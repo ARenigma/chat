@@ -58,7 +58,11 @@ secret-scan:
 
 no-server-keys:
   stage: static
-  image: alpine/git:latest
+  image:
+    # ENTRYPOINT is `git`, so without this override the runner's shell command
+    # is handed to git as a subcommand ("git: 'sh' is not a git command").
+    name: alpine/git:latest
+    entrypoint: ['']
   script:
     # The anon key and Sentry DSN are public by design and deliberately not
     # matched here. A service-role key or an OpenAI key in the tree is an incident.

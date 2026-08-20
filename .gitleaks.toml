@@ -38,13 +38,12 @@ regex = '''MYAPP_UPLOAD_(STORE|KEY)_PASSWORD\s*=\s*\S+'''
 path = '''keystore\.properties$'''
 tags = ["android", "critical"]
 
-[allowlist]
+[[allowlists]]
 description = "Public-by-design values and generated artefacts"
 paths = [
   '''\.env\.example$''',
   '''android/keystore\.properties\.example$''',
   '''package-lock\.json$''',
-  '''supabase/functions/deno\.lock$''',
   '''android/app/debug\.keystore$''',
   '''__tests__/sentry\.test\.ts$''',
 ]
@@ -53,3 +52,21 @@ regexes = [
   '''placeholder-anon-key''',
   '''sk-\.\.\.''',
 ]
+
+# A Figma file key is the identifier in the file's own URL, not a credential: it
+# grants nothing without a Figma session that already has access to the file. It
+# is 22 high-entropy characters, so the default `generic-api-key` rule matches
+# it.
+#
+# Its own block rather than a `regexes` entry above, because those are matched
+# against the extracted secret while what marks this one benign is the field
+# name beside it — hence `regexTarget = "line"`. `condition = "AND"` is
+# load-bearing: without it the path and the regex are OR'd, the whole token file
+# stops being scanned, and a real key pasted into it would sail through. There
+# is a negative-control check for exactly that in the commit message.
+[[allowlists]]
+description = "Figma file key in the exported design tokens"
+regexTarget = "line"
+condition = "AND"
+paths = ['''design/tokens\.json$''']
+regexes = ['''"fileKey"\s*:\s*"[A-Za-z0-9_-]{20,}"''']
