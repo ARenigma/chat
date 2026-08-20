@@ -41,7 +41,6 @@ issue -> branch -> PR -> CI gates -> review -> squash merge -> tag -> rollout
 | `db-test` (pgTAP)         | RLS holes, missing revokes, broken cascades                   |
 | `verify:manifest`         | a dependency adding a permission through manifest merging     |
 | `verify:hermes`           | a release build silently shipping plain JS                    |
-| `check:edge`              | the Deno function, which the RN toolchain cannot see          |
 | Maestro matrix            | journeys on real Android versions and densities               |
 | release health            | a bad build reaching more users than it already has           |
 
