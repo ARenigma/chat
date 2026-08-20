@@ -6,61 +6,65 @@ project_id = "uvghvhcrovmuwivgijvl"
 [auth]
 enable_signup = true
 
-# The product's entire onboarding promise: first launch creates a usable session
-# with no email, no password and no permission prompt. Without this the app
-# cannot start at all — `ensureSession()` fails with
-# "Anonymous sign-ins are disabled".
-enable_anonymous_sign_ins = true
+# Anonymous sign-in is OFF, and that is the whole of migration 006's first
+# decision. It cost the product its sharpest feature — a usable session on the
+# first frame — and bought the only thing that makes suspension, bans and report
+# history mean anything: an identity that survives a reinstall. Against anonymous
+# rows, every safety control shipped in 005 was theatre.
+enable_anonymous_sign_ins = false
 
-# Manual linking lets an anonymous user upgrade to Google or phone later while
-# keeping the same user row, so history survives a reinstall.
-enable_manual_linking = true
+# Nothing left to link. The phone number IS the account, not an upgrade to it.
+enable_manual_linking = false
 
-# The deep link the optional OAuth account link returns to. See src/api/auth.ts.
-additional_redirect_urls = ["companionchat://auth-callback"]
+additional_redirect_urls = []
 
 [auth.email]
-# Email is not an onboarding path for members — the promise is a usable session
-# with no email and no password. `enabled` is on regardless because provider
-# accounts are real, named, admin-created identities that must be able to sign
-# in, and because scripts/provider-console.mjs authenticates as one to test the
-# two-sided path a single device cannot.
+# Off as a user-facing path: members and providers both sign in by phone.
 #
-# `enable_signup = false` is what keeps that from becoming a public sign-up
-# route: an email account can exist and log in, but only an operator can create
-# one.
+# `enabled` stays true for ONE reason: admin-created operational accounts.
+# scripts/provider-console.mjs signs in as a real provider to test the two-sided
+# conversation a single device cannot, and an OTP it cannot receive would make
+# that impossible. `enable_signup = false` is what keeps it from being a public
+# route — an operator can mint such an account, nobody else can.
+#
+# BEFORE LAUNCH: decide whether that account still needs to exist. An email path
+# nobody uses is an attack surface nobody watches.
 enabled = true
 enable_signup = false
 enable_confirmations = false
 
 [auth.sms]
-enable_signup = false
+# The only onboarding path there is.
+enable_signup = true
 enable_confirmations = true
+# 6 digits, and short-lived: an OTP is a bearer token for a whole account.
+otp_length = 6
+otp_expiry = 600
 
-# ---------------------------------------------------------------------------
-# Social identity, optional and additive
-# ---------------------------------------------------------------------------
-# These stay `enabled = false` until real credentials exist, because a half
-# configured provider fails at the consent screen — after the user has already
-# left the app — which is the worst possible place to discover it.
+# REQUIRED BEFORE PHONE AUTH WORKS AT ALL.
 #
-# Both are *linking* paths, not sign-up paths: a member starts anonymous and may
-# attach an identity later so their history survives a reinstall. Requiring a
-# social login to send would trade the app's one genuine differentiator (a usable
-# session on the first frame, nothing to fill in) for accountability we currently
-# get from suspension and rate limits instead.
+# Supabase hosted does not send SMS itself; it needs a gateway. Until one is
+# configured, `signInWithOtp` fails and there is no way into the app. Uncomment
+# the provider you choose and set the secrets in the dashboard, not here.
 #
-# Instagram is not listed because it does not exist as a Supabase provider — see
-# SocialProvider in src/api/auth.ts.
-[auth.external.google]
-enabled = false
-client_id = "env(SUPABASE_AUTH_GOOGLE_CLIENT_ID)"
-secret = "env(SUPABASE_AUTH_GOOGLE_SECRET)"
-redirect_uri = ""
-skip_nonce_check = false
+# For the India launch market there is a second requirement that is not a
+# Supabase setting: transactional SMS needs DLT registration (entity + header +
+# template approval through the operator portal). That takes days to weeks, so it
+# is the long-lead item on the critical path — start it before the code is ready,
+# not after.
+#
+# [auth.sms.twilio]
+# enabled = true
+# account_sid = "env(TWILIO_ACCOUNT_SID)"
+# message_service_sid = "env(TWILIO_MESSAGE_SERVICE_SID)"
+# auth_token = "env(TWILIO_AUTH_TOKEN)"
 
-[auth.external.facebook]
-enabled = false
-client_id = "env(SUPABASE_AUTH_FACEBOOK_CLIENT_ID)"
-secret = "env(SUPABASE_AUTH_FACEBOOK_SECRET)"
-redirect_uri = ""
+# Test numbers, so the device journeys and a reviewer can sign in without an SMS
+# gateway or a real handset. These bypass the gateway entirely and return a fixed
+# code — which is exactly why they must never be a real number.
+#
+# Digits only, no leading '+': the API serialises this table to
+# `number=code,number=code` and rejects anything else.
+[auth.sms.test_otp]
+"919999900001" = "123456"
+"919999900002" = "654321"

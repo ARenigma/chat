@@ -14,23 +14,27 @@ name: Delete account and all data
 # The claim on this screen has to be true; the SQL check in e2e.mjs is what proves it.
 - assertVisible: 'advertising ID'
 
+# The one exception to "nothing is retained", stated where it matters rather than
+# buried in a policy: see the retention note in migration 005.
+- tapOn:
+    id: 'delete-account'
+- assertVisible: 'Abuse reports'
+- tapOn: 'Cancel'
+
 - tapOn:
     id: 'delete-account'
 - assertVisible: 'It cannot be undone.'
 - tapOn:
     id: 'delete-confirm'
 
-# Deletion drops straight back into a clean anonymous session — not a dead end.
-# The provider is untouched by a member's deletion, so the directory still lists
-# Ada; what must be gone is this member's transcript.
+# Deletion now signs you out — there is no anonymous session to fall back into,
+# so the correct end state is the phone screen rather than a fresh wallet. The
+# provider is untouched by a member's deletion; e2e.mjs asserts that in SQL.
 - extendedWaitUntil:
     visible:
-      id: 'token-badge'
+      id: 'phone-input'
     timeout: 30000
-- assertVisible: 'Ada'
-
-- tapOn: 'Ada'
-- assertVisible: 'Say hello.'
+- assertNotVisible: 'Your conversations'
 - assertNotVisible: 'Back online.'
 
 - takeScreenshot: artifacts/06-deleted

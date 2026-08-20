@@ -160,8 +160,16 @@ sql(
 sql(
   `update public.profiles set display_name = 'Ada', is_available = true where id = '${PROVIDER_ID}'`,
 );
+// Migration 006 made admission conditional on a complete application and a
+// verifiable adult date of birth, so the fixture supplies both.
 sql(
-  `insert into public.provider_applications (user_id) values ('${PROVIDER_ID}') on conflict do nothing`,
+  `insert into public.provider_applications
+     (user_id, status, display_name, gender, date_of_birth, headline, languages, about)
+   values ('${PROVIDER_ID}', 'submitted', 'Ada', 'female',
+           (current_date - interval '26 years')::date,
+           'I listen more than I talk', ARRAY['English','Hindi'],
+           'Years of listening to friends.')
+   on conflict (user_id) do nothing`,
 );
 sql(`select public.approve_provider_application('${PROVIDER_ID}')`);
 if (sql('select count(*) from public.provider_directory') !== '1') {

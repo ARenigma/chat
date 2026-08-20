@@ -1,6 +1,8 @@
 import React, { useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { deleteAccount, ensureSession, linkGoogle } from '../api/auth';
+import { deleteAccount, signOut } from '../api/auth';
+import { track } from '../lib/telemetry';
+import { useMyApplication } from '../api/provider';
 import { resetStore, useStore } from '../store/useStore';
 import { Button } from '../components/Button';
 import { Sheet } from '../components/Sheet';
@@ -9,39 +11,43 @@ interface Props {
   visible: boolean;
   onClose: () => void;
   onDeleted: () => void;
+  onSignedOut: () => void;
+  /** Absent on the provider tree — a provider does not apply again. */
+  onApply?: () => void;
+  onApplicationStatus?: () => void;
 }
 
 /**
- * Account and privacy. Two jobs: optional identity linking so a reinstall keeps
- * her history, and the Play Store data-deletion route — one destructive action
- * that hard deletes the auth user, cascading to profile, chats and messages in a
- * single transaction. No soft delete, no retention window.
+ * Account and privacy.
+ *
+ * Identity linking is gone with the anonymous session: the phone number *is* the
+ * account, so there is nothing to upgrade. What replaced it is the route into
+ * provider onboarding, which needs to live somewhere a member can find without
+ * being advertised at — becoming a provider is a deliberate act, not a nudge.
  */
-export function SettingsSheet({ visible, onClose, onDeleted }: Props) {
+export function SettingsSheet({
+  visible,
+  onClose,
+  onDeleted,
+  onSignedOut,
+  onApply,
+  onApplicationStatus,
+}: Props) {
   const setNotice = useStore(s => s.setNotice);
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
-
-  const onLink = useCallback(async () => {
-    setBusy(true);
-    try {
-      await linkGoogle();
-      setNotice('Continue in your browser to finish linking.');
-    } catch (err) {
-      setNotice(err instanceof Error ? err.message : 'Could not start linking');
-    } finally {
-      setBusy(false);
-    }
-  }, [setNotice]);
+  const { data: application } = useMyApplication();
 
   const onDelete = useCallback(async () => {
     setBusy(true);
     try {
       await deleteAccount();
+      track('account_deleted');
       queryClient.clear();
       resetStore();
-      await ensureSession();
+      // No fresh session to start any more: deletion signs you out, and the
+      // phone screen is where you land.
       onDeleted();
     } catch (err) {
       setNotice(err instanceof Error ? err.message : 'Could not delete account');
@@ -51,6 +57,18 @@ export function SettingsSheet({ visible, onClose, onDeleted }: Props) {
     }
   }, [onDeleted, queryClient, setNotice]);
 
+  const onSignOutPress = useCallback(async () => {
+    setBusy(true);
+    try {
+      await signOut();
+      queryClient.clear();
+      resetStore();
+      onSignedOut();
+    } finally {
+      setBusy(false);
+    }
+  }, [onSignedOut, queryClient]);
+
   if (confirming) {
     return (
       <Sheet
@@ -59,7 +77,9 @@ export function SettingsSheet({ visible, onClose, onDeleted }: Props) {
         title="Delete everything?"
         body={
           'This permanently deletes your profile, every conversation and every ' +
-          'message. It cannot be undone.'
+          'message. It cannot be undone. Abuse reports you or someone else filed ' +
+          'are kept without your name, so they cannot be erased by deleting an ' +
+          'account.'
         }
         onClose={() => setConfirming(false)}>
         <Button
@@ -76,20 +96,36 @@ export function SettingsSheet({ visible, onClose, onDeleted }: Props) {
     );
   }
 
+  const hasApplication = application !== null && application !== undefined;
+
   return (
     <Sheet
       visible={visible}
       testID="settings-sheet"
       title="Account & privacy"
       body={
-        'You’re signed in anonymously. No contacts, no location, no photos, no ' +
-        'advertising ID. Link an identity only if you want your history to survive ' +
-        'a reinstall.'
+        'Signed in with your phone number, which is never shown to anyone you ' +
+        'talk to. No contacts, no location, no photos, no advertising ID.'
       }
       onClose={onClose}>
-      <Button label="Link Google" disabled={busy} onPress={() => {
-          void onLink();
-        }} />
+      {hasApplication && onApplicationStatus !== undefined ? (
+        <Button
+          label="My provider application"
+          onPress={onApplicationStatus}
+          testID="settings-application"
+        />
+      ) : onApply !== undefined ? (
+        <Button label="Become a provider" onPress={onApply} testID="settings-apply" />
+      ) : null}
+      <Button
+        label="Sign out"
+        kind="secondary"
+        disabled={busy}
+        onPress={() => {
+          void onSignOutPress();
+        }}
+        testID="sign-out"
+      />
       <Button
         label="Delete account & all data"
         kind="danger"

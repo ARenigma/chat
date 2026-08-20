@@ -98,17 +98,21 @@ describe('accent budget is enforced in code, not just documented', () => {
     // SendButton fill, TypingIndicator dots, InboxScreen unread dot, plus
     // accentTint in Avatar/Chip/TokenCounter.
     //
-    // InboxScreen was added deliberately rather than by loosening the rule. The
-    // unread dot is the one element in a list of threads that is asking for
-    // attention, which is exactly what the accent is for; rendering it in
-    // text.primary would make "she replied" look like ordinary chrome. This
-    // assertion exists to force that argument to be made, not to forbid it — so
-    // a sixth entry needs a reason written down, and a seventh should be
-    // suspicious.
+    // InboxScreen and ProviderHomeScreen were added deliberately rather than by
+    // loosening the rule, and for the same reason: the unread/waiting dot is the
+    // one element in a list of threads that is asking for attention, which is
+    // exactly what the accent is for. Rendering it in text.primary would make
+    // "she replied" — or, for a provider, "someone is waiting on you" — look
+    // like ordinary chrome. Note that ReviewSheet's filled star deliberately
+    // does *not* take the accent: it uses text.primary against bg.sunken,
+    // because five accent stars would swamp the send button on the same screen.
+    //
+    // This assertion exists to force the argument to be made, not to forbid it.
     expect(users).toEqual([
       'Avatar.tsx',
       'Chip.tsx',
       'InboxScreen.tsx',
+      'ProviderHomeScreen.tsx',
       'SendButton.tsx',
       'TokenCounter.tsx',
       'TypingIndicator.tsx',

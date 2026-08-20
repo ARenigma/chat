@@ -30,7 +30,13 @@ export type TelemetryEvent =
   | 'user_blocked'
   | 'user_unblocked'
   | 'account_deleted'
-  | 'identity_linked';
+  | 'identity_linked'
+  | 'signed_in'
+  | 'application_submitted'
+  | 'availability_changed'
+  | 'review_submitted';
+
+export type Gender = 'female' | 'male' | 'other';
 
 export type Profile = {
   id: string;
@@ -42,8 +48,60 @@ export type Profile = {
   is_available: boolean;
   /** Non-null and future-dated means suspended. A ban is a far-future value. */
   suspended_until: string | null;
+  /** Never sent to another user; the directory publishes a computed age. */
+  date_of_birth: string | null;
+  gender: Gender | null;
+  headline: string | null;
+  languages: string[];
+  /** Derived from `reviews` by trigger. Not writable by its subject. */
+  rating_avg: number | null;
+  rating_count: number;
+  median_reply_seconds: number | null;
   created_at: string;
   last_refill_at: string | null;
+};
+
+export type ApplicationStatus =
+  | 'draft'
+  | 'submitted'
+  | 'under_review'
+  | 'needs_info'
+  | 'approved'
+  | 'rejected';
+
+/**
+ * What an applicant may see about their own application.
+ *
+ * `missing_fields` is the whole point: Clarity leaves listeners on "Something
+ * Missing" with no idea which field, and they churn in public in the store
+ * reviews. This is structured so the UI can point at the input.
+ */
+export type MyApplication = {
+  status: ApplicationStatus;
+  missing_fields: string[];
+  reviewer_note: string | null;
+  submitted_at: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+};
+
+export type Review = {
+  id: string;
+  conversation_id: string;
+  member_id: string;
+  provider_id: string;
+  rating: number;
+  comment: string | null;
+  created_at: string;
+};
+
+/** Counted in tokens. Converting to currency is Stripe Connect's job, unbuilt. */
+export type ProviderEarnings = {
+  billable_messages: number;
+  refunded_messages: number;
+  members_served: number;
+  conversations: number;
+  first_message_at: string | null;
 };
 
 export type ReportReason =
@@ -87,6 +145,7 @@ export type ConversationSummary = {
   last_body: string | null;
   last_sender_id: string | null;
   unread_count: number;
+  reviewed: boolean;
 };
 
 /**
@@ -97,7 +156,16 @@ export type ConversationSummary = {
 export type ProviderSummary = {
   id: string;
   display_name: string;
+  gender: Gender | null;
+  /** Integer years. The birth date itself is never exposed. */
+  age: number | null;
+  headline: string | null;
+  languages: string[];
   is_available: boolean;
+  rating_avg: number | null;
+  rating_count: number;
+  /** Published so "does she actually reply" is answerable before spending. */
+  median_reply_seconds: number | null;
   created_at: string;
 };
 
@@ -192,12 +260,28 @@ export type Database = {
         Row: {
           id: string;
           user_id: string;
-          status: 'pending' | 'approved' | 'rejected';
-          submitted_at: string;
+          status: ApplicationStatus;
+          display_name: string | null;
+          gender: Gender | null;
+          date_of_birth: string | null;
+          headline: string | null;
+          languages: string[];
+          about: string | null;
+          missing_fields: string[];
+          submitted_at: string | null;
           reviewed_at: string | null;
           reviewer_note: string | null;
+          created_at: string;
         };
-        Insert: { user_id: string; status?: 'pending' };
+        // Written through submit_provider_application, so completeness is
+        // computed server-side rather than asserted by the client.
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      reviews: {
+        Row: Review;
+        Insert: never;
         Update: never;
         Relationships: [];
       };
@@ -213,6 +297,14 @@ export type Database = {
       };
       my_reports: {
         Row: MyReport;
+        Relationships: [];
+      };
+      my_application: {
+        Row: MyApplication;
+        Relationships: [];
+      };
+      provider_earnings: {
+        Row: ProviderEarnings;
         Relationships: [];
       };
     };
@@ -234,6 +326,22 @@ export type Database = {
         };
         Returns: string;
       };
+      submit_provider_application: {
+        Args: {
+          p_display_name: string;
+          p_gender: Gender | null;
+          p_date_of_birth: string | null;
+          p_headline: string;
+          p_languages: string[];
+          p_about: string;
+        };
+        /** The fields still missing. Empty means it entered the queue. */
+        Returns: string[];
+      };
+      submit_review: {
+        Args: { p_conversation_id: string; p_rating: number; p_comment?: string | null };
+        Returns: undefined;
+      };
       claim_daily_tokens: {
         Args: Record<string, never>;
         Returns: ClaimResult;
@@ -245,6 +353,7 @@ export type Database = {
     };
     Enums: {
       user_role: UserRole;
+      application_status: ApplicationStatus;
       report_reason: ReportReason;
       report_status: ReportStatus;
     };

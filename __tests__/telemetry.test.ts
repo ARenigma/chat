@@ -1,4 +1,4 @@
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { propsAreSafe } from '../src/lib/telemetryGuard';
 
@@ -45,13 +45,28 @@ describe('propsAreSafe', () => {
 });
 
 describe('telemetry contract with the database', () => {
-  const migration = read('supabase/migrations/005_trust_and_safety.sql');
+  /**
+   * The allowlist lives in `guard_event_shape`, which a later migration may
+   * redefine — 006 does. So the authority is the *last* definition across all
+   * migrations in order, not whichever file introduced it. Reading only 005
+   * would have compared against a superseded list and passed while the running
+   * database disagreed.
+   */
+  const migrations = readdirSync(join(ROOT, 'supabase/migrations'))
+    .filter(f => f.endsWith('.sql'))
+    .sort()
+    .map(f => read(`supabase/migrations/${f}`));
+  const migration = migrations.join('\n');
+  const latestGuard = (() => {
+    const blocks = migration.split('create or replace function public.guard_event_shape');
+    return blocks[blocks.length - 1] ?? '';
+  })();
   const types = read('src/lib/database.types.ts');
 
   it('keeps the TelemetryEvent union in step with the SQL allowlist', () => {
     // The SQL list is the authority; the union is what makes a typo a compile
     // error instead of a runtime rejection nobody sees.
-    const sqlList = /if new\.name not in \(([\s\S]*?)\) then/.exec(migration)?.[1] ?? '';
+    const sqlList = /if new\.name not in \(([\s\S]*?)\) then/.exec(latestGuard)?.[1] ?? '';
     const sqlNames = [...sqlList.matchAll(/'([a-z_]+)'/g)].map(m => m[1]).sort();
 
     const unionBlock =
@@ -63,7 +78,7 @@ describe('telemetry contract with the database', () => {
   });
 
   it('forbids the same prop keys on both sides', () => {
-    const sqlPattern = /v_key ~\* '\(([^)]+)\)'/.exec(migration)?.[1] ?? '';
+    const sqlPattern = /v_key ~\* '\(([^)]+)\)'/.exec(latestGuard)?.[1] ?? '';
     const clientPattern =
       /FORBIDDEN_PROP_KEY =\s*\/\(([^)]+)\)\/i/.exec(read('src/lib/telemetryGuard.ts'))?.[1] ??
       '';

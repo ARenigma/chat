@@ -30,8 +30,16 @@ supabase db push           # applies migrations 001-004
 supabase config push       # enables anonymous sign-ins; the app dies at boot without it
 ```
 
-Enable **Manual linking** in Supabase → Authentication if you want the optional
-Google/phone link to work.
+**Phone + OTP is the only way in**, so an SMS gateway is a hard prerequisite:
+Supabase hosted does not send SMS itself. Configure Twilio (or MessageBird /
+Vonage / Textlocal) in the dashboard, or nobody can sign in at all. For an India
+launch there is a second, longer lead item that is not a Supabase setting —
+transactional SMS needs **DLT registration** (entity, header and template
+approval through the operator portal), which takes days to weeks. Start it before
+the code is ready.
+
+`supabase/config.toml` seeds two **test OTP numbers** so the device journeys and a
+Play reviewer can sign in without a gateway or a handset.
 
 There are no Edge Functions and no server-side secrets to set. Sending is a
 single Postgres RPC, so there is nothing between the client and the database.
@@ -59,7 +67,7 @@ single Postgres RPC, so there is nothing between the client and the database.
 
 124 Jest tests. `npm run test:db` is the interesting one: it builds a
 pgTAP-enabled Postgres image, applies the real migration files against a minimal
-`auth` schema shim, then runs **156 pgTAP assertions** covering two-party RLS
+`auth` schema shim, then runs **196 pgTAP assertions** covering two-party RLS
 isolation, least-privilege grants, cascade deletion, message immutability, the
 directory boundary, blocking, reporting, suspension, rate limits, the
 append-only audit trail, PII-free telemetry, and that `deduct_user_token` agrees
@@ -80,12 +88,16 @@ src/
   api/                   auth, react-query hooks, the Realtime channel
   store/useStore.ts      ephemeral UI state only (zustand)
   components/            bubbles, composer, avatar, sheets, typing indicator
-  screens/               InboxScreen (home), ProvidersScreen, ChatScreen,
-                         SafetySheet, RefillSheet, SettingsSheet
+  screens/               PhoneAuthScreen, InboxScreen (home), ProvidersScreen,
+                         ChatScreen, SafetySheet, ReviewSheet, RefillSheet,
+                         SettingsSheet, and the provider tree:
+                         ProviderApplicationScreen, ProviderStatusScreen,
+                         ProviderHomeScreen
 supabase/
   migrations/            001 schema + wallet, 002 grants + RPCs,
                          003 roles + two-party conversations, 004 guards,
-                         005 blocking, reporting, suspension, telemetry
+                         005 blocking, reporting, suspension, telemetry,
+                         006 phone auth, provider onboarding, reviews
   tests/                 pgTAP suite + auth shim, run by npm run test:db
 .maestro/                device journeys
 .gitlab-ci.yml           5 stages; see Pipeline below
@@ -103,6 +115,76 @@ Navigation would add a native-screens dependency and ~15 packages to express
 `provider ?? directory`. `App.tsx` holds one piece of state instead — and that
 same seam is where the provider role switch attaches, since the server-supplied
 role selects the navigation root.
+
+---
+
+## Identity and onboarding
+
+### Members: phone and OTP, nothing else
+
+Two fields. No password, no email, no social buttons, no terms checkbox. Signing
+in and signing up are the same act, which is the one part of the old
+anonymous-first promise still standing.
+
+Anonymous sessions, Google, Facebook, email-as-a-user-path and identity linking
+are all **gone**, and it is worth being honest about the trade:
+
+- **Lost:** "a usable session on the first frame, nothing to fill in." That was
+  the sharpest thing about the product. There is now a form between the launcher
+  and the app, and some people will not fill it in.
+- **Bought:** identity that survives a reinstall. Every safety control in
+  migration 005 — suspension, bans, the report history that makes a repeat
+  offender visible — assumed the account meant something. Against anonymous rows
+  all of it was theatre: a banned user was back in ten seconds with a fresh
+  wallet. A phone number is scarce and costs money to replace.
+
+Instagram is not on the list because it cannot be: Meta shut the Instagram Basic
+Display API in December 2024 and Instagram sign-in now runs through Facebook
+Login for Business. There is no Supabase provider for it.
+
+### Providers: everything, and an age gate that is a constraint
+
+`ProviderApplicationScreen` → `ProviderStatusScreen` → `ProviderHomeScreen`.
+Name, gender, date of birth, headline, languages, about. Reviewed by hand.
+
+**The age gate is a CHECK constraint**, not a form field. `provider_is_adult`
+makes an underage provider unrepresentable — there is no route to one through the
+app, through the approval function, or through a manual `UPDATE` by an operator
+in a hurry. pgTAP asserts that even `service_role` cannot promote a minor.
+`date_of_birth` is write-once, so an applicant cannot pass review and then edit
+it. The client checks too, but only so a 17-year-old is told at the date field
+rather than after filling in six others.
+
+**No status is a dead end.** The application status is a real enum
+(`draft / submitted / under_review / needs_info / approved / rejected`) and
+`missing_fields` is a structured array, computed server-side at submission and
+returned to the form so it can mark the inputs. `needs_info` is resolvable by the
+applicant alone, without contacting support.
+
+That design is a direct response to the most instructive thing in the
+competitor research — see [docs/clarity-learnings.md](docs/clarity-learnings.md).
+
+Ops side:
+
+```bash
+npm run moderate applications              # the queue, oldest first
+npm run moderate admit <user-id>
+npm run moderate needinfo <user-id> --fields=about,headline --note="..."
+npm run moderate decline <user-id> --note="..."
+npm run moderate maintenance               # cron this: refunds + reply latencies
+```
+
+### Nobody pays for silence
+
+A member message the provider never answers is **refunded** after 24 hours
+(`refund_unanswered_messages()`, idempotent via `messages.refunded_at`). The
+directory also publishes a **median reply time**, so "does she actually reply" is
+answerable before spending anything, and the provider home screen tells providers
+plainly that replying is what earns.
+
+This is the one place the research changed the product rather than the UI: the
+most-upvoted negative review of the closest live competitor is about being billed
+while the other person said nothing.
 
 ---
 
@@ -324,9 +406,13 @@ where AI legitimately belongs in this product: classification, not generation.
 **A staffed queue.** A queue nobody reads is theatre. The tooling exists; the
 rota does not.
 
-**KYC.** `identity_verified_at` is set by the approval function, not by a vendor.
-Real age and identity verification (Persona, Veriff, Stripe Identity) is a
-launch requirement, not a nice-to-have.
+**KYC.** The age gate is enforced, but on a self-declared date of birth.
+`identity_verified_at` is set by the approval function, not by a vendor. A
+document check (Persona, Veriff, Stripe Identity) is a launch requirement, not a
+nice-to-have — a constraint on a number someone typed is a floor, not proof.
+
+**Payouts.** Earnings are counted in tokens because that is true. Stripe Connect
+is unbuilt, so no money moves yet.
 
 ---
 

@@ -46,6 +46,7 @@ const MIGRATIONS = [
   'supabase/migrations/003_human_conversations.sql',
   'supabase/migrations/004_message_guard_and_directory.sql',
   'supabase/migrations/005_trust_and_safety.sql',
+  'supabase/migrations/006_phone_auth_and_provider_onboarding.sql',
 ];
 
 const docker = (args, options = {}) =>
@@ -290,6 +291,10 @@ const suites = [
   {
     file: join(ROOT, 'supabase/tests/040_trust_and_safety.sql'),
     label: 'blocking, reporting, suspension, rate limits, telemetry',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/050_onboarding_and_reputation.sql'),
+    label: 'age gate, onboarding transitions, reputation, silence refunds',
   },
 ];
 
