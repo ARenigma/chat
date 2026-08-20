@@ -1,0 +1,22 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createClient } from '@supabase/supabase-js';
+import { ENV } from './env';
+import type { Database } from './database.types';
+
+/**
+ * `detectSessionInUrl: false` because React Native has no URL bar — the OAuth
+ * code arrives through a deep link and is exchanged explicitly in
+ * `src/api/auth.ts`. `flowType: 'pkce'` is what makes that exchange safe on a
+ * device that cannot hold a client secret.
+ */
+export const supabase = createClient<Database>(ENV.supabaseUrl, ENV.supabaseAnonKey, {
+  auth: {
+    storage: AsyncStorage,
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: false,
+    flowType: 'pkce',
+  },
+});
+
+export const FUNCTIONS_URL = `${ENV.supabaseUrl}/functions/v1`;
