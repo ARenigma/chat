@@ -14,6 +14,7 @@ module.exports = {
         'app', // shell, navigation, boot
         'ui', // components and screens
         'api', // client data layer
+        'auth', // identity: providers, sessions, the sign-in surface
         'store', // ephemeral state
         'theme', // design tokens and the generator
         'db', // migrations, RLS, RPCs
