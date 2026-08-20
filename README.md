@@ -375,11 +375,45 @@ CLIs. CI variables: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_PROJECT_REF`,
 `FIREBASE_PROJECT_ID`, and for the release stage `SUPABASE_ACCESS_TOKEN`,
 `SUPABASE_DB_PASSWORD`, `PLAY_SERVICE_ACCOUNT_JSON`.
 
-`FIREBASE_SERVICE_ACCOUNT_JSON` is **not** set and the `distribute` job
-self-skips without it: the GCP project sits under an organisation enforcing
-`constraints/iam.disableServiceAccountKeyCreation`, so no service-account key can
-be created. The fix is Workload Identity Federation (GitLab OIDC → GCP, keyless)
-rather than a key. `npm run ship` distributes from a laptop in the meantime.
+### Distribution is keyless
+
+There is **no** `FIREBASE_SERVICE_ACCOUNT_JSON`, and there cannot be: the GCP
+project sits under an organisation enforcing
+`constraints/iam.disableServiceAccountKeyCreation`. Rather than ask for the
+policy to be weakened, `distribute` uses Workload Identity Federation, which is
+the better answer anyway — nothing long-lived exists to leak, rotate or forget.
+
+GitLab signs a short-lived OIDC token for the job; Google STS verifies it against
+the `gitlab` provider in the `gitlab-pool` pool and returns a federated token
+that impersonates `app-distribution-ci@`. Two conditions on the Google side are
+what make that safe rather than "any GitLab.com project may impersonate our
+release identity":
+
+- the provider's attribute condition pins `assertion.project_path` to
+  `ARenigma/chat` **and** requires `assertion.ref_protected == 'true'`
+- the `roles/iam.workloadIdentityUser` binding is to a `principalSet` scoped to
+  that same `project_path`
+
+`main` is a protected branch, so the second condition holds for real releases
+while refusing a token minted from a fork or an unprotected feature branch. The
+service account holds only `roles/firebaseappdistro.admin`, which already
+includes `firebase.projects.get` — no broader grant was needed.
+
+Setup, for the record (one-off, already applied):
+
+```bash
+gcloud iam workload-identity-pools create gitlab-pool --location=global
+gcloud iam workload-identity-pools providers create-oidc gitlab \
+  --workload-identity-pool=gitlab-pool --location=global \
+  --issuer-uri="https://gitlab.com" --allowed-audiences="gitlab-chat-ci" \
+  --attribute-mapping="google.subject=assertion.sub,attribute.project_path=assertion.project_path,..." \
+  --attribute-condition="assertion.project_path == 'ARenigma/chat' && assertion.ref_protected == 'true'"
+gcloud iam service-accounts add-iam-policy-binding app-distribution-ci@... \
+  --role=roles/iam.workloadIdentityUser \
+  --member="principalSet://iam.googleapis.com/projects/<NUM>/locations/global/workloadIdentityPools/gitlab-pool/attribute.project_path/ARenigma/chat"
+```
+
+`npm run ship` still distributes from a laptop when that is quicker.
 
 ---
 
