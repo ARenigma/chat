@@ -33,6 +33,7 @@ import { PeerTyping } from '../components/PeerTyping';
 import { Pressable } from '../components/Pressable';
 import { TokenCounter } from '../components/TokenCounter';
 import { MyTurn, PeerTurn } from '../components/Turn';
+import { SafetySheet } from './SafetySheet';
 
 interface Props {
   providerId: string;
@@ -68,6 +69,12 @@ export function ChatScreen({ providerId, onBack }: Props) {
   const openRefill = useStore(s => s.openRefill);
   const peerOnline = useStore(selectPeerOnline);
   const [bloomKey, setBloomKey] = useState(0);
+  // Which message the safety sheet was opened from, so a report can attach the
+  // specific message rather than only the thread.
+  const [safety, setSafety] = useState<{ open: boolean; messageId: string | null }>({
+    open: false,
+    messageId: null,
+  });
 
   useProfile();
   const { data: selfId } = useSelfId();
@@ -112,6 +119,10 @@ export function ChatScreen({ providerId, onBack }: Props) {
     });
   }, [messages, selfId]);
 
+  const reportMessage = useCallback((messageId: string) => {
+    setSafety({ open: true, messageId });
+  }, []);
+
   const renderItem = useCallback(
     ({ item }: ListRenderItemInfo<(typeof rows)[number]>) => {
       const { message, mine, first, last, showReceipt } = item;
@@ -137,12 +148,13 @@ export function ChatScreen({ providerId, onBack }: Props) {
               initial={initial}
               first={first}
               timestamp={stamp}
+              onReport={() => reportMessage(message.id)}
             />
           )}
         </View>
       );
     },
-    [initial],
+    [initial, reportMessage],
   );
 
   const header = useCallback(
@@ -173,6 +185,13 @@ export function ChatScreen({ providerId, onBack }: Props) {
             </Text>
           ) : null}
         </View>
+        <Pressable
+          onPress={() => setSafety({ open: true, messageId: null })}
+          testID="open-safety"
+          accessibilityLabel={`Block or report ${name}`}
+          style={styles.back}>
+          <Icon glyph="shield" size={16} color={TOKENS.color.text.secondary} />
+        </Pressable>
         <TokenCounter balance={balance} onPress={openRefill} />
       </View>
 
@@ -229,6 +248,15 @@ export function ChatScreen({ providerId, onBack }: Props) {
           />
         </View>
       </KeyboardAvoidingView>
+
+      <SafetySheet
+        visible={safety.open}
+        onClose={() => setSafety({ open: false, messageId: null })}
+        conversationId={conversationId}
+        peerId={providerId}
+        peerName={name}
+        messageId={safety.messageId}
+      />
     </View>
   );
 }

@@ -24,7 +24,9 @@
     "tokens": "node scripts/gen-tokens.mjs",
     "tokens:check": "node scripts/gen-tokens.mjs --check",
     "distribute": "node scripts/distribute.mjs",
-    "ship": "npm run android:release && npm run verify:manifest && npm run verify:hermes && npm run distribute"
+    "ship": "npm run android:release && npm run verify:manifest && npm run verify:hermes && npm run distribute",
+    "moderate": "node scripts/moderate.mjs",
+    "provider": "node scripts/provider-console.mjs"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^3.1.1",

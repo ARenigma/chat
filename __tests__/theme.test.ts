@@ -95,10 +95,20 @@ describe('accent budget is enforced in code, not just documented', () => {
       .filter(s => s.body.includes('color.bg.accent') && !s.body.includes('color.bg.accentTint('))
       .map(s => s.file)
       .sort();
-    // SendButton fill, TypingIndicator dots, plus accentTint in Avatar/Chip/TokenCounter.
+    // SendButton fill, TypingIndicator dots, InboxScreen unread dot, plus
+    // accentTint in Avatar/Chip/TokenCounter.
+    //
+    // InboxScreen was added deliberately rather than by loosening the rule. The
+    // unread dot is the one element in a list of threads that is asking for
+    // attention, which is exactly what the accent is for; rendering it in
+    // text.primary would make "she replied" look like ordinary chrome. This
+    // assertion exists to force that argument to be made, not to forbid it — so
+    // a sixth entry needs a reason written down, and a seventh should be
+    // suspicious.
     expect(users).toEqual([
       'Avatar.tsx',
       'Chip.tsx',
+      'InboxScreen.tsx',
       'SendButton.tsx',
       'TokenCounter.tsx',
       'TypingIndicator.tsx',

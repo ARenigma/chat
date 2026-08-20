@@ -52,15 +52,18 @@ single Postgres RPC, so there is nothing between the client and the database.
 | `npm run verify:full`     | adds pgTAP                                                                |
 | `npm run verify:hermes`   | the shipped APK really contains Hermes bytecode                           |
 | `npm run e2e:install`     | device journeys on a booted emulator (needs the CLIs below)               |
+| `npm run moderate`        | the moderation queue (needs the service role key)                         |
+| `npm run provider`        | reply as a provider, to test the two-sided path from a laptop             |
 | `npm run android:release` | Release APK: R8 + resource shrinking (needs JDK 17 + SDK 36 + NDK 27)     |
 | `npm run android:bundle`  | Release AAB for Play upload                                               |
 
-108 Jest tests. `npm run test:db` is the interesting one: it builds a
+124 Jest tests. `npm run test:db` is the interesting one: it builds a
 pgTAP-enabled Postgres image, applies the real migration files against a minimal
-`auth` schema shim, then runs **105 pgTAP assertions** covering two-party RLS
+`auth` schema shim, then runs **156 pgTAP assertions** covering two-party RLS
 isolation, least-privilege grants, cascade deletion, message immutability, the
-directory boundary, and that `deduct_user_token` agrees with its TypeScript
-mirror on every row of `supabase/tests/ledger_cases.json`.
+directory boundary, blocking, reporting, suspension, rate limits, the
+append-only audit trail, PII-free telemetry, and that `deduct_user_token` agrees
+with its TypeScript mirror on every row of `supabase/tests/ledger_cases.json`.
 
 > `npm run verify` is **not** the command CI runs — CI adds `--coverage`. That
 > one flag difference hid three real failures until the first GitLab pipeline
@@ -77,16 +80,20 @@ src/
   api/                   auth, react-query hooks, the Realtime channel
   store/useStore.ts      ephemeral UI state only (zustand)
   components/            bubbles, composer, avatar, sheets, typing indicator
-  screens/               ProvidersScreen, ChatScreen, RefillSheet, SettingsSheet
+  screens/               InboxScreen (home), ProvidersScreen, ChatScreen,
+                         SafetySheet, RefillSheet, SettingsSheet
 supabase/
   migrations/            001 schema + wallet, 002 grants + RPCs,
-                         003 roles + two-party conversations, 004 guards
+                         003 roles + two-party conversations, 004 guards,
+                         005 blocking, reporting, suspension, telemetry
   tests/                 pgTAP suite + auth shim, run by npm run test:db
 .maestro/                device journeys
 .gitlab-ci.yml           5 stages; see Pipeline below
 fastlane/                Play upload, staged rollout, halt
 scripts/                 verify-manifest, verify-hermes, db-test, e2e,
-                         distribute, ci-release-health, gen-tokens
+                         distribute, ci-release-health, gen-tokens,
+                         moderate (ops queue), provider-console (test the
+                         other side of a conversation)
 ```
 
 ### Why no navigation library
@@ -223,10 +230,23 @@ permission — see the note in the manifest.
 **`allowBackup="false"`** so auth tokens and cached messages cannot be pulled out
 of an adb backup.
 
-**Data deletion.** Settings → _Delete account & all data_ calls
-`public.delete_user_account()`, which deletes the `auth.users` row. That cascades
-to `profiles`, then `conversations`, then `messages`, in one transaction. No soft
-delete, no retention window. The app then starts a fresh anonymous session.
+**Data deletion, and the one exception.** Settings → _Delete account & all data_
+calls `public.delete_user_account()`, which deletes the `auth.users` row. That
+cascades to `profiles`, then `conversations`, then `messages`, in one
+transaction. No soft delete. The app then starts a fresh anonymous session.
+
+Migration 005 introduced a deliberate exception, and it is stated here rather
+than buried because it makes the previous paragraph less absolute than it was.
+**Abuse reports outlive the accounts involved.** A report has to survive the
+reported message, or the remedy for "he sent me something illegal" is to destroy
+the only evidence of it — and the accused can erase the case against them by
+deleting their account. So `reports` keeps a snapshot of the reported text, and
+`reporter_id` / `subject_user_id` are `on delete set null`: the report survives,
+de-identified.
+
+Retention is bounded in code rather than promised in a policy:
+`purge_expired_reports()` drops resolved reports 90 days after resolution, and
+`npm run moderate purge` runs it. Nothing else survives deletion.
 
 **Sentry.** `src/lib/sentry.ts` scrubs in two layers before anything leaves the
 device: whole fields that exist to carry payloads are deleted (`request.data`,
@@ -236,11 +256,131 @@ bearer/JWT credentials. `event.message` is redacted wholesale — the app never
 calls `captureMessage`, so anything appearing there came from an integration we
 did not write. 30 unit tests cover the scrubber.
 
-**Still missing, and it is the largest thing left.** Trust and safety: reporting,
-blocking, message classification, audit trails and a human ops queue. Paid
-human-to-human chat carries risk in both directions, and none of it is built yet.
-This is where AI legitimately belongs in this product — classification, not
-generation.
+---
+
+## Trust and safety
+
+Five primitives, in the order an incident actually moves through them.
+
+**Blocking** is the remedy that needs no operator and no waiting, so it is a
+direct table write under RLS. It is **symmetric** — blocking someone also stops
+them reaching you, because a one-way block would hand the blocker a megaphone
+aimed at someone who wanted them gone. And the blocked party is **never told**:
+there is no policy that lets anyone read who blocked them, and `is_blocked_pair`
+is not callable by a client, because "you have been blocked" is the disclosure
+that turns a block into a reason to make a second account.
+
+**Reporting** goes through `submit_report`, which verifies the reporter is a
+participant, infers the subject from the thread rather than trusting the client,
+and snapshots the reported message. It refuses to snapshot the reporter's own
+message, so a report cannot be used to pin your words on the other party, and it
+only reads messages from the reported conversation, so it cannot exfiltrate text
+from a thread you are not in. Reporting is itself rate limited at 10/hour —
+mass false reports are a harassment vector and they bury the real queue.
+
+**The audit trail** (`moderation_actions`) is append-only, enforced by a trigger
+rather than by intent, because `service_role` bypasses RLS and would otherwise be
+free to rewrite history. No client role can read it at all.
+
+**Enforcement** is `profiles.suspended_until`, checked in `send_message` and
+`open_conversation` so a suspended user cannot open a fresh thread to route
+around it. A ban is a suspension with no end, so there is one code path instead
+of two that can disagree. A suspended provider also drops out of the directory.
+
+**Rate limiting** is 20 messages/minute — high enough that a fast human typing
+short lines never sees it, low enough that scripted flooding stops being viable.
+
+None of these debit a token. Every rejection happens before the wallet is
+touched, which the pgTAP suite asserts directly rather than assuming.
+
+### The queue
+
+```bash
+npm run moderate list                       # open reports, minor_safety first
+npm run moderate show <report-id>           # detail plus the evidence snapshot
+npm run moderate act <id> --action=suspended --days=7 --note="..."
+npm run moderate dismiss <id> --note="..."
+npm run moderate metrics --days=14
+```
+
+A CLI rather than a web console, and that is the honest sequencing: what a queue
+needs first is that reports are _seen_ and that acting on one is recorded. Every
+action goes through the same tables a console would, so building the UI later is
+a UI change and not a rewrite. `minor_safety` and `self_harm` sort first
+regardless of age, and the triage list carries a **priors** column, because a
+repeat subject should not look like a first-time report.
+
+Suspending or banning asks for confirmation, and the audit row is written
+_before_ the enforcement, so an action can never exist without a record of who
+ordered it.
+
+### Still missing
+
+**Classification.** Everything above is reactive: it needs a human to be harmed
+and then to report. Proactive detection — CSAM hashing, grooming and
+solicitation classifiers, off-platform contact detection — is not built. This is
+where AI legitimately belongs in this product: classification, not generation.
+
+**A staffed queue.** A queue nobody reads is theatre. The tooling exists; the
+rota does not.
+
+**KYC.** `identity_verified_at` is set by the approval function, not by a vendor.
+Real age and identity verification (Persona, Veriff, Stripe Identity) is a
+launch requirement, not a nice-to-have.
+
+---
+
+## Telemetry and observability
+
+Two layers, deliberately separate.
+
+**Sentry** for crashes and errors, scrubbed in two passes before anything leaves
+the device (see the privacy section). That covers "did it break".
+
+**A first-party `events` table** for behaviour. That covers "is it being used,
+and is it being abused". There is no third-party analytics SDK, and that is a
+constraint rather than a preference: the manifest gate permits exactly INTERNET
+and VIBRATE, and the Play data-safety declaration says no advertising id and no
+analytics SDK. Adding Firebase Analytics or PostHog would make both statements
+false and would likely add a permission through manifest merging.
+
+The table is structurally unable to carry a message:
+
+- `name` must be on an allowlist — an unknown event is rejected at insert rather
+  than quietly stored, so the column cannot be used to smuggle free text
+- `props` keys matching `body|message|content|text|detail|email|phone|name|token`
+  are **rejected by a trigger**, not filtered client-side, because the client is
+  the least trustworthy place to enforce that
+- `props` is capped at 2 KB
+- the client has `INSERT` and nothing else: there is no SELECT policy _and_ the
+  grant is revoked, so a client cannot read events back — not even its own
+
+`__tests__/telemetry.test.ts` asserts the TypeScript union and the SQL allowlist
+are identical, so adding an event in one place and not the other is a failing
+test rather than a silent runtime rejection.
+
+### Dashboards
+
+`public.safety_metrics` aggregates the signals worth watching daily: messages
+sent, sends rejected, reports filed, blocks created, active users.
+
+```bash
+npm run moderate metrics --days=14
+```
+
+For Grafana, add a **PostgreSQL** datasource pointing at the Supabase connection
+string with a read-only role, and query `safety_metrics` and `moderation_queue`
+directly — no exporter and no extra service. Create the role rather than reusing
+`postgres`:
+
+```sql
+create role grafana_ro login password '...';
+grant usage on schema public to grafana_ro;
+grant select on public.safety_metrics, public.moderation_queue to grafana_ro;
+```
+
+Watch **ratios, not counts**: reports or blocks per active user climbing is the
+abuse signal. Raw counts just track growth.
 
 ---
 

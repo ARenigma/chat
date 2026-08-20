@@ -12,6 +12,8 @@ import { TokenCounter } from '../components/TokenCounter';
 
 interface Props {
   onSelect: (providerId: string) => void;
+  /** Present because the directory is reached from the inbox, not the launcher. */
+  onBack: () => void;
   onOpenSettings: () => void;
 }
 
@@ -23,7 +25,7 @@ interface Props {
  * the persona list it has genuine loading and empty states: there may be nobody
  * admitted yet, and saying so is better than an empty list that looks broken.
  */
-export function ProvidersScreen({ onSelect, onOpenSettings }: Props) {
+export function ProvidersScreen({ onSelect, onBack, onOpenSettings }: Props) {
   const insets = useSafeAreaInsets();
   const balance = useStore(s => s.balance);
   const openRefill = useStore(s => s.openRefill);
@@ -40,6 +42,13 @@ export function ProvidersScreen({ onSelect, onOpenSettings }: Props) {
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <View style={styles.meta}>
+        <Pressable
+          onPress={onBack}
+          testID="directory-back"
+          accessibilityLabel="Back to your conversations"
+          style={styles.iconButton}>
+          <Icon glyph="chevron-left" size={16} color={TOKENS.color.text.secondary} />
+        </Pressable>
         <TokenCounter balance={balance} onPress={openRefill} />
         <View style={styles.spacer} />
         <Pressable

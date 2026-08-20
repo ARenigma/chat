@@ -20,10 +20,47 @@ enable_manual_linking = true
 additional_redirect_urls = ["companionchat://auth-callback"]
 
 [auth.email]
-# Email is not an onboarding path here; it exists only as an optional later link.
+# Email is not an onboarding path for members — the promise is a usable session
+# with no email and no password. `enabled` is on regardless because provider
+# accounts are real, named, admin-created identities that must be able to sign
+# in, and because scripts/provider-console.mjs authenticates as one to test the
+# two-sided path a single device cannot.
+#
+# `enable_signup = false` is what keeps that from becoming a public sign-up
+# route: an email account can exist and log in, but only an operator can create
+# one.
+enabled = true
 enable_signup = false
 enable_confirmations = false
 
 [auth.sms]
 enable_signup = false
 enable_confirmations = true
+
+# ---------------------------------------------------------------------------
+# Social identity, optional and additive
+# ---------------------------------------------------------------------------
+# These stay `enabled = false` until real credentials exist, because a half
+# configured provider fails at the consent screen — after the user has already
+# left the app — which is the worst possible place to discover it.
+#
+# Both are *linking* paths, not sign-up paths: a member starts anonymous and may
+# attach an identity later so their history survives a reinstall. Requiring a
+# social login to send would trade the app's one genuine differentiator (a usable
+# session on the first frame, nothing to fill in) for accountability we currently
+# get from suspension and rate limits instead.
+#
+# Instagram is not listed because it does not exist as a Supabase provider — see
+# SocialProvider in src/api/auth.ts.
+[auth.external.google]
+enabled = false
+client_id = "env(SUPABASE_AUTH_GOOGLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_GOOGLE_SECRET)"
+redirect_uri = ""
+skip_nonce_check = false
+
+[auth.external.facebook]
+enabled = false
+client_id = "env(SUPABASE_AUTH_FACEBOOK_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_FACEBOOK_SECRET)"
+redirect_uri = ""

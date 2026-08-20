@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import type {
   ClaimResult,
+  ConversationSummary,
   Message,
   Profile,
   ProviderSummary,
@@ -12,6 +13,7 @@ import type {
 import { canSend } from '../lib/tokenLedger';
 import { errorTick, tick } from '../lib/haptics';
 import { PENDING_PREFIX, insertOptimistic, settleOptimistic } from '../lib/transcript';
+import { track } from '../lib/telemetry';
 import { useStore } from '../store/useStore';
 import { messagesKey } from './realtime';
 
@@ -21,6 +23,7 @@ const PAGE_SIZE = 100;
 export const keys = {
   profile: ['profile'] as const,
   providers: ['providers'] as const,
+  conversationList: ['conversation-list'] as const,
   conversation: (providerId: string) => ['conversation', providerId] as const,
   messages: messagesKey,
 };
@@ -31,6 +34,11 @@ const NOTICE: Record<SendError, string> = {
   UNAUTHORIZED: 'Session expired. Reopen the app to continue.',
   FORBIDDEN: 'That conversation is not available.',
   NOT_FOUND: 'That conversation no longer exists.',
+  // Deliberately does not say who blocked whom. The database will not tell us,
+  // and surfacing it would turn a block into an invitation to make a new account.
+  BLOCKED: 'You can no longer message each other.',
+  SUSPENDED: 'Your account is under review and cannot send messages.',
+  RATE_LIMITED: 'Slow down a moment, then try again.',
 };
 
 async function requireUserId(): Promise<string> {
@@ -103,6 +111,31 @@ export function useProviders() {
       return data;
     },
     staleTime: 30_000,
+  });
+}
+
+/**
+ * Chat history: every thread this session is part of, newest activity first.
+ *
+ * Reads the `conversation_summaries` view, which carries the peer's name, the
+ * last message and the unread count in one row. Doing that client-side would be
+ * two extra round trips per thread, and the view is `security_invoker` so RLS
+ * still guarantees it can only ever return your own threads.
+ */
+export function useConversations() {
+  return useQuery<ConversationSummary[]>({
+    queryKey: keys.conversationList,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('conversation_summaries')
+        .select('*')
+        .order('last_message_at', { ascending: false });
+      if (error) {
+        throw new Error(error.message);
+      }
+      return data;
+    },
+    staleTime: 10_000,
   });
 }
 
@@ -204,6 +237,9 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
           settleOptimistic(prev ?? [], pendingId, null),
         );
         const code = result?.error;
+        // The rejection *reason* is the signal worth watching: a spike in
+        // BLOCKED or RATE_LIMITED is an abuse signal, not a bug report.
+        track('send_rejected', { reason: code ?? 'network' });
         setNotice(
           code !== undefined ? NOTICE[code] : 'Could not send. Check your connection.',
         );
@@ -235,6 +271,9 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
       if (typeof result.new_balance === 'number') {
         setBalance(result.new_balance);
       }
+      track('message_sent');
+      // The inbox preview and unread counts are now stale.
+      void queryClient.invalidateQueries({ queryKey: keys.conversationList });
     },
     [conversationId, selfId, queryClient, setSending, setBalance, setNotice, openRefill],
   );
