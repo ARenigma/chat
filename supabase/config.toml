@@ -15,7 +15,15 @@ enable_anonymous_sign_ins = false
 # Nothing to link: the social account IS the account, not an upgrade to one.
 enable_manual_linking = false
 
-# Load-bearing, not optional — the OAuth session arrives through this deep link.
+# Load-bearing, not optional — the OAuth session arrives through this deep link,
+# and Supabase validates `redirect_to` against this list plus `site_url`. With the
+# list empty, a successful Google consent redirects to `site_url` instead of the
+# app: Google appears to work and the app never wakes up. That is exactly what was
+# live on 2026-08-20 until it was caught by inspecting the authorize redirect.
+#
+# `site_url` is set to the same deep link rather than left at the 127.0.0.1
+# placeholder, so the fallback lands somewhere useful too.
+site_url = "companionchat://auth-callback"
 additional_redirect_urls = ["companionchat://auth-callback"]
 
 [auth.email]
