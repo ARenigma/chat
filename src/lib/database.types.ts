@@ -13,6 +13,25 @@
 
 export type UserRole = 'member' | 'provider';
 
+/**
+ * The telemetry allowlist, mirrored from the `guard_event_shape` trigger. An
+ * unknown name is rejected at insert, so keeping this union in step with the
+ * migration is what turns that runtime rejection into a compile error.
+ */
+export type TelemetryEvent =
+  | 'app_open'
+  | 'directory_viewed'
+  | 'conversation_opened'
+  | 'message_sent'
+  | 'send_rejected'
+  | 'refill_opened'
+  | 'refill_claimed'
+  | 'report_submitted'
+  | 'user_blocked'
+  | 'user_unblocked'
+  | 'account_deleted'
+  | 'identity_linked';
+
 export type Profile = {
   id: string;
   username: string | null;
@@ -21,8 +40,53 @@ export type Profile = {
   token_balance: number;
   identity_verified_at: string | null;
   is_available: boolean;
+  /** Non-null and future-dated means suspended. A ban is a far-future value. */
+  suspended_until: string | null;
   created_at: string;
   last_refill_at: string | null;
+};
+
+export type ReportReason =
+  | 'harassment'
+  | 'sexual_content'
+  | 'minor_safety'
+  | 'solicitation'
+  | 'self_harm'
+  | 'spam'
+  | 'impersonation'
+  | 'other';
+
+export type ReportStatus = 'open' | 'actioned' | 'dismissed';
+
+/** What the reporter is allowed to see back — deliberately not the resolver note. */
+export type MyReport = {
+  id: string;
+  reason: ReportReason;
+  status: ReportStatus;
+  created_at: string;
+  resolved_at: string | null;
+};
+
+export type Block = {
+  blocker_id: string;
+  blocked_id: string;
+  created_at: string;
+};
+
+/**
+ * One row per thread for the inbox. A view rather than a client-side join
+ * because the preview and the unread count would otherwise be two extra round
+ * trips per row.
+ */
+export type ConversationSummary = {
+  id: string;
+  last_message_at: string;
+  peer_id: string;
+  peer_display_name: string | null;
+  peer_available: boolean;
+  last_body: string | null;
+  last_sender_id: string | null;
+  unread_count: number;
 };
 
 /**
@@ -65,7 +129,11 @@ export type SendError =
   | 'BAD_REQUEST'
   | 'NOT_FOUND'
   | 'FORBIDDEN'
-  | 'INSUFFICIENT_BALANCE';
+  | 'INSUFFICIENT_BALANCE'
+  // Added by migration 005. None of these debit a token.
+  | 'BLOCKED'
+  | 'SUSPENDED'
+  | 'RATE_LIMITED';
 
 export type SendResult = {
   success: boolean;
@@ -107,6 +175,19 @@ export type Database = {
         Update: { read_at: string };
         Relationships: [];
       };
+      blocks: {
+        Row: Block;
+        Insert: { blocker_id: string; blocked_id: string };
+        // A block is created or removed, never edited.
+        Update: never;
+        Relationships: [];
+      };
+      events: {
+        Row: never;
+        Insert: { user_id: string; name: TelemetryEvent; props?: Record<string, string | number | boolean> };
+        Update: never;
+        Relationships: [];
+      };
       provider_applications: {
         Row: {
           id: string;
@@ -126,6 +207,14 @@ export type Database = {
         Row: ProviderSummary;
         Relationships: [];
       };
+      conversation_summaries: {
+        Row: ConversationSummary;
+        Relationships: [];
+      };
+      my_reports: {
+        Row: MyReport;
+        Relationships: [];
+      };
     };
     Functions: {
       open_conversation: {
@@ -136,6 +225,15 @@ export type Database = {
         Args: { p_conversation_id: string; p_body: string };
         Returns: SendResult;
       };
+      submit_report: {
+        Args: {
+          p_conversation_id: string;
+          p_message_id: string | null;
+          p_reason: ReportReason;
+          p_detail?: string | null;
+        };
+        Returns: string;
+      };
       claim_daily_tokens: {
         Args: Record<string, never>;
         Returns: ClaimResult;
@@ -145,7 +243,11 @@ export type Database = {
         Returns: undefined;
       };
     };
-    Enums: { user_role: UserRole };
+    Enums: {
+      user_role: UserRole;
+      report_reason: ReportReason;
+      report_status: ReportStatus;
+    };
     CompositeTypes: Record<string, never>;
   };
 };

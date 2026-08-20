@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { TOKENS } from '../theme/tokens';
 import { Avatar } from './Avatar';
@@ -13,6 +13,12 @@ interface PeerProps {
   first: boolean;
   timestamp?: string;
   animate?: boolean;
+  /**
+   * Long-press to report this specific message. Only their turns carry it —
+   * reporting your own message is meaningless, and the evidence snapshot in
+   * `submit_report` refuses it anyway.
+   */
+  onReport?: () => void;
 }
 
 /**
@@ -20,16 +26,24 @@ interface PeerProps {
  * around it adds chrome carrying no information. The avatar slot is always
  * reserved so the text edge never shifts between a first and a continued turn.
  */
-function PeerTurnView({ message, initial, first, timestamp, animate }: PeerProps) {
+function PeerTurnView({ message, initial, first, timestamp, animate, onReport }: PeerProps) {
   return (
     <Animated.View
       entering={animate ? FadeInDown.duration(TOKENS.motion.duration.base).springify() : undefined}
       style={styles.peerRow}>
       <View style={styles.slot}>{first ? <Avatar initial={initial} size={26} /> : null}</View>
       <View style={styles.peerColumn}>
-        <Text testID="bubble-peer" allowFontScaling style={styles.peerText}>
-          {message}
-        </Text>
+        {/* A plain RN Pressable, not the animated one: a scale spring on a
+            long-press over body text reads as an accident, and this must not
+            look like a tap target during normal reading. */}
+        <Pressable
+          onLongPress={onReport}
+          delayLongPress={450}
+          accessibilityLabel={onReport ? 'Long press to report this message' : undefined}>
+          <Text testID="bubble-peer" allowFontScaling style={styles.peerText}>
+            {message}
+          </Text>
+        </Pressable>
         {timestamp ? <Text style={styles.stamp}>{timestamp}</Text> : null}
       </View>
     </Animated.View>

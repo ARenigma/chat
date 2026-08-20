@@ -34,16 +34,43 @@ export async function isAnonymous(): Promise<boolean> {
   return data.user?.is_anonymous === true;
 }
 
-/** 1-tap Google link: opens the system browser, returns via deep link. */
-export async function linkGoogle(): Promise<void> {
+/**
+ * The social identities we support.
+ *
+ * Instagram is deliberately absent and cannot be added: Meta shut down the
+ * Instagram Basic Display API in December 2024, and Instagram sign-in now runs
+ * through Facebook Login for Business. So "log in with Instagram" is, in
+ * practice, `facebook` — there is no separate Supabase provider to enable.
+ *
+ * Apple is absent for a different reason: it is only mandatory once another
+ * social login ships on iOS, and there is no iOS build yet.
+ */
+export type SocialProvider = 'google' | 'facebook';
+
+/**
+ * Links a social identity to the *existing anonymous user*, rather than signing
+ * in as a new one. That distinction is the whole design: `linkIdentity` upgrades
+ * the same row, so a member keeps their conversations, their balance and their
+ * history. A fresh `signInWithOAuth` would silently orphan all of it.
+ *
+ * Requires "Manual linking" enabled in the Supabase auth settings.
+ */
+export async function linkSocial(provider: SocialProvider): Promise<void> {
   const { data, error } = await supabase.auth.linkIdentity({
-    provider: 'google',
+    provider,
     options: { redirectTo: AUTH_REDIRECT_URL, skipBrowserRedirect: true },
   });
   if (error || !data.url) {
-    throw new Error(error?.message ?? 'Could not start Google link');
+    throw new Error(error?.message ?? `Could not start the ${provider} link`);
   }
+  // The system browser, not a webview: an in-app webview for an OAuth consent
+  // screen is both a phishing pattern and against Google's own policy.
   await Linking.openURL(data.url);
+}
+
+/** Kept as a named helper because it is the one most call sites want. */
+export async function linkGoogle(): Promise<void> {
+  return linkSocial('google');
 }
 
 /**

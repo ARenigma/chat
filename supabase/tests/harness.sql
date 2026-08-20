@@ -71,11 +71,26 @@ grant select, insert on test.fixture to public;
 -- Table grants Supabase applies by default; the RLS assertions need them.
 -- Deferred to a function because the tables do not exist until the migrations
 -- have run; the runner calls this afterwards.
+-- Supabase's real behaviour is DEFAULT PRIVILEGES, applied when an object is
+-- created — not a blanket grant afterwards. The difference is not academic: the
+-- old version ran after every migration and therefore silently undid any
+-- `revoke ... from authenticated` a migration had just performed, so the suite
+-- would report a table as locked down while the harness had quietly reopened it.
+--
+-- Applied here, before any migration runs, so each CREATE picks it up and an
+-- in-migration REVOKE survives.
+grant usage on schema public to anon, authenticated, service_role;
+
+alter default privileges in schema public
+  grant all on tables to anon, authenticated;
+alter default privileges in schema public
+  grant all on sequences to anon, authenticated;
+
+-- Retained as a no-op so an older db-test.mjs does not fail; the work now
+-- happens above, at harness load.
 create or replace function test.apply_supabase_grants()
 returns void language plpgsql as $$
 begin
   grant usage on schema public to anon, authenticated, service_role;
-  grant select, insert, update, delete on all tables in schema public
-    to anon, authenticated;
 end;
 $$;

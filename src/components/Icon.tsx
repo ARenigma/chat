@@ -2,7 +2,7 @@ import React, { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { TOKENS } from '../theme/tokens';
 
-export type Glyph = 'chevron-left' | 'chevron-right' | 'arrow-up' | 'dots';
+export type Glyph = 'chevron-left' | 'chevron-right' | 'arrow-up' | 'dots' | 'plus' | 'shield';
 
 interface Props {
   glyph: Glyph;
@@ -12,7 +12,7 @@ interface Props {
 }
 
 /**
- * Four glyphs drawn with borders and Views — no SVG, no icon font, no dependency.
+ * Six glyphs drawn with borders and Views — no SVG, no icon font, no dependency.
  *
  * This started as react-native-svg and had to be rewritten: an SVG dispatches a
  * layout event from inside its draw pass (`VirtualView.setClientRect`), and
@@ -22,7 +22,9 @@ interface Props {
  * was unavoidable. Borders have none of that machinery.
  *
  * A chevron is a square with two adjacent borders rotated 45 degrees. An arrow is
- * that same head over a bar.
+ * that same head over a bar. A plus is two crossed bars. A shield is a rounded
+ * square with its lower corners heavily rounded — enough to read as "safety"
+ * next to a name without needing an icon set.
  */
 function IconView({ glyph, size = 16, color, testID }: Props) {
   const stroke = color ?? TOKENS.color.text.primary;
@@ -43,6 +45,44 @@ function IconView({ glyph, size = 16, color, testID }: Props) {
             }}
           />
         ))}
+      </View>
+    );
+  }
+
+  if (glyph === 'plus') {
+    return (
+      <View testID={testID} style={[styles.center, { width: size, height: size }]}>
+        <View
+          style={[
+            styles.absolute,
+            { width: size * 0.78, height: weight, borderRadius: weight / 2, backgroundColor: stroke },
+          ]}
+        />
+        <View
+          style={[
+            styles.absolute,
+            { width: weight, height: size * 0.78, borderRadius: weight / 2, backgroundColor: stroke },
+          ]}
+        />
+      </View>
+    );
+  }
+
+  if (glyph === 'shield') {
+    return (
+      <View testID={testID} style={[styles.center, { width: size, height: size }]}>
+        <View
+          style={{
+            width: size * 0.72,
+            height: size * 0.82,
+            borderWidth: weight,
+            borderColor: stroke,
+            borderTopLeftRadius: weight,
+            borderTopRightRadius: weight,
+            borderBottomLeftRadius: size * 0.36,
+            borderBottomRightRadius: size * 0.36,
+          }}
+        />
       </View>
     );
   }
