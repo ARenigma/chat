@@ -14,7 +14,16 @@
  * Output is TAP, parsed here so CI gets a per-assertion verdict rather than a
  * single pass/fail. `--tap` writes raw TAP to stdout for an external reporter.
  *
- * Requires Docker. Everything is torn down on exit, including on failure.
+ * Two execution modes:
+ *   - default: manages its own Postgres container. Needs Docker; tears everything
+ *     down on exit, including on failure.
+ *   - DATABASE_URL set: talks to a server somebody else provisioned, e.g. a
+ *     GitLab `services:` container. Needs `psql` and a server with pgTAP
+ *     available, and touches no containers at all.
+ *
+ * The second mode exists because a CI runner using the Docker executor cannot
+ * nest Docker without privileged mode, and requiring that of a self-hosted
+ * runner is a worse trade than requiring a service image.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, rmSync } from 'node:fs';
@@ -26,6 +35,9 @@ const CONTAINER = 'companionchat-dbtest';
 const IMAGE = 'companionchat/postgres-pgtap:16';
 const GENERATED = join(ROOT, 'supabase/tests/000_ledger_parity.generated.sql');
 const RAW_TAP = process.argv.includes('--tap');
+/** When set, no container is created and psql runs against this server. */
+const DATABASE_URL = process.env.DATABASE_URL ?? '';
+const MANAGED = DATABASE_URL === '';
 
 const MIGRATIONS = [
   'supabase/tests/harness.sql',
@@ -38,10 +50,12 @@ const docker = (args, options = {}) =>
   execFileSync('docker', args, { encoding: 'utf8', stdio: 'pipe', ...options });
 
 function cleanup() {
-  try {
-    docker(['rm', '-f', CONTAINER]);
-  } catch {
-    // Already gone.
+  if (MANAGED) {
+    try {
+      docker(['rm', '-f', CONTAINER]);
+    } catch {
+      // Already gone.
+    }
   }
   try {
     rmSync(GENERATED);
@@ -102,25 +116,29 @@ function generateParitySql() {
 }
 
 function psql(file, { tap = false } = {}) {
-  const result = spawnSync(
-    'docker',
-    [
-      'exec',
-      '-i',
-      CONTAINER,
-      'psql',
-      '-v',
-      'ON_ERROR_STOP=1',
-      '-q',
-      '-t',
-      '-A',
-      '-U',
-      'postgres',
-      '-d',
-      'postgres',
-    ],
-    { input: readFileSync(file, 'utf8'), encoding: 'utf8' },
-  );
+  const sql = readFileSync(file, 'utf8');
+  const common = ['-v', 'ON_ERROR_STOP=1', '-q', '-t', '-A'];
+  const result = MANAGED
+    ? spawnSync(
+        'docker',
+        [
+          'exec',
+          '-i',
+          CONTAINER,
+          'psql',
+          ...common,
+          '-U',
+          'postgres',
+          '-d',
+          'postgres',
+        ],
+        { input: sql, encoding: 'utf8' },
+      )
+    : spawnSync('psql', [DATABASE_URL, ...common], {
+        input: sql,
+        encoding: 'utf8',
+      });
+
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
   if (!tap && (result.status !== 0 || /^psql:.*ERROR/m.test(output))) {
     console.error(output);
@@ -157,57 +175,79 @@ process.on('SIGINT', () => {
 });
 
 // --- Boot -------------------------------------------------------------------
-try {
-  docker(['version', '--format', '{{.Server.Version}}']);
-} catch {
-  quit('Docker is not available. Start Docker Desktop and re-run.');
-}
-
-cleanup();
-
-if (!RAW_TAP) {
-  console.log(`db-test: building ${IMAGE} (cached after the first run)`);
-}
-docker([
-  'build',
-  '-q',
-  '-t',
-  IMAGE,
-  '-f',
-  join(ROOT, 'supabase/tests/Dockerfile'),
-  join(ROOT, 'supabase/tests'),
-]);
-
-docker([
-  'run',
-  '-d',
-  '--rm',
-  '--name',
-  CONTAINER,
-  '-e',
-  'POSTGRES_PASSWORD=postgres',
-  '-e',
-  'POSTGRES_HOST_AUTH_METHOD=trust',
-  IMAGE,
-]);
-
-let ready = false;
-for (let attempt = 0; attempt < 120; attempt += 1) {
-  const probe = spawnSync(
-    'docker',
-    ['exec', CONTAINER, 'pg_isready', '-U', 'postgres'],
-    {
-      encoding: 'utf8',
-    },
-  );
-  if (probe.status === 0) {
-    ready = true;
-    break;
+if (MANAGED) {
+  try {
+    docker(['version', '--format', '{{.Server.Version}}']);
+  } catch {
+    quit('Docker is not available. Start Docker Desktop, or set DATABASE_URL.');
   }
-  spawnSync('sleep', ['0.5']);
-}
-if (!ready) {
-  quit('Postgres never became ready');
+
+  cleanup();
+
+  if (!RAW_TAP) {
+    console.log(`db-test: building ${IMAGE} (cached after the first run)`);
+  }
+  docker([
+    'build',
+    '-q',
+    '-t',
+    IMAGE,
+    '-f',
+    join(ROOT, 'supabase/tests/Dockerfile'),
+    join(ROOT, 'supabase/tests'),
+  ]);
+
+  docker([
+    'run',
+    '-d',
+    '--rm',
+    '--name',
+    CONTAINER,
+    '-e',
+    'POSTGRES_PASSWORD=postgres',
+    '-e',
+    'POSTGRES_HOST_AUTH_METHOD=trust',
+    IMAGE,
+  ]);
+
+  let ready = false;
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    const probe = spawnSync(
+      'docker',
+      ['exec', CONTAINER, 'pg_isready', '-U', 'postgres'],
+      {
+        encoding: 'utf8',
+      },
+    );
+    if (probe.status === 0) {
+      ready = true;
+      break;
+    }
+    spawnSync('sleep', ['0.5']);
+  }
+  if (!ready) {
+    quit('Postgres never became ready');
+  }
+} else {
+  if (!RAW_TAP) {
+    console.log(
+      'db-test: using the server in DATABASE_URL (no container managed)',
+    );
+  }
+  let ready = false;
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    const probe = spawnSync('psql', [DATABASE_URL, '-c', 'select 1'], {
+      encoding: 'utf8',
+    });
+    if (probe.status === 0) {
+      ready = true;
+      break;
+    }
+    spawnSync('sleep', ['0.5']);
+  }
+  if (!ready) {
+    quit('could not reach the server in DATABASE_URL');
+  }
 }
 
 // --- Migrate ----------------------------------------------------------------

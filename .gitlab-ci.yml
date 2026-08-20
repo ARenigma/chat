@@ -1,0 +1,243 @@
+# CompanionChat pipeline — GitLab, self-hosted runner.
+#
+# A translation of the four GitHub Actions workflows, not a rewrite: the gates and
+# their reasons are unchanged. See docs/adr/0003-ci-on-gitlab.md for why we moved.
+#
+# RUNNER REQUIREMENTS — read before wiring this up:
+#   - executor: docker (the `image:` and `services:` keys below assume it)
+#   - the android job needs ~8 GB disk for the SDK/NDK layer and ~4 GB RAM for R8
+#   - tag the runner `linux-docker`, or change RUNNER_TAG below
+#
+# The Android image is pinned by digest-bearing tag rather than `latest`, because
+# a silently newer SDK is the classic cause of a pipeline that worked yesterday.
+
+stages: [static, verify, build, deliver, release]
+
+variables:
+  NODE_VERSION: '22'
+  GIT_DEPTH: '0' # Secret scanning and commitlint both need history.
+  # Gradle in a container: keep caches inside the project so GitLab can cache them.
+  GRADLE_USER_HOME: '$CI_PROJECT_DIR/.gradle'
+
+default:
+  tags: [linux-docker]
+  interruptible: true
+
+.node:
+  image: node:22-bookworm-slim
+  cache:
+    key:
+      files: [package-lock.json]
+    paths: [.npm/]
+  before_script:
+    - npm ci --cache .npm --prefer-offline
+
+# ---------------------------------------------------------------------------
+# STAGE 1 — static and security
+# ---------------------------------------------------------------------------
+secret-scan:
+  stage: static
+  image:
+    name: zricethezav/gitleaks:latest
+    entrypoint: ['']
+  script:
+    # `--redact` so a finding never prints the credential into a job log that is
+    # itself readable by anyone with report access.
+    - gitleaks detect --source . --config .gitleaks.toml --redact --verbose
+
+no-server-keys:
+  stage: static
+  image: alpine/git:latest
+  script:
+    # The anon key and Sentry DSN are public by design and deliberately not
+    # matched here. A service-role key or an OpenAI key in the tree is an incident.
+    - |
+      set -eu
+      if git grep -nIE '(SUPABASE_SERVICE_ROLE_KEY|service_role)[[:space:]]*[=:][[:space:]]*[A-Za-z0-9._-]{20,}' -- . ':!*.md'; then
+        echo "a service role key looks committed"; exit 1
+      fi
+      if git grep -nIE '\b(sk-[A-Za-z0-9]{20,}|sk-proj-[A-Za-z0-9_-]{20,})' -- . ':!*.md'; then
+        echo "an OpenAI key looks committed"; exit 1
+      fi
+      if git ls-files --error-unmatch .env 2>/dev/null; then
+        echo ".env must never be committed"; exit 1
+      fi
+      echo "no server-side credentials in the tree"
+
+lint-commits:
+  stage: static
+  extends: .node
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+  script:
+    - npx commitlint --from "$CI_MERGE_REQUEST_DIFF_BASE_SHA" --to HEAD --verbose
+
+static:
+  stage: static
+  extends: .node
+  script:
+    - cp .env.example .env # Placeholders; Babel needs the module to resolve.
+    - npm run tokens:check # Design tokens changed in Figma without regenerating.
+    - npx tsc --noEmit
+    - npm run lint
+    - npx jest --ci --coverage --coverageReporters=text-summary --coverageReporters=cobertura
+  coverage: '/All files[^|]*\|[^|]*\s+([\d\.]+)/'
+  artifacts:
+    when: always
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage/cobertura-coverage.xml
+    expire_in: 1 week
+
+edge-function:
+  stage: static
+  image: denoland/deno:latest
+  script:
+    - deno check --allow-import --config supabase/functions/deno.json supabase/functions/stream-chat/index.ts
+    - deno lint --config supabase/functions/deno.json supabase/functions/
+
+# ---------------------------------------------------------------------------
+# STAGE 2 — the database, against a real Postgres with pgTAP
+# ---------------------------------------------------------------------------
+# The runner's Docker executor cannot nest Docker without privileged mode, so
+# rather than let db-test.mjs manage a container it gets a `services:` server and
+# DATABASE_URL. The image is the one built from supabase/tests/Dockerfile and
+# pushed to this project's registry — see the `publish-pgtap-image` job.
+database:
+  stage: verify
+  image: postgres:16-alpine # For psql; the server is the service below.
+  services:
+    - name: $CI_REGISTRY_IMAGE/postgres-pgtap:16
+      alias: db
+      variables:
+        POSTGRES_PASSWORD: postgres
+        POSTGRES_HOST_AUTH_METHOD: trust
+  variables:
+    DATABASE_URL: 'postgresql://postgres@db:5432/postgres'
+  before_script:
+    - apk add --no-cache nodejs
+  script:
+    - node scripts/db-test.mjs
+
+# Run by hand when supabase/tests/Dockerfile changes. Building pgTAP from source
+# takes a couple of minutes, so it is not worth doing on every pipeline.
+publish-pgtap-image:
+  stage: verify
+  image: docker:27
+  services: [docker:27-dind]
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'web'
+      when: manual
+      allow_failure: false
+  script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    - docker build -t "$CI_REGISTRY_IMAGE/postgres-pgtap:16" supabase/tests
+    - docker push "$CI_REGISTRY_IMAGE/postgres-pgtap:16"
+
+# ---------------------------------------------------------------------------
+# STAGE 3 — build and headless compliance
+# ---------------------------------------------------------------------------
+android:
+  stage: build
+  image: reactnativecommunity/react-native-android:v13.0.0
+  needs: [static, database, edge-function, secret-scan, no-server-keys]
+  cache:
+    - key:
+        files: [package-lock.json]
+      paths: [.npm/]
+    - key: gradle-$CI_COMMIT_REF_SLUG
+      paths: [.gradle/caches/, .gradle/wrapper/]
+  script:
+    - npm ci --cache .npm --prefer-offline
+    - |
+      cat > .env <<EOF
+      SUPABASE_URL=${SUPABASE_URL:-https://placeholder.supabase.co}
+      SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-placeholder-anon-key}
+      SENTRY_DSN=${SENTRY_DSN:-}
+      APP_ENV=$([ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ] && echo production || echo ci)
+      EOF
+    - npm run verify:manifest # Source manifest, before anything is built.
+    - |
+      # ANDROID_KEYSTORE_BASE64 is a File-type CI variable, so it arrives as a path.
+      if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+        base64 -d < "$ANDROID_KEYSTORE_BASE64" > android/app/upload.keystore
+        cat > android/keystore.properties <<EOF
+      MYAPP_UPLOAD_STORE_FILE=upload.keystore
+      MYAPP_UPLOAD_STORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD
+      MYAPP_UPLOAD_KEY_ALIAS=$ANDROID_KEY_ALIAS
+      MYAPP_UPLOAD_KEY_PASSWORD=$ANDROID_KEY_PASSWORD
+      EOF
+      else
+        echo "no keystore variable — the build will be unsigned and cannot be installed"
+      fi
+    - cd android && ./gradlew assembleRelease bundleRelease --no-daemon && cd ..
+    # The merged manifest is the only artefact reflecting what dependencies added.
+    - npm run verify:manifest
+    - npm run verify:hermes
+  after_script:
+    - rm -f android/keystore.properties android/app/upload.keystore
+  artifacts:
+    name: 'companionchat-$CI_COMMIT_SHORT_SHA'
+    paths:
+      - android/app/build/outputs/apk/release/*.apk
+      - android/app/build/outputs/bundle/release/*.aab
+    expire_in: 2 weeks
+
+# ---------------------------------------------------------------------------
+# STAGE 4 — onto the founder's phone
+# ---------------------------------------------------------------------------
+distribute:
+  stage: deliver
+  image: node:22-bookworm-slim
+  needs: [android]
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - |
+      if [ -z "${FIREBASE_SERVICE_ACCOUNT_JSON:-}" ]; then
+        echo "FIREBASE_SERVICE_ACCOUNT_JSON is not set — skipping distribution."
+        echo "FIREBASE_APP_ID and FIREBASE_PROJECT_ID are non-secret and already set."
+        exit 0
+      fi
+      export GOOGLE_APPLICATION_CREDENTIALS="$FIREBASE_SERVICE_ACCOUNT_JSON"
+      APK=$(find android/app/build/outputs/apk/release -name '*.apk' | head -1)
+      test -n "$APK" || { echo "no APK in the build artefact"; exit 1; }
+      npx --yes firebase-tools@latest appdistribution:distribute "$APK" \
+        --app "$FIREBASE_APP_ID" \
+        --project "$FIREBASE_PROJECT_ID" \
+        --groups founders \
+        --release-notes "$CI_COMMIT_SHORT_SHA $CI_COMMIT_TITLE"
+
+# ---------------------------------------------------------------------------
+# STAGE 5 — production, on a tag, manual
+# ---------------------------------------------------------------------------
+# Deliberately manual and tag-only. The Edge Function ships before the app: a new
+# client against an old function is broken, the reverse is fine.
+deploy-backend:
+  stage: release
+  image: node:22-bookworm-slim
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: manual
+  environment:
+    name: production
+  script:
+    - npx --yes supabase@latest link --project-ref "$SUPABASE_PROJECT_REF"
+    - npx --yes supabase@latest db push --include-all
+    - npx --yes supabase@latest config push --project-ref "$SUPABASE_PROJECT_REF"
+    - npx --yes supabase@latest functions deploy stream-chat --project-ref "$SUPABASE_PROJECT_REF"
+
+play-internal:
+  stage: release
+  image: ruby:3.3
+  needs: [android, deploy-backend]
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: manual
+  environment:
+    name: production
+  script:
+    - bundle install --path vendor/bundle
+    - export PLAY_SERVICE_ACCOUNT_JSON_PATH="$PLAY_SERVICE_ACCOUNT_JSON"
+    - bundle exec fastlane android internal
