@@ -1,0 +1,64 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      The complete permission set. INTERNET to reach Supabase, VIBRATE for the
+      10 ms send tick. Nothing else is requested, and the app has no code path
+      that could need anything else: no image input, no contacts, no location,
+      no analytics or ads SDK.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!--
+      Belt and braces for the Play Data Safety declaration: a future transitive
+      dependency cannot reintroduce these through manifest merging. If any
+      library ever tries, the merger removes it here instead of shipping it.
+      (Should the app ever need image input, use the system photo picker's
+      ACTION_PICK_IMAGES / PickVisualMedia, which needs no permission at all.)
+    -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" tools:node="remove" />
+    <!--
+      Contributed by @sentry/react-native, which uses it only to tag events with
+      the connection type — ambient device metadata this app does not want and
+      does not need. Sentry's AndroidConnectionStatusProvider permission-checks
+      before reading it and degrades to UNKNOWN, so removing it is safe. Caught
+      by scripts/verify-manifest.mjs against the *merged* manifest.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" tools:node="remove" />
+
+    <application
+      android:name=".MainApplication"
+      android:label="@string/app_name"
+      android:icon="@mipmap/ic_launcher"
+      android:roundIcon="@mipmap/ic_launcher_round"
+      android:allowBackup="false"
+      android:theme="@style/AppTheme"
+      android:usesCleartextTraffic="${usesCleartextTraffic}"
+      android:supportsRtl="true">
+      <activity
+        android:name=".MainActivity"
+        android:label="@string/app_name"
+        android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
+        android:launchMode="singleTask"
+        android:windowSoftInputMode="adjustResize"
+        android:exported="true">
+        <intent-filter>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent-filter>
+        <!-- Return leg of the optional OAuth account link. See src/api/auth.ts. -->
+        <intent-filter>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="companionchat" android:host="auth-callback" />
+        </intent-filter>
+      </activity>
+    </application>
+</manifest>
