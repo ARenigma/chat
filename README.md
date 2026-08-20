@@ -40,6 +40,22 @@ Redirect URI for both providers:
 Facebook additionally needs **App Review** before non-test users can sign in.
 Start it early; it is days, not hours.
 
+**Create the OAuth client in `chat-d8c87`**, the project that already hosts App
+Distribution — not in an unrelated project. Google renders the consent screen's
+app name from the _Cloud project_ that owns the client, so borrowing a client
+from another product makes the sign-in dialog say that other product's name.
+Reusing one is fine to unblock local testing and must not ship: an unfamiliar
+brand on a Google permission dialog reads as phishing, and OAuth verification is
+per-brand.
+
+**Two things that block launch and are not in this repo:**
+
+- a hosted **privacy policy URL** — required by the Google consent screen _and_
+  by Play. It has to match what the app actually does, including the report
+  retention exception in migration 005: abuse reports outlive deleted accounts.
+- a **data deletion URL** for Play's data-safety form. The in-app path exists
+  (`delete_user_account()`); Play also wants a web-reachable description of it.
+
 There are no Edge Functions and no server-side secrets to set. Sending is a
 single Postgres RPC, so there is nothing between the client and the database.
 
