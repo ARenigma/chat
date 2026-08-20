@@ -25,7 +25,9 @@
     "stub:openai": "node scripts/openai-stub.mjs",
     "verify:full": "npm run verify && npm run test:db && npm run check:edge && npm run lint:edge",
     "tokens": "node scripts/gen-tokens.mjs",
-    "tokens:check": "node scripts/gen-tokens.mjs --check"
+    "tokens:check": "node scripts/gen-tokens.mjs --check",
+    "distribute": "node scripts/distribute.mjs",
+    "ship": "npm run android:release && npm run verify:manifest && npm run verify:hermes && npm run distribute"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^3.1.1",
