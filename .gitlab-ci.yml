@@ -17,8 +17,16 @@
 #
 # Point either at `linux-docker` to move that class of job onto the VPS.
 #
-# The Android image is pinned by digest-bearing tag rather than `latest`, because
-# a silently newer SDK is the classic cause of a pipeline that worked yesterday.
+# The Android image is pinned to a published tag rather than `latest`, because a
+# silently newer SDK is the classic cause of a pipeline that worked yesterday.
+# `v13.0.0` was pinned originally and does not exist — the tags are `v13.0`,
+# `v21.0` and so on — so the job failed at image pull before running a line.
+#
+# The image is not trusted to ship the right SDK either. This project pins
+# compileSdk 36 and NDK 27.1.12297006 in android/build.gradle, so the job
+# installs exactly those with sdkmanager before building: a no-op when the image
+# already has them, and the difference between a working build and a cryptic
+# Gradle error when it does not.
 
 stages: [static, verify, build, deliver, release]
 
@@ -160,7 +168,7 @@ publish-pgtap-image:
 android:
   stage: build
   tags: ['$ANDROID_RUNNER_TAG']
-  image: reactnativecommunity/react-native-android:v13.0.0
+  image: reactnativecommunity/react-native-android:v21.0
   needs: [static, database, secret-scan, no-server-keys]
   cache:
     - key:
@@ -169,6 +177,17 @@ android:
     - key: gradle-$CI_COMMIT_REF_SLUG
       paths: [.gradle/caches/, .gradle/wrapper/]
   script:
+    # Kept in step with android/build.gradle. `sdkmanager` is idempotent, so this
+    # costs seconds when the image already has them.
+    - |
+      set -eu
+      yes | sdkmanager --licenses >/dev/null 2>&1 || true
+      sdkmanager \
+        "platforms;android-36" \
+        "build-tools;36.0.0" \
+        "ndk;27.1.12297006" \
+        "platform-tools" >/dev/null
+      echo "sdk provisioned: $(sdkmanager --list_installed 2>/dev/null | grep -cE 'android-36|27\.1\.12297006' || echo '?') matching component(s)"
     - npm ci --cache .npm --prefer-offline
     - |
       cat > .env <<EOF
