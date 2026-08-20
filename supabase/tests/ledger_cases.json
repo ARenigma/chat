@@ -1,0 +1,54 @@
+{
+  "comment": "Single source of truth for token-debit behaviour. __tests__/tokenLedger.test.ts asserts applyDebit() against these rows; scripts/db-test.mjs generates SQL from the same rows and asserts public.deduct_user_token() agrees. Drift between the TypeScript mirror and the database is therefore a test failure, not a production surprise.",
+  "cases": [
+    {
+      "name": "typical spend",
+      "current": 50,
+      "cost": 1,
+      "success": true,
+      "newBalance": 49
+    },
+    {
+      "name": "last token",
+      "current": 1,
+      "cost": 1,
+      "success": true,
+      "newBalance": 0
+    },
+    {
+      "name": "empty wallet",
+      "current": 0,
+      "cost": 1,
+      "success": false,
+      "newBalance": 0
+    },
+    {
+      "name": "exact cost",
+      "current": 5,
+      "cost": 5,
+      "success": true,
+      "newBalance": 0
+    },
+    {
+      "name": "one short",
+      "current": 4,
+      "cost": 5,
+      "success": false,
+      "newBalance": 4
+    },
+    {
+      "name": "zero cost",
+      "current": 0,
+      "cost": 0,
+      "success": true,
+      "newBalance": 0
+    },
+    {
+      "name": "large balance",
+      "current": 999,
+      "cost": 1,
+      "success": true,
+      "newBalance": 998
+    }
+  ]
+}

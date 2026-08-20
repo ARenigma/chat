@@ -1,0 +1,29 @@
+project_id = "uvghvhcrovmuwivgijvl"
+
+# Auth configuration, pushed to the linked project with `supabase config push`.
+# Kept in the repo so the project's auth posture is reviewable in a diff rather
+# than living only in a dashboard someone changed six months ago.
+[auth]
+enable_signup = true
+
+# The product's entire onboarding promise: first launch creates a usable session
+# with no email, no password and no permission prompt. Without this the app
+# cannot start at all — `ensureSession()` fails with
+# "Anonymous sign-ins are disabled".
+enable_anonymous_sign_ins = true
+
+# Manual linking lets an anonymous user upgrade to Google or phone later while
+# keeping the same user row, so history survives a reinstall.
+enable_manual_linking = true
+
+# The deep link the optional OAuth account link returns to. See src/api/auth.ts.
+additional_redirect_urls = ["companionchat://auth-callback"]
+
+[auth.email]
+# Email is not an onboarding path here; it exists only as an optional later link.
+enable_signup = false
+enable_confirmations = false
+
+[auth.sms]
+enable_signup = false
+enable_confirmations = true
