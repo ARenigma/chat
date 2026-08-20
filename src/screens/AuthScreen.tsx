@@ -32,10 +32,10 @@ import { Button } from '../components/Button';
  * in src/components and src/screens, comments included, which is the right kind
  * of blunt.)
  */
-export function AuthScreen() {
+export function AuthScreen({ initialError }: { initialError?: string }) {
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState<SocialProvider | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError ?? null);
 
   /**
    * Clear `busy` whenever the app comes back to the foreground.
@@ -49,6 +49,21 @@ export function AuthScreen() {
    * Returning to this screen at all means sign-in did not complete, because a
    * success unmounts it. So "foreground" is exactly the right signal.
    */
+  /**
+   * Adopt a message handed down from a failed OAuth callback.
+   *
+   * `useState(initialError)` alone is not enough and that was a real bug: the
+   * initialiser runs only on first mount, and this screen is already mounted when
+   * the callback fails — the app goes signedOut -> signedOut, React reuses the
+   * instance, and the explanation is silently dropped. Which is how a fixed
+   * "show the user why" ends up showing nothing.
+   */
+  useEffect(() => {
+    if (initialError != null && initialError !== '') {
+      setError(initialError);
+    }
+  }, [initialError]);
+
   useEffect(() => {
     const sub = AppState.addEventListener('change', state => {
       if (state === 'active') {
@@ -97,6 +112,16 @@ export function AuthScreen() {
         </Animated.View>
       </View>
 
+      {/* Above the actions, not below: an explanation for why sign-in failed
+          belongs next to the button you are about to press again, and the bottom
+          of the screen is where the dev warning toast and the system nav bar both
+          live. */}
+      {error !== null ? (
+        <Text testID="auth-error" allowFontScaling style={styles.error}>
+          {error}
+        </Text>
+      ) : null}
+
       {/* The gap lives on the container, not as margins on the buttons, so the
           Button component stays reusable inside sheets that set their own rhythm. */}
       <Animated.View
@@ -120,12 +145,6 @@ export function AuthScreen() {
           testID="signin-facebook"
         />
       </Animated.View>
-
-      {error !== null ? (
-        <Text testID="auth-error" allowFontScaling style={styles.error}>
-          {error}
-        </Text>
-      ) : null}
 
       <Animated.Text
         entering={FadeIn.delay(320).duration(TOKENS.motion.duration.base)}
@@ -167,7 +186,7 @@ const styles = StyleSheet.create({
   error: {
     ...TOKENS.typography.captionRegular,
     color: TOKENS.color.text.primary,
-    paddingTop: TOKENS.space.md,
+    paddingBottom: TOKENS.space.sm,
   },
   legal: {
     ...TOKENS.typography.captionSmall,

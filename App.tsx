@@ -39,7 +39,7 @@ const queryClient = new QueryClient({
 
 type Boot =
   | { phase: 'loading' }
-  | { phase: 'signedOut' }
+  | { phase: 'signedOut'; message?: string }
   | { phase: 'ready' }
   | { phase: 'error'; message: string };
 
@@ -124,15 +124,24 @@ function Root() {
         return;
       }
       handleAuthDeepLink(url)
-        .then(handled => {
-          if (handled) {
+        .then(result => {
+          if (result.status === 'signedIn') {
             track('signed_in');
             // Everything cached belongs to the previous (absent) session.
             void queryClient.invalidateQueries();
             setBoot({ phase: 'ready' });
+          } else if (result.status === 'failed') {
+            // Back to the auth screen *with the reason*. Advancing here was the
+            // bug that produced a permanent spinner.
+            setBoot({ phase: 'signedOut', message: result.message });
           }
         })
-        .catch(() => setBoot({ phase: 'signedOut' }));
+        .catch(() =>
+          setBoot({
+            phase: 'signedOut',
+            message: 'Could not finish signing in. Please try again.',
+          }),
+        );
     };
 
     void Linking.getInitialURL().then(consume);
@@ -171,7 +180,7 @@ function Root() {
   }
 
   if (boot.phase === 'signedOut') {
-    return <AuthScreen />;
+    return <AuthScreen initialError={boot.message} />;
   }
 
   if (boot.phase === 'error') {
