@@ -91,7 +91,12 @@ android {
         applicationId "com.companionchat"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
+        // Every build was versionCode 1, so every App Distribution release read
+        // "1.0.0 (1)" — indistinguishable in the console, and Android has no
+        // reason to treat a new APK as an upgrade. The pipeline number is
+        // monotonic and unique, which is what a versionCode has to be. Falls
+        // back to 1 for local builds, which never need to be comparable.
+        versionCode (System.getenv("CI_PIPELINE_IID") ?: "1").toInteger()
         versionName "1.0.0"
 
         // Native symbols for Play Console crash reports. Costs nothing at
