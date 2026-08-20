@@ -1,0 +1,35 @@
+# CUJ 5 — Play Store data deletion.
+# The UI half. Proof of the cascade itself is SQL: scripts/e2e.mjs queries the
+# local Supabase database afterwards and fails if a single row survived.
+appId: com.companionchat
+name: Delete account and all data
+---
+- launchApp
+- tapOn:
+    id: 'chat-back'
+- tapOn:
+    id: 'open-settings'
+- assertVisible: 'Account & privacy'
+
+# The claim on this screen has to be true; the SQL check in e2e.mjs is what proves it.
+- assertVisible: 'no advertising ID'
+
+- tapOn:
+    id: 'delete-account'
+- assertVisible: 'It cannot be undone.'
+- tapOn:
+    id: 'delete-confirm'
+
+# Deletion drops straight back into a clean anonymous session — not a dead end.
+- extendedWaitUntil:
+    visible: 'Who are you talking to?'
+    timeout: 30000
+- assertVisible:
+    id: 'token-badge'
+
+- tapOn:
+    id: 'persona-nova'
+- assertVisible: 'Nova is listening.'
+- assertNotVisible: 'I hear you. That sounds genuinely tiring.'
+
+- takeScreenshot: artifacts/06-deleted

@@ -1,0 +1,209 @@
+name: ci
+
+# Stages 1 and 2 of the pipeline: static + security gates, then build and
+# headless compliance. Stage 3 (e2e.yml) and Stage 4 (release.yml) key off the
+# `gate` job below, so nothing reaches a device or the Play Store unless every
+# check here is green.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  # --------------------------------------------------------------------------
+  # STAGE 1: static and security
+  # --------------------------------------------------------------------------
+  secrets-scan:
+    name: secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Both scanners need history to diff commits.
+
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+      - name: trufflehog (verified secrets only)
+        uses: trufflesecurity/trufflehog@main
+        with:
+          extra_args: --results=verified --fail
+
+      # Belt and braces: the anon key is public by design, but a service role key
+      # or an OpenAI key in the tree is a live incident.
+      - name: assert no server-side keys committed
+        run: |
+          set -euo pipefail
+          if git grep -nIE '(SUPABASE_SERVICE_ROLE_KEY|service_role)[[:space:]]*[=:][[:space:]]*[A-Za-z0-9._-]{20,}' -- . ':!*.md'; then
+            echo "::error::a service role key looks committed"; exit 1
+          fi
+          if git grep -nIE '\b(sk-[A-Za-z0-9]{20,}|sk-proj-[A-Za-z0-9_-]{20,})' -- . ':!*.md'; then
+            echo "::error::an OpenAI key looks committed"; exit 1
+          fi
+          if git ls-files --error-unmatch .env 2>/dev/null; then
+            echo "::error::.env must never be committed"; exit 1
+          fi
+          echo "no server-side credentials in the tree"
+
+  static:
+    name: types, lint, unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: cp .env.example .env # Placeholders; Babel needs the module to exist.
+
+      - name: commit message lint
+        if: github.event_name == 'pull_request'
+        run: npx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.sha }} --verbose
+
+      - name: design token drift
+        run: npm run tokens:check
+
+      - run: npx tsc --noEmit
+      - run: npm run lint
+      - run: npx jest --ci --coverage --coverageReporters=text-summary --coverageReporters=lcov
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage/lcov.info
+          retention-days: 7
+
+  edge-function:
+    name: edge function typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: npm run check:edge
+      - run: npm run lint:edge
+
+  database:
+    name: pgTAP schema and RLS
+    runs-on: ubuntu-latest # Docker is preinstalled; db-test.mjs owns the container.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: node scripts/db-test.mjs
+
+  # --------------------------------------------------------------------------
+  # STAGE 2: build and headless compliance
+  # --------------------------------------------------------------------------
+  build:
+    name: release build and compliance
+    needs: [secrets-scan, static, edge-function, database]
+    runs-on: ubuntu-latest
+    # The `secrets` context is not available in `if:`, so the optional
+    # credentials are lifted into env and the steps below branch on that.
+    env:
+      HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+      HAS_SENTRY: ${{ secrets.SENTRY_AUTH_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+
+      - run: npm ci
+      - name: write .env
+        run: |
+          cat > .env <<EOF
+          SUPABASE_URL=${{ secrets.SUPABASE_URL || 'https://placeholder.supabase.co' }}
+          SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY || 'placeholder-anon-key' }}
+          SENTRY_DSN=${{ secrets.SENTRY_DSN }}
+          APP_ENV=${{ github.ref == 'refs/heads/main' && 'production' || 'ci' }}
+          EOF
+
+      - name: manifest gate (source)
+        run: npm run verify:manifest
+
+      - name: decode upload keystore
+        if: env.HAS_KEYSTORE == 'true'
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/upload.keystore
+          cat > android/keystore.properties <<EOF
+          MYAPP_UPLOAD_STORE_FILE=upload.keystore
+          MYAPP_UPLOAD_STORE_PASSWORD=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          MYAPP_UPLOAD_KEY_ALIAS=${{ secrets.ANDROID_KEY_ALIAS }}
+          MYAPP_UPLOAD_KEY_PASSWORD=${{ secrets.ANDROID_KEY_PASSWORD }}
+          EOF
+
+      - name: assembleRelease and bundleRelease
+        run: ./gradlew assembleRelease bundleRelease --no-daemon
+        working-directory: android
+
+      # The merged manifest is the only artefact that reflects what transitive
+      # dependencies actually contributed. This is the check that caught Sentry
+      # adding ACCESS_NETWORK_STATE.
+      - name: manifest gate (merged)
+        run: npm run verify:manifest
+
+      - name: hermes bytecode validation
+        run: npm run verify:hermes
+
+      - name: sentry release and source maps
+        if: github.ref == 'refs/heads/main' && env.HAS_SENTRY == 'true'
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+        run: |
+          set -euo pipefail
+          VERSION="com.companionchat@$(node -p "require('./package.json').version")+${{ github.run_number }}"
+          npm run bundle:android -- --sourcemap-output /tmp/release.map
+          npx sentry-cli releases new "$VERSION"
+          npx sentry-cli releases files "$VERSION" upload-sourcemaps /tmp/release.map --rewrite
+          npx sentry-cli releases set-commits "$VERSION" --auto
+          npx sentry-cli releases finalize "$VERSION"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-aab
+          path: android/app/build/outputs/bundle/release/*.aab
+          retention-days: 14
+
+      - name: shred signing material
+        if: always()
+        run: rm -f android/keystore.properties android/app/upload.keystore
+
+  gate:
+    name: stage 1 and 2 gate
+    needs: [secrets-scan, static, edge-function, database, build]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "static, security, build and compliance gates passed"

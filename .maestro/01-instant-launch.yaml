@@ -1,0 +1,30 @@
+# CUJ 1 — instant launch.
+# The product promise is zero-friction access: no onboarding, no password, no
+# runtime permission dialog. Anything that appears between the launcher and a
+# usable companion list is a regression.
+appId: com.companionchat
+name: Instant launch with no onboarding
+---
+- clearState
+- launchApp:
+    clearKeychain: true
+    stopApp: true
+
+# The anonymous session and its 50 tokens must exist by the first frame.
+- assertVisible:
+    id: 'token-badge'
+- assertVisible: 'Who are you talking to?'
+- assertVisible:
+    id: 'persona-nova'
+
+# No permission dialog, ever. These are the only strings Android can show.
+- assertNotVisible: 'Allow'
+- assertNotVisible: 'While using the app'
+- assertNotVisible: 'Deny'
+
+# No sign-in wall either.
+- assertNotVisible: 'Sign in'
+- assertNotVisible: 'Create account'
+- assertNotVisible: 'Password'
+
+- takeScreenshot: artifacts/01-launch

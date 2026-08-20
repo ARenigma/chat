@@ -1,0 +1,8 @@
+# Maestro over Detox: Detox needs an androidTest source set, a second APK and a
+# native test runner wired into Gradle. These flows drive the app through the
+# accessibility tree instead, so the production build under test is byte-identical
+# to the one that ships and the app carries no test-only native dependency.
+appId: com.companionchat
+---
+- defineVariable:
+    REPLY: 'I hear you. That sounds genuinely tiring.'

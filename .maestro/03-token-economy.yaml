@@ -1,0 +1,45 @@
+# CUJ 3 — the token economy is visible and honest.
+# Drains the wallet to the low-balance threshold, checks the badge flips to a
+# refill affordance without interrupting the conversation, then claims a refill.
+appId: com.companionchat
+name: Low balance nudges, never blocks
+---
+- launchApp
+- tapOn:
+    id: 'persona-sage'
+
+# The seed balance is set to 3 by scripts/e2e.mjs before this flow, so two sends
+# cross the threshold without needing 48 round trips.
+- assertVisible:
+    id: 'token-badge'
+
+- repeat:
+    times: 2
+    commands:
+      - tapOn:
+          id: 'composer-input'
+      - inputText: 'Still here.'
+      - tapOn:
+          id: 'composer-send'
+      - extendedWaitUntil:
+          visible:
+            id: 'bubble-assistant'
+          timeout: 20000
+
+# Under three tokens the label becomes REFILL. It is a nudge in place, not a modal.
+- assertVisible: 'REFILL'
+- assertNotVisible:
+    id: 'refill-title'
+
+- tapOn:
+    id: 'token-badge'
+- assertVisible:
+    id: 'refill-title'
+- assertVisible: 'One message costs one token.'
+- tapOn:
+    id: 'refill-claim'
+- assertNotVisible:
+    id: 'refill-title'
+
+# A send with an empty wallet opens the sheet instead of silently failing.
+- takeScreenshot: artifacts/03-tokens

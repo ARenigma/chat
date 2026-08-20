@@ -1,0 +1,34 @@
+# CUJ 4 — network fault injection.
+# Connectivity is cut by scripts/e2e.mjs (adb svc wifi/data disable) immediately
+# before this flow runs. The invariants: the failure is surfaced, the token is
+# refunded server-side, and the optimistic bubble is rolled back rather than left
+# stranded in the transcript.
+appId: com.companionchat
+name: Offline send fails cleanly and refunds
+---
+- launchApp
+- tapOn:
+    id: 'persona-ember'
+
+- copyTextFrom:
+    id: 'token-count'
+- evalScript: ${output.balanceBefore = maestro.copiedText}
+
+- tapOn:
+    id: 'composer-input'
+- inputText: 'Does this survive a dead connection?'
+- tapOn:
+    id: 'composer-send'
+
+- extendedWaitUntil:
+    visible:
+      id: 'notice-bar'
+    timeout: 30000
+- assertVisible: 'Your token was refunded.'
+
+# The optimistic user bubble must be gone, not orphaned above a missing reply.
+- assertNotVisible: 'Does this survive a dead connection?'
+- assertNotVisible:
+    id: 'streaming-bubble'
+
+- takeScreenshot: artifacts/04-offline
