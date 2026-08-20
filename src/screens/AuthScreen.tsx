@@ -1,10 +1,9 @@
-import React, { useCallback, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { AppState, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS } from '../theme/tokens';
 import { PROVIDER_LABEL, signInWith, type SocialProvider } from '../api/auth';
-import { Avatar } from '../components/Avatar';
 import { Button } from '../components/Button';
 
 /**
@@ -38,6 +37,27 @@ export function AuthScreen() {
   const [busy, setBusy] = useState<SocialProvider | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * Clear `busy` whenever the app comes back to the foreground.
+   *
+   * Without this the screen bricks itself: hand off to the browser, come back
+   * without a session — cancelled, denied, or a failed code exchange — and the
+   * button sits on "Opening…" with both providers disabled forever. Observed on
+   * a real emulator by firing the callback with an invalid code; the only way
+   * out was killing the app.
+   *
+   * Returning to this screen at all means sign-in did not complete, because a
+   * success unmounts it. So "foreground" is exactly the right signal.
+   */
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') {
+        setBusy(null);
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
   const start = useCallback(async (provider: SocialProvider) => {
     setError(null);
     setBusy(provider);
@@ -58,24 +78,24 @@ export function AuthScreen() {
         styles.root,
         { paddingTop: insets.top + TOKENS.space['2xl'], paddingBottom: insets.bottom },
       ]}>
-      <Animated.View
-        entering={FadeIn.duration(TOKENS.motion.duration.slow)}
-        style={styles.mark}>
-        <Avatar initial="·" size={56} tone="warm" breathing />
-      </Animated.View>
-
-      <Animated.View
-        entering={FadeInDown.delay(80).duration(TOKENS.motion.duration.base)}
-        style={styles.head}>
-        <Text allowFontScaling style={styles.title}>
-          {'Someone’s here\nto listen.'}
-        </Text>
-        <Text allowFontScaling style={styles.subtitle}>
-          Real people, ready to talk. Not therapy — just company.
-        </Text>
-      </Animated.View>
-
-      <View style={styles.spacer} />
+      {/* Centred in the space above the actions rather than pinned to the top.
+          The first attempt pinned the text high and pushed the buttons to the
+          bottom, which left a third of the screen empty and read as unfinished.
+          A breathing avatar mark was tried here too and removed: at 56px with a
+          punctuation glyph it rendered as a dot on a pale disc, which looks like
+          a drawing bug, not a brand. */}
+      <View style={styles.middle}>
+        <Animated.View
+          entering={FadeInDown.delay(80).duration(TOKENS.motion.duration.base)}
+          style={styles.head}>
+          <Text allowFontScaling style={styles.title}>
+            {'Someone’s here\nto listen.'}
+          </Text>
+          <Text allowFontScaling style={styles.subtitle}>
+            Real people, ready to talk. Not therapy — just company.
+          </Text>
+        </Animated.View>
+      </View>
 
       {/* The gap lives on the container, not as margins on the buttons, so the
           Button component stays reusable inside sheets that set their own rhythm. */}
@@ -125,8 +145,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: TOKENS.space.lg,
     backgroundColor: TOKENS.color.bg.base,
   },
-  mark: {
-    paddingBottom: TOKENS.space.xl,
+  middle: {
+    flex: 1,
+    justifyContent: 'center',
   },
   head: {
     gap: TOKENS.space.sm,
@@ -138,9 +159,6 @@ const styles = StyleSheet.create({
   subtitle: {
     ...TOKENS.typography.bodyMedium,
     color: TOKENS.color.text.secondary,
-  },
-  spacer: {
-    flex: 1,
   },
   // The fix for "buttons have no gap".
   actions: {

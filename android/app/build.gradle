@@ -81,6 +81,16 @@ if (hasReleaseKeystore) {
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+/**
+ * Build number for versionCode.
+ *
+ * Computed here rather than inline in defaultConfig: Groovy parses
+ * `versionCode (expr).toInteger()` as a method call whose argument is evaluated
+ * in a way AGP rejects with a bare "Value is null", which is a miserable error to
+ * diagnose from. A local avoids the ambiguity entirely.
+ */
+def ciBuildNumber = (System.getenv("CI_PIPELINE_IID") ?: "1") as Integer
+
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -96,7 +106,7 @@ android {
         // reason to treat a new APK as an upgrade. The pipeline number is
         // monotonic and unique, which is what a versionCode has to be. Falls
         // back to 1 for local builds, which never need to be comparable.
-        versionCode (System.getenv("CI_PIPELINE_IID") ?: "1").toInteger()
+        versionCode ciBuildNumber
         versionName "1.0.0"
 
         // Native symbols for Play Console crash reports. Costs nothing at
