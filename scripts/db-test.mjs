@@ -31,6 +31,7 @@ const MIGRATIONS = [
   'supabase/tests/harness.sql',
   'supabase/migrations/001_initial_schema.sql',
   'supabase/migrations/002_bootstrap_and_grants.sql',
+  'supabase/migrations/003_human_conversations.sql',
 ];
 
 const docker = (args, options = {}) =>
@@ -233,8 +234,12 @@ const suites = [
     label: `ledger parity (${caseCount} cases from ledger_cases.json)`,
   },
   {
-    file: join(ROOT, 'supabase/tests/010_schema_and_rls.sql'),
-    label: 'schema, RLS, grants, deletion',
+    file: join(ROOT, 'supabase/tests/010_wallet_and_grants.sql'),
+    label: 'wallet, grants, deletion cascade',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/020_conversations_and_roles.sql'),
+    label: 'roles, admission, two-party conversations',
   },
 ];
 

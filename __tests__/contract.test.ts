@@ -149,12 +149,15 @@ describe('pipeline wiring', () => {
     }
   });
 
-  it('keeps the pgTAP plan in step with the number of assertions', () => {
-    const sql = read('supabase/tests/010_schema_and_rls.sql');
+  it.each([
+    'supabase/tests/010_wallet_and_grants.sql',
+    'supabase/tests/020_conversations_and_roles.sql',
+  ])('keeps the pgTAP plan in step with the assertions in %s', file => {
+    const sql = read(file);
     const planned = Number(/select plan\((\d+)\)/.exec(sql)?.[1]);
     const asserted = (
       sql.match(
-        /^select (has_table|has_index|has_trigger|col_is_pk|col_not_null|col_has_default|policies_are|function_privs_are|isnt_empty|throws_ok|lives_ok|ok|is|isnt)\(/gm,
+        /^select (has_table|hasnt_table|has_column|hasnt_column|has_index|has_trigger|col_is_pk|col_not_null|col_has_default|col_default_is|policies_are|function_privs_are|isnt_empty|throws_ok|lives_ok|ok|is|isnt)\(/gm,
       ) ?? []
     ).length;
     expect(planned).toBe(asserted);

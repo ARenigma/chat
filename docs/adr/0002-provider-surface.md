@@ -1,63 +1,73 @@
-# ADR-0002 — Providers get a web console first, not a second app
+# ADR-0002 — One app, server-gated role switch
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-08-20)
+- **Decision by:** Amit Ranjan
 - **Date:** 2026-08-20
 
 ## Context
 
 Providers need onboarding, availability control, concurrent conversations,
 earnings visibility and identity verification. Members need discovery and a
-single conversation. The question is whether providers live in the same app
-behind a role switch, in a second native app, or somewhere else.
+conversation. The question was whether providers live in the same app behind a
+role switch, in a second native app, or on the web.
 
 ## Options considered
 
-**A. One app, role switch** (Airbnb, Fiverr pattern). Fits when the same human
-plausibly plays both roles, provider work is asynchronous, and forcing a second
-download would tax the supply you are trying to grow.
+**A. One app, role switch** (Airbnb, Fiverr pattern). One pipeline, one design
+system instance, one release, one listing. For a pre-liquidity product this is
+materially less to build and operate.
 
-**B. Two native apps, shared architecture** (Uber, Etsy pattern). Fits when roles
-are mutually exclusive in-session, provider work is high-frequency, and provider
-onboarding is heavy. Uber's own conclusion is worth copying precisely: separate
-_apps_, shared _architecture_ — otherwise platform investment stops compounding.
+**B. Two native apps, shared architecture** (Uber, Etsy pattern). Uber's own
+retrospective is the useful part: separate _apps_, shared _architecture_, or
+platform investment stops compounding. Doubles the release surface and puts both
+sides under Play review.
 
-**C. Native member app + provider web console.**
+**C. Native member app plus a provider web console.** Recommended in the first
+draft of this ADR: providers work at a desk with high typing volume across several
+conversations, and a web console keeps the supply side out of Play review so a
+member-app rejection cannot also destroy supply.
 
 ## Decision
 
-**Option C for v1**, with a native provider app deferred until providers ask for
-mobility.
+**Option A.** One React Native app. The provider surface is reached by a role
+switch, gated server-side.
 
-## Why
+Rationale accepted: with a single founder and no liquidity yet, one pipeline and
+one release beat architectural purity, and provider mobility may turn out to
+matter more than the desk-shaped assumption behind option C.
 
-1. **Roles are mutually exclusive.** No member is ever a provider. The Airbnb
-   argument for role switching does not apply, and a role switch would put the
-   provider surface one tap from every member — an obvious abuse vector.
-2. **Providers work at a desk.** Long sessions, high typing volume, several
-   conversations at once. That is a keyboard-and-wide-screen job. A phone is the
-   wrong form factor for the work, not just an alternative one.
-3. **It removes an app store from the critical path.** The provider surface never
-   faces Play review, so provider iteration is not gated on it — and, given
-   ADR-0001's policy risk, a Play rejection on the member app does not also
-   destroy the supply side. Risk isolation is the strongest argument here.
-4. **Heavy onboarding suits the web.** ID upload, Stripe Connect onboarding and
-   tax forms are all web flows already; wrapping them in a native shell adds
-   nothing.
-5. **It is cheaper before liquidity exists.** Supply is the constraint in every
-   marketplace. Reach it with the smallest buildable surface.
+## The concern this carries, and how it is mitigated
+
+The objection to option A was that a role switch puts the provider surface one tap
+from every member. That is only true if the switch is a client-side flag. It is
+not going to be one.
+
+1. **Role lives in the database, not the client.** `profiles.role` is set only by
+   an approved `provider_applications` row. The client cannot write it, and RLS
+   enforces what each role may read regardless of which screen renders.
+2. **No entry point until admitted.** The switch is not rendered for a member
+   account. Discovering the screen by other means yields nothing, because every
+   query behind it is RLS-scoped to `provider_id = auth.uid()`.
+3. **Separate navigation roots.** Member and provider stacks are distinct trees
+   selected by the server-supplied role, so no member navigation path can reach a
+   provider screen even with a client bug.
+4. **Verified identity precedes the role.** Age and identity verification gate
+   admission, so `role = 'provider'` implies a completed KYC record.
+5. **Coupled Play risk is now explicit.** One listing means one rejection takes
+   both sides down. This is the accepted cost of the decision, and it raises the
+   value of resolving the ADR-0001 policy question _before_ launch rather than
+   after.
 
 ## Consequences
 
-- One repo, three deliverables: `apps/member` (React Native), `apps/provider`
-  (web), `packages/*` (shared design tokens, ledger, protocol, types). Design
-  tokens already generate from Figma and feed both.
-- Provider push notifications need web push, which is weaker than native. If
-  response-time SLAs suffer, that is the trigger to build the native app —
-  the decision to revisit, with a measurable threshold rather than a feeling.
-- Two release pipelines rather than one. The existing four-stage pipeline extends;
-  the web console adds a simpler static deploy.
+- One repo, one app, one pipeline. No monorepo split for now.
+- The provider surface must be built to the same design system — it is the same
+  app, so there is no second visual language to maintain. That is a real saving.
+- Web push is not a concern; native notifications work for both roles.
+- If Play rejects on the ADR-0001 policy question, supply and demand fail
+  together. Mitigation is to resolve policy early, not to re-architect later.
 
 ## Revisit when
 
-Provider median response time exceeds the SLA and web push is the identified
-cause, or providers request mobility in numbers.
+Play policy forces the surfaces apart, or provider tooling grows enough that it
+degrades the member app's size or startup time.

@@ -44,6 +44,17 @@ $$;
 
 grant usage on schema auth to anon, authenticated, service_role;
 
+-- Real Supabase ships this publication; a bare Postgres does not, and migration
+-- 003 adds tables to it. Without this the migration fails in the test container
+-- for a reason that has nothing to do with the schema under test.
+do $$
+begin
+  if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    create publication supabase_realtime;
+  end if;
+end
+$$;
+
 -- ---------------------------------------------------------------------------
 -- Test scaffolding
 -- ---------------------------------------------------------------------------
