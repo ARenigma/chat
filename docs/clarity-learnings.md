@@ -131,3 +131,67 @@ content.
 3. **Retention.** 10M installs and 92K reviews says acquisition works; nothing in
    the listing says whether conversations continue past the first session. Our
    inbox and reply-latency work both bet that they should.
+
+---
+
+## 8. How they take money — and why they are not a safe precedent
+
+Checked empirically on 2026-08-20 against their live Play listing:
+
+| Signal                   | Clarity                                                               | Spotify (control) |
+| ------------------------ | --------------------------------------------------------------------- | ----------------- |
+| `In-app purchases` label | **absent**                                                            | present           |
+| `Contains ads` label     | absent                                                                | present           |
+| Data safety              | _"may share these data types with third parties: **Financial info**"_ | —                 |
+
+The control matters: the same detector finds the label on an app that certainly
+uses Play Billing, so Clarity's absence is a real negative rather than a scraping
+artefact. Google adds that label automatically when an app has IAP products
+configured.
+
+**Conclusion: they are almost certainly charging outside Google Play Billing**, via
+an Indian payment gateway — which is what "shares Financial info with third
+parties" implies. Their coins are bought with a card or UPI, not through Play.
+
+**Do not treat this as a compliance precedent.** Under
+[Play's Payments policy](https://support.google.com/googleplay/android-developer/answer/10281818),
+in-app "virtual currencies" and "app functionality or content" are explicitly in
+the categories that _must_ use Play Billing. The real-world exemption covers
+transportation, airfare, gym memberships, food delivery — physical services, not
+a conversation delivered inside the app. India does allow an **alternative
+billing system**, but _alongside_ Play's, with the service fee reduced by 4% —
+and an app doing that would still show the IAP label.
+
+So one of these is true, and none of them helps us:
+
+1. They are non-compliant and have not been enforced against yet. 10M installs
+   makes them a large target, not a safe one.
+2. They have an arrangement or argument we cannot see, in which case it is not
+   transferable.
+3. The listing signal is misleading in a way the control does not suggest.
+
+### The tension worth naming
+
+Play's payments policy carves out **"transactions involving regulated clinical
+services."** Our positioning is deliberately _non_-clinical — that is what keeps
+us out of the Health category and away from medical claims (§1 above, and
+ADR-0001).
+
+That same choice keeps us **inside** Play Billing. The positioning that protects
+the listing costs us the exemption. Both cannot be optimised at once, and
+pretending to be a clinical service to dodge a 20% fee would be a far worse trade
+than paying it — it invites a regulator instead of a platform fee.
+
+### What this means for us
+
+Assume **Play Billing applies** and model the economics on it. As of the
+[March 2026 changes](https://android-developers.googleblog.com/2026/03/a-new-era-for-choice-and-openness.html),
+the service fee and billing fee are separated: service fee starts at **10% on the
+first $1M** of annual earnings, billing fee **5%** in US/EEA/UK, with other
+regions — India included — **not yet published**. India's existing program still
+gives a **4% reduction** when a user picks alternative billing.
+
+The unit economics question is therefore: ~15% platform cost (optimistically, at
+the new lower rates) plus payment-gateway fees plus the provider split plus TDS
+and GST. Run that before building the money layer, and get Play policy support to
+confirm in writing.
