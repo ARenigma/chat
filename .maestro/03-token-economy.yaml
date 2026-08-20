@@ -1,17 +1,20 @@
 # CUJ 3 — the token economy is visible and honest.
 # Drains the wallet to the low-balance threshold, checks the badge flips to a
-# refill affordance without interrupting the conversation, then claims a refill.
+# nudge without interrupting the conversation, then claims a refill.
+#
+# A member pays on send, not on reply, so this journey needs nobody on the other
+# end — which is why it survived the pivot unchanged in spirit.
 appId: com.companionchat
 name: Low balance nudges, never blocks
 ---
 - launchApp
-- tapOn:
-    id: 'persona-sage'
+- tapOn: 'Ada'
 
 # The seed balance is set to 3 by scripts/e2e.mjs before this flow, so two sends
 # cross the threshold without needing 48 round trips.
 - assertVisible:
     id: 'token-badge'
+- assertVisible: '3 left'
 
 - repeat:
     times: 2
@@ -23,23 +26,22 @@ name: Low balance nudges, never blocks
           id: 'composer-send'
       - extendedWaitUntil:
           visible:
-            id: 'bubble-assistant'
+            id: 'read-receipt'
           timeout: 20000
 
-# Under three tokens the label becomes REFILL. It is a nudge in place, not a modal.
-- assertVisible: 'REFILL'
+# Under three tokens the badge becomes a pill. It is a nudge in place, not a
+# modal: the sheet must not have opened by itself.
+- assertVisible: '1 left'
 - assertNotVisible:
-    id: 'refill-title'
+    id: 'refill-sheet'
 
 - tapOn:
     id: 'token-badge'
 - assertVisible:
-    id: 'refill-title'
-- assertVisible: 'One message costs one token.'
+    id: 'refill-sheet'
 - tapOn:
     id: 'refill-claim'
 - assertNotVisible:
-    id: 'refill-title'
+    id: 'refill-sheet'
 
-# A send with an empty wallet opens the sheet instead of silently failing.
 - takeScreenshot: artifacts/03-tokens

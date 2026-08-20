@@ -6,18 +6,18 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TOKENS } from './src/theme/tokens';
 import { assertEnv } from './src/lib/env';
 import { initSentry } from './src/lib/sentry';
-import { isPersonaId, type PersonaId } from './src/lib/personas';
+import { isUuid } from './src/lib/ids';
 import { ensureSession, handleAuthDeepLink } from './src/api/auth';
 import { useStore } from './src/store/useStore';
 import { RefillSheet } from './src/screens/RefillSheet';
 import { Button } from './src/components/Button';
 import { ChatScreen } from './src/screens/ChatScreen';
-import { CompanionsScreen } from './src/screens/CompanionsScreen';
+import { ProvidersScreen } from './src/screens/ProvidersScreen';
 import { SettingsSheet } from './src/screens/SettingsSheet';
 
 initSentry();
 
-const LAST_PERSONA_KEY = 'companion.lastPersona';
+const LAST_PROVIDER_KEY = 'companion.lastProvider';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -37,14 +37,19 @@ type Boot = { phase: 'loading' } | { phase: 'ready' } | { phase: 'error'; messag
  * Two destinations do not justify a navigation library: no deep-link routing
  * beyond the auth callback, no history stack worth persisting, no shared element
  * transitions. React Navigation would add ~15 transitive packages and a native
- * screens dependency to express `persona ?? selector`.
+ * screens dependency to express `provider ?? directory`.
+ *
+ * This is the seam the provider role switch (ADR-0002) will attach to: the
+ * server-supplied role selects the navigation root, so a member's tree cannot
+ * reach a provider screen even with a client bug.
  */
 function Root() {
   const [boot, setBoot] = useState<Boot>({ phase: 'loading' });
   const [attempt, setAttempt] = useState(0);
-  const [persona, setPersona] = useState<PersonaId | null>(null);
+  const [provider, setProvider] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const setNotice = useStore(s => s.setNotice);
+  const resetConversation = useStore(s => s.resetConversation);
 
   useEffect(() => {
     let cancelled = false;
@@ -53,12 +58,13 @@ function Root() {
       try {
         assertEnv();
         await ensureSession();
-        const stored = await AsyncStorage.getItem(LAST_PERSONA_KEY);
+        const stored = await AsyncStorage.getItem(LAST_PROVIDER_KEY);
         if (cancelled) {
           return;
         }
-        if (isPersonaId(stored)) {
-          setPersona(stored);
+        // A stale or malformed id renders the directory rather than throwing.
+        if (isUuid(stored)) {
+          setProvider(stored);
         }
         setBoot({ phase: 'ready' });
       } catch (err) {
@@ -96,15 +102,16 @@ function Root() {
     return () => sub.remove();
   }, [setNotice]);
 
-  const selectPersona = useCallback((id: PersonaId) => {
-    setPersona(id);
-    void AsyncStorage.setItem(LAST_PERSONA_KEY, id);
+  const selectProvider = useCallback((id: string) => {
+    setProvider(id);
+    void AsyncStorage.setItem(LAST_PROVIDER_KEY, id);
   }, []);
 
-  const clearPersona = useCallback(() => {
-    setPersona(null);
-    void AsyncStorage.removeItem(LAST_PERSONA_KEY);
-  }, []);
+  const clearProvider = useCallback(() => {
+    setProvider(null);
+    resetConversation();
+    void AsyncStorage.removeItem(LAST_PROVIDER_KEY);
+  }, [resetConversation]);
 
   if (boot.phase === 'loading') {
     return <View style={styles.blank} />;
@@ -134,10 +141,10 @@ function Root() {
 
   return (
     <View style={styles.host}>
-      {persona === null ? (
-        <CompanionsScreen onSelect={selectPersona} onOpenSettings={() => setSettingsOpen(true)} />
+      {provider === null ? (
+        <ProvidersScreen onSelect={selectProvider} onOpenSettings={() => setSettingsOpen(true)} />
       ) : (
-        <ChatScreen personaId={persona} onBack={clearPersona} />
+        <ChatScreen providerId={provider} onBack={clearProvider} />
       )}
       <RefillSheet />
       <SettingsSheet
@@ -145,7 +152,7 @@ function Root() {
         onClose={() => setSettingsOpen(false)}
         onDeleted={() => {
           setSettingsOpen(false);
-          clearPersona();
+          clearProvider();
         }}
       />
     </View>

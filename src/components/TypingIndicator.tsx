@@ -44,13 +44,13 @@ const Dot = ({ delay }: { delay: number }) => {
   return <Animated.View style={[styles.dot, animated]} />;
 };
 
-function TypingIndicatorView() {
+function TypingIndicatorView({ label = 'Typing' }: { label?: string }) {
   return (
     <View
       style={styles.host}
       testID="typing-indicator"
       accessibilityRole="progressbar"
-      accessibilityLabel="She is typing">
+      accessibilityLabel={label}>
       <Dot delay={0} />
       <Dot delay={STAGGER} />
       <Dot delay={STAGGER * 2} />

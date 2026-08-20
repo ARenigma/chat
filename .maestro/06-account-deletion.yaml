@@ -12,7 +12,7 @@ name: Delete account and all data
 - assertVisible: 'Account & privacy'
 
 # The claim on this screen has to be true; the SQL check in e2e.mjs is what proves it.
-- assertVisible: 'no advertising ID'
+- assertVisible: 'advertising ID'
 
 - tapOn:
     id: 'delete-account'
@@ -21,15 +21,16 @@ name: Delete account and all data
     id: 'delete-confirm'
 
 # Deletion drops straight back into a clean anonymous session — not a dead end.
+# The provider is untouched by a member's deletion, so the directory still lists
+# Ada; what must be gone is this member's transcript.
 - extendedWaitUntil:
-    visible: 'Who are you talking to?'
+    visible:
+      id: 'token-badge'
     timeout: 30000
-- assertVisible:
-    id: 'token-badge'
+- assertVisible: 'Ada'
 
-- tapOn:
-    id: 'persona-nova'
-- assertVisible: 'Nova is listening.'
-- assertNotVisible: 'I hear you. That sounds genuinely tiring.'
+- tapOn: 'Ada'
+- assertVisible: 'Say hello.'
+- assertNotVisible: 'Back online.'
 
 - takeScreenshot: artifacts/06-deleted

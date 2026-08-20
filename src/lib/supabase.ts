@@ -17,6 +17,12 @@ export const supabase = createClient<Database>(ENV.supabaseUrl, ENV.supabaseAnon
     detectSessionInUrl: false,
     flowType: 'pkce',
   },
+  realtime: {
+    params: {
+      // Typing broadcasts are the high-frequency traffic here and they are
+      // already throttled at the source; this is the backstop that keeps a
+      // pathological client from being disconnected by the server.
+      eventsPerSecond: 10,
+    },
+  },
 });
-
-export const FUNCTIONS_URL = `${ENV.supabaseUrl}/functions/v1`;

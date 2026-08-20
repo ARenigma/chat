@@ -2,8 +2,9 @@ import { APP_ENV, SENTRY_DSN, SUPABASE_ANON_KEY, SUPABASE_URL } from '@env';
 
 /**
  * Build-time configuration, inlined by Babel from `.env` — nothing here is a
- * secret. The anon key is RLS-scoped; the Sentry DSN is ingest-only. Service
- * role keys and the OpenAI key exist solely as Supabase function secrets.
+ * secret. The anon key is RLS-scoped; the Sentry DSN is ingest-only. The service
+ * role key is never on a device: the only privileged operation, provider
+ * admission, runs from the ops surface.
  */
 export const ENV = {
   supabaseUrl: SUPABASE_URL ?? '',

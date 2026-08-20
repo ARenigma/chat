@@ -1,0 +1,44 @@
+# CUJ 2 — a message is sent, confirmed, and survives a relaunch.
+#
+# This replaces the streamed-reply journey. There is no model to answer, and a
+# single device cannot play both sides, so what is provable here is the half that
+# belongs to the sender: the optimistic bubble is confirmed by the server rather
+# than left pending, a token is spent, and the row is durable.
+#
+# The other half — delivery, typing, presence, receipts — needs a second
+# authenticated session driving the provider side. Tracked as a follow-up rather
+# than faked with a stub, because a stub would prove nothing about Realtime.
+appId: com.companionchat
+name: Send is confirmed by the server and persists
+---
+- launchApp
+- tapOn: 'Ada'
+
+- assertVisible:
+    id: 'composer-input'
+- tapOn:
+    id: 'composer-input'
+- inputText: 'Long day. Mind if I talk at you for a bit?'
+- tapOn:
+    id: 'composer-send'
+
+# Our own turn, and the receipt that proves the RPC came back rather than the
+# bubble sitting optimistically forever.
+- extendedWaitUntil:
+    visible:
+      id: 'bubble-mine'
+    timeout: 20000
+- extendedWaitUntil:
+    visible:
+      id: 'read-receipt'
+    timeout: 20000
+- assertVisible: 'Sent'
+
+# Durability: the transcript is Postgres, not local state.
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible: 'Long day. Mind if I talk at you for a bit?'
+    timeout: 20000
+
+- takeScreenshot: artifacts/02-send

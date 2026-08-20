@@ -1,22 +1,25 @@
 # CUJ 4b — resume after connectivity returns.
 # scripts/e2e.mjs re-enables the radios before this flow. Nothing should need a
-# restart, a pull-to-refresh, or a manual retry.
+# restart, a pull-to-refresh, or a manual retry — and with a live Realtime
+# channel that is a stronger claim than it was: the socket has to re-subscribe
+# and refetch on its own, which is what the invalidate-on-SUBSCRIBED does.
 appId: com.companionchat
 name: Sending works again once the network returns
 ---
 - launchApp
-- tapOn:
-    id: 'persona-ember'
+- tapOn: 'Ada'
 - tapOn:
     id: 'composer-input'
 - inputText: 'Back online.'
 - tapOn:
     id: 'composer-send'
+
 - extendedWaitUntil:
     visible:
-      id: 'bubble-assistant'
+      id: 'read-receipt'
     timeout: 30000
-- assertVisible: 'I hear you. That sounds genuinely tiring.'
+- assertVisible: 'Back online.'
 - assertNotVisible:
     id: 'notice-bar'
+
 - takeScreenshot: artifacts/05-resume

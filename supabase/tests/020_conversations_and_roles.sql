@@ -195,9 +195,12 @@ select is(
   public.send_message((select v from test.fixture where k = 'thread'), 'let me in') ->> 'error',
   'FORBIDDEN', 'and cannot post into a thread it is not part of, even with the id'
 );
+-- Discovery goes through the directory view, never the base table. Migration 004
+-- removed the permissive SELECT policy this used to assert against, because it
+-- widened `profiles` itself rather than only feeding the view.
 select ok(
-  (select count(*) from public.profiles where role = 'provider') = 1,
-  'but it can discover admitted providers'
+  (select count(*) from public.provider_directory) = 1,
+  'but it can discover admitted providers through the directory'
 );
 reset role;
 

@@ -6,7 +6,16 @@
 # RUNNER REQUIREMENTS — read before wiring this up:
 #   - executor: docker (the `image:` and `services:` keys below assume it)
 #   - the android job needs ~8 GB disk for the SDK/NDK layer and ~4 GB RAM for R8
-#   - tag the runner `linux-docker`, or change RUNNER_TAG below
+#
+# Runner selection is a CI variable, not a hardcoded tag, because the two
+# candidates have different limits: gitlab.com's shared runners are metered and
+# capped at medium, while the self-hosted Oracle VPS runner is unmetered but has
+# to be up. Start on shared, move the heavy job first when the minutes run out:
+#
+#   RUNNER_TAG          default saas-linux-medium-amd64  (light jobs)
+#   ANDROID_RUNNER_TAG  default saas-linux-medium-amd64  (R8 wants headroom)
+#
+# Point either at `linux-docker` to move that class of job onto the VPS.
 #
 # The Android image is pinned by digest-bearing tag rather than `latest`, because
 # a silently newer SDK is the classic cause of a pipeline that worked yesterday.
@@ -15,12 +24,14 @@ stages: [static, verify, build, deliver, release]
 
 variables:
   NODE_VERSION: '22'
+  RUNNER_TAG: 'saas-linux-medium-amd64'
+  ANDROID_RUNNER_TAG: 'saas-linux-medium-amd64'
   GIT_DEPTH: '0' # Secret scanning and commitlint both need history.
   # Gradle in a container: keep caches inside the project so GitLab can cache them.
   GRADLE_USER_HOME: '$CI_PROJECT_DIR/.gradle'
 
 default:
-  tags: [linux-docker]
+  tags: ['$RUNNER_TAG']
   interruptible: true
 
 .node:
@@ -90,13 +101,6 @@ static:
         path: coverage/cobertura-coverage.xml
     expire_in: 1 week
 
-edge-function:
-  stage: static
-  image: denoland/deno:latest
-  script:
-    - deno check --allow-import --config supabase/functions/deno.json supabase/functions/stream-chat/index.ts
-    - deno lint --config supabase/functions/deno.json supabase/functions/
-
 # ---------------------------------------------------------------------------
 # STAGE 2 — the database, against a real Postgres with pgTAP
 # ---------------------------------------------------------------------------
@@ -140,8 +144,9 @@ publish-pgtap-image:
 # ---------------------------------------------------------------------------
 android:
   stage: build
+  tags: ['$ANDROID_RUNNER_TAG']
   image: reactnativecommunity/react-native-android:v13.0.0
-  needs: [static, database, edge-function, secret-scan, no-server-keys]
+  needs: [static, database, secret-scan, no-server-keys]
   cache:
     - key:
         files: [package-lock.json]
@@ -212,8 +217,10 @@ distribute:
 # ---------------------------------------------------------------------------
 # STAGE 5 — production, on a tag, manual
 # ---------------------------------------------------------------------------
-# Deliberately manual and tag-only. The Edge Function ships before the app: a new
-# client against an old function is broken, the reverse is fine.
+# Deliberately manual and tag-only. The migrations ship before the app: a new
+# client against an old schema is broken, the reverse is fine. There is no
+# function deploy any more — the send path is an RPC, so `db push` is the whole
+# backend release.
 deploy-backend:
   stage: release
   image: node:22-bookworm-slim
@@ -226,7 +233,6 @@ deploy-backend:
     - npx --yes supabase@latest link --project-ref "$SUPABASE_PROJECT_REF"
     - npx --yes supabase@latest db push --include-all
     - npx --yes supabase@latest config push --project-ref "$SUPABASE_PROJECT_REF"
-    - npx --yes supabase@latest functions deploy stream-chat --project-ref "$SUPABASE_PROJECT_REF"
 
 play-internal:
   stage: release

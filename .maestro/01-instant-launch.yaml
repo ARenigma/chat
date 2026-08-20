@@ -1,7 +1,7 @@
 # CUJ 1 — instant launch.
 # The product promise is zero-friction access: no onboarding, no password, no
 # runtime permission dialog. Anything that appears between the launcher and a
-# usable companion list is a regression.
+# usable directory is a regression.
 appId: com.companionchat
 name: Instant launch with no onboarding
 ---
@@ -13,9 +13,15 @@ name: Instant launch with no onboarding
 # The anonymous session and its 50 tokens must exist by the first frame.
 - assertVisible:
     id: 'token-badge'
-- assertVisible: 'Who are you talking to?'
-- assertVisible:
-    id: 'persona-nova'
+
+# The directory is a server query now, so this also proves the anon session can
+# actually read the provider_directory view. scripts/e2e.mjs seeds "Ada".
+- assertVisible: 'Ada'
+- assertVisible: 'Available now'
+
+# The positioning line is load-bearing for the Play listing: peer company, and
+# explicitly not a clinical claim.
+- assertVisible: 'to listen.'
 
 # No permission dialog, ever. These are the only strings Android can show.
 - assertNotVisible: 'Allow'
