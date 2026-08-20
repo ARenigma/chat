@@ -52,14 +52,23 @@ select throws_ok(
   'a nameless profile cannot hold the provider role'
 );
 
-insert into public.provider_applications (user_id) values
-  ('aaaaaaaa-0000-4000-8000-000000000001'),
-  ('cccccccc-0000-4000-8000-000000000003');
+-- The nameless applicant (C) also gets a valid birth date, so the assertion
+-- below still isolates the *name* as the reason for refusal rather than tripping
+-- migration 006's age gate first and passing for the wrong reason.
+insert into public.provider_applications (user_id, display_name, date_of_birth) values
+  ('aaaaaaaa-0000-4000-8000-000000000001', 'Ada', (current_date - interval '26 years')::date),
+  ('cccccccc-0000-4000-8000-000000000003', null, (current_date - interval '26 years')::date);
 
+update public.provider_applications
+set missing_fields = ARRAY['display_name']
+where user_id = 'cccccccc-0000-4000-8000-000000000003';
+
+-- 006 moved this check: a nameless application is now *incomplete*, so the
+-- refusal names the field. Same errcode, better message.
 select throws_ok(
   $$select public.approve_provider_application('cccccccc-0000-4000-8000-000000000003')$$,
   '22023', null,
-  'admission refuses a nameless applicant with an actionable error'
+  'admission refuses an applicant with a missing field, naming it'
 );
 select lives_ok(
   $$select public.approve_provider_application('aaaaaaaa-0000-4000-8000-000000000001')$$,

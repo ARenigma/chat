@@ -19,7 +19,14 @@
  *   act <report-id> --action=<a> [opts] record an action and resolve the report
  *   dismiss <report-id> [--note=...]    close with no action
  *   purge                               drop resolved reports past retention
+ *   maintenance                          refund unanswered messages, refresh
+ *                                        published reply latencies (cron this)
  *   metrics [--days=n]                  the safety counters
+ *   applications [--status=s]            the provider application queue
+ *   admit <user-id> [--note=...]         approve an application
+ *   needinfo <user-id> --fields=a,b      ask for specific fields, resolvable
+ *                                        by the applicant without support
+ *   decline <user-id> [--note=...]       reject, with a note they can read
  *
  * `act` actions: none | warned | suspended | banned | conversation_closed
  *   --days=n   suspension length; required for `suspended`
@@ -309,7 +316,110 @@ async function metrics() {
   );
 }
 
-const COMMANDS = { list, show, act, dismiss, purge, metrics };
+// --- Provider applications --------------------------------------------------
+// Separate from the abuse queue on purpose: these are two different jobs with
+// two different tempos, and mixing them buries the urgent one.
+
+async function applications() {
+  const status = flag('status') ?? 'submitted';
+  const rows = await rest(
+    `provider_applications?status=eq.${status}&order=submitted_at.asc&select=*`,
+  );
+  if (rows.length === 0) {
+    console.log(`no applications with status "${status}"`);
+    return;
+  }
+  console.log(
+    `${'USER'.padEnd(10)}${'NAME'.padEnd(16)}${'AGE'.padEnd(5)}` +
+      `${'LANGS'.padEnd(18)}HEADLINE`,
+  );
+  for (const a of rows) {
+    const age =
+      a.date_of_birth === null
+        ? '?'
+        : String(
+            Math.floor(
+              (Date.now() - new Date(a.date_of_birth)) /
+                (365.25 * 24 * 3600 * 1000),
+            ),
+          );
+    console.log(
+      `${short(a.user_id).padEnd(10)}${clip(a.display_name, 15).padEnd(16)}` +
+        `${age.padEnd(5)}${clip((a.languages ?? []).join(','), 17).padEnd(
+          18,
+        )}` +
+        `${clip(a.headline, 40)}`,
+    );
+  }
+  console.log(
+    `\n${rows.length} waiting. \`admit <user-id>\`, ` +
+      '`needinfo <user-id> --fields=about,headline`, or `decline <user-id>`.',
+  );
+}
+
+async function admit() {
+  const id = positional[0];
+  if (id === undefined) {
+    fail('usage: admit <user-id> [--note=...]');
+  }
+  await rpc('approve_provider_application', {
+    p_user_id: id,
+    p_note: flag('note') ?? null,
+  });
+  console.log(`admitted ${short(id)} — they are now in the directory`);
+}
+
+async function needinfo() {
+  const id = positional[0];
+  const fields = (flag('fields') ?? '')
+    .split(',')
+    .map(f => f.trim())
+    .filter(Boolean);
+  if (id === undefined || fields.length === 0) {
+    fail('usage: needinfo <user-id> --fields=about,headline [--note=...]');
+  }
+  // Naming the fields is the whole point: "Something Missing" with no detail is
+  // what makes applicants churn in public. See docs/clarity-learnings.md.
+  await rpc('request_application_info', {
+    p_user_id: id,
+    p_missing: fields,
+    p_note: flag('note') ?? null,
+  });
+  console.log(`asked ${short(id)} for: ${fields.join(', ')}`);
+}
+
+async function decline() {
+  const id = positional[0];
+  if (id === undefined) {
+    fail('usage: decline <user-id> [--note=...]');
+  }
+  await rpc('reject_provider_application', {
+    p_user_id: id,
+    p_note: flag('note') ?? null,
+  });
+  console.log(`declined ${short(id)}`);
+}
+
+async function maintenance() {
+  const refunded = await rpc('refund_unanswered_messages');
+  const latencies = await rpc('refresh_reply_latencies');
+  console.log(`refunded ${refunded} unanswered message(s)`);
+  console.log(`refreshed reply latency for ${latencies} provider(s)`);
+}
+
+const COMMANDS = {
+  list,
+  show,
+  act,
+  dismiss,
+  purge,
+  metrics,
+  applications,
+  admit,
+  needinfo,
+  decline,
+  maintenance,
+};
 const run = COMMANDS[command];
 if (run === undefined) {
   fail(

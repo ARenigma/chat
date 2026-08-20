@@ -62,8 +62,11 @@ select function_privs_are(
 -- A client cannot promote itself. This is the load-bearing assertion for
 -- ADR-0002: the role switch is only safe because the role is not client-writable.
 -- ---------------------------------------------------------------------------
-insert into public.provider_applications (user_id)
-values ('aaaaaaaa-0000-4000-8000-000000000001');
+-- Migration 006 made admission conditional on a complete application and a
+-- verifiable adult date of birth, so the fixture has to supply both. That the
+-- older fixture no longer suffices is the age gate working.
+insert into public.provider_applications (user_id, display_name, date_of_birth)
+values ('aaaaaaaa-0000-4000-8000-000000000001', 'Ada', (current_date - interval '26 years')::date);
 
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"aaaaaaaa-0000-4000-8000-000000000001","role":"authenticated"}';

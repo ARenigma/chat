@@ -56,8 +56,8 @@ insert into auth.users (id) values
 
 update public.profiles set display_name = 'Ada'
 where id = 'aaaaaaaa-0000-4000-8000-000000000001';
-insert into public.provider_applications (user_id)
-values ('aaaaaaaa-0000-4000-8000-000000000001');
+insert into public.provider_applications (user_id, display_name, date_of_birth)
+values ('aaaaaaaa-0000-4000-8000-000000000001', 'Ada', (current_date - interval '26 years')::date);
 select lives_ok(
   $$select public.approve_provider_application('aaaaaaaa-0000-4000-8000-000000000001')$$,
   'the provider is admitted'
