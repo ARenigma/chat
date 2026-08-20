@@ -30,16 +30,15 @@ supabase db push           # applies migrations 001-004
 supabase config push       # enables anonymous sign-ins; the app dies at boot without it
 ```
 
-**Phone + OTP is the only way in**, so an SMS gateway is a hard prerequisite:
-Supabase hosted does not send SMS itself. Configure Twilio (or MessageBird /
-Vonage / Textlocal) in the dashboard, or nobody can sign in at all. For an India
-launch there is a second, longer lead item that is not a Supabase setting —
-transactional SMS needs **DLT registration** (entity, header and template
-approval through the operator portal), which takes days to weeks. Start it before
-the code is ready.
+**Google or Facebook is the only way in.** Both need OAuth credentials before
+anyone can sign in — see [ADR-0004](docs/adr/0004-identity-is-social-login.md)
+for why this is the third identity model and what it costs.
 
-`supabase/config.toml` seeds two **test OTP numbers** so the device journeys and a
-Play reviewer can sign in without a gateway or a handset.
+Redirect URI for both providers:
+`https://uvghvhcrovmuwivgijvl.supabase.co/auth/v1/callback`
+
+Facebook additionally needs **App Review** before non-test users can sign in.
+Start it early; it is days, not hours.
 
 There are no Edge Functions and no server-side secrets to set. Sending is a
 single Postgres RPC, so there is nothing between the client and the database.
@@ -120,23 +119,29 @@ role selects the navigation root.
 
 ## Identity and onboarding
 
-### Members: phone and OTP, nothing else
+### Members: one tap, Google or Facebook
 
-Two fields. No password, no email, no social buttons, no terms checkbox. Signing
-in and signing up are the same act, which is the one part of the old
-anonymous-first promise still standing.
+No form at all, which recovers most of what the phone screen took away — the
+first frame is one tap from a session again.
 
-Anonymous sessions, Google, Facebook, email-as-a-user-path and identity linking
-are all **gone**, and it is worth being honest about the trade:
+This is the app's **third** identity model, and [ADR-0004](docs/adr/0004-identity-is-social-login.md)
+records all three with the trade-offs, because the churn is real:
 
-- **Lost:** "a usable session on the first frame, nothing to fill in." That was
-  the sharpest thing about the product. There is now a form between the launcher
-  and the app, and some people will not fill it in.
-- **Bought:** identity that survives a reinstall. Every safety control in
-  migration 005 — suspension, bans, the report history that makes a repeat
-  offender visible — assumed the account meant something. Against anonymous rows
-  all of it was theatre: a banned user was back in ten seconds with a fresh
-  wallet. A phone number is scarce and costs money to replace.
+| Model             | Onboarding | Accountability                     | Cost                       |
+| ----------------- | ---------- | ---------------------------------- | -------------------------- |
+| Anonymous         | Perfect    | **None** — banned user back in 10s | Free                       |
+| Phone + OTP       | One form   | **Strongest** short of ID          | Per-SMS + DLT registration |
+| Google / Facebook | One tap    | **Middling** — free accounts       | Free                       |
+
+Two costs worth knowing rather than discovering:
+
+- **Weaker accountability than phone.** Social accounts are free and unlimited,
+  so suspension and bans are friction rather than a wall. The controls that still
+  bite are the ones not depending on scarce identity: rate limits, the evidence
+  snapshot on a report (which survives the account), and per-pair blocking.
+- **A disclosure a phone number did not require.** Signing in tells Google or
+  Facebook that you use _this_ app. For an app about loneliness that is real, and
+  the auth screen says so rather than letting people find out later.
 
 Instagram is not on the list because it cannot be: Meta shut the Instagram Basic
 Display API in December 2024 and Instagram sign-in now runs through Facebook

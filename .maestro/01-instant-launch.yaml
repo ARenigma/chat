@@ -1,15 +1,15 @@
-# CUJ 1 — first launch lands on phone sign-in, and nothing else.
+# CUJ 1 — first launch is one tap from a session, and shows the trade honestly.
 #
-# This journey used to assert the opposite: a usable session on the first frame
-# and *no* sign-in wall. Migration 006 traded that away deliberately (see
-# ADR-0001 and src/api/auth.ts) because anonymous accounts made every safety
-# control in 005 theatre — a banned user was back in ten seconds.
+# The identity model has changed twice; see ADR-0004. This journey asserts what
+# is true of the current one: no form, two providers, and an explicit statement
+# that signing in tells Google or Facebook you use this app.
 #
-# What must still hold is that the wall is the *only* thing between the launcher
-# and the app: two fields, no password, no email, no terms checkbox, and no
-# runtime permission dialog.
+# It deliberately stops at the consent screen. Driving Google's OAuth page from
+# Maestro would be testing Google, would break whenever they change it, and is
+# exactly the kind of brittle end-to-end nobody maintains. The half we own is
+# "the buttons exist, are labelled correctly, and open the system browser".
 appId: com.companionchat
-name: First launch asks for a phone number and nothing else
+name: First launch offers social sign-in and nothing else
 ---
 - clearState
 - launchApp:
@@ -17,50 +17,24 @@ name: First launch asks for a phone number and nothing else
     stopApp: true
 
 - assertVisible:
-    id: 'phone-input'
+    id: 'signin-google'
+- assertVisible:
+    id: 'signin-facebook'
 - assertVisible: 'to listen.'
 - assertVisible: 'Not therapy'
 
-# The number is used for sign-in and safety, and is never shown to a peer. That
-# claim is on the screen because it is the first thing a reasonable person asks.
-- assertVisible: 'never shown to anyone'
+# The disclosure is on the screen, not buried in a policy.
+- assertVisible: 'does tell Google'
 
-# No password, no email, no social buttons — phone and OTP is the whole of it.
+# No form of any kind, and no third path in.
 - assertNotVisible: 'Password'
-- assertNotVisible: 'Continue with Google'
-- assertNotVisible: 'Continue with Facebook'
-- assertNotVisible: 'Email'
+- assertNotVisible: 'Phone number'
+- assertNotVisible: 'Email address'
+- assertNotVisible: 'Continue as guest'
 
 # No permission dialog, ever. These are the only strings Android can show.
 - assertNotVisible: 'Allow'
 - assertNotVisible: 'While using the app'
 - assertNotVisible: 'Deny'
-
-# scripts/e2e.mjs seeds this as a Supabase test OTP number, so it never touches
-# an SMS gateway and the code is fixed.
-- tapOn:
-    id: 'phone-input'
-- inputText: '9999900001'
-- tapOn:
-    id: 'phone-submit'
-
-- extendedWaitUntil:
-    visible:
-      id: 'otp-input'
-    timeout: 20000
-- assertVisible: 'Check your messages'
-
-- tapOn:
-    id: 'otp-input'
-- inputText: '123456'
-- tapOn:
-    id: 'otp-submit'
-
-# Signed in, and the inbox is home.
-- extendedWaitUntil:
-    visible: 'Your conversations'
-    timeout: 30000
-- assertVisible:
-    id: 'token-badge'
 
 - takeScreenshot: artifacts/01-signin

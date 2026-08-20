@@ -6,65 +6,68 @@ project_id = "uvghvhcrovmuwivgijvl"
 [auth]
 enable_signup = true
 
-# Anonymous sign-in is OFF, and that is the whole of migration 006's first
-# decision. It cost the product its sharpest feature — a usable session on the
-# first frame — and bought the only thing that makes suspension, bans and report
-# history mean anything: an identity that survives a reinstall. Against anonymous
-# rows, every safety control shipped in 005 was theatre.
+# Anonymous sign-in stays OFF. It gave the best onboarding imaginable and no
+# accountability whatsoever — a banned user reinstalled and was back in ten
+# seconds with a fresh wallet, which made every control in migration 005
+# decorative. See ADR-0004 for the full identity history.
 enable_anonymous_sign_ins = false
 
-# Nothing left to link. The phone number IS the account, not an upgrade to it.
+# Nothing to link: the social account IS the account, not an upgrade to one.
 enable_manual_linking = false
 
-additional_redirect_urls = []
+# Load-bearing, not optional — the OAuth session arrives through this deep link.
+additional_redirect_urls = ["companionchat://auth-callback"]
 
 [auth.email]
-# Off as a user-facing path: members and providers both sign in by phone.
+# Off as a user-facing path. `enabled` stays true for exactly one reason:
+# admin-created operational accounts. scripts/provider-console.mjs signs in as a
+# real provider to test the two-sided conversation a single device cannot.
 #
-# `enabled` stays true for ONE reason: admin-created operational accounts.
-# scripts/provider-console.mjs signs in as a real provider to test the two-sided
-# conversation a single device cannot, and an OTP it cannot receive would make
-# that impossible. `enable_signup = false` is what keeps it from being a public
-# route — an operator can mint such an account, nobody else can.
-#
-# BEFORE LAUNCH: decide whether that account still needs to exist. An email path
-# nobody uses is an attack surface nobody watches.
+# `enable_signup = false` is what keeps it from being a public route — an
+# operator can mint such an account, nobody else can. Kept deliberately (Amit,
+# 2026-08-20); revisit before launch, because an auth path nobody uses is an
+# attack surface nobody watches.
 enabled = true
 enable_signup = false
 enable_confirmations = false
 
 [auth.sms]
-# The only onboarding path there is.
-enable_signup = true
-enable_confirmations = true
-# 6 digits, and short-lived: an OTP is a bearer token for a whole account.
-otp_length = 6
-otp_expiry = 600
+# Off. Phone + OTP was the strongest accountability available short of ID, and it
+# was abandoned on cost: SMS is billed per message, and Indian transactional SMS
+# additionally needs DLT registration (entity, header and template approval),
+# which is weeks of lead time. Revisit when there is revenue to pay for it — the
+# code for it is in git history, not deleted work.
+enable_signup = false
+enable_confirmations = false
 
-# REQUIRED BEFORE PHONE AUTH WORKS AT ALL.
+# ---------------------------------------------------------------------------
+# Social identity — the only way in
+# ---------------------------------------------------------------------------
+# Both stay `enabled = false` in this file until real credentials exist, because
+# a half-configured provider fails at the consent screen, in the browser, after
+# the user has already left the app. Flip them in the dashboard once the secrets
+# are set, or set them here through env() and push.
 #
-# Supabase hosted does not send SMS itself; it needs a gateway. Until one is
-# configured, `signInWithOtp` fails and there is no way into the app. Uncomment
-# the provider you choose and set the secrets in the dashboard, not here.
+# Google:   console.cloud.google.com -> Credentials -> OAuth client (Web application)
+#           Authorised redirect URI:
+#             https://uvghvhcrovmuwivgijvl.supabase.co/auth/v1/callback
+# Facebook: developers.facebook.com -> app -> Facebook Login -> Settings
+#           Valid OAuth Redirect URI: the same URL.
+#           Facebook additionally requires App Review for public use; test users
+#           work immediately, real ones do not. Start review early.
 #
-# For the India launch market there is a second requirement that is not a
-# Supabase setting: transactional SMS needs DLT registration (entity + header +
-# template approval through the operator portal). That takes days to weeks, so it
-# is the long-lead item on the critical path — start it before the code is ready,
-# not after.
-#
-# [auth.sms.twilio]
-# enabled = true
-# account_sid = "env(TWILIO_ACCOUNT_SID)"
-# message_service_sid = "env(TWILIO_MESSAGE_SERVICE_SID)"
-# auth_token = "env(TWILIO_AUTH_TOKEN)"
+# Instagram is absent because it does not exist as a provider — Meta shut the
+# Instagram Basic Display API in Dec 2024 and Instagram sign-in now runs through
+# Facebook Login for Business. See SocialProvider in src/api/auth.ts.
+[auth.external.google]
+enabled = false
+client_id = "env(SUPABASE_AUTH_GOOGLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_GOOGLE_SECRET)"
+redirect_uri = ""
+skip_nonce_check = false
 
-# Test numbers, so the device journeys and a reviewer can sign in without an SMS
-# gateway or a real handset. These bypass the gateway entirely and return a fixed
-# code — which is exactly why they must never be a real number.
-#
-# Digits only, no leading '+': the API serialises this table to
-# `number=code,number=code` and rejects anything else.
-[auth.sms.test_otp]
-"919999900001" = "123456"
-"919999900002" = "654321"
+[auth.external.facebook]
+enabled = false
+client_id = "env(SUPABASE_AUTH_FACEBOOK_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_FACEBOOK_SECRET)"
+redirect_uri = ""
