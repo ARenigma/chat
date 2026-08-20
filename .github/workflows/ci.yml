@@ -10,6 +10,7 @@ on:
     branches: [main]
   pull_request:
   workflow_call:
+  workflow_dispatch: # Manual re-run, for triage and for the first run of a new repo.
 
 concurrency:
   group: ci-${{ github.ref }}
