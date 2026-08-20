@@ -126,16 +126,27 @@ database:
   before_script:
     - apk add --no-cache nodejs
   script:
+    # If this cannot pull, run `publish-pgtap-image` once on an api- or
+    # web-triggered pipeline: the image is built from supabase/tests/Dockerfile
+    # and lives in this project's container registry.
     - node scripts/db-test.mjs
 
 # Run by hand when supabase/tests/Dockerfile changes. Building pgTAP from source
 # takes a couple of minutes, so it is not worth doing on every pipeline.
+#
+# The `database` job cannot pass until this has run at least once, so the rule
+# deliberately covers api- and web-triggered pipelines rather than web alone:
+# scoping it to `web` made the one job needed to bootstrap the other reachable
+# only by hand in the UI, which is a bad place to hide a prerequisite.
 publish-pgtap-image:
   stage: verify
   image: docker:27
   services: [docker:27-dind]
+  # dind needs privileged mode, which the shared runners provide and a
+  # self-hosted docker-executor runner must be configured for.
+  tags: ['$RUNNER_TAG']
   rules:
-    - if: $CI_PIPELINE_SOURCE == 'web'
+    - if: $CI_PIPELINE_SOURCE == 'web' || $CI_PIPELINE_SOURCE == 'api'
       when: manual
       allow_failure: false
   script:
