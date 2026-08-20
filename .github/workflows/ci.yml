@@ -201,6 +201,55 @@ jobs:
         if: always()
         run: rm -f android/keystore.properties android/app/upload.keystore
 
+  # --------------------------------------------------------------------------
+  # Every merge to main lands on the founder's phone within minutes. This is the
+  # daily loop; the Play internal track in release.yml is the release-candidate
+  # path. Both exist because they answer different questions: this one is "does
+  # the change work", that one is "does the real Play install path work".
+  # --------------------------------------------------------------------------
+  distribute:
+    name: distribute to devices
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      HAS_FIREBASE: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: skip notice
+        if: env.HAS_FIREBASE != 'true'
+        run: |
+          echo "::notice::FIREBASE_SERVICE_ACCOUNT_JSON not set — skipping device distribution."
+          echo "Add the secret plus FIREBASE_APP_ID to enable it."
+
+      - uses: actions/download-artifact@v4
+        if: env.HAS_FIREBASE == 'true'
+        with:
+          name: release-apk
+          path: artifacts
+
+      - name: authenticate
+        if: env.HAS_FIREBASE == 'true'
+        run: |
+          printf '%s' '${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}' > "$RUNNER_TEMP/fb.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/fb.json" >> "$GITHUB_ENV"
+
+      - name: distribute
+        if: env.HAS_FIREBASE == 'true'
+        run: |
+          set -euo pipefail
+          APK=$(find artifacts -name '*.apk' | head -1)
+          test -n "$APK" || { echo "::error::no APK in the build artifact"; exit 1; }
+          npx --yes firebase-tools@latest appdistribution:distribute "$APK" \
+            --app "${{ secrets.FIREBASE_APP_ID }}" \
+            --groups "founders" \
+            --release-notes "$(git log -1 --pretty='%h %s')"
+
+      - name: shred credentials
+        if: always()
+        run: rm -f "$RUNNER_TEMP/fb.json"
+
   gate:
     name: stage 1 and 2 gate
     needs: [secrets-scan, static, edge-function, database, build]
