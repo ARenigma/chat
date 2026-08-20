@@ -37,6 +37,19 @@ for why this is the third identity model and what it costs.
 Redirect URI for both providers:
 `https://uvghvhcrovmuwivgijvl.supabase.co/auth/v1/callback`
 
+**Google client type is `Web application`, not `Android`** — despite this being an
+Android app. Supabase exchanges the authorisation code server-side and needs the
+**client secret** to do it. An Android OAuth client is a public client with no
+secret, bound to a package name and SHA-1, and exists for the native Google
+Sign-In SDK; Supabase cannot use one. Picking Android is the default mistake here
+and the form even demands a SHA-1 fingerprint, which makes it look correct.
+
+Then set the consent screen's **Audience** to Published, or add each tester
+explicitly — a new screen starts in Testing and refuses everyone else. No Google
+verification review is needed: Supabase requests only `openid`, `email` and
+`profile`, which are non-sensitive scopes. Facebook's App Review is the slow
+dependency, not Google's.
+
 Facebook additionally needs **App Review** before non-test users can sign in.
 Start it early; it is days, not hours.
 
