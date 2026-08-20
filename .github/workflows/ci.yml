@@ -220,8 +220,11 @@ jobs:
       - name: skip notice
         if: env.HAS_FIREBASE != 'true'
         run: |
-          echo "::notice::FIREBASE_SERVICE_ACCOUNT_JSON not set — skipping device distribution."
-          echo "Add the secret plus FIREBASE_APP_ID to enable it."
+          echo "::notice::FIREBASE_SERVICE_ACCOUNT_JSON is not set — skipping device distribution."
+          echo "FIREBASE_APP_ID and FIREBASE_PROJECT_ID are already configured as repo variables."
+          echo "Create a service account with the Firebase App Distribution Admin role and add its"
+          echo "JSON key as that secret. Until then, distribute locally with:"
+          echo "  npm run distribute"
 
       - uses: actions/download-artifact@v4
         if: env.HAS_FIREBASE == 'true'
@@ -242,7 +245,8 @@ jobs:
           APK=$(find artifacts -name '*.apk' | head -1)
           test -n "$APK" || { echo "::error::no APK in the build artifact"; exit 1; }
           npx --yes firebase-tools@latest appdistribution:distribute "$APK" \
-            --app "${{ secrets.FIREBASE_APP_ID }}" \
+            --app "${{ vars.FIREBASE_APP_ID }}" \
+            --project "${{ vars.FIREBASE_PROJECT_ID }}" \
             --groups "founders" \
             --release-notes "$(git log -1 --pretty='%h %s')"
 
