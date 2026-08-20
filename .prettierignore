@@ -1,6 +1,5 @@
 # Lockfiles are generated and must stay byte-identical to what the tool wrote.
 package-lock.json
-supabase/functions/deno.lock
 
 # Generated from design/tokens.json by scripts/gen-tokens.mjs.
 src/theme/tokens.generated.ts

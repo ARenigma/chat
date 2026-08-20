@@ -127,7 +127,7 @@ describe('sanitizeSentryEvent — identifiers', () => {
     const event = sanitizeSentryEvent({
       request: {
         method: 'POST',
-        url: 'https://x.supabase.co/functions/v1/stream-chat?apikey=secret',
+        url: 'https://x.supabase.co/rest/v1/rpc/send_message?apikey=secret',
         headers: { Authorization: 'Bearer secret-token' },
         data: { message: PROMPT },
         query_string: 'apikey=secret',
@@ -135,7 +135,7 @@ describe('sanitizeSentryEvent — identifiers', () => {
     });
     expect(event?.request).toEqual({
       method: 'POST',
-      url: 'https://x.supabase.co/functions/v1/stream-chat',
+      url: 'https://x.supabase.co/rest/v1/rpc/send_message',
     });
     expectAbsent(event, 'secret');
     expectAbsent(event, 'breakup');

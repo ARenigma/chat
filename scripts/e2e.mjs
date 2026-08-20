@@ -8,8 +8,8 @@
  *
  *   - stands up the local Supabase stack, so the cascade can be checked in SQL
  *     rather than inferred from the UI
- *   - points the Edge Function at scripts/openai-stub.mjs, so replies are exact
- *     and no device in the matrix bills real tokens
+ *   - seeds an admitted provider, because the directory is a server query now
+ *     and admission is deliberately service-role only
  *   - seeds the wallet straight into Postgres before the low-balance journey,
  *     instead of sending 48 throwaway messages
  *   - toggles the emulator's radios around the fault-injection journeys
@@ -19,14 +19,13 @@
  * device, maestro, docker. Run `npm run e2e` after `npm run android` has
  * installed a debug build, or pass --install to have this script build one.
  */
-import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const APP_ID = 'com.companionchat';
-const STUB_PORT = 8788;
 
 // The loopback alias an Android emulator uses to reach its host.
 const HOST_FROM_EMULATOR = '10.0.2.2';
@@ -40,7 +39,7 @@ const ONLY = [...args]
   .find(a => a.startsWith('--only='))
   ?.slice('--only='.length);
 
-const state = { stub: null, supabaseStarted: false };
+const state = { supabaseStarted: false };
 
 function run(cmd, argv, options = {}) {
   return execFileSync(cmd, argv, {
@@ -100,10 +99,6 @@ function setRadios(enabled) {
 }
 
 function teardown() {
-  if (state.stub) {
-    state.stub.kill('SIGTERM');
-    state.stub = null;
-  }
   setRadios(true);
   if (state.supabaseStarted && !KEEP) {
     tryRun('supabase', ['stop', '--no-backup']);
@@ -154,37 +149,25 @@ const anonKey = (() => {
   return match[1];
 })();
 
-step('starting the deterministic OpenAI stub');
-state.stub = spawn(process.execPath, [join(ROOT, 'scripts/openai-stub.mjs')], {
-  cwd: ROOT,
-  stdio: 'inherit',
-  env: { ...process.env, STUB_PORT: String(STUB_PORT) },
-});
-spawnSync('sleep', ['1']);
-if (!tryRun('curl', ['-sf', `http://127.0.0.1:${STUB_PORT}/healthz`]).ok) {
-  fail('the OpenAI stub did not come up');
+// A provider is not something a client can create: `approve_provider_application`
+// is service-role only by design (ADR-0002), so the fixture is applied in SQL.
+// The uuid is fixed so a failed run leaves a diagnosable database.
+step('seeding an admitted provider');
+const PROVIDER_ID = '11111111-1111-4111-8111-111111111111';
+sql(
+  `insert into auth.users (id) values ('${PROVIDER_ID}') on conflict do nothing`,
+);
+sql(
+  `update public.profiles set display_name = 'Ada', is_available = true where id = '${PROVIDER_ID}'`,
+);
+sql(
+  `insert into public.provider_applications (user_id) values ('${PROVIDER_ID}') on conflict do nothing`,
+);
+sql(`select public.approve_provider_application('${PROVIDER_ID}')`);
+if (sql('select count(*) from public.provider_directory') !== '1') {
+  fail('the provider fixture is not visible in provider_directory');
 }
-
-step('serving the Edge Function against the stub');
-const functionsEnv = join(ROOT, 'supabase/.env.e2e');
-writeFileSync(
-  functionsEnv,
-  [
-    `OPENAI_BASE_URL=http://${HOST_FROM_EMULATOR}:${STUB_PORT}`,
-    'OPENAI_API_KEY=stub-key-not-used',
-    'OPENAI_MODEL=gpt-4o-mini',
-    '',
-  ].join('\n'),
-);
-const functions = spawn(
-  'supabase',
-  ['functions', 'serve', '--env-file', functionsEnv],
-  {
-    cwd: ROOT,
-    stdio: 'inherit',
-  },
-);
-spawnSync('sleep', ['6']);
+console.log('   provider "Ada" admitted and discoverable');
 
 // ---------------------------------------------------------------------------
 // App under test
@@ -216,7 +199,7 @@ if (!existsSync(shots)) {
 // ---------------------------------------------------------------------------
 const journeys = [
   { flow: '01-instant-launch.yaml' },
-  { flow: '02-chat-stream.yaml' },
+  { flow: '02-send-and-persist.yaml' },
   {
     flow: '03-token-economy.yaml',
     before() {
@@ -230,8 +213,27 @@ const journeys = [
   {
     flow: '04-network-faults.yaml',
     before() {
+      state.balanceBeforeOffline = sql(
+        "select coalesce(sum(token_balance), -1) from public.profiles where role = 'member'",
+      );
       setRadios(false);
-      console.log('   radios off: wifi and mobile data disabled');
+      console.log(
+        `   radios off; member balance is ${state.balanceBeforeOffline}`,
+      );
+    },
+    after() {
+      // The point of the atomic send: an unreachable server cannot have taken a
+      // token, so this is an equality check rather than a refund check.
+      setRadios(true);
+      const after = sql(
+        "select coalesce(sum(token_balance), -1) from public.profiles where role = 'member'",
+      );
+      if (after !== state.balanceBeforeOffline) {
+        fail(
+          `an offline send moved the wallet: ${state.balanceBeforeOffline} -> ${after}`,
+        );
+      }
+      console.log('   verified in SQL: no token was spent while offline');
     },
   },
   {
@@ -257,23 +259,25 @@ const journeys = [
       // The GDPR claim is a SQL claim. Assert it in SQL.
       const counts = {
         profiles: Number(sql('select count(*) from public.profiles')),
-        chats: Number(sql('select count(*) from public.chats')),
+        conversations: Number(sql('select count(*) from public.conversations')),
         messages: Number(sql('select count(*) from public.messages')),
       };
-      // The flow starts a fresh anonymous session afterwards, so exactly one
-      // profile with no chats and no messages is the correct end state.
+      // The flow starts a fresh anonymous session afterwards, and the seeded
+      // provider is not the member being deleted, so the correct end state is
+      // the provider plus exactly one new member — and no transcript at all.
       if (
-        counts.profiles !== 1 ||
-        counts.chats !== 0 ||
+        counts.profiles !== 2 ||
+        counts.conversations !== 0 ||
         counts.messages !== 0
       ) {
         fail(
           'deletion cascade incomplete: ' +
-            `${counts.profiles} profile(s), ${counts.chats} chat(s), ${counts.messages} message(s)`,
+            `${counts.profiles} profile(s), ${counts.conversations} conversation(s), ` +
+            `${counts.messages} message(s)`,
         );
       }
       console.log(
-        '   cascade verified in SQL: no chats, no messages, one fresh profile',
+        '   cascade verified in SQL: no conversations, no messages, provider intact',
       );
     },
   },
@@ -306,7 +310,6 @@ for (const journey of journeys) {
   journey.after?.();
 }
 
-functions.kill('SIGTERM');
 teardown();
 
 if (failedFlow) {

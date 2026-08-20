@@ -17,7 +17,6 @@ module.exports = {
         'store', // ephemeral state
         'theme', // design tokens and the generator
         'db', // migrations, RLS, RPCs
-        'edge', // Supabase Edge Functions
         'realtime', // presence, typing, message transport
         'provider', // the provider-side console
         'safety', // moderation, reporting, classification

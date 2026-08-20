@@ -19,8 +19,7 @@
     "types/**/*.d.ts",
     "__tests__/**/*.ts",
     "__tests__/**/*.tsx",
-    "App.tsx",
-    "supabase/functions/_shared/**/*.ts"
+    "App.tsx"
   ],
-  "exclude": ["**/node_modules", "**/Pods", "supabase/functions/stream-chat"]
+  "exclude": ["**/node_modules", "**/Pods"]
 }

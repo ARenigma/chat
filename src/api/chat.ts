@@ -1,29 +1,36 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
-import type { ClaimResult, Message, Profile } from '../lib/database.types';
+import type {
+  ClaimResult,
+  Message,
+  Profile,
+  ProviderSummary,
+  SendError,
+  SendResult,
+} from '../lib/database.types';
 import { canSend } from '../lib/tokenLedger';
 import { errorTick, tick } from '../lib/haptics';
+import { PENDING_PREFIX, insertOptimistic, settleOptimistic } from '../lib/transcript';
 import { useStore } from '../store/useStore';
-import { streamChat, type StreamHandle } from './stream';
-import type { StreamErrorCode } from '../../supabase/functions/_shared/protocol';
+import { messagesKey } from './realtime';
 
 /** Newest-first: the transcript renders into an inverted list. */
 const PAGE_SIZE = 100;
 
 export const keys = {
   profile: ['profile'] as const,
-  chat: (personaId: string) => ['chat', personaId] as const,
-  messages: (chatId: string) => ['messages', chatId] as const,
+  providers: ['providers'] as const,
+  conversation: (providerId: string) => ['conversation', providerId] as const,
+  messages: messagesKey,
 };
 
-const NOTICE: Record<StreamErrorCode, string> = {
-  INSUFFICIENT_TOKENS: 'You are out of tokens.',
-  UPSTREAM_FAILED: 'Could not reach your companion. Your token was refunded.',
+const NOTICE: Record<SendError, string> = {
+  INSUFFICIENT_BALANCE: 'You are out of tokens.',
   BAD_REQUEST: 'That message could not be sent.',
   UNAUTHORIZED: 'Session expired. Reopen the app to continue.',
   FORBIDDEN: 'That conversation is not available.',
-  INTERNAL: 'Something went wrong. Your token was refunded.',
+  NOT_FOUND: 'That conversation no longer exists.',
 };
 
 async function requireUserId(): Promise<string> {
@@ -32,6 +39,15 @@ async function requireUserId(): Promise<string> {
     throw new Error('No session');
   }
   return data.user.id;
+}
+
+/** The session's own profile id — every "is this mine" comparison needs it. */
+export function useSelfId() {
+  return useQuery<string>({
+    queryKey: ['self'],
+    queryFn: requireUserId,
+    staleTime: Infinity,
+  });
 }
 
 /** Profile + the authoritative token balance, mirrored into the store. */
@@ -64,33 +80,59 @@ export function useProfile() {
   return query;
 }
 
-/** One RPC: resolves the persona's chat, creating it on first open. */
-export function useChatId(personaId: string | null) {
+/**
+ * The provider directory.
+ *
+ * Server-supplied, where the persona list was a compile-time constant. Reading
+ * the `provider_directory` view rather than `profiles` is deliberate: the view
+ * names its columns explicitly, so a column added to `profiles` later cannot
+ * leak into the directory by accident.
+ */
+export function useProviders() {
+  return useQuery<ProviderSummary[]>({
+    queryKey: keys.providers,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('provider_directory')
+        .select('*')
+        .order('is_available', { ascending: false })
+        .order('created_at', { ascending: true });
+      if (error) {
+        throw new Error(error.message);
+      }
+      return data;
+    },
+    staleTime: 30_000,
+  });
+}
+
+/** One RPC: resolves this member's thread with a provider, creating it once. */
+export function useConversationId(providerId: string | null) {
   return useQuery<string>({
-    queryKey: keys.chat(personaId ?? ''),
-    enabled: personaId !== null,
+    queryKey: keys.conversation(providerId ?? ''),
+    enabled: providerId !== null,
     staleTime: Infinity,
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('get_or_create_chat', {
-        p_persona_id: personaId as string,
+      const { data, error } = await supabase.rpc('open_conversation', {
+        p_provider_id: providerId as string,
       });
       if (error || !data) {
-        throw new Error(error?.message ?? 'Could not open chat');
+        throw new Error(error?.message ?? 'Could not open the conversation');
       }
       return data;
     },
   });
 }
 
-export function useMessages(chatId: string | undefined) {
+export function useMessages(conversationId: string | undefined) {
   return useQuery<Message[]>({
-    queryKey: keys.messages(chatId ?? ''),
-    enabled: chatId !== undefined,
+    queryKey: keys.messages(conversationId ?? ''),
+    enabled: conversationId !== undefined,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('messages')
         .select('*')
-        .eq('chat_id', chatId as string)
+        .eq('conversation_id', conversationId as string)
         .order('created_at', { ascending: false })
         .limit(PAGE_SIZE);
       if (error) {
@@ -102,36 +144,28 @@ export function useMessages(chatId: string | undefined) {
 }
 
 /**
- * The send path. Optimistically inserts the user's turn so the bubble lands on
- * the same frame as the keypress, then streams the reply. On failure the
- * optimistic row is removed and the balance is re-fetched, because the server
- * has already refunded the token.
+ * The send path: one RPC, one transaction.
+ *
+ * The Edge Function this replaced had to debit, call a model, then insert —
+ * three steps that could fail apart, which is why it carried refund logic.
+ * `send_message` debits and inserts in a single statement pair, so a failure
+ * leaves nothing behind and there is no refund to get wrong.
+ *
+ * The optimistic row still exists, for a different reason: it puts the bubble on
+ * screen on the same frame as the keypress. It is settled by whichever comes
+ * back first, the RPC response or the Realtime INSERT.
  */
-export function useSendMessage(chatId: string | undefined, personaId: string | null) {
+export function useSendMessage(conversationId: string | undefined, selfId: string | undefined) {
   const queryClient = useQueryClient();
-  const handleRef = useRef<StreamHandle | null>(null);
-
-  const beginStream = useStore(s => s.beginStream);
-  const setStreamText = useStore(s => s.setStreamText);
-  const endStream = useStore(s => s.endStream);
+  const setSending = useStore(s => s.setSending);
   const setBalance = useStore(s => s.setBalance);
   const setNotice = useStore(s => s.setNotice);
   const openRefill = useStore(s => s.openRefill);
 
-  useEffect(
-    () => () => {
-      handleRef.current?.cancel();
-    },
-    [],
-  );
-
-  const send = useCallback(
+  return useCallback(
     async (raw: string): Promise<void> => {
-      const message = raw.trim();
-      if (message === '' || chatId === undefined || personaId === null) {
-        return;
-      }
-      if (useStore.getState().isStreaming) {
+      const body = raw.trim();
+      if (body === '' || conversationId === undefined || selfId === undefined) {
         return;
       }
       if (!canSend(useStore.getState().balance)) {
@@ -141,62 +175,69 @@ export function useSendMessage(chatId: string | undefined, personaId: string | n
       }
 
       tick();
-      const optimisticId = `pending-${Date.now()}`;
+      const key = keys.messages(conversationId);
+      const pendingId = `${PENDING_PREFIX}${Date.now()}`;
       const optimistic: Message = {
-        id: optimisticId,
-        chat_id: chatId,
-        sender: 'user',
-        content: message,
+        id: pendingId,
+        conversation_id: conversationId,
+        sender_id: selfId,
+        body,
         created_at: new Date().toISOString(),
-      };
-      queryClient.setQueryData<Message[]>(keys.messages(chatId), prev => [
-        optimistic,
-        ...(prev ?? []),
-      ]);
-      beginStream();
-
-      const settle = async (): Promise<void> => {
-        endStream();
-        await queryClient.invalidateQueries({ queryKey: keys.messages(chatId) });
-        await queryClient.invalidateQueries({ queryKey: keys.profile });
+        read_at: null,
       };
 
-      handleRef.current = await streamChat(
-        { chatId, personaId, message },
-        {
-          onBalance: setBalance,
-          onText: setStreamText,
-          onDone: () => {
-            void settle();
-          },
-          onError: code => {
-            queryClient.setQueryData<Message[]>(keys.messages(chatId), prev =>
-              (prev ?? []).filter(m => m.id !== optimisticId),
-            );
-            setNotice(NOTICE[code]);
-            errorTick();
-            if (code === 'INSUFFICIENT_TOKENS') {
-              openRefill();
-            }
-            void settle();
-          },
-        },
+      queryClient.setQueryData<Message[]>(key, prev =>
+        insertOptimistic(prev ?? [], optimistic),
       );
-    },
-    [
-      chatId,
-      personaId,
-      queryClient,
-      beginStream,
-      setStreamText,
-      endStream,
-      setBalance,
-      setNotice,
-      openRefill,
-    ],
-  );
+      setSending(true);
 
-  return send;
+      const { data, error } = await supabase.rpc('send_message', {
+        p_conversation_id: conversationId,
+        p_body: body,
+      });
+      setSending(false);
+
+      const result: SendResult | null = error ? null : data;
+
+      if (result === null || !result.success) {
+        queryClient.setQueryData<Message[]>(key, prev =>
+          settleOptimistic(prev ?? [], pendingId, null),
+        );
+        const code = result?.error;
+        setNotice(
+          code !== undefined ? NOTICE[code] : 'Could not send. Check your connection.',
+        );
+        errorTick();
+        if (code === 'INSUFFICIENT_BALANCE') {
+          openRefill();
+        }
+        // The balance may have moved for reasons unrelated to this send.
+        void queryClient.invalidateQueries({ queryKey: keys.profile });
+        return;
+      }
+
+      const confirmed: Message | null =
+        result.message_id !== undefined && result.created_at !== undefined
+          ? {
+              id: result.message_id,
+              conversation_id: conversationId,
+              sender_id: selfId,
+              body,
+              created_at: result.created_at,
+              read_at: null,
+            }
+          : null;
+
+      queryClient.setQueryData<Message[]>(key, prev =>
+        settleOptimistic(prev ?? [], pendingId, confirmed),
+      );
+
+      if (typeof result.new_balance === 'number') {
+        setBalance(result.new_balance);
+      }
+    },
+    [conversationId, selfId, queryClient, setSending, setBalance, setNotice, openRefill],
+  );
 }
 
 /** The refill trigger behind the low-balance sheet. */

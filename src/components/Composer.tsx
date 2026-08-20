@@ -9,6 +9,12 @@ interface Props {
   disabled: boolean;
   placeholder: string;
   bloomKey: number;
+  /**
+   * Fired per keystroke so the other side can be shown a typing indicator. The
+   * throttling lives in the Realtime layer, not here — the composer should not
+   * have to know how often a broadcast is affordable.
+   */
+  onTyping?: () => void;
 }
 
 /**
@@ -16,9 +22,19 @@ interface Props {
  * every subscriber on each keystroke for no benefit. The field floats on
  * elevation rather than sitting behind a divider, and send is inset inside it.
  */
-function ComposerView({ onSend, disabled, placeholder, bloomKey }: Props) {
+function ComposerView({ onSend, disabled, placeholder, bloomKey, onTyping }: Props) {
   const [value, setValue] = useState('');
   const ready = value.trim().length > 0 && !disabled;
+
+  const change = useCallback(
+    (next: string) => {
+      setValue(next);
+      if (next !== '') {
+        onTyping?.();
+      }
+    },
+    [onTyping],
+  );
 
   const submit = useCallback(() => {
     if (!ready) {
@@ -35,7 +51,7 @@ function ComposerView({ onSend, disabled, placeholder, bloomKey }: Props) {
           testID="composer-input"
           style={styles.input}
           value={value}
-          onChangeText={setValue}
+          onChangeText={change}
           placeholder={placeholder}
           placeholderTextColor={TOKENS.color.text.secondary}
           multiline

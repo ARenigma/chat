@@ -1,18 +1,19 @@
 # CUJ 4 — network fault injection.
 # Connectivity is cut by scripts/e2e.mjs (adb svc wifi/data disable) immediately
-# before this flow runs. The invariants: the failure is surfaced, the token is
-# refunded server-side, and the optimistic bubble is rolled back rather than left
-# stranded in the transcript.
+# before this flow runs.
+#
+# The invariant changed with the pivot, and in our favour. The Edge Function had
+# to debit, call a model, then insert — three steps that could fail apart, so an
+# offline send needed a *refund*. `send_message` debits and inserts in one
+# transaction, so an unreachable server means the transaction never began and
+# there is nothing to refund. What must hold now is stricter: the failure is
+# surfaced, the optimistic bubble is withdrawn, and not one token moved.
+# scripts/e2e.mjs asserts the balance in SQL afterwards.
 appId: com.companionchat
-name: Offline send fails cleanly and refunds
+name: Offline send fails cleanly and spends nothing
 ---
 - launchApp
-- tapOn:
-    id: 'persona-ember'
-
-- copyTextFrom:
-    id: 'token-count'
-- evalScript: ${output.balanceBefore = maestro.copiedText}
+- tapOn: 'Ada'
 
 - tapOn:
     id: 'composer-input'
@@ -24,11 +25,10 @@ name: Offline send fails cleanly and refunds
     visible:
       id: 'notice-bar'
     timeout: 30000
-- assertVisible: 'Your token was refunded.'
+- assertVisible: 'Check your connection.'
 
-# The optimistic user bubble must be gone, not orphaned above a missing reply.
+# The optimistic bubble must be gone, not stranded in the transcript looking
+# like a delivered message.
 - assertNotVisible: 'Does this survive a dead connection?'
-- assertNotVisible:
-    id: 'streaming-bubble'
 
 - takeScreenshot: artifacts/04-offline

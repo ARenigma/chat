@@ -6,8 +6,6 @@ module.exports = {
     'android/',
     'ios/',
     'vendor/',
-    // Deno runtime — typechecked by `npm run check:edge`, not by the RN config.
-    'supabase/functions/stream-chat/',
     // Generated from design/tokens.json; lint the generator, not its output.
     'src/theme/tokens.generated.ts',
   ],

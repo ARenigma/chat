@@ -90,3 +90,4 @@ supabase/tests/*.generated.sql
 
 # Supabase CLI local state
 supabase/.temp/
+.secrets/
