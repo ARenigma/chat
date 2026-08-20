@@ -1,6 +1,8 @@
 /**
- * Conventional commits. The scope list mirrors the top-level directories, so a
- * commit message says which layer moved without reading the diff.
+ * Conventional commits. The scope names a layer, so a message says which part of
+ * the system moved without reading the diff. Scopes are an allowlist on purpose:
+ * an unfamiliar scope usually means the change is touching something it should
+ * not, or that a new layer has appeared and deserves a deliberate name.
  */
 module.exports = {
   extends: ['@commitlint/config-conventional'],
@@ -9,16 +11,21 @@ module.exports = {
       2,
       'always',
       [
-        'app',
-        'ui',
-        'api',
-        'store',
-        'theme',
-        'db',
-        'edge',
-        'android',
-        'ci',
-        'test',
+        'app', // shell, navigation, boot
+        'ui', // components and screens
+        'api', // client data layer
+        'store', // ephemeral state
+        'theme', // design tokens and the generator
+        'db', // migrations, RLS, RPCs
+        'edge', // Supabase Edge Functions
+        'realtime', // presence, typing, message transport
+        'provider', // the provider-side console
+        'safety', // moderation, reporting, classification
+        'payments', // wallet, payouts, billing
+        'android', // native project, manifest, Gradle
+        'ci', // pipeline and gates
+        'test', // suites and harnesses
+        'adr', // architecture decision records
         'deps',
         'docs',
       ],
