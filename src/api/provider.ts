@@ -23,7 +23,7 @@ import type {
 import { track } from '../lib/telemetry';
 import { errorTick, tick } from '../lib/haptics';
 import { useStore } from '../store/useStore';
-import { keys } from './chat';
+import { keys, useProfile } from './chat';
 
 export const providerKeys = {
   application: ['my-application'] as const,
@@ -184,27 +184,16 @@ export function useSubmitReview() {
   );
 }
 
-/** The signed-in profile's role, which selects the navigation root. */
+/**
+ * The signed-in profile's role, which selects the navigation root.
+ *
+ * Delegates to `useProfile` rather than running its own query. It previously
+ * declared a *second* queryFn against the same `keys.profile` key, which React
+ * Query resolves by whichever observer mounts first — so the behaviour depended
+ * on render order. Two functions fighting over one cache key is a bug whether or
+ * not it is the one currently visible.
+ */
 export function useRole(): { role: Profile['role'] | undefined; isPending: boolean } {
-  const { data, isPending } = useQuery<Profile>({
-    queryKey: keys.profile,
-    queryFn: async () => {
-      const { data: user } = await supabase.auth.getUser();
-      const id = user.user?.id;
-      if (id === undefined) {
-        throw new Error('No session');
-      }
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', id)
-        .single();
-      if (error) {
-        throw new Error(error.message);
-      }
-      return profile;
-    },
-    staleTime: 15_000,
-  });
+  const { data, isPending } = useProfile();
   return { role: data?.role, isPending };
 }
