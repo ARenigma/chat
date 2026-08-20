@@ -21,6 +21,7 @@ import { ProviderApplicationScreen } from './src/screens/ProviderApplicationScre
 import { ProviderHomeScreen } from './src/screens/ProviderHomeScreen';
 import { ProviderStatusScreen } from './src/screens/ProviderStatusScreen';
 import { SettingsSheet } from './src/screens/SettingsSheet';
+import { SplashScreen } from './src/screens/SplashScreen';
 
 initSentry();
 
@@ -159,7 +160,14 @@ function Root() {
   const backToInbox = useCallback(() => setRoute({ name: 'inbox' }), []);
 
   if (boot.phase === 'loading') {
-    return <View style={styles.blank} />;
+    return (
+      <SplashScreen
+        onRetry={() => {
+          setBoot({ phase: 'loading' });
+          setAttempt(n => n + 1);
+        }}
+      />
+    );
   }
 
   if (boot.phase === 'signedOut') {
@@ -238,8 +246,11 @@ function SignedIn({
 }: SignedInProps) {
   const { role, isPending } = useRole();
 
+  // No retry handler here on purpose: the profile query owns its own retries, and
+  // a button that re-runs a query React Query is already retrying would only
+  // look like it did something.
   if (isPending) {
-    return <View style={styles.blank} />;
+    return <SplashScreen />;
   }
 
   // The provider tree. Selected by the server, never by a client flag.
