@@ -177,6 +177,20 @@ if (sql('select count(*) from public.provider_directory') !== '1') {
 }
 console.log('   provider "Ada" admitted and discoverable');
 
+// A member session, injected rather than earned.
+//
+// Sign-in is now Google/Facebook OAuth (ADR-0004), which Maestro cannot drive
+// without automating Google's own consent page — brittle, and a test of Google
+// rather than of us. So the member is created with the admin API and the journeys
+// after 01 run against a session that already exists. Journey 01 still asserts
+// the real sign-in screen.
+step('seeding a member session');
+const MEMBER_ID = '22222222-2222-4222-8222-222222222222';
+sql(
+  `insert into auth.users (id) values ('${MEMBER_ID}') on conflict do nothing`,
+);
+console.log('   member seeded');
+
 // ---------------------------------------------------------------------------
 // App under test
 // ---------------------------------------------------------------------------

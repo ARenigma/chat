@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { StatusBar, StyleSheet, Text, View } from 'react-native';
+import { Linking, StatusBar, StyleSheet, Text, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -8,14 +8,14 @@ import { assertEnv } from './src/lib/env';
 import { initSentry } from './src/lib/sentry';
 import { isUuid } from './src/lib/ids';
 import { track } from './src/lib/telemetry';
-import { currentSession } from './src/api/auth';
+import { currentSession, handleAuthDeepLink } from './src/api/auth';
 import { useRole } from './src/api/provider';
 import { useStore } from './src/store/useStore';
 import { RefillSheet } from './src/screens/RefillSheet';
 import { Button } from './src/components/Button';
 import { ChatScreen } from './src/screens/ChatScreen';
 import { InboxScreen } from './src/screens/InboxScreen';
-import { PhoneAuthScreen } from './src/screens/PhoneAuthScreen';
+import { AuthScreen } from './src/screens/AuthScreen';
 import { ProvidersScreen } from './src/screens/ProvidersScreen';
 import { ProviderApplicationScreen } from './src/screens/ProviderApplicationScreen';
 import { ProviderHomeScreen } from './src/screens/ProviderHomeScreen';
@@ -112,6 +112,33 @@ function Root() {
     };
   }, [attempt]);
 
+  /**
+   * The only deep link the app handles, and now it is load-bearing rather than
+   * optional: the OAuth session arrives through it. `getInitialURL` covers the
+   * cold-start case where the browser hands control back to a dead process.
+   */
+  useEffect(() => {
+    const consume = (url: string | null): void => {
+      if (url === null) {
+        return;
+      }
+      handleAuthDeepLink(url)
+        .then(handled => {
+          if (handled) {
+            track('signed_in');
+            // Everything cached belongs to the previous (absent) session.
+            void queryClient.invalidateQueries();
+            setBoot({ phase: 'ready' });
+          }
+        })
+        .catch(() => setBoot({ phase: 'signedOut' }));
+    };
+
+    void Linking.getInitialURL().then(consume);
+    const sub = Linking.addEventListener('url', ({ url }) => consume(url));
+    return () => sub.remove();
+  }, []);
+
   const openChat = useCallback((id: string) => {
     setRoute({ name: 'chat', providerId: id });
     track('conversation_opened');
@@ -136,16 +163,7 @@ function Root() {
   }
 
   if (boot.phase === 'signedOut') {
-    return (
-      <PhoneAuthScreen
-        onSignedIn={() => {
-          track('signed_in');
-          // Everything cached belongs to the previous (absent) session.
-          void queryClient.invalidateQueries();
-          setBoot({ phase: 'ready' });
-        }}
-      />
-    );
+    return <AuthScreen />;
   }
 
   if (boot.phase === 'error') {

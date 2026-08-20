@@ -28,11 +28,11 @@ name: Delete account and all data
     id: 'delete-confirm'
 
 # Deletion now signs you out — there is no anonymous session to fall back into,
-# so the correct end state is the phone screen rather than a fresh wallet. The
+# so the correct end state is the sign-in screen rather than a fresh wallet. The
 # provider is untouched by a member's deletion; e2e.mjs asserts that in SQL.
 - extendedWaitUntil:
     visible:
-      id: 'phone-input'
+      id: 'signin-google'
     timeout: 30000
 - assertNotVisible: 'Your conversations'
 - assertNotVisible: 'Back online.'
