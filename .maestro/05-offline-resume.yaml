@@ -1,0 +1,22 @@
+# CUJ 4b — resume after connectivity returns.
+# scripts/e2e.mjs re-enables the radios before this flow. Nothing should need a
+# restart, a pull-to-refresh, or a manual retry.
+appId: com.companionchat
+name: Sending works again once the network returns
+---
+- launchApp
+- tapOn:
+    id: 'persona-ember'
+- tapOn:
+    id: 'composer-input'
+- inputText: 'Back online.'
+- tapOn:
+    id: 'composer-send'
+- extendedWaitUntil:
+    visible:
+      id: 'bubble-assistant'
+    timeout: 30000
+- assertVisible: 'I hear you. That sounds genuinely tiring.'
+- assertNotVisible:
+    id: 'notice-bar'
+- takeScreenshot: artifacts/05-resume

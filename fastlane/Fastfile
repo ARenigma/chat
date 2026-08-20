@@ -1,0 +1,70 @@
+# Stage 4 lanes. Deliberately thin: the build already happened in ci.yml, so
+# these lanes only ever move an artefact that has passed every gate. Nothing here
+# compiles anything, which keeps "what was tested" and "what was shipped"
+# identical by construction.
+
+default_platform(:android)
+
+AAB = "../android/app/build/outputs/bundle/release/app-release.aab"
+
+platform :android do
+  desc "Upload the gated AAB to internal testing"
+  lane :internal do
+    upload_to_play_store(
+      track: "internal",
+      aab: AAB,
+      release_status: "completed",
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      validate_only: false,
+    )
+  end
+
+  desc "Promote internal -> closed beta at a staged percentage"
+  lane :beta do |options|
+    fraction = (options[:rollout] || "0.1").to_f
+    upload_to_play_store(
+      track: "beta",
+      aab: AAB,
+      release_status: "inProgress",
+      rollout: fraction.to_s,
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+    )
+  end
+
+  desc "Widen an in-progress rollout"
+  lane :widen do |options|
+    upload_to_play_store(
+      track: options[:track] || "beta",
+      rollout: (options[:rollout] || "0.5").to_s,
+      skip_upload_aab: true,
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+    )
+  end
+
+  desc "Stop a rollout dead. Called when release health drops below threshold."
+  lane :halt_rollout do |options|
+    track = options[:track] || "beta"
+    # Halting is a rollout of 0: existing installs keep the build, nobody new
+    # receives it. Deliberately not a version rollback — Play cannot un-ship a
+    # version code, so the recovery path is halt, then ship a fix forward.
+    upload_to_play_store(
+      track: track,
+      rollout: "0",
+      skip_upload_aab: true,
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+    )
+    UI.important("Rollout on #{track} halted at 0%. Ship a fix forward; Play cannot un-publish a version code.")
+  end
+end

@@ -1,0 +1,55 @@
+title = "CompanionChat secret scanning"
+
+[extend]
+useDefault = true
+
+# Rules for the credentials this project actually handles. The Supabase anon key
+# and the Sentry DSN are public by design and deliberately not flagged; a service
+# role key, a Supabase personal access token, an OpenAI key or a Play service
+# account JSON are all live incidents.
+[[rules]]
+id = "supabase-service-role-jwt"
+description = "Supabase service role JWT (bypasses RLS)"
+regex = '''eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]*service_role[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{10,}'''
+tags = ["supabase", "jwt", "critical"]
+
+[[rules]]
+id = "supabase-access-token"
+description = "Supabase personal access token"
+regex = '''sbp_[a-f0-9]{40,}'''
+tags = ["supabase", "critical"]
+
+[[rules]]
+id = "openai-api-key"
+description = "OpenAI API key"
+regex = '''sk-(proj-)?[A-Za-z0-9_-]{20,}'''
+tags = ["openai", "critical"]
+
+[[rules]]
+id = "play-service-account"
+description = "Google Play service account private key"
+regex = '''"type"\s*:\s*"service_account"'''
+tags = ["gcp", "play", "critical"]
+
+[[rules]]
+id = "android-keystore-inline"
+description = "Keystore password committed in a properties file"
+regex = '''MYAPP_UPLOAD_(STORE|KEY)_PASSWORD\s*=\s*\S+'''
+path = '''keystore\.properties$'''
+tags = ["android", "critical"]
+
+[allowlist]
+description = "Public-by-design values and generated artefacts"
+paths = [
+  '''\.env\.example$''',
+  '''android/keystore\.properties\.example$''',
+  '''package-lock\.json$''',
+  '''supabase/functions/deno\.lock$''',
+  '''android/app/debug\.keystore$''',
+  '''__tests__/sentry\.test\.ts$''',
+]
+regexes = [
+  '''your-project\.supabase\.co''',
+  '''placeholder-anon-key''',
+  '''sk-\.\.\.''',
+]
