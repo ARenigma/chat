@@ -75,27 +75,79 @@ export async function signInWith(provider: SocialProvider): Promise<void> {
 }
 
 /**
+ * The three things an OAuth callback can mean. A boolean could not express the
+ * middle one, which is exactly the bug this replaced: an `error=` callback was
+ * reported as `true` ("handled"), the app advanced to the signed-in tree with no
+ * session, and every query there hung — producing a permanent spinner and no
+ * clue why. Observed end-to-end on an emulator: Supabase returned
+ * `error=server_error, Unable to exchange external code`, and the app showed a
+ * blank loading screen.
+ */
+export type AuthCallbackResult =
+  | { status: 'ignored' }
+  | { status: 'signedIn' }
+  | { status: 'failed'; message: string };
+
+/** Maps Supabase/Google callback errors onto something a person can act on. */
+function describeCallbackError(code: string | null, description: string | null): string {
+  const detail = (description ?? '').replace(/\+/g, ' ');
+  if (/Unable to exchange external code/i.test(detail)) {
+    // The provider accepted the user and rejected us. Almost always a client
+    // secret that does not match the client id it is paired with.
+    return 'Sign-in is misconfigured on our side. Nothing you did wrong — we are on it.';
+  }
+  if (code === 'access_denied' || /denied/i.test(detail)) {
+    return 'Sign-in was cancelled.';
+  }
+  return 'Could not finish signing in. Please try again.';
+}
+
+/**
  * Completes the PKCE exchange for `companionchat://auth-callback?code=...`.
- * Returns true when the link was ours and was consumed.
  *
  * PKCE is what makes this safe on a device that cannot keep a client secret:
  * the verifier never leaves the app, so intercepting the redirect is not enough
  * to steal the session.
  */
-export async function handleAuthDeepLink(url: string): Promise<boolean> {
+export async function handleAuthDeepLink(url: string): Promise<AuthCallbackResult> {
   if (!url.startsWith(AUTH_REDIRECT_URL)) {
-    return false;
+    return { status: 'ignored' };
   }
-  const code = url.match(/[?&]code=([^&]+)/)?.[1];
+
+  // Supabase puts callback parameters in the fragment as well as the query
+  // depending on the failure, so both are parsed.
+  const raw = url.slice(AUTH_REDIRECT_URL.length).replace(/^[?#]/, '');
+  const params = new URLSearchParams(raw.replace(/^[?#]/, ''));
+
+  if (__DEV__) {
+    const names = [...params.keys()].join(',') || '(none)';
+    console.warn(
+      `auth callback params: ${names}` +
+        (params.get('error') != null ? ` | error=${params.get('error')}` : '') +
+        (params.get('error_description') != null
+          ? ` | ${params.get('error_description')}`
+          : ''),
+    );
+  }
+
+  const error = params.get('error') ?? params.get('error_code');
+  if (error != null) {
+    return {
+      status: 'failed',
+      message: describeCallbackError(error, params.get('error_description')),
+    };
+  }
+
+  const code = params.get('code');
   if (code == null) {
-    // An error came back instead of a code — a denied consent screen, usually.
-    return url.includes('error');
+    return { status: 'ignored' };
   }
-  const { error } = await supabase.auth.exchangeCodeForSession(decodeURIComponent(code));
-  if (error) {
-    throw new Error(error.message);
+
+  const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+  if (exchangeError) {
+    return { status: 'failed', message: 'Could not finish signing in. Please try again.' };
   }
-  return true;
+  return { status: 'signedIn' };
 }
 
 export async function signOut(): Promise<void> {
