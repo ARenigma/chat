@@ -1,3 +1,5 @@
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { resetStore, selectIsLow, useStore } from '../src/store/useStore';
 import { LOW_BALANCE_THRESHOLD } from '../src/lib/tokenLedger';
 
@@ -87,5 +89,55 @@ describe('useStore', () => {
       refillVisible: false,
       notice: null,
     });
+  });
+});
+
+/**
+ * A confirmation must not be able to arrive wearing the failure surface.
+ *
+ * There was one channel and one appearance, so "Blocked.", "Reported.",
+ * "Application submitted." and "Thanks — that helps the next person choose."
+ * all rendered inside a red-bordered bar. It was visible on a device the
+ * instant a rating was submitted: a thank-you in an error box.
+ */
+describe('notice tone', () => {
+  beforeEach(() => resetStore());
+
+  it('treats an unqualified notice as a failure', () => {
+    useStore.getState().setNotice('Could not send.');
+    expect(useStore.getState().noticeTone).toBe('error');
+  });
+
+  it('carries a confirmation tone when one is asked for', () => {
+    useStore.getState().setNotice('Unblocked.', 'confirm');
+    expect(useStore.getState().noticeTone).toBe('confirm');
+  });
+
+  it('does not leave a stale confirm tone on the next failure', () => {
+    const s = useStore.getState();
+    s.setNotice('Unblocked.', 'confirm');
+    s.setNotice('Could not unblock right now.');
+    expect(useStore.getState().noticeTone).toBe('error');
+  });
+});
+
+/**
+ * Every message the app phrases as good news is tagged as one. Source-level,
+ * because the alternative is rendering each mutation and asserting a border
+ * colour — far more machinery for a weaker claim.
+ */
+describe('success messages are tagged as confirmations', () => {
+  const sources = ['src/api/safety.ts', 'src/api/provider.ts', 'src/api/chat.ts']
+    .map(f => readFileSync(join(__dirname, '..', f), 'utf8'))
+    .join('\n');
+
+  it.each([
+    'Blocked. They can no longer message you.',
+    'Unblocked.',
+    'Reported. Our team will review this.',
+    'Application submitted. We will be in touch.',
+    'Thanks — that helps the next person choose.',
+  ])('tags %s', message => {
+    expect(sources).toContain(`setNotice('${message}', 'confirm')`);
   });
 });

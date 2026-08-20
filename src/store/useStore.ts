@@ -12,6 +12,17 @@ import { isLowBalance } from '../lib/tokenLedger';
  * only what Postgres does not store — whether the other person is typing, and
  * whether they are connected.
  */
+/**
+ * What a notice *is*, so it can be styled honestly.
+ *
+ * There was one channel and one appearance: a red-bordered bar. Which meant
+ * "Blocked. They can no longer message you.", "Reported.", "Application
+ * submitted." and "Thanks — that helps the next person choose." all arrived
+ * looking like failures. Seen on a device right after submitting a rating: a
+ * thank-you inside an error box.
+ */
+export type NoticeTone = 'error' | 'confirm';
+
 export interface AppState {
   balance: number | null;
   /** A `send_message` RPC is in flight. Distinct from the peer typing. */
@@ -20,6 +31,7 @@ export interface AppState {
   peerOnline: boolean;
   refillVisible: boolean;
   notice: string | null;
+  noticeTone: NoticeTone;
 
   setBalance: (balance: number | null) => void;
   setSending: (sending: boolean) => void;
@@ -27,7 +39,11 @@ export interface AppState {
   setPeerOnline: (online: boolean) => void;
   openRefill: () => void;
   closeRefill: () => void;
-  setNotice: (notice: string | null) => void;
+  /**
+   * Tone defaults to `error` because most notices are failures and a failure
+   * mis-styled as a confirmation is the worse of the two mistakes.
+   */
+  setNotice: (notice: string | null, tone?: NoticeTone) => void;
   /** Leaving a conversation must not leak its presence into the next one. */
   resetConversation: () => void;
 }
@@ -39,6 +55,7 @@ const INITIAL = {
   peerOnline: false,
   refillVisible: false,
   notice: null,
+  noticeTone: 'error' as NoticeTone,
 } satisfies Omit<
   AppState,
   | 'setBalance'
@@ -60,7 +77,7 @@ export const useStore = create<AppState>()(set => ({
   setPeerOnline: peerOnline => set({ peerOnline }),
   openRefill: () => set({ refillVisible: true }),
   closeRefill: () => set({ refillVisible: false }),
-  setNotice: notice => set({ notice }),
+  setNotice: (notice, tone = 'error') => set({ notice, noticeTone: tone }),
   resetConversation: () =>
     set({ sending: false, peerTyping: false, peerOnline: false, notice: null }),
 }));

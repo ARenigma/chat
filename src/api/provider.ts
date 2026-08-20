@@ -81,7 +81,7 @@ export function useSubmitApplication() {
       void queryClient.invalidateQueries({ queryKey: providerKeys.application });
       if (missing.length === 0) {
         tick();
-        setNotice('Application submitted. We will be in touch.');
+        setNotice('Application submitted. We will be in touch.', 'confirm');
       }
     },
     onError: err => {
@@ -169,7 +169,7 @@ export function useSubmitReview() {
         // Rating is a 1..5 integer, so it is safe as a telemetry dimension; the
         // free-text comment never is.
         track('review_submitted', { rating: input.rating });
-        setNotice('Thanks — that helps the next person choose.');
+        setNotice('Thanks — that helps the next person choose.', 'confirm');
         void queryClient.invalidateQueries({ queryKey: keys.conversationList });
       },
       onError: err => {

@@ -6,9 +6,22 @@ import { useStore } from '../store/useStore';
 
 const DISMISS_AFTER_MS = 4200;
 
-/** Transient, non-blocking failure surface. No modal, no alert, no dead end. */
+/**
+ * Transient, non-blocking notice surface. No modal, no alert, no dead end.
+ *
+ * Two appearances, one channel. It had one — a danger border — and the same bar
+ * carried "Blocked. They can no longer message you.", "Reported.", "Application
+ * submitted." and "Thanks — that helps the next person choose.". A thank-you in
+ * a red box is not a small cosmetic issue: it tells the user something went
+ * wrong immediately after they did something right.
+ *
+ * A confirmation gets the hairline border rather than a green one, deliberately.
+ * Success does not need a colour to be legible, and the accent budget is spent
+ * on the things that ask for attention.
+ */
 export function NoticeBar() {
   const notice = useStore(s => s.notice);
+  const tone = useStore(s => s.noticeTone);
   const setNotice = useStore(s => s.setNotice);
 
   useEffect(() => {
@@ -27,10 +40,14 @@ export function NoticeBar() {
     <Animated.View
       entering={FadeInUp.duration(TOKENS.motion.duration.fast)}
       exiting={FadeOut.duration(TOKENS.motion.duration.fast)}
-      style={styles.bar}
+      style={[styles.bar, tone === 'confirm' && styles.barConfirm]}
       testID="notice-bar"
       accessibilityLiveRegion="polite"
-      accessibilityRole="alert">
+      // A confirmation is not an alert. `polite` already gets it announced;
+      // `role="alert"` on top of that is an interruption a thank-you has not
+      // earned. (React Native has no `status` role — the absence is the
+      // correct expression of "announce, do not interrupt".)
+      accessibilityRole={tone === 'confirm' ? undefined : 'alert'}>
       <Text allowFontScaling style={styles.text}>
         {notice}
       </Text>
@@ -48,6 +65,9 @@ const styles = StyleSheet.create({
     backgroundColor: TOKENS.color.bg.raised,
     borderWidth: 1,
     borderColor: TOKENS.color.state.danger,
+  },
+  barConfirm: {
+    borderColor: TOKENS.color.border.hairline,
   },
   text: {
     ...TOKENS.typography.captionRegular,

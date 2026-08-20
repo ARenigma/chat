@@ -15,6 +15,7 @@ import { initialOf } from '../lib/display';
 import { isPending, lastOwnMessageId } from '../lib/transcript';
 import {
   useConversationId,
+  useConversations,
   useMessages,
   useProfile,
   useProviders,
@@ -33,6 +34,7 @@ import { PeerTyping } from '../components/PeerTyping';
 import { Pressable } from '../components/Pressable';
 import { TokenCounter } from '../components/TokenCounter';
 import { MyTurn, PeerTurn } from '../components/Turn';
+import { ReviewSheet } from './ReviewSheet';
 import { SafetySheet } from './SafetySheet';
 
 interface Props {
@@ -75,12 +77,19 @@ export function ChatScreen({ providerId, onBack }: Props) {
     open: false,
     messageId: null,
   });
+  const [reviewOpen, setReviewOpen] = useState(false);
+  // Dismissing the prompt is per-visit, not persisted. A member who says "not
+  // now" and comes back tomorrow is a different question from one who said it a
+  // second ago, and persisting it would need a key per conversation for a
+  // decision worth almost nothing.
+  const [promptHidden, setPromptHidden] = useState(false);
 
   useProfile();
   const { data: selfId } = useSelfId();
   const { data: providers } = useProviders();
   const { data: conversationId, isPending: conversationPending } = useConversationId(providerId);
   const { data: messages, isPending: messagesPending } = useMessages(conversationId);
+  const { data: threads } = useConversations();
 
   const { notifyTyping } = useLiveConversation(conversationId, selfId);
   useMarkRead(conversationId, selfId);
@@ -118,6 +127,44 @@ export function ChatScreen({ providerId, onBack }: Props) {
       };
     });
   }, [messages, selfId]);
+
+  /**
+   * Whether to offer a rating, and the conditions are deliberately strict.
+   *
+   * The directory publishes a rating and a review count that are worthless if
+   * nobody rates — Clarity's rows lead with "5.0 ★ 39+ reviews", which is what a
+   * member actually picks on. But a rating prompt is the easiest thing in a
+   * product to make obnoxious, so all four of these must hold:
+   *
+   *   1. **The caller is the member of this thread**, which is `i_am_member`
+   *      and deliberately *not* `role === 'member'`. The first version used the
+   *      profile role and was wrong for the accounts the product most wants: a
+   *      member admitted as a provider keeps the threads they paid for, and
+   *      `submit_review` would happily accept them. See migration 007.
+   *   2. **A real exchange.** Both sides must have sent something. The server
+   *      requires two messages; two of your own is not a conversation, and
+   *      rating it would be a rating-farming primitive.
+   *   3. **Not already rated.** `conversation_summaries.reviewed` exists for
+   *      exactly this and was, until now, published and never read. Defaults to
+   *      not-offered while the query is in flight so the prompt cannot flash and
+   *      vanish.
+   *   4. **Not dismissed this visit.**
+   */
+  const exchanged = useMemo(() => {
+    const list = messages ?? [];
+    return (
+      list.some(m => m.sender_id === selfId) && list.some(m => m.sender_id !== selfId)
+    );
+  }, [messages, selfId]);
+
+  const thread = threads?.find(t => t.id === conversationId);
+  const offerReview =
+    thread !== undefined &&
+    thread.i_am_member &&
+    !thread.reviewed &&
+    conversationId !== undefined &&
+    exchanged &&
+    !promptHidden;
 
   const reportMessage = useCallback((messageId: string) => {
     setSafety({ open: true, messageId });
@@ -236,6 +283,36 @@ export function ChatScreen({ providerId, onBack }: Props) {
           />
         )}
 
+        {/* Above the composer and below the transcript: in the flow, but never
+            over it. A modal here would interrupt the one thing the screen is
+            for. */}
+        {offerReview ? (
+          <View style={styles.prompt}>
+            {/* Wrapped rather than given `flex: 1` directly: Pressable applies
+                its `style` to the inner animated view, so layout has to live on
+                a plain View around it or the row does not stretch. */}
+            <View style={styles.promptFill}>
+              <Pressable
+                onPress={() => setReviewOpen(true)}
+                testID="open-review"
+                accessibilityLabel={`Rate your conversation with ${name}`}
+                accessibilityHint="Opens a rating sheet"
+                style={styles.promptBody}>
+                <Text allowFontScaling style={styles.promptText}>
+                  How was talking to {name}?
+                </Text>
+              </Pressable>
+            </View>
+            <Pressable
+              onPress={() => setPromptHidden(true)}
+              testID="dismiss-review-prompt"
+              accessibilityLabel="Not now"
+              style={styles.promptClose}>
+              <Icon glyph="close" size={12} color={TOKENS.color.text.secondary} />
+            </Pressable>
+          </View>
+        ) : null}
+
         <NoticeBar />
 
         <View style={{ paddingBottom: insets.bottom + TOKENS.space.sm }}>
@@ -256,6 +333,19 @@ export function ChatScreen({ providerId, onBack }: Props) {
         peerId={providerId}
         peerName={name}
         messageId={safety.messageId}
+      />
+
+      <ReviewSheet
+        visible={reviewOpen}
+        onClose={() => {
+          setReviewOpen(false);
+          // Whether they submitted or backed out, do not ask again this visit.
+          // On submit the `reviewed` flag will settle it permanently once the
+          // conversation list refetches; this covers the gap in between.
+          setPromptHidden(true);
+        }}
+        conversationId={conversationId}
+        peerName={name}
       />
     </View>
   );
@@ -330,5 +420,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: TOKENS.space['2xs'],
     paddingTop: TOKENS.space.xl,
+  },
+  // Deliberately quieter than the NoticeBar it sits above: no accent border, no
+  // colour. This is an invitation, not a problem.
+  prompt: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: TOKENS.space.md,
+    marginBottom: TOKENS.space.xs,
+    borderRadius: TOKENS.radius.md,
+    backgroundColor: TOKENS.color.bg.sunken,
+  },
+  promptFill: {
+    flex: 1,
+  },
+  promptBody: {
+    paddingHorizontal: TOKENS.space.md,
+    paddingVertical: 10,
+  },
+  promptText: {
+    ...TOKENS.typography.captionRegular,
+    color: TOKENS.color.text.primary,
+  },
+  promptClose: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
