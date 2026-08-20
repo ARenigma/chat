@@ -61,13 +61,28 @@ Reusing one is fine to unblock local testing and must not ship: an unfamiliar
 brand on a Google permission dialog reads as phishing, and OAuth verification is
 per-brand.
 
-**Two things that block launch and are not in this repo:**
+**The consent screen will show `<project>.supabase.co`, not the app name**, until
+**brand verification** passes. That is a different track from scope verification:
+non-sensitive scopes (`openid`, `email`, `profile`) skip the "app isn't verified"
+warning, and the app _name and logo_ still stay hidden until the brand is
+verified and published. Google shows the domain instead, deliberately — an
+unverified app must not be able to claim an arbitrary name.
+
+Brand verification cannot be completed from the console alone. It requires a
+homepage and a privacy policy on a domain **you own**, that domain verified in
+Google Search Console, and it added as the authorised domain. The current
+authorised domain is the Supabase project host, which is not ownable. So this is
+blocked on owning a domain, not on a setting.
+
+**Three things that block launch and are not in this repo:**
 
 - a hosted **privacy policy URL** — required by the Google consent screen _and_
   by Play. It has to match what the app actually does, including the report
   retention exception in migration 005: abuse reports outlive deleted accounts.
 - a **data deletion URL** for Play's data-safety form. The in-app path exists
   (`delete_user_account()`); Play also wants a web-reachable description of it.
+- a **domain you own**, which is the shared prerequisite for all of the above
+  _and_ for Google brand verification. One purchase unblocks three things.
 
 There are no Edge Functions and no server-side secrets to set. Sending is a
 single Postgres RPC, so there is nothing between the client and the database.
