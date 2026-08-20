@@ -1,5 +1,5 @@
-import React, { useCallback } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Switch, Text, View } from 'react-native';
+import React, { useCallback, useMemo } from 'react';
+import { ActivityIndicator, SectionList, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS } from '../theme/tokens';
 import type { ConversationSummary } from '../lib/database.types';
@@ -44,11 +44,48 @@ function ago(iso: string): string {
 export function ProviderHomeScreen({ onOpenConversation, onOpenSettings }: Props) {
   const insets = useSafeAreaInsets();
   const { data: profile } = useProfile();
-  const { data: threads, isPending } = useConversations();
+  const { data: allThreads, isPending } = useConversations();
   const { data: earnings } = useEarnings();
   const setAvailability = useSetAvailability();
 
   const available = profile?.is_available ?? false;
+
+  /**
+   * Two groups, because a provider can be on either side of a thread.
+   *
+   * `useConversations` returns every thread the caller participates in, and this
+   * screen used all of them as work. A provider who was a member first therefore
+   * saw the conversations *they* paid for counted under "Waiting" and listed
+   * beside their earnings — observed on a device straight after an admission,
+   * where the first row of the work list was the provider's own thread with the
+   * provider they had been talking to.
+   *
+   * Filtering them out entirely would have been worse: role picks the whole
+   * navigation tree (ADR-0002), so a thread missing from this list is a thread
+   * the person can no longer open or rate. So they stay, in their own group,
+   * counted as nobody's work.
+   *
+   * `i_am_member` is the per-conversation answer `profiles.role` cannot give,
+   * since it flips on admission and takes the old threads with it (migration
+   * 007).
+   */
+  const work = useMemo(
+    () => (allThreads ?? []).filter(t => !t.i_am_member),
+    [allThreads],
+  );
+
+  const sections = useMemo(
+    () =>
+      [
+        { key: 'work', title: null, data: work },
+        {
+          key: 'mine',
+          title: 'Your own conversations',
+          data: (allThreads ?? []).filter(t => t.i_am_member),
+        },
+      ].filter(s => s.data.length > 0),
+    [allThreads, work],
+  );
 
   const toggle = useCallback(
     (next: boolean) => {
@@ -58,7 +95,8 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings }: Props
     [setAvailability],
   );
 
-  const waiting = (threads ?? []).filter(t => Number(t.unread_count) > 0).length;
+  // Only work counts as waiting. Their own thread is not a person waiting on them.
+  const waiting = work.filter(t => Number(t.unread_count) > 0).length;
 
   const renderItem = useCallback(
     ({ item }: { item: ConversationSummary }) => {
@@ -163,7 +201,7 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings }: Props
         <View style={styles.state}>
           <ActivityIndicator color={TOKENS.color.text.secondary} />
         </View>
-      ) : (threads ?? []).length === 0 ? (
+      ) : sections.length === 0 ? (
         <View style={styles.state}>
           <Text allowFontScaling style={styles.stateText}>
             {available
@@ -172,10 +210,18 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings }: Props
           </Text>
         </View>
       ) : (
-        <FlatList
-          data={threads}
+        <SectionList
+          sections={sections}
           keyExtractor={t => t.id}
           renderItem={renderItem}
+          renderSectionHeader={({ section }) =>
+            section.title === null ? null : (
+              <Text allowFontScaling style={styles.sectionTitle}>
+                {section.title}
+              </Text>
+            )
+          }
+          stickySectionHeadersEnabled={false}
           contentContainerStyle={[
             styles.list,
             { paddingBottom: insets.bottom + TOKENS.space['2xl'] },
@@ -280,6 +326,12 @@ const styles = StyleSheet.create({
   },
   list: {
     paddingHorizontal: TOKENS.space.lg,
+  },
+  sectionTitle: {
+    ...TOKENS.typography.captionSmall,
+    color: TOKENS.color.text.secondary,
+    paddingTop: TOKENS.space.lg,
+    paddingBottom: TOKENS.space.xs,
   },
   row: {
     flexDirection: 'row',

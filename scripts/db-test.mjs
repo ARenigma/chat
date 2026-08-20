@@ -47,6 +47,7 @@ const MIGRATIONS = [
   'supabase/migrations/004_message_guard_and_directory.sql',
   'supabase/migrations/005_trust_and_safety.sql',
   'supabase/migrations/006_phone_auth_and_provider_onboarding.sql',
+  'supabase/migrations/007_conversation_side.sql',
 ];
 
 const docker = (args, options = {}) =>
@@ -213,6 +214,33 @@ if (MANAGED) {
     IMAGE,
   ]);
 
+  /**
+   * Two-stage wait, because `pg_isready` alone is a lie on a fresh container.
+   *
+   * The postgres entrypoint starts a *temporary* server to run initdb and any
+   * bootstrap scripts, then shuts it down and starts the real one. That
+   * temporary server answers `pg_isready` on the same socket, so a single probe
+   * can pass, and then the first real query lands in the gap between the two
+   * and fails with "No such file or directory" on the socket. Seen twice on
+   * this machine — a first-migration failure with no bad SQL behind it, which
+   * is the worst kind of flake to debug.
+   *
+   * So: wait for the entrypoint to *say* it has finished initialising, and only
+   * then wait for the socket.
+   */
+  let initialised = false;
+  for (let attempt = 0; attempt < 240; attempt += 1) {
+    const logs = spawnSync('docker', ['logs', CONTAINER], { encoding: 'utf8' });
+    if (/init process complete/.test(`${logs.stdout}${logs.stderr}`)) {
+      initialised = true;
+      break;
+    }
+    spawnSync('sleep', ['0.5']);
+  }
+  if (!initialised) {
+    quit('Postgres never finished initialising');
+  }
+
   let ready = false;
   for (let attempt = 0; attempt < 120; attempt += 1) {
     const probe = spawnSync(
@@ -295,6 +323,10 @@ const suites = [
   {
     file: join(ROOT, 'supabase/tests/050_onboarding_and_reputation.sql'),
     label: 'age gate, onboarding transitions, reputation, silence refunds',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/060_conversation_side.sql'),
+    label: 'per-conversation membership survives a role change',
   },
 ];
 

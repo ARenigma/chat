@@ -146,6 +146,13 @@ export type ConversationSummary = {
   last_sender_id: string | null;
   unread_count: number;
   reviewed: boolean;
+  /**
+   * Whether the caller is the paying side of *this* thread. Not the same as
+   * `profiles.role === 'member'`: a member admitted as a provider keeps the
+   * threads they paid for, and is still entitled to rate them. See migration
+   * 007.
+   */
+  i_am_member: boolean;
 };
 
 /**

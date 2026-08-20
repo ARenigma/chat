@@ -2,7 +2,14 @@ import React, { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { TOKENS } from '../theme/tokens';
 
-export type Glyph = 'chevron-left' | 'chevron-right' | 'arrow-up' | 'dots' | 'plus' | 'shield';
+export type Glyph =
+  | 'chevron-left'
+  | 'chevron-right'
+  | 'arrow-up'
+  | 'close'
+  | 'dots'
+  | 'plus'
+  | 'shield';
 
 interface Props {
   glyph: Glyph;
@@ -22,9 +29,10 @@ interface Props {
  * was unavoidable. Borders have none of that machinery.
  *
  * A chevron is a square with two adjacent borders rotated 45 degrees. An arrow is
- * that same head over a bar. A plus is two crossed bars. A shield is a rounded
- * square with its lower corners heavily rounded — enough to read as "safety"
- * next to a name without needing an icon set.
+ * that same head over a bar. A plus is two crossed bars — and a close is the same
+ * plus, turned 45 degrees. A shield is a rounded square with its lower corners
+ * heavily rounded — enough to read as "safety" next to a name without needing an
+ * icon set.
  */
 function IconView({ glyph, size = 16, color, testID }: Props) {
   const stroke = color ?? TOKENS.color.text.primary;
@@ -49,9 +57,15 @@ function IconView({ glyph, size = 16, color, testID }: Props) {
     );
   }
 
-  if (glyph === 'plus') {
+  if (glyph === 'plus' || glyph === 'close') {
     return (
-      <View testID={testID} style={[styles.center, { width: size, height: size }]}>
+      <View
+        testID={testID}
+        style={[
+          styles.center,
+          { width: size, height: size },
+          glyph === 'close' && styles.turned,
+        ]}>
         <View
           style={[
             styles.absolute,
@@ -146,5 +160,8 @@ const styles = StyleSheet.create({
   },
   absolute: {
     position: 'absolute',
+  },
+  turned: {
+    transform: [{ rotate: '45deg' }],
   },
 });

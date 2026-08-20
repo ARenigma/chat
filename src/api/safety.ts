@@ -59,7 +59,7 @@ export function useBlockUser() {
     onSuccess: () => {
       tick();
       track('user_blocked');
-      setNotice('Blocked. They can no longer message you.');
+      setNotice('Blocked. They can no longer message you.', 'confirm');
       void queryClient.invalidateQueries({ queryKey: safetyKeys.blocks });
       // The directory and inbox do not change, but the send path now refuses,
       // so anything cached about this thread is stale.
@@ -86,7 +86,7 @@ export function useUnblockUser() {
     onSuccess: () => {
       tick();
       track('user_unblocked');
-      setNotice('Unblocked.');
+      setNotice('Unblocked.', 'confirm');
       void queryClient.invalidateQueries({ queryKey: safetyKeys.blocks });
       void queryClient.invalidateQueries({ queryKey: keys.conversationList });
     },
@@ -126,7 +126,7 @@ export function useSubmitReport() {
       // The reason is a closed enum, so it is safe as a prop; the free-text
       // detail is not, and is deliberately never attached.
       track('report_submitted', { reason: input.reason });
-      setNotice('Reported. Our team will review this.');
+      setNotice('Reported. Our team will review this.', 'confirm');
       void queryClient.invalidateQueries({ queryKey: safetyKeys.myReports });
     },
     onError: () => {

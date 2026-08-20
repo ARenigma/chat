@@ -24,6 +24,18 @@ function plpgsqlBody(sql: string, name: string): string {
     .join('\n');
 }
 
+/**
+ * TypeScript with comments removed, for negative assertions.
+ *
+ * A `not.toContain` over source is otherwise unusable: the comment explaining
+ * why a construct is wrong necessarily quotes it, so the test fails on its own
+ * documentation. Handles block and line comments; not string-literal aware,
+ * which is fine — no assertion here looks for `//` inside a string.
+ */
+function withoutComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+}
+
 describe('isUuid', () => {
   it('accepts a v4 uuid', () => {
     expect(isUuid('3f2504e0-4f89-41d3-9a0c-0305e82c3301')).toBe(true);
@@ -284,5 +296,91 @@ describe('pipeline wiring', () => {
       const needle = id.replace(/\.\*$/, '');
       expect(haystack).toContain(needle);
     }
+  });
+});
+
+/**
+ * No screen is written and then never mounted.
+ *
+ * This test exists because `ReviewSheet` shipped complete — sheet, mutation,
+ * `submit_review`, a `reviewed` column in `conversation_summaries` published
+ * specifically to drive it — and was rendered by nothing at all. Everything
+ * typechecked, everything linted, no test failed, and the feature did not
+ * exist. Dead UI is the one class of bug the other gates here cannot see,
+ * because a component that is never referenced is indistinguishable from one
+ * that is correct.
+ */
+describe('every screen is reachable', () => {
+  const mounters = ['App.tsx', ...walk(join(ROOT, 'src'))
+    .filter(f => f.endsWith('.tsx'))
+    .map(f => f.slice(ROOT.length + 1))]
+    .map(read)
+    .join('\n');
+
+  const screens = readdirSync(join(ROOT, 'src/screens'))
+    .filter(f => f.endsWith('.tsx'))
+    .map(f => f.replace(/\.tsx$/, ''));
+
+  it('finds screens to check', () => {
+    expect(screens.length).toBeGreaterThan(8);
+  });
+
+  it.each(screens)('mounts %s somewhere', name => {
+    // The trailing character class is not decoration: a bare
+    // `toContain('<Name')` is satisfied by `<NameSomethingElse`, which made an
+    // earlier version of this test pass against a deliberately broken mount.
+    // Counting occurrences would not work either — the defining file holds the
+    // name as a function declaration, never as an element.
+    expect(mounters).toMatch(new RegExp(`<${name}[\\s/>]`));
+  });
+});
+
+/**
+ * The rating prompt's guards, as source-level claims.
+ *
+ * All four matter and three of them are invisible from the outside: this screen
+ * serves the provider tree as well, `submit_review` refuses anyone who is not
+ * the member, and the server refuses a thread with fewer than two messages. A
+ * prompt that ignored any of them would offer an action that can only fail.
+ */
+describe('the review prompt is offered only when it can succeed', () => {
+  const chat = read('src/screens/ChatScreen.tsx');
+
+  it('asks the conversation who the member is, not the profile', () => {
+    // `profiles.role` flips when a member is admitted as a provider and takes
+    // their old member-side threads with it, so it is the wrong question.
+    //
+    // Asserted against the code with comments stripped, because the comment
+    // explaining why the old form was wrong *contains* the old form — which is
+    // a negative assertion failing on the prose that documents it.
+    expect(chat).toContain('thread.i_am_member');
+    expect(withoutComments(chat)).not.toContain("role === 'member'");
+  });
+
+  it('requires both sides to have said something', () => {
+    expect(chat).toContain('m.sender_id === selfId');
+    expect(chat).toContain('m.sender_id !== selfId');
+  });
+
+  it('says nothing until the conversation row has actually loaded', () => {
+    // `thread !== undefined` first: the alternative is a prompt that appears
+    // and disappears on its own as the query settles.
+    expect(chat).toContain('thread !== undefined');
+    expect(chat).toContain('!thread.reviewed');
+  });
+
+  it('keeps the provider work list to actual work', () => {
+    const home = read('src/screens/ProviderHomeScreen.tsx');
+    expect(home).toContain('!t.i_am_member');
+    // ...while still letting them open the threads they are the member of,
+    // because role picks the whole navigation tree and nothing else would.
+    expect(home).toContain('t.i_am_member');
+    expect(home).toContain('Your own conversations');
+  });
+
+  it('never blocks the transcript with it', () => {
+    // A rating request in a modal over an open conversation would interrupt the
+    // single thing this screen is for.
+    expect(chat).not.toMatch(/Alert\.alert/);
   });
 });
