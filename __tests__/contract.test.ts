@@ -2,6 +2,7 @@ import { spawnSync } from 'child_process';
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { isUuid } from '../src/lib/ids';
+import { normalisePhone } from '../src/lib/phone';
 import { DAILY_REFILL_TOKENS, MAX_MESSAGE_CHARS } from '../src/lib/tokenLedger';
 
 const ROOT = join(__dirname, '..');
@@ -80,7 +81,7 @@ describe('the AI path is gone, not dormant', () => {
     if (!existsSync(dir)) {
       return;
     }
-    const allowed = ['send-push'];
+    const allowed = ['send-push', 'send-sms'];
     const present = readdirSync(dir, { withFileTypes: true })
       .filter(entry => entry.isDirectory())
       .map(entry => entry.name);
@@ -694,5 +695,78 @@ describe('secrets are untrackable', () => {
       'fcm-service-account.json',
     ];
     expect(trackable(likely)).toEqual([]);
+  });
+});
+
+/**
+ * Phone sign-in is written and switched off, and this is what keeps the second
+ * half of that sentence true.
+ *
+ * The Facebook button shipped: an option that took a tap and produced a failure,
+ * because the provider had no credentials. Phone is the same shape of risk for a
+ * different reason — Indian transactional SMS cannot be delivered at all until
+ * DLT registration completes, so `signInWithOtp` would accept a number, look
+ * like it worked, and deliver nothing for one to three weeks.
+ */
+describe('phone sign-in stays off until it can deliver', () => {
+  const auth = read('src/api/auth.ts');
+  const enabled = /export const PHONE_AUTH_ENABLED = (true|false);/.exec(auth)?.[1];
+
+  it('declares the flag explicitly', () => {
+    expect(enabled).toBeDefined();
+  });
+
+  it('offers no phone entry on the sign-in screen while the flag is false', () => {
+    if (enabled !== 'false') {
+      return; // Flag is on: the screen is supposed to offer it.
+    }
+    const screen = withoutComments(read('src/screens/AuthScreen.tsx'));
+    expect(screen).not.toMatch(/PHONE_AUTH_ENABLED/);
+    expect(screen).not.toMatch(/sendPhoneOtp|verifyPhoneOtp/);
+    expect(screen.toLowerCase()).not.toContain('phone number');
+  });
+
+  it('refuses to call Supabase while the flag is false', () => {
+    // Both entry points return early, so even a caller that ignores the flag
+    // cannot spend an SMS or start a flow that cannot finish.
+    for (const fn of ['sendPhoneOtp', 'verifyPhoneOtp']) {
+      const start = auth.indexOf(`export async function ${fn}`);
+      expect(start).toBeGreaterThan(-1);
+      const body = auth.slice(start, start + 400);
+      expect(body).toMatch(/if \(!PHONE_AUTH_ENABLED\)/);
+    }
+  });
+
+  it('keeps the hook disabled in config while the flag is false', () => {
+    if (enabled !== 'false') {
+      return;
+    }
+    const config = read('supabase/config.toml');
+    // Every line of the hook block must still be commented out. An enabled hook
+    // with no MSG91 credentials makes Supabase fail the send rather than skip it.
+    const live = config
+      .split('\n')
+      .filter(line => !line.trimStart().startsWith('#'))
+      .join('\n');
+    expect(live).not.toContain('[auth.hook.send_sms]');
+  });
+});
+
+describe('normalisePhone', () => {
+  it('assumes +91 for a bare ten-digit number', () => {
+    expect(normalisePhone('9876543210')).toBe('919876543210');
+    expect(normalisePhone('98765 43210')).toBe('919876543210');
+  });
+
+  it('leaves an existing country code alone', () => {
+    expect(normalisePhone('+91 98765 43210')).toBe('919876543210');
+    expect(normalisePhone('+1 415 555 0123')).toBe('14155550123');
+  });
+
+  it('rejects anything too short or too long to be dialable', () => {
+    expect(normalisePhone('')).toBeNull();
+    expect(normalisePhone('12345')).toBeNull();
+    expect(normalisePhone('9876543210987654321')).toBeNull();
+    expect(normalisePhone('not a phone')).toBeNull();
   });
 });
