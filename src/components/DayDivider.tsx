@@ -21,8 +21,7 @@ const styles = StyleSheet.create({
     paddingVertical: TOKENS.space['2xs'],
   },
   label: {
-    ...TOKENS.typography.captionRegular,
-    fontSize: 13,
-    color: TOKENS.color.text.secondary,
+    ...TOKENS.typography.captionSmall,
+    color: TOKENS.color.text.tertiary,
   },
 });

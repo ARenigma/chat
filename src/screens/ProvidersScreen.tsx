@@ -1,7 +1,9 @@
 import React, { useCallback } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated from 'react-native-reanimated';
 import { TOKENS } from '../theme/tokens';
+import { enterBlock } from '../theme/motion';
 import type { ProviderSummary } from '../lib/database.types';
 import { useProfile, useProviders } from '../api/chat';
 import { useStore } from '../store/useStore';
@@ -38,6 +40,7 @@ export function ProvidersScreen({ onSelect, onBack, onOpenSettings }: Props) {
   );
 
   const list = providers ?? [];
+  const free = list.filter(p => p.is_available).length;
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
@@ -60,14 +63,19 @@ export function ProvidersScreen({ onSelect, onBack, onOpenSettings }: Props) {
         </Pressable>
       </View>
 
-      <View style={styles.head}>
+      {/* The headline counts. "4 people free now." is the only fact on this
+          screen a member can act on, and a fixed slogan wasted the largest type
+          on the page saying nothing they did not already know. It falls back to
+          the slogan while the count is unknown, because a hero that reads
+          "0 people free now." on a slow network is worse than no hero. */}
+      <Animated.View entering={enterBlock(0)} style={styles.head}>
         <Text allowFontScaling style={styles.title}>
-          {'Someone’s here\nto listen.'}
+          {free > 0 ? `${free} ${free === 1 ? 'person' : 'people'}\nfree now.` : 'Someone’s here\nto listen.'}
         </Text>
         <Text allowFontScaling style={styles.subtitle}>
           Real people, ready to talk. Not therapy — just company.
         </Text>
-      </View>
+      </Animated.View>
 
       {isPending ? (
         <View style={styles.state}>
@@ -96,12 +104,7 @@ export function ProvidersScreen({ onSelect, onBack, onOpenSettings }: Props) {
           data={list}
           keyExtractor={p => p.id}
           renderItem={({ item, index }) => (
-            <ProviderRow
-              provider={item}
-              index={index}
-              divider={index > 0}
-              onPress={onPressRow}
-            />
+            <ProviderRow provider={item} index={index} onPress={onPressRow} />
           )}
           contentContainerStyle={[
             styles.list,
@@ -141,7 +144,7 @@ const styles = StyleSheet.create({
     gap: TOKENS.space['2xs'] + 2,
   },
   title: {
-    ...TOKENS.typography.displayLarge,
+    ...TOKENS.typography.displaySmall,
     color: TOKENS.color.text.primary,
   },
   subtitle: {
@@ -150,6 +153,7 @@ const styles = StyleSheet.create({
   },
   list: {
     paddingHorizontal: TOKENS.space.lg,
+    gap: TOKENS.space.sm,
   },
   state: {
     flex: 1,

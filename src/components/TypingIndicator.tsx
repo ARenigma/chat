@@ -10,9 +10,10 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { TOKENS } from '../theme/tokens';
+import { DURATION } from '../theme/motion';
 
-const CYCLE = TOKENS.motion.duration.breath / 4;
-const STAGGER = TOKENS.motion.duration.fast;
+const CYCLE = DURATION.breath / 4;
+const OFFSET = DURATION.fast;
 
 /**
  * Deliberately a breath, not a bounce. A mechanical bounce reads as a loading
@@ -52,8 +53,8 @@ function TypingIndicatorView({ label = 'Typing' }: { label?: string }) {
       accessibilityRole="progressbar"
       accessibilityLabel={label}>
       <Dot delay={0} />
-      <Dot delay={STAGGER} />
-      <Dot delay={STAGGER * 2} />
+      <Dot delay={OFFSET} />
+      <Dot delay={OFFSET * 2} />
     </View>
   );
 }

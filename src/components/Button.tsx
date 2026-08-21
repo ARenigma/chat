@@ -12,11 +12,25 @@ interface Props {
 }
 
 /**
- * Full-width pill for sheet actions. Primary uses bg/inverse, not the accent —
- * the accent belongs to send, and two accent surfaces on one screen means
- * neither reads as special. Danger is outline-only: destructive actions should
- * look deliberate, not inviting.
+ * Full-width action.
+ *
+ * Primary is **ink, not coral**, and that is the load-bearing decision in the
+ * whole palette. The coral is the app's one signal; spending it on every
+ * confirm button would leave nothing to mark the send, the unread count or the
+ * message you just wrote. It also could not carry a label safely — coral.9
+ * measures 3.4:1 against white, which is why the token that *can* is a separate,
+ * deeper step used only for the bubble.
+ *
+ * Danger is an outline in garnet rather than a filled red: destructive actions
+ * should look deliberate, not inviting.
+ *
+ * The radius morph is here rather than in Pressable's defaults because it needs
+ * a resting radius to travel from, and a pill has no meaningful one — `radius.xl`
+ * on a 52pt button is just short of a pill, which is what makes the tightening
+ * visible at all.
  */
+const MORPH = { from: TOKENS.radius.xl, to: TOKENS.radius.pressButton };
+
 function ButtonView({ label, onPress, kind = 'primary', disabled = false, testID }: Props) {
   return (
     <Pressable
@@ -24,6 +38,8 @@ function ButtonView({ label, onPress, kind = 'primary', disabled = false, testID
       disabled={disabled}
       testID={testID}
       accessibilityLabel={label}
+      press="button"
+      morph={MORPH}
       style={[styles.base, styles[kind]]}>
       <Text allowFontScaling style={[styles.label, styles[`${kind}Label`]]}>
         {label}
@@ -40,22 +56,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: TOKENS.space.lg,
-    borderRadius: TOKENS.radius.pill,
+    borderRadius: TOKENS.radius.xl,
   },
   primary: {
     backgroundColor: TOKENS.color.bg.inverse,
   },
   secondary: {
+    backgroundColor: TOKENS.color.bg.raised,
     borderWidth: 1,
-    borderColor: TOKENS.color.border.hairline,
+    borderColor: TOKENS.color.border.strong,
   },
   danger: {
+    backgroundColor: TOKENS.color.bg.raised,
     borderWidth: 1,
     borderColor: TOKENS.color.state.danger,
   },
   label: {
-    ...TOKENS.typography.bodyMedium,
-    fontWeight: '500',
+    ...TOKENS.typography.labelMedium,
   },
   primaryLabel: {
     color: TOKENS.color.text.onInverse,

@@ -12,7 +12,12 @@ import type {
 } from '../lib/database.types';
 import { canSend } from '../lib/tokenLedger';
 import { errorTick, tick } from '../lib/haptics';
-import { PENDING_PREFIX, insertOptimistic, settleOptimistic } from '../lib/transcript';
+import {
+  PENDING_PREFIX,
+  insertOptimistic,
+  settleOptimistic,
+  type TranscriptMessage,
+} from '../lib/transcript';
 import { track } from '../lib/telemetry';
 import { useStore } from '../store/useStore';
 import { messagesKey } from './realtime';
@@ -158,7 +163,10 @@ export function useConversationId(providerId: string | null) {
 }
 
 export function useMessages(conversationId: string | undefined) {
-  return useQuery<Message[]>({
+  // TranscriptMessage rather than Message: rows that have settled carry a
+  // client-only `localKey`, which the list keys on so a confirmation does not
+  // remount the bubble. See lib/transcript.ts.
+  return useQuery<TranscriptMessage[]>({
     queryKey: keys.messages(conversationId ?? ''),
     enabled: conversationId !== undefined,
     queryFn: async () => {
@@ -219,7 +227,7 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
         read_at: null,
       };
 
-      queryClient.setQueryData<Message[]>(key, prev =>
+      queryClient.setQueryData<TranscriptMessage[]>(key, prev =>
         insertOptimistic(prev ?? [], optimistic),
       );
       setSending(true);
@@ -233,7 +241,7 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
       const result: SendResult | null = error ? null : data;
 
       if (result === null || !result.success) {
-        queryClient.setQueryData<Message[]>(key, prev =>
+        queryClient.setQueryData<TranscriptMessage[]>(key, prev =>
           settleOptimistic(prev ?? [], pendingId, null),
         );
         const code = result?.error;
@@ -264,7 +272,7 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
             }
           : null;
 
-      queryClient.setQueryData<Message[]>(key, prev =>
+      queryClient.setQueryData<TranscriptMessage[]>(key, prev =>
         settleOptimistic(prev ?? [], pendingId, confirmed),
       );
 

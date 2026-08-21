@@ -1,17 +1,16 @@
 import React, { memo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 import { TOKENS } from '../theme/tokens';
 import type { ProviderSummary } from '../lib/database.types';
 import { initialOf } from '../lib/display';
+import { enterRow } from '../theme/motion';
 import { Avatar } from './Avatar';
-import { Icon } from './Icon';
 import { Pressable } from './Pressable';
 
 interface Props {
   provider: ProviderSummary;
   index: number;
-  divider: boolean;
   onPress: (provider: ProviderSummary) => void;
 }
 
@@ -34,26 +33,31 @@ function replyLatency(seconds: number | null): string | null {
   return 'replies slowly';
 }
 
+const MORPH = { from: TOKENS.radius.lg, to: TOKENS.radius.pressCard };
+
 /**
- * A row in the directory.
+ * A card in the directory, no longer a row.
  *
- * Rebuilt from the Clarity/WeHeal listing, whose rows carry a photo, name,
- * gender and age, a star rating with a review count, a one-line bio and a price.
- * Ours carried a name and "Available now", which means a member choosing between
- * two names is choosing at random — the directory was the weakest screen in the
- * app and it is the one that decides whether anyone spends anything.
+ * The content is unchanged and the container is not: a white card on warm paper
+ * separates two people far better than a hairline between two rows, and this is
+ * the screen where a member is comparing strangers side by side. It is also the
+ * one structural idea every reference shared — pure-white cards on an off-white
+ * page, with the colour difference doing the work a shadow usually does badly.
  *
- * Two deliberate departures:
+ * Two deliberate departures from the apps this was modelled on:
  *
- *   - **No price.** Clarity's rows advertise ₹/min. Ours is one token per
- *     message for everyone — an invariant with a SQL parity test behind it — so
- *     a per-provider price would be a lie or a schema change.
- *   - **Reply latency instead.** The most-upvoted negative review of Clarity is
- *     about a listener who never replied while the meter ran. Publishing a median
- *     reply time makes that the provider's problem rather than the member's
- *     discovery.
+ *   - **No price.** Their rows advertise ₹/min. Ours is one token per message for
+ *     everyone — an invariant with a SQL parity test behind it — so a
+ *     per-provider price would be a lie or a schema change.
+ *   - **Reply latency instead.** The most-upvoted negative review of the app this
+ *     was studied from is about a listener who never replied while the meter ran.
+ *     Publishing a median reply time makes that the provider's problem rather
+ *     than the member's discovery.
+ *
+ * The avatar is never `warm`. Washing one stranger's mark in the brand colour
+ * reads as a recommendation, and nobody made one.
  */
-function ProviderRowView({ provider, index, divider, onPress }: Props) {
+function ProviderRowView({ provider, index, onPress }: Props) {
   const initial = initialOf(provider.display_name);
   const shortGender = provider.gender ? (GENDER_SHORT[provider.gender] ?? '') : '';
   const identity = [shortGender, provider.age !== null ? `${provider.age}` : null]
@@ -73,14 +77,15 @@ function ProviderRowView({ provider, index, divider, onPress }: Props) {
     .join(', ');
 
   return (
-    <Animated.View
-      entering={FadeInDown.delay(index * 50).duration(TOKENS.motion.duration.base)}>
+    <Animated.View entering={enterRow(index)}>
       <Pressable
         onPress={() => onPress(provider)}
         testID={`provider-${provider.id}`}
         accessibilityLabel={accessibility}
-        style={[styles.row, divider && styles.divider]}>
-        <View style={styles.inner}>
+        press="card"
+        morph={MORPH}
+        style={styles.card}>
+        <View style={styles.head}>
           <Avatar initial={initial} size={42} online={provider.is_available} />
           <View style={styles.label}>
             <View style={styles.topLine}>
@@ -89,42 +94,56 @@ function ProviderRowView({ provider, index, divider, onPress }: Props) {
               </Text>
               {identity !== '' ? (
                 <Text allowFontScaling style={styles.identity}>
-                  {identity}
+                  · {identity}
                 </Text>
               ) : null}
             </View>
 
             {provider.headline !== null && provider.headline !== '' ? (
-              <Text allowFontScaling numberOfLines={1} style={styles.headline}>
+              <Text allowFontScaling numberOfLines={2} style={styles.headline}>
                 {provider.headline}
               </Text>
             ) : null}
 
-            <View style={styles.metaLine}>
-              {/* A rating with two reviews behind it is noise dressed as signal,
-                  so the count is always shown next to it. */}
-              {provider.rating_count > 0 ? (
-                <Text testID="provider-rating" allowFontScaling style={styles.meta}>
-                  ★ {provider.rating_avg?.toFixed(1)} · {provider.rating_count}
-                </Text>
-              ) : (
-                <Text allowFontScaling style={styles.meta}>
-                  New
-                </Text>
-              )}
-              {latency !== null ? (
-                <Text testID="provider-latency" allowFontScaling style={styles.meta}>
-                  {latency}
-                </Text>
-              ) : null}
-              {provider.languages.length > 0 ? (
-                <Text allowFontScaling numberOfLines={1} style={styles.meta}>
-                  {provider.languages.slice(0, 2).join(', ')}
-                </Text>
-              ) : null}
-            </View>
+            {provider.languages.length > 0 ? (
+              <View style={styles.tags}>
+                {provider.languages.slice(0, 3).map(lang => (
+                  <View key={lang} style={styles.tag}>
+                    <Text allowFontScaling style={styles.tagText}>
+                      {lang}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
           </View>
-          <Icon glyph="chevron-right" size={16} color={TOKENS.color.text.secondary} />
+        </View>
+
+        <View style={styles.foot}>
+          {/* A rating with two reviews behind it is noise dressed as signal, so
+              the count is always next to it. */}
+          {provider.rating_count > 0 ? (
+            <Text testID="provider-rating" allowFontScaling style={styles.rating}>
+              ★ {provider.rating_avg?.toFixed(1)}
+              <Text style={styles.ratingCount}> · {provider.rating_count}</Text>
+            </Text>
+          ) : (
+            <Text allowFontScaling style={styles.meta}>
+              New here
+            </Text>
+          )}
+          {provider.is_available ? (
+            <View style={styles.presence}>
+              <View style={styles.presenceDot} />
+              <Text allowFontScaling style={styles.presenceText}>
+                Here now
+              </Text>
+            </View>
+          ) : latency !== null ? (
+            <Text testID="provider-latency" allowFontScaling style={styles.meta}>
+              {latency}
+            </Text>
+          ) : null}
         </View>
       </Pressable>
     </Animated.View>
@@ -134,17 +153,18 @@ function ProviderRowView({ provider, index, divider, onPress }: Props) {
 export const ProviderRow = memo(ProviderRowView);
 
 const styles = StyleSheet.create({
-  row: {
-    paddingVertical: TOKENS.space.md,
+  card: {
+    padding: TOKENS.space.md,
+    borderRadius: TOKENS.radius.lg,
+    backgroundColor: TOKENS.color.bg.raised,
+    borderWidth: 1,
+    borderColor: TOKENS.color.border.hairline,
+    ...TOKENS.elevation.card,
   },
-  divider: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: TOKENS.color.border.hairline,
-  },
-  inner: {
+  head: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: TOKENS.space.md,
+    alignItems: 'flex-start',
+    gap: TOKENS.space.sm,
   },
   label: {
     flex: 1,
@@ -153,11 +173,10 @@ const styles = StyleSheet.create({
   topLine: {
     flexDirection: 'row',
     alignItems: 'baseline',
-    gap: TOKENS.space.xs,
+    gap: TOKENS.space['2xs'],
   },
   name: {
-    ...TOKENS.typography.bodyLarge,
-    fontWeight: '500',
+    ...TOKENS.typography.labelMedium,
     color: TOKENS.color.text.primary,
     flexShrink: 1,
   },
@@ -167,15 +186,58 @@ const styles = StyleSheet.create({
   },
   headline: {
     ...TOKENS.typography.captionRegular,
-    color: TOKENS.color.text.primary,
+    color: TOKENS.color.text.secondary,
   },
-  metaLine: {
+  tags: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: TOKENS.space['2xs'],
+    paddingTop: TOKENS.space['2xs'],
+  },
+  tag: {
+    paddingHorizontal: TOKENS.space.xs,
+    paddingVertical: 3,
+    borderRadius: TOKENS.radius.pill,
+    backgroundColor: TOKENS.color.bg.sunken,
+  },
+  tagText: {
+    ...TOKENS.typography.captionSmall,
+    color: TOKENS.color.text.secondary,
+  },
+  foot: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: TOKENS.space.sm,
+    justifyContent: 'space-between',
+    marginTop: TOKENS.space.sm,
+    paddingTop: TOKENS.space.sm,
+    borderTopWidth: 1,
+    borderTopColor: TOKENS.color.border.hairline,
+  },
+  rating: {
+    ...TOKENS.typography.labelSmall,
+    color: TOKENS.color.text.primary,
+  },
+  ratingCount: {
+    ...TOKENS.typography.captionSmall,
+    color: TOKENS.color.text.secondary,
   },
   meta: {
     ...TOKENS.typography.captionSmall,
     color: TOKENS.color.text.secondary,
+  },
+  presence: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: TOKENS.space['2xs'],
+  },
+  presenceDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: TOKENS.color.state.available,
+  },
+  presenceText: {
+    ...TOKENS.typography.labelSmall,
+    color: TOKENS.color.text.positive,
   },
 });

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Linking, StatusBar, StyleSheet, Text, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TOKENS } from './src/theme/tokens';
 import { assertEnv } from './src/lib/env';
@@ -341,18 +342,30 @@ function SignedIn({
 
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <QueryClientProvider client={queryClient}>
-        {/* Light-first palette, so dark status bar content. No backgroundColor:
-            unsupported once edge-to-edge is on (Android 15+). */}
-        <StatusBar barStyle="dark-content" translucent />
-        <Root />
-      </QueryClientProvider>
-    </SafeAreaProvider>
+    /**
+     * GestureHandlerRootView has to be the outermost view, not a wrapper inside
+     * a screen: on Android it installs the touch interceptor that lets a pan
+     * compete with the scroll views above it. Without it at the root, the sheet
+     * drag silently does nothing — the gesture is created, recognised by nobody,
+     * and there is no warning.
+     */
+    <GestureHandlerRootView style={styles.root}>
+      <SafeAreaProvider>
+        <QueryClientProvider client={queryClient}>
+          {/* Light-first palette, so dark status bar content. No backgroundColor:
+              unsupported once edge-to-edge is on (Android 15+). */}
+          <StatusBar barStyle="dark-content" translucent />
+          <Root />
+        </QueryClientProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
   host: {
     flex: 1,
     backgroundColor: TOKENS.color.bg.base,

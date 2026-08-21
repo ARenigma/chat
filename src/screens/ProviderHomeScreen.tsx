@@ -127,7 +127,13 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings }: Props
                 style={[styles.rowPreview, unread && styles.rowPreviewUnread]}>
                 {item.last_body ?? 'No messages yet'}
               </Text>
-              {unread ? <View testID="waiting-dot" style={styles.dot} /> : null}
+              {unread ? (
+                <View testID="waiting-dot" style={styles.unread}>
+                  <Text allowFontScaling style={styles.unreadCount}>
+                    {item.unread_count}
+                  </Text>
+                </View>
+              ) : null}
             </View>
           </View>
         </Pressable>
@@ -165,12 +171,23 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings }: Props
               : 'You are hidden. Existing conversations still work.'}
           </Text>
         </View>
+        {/* The one platform control in the app, and it has to be told the
+            palette or it renders Android's stock teal — which was the single
+            most out-of-place colour on the screen, and no token would ever have
+            caught it. Sage for on, because availability is a presence state and
+            presence is sage everywhere else. */}
         <Switch
           testID="availability-toggle"
           value={available}
           onValueChange={toggle}
           disabled={setAvailability.isPending}
           accessibilityLabel="Available to talk"
+          trackColor={{
+            false: TOKENS.color.bg.pressed,
+            true: TOKENS.color.state.available,
+          }}
+          thumbColor={TOKENS.color.bg.raised}
+          ios_backgroundColor={TOKENS.color.bg.pressed}
         />
       </View>
 
@@ -293,8 +310,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   availabilityTitle: {
-    ...TOKENS.typography.bodyMedium,
-    fontWeight: '600',
+    ...TOKENS.typography.labelMedium,
     color: TOKENS.color.text.primary,
   },
   availabilitySub: {
@@ -349,8 +365,7 @@ const styles = StyleSheet.create({
     gap: TOKENS.space.xs,
   },
   rowName: {
-    ...TOKENS.typography.bodyLarge,
-    fontWeight: '500',
+    ...TOKENS.typography.labelMedium,
     color: TOKENS.color.text.primary,
     flex: 1,
   },
@@ -364,14 +379,24 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   rowPreviewUnread: {
+    ...TOKENS.typography.labelMedium,
     color: TOKENS.color.text.primary,
-    fontWeight: '500',
   },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: TOKENS.color.bg.accent,
+  // A count, not a dot — the same badge the member's inbox uses. "Someone is
+  // waiting on you" is the one thing on this screen worth interrupting for, and
+  // the number is the difference between checking and deciding.
+  unread: {
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 5,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: TOKENS.color.bg.accentStrong,
+  },
+  unreadCount: {
+    ...TOKENS.typography.numeralSmall,
+    color: TOKENS.color.text.onAccent,
   },
   state: {
     flex: 1,

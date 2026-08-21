@@ -301,8 +301,7 @@ const styles = StyleSheet.create({
     backgroundColor: TOKENS.color.bg.sunken,
   },
   headerTitle: {
-    ...TOKENS.typography.bodyMedium,
-    fontWeight: '600',
+    ...TOKENS.typography.labelMedium,
     color: TOKENS.color.text.primary,
   },
   body: {
@@ -321,8 +320,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   missingTitle: {
-    ...TOKENS.typography.bodyMedium,
-    fontWeight: '600',
+    ...TOKENS.typography.labelMedium,
     color: TOKENS.color.text.primary,
     paddingBottom: TOKENS.space['2xs'],
   },
@@ -338,8 +336,8 @@ const styles = StyleSheet.create({
     color: TOKENS.color.text.secondary,
   },
   labelFlagged: {
+    ...TOKENS.typography.labelSmall,
     color: TOKENS.color.text.primary,
-    fontWeight: '600',
   },
   input: {
     minHeight: 48,
@@ -364,9 +362,8 @@ const styles = StyleSheet.create({
     color: TOKENS.color.text.secondary,
   },
   block: {
-    ...TOKENS.typography.captionRegular,
+    ...TOKENS.typography.labelSmall,
     color: TOKENS.color.text.primary,
-    fontWeight: '600',
   },
   legal: {
     ...TOKENS.typography.captionSmall,

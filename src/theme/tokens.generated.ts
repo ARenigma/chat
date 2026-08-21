@@ -4,36 +4,53 @@
  * Source: design/tokens.json, exported from Figma file dThaRIYIQZX0wamQXa9b2g.
  * Regenerate with `npm run tokens`. `npm run tokens:check` fails on drift.
  *
- * Accent budget: color.bg.accent and color.text.accent appear in exactly five
- * places — send button fill, companion mark wash, low-balance count, typing dots
- * and the presence dot. See the Accent budget page in Figma before adding a
- * sixth. Backgrounds, bubbles, headers, dividers and list rows stay monochrome.
+ * System: Warm Signal — warm paper base, one coral signal, deep warm ink. Sage carries presence, citrus carries the token balance, and nothing else is allowed a hue.
+ *
+ * Accent budget: the coral is for ACTIONS AND STATES ONLY — send, own bubble,
+ * unread count, avatar wash, low-balance count, typing dots. Never a page
+ * background, never a header, never a divider, never a provider's avatar. That
+ * single rule is the difference between friendly and flirty, and a test in
+ * __tests__/theme.test.ts enforces it rather than trusting this comment.
+ *
+ * Contrast: Every pair in this file was measured with WCAG 2.1 relative luminance rather than copied from a reference. The palettes this was drawn from publish ratios that do not reproduce — one swatch labelled 6.98:1 measures 3.01:1 against white — so no published number was trusted.
  */
+
+/** Widened deliberately — see the fontVariant note in scripts/gen-tokens.mjs. */
+type FontVariantList = 'tabular-nums'[];
 
 export const LIGHT = {
   color: {
     bg: {
-      base: '#F4F4F4',
+      base: '#FBF8F5',
       raised: '#FFFFFF',
-      sunken: '#EBEBEB',
-      inverse: '#0A0A0A',
-      accent: '#B0325C',
-      accentTint: '#FCF1F4',
+      sunken: '#EFE8DF',
+      hover: '#E7DED2',
+      pressed: '#DCD2C4',
+      inverse: '#2A1F1A',
+      accent: '#F2543D',
+      accentStrong: '#C2401F',
+      accentTint: '#FBE4DE',
+      positive: '#DCE8E3',
+      token: '#F2EFC0',
     },
     text: {
-      primary: '#0A0A0A',
-      secondary: '#4E4F54',
-      accent: '#95264A',
+      primary: '#2A1F1A',
+      secondary: '#6B5A4C',
+      tertiary: '#A2937F',
+      accent: '#8F2E17',
       onAccent: '#FFFFFF',
-      onInverse: '#FFFFFF',
+      onInverse: '#FBF8F5',
+      positive: '#1F4A3F',
+      token: '#4A4708',
     },
     border: {
-      hairline: '#E5E5E5',
-      accent: '#F0D5DE',
+      hairline: '#EFE8DF',
+      strong: '#CFC3B2',
+      accent: '#F2543D',
     },
     state: {
-      available: '#10B981',
-      danger: '#E5484D',
+      available: '#4E8B7C',
+      danger: '#733635',
     },
   },
   space: {
@@ -47,72 +64,179 @@ export const LIGHT = {
     '3xl': 40,
   },
   radius: {
-    tail: 6,
-    sm: 8,
+    tail: 5,
+    xs: 8,
+    sm: 12,
     md: 16,
     lg: 20,
-    xl: 26,
+    xl: 24,
     pill: 999,
     screen: 44,
+    pressButton: 14,
+    pressCard: 12,
+    pressSend: 9,
   },
   motion: {
-    duration: {
-      fast: 140,
-      base: 220,
-      slow: 420,
-      breath: 4000,
-    },
     spring: {
-      damping: 18,
-      stiffness: 140,
-      mass: 0.8,
+      snap: {
+        damping: 37,
+        stiffness: 400,
+        mass: 1,
+        restDisplacementThreshold: 0.01,
+        restSpeedThreshold: 2,
+      },
+      smooth: {
+        damping: 27,
+        stiffness: 180,
+        mass: 1,
+        restDisplacementThreshold: 0.01,
+        restSpeedThreshold: 2,
+      },
+      bounce: {
+        damping: 18,
+        stiffness: 260,
+        mass: 0.9,
+        restDisplacementThreshold: 0.01,
+        restSpeedThreshold: 2,
+      },
+      gentle: {
+        damping: 24,
+        stiffness: 200,
+        mass: 1,
+        restDisplacementThreshold: 0.01,
+        restSpeedThreshold: 2,
+      },
+    },
+    springMeta: {
+      snap: {
+        ratio: 0.925,
+        settleMs: 216,
+        overshoots: true,
+      },
+      smooth: {
+        ratio: 1.006,
+        settleMs: 296,
+        overshoots: false,
+      },
+      bounce: {
+        ratio: 0.588,
+        settleMs: 400,
+        overshoots: true,
+      },
+      gentle: {
+        ratio: 0.849,
+        settleMs: 333,
+        overshoots: true,
+      },
+    },
+    decay: {
+      deceleration: 0.994,
+      velocityFactor: 1,
+    },
+    gesture: {
+      dismissDistance: 0.28,
+      dismissVelocity: 800,
+    },
+    press: {
+      card: 0.975,
+      button: 0.96,
+      chip: 0.94,
+      send: 0.86,
+      sendSquashY: 0.78,
+    },
+    stagger: {
+      row: 42,
+      rail: 55,
+    },
+    duration: {
+      instant: 110,
+      fast: 170,
+      base: 240,
+      slow: 420,
+      breath: 4200,
     },
   },
   typography: {
     displayLarge: {
+      fontFamily: 'Urbanist-ExtraBold',
       fontSize: 30,
-      fontWeight: '600',
-      lineHeight: 35,
+      lineHeight: 31,
       letterSpacing: -0.75,
     },
+    displaySmall: {
+      fontFamily: 'Urbanist-ExtraBold',
+      fontSize: 25,
+      lineHeight: 27,
+      letterSpacing: -0.63,
+    },
     titleMedium: {
-      fontSize: 20,
-      fontWeight: '600',
-      lineHeight: 26,
-      letterSpacing: -0.3,
+      fontFamily: 'Urbanist-Bold',
+      fontSize: 22,
+      lineHeight: 28,
+      letterSpacing: -0.33,
     },
     bodyLarge: {
+      fontFamily: 'Urbanist-Regular',
       fontSize: 17,
-      fontWeight: '400',
-      lineHeight: 25,
+      lineHeight: 24,
       letterSpacing: -0.09,
     },
     bodyMedium: {
+      fontFamily: 'Urbanist-Regular',
       fontSize: 16,
-      fontWeight: '400',
       lineHeight: 23,
       letterSpacing: -0.08,
     },
     labelMedium: {
+      fontFamily: 'Urbanist-SemiBold',
       fontSize: 15,
-      fontWeight: '500',
-      lineHeight: 21,
+      lineHeight: 20,
+      letterSpacing: -0.07,
+    },
+    labelSmall: {
+      fontFamily: 'Urbanist-SemiBold',
+      fontSize: 13,
+      lineHeight: 17,
       letterSpacing: -0.07,
     },
     captionRegular: {
+      fontFamily: 'Urbanist-Regular',
       fontSize: 14,
-      fontWeight: '400',
       lineHeight: 20,
       letterSpacing: -0.07,
     },
     captionSmall: {
+      fontFamily: 'Urbanist-Regular',
       fontSize: 12,
-      fontWeight: '400',
       lineHeight: 17,
       letterSpacing: 0,
     },
+    numeralMedium: {
+      fontFamily: 'Urbanist-Bold',
+      fontSize: 15,
+      lineHeight: 20,
+      letterSpacing: -0.07,
+      fontVariant: ['tabular-nums'] as FontVariantList,
+    },
+    numeralSmall: {
+      fontFamily: 'Urbanist-Bold',
+      fontSize: 12,
+      lineHeight: 16,
+      letterSpacing: 0,
+      fontVariant: ['tabular-nums'] as FontVariantList,
+    },
   },
   elevation: {
+    card: {
+      shadowColor: '#000000',
+      shadowOffset: {
+        width: 0,
+        height: 1,
+      },
+      shadowOpacity: 0.04,
+      shadowRadius: 3,
+      elevation: 2,
+    },
     composer: {
       shadowColor: '#000000',
       shadowOffset: {
@@ -139,27 +263,36 @@ export const LIGHT = {
 export const DARK = {
   color: {
     bg: {
-      base: '#0C0C0D',
-      raised: '#17181A',
-      sunken: '#1E1F22',
-      inverse: '#26272B',
-      accent: '#E0648B',
-      accentTint: '#241118',
+      base: '#14110F',
+      raised: '#1E1A17',
+      sunken: '#262119',
+      hover: '#2E2820',
+      pressed: '#372F26',
+      inverse: '#F6F1EB',
+      accent: '#F2543D',
+      accentStrong: '#F2836B',
+      accentTint: '#3A1A12',
+      positive: '#16302A',
+      token: '#3A3705',
     },
     text: {
-      primary: '#F7F7F8',
-      secondary: '#9C9CA1',
-      accent: '#F2A0B8',
-      onAccent: '#0C0C0D',
-      onInverse: '#F7F7F8',
+      primary: '#F7F3EE',
+      secondary: '#B3A596',
+      tertiary: '#8A7C6D',
+      accent: '#FFB4A0',
+      onAccent: '#2A1F1A',
+      onInverse: '#2A1F1A',
+      positive: '#A8D8C8',
+      token: '#E4E26A',
     },
     border: {
-      hairline: '#232427',
-      accent: '#241118',
+      hairline: '#262119',
+      strong: '#3A332B',
+      accent: '#F2543D',
     },
     state: {
-      available: '#10B981',
-      danger: '#E5484D',
+      available: '#6BA697',
+      danger: '#E39B92',
     },
   },
   space: {
@@ -173,72 +306,179 @@ export const DARK = {
     '3xl': 40,
   },
   radius: {
-    tail: 6,
-    sm: 8,
+    tail: 5,
+    xs: 8,
+    sm: 12,
     md: 16,
     lg: 20,
-    xl: 26,
+    xl: 24,
     pill: 999,
     screen: 44,
+    pressButton: 14,
+    pressCard: 12,
+    pressSend: 9,
   },
   motion: {
-    duration: {
-      fast: 140,
-      base: 220,
-      slow: 420,
-      breath: 4000,
-    },
     spring: {
-      damping: 18,
-      stiffness: 140,
-      mass: 0.8,
+      snap: {
+        damping: 37,
+        stiffness: 400,
+        mass: 1,
+        restDisplacementThreshold: 0.01,
+        restSpeedThreshold: 2,
+      },
+      smooth: {
+        damping: 27,
+        stiffness: 180,
+        mass: 1,
+        restDisplacementThreshold: 0.01,
+        restSpeedThreshold: 2,
+      },
+      bounce: {
+        damping: 18,
+        stiffness: 260,
+        mass: 0.9,
+        restDisplacementThreshold: 0.01,
+        restSpeedThreshold: 2,
+      },
+      gentle: {
+        damping: 24,
+        stiffness: 200,
+        mass: 1,
+        restDisplacementThreshold: 0.01,
+        restSpeedThreshold: 2,
+      },
+    },
+    springMeta: {
+      snap: {
+        ratio: 0.925,
+        settleMs: 216,
+        overshoots: true,
+      },
+      smooth: {
+        ratio: 1.006,
+        settleMs: 296,
+        overshoots: false,
+      },
+      bounce: {
+        ratio: 0.588,
+        settleMs: 400,
+        overshoots: true,
+      },
+      gentle: {
+        ratio: 0.849,
+        settleMs: 333,
+        overshoots: true,
+      },
+    },
+    decay: {
+      deceleration: 0.994,
+      velocityFactor: 1,
+    },
+    gesture: {
+      dismissDistance: 0.28,
+      dismissVelocity: 800,
+    },
+    press: {
+      card: 0.975,
+      button: 0.96,
+      chip: 0.94,
+      send: 0.86,
+      sendSquashY: 0.78,
+    },
+    stagger: {
+      row: 42,
+      rail: 55,
+    },
+    duration: {
+      instant: 110,
+      fast: 170,
+      base: 240,
+      slow: 420,
+      breath: 4200,
     },
   },
   typography: {
     displayLarge: {
+      fontFamily: 'Urbanist-ExtraBold',
       fontSize: 30,
-      fontWeight: '600',
-      lineHeight: 35,
+      lineHeight: 31,
       letterSpacing: -0.75,
     },
+    displaySmall: {
+      fontFamily: 'Urbanist-ExtraBold',
+      fontSize: 25,
+      lineHeight: 27,
+      letterSpacing: -0.63,
+    },
     titleMedium: {
-      fontSize: 20,
-      fontWeight: '600',
-      lineHeight: 26,
-      letterSpacing: -0.3,
+      fontFamily: 'Urbanist-Bold',
+      fontSize: 22,
+      lineHeight: 28,
+      letterSpacing: -0.33,
     },
     bodyLarge: {
+      fontFamily: 'Urbanist-Regular',
       fontSize: 17,
-      fontWeight: '400',
-      lineHeight: 25,
+      lineHeight: 24,
       letterSpacing: -0.09,
     },
     bodyMedium: {
+      fontFamily: 'Urbanist-Regular',
       fontSize: 16,
-      fontWeight: '400',
       lineHeight: 23,
       letterSpacing: -0.08,
     },
     labelMedium: {
+      fontFamily: 'Urbanist-SemiBold',
       fontSize: 15,
-      fontWeight: '500',
-      lineHeight: 21,
+      lineHeight: 20,
+      letterSpacing: -0.07,
+    },
+    labelSmall: {
+      fontFamily: 'Urbanist-SemiBold',
+      fontSize: 13,
+      lineHeight: 17,
       letterSpacing: -0.07,
     },
     captionRegular: {
+      fontFamily: 'Urbanist-Regular',
       fontSize: 14,
-      fontWeight: '400',
       lineHeight: 20,
       letterSpacing: -0.07,
     },
     captionSmall: {
+      fontFamily: 'Urbanist-Regular',
       fontSize: 12,
-      fontWeight: '400',
       lineHeight: 17,
       letterSpacing: 0,
     },
+    numeralMedium: {
+      fontFamily: 'Urbanist-Bold',
+      fontSize: 15,
+      lineHeight: 20,
+      letterSpacing: -0.07,
+      fontVariant: ['tabular-nums'] as FontVariantList,
+    },
+    numeralSmall: {
+      fontFamily: 'Urbanist-Bold',
+      fontSize: 12,
+      lineHeight: 16,
+      letterSpacing: 0,
+      fontVariant: ['tabular-nums'] as FontVariantList,
+    },
   },
   elevation: {
+    card: {
+      shadowColor: '#000000',
+      shadowOffset: {
+        width: 0,
+        height: 1,
+      },
+      shadowOpacity: 0.12,
+      shadowRadius: 3,
+      elevation: 2,
+    },
     composer: {
       shadowColor: '#000000',
       shadowOffset: {
