@@ -63,5 +63,31 @@
             <data android:scheme="companionchat" android:host="auth-callback" />
         </intent-filter>
       </activity>
+
+      <!--
+        The notification small icon, and it is not optional.
+
+        Without it firebase-messaging falls back to android:icon, and the status
+        bar renders a small icon from its alpha channel only — which turned the
+        two-bubble mark into a featureless white ring on the lock screen. Seen on
+        a device, not deduced. `ic_notification` is the monochrome silhouette the
+        adaptive icon already ships, which is exactly the shape this slot wants.
+
+        The colour tints the icon and the app name in the shade. Coral, so a
+        notification from this app is recognisable before it is read.
+
+        `tools:replace` on the colour is required, and finding out why explained
+        the white ring: react-native-firebase_messaging already declares this
+        same meta-data as @color/white. So the library was tinting our launcher
+        icon's alpha mask pure white — the two facts that produced the bug were
+        both defaults, neither of them ours.
+      -->
+      <meta-data
+        android:name="com.google.firebase.messaging.default_notification_icon"
+        android:resource="@drawable/ic_notification" />
+      <meta-data
+        android:name="com.google.firebase.messaging.default_notification_color"
+        android:resource="@color/notification_accent"
+        tools:replace="android:resource" />
     </application>
 </manifest>

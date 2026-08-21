@@ -7,7 +7,12 @@
   ic_launcher_background is bg/inverse (Light): ink, not black. It is the icon's
   whole background, and it is deliberately the same ink as the primary button so
   the launcher and the first screen agree.
+
+  notification_accent is bg/accentStrong (Light): the coral. It tints the small
+  icon and the app name in the notification shade, which is the one place the
+  brand has to be recognisable before a single word is read.
 -->
 <resources>
     <color name="ic_launcher_background">#2A1F1A</color>
+    <color name="notification_accent">#C2401F</color>
 </resources>

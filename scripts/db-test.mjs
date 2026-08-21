@@ -49,6 +49,7 @@ const MIGRATIONS = [
   'supabase/migrations/006_phone_auth_and_provider_onboarding.sql',
   'supabase/migrations/007_conversation_side.sql',
   'supabase/migrations/008_push_tokens.sql',
+  'supabase/migrations/009_push_sender.sql',
 ];
 
 const docker = (args, options = {}) =>

@@ -106,40 +106,30 @@ function AvatarView({
 }
 
 /**
- * Split out so the dot owns its own breath. It has to breathe independently of
- * the avatar — the avatar's breath is optional and the dot's is the whole point:
- * a static dot says "marked available", a breathing one says "someone is there".
+ * Static, deliberately.
+ *
+ * This dot used to pulse — scale 0.86 to 1.0 and opacity 0.72 to 1.0, forever —
+ * and the comment here argued that "a static dot says marked available, a
+ * breathing one says someone is there". That was the problem, not the feature.
+ * The dot renders a stored boolean (`is_available`); nobody is necessarily doing
+ * anything. Animating it manufactures a sense of a person waiting, and in a
+ * product where a lonely user spends tokens to start a conversation, that is not
+ * a decorative flourish — it is a nudge built on something we do not know.
+ *
+ * The file also contradicted itself: AvatarView's own comment fixes the breath
+ * at 2% because "anything larger stops reading as breathing and starts reading
+ * as a pulse animation, which is a notification, not a presence." The dot was
+ * running 14% scale and 28% opacity.
+ *
+ * Genuinely live activity already has an honest channel: PeerTyping, which
+ * animates because someone is actually typing at that moment.
  */
 function PresenceDot({ size }: { size: number }) {
   const styles = useStyles(makeStyles);
-  const pulse = useSharedValue(0);
-
-  useEffect(() => {
-    pulse.value = withRepeat(
-      withTiming(1, {
-        duration: DURATION.breath / 2,
-        easing: Easing.inOut(Easing.sin),
-      }),
-      -1,
-      true,
-    );
-  }, [pulse]);
-
-  const animated = useAnimatedStyle(() => ({
-    transform: [{ scale: 0.86 + pulse.value * 0.14 }],
-    opacity: 0.72 + pulse.value * 0.28,
-  }));
-
   const inner = size - 4;
   return (
     <View style={[styles.ring, { width: size, height: size, borderRadius: size / 2 }]}>
-      <Animated.View
-        style={[
-          { width: inner, height: inner, borderRadius: inner / 2 },
-          styles.dot,
-          animated,
-        ]}
-      />
+      <View style={[{ width: inner, height: inner, borderRadius: inner / 2 }, styles.dot]} />
     </View>
   );
 }

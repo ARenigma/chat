@@ -100,7 +100,7 @@ a {
   padding: 18px var(--space-lg);
   border-radius: var(--radius-xl);
   transition:
-    transform var(--duration-fast) var(--ease-bounce),
+    transform var(--duration-fast) var(--ease-out-expo),
     border-radius var(--duration-fast) var(--ease-snap);
 }
 
