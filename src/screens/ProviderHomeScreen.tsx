@@ -185,6 +185,7 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings }: Props
           onValueChange={toggle}
           disabled={setAvailability.isPending}
           accessibilityLabel="Available to talk"
+          tone="presence"
         />
       </View>
 

@@ -359,6 +359,9 @@ describe('accent budget is enforced in code, not just documented', () => {
     //   InboxScreen   — the unread count
     //   ProviderHomeScreen — the same count, for a member waiting on a reply
     //   SendButton    — the fill and the ring
+    //   Toggle        — the track when on. A control in a colour that appears
+    //                   nowhere else reads as a different system, which is
+    //                   precisely how the stock Android teal looked
     //   TokenCounter  — the low-balance pill
     //   Turn          — the member's own bubble
     //   TypingIndicator — the three dots
@@ -371,6 +374,7 @@ describe('accent budget is enforced in code, not just documented', () => {
       'InboxScreen.tsx',
       'ProviderHomeScreen.tsx',
       'SendButton.tsx',
+      'Toggle.tsx',
       'TokenCounter.tsx',
       'Turn.tsx',
       'TypingIndicator.tsx',

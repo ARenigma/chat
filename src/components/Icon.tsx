@@ -9,6 +9,7 @@ export type Glyph =
   | 'close'
   | 'dots'
   | 'plus'
+  | 'search'
   | 'shield';
 
 interface Props {
@@ -31,8 +32,8 @@ interface Props {
  * A chevron is a square with two adjacent borders rotated 45 degrees. An arrow is
  * that same head over a bar. A plus is two crossed bars — and a close is the same
  * plus, turned 45 degrees. A shield is a rounded square with its lower corners
- * heavily rounded — enough to read as "safety" next to a name without needing an
- * icon set.
+ * heavily rounded. A magnifier is a circle with a short bar at its corner —
+ * enough to read as "search" without needing an icon set.
  */
 function IconView({ glyph, size = 16, color, testID }: Props) {
   const stroke = color ?? TOKENS.color.text.primary;
@@ -65,17 +66,67 @@ function IconView({ glyph, size = 16, color, testID }: Props) {
           styles.center,
           { width: size, height: size },
           glyph === 'close' && styles.turned,
-        ]}>
+        ]}
+      >
         <View
           style={[
             styles.absolute,
-            { width: size * 0.78, height: weight, borderRadius: weight / 2, backgroundColor: stroke },
+            {
+              width: size * 0.78,
+              height: weight,
+              borderRadius: weight / 2,
+              backgroundColor: stroke,
+            },
           ]}
         />
         <View
           style={[
             styles.absolute,
-            { width: weight, height: size * 0.78, borderRadius: weight / 2, backgroundColor: stroke },
+            {
+              width: weight,
+              height: size * 0.78,
+              borderRadius: weight / 2,
+              backgroundColor: stroke,
+            },
+          ]}
+        />
+      </View>
+    );
+  }
+
+  if (glyph === 'search') {
+    const ring = size * 0.62;
+    return (
+      <View
+        testID={testID}
+        style={[styles.center, { width: size, height: size }]}
+      >
+        <View
+          style={{
+            width: ring,
+            height: ring,
+            borderRadius: ring / 2,
+            borderWidth: weight,
+            borderColor: stroke,
+            // Offset up-left so the handle has room without growing the box.
+            transform: [
+              { translateX: -size * 0.07 },
+              { translateY: -size * 0.07 },
+            ],
+          }}
+        />
+        <View
+          style={[
+            styles.absolute,
+            {
+              right: size * 0.12,
+              bottom: size * 0.14,
+              width: size * 0.3,
+              height: weight,
+              borderRadius: weight / 2,
+              backgroundColor: stroke,
+              transform: [{ rotate: '45deg' }],
+            },
           ]}
         />
       </View>
@@ -84,7 +135,10 @@ function IconView({ glyph, size = 16, color, testID }: Props) {
 
   if (glyph === 'shield') {
     return (
-      <View testID={testID} style={[styles.center, { width: size, height: size }]}>
+      <View
+        testID={testID}
+        style={[styles.center, { width: size, height: size }]}
+      >
         <View
           style={{
             width: size * 0.72,
@@ -112,7 +166,10 @@ function IconView({ glyph, size = 16, color, testID }: Props) {
 
   if (glyph === 'arrow-up') {
     return (
-      <View testID={testID} style={[styles.center, { width: size, height: size }]}>
+      <View
+        testID={testID}
+        style={[styles.center, { width: size, height: size }]}
+      >
         <View
           style={[
             styles.absolute,
@@ -136,11 +193,18 @@ function IconView({ glyph, size = 16, color, testID }: Props) {
   }
 
   return (
-    <View testID={testID} style={[styles.center, { width: size * 0.7, height: size }]}>
+    <View
+      testID={testID}
+      style={[styles.center, { width: size * 0.7, height: size }]}
+    >
       <View
         style={[
           headStyle,
-          { transform: [{ rotate: glyph === 'chevron-right' ? '45deg' : '-135deg' }] },
+          {
+            transform: [
+              { rotate: glyph === 'chevron-right' ? '45deg' : '-135deg' },
+            ],
+          },
         ]}
       />
     </View>
