@@ -48,48 +48,45 @@ enable_confirmations = false
 enable_signup = false
 enable_confirmations = false
 
-# --- Turning it on later: the two routes, ready to uncomment -----------------
+# --- The route chosen: Send SMS hook, MSG91 as carrier ----------------------
 #
-# The dashboard toggle is real and it is not the whole story. Supabase Auth
-# implements phone login — OTP issue, verify, rate limits, session — but it has
-# no carrier. Something has to actually put an SMS on the network, and that is
-# where the two routes diverge. Costs are in ADR-0006 and were measured, not
-# quoted: an Indian DLT aggregator is roughly 20x cheaper than Firebase Phone
-# Auth for the same message.
+# ADR-0009 decided this over the MSG91 OTP widget. The widget verifies the code
+# itself, which takes Supabase Auth out of the login path entirely — and since
+# Supabase has no admin endpoint that mints a session for a phone user, that
+# leaves either a fake email per number or self-signed Supabase JWTs. Both put
+# the RLS model behind our own token minting. The hook keeps Supabase Auth in
+# charge and reduces MSG91 to the carrier.
 #
-# ROUTE A — a provider Supabase supports natively. MessageBird, Twilio, Vonage
-# or TextLocal. Least code, most expensive (Twilio Verify lands near
-# Rs 5,600/month at 1,300 OTPs against roughly Rs 385 for an aggregator):
+# `supabase/functions/send-sms/index.ts` is written and deployed. Three secrets
+# have to exist before it can work:
 #
-#   enable_signup = true
-#   [auth.sms.twilio]
-#   enabled = true
-#   account_sid = "env(TWILIO_ACCOUNT_SID)"
-#   message_service_sid = "env(TWILIO_MESSAGE_SERVICE_SID)"
-#   auth_token = "env(TWILIO_AUTH_TOKEN)"
+#   SEND_SMS_HOOK_SECRET   the v1,whsec_... value the dashboard shows for the hook
+#   MSG91_AUTHKEY          MSG91 panel -> Authkey
+#   MSG91_TEMPLATE_ID      the DLT-approved template, code as ##var1##
 #
-# ROUTE B — the Send SMS hook, which is what makes the cheap route possible.
-# Supabase hands an Edge Function the user and the OTP and lets us deliver it
-# however we like, so the carrier can be Msg91 or any Indian aggregator that is
-# not on the supported-providers list. This is the route to take:
+# Uncomment all four lines below once the DLT template is approved. Until then
+# `PHONE_AUTH_ENABLED` in src/api/auth.ts keeps the entry point off the sign-in
+# screen — a button that accepts a number and then fails is the Facebook mistake
+# repeated, and that one shipped before it was caught.
 #
-#   [auth.hook.send_sms]
-#   enabled = true
-#   uri = "https://<ref>.supabase.co/functions/v1/send-sms"
-#   secrets = "env(SEND_SMS_HOOK_SECRET)"
+# enable_signup = true
+# [auth.hook.send_sms]
+# enabled = true
+# uri = "https://uvghvhcrovmuwivgijvl.supabase.co/functions/v1/send-sms"
+# secrets = "env(SEND_SMS_HOOK_SECRET)"
 #
 # THE GATE IS NOT MONEY. Every domestic Indian SMS route requires DLT
 # registration under the TRAI mandate — entity, then header (sender ID), then
 # template — typically one to three weeks, and no vendor shortcuts it, Firebase
-# included, because they all use the same domestic routes. So phone OTP is the
-# slowest auth to launch in India, not the fastest, and turning either block on
-# before DLT clears produces a sign-in screen that accepts a number and then
-# fails. Start DLT in parallel; flip a block when the template is approved.
+# included, because they all use the same domestic routes. ADR-0009 section 1 has
+# the thing that is easy to get wrong: the SMS-autofill app hash has to be inside
+# the template *before* approval, and it depends on Google's app signing
+# certificate, which does not exist until after the first Play upload.
 
 # ---------------------------------------------------------------------------
 # Social identity — the only way in
 # ---------------------------------------------------------------------------
-# Both stay `enabled = false` in this file until real credentials exist, because
+# Stays `enabled = false` in this file until real credentials exist, because
 # a half-configured provider fails at the consent screen, in the browser, after
 # the user has already left the app. Flip them in the dashboard once the secrets
 # are set, or set them here through env() and push.
@@ -97,14 +94,12 @@ enable_confirmations = false
 # Google:   console.cloud.google.com -> Credentials -> OAuth client (Web application)
 #           Authorised redirect URI:
 #             https://uvghvhcrovmuwivgijvl.supabase.co/auth/v1/callback
-# Facebook: developers.facebook.com -> app -> Facebook Login -> Settings
-#           Valid OAuth Redirect URI: the same URL.
-#           Facebook additionally requires App Review for public use; test users
-#           work immediately, real ones do not. Start review early.
 #
-# Instagram is absent because it does not exist as a provider — Meta shut the
-# Instagram Basic Display API in Dec 2024 and Instagram sign-in now runs through
-# Facebook Login for Business. See SocialProvider in src/api/auth.ts.
+# Google is the only provider. Facebook's block was deleted rather than left at
+# `enabled = false`: ADR-0006 removed it from the app, and dead provider config
+# is a standing invitation to re-enable something the sign-in screen no longer
+# offers. Instagram never existed as a provider — Meta shut the Instagram Basic
+# Display API in Dec 2024.
 [auth.external.google]
 enabled = false
 client_id = "env(SUPABASE_AUTH_GOOGLE_CLIENT_ID)"
@@ -112,8 +107,3 @@ secret = "env(SUPABASE_AUTH_GOOGLE_SECRET)"
 redirect_uri = ""
 skip_nonce_check = false
 
-[auth.external.facebook]
-enabled = false
-client_id = "env(SUPABASE_AUTH_FACEBOOK_CLIENT_ID)"
-secret = "env(SUPABASE_AUTH_FACEBOOK_SECRET)"
-redirect_uri = ""

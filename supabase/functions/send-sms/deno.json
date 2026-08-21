@@ -1,0 +1,3 @@
+{
+  "//": "verify_jwt is off for this function and must be: Supabase Auth calls the hook with a Standard Webhooks signature, not a user JWT. The HMAC check in index.ts is the authentication, which is why it also enforces a 5-minute timestamp tolerance."
+}

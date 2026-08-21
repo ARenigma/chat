@@ -2,6 +2,7 @@ import { Linking } from 'react-native';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { AUTH_REDIRECT_URL } from '../lib/env';
+import { normalisePhone } from '../lib/phone';
 
 /**
  * Google. No Facebook, no phone, no password, no anonymous session.
@@ -50,14 +51,117 @@ import { AUTH_REDIRECT_URL } from '../lib/env';
  * Apple is absent because there is no iOS build yet. It becomes *mandatory* the
  * moment one ships, under App Store guideline 4.8.
  *
- * Phone + OTP is the next one to add, and it is a cost decision rather than an
- * engineering one — see ADR-0006.
+ * Phone + OTP is built below and switched off — see PHONE_AUTH_ENABLED.
  */
 export type SocialProvider = 'google';
 
 export const PROVIDER_LABEL: Record<SocialProvider, string> = {
   google: 'Continue with Google',
 };
+
+/**
+ * Phone sign-in: implemented, and off until the DLT template is approved.
+ *
+ * This flag exists because of the Facebook mistake, which shipped. A sign-in
+ * option that accepts input and then fails is worse than an absent one, and
+ * Indian transactional SMS cannot be delivered at all until DLT registration
+ * completes — entity, sender ID, then template, one to three weeks. Until then
+ * `signInWithOtp` would take a number, look like it worked, and deliver nothing.
+ *
+ * Turning it on is three things, in this order:
+ *   1. DLT template approved, with the SMS-autofill app hash inside it
+ *      (ADR-0009 §1 — the hash depends on Google's app signing certificate, so
+ *      it cannot be computed before the first Play upload).
+ *   2. Uncomment `[auth.hook.send_sms]` in supabase/config.toml and push, with
+ *      SEND_SMS_HOOK_SECRET, MSG91_AUTHKEY and MSG91_TEMPLATE_ID set.
+ *   3. Flip this to true.
+ *
+ * A contract test asserts the sign-in screen offers no phone entry while this is
+ * false, so the flag cannot be quietly bypassed by adding a button.
+ */
+export const PHONE_AUTH_ENABLED = false;
+
+/**
+ * The OTP flow has a state the OAuth flow does not: a code is in the air and
+ * nothing has been decided yet. Reusing AuthCallbackResult would have meant
+ * either overloading `signedIn` to also mean "sent", or a boolean beside it —
+ * both of which lose the distinction the UI needs to switch from the phone field
+ * to the code field.
+ */
+export type OtpResult =
+  | { status: 'sent' }
+  | { status: 'signedIn' }
+  | { status: 'failed'; message: string };
+
+/**
+ * Ask Supabase to issue a code. Supabase generates and stores it, then calls the
+ * send-sms hook, which puts it on the network through MSG91.
+ *
+ * This function never sees the code, which is the point of choosing the hook
+ * over the MSG91 widget: Supabase Auth stays the only thing that can mint a
+ * session, so RLS keeps resting on `auth.uid()` rather than on our own signing.
+ */
+export async function sendPhoneOtp(phone: string): Promise<OtpResult> {
+  if (!PHONE_AUTH_ENABLED) {
+    return { status: 'failed', message: 'Phone sign-in is not available yet.' };
+  }
+  const normalised = normalisePhone(phone);
+  if (normalised === null) {
+    return { status: 'failed', message: 'That does not look like a phone number.' };
+  }
+  const { error } = await supabase.auth.signInWithOtp({ phone: `+${normalised}` });
+  if (error != null) {
+    return { status: 'failed', message: describeOtpError(error.message) };
+  }
+  return { status: 'sent' };
+}
+
+/** Verify what the user typed. A wrong code is a failure, not a thrown error. */
+export async function verifyPhoneOtp(
+  phone: string,
+  token: string,
+): Promise<OtpResult> {
+  if (!PHONE_AUTH_ENABLED) {
+    return { status: 'failed', message: 'Phone sign-in is not available yet.' };
+  }
+  const normalised = normalisePhone(phone);
+  if (normalised === null) {
+    return { status: 'failed', message: 'That does not look like a phone number.' };
+  }
+  const { error } = await supabase.auth.verifyOtp({
+    phone: `+${normalised}`,
+    token: token.trim(),
+    type: 'sms',
+  });
+  if (error != null) {
+    return { status: 'failed', message: describeOtpError(error.message) };
+  }
+  return { status: 'signedIn' };
+}
+
+/**
+ * Supabase's OTP errors in words that say what to do.
+ *
+ * "Invalid OTP" tells someone nothing about whether to retype or resend, and the
+ * difference matters: an expired code needs a new one, a wrong code needs a
+ * correction, and a rate limit needs a wait. Three different actions.
+ */
+function describeOtpError(message: string): string {
+  const text = message.toLowerCase();
+  if (text.includes('expired')) {
+    return 'That code has expired — send a new one.';
+  }
+  if (text.includes('invalid') || text.includes('incorrect')) {
+    return 'That code is not right. Check the last digits.';
+  }
+  if (text.includes('rate') || text.includes('too many') || text.includes('limit')) {
+    return 'Too many attempts. Wait a minute and try again.';
+  }
+  if (text.includes('sms') || text.includes('provider')) {
+    return 'We could not send a code right now. Try Google instead.';
+  }
+  return 'Could not verify that code. Please try again.';
+}
 
 export async function currentSession(): Promise<Session | null> {
   const { data } = await supabase.auth.getSession();
