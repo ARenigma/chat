@@ -790,3 +790,78 @@ describe('normalisePhone', () => {
     expect(normalisePhone('not a phone')).toBeNull();
   });
 });
+
+/**
+ * `supabase config push` sends config.toml verbatim, so this file is
+ * authoritative or it is a landmine.
+ *
+ * On 2026-08-21 a push made to change the SMS OTP expiry also took Google
+ * sign-in down, because config.toml said `enabled = false` while the credentials
+ * had been set in the dashboard. Nothing in the file or the tests objected. The
+ * secret survived and only the flag flipped, so it was a few minutes of outage
+ * rather than an unrecoverable one — but the next version of that mistake could
+ * wipe a credential nobody has a copy of.
+ */
+describe('config.toml cannot silently disable a live provider', () => {
+  const config = read('supabase/config.toml');
+
+  /** Uncommented lines only: the file explains a lot of things it does not do. */
+  const live = config
+    .split('\n')
+    .filter(line => !line.trimStart().startsWith('#'))
+    .join('\n');
+
+  function providerBlock(name: string): string {
+    const at = live.indexOf(`[auth.external.${name}]`);
+    expect(at).toBeGreaterThan(-1);
+    const rest = live.slice(at + 1);
+    const next = rest.indexOf('\n[');
+    return rest.slice(0, next === -1 ? undefined : next);
+  }
+
+  it('enables every provider the sign-in screen offers', () => {
+    const providers = [
+      ...(/export type SocialProvider =([^;]+);/
+        .exec(read('src/api/auth.ts'))?.[1] ?? '')
+        .matchAll(/'([a-z]+)'/g),
+    ].map(m => m[1] ?? '');
+    expect(providers.length).toBeGreaterThan(0);
+
+    for (const provider of providers) {
+      expect(providerBlock(provider)).toMatch(/enabled = true/);
+    }
+  });
+
+  it('keeps the client id literal and only the secret in the environment', () => {
+    // A client id is not a secret — it ships inside google-services.json. Having
+    // it as env() is how the value ends up empty on a push from a machine that
+    // happens not to have the variable set.
+    const block = providerBlock('google');
+    expect(block).toMatch(/client_id = "\d+-[a-z0-9]+\.apps\.googleusercontent\.com"/);
+    expect(block).toMatch(/secret = "env\(/);
+  });
+
+  it('agrees with the app about the code expiry', () => {
+    // The screen tells the user how long they have. If the two disagree, one of
+    // them is lying to somebody.
+    const seconds = Number(/^otp_expiry = (\d+)$/m.exec(live)?.[1]);
+    expect(Number.isFinite(seconds)).toBe(true);
+    const minutes = seconds / 60;
+    expect(read('src/screens/AuthScreen.tsx')).toContain(
+      `expires in ${minutes} minute`,
+    );
+  });
+
+  it('does not let the resend button outpace the server', () => {
+    // The screen enables "Resend code" after RESEND_SECONDS. If Supabase's
+    // max_frequency is longer, the button is live while the server still refuses
+    // — the user gets a security error for pressing what the app offered.
+    const maxFrequency = /^max_frequency = "(\d+)s"$/m.exec(live)?.[1];
+    const uiCooldown = /const RESEND_SECONDS = (\d+);/.exec(
+      read('src/screens/AuthScreen.tsx'),
+    )?.[1];
+    expect(maxFrequency).toBeDefined();
+    expect(uiCooldown).toBeDefined();
+    expect(Number(uiCooldown)).toBeGreaterThanOrEqual(Number(maxFrequency));
+  });
+});

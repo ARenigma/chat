@@ -40,13 +40,37 @@ enable_signup = false
 enable_confirmations = false
 
 [auth.sms]
-# Off. Phone + OTP was the strongest accountability available short of ID, and it
-# was abandoned on cost: SMS is billed per message, and Indian transactional SMS
-# additionally needs DLT registration (entity, header and template approval),
-# which is weeks of lead time. Revisit when there is revenue to pay for it — the
-# code for it is in git history, not deleted work.
+# Still `enable_signup = false` until delivery is configured — see the block
+# below. Everything else here is set now so that flipping one flag is the only
+# remaining step.
 enable_signup = false
 enable_confirmations = false
+
+# Two minutes, not the fifteen a provider will offer by default.
+#
+# A code that lives for a quarter of an hour is a credential sitting in a
+# notification shade on an unlocked phone. Two minutes is long enough to read six
+# digits off a lock screen and short enough that a glanced-at code is useless by
+# the time anyone acts on it.
+#
+# The honest cost, so it is a decision and not a surprise: Indian SMS delivery is
+# usually a few seconds but can take thirty or more under load, and every second
+# of that eats the window. If real users start reporting expired codes, this is
+# the first number to look at — not the resend logic.
+otp_expiry = 120
+
+# Six digits. 10,000 combinations against even a two-minute window is not enough
+# margin when the resend limit is the only other control.
+otp_length = 6
+
+# Matched deliberately to the 30-second countdown on the sign-in screen.
+#
+# Supabase's default is 60s, and leaving it there would have been a real bug: the
+# UI enables "Resend code" at 30s, Supabase would reject the request, and the
+# user would get a security error for pressing a button the app told them was
+# ready. With a 120-second expiry a 60-second floor would also leave only one
+# usable resend, which is not a recovery path.
+max_frequency = "30s"
 
 # --- The route chosen: Send SMS hook, MSG91 as carrier ----------------------
 #
@@ -100,9 +124,22 @@ enable_confirmations = false
 # is a standing invitation to re-enable something the sign-in screen no longer
 # offers. Instagram never existed as a provider — Meta shut the Instagram Basic
 # Display API in Dec 2024.
+# DANGER, and it is not theoretical: `supabase config push` sends this block
+# verbatim, so `enabled = false` here TURNS GOOGLE OFF on the live project even
+# though the credentials were set in the dashboard. That is exactly what happened
+# on 2026-08-21 — a push made to change the SMS OTP expiry took Google sign-in
+# down with it, because this file said false and the dashboard said true.
+#
+# The rule that follows: this file is authoritative or it is a landmine. There is
+# no third state. So `enabled` is true, the client id is the literal (a client id
+# is not a secret — it ships in google-services.json), and only the secret comes
+# from the environment.
+#
+# A test in __tests__/contract.test.ts now fails if a provider the sign-in screen
+# offers is declared disabled here.
 [auth.external.google]
-enabled = false
-client_id = "env(SUPABASE_AUTH_GOOGLE_CLIENT_ID)"
+enabled = true
+client_id = "305484620007-qt4tbvd29i5vl6qj34t0vboqvcmjrh73.apps.googleusercontent.com"
 secret = "env(SUPABASE_AUTH_GOOGLE_SECRET)"
 redirect_uri = ""
 skip_nonce_check = false
