@@ -218,6 +218,8 @@ export function ChatScreen({ providerId, onBack }: Props) {
           onPress={onBack}
           testID="chat-back"
           accessibilityLabel="Back to the directory"
+          press="chip"
+          size={40}
           style={styles.back}>
           <Icon glyph="chevron-left" size={16} />
         </Pressable>
@@ -372,9 +374,9 @@ const styles = StyleSheet.create({
     borderBottomColor: TOKENS.color.border.hairline,
   },
   back: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: TOKENS.color.bg.sunken,
@@ -453,8 +455,8 @@ const styles = StyleSheet.create({
     color: TOKENS.color.text.positive,
   },
   promptClose: {
-    width: 34,
-    height: 34,
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -37,6 +37,8 @@ export const DURATION = TOKENS.motion.duration;
 export const STAGGER = TOKENS.motion.stagger;
 export const DECAY = TOKENS.motion.decay;
 export const GESTURE = TOKENS.motion.gesture;
+/** Material 3 state-layer opacities and the 48dp minimum target. */
+export const INTERACTION = TOKENS.interaction;
 
 export type SpringName = keyof typeof SPRING;
 

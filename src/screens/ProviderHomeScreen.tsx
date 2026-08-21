@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo } from 'react';
-import { ActivityIndicator, SectionList, StyleSheet, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, SectionList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS } from '../theme/tokens';
 import type { ConversationSummary } from '../lib/database.types';
@@ -10,6 +10,7 @@ import { useEarnings, useSetAvailability } from '../api/provider';
 import { Avatar } from '../components/Avatar';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
+import { Toggle } from '../components/Toggle';
 
 interface Props {
   onOpenConversation: (peerId: string) => void;
@@ -153,6 +154,8 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings }: Props
           onPress={onOpenSettings}
           testID="open-settings"
           accessibilityLabel="Account and privacy"
+          press="chip"
+          size={40}
           style={styles.iconButton}>
           <Icon glyph="dots" size={18} color={TOKENS.color.text.secondary} />
         </Pressable>
@@ -171,23 +174,17 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings }: Props
               : 'You are hidden. Existing conversations still work.'}
           </Text>
         </View>
-        {/* The one platform control in the app, and it has to be told the
-            palette or it renders Android's stock teal — which was the single
-            most out-of-place colour on the screen, and no token would ever have
-            caught it. Sage for on, because availability is a presence state and
-            presence is sage everywhere else. */}
-        <Switch
+        {/* Our own M3 switch, not the platform one. RN's Switch rendered
+            Android's stock teal here — the single most out-of-place colour in
+            the app — and even once told the palette it cannot do the M3 anatomy.
+            Sage for on, because availability is a presence state and presence is
+            sage everywhere else. */}
+        <Toggle
           testID="availability-toggle"
           value={available}
           onValueChange={toggle}
           disabled={setAvailability.isPending}
           accessibilityLabel="Available to talk"
-          trackColor={{
-            false: TOKENS.color.bg.pressed,
-            true: TOKENS.color.state.available,
-          }}
-          thumbColor={TOKENS.color.bg.raised}
-          ios_backgroundColor={TOKENS.color.bg.pressed}
         />
       </View>
 
@@ -291,8 +288,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   iconButton: {
-    width: 34,
-    height: 34,
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
   },

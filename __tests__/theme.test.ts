@@ -397,3 +397,88 @@ describe('accent budget is enforced in code, not just documented', () => {
     expect(read('src/components/ProviderRow.tsx')).not.toMatch(/accent/);
   });
 });
+
+/**
+ * Material 3 conformance, as far as it can be asserted from source.
+ *
+ * The parts of M3 that are *numbers* — state-layer opacities, the 48dp target,
+ * the switch anatomy, a bottom sheet's 28dp corner — are checkable, so they are
+ * checked. The parts that are judgement (when to use a spring, how expressive to
+ * be) are not, and pretending otherwise would be theatre.
+ *
+ * Backward compatibility comes from the same decision that makes this testable:
+ * every control is drawn by us from these tokens, so it renders identically from
+ * minSdk 24 to the current platform. The only controls that would differ across
+ * Android versions are platform widgets, and there are none left.
+ */
+describe('Material 3 conformance', () => {
+  const { interaction, toggle, radius } = LIGHT;
+
+  it('uses M3 state-layer opacities', () => {
+    expect(interaction.stateHover).toBeCloseTo(0.08, 3);
+    expect(interaction.stateFocus).toBeCloseTo(0.1, 3);
+    expect(interaction.statePressed).toBeCloseTo(0.1, 3);
+    expect(interaction.stateDragged).toBeCloseTo(0.16, 3);
+  });
+
+  it('keeps the 48dp minimum touch target', () => {
+    expect(interaction.minTarget).toBe(48);
+  });
+
+  it('matches the M3 switch anatomy to the dp', () => {
+    expect(toggle.trackWidth).toBe(52);
+    expect(toggle.trackHeight).toBe(32);
+    expect(toggle.thumbOff).toBe(16);
+    expect(toggle.thumbOn).toBe(24);
+    expect(toggle.thumbPressed).toBe(28);
+    // The growth is the whole point: off < on < held.
+    expect(toggle.thumbOff).toBeLessThan(toggle.thumbOn);
+    expect(toggle.thumbOn).toBeLessThan(toggle.thumbPressed);
+  });
+
+  it('uses the M3 bottom-sheet corner', () => {
+    expect(radius.sheet).toBe(28);
+    expect(read('src/components/Sheet.tsx')).toContain('TOKENS.radius.sheet');
+  });
+
+  it('draws every control itself — no platform widgets left', () => {
+    // A platform widget is the one thing that cannot be backward compatible:
+    // it renders whatever that Android version's framework draws, and on API 31+
+    // Material You would recolour it from the user's wallpaper. RN's Switch was
+    // rendering Android's stock teal here.
+    const sources = ['src/components', 'src/screens'].flatMap(dir =>
+      readdirSync(join(ROOT, dir))
+        .filter(f => f.endsWith('.tsx'))
+        .map(f => ({ file: f, body: withoutJsxComments(read(`${dir}/${f}`)) })),
+    );
+    // Checked at the *import*, not the tag: `<Button` matches our own Button
+    // too, and an assertion that cannot tell them apart is worse than none.
+    for (const s of sources) {
+      const rnImport = s.body.match(/import \{([^}]*)\} from 'react-native';/)?.[1] ?? '';
+      const imported = rnImport.split(',').map(n => n.trim());
+      for (const widget of ['Switch', 'Button', 'Alert', 'ToastAndroid', 'ProgressBarAndroid']) {
+        expect(imported).not.toContain(widget);
+      }
+      expect(s.body).not.toMatch(/Alert\.alert/);
+    }
+  });
+
+  it('gives every pressable surface a state layer', () => {
+    // Asserted on the primitive rather than per caller: everything interactive
+    // goes through it, which is the reason it exists.
+    const pressable = read('src/components/Pressable.tsx');
+    expect(pressable).toContain('INTERACTION.statePressed');
+    expect(pressable).toContain("overflow: 'hidden'");
+  });
+
+  it('states the minSdk this all has to work on', () => {
+    // 24. Nothing here depends on a platform API, so this is a floor rather than
+    // a constraint — but it should be a known floor.
+    expect(read('android/build.gradle')).toMatch(/minSdkVersion\s*=\s*24/);
+  });
+});
+
+/** JSX comments quote the things these assertions forbid. */
+function withoutJsxComments(source: string): string {
+  return source.replace(/\{?\/\*[\s\S]*?\*\/\}?/g, '').replace(/^\s*\/\/.*$/gm, '');
+}

@@ -73,6 +73,8 @@ export function ProviderStatusScreen({ onBack, onEdit }: Props) {
           onPress={onBack}
           testID="status-back"
           accessibilityLabel="Back"
+          press="chip"
+          size={40}
           style={styles.back}>
           <Icon glyph="chevron-left" size={16} />
         </Pressable>
@@ -156,9 +158,9 @@ const styles = StyleSheet.create({
     borderBottomColor: TOKENS.color.border.hairline,
   },
   back: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: TOKENS.color.bg.sunken,

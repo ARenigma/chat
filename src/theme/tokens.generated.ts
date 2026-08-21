@@ -1,7 +1,8 @@
 /**
  * GENERATED FILE — DO NOT EDIT.
  *
- * Source: design/tokens.json, exported from Figma file dThaRIYIQZX0wamQXa9b2g.
+ * Source: design/tokens.json (authored directly — the Figma library is stale; see
+ * the provenance note in that file).
  * Regenerate with `npm run tokens`. `npm run tokens:check` fails on drift.
  *
  * System: Warm Signal — warm paper base, one coral signal, deep warm ink. Sage carries presence, citrus carries the token balance, and nothing else is allowed a hue.
@@ -75,6 +76,7 @@ export const LIGHT = {
     pressButton: 14,
     pressCard: 12,
     pressSend: 9,
+    sheet: 28,
   },
   motion: {
     spring: {
@@ -155,6 +157,22 @@ export const LIGHT = {
       slow: 420,
       breath: 4200,
     },
+  },
+  interaction: {
+    minTarget: 48,
+    focusRingWidth: 3,
+    focusRingOffset: 2,
+    stateHover: 0.08,
+    stateFocus: 0.1,
+    statePressed: 0.1,
+    stateDragged: 0.16,
+  },
+  toggle: {
+    trackWidth: 52,
+    trackHeight: 32,
+    thumbOff: 16,
+    thumbOn: 24,
+    thumbPressed: 28,
   },
   typography: {
     displayLarge: {
@@ -317,6 +335,7 @@ export const DARK = {
     pressButton: 14,
     pressCard: 12,
     pressSend: 9,
+    sheet: 28,
   },
   motion: {
     spring: {
@@ -397,6 +416,22 @@ export const DARK = {
       slow: 420,
       breath: 4200,
     },
+  },
+  interaction: {
+    minTarget: 48,
+    focusRingWidth: 3,
+    focusRingOffset: 2,
+    stateHover: 0.08,
+    stateFocus: 0.1,
+    statePressed: 0.1,
+    stateDragged: 0.16,
+  },
+  toggle: {
+    trackWidth: 52,
+    trackHeight: 32,
+    thumbOff: 16,
+    thumbOn: 24,
+    thumbPressed: 28,
   },
   typography: {
     displayLarge: {

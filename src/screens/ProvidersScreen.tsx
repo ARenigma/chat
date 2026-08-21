@@ -49,6 +49,8 @@ export function ProvidersScreen({ onSelect, onBack, onOpenSettings }: Props) {
           onPress={onBack}
           testID="directory-back"
           accessibilityLabel="Back to your conversations"
+          press="chip"
+          size={40}
           style={styles.iconButton}>
           <Icon glyph="chevron-left" size={16} color={TOKENS.color.text.secondary} />
         </Pressable>
@@ -58,6 +60,8 @@ export function ProvidersScreen({ onSelect, onBack, onOpenSettings }: Props) {
           onPress={onOpenSettings}
           testID="open-settings"
           accessibilityLabel="Account and privacy"
+          press="chip"
+          size={40}
           style={styles.iconButton}>
           <Icon glyph="dots" size={18} color={TOKENS.color.text.secondary} />
         </Pressable>
@@ -133,8 +137,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   iconButton: {
-    width: 34,
-    height: 34,
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
   },
