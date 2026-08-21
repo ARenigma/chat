@@ -98,24 +98,35 @@ words "someone who listens" and "company" are the approved vocabulary.
 | ----------------- | --------------------- | ------------------------------------- |
 | App icon          | 512×512 PNG, no alpha | `assets/play-icon-512.png`            |
 | Feature graphic   | 1024×500 PNG          | `assets/feature-graphic-1024x500.png` |
-| Phone screenshots | 2–8, min 320px side   | **pending — see below**               |
+| Phone screenshots | 2–8, min 320px side   | `assets/screenshot-*.png`             |
 
 The icon is two bubbles with their tails turned toward each other. It is not a
 generic speech balloon: the asymmetric corner is the same geometry the app's own
 message bubble uses, so the launcher and the first screen are made of the same
 shape. Off-black ground, coral sender, white reply.
 
-**The screenshots must be re-shot before submission.** The five in
-`assets/stale-warm-palette/` were captured on the warm paper palette that the
-neutral-ramp swap removed, so they show surfaces the app no longer has. They are
-kept for reference and deliberately moved out of the assets root so they cannot
-be uploaded by mistake.
+The five screenshots are device captures at 1080×2400, not mockups: inbox, an
+open conversation, the provider directory, the safety sheet, and the inbox in
+dark mode. What the listing shows is what installs.
 
-Re-shooting needs one Google sign-in on the device, which is the one step that
-cannot be automated: sign-in is PKCE, so the verifier is generated inside the app
-and a session cannot be injected from outside. Sign in once on the emulator and
-the five captures take about two minutes — inbox, chat, directory, safety sheet,
-and the inbox in dark mode.
+They were re-shot after the neutral-ramp swap, and the check that they actually
+were is mechanical rather than remembered — the page-background pixel of each
+one is sampled and must equal the current `bg/base`:
+
+```bash
+python3 - <<'PY'
+import sys, glob; sys.path.insert(0, 'scripts')
+from pngcrop import read_png
+for f in sorted(glob.glob('docs/play/assets/screenshot-*.png')):
+    w, h, bpp, px = read_png(f)
+    i = ((h // 2 + 600) * w + 20) * bpp
+    print(f, '#%02X%02X%02X' % tuple(px[i:i+3]))
+PY
+```
+
+Light screens must sample `#F2F2F7`, the dark one `#000000`. A screenshot showing
+a palette the app no longer has is worse than no screenshot: it is a promise the
+install breaks.
 
 ---
 
