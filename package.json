@@ -11,7 +11,7 @@
     "test": "jest",
     "test:db": "node scripts/db-test.mjs",
     "verify:manifest": "node scripts/verify-manifest.mjs",
-    "verify": "npm run tokens:check && npm run tokens:web:check && npm run icons:check && npm run contrast:check && npm run design:check && npm run typecheck && npm run lint && npm test && npm run verify:manifest && npm run bundle:android",
+    "verify": "npm run tokens:check && npm run tokens:web:check && npm run icons:check && npm run contrast:check && npm run web:check && npm run design:check && npm run typecheck && npm run lint && npm test && npm run verify:manifest && npm run bundle:android",
     "android:release": "cd android && ./gradlew assembleRelease",
     "android:bundle": "cd android && ./gradlew bundleRelease",
     "android:clean": "cd android && ./gradlew clean",
@@ -32,7 +32,8 @@
     "icons": "node scripts/gen-icons.mjs",
     "icons:check": "node scripts/gen-icons.mjs --check",
     "design:check": "impeccable detect web/",
-    "contrast:check": "node scripts/check-contrast.mjs"
+    "contrast:check": "node scripts/check-contrast.mjs",
+    "web:check": "node scripts/check-web.mjs"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^3.1.1",
