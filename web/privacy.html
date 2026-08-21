@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>bond — privacy</title>
+    <meta name="theme-color" content="#FBF8F5" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#14110F" media="(prefers-color-scheme: dark)" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Urbanist:wght@400;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/tokens.css" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header><a href="/" class="mark">bond</a></header>
+
+    <h1>Privacy</h1>
+    <p class="lede">
+      Written to be checked against the app rather than to cover us. Every claim
+      here is enforced in the database, not in a policy document.
+    </p>
+
+    <h2>What we hold</h2>
+    <ul>
+      <li>
+        <strong>Your name and email</strong>, from Google. Neither is shown to
+        anyone you talk to — a separate display name is.
+      </li>
+      <li><strong>Your messages</strong>, so a conversation can continue.</li>
+      <li>
+        <strong>Your token balance</strong> and when you last claimed free ones.
+      </li>
+      <li>
+        <strong>A date of birth</strong>, only if you apply to be someone who
+        listens. It is never shown; an age is computed from it.
+      </li>
+      <li>
+        <strong>A notification token</strong> for your device, so a reply can
+        reach you. Deleted when you sign out.
+      </li>
+    </ul>
+
+    <h2>What we do not hold</h2>
+    <ul>
+      <li>No contacts, location, photos, microphone or camera.</li>
+      <li>No advertising ID. The app requests three Android permissions in total.</li>
+      <li>
+        No analytics on what you say. We count events like “a message was sent”,
+        never their contents — a database trigger rejects any event carrying free
+        text.
+      </li>
+    </ul>
+
+    <h2>Who can see your messages</h2>
+    <p>
+      The person you are talking to, and nobody else — enforced by row-level
+      security in the database, so it holds even if the app is wrong. Our team
+      can read a specific message only when you report it: reporting attaches a
+      copy of that message to the report, and that copy is what a human reviews.
+    </p>
+    <p>
+      A notification never contains what was said. It tells you who replied, and
+      that is deliberate — a lock screen is read by whoever is holding the phone.
+    </p>
+
+    <h2>What survives deleting your account</h2>
+    <p>
+      Your profile, conversations, messages and tokens are deleted immediately
+      and permanently. <strong>Abuse reports do not.</strong> A report is kept,
+      with the reporter’s identity removed, for 90 days — because a report that
+      vanished when the reported account was deleted would make deletion a way to
+      destroy the evidence against you.
+    </p>
+
+    <h2>Where it lives</h2>
+    <p>
+      Supabase (Postgres) for data, Google Firebase for notifications and app
+      distribution, Sentry for crash reports. Crash reports are scrubbed of
+      message contents before they are sent.
+    </p>
+
+    <h2>Contact</h2>
+    <p>
+      Questions, or a request to see what we hold about you:
+      <a href="mailto:privacy@example.invalid">privacy@example.invalid</a>.
+    </p>
+
+    <footer>
+      <a href="/">Home</a>
+      <a href="/delete.html">Delete your data</a>
+      <span>Last updated 21 August 2026</span>
+    </footer>
+  </body>
+</html>

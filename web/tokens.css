@@ -1,0 +1,110 @@
+/* GENERATED FILE — DO NOT EDIT. Run `npm run tokens:web`.
+ *
+ * Source: design/tokens.json, the same file src/theme/tokens.generated.ts comes
+ * from. If the site and the app ever look like different products, this file is
+ * stale, not wrong.
+ *
+ * System: Warm Signal — warm paper base, one coral signal, deep warm ink. Sage carries presence, citrus carries the token balance, and nothing else is allowed a hue.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  --bg-base: #FBF8F5;
+  --bg-raised: #FFFFFF;
+  --bg-sunken: #EFE8DF;
+  --bg-hover: #E7DED2;
+  --bg-pressed: #DCD2C4;
+  --bg-inverse: #2A1F1A;
+  --bg-accent: #F2543D;
+  --bg-accent-strong: #C2401F;
+  --bg-accent-tint: #FBE4DE;
+  --bg-positive: #DCE8E3;
+  --bg-token: #F2EFC0;
+  --text-primary: #2A1F1A;
+  --text-secondary: #6B5A4C;
+  --text-tertiary: #A2937F;
+  --text-accent: #8F2E17;
+  --text-on-accent: #FFFFFF;
+  --text-on-inverse: #FBF8F5;
+  --text-positive: #1F4A3F;
+  --text-token: #4A4708;
+  --border-hairline: #EFE8DF;
+  --border-strong: #CFC3B2;
+  --border-accent: #F2543D;
+  --state-available: #4E8B7C;
+  --state-danger: #733635;
+
+  --space-2xs: 4px;
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 20px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+  --space-3xl: 40px;
+
+  --radius-tail: 5px;
+  --radius-xs: 8px;
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-lg: 20px;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
+  --radius-screen: 44px;
+  --radius-pressbutton: 14px;
+  --radius-presscard: 12px;
+  --radius-presssend: 9px;
+  --radius-sheet: 28px;
+
+  /* One family plus a weight, unlike the app.
+   *
+   * That difference is not sloppiness: on the web Urbanist arrives as a real
+   * variable font from Google Fonts, so asking for weight 800 gets the 800 cut.
+   * In the app the faces are separate static files and asking for a weight makes
+   * Android synthesise one it already has — which is why the app names a face
+   * per style and forbids fontWeight outright. */
+  --face-display: 'Urbanist', system-ui, sans-serif;
+  --face-title: 'Urbanist', system-ui, sans-serif;
+  --face-label: 'Urbanist', system-ui, sans-serif;
+  --face-body: 'Urbanist', system-ui, sans-serif;
+
+  /* The four springs, as the closest thing CSS has. A spring is not expressible
+   * as a cubic bezier, so these approximate the settle of each one rather than
+   * pretending to be it — the app owns the real physics. */
+  --ease-snap: cubic-bezier(0.32, 0.72, 0.31, 1);
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-bounce: cubic-bezier(0.2, 1.5, 0.4, 1);
+  --duration-fast: 170ms;
+  --duration-base: 240ms;
+  --duration-slow: 420ms;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+  --bg-base: #14110F;
+  --bg-raised: #1E1A17;
+  --bg-sunken: #262119;
+  --bg-hover: #2E2820;
+  --bg-pressed: #372F26;
+  --bg-inverse: #F6F1EB;
+  --bg-accent: #F2543D;
+  --bg-accent-strong: #F2836B;
+  --bg-accent-tint: #3A1A12;
+  --bg-positive: #16302A;
+  --bg-token: #3A3705;
+  --text-primary: #F7F3EE;
+  --text-secondary: #B3A596;
+  --text-tertiary: #8A7C6D;
+  --text-accent: #FFB4A0;
+  --text-on-accent: #2A1F1A;
+  --text-on-inverse: #2A1F1A;
+  --text-positive: #A8D8C8;
+  --text-token: #E4E26A;
+  --border-hairline: #262119;
+  --border-strong: #3A332B;
+  --border-accent: #F2543D;
+  --state-available: #6BA697;
+  --state-danger: #E39B92;
+  }
+}

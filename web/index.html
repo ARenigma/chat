@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>bond — someone to talk to</title>
+    <!--
+      The description is the positioning, verbatim from ADR-0001. It is also what
+      an ad's landing-page relevance is judged on, so it is not a place to get
+      creative: "peer support, explicitly not clinical".
+    -->
+    <meta
+      name="description"
+      content="Real people, ready to talk. Not therapy — just company. Message someone who listens, whenever you need to."
+    />
+    <meta name="theme-color" content="#FBF8F5" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#14110F" media="(prefers-color-scheme: dark)" />
+    <meta property="og:title" content="bond — someone to talk to" />
+    <meta
+      property="og:description"
+      content="Real people, ready to talk. Not therapy — just company."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Urbanist:wght@400;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/tokens.css" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header>
+      <span class="mark">bond</span>
+    </header>
+
+    <h1>Someone’s here to&nbsp;listen.</h1>
+    <p class="lede">
+      Real people, ready to talk — about a long week, a bad night, or nothing in
+      particular. You pick who. They reply.
+    </p>
+
+    <p class="disclaim">Not therapy, not counselling. Just company.</p>
+
+    <!--
+      Points at the GitLab release rather than a file on Vercel: the APK is tens
+      of megabytes and Vercel is not a binary host. It also means the download
+      URL keeps working when a new version ships, without a redeploy.
+    -->
+    <a class="cta" href="https://gitlab.com/ARenigma/chat/-/releases" rel="noopener"
+      >Download for Android</a
+    >
+    <p class="meta">
+      Android 7 and up · You’ll need to allow install from your browser
+    </p>
+
+    <h2>How it works</h2>
+
+    <div class="card">
+      <strong>Sign in with Google</strong>
+      <p>
+        No phone number, no forms. We read your name and email, and neither is
+        shown to anyone you talk to — you pick a separate display name.
+      </p>
+    </div>
+    <div class="card">
+      <strong>Pick someone who’s free</strong>
+      <p>
+        Everyone shows their age, the languages they speak, how they describe
+        themselves, and how quickly they usually reply.
+      </p>
+    </div>
+    <div class="card">
+      <strong>One message, one token</strong>
+      <p>
+        You start with 50, free. Their replies cost you nothing. If someone never
+        answers, the token comes back.
+      </p>
+    </div>
+
+    <h2>The rules</h2>
+    <ul>
+      <li>Everyone who listens is 18 or over. We check the date of birth.</li>
+      <li>You can block anyone instantly. They are not told.</li>
+      <li>Reporting a message sends the message itself to our team.</li>
+      <li>Deleting your account deletes your conversations with it.</li>
+      <li>No contacts, no location, no photos, no advertising ID.</li>
+    </ul>
+
+    <footer>
+      <a href="/privacy.html">Privacy</a>
+      <a href="/delete.html">Delete your data</a>
+      <span>© 2026 bond</span>
+    </footer>
+  </body>
+</html>
