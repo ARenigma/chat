@@ -14,8 +14,9 @@ class MainApplication : Application(), ReactApplication {
       context = applicationContext,
       packageList =
         PackageList(this).packages.apply {
-          // Packages that cannot be autolinked yet can be added manually here, for example:
-          // add(MyReactNativePackage())
+          // Google Play in-app updates. Not autolinkable because it is this
+          // app's own module rather than a node_modules package.
+          add(InAppUpdatePackage())
         },
     )
   }

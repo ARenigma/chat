@@ -865,3 +865,63 @@ describe('config.toml cannot silently disable a live provider', () => {
     expect(Number(uiCooldown)).toBeGreaterThanOrEqual(Number(maxFrequency));
   });
 });
+
+/**
+ * In-app updates have to be present in the FIRST release or they are useless for
+ * the first update.
+ *
+ * The prompt runs inside the version the user already has. A 1.0.0 that ships
+ * without this can never offer 1.0.1 in-app — Play's silent background
+ * auto-update still happens, but nothing can ask. There is no way to add it
+ * retroactively to a version already installed, which makes this the one feature
+ * whose absence cannot be fixed in the next release.
+ */
+describe('in-app updates are wired end to end', () => {
+  it('depends on the Play app-update library', () => {
+    expect(read('android/app/build.gradle')).toMatch(
+      /implementation\("com\.google\.android\.play:app-update:[\d.]+"\)/,
+    );
+  });
+
+  it('registers the native package, which autolinking cannot do for us', () => {
+    // It is this app's own module rather than a node_modules package, so it must
+    // be added by hand — and a missing registration fails silently: the JS side
+    // simply sees an unsupported platform and never prompts.
+    expect(read('android/app/src/main/java/com/companionchat/MainApplication.kt')).toContain(
+      'add(InAppUpdatePackage())',
+    );
+  });
+
+  it('keeps the decision out of the native module', () => {
+    // The bridge cannot be tested without Play, so it must hold no judgement.
+    // Anything resembling a threshold in Kotlin is a rule nothing can verify.
+    const kotlin = read('android/app/src/main/java/com/companionchat/InAppUpdateModule.kt');
+    expect(kotlin).not.toMatch(/updatePriority\(\)\s*>=/);
+    expect(kotlin).not.toMatch(/clientVersionStalenessDays\(\)\s*>=/);
+  });
+
+  it('mounts the restart prompt outside the routed tree', () => {
+    // A downloaded update must survive navigation and both the signed-in and
+    // signed-out trees. Mounting it inside a screen loses it on the next route.
+    const app = read('App.tsx');
+    expect(app).toContain('<UpdateBanner />');
+    // After <Root /> rather than adjacent to it: stripping the JSX comment that
+    // explains why leaves braces behind, so an adjacency regex is checking the
+    // comment's formatting rather than the mount point.
+    expect(app.indexOf('<UpdateBanner />')).toBeGreaterThan(app.indexOf('<Root />'));
+    // And a sibling of <Root /> inside Shell, not nested in a screen. Scoped to
+    // the Shell function body, because a whole-file regex with [\s\S]* only
+    // proves one string appears before another — which was the first version of
+    // this assertion and it proved nothing.
+    const shell = app.slice(app.indexOf('function Shell()'));
+    expect(shell).toContain('<UpdateBanner />');
+  });
+
+  it('never blocks a release build on an accidental versionCode', () => {
+    // Play rejects a duplicate versionCode. The old default of 1 meant the first
+    // upload worked and every later local build collided.
+    const gradle = read('android/app/build.gradle');
+    expect(gradle).toContain('wantsRelease && explicitVersionCode == null');
+    expect(gradle).toMatch(/throw new GradleException/);
+  });
+});
