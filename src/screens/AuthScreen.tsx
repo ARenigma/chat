@@ -344,7 +344,7 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
           ? PHONE_AUTH_ENABLED
             ? 'Your number is never shown to anyone you talk to — you pick a separate display name. Signing in with Google instead tells Google that you use this app.'
             : 'We only read your name and email, and neither is shown to anyone you talk to — you pick a separate display name. Signing in does tell Google that you use this app.'
-          : 'Standard message rates may apply. The code expires in 15 minutes.'}
+          : 'Standard message rates may apply. The code expires in 2 minutes.'}
       </Animated.Text>
     </KeyboardAvoidingView>
   );
