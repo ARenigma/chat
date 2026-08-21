@@ -13,6 +13,6 @@
   brand has to be recognisable before a single word is read.
 -->
 <resources>
-    <color name="ic_launcher_background">#2A1F1A</color>
+    <color name="ic_launcher_background">#1C1C1E</color>
     <color name="notification_accent">#C2401F</color>
 </resources>

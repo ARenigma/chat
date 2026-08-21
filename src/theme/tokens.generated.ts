@@ -5,7 +5,7 @@
  * the provenance note in that file).
  * Regenerate with `npm run tokens`. `npm run tokens:check` fails on drift.
  *
- * System: Warm Signal — warm paper base, one coral signal, deep warm ink. Sage carries presence, citrus carries the token balance, and nothing else is allowed a hue.
+ * System: Signal on Neutral — iOS system greys carry the chrome, and hue is reserved for meaning: coral is the one call to act, sage is presence, citrus is the token balance. Nothing else gets a hue. Renamed from "Warm Signal", which described a warm paper base that no longer exists — a system whose name asserts a fact about its own palette has to be renamed when that fact changes.
  *
  * Accent budget: the coral is for ACTIONS AND STATES ONLY — send, own bubble,
  * unread count, avatar wash, low-balance count, typing dots. Never a page
@@ -13,7 +13,7 @@
  * single rule is the difference between friendly and flirty, and a test in
  * __tests__/theme.test.ts enforces it rather than trusting this comment.
  *
- * Contrast: Every pair in this file was measured with WCAG 2.1 relative luminance rather than copied from a reference. The palettes this was drawn from publish ratios that do not reproduce — one swatch labelled 6.98:1 measures 3.01:1 against white — so no published number was trusted.
+ * Contrast: Every pair is measured, not copied: `npm run contrast:check` recomputes WCAG 2.1 relative luminance for all 19 foreground/background pairs in both modes and fails the build below target. That gate was written for the neutral-ramp swap, because a palette change is the one edit that can break legibility everywhere at once while every ratio in this file's notes still describes the old background. It immediately found two pre-existing failures: light text/tertiary measured 2.99:1 against white, and the dark hairline 1.08:1 against a dark card — a divider that was not there. Both fixed.
  */
 
 /** Widened deliberately — see the fontVariant note in scripts/gen-tokens.mjs. */
@@ -22,12 +22,12 @@ type FontVariantList = 'tabular-nums'[];
 export const LIGHT = {
   color: {
     bg: {
-      base: '#FBF8F5',
+      base: '#F2F2F7',
       raised: '#FFFFFF',
-      sunken: '#EFE8DF',
-      hover: '#E7DED2',
-      pressed: '#DCD2C4',
-      inverse: '#2A1F1A',
+      sunken: '#E5E5EA',
+      hover: '#DEDEE3',
+      pressed: '#D1D1D6',
+      inverse: '#1C1C1E',
       accent: '#F2543D',
       accentStrong: '#C2401F',
       accentTint: '#FBE4DE',
@@ -35,18 +35,18 @@ export const LIGHT = {
       token: '#F2EFC0',
     },
     text: {
-      primary: '#2A1F1A',
-      secondary: '#6B5A4C',
-      tertiary: '#A2937F',
+      primary: '#1C1C1E',
+      secondary: '#55555A',
+      tertiary: '#78787D',
       accent: '#8F2E17',
       onAccent: '#FFFFFF',
-      onInverse: '#FBF8F5',
+      onInverse: '#FFFFFF',
       positive: '#1F4A3F',
       token: '#4A4708',
     },
     border: {
-      hairline: '#EFE8DF',
-      strong: '#CFC3B2',
+      hairline: '#E5E5EA',
+      strong: '#C7C7CC',
       accent: '#F2543D',
     },
     state: {
@@ -281,12 +281,12 @@ export const LIGHT = {
 export const DARK = {
   color: {
     bg: {
-      base: '#14110F',
-      raised: '#1E1A17',
-      sunken: '#262119',
-      hover: '#2E2820',
-      pressed: '#372F26',
-      inverse: '#F6F1EB',
+      base: '#000000',
+      raised: '#1C1C1E',
+      sunken: '#2C2C2E',
+      hover: '#3A3A3C',
+      pressed: '#48484A',
+      inverse: '#F2F2F7',
       accent: '#F2543D',
       accentStrong: '#F2836B',
       accentTint: '#3A1A12',
@@ -294,18 +294,18 @@ export const DARK = {
       token: '#3A3705',
     },
     text: {
-      primary: '#F7F3EE',
-      secondary: '#B3A596',
-      tertiary: '#8A7C6D',
+      primary: '#F5F5F7',
+      secondary: '#AEAEB2',
+      tertiary: '#98989D',
       accent: '#FFB4A0',
-      onAccent: '#2A1F1A',
-      onInverse: '#2A1F1A',
+      onAccent: '#1C1C1E',
+      onInverse: '#1C1C1E',
       positive: '#A8D8C8',
       token: '#E4E26A',
     },
     border: {
-      hairline: '#262119',
-      strong: '#3A332B',
+      hairline: '#38383A',
+      strong: '#48484A',
       accent: '#F2543D',
     },
     state: {

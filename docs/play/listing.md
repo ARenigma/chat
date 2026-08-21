@@ -98,12 +98,24 @@ words "someone who listens" and "company" are the approved vocabulary.
 | ----------------- | --------------------- | ------------------------------------- |
 | App icon          | 512×512 PNG, no alpha | `assets/play-icon-512.png`            |
 | Feature graphic   | 1024×500 PNG          | `assets/feature-graphic-1024x500.png` |
-| Phone screenshots | 2–8, min 320px side   | `assets/screenshot-*.png`             |
+| Phone screenshots | 2–8, min 320px side   | **pending — see below**               |
 
 The icon is two bubbles with their tails turned toward each other. It is not a
 generic speech balloon: the asymmetric corner is the same geometry the app's own
 message bubble uses, so the launcher and the first screen are made of the same
-shape. Ink background, coral sender, paper reply.
+shape. Off-black ground, coral sender, white reply.
+
+**The screenshots must be re-shot before submission.** The five in
+`assets/stale-warm-palette/` were captured on the warm paper palette that the
+neutral-ramp swap removed, so they show surfaces the app no longer has. They are
+kept for reference and deliberately moved out of the assets root so they cannot
+be uploaded by mistake.
+
+Re-shooting needs one Google sign-in on the device, which is the one step that
+cannot be automated: sign-in is PKCE, so the verifier is generated inside the app
+and a session cannot be injected from outside. Sign in once on the emulator and
+the five captures take about two minutes — inbox, chat, directory, safety sheet,
+and the inbox in dark mode.
 
 ---
 
@@ -132,7 +144,7 @@ app activity/browsing, search history, installed apps, advertising ID.
 
 - Data is encrypted in transit — yes (HTTPS/TLS to Supabase and FCM).
 - Users can request data deletion — **yes**, and it is in the app, not by email:
-  `https://<domain>/delete.html` is the required URL.
+  `https://chat-git-main-arenigmas-projects.vercel.app/delete.html` is the required URL.
 - Committed to the Play Families policy — not applicable (18+, see §5).
 - Independent security review — no.
 
@@ -186,21 +198,22 @@ than tangled up with the initial approval.
 
 ## 7. Required URLs
 
-| Field          | URL                             |
-| -------------- | ------------------------------- |
-| Privacy policy | `https://<domain>/privacy.html` |
-| Data deletion  | `https://<domain>/delete.html`  |
-| Support email  | **needs a real address**        |
+| Field          | Value                                                              |
+| -------------- | ------------------------------------------------------------------ |
+| Privacy policy | `https://chat-git-main-arenigmas-projects.vercel.app/privacy.html` |
+| Data deletion  | `https://chat-git-main-arenigmas-projects.vercel.app/delete.html`  |
+| Support email  | `testrelay97@gmail.com`                                            |
 
-Two blockers here, both outside the code:
+Swap the host for the custom domain when it exists — the paths do not change.
+Play lets you edit these after submission, so a `.vercel.app` host is fine for
+the first review.
 
-1. **The Vercel deployment is SSO-protected.** Deployment Protection is set to
-   `all_except_custom_domains`, so both URLs currently 302 to a Vercel login. A
-   reviewer sees a sign-in wall where the privacy policy should be, and that is a
-   rejection. Fix: Vercel dashboard → project `chat` → Settings → Deployment
-   Protection → Vercel Authentication → **Disabled**. The API rejects this change
-   with 403 for our integration token, so it has to be the dashboard.
-2. **`privacy@example.invalid` is a placeholder** in `web/privacy.html` and
+Both of these were blockers and both are now resolved:
+
+1. ~~The Vercel deployment was SSO-protected~~ **Resolved.** Deployment
+   Protection is off; `/`, `/privacy.html` and `/delete.html` all return 200
+   with no redirect. Verified with curl, not assumed.
+2. ~~`privacy@example.invalid` is a placeholder~~ **Resolved: `testrelay97@gmail.com`** in `web/privacy.html` and
    `web/delete.html`. Play requires a working address, and it is the one thing in
    the pack that cannot be invented.
 
