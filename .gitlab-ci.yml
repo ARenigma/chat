@@ -331,3 +331,43 @@ play-internal:
     - bundle install --path vendor/bundle
     - export PLAY_SERVICE_ACCOUNT_JSON_PATH="$PLAY_SERVICE_ACCOUNT_JSON"
     - bundle exec fastlane android internal
+
+# ---------------------------------------------------------------------------
+# Website → Vercel
+# ---------------------------------------------------------------------------
+# Same pattern as arenigma1/overforge's deploy-frontend: Vercel never touches
+# the repo, CI ships the directory with a token. That matters here beyond
+# convenience — the repo is private, and a git-linked Vercel project would mean
+# granting Vercel read access to the app source to publish three static files.
+#
+# `web/` has no build step at all, so `--prebuilt` is not used and there is no
+# install: Vercel receives five files and serves them. The whole deploy is under
+# 20KB, which is the point — this is the page ad traffic lands on, on an Indian
+# mobile network.
+#
+# Needs one CI variable: VERCEL_TOKEN (masked), from vercel.com/account/tokens.
+# VERCEL_PROJECT_ID is deliberately absent: on the first run the CLI creates the
+# project under the org and prints its id, which then belongs in the variables
+# below so subsequent deploys target it rather than making another one.
+deploy-web:
+  stage: release
+  image: node:22-bookworm-slim
+  needs: []
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" && $VERCEL_TOKEN'
+      changes:
+        - web/**/*
+        - design/tokens.json
+  variables:
+    VERCEL_ORG_ID: 'team_3gHsyR3zCdpVWtnv3r0SJ5Vq'
+  environment:
+    name: web
+    url: https://bond-app.vercel.app
+  script:
+    # Regenerated rather than trusted: web/tokens.css is a build artefact of
+    # design/tokens.json, and `verify` already fails on drift — this makes the
+    # deployed bytes match the source even if someone committed a stale file.
+    - npm ci --ignore-scripts
+    - npm run tokens:web
+    - cd web
+    - npx --yes vercel@latest deploy --prod --yes --token="$VERCEL_TOKEN"
