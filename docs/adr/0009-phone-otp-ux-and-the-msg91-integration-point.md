@@ -290,3 +290,77 @@ Whether `route=otp` has a second gate behind website verification is not known:
 is cheaper per message, carries a branded sender id, and can include the
 SMS-autofill hash that the shared template cannot. `FAST2SMS_ROUTE=dlt` and a
 sender id are already handled in the hook, so that move is configuration.
+
+---
+
+## 6. WhatsApp OTP: attempted, blocked, and the pattern underneath
+
+Tried on 2026-08-22 in the WhatsApp Manager, because a WhatsApp Business account,
+a number and a Meta account already existed. Recording what was actually found,
+since "we already have it" turned out to mean something different from what was
+needed.
+
+**Cost would have been good.** India authentication messages are ~Rs 0.115 (Meta
+base) to Rs 0.145 (BSP-inclusive) plus 18% GST — cheaper than SMS at Rs 0.25 and
+far below Firebase's Rs 6.15.
+
+**One trap worth knowing before registering anything.** Since 1 April 2026 Meta
+charges a separate _authentication-international_ rate when the WABA is registered
+in a different country from the recipient: $0.0304 against $0.0014, about 22x. The
+WABA has to be registered in India or WhatsApp costs more than SMS.
+
+**What the account actually is.** A WABA exists (`1314123584024366`, business
+portfolio `1342961154389274`, "Nanoclaw") but it is Meta's **test** tier, and its
+only number is Meta's test number `+1 555-640-9610`. Creating the authentication
+template failed outright:
+
+> Cannot create message template — This WhatsApp Business account does not have
+> permission to create message template
+
+Test WABAs are locked to the seeded samples (`hello_world`, `jaspers_market_*`).
+None is an authentication template with a code variable, and using a _utility_
+template to carry an OTP would be both absurd in the message body and a category
+violation. So WhatsApp OTP cannot be built or even developed against here.
+
+**The underlying blocker.** Business portfolio → Business info reports:
+
+| Field                        | Value           |
+| ---------------------------- | --------------- |
+| Business verification status | **Unverified**  |
+| Legal business name          | No name         |
+| Address                      | No address      |
+| Business phone number        | No phone number |
+| Website                      | No website      |
+
+Verification has not been started, and none of the details it needs are entered.
+
+**Also learned in passing:** zero-tap and one-tap auto-fill both require the
+Android package name plus an 11-character app signature hash — the same value the
+SMS Retriever hash needs, and therefore the same trap: under Play App Signing it
+depends on Google's certificate and cannot be computed before the first upload.
+Copy-code needs none of that, so it is the right first choice; the template
+settings that work are Authentication → One-time passcode → Copy code, with
+"expires in 2 minutes" to match `otp_expiry`.
+
+## 7. The pattern, stated once
+
+Three vendors have now been tried and each ended in the same place: **every
+production SMS or WhatsApp channel for Indian recipients requires a verified legal
+entity.** DLT needs entity registration; WhatsApp needs Meta business
+verification; MSG91 and Fast2SMS both need DLT for their cheap branded routes.
+The obstacle is not the vendor and switching vendors does not move it.
+
+So there is exactly one action that unblocks all of them at once — register and
+verify the business entity — and one that does not need it at all: Fast2SMS's
+`route=otp`, whose gate is _website verification_ rather than entity
+documentation, and there is already a live site to verify against.
+
+Ordering that follows, and it is the recommendation:
+
+1. **Ship to Play with Google sign-in**, which is ready and verified. Phone is
+   behind `PHONE_AUTH_ENABLED` and the app does not offer it, so there is no
+   half-feature for a reviewer to find.
+2. **Fast2SMS website verification** — the only unlock that needs no entity
+   documents, and it makes phone OTP live.
+3. **Business entity verification** once, which then opens DLT, MSG91's branded
+   sender, WhatsApp, and the autofill hash together.
