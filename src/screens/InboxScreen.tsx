@@ -174,9 +174,7 @@ export function InboxScreen({ onOpenConversation, onBrowse, onOpenSettings }: Pr
       <View>
         <Animated.View entering={enterBlock(0)} style={styles.head}>
           <Text testID="inbox-hero" allowFontScaling style={styles.title}>
-            {free.length > 0
-              ? `${free.length} ${free.length === 1 ? 'person' : 'people'}\nfree now.`
-              : 'Your\npeople.'}
+            {'Your\npeople.'}
           </Text>
         </Animated.View>
 
