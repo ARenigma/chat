@@ -384,3 +384,50 @@ describe('the review prompt is offered only when it can succeed', () => {
     expect(chat).not.toMatch(/Alert\.alert/);
   });
 });
+
+/**
+ * Gestures work inside modals.
+ *
+ * On Android a React Native `Modal` is a separate native window with its own
+ * root view, so the `GestureHandlerRootView` at the top of `App.tsx` does not
+ * enclose anything rendered inside one. A pan declared in a modal is
+ * constructed, attached, and then recognised by nobody — silently. Found by
+ * holding a finger on the sheet and dragging: nothing moved, nothing warned.
+ *
+ * Asserted structurally because the failure mode is a feature that quietly does
+ * not exist, which no runtime check will catch.
+ */
+describe('gesture handling reaches every root', () => {
+  it('wraps the app root', () => {
+    expect(read('App.tsx')).toContain('<GestureHandlerRootView');
+  });
+
+  it('wraps each modal that declares a gesture', () => {
+    const withModals = ['src/components', 'src/screens']
+      .flatMap(dir =>
+        readdirSync(join(ROOT, dir))
+          .filter(f => f.endsWith('.tsx'))
+          .map(f => ({ file: `${dir}/${f}`, body: read(`${dir}/${f}`) })),
+      )
+      .filter(s => s.body.includes('<Modal') && /Gesture\.\w+\(/.test(s.body));
+
+    expect(withModals.length).toBeGreaterThan(0);
+    for (const s of withModals) {
+      expect(s.body).toContain('<GestureHandlerRootView');
+    }
+  });
+
+  it('keeps the sheet the only gesture surface for now', () => {
+    // Not a rule, a tripwire: the next component to declare a pan needs the
+    // wrapper decision made deliberately rather than copied.
+    const users = ['src/components', 'src/screens']
+      .flatMap(dir =>
+        readdirSync(join(ROOT, dir))
+          .filter(f => f.endsWith('.tsx'))
+          .map(f => ({ file: f, body: read(`${dir}/${f}`) })),
+      )
+      .filter(s => /Gesture\.\w+\(/.test(s.body))
+      .map(s => s.file);
+    expect(users).toEqual(['Sheet.tsx']);
+  });
+});

@@ -221,7 +221,7 @@ export function ChatScreen({ providerId, onBack }: Props) {
           style={styles.back}>
           <Icon glyph="chevron-left" size={16} />
         </Pressable>
-        <Avatar initial={initial} size={32} online={peerOnline} />
+        <Avatar initial={initial} size={34} online={peerOnline} />
         <View style={styles.identity}>
           <Text testID="chat-title" allowFontScaling numberOfLines={1} style={styles.title}>
             {name}
@@ -251,7 +251,9 @@ export function ChatScreen({ providerId, onBack }: Props) {
           </View>
         ) : empty ? (
           <View style={styles.empty}>
-            <Avatar initial={initial} size={56} tone="warm" breathing />
+            <View style={styles.emptyMark}>
+              <Avatar initial={initial} size={56} tone="warm" breathing />
+            </View>
             <Text allowFontScaling style={styles.emptyName}>
               {name}
             </Text>
@@ -268,7 +270,10 @@ export function ChatScreen({ providerId, onBack }: Props) {
           <FlatList
             data={rows}
             inverted
-            keyExtractor={r => r.message.id}
+            // localKey, not id: a settled row keeps the key its optimistic
+            // version had, so the bubble's component survives confirmation and
+            // the launch animation does not replay. See lib/transcript.ts.
+            keyExtractor={r => r.message.localKey ?? r.message.id}
             renderItem={renderItem}
             ListHeaderComponent={header}
             ListFooterComponent={<DayDivider label="Today" />}
@@ -308,7 +313,7 @@ export function ChatScreen({ providerId, onBack }: Props) {
               testID="dismiss-review-prompt"
               accessibilityLabel="Not now"
               style={styles.promptClose}>
-              <Icon glyph="close" size={12} color={TOKENS.color.text.secondary} />
+              <Icon glyph="close" size={12} color={TOKENS.color.text.positive} />
             </Pressable>
           </View>
         ) : null}
@@ -374,17 +379,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: TOKENS.color.bg.sunken,
   },
+  emptyMark: {
+    paddingBottom: TOKENS.space.xs,
+  },
   identity: {
     flex: 1,
   },
   title: {
-    ...TOKENS.typography.bodyMedium,
-    fontWeight: '600',
+    ...TOKENS.typography.labelMedium,
     color: TOKENS.color.text.primary,
   },
   presence: {
     ...TOKENS.typography.captionSmall,
-    color: TOKENS.color.text.secondary,
+    color: TOKENS.color.text.positive,
   },
   body: {
     flex: 1,
@@ -409,7 +416,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: TOKENS.space['2xl'],
   },
   emptyName: {
-    ...TOKENS.typography.titleMedium,
+    ...TOKENS.typography.displaySmall,
     color: TOKENS.color.text.primary,
   },
   emptyLine: {
@@ -423,13 +430,16 @@ const styles = StyleSheet.create({
   },
   // Deliberately quieter than the NoticeBar it sits above: no accent border, no
   // colour. This is an invitation, not a problem.
+  // The one calm band in the app. bg/positive rather than bg/sunken: this is an
+  // invitation, and the sage reads as "good news, no action required" where the
+  // grey read as another piece of chrome.
   prompt: {
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: TOKENS.space.md,
     marginBottom: TOKENS.space.xs,
     borderRadius: TOKENS.radius.md,
-    backgroundColor: TOKENS.color.bg.sunken,
+    backgroundColor: TOKENS.color.bg.positive,
   },
   promptFill: {
     flex: 1,
@@ -439,8 +449,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   promptText: {
-    ...TOKENS.typography.captionRegular,
-    color: TOKENS.color.text.primary,
+    ...TOKENS.typography.labelSmall,
+    color: TOKENS.color.text.positive,
   },
   promptClose: {
     width: 34,

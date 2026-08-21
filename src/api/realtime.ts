@@ -19,7 +19,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import type { Message } from '../lib/database.types';
-import { applyReadReceipt, mergeIncoming, unreadFromPeer } from '../lib/transcript';
+import {
+  applyReadReceipt,
+  mergeIncoming,
+  unreadFromPeer,
+  type TranscriptMessage,
+} from '../lib/transcript';
 import { useStore } from '../store/useStore';
 
 /** How long a typing broadcast keeps the indicator up without a refresh. */
@@ -63,8 +68,10 @@ export function useLiveConversation(
     let cancelled = false;
     const key = messagesKey(conversationId);
 
-    const write = (fn: (list: readonly Message[]) => Message[]): void => {
-      queryClient.setQueryData<Message[]>(key, prev => fn(prev ?? []));
+    const write = (
+      fn: (list: readonly TranscriptMessage[]) => TranscriptMessage[],
+    ): void => {
+      queryClient.setQueryData<TranscriptMessage[]>(key, prev => fn(prev ?? []));
     };
 
     const channel = supabase.channel(`conversation:${conversationId}`, {
@@ -205,7 +212,7 @@ export function useMarkRead(conversationId: string | undefined, selfId: string |
     const key = messagesKey(conversationId);
 
     const flush = (): void => {
-      const list = queryClient.getQueryData<Message[]>(key) ?? [];
+      const list = queryClient.getQueryData<TranscriptMessage[]>(key) ?? [];
       const ids = unreadFromPeer(list, selfId).filter(id => !inFlightRef.current.has(id));
       if (ids.length === 0) {
         return;

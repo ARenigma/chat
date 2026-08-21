@@ -1,16 +1,20 @@
 import React, { useCallback } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated from 'react-native-reanimated';
 import { TOKENS } from '../theme/tokens';
-import type { ConversationSummary } from '../lib/database.types';
+import type { ConversationSummary, ProviderSummary } from '../lib/database.types';
 import { initialOf } from '../lib/display';
-import { useConversations, useProfile } from '../api/chat';
+import { enterBlock, enterRail, enterRow } from '../theme/motion';
+import { useConversations, useProfile, useProviders } from '../api/chat';
 import { useStore } from '../store/useStore';
 import { Avatar } from '../components/Avatar';
 import { Button } from '../components/Button';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { TokenCounter } from '../components/TokenCounter';
+
+const CARD_MORPH = { from: TOKENS.radius.lg, to: TOKENS.radius.pressCard };
 
 interface Props {
   onOpenConversation: (peerId: string) => void;
@@ -37,16 +41,27 @@ function ago(iso: string): string {
 }
 
 /**
- * Chat history — the screen the app was missing entirely.
+ * Chat history, and the home screen whenever any thread exists.
  *
- * Until now the only route into a conversation was through the directory, which
- * meant a member with three ongoing threads had no way to see them and no way to
- * tell which had replied. That is the single most conspicuous absence for a
- * product whose value is a continuing relationship rather than a one-off
- * transaction.
+ * Three structures here are lifted from the references, and each earns its place
+ * by carrying information the previous version made the member go and find:
  *
- * This is the home screen when any thread exists, and the directory becomes the
- * "start a new conversation" path rather than the entry point.
+ *   1. **A counting headline.** The largest type on the page now says how many
+ *      people are free, which is the one thing worth knowing before opening it.
+ *      A fixed slogan in that slot spends the most valuable space on the screen
+ *      telling you what app you already opened.
+ *   2. **The "here now" rail.** Every reference opens with a horizontal row of
+ *      faces. Theirs are stories; ours are the providers who are actually
+ *      available this second, which turns decoration into a shortcut. The `+`
+ *      leads to the full directory, exactly where the "add" affordance led in the
+ *      designs this came from.
+ *   3. **Threads in one white card.** Cards on warm paper separate content
+ *      without drawing a single line, and the whole list reads as one object
+ *      rather than a stack of rows.
+ *
+ * `ScrollView` for the rail rather than a nested FlatList: it holds at most a
+ * handful of avatars, and a virtualised list inside a virtualised list is a
+ * warning in the console and a scroll-jank bug in practice.
  */
 export function InboxScreen({ onOpenConversation, onBrowse, onOpenSettings }: Props) {
   const insets = useSafeAreaInsets();
@@ -54,47 +69,119 @@ export function InboxScreen({ onOpenConversation, onBrowse, onOpenSettings }: Pr
   const openRefill = useStore(s => s.openRefill);
   useProfile();
   const { data, isPending } = useConversations();
+  const { data: providers } = useProviders();
+
+  const free = (providers ?? []).filter(p => p.is_available);
+  const threads = data ?? [];
+  const unreadTotal = threads.reduce((n, t) => n + Number(t.unread_count), 0);
 
   const renderItem = useCallback(
-    ({ item }: { item: ConversationSummary }) => {
+    ({ item, index }: { item: ConversationSummary; index: number }) => {
       const name = item.peer_display_name ?? 'Conversation';
       const unread = Number(item.unread_count) > 0;
       return (
-        <Pressable
-          onPress={() => onOpenConversation(item.peer_id)}
-          testID={`thread-${item.peer_id}`}
-          accessibilityLabel={
-            unread
-              ? `${name}, ${item.unread_count} unread messages`
-              : `${name}, no unread messages`
-          }
-          style={styles.row}>
-          <Avatar initial={initialOf(name)} size={42} online={item.peer_available} />
-          <View style={styles.body}>
-            <View style={styles.topLine}>
-              <Text allowFontScaling numberOfLines={1} style={styles.name}>
-                {name}
-              </Text>
-              <Text allowFontScaling style={styles.time}>
-                {ago(item.last_message_at)}
-              </Text>
+        <Animated.View entering={enterRow(index)}>
+          <Pressable
+            onPress={() => onOpenConversation(item.peer_id)}
+            testID={`thread-${item.peer_id}`}
+            accessibilityLabel={
+              unread
+                ? `${name}, ${item.unread_count} unread messages`
+                : `${name}, no unread messages`
+            }
+            press="card"
+            morph={CARD_MORPH}
+            style={styles.row}>
+            <Avatar initial={initialOf(name)} size={42} online={item.peer_available} />
+            <View style={styles.body}>
+              <View style={styles.topLine}>
+                <Text allowFontScaling numberOfLines={1} style={styles.name}>
+                  {name}
+                </Text>
+                <Text allowFontScaling style={styles.time}>
+                  {ago(item.last_message_at)}
+                </Text>
+              </View>
+              <View style={styles.bottomLine}>
+                <Text
+                  allowFontScaling
+                  numberOfLines={1}
+                  style={[styles.preview, unread && styles.previewUnread]}>
+                  {item.last_body ?? 'No messages yet'}
+                </Text>
+                {unread ? (
+                  <View testID="unread-dot" style={styles.unread}>
+                    <Text allowFontScaling style={styles.unreadCount}>
+                      {item.unread_count}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
             </View>
-            <View style={styles.bottomLine}>
-              <Text
-                allowFontScaling
-                numberOfLines={1}
-                style={[styles.preview, unread && styles.previewUnread]}>
-                {item.last_body ?? 'No messages yet'}
-              </Text>
-              {unread ? (
-                <View testID="unread-dot" style={styles.unreadDot} />
-              ) : null}
-            </View>
-          </View>
-        </Pressable>
+          </Pressable>
+        </Animated.View>
       );
     },
     [onOpenConversation],
+  );
+
+  const header = useCallback(
+    () => (
+      <View>
+        <Animated.View entering={enterBlock(0)} style={styles.head}>
+          <Text testID="inbox-hero" allowFontScaling style={styles.title}>
+            {free.length > 0
+              ? `${free.length} ${free.length === 1 ? 'person' : 'people'}\nfree now.`
+              : 'Your\npeople.'}
+          </Text>
+        </Animated.View>
+
+        {free.length > 0 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.rail}>
+            <Animated.View entering={enterRail(0)}>
+              <Pressable
+                onPress={onBrowse}
+                testID="rail-browse"
+                accessibilityLabel="See everyone who is available"
+                press="card"
+                style={styles.railItem}>
+                <View style={styles.add}>
+                  <Icon glyph="plus" size={16} color={TOKENS.color.text.tertiary} />
+                </View>
+                <Text allowFontScaling numberOfLines={1} style={styles.railLabel}>
+                  All
+                </Text>
+              </Pressable>
+            </Animated.View>
+            {free.slice(0, 8).map((p: ProviderSummary, i) => (
+              <Animated.View key={p.id} entering={enterRail(i + 1)}>
+                <Pressable
+                  onPress={() => onOpenConversation(p.id)}
+                  testID={`rail-${p.id}`}
+                  accessibilityLabel={`Message ${p.display_name}, available now`}
+                  press="card"
+                  style={styles.railItem}>
+                  <Avatar initial={initialOf(p.display_name)} size={42} online />
+                  <Text allowFontScaling numberOfLines={1} style={styles.railLabel}>
+                    {p.display_name}
+                  </Text>
+                </Pressable>
+              </Animated.View>
+            ))}
+          </ScrollView>
+        ) : null}
+
+        {threads.length > 0 ? (
+          <Text allowFontScaling style={styles.section}>
+            {unreadTotal > 0 ? `Waiting for you · ${unreadTotal}` : 'Your conversations'}
+          </Text>
+        ) : null}
+      </View>
+    ),
+    [free, onBrowse, onOpenConversation, threads.length, unreadTotal],
   );
 
   return (
@@ -103,33 +190,22 @@ export function InboxScreen({ onOpenConversation, onBrowse, onOpenSettings }: Pr
         <TokenCounter balance={balance} onPress={openRefill} />
         <View style={styles.spacer} />
         <Pressable
-          onPress={onBrowse}
-          testID="browse-providers"
-          accessibilityLabel="Find someone new to talk to"
-          style={styles.iconButton}>
-          <Icon glyph="plus" size={18} color={TOKENS.color.text.secondary} />
-        </Pressable>
-        <Pressable
           onPress={onOpenSettings}
           testID="open-settings"
           accessibilityLabel="Account and privacy"
+          press="chip"
           style={styles.iconButton}>
           <Icon glyph="dots" size={18} color={TOKENS.color.text.secondary} />
         </Pressable>
-      </View>
-
-      <View style={styles.head}>
-        <Text allowFontScaling style={styles.title}>
-          Your conversations
-        </Text>
       </View>
 
       {isPending ? (
         <View style={styles.state}>
           <ActivityIndicator color={TOKENS.color.text.secondary} />
         </View>
-      ) : (data ?? []).length === 0 ? (
+      ) : threads.length === 0 ? (
         <View style={styles.state}>
+          <Avatar initial="·" size={56} tone="warm" breathing />
           <Text allowFontScaling style={styles.stateText}>
             No conversations yet.
           </Text>
@@ -138,16 +214,38 @@ export function InboxScreen({ onOpenConversation, onBrowse, onOpenSettings }: Pr
           </View>
         </View>
       ) : (
-        <FlatList
-          data={data}
-          keyExtractor={c => c.id}
-          renderItem={renderItem}
-          contentContainerStyle={[
-            styles.list,
-            { paddingBottom: insets.bottom + TOKENS.space['2xl'] },
-          ]}
-          showsVerticalScrollIndicator={false}
-        />
+        <>
+          <FlatList
+            data={threads}
+            keyExtractor={c => c.id}
+            renderItem={renderItem}
+            ListHeaderComponent={header}
+            // One card behind the rows, not a card per row: a list of threads is
+            // one object, and per-row cards turn a conversation history into a
+            // settings screen.
+            contentContainerStyle={[
+              styles.list,
+              { paddingBottom: insets.bottom + TOKENS.space['3xl'] * 2 },
+            ]}
+            showsVerticalScrollIndicator={false}
+          />
+          {/* Floating rather than in a bar. There are two destinations in this
+              app, which is one too few for a tab bar and exactly right for a
+              single pill that says what it does. */}
+          <View style={[styles.fabWrap, { bottom: insets.bottom + TOKENS.space.lg }]}>
+            <Pressable
+              onPress={onBrowse}
+              testID="browse-providers"
+              accessibilityLabel="Find someone new to talk to"
+              press="button"
+              morph={{ from: TOKENS.radius.pill, to: TOKENS.radius.xl }}
+              style={styles.fab}>
+              <Text allowFontScaling style={styles.fabLabel}>
+                Find someone
+              </Text>
+            </Pressable>
+          </View>
+        </>
       )}
     </View>
   );
@@ -164,7 +262,7 @@ const styles = StyleSheet.create({
     gap: TOKENS.space['2xs'],
     paddingHorizontal: TOKENS.space.lg,
     paddingTop: TOKENS.space['2xs'],
-    paddingBottom: TOKENS.space.lg,
+    paddingBottom: TOKENS.space.sm,
   },
   spacer: {
     flex: 1,
@@ -176,12 +274,39 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   head: {
-    paddingHorizontal: TOKENS.space.lg,
     paddingBottom: TOKENS.space.lg,
   },
   title: {
-    ...TOKENS.typography.titleMedium,
+    ...TOKENS.typography.displaySmall,
     color: TOKENS.color.text.primary,
+  },
+  rail: {
+    gap: TOKENS.space.sm,
+    paddingBottom: TOKENS.space.xl,
+  },
+  railItem: {
+    width: 56,
+    alignItems: 'center',
+    gap: TOKENS.space['2xs'],
+  },
+  add: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: TOKENS.color.border.strong,
+  },
+  railLabel: {
+    ...TOKENS.typography.captionSmall,
+    color: TOKENS.color.text.secondary,
+  },
+  section: {
+    ...TOKENS.typography.labelSmall,
+    color: TOKENS.color.text.secondary,
+    paddingBottom: TOKENS.space.xs,
   },
   list: {
     paddingHorizontal: TOKENS.space.lg,
@@ -189,8 +314,14 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: TOKENS.space.md,
-    paddingVertical: TOKENS.space.sm,
+    gap: TOKENS.space.sm,
+    padding: TOKENS.space.sm,
+    marginBottom: TOKENS.space.xs,
+    borderRadius: TOKENS.radius.lg,
+    backgroundColor: TOKENS.color.bg.raised,
+    borderWidth: 1,
+    borderColor: TOKENS.color.border.hairline,
+    ...TOKENS.elevation.card,
   },
   body: {
     flex: 1,
@@ -207,14 +338,13 @@ const styles = StyleSheet.create({
     gap: TOKENS.space.xs,
   },
   name: {
-    ...TOKENS.typography.bodyLarge,
-    fontWeight: '500',
+    ...TOKENS.typography.labelMedium,
     color: TOKENS.color.text.primary,
     flex: 1,
   },
   time: {
     ...TOKENS.typography.captionSmall,
-    color: TOKENS.color.text.secondary,
+    color: TOKENS.color.text.tertiary,
   },
   preview: {
     ...TOKENS.typography.captionRegular,
@@ -223,15 +353,39 @@ const styles = StyleSheet.create({
   },
   previewUnread: {
     color: TOKENS.color.text.primary,
-    fontWeight: '500',
   },
-  // A dot, not a count. The number matters far less than "there is something",
-  // and a badge with a number invites anxiety about the number.
-  unreadDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: TOKENS.color.bg.accent,
+  // A count, not a bare dot. The dot was chosen to avoid "anxiety about the
+  // number", but with the threads in cards it read as a rendering artefact, and
+  // one glance at "2" is less anxious than opening a thread to find out.
+  unread: {
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 5,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: TOKENS.color.bg.accentStrong,
+  },
+  unreadCount: {
+    ...TOKENS.typography.numeralSmall,
+    color: TOKENS.color.text.onAccent,
+  },
+  fabWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  fab: {
+    paddingHorizontal: TOKENS.space.xl,
+    paddingVertical: TOKENS.space.sm,
+    borderRadius: TOKENS.radius.pill,
+    backgroundColor: TOKENS.color.bg.inverse,
+    ...TOKENS.elevation.composer,
+  },
+  fabLabel: {
+    ...TOKENS.typography.labelMedium,
+    color: TOKENS.color.text.onInverse,
   },
   state: {
     flex: 1,

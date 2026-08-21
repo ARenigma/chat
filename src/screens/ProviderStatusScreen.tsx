@@ -164,8 +164,7 @@ const styles = StyleSheet.create({
     backgroundColor: TOKENS.color.bg.sunken,
   },
   headerTitle: {
-    ...TOKENS.typography.bodyMedium,
-    fontWeight: '600',
+    ...TOKENS.typography.labelMedium,
     color: TOKENS.color.text.primary,
   },
   body: {
@@ -206,8 +205,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   missingTitle: {
-    ...TOKENS.typography.bodyMedium,
-    fontWeight: '600',
+    ...TOKENS.typography.labelMedium,
     color: TOKENS.color.text.primary,
     paddingBottom: TOKENS.space['2xs'],
   },

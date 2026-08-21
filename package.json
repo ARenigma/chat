@@ -36,6 +36,7 @@
     "js-sha256": "^1.0.0",
     "react": "19.2.3",
     "react-native": "0.86.2",
+    "react-native-gesture-handler": "^3.2.1",
     "react-native-get-random-values": "^2.0.0",
     "react-native-reanimated": "^4.5.3",
     "react-native-safe-area-context": "^5.5.2",

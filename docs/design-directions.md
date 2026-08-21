@@ -285,3 +285,68 @@ product whose main existential risk is being mistaken for something else.
 
 Roughly a day of focused work, gates green throughout. Nothing here touches the
 schema, the safety model, or the auth flow.
+
+---
+
+## Part 6 — What was actually chosen and built
+
+None of the three, in the end. A fourth direction — **"Warm Signal"** — was
+synthesised from nine references supplied afterwards (a Dribbble chat concept,
+a Savee pin of Kretya's _Mengobrol_, and seven Pinterest boards including five
+colour systems). It keeps Direction A's warm base and Direction B's energy, and
+takes the structure from the references rather than from either.
+
+### Where each part came from
+
+| Source                                           | Taken                                                                                                                         |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| _Mengobrol_ (Kretya)                             | The structural spine: warm off-white page, **pure-white cards**, one accent, avatar rail with `+` first, floating pill action |
+| Dribbble _Chat App Concept_ + its Pinterest twin | Counting display headline, search pill, dashed "add" ring, circular icon buttons, dense list under a hero                     |
+| Yellow social pin                                | The inline coloured band that interrupts a list to ask one thing — now the rating prompt                                      |
+| Urbanist pin                                     | The typeface, and "muted neutrals + a near-black that is not black"                                                           |
+| WW/STUDIO _Coral_                                | The palette's bones — Paper / Stone / Coral / Ink                                                                             |
+| MP069 + MP072                                    | Warm off-white over cool grey, deep warm ink instead of black, and publishing a contrast figure per swatch                    |
+| FEST / Bolt                                      | Three-colour discipline, sand as the neutral                                                                                  |
+
+### Deliberately not taken
+
+- **The orange-on-black gradient.** The best-looking thing in the references and
+  the wrong bet here: dark + warm glow + paid one-to-one chat is the visual
+  signature of cam and hookup apps. The coral survives; the darkness does not.
+- **Glass bubbles over a colour field.** They fail AA at body size, and Android
+  blur in React Native is expensive for what it buys.
+- **A four-tab bar and a stories rail.** Two destinations is one too few for a
+  tab bar, and we are not a stories product — the rail carries _who is free now_,
+  which is information rather than decoration.
+
+### One correction to the sources
+
+The contrast ratios printed on those colour-system boards do not reproduce.
+"Toxic Orange 6.98:1" measures 5.16 against the same board's dark and 3.01
+against white; "Aqua Mist 11.71" measures 8.63. Every pair in
+`design/tokens.json` was therefore measured rather than copied, and the file
+says so. One measurement is load-bearing: **white on coral `#F2543D` is 3.4:1**,
+a fail, which is why the accent is two tokens — `bg.accent` for marks and
+`bg.accentStrong` for anything under a label.
+
+### The system
+
+- **Colour** — warm paper 1–7, coral 3/9/10/11, sage (presence), citrus (tokens
+  only), warm ink 11/12, garnet for danger. Danger is deliberately _not_ a red:
+  a red beside a coral accent is two signals the eye cannot separate.
+- **Type** — Urbanist (OFL), five static faces bundled from `assets/fonts`,
+  mounted into the APK by Gradle. Every style names its own face and **nothing
+  sets a `fontWeight`** — a concrete family plus a weight makes Android
+  synthesise a weight the family already ships.
+- **Motion** — four springs as physical triplets, with the perceptual damping
+  ratio _derived_ by the generator so the prose cannot drift from the physics:
+  `snap` 0.93, `smooth` 1.01 (critically damped), `bounce` 0.59 (the send, and
+  nothing else), `gentle` 0.85. Press scales, radius-morph targets, stagger
+  delays, decay and the gesture thresholds are all tokens too.
+- **Physics** — Reanimated for the springs, `react-native-gesture-handler` for
+  velocity. Moti and the other wrappers were skipped: they sit on top of
+  Reanimated and would duplicate what a token-driven `springTo` already gives.
+
+Everything above is enforced by tests rather than described: contrast per pair,
+warmth per neutral, faces bundled, no raw duration or damping outside the theme,
+`bounce` used in exactly one place, and reduce-motion honoured on every entrance.

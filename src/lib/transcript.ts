@@ -20,15 +20,34 @@
  */
 import type { Message } from './database.types';
 
+/**
+ * A transcript row, which is a server row plus one client-only field.
+ *
+ * `localKey` is the id the row had while it was optimistic, carried forward onto
+ * the confirmed row when it settles. It exists for exactly one reason, and it is
+ * a visible one: the list keys on it, so the React element that rendered the
+ * pending bubble is the *same* element that renders the confirmed one.
+ *
+ * Without it, settlement changes the row's id from `pending-…` to a uuid, the
+ * key changes, and FlatList unmounts one component and mounts another. Seen on a
+ * 30fps screen recording of a real send: the bubble appeared, vanished for two
+ * frames, and then replayed the whole squash-and-stretch launch. The animation
+ * was correct both times — it simply ran twice, with a hole in the middle,
+ * because as far as React was concerned two different messages had arrived.
+ *
+ * It is never read from Postgres and never written to it.
+ */
+export type TranscriptMessage = Message & { localKey?: string };
+
 /** Marks a locally-created row that the server has not yet confirmed. */
 export const PENDING_PREFIX = 'pending-';
 
-export function isPending(message: Message): boolean {
+export function isPending(message: TranscriptMessage): boolean {
   return message.id.startsWith(PENDING_PREFIX);
 }
 
 /** Newest-first insertion point for `created_at`. */
-function insertAt(list: readonly Message[], createdAt: string): number {
+function insertAt(list: readonly TranscriptMessage[], createdAt: string): number {
   for (let i = 0; i < list.length; i += 1) {
     const row = list[i];
     if (row !== undefined && row.created_at <= createdAt) {
@@ -45,14 +64,20 @@ function insertAt(list: readonly Message[], createdAt: string): number {
  * the settlement of an optimistic one, not a new message.
  */
 export function mergeIncoming(
-  list: readonly Message[],
+  list: readonly TranscriptMessage[],
   incoming: Message,
   selfId: string | undefined,
-): Message[] {
+): TranscriptMessage[] {
   const existing = list.findIndex(m => m.id === incoming.id);
   if (existing !== -1) {
     const next = [...list];
-    next[existing] = incoming;
+    // Preserve `localKey`. An update to a row already in the list must not
+    // change its identity, and this branch is reached in the interleaving the
+    // reconciliation exists for: Realtime settles the optimistic row first, then
+    // the RPC response arrives for the same id. Overwriting with the bare server
+    // row dropped the key and remounted the bubble on the *second* path — the
+    // same replayed animation, one code path further along.
+    next[existing] = { ...incoming, localKey: list[existing]?.localKey };
     return next;
   }
 
@@ -69,7 +94,9 @@ export function mergeIncoming(
     }
     if (match !== -1) {
       const next = [...list];
-      next[match] = incoming;
+      // Carry the optimistic id forward so the row keeps its identity — see the
+      // note on TranscriptMessage. Without this the send animation plays twice.
+      next[match] = { ...incoming, localKey: list[match]?.localKey ?? list[match]?.id };
       return next;
     }
   }
@@ -80,7 +107,10 @@ export function mergeIncoming(
 }
 
 /** Optimistic rows always go to the head — they are, by definition, newest. */
-export function insertOptimistic(list: readonly Message[], optimistic: Message): Message[] {
+export function insertOptimistic(
+  list: readonly TranscriptMessage[],
+  optimistic: Message,
+): TranscriptMessage[] {
   return [optimistic, ...list];
 }
 
@@ -92,10 +122,10 @@ export function insertOptimistic(list: readonly Message[], optimistic: Message):
  * which is exactly why the id check comes first.
  */
 export function settleOptimistic(
-  list: readonly Message[],
+  list: readonly TranscriptMessage[],
   pendingId: string,
   confirmed: Message | null,
-): Message[] {
+): TranscriptMessage[] {
   const index = list.findIndex(m => m.id === pendingId);
   if (index === -1) {
     return confirmed === null ? [...list] : mergeIncoming(list, confirmed, confirmed.sender_id);
@@ -110,16 +140,16 @@ export function settleOptimistic(
     next.splice(index, 1);
     return next;
   }
-  next[index] = confirmed;
+  next[index] = { ...confirmed, localKey: pendingId };
   return next;
 }
 
 /** A read receipt is an UPDATE, so it arrives for a row already in the list. */
 export function applyReadReceipt(
-  list: readonly Message[],
+  list: readonly TranscriptMessage[],
   id: string,
   readAt: string,
-): Message[] {
+): TranscriptMessage[] {
   const index = list.findIndex(m => m.id === id);
   if (index === -1) {
     return [...list];
@@ -140,7 +170,10 @@ export function applyReadReceipt(
  * marking your own message read, so filtering by sender here is not merely an
  * optimisation, it is what keeps the update from being rejected.
  */
-export function unreadFromPeer(list: readonly Message[], selfId: string | undefined): string[] {
+export function unreadFromPeer(
+  list: readonly TranscriptMessage[],
+  selfId: string | undefined,
+): string[] {
   if (selfId === undefined) {
     return [];
   }
@@ -151,7 +184,7 @@ export function unreadFromPeer(list: readonly Message[], selfId: string | undefi
 
 /** The newest message this session sent, which is the one that shows a receipt. */
 export function lastOwnMessageId(
-  list: readonly Message[],
+  list: readonly TranscriptMessage[],
   selfId: string | undefined,
 ): string | undefined {
   if (selfId === undefined) {

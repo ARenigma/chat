@@ -226,3 +226,59 @@ describe('lastOwnMessageId', () => {
     expect(lastOwnMessageId([message({ sender_id: THEM })], ME)).toBeUndefined();
   });
 });
+
+/**
+ * A settled row keeps the identity its optimistic version had.
+ *
+ * This is a rendering invariant expressed in data, and it was found on a 30fps
+ * screen recording rather than by reasoning: the bubble appeared, vanished for
+ * two frames, and replayed the entire send animation. The cause was that
+ * settlement swaps `pending-…` for a uuid, so the list key changed and FlatList
+ * unmounted the component mid-animation and mounted a different one.
+ *
+ * Nothing else in this suite would notice — every existing assertion is about
+ * the *contents* of the list, and the contents were right both times.
+ */
+describe('optimistic rows keep their identity through settlement', () => {
+  const CONFIRMED: Message = {
+    id: 'aaaaaaaa-0000-4000-8000-000000000001',
+    conversation_id: 'c1',
+    sender_id: 'me',
+    body: 'hello',
+    created_at: '2026-01-01T00:00:00.000Z',
+    read_at: null,
+  };
+
+  const pending = (id: string): Message => ({ ...CONFIRMED, id, created_at: CONFIRMED.created_at });
+
+  it('carries the pending id forward when the RPC settles it', () => {
+    const list = insertOptimistic([], pending('pending-1'));
+    const settled = settleOptimistic(list, 'pending-1', CONFIRMED);
+    expect(settled[0]?.id).toBe(CONFIRMED.id);
+    expect(settled[0]?.localKey).toBe('pending-1');
+  });
+
+  it('carries it forward when Realtime settles it first', () => {
+    const list = insertOptimistic([], pending('pending-2'));
+    const settled = mergeIncoming(list, CONFIRMED, 'me');
+    expect(settled[0]?.id).toBe(CONFIRMED.id);
+    expect(settled[0]?.localKey).toBe('pending-2');
+  });
+
+  it('keeps the key stable however the two paths interleave', () => {
+    // The whole point of the reconciliation being order-independent: whichever
+    // path lands first, the rendered key must not change on the second.
+    const first = mergeIncoming(insertOptimistic([], pending('pending-3')), CONFIRMED, 'me');
+    const second = settleOptimistic(first, 'pending-3', CONFIRMED);
+    expect(second).toHaveLength(1);
+    const key = (m: Message & { localKey?: string }): string => m.localKey ?? m.id;
+    expect(key(first[0]!)).toBe('pending-3');
+    expect(key(second[0]!)).toBe('pending-3');
+  });
+
+  it('leaves a peer message with no local key, so it keys on its own id', () => {
+    const peer: Message = { ...CONFIRMED, id: 'peer-1', sender_id: 'them' };
+    const merged = mergeIncoming([], peer, 'me');
+    expect(merged[0]?.localKey).toBeUndefined();
+  });
+});

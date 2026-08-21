@@ -92,6 +92,22 @@ def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 def ciBuildNumber = (System.getenv("CI_PIPELINE_IID") ?: "1") as Integer
 
 android {
+    /**
+     * Mount `assets/` from the repo root instead of keeping a second copy of the
+     * fonts under android/app/src/main/assets.
+     *
+     * React Native resolves a bundled face by looking for `fonts/<PostScript
+     * name>.ttf` in the APK's assets, and adding the repo's `assets` directory as
+     * a source dir puts `assets/fonts/Urbanist-*.ttf` at exactly that path. The
+     * alternative — copying the five .ttf files into the Android tree — means two
+     * copies of a binary in git and a silent drift the day someone updates one.
+     */
+    sourceSets {
+        main {
+            assets.srcDirs += ['../../assets']
+        }
+    }
+
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion

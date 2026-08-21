@@ -1,7 +1,8 @@
 import React, { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 import { TOKENS } from '../theme/tokens';
+import { bubbleArrive, bubbleLaunch } from '../theme/motion';
 import { Avatar } from './Avatar';
 
 const AVATAR_SLOT = 26;
@@ -22,15 +23,22 @@ interface PeerProps {
 }
 
 /**
- * Their words are not in a bubble. The message IS the content, and a container
- * around it adds chrome carrying no information. The avatar slot is always
- * reserved so the text edge never shifts between a first and a continued turn.
+ * Both sides are in bubbles now, and that is a reversal worth recording.
+ *
+ * The previous version left their words bare on the page, on the argument that a
+ * container adds chrome carrying no information. That argument was right about
+ * chrome and wrong about the product: with one side in a container and one side
+ * loose, a long thread reads as *your* messages punctuated by captions, rather
+ * than as two people talking. Symmetry of shape with asymmetry of colour is what
+ * every reference used, and it is the correct trade — the tail corner and the fill
+ * carry the speaker, the shape carries the fact that both are speech.
+ *
+ * The avatar slot is still always reserved, so the text edge never shifts between
+ * a first and a continued turn.
  */
 function PeerTurnView({ message, initial, first, timestamp, animate, onReport }: PeerProps) {
   return (
-    <Animated.View
-      entering={animate ? FadeInDown.duration(TOKENS.motion.duration.base).springify() : undefined}
-      style={styles.peerRow}>
+    <Animated.View entering={animate === true ? bubbleArrive : undefined} style={styles.peerRow}>
       <View style={styles.slot}>{first ? <Avatar initial={initial} size={26} /> : null}</View>
       <View style={styles.peerColumn}>
         {/* A plain RN Pressable, not the animated one: a scale spring on a
@@ -40,9 +48,11 @@ function PeerTurnView({ message, initial, first, timestamp, animate, onReport }:
           onLongPress={onReport}
           delayLongPress={450}
           accessibilityLabel={onReport ? 'Long press to report this message' : undefined}>
-          <Text testID="bubble-peer" allowFontScaling style={styles.peerText}>
-            {message}
-          </Text>
+          <View style={styles.peerBubble}>
+            <Text testID="bubble-peer" allowFontScaling style={styles.peerText}>
+              {message}
+            </Text>
+          </View>
         </Pressable>
         {timestamp ? <Text style={styles.stamp}>{timestamp}</Text> : null}
       </View>
@@ -65,12 +75,22 @@ interface MineProps {
   receipt?: 'sent' | 'read';
 }
 
-/** My words get the container. That asymmetry separates the voices without colour. */
+/**
+ * The signature moment lands here.
+ *
+ * `bubbleLaunch` starts the bubble narrow-and-tall and lets one `bounce` spring
+ * resolve width, height and position together, so it arrives as an object with
+ * mass rather than three properties finishing at their own pace. It is the
+ * counterpart to the send button's squash: squeezed out of the button, released
+ * into the thread.
+ *
+ * The fill is `accentStrong` rather than `accent` for a measured reason — the
+ * lighter coral carries white text at 3.4:1, which is a fail, and this bubble is
+ * full of white body copy. The deeper step measures 5.2:1.
+ */
 function MyTurnView({ message, timestamp, pending, receipt }: MineProps) {
   return (
-    <Animated.View
-      entering={FadeInDown.duration(TOKENS.motion.duration.fast)}
-      style={styles.myColumn}>
+    <Animated.View entering={bubbleLaunch} style={styles.myColumn}>
       <View style={[styles.bubble, pending === true && styles.pending]}>
         <Text testID="bubble-mine" allowFontScaling style={styles.myText}>
           {message}
@@ -103,8 +123,20 @@ const styles = StyleSheet.create({
   },
   peerColumn: {
     flex: 1,
-    paddingRight: TOKENS.space.xl + TOKENS.space['2xs'],
+    alignItems: 'flex-start',
+    paddingRight: TOKENS.space.lg,
     gap: TOKENS.space['2xs'],
+  },
+  peerBubble: {
+    paddingHorizontal: TOKENS.space.md,
+    paddingVertical: 10,
+    backgroundColor: TOKENS.color.bg.raised,
+    borderWidth: 1,
+    borderColor: TOKENS.color.border.hairline,
+    borderTopLeftRadius: TOKENS.radius.lg,
+    borderTopRightRadius: TOKENS.radius.lg,
+    borderBottomRightRadius: TOKENS.radius.lg,
+    borderBottomLeftRadius: TOKENS.radius.tail,
   },
   peerText: {
     ...TOKENS.typography.bodyLarge,
@@ -115,10 +147,10 @@ const styles = StyleSheet.create({
     gap: TOKENS.space['2xs'],
   },
   bubble: {
-    maxWidth: '76%',
+    maxWidth: '80%',
     paddingHorizontal: TOKENS.space.md,
     paddingVertical: 10,
-    backgroundColor: TOKENS.color.bg.inverse,
+    backgroundColor: TOKENS.color.bg.accentStrong,
     borderTopLeftRadius: TOKENS.radius.lg,
     borderTopRightRadius: TOKENS.radius.lg,
     borderBottomLeftRadius: TOKENS.radius.lg,
@@ -131,7 +163,7 @@ const styles = StyleSheet.create({
   },
   myText: {
     ...TOKENS.typography.bodyLarge,
-    color: TOKENS.color.text.onInverse,
+    color: TOKENS.color.text.onAccent,
   },
   meta: {
     flexDirection: 'row',
