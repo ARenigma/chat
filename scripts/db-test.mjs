@@ -50,6 +50,7 @@ const MIGRATIONS = [
   'supabase/migrations/007_conversation_side.sql',
   'supabase/migrations/008_push_tokens.sql',
   'supabase/migrations/009_push_sender.sql',
+  'supabase/migrations/010_phone_verification.sql',
 ];
 
 const docker = (args, options = {}) =>
@@ -333,6 +334,10 @@ const suites = [
   {
     file: join(ROOT, 'supabase/tests/070_push_tokens.sql'),
     label: 'push tokens: registration, reassignment, sender isolation',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/080_phone_verification.sql'),
+    label: 'phone verification: a claim only the server can make',
   },
 ];
 

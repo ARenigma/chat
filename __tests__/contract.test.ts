@@ -81,7 +81,7 @@ describe('the AI path is gone, not dormant', () => {
     if (!existsSync(dir)) {
       return;
     }
-    const allowed = ['send-push', 'send-sms'];
+    const allowed = ['send-push', 'send-sms', 'verify-phone'];
     const present = readdirSync(dir, { withFileTypes: true })
       .filter(entry => entry.isDirectory())
       .map(entry => entry.name);
