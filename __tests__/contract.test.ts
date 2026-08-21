@@ -1,3 +1,4 @@
+import { spawnSync } from 'child_process';
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { isUuid } from '../src/lib/ids';
@@ -612,5 +613,86 @@ describe('sign-in copy matches the sign-in that exists', () => {
         expect(screen.body).not.toMatch(claim);
       }
     }
+  });
+});
+
+/**
+ * Nothing that signs or authenticates may be git-trackable.
+ *
+ * There is now a copy of the upload keystore and its two passwords at the repo
+ * root, which is convenient and also the single worst place for them: the root
+ * is the directory that gets committed, archived and shared. `.gitignore` covers
+ * the paths that exist today, and that is exactly the protection that fails —
+ * the realistic accident is not someone reading the repo, it is someone adding
+ * `upload.keystore.bak` or `keys/` and pushing a signing key to two remotes,
+ * where it cannot be un-pushed.
+ *
+ * So this asserts the property rather than the paths: for every file on disk
+ * that looks like a credential, git must refuse to track it. A new name is
+ * caught the first time anyone runs the suite.
+ */
+describe('secrets are untrackable', () => {
+  const SUSPICIOUS = /(\.keystore|\.jks|\.p12|\.pem|keystore\.properties|-key\.json|service.?account.*\.json|\.env$)/i;
+
+  /** Files git would actually track, i.e. not ignored. `-c` keeps it quiet. */
+  function trackable(paths: string[]): string[] {
+    if (paths.length === 0) {
+      return [];
+    }
+    const result = spawnSync(
+      'git',
+      ['check-ignore', '--no-index', '--stdin'],
+      { cwd: ROOT, input: paths.join('\n'), encoding: 'utf8' },
+    );
+    const ignored = new Set(
+      (result.stdout ?? '').split('\n').map(l => l.trim()).filter(Boolean),
+    );
+    return paths.filter(p => !ignored.has(p));
+  }
+
+  it('ignores every credential-shaped file present on disk', () => {
+    const listed = spawnSync(
+      'git',
+      ['ls-files', '--others', '--cached', '--exclude-standard', '-z'],
+      { cwd: ROOT, encoding: 'utf8' },
+    );
+    // `--others --exclude-standard` lists untracked-but-not-ignored files, and
+    // `--cached` lists tracked ones. Anything credential-shaped in either set is
+    // a file git is willing to commit.
+    const candidates = (listed.stdout ?? '')
+      .split('\0')
+      .filter(Boolean)
+      .filter(p => SUSPICIOUS.test(p))
+      // Three files legitimately live in git, and each is committed on purpose:
+      //   - debug.keystore is Android's public, universally-known debug key,
+      //     needed for a debug build to work on a fresh clone.
+      //   - keystore.properties.example is a template with no values in it.
+      //   - ios/.xcode.env is Xcode build config, matched only because the
+      //     pattern ends with `.env`. It holds a node path, not a secret.
+      .filter(
+        p =>
+          ![
+            'android/app/debug.keystore',
+            'android/keystore.properties.example',
+            'ios/.xcode.env',
+          ].includes(p),
+      );
+
+    expect(candidates).toEqual([]);
+  });
+
+  it('would refuse the names someone is most likely to invent', () => {
+    const likely = [
+      'upload.keystore',
+      'upload.keystore.bak',
+      'keys-backup/upload.keystore',
+      'keys/upload.jks',
+      'android/keystore.properties',
+      'backup/keystore.properties',
+      '.env',
+      '.secrets/fcm-sender.json',
+      'fcm-service-account.json',
+    ];
+    expect(trackable(likely)).toEqual([]);
   });
 });

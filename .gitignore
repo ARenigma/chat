@@ -95,3 +95,28 @@ supabase/.temp/
 # Build artefacts staged for upload. A 59 MB AAB does not belong in git, and the
 # reproducible way to get one is `CI_PIPELINE_IID=n npm run android:bundle`.
 dist/
+
+# Local convenience copy of the signing key. See keys-backup/README.md —
+# gitignored because a signing key pushed to a remote cannot be un-pushed.
+keys-backup/
+
+# --- Credentials, by shape rather than by name -------------------------------
+# The rules above were path- and name-specific: `*.keystore` and
+# `android/keystore.properties`. A test in __tests__/contract.test.ts checks the
+# property those rules were meant to guarantee and found the gaps — git would
+# have tracked `upload.keystore.bak`, `keys/upload.jks`,
+# `backup/keystore.properties` and `fcm-service-account.json`. A signing key
+# pushed to a remote cannot be un-pushed, so these match anywhere at any depth.
+**/*.keystore*
+!**/debug.keystore
+**/*.jks
+**/*.jks.*
+**/*.p12
+**/*.pfx
+**/*.pem
+**/*.key
+**/keystore.properties
+!**/keystore.properties.example
+**/*service?account*.json
+**/*service-account*.json
+**/*-key.json
