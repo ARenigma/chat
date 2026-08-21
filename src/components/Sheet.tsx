@@ -175,8 +175,11 @@ const styles = StyleSheet.create({
     // slack at the bottom, or the last button sits under the gesture area.
     paddingBottom: TOKENS.space['3xl'],
     gap: TOKENS.space.sm,
-    borderTopLeftRadius: TOKENS.radius.screen,
-    borderTopRightRadius: TOKENS.radius.screen,
+    // Material 3 specifies 28dp for a bottom sheet's top corners. The 44dp
+    // screen radius that was here is for full-screen surfaces, and at that size
+    // the sheet read as a card floating rather than a surface rising.
+    borderTopLeftRadius: TOKENS.radius.sheet,
+    borderTopRightRadius: TOKENS.radius.sheet,
     backgroundColor: TOKENS.color.bg.raised,
     ...TOKENS.elevation.sheet,
   },

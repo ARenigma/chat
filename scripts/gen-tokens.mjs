@@ -2,16 +2,17 @@
 /**
  * Generates `src/theme/tokens.generated.ts` from `design/tokens.json`.
  *
- * This is the code half of the design pipeline: Figma variables are the source of
- * truth, `design/tokens.json` is their exported form, and this turns them into a
- * typed RN theme. Neither the JSON nor the TS is hand-edited.
+ * `design/tokens.json` is the source of truth and this turns it into a typed RN
+ * theme. The generated file is never hand-edited.
+ *
+ * The pipeline used to start in Figma, and the JSON was its export. It no longer
+ * does — see the provenance note in the JSON. The generator does not care either
+ * way, but the header it writes should not claim a lineage the file does not
+ * have.
  *
  * `--check` regenerates in memory and exits non-zero if the committed file
  * differs, which is what makes drift a build failure rather than a surprise.
  *
- * The export step upstream of this is manual: reading Figma variables over REST
- * needs an Enterprise plan, so today they come out through the Plugin API. This
- * generator is the part that runs unattended.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -189,7 +190,8 @@ function elevation(mode) {
 const header = `/**
  * GENERATED FILE — DO NOT EDIT.
  *
- * Source: design/tokens.json, exported from Figma file ${spec.source.fileKey}.
+ * Source: design/tokens.json (authored directly — the Figma library is stale; see
+ * the provenance note in that file).
  * Regenerate with \`npm run tokens\`. \`npm run tokens:check\` fails on drift.
  *
  * System: ${spec.source.system}
@@ -214,6 +216,8 @@ export const LIGHT = ${render(
     space: values(spec.space),
     radius: values(spec.radius),
     motion: motion(),
+    interaction: values(spec.interaction),
+    toggle: values(spec.toggle),
     typography: typography(),
     elevation: elevation('Light'),
   },
@@ -226,6 +230,8 @@ export const DARK = ${render(
     space: values(spec.space),
     radius: values(spec.radius),
     motion: motion(),
+    interaction: values(spec.interaction),
+    toggle: values(spec.toggle),
     typography: typography(),
     elevation: elevation('Dark'),
   },

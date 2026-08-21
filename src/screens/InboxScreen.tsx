@@ -268,8 +268,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   iconButton: {
-    width: 34,
-    height: 34,
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
   },
