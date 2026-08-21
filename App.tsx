@@ -5,6 +5,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from './src/theme/tokens';
 import { ThemeProvider, useStyles, useThemeMode } from './src/theme/ThemeProvider';
+import { UpdateBanner } from './src/components/UpdateBanner';
 import { assertEnv } from './src/lib/env';
 import { migrateLegacyStorage, storage } from './src/lib/storage';
 import { initialNotificationPeer, onNotificationOpen, startPush } from './src/lib/push';
@@ -390,6 +391,11 @@ function Shell() {
     <>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} translucent />
       <Root />
+      {/* Outside Root on purpose. A downloaded update has to survive every route
+          change and both the signed-in and signed-out trees — the one thing
+          worse than not prompting is prompting and then losing it when the user
+          navigates. */}
+      <UpdateBanner />
     </>
   );
 }

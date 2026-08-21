@@ -1,6 +1,6 @@
 # ADR-0008 — Versioning, and why OTA updates wait
 
-Status: **accepted**
+Status: **accepted, amended 2026-08-22 (§4)**
 Date: 2026-08-21
 
 Three questions that look like one: how Play versions are numbered, how the git
@@ -89,3 +89,78 @@ Sources consulted: [Stallion's 2026 OTA
 guide](https://stalliontech.io/react-native-ota-updates-guide), [CodePush
 alternatives](https://rnrescue.dev/blog/react-native-codepush-alternatives),
 [Expo vs bare in 2026](https://pawelkarniej.com/blog/expo-or-bare-react-native-2026/).
+
+---
+
+## 4. Amended: in-app updates, and a guard on versionCode
+
+Two changes, both prompted by preparing the first upload.
+
+### The versionCode fallback was a trap with a delayed trigger
+
+`CI_PIPELINE_IID ?: 1` is fine until the second release. Play only checks that
+versionCode strictly increases, so the _first_ upload of `1` succeeds and looks
+correct — and then every local release build is also `1` and is rejected at
+upload, by which time nobody remembers why. The failure lands on whoever ships
+the update, not whoever set it up.
+
+A release build now refuses to guess:
+
+```
+> A release build needs an explicit versionCode.
+    CI_PIPELINE_IID=<n> npm run android:bundle
+    ./gradlew bundleRelease -PversionCode=<n>
+```
+
+Debug keeps the fallback — those builds are never uploaded. Verified all three
+paths: release without a number fails, release with `-PversionCode` builds, debug
+builds untouched.
+
+### In-app updates ship in 1.0.0, not 1.0.1
+
+This reverses nothing in §3 — OTA JavaScript updates are still deferred — but it
+is the opposite kind of decision, and the reason is timing rather than taste:
+**the prompt runs inside the version the user already has.** A 1.0.0 without it
+can never offer 1.0.1 in-app. Play's silent background auto-update still happens
+either way, but nothing can _ask_, and there is no way to add it retroactively to
+a version already installed. It is the one feature whose absence cannot be fixed
+in the next release.
+
+`com.google.android.play:app-update:2.1.0`, a thin Kotlin module, and a policy
+module in TypeScript. The split is deliberate: nothing in the native module can
+be tested without Play, so it holds no judgement at all — a test asserts there is
+no threshold comparison in the Kotlin. Every decision is in
+`src/lib/updatePolicy.ts` and covered by 13 unit tests.
+
+The policy, in order of how much it matters:
+
+1. **Flexible by default.** An immediate update is a full-screen block the user
+   cannot dismiss. Doing that to someone mid-conversation, in an app whose whole
+   premise is that a person is listening, is worse than shipping a day later.
+2. **Immediate only when Play says urgent** — priority 4 or 5, set per release at
+   rollout, so it is a decision made when publishing rather than guessed here.
+3. **Immediate when 30+ days stale**, because at that point a block is the lesser
+   harm.
+4. **Flexible prompts at most weekly**, recorded _before_ the flow starts so a
+   dismissal also counts. A prompt that returns every launch is one people learn
+   to dismiss unread — which then gets the urgent ones dismissed too.
+
+`UpdateBanner` is a separate surface from `NoticeBar` for a behavioural reason:
+NoticeBar self-dismisses after 4.2 seconds and cannot be tapped, which is right
+for "Reported." and wrong for the one notice that asks the user to act and must
+wait until they do. It mounts as a sibling of `<Root />` so a downloaded update
+survives every route change and both the signed-in and signed-out trees.
+
+Verified on device, which is the most that can be verified off Play:
+
+```
+PlayCore: AppUpdateService : requestUpdateInfo(com.companionchat)
+PlayCore: AppUpdateService : Failed to bind to the service.
+ReactNativeJS: update check: supported=true available=false ...
+```
+
+`supported=true` proves the module is registered; the bind failure is expected on
+an emulator with no Play Store, and it degrades to "nothing available" with no
+crash and nothing shown to the user. The flows themselves need internal app
+sharing or a Play test track, so they are unverified until the first release is
+live — stated rather than implied.

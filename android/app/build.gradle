@@ -89,8 +89,39 @@ def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
  * `versionCode (expr).toInteger()` as a method call whose argument is evaluated
  * in a way AGP rejects with a bare "Value is null", which is a miserable error to
  * diagnose from. A local avoids the ambiguity entirely.
+ *
+ * A release build now REFUSES to fall back to 1, and that guard exists because
+ * the old behaviour was a trap with a delayed trigger. Play only cares that
+ * versionCode strictly increases, so the first upload of `1` succeeds and looks
+ * fine — and then every subsequent local build is also `1` and is rejected at
+ * upload, long after anyone remembers why. The failure lands on the person
+ * shipping an update, not the person who set this up.
+ *
+ * Debug keeps the fallback: those builds are never uploaded and a version code
+ * would be noise on every `run-android`.
+ *
+ * Supply it either way:
+ *     CI_PIPELINE_IID=7 npm run android:bundle     (what CI does)
+ *     ./gradlew bundleRelease -PversionCode=7      (by hand)
  */
-def ciBuildNumber = (System.getenv("CI_PIPELINE_IID") ?: "1") as Integer
+def wantsRelease = gradle.startParameter.taskNames.any {
+    it.toLowerCase().contains("release")
+}
+def explicitVersionCode = System.getenv("CI_PIPELINE_IID") ?: project.findProperty("versionCode")
+
+if (wantsRelease && explicitVersionCode == null) {
+    throw new GradleException(
+        "A release build needs an explicit versionCode.\n\n" +
+        "  Play rejects a duplicate versionCode, and the old default of 1 meant\n" +
+        "  every local release build collided with the first upload.\n\n" +
+        "  Pass one:\n" +
+        "    CI_PIPELINE_IID=<n> npm run android:bundle\n" +
+        "    ./gradlew bundleRelease -PversionCode=<n>\n\n" +
+        "  It must be higher than the highest already uploaded to Play."
+    )
+}
+
+def ciBuildNumber = (explicitVersionCode ?: "1") as Integer
 
 android {
     /**
@@ -118,11 +149,9 @@ android {
         applicationId "com.companionchat"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        // Every build was versionCode 1, so every App Distribution release read
-        // "1.0.0 (1)" — indistinguishable in the console, and Android has no
-        // reason to treat a new APK as an upgrade. The pipeline number is
-        // monotonic and unique, which is what a versionCode has to be. Falls
-        // back to 1 for local builds, which never need to be comparable.
+        // Resolved above, where the release guard also lives. Debug builds fall
+        // back to 1; a release build without an explicit number refuses to
+        // build at all rather than producing a duplicate Play would reject.
         versionCode ciBuildNumber
         versionName "1.0.0"
 
@@ -166,6 +195,20 @@ android {
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
+
+    /**
+     * Google Play in-app updates.
+     *
+     * This has to ship in the FIRST release or it is useless for the first
+     * update: the prompt runs inside the version the user already has, so a
+     * 1.0.0 without it can never offer 1.0.1 in-app. Play's own background
+     * auto-update still happens either way; this is what makes it promptable.
+     *
+     * No -ktx variant: the module is small and the Task API reads fine without
+     * the coroutine extensions, which would pull in a second dependency for two
+     * call sites.
+     */
+    implementation("com.google.android.play:app-update:2.1.0")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
