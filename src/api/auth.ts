@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import { AUTH_REDIRECT_URL } from '../lib/env';
 
 /**
- * Google or Facebook. No phone, no password, no anonymous session.
+ * Google. No Facebook, no phone, no password, no anonymous session.
  *
  * This is the third identity model this app has had, so the reasoning is worth
  * keeping in one place. See ADR-0004 for the decision record.
@@ -15,7 +15,7 @@ import { AUTH_REDIRECT_URL } from '../lib/env';
  *   2. **Phone + OTP** — strongest accountability available without asking for
  *      ID, because a number costs money to replace. Abandoned on cost: SMS is
  *      billed per message and DLT registration is weeks of lead time in India.
- *   3. **Google / Facebook** (here) — free to us, and an account that is harder
+ *   3. **Google** (here) — free to us, and an account that is harder
  *      to churn than an anonymous row while being easier than a phone number.
  *
  * Being clear about what this costs: a social account is **weaker
@@ -26,28 +26,37 @@ import { AUTH_REDIRECT_URL } from '../lib/env';
  * *conversation*, and eventually classification. That is a real regression
  * against the phone model and it should be revisited when SMS is affordable.
  *
- * There is a second, subtler cost worth naming: Facebook and Google both learn
- * that the user signed into *this* app. For an app about loneliness, that is a
- * disclosure some people will not want to make, and it is not a disclosure a
- * phone number required. It is the main argument for offering Apple sign-in on
- * iOS later, which supports private relay.
+ * There is a second, subtler cost worth naming: Google learns that the user
+ * signed into *this* app. For an app about loneliness, that is a disclosure some
+ * people will not want to make, and it is not one a phone number required. It is
+ * the main argument for phone auth and for Apple sign-in on iOS later, which
+ * supports private relay.
  */
 
 /**
- * The providers we support.
+ * One provider, deliberately.
+ *
+ * **Facebook was removed** rather than left unfinished. It had a button and no
+ * credentials — `enable_facebook = false` in the Supabase config — so every tap
+ * produced a failure, which is worse than an absent option: a sign-in screen
+ * that offers something it cannot deliver is the first thing a new user
+ * experiences. Meta's App Review would also have to be passed before it could
+ * ever work, for a second identity nobody asked for.
  *
  * Instagram is absent and cannot be added: Meta shut down the Instagram Basic
  * Display API in December 2024, and Instagram sign-in now runs through Facebook
  * Login for Business. "Log in with Instagram" is, in practice, `facebook`.
  *
  * Apple is absent because there is no iOS build yet. It becomes *mandatory* the
- * moment one ships with these two, under App Store guideline 4.8.
+ * moment one ships, under App Store guideline 4.8.
+ *
+ * Phone + OTP is the next one to add, and it is a cost decision rather than an
+ * engineering one — see ADR-0006.
  */
-export type SocialProvider = 'google' | 'facebook';
+export type SocialProvider = 'google';
 
 export const PROVIDER_LABEL: Record<SocialProvider, string> = {
   google: 'Continue with Google',
-  facebook: 'Continue with Facebook',
 };
 
 export async function currentSession(): Promise<Session | null> {

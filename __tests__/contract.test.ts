@@ -288,12 +288,26 @@ describe('pipeline wiring', () => {
       .flatMap(dir => readdirSync(join(ROOT, dir)).map(f => read(`${dir}/${f}`)))
       .join('\n');
 
-    const selectors = new Set(
-      readdirSync(join(ROOT, '.maestro'))
-        .filter(f => /^\d/.test(f))
-        .flatMap(f => [...read(`.maestro/${f}`).matchAll(/id:\s*'([^']+)'/g)])
-        .map(m => m[1] ?? ''),
-    );
+    /**
+     * Ids under `assertNotVisible` are excluded, and the exclusion is the
+     * interesting part: those name things that must *not* exist. `signin-facebook`
+     * is asserted absent because the Facebook button shipped with no credentials
+     * behind it, so every tap failed — and a flow that simply stopped mentioning
+     * it would pass again the moment someone re-added it.
+     */
+    const flows = readdirSync(join(ROOT, '.maestro')).filter(f => /^\d/.test(f));
+    const selectors = new Set<string>();
+    for (const file of flows) {
+      const body = read(`.maestro/${file}`);
+      for (const block of body.split(/\n(?=- )/)) {
+        if (/assertNotVisible/.test(block)) {
+          continue;
+        }
+        for (const m of block.matchAll(/id:\s*'([^']+)'/g)) {
+          selectors.add(m[1] ?? '');
+        }
+      }
+    }
     expect(selectors.size).toBeGreaterThan(0);
 
     for (const id of selectors) {
