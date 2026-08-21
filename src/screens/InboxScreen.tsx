@@ -1,5 +1,13 @@
-import React, { useCallback } from 'react';
-import { ActivityIndicator, FlatList, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated from 'react-native-reanimated';
 import { TOKENS } from '../theme/tokens';
@@ -15,6 +23,17 @@ import { Pressable } from '../components/Pressable';
 import { TokenCounter } from '../components/TokenCounter';
 
 const CARD_MORPH = { from: TOKENS.radius.lg, to: TOKENS.radius.pressCard };
+
+/**
+ * Search appears only once there is something to search.
+ *
+ * A filter over three conversations is chrome: it costs a permanent row of
+ * screen space to save a scroll that nobody needed. Four is where a list stops
+ * being scannable in one glance, which is the point at which the field earns its
+ * place — and it appearing on its own is a small piece of the app noticing that
+ * you now have people.
+ */
+const SEARCH_THRESHOLD = 3;
 
 interface Props {
   onOpenConversation: (peerId: string) => void;
@@ -71,9 +90,34 @@ export function InboxScreen({ onOpenConversation, onBrowse, onOpenSettings }: Pr
   const { data, isPending } = useConversations();
   const { data: providers } = useProviders();
 
+  const [query, setQuery] = useState('');
+
   const free = (providers ?? []).filter(p => p.is_available);
-  const threads = data ?? [];
-  const unreadTotal = threads.reduce((n, t) => n + Number(t.unread_count), 0);
+  // Memoised so the filter below does not see a new array identity every render.
+  const all = useMemo(() => data ?? [], [data]);
+  const searchable = all.length > SEARCH_THRESHOLD;
+
+  /**
+   * Filtered client-side, deliberately.
+   *
+   * Every thread is already in memory — the inbox query returns the whole list —
+   * so a server round trip per keystroke would be slower and would also leak
+   * what someone is looking for into the network log of a product about
+   * loneliness. Name and last message are the only fields worth matching: the
+   * full transcript is not loaded here, and searching inside message bodies is a
+   * different feature with a different privacy question.
+   */
+  const threads = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (q === '') {
+      return all;
+    }
+    return all.filter(t =>
+      `${t.peer_display_name ?? ''} ${t.last_body ?? ''}`.toLowerCase().includes(q),
+    );
+  }, [all, query]);
+
+  const unreadTotal = all.reduce((n, t) => n + Number(t.unread_count), 0);
 
   const renderItem = useCallback(
     ({ item, index }: { item: ConversationSummary; index: number }) => {
@@ -174,14 +218,52 @@ export function InboxScreen({ onOpenConversation, onBrowse, onOpenSettings }: Pr
           </ScrollView>
         ) : null}
 
+        {searchable ? (
+          <View style={styles.search}>
+            <Icon glyph="search" size={16} color={TOKENS.color.text.tertiary} />
+            <TextInput
+              testID="inbox-search"
+              style={styles.searchInput}
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search your conversations"
+              placeholderTextColor={TOKENS.color.text.tertiary}
+              allowFontScaling
+              autoCorrect={false}
+              returnKeyType="search"
+              accessibilityLabel="Search your conversations"
+              underlineColorAndroid="transparent"
+            />
+            {query !== '' ? (
+              <Pressable
+                onPress={() => setQuery('')}
+                testID="inbox-search-clear"
+                accessibilityLabel="Clear search"
+                press="chip"
+                size={24}
+                style={styles.clear}>
+                <Icon glyph="close" size={11} color={TOKENS.color.text.secondary} />
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
+
         {threads.length > 0 ? (
           <Text allowFontScaling style={styles.section}>
-            {unreadTotal > 0 ? `Waiting for you · ${unreadTotal}` : 'Your conversations'}
+            {query !== ''
+              ? `${threads.length} of ${all.length}`
+              : unreadTotal > 0
+                ? `Waiting for you · ${unreadTotal}`
+                : 'Your conversations'}
           </Text>
-        ) : null}
+        ) : (
+          <Text testID="inbox-no-matches" allowFontScaling style={styles.section}>
+            Nobody matching “{query.trim()}”.
+          </Text>
+        )}
       </View>
     ),
-    [free, onBrowse, onOpenConversation, threads.length, unreadTotal],
+    [all.length, free, onBrowse, onOpenConversation, query, searchable, threads.length, unreadTotal],
   );
 
   return (
@@ -203,7 +285,7 @@ export function InboxScreen({ onOpenConversation, onBrowse, onOpenSettings }: Pr
         <View style={styles.state}>
           <ActivityIndicator color={TOKENS.color.text.secondary} />
         </View>
-      ) : threads.length === 0 ? (
+      ) : all.length === 0 ? (
         <View style={styles.state}>
           <Avatar initial="·" size={56} tone="warm" breathing />
           <Text allowFontScaling style={styles.stateText}>
@@ -215,7 +297,12 @@ export function InboxScreen({ onOpenConversation, onBrowse, onOpenSettings }: Pr
         </View>
       ) : (
         <>
-          <FlatList
+          {/* FlashList, not FlatList. It recycles cells instead of mounting a
+              new component per row, which is the difference that shows up when
+              someone with forty conversations scrolls fast — FlatList's blank
+              cells are the recycling it does not do. v2 sizes rows itself, so
+              there is no estimate to keep in sync with the design. */}
+          <FlashList
             data={threads}
             keyExtractor={c => c.id}
             renderItem={renderItem}
@@ -302,6 +389,33 @@ const styles = StyleSheet.create({
   railLabel: {
     ...TOKENS.typography.captionSmall,
     color: TOKENS.color.text.secondary,
+  },
+  search: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: TOKENS.space.xs,
+    paddingLeft: TOKENS.space.md,
+    paddingRight: TOKENS.space['2xs'],
+    marginBottom: TOKENS.space.md,
+    borderRadius: TOKENS.radius.pill,
+    backgroundColor: TOKENS.color.bg.raised,
+    borderWidth: 1,
+    borderColor: TOKENS.color.border.hairline,
+  },
+  searchInput: {
+    flex: 1,
+    minHeight: 44,
+    paddingVertical: 0,
+    ...TOKENS.typography.bodyMedium,
+    color: TOKENS.color.text.primary,
+  },
+  clear: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: TOKENS.color.bg.sunken,
   },
   section: {
     ...TOKENS.typography.labelSmall,

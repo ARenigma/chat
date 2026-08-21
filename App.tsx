@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Linking, StatusBar, StyleSheet, Text, View } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TOKENS } from './src/theme/tokens';
 import { assertEnv } from './src/lib/env';
+import { migrateLegacyStorage, storage } from './src/lib/storage';
 import { initSentry } from './src/lib/sentry';
 import { isUuid } from './src/lib/ids';
 import { track } from './src/lib/telemetry';
@@ -82,6 +82,10 @@ function Root() {
     (async () => {
       try {
         assertEnv();
+        // One-time move of anything the previous AsyncStorage build left behind,
+        // before the session is read — otherwise the first boot after the switch
+        // signs everybody out.
+        await migrateLegacyStorage();
         const session = await currentSession();
         if (cancelled) {
           return;
@@ -90,10 +94,8 @@ function Root() {
           setBoot({ phase: 'signedOut' });
           return;
         }
-        const stored = await AsyncStorage.getItem(LAST_PROVIDER_KEY);
-        if (cancelled) {
-          return;
-        }
+        // Synchronous, so the first frame can already be the right screen.
+        const stored = storage.get(LAST_PROVIDER_KEY);
         if (isUuid(stored)) {
           setRoute({ name: 'chat', providerId: stored });
         }
@@ -153,13 +155,13 @@ function Root() {
   const openChat = useCallback((id: string) => {
     setRoute({ name: 'chat', providerId: id });
     track('conversation_opened');
-    void AsyncStorage.setItem(LAST_PROVIDER_KEY, id);
+    storage.set(LAST_PROVIDER_KEY, id);
   }, []);
 
   const leaveChat = useCallback(() => {
     setRoute({ name: 'inbox' });
     resetConversation();
-    void AsyncStorage.removeItem(LAST_PROVIDER_KEY);
+    storage.remove(LAST_PROVIDER_KEY);
   }, [resetConversation]);
 
   const browse = useCallback(() => {

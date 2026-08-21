@@ -14,6 +14,20 @@ interface Props {
   accessibilityLabel: string;
   disabled?: boolean;
   testID?: string;
+  /**
+   * Which token fills the track when on.
+   *
+   * `accent` is the default because the coral is the app's signal and a toggle
+   * is an action — a control in a colour that appears nowhere else reads as
+   * belonging to a different system, which is exactly how the stock Android teal
+   * looked before this component existed.
+   *
+   * `presence` exists for one switch: the provider's availability. Sage means
+   * "someone is there" everywhere else in the app — on the dot, on the rail, on
+   * the "Here now" label — so the control that *sets* that state should be the
+   * same colour as the state it sets.
+   */
+  tone?: 'accent' | 'presence';
 }
 
 const T = TOKENS.toggle;
@@ -66,7 +80,10 @@ function ToggleView({
   accessibilityLabel,
   disabled = false,
   testID,
+  tone = 'accent',
 }: Props) {
+  const fill =
+    tone === 'presence' ? TOKENS.color.state.available : TOKENS.color.bg.accentStrong;
   // 0 = off, 1 = on. `held` is separate because the pressed thumb size applies
   // in both states, and folding it into one value would make "off and held"
   // indistinguishable from "half on".
@@ -78,16 +95,8 @@ function ToggleView({
   }, [value, on]);
 
   const track = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(
-      on.value,
-      [0, 1],
-      [TOKENS.color.bg.pressed, TOKENS.color.state.available],
-    ),
-    borderColor: interpolateColor(
-      on.value,
-      [0, 1],
-      [TOKENS.color.border.strong, TOKENS.color.state.available],
-    ),
+    backgroundColor: interpolateColor(on.value, [0, 1], [TOKENS.color.bg.pressed, fill]),
+    borderColor: interpolateColor(on.value, [0, 1], [TOKENS.color.border.strong, fill]),
   }));
 
   const thumb = useAnimatedStyle(() => {

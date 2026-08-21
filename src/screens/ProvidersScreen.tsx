@@ -1,5 +1,6 @@
 import React, { useCallback } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated from 'react-native-reanimated';
 import { TOKENS } from '../theme/tokens';
@@ -104,7 +105,7 @@ export function ProvidersScreen({ onSelect, onBack, onOpenSettings }: Props) {
           </Text>
         </View>
       ) : (
-        <FlatList
+        <FlashList
           data={list}
           keyExtractor={p => p.id}
           renderItem={({ item, index }) => (
