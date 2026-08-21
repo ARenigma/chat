@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CompanionChat — about &amp; contact</title>
+    <meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Urbanist:wght@400;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/tokens.css" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header><a href="/" class="mark">CompanionChat</a></header>
+
+    <h1>About &amp; contact</h1>
+    <p class="lede">
+      Who runs this, what it is, and how to reach a person about it.
+    </p>
+
+    <h2>What CompanionChat is</h2>
+    <p>
+      A paid chat service that connects people who want to talk with people who
+      are willing to listen. Members start a conversation and spend tokens to send
+      messages; the people who listen are ordinary adults who applied and were
+      admitted, not clinicians.
+    </p>
+
+    <div class="disclaim">
+      It is peer support and company, not therapy, counselling or medical care.
+    </div>
+
+    <h2>How it works</h2>
+    <div class="card">
+      <strong>For members</strong>
+      <p>
+        Sign in, see who is free, start talking. 50 tokens to begin and 25 free
+        every day; one token sends one message. A message that is never answered
+        refunds its token automatically.
+      </p>
+    </div>
+    <div class="card">
+      <strong>For people who listen</strong>
+      <p>
+        Apply from inside the app. You confirm you are over 18, write a short
+        introduction, and choose the languages you speak. Applications are
+        reviewed by a person.
+      </p>
+    </div>
+    <div class="card">
+      <strong>Safety</strong>
+      <p>
+        Every conversation can be reported from the message itself, and reports go
+        to a human. Blocking is immediate and mutual. Only the two people in a
+        conversation can read it — enforced by the database, not by a promise.
+      </p>
+    </div>
+
+    <h2>Contact</h2>
+    <p>
+      <a href="mailto:testrelay97@gmail.com">testrelay97@gmail.com</a> reaches a
+      person for support, privacy requests, abuse reports and press. We answer in
+      English and Hindi.
+    </p>
+
+    <!--
+      BUSINESS IDENTITY — deliberately not filled in with invented values.
+
+      Meta business verification and Google Play both read this page and compare
+      it against the details submitted in their consoles. A legal name or address
+      that does not match official documents is worse than an absent one: it is a
+      mismatch, and a mismatch is a rejection rather than a gap.
+
+      Paste the real values here once the entity details are known, and they must
+      match the Meta business portfolio (Business info) and the registration
+      documents exactly:
+
+      <h2>Operating entity</h2>
+      <div class="card">
+        <strong>LEGAL BUSINESS NAME</strong>
+        <p>
+          REGISTERED ADDRESS<br />
+          BUSINESS PHONE<br />
+          GSTIN or CIN, if registered
+        </p>
+      </div>
+    -->
+
+    <h2>Where your data lives</h2>
+    <p>
+      Supabase (PostgreSQL) for the database, Google Firebase for notifications,
+      Sentry for crash reports. Crash reports are scrubbed of message contents
+      before they are sent. The full detail is on the
+      <a href="/privacy.html">privacy page</a>.
+    </p>
+
+    <footer>
+      <a href="/">Home</a>
+      <a href="/terms.html">Terms</a>
+      <a href="/privacy.html">Privacy</a>
+      <a href="/delete.html">Delete your data</a>
+      <span>© 2026 CompanionChat</span>
+    </footer>
+  </body>
+</html>
