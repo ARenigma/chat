@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Round variant. Identical to ic_launcher on purpose: an adaptive icon is already
+  masked by the launcher, so the round request is satisfied by the same layers.
+  The distinct `mipmap-*/ic_launcher_round.png` files exist only for API 24-25,
+  which mask nothing.
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_bg" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <monochrome android:drawable="@mipmap/ic_launcher_monochrome" />
+</adaptive-icon>

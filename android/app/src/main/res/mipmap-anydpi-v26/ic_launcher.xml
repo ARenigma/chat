@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Adaptive icon, API 26+.
+
+  The background is a flat colour rather than a bitmap: the mark is the whole
+  design, so a background PNG would be five files that are all the same pixel.
+
+  `monochrome` is what Android 13's themed icons use — without it the launcher
+  falls back to showing the full-colour icon in a themed tray, which looks like
+  an oversight rather than a choice. It is declared after the other two so older
+  parsers that do not know the tag simply stop reading.
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_bg" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <monochrome android:drawable="@mipmap/ic_launcher_monochrome" />
+</adaptive-icon>

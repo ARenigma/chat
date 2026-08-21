@@ -25,8 +25,8 @@ interface Props {
 /**
  * Account and privacy.
  *
- * Identity linking is gone with the anonymous session: the phone number *is* the
- * account, so there is nothing to upgrade. What replaced it is the route into
+ * Identity linking is gone with the anonymous session: the Google account *is*
+ * the account, so there is nothing to upgrade. What replaced it is the route into
  * provider onboarding, which needs to live somewhere a member can find without
  * being advertised at — becoming a provider is a deliberate act, not a nudge.
  */
@@ -116,8 +116,8 @@ export function SettingsSheet({
       testID="settings-sheet"
       title="Account & privacy"
       body={
-        'Signed in with your phone number, which is never shown to anyone you ' +
-        'talk to. No contacts, no location, no photos, no advertising ID.'
+        'Signed in with Google. Your name and email are never shown to anyone ' +
+        'you talk to. No contacts, no location, no photos, no advertising ID.'
       }
       onClose={onClose}>
       {/* Setting an explicit mode rather than toggling between light and dark

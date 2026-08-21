@@ -450,3 +450,146 @@ describe('gesture handling reaches every root', () => {
     expect(users).toEqual(['Sheet.tsx']);
   });
 });
+
+/**
+ * The launcher icon, which is the one asset with no runtime and therefore no
+ * chance of failing loudly.
+ *
+ * Every density is a resized copy of a committed master, so the interesting
+ * failures are structural: a density bucket that was never generated, an
+ * adaptive layer referenced by XML but absent from mipmap, and the ink value
+ * hardcoded in colors.xml drifting from the token it was copied from. None of
+ * those show up in a build; all of them show up on someone's home screen.
+ */
+describe('launcher icon', () => {
+  const RES = 'android/app/src/main/res';
+  const BUCKETS = ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi'];
+  const LAYERS = [
+    'ic_launcher.png',
+    'ic_launcher_round.png',
+    'ic_launcher_foreground.png',
+    'ic_launcher_monochrome.png',
+  ];
+
+  it('ships every layer at every density', () => {
+    const missing: string[] = [];
+    for (const bucket of BUCKETS) {
+      for (const layer of LAYERS) {
+        if (!existsSync(join(ROOT, RES, `mipmap-${bucket}`, layer))) {
+          missing.push(`mipmap-${bucket}/${layer}`);
+        }
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it('keeps the pre-26 bitmaps, because minSdk is 24', () => {
+    // Adaptive icons start at API 26. Deleting these because the XML exists
+    // would leave two Android versions with no icon at all.
+    const minSdk = read('android/build.gradle').match(/minSdkVersion\s*=\s*(\d+)/);
+    expect(minSdk).not.toBeNull();
+    expect(Number(minSdk?.[1])).toBeLessThan(26);
+    expect(existsSync(join(ROOT, RES, 'mipmap-mdpi/ic_launcher.png'))).toBe(true);
+  });
+
+  it('declares a monochrome layer for themed icons', () => {
+    for (const name of ['ic_launcher.xml', 'ic_launcher_round.xml']) {
+      const xml = read(`${RES}/mipmap-anydpi-v26/${name}`);
+      expect(xml).toContain('<monochrome');
+      expect(xml).toContain('@mipmap/ic_launcher_monochrome');
+    }
+  });
+
+  it('backs the adaptive icon with a drawable, not a bare colour', () => {
+    // `<background android:drawable="@color/...">` compiles and ships the right
+    // value, and then renders as nothing on API 34 — the mark composited over
+    // whatever was behind it and the paper bubble vanished. Verified on device;
+    // this is the assertion that stops it coming back.
+    for (const name of ['ic_launcher.xml', 'ic_launcher_round.xml']) {
+      const xml = read(`${RES}/mipmap-anydpi-v26/${name}`);
+      const background = xml.match(/<background[^>]*android:drawable="([^"]+)"/)?.[1];
+      expect(background).toBe('@drawable/ic_launcher_bg');
+    }
+    expect(read(`${RES}/drawable/ic_launcher_bg.xml`)).toContain(
+      '@color/ic_launcher_background',
+    );
+  });
+
+  it('resolves every resource the adaptive XML references', () => {
+    const xml = read(`${RES}/mipmap-anydpi-v26/ic_launcher.xml`);
+    for (const [, ref] of xml.matchAll(/@mipmap\/(\w+)/g)) {
+      expect(existsSync(join(ROOT, RES, 'mipmap-xxxhdpi', `${ref}.png`))).toBe(true);
+    }
+    for (const [, ref] of xml.matchAll(/@drawable\/(\w+)/g)) {
+      expect(existsSync(join(ROOT, RES, 'drawable', `${ref}.xml`))).toBe(true);
+    }
+    for (const [, ref] of read(`${RES}/drawable/ic_launcher_bg.xml`).matchAll(
+      /@color\/(\w+)/g,
+    )) {
+      expect(read(`${RES}/values/colors.xml`)).toContain(`name="${ref}"`);
+    }
+  });
+
+  it('keeps the native icon background equal to the token it was copied from', () => {
+    // colors.xml cannot be generated: the platform reads it before any JS runs.
+    // So this is the only thing standing between a palette change and an icon
+    // that no longer matches the app it opens.
+    const tokens = JSON.parse(read('design/tokens.json'));
+    const ink = tokens.color.tokens['bg/inverse'].Light.toUpperCase();
+    const declared = read(`${RES}/values/colors.xml`)
+      .match(/name="ic_launcher_background">(#[0-9A-Fa-f]{6})</)?.[1]
+      ?.toUpperCase();
+    expect(declared).toBe(ink);
+  });
+
+  it('has a Play listing icon and feature graphic', () => {
+    expect(existsSync(join(ROOT, 'docs/play/assets/play-icon-512.png'))).toBe(true);
+    expect(
+      existsSync(join(ROOT, 'docs/play/assets/feature-graphic-1024x500.png')),
+    ).toBe(true);
+  });
+});
+
+/**
+ * Copy that describes how you sign in, versus how you actually sign in.
+ *
+ * The settings sheet told every user "Signed in with your phone number" for as
+ * long as phone auth had been off — a claim about identity, on the privacy
+ * screen, that was simply false. It survived a full verify because nothing ties
+ * prose to `SocialProvider`. This does.
+ */
+describe('sign-in copy matches the sign-in that exists', () => {
+  const providers = (() => {
+    const union = read('src/api/auth.ts').match(
+      /export type SocialProvider =([^;]+);/,
+    )?.[1];
+    expect(union).toBeDefined();
+    return [...(union ?? '').matchAll(/'([a-z]+)'/g)].map(m => m[1] ?? '');
+  })();
+
+  it('offers only providers the app implements', () => {
+    expect(providers).toEqual(['google']);
+  });
+
+  it('never claims an identity the app cannot issue', () => {
+    // Every user-facing string in the app, checked against the providers that
+    // are not in the union. "phone" is the one that actually happened; the rest
+    // are here so the next removal is caught by the same test.
+    const absent = ['phone number', 'facebook', 'apple id'].filter(
+      name => !providers.some(p => name.startsWith(p)),
+    );
+    const screens = readdirSync(join(ROOT, 'src/screens'))
+      .filter(f => f.endsWith('.tsx'))
+      .map(f => ({ file: f, body: withoutComments(read(`src/screens/${f}`)) }));
+
+    for (const screen of screens) {
+      for (const name of absent) {
+        // "your phone" is the device, not the identity — that is the whole
+        // distinction this test has to be careful about, so match the claim
+        // ("signed in with ... phone number") rather than the noun.
+        const claim = new RegExp(`[Ss]igned in with[^'"]{0,40}${name}`, 'i');
+        expect(screen.body).not.toMatch(claim);
+      }
+    }
+  });
+});
