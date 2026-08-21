@@ -48,6 +48,7 @@ const MIGRATIONS = [
   'supabase/migrations/005_trust_and_safety.sql',
   'supabase/migrations/006_phone_auth_and_provider_onboarding.sql',
   'supabase/migrations/007_conversation_side.sql',
+  'supabase/migrations/008_push_tokens.sql',
 ];
 
 const docker = (args, options = {}) =>
@@ -327,6 +328,10 @@ const suites = [
   {
     file: join(ROOT, 'supabase/tests/060_conversation_side.sql'),
     label: 'per-conversation membership survives a role change',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/070_push_tokens.sql'),
+    label: 'push tokens: registration, reassignment, sender isolation',
   },
 ];
 

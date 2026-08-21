@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { deleteAccount, signOut } from '../api/auth';
+import { stopPush } from '../lib/push';
 import { track } from '../lib/telemetry';
 import { useMyApplication } from '../api/provider';
 import { resetStore, useStore } from '../store/useStore';
@@ -48,6 +49,10 @@ export function SettingsSheet({
   const onDelete = useCallback(async () => {
     setBusy(true);
     try {
+      // Before the account goes: the token row cascades with the user, but the
+      // *device* keeps the FCM token, and a token that outlives its row would
+      // be re-registered by the next sign-in on this phone.
+      await stopPush();
       await deleteAccount();
       track('account_deleted');
       queryClient.clear();
@@ -66,6 +71,7 @@ export function SettingsSheet({
   const onSignOutPress = useCallback(async () => {
     setBusy(true);
     try {
+      await stopPush();
       await signOut();
       queryClient.clear();
       resetStore();

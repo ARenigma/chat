@@ -164,9 +164,14 @@ describe('Android manifest', () => {
     .filter(attrs => !attrs.includes('tools:node="remove"'))
     .map(attrs => attrs.match(/android:name="([^"]+)"/)?.[1] ?? '');
 
-  it('requests exactly INTERNET and VIBRATE', () => {
+  it('requests exactly INTERNET, VIBRATE and POST_NOTIFICATIONS', () => {
+    // The list is asserted exactly rather than as a subset, because the cost of
+    // a permission is paid on the Play listing and in the install dialog — a
+    // library quietly merging one in is the failure this catches. POST_NOTIFICATIONS
+    // was added deliberately for push and grants no access to data.
     expect(declared.sort()).toEqual([
       'android.permission.INTERNET',
+      'android.permission.POST_NOTIFICATIONS',
       'android.permission.VIBRATE',
     ]);
   });

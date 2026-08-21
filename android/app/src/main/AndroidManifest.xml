@@ -9,6 +9,9 @@
     -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Android 13+ made notifications a runtime permission. Without this the
+         request in src/lib/push.ts resolves as denied and the token never rings. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!--
       Belt and braces for the Play Data Safety declaration: a future transitive

@@ -292,6 +292,17 @@ export type Database = {
         Update: never;
         Relationships: [];
       };
+      /**
+       * Registration happens through `register_push_token`, never an insert —
+       * the client must not be able to name the user a token belongs to. Delete
+       * is allowed so a sign-out can revoke this device.
+       */
+      push_tokens: {
+        Row: { token: string; user_id: string; platform: string; created_at: string; last_seen_at: string };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
     };
     Views: {
       provider_directory: {
@@ -344,6 +355,10 @@ export type Database = {
         };
         /** The fields still missing. Empty means it entered the queue. */
         Returns: string[];
+      };
+      register_push_token: {
+        Args: { p_token: string; p_platform?: string };
+        Returns: void;
       };
       submit_review: {
         Args: { p_conversation_id: string; p_rating: number; p_comment?: string | null };

@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "305484620007",
+    "project_id": "chat-d8c87",
+    "storage_bucket": "chat-d8c87.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:305484620007:android:ab6201497a877f32074242",
+        "android_client_info": {
+          "package_name": "com.companionchat"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "305484620007-qt4tbvd29i5vl6qj34t0vboqvcmjrh73.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDcVjlHihSSE92L5KWMMlBS1G9dK9LtB4k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "305484620007-qt4tbvd29i5vl6qj34t0vboqvcmjrh73.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
