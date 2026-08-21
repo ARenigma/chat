@@ -91,3 +91,7 @@ supabase/tests/*.generated.sql
 # Supabase CLI local state
 supabase/.temp/
 .secrets/
+
+# Build artefacts staged for upload. A 59 MB AAB does not belong in git, and the
+# reproducible way to get one is `CI_PIPELINE_IID=n npm run android:bundle`.
+dist/

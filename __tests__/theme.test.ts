@@ -26,34 +26,78 @@ function contrast(a: string, b: string): number {
 }
 
 describe('generated theme', () => {
-  it('is light-first, on warm paper rather than grey', () => {
+  it('is light-first, on iOS system greys', () => {
     expect(TOKENS).toBe(LIGHT);
-    expect(LIGHT.color.bg.base).toBe('#FBF8F5');
-    expect(DARK.color.bg.base).toBe('#14110F');
+    expect(LIGHT.color.bg.base).toBe('#F2F2F7');
+    expect(DARK.color.bg.base).toBe('#000000');
   });
 
   /**
-   * Warmth is the whole premise of the palette, so it is asserted rather than
-   * described. A "warm off-white" that someone nudges towards #F5F5F5 during a
-   * merge is a different product: cool greys are what made the old build read as
-   * clinical, and nothing else in this file would notice the change.
+   * The inverse of the assertion this used to be.
+   *
+   * The palette was a warm paper base, and this test defended that warmth — red
+   * channel above blue on every neutral — on the grounds that cool greys read as
+   * clinical. What that missed is that a warm off-white is also the reflex
+   * "tasteful" surface, and ours measured warmth 6, which is the minimum a
+   * detector will flag and far below what an eye can see. It was paying the
+   * cost of looking like a default without buying any of the warmth.
+   *
+   * So hue moved out of the chrome entirely and into meaning: coral acts, sage
+   * is presence, citrus is the balance. This is the same idea defended from the
+   * other side — a neutral that acquires a tint is the regression now, and it is
+   * asserted with impeccable's own cream test so the rule and the test cannot
+   * disagree.
    */
-  it('keeps every neutral warm — red channel above blue', () => {
-    for (const [name, hex] of Object.entries({
+  it('keeps every surface neutral — no cream, no beige', () => {
+    const isCream = (hex: string): boolean => {
+      const [r, g, b] = [
+        parseInt(hex.slice(1, 3), 16),
+        parseInt(hex.slice(3, 5), 16),
+        parseInt(hex.slice(5, 7), 16),
+      ];
+      // impeccable's cream-palette test, verbatim: light, warm-ordered, and
+      // tinted somewhere between 6 and 48 points of red-over-blue.
+      if (Math.min(r, g, b) < 209) {
+        return false;
+      }
+      if (!(r >= g && g >= b)) {
+        return false;
+      }
+      return r - b >= 6 && r - b <= 48;
+    };
+
+    const surfaces = {
       base: LIGHT.color.bg.base,
       raised: LIGHT.color.bg.raised,
       sunken: LIGHT.color.bg.sunken,
+      hover: LIGHT.color.bg.hover,
+      pressed: LIGHT.color.bg.pressed,
       hairline: LIGHT.color.border.hairline,
-      textPrimary: LIGHT.color.text.primary,
-      textSecondary: LIGHT.color.text.secondary,
-    })) {
-      const r = parseInt(hex.slice(1, 3), 16);
-      const b = parseInt(hex.slice(5, 7), 16);
-      // raised is pure white, which has no temperature at all; everything else
-      // must lean warm.
-      const warmth = name === 'raised' ? 0 : 1;
-      expect(r - b).toBeGreaterThanOrEqual(warmth);
+      strong: LIGHT.color.border.strong,
+      inverseDark: DARK.color.bg.inverse,
+      textPrimaryDark: DARK.color.text.primary,
+    };
+    for (const [name, hex] of Object.entries(surfaces)) {
+      expect({ name, cream: isCream(hex) }).toEqual({ name, cream: false });
     }
+  });
+
+  /**
+   * The exception, stated so it is a decision rather than an oversight.
+   *
+   * `bg/accentTint` is the only light token that still reads warm, and it has to
+   * be: it is the coral at low saturation, the wash an avatar initial sits on.
+   * Neutralising it would mean the avatars stop belonging to the accent family,
+   * which is the one thing carrying identity in a product with no photographs.
+   * It is a pink, not a cream, and impeccable's rule only ever inspects the page
+   * background — so it cannot fire on this token in practice.
+   */
+  it('keeps the avatar wash in the accent family', () => {
+    const tint = LIGHT.color.bg.accentTint;
+    const r = parseInt(tint.slice(1, 3), 16);
+    const b = parseInt(tint.slice(5, 7), 16);
+    expect(r - b).toBeGreaterThan(20);
+    expect(tint).not.toBe(LIGHT.color.bg.sunken);
   });
 
   it('converts percentage line-height and tracking into absolute units', () => {

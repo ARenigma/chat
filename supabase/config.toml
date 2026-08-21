@@ -48,6 +48,44 @@ enable_confirmations = false
 enable_signup = false
 enable_confirmations = false
 
+# --- Turning it on later: the two routes, ready to uncomment -----------------
+#
+# The dashboard toggle is real and it is not the whole story. Supabase Auth
+# implements phone login — OTP issue, verify, rate limits, session — but it has
+# no carrier. Something has to actually put an SMS on the network, and that is
+# where the two routes diverge. Costs are in ADR-0006 and were measured, not
+# quoted: an Indian DLT aggregator is roughly 20x cheaper than Firebase Phone
+# Auth for the same message.
+#
+# ROUTE A — a provider Supabase supports natively. MessageBird, Twilio, Vonage
+# or TextLocal. Least code, most expensive (Twilio Verify lands near
+# Rs 5,600/month at 1,300 OTPs against roughly Rs 385 for an aggregator):
+#
+#   enable_signup = true
+#   [auth.sms.twilio]
+#   enabled = true
+#   account_sid = "env(TWILIO_ACCOUNT_SID)"
+#   message_service_sid = "env(TWILIO_MESSAGE_SERVICE_SID)"
+#   auth_token = "env(TWILIO_AUTH_TOKEN)"
+#
+# ROUTE B — the Send SMS hook, which is what makes the cheap route possible.
+# Supabase hands an Edge Function the user and the OTP and lets us deliver it
+# however we like, so the carrier can be Msg91 or any Indian aggregator that is
+# not on the supported-providers list. This is the route to take:
+#
+#   [auth.hook.send_sms]
+#   enabled = true
+#   uri = "https://<ref>.supabase.co/functions/v1/send-sms"
+#   secrets = "env(SEND_SMS_HOOK_SECRET)"
+#
+# THE GATE IS NOT MONEY. Every domestic Indian SMS route requires DLT
+# registration under the TRAI mandate — entity, then header (sender ID), then
+# template — typically one to three weeks, and no vendor shortcuts it, Firebase
+# included, because they all use the same domestic routes. So phone OTP is the
+# slowest auth to launch in India, not the fastest, and turning either block on
+# before DLT clears produces a sign-in screen that accepts a number and then
+# fails. Start DLT in parallel; flip a block when the template is approved.
+
 # ---------------------------------------------------------------------------
 # Social identity — the only way in
 # ---------------------------------------------------------------------------
