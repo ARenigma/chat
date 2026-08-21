@@ -716,14 +716,34 @@ describe('phone sign-in stays off until it can deliver', () => {
     expect(enabled).toBeDefined();
   });
 
-  it('offers no phone entry on the sign-in screen while the flag is false', () => {
-    if (enabled !== 'false') {
-      return; // Flag is on: the screen is supposed to offer it.
-    }
+  /**
+   * Rewritten when the screen was built.
+   *
+   * This used to assert the sign-in screen never mentioned phone at all, which
+   * was the right intent expressed the wrong way — it forbade the code rather
+   * than the reachability. The screen now implements phone sign-in and gates the
+   * entry point, so the assertion that matters is that the gate is actually
+   * there: every element that starts the flow must be inside a
+   * PHONE_AUTH_ENABLED condition.
+   */
+  it('gates every phone entry point on the flag', () => {
     const screen = withoutComments(read('src/screens/AuthScreen.tsx'));
-    expect(screen).not.toMatch(/PHONE_AUTH_ENABLED/);
-    expect(screen).not.toMatch(/sendPhoneOtp|verifyPhoneOtp/);
-    expect(screen.toLowerCase()).not.toContain('phone number');
+
+    // The button that begins the flow, and the copy that promises it.
+    for (const marker of ['signin-phone"', 'Continue with phone']) {
+      const at = screen.indexOf(marker);
+      expect(at).toBeGreaterThan(-1);
+      // Walk back to the enclosing JSX conditional and require the flag in it.
+      const preceding = screen.slice(Math.max(0, at - 400), at);
+      expect(preceding).toMatch(/PHONE_AUTH_ENABLED/);
+    }
+  });
+
+  it('still offers Google as a primary button when phone is off', () => {
+    // With the flag false there is exactly one way in, and it must not render as
+    // a secondary action with nothing above it.
+    const screen = withoutComments(read('src/screens/AuthScreen.tsx'));
+    expect(screen).toMatch(/kind=\{PHONE_AUTH_ENABLED \? 'secondary' : 'primary'\}/);
   });
 
   it('refuses to call Supabase while the flag is false', () => {
