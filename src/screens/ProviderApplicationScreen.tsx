@@ -1,7 +1,8 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { TOKENS } from '../theme/tokens';
+import { TOKENS, type Theme } from '../theme/tokens';
+import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { Gender } from '../lib/database.types';
 import { track } from '../lib/telemetry';
 import { useMyApplication, useSubmitApplication } from '../api/provider';
@@ -59,6 +60,8 @@ function yearsSince(iso: string): number {
  * the failure this screen exists to not repeat.
  */
 export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { data: existing } = useMyApplication();
   const submit = useSubmitApplication();
@@ -155,7 +158,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
             value={displayName}
             onChangeText={setDisplayName}
             placeholder="What should people call you?"
-            placeholderTextColor={TOKENS.color.text.secondary}
+            placeholderTextColor={theme.color.text.secondary}
             maxLength={40}
             allowFontScaling
             underlineColorAndroid="transparent"
@@ -184,7 +187,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
             value={dob}
             onChangeText={setDob}
             placeholder="YYYY-MM-DD"
-            placeholderTextColor={TOKENS.color.text.secondary}
+            placeholderTextColor={theme.color.text.secondary}
             keyboardType="numbers-and-punctuation"
             maxLength={10}
             allowFontScaling
@@ -209,7 +212,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
             value={headline}
             onChangeText={setHeadline}
             placeholder="“I listen more than I talk”"
-            placeholderTextColor={TOKENS.color.text.secondary}
+            placeholderTextColor={theme.color.text.secondary}
             maxLength={140}
             allowFontScaling
             underlineColorAndroid="transparent"
@@ -236,7 +239,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
             value={about}
             onChangeText={setAbout}
             placeholder="Why are you good at this?"
-            placeholderTextColor={TOKENS.color.text.secondary}
+            placeholderTextColor={theme.color.text.secondary}
             multiline
             maxLength={2000}
             allowFontScaling
@@ -269,6 +272,7 @@ function Field({
   flagged: boolean;
   children: React.ReactNode;
 }) {
+  const styles = useStyles(makeStyles);
   return (
     <View style={styles.field}>
       <Text allowFontScaling style={[styles.label, flagged && styles.labelFlagged]}>
@@ -279,10 +283,10 @@ function Field({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: TOKENS.color.bg.base,
+    backgroundColor: t.color.bg.base,
   },
   header: {
     flexDirection: 'row',
@@ -292,7 +296,7 @@ const styles = StyleSheet.create({
     paddingTop: TOKENS.space.xs,
     paddingBottom: TOKENS.space.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: TOKENS.color.border.hairline,
+    borderBottomColor: t.color.border.hairline,
   },
   back: {
     width: 40,
@@ -300,11 +304,11 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: TOKENS.color.bg.sunken,
+    backgroundColor: t.color.bg.sunken,
   },
   headerTitle: {
     ...TOKENS.typography.labelMedium,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
   },
   body: {
     paddingHorizontal: TOKENS.space.lg,
@@ -313,41 +317,41 @@ const styles = StyleSheet.create({
   },
   intro: {
     ...TOKENS.typography.bodyMedium,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
   },
   missingBox: {
     padding: TOKENS.space.md,
     borderRadius: TOKENS.radius.md,
-    backgroundColor: TOKENS.color.bg.sunken,
+    backgroundColor: t.color.bg.sunken,
     gap: 2,
   },
   missingTitle: {
     ...TOKENS.typography.labelMedium,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
     paddingBottom: TOKENS.space['2xs'],
   },
   missingItem: {
     ...TOKENS.typography.captionRegular,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
   },
   field: {
     gap: TOKENS.space['2xs'],
   },
   label: {
     ...TOKENS.typography.captionRegular,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
   },
   labelFlagged: {
     ...TOKENS.typography.labelSmall,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
   },
   input: {
     minHeight: 48,
     paddingHorizontal: TOKENS.space.md,
     borderRadius: TOKENS.radius.md,
-    backgroundColor: TOKENS.color.bg.raised,
+    backgroundColor: t.color.bg.raised,
     ...TOKENS.typography.bodyMedium,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
   },
   multiline: {
     minHeight: 110,
@@ -361,14 +365,14 @@ const styles = StyleSheet.create({
   },
   hint: {
     ...TOKENS.typography.captionSmall,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
   },
   block: {
     ...TOKENS.typography.labelSmall,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
   },
   legal: {
     ...TOKENS.typography.captionSmall,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
   },
 });

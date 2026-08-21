@@ -1,11 +1,15 @@
 import React, { useCallback, useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { deleteAccount, signOut } from '../api/auth';
 import { track } from '../lib/telemetry';
 import { useMyApplication } from '../api/provider';
 import { resetStore, useStore } from '../store/useStore';
+import { TOKENS, type Theme } from '../theme/tokens';
+import { useStyles, useThemeMode } from '../theme/ThemeProvider';
 import { Button } from '../components/Button';
 import { Sheet } from '../components/Sheet';
+import { Toggle } from '../components/Toggle';
 
 interface Props {
   visible: boolean;
@@ -33,6 +37,8 @@ export function SettingsSheet({
   onApply,
   onApplicationStatus,
 }: Props) {
+  const styles = useStyles(makeStyles);
+  const { isDark, setMode } = useThemeMode();
   const setNotice = useStore(s => s.setNotice);
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
@@ -108,6 +114,31 @@ export function SettingsSheet({
         'talk to. No contacts, no location, no photos, no advertising ID.'
       }
       onClose={onClose}>
+      {/* Setting an explicit mode rather than toggling between light and dark
+          leaves `system` reachable only until the first tap — which is the right
+          trade. Someone who has expressed a preference has expressed it; someone
+          who never touches this keeps following the OS, which is what the
+          default should do and what the initial value reflects. */}
+      <View style={styles.row}>
+        <View style={styles.rowText}>
+          <Text allowFontScaling style={styles.rowTitle}>
+            Dark mode
+          </Text>
+          <Text allowFontScaling style={styles.rowSub}>
+            Follows your phone until you choose here.
+          </Text>
+        </View>
+        <Toggle
+          testID="theme-toggle"
+          value={isDark}
+          // Not tracked: the telemetry allowlist is enforced by a database
+          // trigger, so a new event name costs a migration, and a local display
+          // preference is not worth one. It is stored on the device only.
+          onValueChange={next => setMode(next ? 'dark' : 'light')}
+          accessibilityLabel="Dark mode"
+        />
+      </View>
+
       {hasApplication && onApplicationStatus !== undefined ? (
         <Button
           label="My provider application"
@@ -136,3 +167,29 @@ export function SettingsSheet({
     </Sheet>
   );
 }
+
+const makeStyles = (t: Theme) =>
+  StyleSheet.create({
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.md,
+      paddingVertical: TOKENS.space.sm,
+      paddingHorizontal: TOKENS.space.md,
+      marginBottom: TOKENS.space['2xs'],
+      borderRadius: TOKENS.radius.lg,
+      backgroundColor: t.color.bg.sunken,
+    },
+    rowText: {
+      flex: 1,
+      gap: 2,
+    },
+    rowTitle: {
+      ...TOKENS.typography.labelMedium,
+      color: t.color.text.primary,
+    },
+    rowSub: {
+      ...TOKENS.typography.captionSmall,
+      color: t.color.text.secondary,
+    },
+  });

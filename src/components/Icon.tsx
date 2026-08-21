@@ -1,6 +1,7 @@
 import React, { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { TOKENS } from '../theme/tokens';
+import type { Theme } from '../theme/tokens';
+import { useStyles, useTheme } from '../theme/ThemeProvider';
 
 export type Glyph =
   | 'chevron-left'
@@ -36,7 +37,9 @@ interface Props {
  * enough to read as "search" without needing an icon set.
  */
 function IconView({ glyph, size = 16, color, testID }: Props) {
-  const stroke = color ?? TOKENS.color.text.primary;
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
+  const stroke = color ?? theme.color.text.primary;
   const weight = Math.max(1.5, size / 9);
 
   if (glyph === 'dots') {
@@ -213,7 +216,7 @@ function IconView({ glyph, size = 16, color, testID }: Props) {
 
 export const Icon = memo(IconView);
 
-const styles = StyleSheet.create({
+const makeStyles = (_t: Theme) => StyleSheet.create({
   center: {
     alignItems: 'center',
     justifyContent: 'center',

@@ -1,9 +1,11 @@
 import React, { memo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { TOKENS } from '../theme/tokens';
+import { TOKENS, type Theme } from '../theme/tokens';
+import { useStyles } from '../theme/ThemeProvider';
 
 /** Centred, unadorned. A rule either side would draw the eye to the frame. */
 function DayDividerView({ label }: { label: string }) {
+  const styles = useStyles(makeStyles);
   return (
     <View style={styles.host}>
       <Text allowFontScaling style={styles.label}>
@@ -15,13 +17,13 @@ function DayDividerView({ label }: { label: string }) {
 
 export const DayDivider = memo(DayDividerView);
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   host: {
     alignItems: 'center',
     paddingVertical: TOKENS.space['2xs'],
   },
   label: {
     ...TOKENS.typography.captionSmall,
-    color: TOKENS.color.text.tertiary,
+    color: t.color.text.tertiary,
   },
 });

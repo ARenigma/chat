@@ -7,7 +7,8 @@ import Animated, {
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
-import { TOKENS } from '../theme/tokens';
+import { TOKENS, type Theme } from '../theme/tokens';
+import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { DURATION } from '../theme/motion';
 
 type Size = 26 | 30 | 34 | 42 | 56;
@@ -50,6 +51,8 @@ function AvatarView({
   breathing = false,
   testID,
 }: Props) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const breath = useSharedValue(0);
 
   useEffect(() => {
@@ -73,10 +76,10 @@ function AvatarView({
   const dot = size <= 30 ? 10 : 13;
   const fill =
     tone === 'warm'
-      ? TOKENS.color.bg.accentTint
+      ? theme.color.bg.accentTint
       : tone === 'positive'
-        ? TOKENS.color.bg.positive
-        : TOKENS.color.bg.sunken;
+        ? theme.color.bg.positive
+        : theme.color.bg.sunken;
 
   return (
     <Animated.View
@@ -108,6 +111,7 @@ function AvatarView({
  * a static dot says "marked available", a breathing one says "someone is there".
  */
 function PresenceDot({ size }: { size: number }) {
+  const styles = useStyles(makeStyles);
   const pulse = useSharedValue(0);
 
   useEffect(() => {
@@ -142,14 +146,14 @@ function PresenceDot({ size }: { size: number }) {
 
 export const Avatar = memo(AvatarView);
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   host: {
     alignItems: 'center',
     justifyContent: 'center',
   },
   initial: {
     ...TOKENS.typography.labelSmall,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
   },
   ring: {
     position: 'absolute',
@@ -157,9 +161,9 @@ const styles = StyleSheet.create({
     bottom: -1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: TOKENS.color.bg.base,
+    backgroundColor: t.color.bg.base,
   },
   dot: {
-    backgroundColor: TOKENS.color.state.available,
+    backgroundColor: t.color.state.available,
   },
 });

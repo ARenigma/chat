@@ -1,6 +1,7 @@
 import React, { memo, useCallback, useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
-import { TOKENS } from '../theme/tokens';
+import { TOKENS, type Theme } from '../theme/tokens';
+import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { MAX_MESSAGE_CHARS } from '../lib/tokenLedger';
 import { SendButton } from './SendButton';
 
@@ -23,6 +24,8 @@ interface Props {
  * elevation rather than sitting behind a divider, and send is inset inside it.
  */
 function ComposerView({ onSend, disabled, placeholder, bloomKey, onTyping }: Props) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const [value, setValue] = useState('');
   const ready = value.trim().length > 0 && !disabled;
 
@@ -53,7 +56,7 @@ function ComposerView({ onSend, disabled, placeholder, bloomKey, onTyping }: Pro
           value={value}
           onChangeText={change}
           placeholder={placeholder}
-          placeholderTextColor={TOKENS.color.text.secondary}
+          placeholderTextColor={theme.color.text.secondary}
           multiline
           maxLength={MAX_MESSAGE_CHARS}
           allowFontScaling
@@ -72,7 +75,7 @@ function ComposerView({ onSend, disabled, placeholder, bloomKey, onTyping }: Pro
 
 export const Composer = memo(ComposerView);
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   row: {
     paddingHorizontal: TOKENS.space.md,
     paddingTop: TOKENS.space['2xs'],
@@ -85,7 +88,7 @@ const styles = StyleSheet.create({
     paddingRight: 6,
     paddingVertical: 6,
     borderRadius: TOKENS.radius.pill,
-    backgroundColor: TOKENS.color.bg.raised,
+    backgroundColor: t.color.bg.raised,
     ...TOKENS.elevation.composer,
   },
   input: {
@@ -95,6 +98,6 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 10,
     ...TOKENS.typography.bodyMedium,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
   },
 });

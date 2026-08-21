@@ -6,7 +6,8 @@ import {
   type ViewStyle,
 } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
-import { TOKENS } from '../theme/tokens';
+import type { Theme } from '../theme/tokens';
+import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { INTERACTION, PRESS, springTo } from '../theme/motion';
 
 /** Which press token this surface uses. `none` still handles the tap. */
@@ -28,8 +29,8 @@ interface Props {
    */
   morph?: { from: number; to: number };
   /**
-   * The surface's ON colour, for the Material 3 state layer. Defaults to the ink
-   * used on light surfaces; pass `text.onInverse` on a dark or coral fill.
+   * The surface's ON colour, for the Material 3 state layer. Defaults to the
+   * theme's primary ink; pass `text.onInverse` on a dark or coral fill.
    */
   onColor?: string;
   /** Rendered size of a round control, so the 48dp target can be guaranteed. */
@@ -78,10 +79,15 @@ function PressableView({
   testID,
   press = 'card',
   morph,
-  onColor = TOKENS.color.text.primary,
+  onColor,
   size,
   onLongPress,
 }: Props) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
+  // Resolved in the body, not as a default parameter: the default is a theme
+  // value and a hook cannot be called in a parameter list.
+  const layerColor = onColor ?? theme.color.text.primary;
   const p = useSharedValue(0);
   // Read out of the token tables once, on the JS thread: indexing them inside a
   // worklet would capture the whole table into the animation closure.
@@ -92,13 +98,13 @@ function PressableView({
   const layerOpacity = INTERACTION.statePressed;
 
   const animated = useAnimatedStyle(() => {
-    const t = p.value;
-    const scale = 1 - (1 - target) * t;
-    const scaleY = 1 - (1 - squashY) * t;
+    const progress = p.value;
+    const scale = 1 - (1 - target) * progress;
+    const scaleY = 1 - (1 - squashY) * progress;
     return {
       transform: [{ scale }, { scaleY }],
       ...(from !== undefined && to !== undefined
-        ? { borderRadius: from + (to - from) * t }
+        ? { borderRadius: from + (to - from) * progress }
         : null),
       opacity: disabled ? 0.45 : 1,
     };
@@ -135,7 +141,7 @@ function PressableView({
             same number in two places and getting it wrong on the circles. */}
         <Animated.View
           pointerEvents="none"
-          style={[styles.layer, { backgroundColor: onColor }, layer]}
+          style={[styles.layer, { backgroundColor: layerColor }, layer]}
         />
       </Animated.View>
     </RNPressable>
@@ -144,7 +150,7 @@ function PressableView({
 
 export const Pressable = memo(PressableView);
 
-const styles = StyleSheet.create({
+const makeStyles = (_t: Theme) => StyleSheet.create({
   clip: {
     overflow: 'hidden',
   },

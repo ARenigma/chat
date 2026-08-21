@@ -1,7 +1,8 @@
 import React, { memo, useEffect, useRef } from 'react';
 import { StyleSheet, Text } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence } from 'react-native-reanimated';
-import { TOKENS } from '../theme/tokens';
+import { TOKENS, type Theme } from '../theme/tokens';
+import { useStyles } from '../theme/ThemeProvider';
 import { isLowBalance } from '../lib/tokenLedger';
 import { springTo } from '../theme/motion';
 import { Pressable } from './Pressable';
@@ -28,6 +29,7 @@ interface Props {
  * navigation.
  */
 function TokenCounterView({ balance, onPress }: Props) {
+  const styles = useStyles(makeStyles);
   const low = isLowBalance(balance);
   const flinch = useSharedValue(0);
   const wasLow = useRef(low);
@@ -65,21 +67,21 @@ function TokenCounterView({ balance, onPress }: Props) {
 
 export const TokenCounter = memo(TokenCounterView);
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   pill: {
     paddingHorizontal: TOKENS.space.sm,
     paddingVertical: 5,
     borderRadius: TOKENS.radius.pill,
-    backgroundColor: TOKENS.color.bg.token,
+    backgroundColor: t.color.bg.token,
   },
   pillLow: {
-    backgroundColor: TOKENS.color.bg.accentTint,
+    backgroundColor: t.color.bg.accentTint,
   },
   label: {
     ...TOKENS.typography.numeralMedium,
-    color: TOKENS.color.text.token,
+    color: t.color.text.token,
   },
   labelLow: {
-    color: TOKENS.color.text.accent,
+    color: t.color.text.accent,
   },
 });

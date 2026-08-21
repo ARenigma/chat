@@ -1,6 +1,7 @@
 import React, { memo } from 'react';
 import { StyleSheet, Text } from 'react-native';
-import { TOKENS } from '../theme/tokens';
+import { TOKENS, type Theme } from '../theme/tokens';
+import { useStyles } from '../theme/ThemeProvider';
 import { Pressable } from './Pressable';
 
 interface Props {
@@ -28,6 +29,7 @@ interface Props {
 const MORPH = { from: TOKENS.radius.pill, to: TOKENS.radius.sm };
 
 function ChipView({ label, tone = 'neutral', onPress, selected = false }: Props) {
+  const styles = useStyles(makeStyles);
   return (
     <Pressable
       onPress={() => onPress(label)}
@@ -57,33 +59,33 @@ function ChipView({ label, tone = 'neutral', onPress, selected = false }: Props)
 
 export const Chip = memo(ChipView);
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   chip: {
     paddingHorizontal: TOKENS.space.md,
     paddingVertical: 10,
     borderRadius: TOKENS.radius.pill,
-    backgroundColor: TOKENS.color.bg.sunken,
+    backgroundColor: t.color.bg.sunken,
   },
   chipWarm: {
-    backgroundColor: TOKENS.color.bg.accentTint,
+    backgroundColor: t.color.bg.accentTint,
   },
   chipPositive: {
-    backgroundColor: TOKENS.color.bg.positive,
+    backgroundColor: t.color.bg.positive,
   },
   chipSelected: {
-    backgroundColor: TOKENS.color.bg.inverse,
+    backgroundColor: t.color.bg.inverse,
   },
   label: {
     ...TOKENS.typography.labelMedium,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
   },
   labelWarm: {
-    color: TOKENS.color.text.accent,
+    color: t.color.text.accent,
   },
   labelPositive: {
-    color: TOKENS.color.text.positive,
+    color: t.color.text.positive,
   },
   labelSelected: {
-    color: TOKENS.color.text.onInverse,
+    color: t.color.text.onInverse,
   },
 });

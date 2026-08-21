@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
-import { TOKENS } from '../theme/tokens';
+import { TOKENS, type Theme } from '../theme/tokens';
+import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { Button } from '../components/Button';
 
 interface Props {
@@ -25,6 +26,8 @@ const PATIENCE_MS = 6000;
  * report that says "blank screen" and one that says what actually broke.
  */
 export function SplashScreen({ onRetry }: Props) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const [slow, setSlow] = useState(false);
 
   useEffect(() => {
@@ -34,7 +37,7 @@ export function SplashScreen({ onRetry }: Props) {
 
   return (
     <View style={styles.root}>
-      <ActivityIndicator color={TOKENS.color.text.secondary} />
+      <ActivityIndicator color={theme.color.text.secondary} />
       {slow ? (
         <View style={styles.slow}>
           <Text testID="splash-slow" allowFontScaling style={styles.text}>
@@ -51,14 +54,14 @@ export function SplashScreen({ onRetry }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   root: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     gap: TOKENS.space.xl,
     paddingHorizontal: TOKENS.space['2xl'],
-    backgroundColor: TOKENS.color.bg.base,
+    backgroundColor: t.color.bg.base,
   },
   slow: {
     alignItems: 'center',
@@ -67,7 +70,7 @@ const styles = StyleSheet.create({
   },
   text: {
     ...TOKENS.typography.bodyMedium,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
     textAlign: 'center',
   },
   action: {

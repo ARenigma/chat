@@ -3,7 +3,8 @@ import { Linking, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { TOKENS } from './src/theme/tokens';
+import { TOKENS, type Theme } from './src/theme/tokens';
+import { ThemeProvider, useStyles, useThemeMode } from './src/theme/ThemeProvider';
 import { assertEnv } from './src/lib/env';
 import { migrateLegacyStorage, storage } from './src/lib/storage';
 import { initSentry } from './src/lib/sentry';
@@ -69,6 +70,7 @@ type ProviderRoute = { name: 'home' } | { name: 'chat'; peerId: string };
  * another by construction.
  */
 function Root() {
+  const styles = useStyles(makeStyles);
   const [boot, setBoot] = useState<Boot>({ phase: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [route, setRoute] = useState<MemberRoute>({ name: 'inbox' });
@@ -256,6 +258,7 @@ function SignedIn({
   setSettingsOpen,
   onSignedOut,
 }: SignedInProps) {
+  const styles = useStyles(makeStyles);
   const { role, isPending } = useRole();
 
   // No retry handler here on purpose: the profile query owns its own retries, and
@@ -342,6 +345,23 @@ function SignedIn({
   );
 }
 
+/**
+ * Inside the provider, so the status bar can follow the theme.
+ *
+ * Android draws the clock and battery over our background once edge-to-edge is
+ * on, so this is not cosmetic: with light content on a light background the
+ * status bar is simply blank. No `backgroundColor` — unsupported from Android 15.
+ */
+function Shell() {
+  const { isDark } = useThemeMode();
+  return (
+    <>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} translucent />
+      <Root />
+    </>
+  );
+}
+
 export default function App() {
   return (
     /**
@@ -351,30 +371,37 @@ export default function App() {
      * drag silently does nothing — the gesture is created, recognised by nobody,
      * and there is no warning.
      */
-    <GestureHandlerRootView style={styles.root}>
+    <GestureHandlerRootView style={fill.root}>
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
-          {/* Light-first palette, so dark status bar content. No backgroundColor:
-              unsupported once edge-to-edge is on (Android 15+). */}
-          <StatusBar barStyle="dark-content" translucent />
-          <Root />
+          <ThemeProvider>
+            <Shell />
+          </ThemeProvider>
         </QueryClientProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
 
-const styles = StyleSheet.create({
+/**
+ * The one stylesheet that cannot be theme-aware: it belongs to the component
+ * that *installs* the provider, so there is no theme to read yet. It carries no
+ * colour, which is why that is fine.
+ */
+const fill = StyleSheet.create({
   root: {
     flex: 1,
   },
+});
+
+const makeStyles = (t: Theme) => StyleSheet.create({
   host: {
     flex: 1,
-    backgroundColor: TOKENS.color.bg.base,
+    backgroundColor: t.color.bg.base,
   },
   blank: {
     flex: 1,
-    backgroundColor: TOKENS.color.bg.base,
+    backgroundColor: t.color.bg.base,
   },
   fatal: {
     flex: 1,
@@ -382,15 +409,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: TOKENS.space.lg,
-    backgroundColor: TOKENS.color.bg.base,
+    backgroundColor: t.color.bg.base,
   },
   fatalTitle: {
     ...TOKENS.typography.displayLarge,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
   },
   fatalBody: {
     ...TOKENS.typography.bodyMedium,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
     textAlign: 'center',
   },
   retryWrap: {

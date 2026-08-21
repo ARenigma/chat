@@ -1,7 +1,8 @@
 import React, { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated from 'react-native-reanimated';
-import { TOKENS } from '../theme/tokens';
+import { TOKENS, type Theme } from '../theme/tokens';
+import { useStyles } from '../theme/ThemeProvider';
 import { bubbleArrive, bubbleLaunch } from '../theme/motion';
 import { Avatar } from './Avatar';
 
@@ -37,6 +38,7 @@ interface PeerProps {
  * a first and a continued turn.
  */
 function PeerTurnView({ message, initial, first, timestamp, animate, onReport }: PeerProps) {
+  const styles = useStyles(makeStyles);
   return (
     <Animated.View entering={animate === true ? bubbleArrive : undefined} style={styles.peerRow}>
       <View style={styles.slot}>{first ? <Avatar initial={initial} size={26} /> : null}</View>
@@ -89,6 +91,7 @@ interface MineProps {
  * full of white body copy. The deeper step measures 5.2:1.
  */
 function MyTurnView({ message, timestamp, pending, receipt }: MineProps) {
+  const styles = useStyles(makeStyles);
   return (
     <Animated.View entering={bubbleLaunch} style={styles.myColumn}>
       <View style={[styles.bubble, pending === true && styles.pending]}>
@@ -112,7 +115,7 @@ function MyTurnView({ message, timestamp, pending, receipt }: MineProps) {
 
 export const MyTurn = memo(MyTurnView);
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   peerRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -130,9 +133,9 @@ const styles = StyleSheet.create({
   peerBubble: {
     paddingHorizontal: TOKENS.space.md,
     paddingVertical: 10,
-    backgroundColor: TOKENS.color.bg.raised,
+    backgroundColor: t.color.bg.raised,
     borderWidth: 1,
-    borderColor: TOKENS.color.border.hairline,
+    borderColor: t.color.border.hairline,
     borderTopLeftRadius: TOKENS.radius.lg,
     borderTopRightRadius: TOKENS.radius.lg,
     borderBottomRightRadius: TOKENS.radius.lg,
@@ -140,7 +143,7 @@ const styles = StyleSheet.create({
   },
   peerText: {
     ...TOKENS.typography.bodyLarge,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
   },
   myColumn: {
     alignItems: 'flex-end',
@@ -150,7 +153,7 @@ const styles = StyleSheet.create({
     maxWidth: '80%',
     paddingHorizontal: TOKENS.space.md,
     paddingVertical: 10,
-    backgroundColor: TOKENS.color.bg.accentStrong,
+    backgroundColor: t.color.bg.accentStrong,
     borderTopLeftRadius: TOKENS.radius.lg,
     borderTopRightRadius: TOKENS.radius.lg,
     borderBottomLeftRadius: TOKENS.radius.lg,
@@ -163,7 +166,7 @@ const styles = StyleSheet.create({
   },
   myText: {
     ...TOKENS.typography.bodyLarge,
-    color: TOKENS.color.text.onAccent,
+    color: t.color.text.onAccent,
   },
   meta: {
     flexDirection: 'row',
@@ -172,6 +175,6 @@ const styles = StyleSheet.create({
   },
   stamp: {
     ...TOKENS.typography.captionSmall,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
   },
 });

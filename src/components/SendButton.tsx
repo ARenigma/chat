@@ -1,7 +1,8 @@
 import React, { memo, useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
-import { TOKENS } from '../theme/tokens';
+import type { Theme } from '../theme/tokens';
+import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { DURATION, fadeTo, springTo } from '../theme/motion';
 import { Icon } from './Icon';
 import { Pressable } from './Pressable';
@@ -32,6 +33,8 @@ const SIZE = 40;
  * an earlier version did — a permanent 18% wash that looked like a rendering bug.
  */
 function SendButtonView({ onPress, disabled, bloomKey }: Props) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const bloom = useSharedValue(0);
   const ring = useSharedValue(0);
 
@@ -67,7 +70,7 @@ function SendButtonView({ onPress, disabled, bloomKey }: Props) {
         <Icon
           glyph="arrow-up"
           size={20}
-          color={disabled ? TOKENS.color.text.tertiary : TOKENS.color.text.onAccent}
+          color={disabled ? theme.color.text.tertiary : theme.color.text.onAccent}
         />
       </Pressable>
     </View>
@@ -76,7 +79,7 @@ function SendButtonView({ onPress, disabled, bloomKey }: Props) {
 
 export const SendButton = memo(SendButtonView);
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   host: {
     width: SIZE,
     height: SIZE,
@@ -88,7 +91,7 @@ const styles = StyleSheet.create({
     width: SIZE,
     height: SIZE,
     borderRadius: SIZE / 2,
-    backgroundColor: TOKENS.color.bg.accent,
+    backgroundColor: t.color.bg.accent,
   },
   // accentStrong, not accent: the glyph inside is white, and the lighter coral
   // does not carry white text. The measured pair is 5.2:1.
@@ -98,9 +101,9 @@ const styles = StyleSheet.create({
     borderRadius: SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: TOKENS.color.bg.accentStrong,
+    backgroundColor: t.color.bg.accentStrong,
   },
   buttonDisabled: {
-    backgroundColor: TOKENS.color.bg.sunken,
+    backgroundColor: t.color.bg.sunken,
   },
 });
