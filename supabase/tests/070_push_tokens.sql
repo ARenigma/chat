@@ -6,7 +6,7 @@
 
 \set ON_ERROR_STOP on
 begin;
-select plan(11);
+select plan(14);
 
 select has_table('public', 'push_tokens', 'push_tokens exists');
 select has_column('public', 'messages', 'notified_at', 'messages record when they were pushed');
@@ -81,6 +81,29 @@ select throws_ok(
   'a client cannot mark messages notified'
 );
 reset role;
+
+-- ---------------------------------------------------------------------------
+-- What the notification needs to be openable, and what it must never carry
+-- ---------------------------------------------------------------------------
+-- Both halves of this are contracts with code outside the database, which is
+-- exactly why they belong here. `src/lib/push.ts` routes on `data.peerId`, and
+-- the sender can only put a peer id in the payload if the view hands it one —
+-- it did not, originally, so notifications would have arrived and gone nowhere.
+--
+-- The negative assertion is the more important one. The privacy promise in
+-- web/privacy.html is that a notification says who replied and never what they
+-- said. That holds because the view has no body column to leak, not because the
+-- Edge Function remembers not to select it. If someone adds one, this fails.
+select has_column('public', 'pending_pushes', 'peer_id',
+  'the sender can tell the device which conversation to open');
+select hasnt_column('public', 'pending_pushes', 'body',
+  'and cannot leak the message onto a lock screen, because there is no body to select');
+select is(
+  (select count(*)::int from information_schema.role_table_grants
+   where table_name = 'pending_pushes' and grantee in ('anon', 'authenticated')),
+  0,
+  'no client role can read the pending queue'
+);
 
 select * from finish();
 rollback;

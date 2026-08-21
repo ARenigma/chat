@@ -60,7 +60,6 @@ describe('isUuid', () => {
  */
 describe('the AI path is gone, not dormant', () => {
   it.each([
-    'supabase/functions',
     'src/api/stream.ts',
     'src/lib/personas.ts',
     'src/components/StreamingTurn.tsx',
@@ -69,8 +68,30 @@ describe('the AI path is gone, not dormant', () => {
     expect(existsSync(join(ROOT, path))).toBe(false);
   });
 
+  /**
+   * This used to assert `supabase/functions` did not exist at all, which was a
+   * proxy for "no Edge Function holds a model provider key". The push sender is
+   * an Edge Function and a legitimate one, so the proxy had to be replaced with
+   * the thing it stood for: whatever lives there, none of it may be an AI path.
+   */
+  it('allows Edge Functions, but only ones that are not a model path', () => {
+    const dir = join(ROOT, 'supabase/functions');
+    if (!existsSync(dir)) {
+      return;
+    }
+    const allowed = ['send-push'];
+    const present = readdirSync(dir, { withFileTypes: true })
+      .filter(entry => entry.isDirectory())
+      .map(entry => entry.name);
+    // An allow-list rather than a pattern: a new Edge Function is a decision
+    // worth making explicitly, because this is the one place in the stack that
+    // holds a credential and can reach the open internet.
+    expect(present.sort()).toEqual(allowed);
+  });
+
   it('leaves no reference to a model, a prompt or an SSE stream in the app', () => {
-    const sources = ['src', '__tests__']
+    const sources = ['src', '__tests__', 'supabase/functions']
+      .filter(dir => existsSync(join(ROOT, dir)))
       .flatMap(dir => walk(join(ROOT, dir)))
       .filter(f => f.endsWith('.ts') || f.endsWith('.tsx'))
       // This test necessarily names the things it forbids.

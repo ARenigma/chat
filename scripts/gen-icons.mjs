@@ -60,6 +60,20 @@ const ICONS = [
     dp: 108,
     edge: 'alpha',
   },
+  // The notification small icon, at Android's 24dp status-bar size.
+  //
+  // Without this, firebase-messaging falls back to the launcher icon, and the
+  // status bar flattens whatever it is given to pure alpha — which turned our
+  // icon into a featureless white ring on the lock screen. Verified on device.
+  // The monochrome master is already an alpha-only silhouette, which is exactly
+  // what this slot wants, so it is the same art rather than a second drawing.
+  {
+    master: 'icon-monochrome.png',
+    name: 'ic_notification.png',
+    dp: 24,
+    edge: 'alpha',
+    dir: 'drawable',
+  },
 ];
 
 const px = (dp, scale) => Math.round(dp * scale);
@@ -157,14 +171,15 @@ for (const icon of ICONS) {
     problems.push(edge);
     continue;
   }
+  const family = icon.dir ?? 'mipmap';
   for (const [bucket, scale] of Object.entries(DENSITY)) {
-    const dir = join(RES, `mipmap-${bucket}`);
+    const dir = join(RES, `${family}-${bucket}`);
     const out = join(dir, icon.name);
     const size = px(icon.dp, scale);
 
     if (CHECK) {
       if (!existsSync(out)) {
-        problems.push(`missing: mipmap-${bucket}/${icon.name}`);
+        problems.push(`missing: ${family}-${bucket}/${icon.name}`);
         continue;
       }
       // Compare mtimes rather than pixels: a master newer than its output is
@@ -172,7 +187,7 @@ for (const icon of ICONS) {
       // the one that actually happens (mark redrawn, densities not regenerated).
       if (statSync(master).mtimeMs > statSync(out).mtimeMs + 1000) {
         problems.push(
-          `stale: mipmap-${bucket}/${icon.name} is older than ${icon.master}`,
+          `stale: ${family}-${bucket}/${icon.name} is older than ${icon.master}`,
         );
       }
       continue;
@@ -180,7 +195,7 @@ for (const icon of ICONS) {
 
     mkdirSync(dir, { recursive: true });
     resize(master, out, size);
-    written.push(`mipmap-${bucket}/${icon.name} ${size}px`);
+    written.push(`${family}-${bucket}/${icon.name} ${size}px`);
   }
 }
 

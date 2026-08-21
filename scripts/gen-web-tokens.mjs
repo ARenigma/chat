@@ -75,12 +75,20 @@ ${scale('radius', 'radius')}
   --face-label: 'Urbanist', system-ui, sans-serif;
   --face-body: 'Urbanist', system-ui, sans-serif;
 
-  /* The four springs, as the closest thing CSS has. A spring is not expressible
-   * as a cubic bezier, so these approximate the settle of each one rather than
-   * pretending to be it — the app owns the real physics. */
+  /* The springs, as the closest thing CSS has. A spring is not expressible as a
+   * cubic bezier, so these approximate the settle of each one rather than
+   * pretending to be it — the app owns the real physics.
+   *
+   * There is deliberately no bounce curve here. The app's bounce is a spring
+   * driving a discrete event (a message leaving), where overshoot is the
+   * physics. On the web the only animated thing is a button press, and a press
+   * that springs *past* its target and comes back is backwards: you are pushing
+   * something down, not throwing it. It also reads as dated, which is what
+   * impeccable's bounce-easing rule is about. Exponential deceleration is what
+   * a pressed surface actually does. */
   --ease-snap: cubic-bezier(0.32, 0.72, 0.31, 1);
   --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
-  --ease-bounce: cubic-bezier(0.2, 1.5, 0.4, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --duration-fast: ${spec.motion.duration.fast}ms;
   --duration-base: ${spec.motion.duration.base}ms;
   --duration-slow: ${spec.motion.duration.slow}ms;
