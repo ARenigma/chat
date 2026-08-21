@@ -248,11 +248,43 @@ Two things about it that are not obvious:
 - **Fast2SMS reports failure inside a 200**, exactly as MSG91 does, so success is
   proven by an explicit `return: true` and nothing else.
 
-**Still to clear on the account:** a top-up of at least Rs 100 ("you need to
-complete one transaction of 100 INR or more"), website verification for the otp
-route, and an `otp_id` template if the newer `/dev/otp/send` endpoint is used
-instead of `bulkV2`. All three surface through the hook as ordinary failed sends,
-which is correct — they are not code bugs.
+### What each route actually requires
+
+Corrected after probing every route rather than generalising from one. These are
+the API's own responses, not documentation — no route was ever charged, because
+none of them got as far as sending.
+
+| Route             | Response                                                      |
+| ----------------- | ------------------------------------------------------------- |
+| `route=otp`       | 996 — "complete website verification. Visit OTP Message menu" |
+| `route=q`         | 999 — "complete one transaction of 100 INR or more"           |
+| `route=v3`        | 999 — same                                                    |
+| `route=dlt`       | **406 — "Invalid Sender ID"**                                 |
+| `route=notaroute` | 999 — same as q/v3                                            |
+| `/dev/otp/send`   | 400 — "The otp id field is required."                         |
+
+Two corrections to an earlier reading of this, both worth keeping:
+
+**The Rs 100 gate does not apply to the routes we want.** It was first seen on a
+deliberately invalid route and generalised to the whole API, which was wrong. It
+gates `q`, `v3` and unrecognised routes.
+
+**`route=dlt` is already available on this account.** It passed the account gate
+and failed only on a fake sender id, which means the account itself is not the
+obstacle — a DLT-approved sender and template are. That makes DLT registration
+the single unlock that serves both vendors: with an entity id, header and
+template, Fast2SMS `route=dlt` and MSG91's Flow API both work, both cost less per
+message than a shared template, and both can carry the SMS-autofill hash.
+
+So there are two ways forward and they are not the same size:
+
+1. **`route=otp` after website verification.** No top-up. Unbranded sender, no
+   autofill. This is the fast path and it is what `FAST2SMS_ROUTE` defaults to.
+2. **DLT registration, then `route=dlt` or MSG91.** One to three weeks, and it is
+   the destination either way — cheaper, branded, autofillable.
+
+Whether `route=otp` has a second gate behind website verification is not known:
+996 is returned first, so nothing past it can be observed yet.
 
 **MSG91 remains the better destination later.** With an approved DLT template it
 is cheaper per message, carries a branded sender id, and can include the
