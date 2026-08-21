@@ -1,7 +1,8 @@
 import React, { memo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated from 'react-native-reanimated';
-import { TOKENS } from '../theme/tokens';
+import { TOKENS, type Theme } from '../theme/tokens';
+import { useStyles } from '../theme/ThemeProvider';
 import type { ProviderSummary } from '../lib/database.types';
 import { initialOf } from '../lib/display';
 import { enterRow } from '../theme/motion';
@@ -58,6 +59,7 @@ const MORPH = { from: TOKENS.radius.lg, to: TOKENS.radius.pressCard };
  * reads as a recommendation, and nobody made one.
  */
 function ProviderRowView({ provider, index, onPress }: Props) {
+  const styles = useStyles(makeStyles);
   const initial = initialOf(provider.display_name);
   const shortGender = provider.gender ? (GENDER_SHORT[provider.gender] ?? '') : '';
   const identity = [shortGender, provider.age !== null ? `${provider.age}` : null]
@@ -152,13 +154,13 @@ function ProviderRowView({ provider, index, onPress }: Props) {
 
 export const ProviderRow = memo(ProviderRowView);
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   card: {
     padding: TOKENS.space.md,
     borderRadius: TOKENS.radius.lg,
-    backgroundColor: TOKENS.color.bg.raised,
+    backgroundColor: t.color.bg.raised,
     borderWidth: 1,
-    borderColor: TOKENS.color.border.hairline,
+    borderColor: t.color.border.hairline,
     ...TOKENS.elevation.card,
   },
   head: {
@@ -177,16 +179,16 @@ const styles = StyleSheet.create({
   },
   name: {
     ...TOKENS.typography.labelMedium,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
     flexShrink: 1,
   },
   identity: {
     ...TOKENS.typography.captionSmall,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
   },
   headline: {
     ...TOKENS.typography.captionRegular,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
   },
   tags: {
     flexDirection: 'row',
@@ -198,11 +200,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: TOKENS.space.xs,
     paddingVertical: 3,
     borderRadius: TOKENS.radius.pill,
-    backgroundColor: TOKENS.color.bg.sunken,
+    backgroundColor: t.color.bg.sunken,
   },
   tagText: {
     ...TOKENS.typography.captionSmall,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
   },
   foot: {
     flexDirection: 'row',
@@ -211,19 +213,19 @@ const styles = StyleSheet.create({
     marginTop: TOKENS.space.sm,
     paddingTop: TOKENS.space.sm,
     borderTopWidth: 1,
-    borderTopColor: TOKENS.color.border.hairline,
+    borderTopColor: t.color.border.hairline,
   },
   rating: {
     ...TOKENS.typography.labelSmall,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
   },
   ratingCount: {
     ...TOKENS.typography.captionSmall,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
   },
   meta: {
     ...TOKENS.typography.captionSmall,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
   },
   presence: {
     flexDirection: 'row',
@@ -234,10 +236,10 @@ const styles = StyleSheet.create({
     width: 7,
     height: 7,
     borderRadius: 3.5,
-    backgroundColor: TOKENS.color.state.available,
+    backgroundColor: t.color.state.available,
   },
   presenceText: {
     ...TOKENS.typography.labelSmall,
-    color: TOKENS.color.text.positive,
+    color: t.color.text.positive,
   },
 });

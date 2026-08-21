@@ -9,7 +9,8 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-import { TOKENS } from '../theme/tokens';
+import { TOKENS, type Theme } from '../theme/tokens';
+import { useStyles } from '../theme/ThemeProvider';
 import { DURATION } from '../theme/motion';
 
 const CYCLE = DURATION.breath / 4;
@@ -21,6 +22,7 @@ const OFFSET = DURATION.fast;
  * on the other end. Accent-coloured — one of the five permitted accent uses.
  */
 const Dot = ({ delay }: { delay: number }) => {
+  const styles = useStyles(makeStyles);
   const t = useSharedValue(0);
 
   useEffect(() => {
@@ -46,6 +48,7 @@ const Dot = ({ delay }: { delay: number }) => {
 };
 
 function TypingIndicatorView({ label = 'Typing' }: { label?: string }) {
+  const styles = useStyles(makeStyles);
   return (
     <View
       style={styles.host}
@@ -61,7 +64,7 @@ function TypingIndicatorView({ label = 'Typing' }: { label?: string }) {
 
 export const TypingIndicator = memo(TypingIndicatorView);
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   host: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -72,6 +75,6 @@ const styles = StyleSheet.create({
     width: 7,
     height: 7,
     borderRadius: 3.5,
-    backgroundColor: TOKENS.color.bg.accent,
+    backgroundColor: t.color.bg.accent,
   },
 });

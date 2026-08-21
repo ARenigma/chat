@@ -1,6 +1,7 @@
 import React, { memo } from 'react';
 import { StyleSheet, Text } from 'react-native';
-import { TOKENS } from '../theme/tokens';
+import { TOKENS, type Theme } from '../theme/tokens';
+import { useStyles } from '../theme/ThemeProvider';
 import { Pressable } from './Pressable';
 
 interface Props {
@@ -32,6 +33,7 @@ interface Props {
 const MORPH = { from: TOKENS.radius.xl, to: TOKENS.radius.pressButton };
 
 function ButtonView({ label, onPress, kind = 'primary', disabled = false, testID }: Props) {
+  const styles = useStyles(makeStyles);
   return (
     <Pressable
       onPress={onPress}
@@ -50,7 +52,7 @@ function ButtonView({ label, onPress, kind = 'primary', disabled = false, testID
 
 export const Button = memo(ButtonView);
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   base: {
     minHeight: 52,
     alignItems: 'center',
@@ -59,28 +61,28 @@ const styles = StyleSheet.create({
     borderRadius: TOKENS.radius.xl,
   },
   primary: {
-    backgroundColor: TOKENS.color.bg.inverse,
+    backgroundColor: t.color.bg.inverse,
   },
   secondary: {
-    backgroundColor: TOKENS.color.bg.raised,
+    backgroundColor: t.color.bg.raised,
     borderWidth: 1,
-    borderColor: TOKENS.color.border.strong,
+    borderColor: t.color.border.strong,
   },
   danger: {
-    backgroundColor: TOKENS.color.bg.raised,
+    backgroundColor: t.color.bg.raised,
     borderWidth: 1,
-    borderColor: TOKENS.color.state.danger,
+    borderColor: t.color.state.danger,
   },
   label: {
     ...TOKENS.typography.labelMedium,
   },
   primaryLabel: {
-    color: TOKENS.color.text.onInverse,
+    color: t.color.text.onInverse,
   },
   secondaryLabel: {
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
   },
   dangerLabel: {
-    color: TOKENS.color.state.danger,
+    color: t.color.state.danger,
   },
 });

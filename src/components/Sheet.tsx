@@ -18,7 +18,8 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
 } from 'react-native-reanimated';
-import { TOKENS } from '../theme/tokens';
+import { TOKENS, type Theme } from '../theme/tokens';
+import { useStyles } from '../theme/ThemeProvider';
 import { GESTURE, springTo } from '../theme/motion';
 
 interface Props {
@@ -57,6 +58,7 @@ interface Props {
  * overlay, both of which a hand-rolled overlay would have to reimplement.
  */
 function SheetView({ visible, title, body, onClose, children, testID }: Props) {
+  const styles = useStyles(makeStyles);
   const y = useSharedValue(0);
   const [height, setHeight] = useState(0);
 
@@ -148,7 +150,7 @@ function SheetView({ visible, title, body, onClose, children, testID }: Props) {
 
 export const Sheet = memo(SheetView);
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   host: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -180,7 +182,7 @@ const styles = StyleSheet.create({
     // the sheet read as a card floating rather than a surface rising.
     borderTopLeftRadius: TOKENS.radius.sheet,
     borderTopRightRadius: TOKENS.radius.sheet,
-    backgroundColor: TOKENS.color.bg.raised,
+    backgroundColor: t.color.bg.raised,
     ...TOKENS.elevation.sheet,
   },
   grabberRow: {
@@ -191,15 +193,15 @@ const styles = StyleSheet.create({
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: TOKENS.color.border.strong,
+    backgroundColor: t.color.border.strong,
   },
   title: {
     ...TOKENS.typography.titleMedium,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
   },
   body: {
     ...TOKENS.typography.bodyMedium,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
   },
   actions: {
     paddingTop: TOKENS.space.sm,

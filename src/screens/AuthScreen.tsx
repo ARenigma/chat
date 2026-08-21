@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { AppState, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { TOKENS } from '../theme/tokens';
+import { TOKENS, type Theme } from '../theme/tokens';
+import { useStyles } from '../theme/ThemeProvider';
 import { PROVIDER_LABEL, signInWith, type SocialProvider } from '../api/auth';
 import { Button } from '../components/Button';
 
@@ -33,6 +34,7 @@ import { Button } from '../components/Button';
  * of blunt.)
  */
 export function AuthScreen({ initialError }: { initialError?: string }) {
+  const styles = useStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState<SocialProvider | null>(null);
   const [error, setError] = useState<string | null>(initialError ?? null);
@@ -158,11 +160,11 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   root: {
     flex: 1,
     paddingHorizontal: TOKENS.space.lg,
-    backgroundColor: TOKENS.color.bg.base,
+    backgroundColor: t.color.bg.base,
   },
   middle: {
     flex: 1,
@@ -173,11 +175,11 @@ const styles = StyleSheet.create({
   },
   title: {
     ...TOKENS.typography.displayLarge,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
   },
   subtitle: {
     ...TOKENS.typography.bodyMedium,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
   },
   // The fix for "buttons have no gap".
   actions: {
@@ -185,12 +187,12 @@ const styles = StyleSheet.create({
   },
   error: {
     ...TOKENS.typography.captionRegular,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
     paddingBottom: TOKENS.space.sm,
   },
   legal: {
     ...TOKENS.typography.captionSmall,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
     paddingTop: TOKENS.space.xl,
     paddingBottom: TOKENS.space.xl,
   },

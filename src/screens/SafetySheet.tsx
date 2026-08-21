@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
-import { TOKENS } from '../theme/tokens';
+import { TOKENS, type Theme } from '../theme/tokens';
+import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ReportReason } from '../lib/database.types';
 import { useBlockUser, useIsBlocked, useSubmitReport, useUnblockUser } from '../api/safety';
 import { Button } from '../components/Button';
@@ -49,6 +50,8 @@ export function SafetySheet({
   peerName,
   messageId,
 }: Props) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const [step, setStep] = useState<Step>('menu');
   const [reason, setReason] = useState<ReportReason | null>(null);
   const [detail, setDetail] = useState('');
@@ -124,7 +127,7 @@ export function SafetySheet({
           value={detail}
           onChangeText={setDetail}
           placeholder="What should we know?"
-          placeholderTextColor={TOKENS.color.text.secondary}
+          placeholderTextColor={theme.color.text.secondary}
           multiline
           maxLength={2000}
           allowFontScaling
@@ -201,7 +204,7 @@ export function SafetySheet({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   reasons: {
     alignSelf: 'stretch',
     gap: 2,
@@ -214,7 +217,7 @@ const styles = StyleSheet.create({
   },
   reasonLabel: {
     ...TOKENS.typography.bodyMedium,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
   },
   input: {
     alignSelf: 'stretch',
@@ -223,9 +226,9 @@ const styles = StyleSheet.create({
     padding: TOKENS.space.md,
     marginBottom: TOKENS.space.sm,
     borderRadius: TOKENS.radius.md,
-    backgroundColor: TOKENS.color.bg.sunken,
+    backgroundColor: t.color.bg.sunken,
     ...TOKENS.typography.bodyMedium,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
     textAlignVertical: 'top',
   },
 });

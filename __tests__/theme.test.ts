@@ -486,3 +486,73 @@ describe('Material 3 conformance', () => {
 function withoutJsxComments(source: string): string {
   return source.replace(/\{?\/\*[\s\S]*?\*\/\}?/g, '').replace(/^\s*\/\/.*$/gm, '');
 }
+
+/**
+ * The light/dark boundary, enforced rather than described.
+ *
+ * Only `color` is reactive, and that is not a shortcut — `space`, `radius`,
+ * `typography` and `motion` are byte-identical across the two modes (asserted
+ * above), so making them reactive would re-render the app to hand every
+ * component the same numbers back.
+ *
+ * The failure mode this guards is silent and ugly: one `TOKENS.color` left in a
+ * component keeps rendering the *light* value forever, because the generated
+ * `TOKENS` is `LIGHT`. The screen goes dark and one border stays pale, and
+ * nothing anywhere fails.
+ */
+describe('light and dark', () => {
+  const sources = ['src/components', 'src/screens'].flatMap(dir =>
+    readdirSync(join(ROOT, dir))
+      .filter(f => f.endsWith('.tsx'))
+      .map(f => ({ file: `${dir}/${f}`, body: read(`${dir}/${f}`) })),
+  );
+
+  it('never reads a colour off the static token object outside the theme', () => {
+    for (const s of sources) {
+      expect(withoutJsxComments(s.body)).not.toMatch(/TOKENS\.color/);
+    }
+    expect(withoutJsxComments(read('App.tsx'))).not.toMatch(/TOKENS\.color/);
+  });
+
+  it('still reads the mode-independent scales statically', () => {
+    // If this ever finds nothing, the migration went too far and every spacing
+    // value is now paying for a context read.
+    const staticReads = sources.filter(s => /TOKENS\.(space|radius|typography)/.test(s.body));
+    expect(staticReads.length).toBeGreaterThan(10);
+  });
+
+  it('builds every themed stylesheet through a module-scope factory', () => {
+    for (const s of sources) {
+      if (!s.body.includes('StyleSheet.create')) {
+        continue;
+      }
+      // `const styles = StyleSheet.create` at module scope would freeze whichever
+      // theme was active when the bundle loaded.
+      expect(s.body).not.toMatch(/^const styles = StyleSheet\.create/m);
+      expect(s.body).toMatch(/^const makeStyles = \(_?t: Theme\)/m);
+    }
+  });
+
+  it('memoises styles on theme identity rather than rebuilding per render', () => {
+    const provider = read('src/theme/ThemeProvider.tsx');
+    expect(provider).toContain('useMemo(() => makeStyles(theme), [makeStyles, theme])');
+  });
+
+  it('persists the choice and defaults to following the OS', () => {
+    const provider = read('src/theme/ThemeProvider.tsx');
+    expect(provider).toContain('companion.themeMode');
+    expect(provider).toContain("Appearance.getColorScheme()");
+    expect(provider).toMatch(/:\s*'system'/);
+  });
+
+  it('flips the status bar with the mode', () => {
+    // Edge-to-edge means Android draws the clock over our background; a light
+    // bar on a light page is an invisible status bar, not a subtle one.
+    expect(read('App.tsx')).toContain("isDark ? 'light-content' : 'dark-content'");
+  });
+
+  it('covers the change with a dissolve rather than cutting', () => {
+    expect(read('src/theme/ThemeProvider.tsx')).toContain('Dissolve');
+    expect(read('src/theme/ThemeProvider.tsx')).toContain('pointerEvents="none"');
+  });
+});

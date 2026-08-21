@@ -537,7 +537,16 @@ export const DARK = {
   },
 } as const;
 
-export type Theme = typeof LIGHT;
+/**
+ * Either mode, and deliberately a union rather than `typeof LIGHT`.
+ *
+ * Both objects are `as const`, which makes every hex a literal type — so
+ * `typeof LIGHT` cannot hold DARK, and a theme-aware stylesheet would only
+ * ever typecheck against light mode. The union works because the two shapes are
+ * identical: property access resolves, and each colour reads as the union of its
+ * two values, which is still a string everywhere it is used.
+ */
+export type Theme = typeof LIGHT | typeof DARK;
 
 /** The app is light-first; DARK exists for the mode switch, not as a default. */
 export const TOKENS: Theme = LIGHT;

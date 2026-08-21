@@ -5,7 +5,8 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
 } from 'react-native-reanimated';
-import { TOKENS } from '../theme/tokens';
+import { TOKENS, type Theme } from '../theme/tokens';
+import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { INTERACTION, springTo } from '../theme/motion';
 
 interface Props {
@@ -82,8 +83,10 @@ function ToggleView({
   testID,
   tone = 'accent',
 }: Props) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const fill =
-    tone === 'presence' ? TOKENS.color.state.available : TOKENS.color.bg.accentStrong;
+    tone === 'presence' ? theme.color.state.available : theme.color.bg.accentStrong;
   // 0 = off, 1 = on. `held` is separate because the pressed thumb size applies
   // in both states, and folding it into one value would make "off and held"
   // indistinguishable from "half on".
@@ -95,8 +98,8 @@ function ToggleView({
   }, [value, on]);
 
   const track = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(on.value, [0, 1], [TOKENS.color.bg.pressed, fill]),
-    borderColor: interpolateColor(on.value, [0, 1], [TOKENS.color.border.strong, fill]),
+    backgroundColor: interpolateColor(on.value, [0, 1], [theme.color.bg.pressed, fill]),
+    borderColor: interpolateColor(on.value, [0, 1], [theme.color.border.strong, fill]),
   }));
 
   const thumb = useAnimatedStyle(() => {
@@ -117,7 +120,7 @@ function ToggleView({
       backgroundColor: interpolateColor(
         on.value,
         [0, 1],
-        [TOKENS.color.border.strong, TOKENS.color.bg.raised],
+        [theme.color.border.strong, theme.color.bg.raised],
       ),
     };
   });
@@ -147,7 +150,7 @@ function ToggleView({
 
 export const Toggle = memo(ToggleView);
 
-const styles = StyleSheet.create({
+const makeStyles = (_t: Theme) => StyleSheet.create({
   track: {
     width: T.trackWidth,
     height: T.trackHeight,

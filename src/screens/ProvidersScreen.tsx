@@ -3,7 +3,8 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated from 'react-native-reanimated';
-import { TOKENS } from '../theme/tokens';
+import { TOKENS, type Theme } from '../theme/tokens';
+import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { enterBlock } from '../theme/motion';
 import type { ProviderSummary } from '../lib/database.types';
 import { useProfile, useProviders } from '../api/chat';
@@ -29,6 +30,8 @@ interface Props {
  * admitted yet, and saying so is better than an empty list that looks broken.
  */
 export function ProvidersScreen({ onSelect, onBack, onOpenSettings }: Props) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const balance = useStore(s => s.balance);
   const openRefill = useStore(s => s.openRefill);
@@ -53,7 +56,7 @@ export function ProvidersScreen({ onSelect, onBack, onOpenSettings }: Props) {
           press="chip"
           size={40}
           style={styles.iconButton}>
-          <Icon glyph="chevron-left" size={16} color={TOKENS.color.text.secondary} />
+          <Icon glyph="chevron-left" size={16} color={theme.color.text.secondary} />
         </Pressable>
         <TokenCounter balance={balance} onPress={openRefill} />
         <View style={styles.spacer} />
@@ -64,7 +67,7 @@ export function ProvidersScreen({ onSelect, onBack, onOpenSettings }: Props) {
           press="chip"
           size={40}
           style={styles.iconButton}>
-          <Icon glyph="dots" size={18} color={TOKENS.color.text.secondary} />
+          <Icon glyph="dots" size={18} color={theme.color.text.secondary} />
         </Pressable>
       </View>
 
@@ -84,7 +87,7 @@ export function ProvidersScreen({ onSelect, onBack, onOpenSettings }: Props) {
 
       {isPending ? (
         <View style={styles.state}>
-          <ActivityIndicator color={TOKENS.color.text.secondary} />
+          <ActivityIndicator color={theme.color.text.secondary} />
         </View>
       ) : isError ? (
         <Pressable
@@ -122,10 +125,10 @@ export function ProvidersScreen({ onSelect, onBack, onOpenSettings }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: TOKENS.color.bg.base,
+    backgroundColor: t.color.bg.base,
   },
   meta: {
     flexDirection: 'row',
@@ -150,11 +153,11 @@ const styles = StyleSheet.create({
   },
   title: {
     ...TOKENS.typography.displaySmall,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
   },
   subtitle: {
     ...TOKENS.typography.bodyMedium,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
   },
   list: {
     paddingHorizontal: TOKENS.space.lg,
@@ -168,7 +171,7 @@ const styles = StyleSheet.create({
   },
   stateText: {
     ...TOKENS.typography.bodyMedium,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
     textAlign: 'center',
   },
 });

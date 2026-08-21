@@ -1,7 +1,8 @@
 import React, { useCallback, useMemo } from 'react';
 import { ActivityIndicator, SectionList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { TOKENS } from '../theme/tokens';
+import { TOKENS, type Theme } from '../theme/tokens';
+import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ConversationSummary } from '../lib/database.types';
 import { initialOf } from '../lib/display';
 import { track } from '../lib/telemetry';
@@ -43,6 +44,8 @@ function ago(iso: string): string {
  * what is true.
  */
 export function ProviderHomeScreen({ onOpenConversation, onOpenSettings }: Props) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { data: profile } = useProfile();
   const { data: allThreads, isPending } = useConversations();
@@ -140,7 +143,7 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings }: Props
         </Pressable>
       );
     },
-    [onOpenConversation],
+    [onOpenConversation, styles],
   );
 
   return (
@@ -157,7 +160,7 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings }: Props
           press="chip"
           size={40}
           style={styles.iconButton}>
-          <Icon glyph="dots" size={18} color={TOKENS.color.text.secondary} />
+          <Icon glyph="dots" size={18} color={theme.color.text.secondary} />
         </Pressable>
       </View>
 
@@ -214,7 +217,7 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings }: Props
 
       {isPending ? (
         <View style={styles.state}>
-          <ActivityIndicator color={TOKENS.color.text.secondary} />
+          <ActivityIndicator color={theme.color.text.secondary} />
         </View>
       ) : sections.length === 0 ? (
         <View style={styles.state}>
@@ -257,6 +260,7 @@ function Stat({
   value: string;
   testID: string;
 }) {
+  const styles = useStyles(makeStyles);
   return (
     <View style={styles.stat}>
       <Text testID={testID} allowFontScaling style={styles.statValue}>
@@ -269,10 +273,10 @@ function Stat({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: TOKENS.color.bg.base,
+    backgroundColor: t.color.bg.base,
   },
   meta: {
     flexDirection: 'row',
@@ -283,7 +287,7 @@ const styles = StyleSheet.create({
   },
   role: {
     ...TOKENS.typography.captionRegular,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
   },
   spacer: {
     flex: 1,
@@ -301,7 +305,7 @@ const styles = StyleSheet.create({
     marginHorizontal: TOKENS.space.lg,
     padding: TOKENS.space.md,
     borderRadius: TOKENS.radius.md,
-    backgroundColor: TOKENS.color.bg.raised,
+    backgroundColor: t.color.bg.raised,
   },
   availabilityText: {
     flex: 1,
@@ -309,11 +313,11 @@ const styles = StyleSheet.create({
   },
   availabilityTitle: {
     ...TOKENS.typography.labelMedium,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
   },
   availabilitySub: {
     ...TOKENS.typography.captionSmall,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
   },
   stats: {
     flexDirection: 'row',
@@ -326,15 +330,15 @@ const styles = StyleSheet.create({
   },
   statValue: {
     ...TOKENS.typography.titleMedium,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
   },
   statLabel: {
     ...TOKENS.typography.captionSmall,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
   },
   refundNote: {
     ...TOKENS.typography.captionRegular,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
     paddingHorizontal: TOKENS.space.lg,
     paddingBottom: TOKENS.space.md,
   },
@@ -343,7 +347,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     ...TOKENS.typography.captionSmall,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
     paddingTop: TOKENS.space.lg,
     paddingBottom: TOKENS.space.xs,
   },
@@ -364,21 +368,21 @@ const styles = StyleSheet.create({
   },
   rowName: {
     ...TOKENS.typography.labelMedium,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
     flex: 1,
   },
   rowTime: {
     ...TOKENS.typography.captionSmall,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
   },
   rowPreview: {
     ...TOKENS.typography.captionRegular,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
     flex: 1,
   },
   rowPreviewUnread: {
     ...TOKENS.typography.labelMedium,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
   },
   // A count, not a dot — the same badge the member's inbox uses. "Someone is
   // waiting on you" is the one thing on this screen worth interrupting for, and
@@ -390,11 +394,11 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: TOKENS.color.bg.accentStrong,
+    backgroundColor: t.color.bg.accentStrong,
   },
   unreadCount: {
     ...TOKENS.typography.numeralSmall,
-    color: TOKENS.color.text.onAccent,
+    color: t.color.text.onAccent,
   },
   state: {
     flex: 1,
@@ -404,7 +408,7 @@ const styles = StyleSheet.create({
   },
   stateText: {
     ...TOKENS.typography.bodyMedium,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
     textAlign: 'center',
   },
 });

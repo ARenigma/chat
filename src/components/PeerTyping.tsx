@@ -1,6 +1,7 @@
 import React, { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { TOKENS } from '../theme/tokens';
+import { TOKENS, type Theme } from '../theme/tokens';
+import { useStyles } from '../theme/ThemeProvider';
 import { selectPeerTyping, useStore } from '../store/useStore';
 import { Avatar } from './Avatar';
 import { TypingIndicator } from './TypingIndicator';
@@ -15,6 +16,7 @@ import { TypingIndicator } from './TypingIndicator';
  * `ListHeaderComponent` does not invalidate the list either.
  */
 function PeerTypingView({ initial, name }: { initial: string; name: string }) {
+  const styles = useStyles(makeStyles);
   const typing = useStore(selectPeerTyping);
 
   if (!typing) {
@@ -35,7 +37,7 @@ function PeerTypingView({ initial, name }: { initial: string; name: string }) {
 
 export const PeerTyping = memo(PeerTypingView);
 
-const styles = StyleSheet.create({
+const makeStyles = (_t: Theme) => StyleSheet.create({
   // No counter-flip: VirtualizedList composes its inversion style onto the
   // ListHeaderComponent wrapper, so the header renders upright already.
   row: {

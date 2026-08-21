@@ -1,7 +1,8 @@
 import React, { useEffect } from 'react';
 import { StyleSheet, Text } from 'react-native';
 import Animated, { FadeInUp, FadeOut } from 'react-native-reanimated';
-import { TOKENS } from '../theme/tokens';
+import { TOKENS, type Theme } from '../theme/tokens';
+import { useStyles } from '../theme/ThemeProvider';
 import { useStore } from '../store/useStore';
 
 const DISMISS_AFTER_MS = 4200;
@@ -20,6 +21,7 @@ const DISMISS_AFTER_MS = 4200;
  * on the things that ask for attention.
  */
 export function NoticeBar() {
+  const styles = useStyles(makeStyles);
   const notice = useStore(s => s.notice);
   const tone = useStore(s => s.noticeTone);
   const setNotice = useStore(s => s.setNotice);
@@ -55,22 +57,22 @@ export function NoticeBar() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   bar: {
     marginHorizontal: TOKENS.space.md,
     marginBottom: TOKENS.space.xs,
     paddingHorizontal: TOKENS.space.md,
     paddingVertical: 10,
     borderRadius: TOKENS.radius.md,
-    backgroundColor: TOKENS.color.bg.raised,
+    backgroundColor: t.color.bg.raised,
     borderWidth: 1,
-    borderColor: TOKENS.color.state.danger,
+    borderColor: t.color.state.danger,
   },
   barConfirm: {
-    borderColor: TOKENS.color.border.hairline,
+    borderColor: t.color.border.hairline,
   },
   text: {
     ...TOKENS.typography.captionRegular,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
   },
 });

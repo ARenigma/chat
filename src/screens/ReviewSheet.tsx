@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
-import { TOKENS } from '../theme/tokens';
+import { TOKENS, type Theme } from '../theme/tokens';
+import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { useSubmitReview } from '../api/provider';
 import { Button } from '../components/Button';
 import { Pressable } from '../components/Pressable';
@@ -28,6 +29,8 @@ const STARS = [1, 2, 3, 4, 5] as const;
  * there is nothing to rate before there is something to rate.
  */
 export function ReviewSheet({ visible, onClose, conversationId, peerName }: Props) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
   const submit = useSubmitReview();
@@ -66,7 +69,7 @@ export function ReviewSheet({ visible, onClose, conversationId, peerName }: Prop
         value={comment}
         onChangeText={setComment}
         placeholder="Anything you want to add? (optional)"
-        placeholderTextColor={TOKENS.color.text.secondary}
+        placeholderTextColor={theme.color.text.secondary}
         multiline
         maxLength={1000}
         allowFontScaling
@@ -91,7 +94,7 @@ export function ReviewSheet({ visible, onClose, conversationId, peerName }: Prop
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   stars: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -106,10 +109,10 @@ const styles = StyleSheet.create({
   // against an outline reads unambiguously without it.
   starGlyph: {
     fontSize: 30,
-    color: TOKENS.color.bg.sunken,
+    color: t.color.bg.sunken,
   },
   starOn: {
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
   },
   input: {
     alignSelf: 'stretch',
@@ -118,9 +121,9 @@ const styles = StyleSheet.create({
     padding: TOKENS.space.md,
     marginBottom: TOKENS.space.sm,
     borderRadius: TOKENS.radius.md,
-    backgroundColor: TOKENS.color.bg.sunken,
+    backgroundColor: t.color.bg.sunken,
     ...TOKENS.typography.bodyMedium,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
     textAlignVertical: 'top',
   },
 });

@@ -10,7 +10,8 @@ import {
 import { FlashList } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated from 'react-native-reanimated';
-import { TOKENS } from '../theme/tokens';
+import { TOKENS, type Theme } from '../theme/tokens';
+import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ConversationSummary, ProviderSummary } from '../lib/database.types';
 import { initialOf } from '../lib/display';
 import { enterBlock, enterRail, enterRow } from '../theme/motion';
@@ -83,6 +84,8 @@ function ago(iso: string): string {
  * warning in the console and a scroll-jank bug in practice.
  */
 export function InboxScreen({ onOpenConversation, onBrowse, onOpenSettings }: Props) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const balance = useStore(s => s.balance);
   const openRefill = useStore(s => s.openRefill);
@@ -166,7 +169,7 @@ export function InboxScreen({ onOpenConversation, onBrowse, onOpenSettings }: Pr
         </Animated.View>
       );
     },
-    [onOpenConversation],
+    [onOpenConversation, styles],
   );
 
   const header = useCallback(
@@ -191,7 +194,7 @@ export function InboxScreen({ onOpenConversation, onBrowse, onOpenSettings }: Pr
                 press="card"
                 style={styles.railItem}>
                 <View style={styles.add}>
-                  <Icon glyph="plus" size={16} color={TOKENS.color.text.tertiary} />
+                  <Icon glyph="plus" size={16} color={theme.color.text.tertiary} />
                 </View>
                 <Text allowFontScaling numberOfLines={1} style={styles.railLabel}>
                   All
@@ -218,14 +221,14 @@ export function InboxScreen({ onOpenConversation, onBrowse, onOpenSettings }: Pr
 
         {searchable ? (
           <View style={styles.search}>
-            <Icon glyph="search" size={16} color={TOKENS.color.text.tertiary} />
+            <Icon glyph="search" size={16} color={theme.color.text.tertiary} />
             <TextInput
               testID="inbox-search"
               style={styles.searchInput}
               value={query}
               onChangeText={setQuery}
               placeholder="Search your conversations"
-              placeholderTextColor={TOKENS.color.text.tertiary}
+              placeholderTextColor={theme.color.text.tertiary}
               allowFontScaling
               autoCorrect={false}
               returnKeyType="search"
@@ -240,7 +243,7 @@ export function InboxScreen({ onOpenConversation, onBrowse, onOpenSettings }: Pr
                 press="chip"
                 size={24}
                 style={styles.clear}>
-                <Icon glyph="close" size={11} color={TOKENS.color.text.secondary} />
+                <Icon glyph="close" size={11} color={theme.color.text.secondary} />
               </Pressable>
             ) : null}
           </View>
@@ -261,7 +264,18 @@ export function InboxScreen({ onOpenConversation, onBrowse, onOpenSettings }: Pr
         )}
       </View>
     ),
-    [all.length, free, onBrowse, onOpenConversation, query, searchable, threads.length, unreadTotal],
+    [
+      all.length,
+      free,
+      onBrowse,
+      onOpenConversation,
+      query,
+      searchable,
+      styles,
+      theme,
+      threads.length,
+      unreadTotal,
+    ],
   );
 
   return (
@@ -275,13 +289,13 @@ export function InboxScreen({ onOpenConversation, onBrowse, onOpenSettings }: Pr
           accessibilityLabel="Account and privacy"
           press="chip"
           style={styles.iconButton}>
-          <Icon glyph="dots" size={18} color={TOKENS.color.text.secondary} />
+          <Icon glyph="dots" size={18} color={theme.color.text.secondary} />
         </Pressable>
       </View>
 
       {isPending ? (
         <View style={styles.state}>
-          <ActivityIndicator color={TOKENS.color.text.secondary} />
+          <ActivityIndicator color={theme.color.text.secondary} />
         </View>
       ) : all.length === 0 ? (
         <View style={styles.state}>
@@ -336,10 +350,10 @@ export function InboxScreen({ onOpenConversation, onBrowse, onOpenSettings }: Pr
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: TOKENS.color.bg.base,
+    backgroundColor: t.color.bg.base,
   },
   meta: {
     flexDirection: 'row',
@@ -363,7 +377,7 @@ const styles = StyleSheet.create({
   },
   title: {
     ...TOKENS.typography.displaySmall,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
   },
   rail: {
     gap: TOKENS.space.sm,
@@ -382,11 +396,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderStyle: 'dashed',
-    borderColor: TOKENS.color.border.strong,
+    borderColor: t.color.border.strong,
   },
   railLabel: {
     ...TOKENS.typography.captionSmall,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
   },
   search: {
     flexDirection: 'row',
@@ -396,16 +410,16 @@ const styles = StyleSheet.create({
     paddingRight: TOKENS.space['2xs'],
     marginBottom: TOKENS.space.md,
     borderRadius: TOKENS.radius.pill,
-    backgroundColor: TOKENS.color.bg.raised,
+    backgroundColor: t.color.bg.raised,
     borderWidth: 1,
-    borderColor: TOKENS.color.border.hairline,
+    borderColor: t.color.border.hairline,
   },
   searchInput: {
     flex: 1,
     minHeight: 44,
     paddingVertical: 0,
     ...TOKENS.typography.bodyMedium,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
   },
   clear: {
     width: 28,
@@ -413,11 +427,11 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: TOKENS.color.bg.sunken,
+    backgroundColor: t.color.bg.sunken,
   },
   section: {
     ...TOKENS.typography.labelSmall,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
     paddingBottom: TOKENS.space.xs,
   },
   list: {
@@ -430,9 +444,9 @@ const styles = StyleSheet.create({
     padding: TOKENS.space.sm,
     marginBottom: TOKENS.space.xs,
     borderRadius: TOKENS.radius.lg,
-    backgroundColor: TOKENS.color.bg.raised,
+    backgroundColor: t.color.bg.raised,
     borderWidth: 1,
-    borderColor: TOKENS.color.border.hairline,
+    borderColor: t.color.border.hairline,
     ...TOKENS.elevation.card,
   },
   body: {
@@ -451,20 +465,20 @@ const styles = StyleSheet.create({
   },
   name: {
     ...TOKENS.typography.labelMedium,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
     flex: 1,
   },
   time: {
     ...TOKENS.typography.captionSmall,
-    color: TOKENS.color.text.tertiary,
+    color: t.color.text.tertiary,
   },
   preview: {
     ...TOKENS.typography.captionRegular,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
     flex: 1,
   },
   previewUnread: {
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
   },
   // A count, not a bare dot. The dot was chosen to avoid "anxiety about the
   // number", but with the threads in cards it read as a rendering artefact, and
@@ -476,11 +490,11 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: TOKENS.color.bg.accentStrong,
+    backgroundColor: t.color.bg.accentStrong,
   },
   unreadCount: {
     ...TOKENS.typography.numeralSmall,
-    color: TOKENS.color.text.onAccent,
+    color: t.color.text.onAccent,
   },
   fabWrap: {
     position: 'absolute',
@@ -492,12 +506,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: TOKENS.space.xl,
     paddingVertical: TOKENS.space.sm,
     borderRadius: TOKENS.radius.pill,
-    backgroundColor: TOKENS.color.bg.inverse,
+    backgroundColor: t.color.bg.inverse,
     ...TOKENS.elevation.composer,
   },
   fabLabel: {
     ...TOKENS.typography.labelMedium,
-    color: TOKENS.color.text.onInverse,
+    color: t.color.text.onInverse,
   },
   state: {
     flex: 1,
@@ -508,7 +522,7 @@ const styles = StyleSheet.create({
   },
   stateText: {
     ...TOKENS.typography.bodyMedium,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
     textAlign: 'center',
   },
   stateAction: {

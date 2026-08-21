@@ -1,7 +1,8 @@
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { TOKENS } from '../theme/tokens';
+import { TOKENS, type Theme } from '../theme/tokens';
+import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ApplicationStatus } from '../lib/database.types';
 import { useMyApplication } from '../api/provider';
 import { Button } from '../components/Button';
@@ -59,6 +60,8 @@ const COPY: Record<ApplicationStatus, { title: string; body: string }> = {
 };
 
 export function ProviderStatusScreen({ onBack, onEdit }: Props) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { data, isPending } = useMyApplication();
 
@@ -85,7 +88,7 @@ export function ProviderStatusScreen({ onBack, onEdit }: Props) {
 
       {isPending ? (
         <View style={styles.state}>
-          <ActivityIndicator color={TOKENS.color.text.secondary} />
+          <ActivityIndicator color={theme.color.text.secondary} />
         </View>
       ) : (
         <View style={styles.body}>
@@ -142,10 +145,10 @@ export function ProviderStatusScreen({ onBack, onEdit }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: TOKENS.color.bg.base,
+    backgroundColor: t.color.bg.base,
   },
   header: {
     flexDirection: 'row',
@@ -155,7 +158,7 @@ const styles = StyleSheet.create({
     paddingTop: TOKENS.space.xs,
     paddingBottom: TOKENS.space.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: TOKENS.color.border.hairline,
+    borderBottomColor: t.color.border.hairline,
   },
   back: {
     width: 40,
@@ -163,11 +166,11 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: TOKENS.color.bg.sunken,
+    backgroundColor: t.color.bg.sunken,
   },
   headerTitle: {
     ...TOKENS.typography.labelMedium,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
   },
   body: {
     flex: 1,
@@ -183,37 +186,37 @@ const styles = StyleSheet.create({
   },
   title: {
     ...TOKENS.typography.titleMedium,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
   },
   copy: {
     ...TOKENS.typography.bodyMedium,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
   },
   meta: {
     ...TOKENS.typography.captionSmall,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
   },
   missingBox: {
     marginTop: TOKENS.space.sm,
     padding: TOKENS.space.md,
     borderRadius: TOKENS.radius.md,
-    backgroundColor: TOKENS.color.bg.sunken,
+    backgroundColor: t.color.bg.sunken,
     gap: 2,
   },
   noteBox: {
     padding: TOKENS.space.md,
     borderRadius: TOKENS.radius.md,
-    backgroundColor: TOKENS.color.bg.raised,
+    backgroundColor: t.color.bg.raised,
     gap: 2,
   },
   missingTitle: {
     ...TOKENS.typography.labelMedium,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
     paddingBottom: TOKENS.space['2xs'],
   },
   missingItem: {
     ...TOKENS.typography.captionRegular,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
   },
   spacer: {
     flex: 1,

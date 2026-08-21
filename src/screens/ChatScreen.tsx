@@ -10,7 +10,8 @@ import {
   type ListRenderItemInfo,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { TOKENS } from '../theme/tokens';
+import { TOKENS, type Theme } from '../theme/tokens';
+import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { initialOf } from '../lib/display';
 import { isPending, lastOwnMessageId } from '../lib/transcript';
 import {
@@ -66,6 +67,8 @@ function timeOf(iso: string): string {
  * conversation and the UI should not fight it.
  */
 export function ChatScreen({ providerId, onBack }: Props) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const balance = useStore(s => s.balance);
   const openRefill = useStore(s => s.openRefill);
@@ -201,7 +204,7 @@ export function ChatScreen({ providerId, onBack }: Props) {
         </View>
       );
     },
-    [initial, reportMessage],
+    [initial, reportMessage, styles],
   );
 
   const header = useCallback(
@@ -239,7 +242,7 @@ export function ChatScreen({ providerId, onBack }: Props) {
           testID="open-safety"
           accessibilityLabel={`Block or report ${name}`}
           style={styles.back}>
-          <Icon glyph="shield" size={16} color={TOKENS.color.text.secondary} />
+          <Icon glyph="shield" size={16} color={theme.color.text.secondary} />
         </Pressable>
         <TokenCounter balance={balance} onPress={openRefill} />
       </View>
@@ -249,7 +252,7 @@ export function ChatScreen({ providerId, onBack }: Props) {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         {loading ? (
           <View style={styles.loading}>
-            <ActivityIndicator color={TOKENS.color.text.secondary} />
+            <ActivityIndicator color={theme.color.text.secondary} />
           </View>
         ) : empty ? (
           <View style={styles.empty}>
@@ -315,7 +318,7 @@ export function ChatScreen({ providerId, onBack }: Props) {
               testID="dismiss-review-prompt"
               accessibilityLabel="Not now"
               style={styles.promptClose}>
-              <Icon glyph="close" size={12} color={TOKENS.color.text.positive} />
+              <Icon glyph="close" size={12} color={theme.color.text.positive} />
             </Pressable>
           </View>
         ) : null}
@@ -358,10 +361,10 @@ export function ChatScreen({ providerId, onBack }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: TOKENS.color.bg.base,
+    backgroundColor: t.color.bg.base,
   },
   header: {
     flexDirection: 'row',
@@ -371,7 +374,7 @@ const styles = StyleSheet.create({
     paddingTop: TOKENS.space.xs,
     paddingBottom: TOKENS.space.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: TOKENS.color.border.hairline,
+    borderBottomColor: t.color.border.hairline,
   },
   back: {
     width: 40,
@@ -379,7 +382,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: TOKENS.color.bg.sunken,
+    backgroundColor: t.color.bg.sunken,
   },
   emptyMark: {
     paddingBottom: TOKENS.space.xs,
@@ -389,11 +392,11 @@ const styles = StyleSheet.create({
   },
   title: {
     ...TOKENS.typography.labelMedium,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
   },
   presence: {
     ...TOKENS.typography.captionSmall,
-    color: TOKENS.color.text.positive,
+    color: t.color.text.positive,
   },
   body: {
     flex: 1,
@@ -419,11 +422,11 @@ const styles = StyleSheet.create({
   },
   emptyName: {
     ...TOKENS.typography.displaySmall,
-    color: TOKENS.color.text.primary,
+    color: t.color.text.primary,
   },
   emptyLine: {
     ...TOKENS.typography.bodyMedium,
-    color: TOKENS.color.text.secondary,
+    color: t.color.text.secondary,
   },
   starters: {
     alignItems: 'center',
@@ -441,7 +444,7 @@ const styles = StyleSheet.create({
     marginHorizontal: TOKENS.space.md,
     marginBottom: TOKENS.space.xs,
     borderRadius: TOKENS.radius.md,
-    backgroundColor: TOKENS.color.bg.positive,
+    backgroundColor: t.color.bg.positive,
   },
   promptFill: {
     flex: 1,
@@ -452,7 +455,7 @@ const styles = StyleSheet.create({
   },
   promptText: {
     ...TOKENS.typography.labelSmall,
-    color: TOKENS.color.text.positive,
+    color: t.color.text.positive,
   },
   promptClose: {
     width: 40,
