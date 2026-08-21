@@ -8,7 +8,7 @@ import { PROVIDER_LABEL, signInWith, type SocialProvider } from '../api/auth';
 import { Button } from '../components/Button';
 
 /**
- * The only way in: two buttons.
+ * The only way in: one button.
  *
  * The first version of this screen shipped with no gap between those buttons, no
  * entrance animation and nothing above the headline, which read as an unstyled
@@ -137,15 +137,6 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
           disabled={busy !== null}
           testID="signin-google"
         />
-        <Button
-          label={busy === 'facebook' ? 'Opening…' : PROVIDER_LABEL.facebook}
-          kind="secondary"
-          onPress={() => {
-            void start('facebook');
-          }}
-          disabled={busy !== null}
-          testID="signin-facebook"
-        />
       </Animated.View>
 
       <Animated.Text
@@ -153,8 +144,8 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
         allowFontScaling
         style={styles.legal}>
         We only read your name and email, and neither is shown to anyone you talk
-        to — you pick a separate display name. Signing in does tell Google or
-        Facebook that you use this app.
+        to — you pick a separate display name. Signing in does tell Google that
+        you use this app.
       </Animated.Text>
     </View>
   );

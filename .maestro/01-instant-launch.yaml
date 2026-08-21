@@ -18,7 +18,10 @@ name: First launch offers social sign-in and nothing else
 
 - assertVisible:
     id: 'signin-google'
-- assertVisible:
+# Asserted absent, not merely unmentioned: the Facebook button existed with no
+# credentials behind it, so every tap failed. A flow that stops naming it would
+# pass again the moment someone re-added it.
+- assertNotVisible:
     id: 'signin-facebook'
 - assertVisible: 'to listen.'
 - assertVisible: 'Not therapy'
