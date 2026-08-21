@@ -7,6 +7,7 @@ import { TOKENS, type Theme } from './src/theme/tokens';
 import { ThemeProvider, useStyles, useThemeMode } from './src/theme/ThemeProvider';
 import { assertEnv } from './src/lib/env';
 import { migrateLegacyStorage, storage } from './src/lib/storage';
+import { initialNotificationPeer, onNotificationOpen, startPush } from './src/lib/push';
 import { initSentry } from './src/lib/sentry';
 import { isUuid } from './src/lib/ids';
 import { track } from './src/lib/telemetry';
@@ -101,6 +102,13 @@ function Root() {
         if (isUuid(stored)) {
           setRoute({ name: 'chat', providerId: stored });
         }
+        // A notification tap outranks the remembered conversation: it is the
+        // more recent, more explicit statement of what this person opened the
+        // app to do.
+        const tapped = await initialNotificationPeer();
+        if (tapped !== null) {
+          setRoute({ name: 'chat', providerId: tapped });
+        }
         setBoot({ phase: 'ready' });
         track('app_open');
       } catch (err) {
@@ -153,6 +161,30 @@ function Root() {
     const sub = Linking.addEventListener('url', ({ url }) => consume(url));
     return () => sub.remove();
   }, []);
+
+  /**
+   * Push is started only once there is a session, and stopped when it ends.
+   *
+   * Registering before sign-in would upload a token with no user to attach it
+   * to, and leaving the refresh listener running across a sign-out would
+   * re-register the next account's device against a dead session.
+   */
+  useEffect(() => {
+    if (boot.phase !== 'ready') {
+      return;
+    }
+    let unsubscribeToken: (() => void) | undefined;
+    void startPush().then(unsub => {
+      unsubscribeToken = unsub;
+    });
+    const unsubscribeOpen = onNotificationOpen(peerId => {
+      setRoute({ name: 'chat', providerId: peerId });
+    });
+    return () => {
+      unsubscribeToken?.();
+      unsubscribeOpen();
+    };
+  }, [boot.phase]);
 
   const openChat = useCallback((id: string) => {
     setRoute({ name: 'chat', providerId: id });

@@ -18,6 +18,33 @@ const SOURCE = join(ROOT, 'android/app/src/main/AndroidManifest.xml');
 const ALLOWED = new Set([
   'android.permission.INTERNET',
   'android.permission.VIBRATE',
+  // Added with push. This is a permission the Play listing has to justify, and
+  // the justification is the product's core loop: without it a reply reaches a
+  // backgrounded app nowhere at all. It grants no access to data — only the
+  // ability to draw a notification the user can turn off in Settings.
+  'android.permission.POST_NOTIFICATIONS',
+]);
+
+/**
+ * Permitted in the merged output but NOT declared by us.
+ *
+ * These are the permissions firebase-messaging merges in, which is precisely
+ * the case this script exists to surface — so they are named, with a reason,
+ * rather than pattern-matched away.
+ *
+ * WAKE_LOCK is how a push wakes a sleeping device long enough to hand the
+ * message to the app. c2dm RECEIVE is the transport permission FCM's own
+ * receiver is protected by. Neither grants access to user data, neither is
+ * user-visible on Play, and neither is optional if push exists at all — the
+ * only way to drop them is to drop notifications.
+ *
+ * The distinction from ALLOWED matters: ALLOWED is also the *required* set, so
+ * anything listed there must appear in our source manifest. Declaring a
+ * library's permission ourselves would be a claim we do not own.
+ */
+const ALLOWED_FROM_LIBRARIES = new Set([
+  'android.permission.WAKE_LOCK',
+  'com.google.android.c2dm.permission.RECEIVE',
 ]);
 
 /**
@@ -33,6 +60,7 @@ const ALLOWED_PATTERNS = [
 
 const isAllowed = permission =>
   ALLOWED.has(permission) ||
+  ALLOWED_FROM_LIBRARIES.has(permission) ||
   ALLOWED_PATTERNS.some(pattern => pattern.test(permission));
 
 const FORBIDDEN = [

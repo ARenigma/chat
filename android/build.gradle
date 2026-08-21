@@ -15,6 +15,10 @@ buildscript {
         classpath("com.android.tools.build:gradle")
         classpath("com.facebook.react:react-native-gradle-plugin")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
+        // Reads android/app/google-services.json and generates the resources
+        // Firebase reads at init. Without it, messaging() throws "No Firebase App
+        // '[DEFAULT]' has been created" at the first call and nowhere earlier.
+        classpath("com.google.gms:google-services:4.4.2")
     }
 }
 
