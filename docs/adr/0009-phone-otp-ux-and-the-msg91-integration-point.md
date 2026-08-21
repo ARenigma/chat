@@ -1,6 +1,6 @@
 # ADR-0009 — Phone OTP: the UX, and where MSG91 attaches
 
-Status: **UX decided. Integration point needs one decision (§2).**
+Status: **decided — Supabase phone auth, Fast2SMS as carrier (§5)**
 Date: 2026-08-21
 Builds on [ADR-0006](0006-phone-otp-costs-and-the-dlt-gate.md), which priced the
 options and named DLT as the gate
@@ -178,3 +178,83 @@ Whether phone becomes _mandatory_ for providers. There is a real argument for it
 replace is the cheapest accountability available short of KYC — but it is a
 policy decision with a conversion cost, and it belongs with the KYC work in
 ADR-0001 item 2 rather than with the transport choice.
+
+---
+
+## 5. Carrier decided: Fast2SMS, and why not Firebase
+
+Two later rounds settled this. Recording both so neither is re-argued from zero.
+
+### The widget cannot be a login
+
+MSG91's no-DLT default template is only reachable through the OTP widget, and the
+widget generates and verifies its own code. So it can never deliver a code
+Supabase issued — "widget with the free template" and "Supabase owns the OTP" are
+incompatible, not a preference. Section 2's claim that nothing is lost by
+choosing the hook was wrong in one respect: choosing the hook does cost the
+ability to send on MSG91 without a DLT template of our own.
+
+### Firebase Phone Auth: read, priced, declined
+
+It looks like the easy answer because the Firebase project already exists for
+FCM. Three findings say otherwise.
+
+**It cannot be switched on.** Phone auth requires the Blaze plan, and both
+billing accounts on this org report `OPEN: False` with `billingEnabled: false` on
+`chat-d8c87`. The same wall as [ADR-0005](0005-push-sender-needs-billing-or-a-token-chain.md).
+
+**India is one of the expensive tiers.** From Google's own Identity Platform
+table, read directly because published summaries disagreed by 7x:
+
+| Country       | Per SMS   |
+| ------------- | --------- |
+| United States | $0.01     |
+| Australia     | $0.02     |
+| India         | **$0.07** |
+| Germany       | $0.10     |
+| Indonesia     | $0.35     |
+
+First ten per day unbilled. At 1,300 OTPs/month that is roughly **$70/month
+(about Rs 6,150)** against **Rs 325** through an Indian aggregator — about 25x per
+message.
+
+**It moves identity off Supabase Auth.** Firebase issues a Firebase ID token, not
+a Supabase session. Supabase does support Firebase as a third-party auth
+provider, so this is possible rather than a hack — but `auth.uid()` then resolves
+to a Firebase UID _string_, not a UUID from `auth.users`. This schema has **64
+`auth.uid()` calls across 23 RLS policies**, eight `p_user_id uuid` parameters and
+230 pgTAP assertions built on UUID literals.
+
+The bounded version of that migration is a `profiles.firebase_uid text unique`
+column plus a `current_profile_id()` helper, keeping every UUID key and rewriting
+the policy predicates — perhaps a day. The unbounded part is the second-order
+effect: Google sign-in currently runs through Supabase Auth and is verified
+working, and mixing a Firebase token for phone with a Supabase session for Google
+means two token types and two RLS predicates. Realistically Google moves to
+Firebase too, which puts a working sign-in back in play.
+
+**Decision: Fast2SMS as the carrier, through the hook that already exists.**
+About Rs 0.25/SMS, Supabase Auth keeps issuing sessions, no schema change, no
+billing account. Its `otp` route injects our code into their pre-approved DLT
+template, so there is nothing to register.
+
+Two things about it that are not obvious:
+
+- **The route is India-only.** Fast2SMS wants a bare ten-digit number, so
+  `indianTenDigits()` in the hook rejects anything else with a 400 _before_
+  spending. The sign-in screen deliberately leaves the country code editable, so
+  a foreign number can reach this point and must be told, not left waiting for an
+  SMS that never left.
+- **Fast2SMS reports failure inside a 200**, exactly as MSG91 does, so success is
+  proven by an explicit `return: true` and nothing else.
+
+**Still to clear on the account:** a top-up of at least Rs 100 ("you need to
+complete one transaction of 100 INR or more"), website verification for the otp
+route, and an `otp_id` template if the newer `/dev/otp/send` endpoint is used
+instead of `bulkV2`. All three surface through the hook as ordinary failed sends,
+which is correct — they are not code bugs.
+
+**MSG91 remains the better destination later.** With an approved DLT template it
+is cheaper per message, carries a branded sender id, and can include the
+SMS-autofill hash that the shared template cannot. `FAST2SMS_ROUTE=dlt` and a
+sender id are already handled in the hook, so that move is configuration.

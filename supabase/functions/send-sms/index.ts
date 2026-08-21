@@ -1,12 +1,21 @@
 /**
- * Supabase's Send SMS auth hook, delivering through MSG91.
+ * Supabase's Send SMS auth hook, delivering through Fast2SMS.
  *
- * ADR-0009 §2: Supabase Auth owns the login and MSG91 is only the carrier. The
- * client calls `signInWithOtp({ phone })`, Supabase generates and stores the
+ * ADR-0009 §2: Supabase Auth owns the login and the SMS vendor is only the
+ * carrier. The client calls `signInWithOtp({ phone })`, Supabase generates and
+ * stores the
  * code and hands it to this function, we put it on the network, and the client
  * calls `verifyOtp`. Nothing about identity, RLS, refresh tokens or account
  * deletion changes — which is the whole reason this is a hook rather than the
  * MSG91 widget.
+ *
+ * The carrier is Fast2SMS rather than MSG91, and the reason is narrow: MSG91's
+ * Flow API needs a DLT template we would have to register ourselves, which is
+ * one to three weeks. Fast2SMS's `otp` route injects our code into *their*
+ * pre-approved template, so there is nothing to register. MSG91 remains the
+ * better destination once a template is approved — branded sender and the SMS
+ * autofill hash — and that is a config change here, not a rewrite: set
+ * FAST2SMS_ROUTE=dlt with a sender id and template, or swap the vendor call.
  *
  * This function never generates or validates a code. It cannot: it has no
  * storage and no idea what the user typed. That is a feature — the only thing it
@@ -14,8 +23,10 @@
  *
  * Secrets it needs (`supabase secrets set --env-file ...`, never as arguments):
  *   SEND_SMS_HOOK_SECRET  the `v1,whsec_...` value Supabase shows for the hook
- *   MSG91_AUTHKEY         MSG91 panel -> Authkey
- *   MSG91_TEMPLATE_ID     the DLT-approved template, with the code as ##var1##
+ *   FAST2SMS_API_KEY      Fast2SMS panel -> API key
+ *   FAST2SMS_ROUTE        'otp' (their template, no DLT) or 'dlt' (ours)
+ *   FAST2SMS_SENDER_ID    dlt route only: the approved header
+ *   FAST2SMS_MESSAGE_ID   dlt route only: the approved template id
  */
 
 /** Standard Webhooks: `v1,<base64 hmac>`, possibly several space-separated. */
@@ -110,21 +121,34 @@ async function verifySignature(
     .some(part => sameBytes(part.slice(3), expected));
 }
 
-/** E.164 without the plus, which is what MSG91 wants. */
-function msg91Number(phone: string): string | null {
+/**
+ * Fast2SMS wants a bare ten-digit Indian number — no country code, no plus.
+ *
+ * That is a real constraint and not a formatting detail: this route reaches
+ * Indian numbers only. The sign-in screen deliberately leaves the country code
+ * editable, so a user on a foreign number can get this far, and they must be
+ * told that rather than watch an SMS never arrive. Returning null here produces
+ * a failure Supabase surfaces, instead of a silent success.
+ */
+function indianTenDigits(phone: string): string | null {
   const digits = phone.replace(/[^\d]/g, '');
-  // 10 digits is a bare Indian number; assume +91 rather than failing, because
-  // Supabase stores what the client sent and the client defaults to +91.
-  const normalised = digits.length === 10 ? `91${digits}` : digits;
-  return normalised.length >= 11 && normalised.length <= 15 ? normalised : null;
+  if (digits.length === 10) {
+    return /^[6-9]/.test(digits) ? digits : null;
+  }
+  if (digits.length === 12 && digits.startsWith('91')) {
+    const local = digits.slice(2);
+    return /^[6-9]/.test(local) ? local : null;
+  }
+  // Anything else is a number this route cannot deliver to.
+  return null;
 }
 
 Deno.serve(async request => {
   const secret = Deno.env.get('SEND_SMS_HOOK_SECRET');
-  const authkey = Deno.env.get('MSG91_AUTHKEY');
-  const templateId = Deno.env.get('MSG91_TEMPLATE_ID');
+  const apiKey = Deno.env.get('FAST2SMS_API_KEY');
+  const route = Deno.env.get('FAST2SMS_ROUTE') ?? 'otp';
 
-  if (!secret || !authkey || !templateId) {
+  if (!secret || !apiKey) {
     console.error('send-sms is not configured');
     return new Response(JSON.stringify({ error: 'not configured' }), {
       status: 500,
@@ -151,83 +175,96 @@ Deno.serve(async request => {
 
   const phone = payload.user?.phone ?? '';
   const otp = payload.sms?.otp ?? '';
-  const mobiles = msg91Number(phone);
+  const mobiles = indianTenDigits(phone);
 
   if (!mobiles || !/^\d{4,8}$/.test(otp)) {
     // Deliberately not logging either value: a phone number is personal data and
-    // the code is a live credential for the next fifteen minutes.
+    // the code is a live credential for the next two minutes.
     console.error('send-sms rejected a payload with an unusable phone or code');
     return new Response(JSON.stringify({ error: 'bad payload' }), { status: 400 });
   }
 
-  const response = await fetch('https://control.msg91.com/api/v5/flow/', {
+  /**
+   * Fast2SMS, form-encoded, with the route chosen by configuration.
+   *
+   *   otp  their pre-approved template ("Your OTP: <code>"), nothing to register,
+   *        generic sender. This is what ships first.
+   *   dlt  our own approved template and sender id. Cheaper per message and it
+   *        can carry the SMS-autofill hash, which the otp route cannot.
+   *
+   * Both take a bare ten-digit number and our own code, so switching is
+   * configuration rather than a rewrite.
+   */
+  const form = new URLSearchParams(
+    route === 'dlt'
+      ? {
+          route: 'dlt',
+          sender_id: Deno.env.get('FAST2SMS_SENDER_ID') ?? '',
+          message: Deno.env.get('FAST2SMS_MESSAGE_ID') ?? '',
+          variables_values: otp,
+          numbers: mobiles,
+          flash: '0',
+        }
+      : {
+          route: 'otp',
+          variables_values: otp,
+          numbers: mobiles,
+          flash: '0',
+        },
+  );
+
+  const response = await fetch('https://www.fast2sms.com/dev/bulkV2', {
     method: 'POST',
     headers: {
-      authkey,
-      'Content-Type': 'application/json',
-      accept: 'application/json',
+      authorization: apiKey,
+      'Content-Type': 'application/x-www-form-urlencoded',
     },
-    body: JSON.stringify({
-      template_id: templateId,
-      short_url: '0',
-      // Makes MSG91 answer with the submission result rather than queueing
-      // silently, so a rejected template surfaces here instead of as a user
-      // who never receives a code.
-      realTimeResponse: '1',
-      recipients: [{ mobiles, var1: otp }],
-    }),
+    body: form.toString(),
   });
 
   const body = await response.text();
-  if (!response.ok) {
-    // MSG91's error bodies name the cause — unapproved template, DLT mismatch,
-    // insufficient balance — and contain neither the code nor the number.
-    console.error(`msg91 ${response.status}: ${body}`);
-    return new Response(
-      JSON.stringify({
-        error: {
-          http_code: 500,
-          message: 'Could not send the code. Please try again.',
-        },
-      }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } },
-    );
-  }
 
   /**
-   * MSG91 signals failure inside a 200, so success has to be proven rather than
-   * assumed. A rejected authkey returns, verbatim:
+   * Prove success; never infer it.
    *
-   *   HTTP/2 200
-   *   {"message":"Invalid authkey or Token","type":"error"}
+   * This is the same lesson MSG91 taught, and Fast2SMS behaves the same way: a
+   * rejected request comes back as HTTP 200 with `{"return":false, ...}`. The
+   * first version of the MSG91 code treated an unparseable body as success,
+   * which would have reported a code as sent while the user waited for an SMS
+   * that never left. So the only accepted outcome is an explicit `return: true`
+   * — an error, a missing field, or bytes that will not parse all count as a
+   * failed send.
    *
-   * The first version of this checked `type === 'error'` and treated an
-   * unparseable body as success — which meant that if MSG91 ever answered with
-   * HTML (a Cloudflare challenge, a maintenance page), the hook reported the code
-   * as sent and the user sat waiting for an SMS that was never dispatched. In a
-   * function whose only job is delivery, "I could not tell" must mean failure.
-   *
-   * So this requires an explicit `type: "success"` and treats everything else —
-   * an error type, a missing type, unparseable bytes — as a failed send.
+   * Fast2SMS's own account gates surface here as ordinary failures, which is
+   * exactly right: as of writing this account returns "complete website
+   * verification" on the otp route and "you need to complete one transaction of
+   * 100 INR or more" on any route. Those are not code bugs and they must not look
+   * like successes.
    */
   const failure = ((): string | null => {
-    let parsed: { type?: string; message?: string };
+    if (!response.ok) {
+      return `http ${response.status}: ${body.slice(0, 200)}`;
+    }
+    let parsed: { return?: boolean; message?: unknown; status_code?: number };
     try {
-      parsed = JSON.parse(body) as { type?: string; message?: string };
+      parsed = JSON.parse(body) as typeof parsed;
     } catch {
       return `unparseable response: ${body.slice(0, 200)}`;
     }
-    if (parsed.type === 'success') {
+    if (parsed.return === true) {
       return null;
     }
-    return parsed.message ?? `unexpected response type: ${String(parsed.type)}`;
+    const detail = Array.isArray(parsed.message)
+      ? parsed.message.join('; ')
+      : String(parsed.message ?? 'no message');
+    return `status_code ${String(parsed.status_code)}: ${detail}`;
   })();
 
   if (failure !== null) {
-    // Safe to log: MSG91's diagnostics name the cause — invalid authkey,
-    // unapproved template, DLT mismatch, no balance — and carry neither the
-    // phone number nor the code.
-    console.error(`msg91 did not confirm the send: ${failure}`);
+    // Safe to log: Fast2SMS's diagnostics name the cause — unverified account,
+    // insufficient balance, bad route — and carry neither the number nor the
+    // code.
+    console.error(`fast2sms did not confirm the send: ${failure}`);
     return new Response(
       JSON.stringify({
         error: { http_code: 500, message: 'Could not send the code. Please try again.' },
