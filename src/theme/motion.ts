@@ -3,9 +3,10 @@ import {
   FadeIn,
   FadeInDown,
   ReduceMotion,
+  type WithSpringConfig,
+  withSequence,
   withSpring,
   withTiming,
-  type WithSpringConfig,
 } from 'react-native-reanimated';
 import { TOKENS } from './tokens';
 
@@ -167,4 +168,30 @@ export function bubbleArrive() {
       ],
     },
   };
+}
+
+/**
+ * A horizontal refusal — the field says no without losing what you typed.
+ *
+ * Used when a verification code is rejected. The alternative that most apps pick
+ * is clearing the field, and it is the single most disliked behaviour in an OTP
+ * flow: a wrong code is nearly always one mistyped character, and clearing makes
+ * you retype all six. So nothing is cleared; only the position moves.
+ *
+ * Four decaying hops on `snap` rather than a timing loop, because a spring is
+ * what a physical object actually does when it is stopped short — the amplitudes
+ * fall off and the last one returns to rest. `ReduceMotion.System` is threaded
+ * through so this becomes a no-op for anyone who has asked the OS for less
+ * movement, which matters more here than elsewhere: this animation fires at the
+ * exact moment someone is already frustrated.
+ *
+ * Lives here rather than in the component because every spring in the app lives
+ * here — a `withSpring` call in a component is a physics decision made where
+ * nobody will find it again, and there is a test that says so.
+ */
+export function shakeX(): number {
+  'worklet';
+  const hop = (to: number) =>
+    withSpring(to, { ...SPRING.snap, reduceMotion: ReduceMotion.System });
+  return withSequence(hop(-9), hop(7), hop(-4), hop(0));
 }
