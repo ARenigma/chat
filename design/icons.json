@@ -1,8 +1,8 @@
 {
   "$comment": "Icon system config, the single place icon style/weight/set is decided. Change a value here and run `npm run icons` to regenerate the font + glyph map, the same way design/tokens.json drives the type system. Material Symbols, rendered as a FONT rather than SVG (banned here — react-native-svg kills touch inside Reanimated views) or hand-drawn geometry (the old Icon.tsx, whose fixed shapes gave us the empty-box `bubble` and the smile-arc `phone`).",
-  "style": "rounded",
-  "$style": "rounded | outlined | sharp. The creative choice (ADR-pending), Amit's call, not the docs'. Rounded pairs with Nunito's rounded terminals. Changing this re-instances a different Material Symbols family on the next `npm run icons`.",
-  "weight": 400,
+  "style": "outlined",
+  "$style": "rounded | outlined | sharp. Amit's call: switched rounded -> outlined to match the Mengobrol reference (thin, neutral outlined icons over the grotesk type). Changing this re-instances a different Material Symbols family on the next `npm run icons:font`.",
+  "weight": 300,
   "$weight": "100-700. Material's default is 400. React Native Android cannot animate a variable-font axis at runtime, so weight is baked into the static instance at generation time, not set per-render.",
   "opticalSize": 24,
   "$opticalSize": "20-48dp. The axis Material tunes stroke contrast on; 24 is the UI default and matches our default render size.",
