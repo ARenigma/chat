@@ -311,9 +311,13 @@ describe('typography is bound to real font files', () => {
      * 1 to 2 moved the token pill by 0.27em, about 3.3px at 12pt — precisely the
      * shift the flag was written to prevent, silently, for as long as it shipped.
      *
-     * Nunito needs no feature: every digit is 600/1000. This asserts that
-     * property directly against the binary rather than trusting the family name,
-     * so the next font change cannot quietly reintroduce the lie.
+     * Inter's default digits are proportional, so unlike Nunito it does NOT have
+     * uniform default advances — its tabular figures come from the `tnum`
+     * OpenType feature, which `fontVariant: ['tabular-nums']` invokes. So a
+     * tabular style is honest if EITHER the face has uniform default digit widths
+     * (Nunito-style) OR ships a `tnum` feature (Inter-style). Asserted against the
+     * binary rather than the family name, so the next font change cannot quietly
+     * reintroduce the lie.
      */
     const tabularStyles = Object.entries(LIGHT.typography).filter(
       ([, style]) => 'fontVariant' in style,
@@ -323,8 +327,13 @@ describe('typography is bound to real font files', () => {
     expect(tabularStyles.length).toBeGreaterThan(0);
     for (const [name, style] of tabularStyles) {
       const widths = digitAdvances(`${style.fontFamily}.ttf`);
-      const distinct = new Set(widths);
-      expect(`${name}: ${[...distinct].join(',')}`).toBe(`${name}: ${widths[0]}`);
+      const uniform = new Set(widths).size === 1;
+      // GSUB feature tags are stored as four ASCII bytes; a raw search for
+      // 'tnum' is a sufficient proxy for "this face can do tabular figures".
+      const hasTnum = readFileSync(join(ROOT, 'assets/fonts', `${style.fontFamily}.ttf`)).includes(
+        'tnum',
+      );
+      expect(`${name}: tabular-capable=${uniform || hasTnum}`).toBe(`${name}: tabular-capable=true`);
     }
   });
 
@@ -346,12 +355,12 @@ describe('typography is bound to real font files', () => {
      */
     const files = readdirSync(join(ROOT, 'assets/fonts'));
     const NOTICE: Record<string, string> = {
-      Nunito: 'OFL-Nunito.txt',
+      Inter: 'OFL-Inter.txt',
       LilitaOne: 'OFL-LilitaOne.txt',
       // Material Symbols is Apache-2.0, not OFL — a different licence, still
       // mandatory to ship. Both instances map to the one notice.
-      MaterialSymbolsRounded: 'LICENSE-MaterialSymbols.txt',
-      MaterialSymbolsRoundedFill: 'LICENSE-MaterialSymbols.txt',
+      MaterialSymbolsOutlined: 'LICENSE-MaterialSymbols.txt',
+      MaterialSymbolsOutlinedFill: 'LICENSE-MaterialSymbols.txt',
     };
     // `?? name` rather than a non-null assertion: a face called exactly `X.ttf`
     // with no weight suffix is its own family, and split always yields at least
@@ -955,7 +964,7 @@ describe('iOS conformance', () => {
     // every one of them was two points small. iOS's headline is 17 semibold and
     // it is also a list row's name and a filled button's label.
     expect(typography.headline.fontSize).toBe(17);
-    expect(typography.headline.fontFamily).toBe('Nunito-SemiBold');
+    expect(typography.headline.fontFamily).toBe('Inter-SemiBold');
     expect(typography.subhead.fontSize).toBe(15);
     expect(typography.bodyLarge.fontSize).toBe(17);
     expect(typography.displayLarge.fontSize).toBe(34);
