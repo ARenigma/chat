@@ -11,13 +11,14 @@ export const ICON_FAMILY = 'MaterialSymbolsRounded' as const;
 export const ICON_FAMILY_FILLED = 'MaterialSymbolsRoundedFill' as const;
 export const ICON_FILL_ON_ACTIVE = true as const;
 
-export type IconName = 'arrowUp' | 'back' | 'block' | 'call' | 'chat' | 'check' | 'chevronLeft' | 'chevronRight' | 'close' | 'code' | 'dot' | 'forward' | 'globe' | 'heart' | 'home' | 'listen' | 'mic' | 'more' | 'pause' | 'people' | 'person' | 'play' | 'reply' | 'report' | 'search' | 'send' | 'settings' | 'share' | 'star' | 'stop' | 'unwind' | 'vent' | 'video' | 'wallet';
+export type IconName = 'arrowUp' | 'back' | 'block' | 'call' | 'callEnd' | 'chat' | 'check' | 'chevronLeft' | 'chevronRight' | 'close' | 'code' | 'dot' | 'forward' | 'globe' | 'heart' | 'home' | 'listen' | 'mic' | 'micOff' | 'more' | 'pause' | 'people' | 'person' | 'play' | 'reply' | 'report' | 'search' | 'send' | 'settings' | 'share' | 'speaker' | 'star' | 'stop' | 'unwind' | 'vent' | 'video' | 'videoOff' | 'wallet';
 
 export const ICON_GLYPH: Record<IconName, string> = {
   arrowUp: "",
   back: "",
   block: "",
   call: "",
+  callEnd: "",
   chat: "",
   check: "",
   chevronLeft: "",
@@ -31,6 +32,7 @@ export const ICON_GLYPH: Record<IconName, string> = {
   home: "",
   listen: "",
   mic: "",
+  micOff: "",
   more: "",
   pause: "",
   people: "",
@@ -42,10 +44,12 @@ export const ICON_GLYPH: Record<IconName, string> = {
   send: "",
   settings: "",
   share: "",
+  speaker: "",
   star: "",
   stop: "",
   unwind: "",
   vent: "",
   video: "",
+  videoOff: "",
   wallet: "",
 };

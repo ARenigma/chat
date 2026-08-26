@@ -31,6 +31,12 @@ export type MemberRoute =
    * guess, or a full history stack to answer a question one field answers.
    */
   | { readonly name: 'chat'; readonly providerId: string; readonly from: 'home' | 'detail' }
+  /**
+   * A voice/video call. Reached only from a provider's profile and only while
+   * `CALLS_ENABLED` (the buttons are disabled otherwise), so back always returns
+   * to that profile.
+   */
+  | { readonly name: 'call'; readonly providerId: string; readonly mode: 'incoming' | 'audio' | 'video' }
   | { readonly name: 'apply' }
   | { readonly name: 'applicationStatus' };
 
@@ -55,6 +61,8 @@ export function memberParent(route: MemberRoute): MemberRoute | null {
       return route.from === 'detail'
         ? { name: 'providerDetail', providerId: route.providerId }
         : { name: 'home' };
+    case 'call':
+      return { name: 'providerDetail', providerId: route.providerId };
     case 'providerDetail':
     case 'apply':
     case 'applicationStatus':
