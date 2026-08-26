@@ -186,6 +186,12 @@ export function SettingsSheet({
           rather than the absence of one, or opting out and declaring yourself
           absent become the same statement. Three rows is also what iOS Settings
           does for an exclusive choice of this size. */}
+      {/* Section headers, v11-style — grouped light: uppercase labels name each
+          band so the sheet reads as one settings surface rather than a stack of
+          unrelated cards. */}
+      <Text allowFontScaling style={styles.sectionLabel}>
+        PRESENCE
+      </Text>
       <View style={styles.group}>
         {PRESENCE_OPTIONS.map((option, index) => (
           <PresenceRow
@@ -217,6 +223,9 @@ export function SettingsSheet({
           : ' Only people you have a conversation with can see it.'}
       </Text>
 
+      <Text allowFontScaling style={styles.sectionLabel}>
+        APPEARANCE
+      </Text>
       <View style={styles.group}>
         {/* Setting an explicit mode rather than toggling between light and dark
             leaves `system` reachable only until the first tap, which is the right
@@ -246,6 +255,10 @@ export function SettingsSheet({
       </Text>
 
       {canVerifyPhone || hasApplication || onApply !== undefined ? (
+        <>
+        <Text allowFontScaling style={styles.sectionLabel}>
+          ACCOUNT
+        </Text>
         <View style={styles.group}>
           {canVerifyPhone ? (
             <ChevronRow
@@ -274,11 +287,16 @@ export function SettingsSheet({
             />
           ) : null}
         </View>
+        </>
       ) : null}
 
       {/* Managing a block is a UGC-policy requirement: v13's Home hides blocked
           people, so this is the only route back to unblocking one. */}
       {onBlocked !== undefined ? (
+        <>
+        <Text allowFontScaling style={styles.sectionLabel}>
+          PRIVACY & SAFETY
+        </Text>
         <View style={styles.group}>
           <ChevronRow
             label="Blocked Users"
@@ -288,6 +306,7 @@ export function SettingsSheet({
             last
           />
         </View>
+        </>
       ) : null}
 
       <View style={styles.group}>
@@ -322,6 +341,12 @@ export function SettingsSheet({
           </Text>
         </Pressable>
       </View>
+
+      {/* The brandmark closes the sheet, v11-style — a quiet full stop that says
+          this is the end of the settings surface. */}
+      <Text allowFontScaling style={styles.brandFooter}>
+        Pappal
+      </Text>
     </Sheet>
   );
 }
@@ -480,5 +505,21 @@ const makeStyles = (t: Theme) =>
       color: t.color.text.secondary,
       paddingHorizontal: TOKENS.space.md,
       paddingTop: TOKENS.space['2xs'],
+    },
+    // Uppercase band label above each group, iOS grouped-settings style.
+    sectionLabel: {
+      ...TOKENS.typography.labelSmall,
+      color: t.color.text.secondary,
+      paddingHorizontal: TOKENS.space.md,
+      paddingTop: TOKENS.space.lg,
+      paddingBottom: TOKENS.space.xs,
+    },
+    brandFooter: {
+      fontFamily: TOKENS.typography.wordmark.fontFamily,
+      fontSize: 15,
+      color: t.color.text.tertiary,
+      textAlign: 'center',
+      paddingTop: TOKENS.space.xl,
+      paddingBottom: TOKENS.space.md,
     },
   });
