@@ -52,6 +52,11 @@ import { SafetySheet } from './SafetySheet';
 interface Props {
   providerId: string;
   onBack: () => void;
+  /**
+   * Start a voice/video call from the header. Only fires while `CALLS_ENABLED`
+   * (the buttons are disabled otherwise); omitted on the provider tree.
+   */
+  onStartCall?: (channel: 'audio' | 'video') => void;
 }
 
 const STARTERS: ReadonlyArray<{ label: string; tone: 'neutral' | 'warm' }> = [
@@ -80,7 +85,7 @@ interface ActionTarget {
  * one reply per turn; against a person, sending two messages in a row is normal
  * conversation and the UI should not fight it.
  */
-export function ChatScreen({ providerId, onBack }: Props) {
+export function ChatScreen({ providerId, onBack, onStartCall }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -563,24 +568,29 @@ export function ChatScreen({ providerId, onBack }: Props) {
             would ring a phone that can never connect. Hiding them instead would
             mean the header changes shape on the commit that turns calling on.
             See CALLS_ENABLED in src/api/calls.ts. */}
-        <View
+        {/* Real Pressables, not Views posing as buttons: TalkBack now announces a
+            control that actually does something, and the disabled state is an
+            honest gate (CALLS_ENABLED) rather than a role that never fires. */}
+        <Pressable
+          onPress={() => onStartCall?.('video')}
+          disabled={!CALLS_ENABLED}
           testID="call-video"
-          accessible
-          accessibilityRole="button"
           accessibilityLabel={`Video call ${name}`}
-          accessibilityState={{ disabled: !CALLS_ENABLED }}
+          press="none"
+          size={28}
           style={[styles.navButton, !CALLS_ENABLED && styles.navDisabled]}>
           <Icon name="video" size={20} color={theme.color.text.secondary} />
-        </View>
-        <View
+        </Pressable>
+        <Pressable
+          onPress={() => onStartCall?.('audio')}
+          disabled={!CALLS_ENABLED}
           testID="call-voice"
-          accessible
-          accessibilityRole="button"
           accessibilityLabel={`Voice call ${name}`}
-          accessibilityState={{ disabled: !CALLS_ENABLED }}
+          press="none"
+          size={28}
           style={[styles.navButton, !CALLS_ENABLED && styles.navDisabled]}>
           <Icon name="call" size={20} color={theme.color.text.secondary} />
-        </View>
+        </Pressable>
         <TokenCounter balance={balance} onPress={openRefill} />
       </View>
 

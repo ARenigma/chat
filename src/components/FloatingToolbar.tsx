@@ -63,8 +63,12 @@ function FloatingToolbarView({ active, onSelect, callEnabled = false }: Props) {
               onPress={() => onSelect(tab.key)}
               disabled={disabled}
               testID={`nav-${tab.key}`}
-              accessibilityLabel={on ? `${tab.label}, selected` : tab.label}
+              accessibilityLabel={tab.label}
               accessibilityHint={disabled ? 'Coming soon' : tab.hint}
+              // A nav item is a tab, and its chosen state belongs in
+              // accessibilityState, not spelled into the label.
+              accessibilityRole="tab"
+              selected={on}
               press="none"
               style={styles.slot}>
               <View style={[styles.disc, on && styles.discOn]}>
