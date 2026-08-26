@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -149,15 +149,19 @@ function Hero({
   ].filter(s => s !== '');
   return (
     <View style={styles.hero}>
-      <View
-        style={[
-          styles.heroFill,
-          { experimental_backgroundImage: gradient },
-        ]}
-      />
-      <Text allowFontScaling={false} style={styles.heroWatermark}>
-        {initialOf(provider.display_name)}
-      </Text>
+      {provider.avatar_url ? (
+        <>
+          <Image source={{ uri: provider.avatar_url }} style={styles.heroFill} />
+          <View style={styles.heroScrim} />
+        </>
+      ) : (
+        <>
+          <View style={[styles.heroFill, { experimental_backgroundImage: gradient }]} />
+          <Text allowFontScaling={false} style={styles.heroWatermark}>
+            {initialOf(provider.display_name)}
+          </Text>
+        </>
+      )}
       {/* Absolute position lives on this wrapper View, not on the Pressable:
           Pressable applies `style` to an inner Animated.View, so `position:
           absolute` on it anchors to the Pressable's own bottom-pinned box rather
@@ -303,6 +307,10 @@ const makeStyles = (t: Theme) =>
     },
     heroFill: {
       position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    },
+    heroScrim: {
+      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+      experimental_backgroundImage: 'linear-gradient(0deg, rgba(0,0,0,0.66) 0%, rgba(0,0,0,0) 50%)',
     },
     heroWatermark: {
       position: 'absolute',

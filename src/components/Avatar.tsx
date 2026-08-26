@@ -1,5 +1,5 @@
 import React, { memo, useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -22,6 +22,12 @@ type Size = 26 | 30 | 34 | 40 | 48 | 56;
 
 interface Props {
   initial: string;
+  /**
+   * A profile photo. When present it covers the initial once loaded; the initial
+   * stays underneath as the fallback (and shows while the photo loads, or forever
+   * if there is no photo). The presence dot still paints on top.
+   */
+  uri?: string | null;
   size?: Size;
   /**
    * `warm` applies the coral wash. It marks *your* side of things, the mark on
@@ -75,6 +81,7 @@ const DOT: Record<Size, number> = { 26: 10, 30: 10, 34: 13, 40: 13, 48: 16, 56: 
  */
 function AvatarView({
   initial,
+  uri,
   size = 40,
   tone = 'neutral',
   online = false,
@@ -144,6 +151,13 @@ function AvatarView({
         ]}>
         {initial}
       </Text>
+      {uri ? (
+        <Image
+          source={{ uri }}
+          style={[styles.photo, { width: size, height: size, borderRadius: size / 2 }]}
+          accessibilityIgnoresInvertColors
+        />
+      ) : null}
       {online ? <PresenceDot size={dot} surface={surface} /> : null}
     </Animated.View>
   );
@@ -209,6 +223,9 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   // No `backgroundColor` here on purpose: it is the one property that has to
   // follow the surface the avatar was placed on, so it is passed in rather than
   // being a default that is silently wrong half the time.
+  photo: {
+    position: 'absolute',
+  },
   ring: {
     position: 'absolute',
     right: -1,

@@ -53,6 +53,7 @@ const MIGRATIONS = [
   'supabase/migrations/010_phone_verification.sql',
   'supabase/migrations/011_reactions_replies_voice_calls.sql',
   'supabase/migrations/012_declared_presence_and_pii_guard.sql',
+  'supabase/migrations/013_provider_avatars.sql',
 ];
 
 const docker = (args, options = {}) =>

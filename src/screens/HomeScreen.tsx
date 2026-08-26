@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo } from 'react';
 import {
   ActivityIndicator,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -220,7 +221,12 @@ function RailItem({
       press="none"
       style={styles.railItem}>
       <View style={[styles.railRing, unread && styles.railRingUnread]}>
-        <Avatar initial={initialOf(name)} size={48} online={presence.here} />
+        <Avatar
+          initial={initialOf(name)}
+          uri={chat.peer_avatar_url}
+          size={48}
+          online={presence.here}
+        />
       </View>
       {unread ? (
         <View style={styles.railBadge}>
@@ -267,15 +273,21 @@ function FeaturedCard({
       accessibilityLabel={`Featured: ${provider.display_name}. ${tagline}`}
       press="card"
       style={styles.featured}>
-      <View
-        style={[
-          styles.featuredFill,
-          { experimental_backgroundImage: gradient },
-        ]}
-      />
-      <Text allowFontScaling={false} style={styles.featuredWatermark}>
-        {initialOf(provider.display_name)}
-      </Text>
+      {provider.avatar_url ? (
+        <>
+          <Image source={{ uri: provider.avatar_url }} style={styles.featuredFill} />
+          {/* A dark scrim under the text so white copy stays legible over any
+              photo, not only the coral fallback. */}
+          <View style={styles.featuredScrim} />
+        </>
+      ) : (
+        <>
+          <View style={[styles.featuredFill, { experimental_backgroundImage: gradient }]} />
+          <Text allowFontScaling={false} style={styles.featuredWatermark}>
+            {initialOf(provider.display_name)}
+          </Text>
+        </>
+      )}
       <View style={styles.featuredBadge}>
         <Text allowFontScaling style={styles.featuredBadgeText}>
           Top rated
@@ -439,6 +451,10 @@ const makeStyles = (t: Theme) =>
     },
     featuredFill: {
       position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    },
+    featuredScrim: {
+      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+      experimental_backgroundImage: 'linear-gradient(0deg, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0) 55%)',
     },
     featuredWatermark: {
       position: 'absolute',
