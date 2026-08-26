@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { formatRupees, PAYMENTS_ENABLED, RECHARGE_PACKS } from '../lib/rates';
+import { formatRupees, formatTokens, PAYMENTS_ENABLED, RECHARGE_PACKS } from '../lib/rates';
 import { DAILY_REFILL_TOKENS } from '../lib/tokenLedger';
 import { useClaimTokens } from '../api/chat';
 import { useStore } from '../store/useStore';
@@ -71,7 +71,7 @@ export function RechargeScreen() {
             Balance
           </Text>
           <Text allowFontScaling style={styles.balanceValue}>
-            {formatRupees(balance)}
+            {`${formatTokens(balance)} tokens`}
           </Text>
           <Text allowFontScaling style={styles.balanceHint}>
             Talk time is charged by the minute.
@@ -79,7 +79,7 @@ export function RechargeScreen() {
         </View>
 
         <Text allowFontScaling style={styles.section}>
-          Add money
+          Add tokens
         </Text>
         <Text allowFontScaling style={styles.sectionHint}>
           Pick an amount
@@ -96,15 +96,15 @@ export function RechargeScreen() {
                 <Pressable
                   onPress={() => setAmount(pack)}
                   testID={`pack-${pack}`}
-                  accessibilityLabel={`Add ${formatRupees(pack)}${on ? ', selected' : ''}`}
+                  accessibilityLabel={`Add ${formatTokens(pack)} tokens${on ? ', selected' : ''}`}
                   press="card"
                   style={[styles.card, on && styles.cardOn]}>
                   <Text allowFontScaling style={[styles.cardAmount, on && styles.cardTextOn]}>
-                    {formatRupees(pack)}
+                    {formatTokens(pack)}
                   </Text>
                   <Text allowFontScaling style={[styles.cardMinutes, on && styles.cardTextOn]}>
-                    {/* At the chat/call rate (₹22/min) this many minutes. Honest,
-                        derived, and the whole reason the balance is money. */}
+                    {/* At the chat/call rate (22/min) this many minutes. Honest,
+                        derived, and the whole point of a per-minute balance. */}
                     {`~${Math.floor(pack / 22)} min`}
                   </Text>
                 </Pressable>
@@ -117,14 +117,14 @@ export function RechargeScreen() {
         <Pressable
           onPress={() => claim.mutate()}
           testID="refill-claim"
-          accessibilityLabel={`Claim your daily ${formatRupees(DAILY_REFILL_TOKENS)} credit`}
+          accessibilityLabel={`Claim your daily ${formatTokens(DAILY_REFILL_TOKENS)} tokens`}
           press="chip"
           style={styles.checkin}>
           <Text allowFontScaling style={styles.checkinLabel}>
-            {claim.isPending ? 'Adding credit' : 'Daily check-in'}
+            {claim.isPending ? 'Adding tokens' : 'Daily check-in'}
           </Text>
           <Text allowFontScaling style={styles.checkinValue}>
-            {`+${formatRupees(DAILY_REFILL_TOKENS)}`}
+            {`+${formatTokens(DAILY_REFILL_TOKENS)}`}
           </Text>
         </Pressable>
 
@@ -133,7 +133,7 @@ export function RechargeScreen() {
         </Text>
         <View style={styles.payment}>
           <View style={styles.payIcon}>
-            <Icon name="wallet" size={20} color={theme.color.text.accent} />
+            <Icon name="wallet" active size={20} color={theme.color.text.accent} />
           </View>
           <View style={styles.payText}>
             <Text allowFontScaling style={styles.payName}>
@@ -144,6 +144,10 @@ export function RechargeScreen() {
             </Text>
           </View>
         </View>
+        {/* The one place the ₹ mark belongs: the real-money step. */}
+        <Text allowFontScaling style={styles.rupeeNote}>
+          1 token = ₹1. You are charged in rupees at checkout.
+        </Text>
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + TOKENS.space.sm }]}>
@@ -309,6 +313,11 @@ const makeStyles = (t: Theme) =>
     paySub: {
       ...TOKENS.typography.captionSmall,
       color: t.color.text.secondary,
+    },
+    rupeeNote: {
+      ...TOKENS.typography.captionSmall,
+      color: t.color.text.tertiary,
+      paddingTop: TOKENS.space.sm,
     },
     footer: {
       paddingHorizontal: TOKENS.space.md,

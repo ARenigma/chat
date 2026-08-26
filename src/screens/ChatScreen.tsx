@@ -31,7 +31,7 @@ import { useSendVoiceNote, useVoicePlayer } from '../api/voice';
 import { opensDay, timeOfDay } from '../lib/datetime';
 import { voiceOf, type VoiceDraft } from '../lib/voice';
 import { readPresence } from '../lib/presence';
-import { DEFAULT_RATES, isLowRupees, talkTimeLeft } from '../lib/rates';
+import { DEFAULT_RATES, isLowBalance, talkTimeLeft } from '../lib/rates';
 import { ownReaction, tallyByMessage } from '../lib/reactions';
 import type { ReactionEmoji } from '../lib/database.types';
 import { useStore } from '../store/useStore';
@@ -588,7 +588,7 @@ export function ChatScreen({ providerId, onBack }: Props) {
           this shows how long the balance buys at the chat rate and offers a top-up
           without leaving the thread. Coral-tint when low, quiet otherwise. */}
       {balance !== null ? (
-        <View style={[styles.talkBar, isLowRupees(balance) && styles.talkBarLow]}>
+        <View style={[styles.talkBar, isLowBalance(balance) && styles.talkBarLow]}>
           <View style={styles.talkDot} />
           <Text allowFontScaling style={styles.talkText}>
             {talkTimeLeft(balance, DEFAULT_RATES.chat)} of talk time left

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { BackHandler, Linking, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { Alert, BackHandler, Linking, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { FadeIn } from 'react-native-reanimated';
@@ -84,6 +84,8 @@ function Root() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [welcomeSeen, setWelcomeSeen] = useState(false);
   const resetConversation = useStore(s => s.resetConversation);
+  const refillVisible = useStore(s => s.refillVisible);
+  const closeRefill = useStore(s => s.closeRefill);
 
   useEffect(() => {
     let cancelled = false;
@@ -249,8 +251,15 @@ function Root() {
    */
   useEffect(() => {
     const onBack = () => {
+      // Overlays close before screens pop, most-recent first: the settings sheet,
+      // then the Recharge overlay. Each is the thing the user most recently
+      // opened and therefore the thing back means.
       if (settingsOpen) {
         setSettingsOpen(false);
+        return true;
+      }
+      if (refillVisible) {
+        closeRefill();
         return true;
       }
       const parent = memberParent(route);
@@ -267,11 +276,28 @@ function Root() {
         setProviderRoute(providerBack);
         return true;
       }
-      return false;
+      /*
+       * At the root, do NOT silently close. A lonely person about to leave is
+       * exactly the moment to say "someone's still here", so back at Home asks
+       * first. This is the seam the retention experience plugs into later (an AI
+       * companion clip inviting them to stay / try a call); for now it is an
+       * honest native confirm, and returning `true` keeps the gesture handled so
+       * Android does not close underneath it.
+       */
+      Alert.alert(
+        'Leave Pappal?',
+        'Someone is around to talk whenever you are. You can pick up right where you left off.',
+        [
+          { text: 'Stay', style: 'cancel' },
+          { text: 'Leave', style: 'destructive', onPress: () => BackHandler.exitApp() },
+        ],
+        { cancelable: true },
+      );
+      return true;
     };
     const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
     return () => sub.remove();
-  }, [route, providerRoute, settingsOpen, resetConversation]);
+  }, [route, providerRoute, settingsOpen, refillVisible, closeRefill, resetConversation]);
 
   if (boot.phase === 'loading') {
     return (
@@ -460,56 +486,63 @@ function SignedIn({
 
   return (
     <View style={styles.host}>
-      {route.name === 'chat' ? (
-        <ChatScreen providerId={route.providerId} onBack={leaveChat} />
-      ) : route.name === 'call' ? (
-        <CallScreen
-          providerId={route.providerId}
-          mode={route.mode}
-          // A call ends back on the profile it started from.
-          onEnd={() => setRoute({ name: 'providerDetail', providerId: route.providerId })}
-          onAccept={() =>
-            setRoute({ name: 'call', providerId: route.providerId, mode: 'audio' })
-          }
-        />
-      ) : route.name === 'providerDetail' ? (
-        <ProviderDetailScreen
-          providerId={route.providerId}
-          onBack={backToHome}
-          // Opened from a profile, so back from the chat returns to the profile.
-          onOpenChat={id => openChat(id, 'detail')}
-          // Only fires while CALLS_ENABLED (the buttons are disabled otherwise).
-          onStartCall={(id, channel) => setRoute({ name: 'call', providerId: id, mode: channel })}
-        />
-      ) : route.name === 'apply' ? (
-        <ProviderApplicationScreen
-          onBack={backToHome}
-          onSubmitted={() => setRoute({ name: 'applicationStatus' })}
-        />
-      ) : route.name === 'applicationStatus' ? (
-        <ProviderStatusScreen
-          onBack={backToHome}
-          onEdit={() => setRoute({ name: 'apply' })}
-        />
-      ) : route.name === 'blocked' ? (
-        <BlockedUsersScreen onBack={backToHome} />
-      ) : (
-        <HomeScreen
-          onOpenConversation={openChat}
-          onOpenProvider={openProvider}
-          onOpenSettings={() => setSettingsOpen(true)}
-        />
-      )}
       {/*
-        * The floating toolbar renders on Home and nowhere else.
-        *
-        * Chat, providerDetail, apply and applicationStatus are pushed screens: they
-        * are somewhere you go and come back from, and leaving the toolbar under them
-        * would offer a sideways exit out of a half-finished thing. iOS hides the tab
-        * bar on a push for the same reason.
-        *
-        * Calls are gated (`CALLS_ENABLED`); the Call tab is dimmed until they ship.
-        * Settings opens the sheet rather than being a destination in the tree.
+        * Home stays mounted underneath, always. Pushed screens render as an
+        * opaque overlay on top and unmount on back, so returning to Home never
+        * remounts its lists, loses scroll position, or replays entry animations —
+        * which is exactly the "the home screen rebuilds every time I come back"
+        * jank. This is what a native back stack gives for free and what a single
+        * swapped-in screen threw away.
+        */}
+      <HomeScreen
+        onOpenConversation={openChat}
+        onOpenProvider={openProvider}
+        onOpenSettings={() => setSettingsOpen(true)}
+      />
+
+      {route.name !== 'home' ? (
+        <View style={styles.overlay}>
+          {route.name === 'chat' ? (
+            <ChatScreen providerId={route.providerId} onBack={leaveChat} />
+          ) : route.name === 'call' ? (
+            <CallScreen
+              providerId={route.providerId}
+              mode={route.mode}
+              // A call ends back on the profile it started from.
+              onEnd={() => setRoute({ name: 'providerDetail', providerId: route.providerId })}
+              onAccept={() =>
+                setRoute({ name: 'call', providerId: route.providerId, mode: 'audio' })
+              }
+            />
+          ) : route.name === 'providerDetail' ? (
+            <ProviderDetailScreen
+              providerId={route.providerId}
+              onBack={backToHome}
+              // Opened from a profile, so back from the chat returns to the profile.
+              onOpenChat={id => openChat(id, 'detail')}
+              // Only fires while CALLS_ENABLED (the buttons are disabled otherwise).
+              onStartCall={(id, channel) =>
+                setRoute({ name: 'call', providerId: id, mode: channel })
+              }
+            />
+          ) : route.name === 'apply' ? (
+            <ProviderApplicationScreen
+              onBack={backToHome}
+              onSubmitted={() => setRoute({ name: 'applicationStatus' })}
+            />
+          ) : route.name === 'applicationStatus' ? (
+            <ProviderStatusScreen onBack={backToHome} onEdit={() => setRoute({ name: 'apply' })} />
+          ) : route.name === 'blocked' ? (
+            <BlockedUsersScreen onBack={backToHome} />
+          ) : null}
+        </View>
+      ) : null}
+
+      {/*
+        * The floating toolbar renders on Home only. Pushed screens are somewhere
+        * you go and come back from; leaving the toolbar under them would offer a
+        * sideways exit out of a half-finished thing. Calls are gated
+        * (`CALLS_ENABLED`); Settings opens the sheet rather than being a route.
         */}
       {route.name === 'home' ? (
         <FloatingToolbar
@@ -606,6 +639,17 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   host: {
     flex: 1,
     backgroundColor: t.color.bg.base,
+  },
+  // Opaque cover for a pushed screen, above the always-mounted Home and below
+  // the Recharge overlay (zIndex 20) and the settings sheet.
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: t.color.bg.base,
+    zIndex: 10,
   },
   blank: {
     flex: 1,

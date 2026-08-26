@@ -3,7 +3,7 @@ import { StyleSheet, Text } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence } from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { formatRupees, isLowRupees } from '../lib/rates';
+import { formatTokens, isLowBalance } from '../lib/rates';
 import { springTo } from '../theme/motion';
 import { Icon } from './Icon';
 import { Pressable } from './Pressable';
@@ -32,7 +32,7 @@ interface Props {
 function TokenCounterView({ balance, onPress }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
-  const low = isLowRupees(balance);
+  const low = isLowBalance(balance);
   const flinch = useSharedValue(0);
   const wasLow = useRef(low);
 
@@ -55,17 +55,21 @@ function TokenCounterView({ balance, onPress }: Props) {
       accessibilityLabel={
         balance === null
           ? 'Balance loading'
-          : `Balance ${formatRupees(balance)}. Talk time is charged by the minute.`
+          : `${formatTokens(balance)} tokens. Talk time is charged by the minute.`
       }
       accessibilityHint={low ? 'Opens Recharge' : 'Opens Recharge and explains rates'}>
       <Animated.View style={[styles.pill, low && styles.pillLow, animated]}>
+        {/* The wallet is always the filled instance — it is the app's standing
+            "you have" mark, not a toggled state, so it should never read as the
+            hollow, inactive outline. */}
         <Icon
           name="wallet"
+          active
           size={15}
           color={low ? theme.color.text.accent : theme.color.text.token}
         />
         <Text testID="token-count" allowFontScaling style={[styles.label, low && styles.labelLow]}>
-          {balance === null ? '' : formatRupees(balance)}
+          {balance === null ? '' : formatTokens(balance)}
         </Text>
       </Animated.View>
     </Pressable>

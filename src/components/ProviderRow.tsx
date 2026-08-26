@@ -20,7 +20,14 @@ interface Props {
    * a list that has been cut off rather than one that has ended.
    */
   isLast: boolean;
+  /** Row body tap: open the conversation. */
   onPress: (provider: ProviderSummary) => void;
+  /**
+   * Avatar tap: open the profile card. Two targets in one row — the photo is a
+   * peek at who they are, the rest of the row is "talk to them" — which is the
+   * split every dating/marketplace list uses and what v13 intends.
+   */
+  onPressAvatar?: (provider: ProviderSummary) => void;
 }
 
 const GENDER_SHORT: Record<string, string> = { female: 'F', male: 'M', other: '' };
@@ -84,7 +91,7 @@ export const ROW_SEPARATOR_INSET = ROW_AVATAR + TOKENS.space.sm;
  * making rows variable-height, and a list whose rows disagree about their height
  * cannot carry a hairline convincingly.
  */
-function ProviderRowView({ provider, index, isLast, onPress }: Props) {
+function ProviderRowView({ provider, index, isLast, onPress, onPressAvatar }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const initial = initialOf(provider.display_name);
@@ -125,7 +132,17 @@ function ProviderRowView({ provider, index, isLast, onPress }: Props) {
         press="none"
         highlight="ios"
         style={styles.row}>
-        <Avatar initial={initial} size={ROW_AVATAR} online={presence.here} />
+        {/* The avatar is its own target: it opens the profile card, while the
+            rest of the row opens the conversation. Nested inside the row
+            Pressable, the inner one captures taps that land on the photo. */}
+        <Pressable
+          onPress={() => (onPressAvatar ?? onPress)(provider)}
+          testID={`provider-avatar-${provider.id}`}
+          accessibilityLabel={`${provider.display_name}'s profile`}
+          press="none"
+          style={styles.avatarTap}>
+          <Avatar initial={initial} size={ROW_AVATAR} online={presence.here} />
+        </Pressable>
         <View style={styles.label}>
           <View style={styles.topLine}>
             <Text allowFontScaling numberOfLines={1} style={styles.name}>
@@ -203,6 +220,9 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     paddingHorizontal: TOKENS.space.md,
     // No radius, no border, no elevation. The page is the surface now.
     backgroundColor: t.color.bg.base,
+  },
+  avatarTap: {
+    borderRadius: ROW_AVATAR / 2,
   },
   // Inset to the text edge, iMessage style. A separator that runs under the
   // avatar cuts the person in half instead of dividing two of them.
