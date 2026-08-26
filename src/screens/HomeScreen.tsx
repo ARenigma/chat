@@ -162,7 +162,9 @@ export function HomeScreen({ onOpenConversation, onOpenProvider, onOpenSettings 
                   provider={p}
                   index={i}
                   isLast={i === rows.length - 1}
-                  onPress={() => onOpenProvider(p.id)}
+                  // Row opens the conversation; the avatar opens the profile card.
+                  onPress={() => onOpenConversation(p.id)}
+                  onPressAvatar={() => onOpenProvider(p.id)}
                 />
               ))}
             </View>

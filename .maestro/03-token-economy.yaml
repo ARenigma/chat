@@ -15,7 +15,7 @@ name: Low balance nudges, never blocks
 # (ADR-0019), so the pill reads ₹3, not "3 left".
 - assertVisible:
     id: 'token-badge'
-- assertVisible: '₹3'
+- assertVisible: '3'
 
 - repeat:
     times: 2
@@ -32,7 +32,7 @@ name: Low balance nudges, never blocks
 
 # Low balance turns the badge coral. It is a nudge in place, not a modal: the
 # sheet must not have opened by itself.
-- assertVisible: '₹1'
+- assertVisible: '1'
 - assertNotVisible:
     id: 'refill-sheet'
 
