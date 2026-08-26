@@ -1,13 +1,21 @@
 /**
- * The live conversation: one Realtime channel carrying three different kinds of
- * signal, because they have three different durabilities.
+ * The live conversation: one Realtime channel carrying two different kinds of
+ * signal, because they have two different durabilities.
  *
- *   - `postgres_changes` on `messages` — durable. The message exists whether or
+ *   - `postgres_changes` on `messages`, durable. The message exists whether or
  *     not anyone is listening, so the socket is a delivery optimisation, not the
  *     source of truth. A missed event is recovered by the query refetching.
- *   - `presence` — connection-scoped. "Is the other person here right now."
- *     Nothing to persist: if the socket drops, the answer is genuinely no.
- *   - `broadcast` typing — sub-second and disposable. Never written down.
+ *   - `broadcast` typing, sub-second and disposable. Never written down.
+ *
+ * There was a third, and migration 012 is why it is gone. A Realtime `presence`
+ * channel answers "is the other person's app in the foreground", which is not
+ * presence: nobody agreed to have it published, it cannot be turned off, and in a
+ * product about loneliness a dot implying somebody is waiting is a nudge built on
+ * a fact we do not have. Presence is now a declared column read from
+ * `conversation_peers`, so this channel stopped being read by any screen; the
+ * `track()` call was still broadcasting the caller's connection to nobody, which
+ * is the worst of both. Typing stays, because it animates while somebody is
+ * actually typing, which is a thing they are doing on purpose.
  *
  * Realtime enforces RLS on `postgres_changes`, so a client is only ever sent
  * rows it could have selected. That is why the channel does not filter by
@@ -54,7 +62,6 @@ export function useLiveConversation(
 ): LiveConversation {
   const queryClient = useQueryClient();
   const setPeerTyping = useStore(s => s.setPeerTyping);
-  const setPeerOnline = useStore(s => s.setPeerOnline);
 
   const channelRef = useRef<RealtimeChannel | null>(null);
   const lastTypingSentRef = useRef(0);
@@ -76,9 +83,6 @@ export function useLiveConversation(
 
     const channel = supabase.channel(`conversation:${conversationId}`, {
       config: {
-        // Keying presence by profile id means a reconnect replaces the old entry
-        // instead of appearing as a second participant.
-        presence: { key: selfId },
         // Our own typing broadcast coming back to us would flicker the peer
         // indicator on our own keystrokes.
         broadcast: { self: false },
@@ -128,10 +132,6 @@ export function useLiveConversation(
           clearTimeout(typingTimerRef.current);
         }
         typingTimerRef.current = setTimeout(() => setPeerTyping(false), TYPING_TTL_MS);
-      })
-      .on('presence', { event: 'sync' }, () => {
-        const state = channel.presenceState();
-        setPeerOnline(Object.keys(state).some(id => id !== selfId));
       });
 
     void (async () => {
@@ -148,7 +148,10 @@ export function useLiveConversation(
       }
       channel.subscribe(status => {
         if (status === 'SUBSCRIBED') {
-          void channel.track({ userId: selfId, at: new Date().toISOString() });
+          // No `channel.track()` any more. It published this device's connection
+          // for a presence signal nothing reads, which is a fact about somebody
+          // leaving their phone unlocked that we have no business broadcasting.
+          //
           // A socket that was down may have missed inserts. Refetching on
           // (re)subscribe is what makes a dropped connection self-healing.
           void queryClient.invalidateQueries({ queryKey: key });
@@ -165,10 +168,9 @@ export function useLiveConversation(
       }
       channelRef.current = null;
       setPeerTyping(false);
-      setPeerOnline(false);
       void supabase.removeChannel(channel);
     };
-  }, [conversationId, selfId, queryClient, setPeerTyping, setPeerOnline]);
+  }, [conversationId, selfId, queryClient, setPeerTyping]);
 
   return useMemo<LiveConversation>(
     () => ({
@@ -197,7 +199,7 @@ export function useLiveConversation(
  * Marks the peer's messages read once they are on screen.
  *
  * Batched into one `in` filter rather than a write per message, and it only ever
- * touches `read_at` — the RLS policy rejects marking your own message read, and
+ * touches `read_at`, the RLS policy rejects marking your own message read, and
  * a trigger rejects any other column, so this is the whole of what a client may
  * write to `messages`.
  */

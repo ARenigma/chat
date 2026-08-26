@@ -9,7 +9,7 @@
 --
 -- It does NOT restore the device account's provider role. That was a test
 -- promotion in the first place, and a member is the state the app should be
--- exercised in — flipping it back is a deliberate act, not cleanup.
+-- exercised in, flipping it back is a deliberate act, not cleanup.
 
 begin;
 

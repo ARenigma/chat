@@ -9,8 +9,8 @@
  *
  *   1. **Flexible by default.** An immediate update is a full-screen block that
  *      Play will not let the user dismiss. Doing that to someone who is mid
- *      conversation — in an app whose entire purpose is that a person is
- *      listening — is worse than shipping the update a day later.
+ *      conversation, in an app whose entire purpose is that a person is
+ *      listening, is worse than shipping the update a day later.
  *   2. **Immediate only when Play says it is urgent**, i.e. an update priority
  *      of 4 or 5. Priority is set per release when rolling out, so this is a
  *      decision made at release time rather than guessed here.
@@ -53,7 +53,7 @@ export const FLEXIBLE_PROMPT_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * `lastPromptedAt` is a millisecond timestamp, or null if never asked. Passed in
- * rather than read here so this stays pure — the caller owns storage.
+ * rather than read here so this stays pure, the caller owns storage.
  */
 export function decideUpdateAction(
   status: UpdateStatus,
@@ -78,7 +78,7 @@ export function decideUpdateAction(
       return { kind: 'immediate', because: 'priority' };
     }
     // -1 means Play does not know how stale this client is, which must not read
-    // as "not stale" — hence the explicit lower bound rather than a truthy test.
+    // as "not stale", hence the explicit lower bound rather than a truthy test.
     if (
       status.stalenessDays >= 0 &&
       status.stalenessDays >= STALE_DAYS_FOR_IMMEDIATE

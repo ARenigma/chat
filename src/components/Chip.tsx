@@ -15,18 +15,27 @@ interface Props {
 /**
  * Conversation starter, and the smallest tappable surface in the app.
  *
- * It answers "what do I even say?" — the highest-friction moment in the product,
+ * It answers "what do I even say?", the highest-friction moment in the product,
  * and the reason the empty conversation offers three of these rather than a
  * blinking cursor.
  *
- * The press scale is `chip` (0.94) rather than `button` (0.96): the smaller the
- * target, the larger the scale change has to be to register at all, because the
- * eye reads the *absolute* pixel travel, not the ratio. A 0.96 press on a 32pt
- * chip moves its edge by less than a pixel.
+ * The press scale and the radius morph are both gone: a pill that tightens to
+ * `radius.sm` under the finger is Material 3 Expressive's shape-morphing, and a
+ * UIKit `.bordered` capsule button dims rather than moving. The argument that used
+ * to be here, that a smaller target needs a *larger* scale change, because the
+ * eye reads absolute pixel travel and 0.96 on a 32pt chip moves its edge by less
+ * than a pixel, is still correct, and it is exactly why dropping the scale
+ * entirely rather than shrinking it is the right move.
+ *
+ * `paddingVertical` drops from 10 to 8: at 10 with a 15pt label the chip came to
+ * about 40pt, where iOS's bordered capsule is 34, and hitSlop derived from
+ * `INTERACTION.minTarget` carries the target.
+ *
+ * The labels themselves ('How was your day?') are message text, not control
+ * labels, so their sentence case is correct and stays.
  *
  * At most one warm chip per screen. It counts against the accent budget.
  */
-const MORPH = { from: TOKENS.radius.pill, to: TOKENS.radius.sm };
 
 function ChipView({ label, tone = 'neutral', onPress, selected = false }: Props) {
   const styles = useStyles(makeStyles);
@@ -35,8 +44,8 @@ function ChipView({ label, tone = 'neutral', onPress, selected = false }: Props)
       onPress={() => onPress(label)}
       accessibilityLabel={`Start with: ${label}`}
       testID={`starter-${tone}`}
-      press="chip"
-      morph={MORPH}
+      press="none"
+      highlight="ios"
       style={[
         styles.chip,
         tone === 'warm' && styles.chipWarm,
@@ -62,8 +71,9 @@ export const Chip = memo(ChipView);
 const makeStyles = (t: Theme) => StyleSheet.create({
   chip: {
     paddingHorizontal: TOKENS.space.md,
-    paddingVertical: 10,
+    paddingVertical: TOKENS.space.xs,
     borderRadius: TOKENS.radius.pill,
+    borderCurve: 'continuous',
     backgroundColor: t.color.bg.sunken,
   },
   chipWarm: {

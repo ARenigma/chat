@@ -28,7 +28,11 @@ function PeerTypingView({ initial, name }: { initial: string; name: string }) {
       <View style={styles.slot}>
         <Avatar initial={initial} size={26} breathing />
       </View>
-      <View style={styles.column}>
+      {/* In a bubble, at the peer's bubble position. Three loose dots beside an
+          avatar is not where iOS Messages puts the typing state, and the same
+          `bg/sunken` fill Turn.tsx uses is what makes it read as a bubble the
+          other person is about to fill. */}
+      <View style={styles.bubble}>
         <TypingIndicator label={`${name} is typing`} />
       </View>
     </View>
@@ -49,7 +53,11 @@ const makeStyles = (_t: Theme) => StyleSheet.create({
   slot: {
     width: 26,
   },
-  column: {
-    flex: 1,
+  bubble: {
+    paddingHorizontal: TOKENS.space.md,
+    paddingVertical: 2,
+    borderRadius: 18,
+    borderCurve: 'continuous',
+    backgroundColor: _t.color.bg.sunken,
   },
 });

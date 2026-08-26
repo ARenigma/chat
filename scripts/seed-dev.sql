@@ -15,8 +15,8 @@
 -- without touching a real account.
 --
 -- Messages are inserted directly rather than through `send_message`, so no
--- tokens are spent and no rate limit applies. That is deliberate — this seeds
--- the *view*, and going through the RPC would need four JWTs — but it does mean
+-- tokens are spent and no rate limit applies. That is deliberate, this seeds
+-- the *view*, and going through the RPC would need four JWTs, but it does mean
 -- balances here are not evidence about billing. The ledger has its own tests.
 
 begin;
@@ -47,6 +47,12 @@ update public.profiles p set
   headline = v.headline,
   languages = v.languages,
   is_available = v.available,
+  -- Set alongside `is_available` rather than derived from it, because 012 split
+  -- the two and the seed is the one place that has to show both states on a
+  -- device: Nia is closed for work AND away, so the directory can be checked
+  -- with a row that has no dot and no presence line.
+  presence = case when v.available then 'here'::public.presence_choice else 'away' end,
+  presence_visible = true,
   identity_verified_at = now()
 from (values
   ('11111111-1111-4111-8111-111111111111'::uuid, 'Mira', 31,
@@ -64,9 +70,23 @@ where p.id = v.id;
 -- 2. The device account goes back to being a member
 -- ---------------------------------------------------------------------------
 -- It was promoted while testing the admission flow, which left the member tree
--- — inbox, directory, search — unreachable on the only device we have.
+--, inbox, directory, search, unreachable on the only device we have.
+-- The three provider facts go with the role. 011's `member_is_pseudonymous`
+-- makes a member row carrying a birth date, gender or headline unrepresentable,
+-- so demoting without shedding them fails the CHECK rather than the seed quietly
+-- leaving stale provider details on a member.
 update public.profiles
-set role = 'member', is_available = false
+set role = 'member',
+    is_available = false,
+    date_of_birth = null,
+    gender = null,
+    headline = null,
+    -- Explicit, because a member declaring presence is the case 012 made
+    -- possible and there is no other way to see it on a device: with this set,
+    -- the provider tree's inbox shows the device account's own thread with a dot
+    -- on it, which was unrepresentable before.
+    presence = 'here',
+    presence_visible = true
 where id = 'dc842257-519a-46be-8d19-63247bdb5ff6';
 
 -- ---------------------------------------------------------------------------
@@ -108,7 +128,7 @@ values
   ('aaaa1111-0000-4000-8000-000000000004', 'dc842257-519a-46be-8d19-63247bdb5ff6',
    'hello', now() - interval '9 days 2 hours', now() - interval '9 days'),
   ('aaaa1111-0000-4000-8000-000000000004', '44444444-4444-4444-8444-444444444444',
-   'hi — tell me about your week', now() - interval '9 days', now() - interval '9 days');
+   'hi, tell me about your week', now() - interval '9 days', now() - interval '9 days');
 
 commit;
 

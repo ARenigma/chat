@@ -4,7 +4,7 @@
 -- Scope note: this file used to cover the persona chat model too. Migration 003
 -- replaced that model with two-party conversations, so those assertions moved to
 -- 020 and the ones about `chats` and `messages.sender` are gone rather than
--- rewritten — they were asserting a shape that no longer exists.
+-- rewritten, they were asserting a shape that no longer exists.
 
 \set ON_ERROR_STOP on
 begin;

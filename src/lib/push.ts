@@ -10,6 +10,7 @@ import {
   requestPermission,
 } from '@react-native-firebase/messaging';
 import { supabase } from './supabase';
+import { ensureConversationChannel } from './conversations';
 import { isUuid } from './ids';
 
 /**
@@ -17,7 +18,7 @@ import { isUuid } from './ids';
  * missing.
  *
  * Realtime only reaches a client holding a live socket, so until now "someone
- * replied" was a fact the app could only learn while it was open — which is the
+ * replied" was a fact the app could only learn while it was open, which is the
  * opposite of what a conversation product needs. This is also the only feature a
  * paid chat SDK would genuinely have given us, and it costs nothing: FCM is
  * free at any volume we will see.
@@ -31,14 +32,14 @@ import { isUuid } from './ids';
  *      noise. Background and quit-state notifications are drawn by the OS from
  *      the `notification` block the sender includes.
  *   2. **The body is never in the payload.** The sender publishes who it is from
- *      and nothing else — see `pending_pushes`. A lock screen that quotes the
+ *      and nothing else, see `pending_pushes`. A lock screen that quotes the
  *      message tells whoever is holding the phone what you talked about, and for
  *      this product that is the wrong default at any convenience.
  *   3. **No notification library.** Notifee and friends exist to *display*
  *      notifications from the app, which is exactly the case we are declining.
  *
  * Uses the modular API (`getMessaging(...)`) rather than the namespaced
- * `messaging()` default export, which v26 removed — the namespaced form still
+ * `messaging()` default export, which v26 removed, the namespaced form still
  * appears in most tutorials and fails at import with no default export.
  */
 
@@ -70,7 +71,7 @@ async function upload(token: string): Promise<void> {
     p_platform: Platform.OS === 'ios' ? 'ios' : 'android',
   });
   if (error !== null && __DEV__) {
-    console.warn(`push: could not register token — ${error.message}`);
+    console.warn(`push: could not register token, ${error.message}`);
   }
 }
 
@@ -82,11 +83,22 @@ async function upload(token: string): Promise<void> {
  * client that registers once and never again goes quietly silent weeks later,
  * which is indistinguishable from "nobody messaged me".
  *
- * Returns the unsubscribe so a sign-out can stop listening — otherwise the
+ * Returns the unsubscribe so a sign-out can stop listening, otherwise the
  * refresh handler would re-register the *new* user's device against the old
  * session's client.
  */
 export async function startPush(): Promise<() => void> {
+  /*
+   * Create the notification channel before asking for permission, not after.
+   *
+   * Android 8+ requires a channel for any notification, and this app declared
+   * none at all — Firebase's SDK was falling back to a generic channel named
+   * after the library, which is what a user would have found in Settings. Doing
+   * it here means somebody who wants to silence messages before ever receiving
+   * one has something to silence.
+   */
+  await ensureConversationChannel();
+
   const granted = await ensurePermission();
   if (!granted) {
     // A refusal is a legitimate answer and not an error state. The app works
@@ -120,7 +132,7 @@ export async function stopPush(): Promise<void> {
     await deleteToken(getMessaging());
   } catch (err) {
     if (__DEV__) {
-      console.warn(`push: could not revoke token — ${String(err)}`);
+      console.warn(`push: could not revoke token, ${String(err)}`);
     }
   }
 }
@@ -130,13 +142,13 @@ export async function stopPush(): Promise<void> {
  * tapping one.
  *
  * The payload carries `peerId`, not a conversation id, because that is what the
- * app navigates by — routing on the conversation would mean looking the peer up
+ * app navigates by, routing on the conversation would mean looking the peer up
  * before the first frame, and the sender already knows both. A raw `data` field
  * rather than a deep link: the payload is ours end to end, and a URL would mean
  * parsing an untrusted string into a route.
  *
  * Validated as a uuid regardless. A push payload is remote input, and remote
- * input is exactly what should not reach a query unchecked — the same reasoning
+ * input is exactly what should not reach a query unchecked, the same reasoning
  * that put `isUuid` in front of the stored last-conversation id.
  */
 export function openedPeerId(

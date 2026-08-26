@@ -36,6 +36,18 @@
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string></string>
+	<!--
+	  iOS shows this string verbatim in the permission dialog and rejects a build
+	  that records without one. It names the limit rather than the feature,
+	  because the dialog is the only place most people will read it.
+
+	  Note for whoever ships the first iOS build: the empty
+	  NSLocationWhenInUseUsageDescription above has no code path behind it and
+	  should be deleted. It is left alone here because removing it is unrelated to
+	  voice notes.
+	-->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>So you can send a voice note instead of typing. Recording only happens while you are recording one.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>

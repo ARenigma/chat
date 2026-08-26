@@ -5,10 +5,10 @@ import { ENV } from './env';
  * Crash reporting that cannot leak a conversation.
  *
  * Two layers, because either alone is insufficient:
- *   1. Structural — whole fields that exist to carry payloads (`request.data`,
+ *   1. Structural, whole fields that exist to carry payloads (`request.data`,
  *      `breadcrumb.data`, stack-frame locals, anything keyed like content) are
  *      removed outright.
- *   2. Textual — the free-text fields that remain (`message`,
+ *   2. Textual, the free-text fields that remain (`message`,
  *      `exception.value`) are run through `scrubText`, which strips emails,
  *      IPs, phone numbers and bearer/JWT credentials.
  *
@@ -187,7 +187,7 @@ export function sanitizeSentryEvent(event: ScrubbableEvent | null): ScrubbableEv
   }
 
   // `message` is redacted wholesale rather than scrubbed. This app never calls
-  // captureMessage, so nothing diagnostic is lost — and free-form prose is
+  // captureMessage, so nothing diagnostic is lost, and free-form prose is
   // exactly what pattern matching cannot classify. Anything that shows up here
   // came from an integration we did not write and is treated as user content.
   // Exception values survive (scrubbed) because the runtime, not the user,

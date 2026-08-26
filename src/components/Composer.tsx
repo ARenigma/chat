@@ -1,33 +1,148 @@
-import React, { memo, useCallback, useState } from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, StyleSheet, Text, View } from 'react-native';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { MAX_MESSAGE_CHARS } from '../lib/tokenLedger';
+import { errorTick, tick } from '../lib/haptics';
+import {
+  ensureMicrophone,
+  startRecording,
+  type RecordingHandle,
+} from '../lib/recorder';
+import { MAX_VOICE_MS, clock, isSendable, type VoiceDraft } from '../lib/voice';
+import { useStore } from '../store/useStore';
+import { Icon } from './Icon';
+import { Pressable } from './Pressable';
 import { SendButton } from './SendButton';
+import { Waveform } from './Waveform';
+import { TextField } from './TextField';
 
 interface Props {
   onSend: (text: string) => void;
+  /** A finished recording, ready to upload. Both roles get this: the provider
+   *  tree renders the same ChatScreen, and voice notes are in scope for both. */
+  onSendVoice: (draft: VoiceDraft) => void;
   disabled: boolean;
   placeholder: string;
   bloomKey: number;
   /**
    * Fired per keystroke so the other side can be shown a typing indicator. The
-   * throttling lives in the Realtime layer, not here — the composer should not
+   * throttling lives in the Realtime layer, not here, the composer should not
    * have to know how often a broadcast is affordable.
    */
   onTyping?: () => void;
 }
 
 /**
- * Composition state is local — lifting the draft into the store would re-render
- * every subscriber on each keystroke for no benefit. The field floats on
- * elevation rather than sitting behind a divider, and send is inset inside it.
+ * Three states, and the row is the same height in all of them so the transcript
+ * does not jump when one replaces another.
+ *
+ * `review` exists because of the three-minute ceiling. Stopping at a cap and
+ * sending immediately sends a sentence that was cut off mid-word, so the
+ * recording is held with a way out instead. It is also the only place the length
+ * is shown before the note leaves.
  */
-function ComposerView({ onSend, disabled, placeholder, bloomKey, onTyping }: Props) {
+type Mode = 'idle' | 'recording' | 'review';
+
+/**
+ * Composition state is local, lifting the draft into the store would re-render
+ * every subscriber on each keystroke for no benefit.
+ *
+ * The field no longer floats on elevation, and that was not a style preference.
+ * `bg/raised` is `#FFFFFF` in light mode and so is `bg/base`, so the field was a
+ * white pill on a white page held together by nothing but a shadow. It now has
+ * iOS Messages' anatomy: a hairline-bordered capsule on the page colour, inside a
+ * bar with a hairline along its top edge, so the transcript reads as scrolling
+ * *under* a bar rather than behind a floating card.
+ *
+ * The honest limit, stated rather than hidden: iOS's real composer bar is
+ * translucent `.systemChromeMaterial` and React Native cannot blur a background
+ * without a native module. An opaque bar with a top hairline is the correct
+ * fallback for that, not a compromise pretending to be the thing.
+ *
+ * ---------------------------------------------------------------------------
+ * Why tap-to-record and not hold-to-talk
+ * ---------------------------------------------------------------------------
+ * WhatsApp's gesture is hold the mic, slide left to cancel, slide up to lock. It
+ * is not copied here, and the reasons are not aesthetic.
+ *
+ * TalkBack and VoiceOver cannot express "hold and slide", and a sustained hold
+ * excludes people with tremor or limited grip. Any hold-to-talk implementation
+ * therefore needs a tap path *as well*, for the users a peer-support product
+ * should least want to shut out. Having built the tap path, the hold is a second
+ * way to do the same thing.
+ *
+ * It also costs a `Gesture.Pan` inside a row that lives above an inverted list,
+ * where a horizontal pan and the list's scroll have to be taught not to fight.
+ * `contract.test.ts` asserts that Sheet is still the only file declaring a
+ * gesture, precisely so the next pan is a decision rather than a copy, and this
+ * one cannot be verified anywhere but on a device.
+ *
+ * So: tap the mic, watch the meter, tap stop, then send or discard. If the hold
+ * is added later it belongs on top of this, not instead of it.
+ */
+function ComposerView({
+  onSend,
+  onSendVoice,
+  disabled,
+  placeholder,
+  bloomKey,
+  onTyping,
+}: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
+  const setNotice = useStore(s => s.setNotice);
   const [value, setValue] = useState('');
+  const [mode, setMode] = useState<Mode>('idle');
+  const [elapsed, setElapsed] = useState(0);
+  const [levels, setLevels] = useState<readonly number[]>([]);
+  const [draft, setDraft] = useState<VoiceDraft | null>(null);
+  // The live handle, in a ref rather than state: nothing renders from it, and a
+  // stop that raced a re-render would otherwise stop a recorder that had already
+  // been replaced.
+  const handle = useRef<RecordingHandle | null>(null);
+  /**
+   * Which attempt is current, bumped by every start, stop, discard and unmount.
+   *
+   * It exists for one gap, and it is the worst failure this feature has: starting
+   * the recorder is asynchronous (a permission dialog on the first run, then
+   * `MediaRecorder.prepare`), so stop and unmount are both reachable *before*
+   * there is a handle to stop. Without this the recorder resolves afterwards into
+   * a ref nothing is watching, and the microphone stays live with no way to turn
+   * it off short of killing the app.
+   */
+  const attempt = useRef(0);
   const ready = value.trim().length > 0 && !disabled;
+
+  const finish = useCallback((next: VoiceDraft | null) => {
+    handle.current = null;
+    if (next !== null && isSendable(next.durationMs)) {
+      setDraft(next);
+      setMode('review');
+      return;
+    }
+    // Under a second. Thrown away without a word: at that length it is a mistap
+    // on the mic button, and being told off for brushing a button is worse than
+    // nothing happening.
+    setDraft(null);
+    setMode('idle');
+  }, []);
+
+  /**
+   * Leaving the screen mid-recording must stop the microphone.
+   *
+   * Without this the recorder keeps running with nothing listening, which is both
+   * a privacy claim this app should not have to make and the state that leaves
+   * the next `startRecorder` fighting a live one.
+   */
+  useEffect(
+    () => () => {
+      attempt.current += 1;
+      void handle.current?.cancel();
+      handle.current = null;
+    },
+    [],
+  );
 
   const change = useCallback(
     (next: string) => {
@@ -47,16 +162,213 @@ function ComposerView({ onSend, disabled, placeholder, bloomKey, onTyping }: Pro
     setValue('');
   }, [onSend, ready, value]);
 
+  const record = useCallback(async () => {
+    if (disabled || handle.current !== null) {
+      return;
+    }
+    const mine = attempt.current + 1;
+    attempt.current = mine;
+    if (!(await ensureMicrophone())) {
+      errorTick();
+      // A permanent denial is a system setting, not something to retry, so the
+      // notice says where the switch is rather than offering a button that would
+      // never open the dialog again.
+      setNotice('Voice notes need the microphone. Turn it on in Settings.');
+      return;
+    }
+    if (attempt.current !== mine) {
+      return;
+    }
+    tick();
+    setElapsed(0);
+    setLevels([]);
+    setMode('recording');
+    try {
+      const started = await startRecording({
+        onTick: (ms, window) => {
+          setElapsed(ms);
+          setLevels(window);
+        },
+        onLimit: finish,
+      });
+      if (attempt.current !== mine) {
+        // Stopped, discarded or unmounted while the recorder was starting. Stop
+        // the hardware rather than storing a handle nothing will ever reach, and
+        // put the row back: whoever bumped the attempt could not reset the mode,
+        // because at that moment it did not know whether a recorder was coming.
+        await started.cancel();
+        setMode('idle');
+        return;
+      }
+      handle.current = started;
+    } catch {
+      handle.current = null;
+      setMode('idle');
+      errorTick();
+      setNotice('The microphone could not be started.');
+    }
+  }, [disabled, finish, setNotice]);
+
+  const stop = useCallback(async () => {
+    const current = handle.current;
+    attempt.current += 1;
+    if (current === null) {
+      // Nothing to stop. Either the recorder has not finished starting, in which
+      // case the bump above is what cancels it, or `onLimit` already handed over a
+      // draft and moved us to review. The mode is deliberately left alone: forcing
+      // it to idle here would throw away a recording that had just landed.
+      return;
+    }
+    tick();
+    finish(await current.stop());
+  }, [finish]);
+
+  const discard = useCallback(async () => {
+    attempt.current += 1;
+    await handle.current?.cancel();
+    handle.current = null;
+    setDraft(null);
+    setMode('idle');
+  }, []);
+
+  /**
+   * Stop recording the moment the app leaves the foreground.
+   *
+   * Without this the microphone keeps running while the app is backgrounded,
+   * which makes two claims false at once: the permission comment in
+   * AndroidManifest.xml says "nothing records while the app is not in the
+   * foreground", and the Play Data Safety declaration rests on the same
+   * sentence. A claim a reviewer can disprove with one press of the home button
+   * is worse than no claim.
+   *
+   * Cancel rather than stop: a recording interrupted by a phone call or a
+   * notification shade is not a voice note somebody chose to send, and offering
+   * a half-recorded draft on return invites sending it by accident.
+   *
+   * Found by an adversarial review of this change, not by a test. No gate can see
+   * a permission comment disagreeing with runtime behaviour.
+   */
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', next => {
+      if (next !== 'active' && handle.current !== null) {
+        void discard();
+      }
+    });
+    return () => sub.remove();
+  }, [discard]);
+
+  const sendDraft = useCallback(() => {
+    if (draft === null) {
+      return;
+    }
+    onSendVoice(draft);
+    setDraft(null);
+    setMode('idle');
+  }, [draft, onSendVoice]);
+
+  if (mode === 'recording') {
+    return (
+      <View style={styles.row}>
+        <View style={styles.panel}>
+          <Pressable
+            onPress={() => {
+              void discard();
+            }}
+            testID="voice-cancel"
+            accessibilityLabel="Cancel recording"
+            press="none"
+            highlight="ios"
+            size={32}
+            style={styles.panelButton}
+          >
+            <Icon name="close" size={14} color={theme.color.text.secondary} />
+          </Pressable>
+          {/* The one red thing in the app, and it earns it: this is the only
+              moment the microphone is live, and every recorder on every platform
+              marks that with a red dot. */}
+          <View style={styles.live} />
+          <Text
+            testID="voice-elapsed"
+            allowFontScaling
+            accessibilityLiveRegion="none"
+            style={styles.clock}
+          >
+            {clock(elapsed)}
+          </Text>
+          <Waveform
+            peaks={levels}
+            // No unplayed half while recording: everything drawn has happened.
+            progress={1}
+            tint={theme.color.text.secondary}
+            dim={1}
+            testID="voice-meter"
+          />
+          <Pressable
+            onPress={() => {
+              void stop();
+            }}
+            testID="voice-stop"
+            accessibilityLabel="Stop recording"
+            accessibilityHint={`Up to ${clock(MAX_VOICE_MS)}`}
+            press="chip"
+            size={32}
+            style={styles.stop}
+          >
+            <Icon name="stop" size={14} color={theme.color.text.primary} />
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  if (mode === 'review' && draft !== null) {
+    return (
+      <View style={styles.row}>
+        <View style={styles.panel}>
+          <Pressable
+            onPress={() => {
+              void discard();
+            }}
+            testID="voice-discard"
+            accessibilityLabel="Discard this recording"
+            press="none"
+            highlight="ios"
+            size={32}
+            style={styles.panelButton}
+          >
+            <Icon name="close" size={14} color={theme.color.text.secondary} />
+          </Pressable>
+          <Text testID="voice-length" allowFontScaling style={styles.clock}>
+            {clock(draft.durationMs)}
+          </Text>
+          {/* The peaks the recorder actually measured, shown once. They are not
+              stored with the message, so this is the only time the real shape of
+              a note is ever on screen. See the note in VoiceNote.tsx. */}
+          <Waveform
+            peaks={draft.peaks}
+            progress={1}
+            tint={theme.color.text.secondary}
+            dim={1}
+          />
+          <SendButton onPress={sendDraft} disabled={disabled} bloomKey={bloomKey} />
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.row}>
       <View style={styles.field}>
-        <TextInput
+        <TextField
           testID="composer-input"
           style={styles.input}
           value={value}
           onChangeText={change}
           placeholder={placeholder}
-          placeholderTextColor={theme.color.text.secondary}
+          // Tertiary, not secondary: iOS's placeholder is tertiaryLabel, and at
+          // secondary the hint was close enough to real input to be misread as
+          // one.
+          placeholderTextColor={theme.color.text.tertiary}
           multiline
           maxLength={MAX_MESSAGE_CHARS}
           allowFontScaling
@@ -67,7 +379,27 @@ function ComposerView({ onSend, disabled, placeholder, bloomKey, onTyping }: Pro
           accessibilityHint="One message costs one token"
           underlineColorAndroid="transparent"
         />
-        <SendButton onPress={submit} disabled={!ready} bloomKey={bloomKey} />
+        {/* One trailing control, never two competing. With text there is a send
+            button; with an empty field there is a microphone. A row holding both
+            asks which of them the return key means. */}
+        {ready ? (
+          <SendButton onPress={submit} disabled={!ready} bloomKey={bloomKey} />
+        ) : (
+          <Pressable
+            onPress={() => {
+              void record();
+            }}
+            disabled={disabled}
+            testID="voice-record"
+            accessibilityLabel="Record a voice note"
+            accessibilityHint="Recording starts on tap and stops when you tap stop. One voice note costs one token"
+            press="chip"
+            size={32}
+            style={styles.mic}
+          >
+            <Icon name="mic" size={18} color={theme.color.text.secondary} />
+          </Pressable>
+        )}
       </View>
     </View>
   );
@@ -78,18 +410,26 @@ export const Composer = memo(ComposerView);
 const makeStyles = (t: Theme) => StyleSheet.create({
   row: {
     paddingHorizontal: TOKENS.space.md,
-    paddingTop: TOKENS.space['2xs'],
+    paddingTop: TOKENS.space.xs,
+    paddingBottom: TOKENS.space['2xs'],
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: t.color.border.hairline,
+    backgroundColor: t.color.bg.base,
   },
   field: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: TOKENS.space.xs,
-    paddingLeft: TOKENS.space.lg,
+    paddingLeft: TOKENS.space.md,
     paddingRight: 6,
-    paddingVertical: 6,
+    paddingVertical: 5,
+    // Still a capsule: the field is a capsule on iOS too. What changed is what
+    // defines its edge.
     borderRadius: TOKENS.radius.pill,
-    backgroundColor: t.color.bg.raised,
-    ...TOKENS.elevation.composer,
+    borderCurve: 'continuous',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: t.color.border.hairline,
+    backgroundColor: t.color.bg.base,
   },
   input: {
     flex: 1,
@@ -99,5 +439,51 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     paddingBottom: 10,
     ...TOKENS.typography.bodyMedium,
     color: t.color.text.primary,
+  },
+  // The same capsule as the field, filled, so the row's height and edge do not
+  // change when recording replaces typing.
+  panel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: TOKENS.space.xs,
+    minHeight: 50,
+    paddingLeft: TOKENS.space['2xs'],
+    paddingRight: 6,
+    borderRadius: TOKENS.radius.pill,
+    borderCurve: 'continuous',
+    backgroundColor: t.color.bg.sunken,
+  },
+  panelButton: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  live: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: t.color.state.danger,
+  },
+  clock: {
+    ...TOKENS.typography.numeralSmall,
+    color: t.color.text.secondary,
+  },
+  mic: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderCurve: 'continuous',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stop: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderCurve: 'continuous',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: t.color.bg.base,
   },
 });

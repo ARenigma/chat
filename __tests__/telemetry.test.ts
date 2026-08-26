@@ -6,7 +6,7 @@ const ROOT = join(__dirname, '..');
 const read = (relative: string): string => readFileSync(join(ROOT, relative), 'utf8');
 
 /**
- * The client-side check is a convenience — `guard_event_shape` is the real
+ * The client-side check is a convenience, `guard_event_shape` is the real
  * enforcement. These tests cover the convenience *and* assert the two stay in
  * step, because a client check that is laxer than the server produces confusing
  * silent rejections, and one that is stricter silently drops valid metrics.
@@ -47,7 +47,7 @@ describe('propsAreSafe', () => {
 describe('telemetry contract with the database', () => {
   /**
    * The allowlist lives in `guard_event_shape`, which a later migration may
-   * redefine — 006 does. So the authority is the *last* definition across all
+   * redefine, 006 does. So the authority is the *last* definition across all
    * migrations in order, not whichever file introduced it. Reading only 005
    * would have compared against a superseded list and passed while the running
    * database disagreed.

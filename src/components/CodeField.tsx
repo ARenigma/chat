@@ -1,9 +1,11 @@
+import { type TextInput } from 'react-native';
 import React, { useCallback, useEffect, useRef } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { INTERACTION, shakeX } from '../theme/motion';
+import { TextField } from './TextField';
 
 interface Props {
   value: string;
@@ -27,7 +29,7 @@ interface Props {
  *      understand them as one value.
  *   2. Paste fills the first box and drops the rest, because each input has
  *      `maxLength={1}`.
- *   3. Backspace across a boundary is ambiguous — every implementation invents
+ *   3. Backspace across a boundary is ambiguous, every implementation invents
  *      its own rule for whether it clears the current box or moves back first,
  *      and none of them match the platform.
  *
@@ -36,7 +38,7 @@ interface Props {
  * platform says it is.
  *
  * It is hidden by z-order rather than by `color: 'transparent'`, which is the
- * usual trick and does not work on this build — see the note at the element.
+ * usual trick and does not work on this build, see the note at the element.
  */
 function CodeFieldView({
   value,
@@ -73,7 +75,7 @@ function CodeFieldView({
   }, [value, length, onComplete]);
 
   /**
-   * Shake, and keep the digits. The physics is in motion.ts — see shakeX for why
+   * Shake, and keep the digits. The physics is in motion.ts, see shakeX for why
    * nothing is cleared here.
    */
   useEffect(() => {
@@ -113,7 +115,7 @@ function CodeFieldView({
         style={styles.row}>
         {/* First child, deliberately: the opaque segments below paint over it.
             `color: 'transparent'` is the usual way to hide this input's glyphs
-            and it does not work on this build — verified on a device, with
+            and it does not work on this build, verified on a device, with
             'transparent' and with 'rgba(0,0,0,0)', both of which left the raw
             "123" visible across the first segment in the input's own font while
             position and fontSize from the same style object applied fine. So the
@@ -123,7 +125,7 @@ function CodeFieldView({
             Android's clipboard chip above the keyboard still inserts into the
             focused field, so pasting a code is preserved by the path people
             actually use. */}
-        <TextInput
+        <TextField
           ref={input}
           testID={testID}
           value={value}
@@ -180,7 +182,8 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   segment: {
     flex: 1,
     height: 60,
-    borderRadius: TOKENS.radius.md,
+    borderRadius: TOKENS.radius.field,
+    borderCurve: 'continuous',
     borderWidth: 1,
     borderColor: t.color.border.strong,
     backgroundColor: t.color.bg.raised,
@@ -192,8 +195,8 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   },
   // The caret is drawn as a border rather than a real cursor, because the real
   // one belongs to a TextInput that is deliberately not where the glyphs are.
-  // Ink, not coral. The accent in this product means "act" — the send button,
-  // your own bubble, an unread count — and a caret is not an action. Spending it
+  // Ink, not coral. The accent in this product means "act", the send button,
+  // your own bubble, an unread count, and a caret is not an action. Spending it
   // here would put coral on a screen that already has a primary button, which is
   // exactly the competition the accent budget exists to prevent.
   segmentActive: {
@@ -211,7 +214,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     right: 0,
     bottom: 0,
     // A real font size, so the keyboard and autofill treat this as a normal
-    // field. The glyphs themselves are transparent — the visible digits are the
+    // field. The glyphs themselves are transparent, the visible digits are the
     // Text nodes in the segments above.
     fontSize: 24,
     color: 'rgba(0, 0, 0, 0)',

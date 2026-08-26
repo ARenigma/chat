@@ -2,14 +2,30 @@ import React, { memo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
+import { dayLabel, timeOfDay } from '../lib/datetime';
 
-/** Centred, unadorned. A rule either side would draw the eye to the frame. */
-function DayDividerView({ label }: { label: string }) {
+/**
+ * Centred, unadorned. A rule either side would draw the eye to the frame.
+ *
+ * It takes an instant, not a label, and that is the fix rather than a
+ * refactor: the prop used to be a bare `label: string` with no date logic
+ * anywhere in the app, and the single call site passed the literal `"Today"` as
+ * the `ListFooterComponent` of an *inverted* list, so one hardcoded divider
+ * rendered at the visual top of the transcript, labelling the oldest message
+ * whatever date it was on. A component that cannot be given a wrong label is
+ * better than a comment asking for the right one.
+ *
+ * Bold day plus regular time on one line, matching iOS Messages. The padding is
+ * `space.md` rather than the `2xs` it was: this separates days, so it earns real
+ * air instead of decorating.
+ */
+function DayDividerView({ iso }: { iso: string }) {
   const styles = useStyles(makeStyles);
   return (
     <View style={styles.host}>
-      <Text allowFontScaling style={styles.label}>
-        {label}
+      <Text allowFontScaling style={styles.day}>
+        {dayLabel(iso)}
+        <Text style={styles.time}> {timeOfDay(iso)}</Text>
       </Text>
     </View>
   );
@@ -20,10 +36,14 @@ export const DayDivider = memo(DayDividerView);
 const makeStyles = (t: Theme) => StyleSheet.create({
   host: {
     alignItems: 'center',
-    paddingVertical: TOKENS.space['2xs'],
+    paddingVertical: TOKENS.space.md,
   },
-  label: {
-    ...TOKENS.typography.captionSmall,
-    color: t.color.text.tertiary,
+  day: {
+    ...TOKENS.typography.labelSmall,
+    color: t.color.text.secondary,
+  },
+  time: {
+    ...TOKENS.typography.captionRegular,
+    color: t.color.text.secondary,
   },
 });

@@ -3,7 +3,7 @@
  * Structural checks on the website.
  *
  * The site is five static files with no build step and no framework, which is
- * the right shape for three legal pages — but it also means nothing would notice
+ * the right shape for three legal pages, but it also means nothing would notice
  * a broken link. Two of these pages are load-bearing outside the repo: Google
  * Play requires the privacy and data-deletion URLs to resolve, and Meta business
  * verification reads the site. A 404 on either is a rejection, not a cosmetic
@@ -35,7 +35,7 @@ const present = new Set(readdirSync(WEB));
 
 for (const [page, why] of Object.entries(REQUIRED)) {
   if (!present.has(page)) {
-    problems.push(`missing web/${page} — ${why}`);
+    problems.push(`missing web/${page}, ${why}`);
   }
 }
 
@@ -54,7 +54,7 @@ for (const page of pages) {
   }
 
   // The generated stylesheet is what keeps the site and the app the same
-  // product. A page that forgets it still renders — just wrong, and only on
+  // product. A page that forgets it still renders, just wrong, and only on
   // that one page, which is the kind of thing nobody spots.
   if (!body.includes('/tokens.css')) {
     problems.push(`web/${page} does not link tokens.css`);
@@ -95,5 +95,5 @@ if (problems.length > 0) {
 }
 
 console.log(
-  `web:check OK — ${pages.length} pages, links resolve, one contact address, all tokenised`,
+  `web:check OK, ${pages.length} pages, links resolve, one contact address, all tokenised`,
 );

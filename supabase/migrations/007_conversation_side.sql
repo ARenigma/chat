@@ -1,9 +1,9 @@
 -- ---------------------------------------------------------------------------
--- 007 — which side of a conversation you are on
+-- 007, which side of a conversation you are on
 -- ---------------------------------------------------------------------------
 -- One column, and it fixes two things that both come from the same wrong
 -- assumption: that a person's *profile role* tells you their role in a given
--- conversation. It does not, and the counterexample is not exotic — it is the
+-- conversation. It does not, and the counterexample is not exotic, it is the
 -- supply pipeline working as designed.
 --
 -- A member who is admitted as a provider keeps every thread they had as a
@@ -12,7 +12,7 @@
 -- only the threads where they are the one being paid.
 --
 -- `conversation_summaries` published `peer_id` but never said which side the
--- caller was on, so the client had to guess from `profiles.role` — which was
+-- caller was on, so the client had to guess from `profiles.role`, which was
 -- wrong for exactly the accounts the product wants most. Two consequences,
 -- both observed on a real device after an admission:
 --
@@ -25,7 +25,7 @@
 -- Nothing about privacy changes: the caller already had to be a participant to
 -- see the row at all, and `member_id` is compared rather than published.
 
--- Recreated rather than altered — a view's column list cannot be extended in
+-- Recreated rather than altered, a view's column list cannot be extended in
 -- place. Identical to the 006 definition apart from the final column, and still
 -- security_invoker so the underlying RLS on `conversations` remains the
 -- boundary.
@@ -62,7 +62,7 @@ with (security_invoker = true) as
 
 comment on view public.conversation_summaries is
   'One row per thread the caller participates in. `i_am_member` is the '
-  'authoritative answer to "am I the paying side of THIS thread" — profiles.role '
+  'authoritative answer to "am I the paying side of THIS thread", profiles.role '
   'is not, because a promoted provider keeps their member-side threads.';
 
 revoke all on public.conversation_summaries from anon;

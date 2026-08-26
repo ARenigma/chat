@@ -5,7 +5,7 @@
   The background is a flat colour rather than a bitmap: the mark is the whole
   design, so a background PNG would be five files that are all the same pixel.
 
-  `monochrome` is what Android 13's themed icons use — without it the launcher
+  `monochrome` is what Android 13's themed icons use, without it the launcher
   falls back to showing the full-colour icon in a themed tray, which looks like
   an oversight rather than a choice. It is declared after the other two so older
   parsers that do not know the tag simply stop reading.

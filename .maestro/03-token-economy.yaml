@@ -11,10 +11,11 @@ name: Low balance nudges, never blocks
 - tapOn: 'Ada'
 
 # The seed balance is set to 3 by scripts/e2e.mjs before this flow, so two sends
-# cross the threshold without needing 48 round trips.
+# cross the threshold without needing 48 round trips. The balance is money now
+# (ADR-0019), so the pill reads ₹3, not "3 left".
 - assertVisible:
     id: 'token-badge'
-- assertVisible: '3 left'
+- assertVisible: '₹3'
 
 - repeat:
     times: 2
@@ -29,9 +30,9 @@ name: Low balance nudges, never blocks
             id: 'read-receipt'
           timeout: 20000
 
-# Under three tokens the badge becomes a pill. It is a nudge in place, not a
-# modal: the sheet must not have opened by itself.
-- assertVisible: '1 left'
+# Low balance turns the badge coral. It is a nudge in place, not a modal: the
+# sheet must not have opened by itself.
+- assertVisible: '₹1'
 - assertNotVisible:
     id: 'refill-sheet'
 

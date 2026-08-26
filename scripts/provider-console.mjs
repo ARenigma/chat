@@ -8,8 +8,8 @@
  * proves the sender's half.
  *
  * This closes that gap cheaply. It authenticates as a real admitted provider
- * and talks through exactly the same RPCs the app would — `send_message`, the
- * same RLS, the same rate limits — so replying here exercises the phone's
+ * and talks through exactly the same RPCs the app would, `send_message`, the
+ * same RLS, the same rate limits, so replying here exercises the phone's
  * Realtime subscription, typing indicator and read receipts for real.
  *
  * It is a test and ops tool, not a product surface, and it is deliberately
@@ -153,7 +153,7 @@ for (const m of initial) {
   seen.add(m.id);
   show(m);
 }
-console.log('\n— type a reply and press enter; ctrl-c to quit —\n');
+console.log('\n, type a reply and press enter; ctrl-c to quit ,\n');
 
 // Polling rather than a socket: this is the side under test's *counterpart*, and
 // a poll here still exercises the phone's Realtime subscription when we send.

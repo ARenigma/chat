@@ -7,11 +7,23 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.uimanager.ReactShadowNode
 import com.facebook.react.uimanager.ViewManager
 
-/** The only custom native package in the app. Registered in MainApplication. */
+/**
+ * The custom native modules. Registered in MainApplication.
+ *
+ * Two unrelated modules share one package rather than each getting their own,
+ * because a `ReactPackage` is pure registration boilerplate and a second copy of
+ * it would carry no information. The name is now narrower than its contents;
+ * renaming it would touch MainApplication and a contract test for no behavioural
+ * gain, so it stays and says so here instead.
+ */
 class InAppUpdatePackage : ReactPackage {
     override fun createNativeModules(
         reactContext: ReactApplicationContext,
-    ): List<NativeModule> = listOf(InAppUpdateModule(reactContext))
+    ): List<NativeModule> = listOf(
+        InAppUpdateModule(reactContext),
+        GoogleCredentialModule(reactContext),
+        ConversationsModule(reactContext),
+    )
 
     override fun createViewManagers(
         reactContext: ReactApplicationContext,

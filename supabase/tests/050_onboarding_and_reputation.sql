@@ -52,10 +52,17 @@ reset role;
 
 -- And the constraint holds even against an operator doing it by hand, which is
 -- the whole reason it is a constraint.
-update public.profiles set date_of_birth = (current_date - interval '15 years')::date
-where id = 'dddddddd-0000-4000-8000-000000000004';
+--
+-- The birth date is set in the same statement as the role, not before it. 011
+-- added `member_is_pseudonymous`, so a member row carrying a birth date is no
+-- longer representable at all and the old two-step setup aborted the file under
+-- ON_ERROR_STOP. A CHECK is evaluated once per row after the whole UPDATE, so
+-- `provider_is_adult` is still what fires here, and the assertion is now the
+-- stronger one: it proves the constraint rather than proving the setup.
 select throws_ok(
-  $$update public.profiles set role = 'provider'
+  $$update public.profiles
+    set role = 'provider',
+        date_of_birth = (current_date - interval '15 years')::date
     where id = 'dddddddd-0000-4000-8000-000000000004'$$,
   '23514', null,
   'and cannot be promoted to provider even by service_role'
@@ -139,7 +146,7 @@ select is(
 );
 select is(
   (select missing_fields from public.my_application), ARRAY['about'],
-  'and exactly which field to fix — never "Something Missing"'
+  'and exactly which field to fix, never "Something Missing"'
 );
 select is(
   (select reviewer_note from public.my_application), 'Tell us a bit more.',
@@ -269,7 +276,7 @@ select is(
 );
 select is(
   public.refund_unanswered_messages(), 0,
-  'refunding is idempotent — the same message is never credited twice'
+  'refunding is idempotent, the same message is never credited twice'
 );
 
 select * from finish();

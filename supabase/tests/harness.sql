@@ -72,7 +72,7 @@ grant select, insert on test.fixture to public;
 -- Deferred to a function because the tables do not exist until the migrations
 -- have run; the runner calls this afterwards.
 -- Supabase's real behaviour is DEFAULT PRIVILEGES, applied when an object is
--- created — not a blanket grant afterwards. The difference is not academic: the
+-- created, not a blanket grant afterwards. The difference is not academic: the
 -- old version ran after every migration and therefore silently undid any
 -- `revoke ... from authenticated` a migration had just performed, so the suite
 -- would report a table as locked down while the harness had quietly reopened it.

@@ -35,7 +35,7 @@ export async function record(
       // Deliberately dropped rather than sent and rejected: the point is that
       // this data never leaves the device.
       if (__DEV__) {
-        console.warn(`telemetry: dropped "${name}" — unsafe prop key`);
+        console.warn(`telemetry: dropped "${name}", unsafe prop key`);
       }
       return;
     }

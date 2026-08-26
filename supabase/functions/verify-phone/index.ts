@@ -3,7 +3,7 @@
  * client's.
  *
  * The flow (ADR-0009, revised):
- *   1. The user is already signed in with Google — Supabase Auth issued the
+ *   1. The user is already signed in with Google, Supabase Auth issued the
  *      session, and this function does not create one.
  *   2. The MSG91 widget in the app sends and verifies a code, and hands the
  *      client a JWT access token.
@@ -18,20 +18,37 @@
  * the only source of the identifier.
  *
  * Secrets:
- *   MSG91_AUTHKEY  server-side key. NOT the widget's client token — that one
+ *   MSG91_AUTHKEY  server-side key. NOT the widget's client token, that one
  *                  ships in the APK and can be extracted; this one cannot leave
  *                  the function.
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
-const VERIFY_URL = 'https://api.msg91.com/api/v5/widget/verifyAccessToken';
+/**
+ * `control.msg91.com`, not `api.msg91.com`, and the authkey travels in the body.
+ *
+ * This file originally posted to `api.msg91.com` with the authkey in a header,
+ * which is what MSG91's general API docs describe. The widget's own Server Side
+ * Integration page describes something different, and it is the authoritative
+ * one for this endpoint:
+ *
+ *   curl --request POST 'https://control.msg91.com/api/v5/widget/verifyAccessToken'
+ *     --header 'Content-Type: application/json'
+ *     --data-raw '{"authkey": "...", "access-token": "..."}'
+ *
+ * Corrected to match. Note that both shapes returned `AuthenticationFailure`
+ * (code 201) when probed with a real, freshly minted access token, so the header
+ * placement was not the only problem and this change alone is not proven to fix
+ * it. See ADR-0009 §8 for what is verified and what is not.
+ */
+const VERIFY_URL = 'https://control.msg91.com/api/v5/widget/verifyAccessToken';
 
 /** E.164 with the plus. Must agree with the check in migration 010. */
 const E164 = /^\+[1-9][0-9]{7,14}$/;
 
 /**
  * MSG91 returns the identifier it verified. The field name varies by contact
- * point and across their docs, so several are accepted — but only one is ever
+ * point and across their docs, so several are accepted, but only one is ever
  * used, and it must survive the E.164 check below.
  */
 function extractPhone(payload: unknown): string | null {
@@ -99,8 +116,8 @@ Deno.serve(async request => {
 
   const response = await fetch(VERIFY_URL, {
     method: 'POST',
-    headers: { authkey, 'content-type': 'application/json' },
-    body: JSON.stringify({ 'access-token': accessToken }),
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ authkey, 'access-token': accessToken }),
   });
   const raw = await response.text();
 
@@ -110,7 +127,7 @@ Deno.serve(async request => {
   }
 
   // Same lesson as send-sms: MSG91 puts failures inside a 200, so success has to
-  // be proven. Here the proof is stronger than a status field — there must be a
+  // be proven. Here the proof is stronger than a status field, there must be a
   // usable E.164 identifier in the response, and if there is not, this is a
   // failure regardless of what the body claims.
   let parsed: unknown;

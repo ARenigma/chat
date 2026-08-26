@@ -14,8 +14,8 @@ import {
  *   - **It never blocks startup.** Every failure resolves rather than rejects,
  *     and the check runs after the app is interactive. An update check that can
  *     delay a cold start is a worse bug than a missed update.
- *   - **It never reports an error to the user.** Off Play — a debug build, a
- *     sideloaded APK, an emulator without the Play Store — the native side
+ *   - **It never reports an error to the user.** Off Play, a debug build, a
+ *     sideloaded APK, an emulator without the Play Store, the native side
  *     resolves `available: false`. There is nothing here anyone can act on.
  */
 

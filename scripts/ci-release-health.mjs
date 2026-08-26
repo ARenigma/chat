@@ -2,7 +2,7 @@
 /**
  * Stage 4 rollback trigger.
  *
- * Sentry can alert on a crash-free rate, but it cannot halt a Play rollout — so
+ * Sentry can alert on a crash-free rate, but it cannot halt a Play rollout, so
  * this polls release health and exits non-zero when the release is unhealthy,
  * which lets the workflow run `fastlane halt_rollout` before the bad build
  * reaches more users.
@@ -108,7 +108,7 @@ while (Date.now() < deadline) {
       `\nrelease-health UNHEALTHY: crash-free ${rate.toFixed(
         2,
       )}% is below ${THRESHOLD}% ` +
-        `over ${reading.sessions} sessions — halt the rollout`,
+        `over ${reading.sessions} sessions, halt the rollout`,
     );
     process.exit(1);
   }

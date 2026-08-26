@@ -22,15 +22,24 @@ export const LOW_BALANCE_THRESHOLD = 3;
 /** Tokens granted by `claim_daily_tokens`, at most once per 24h. */
 export const DAILY_REFILL_TOKENS = 25;
 
-/** Balance handed to a brand-new profile. Mirrors the column default. */
+/**
+ * Balance handed to a brand-new profile. Mirrors the column default, and a
+ * contract test now asserts that rather than trusting this comment: the pgTAP
+ * suite already checked the number by hand while nothing connected it to here.
+ */
 export const STARTING_BALANCE = 50;
 
 /** Hard input ceiling. Mirrors the CHECK constraint on `messages.body`. */
 export const MAX_MESSAGE_CHARS = 4000;
 
-export type LedgerError = 'INSUFFICIENT_BALANCE';
+/*
+ * Both types below are deliberately not exported. `applyDebit`'s return type is
+ * inferred at every call site, no caller has ever named either of them, and an
+ * exported type is a promise about a shape as much as a function is.
+ */
+type LedgerError = 'INSUFFICIENT_BALANCE';
 
-export type DebitResult =
+type DebitResult =
   | { readonly success: true; readonly newBalance: number }
   | { readonly success: false; readonly error: LedgerError };
 

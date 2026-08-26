@@ -10,21 +10,29 @@
  * deliberately offers no way to ask, because telling someone they have been
  * blocked is what turns a block into an invitation to make a second account.
  */
+import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
-import type { Block, MyReport, ReportReason } from '../lib/database.types';
+import type { Block, ReportReason } from '../lib/database.types';
 import { track } from '../lib/telemetry';
 import { errorTick, tick } from '../lib/haptics';
 import { useStore } from '../store/useStore';
 import { keys } from './chat';
 
-export const safetyKeys = {
+const safetyKeys = {
   blocks: ['blocks'] as const,
   myReports: ['my-reports'] as const,
 };
 
-/** The session's own block list — the only part of the block graph it may read. */
-export function useBlocks() {
+/**
+ * The session's own block list, the only part of the block graph it may read.
+ *
+ * Private on purpose. Callers want the answer to "have I blocked this person",
+ * never the rows, and `Block[]` in the interface would invite somebody to read
+ * `blocker_id` and conclude the list is symmetric. RLS returns only rows where
+ * the caller is the blocker, so it never has been.
+ */
+function useBlocks() {
   return useQuery<Block[]>({
     queryKey: safetyKeys.blocks,
     queryFn: async () => {
@@ -36,6 +44,27 @@ export function useBlocks() {
     },
     staleTime: 30_000,
   });
+}
+
+/**
+ * Everyone this session has blocked, as a set.
+ *
+ * This is the module's real interface, and three surfaces need it: the directory
+ * hides these people, the inbox rail hides them, and a thread with one of them
+ * is marked rather than removed. Before this existed each of those screens knew
+ * nothing about blocking, so a block silenced the send path and changed nothing
+ * a member could see.
+ *
+ * Memoised because the set is a dependency of `useMemo` filters in both screens,
+ * and a fresh Set every render would defeat them.
+ *
+ * An empty set while the query is in flight is the right default: it shows one
+ * frame of a person you blocked at worst, where the alternative is hiding people
+ * you did not block every time the app cold-starts.
+ */
+export function useBlockedPeerIds(): ReadonlySet<string> {
+  const { data } = useBlocks();
+  return useMemo(() => new Set((data ?? []).map(b => b.blocked_id)), [data]);
 }
 
 export function useBlockUser() {
@@ -61,8 +90,9 @@ export function useBlockUser() {
       track('user_blocked');
       setNotice('Blocked. They can no longer message you.', 'confirm');
       void queryClient.invalidateQueries({ queryKey: safetyKeys.blocks });
-      // The directory and inbox do not change, but the send path now refuses,
-      // so anything cached about this thread is stale.
+      // Both invalidations matter now. The block list drives what the directory
+      // and the inbox rail show, and the send path refuses, so anything cached
+      // about this thread is stale too.
       void queryClient.invalidateQueries({ queryKey: keys.conversationList });
     },
     onError: () => {
@@ -136,28 +166,22 @@ export function useSubmitReport() {
   });
 }
 
-/** Closing the loop matters: an unacknowledged report reads as nothing happened. */
-export function useMyReports() {
-  return useQuery<MyReport[]>({
-    queryKey: safetyKeys.myReports,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('my_reports')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (error) {
-        throw new Error(error.message);
-      }
-      return data;
-    },
-  });
-}
-
 /**
  * Whether *we* have blocked this peer, for rendering Block vs Unblock. Derived
  * from the block list we already hold rather than a second query.
  */
 export function useIsBlocked(peerId: string | undefined): boolean {
-  const { data } = useBlocks();
-  return (data ?? []).some(b => b.blocked_id === peerId);
+  const blocked = useBlockedPeerIds();
+  return peerId !== undefined && blocked.has(peerId);
 }
+
+/*
+ * There was a `useMyReports` here, reading the `my_reports` view. It had no
+ * caller and no screen: nothing in the app listed your past reports, so the hook
+ * was a surface with nothing behind it. The view and `submit_report` stay, so
+ * building that screen later is a hook away.
+ *
+ * Removed rather than kept for the day it is needed, because the same shape shipped
+ * once before as an orphaned ReviewSheet, and dead safety code is worse than
+ * missing safety code: it reads as a control that exists.
+ */

@@ -53,8 +53,14 @@ select function_privs_are(
   'authenticated', ARRAY[]::text[],
   'authenticated cannot approve provider applications'
 );
+-- The argument list moved in 011: send_message now carries a reply parent and a
+-- voice payload, and the two-argument signature was DROPPED rather than
+-- overloaded, because two candidates for a two-argument call leave PostgREST
+-- guessing which one a client meant. Every behavioural assertion below still
+-- calls it with two arguments and still passes, through the defaults.
 select function_privs_are(
-  'public', 'send_message', ARRAY['uuid', 'text'], 'authenticated', ARRAY['EXECUTE'],
+  'public', 'send_message', ARRAY['uuid', 'text', 'uuid', 'text', 'integer'],
+  'authenticated', ARRAY['EXECUTE'],
   'authenticated may send a message'
 );
 

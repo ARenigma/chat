@@ -1,10 +1,13 @@
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
+import { fadeSwap } from '../theme/motion';
 import type { ApplicationStatus } from '../lib/database.types';
 import { useMyApplication } from '../api/provider';
+import { longDate } from '../lib/datetime';
 import { Button } from '../components/Button';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
@@ -29,7 +32,7 @@ const FIELD_LABEL: Record<string, string> = {
  * This screen is the direct answer to the most instructive thing in Clarity's
  * store reviews: an applicant two weeks into "Profile Under Review / Something
  * Missing", mailing support, hearing nothing, and finally writing it up publicly
- * under the listing. The fix is not faster review — it is telling people the
+ * under the listing. The fix is not faster review, it is telling people the
  * truth continuously, and making `needs_info` something they can resolve alone.
  */
 const COPY: Record<ApplicationStatus, { title: string; body: string }> = {
@@ -71,19 +74,27 @@ export function ProviderStatusScreen({ onBack, onEdit }: Props) {
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
+      {/* A nav bar, not a Material Toolbar: a bare 22pt chevron in a transparent
+          target with a centred 17-semibold title, the same as ChatScreen and
+          ProviderApplicationScreen now. The filled 40pt grey circle plus a
+          left-aligned 15pt title was the strongest Android tell in the app. */}
       <View style={styles.header}>
         <Pressable
           onPress={onBack}
           testID="status-back"
           accessibilityLabel="Back"
-          press="chip"
-          size={40}
+          press="none"
+          highlight="ios"
+          size={28}
           style={styles.back}>
-          <Icon glyph="chevron-left" size={16} />
+          <Icon name="chevronLeft" size={22} />
         </Pressable>
-        <Text allowFontScaling style={styles.headerTitle}>
-          Your application
+        <Text allowFontScaling numberOfLines={1} style={styles.headerTitle}>
+          Your Application
         </Text>
+        {/* Balances the chevron so the title is centred on the bar rather than on
+            the space left over beside it. */}
+        <View style={styles.back} />
       </View>
 
       {isPending ? (
@@ -92,28 +103,56 @@ export function ProviderStatusScreen({ onBack, onEdit }: Props) {
         </View>
       ) : (
         <View style={styles.body}>
-          <Text testID="application-status" allowFontScaling style={styles.title}>
+          {/* Rule 7: both of these change when the query resolves and again on
+              every refetch that finds a new status, and they used to hard-cut. An
+              application status is the one thing on this screen somebody is
+              actually reading, so the change should be visible as a change.
+              Opacity only, keyed on the content so React remounts and Reanimated
+              fades the new string in. Nothing scales and nothing moves, which is
+              what makes it safe on a paragraph whose height varies with its
+              status. */}
+          <Animated.Text
+            key={copy.title}
+            entering={fadeSwap}
+            testID="application-status"
+            allowFontScaling
+            style={styles.title}>
             {copy.title}
-          </Text>
-          <Text allowFontScaling style={styles.copy}>
+          </Animated.Text>
+          <Animated.Text
+            key={copy.body}
+            entering={fadeSwap}
+            allowFontScaling
+            style={styles.copy}>
             {copy.body}
-          </Text>
+          </Animated.Text>
 
           {data?.submitted_at != null ? (
             <Text allowFontScaling style={styles.meta}>
-              Submitted {new Date(data.submitted_at).toLocaleDateString()}
+              {/* A bare toLocaleDateString() gives '8/22/2026' under Hermes
+                  whatever the device's region, because Hermes ships one locale.
+                  longDate() names the month. */}
+              Submitted {longDate(data.submitted_at)}
             </Text>
           ) : null}
 
           {(data?.missing_fields ?? []).length > 0 ? (
             <View testID="status-missing" style={styles.missingBox}>
               <Text allowFontScaling style={styles.missingTitle}>
-                Still needed
+                Still Needed
               </Text>
+              {/* The bullet is a sibling in a row, not a '• ' prefix inside the
+                  string: with the glyph in its own column a wrapped line aligns
+                  under the text rather than under the bullet. */}
               {(data?.missing_fields ?? []).map(f => (
-                <Text key={f} allowFontScaling style={styles.missingItem}>
-                  • {FIELD_LABEL[f] ?? f}
-                </Text>
+                <View key={f} style={styles.bulletRow}>
+                  <Text allowFontScaling style={styles.bullet}>
+                    •
+                  </Text>
+                  <Text allowFontScaling style={styles.missingItem}>
+                    {FIELD_LABEL[f] ?? f}
+                  </Text>
+                </View>
               ))}
             </View>
           ) : null}
@@ -121,7 +160,7 @@ export function ProviderStatusScreen({ onBack, onEdit }: Props) {
           {data?.reviewer_note != null && data.reviewer_note !== '' ? (
             <View style={styles.noteBox}>
               <Text allowFontScaling style={styles.missingTitle}>
-                From the reviewer
+                From the Reviewer
               </Text>
               <Text testID="reviewer-note" allowFontScaling style={styles.missingItem}>
                 {data.reviewer_note}
@@ -133,7 +172,7 @@ export function ProviderStatusScreen({ onBack, onEdit }: Props) {
 
           {actionable ? (
             <Button
-              label={status === 'needs_info' ? 'Fix and resubmit' : 'Finish my application'}
+              label={status === 'needs_info' ? 'Fix and Resubmit' : 'Finish Application'}
               onPress={onEdit}
               testID="status-edit"
             />
@@ -161,16 +200,16 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     borderBottomColor: t.color.border.hairline,
   },
   back: {
-    width: 40,
+    width: 28,
     height: 40,
-    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: t.color.bg.sunken,
   },
   headerTitle: {
-    ...TOKENS.typography.labelMedium,
+    ...TOKENS.typography.headline,
     color: t.color.text.primary,
+    flex: 1,
+    textAlign: 'center',
   },
   body: {
     flex: 1,
@@ -199,15 +238,28 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   missingBox: {
     marginTop: TOKENS.space.sm,
     padding: TOKENS.space.md,
-    borderRadius: TOKENS.radius.md,
+    borderRadius: TOKENS.radius.field,
+    borderCurve: 'continuous',
     backgroundColor: t.color.bg.sunken,
     gap: 2,
   },
+  // `bg/sunken`, matching missingBox. It was `bg/raised`, which is #FFFFFF in
+  // light mode and so is the page, so the reviewer's note had no box at all, on
+  // the one screen where a rejected applicant is looking for exactly that box.
   noteBox: {
     padding: TOKENS.space.md,
-    borderRadius: TOKENS.radius.md,
-    backgroundColor: t.color.bg.raised,
+    borderRadius: TOKENS.radius.field,
+    borderCurve: 'continuous',
+    backgroundColor: t.color.bg.sunken,
     gap: 2,
+  },
+  bulletRow: {
+    flexDirection: 'row',
+    gap: TOKENS.space['2xs'],
+  },
+  bullet: {
+    ...TOKENS.typography.captionRegular,
+    color: t.color.text.secondary,
   },
   missingTitle: {
     ...TOKENS.typography.labelMedium,
@@ -217,6 +269,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   missingItem: {
     ...TOKENS.typography.captionRegular,
     color: t.color.text.secondary,
+    flex: 1,
   },
   spacer: {
     flex: 1,

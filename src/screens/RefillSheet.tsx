@@ -1,14 +1,20 @@
 import React from 'react';
-import { DAILY_REFILL_TOKENS, LOW_BALANCE_THRESHOLD } from '../lib/tokenLedger';
+import { DAILY_REFILL_TOKENS } from '../lib/tokenLedger';
+import { formatRupees } from '../lib/rates';
 import { useClaimTokens } from '../api/chat';
 import { useStore } from '../store/useStore';
 import { Button } from '../components/Button';
 import { Sheet } from '../components/Sheet';
 
 /**
- * The only paywall-shaped surface. Opened by tapping the counter or by a send
- * blocked on an empty wallet — never by a balance change on its own, so it can
- * never interrupt a conversation.
+ * The only paywall-shaped surface. Opened by tapping the balance pill or a
+ * Recharge button, never by a balance change on its own, so it can never
+ * interrupt a conversation.
+ *
+ * Framed in rupees, not tokens (ADR-0019): talk time is charged by the minute,
+ * so the balance is money. The free grant is a starter credit rather than free
+ * tokens; the full ₹-tier / UPI Recharge screen is a later build, and this sheet
+ * is the interim top-up until it lands.
  */
 export function RefillSheet() {
   const visible = useStore(s => s.refillVisible);
@@ -20,20 +26,27 @@ export function RefillSheet() {
     <Sheet
       visible={visible}
       testID="refill-sheet"
-      title={balance === 0 ? 'You’re out of tokens' : `${balance ?? 0} tokens left`}
+      title={balance === 0 ? 'You’re Out of Balance' : `${formatRupees(balance)} balance`}
+      // 'She’ll still be here' was a gendered pronoun left over from the
+      // AI-persona era that ADR-0001 pivoted away from: the product is
+      // human-to-human and a provider is any gender.
       body={
-        `One message costs one token — nothing else spends them, not long replies ` +
-        `and not long messages. The nudge appears below ${LOW_BALANCE_THRESHOLD}. ` +
-        `She’ll still be here when you top up.`
+        `Talk time is charged by the minute, chat and calls alike, so your ` +
+        `balance is money you spend as you go. Top up to keep the conversation ` +
+        `going. They will still be here when you top up.`
       }
+      // 'Not Now' moves into the sheet's own bar, leaving one full-width
+      // primary, which is exactly the iOS sheet shape.
+      onCancel={close}
+      cancelLabel="Not Now"
       onClose={close}>
       <Button
-        label={claim.isPending ? 'Adding…' : `Add ${DAILY_REFILL_TOKENS} free tokens`}
+        label={`Add ${formatRupees(DAILY_REFILL_TOKENS)} Credit`}
+        busy={claim.isPending}
+        busyLabel="Adding credit"
         onPress={() => claim.mutate()}
-        disabled={claim.isPending}
         testID="refill-claim"
       />
-      <Button label="Not now" kind="secondary" onPress={close} />
     </Sheet>
   );
 }

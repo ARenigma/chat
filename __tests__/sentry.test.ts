@@ -54,7 +54,7 @@ describe('scrubText', () => {
   });
 });
 
-describe('sanitizeSentryEvent — message content', () => {
+describe('sanitizeSentryEvent, message content', () => {
   it('redacts a captureMessage that carried the prompt', () => {
     const event = sanitizeSentryEvent({ message: PROMPT });
     expect(event?.message).toBe(REDACTED);
@@ -100,7 +100,7 @@ describe('sanitizeSentryEvent — message content', () => {
   });
 });
 
-describe('sanitizeSentryEvent — identifiers', () => {
+describe('sanitizeSentryEvent, identifiers', () => {
   it('keeps the opaque user id and drops email, ip and username', () => {
     const event = sanitizeSentryEvent({
       user: {
@@ -142,7 +142,7 @@ describe('sanitizeSentryEvent — identifiers', () => {
   });
 });
 
-describe('sanitizeSentryEvent — exceptions', () => {
+describe('sanitizeSentryEvent, exceptions', () => {
   it('scrubs identifiers out of the exception value but keeps the type', () => {
     const event = sanitizeSentryEvent({
       exception: {
@@ -224,7 +224,7 @@ describe('sanitizeSentryBreadcrumb', () => {
   });
 });
 
-describe('sanitizeSentryEvent — contract', () => {
+describe('sanitizeSentryEvent, contract', () => {
   it('passes null through', () => {
     expect(sanitizeSentryEvent(null)).toBeNull();
   });

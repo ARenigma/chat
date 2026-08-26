@@ -1,4 +1,4 @@
-# ADR-0002 — One app, server-gated role switch
+# ADR-0002, One app, server-gated role switch
 
 - **Status:** Accepted (2026-08-20)
 - **Decision by:** Amit Ranjan
@@ -61,7 +61,7 @@ not going to be one.
 ## Consequences
 
 - One repo, one app, one pipeline. No monorepo split for now.
-- The provider surface must be built to the same design system — it is the same
+- The provider surface must be built to the same design system, it is the same
   app, so there is no second visual language to maintain. That is a real saving.
 - Web push is not a concern; native notifications work for both roles.
 - If Play rejects on the ADR-0001 policy question, supply and demand fail

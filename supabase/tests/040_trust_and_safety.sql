@@ -30,7 +30,7 @@ select has_trigger(
 );
 
 -- is_blocked_pair answers "is A blocked by B" for arbitrary pairs, so a client
--- must not be able to call it — that is the disclosure the missing SELECT policy
+-- must not be able to call it, that is the disclosure the missing SELECT policy
 -- on blocks exists to prevent.
 select function_privs_are(
   'public', 'is_blocked_pair', ARRAY['uuid', 'uuid'], 'authenticated', ARRAY[]::text[],
@@ -106,7 +106,7 @@ select is(
 select is(
   (select token_balance from public.profiles
     where id = 'bbbbbbbb-0000-4000-8000-000000000002'),
-  49, 'a blocked send costs nothing — only the one pre-block message was billed'
+  49, 'a blocked send costs nothing, only the one pre-block message was billed'
 );
 reset role;
 

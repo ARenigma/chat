@@ -12,7 +12,7 @@
 const DEFAULT_COUNTRY = '91';
 
 /**
- * To E.164 without the leading `+` — digits only, country code included.
+ * To E.164 without the leading `+`, digits only, country code included.
  *
  * Returns null rather than throwing, because the caller is a text field and an
  * incomplete number is the normal state of one, not an error.

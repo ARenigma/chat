@@ -1,234 +1,92 @@
 import React, { memo } from 'react';
-import { StyleSheet, View } from 'react-native';
-import type { Theme } from '../theme/tokens';
-import { useStyles, useTheme } from '../theme/ThemeProvider';
+import { StyleSheet, Text } from 'react-native';
+import { useTheme } from '../theme/ThemeProvider';
+import {
+  ICON_FAMILY,
+  ICON_FAMILY_FILLED,
+  ICON_GLYPH,
+  type IconName,
+} from '../theme/icons.generated';
 
-export type Glyph =
-  | 'chevron-left'
-  | 'chevron-right'
-  | 'arrow-up'
-  | 'close'
-  | 'dots'
-  | 'plus'
-  | 'search'
-  | 'shield';
-
+/**
+ * Every icon in the app, rendered as a Material Symbols glyph in a font.
+ *
+ * **A font, not SVG and not hand-drawn geometry.** react-native-svg is banned
+ * here — it throws `synchronouslyUpdateUIProps` inside Reanimated views and
+ * kills touch on the subtree. The previous version of this file drew each of ~19
+ * glyphs from `View` borders, which is what made `bubble` render as an empty box
+ * and `phone` as a bare arc at display size. A glyph in a font is plain `<Text>`:
+ * safe inside Reanimated, tinted by `color`, and scaled by `fontSize`.
+ *
+ * **Style, weight and set live in `design/icons.json`**, and `npm run icons`
+ * regenerates the subset fonts and `icons.generated.ts` from it — the same
+ * pipeline as the type tokens. Swapping Rounded for Outlined is a one-line config
+ * change plus a regenerate, which is the "change instantly like fonts" the icon
+ * set was asked to support.
+ *
+ * **`active` swaps to the filled face.** React Native Android cannot animate the
+ * Material `FILL` axis at runtime, so the generator ships two static instances —
+ * outlined and filled — and this picks between them. That is Material's own
+ * selection pattern (a filled tab icon is the selected tab), and it adds a shape
+ * signal on top of the colour one, which colour-blind users cannot read.
+ */
 interface Props {
-  glyph: Glyph;
+  name: IconName;
+  /** Selected / live state. Renders the filled face. */
+  active?: boolean;
   size?: number;
   color?: string;
   testID?: string;
+  /**
+   * Hidden from the accessibility tree by default: an icon almost always sits
+   * beside a label or inside a labelled control, so announcing the glyph too is
+   * noise. Pass an `accessibilityLabel` only for an icon that stands alone as the
+   * whole meaning of its control.
+   */
+  accessibilityLabel?: string;
 }
 
-/**
- * Six glyphs drawn with borders and Views — no SVG, no icon font, no dependency.
- *
- * This started as react-native-svg and had to be rewritten: an SVG dispatches a
- * layout event from inside its draw pass (`VirtualView.setClientRect`), and
- * Reanimated responds with a synchronous prop update, which throws
- * `synchronouslyUpdateUIProps failed` and kills touch handling on the whole
- * subtree. Every icon here sits inside an animated pressable, so that collision
- * was unavoidable. Borders have none of that machinery.
- *
- * A chevron is a square with two adjacent borders rotated 45 degrees. An arrow is
- * that same head over a bar. A plus is two crossed bars — and a close is the same
- * plus, turned 45 degrees. A shield is a rounded square with its lower corners
- * heavily rounded. A magnifier is a circle with a short bar at its corner —
- * enough to read as "search" without needing an icon set.
- */
-function IconView({ glyph, size = 16, color, testID }: Props) {
-  const styles = useStyles(makeStyles);
+const DEFAULT_SIZE = 24;
+
+function IconView({ name, active = false, size = DEFAULT_SIZE, color, testID, accessibilityLabel }: Props) {
   const theme = useTheme();
-  const stroke = color ?? theme.color.text.primary;
-  const weight = Math.max(1.5, size / 9);
-
-  if (glyph === 'dots') {
-    const dot = Math.max(3, size / 4.5);
-    return (
-      <View testID={testID} style={[styles.row, { gap: dot * 0.8 }]}>
-        {[0, 1, 2].map(i => (
-          <View
-            key={i}
-            style={{
-              width: dot,
-              height: dot,
-              borderRadius: dot / 2,
-              backgroundColor: stroke,
-            }}
-          />
-        ))}
-      </View>
-    );
-  }
-
-  if (glyph === 'plus' || glyph === 'close') {
-    return (
-      <View
-        testID={testID}
-        style={[
-          styles.center,
-          { width: size, height: size },
-          glyph === 'close' && styles.turned,
-        ]}
-      >
-        <View
-          style={[
-            styles.absolute,
-            {
-              width: size * 0.78,
-              height: weight,
-              borderRadius: weight / 2,
-              backgroundColor: stroke,
-            },
-          ]}
-        />
-        <View
-          style={[
-            styles.absolute,
-            {
-              width: weight,
-              height: size * 0.78,
-              borderRadius: weight / 2,
-              backgroundColor: stroke,
-            },
-          ]}
-        />
-      </View>
-    );
-  }
-
-  if (glyph === 'search') {
-    const ring = size * 0.62;
-    return (
-      <View
-        testID={testID}
-        style={[styles.center, { width: size, height: size }]}
-      >
-        <View
-          style={{
-            width: ring,
-            height: ring,
-            borderRadius: ring / 2,
-            borderWidth: weight,
-            borderColor: stroke,
-            // Offset up-left so the handle has room without growing the box.
-            transform: [
-              { translateX: -size * 0.07 },
-              { translateY: -size * 0.07 },
-            ],
-          }}
-        />
-        <View
-          style={[
-            styles.absolute,
-            {
-              right: size * 0.12,
-              bottom: size * 0.14,
-              width: size * 0.3,
-              height: weight,
-              borderRadius: weight / 2,
-              backgroundColor: stroke,
-              transform: [{ rotate: '45deg' }],
-            },
-          ]}
-        />
-      </View>
-    );
-  }
-
-  if (glyph === 'shield') {
-    return (
-      <View
-        testID={testID}
-        style={[styles.center, { width: size, height: size }]}
-      >
-        <View
-          style={{
-            width: size * 0.72,
-            height: size * 0.82,
-            borderWidth: weight,
-            borderColor: stroke,
-            borderTopLeftRadius: weight,
-            borderTopRightRadius: weight,
-            borderBottomLeftRadius: size * 0.36,
-            borderBottomRightRadius: size * 0.36,
-          }}
-        />
-      </View>
-    );
-  }
-
-  const head = size * 0.62;
-  const headStyle = {
-    width: head,
-    height: head,
-    borderColor: stroke,
-    borderTopWidth: weight,
-    borderRightWidth: weight,
-  };
-
-  if (glyph === 'arrow-up') {
-    return (
-      <View
-        testID={testID}
-        style={[styles.center, { width: size, height: size }]}
-      >
-        <View
-          style={[
-            styles.absolute,
-            {
-              width: weight,
-              height: size * 0.86,
-              borderRadius: weight / 2,
-              backgroundColor: stroke,
-            },
-          ]}
-        />
-        <View
-          style={[
-            headStyle,
-            styles.absolute,
-            { top: weight, transform: [{ rotate: '-45deg' }] },
-          ]}
-        />
-      </View>
-    );
-  }
-
+  const glyph = ICON_GLYPH[name];
   return (
-    <View
+    <Text
       testID={testID}
-      style={[styles.center, { width: size * 0.7, height: size }]}
-    >
-      <View
-        style={[
-          headStyle,
-          {
-            transform: [
-              { rotate: glyph === 'chevron-right' ? '45deg' : '-135deg' },
-            ],
-          },
-        ]}
-      />
-    </View>
+      allowFontScaling={false}
+      accessible={accessibilityLabel !== undefined}
+      accessibilityLabel={accessibilityLabel}
+      importantForAccessibility={
+        accessibilityLabel === undefined ? 'no-hide-descendants' : 'yes'
+      }
+      style={[
+        styles.glyph,
+        {
+          fontFamily: active ? ICON_FAMILY_FILLED : ICON_FAMILY,
+          // Square line height so the glyph box is not taller than the glyph,
+          // which would misalign it against adjacent text.
+          fontSize: size,
+          lineHeight: size,
+          width: size,
+          height: size,
+          color: color ?? theme.color.text.primary,
+        },
+      ]}>
+      {glyph}
+    </Text>
   );
 }
 
 export const Icon = memo(IconView);
 
-const makeStyles = (_t: Theme) => StyleSheet.create({
-  center: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  absolute: {
-    position: 'absolute',
-  },
-  turned: {
-    transform: [{ rotate: '45deg' }],
+export type { IconName };
+
+const styles = StyleSheet.create({
+  glyph: {
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    // A Material Symbols glyph is centred in an em square; no extra padding.
+    includeFontPadding: false,
   },
 });

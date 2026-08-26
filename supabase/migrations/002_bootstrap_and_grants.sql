@@ -9,7 +9,7 @@
 -- SECURITY (why part 2 is not optional): `deduct_user_token(p_user_id, p_cost)`
 -- is SECURITY DEFINER and Postgres grants EXECUTE to PUBLIC by default. Left as
 -- is, any signed-in client could call it with another user's id, or with a
--- negative p_cost — `50 - (-100) = 150` — and mint tokens for free. The revokes
+-- negative p_cost, `50 - (-100) = 150`, and mint tokens for free. The revokes
 -- below are the fix; only service_role (the Edge Function) may move the wallet.
 
 -- ---------------------------------------------------------------------------

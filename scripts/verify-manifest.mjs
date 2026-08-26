@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 /**
- * Play Store permission gate.
+ * Manifest gate: the permission set, plus the two attributes a merge could hand
+ * back to a library without anybody noticing, `allowBackup="false"` on the
+ * application, and the ABSENCE of `screenOrientation` on the launcher activity.
  *
- * Checks the source manifest, and — when a release build has been run — the
+ * Checks the source manifest, and, when a release build has been run, the
  * *merged* manifest too, which is the only artefact that reflects what a
  * transitive dependency actually contributed.
  *
@@ -20,22 +22,39 @@ const ALLOWED = new Set([
   'android.permission.VIBRATE',
   // Added with push. This is a permission the Play listing has to justify, and
   // the justification is the product's core loop: without it a reply reaches a
-  // backgrounded app nowhere at all. It grants no access to data — only the
+  // backgrounded app nowhere at all. It grants no access to data, only the
   // ability to draw a notification the user can turn off in Settings.
   'android.permission.POST_NOTIFICATIONS',
+  // Added with voice notes, and it is the most expensive entry on this list: it
+  // is the first permission here that reaches a sensor, and it moved out of
+  // FORBIDDEN below rather than being appended to a growing set.
+  //
+  // Deliberately NOT in ALLOWED_FROM_LIBRARIES even though
+  // react-native-nitro-sound declares it. That set exists for permissions a
+  // dependency needs and we do not use; the microphone is a product decision
+  // this app owns, so it is declared in our own source manifest and required
+  // here. The cost is paid twice over: the Play Data Safety form gains an Audio
+  // row, and the privacy page loses the sentence that said no microphone.
+  //
+  // What this gate can no longer do, stated plainly rather than left to be
+  // discovered: while RECORD_AUDIO was forbidden, no dependency could quietly
+  // acquire the microphone. Now only a *new* permission is caught. The narrower
+  // protection left is that recording is confined to src/lib/recorder.ts, which
+  // a contract assertion checks.
+  'android.permission.RECORD_AUDIO',
 ]);
 
 /**
  * Permitted in the merged output but NOT declared by us.
  *
  * These are the permissions firebase-messaging merges in, which is precisely
- * the case this script exists to surface — so they are named, with a reason,
+ * the case this script exists to surface, so they are named, with a reason,
  * rather than pattern-matched away.
  *
  * WAKE_LOCK is how a push wakes a sleeping device long enough to hand the
  * message to the app. c2dm RECEIVE is the transport permission FCM's own
  * receiver is protected by. Neither grants access to user data, neither is
- * user-visible on Play, and neither is optional if push exists at all — the
+ * user-visible on Play, and neither is optional if push exists at all, the
  * only way to drop them is to drop notifications.
  *
  * The distinction from ALLOWED matters: ALLOWED is also the *required* set, so
@@ -73,7 +92,10 @@ const FORBIDDEN = [
   'android.permission.ACCESS_COARSE_LOCATION',
   'android.permission.READ_CONTACTS',
   'android.permission.CAMERA',
-  'android.permission.RECORD_AUDIO',
+  // RECORD_AUDIO used to be here. It is in ALLOWED now, with the reason and the
+  // cost written above. CAMERA stays: there is no video call and no photo input,
+  // so a camera permission appearing in the merged manifest would still mean a
+  // dependency wants something the product does not do.
   'android.permission.READ_PHONE_STATE',
   'android.permission.QUERY_ALL_PACKAGES',
 ];
@@ -81,12 +103,31 @@ const FORBIDDEN = [
 const failures = [];
 const notes = [];
 
-/** Permissions actually requested — `tools:node="remove"` entries are removals. */
+/** Permissions actually requested, `tools:node="remove"` entries are removals. */
 function declaredPermissions(xml) {
   return [...xml.matchAll(/<uses-permission[^>]*>/g)]
     .filter(([tag]) => !tag.includes('tools:node="remove"'))
     .map(([tag]) => tag.match(/android:name="([^"]+)"/)?.[1])
     .filter(Boolean);
+}
+
+/**
+ * Our own launcher activity's opening tag, in either manifest's spelling: the
+ * source writes `.MainActivity` and the merger expands it against the namespace.
+ *
+ * Returned as a tag rather than searched for across the whole file because three
+ * library activities merge in beside ours (Play Core's dialog wrapper and two
+ * from GMS auth), and any of them could satisfy a file-wide attribute match
+ * while MainActivity had lost the attribute.
+ */
+function launcherActivity(xml) {
+  return (
+    [...xml.matchAll(/<activity\b[^>]*>/g)]
+      .map(([tag]) => tag)
+      .find(tag =>
+        /android:name="(?:\.|com\.companionchat\.)MainActivity"/.test(tag),
+      ) ?? ''
+  );
 }
 
 function check(label, xml) {
@@ -110,8 +151,52 @@ function check(label, xml) {
   if (!/android:allowBackup="false"/.test(xml)) {
     failures.push(`${label}: android:allowBackup must be "false"`);
   }
+  /*
+   * The ABSENCE of an orientation restriction, checked against the merged output
+   * and not only against our own file.
+   *
+   * This check was inverted on 2026-08-26. It used to REQUIRE
+   * `screenOrientation="portrait"`, which the app carried to avoid the input
+   * method's fullscreen extract editor in landscape. That cause is now fixed at
+   * source — every field goes through `src/components/TextField.tsx`, which
+   * forces React Native's `disableFullscreenUI` on — so the restriction is gone
+   * and https://developer.android.com/guide/topics/large-screens is satisfied.
+   *
+   * Checked against the MERGED manifest because an activity attribute is the one
+   * claim here a dependency can hand back in silence: a library declaring
+   * `screenOrientation` wins by default, which is precisely the mechanism
+   * react-native-firebase already uses on the notification colour two elements
+   * away. A dependency quietly re-locking the app to portrait is a large-screen
+   * regression nobody would see on a phone.
+   */
+  const orientation = /android:screenOrientation="([^"]+)"/.exec(
+    launcherActivity(xml),
+  );
+  if (orientation) {
+    failures.push(
+      `${label}: MainActivity must not restrict orientation, found "${orientation[1]}". ` +
+        'Large-screen guidance forbids it and the reason it was locked is fixed ' +
+        'in src/components/TextField.tsx.',
+    );
+  }
+  /*
+   * `configChanges` matters MORE without the lock than it did with it. Rotation,
+   * split screen, freeform and a folding hinge all resize the window, and losing
+   * these entries turns a configuration change into an activity restart, which
+   * rebuilds the surface and costs somebody's half-typed message.
+   */
+  for (const required of ['orientation', 'screenSize', 'keyboardHidden']) {
+    const configChanges = /android:configChanges="([^"]*)"/.exec(
+      launcherActivity(xml),
+    );
+    if (!configChanges || !configChanges[1].includes(required)) {
+      failures.push(
+        `${label}: MainActivity configChanges must include ${required}`,
+      );
+    }
+  }
   notes.push(
-    `${label}: ${declared.length} permission(s) — ${declared.join(', ')}`,
+    `${label}: ${declared.length} permission(s), ${declared.join(', ')}`,
   );
 }
 
@@ -128,7 +213,7 @@ const MERGED_DIR = join(
 /**
  * Release variants only. React Native's debug manifest legitimately adds
  * SYSTEM_ALERT_WINDOW so the dev menu can draw over the app, and debug artefacts
- * are never distributed — auditing them reports a violation that cannot ship.
+ * are never distributed, auditing them reports a violation that cannot ship.
  */
 const merged = existsSync(MERGED_DIR)
   ? readdirSync(MERGED_DIR, { recursive: true, encoding: 'utf8' }).filter(
@@ -140,7 +225,7 @@ const merged = existsSync(MERGED_DIR)
 
 if (merged.length === 0) {
   notes.push(
-    'merged manifest: no release variant built yet — run `npm run android:release` ' +
+    'merged manifest: no release variant built yet, run `npm run android:release` ' +
       'to verify what dependencies actually contribute',
   );
 } else {

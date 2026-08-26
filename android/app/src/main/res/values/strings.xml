@@ -1,3 +1,27 @@
 <resources>
-    <string name="app_name">CompanionChat</string>
+    <!--
+      The launcher label, and the only place the product's name reaches a user on
+      the device. Renamed from CompanionChat on 2026-08-23, and from Papal to Pappal on
+      2026-08-26.
+
+      Deliberately NOT accompanied by an applicationId change: the package stays
+      `com.companionchat`. It is the identity Play, Firebase, the upload keystore
+      and the `companionchat://` OAuth redirect are all keyed to, and renaming it
+      means a new Play listing, a new Firebase app and a broken sign-in redirect.
+      A user never sees an applicationId.
+    -->
+    <string name="app_name">Pappal</string>
+
+    <!--
+      The notification channel a user sees in Settings. Named for what it
+      carries, not for the app: "Pappal notifications" tells somebody nothing
+      about what they would be silencing.
+    -->
+    <string name="channel_conversations">Messages</string>
+    <string name="channel_conversations_desc">Someone you are talking to has replied</string>
+
+    <!-- MessagingStyle needs a name for the device owner to attribute outgoing
+         lines to. It is never displayed for a one-to-one thread, but a null here
+         makes the style refuse to build. -->
+    <string name="you">You</string>
 </resources>

@@ -14,7 +14,10 @@ interface Props {
   bloomKey: number;
 }
 
-const SIZE = 40;
+// 32, not 40. iOS's in-field send button is about 30pt, and hitSlop derived from
+// INTERACTION.minTarget already carries the target, so the visual can shrink to
+// the platform's size without losing a pixel of tappable area.
+const SIZE = 32;
 
 /**
  * The most-touched element in the app, and the one place the signature motion
@@ -25,12 +28,19 @@ const SIZE = 40;
  * something taking weight. Uniform scaling reads as "the button got smaller";
  * non-uniform scaling reads as mass. The bubble that arrives a moment later
  * enters with the matching stretch (see `bubbleLaunch`), so the two halves of
- * one gesture rhyme — squeezed here, released there.
+ * one gesture rhyme, squeezed here, released there.
+ *
+ * **This is a deliberate brand exception to the iOS pass, not an oversight.**
+ * Every other press model in the app moved to `highlight="ios"`, which does not
+ * scale at all; iOS's own send button scales *up* briefly and dims. The squash
+ * stays because it is the one moment the product is built around and because it
+ * rhymes with the bubble's arrival, which nothing on the platform does. Stated
+ * here so the next reader does not "finish" the pass by deleting it.
  *
  * On release it emits a single ring. One ring, not a particle system: the point
  * is to confirm a token was spent, and confirmation is a full stop rather than a
  * celebration. The ring is driven 1 → 0 so an idle button carries no halo, which
- * an earlier version did — a permanent 18% wash that looked like a rendering bug.
+ * an earlier version did, a permanent 18% wash that looked like a rendering bug.
  */
 function SendButtonView({ onPress, disabled, bloomKey }: Props) {
   const styles = useStyles(makeStyles);
@@ -68,7 +78,7 @@ function SendButtonView({ onPress, disabled, bloomKey }: Props) {
         accessibilityHint="Spends one token"
         style={[styles.button, disabled && styles.buttonDisabled]}>
         <Icon
-          glyph="arrow-up"
+          name="arrowUp"
           size={20}
           color={disabled ? theme.color.text.tertiary : theme.color.text.onAccent}
         />

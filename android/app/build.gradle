@@ -2,6 +2,7 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 apply plugin: "com.google.gms.google-services"
+apply plugin: "androidx.baselineprofile"
 
 /**
  * This is the configuration block to customize your React Native Android app.
@@ -58,7 +59,7 @@ react {
 /**
  * Release signing is read from `android/keystore.properties`, which is
  * git-ignored. When that file is absent (CI typechecks, a contributor's clone)
- * the release build still assembles — unsigned — instead of failing, so build
+ * the release build still assembles, unsigned, instead of failing, so build
  * verification never depends on holding the upload key.
  * See keystore.properties.example.
  */
@@ -93,7 +94,7 @@ def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
  * A release build now REFUSES to fall back to 1, and that guard exists because
  * the old behaviour was a trap with a delayed trigger. Play only cares that
  * versionCode strictly increases, so the first upload of `1` succeeds and looks
- * fine — and then every subsequent local build is also `1` and is rejected at
+ * fine, and then every subsequent local build is also `1` and is rejected at
  * upload, long after anyone remembers why. The failure lands on the person
  * shipping an update, not the person who set this up.
  *
@@ -106,6 +107,9 @@ def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
  */
 def wantsRelease = gradle.startParameter.taskNames.any {
     it.toLowerCase().contains("release")
+}
+def wantsInternal = gradle.startParameter.taskNames.any {
+    it.toLowerCase().contains("internal")
 }
 def explicitVersionCode = System.getenv("CI_PIPELINE_IID") ?: project.findProperty("versionCode")
 
@@ -121,7 +125,40 @@ if (wantsRelease && explicitVersionCode == null) {
     )
 }
 
-def ciBuildNumber = (explicitVersionCode ?: "1") as Integer
+/**
+ * The version users see. Required, because a build with no version is not a
+ * release candidate and a default here would hide a missing property.
+ */
+def versionNameProperty = project.findProperty("VERSION_NAME")
+if (versionNameProperty == null || !(versionNameProperty ==~ /\d+\.\d+\.\d+/)) {
+    throw new GradleException(
+        "VERSION_NAME must be set in android/gradle.properties as MAJOR.MINOR.PATCH.\n" +
+        "  Found: ${versionNameProperty}"
+    )
+}
+
+/**
+ * Internal builds derive their versionCode from the version name.
+ *
+ * The App Distribution update prompt only fires when the *code* increases, so a
+ * tester on a fixed versionCode would never be offered anything no matter how
+ * many builds we pushed. Deriving it means bumping VERSION_NAME is enough, with
+ * nothing else to remember and no counter file to drift out of step.
+ *
+ * 1.0.1 -> 10001, 1.2.3 -> 10203. Monotonic with semver as long as minor and
+ * patch stay under 100, which is a limit worth having: a 100th patch on one
+ * minor version is a signal, not a version number.
+ *
+ * Release builds are deliberately NOT derived. Play needs a code that strictly
+ * increases across everything ever uploaded, and CI's pipeline number is the
+ * only thing that actually guarantees that.
+ */
+def derivedInternalCode = {
+    def parts = (versionNameProperty as String).tokenize('.').collect { it as Integer }
+    parts[0] * 10000 + parts[1] * 100 + parts[2]
+}()
+
+def ciBuildNumber = (explicitVersionCode ?: (wantsInternal ? derivedInternalCode : "1")) as Integer
 
 android {
     /**
@@ -131,7 +168,7 @@ android {
      * React Native resolves a bundled face by looking for `fonts/<PostScript
      * name>.ttf` in the APK's assets, and adding the repo's `assets` directory as
      * a source dir puts `assets/fonts/Urbanist-*.ttf` at exactly that path. The
-     * alternative — copying the five .ttf files into the Android tree — means two
+     * alternative, copying the five .ttf files into the Android tree, means two
      * copies of a binary in git and a silent drift the day someone updates one.
      */
     sourceSets {
@@ -153,7 +190,7 @@ android {
         // back to 1; a release build without an explicit number refuses to
         // build at all rather than producing a duplicate Play would reject.
         versionCode ciBuildNumber
-        versionName "1.0.0"
+        versionName versionNameProperty
 
         // Native symbols for Play Console crash reports. Costs nothing at
         // runtime; the symbol file is stripped out of the delivered APKs.
@@ -178,8 +215,24 @@ android {
         }
     }
     buildTypes {
+        /**
+         * Screen capture is blocked per build type, not per app.
+         *
+         * `FLAG_SECURE` is the product's rule and it belongs in what users install.
+         * It is also the reason nobody can look at the app while building it: a
+         * secure window returns nothing to `screencap`, so on-device visual
+         * verification stops working entirely, which is how three bugs reached a
+         * device in this project already.
+         *
+         * So `release` blocks it and the two build types nobody ships do not.
+         * `internal` goes to two named testers who are the founders; the trade of
+         * their screenshots against being able to frame-step the UI is obviously
+         * worth taking, and it is a trade rather than a hole because Play only ever
+         * receives `release`. A contract test asserts release stays true.
+         */
         debug {
             signingConfig signingConfigs.debug
+            buildConfigField "boolean", "BLOCK_SCREENSHOTS", "false"
         }
         release {
             // Never the debug key: an APK signed with the shared debug keystore
@@ -188,6 +241,59 @@ android {
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+            buildConfigField "boolean", "BLOCK_SCREENSHOTS", "true"
+        }
+
+        /**
+         * What testers install, via Firebase App Distribution.
+         *
+         * `initWith release` rather than a hand-copied block, because the whole
+         * point of a test build is that it is the release build. It inherits
+         * minification, resource shrinking, the ProGuard rules and the upload
+         * signing config, so a crash a tester hits is a crash that would have
+         * shipped. A test build with minification off tests a different app.
+         *
+         * The one difference is the Firebase App Distribution SDK, added below
+         * for this variant only. That SDK must never reach Play: Google ships it
+         * as a beta artefact whose job is to sideload APKs, which is not
+         * something a store build should be able to do.
+         *
+         * `matchingFallbacks` is not optional. Every AAR we depend on publishes
+         * only `debug` and `release`, so without it AGP cannot resolve a variant
+         * called `internal` and fails on the first library it reaches.
+         *
+         * No `applicationIdSuffix`. It is tempting, and it would break Google
+         * sign-in: the OAuth redirect goes to the `companionchat://` scheme and
+         * Supabase validates against a fixed redirect list, so a different
+         * application id would only change which app cannot be signed into.
+         */
+        internal {
+            initWith release
+            matchingFallbacks = ["release"]
+            signingConfig hasReleaseKeystore ? signingConfigs.release : null
+
+            /*
+             * The manifest interpolates `${usesCleartextTraffic}`, and the React
+             * Native Gradle Plugin only fills it in for `debug` and `release` --
+             * it does it after this block is evaluated, so `initWith` cannot
+             * inherit it either. Without this line the build dies at
+             * `processInternalMainManifest` with "requires a placeholder
+             * substitution", which reads like a broken manifest rather than a
+             * missing build type.
+             *
+             * `false`, matching release. A test build that quietly allows
+             * cleartext is a test build that cannot reproduce a TLS problem.
+             */
+            manifestPlaceholders["usesCleartextTraffic"] = false
+
+            /*
+             * The one place internal deliberately differs from release in
+             * behaviour rather than only in dependencies. Everything else about
+             * this variant is release, so a crash a tester hits is a crash that
+             * would have shipped; this is the exception, and it exists so the UI
+             * can be looked at.
+             */
+            buildConfigField "boolean", "BLOCK_SCREENSHOTS", "false"
         }
     }
 }
@@ -209,6 +315,68 @@ dependencies {
      * call sites.
      */
     implementation("com.google.android.play:app-update:2.1.0")
+
+    /**
+     * Firebase App Distribution, which is the *other* update prompt.
+     *
+     * These two do not overlap and both are needed. Play's in-app update only
+     * works for an app installed from Play, so on a tester's sideloaded build it
+     * fails to bind to the service and correctly reports nothing available. App
+     * Distribution is the reverse: it is how a tester on a sideloaded build gets
+     * told a newer one exists, and it is meaningless once the app is on Play.
+     *
+     * The split below is Google's, and it is what makes a single call site safe:
+     *
+     *   -api  in every variant. A no-op stub in builds without the full SDK, so
+     *         `updateIfNewReleaseAvailable()` compiles and does nothing rather
+     *         than needing a variant-specific source set and a stub of our own.
+     *   full  in `internal` only. This is the part that checks for a release,
+     *         shows the dialog, downloads and installs.
+     *
+     * So MainActivity calls it unconditionally and the release APK carries only
+     * the stub. A contract test asserts the full SDK never becomes a plain
+     * `implementation`, because that one-word change is how it would silently
+     * end up in a Play upload.
+     */
+    implementation("com.google.firebase:firebase-appdistribution-api:16.0.0-beta20")
+    internalImplementation("com.google.firebase:firebase-appdistribution:16.0.0-beta20")
+
+    /**
+     * Sign in with Google, in an app-owned bottom sheet.
+     *
+     * Credential Manager is the platform API Google now requires for this; the
+     * old GoogleSignInClient is deprecated and the browser redirect it replaced
+     * is the only step that used to take a user out of the onboarding.
+     *
+     *   credentials                    the AndroidX API surface
+     *   credentials-play-services-auth the Play services provider that actually
+     *                                  renders the sheet. Without it every
+     *                                  request fails with NoCredentialException
+     *                                  on a device that plainly has accounts.
+     *   googleid                       GetGoogleIdOption and the token type
+     *
+     * No coroutines dependency is declared: `getCredential` is a suspend
+     * function, and kotlinx-coroutines already arrives transitively through
+     * androidx.credentials. Declaring it again would risk pinning a version
+     * against the one the AndroidX artifact expects.
+     */
+    /*
+     * Baseline Profile: the generated profile, plus the installer that applies it.
+     * https://developer.android.com/topic/performance/baselineprofiles/overview
+     *
+     * `profileinstaller` is not optional here and is the part most easily
+     * missed. A baseline profile baked into an APK is applied automatically only
+     * when Play installs it. Every build a tester sideloads from App
+     * Distribution, and every `adb install`, needs this library to write the
+     * profile into ART at first run — without it the whole exercise measures
+     * nothing outside Play.
+     */
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
+    baselineProfile(project(":baselineprofile"))
+
+    implementation("androidx.credentials:credentials:1.3.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

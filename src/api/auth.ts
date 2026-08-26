@@ -1,6 +1,11 @@
 import { Linking } from 'react-native';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import {
+  GoogleCredentialError,
+  credentialSheetAvailable,
+  requestGoogleCredential,
+} from '../lib/googleCredential';
 import { AUTH_REDIRECT_URL } from '../lib/env';
 import { normalisePhone } from '../lib/phone';
 
@@ -10,20 +15,20 @@ import { normalisePhone } from '../lib/phone';
  * This is the third identity model this app has had, so the reasoning is worth
  * keeping in one place. See ADR-0004 for the decision record.
  *
- *   1. **Anonymous** — best onboarding imaginable, but no accountability at all:
+ *   1. **Anonymous**, best onboarding imaginable, but no accountability at all:
  *      a banned user reinstalled and was back in ten seconds with a fresh
  *      wallet, which made every control in migration 005 decorative.
- *   2. **Phone + OTP** — strongest accountability available without asking for
+ *   2. **Phone + OTP**, strongest accountability available without asking for
  *      ID, because a number costs money to replace. Abandoned on cost: SMS is
  *      billed per message and DLT registration is weeks of lead time in India.
- *   3. **Google** (here) — free to us, and an account that is harder
+ *   3. **Google** (here), free to us, and an account that is harder
  *      to churn than an anonymous row while being easier than a phone number.
  *
  * Being clear about what this costs: a social account is **weaker
  * accountability than a phone number**. Google accounts are free and
  * unlimited, so a determined banned user can return. Suspension and bans are
  * therefore friction rather than a wall, and the compensating controls are the
- * ones that do not depend on identity — rate limits, the report history on a
+ * ones that do not depend on identity, rate limits, the report history on a
  * *conversation*, and eventually classification. That is a real regression
  * against the phone model and it should be revisited when SMS is affordable.
  *
@@ -38,7 +43,7 @@ import { normalisePhone } from '../lib/phone';
  * One provider, deliberately.
  *
  * **Facebook was removed** rather than left unfinished. It had a button and no
- * credentials — `enable_facebook = false` in the Supabase config — so every tap
+ * credentials, `enable_facebook = false` in the Supabase config, so every tap
  * produced a failure, which is worse than an absent option: a sign-in screen
  * that offers something it cannot deliver is the first thing a new user
  * experiences. Meta's App Review would also have to be passed before it could
@@ -51,7 +56,7 @@ import { normalisePhone } from '../lib/phone';
  * Apple is absent because there is no iOS build yet. It becomes *mandatory* the
  * moment one ships, under App Store guideline 4.8.
  *
- * Phone + OTP is built below and switched off — see PHONE_AUTH_ENABLED.
+ * Phone + OTP is built below and switched off, see PHONE_AUTH_ENABLED.
  */
 export type SocialProvider = 'google';
 
@@ -65,12 +70,12 @@ export const PROVIDER_LABEL: Record<SocialProvider, string> = {
  * This flag exists because of the Facebook mistake, which shipped. A sign-in
  * option that accepts input and then fails is worse than an absent one, and
  * Indian transactional SMS cannot be delivered at all until DLT registration
- * completes — entity, sender ID, then template, one to three weeks. Until then
+ * completes, entity, sender ID, then template, one to three weeks. Until then
  * `signInWithOtp` would take a number, look like it worked, and deliver nothing.
  *
  * Turning it on is three things, in this order:
  *   1. DLT template approved, with the SMS-autofill app hash inside it
- *      (ADR-0009 §1 — the hash depends on Google's app signing certificate, so
+ *      (ADR-0009 §1, the hash depends on Google's app signing certificate, so
  *      it cannot be computed before the first Play upload).
  *   2. Uncomment `[auth.hook.send_sms]` in supabase/config.toml and push, with
  *      SEND_SMS_HOOK_SECRET, MSG91_AUTHKEY and MSG91_TEMPLATE_ID set.
@@ -79,12 +84,37 @@ export const PROVIDER_LABEL: Record<SocialProvider, string> = {
  * A contract test asserts the sign-in screen offers no phone entry while this is
  * false, so the flag cannot be quietly bypassed by adding a button.
  */
-export const PHONE_AUTH_ENABLED = false;
+export const PHONE_AUTH_ENABLED = true;
+
+/**
+ * Whether to try the Credential Manager sheet before the browser.
+ *
+ * On. It was off for one concrete reason — the sheet's `GetGoogleIdOption`
+ * authenticates against an **Android** OAuth client (`client_type 1`) keyed on
+ * the package name and signing SHA-1, and the Google Cloud project had only the
+ * **Web** client (`client_type 3`). With no Android client the sheet returned
+ * GMS status 16, androidx mapped 16 to `GetCredentialCancellationException`, the
+ * native module mapped that to `code: 'cancelled'` (correctly — 16 *is* the
+ * cancellation code), and `signInWithGoogle` treated the cancel as a deliberate
+ * choice and did nothing: the "doesn't let me continue" report.
+ *
+ * The two Android clients now exist — one per signing cert, both in
+ * `android/app/google-services.json`:
+ *   debug  5e8f16062ea3cd2c4a0d547876baa6f38cabf625
+ *   upload 4910a1ff7ac9cb1ab11bb46386bf6a7ec4726553
+ * so the sheet can succeed and this is on. The browser remains the fallback for
+ * any device that cannot show a sheet (no/stale Play services); it authenticates
+ * against the Web client, which is still present.
+ *
+ * If this is ever flipped back off, sign-in still works — it goes straight to
+ * the browser, which needs none of the above.
+ */
+export const CREDENTIAL_MANAGER_ENABLED = true;
 
 /**
  * The OTP flow has a state the OAuth flow does not: a code is in the air and
  * nothing has been decided yet. Reusing AuthCallbackResult would have meant
- * either overloading `signedIn` to also mean "sent", or a boolean beside it —
+ * either overloading `signedIn` to also mean "sent", or a boolean beside it,
  * both of which lose the distinction the UI needs to switch from the phone field
  * to the code field.
  */
@@ -149,7 +179,7 @@ export async function verifyPhoneOtp(
 function describeOtpError(message: string): string {
   const text = message.toLowerCase();
   if (text.includes('expired')) {
-    return 'That code has expired — send a new one.';
+    return 'That code has expired, send a new one.';
   }
   if (text.includes('invalid') || text.includes('incorrect')) {
     return 'That code is not right. Check the last digits.';
@@ -188,10 +218,86 @@ export async function signInWith(provider: SocialProvider): Promise<void> {
 }
 
 /**
+ * How a Google sign-in attempt ended.
+ *
+ * Two outcomes and not a boolean, because the two live paths differ in the one
+ * way that matters to the caller: whether there is a session when this resolves.
+ *
+ *   `session`    — Credential Manager returned an ID token and Supabase minted a
+ *                  session from it. The app is signed in RIGHT NOW.
+ *   `redirected` — the system browser was opened. This resolves as soon as the
+ *                  browser is up, long before the user has consented, and the
+ *                  session arrives later through `handleAuthDeepLink`.
+ *
+ * A caller that treats `redirected` as success advances to a signed-in tree with
+ * no session and every query there hangs. That exact bug has already shipped
+ * once here, which is why this is a union and not a `void`.
+ */
+export type GoogleResult = 'session' | 'redirected';
+
+export { GoogleCredentialError } from '../lib/googleCredential';
+
+/**
+ * Sign in with Google: the Credential Manager sheet, falling back to the browser.
+ *
+ * The sheet is gated behind `CREDENTIAL_MANAGER_ENABLED`, which is off until an
+ * Android OAuth client exists — see that flag. While it is off this goes
+ * straight to the browser, which authenticates against the Web client and works
+ * today. Everything below the flag is the sheet path, ready for when it flips.
+ *
+ * The seam exists so the onboarding screen never learns which mechanism ran, and
+ * both mechanisms are live. The sheet is tried first because it keeps the user
+ * inside the app — the only step of the onboarding that used to leave it — and
+ * because it returns a session synchronously, so the flow can carry straight on
+ * to the completion beat instead of waiting on a deep link.
+ *
+ * **Cancellation propagates; everything else falls back.** Somebody dismissing
+ * the sheet has made a decision, and reopening the browser underneath them would
+ * override it. Every other failure — no Play services, stale Play services, an
+ * unregistered signing certificate — is the device being unable to show a sheet,
+ * not the user declining, and the browser handles all of them.
+ *
+ * The nonce is checked: `skip_nonce_check = false` in `supabase/config.toml`.
+ * Google embedded the SHA-256 in the token and Supabase is handed the original,
+ * which is why the native side returns both.
+ */
+export async function signInWithGoogle(): Promise<GoogleResult> {
+  if (CREDENTIAL_MANAGER_ENABLED && credentialSheetAvailable()) {
+    try {
+      const { idToken, rawNonce } = await requestGoogleCredential();
+      const { error } = await supabase.auth.signInWithIdToken({
+        provider: 'google',
+        token: idToken,
+        nonce: rawNonce,
+      });
+      if (error != null) {
+        // `null` code: this is not an OAuth callback, so there is no `error=`
+        // parameter to interpret — only Supabase's own message.
+        throw new Error(describeCallbackError(null, error.message));
+      }
+      return 'session';
+    } catch (error) {
+      if (error instanceof GoogleCredentialError && error.reason === 'cancelled') {
+        throw error;
+      }
+      if (!(error instanceof GoogleCredentialError)) {
+        // Supabase rejected a token the sheet produced. That is a real failure
+        // and retrying it through the browser would fail the same way, so it is
+        // surfaced rather than swallowed by the fallback below.
+        throw error;
+      }
+      // Fall through to the browser.
+    }
+  }
+  await signInWith('google');
+  return 'redirected';
+}
+
+/**
  * The three things an OAuth callback can mean. A boolean could not express the
  * middle one, which is exactly the bug this replaced: an `error=` callback was
  * reported as `true` ("handled"), the app advanced to the signed-in tree with no
- * session, and every query there hung — producing a permanent spinner and no
+ * session, and every query there hung, producing a permanent spinner and no
  * clue why. Observed end-to-end on an emulator: Supabase returned
  * `error=server_error, Unable to exchange external code`, and the app showed a
  * blank loading screen.
@@ -207,7 +313,7 @@ function describeCallbackError(code: string | null, description: string | null):
   if (/Unable to exchange external code/i.test(detail)) {
     // The provider accepted the user and rejected us. Almost always a client
     // secret that does not match the client id it is paired with.
-    return 'Sign-in is misconfigured on our side. Nothing you did wrong — we are on it.';
+    return 'Sign-in is misconfigured on our side. Nothing you did wrong, we are on it.';
   }
   if (code === 'access_denied' || /denied/i.test(detail)) {
     return 'Sign-in was cancelled.';
@@ -272,7 +378,7 @@ export async function signOut(): Promise<void> {
  * auth user, which cascades to profile -> conversations -> messages.
  *
  * One thing survives, deliberately: abuse reports, de-identified. See the
- * retention note in migration 005 — a report has to outlive the reported
+ * retention note in migration 005, a report has to outlive the reported
  * message, or deleting your account destroys the case against you.
  */
 export async function deleteAccount(): Promise<void> {

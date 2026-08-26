@@ -7,7 +7,7 @@ project_id = "uvghvhcrovmuwivgijvl"
 enable_signup = true
 
 # Anonymous sign-in stays OFF. It gave the best onboarding imaginable and no
-# accountability whatsoever — a banned user reinstalled and was back in ten
+# accountability whatsoever, a banned user reinstalled and was back in ten
 # seconds with a fresh wallet, which made every control in migration 005
 # decorative. See ADR-0004 for the full identity history.
 enable_anonymous_sign_ins = false
@@ -15,7 +15,7 @@ enable_anonymous_sign_ins = false
 # Nothing to link: the social account IS the account, not an upgrade to one.
 enable_manual_linking = false
 
-# Load-bearing, not optional — the OAuth session arrives through this deep link,
+# Load-bearing, not optional, the OAuth session arrives through this deep link,
 # and Supabase validates `redirect_to` against this list plus `site_url`. With the
 # list empty, a successful Google consent redirects to `site_url` instead of the
 # app: Google appears to work and the app never wakes up. That is exactly what was
@@ -31,7 +31,7 @@ additional_redirect_urls = ["companionchat://auth-callback"]
 # admin-created operational accounts. scripts/provider-console.mjs signs in as a
 # real provider to test the two-sided conversation a single device cannot.
 #
-# `enable_signup = false` is what keeps it from being a public route — an
+# `enable_signup = false` is what keeps it from being a public route, an
 # operator can mint such an account, nobody else can. Kept deliberately (Amit,
 # 2026-08-20); revisit before launch, because an auth path nobody uses is an
 # attack surface nobody watches.
@@ -40,10 +40,20 @@ enable_signup = false
 enable_confirmations = false
 
 [auth.sms]
-# Still `enable_signup = false` until delivery is configured — see the block
+# Still `enable_signup = false` until delivery is configured: see the block
 # below. Everything else here is set now so that flipping one flag is the only
 # remaining step.
-enable_signup = false
+#
+# Enabled 2026-08-26, once the send-SMS hook below had both of its secrets.
+#
+# **Read this before running `supabase config push`.** That command sends this
+# file verbatim AND resolves every `env(...)` from your local shell. Google
+# sign-in went down on 2026-08-21 because it was pushed without
+# `SUPABASE_AUTH_GOOGLE_SECRET` exported, so `[auth.external.google].secret` went
+# up empty. The variable is deliberately NOT in `.env`. Export it from the OAuth
+# client JSON in the same shell as the push, every time, or take Google down
+# again — the failure is silent here and only shows up at the consent screen.
+enable_signup = true
 enable_confirmations = false
 
 # Two minutes, not the fifteen a provider will offer by default.
@@ -56,7 +66,7 @@ enable_confirmations = false
 # The honest cost, so it is a decision and not a surprise: Indian SMS delivery is
 # usually a few seconds but can take thirty or more under load, and every second
 # of that eats the window. If real users start reporting expired codes, this is
-# the first number to look at — not the resend logic.
+# the first number to look at, not the resend logic.
 otp_expiry = 120
 
 # Six digits. 10,000 combinations against even a two-minute window is not enough
@@ -72,43 +82,55 @@ otp_length = 6
 # usable resend, which is not a recovery path.
 max_frequency = "30s"
 
-# --- The route chosen: Send SMS hook, MSG91 as carrier ----------------------
+# --- The route chosen: Send SMS hook, FAST2SMS as carrier -------------------
+#
+# **Carrier corrected 2026-08-26.** This block said MSG91 for months while
+# `supabase/functions/send-sms/index.ts` has only ever read `FAST2SMS_API_KEY`.
+# The distinction is the entire DLT story: Fast2SMS's OTP route sends on THEIR
+# registered template, so it needs no DLT entity, header or template of ours.
+# The "one to three weeks of TRAI registration" this file used to describe as the
+# gate was a gate for a carrier we are not using. MSG91 remains in the picture
+# only for `verify-phone`, which is the separate widget path for attaching a
+# number to an account that already has a session.
 #
 # ADR-0009 decided this over the MSG91 OTP widget. The widget verifies the code
-# itself, which takes Supabase Auth out of the login path entirely — and since
+# itself, which takes Supabase Auth out of the login path entirely, and since
 # Supabase has no admin endpoint that mints a session for a phone user, that
 # leaves either a fake email per number or self-signed Supabase JWTs. Both put
 # the RLS model behind our own token minting. The hook keeps Supabase Auth in
 # charge and reduces MSG91 to the carrier.
 #
-# `supabase/functions/send-sms/index.ts` is written and deployed. Three secrets
-# have to exist before it can work:
+# `supabase/functions/send-sms/index.ts` is written and deployed. Both secrets it
+# needs now exist on the project (verified with `supabase secrets list`, which
+# returns names and digests rather than values):
 #
-#   SEND_SMS_HOOK_SECRET   the v1,whsec_... value the dashboard shows for the hook
-#   MSG91_AUTHKEY          MSG91 panel -> Authkey
-#   MSG91_TEMPLATE_ID      the DLT-approved template, code as ##var1##
+#   SEND_SMS_HOOK_SECRET   generated and set 2026-08-26
+#   FAST2SMS_API_KEY       set 2026-08-21
 #
-# Uncomment all four lines below once the DLT template is approved. Until then
-# `PHONE_AUTH_ENABLED` in src/api/auth.ts keeps the entry point off the sign-in
-# screen — a button that accepts a number and then fails is the Facebook mistake
-# repeated, and that one shipped before it was caught.
+# Enabled below. `enable_signup` for this channel is set once at the top of
+# [auth.sms]; repeating it here is what made the whole file unparseable, because
+# TOML rejects a key redefined inside the same table and the original commented
+# block was written before that flag was flipped.
+[auth.hook.send_sms]
+enabled = true
+uri = "https://uvghvhcrovmuwivgijvl.supabase.co/functions/v1/send-sms"
+secrets = "env(SEND_SMS_HOOK_SECRET)"
 #
-# enable_signup = true
-# [auth.hook.send_sms]
-# enabled = true
-# uri = "https://uvghvhcrovmuwivgijvl.supabase.co/functions/v1/send-sms"
-# secrets = "env(SEND_SMS_HOOK_SECRET)"
+# ON DLT, CORRECTED. The paragraph that stood here said every domestic Indian
+# SMS route needs our own TRAI/DLT registration and that no vendor shortcuts it.
+# That is true when you send on your OWN header and template, which is what the
+# MSG91 transactional route would have required. It is not true of Fast2SMS's OTP
+# route, which sends on Fast2SMS's registered template — the reason this is
+# enabled today rather than in three weeks.
 #
-# THE GATE IS NOT MONEY. Every domestic Indian SMS route requires DLT
-# registration under the TRAI mandate — entity, then header (sender ID), then
-# template — typically one to three weeks, and no vendor shortcuts it, Firebase
-# included, because they all use the same domestic routes. ADR-0009 section 1 has
-# the thing that is easy to get wrong: the SMS-autofill app hash has to be inside
-# the template *before* approval, and it depends on Google's app signing
-# certificate, which does not exist until after the first Play upload.
+# What we give up by riding their template: no custom sender ID, and no
+# app-signature suffix, so Android SMS Retriever autofill will not fire and the
+# code has to be typed. ADR-0009 section 1 is still right that the autofill hash
+# depends on Google's app-signing certificate and so cannot exist before the
+# first Play upload; that work simply is not on the critical path any more.
 
 # ---------------------------------------------------------------------------
-# Social identity — the only way in
+# Social identity, the only way in
 # ---------------------------------------------------------------------------
 # Stays `enabled = false` in this file until real credentials exist, because
 # a half-configured provider fails at the consent screen, in the browser, after
@@ -122,17 +144,17 @@ max_frequency = "30s"
 # Google is the only provider. Facebook's block was deleted rather than left at
 # `enabled = false`: ADR-0006 removed it from the app, and dead provider config
 # is a standing invitation to re-enable something the sign-in screen no longer
-# offers. Instagram never existed as a provider — Meta shut the Instagram Basic
+# offers. Instagram never existed as a provider, Meta shut the Instagram Basic
 # Display API in Dec 2024.
 # DANGER, and it is not theoretical: `supabase config push` sends this block
 # verbatim, so `enabled = false` here TURNS GOOGLE OFF on the live project even
 # though the credentials were set in the dashboard. That is exactly what happened
-# on 2026-08-21 — a push made to change the SMS OTP expiry took Google sign-in
+# on 2026-08-21, a push made to change the SMS OTP expiry took Google sign-in
 # down with it, because this file said false and the dashboard said true.
 #
 # The rule that follows: this file is authoritative or it is a landmine. There is
 # no third state. So `enabled` is true, the client id is the literal (a client id
-# is not a secret — it ships in google-services.json), and only the secret comes
+# is not a secret, it ships in google-services.json), and only the secret comes
 # from the environment.
 #
 # A test in __tests__/contract.test.ts now fails if a provider the sign-in screen

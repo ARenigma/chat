@@ -1,16 +1,16 @@
-# ADR-0011 — React Native, not Jetpack Compose
+# ADR-0011, React Native, not Jetpack Compose
 
 Status: **accepted** (recording a decision that predates this record)
 Date: 2026-08-22
 
-Asked directly: are we using Jetpack Compose, and if not, why — isn't it the best
+Asked directly: are we using Jetpack Compose, and if not, why, isn't it the best
 option for native Android?
 
 ## What we are actually using
 
 React Native 0.86.2 with the New Architecture: Fabric renderer, Hermes engine,
 TurboModules. The UI is React components that Fabric renders into real Android
-views — not a WebView, and not Compose.
+views, not a WebView, and not Compose.
 
 ## Compose is the right answer to a different question
 
@@ -20,7 +20,7 @@ product there is no serious argument for anything else. That is not in dispute.
 
 The question this app answers is different: _cross-platform reach from one
 codebase_. Compose is Android-only. Compose Multiplatform exists and is a
-credible bet, but it is a different bet — and taking it would mean the same
+credible bet, but it is a different bet, and taking it would mean the same
 rewrite as taking Compose, plus a less mature iOS story than React Native's.
 
 ## What React Native actually costs us
@@ -41,8 +41,8 @@ Worth being concrete rather than defensive, because the costs are real:
 
 ## What it buys, for this product specifically
 
-- **One codebase for Android and iOS.** iOS is on the roadmap — ADR-0004 notes
-  Apple sign-in becomes mandatory the moment one ships — and this is the whole
+- **One codebase for Android and iOS.** iOS is on the roadmap, ADR-0004 notes
+  Apple sign-in becomes mandatory the moment one ships, and this is the whole
   argument.
 - **The Supabase JavaScript client, directly.** Auth, Realtime, RLS-aware
   queries, all first-party. The Kotlin client exists but the JS one is where the
@@ -58,7 +58,7 @@ Worth being concrete rather than defensive, because the costs are real:
 
 **Stay on React Native.** Migrating to Compose means rewriting all 12 screens and
 18 components (2,401 lines), discarding the token pipeline's TypeScript output, the Reanimated
-motion system, and 245 tests — for a product about to ship, in exchange for
+motion system, and 245 tests, for a product about to ship, in exchange for
 platform qualities this app does not need and the loss of the one it does.
 
 ## When this would be worth revisiting
@@ -67,12 +67,12 @@ Honestly, and none of these is close today:
 
 1. **iOS is abandoned as a goal.** The whole argument for React Native
    evaporates, and Compose becomes clearly better.
-2. **A performance problem that profiles to the renderer.** Not "it feels slow" —
+2. **A performance problem that profiles to the renderer.** Not "it feels slow",
    a trace showing Fabric as the bottleneck on hardware people actually use.
 3. **The bridge tax dominates the work.** If most new features start with a
    Kotlin module, the abstraction has stopped paying for itself.
 
 Compose Multiplatform is the third path and worth a look at that point rather
 than now: it would keep one codebase while removing the JavaScript runtime, at
-the cost of leaving the entire JS ecosystem — including the Supabase client this
+the cost of leaving the entire JS ecosystem, including the Supabase client this
 app is built on.

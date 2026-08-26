@@ -5,9 +5,9 @@ import {
   Platform,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
+import { TextField } from '../components/TextField';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
@@ -21,6 +21,7 @@ import {
   type SocialProvider,
 } from '../api/auth';
 import { normalisePhone } from '../lib/phone';
+import { fadeSwap } from '../theme/motion';
 import { Button } from '../components/Button';
 import { CodeField } from '../components/CodeField';
 import { Pressable } from '../components/Pressable';
@@ -35,12 +36,12 @@ type Step = 'choose' | 'number' | 'code';
  *
  * The ordering is the product decision, not a layout one. A phone number costs
  * money to replace and a Google account does not, so phone is the stronger
- * identity — and for an Indian audience it is also the more familiar one. Google
+ * identity, and for an Indian audience it is also the more familiar one. Google
  * stays because it is instant and some people would rather not hand over a
  * number to an app about loneliness.
  *
  * What it still does not do is oversell. No illustration, no colour wash, no hero
- * image of a smiling stranger — the product's claim is that a real person will
+ * image of a smiling stranger, the product's claim is that a real person will
  * listen, and a stock photograph would undercut it on the first screen.
  *
  * (Avoiding a certain g-word literally: the accent-budget test bans it anywhere
@@ -52,7 +53,15 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
 
-  const [busy, setBusy] = useState<SocialProvider | 'phone' | null>(null);
+  /**
+   * One flag for two operations was a bug, not a shortcut.
+   *
+   * `'phone'` used to cover both "asking for a code" and "checking one", so
+   * submitting a code made the *resend* button narrate 'Checking…'. They are
+   * separate values now because two buttons read this and each may only speak
+   * for itself.
+   */
+  const [busy, setBusy] = useState<SocialProvider | 'phone' | 'verify' | null>(null);
   const [error, setError] = useState<string | null>(initialError ?? null);
   const [step, setStep] = useState<Step>('choose');
   const [phone, setPhone] = useState('');
@@ -66,7 +75,7 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
    *
    * `useState(initialError)` alone is not enough and that was a real bug: the
    * initialiser runs only on first mount, and this screen is already mounted when
-   * the callback fails — the app goes signedOut -> signedOut, React reuses the
+   * the callback fails, the app goes signedOut -> signedOut, React reuses the
    * instance, and the explanation is silently dropped. Which is how a fixed
    * "show the user why" ends up showing nothing.
    */
@@ -80,7 +89,7 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
    * Clear `busy` whenever the app comes back to the foreground.
    *
    * Without this the screen bricks itself: hand off to the browser, come back
-   * without a session — cancelled, denied, or a failed code exchange — and the
+   * without a session, cancelled, denied, or a failed code exchange, and the
    * button sits on "Opening…" disabled forever. Observed on a real emulator by
    * firing the callback with an invalid code; the only way out was killing the
    * app. Returning to this screen at all means sign-in did not complete, because
@@ -110,7 +119,7 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
     try {
       await signInWith(provider);
       // The browser owns the flow now. The session returns through the deep link
-      // handler in App.tsx, so there is nothing to await — and `busy` stays set
+      // handler in App.tsx, so there is nothing to await, and `busy` stays set
       // deliberately: a second tap would start a second OAuth flow.
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not start sign-in.');
@@ -136,14 +145,14 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
   /**
    * Submit. Called by CodeField the moment six digits exist, once per value.
    *
-   * A wrong code bumps `errorNonce` and leaves the digits alone — the field
+   * A wrong code bumps `errorNonce` and leaves the digits alone, the field
    * shakes and the user fixes one character. Clearing here would be the single
    * most disliked behaviour in an OTP flow.
    */
   const submitCode = useCallback(
     async (entered: string) => {
       setError(null);
-      setBusy('phone');
+      setBusy('verify');
       const result = await verifyPhoneOtp(sentTo.current, entered);
       setBusy(null);
       if (result.status === 'failed') {
@@ -157,14 +166,20 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
   );
 
   const canSend = normalisePhone(phone) !== null && busy === null;
+  // On the code step, a code request can only have come from Resend.
+  const resending = step === 'code' && busy === 'phone';
   const pretty = phone.trim() === '' ? '' : `+${normalisePhone(phone) ?? phone}`;
+  const title = step === 'code' ? 'Enter the code' : 'Someone’s here to listen';
+  // The number stays visible: "which number did I just type" is the question
+  // people actually have at this moment.
+  const subtitle = step === 'code' ? `Sent to ${pretty}.` : 'Real people, ready to talk.';
 
   return (
     /**
      * The keyboard used to cover the primary action.
      *
      * Tapping "Continue with phone" autofocuses the field, which opens the phone
-     * pad straight over "Send code" — the button you need next is the one you
+     * pad straight over "Send code", the button you need next is the one you
      * cannot see. The manifest already asks for `adjustResize`, and that is not
      * enough here: the app draws edge to edge, and edge-to-edge windows stop
      * getting the automatic resize on newer Android.
@@ -183,16 +198,62 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
         <Animated.View
           entering={FadeInDown.delay(80).duration(TOKENS.motion.duration.base)}
           style={styles.head}>
-          <Text allowFontScaling style={styles.title}>
-            {step === 'code' ? 'Enter the code.' : 'Someone’s here\nto listen.'}
-          </Text>
-          <Text allowFontScaling style={styles.subtitle}>
-            {step === 'code'
-              ? // The number stays visible: "which number did I just type" is the
-                // question people actually have at this moment.
-                `Sent to ${pretty}.`
-              : 'Real people, ready to talk. Not therapy — just company.'}
-          </Text>
+          {/* Rule 7: the title cross-fades rather than cutting when the step
+              changes, and the block reserves the taller of the two heights so the
+              swap cannot reflow what is under it. Keyed on its own content, which
+              is what makes the entrance run. Opacity only: no scale, no
+              translate. */}
+          <Animated.Text
+            key={title}
+            entering={fadeSwap}
+            allowFontScaling
+            style={styles.title}>
+            {/* No forced line break and no terminal full stop: iOS display copy
+                on an onboarding screen carries neither. */}
+            {title}
+          </Animated.Text>
+          {step === 'choose' ? (
+            /*
+             * Three static claims, all legible at once.
+             *
+             * This was a WordCarousel: three lines with one lit and the others at
+             * 10% opacity, cycling, taken from the Fuse reference. It was verified
+             * on a device and reverted, because the arithmetic rules it out rather
+             * than taste doing so. `text/secondary` on white is 7.41:1; composited
+             * at 10% alpha it is 1.16:1, and it does not reach AA's 4.5 until alpha
+             * 0.85, by which point the fade is imperceptible and the effect is
+             * gone. So an opacity-driven focus and readable body copy are mutually
+             * exclusive at this type size.
+             *
+             * The content made it worse rather than better. Fuse cycles decorative
+             * single words; these are three substantive claims, and one of them is
+             * "Not therapy, just company", which is this product's whole ethical
+             * position. Making that unreadable two thirds of the time is the one
+             * line here that must never be a design flourish.
+             *
+             * See design/references/motion-system.md for where rule 1 could still
+             * live: a single rotating word inside the headline, which is what the
+             * reference actually does.
+             */
+            <Animated.View entering={fadeSwap} style={styles.claims}>
+              {[
+                'Real people, not a chatbot',
+                'Talk about anything, or nothing',
+                'Not therapy, just company',
+              ].map(claim => (
+                <View key={claim} style={styles.claim}>
+                  <View style={styles.claimDot} />
+                  <Text allowFontScaling style={styles.claimText}>
+                    {claim}
+                  </Text>
+                </View>
+              ))}
+            </Animated.View>
+          ) : (
+            <Animated.Text key={subtitle} entering={fadeSwap} allowFontScaling style={styles.subtitle}>
+              {subtitle}
+            </Animated.Text>
+          )}
           {step === 'code' ? (
             <Pressable
               onPress={() => {
@@ -202,7 +263,7 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
               accessibilityLabel="Change phone number"
               testID="signin-change-number">
               <Text allowFontScaling style={styles.link}>
-                Change number
+                Change Number
               </Text>
             </Pressable>
           ) : null}
@@ -214,7 +275,7 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
             style={styles.field}>
             {/* +91 is shown and still editable. A hard-locked country code is a
                 bug for anyone travelling or holding a foreign number. */}
-            <TextInput
+            <TextField
               testID="signin-phone-input"
               value={phone}
               onChangeText={setPhone}
@@ -243,8 +304,8 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
             {/* Deliberately not disabled while verifying.
                 `editable={busy === null}` was the obvious thing and it undid the
                 point of the whole component: disabling a focused TextInput blurs
-                it, Android moves focus to the next focusable — the "Change
-                number" button, which then wore a focus highlight — and the
+                it, Android moves focus to the next focusable, the "Change
+                number" button, which then wore a focus highlight, and the
                 keyboard closes. So a rejected code left the six digits on screen
                 and no way to edit one without tapping back in, which is the
                 behaviour this design exists to avoid.
@@ -280,7 +341,7 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
         style={styles.actions}>
         {step === 'choose' && PHONE_AUTH_ENABLED ? (
           <Button
-            label="Continue with phone"
+            label="Continue with Phone Number"
             onPress={() => {
               setError(null);
               setStep('number');
@@ -292,7 +353,9 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
 
         {step === 'number' ? (
           <Button
-            label={busy === 'phone' ? 'Sending…' : 'Send code'}
+            label="Send Code"
+            busy={busy === 'phone'}
+            busyLabel="Sending code"
             onPress={() => {
               void requestCode();
             }}
@@ -303,13 +366,17 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
 
         {step === 'code' ? (
           <Button
-            label={
-              cooldown > 0
-                ? `Resend in ${cooldown}s`
-                : busy === 'phone'
-                  ? 'Checking…'
-                  : 'Resend code'
-            }
+            // The cooldown is a genuine disabled state and stays one: the button
+            // cannot be pressed and the label says when it can.
+            //
+            // It used to read 'Verifying…' here, which was a copy bug rather than
+            // a style one. `busy` is set by BOTH requestCode and submitCode, so
+            // entering a code made the RESEND button claim it was verifying. This
+            // button only ever resends, so that is all it may narrate, and it
+            // narrates it only while `resending` is what is actually happening.
+            label={cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend Code'}
+            busy={resending}
+            busyLabel="Resending code"
             kind="secondary"
             onPress={() => {
               void requestCode();
@@ -320,12 +387,17 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
         ) : null}
 
         {/* Google is the second option on every step that offers a choice. Not
-            hidden — some people would rather not give a number to an app about
-            loneliness — but not first either, because a Google account is free to
+            hidden, some people would rather not give a number to an app about
+            loneliness, but not first either, because a Google account is free to
             replace and a number is not. */}
         {step === 'choose' ? (
           <Button
-            label={busy === 'google' ? 'Opening…' : PROVIDER_LABEL.google}
+            label={PROVIDER_LABEL.google}
+            busy={busy === 'google'}
+            // Names where it is going, because it is going somewhere: this hands
+            // off to the system browser, and the label is the only warning that
+            // the app is about to disappear.
+            busyLabel="Opening Google"
             kind={PHONE_AUTH_ENABLED ? 'secondary' : 'primary'}
             onPress={() => {
               void startSocial('google');
@@ -342,8 +414,8 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
         style={styles.legal}>
         {step === 'choose'
           ? PHONE_AUTH_ENABLED
-            ? 'Your number is never shown to anyone you talk to — you pick a separate display name. Signing in with Google instead tells Google that you use this app.'
-            : 'We only read your name and email, and neither is shown to anyone you talk to — you pick a separate display name. Signing in does tell Google that you use this app.'
+            ? 'Your number is never shown to anyone you talk to. You pick a separate display name. Signing in with Google instead tells Google that you use this app.'
+            : 'We only read your name and email, and neither is shown to anyone you talk to. You pick a separate display name. Signing in does tell Google that you use this app.'
           : 'Standard message rates may apply. The code expires in 2 minutes.'}
       </Animated.Text>
     </KeyboardAvoidingView>
@@ -367,6 +439,32 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   title: {
     ...TOKENS.typography.displayLarge,
     color: t.color.text.primary,
+    // Two lines reserved, derived rather than typed. 'Someone’s here to listen'
+    // wraps at 34pt and 'Enter the code' does not, so without this the whole head
+    // block jumps a line high the moment the step changes, and under a cross-fade
+    // that is worse than a hard cut, because the movement happens while the text
+    // is half transparent.
+    minHeight: TOKENS.typography.displayLarge.lineHeight * 2,
+  },
+  claims: {
+    gap: TOKENS.space.xs,
+  },
+  claim: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: TOKENS.space.sm,
+  },
+  // A bullet, not a lit/dim state. The mark is the same on every row because
+  // every row is equally true.
+  claimDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: t.color.text.tertiary,
+  },
+  claimText: {
+    ...TOKENS.typography.bodyMedium,
+    color: t.color.text.secondary,
   },
   subtitle: {
     ...TOKENS.typography.bodyMedium,
@@ -377,7 +475,6 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   link: {
     ...TOKENS.typography.labelMedium,
     color: t.color.text.secondary,
-    textDecorationLine: 'underline',
   },
   field: {
     gap: TOKENS.space.sm,
@@ -385,12 +482,15 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   input: {
     ...TOKENS.typography.bodyLarge,
     color: t.color.text.primary,
-    backgroundColor: t.color.bg.raised,
-    borderWidth: 1,
-    borderColor: t.color.border.strong,
-    borderRadius: TOKENS.radius.md,
+    // A filled field, not a Material outlined one: `bg/sunken`, no stroke, 10pt
+    // corner. See the same change in PhoneVerifySheet. It was `bg/raised` plus a
+    // 1px `border/strong` at radius 16, and `bg/raised` is the same white as the
+    // page in light mode, so the border was carrying the whole field.
+    backgroundColor: t.color.bg.sunken,
+    borderRadius: TOKENS.radius.field,
+    borderCurve: 'continuous',
     paddingHorizontal: TOKENS.space.md,
-    height: 56,
+    height: 48,
   },
   // The fix for "buttons have no gap".
   actions: {

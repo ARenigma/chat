@@ -4,7 +4,7 @@
 -- one: a member who is later admitted as a provider is *still the member* of
 -- the threads they paid for. Until this column existed the client answered that
 -- question from `profiles.role`, which flips on admission and takes the answer
--- with it — so the rating prompt disappeared from the only person entitled to
+-- with it, so the rating prompt disappeared from the only person entitled to
 -- use it, and the provider's work list grew a thread that was not work.
 
 \set ON_ERROR_STOP on
@@ -87,7 +87,7 @@ select is(
   (select i_am_member from public.conversation_summaries
     where id = (select v from test.fixture where k = 'thread')),
   true,
-  'yet remains the member of the thread they paid for — which profiles.role cannot express'
+  'yet remains the member of the thread they paid for, which profiles.role cannot express'
 );
 -- And the entitlement that hung on it is real: they can still rate it.
 select is(

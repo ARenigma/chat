@@ -35,7 +35,7 @@ comment on column public.profiles.role is
 
 comment on column public.profiles.identity_verified_at is
   'Non-null implies a completed age and identity check. A provider row without '
-  'this is a bug — see the constraint trigger below.';
+  'this is a bug, see the constraint trigger below.';
 
 -- A member may edit their own profile, but not promote themselves.
 drop policy if exists "User owns profile" on public.profiles;
@@ -55,19 +55,19 @@ create policy "Profile updatable by owner"
 
 -- Column immutability is a trigger, not a policy.
 --
--- The obvious approach — comparing NEW against a subquery on profiles inside the
--- policy's WITH CHECK — does not work: that subquery is itself subject to this
+-- The obvious approach, comparing NEW against a subquery on profiles inside the
+-- policy's WITH CHECK, does not work: that subquery is itself subject to this
 -- table's RLS, so it resolves to NULL, the check is never TRUE, and every update
 -- is rejected including harmless ones. A BEFORE UPDATE trigger sees OLD directly
 -- and has no such problem.
 --
 -- The role test is `current_user`, which is the client role for a normal session
--- but the function owner inside a SECURITY DEFINER function — so
+-- but the function owner inside a SECURITY DEFINER function, so
 -- approve_provider_application and send_message pass through, and nothing a
 -- client can call does.
 -- Deliberately SECURITY INVOKER (the default). A SECURITY DEFINER trigger sees
 -- `current_user` as its own owner, so the guard would never recognise a client
--- session and would silently permit self-promotion — which is exactly what it
+-- session and would silently permit self-promotion, which is exactly what it
 -- did before this was corrected.
 create or replace function public.guard_privileged_profile_columns()
 returns trigger

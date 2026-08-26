@@ -6,19 +6,19 @@
  * stores the
  * code and hands it to this function, we put it on the network, and the client
  * calls `verifyOtp`. Nothing about identity, RLS, refresh tokens or account
- * deletion changes — which is the whole reason this is a hook rather than the
+ * deletion changes, which is the whole reason this is a hook rather than the
  * MSG91 widget.
  *
  * The carrier is Fast2SMS rather than MSG91, and the reason is narrow: MSG91's
  * Flow API needs a DLT template we would have to register ourselves, which is
  * one to three weeks. Fast2SMS's `otp` route injects our code into *their*
  * pre-approved template, so there is nothing to register. MSG91 remains the
- * better destination once a template is approved — branded sender and the SMS
- * autofill hash — and that is a config change here, not a rewrite: set
+ * better destination once a template is approved, branded sender and the SMS
+ * autofill hash, and that is a config change here, not a rewrite: set
  * FAST2SMS_ROUTE=dlt with a sender id and template, or swap the vendor call.
  *
  * This function never generates or validates a code. It cannot: it has no
- * storage and no idea what the user typed. That is a feature — the only thing it
+ * storage and no idea what the user typed. That is a feature, the only thing it
  * can get wrong is delivery.
  *
  * Secrets it needs (`supabase secrets set --env-file ...`, never as arguments):
@@ -122,7 +122,7 @@ async function verifySignature(
 }
 
 /**
- * Fast2SMS wants a bare ten-digit Indian number — no country code, no plus.
+ * Fast2SMS wants a bare ten-digit Indian number, no country code, no plus.
  *
  * That is a real constraint and not a formatting detail: this route reaches
  * Indian numbers only. The sign-in screen deliberately leaves the country code
@@ -232,7 +232,7 @@ Deno.serve(async request => {
    * first version of the MSG91 code treated an unparseable body as success,
    * which would have reported a code as sent while the user waited for an SMS
    * that never left. So the only accepted outcome is an explicit `return: true`
-   * — an error, a missing field, or bytes that will not parse all count as a
+   *, an error, a missing field, or bytes that will not parse all count as a
    * failed send.
    *
    * Fast2SMS's own account gates surface here as ordinary failures, which is
@@ -261,8 +261,8 @@ Deno.serve(async request => {
   })();
 
   if (failure !== null) {
-    // Safe to log: Fast2SMS's diagnostics name the cause — unverified account,
-    // insufficient balance, bad route — and carry neither the number nor the
+    // Safe to log: Fast2SMS's diagnostics name the cause, unverified account,
+    // insufficient balance, bad route, and carry neither the number nor the
     // code.
     console.error(`fast2sms did not confirm the send: ${failure}`);
     return new Response(

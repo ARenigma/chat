@@ -79,7 +79,7 @@ describe('update policy', () => {
   /**
    * Play returns null for staleness when it does not know, which the bridge maps
    * to -1. If that were treated as a number like any other, `-1 >= 30` is false
-   * and it happens to work — but a future change to the comparison would make
+   * and it happens to work, but a future change to the comparison would make
    * "unknown" mean "not stale" silently. Pinned deliberately.
    */
   it('treats unknown staleness as unknown, not as fresh', () => {
