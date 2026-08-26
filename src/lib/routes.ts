@@ -38,7 +38,8 @@ export type MemberRoute =
    */
   | { readonly name: 'call'; readonly providerId: string; readonly mode: 'incoming' | 'audio' | 'video' }
   | { readonly name: 'apply' }
-  | { readonly name: 'applicationStatus' };
+  | { readonly name: 'applicationStatus' }
+  | { readonly name: 'blocked' };
 
 export type ProviderRoute =
   | { readonly name: 'home' }
@@ -66,6 +67,7 @@ export function memberParent(route: MemberRoute): MemberRoute | null {
     case 'providerDetail':
     case 'apply':
     case 'applicationStatus':
+    case 'blocked':
       return { name: 'home' };
   }
 }

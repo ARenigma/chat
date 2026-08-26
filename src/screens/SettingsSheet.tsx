@@ -31,6 +31,7 @@ interface Props {
   /** Absent on the provider tree, a provider does not apply again. */
   onApply?: () => void;
   onApplicationStatus?: () => void;
+  onBlocked?: () => void;
 }
 
 /**
@@ -48,6 +49,7 @@ export function SettingsSheet({
   onSignedOut,
   onApply,
   onApplicationStatus,
+  onBlocked,
 }: Props) {
   const styles = useStyles(makeStyles);
   const { isDark, setMode } = useThemeMode();
@@ -271,6 +273,20 @@ export function SettingsSheet({
               last
             />
           ) : null}
+        </View>
+      ) : null}
+
+      {/* Managing a block is a UGC-policy requirement: v13's Home hides blocked
+          people, so this is the only route back to unblocking one. */}
+      {onBlocked !== undefined ? (
+        <View style={styles.group}>
+          <ChevronRow
+            label="Blocked Users"
+            onPress={onBlocked}
+            testID="settings-blocked"
+            first
+            last
+          />
         </View>
       ) : null}
 

@@ -36,6 +36,7 @@ import { CallScreen } from './src/screens/CallScreen';
 import { ProviderApplicationScreen } from './src/screens/ProviderApplicationScreen';
 import { ProviderHomeScreen } from './src/screens/ProviderHomeScreen';
 import { ProviderStatusScreen } from './src/screens/ProviderStatusScreen';
+import { BlockedUsersScreen } from './src/screens/BlockedUsersScreen';
 import { SettingsSheet } from './src/screens/SettingsSheet';
 import { SplashScreen } from './src/screens/SplashScreen';
 
@@ -490,6 +491,8 @@ function SignedIn({
           onBack={backToHome}
           onEdit={() => setRoute({ name: 'apply' })}
         />
+      ) : route.name === 'blocked' ? (
+        <BlockedUsersScreen onBack={backToHome} />
       ) : (
         <HomeScreen
           onOpenConversation={openChat}
@@ -535,6 +538,10 @@ function SignedIn({
         onApplicationStatus={() => {
           setSettingsOpen(false);
           setRoute({ name: 'applicationStatus' });
+        }}
+        onBlocked={() => {
+          setSettingsOpen(false);
+          setRoute({ name: 'blocked' });
         }}
       />
     </View>
