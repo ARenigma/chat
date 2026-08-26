@@ -60,6 +60,20 @@ interface Props {
   /** Rendered size of a round control, so the 48dp target can be guaranteed. */
   size?: number;
   onLongPress?: () => void;
+  /**
+   * Override the default `button` role. A nav item is a `tab`, so TalkBack says
+   * "Home, tab, selected" rather than "Home, button" — the role tells a screen
+   * reader this is one of a group, which a button does not.
+   */
+  accessibilityRole?: 'button' | 'tab' | 'link';
+  /** Selected state, surfaced through `accessibilityState` (not baked into the label). */
+  selected?: boolean;
+  /**
+   * Whether this is its own accessibility node. `false` folds it into its parent,
+   * which is how a nested control (an avatar tap inside a row) avoids becoming a
+   * second, overlapping TalkBack target.
+   */
+  accessible?: boolean;
 }
 
 /**
@@ -116,6 +130,9 @@ function PressableView({
   onColor,
   size,
   onLongPress,
+  accessibilityRole = 'button',
+  selected,
+  accessible,
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -193,13 +210,15 @@ function PressableView({
       disabled={disabled}
       hitSlop={slop}
       testID={testID}
-      accessibilityRole="button"
+      accessible={accessible}
+      accessibilityRole={accessibilityRole}
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
       // `busy` is its own AccessibilityState field on both platforms, so a screen
       // reader can say "in progress" without being told the control is disabled,
-      // which is what conflating the two used to make it say.
-      accessibilityState={{ disabled, busy }}>
+      // which is what conflating the two used to make it say. `selected` is folded
+      // in for tab/segmented controls that carry a chosen state.
+      accessibilityState={{ disabled, busy, ...(selected !== undefined ? { selected } : null) }}>
       <Animated.View style={[styles.clip, style, animated]}>
         {/* Absolutely positioned and FIRST, so it paints between the caller's
             background and the content. It used to come last, which tinted the

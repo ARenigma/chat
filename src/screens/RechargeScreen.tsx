@@ -44,7 +44,13 @@ export function RechargeScreen() {
   }
 
   return (
-    <View testID="refill-sheet" style={[styles.root, { paddingTop: insets.top }]}>
+    <View
+      testID="refill-sheet"
+      // A modal overlay must hide everything under it from TalkBack, or a swipe
+      // lands on the Home controls behind it.
+      accessibilityViewIsModal
+      importantForAccessibility="yes"
+      style={[styles.root, { paddingTop: insets.top }]}>
       {/* Header: back closes the overlay, balance pill mirrors the one that opened it. */}
       <View style={styles.bar}>
         <Pressable

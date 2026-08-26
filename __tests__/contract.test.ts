@@ -1712,13 +1712,20 @@ describe('calling ships visible and off, never silently dead', () => {
     expect(flag).toBe('false');
   });
 
-  it('renders the two glyphs disabled rather than hiding them', () => {
+  it('gates the two call buttons rather than hiding them, as real controls', () => {
+    // The Android conformance audit (2026-08-26) flagged the previous approach:
+    // a <View> with accessibilityRole="button" and no handler is a role that
+    // never fires — TalkBack announces a button that does nothing, and stays a
+    // no-op even when the flag flips. They are Pressables now: disabled while
+    // CALLS_ENABLED is false (an honest gate), and wired to start a call when on.
     const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
     expect(chat).toContain('CALLS_ENABLED');
-    expect(chat).toContain('accessibilityState={{ disabled: !CALLS_ENABLED }}');
-    // And they are not Pressables, so there is nothing to tap that does nothing.
-    const video = chat.slice(chat.indexOf('testID="call-video"'));
-    expect(video.slice(0, 400)).not.toContain('onPress');
+    expect(chat).toContain('testID="call-video"');
+    expect(chat).toContain('testID="call-voice"');
+    expect(chat).toContain('disabled={!CALLS_ENABLED}');
+    // Real, and ready for the flag flip: the tap starts a call.
+    expect(chat).toContain("onStartCall?.('video')");
+    expect(chat).toContain("onStartCall?.('audio')");
   });
 
   it('keeps the token counter in the chat header', () => {
@@ -2103,8 +2110,10 @@ describe('the motion adoption is wired, not just drawn', () => {
     expect(pressable).toMatch(/opacity: disabled \? 0\.45 : 1/);
     expect(withoutComments(pressable)).not.toMatch(/disabled \|\| busy/);
     expect(withoutComments(pressable)).not.toMatch(/busy \|\| disabled/);
-    // Told to the accessibility tree as its own state, not as "disabled".
-    expect(pressable).toContain('accessibilityState={{ disabled, busy }}');
+    // Told to the accessibility tree as its own state, not as "disabled". The
+    // trailing spread carries an optional `selected` for tab/segmented controls
+    // (added for the nav-bar a11y fix); busy and disabled stay separate fields.
+    expect(pressable).toContain('accessibilityState={{ disabled, busy,');
   });
 
   it('holds a working button compressed rather than springing back', () => {

@@ -503,7 +503,13 @@ function SignedIn({
       {route.name !== 'home' ? (
         <View style={styles.overlay}>
           {route.name === 'chat' ? (
-            <ChatScreen providerId={route.providerId} onBack={leaveChat} />
+            <ChatScreen
+              providerId={route.providerId}
+              onBack={leaveChat}
+              onStartCall={channel =>
+                setRoute({ name: 'call', providerId: route.providerId, mode: channel })
+              }
+            />
           ) : route.name === 'call' ? (
             <CallScreen
               providerId={route.providerId}

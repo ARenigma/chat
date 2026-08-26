@@ -139,6 +139,11 @@ function ProviderRowView({ provider, index, isLast, onPress, onPressAvatar }: Pr
           onPress={() => (onPressAvatar ?? onPress)(provider)}
           testID={`provider-avatar-${provider.id}`}
           accessibilityLabel={`${provider.display_name}'s profile`}
+          // Folded into the row for TalkBack: the avatar is a sighted-tap
+          // shortcut to the profile, not a second focus target overlapping the
+          // row. The row's own label already carries who this is; screen-reader
+          // users open the conversation (the row's action) and lose nothing.
+          accessible={false}
           press="none"
           style={styles.avatarTap}>
           <Avatar initial={initial} size={ROW_AVATAR} online={presence.here} />
