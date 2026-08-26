@@ -72,3 +72,16 @@ export const LOW_BALANCE_RUPEES = DEFAULT_RATES.chat;
 export function isLowRupees(rupees: number | null): boolean {
   return rupees !== null && rupees <= LOW_BALANCE_RUPEES;
 }
+
+/**
+ * Whether a real payment can be taken.
+ *
+ * Off, and gated the same way `CALLS_ENABLED` is: the UPI intent / Play Billing
+ * rail is a follow-up (ADR-0019), so the Recharge screen shows the packs and the
+ * Pay button but does not pretend to charge. The daily starter credit is a
+ * separate, real path that stays live. Flip this when the rail is wired.
+ */
+export const PAYMENTS_ENABLED = false;
+
+/** The ₹ top-up packs offered on the Recharge screen. */
+export const RECHARGE_PACKS: readonly number[] = [25, 60, 100, 180];

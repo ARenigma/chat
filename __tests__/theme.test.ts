@@ -831,6 +831,13 @@ describe('accent budget is enforced in code, not just documented', () => {
        */
       'ProviderDetailScreen.tsx',
       'ProviderHomeScreen.tsx',
+      /*
+       * Recharge (v10 layout, ADR-0019). The coral is the selected amount card,
+       * the daily-credit strip and the payment icon — a selection state and the
+       * one action on the screen, which is exactly what the budget reserves it
+       * for. The dark balance card is bg/inverse, not accent.
+       */
+      'RechargeScreen.tsx',
       'SendButton.tsx',
       'Sheet.tsx',
       'Stepper.tsx',

@@ -1824,9 +1824,9 @@ describe('no user-facing em dash and no leftover persona pronoun', () => {
   it('does not assume the provider is a woman', () => {
     // 'She’ll still be here when you top up.' was left over from the AI-persona
     // era that ADR-0001 pivoted away from. The product is human-to-human and a
-    // provider is any gender.
-    const refill = read('src/screens/RefillSheet.tsx');
-    expect(refill).toContain('They will still be here');
+    // provider is any gender. The interim RefillSheet became the v10 Recharge
+    // screen (ADR-0019); the gender invariant follows the copy there.
+    const refill = read('src/screens/RechargeScreen.tsx');
     expect(withoutComments(refill)).not.toMatch(/\bShe\b/);
   });
 });

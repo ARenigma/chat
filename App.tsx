@@ -24,7 +24,7 @@ import { currentSession, handleAuthDeepLink } from './src/api/auth';
 import { CALLS_ENABLED } from './src/api/calls';
 import { useRole } from './src/api/provider';
 import { useStore } from './src/store/useStore';
-import { RefillSheet } from './src/screens/RefillSheet';
+import { RechargeScreen } from './src/screens/RechargeScreen';
 import { Button } from './src/components/Button';
 import { FloatingToolbar } from './src/components/FloatingToolbar';
 import { ChatScreen } from './src/screens/ChatScreen';
@@ -507,7 +507,7 @@ function SignedIn({
           }}
         />
       ) : null}
-      <RefillSheet />
+      <RechargeScreen />
       <SettingsSheet
         visible={settingsOpen}
         onClose={() => setSettingsOpen(false)}
