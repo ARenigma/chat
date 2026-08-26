@@ -66,6 +66,20 @@ from (values
 ) as v(id, name, age, headline, languages, available)
 where p.id = v.id;
 
+-- Profile photos, seeded from the public `avatars` storage bucket (013). Distinct
+-- female portraits, one per provider. Ada is created by the e2e/member seed
+-- rather than here, and her avatar is set alongside that row. The files are
+-- uploaded out of band (supabase storage cp); this only points the rows at them.
+update public.profiles set avatar_url =
+  'https://uvghvhcrovmuwivgijvl.supabase.co/storage/v1/object/public/avatars/' || fn
+from (values
+  ('11111111-1111-4111-8111-111111111111'::uuid, 'mira.png'),
+  ('22222222-2222-4222-8222-222222222222'::uuid, 'sara2.png'),
+  ('33333333-3333-4333-8333-333333333333'::uuid, 'nia2.png'),
+  ('44444444-4444-4444-8444-444444444444'::uuid, 'ivy.png')
+) as a(id, fn)
+where profiles.id = a.id;
+
 -- ---------------------------------------------------------------------------
 -- 2. The device account goes back to being a member
 -- ---------------------------------------------------------------------------

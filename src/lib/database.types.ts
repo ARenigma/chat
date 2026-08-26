@@ -202,6 +202,8 @@ export type ConversationSummary = {
   last_message_at: string;
   peer_id: string;
   peer_display_name: string | null;
+  /** The peer's photo (providers only; null for members and until set). */
+  peer_avatar_url: string | null;
   /**
    * The peer's declared presence. Replaced `peer_available` in 012: that column
    * resolved the provider's listing switch through a join that is false for
@@ -237,6 +239,8 @@ export type ConversationSummary = {
 export type ProviderSummary = {
   id: string;
   display_name: string;
+  /** Member-facing profile photo (public storage URL). Null → initial fallback. */
+  avatar_url: string | null;
   gender: Gender | null;
   /** Integer years. The birth date itself is never exposed. */
   age: number | null;

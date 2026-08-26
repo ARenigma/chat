@@ -146,7 +146,12 @@ function ProviderRowView({ provider, index, isLast, onPress, onPressAvatar }: Pr
           accessible={false}
           press="none"
           style={styles.avatarTap}>
-          <Avatar initial={initial} size={ROW_AVATAR} online={presence.here} />
+          <Avatar
+            initial={initial}
+            uri={provider.avatar_url}
+            size={ROW_AVATAR}
+            online={presence.here}
+          />
         </Pressable>
         <View style={styles.label}>
           <View style={styles.topLine}>

@@ -206,6 +206,7 @@ export function ChatScreen({ providerId, onBack, onStartCall }: Props) {
   const peerName = peerThread?.peer_display_name ?? provider?.display_name;
   const name = peerName ?? 'Conversation';
   const initial = initialOf(peerName);
+  const avatarUrl = peerThread?.peer_avatar_url ?? provider?.avatar_url ?? null;
 
   /**
    * One presence value, read from one place, so the header's layout does not have
@@ -541,7 +542,7 @@ export function ChatScreen({ providerId, onBack, onStartCall }: Props) {
           press="none"
           highlight="ios"
           style={styles.identity}>
-          <Avatar initial={initial} size={30} online={presence.here} />
+          <Avatar initial={initial} uri={avatarUrl} size={30} online={presence.here} />
           <View style={styles.identityText}>
             <Text testID="chat-title" allowFontScaling numberOfLines={1} style={styles.title}>
               {name}
@@ -626,7 +627,7 @@ export function ChatScreen({ providerId, onBack, onStartCall }: Props) {
         ) : empty ? (
           <View style={styles.empty}>
             <View style={styles.emptyMark}>
-              <Avatar initial={initial} size={56} tone="warm" breathing />
+              <Avatar initial={initial} uri={avatarUrl} size={56} tone="warm" breathing />
             </View>
             <Text allowFontScaling style={styles.emptyName}>
               {name}
