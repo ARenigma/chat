@@ -2,7 +2,7 @@
  *
  * Urbanist comes from Google Fonts here rather than being bundled like it is in
  * the app. The web wants woff2 and a CDN cache; the app cannot have either, so
- * it ships the .ttf files. Same typeface, different delivery — the only thing
+ * it ships the .ttf files. Same typeface, different delivery, the only thing
  * that must not differ is the family.
  */
 *,

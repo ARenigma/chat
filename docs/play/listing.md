@@ -1,4 +1,4 @@
-# Play Console submission pack — CompanionChat 1.0.0
+# Play Console submission pack, Pappal 1.0.0
 
 Everything the console asks for, written down so the answers are consistent
 between the listing, the privacy policy and what the code actually does. Where an
@@ -13,18 +13,18 @@ masters in `design/brand/`.
 
 | Field             | Value                                                     |
 | ----------------- | --------------------------------------------------------- |
-| App name (30 max) | `CompanionChat`                                           |
-| Default language  | English (India) — `en-IN`                                 |
+| App name (30 max) | `Pappal`                                                  |
+| Default language  | English (India), `en-IN`                                  |
 | App or game       | App                                                       |
 | Category          | **Lifestyle**                                             |
 | Tags              | Chat, Communication, Wellbeing (no "Dating", no "Health") |
 | Package           | `com.companionchat`                                       |
 | Free or paid      | Free                                                      |
 | Contains ads      | **No**                                                    |
-| In-app purchases  | **No** — see §6                                           |
+| In-app purchases  | **No**, see §6                                            |
 
 **Why Lifestyle and not Health & Fitness.** Health attaches medical-claims rules
-and a second regulator to an app whose providers are not licensed clinicians —
+and a second regulator to an app whose providers are not licensed clinicians,
 the claim would be both costly and false. Clarity ships the same shape of product
 under Lifestyle (`docs/clarity-learnings.md` §1), which is the precedent we are
 following. ADR-0001 records this as a decision, not a preference.
@@ -33,10 +33,10 @@ following. ADR-0001 records this as a decision, not a preference.
 
 ## 2. Store listing copy
 
-**Short description** (80 characters max — this one is 74):
+**Short description** (80 characters max, this one is 74):
 
 ```
-Real people, ready to talk. Not therapy — just company when you need it.
+Real people, ready to talk. Not therapy, just company when you need it.
 ```
 
 **Full description** (4000 max):
@@ -44,8 +44,8 @@ Real people, ready to talk. Not therapy — just company when you need it.
 ```
 Some days you just need someone to talk to.
 
-CompanionChat connects you with real people who are there to listen. Not a bot,
-not a therapist — a person who will hear you out about the day you had.
+Pappal connects you with real people who are there to listen. Not a bot,
+not a therapist, a person who will hear you out about the day you had.
 
 HOW IT WORKS
 
@@ -59,19 +59,20 @@ WHAT THIS IS NOT
 
 This is not therapy, counselling or medical care, and the people who listen are
 not licensed clinicians. If you are in crisis, please contact a helpline or
-emergency services — the app shows the numbers on its safety screen.
+emergency services, the app shows the numbers on its safety screen.
 
 PRIVACY, WHICH WE MEAN LITERALLY
 
 Only the person you are talking to can read what you write. That is enforced by
 the database, not by a promise in a policy document.
 
-We do not ask for your contacts, your location, your photos, your camera or your
-microphone. The app requests three Android permissions in total. There is no
+We do not ask for your contacts, your location, your photos or your camera. The
+microphone is used only for the seconds you spend recording a voice note, and
+never otherwise. The app requests four Android permissions in total. There is no
 advertising ID and there are no ads. We never analyse the contents of your
 messages.
 
-A notification tells you who replied, never what they said — a lock screen is
+A notification tells you who replied, never what they said, a lock screen is
 read by whoever is holding the phone.
 
 You can delete your account and everything in it from inside the app, in two
@@ -80,7 +81,7 @@ taps, with no email to anyone and no waiting period.
 SAFETY
 
 Every conversation can be reported from the message itself. Reports go to a human.
-Blocking is immediate and mutual. You can also apply to be someone who listens —
+Blocking is immediate and mutual. You can also apply to be someone who listens,
 that requires confirming you are over 18.
 ```
 
@@ -110,7 +111,7 @@ open conversation, the provider directory, the safety sheet, and the inbox in
 dark mode. What the listing shows is what installs.
 
 They were re-shot after the neutral-ramp swap, and the check that they actually
-were is mechanical rather than remembered — the page-background pixel of each
+were is mechanical rather than remembered, the page-background pixel of each
 one is sampled and must equal the current `bg/base`:
 
 ```bash
@@ -137,32 +138,45 @@ does, cross-checked against `web/privacy.html` and the RLS policies.
 
 **Does your app collect or share any of the required user data types?** Yes.
 
-| Data type                  | Collected | Shared | Optional | Purpose                       | Notes                                                       |
-| -------------------------- | --------- | ------ | -------- | ----------------------------- | ----------------------------------------------------------- |
-| Name                       | Yes       | No     | No       | Account management            | From Google. Never shown to other users — a display name is |
-| Email address              | Yes       | No     | No       | Account management            | From Google. Never shown to other users                     |
-| User IDs                   | Yes       | No     | No       | Account management            | Supabase user id                                            |
-| Messages (in-app)          | Yes       | No     | No       | App functionality             | Visible only to the two participants; RLS-enforced          |
-| Other info (date of birth) | Yes       | No     | Yes      | App functionality (age check) | Only if the user applies to be a provider. Never displayed  |
-| Crash logs                 | Yes       | Yes    | No       | Crash reporting               | Sentry. Scrubbed of message contents before sending         |
-| Device or other IDs        | Yes       | No     | No       | App functionality             | FCM token, for notification delivery. Deleted on sign-out   |
+| Data type                  | Collected | Shared | Optional | Purpose                       | Notes                                                           |
+| -------------------------- | --------- | ------ | -------- | ----------------------------- | --------------------------------------------------------------- |
+| Name                       | Yes       | No     | No       | Account management            | From Google. Never shown to other users, a display name is      |
+| Email address              | Yes       | No     | No       | Account management            | From Google. Never shown to other users                         |
+| User IDs                   | Yes       | No     | No       | Account management            | Supabase user id                                                |
+| Messages (in-app)          | Yes       | No     | No       | App functionality             | Visible only to the two participants; RLS-enforced              |
+| Audio (voice notes)        | Yes       | No     | Yes      | App functionality             | Only while recording one. Private bucket, two participants only |
+| Other info (date of birth) | Yes       | No     | Yes      | App functionality (age check) | Only if the user applies to be a provider. Never displayed      |
+| Crash logs                 | Yes       | Yes    | No       | Crash reporting               | Sentry. Scrubbed of message contents before sending             |
+| Device or other IDs        | Yes       | No     | No       | App functionality             | FCM token, for notification delivery. Deleted on sign-out       |
 
 **Not collected, and say so:** approximate or precise location, financial info,
-health info, contacts, photos or videos, audio, files, calendar, SMS, call logs,
+health info, contacts, photos or videos, files, calendar, SMS, call logs,
 app activity/browsing, search history, installed apps, advertising ID.
+
+**Audio moved out of that list when voice notes shipped**, and this is the one
+row on the table that needs an out-of-band action rather than a code change:
+**the Data Safety declaration must be amended before an AAB declaring
+RECORD_AUDIO is uploaded.** Uploading first is a policy violation, not a
+paperwork nit, because the linked privacy policy and the declaration would
+disagree with the manifest. Marked Optional because a voice note is never
+required to use the app: every conversation works with text alone.
 
 **Security practices:**
 
-- Data is encrypted in transit — yes (HTTPS/TLS to Supabase and FCM).
-- Users can request data deletion — **yes**, and it is in the app, not by email:
+- Data is encrypted in transit, yes (HTTPS/TLS to Supabase and FCM).
+- Users can request data deletion, **yes**, and it is in the app, not by email:
   `https://chat-git-main-arenigmas-projects.vercel.app/delete.html` is the required URL.
-- Committed to the Play Families policy — not applicable (18+, see §5).
-- Independent security review — no.
+- Committed to the Play Families policy, not applicable (18+, see §5).
+- Independent security review, no.
 
 **Data retention:** account data is deleted immediately on request. Abuse reports
 survive for 90 days with the reporter's identity removed. That exception is
 declared here and in the privacy policy, in the same words, because a report that
 vanished with the reported account would make deletion a way to destroy evidence.
+A reported voice note's audio survives with the report, for the same 90 days and
+for the same reason: a report about something spoken would otherwise point at
+nothing. Unreported audio is deleted with the conversation, and a recording that
+was never sent is swept within 24 hours.
 
 ---
 
@@ -178,7 +192,7 @@ Answer the IARC questionnaire as follows.
 | Does the app allow purchase of digital goods?                 | No      | No purchase path exists in 1.0.0                                                                          |
 | Is user-generated content moderated?                          | Yes     | In-message reporting, human review queue, immediate mutual blocking                                       |
 
-**Target audience:** 18 and over only. Not "18+ and also younger" — the provider
+**Target audience:** 18 and over only. Not "18+ and also younger", the provider
 side requires an age, the subject matter is adult loneliness, and a mixed-age
 audience would pull the listing into the Families programme and its content
 review. Declare no appeal to children.
@@ -187,7 +201,7 @@ review. Declare no appeal to children.
 (`AndroidManifest.xml`, and `npm run verify:manifest` fails the build if a
 dependency reintroduces it).
 
-**Government app:** no. **Financial features:** none. **Health:** none — and this
+**Government app:** no. **Financial features:** none. **Health:** none, and this
 is worth answering carefully, because "wellbeing" phrasing in the listing must
 not become a health claim.
 
@@ -199,7 +213,7 @@ There is no purchase path in the app. Tokens come from a 50-token starting
 balance and a 25-token daily refill (`src/lib/tokenLedger.ts`), both free.
 
 This is not an omission. It means the first submission declares no in-app
-purchases, no financial data, and no payment-policy question — which is the
+purchases, no financial data, and no payment-policy question, which is the
 narrowest possible surface for a first review of an app in a category reviewers
 scrutinise. Payments (Cashfree, pending KYC) land in a later release, and Play's
 real-world-services exemption question gets answered then, on its own, rather
@@ -215,7 +229,7 @@ than tangled up with the initial approval.
 | Data deletion  | `https://chat-git-main-arenigmas-projects.vercel.app/delete.html`  |
 | Support email  | `testrelay97@gmail.com`                                            |
 
-Swap the host for the custom domain when it exists — the paths do not change.
+Swap the host for the custom domain when it exists, the paths do not change.
 Play lets you edit these after submission, so a `.vercel.app` host is fine for
 the first review.
 
@@ -241,11 +255,11 @@ Both of these were blockers and both are now resolved:
 
 `versionCode` comes from `CI_PIPELINE_IID` and falls back to 1 locally, so the
 artefact uploaded to Play must be built by CI or have the version set explicitly
-— Play refuses a duplicate `versionCode` and every local build produces 1.
+, Play refuses a duplicate `versionCode` and every local build produces 1.
 
 **The upload key does not exist yet.** `android/keystore.properties` is absent,
 so `hasReleaseKeystore` is false and a release build is unsigned. Creating it is
-one command, and it must be run by the person who will own the key — losing it
+one command, and it must be run by the person who will own the key, losing it
 means losing the ability to update the app:
 
 ```

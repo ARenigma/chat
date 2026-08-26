@@ -6,7 +6,7 @@ import { createMMKV } from 'react-native-mmkv';
  *
  * MMKV is memory-mapped and **synchronous**, which is the point. AsyncStorage
  * crosses to native and back for every read, so the boot path had to `await`
- * storage twice before it could decide which screen to show — once for the
+ * storage twice before it could decide which screen to show, once for the
  * Supabase session and once for the last conversation. Those awaits are the
  * difference between the first frame being the right screen and the first frame
  * being a spinner.
@@ -24,13 +24,13 @@ const MIGRATED = ['companion.lastProvider'] as const;
  * Move anything AsyncStorage still holds into MMKV, once.
  *
  * Without this, switching storage engines silently signs everybody out and
- * forgets which conversation they were in — the data is not gone, it is just
+ * forgets which conversation they were in, the data is not gone, it is just
  * behind a door nothing opens any more. Supabase's session keys are discovered
  * rather than listed, because their names include the project ref.
  *
  * Runs at import time and deliberately does not block: every consumer reads
  * through `storage`, which falls back to nothing rather than to stale data, and
- * a missed session on one cold start costs a sign-in — whereas awaiting this
+ * a missed session on one cold start costs a sign-in, whereas awaiting this
  * before the first frame would cost the boot time the migration exists to save.
  */
 let migrating: Promise<void> | null = null;

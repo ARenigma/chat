@@ -3,8 +3,8 @@
 -- Two decisions and one research pass.
 --
 -- 1. Phone + OTP is the only identity. Anonymous sessions, Google, Facebook and
---    email all go. That is a real loss — "usable on the first frame, nothing to
---    fill in" was the product's sharpest differentiator — and it buys something
+--    email all go. That is a real loss, "usable on the first frame, nothing to
+--    fill in" was the product's sharpest differentiator, and it buys something
 --    the safety work could not: a member who is banned cannot come back for the
 --    price of a reinstall, because a phone number is scarce in a way a fresh
 --    anonymous row is not. Suspension only means something if identity persists.
@@ -44,7 +44,7 @@ comment on column public.profiles.date_of_birth is
   'Never exposed to another user. The directory publishes a computed integer age.';
 
 -- Any provider admitted before this migration was, by definition, never
--- age-verified — the column did not exist. They cannot be grandfathered in: the
+-- age-verified, the column did not exist. They cannot be grandfathered in: the
 -- whole point of the constraint is that there is no such thing as a provider of
 -- unknown age. So they are demoted to member and must reapply through the
 -- reviewed path, which now asks for a birth date.
@@ -58,7 +58,7 @@ set role = 'member',
 where role = 'provider' and date_of_birth is null;
 
 -- The age gate. A constraint, not a form field, so there is no route to an
--- underage provider — not through the app, not through the approval function,
+-- underage provider, not through the app, not through the approval function,
 -- not through a manual UPDATE by an operator in a hurry.
 alter table public.profiles
   drop constraint if exists provider_is_adult;
@@ -438,7 +438,7 @@ revoke all on function public.reject_provider_application(uuid, text) from publi
 grant execute on function public.reject_provider_application(uuid, text) to service_role;
 
 -- ---------------------------------------------------------------------------
--- 3. Reviews — reputation a member can see before spending anything
+-- 3. Reviews, reputation a member can see before spending anything
 -- ---------------------------------------------------------------------------
 -- Clarity's rows carry "5.0 ★ 39+ reviews" and ours carried nothing, which means
 -- a member choosing between two names is choosing at random. One review per
@@ -552,8 +552,8 @@ create trigger refresh_provider_rating
 -- 4. Nobody pays for silence
 -- ---------------------------------------------------------------------------
 -- The most-upvoted negative review of Clarity is about being billed while the
--- listener said nothing. Per-message billing already avoids the worst of it —
--- there is no meter running — but a member can still pay for messages that were
+-- listener said nothing. Per-message billing already avoids the worst of it,
+-- there is no meter running, but a member can still pay for messages that were
 -- never answered, which is the same grievance with a different shape.
 --
 -- So an unanswered message is refunded. Not as goodwill: it is the difference
@@ -654,7 +654,7 @@ grant execute on function public.refresh_reply_latencies() to service_role;
 -- 5. The directory, enriched
 -- ---------------------------------------------------------------------------
 -- Ours published a name and "Available now". Clarity's row carries a photo,
--- name, gender, age, rating, review count, a one-line bio and a price — which is
+-- name, gender, age, rating, review count, a one-line bio and a price, which is
 -- the difference between choosing a person and picking a name off a list.
 --
 -- Age is computed here and the birth date is not exposed. Price is deliberately
@@ -689,7 +689,7 @@ with (security_invoker = false) as
 comment on view public.provider_directory is
   'The only member-facing projection of a provider. Runs as owner and therefore '
   'bypasses RLS on profiles by design: the column list here IS the privacy '
-  'boundary. date_of_birth is deliberately absent — age is computed. Never add a '
+  'boundary. date_of_birth is deliberately absent, age is computed. Never add a '
   'column without deciding it is public to every member.';
 
 revoke all on public.provider_directory from anon;

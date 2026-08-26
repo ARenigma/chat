@@ -62,6 +62,36 @@ const PAIRS = [
     target: 4.5,
     what: 'body copy on a sunken field',
   },
+  /*
+   * The thread bubble put three more foregrounds onto `bg/sunken` at once.
+   *
+   * Until Chats became bubbles, the only thing measured against that fill was
+   * `text/primary`, because a sunken surface was a search field and a search
+   * field holds one kind of text. A bubble holds four: a name, a preview, a
+   * timestamp and a presence dot. All three of the new ones pass today, which is
+   * exactly why they belong here: the risk is not that the design is wrong now,
+   * it is that somebody tunes a grey later and nothing notices.
+   */
+  {
+    fg: 'text/secondary',
+    bg: 'bg/sunken',
+    target: 4.5,
+    what: "a thread bubble's message preview",
+  },
+  {
+    fg: 'text/tertiary',
+    bg: 'bg/sunken',
+    target: 3,
+    exempt:
+      'a timestamp is a secondary label beside a name that already passes at 4.5, and it is never the only way to know when a message arrived',
+    what: "a thread bubble's timestamp",
+  },
+  {
+    fg: 'state/available',
+    bg: 'bg/sunken',
+    target: 3,
+    what: 'the presence dot on a thread bubble (non-text)',
+  },
   {
     fg: 'text/secondary',
     bg: 'bg/base',
@@ -80,7 +110,7 @@ const PAIRS = [
     target: 3,
     what: 'timestamps and receipts',
     exempt:
-      'glanceable metadata, never the only carrier of meaning — the row it labels is legible without it',
+      'glanceable metadata, never the only carrier of meaning, the row it labels is legible without it',
   },
   {
     fg: 'text/onAccent',
@@ -149,13 +179,44 @@ const PAIRS = [
     target: 1.2,
     what: 'card divider',
     exempt:
-      'a hairline is a seam, not a boundary a user must find — border/strong is what carries meaning',
+      'a hairline is a seam, not a boundary a user must find, border/strong is what carries meaning',
   },
   {
     fg: 'border/strong',
     bg: 'bg/base',
     target: 1.5,
     what: 'input and toggle outline',
+  },
+  // bg/grouped is the second page colour, so everything that reads on bg/base
+  // has to read on it too. Added with the token rather than after somebody
+  // notices a settings footer has gone pale.
+  {
+    fg: 'text/primary',
+    bg: 'bg/grouped',
+    target: 4.5,
+    what: 'a row label on the grouped page',
+  },
+  {
+    fg: 'text/secondary',
+    bg: 'bg/grouped',
+    target: 4.5,
+    what: 'a section footer under a group',
+  },
+  {
+    fg: 'border/hairline',
+    bg: 'bg/grouped',
+    target: 1.2,
+    what: 'the separator between grouped rows',
+    exempt:
+      'a hairline is a seam, not a boundary a user must find: border/strong is what carries meaning',
+  },
+  // The selected cell keeps its label readable, which is the whole reason the
+  // iOS highlight is a mid grey and not the accent.
+  {
+    fg: 'text/primary',
+    bg: 'bg/selected',
+    target: 4.5,
+    what: 'a row label while the cell is held',
   },
 ];
 
@@ -187,7 +248,7 @@ for (const mode of ['Light', 'Dark']) {
 
 console.log(rows.join('\n'));
 if (failures > 0) {
-  console.error(`\ncontrast FAILED — ${failures} pair(s) below target`);
+  console.error(`\ncontrast FAILED, ${failures} pair(s) below target`);
   process.exit(1);
 }
-console.log(`\ncontrast OK — ${PAIRS.length * 2} pairs meet WCAG AA targets`);
+console.log(`\ncontrast OK, ${PAIRS.length * 2} pairs meet WCAG AA targets`);

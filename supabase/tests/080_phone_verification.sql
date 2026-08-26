@@ -1,4 +1,4 @@
--- 080 — phone verification is a claim only the server can make
+-- 080, phone verification is a claim only the server can make
 --
 -- The point of migration 010 is that "this person controls this number" is
 -- asserted by MSG91 through an Edge Function, never by a client about itself. If
@@ -49,7 +49,7 @@ select throws_ok(
   $$update public.profiles set token_balance = 9999
     where id = 'cccccccc-0000-4000-8000-000000000001'$$,
   '42501', null,
-  'and the original guard still holds — the two triggers compose'
+  'and the original guard still holds, the two triggers compose'
 );
 reset role;
 

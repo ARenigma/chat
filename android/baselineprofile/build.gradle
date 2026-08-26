@@ -1,0 +1,103 @@
+/*
+ * Baseline Profile generation.
+ * https://developer.android.com/topic/performance/baselineprofiles/create-baselineprofile
+ *
+ * A `com.android.test` module, not a library: it builds its own APK, installs
+ * the app under test, drives it, and records which classes and methods the
+ * runtime actually loaded during startup. That recording becomes
+ * `app/src/<variant>/generated/baselineProfiles/baseline-prof.txt`, which AGP
+ * bakes into the APK as an ART profile so those classes are AOT-compiled instead
+ * of interpreted then JIT-ed on first run.
+ *
+ * **What this buys a React Native app, honestly.** It AOT-compiles the
+ * Java/Kotlin scaffolding — ReactActivity, ReactHostImpl, the TurboModule and
+ * ViewManager registries, Fabric's mounting layer, SoLoader, Fresco, Firebase.
+ * It does NOTHING for the Hermes bundle, which is ~5MB of bytecode Hermes
+ * handles itself, and nothing for the native .so files. Expect single-digit to
+ * low-double-digit percent off time-to-initial-display, not the 30% the headline
+ * numbers imply. The more reliable half is the DEX layout change: startup
+ * classes end up adjacent on disk, which cuts major page faults rather than JIT
+ * time.
+ *
+ * **This module never ships.** `com.android.test` output is not part of the app
+ * APK; only the generated text file is consumed at build time.
+ */
+apply plugin: "com.android.test"
+apply plugin: "org.jetbrains.kotlin.android"
+apply plugin: "androidx.baselineprofile"
+
+android {
+    namespace "com.companionchat.baselineprofile"
+    compileSdk rootProject.ext.compileSdkVersion
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+
+    defaultConfig {
+        /*
+         * minSdk 28, not the app's 24, and this is a requirement rather than a
+         * preference: Macrobenchmark needs API 28+ to read the profile back off
+         * the device. It does not constrain what the app supports — the profile
+         * generated here is installed by `androidx.profileinstaller` on every
+         * device the app runs on.
+         */
+        minSdk 28
+        targetSdk rootProject.ext.targetSdkVersion
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    targetProjectPath = ":app"
+
+    /*
+     * Target the `internal` build type, declared here rather than set via
+     * `testBuildType`.
+     *
+     * `internal` is the variant testers actually install (`initWith release`, so
+     * minified with the same ProGuard rules), which is what the profile needs to
+     * describe.
+     *
+     * **The recording itself happens un-minified, and I had this backwards at
+     * first.** The plugin does not record against the minified build — it
+     * synthesises a `nonMinifiedInternal` variant, records real class names
+     * there, and R8 rewrites the profile through its own mapping when building
+     * the shipped APK. Visible in the generated task names:
+     * `collectNonMinifiedInternalBaselineProfile`. Recording against a minified
+     * build would give a profile full of `a.b.c` that matches nothing after the
+     * next build renames them differently.
+     *
+     * `testBuildType` is read-only on `TestExtension` regardless — it is an
+     * application property. A test module declares the build types it targets and
+     * lets variant matching pair them with the app's, which is what
+     * `matchingFallbacks` is for.
+     */
+    buildTypes {
+        internal {
+            matchingFallbacks = ["release"]
+        }
+    }
+}
+
+dependencies {
+    implementation "androidx.test.ext:junit:1.2.1"
+    implementation "androidx.test.uiautomator:uiautomator:2.3.0"
+    implementation "androidx.benchmark:benchmark-macro-junit4:1.4.1"
+}
+
+baselineProfile {
+    /*
+     * The connected device, not a Gradle-managed one.
+     *
+     * A managed device would need an `aosp` system image downloaded per build,
+     * and this machine already has an API 34 `google_apis` AVD that is
+     * userdebug and therefore able to run the generator. Note that a
+     * `google_apis_playstore` image CANNOT do this — the docs are explicit that
+     * it lacks the root/userdebug capability the recording needs. The playstore
+     * AVD on this machine exists for Credential Manager testing, which needs
+     * current Play services, and the two requirements are mutually exclusive in
+     * one image.
+     */
+    useConnectedDevices = true
+}

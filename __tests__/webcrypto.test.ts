@@ -2,7 +2,7 @@ import { digestSha256, webCryptoIsReady } from '../src/lib/webcrypto';
 
 /**
  * Note on what is under test. The polyfill installs itself only when the runtime
- * lacks `crypto.subtle`, and Node has had it since 19 — so asserting through
+ * lacks `crypto.subtle`, and Node has had it since 19, so asserting through
  * `crypto.subtle.digest` here would exercise Node's implementation and none of
  * ours. The digest is therefore imported and called directly.
  */

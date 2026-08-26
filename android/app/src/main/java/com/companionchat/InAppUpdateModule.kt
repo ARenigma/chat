@@ -25,7 +25,7 @@ import com.google.android.play.core.install.model.UpdateAvailability
  *
  * There are no events. The official sample registers an InstallStateUpdatedListener,
  * but the same guide also polls `appUpdateInfo` in `onResume` to catch an update
- * that finished downloading while the app was away — and that poll subsumes the
+ * that finished downloading while the app was away, and that poll subsumes the
  * listener for our purposes. JS calls `check()` on mount and on foreground,
  * which is strictly simpler than bridging a listener and keeping it in step with
  * the React lifecycle.
@@ -49,7 +49,7 @@ class InAppUpdateModule(private val reactContext: ReactApplicationContext) :
      * What Play currently thinks. Resolves rather than rejects on "no update",
      * because that is the normal case and not an error.
      *
-     * Off Play entirely — a sideloaded APK, an emulator without Play Store —
+     * Off Play entirely, a sideloaded APK, an emulator without Play Store,
      * this fails, and it fails by resolving `available: false`. An update check
      * is never important enough to surface an error to someone who is simply
      * running a debug build.

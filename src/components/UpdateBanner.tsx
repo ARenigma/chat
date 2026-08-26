@@ -21,6 +21,12 @@ import { updateNotice, type UpdateAction } from '../lib/updatePolicy';
  * It only ever appears for a flexible update that has finished downloading.
  * Play draws its own UI for the download itself and for immediate updates, so
  * anything here would be a second voice saying the same thing.
+ *
+ * **Deliberately Android-shaped, and left alone by the iOS pass.** A snackbar has
+ * no iOS equivalent because the App Store owns updates there, and
+ * `src/lib/appUpdate.ts` already gates on `Platform.OS === 'android'`, so on iOS
+ * this renders nothing at all. There is no iPhone idiom to move it towards, and a
+ * future pass should not invent one.
  */
 export function UpdateBanner() {
   const styles = useStyles(makeStyles);
@@ -43,7 +49,7 @@ export function UpdateBanner() {
         {message}
       </Text>
       {/* Restarting is destructive to whatever is on screen, so it is never
-          automatic — the app closes and reopens, and a half-typed message would
+          automatic, the app closes and reopens, and a half-typed message would
           go with it. */}
       <Pressable
         onPress={() => {

@@ -1,4 +1,4 @@
-# ADR-0003 — CI moves to GitLab with a self-hosted runner
+# ADR-0003, CI moves to GitLab with a self-hosted runner
 
 - **Status:** Accepted (2026-08-20)
 - **Decision by:** Amit Ranjan
@@ -9,7 +9,7 @@ GitHub Actions is disabled at the account level on `ARenigma`
 (`HTTP 422: Actions has been disabled for this user`). Repository settings report
 Actions enabled, and three pushes touching `ci.yml` produced zero runs. The
 four-stage pipeline was therefore written, locally verified, and never executed on
-a runner — which is the same as not having one.
+a runner, which is the same as not having one.
 
 An Oracle VPS with a registered GitLab runner already exists and is paid for.
 

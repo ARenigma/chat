@@ -9,7 +9,7 @@ import {
 } from '../src/lib/tokenLedger';
 import fixture from '../supabase/tests/ledger_cases.json';
 
-describe('applyDebit — parity with public.deduct_user_token', () => {
+describe('applyDebit, parity with public.deduct_user_token', () => {
   for (const c of fixture.cases) {
     it(`${c.name}: ${c.current} - ${c.cost} -> ${c.success ? c.newBalance : 'rejected'}`, () => {
       const result = applyDebit(c.current, c.cost);

@@ -6,7 +6,7 @@
  * theme. The generated file is never hand-edited.
  *
  * The pipeline used to start in Figma, and the JSON was its export. It no longer
- * does — see the provenance note in the JSON. The generator does not care either
+ * does, see the provenance note in the JSON. The generator does not care either
  * way, but the header it writes should not claim a lineage the file does not
  * have.
  *
@@ -69,7 +69,7 @@ function render(value, indent) {
  *
  * Deliberately emits **no `fontWeight`**. Each style names its own static face,
  * and on Android a concrete family plus a weight makes the platform synthesise a
- * weight the family already ships — which smears the letterforms and is
+ * weight the family already ships, which smears the letterforms and is
  * invisible on the emulator until you look at a screenshot at 3x. The weight
  * lives in the family name and nowhere else; a test forbids `fontWeight` in
  * components and screens so it cannot creep back.
@@ -111,7 +111,7 @@ function values(obj) {
  *
  * The rest thresholds are attached here rather than left to Reanimated's
  * defaults, which allow a spring to sit a fraction of a pixel off target for
- * several frames — cheap to fix, and the difference between a press that ends
+ * several frames, cheap to fix, and the difference between a press that ends
  * and one that fades out.
  *
  * Only damping/stiffness/mass are emitted. Passing a `dampingRatio` alongside
@@ -141,7 +141,7 @@ function springs() {
  *
  * `ratio` is c / (2*sqrt(k*m)): 1 is critically damped, below 1 overshoots,
  * above 1 crawls in. `settleMs` is the 4-time-constant estimate, 4 / (ratio *
- * sqrt(k/m)) — near enough to the frame where the eye stops seeing movement.
+ * sqrt(k/m)), near enough to the frame where the eye stops seeing movement.
  *
  * Both are computed rather than written down, so a note claiming "no overshoot"
  * cannot survive someone lowering the damping.
@@ -160,16 +160,29 @@ function springMeta() {
   return out;
 }
 
+/**
+ * Every sub-block of `spec.motion`, rather than a hand-written list of them.
+ *
+ * The list this replaced was a trap with a long fuse. Adding a block to
+ * tokens.json and not naming it here dropped it silently, and `tokens:check`
+ * still passed: it compares generated output against the committed file, and
+ * both lacked the block. The failure then surfaced as a typecheck error in
+ * motion.ts, a long way from the edit that caused it. Iterating cannot go wrong
+ * that way.
+ *
+ * `spring` is skipped because it is rebuilt below from the physical triplet, and
+ * `rest` because `springs()` folds the two settle thresholds into every spring
+ * rather than emitting them as a block of their own.
+ */
 function motion() {
-  return {
-    spring: springs(),
-    springMeta: springMeta(),
-    decay: values(spec.motion.decay),
-    gesture: values(spec.motion.gesture),
-    press: values(spec.motion.press),
-    stagger: values(spec.motion.stagger),
-    duration: values(spec.motion.duration),
-  };
+  const out = { spring: springs(), springMeta: springMeta() };
+  for (const [name, block] of Object.entries(spec.motion)) {
+    if (name.startsWith('$') || name === 'spring' || name === 'rest') {
+      continue;
+    }
+    out[name] = values(block);
+  }
+  return out;
 }
 
 function elevation(mode) {
@@ -188,15 +201,15 @@ function elevation(mode) {
 }
 
 const header = `/**
- * GENERATED FILE — DO NOT EDIT.
+ * GENERATED FILE, DO NOT EDIT.
  *
- * Source: design/tokens.json (authored directly — the Figma library is stale; see
+ * Source: design/tokens.json (authored directly, the Figma library is stale; see
  * the provenance note in that file).
  * Regenerate with \`npm run tokens\`. \`npm run tokens:check\` fails on drift.
  *
  * System: ${spec.source.system}
  *
- * Accent budget: the coral is for ACTIONS AND STATES ONLY — send, own bubble,
+ * Accent budget: the coral is for ACTIONS AND STATES ONLY, send, own bubble,
  * unread count, avatar wash, low-balance count, typing dots. Never a page
  * background, never a header, never a divider, never a provider's avatar. That
  * single rule is the difference between friendly and flirty, and a test in
@@ -205,7 +218,7 @@ const header = `/**
  * Contrast: ${spec.source.ratiosMeasured}
  */
 
-/** Widened deliberately — see the fontVariant note in scripts/gen-tokens.mjs. */
+/** Widened deliberately, see the fontVariant note in scripts/gen-tokens.mjs. */
 type FontVariantList = 'tabular-nums'[];
 `;
 
@@ -241,7 +254,7 @@ export const DARK = ${render(
 /**
  * Either mode, and deliberately a union rather than \`typeof LIGHT\`.
  *
- * Both objects are \`as const\`, which makes every hex a literal type — so
+ * Both objects are \`as const\`, which makes every hex a literal type, so
  * \`typeof LIGHT\` cannot hold DARK, and a theme-aware stylesheet would only
  * ever typecheck against light mode. The union works because the two shapes are
  * identical: property access resolves, and each colour reads as the union of its
@@ -261,25 +274,25 @@ if (CHECK) {
     current = readFileSync(OUTPUT, 'utf8');
   } catch {
     console.error(
-      'tokens:check FAILED — src/theme/tokens.generated.ts does not exist',
+      'tokens:check FAILED, src/theme/tokens.generated.ts does not exist',
     );
     process.exit(1);
   }
   if (current !== generated) {
     console.error(
-      'tokens:check FAILED — src/theme/tokens.generated.ts is stale.\n' +
+      'tokens:check FAILED, src/theme/tokens.generated.ts is stale.\n' +
         'design/tokens.json changed without regenerating. Run `npm run tokens`.',
     );
     process.exit(1);
   }
-  console.log('tokens:check OK — generated theme matches design/tokens.json');
+  console.log('tokens:check OK, generated theme matches design/tokens.json');
   process.exit(0);
 }
 
 writeFileSync(OUTPUT, generated);
 const colorCount = Object.keys(spec.color.tokens).length;
 console.log(
-  `tokens OK — ${colorCount} colours x 2 modes, ` +
+  `tokens OK, ${colorCount} colours x 2 modes, ` +
     `${Object.keys(values(spec.space)).length} space, ${
       Object.keys(values(spec.radius)).length
     } radius, ` +

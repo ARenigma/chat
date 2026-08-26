@@ -1,0 +1,352 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { supabase } from '../lib/supabase';
+import { ENV } from '../lib/env';
+import { newUuid } from '../lib/ids';
+import { canSend } from '../lib/tokenLedger';
+import { errorTick, tick } from '../lib/haptics';
+import {
+  PENDING_PREFIX,
+  insertOptimistic,
+  settleOptimistic,
+  type TranscriptMessage,
+} from '../lib/transcript';
+import { track } from '../lib/telemetry';
+import type { Message, SendError, SendResult } from '../lib/database.types';
+import {
+  isSendable,
+  isVoicePath,
+  nextSpeed,
+  voiceObjectPath,
+  type PlaybackSpeed,
+  type VoiceDraft,
+  type VoicePlayer,
+} from '../lib/voice';
+import {
+  applySpeed,
+  rememberSpeed,
+  startPlayback,
+  stopPlayback,
+  storedSpeed,
+} from '../lib/recorder';
+import { useStore } from '../store/useStore';
+import { keys } from './chat';
+
+/** The private bucket created by migration 011. */
+const BUCKET = 'voice-notes';
+
+/**
+ * How long a playback URL is good for.
+ *
+ * Sixty seconds, minted on the tap rather than on render. Minting per row at
+ * render time would issue a signed URL for every note on screen whether or not
+ * anybody listens, and each one is a credential with a lifetime.
+ */
+const SIGNED_URL_TTL_SECONDS = 60;
+
+const NOTICE: Record<SendError | 'UPLOAD', string> = {
+  INSUFFICIENT_BALANCE: 'You are out of tokens.',
+  BAD_REQUEST: 'That voice note could not be sent.',
+  UNAUTHORIZED: 'Session expired. Reopen the app to continue.',
+  FORBIDDEN: 'That conversation is not available.',
+  NOT_FOUND: 'That conversation no longer exists.',
+  BLOCKED: 'You can no longer message each other.',
+  SUSPENDED: 'Your account is under review and cannot send messages.',
+  RATE_LIMITED: 'Slow down a moment, then try again.',
+  // Not a `SendError`: the upload is a separate hop and it is the one that fails
+  // on a bad connection, so it says so rather than borrowing BAD_REQUEST.
+  UPLOAD: 'The recording could not be uploaded. Check your connection.',
+};
+
+/**
+ * The upload, hand-rolled, and the comment is the reason rather than a preference.
+ *
+ * `supabase.storage.from(b).upload(path, body)` cannot be used from React Native.
+ * storage-js's FormData branch calls `body.has('cacheControl')`, and React
+ * Native's FormData polyfill implements only `append`, `getAll` and `getParts`,
+ * so it throws a TypeError before a byte leaves the device. The Blob branch is no
+ * help either: RN's Blob cannot be constructed from a file path.
+ *
+ * What does work needs no filesystem module and puts no bytes through JS: RN's
+ * networking layer streams a file part natively when given `{ uri, name, type }`,
+ * so this is the same multipart shape storage-js sends for a browser Blob, posted
+ * to the same endpoint. The alternative, reading the file into an ArrayBuffer,
+ * would base64 the whole recording across the bridge *and* need a filesystem
+ * dependency to read it.
+ */
+async function uploadRecording(
+  path: string,
+  file: string,
+  accessToken: string,
+): Promise<boolean> {
+  const form = new FormData();
+  form.append('cacheControl', '3600');
+  // The empty field name is what storage-js uses, and the server reads the first
+  // file part regardless of its name.
+  form.append('', {
+    uri: file.startsWith('file://') ? file : `file://${file}`,
+    name: 'note.m4a',
+    type: 'audio/mp4',
+  } as unknown as Blob);
+
+  const response = await fetch(
+    `${ENV.supabaseUrl}/storage/v1/object/${BUCKET}/${path}`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        apikey: ENV.supabaseAnonKey,
+        // No `x-upsert`. The bucket has no UPDATE policy on purpose: a recording
+        // the sender can replace after it has been read or reported is worthless
+        // as evidence. A retry mints a new key instead.
+      },
+      body: form,
+    },
+  );
+  return response.ok;
+}
+
+/**
+ * Send a recording as a message.
+ *
+ * Upload first, insert second, and that order is the whole design. `voice_path`
+ * is not client-writable after the fact (migration 011 guards it in
+ * `guard_message_reply_and_voice`), so the row can only ever be written once and
+ * has to point at audio that already exists. The failure this leaves behind is an
+ * orphaned object when the RPC rejects after a successful upload, and
+ * `purge_orphaned_voice_notes` sweeps those after 24 hours.
+ *
+ * Mirrors `useSendMessage` deliberately, including the optimistic row and the
+ * notice map, so the two send paths behave the same when they fail. The one thing
+ * it does not mirror: the optimistic row cannot be played, because its audio is
+ * on disk and not yet in the bucket, and a local-file playback path would be a
+ * second player route to keep in step with the first for one second of benefit.
+ */
+export function useSendVoiceNote(
+  conversationId: string | undefined,
+  selfId: string | undefined,
+) {
+  const queryClient = useQueryClient();
+  const setSending = useStore(s => s.setSending);
+  const setBalance = useStore(s => s.setBalance);
+  const setNotice = useStore(s => s.setNotice);
+  const openRefill = useStore(s => s.openRefill);
+
+  return useCallback(
+    async (draft: VoiceDraft, replyToId: string | null = null): Promise<void> => {
+      if (conversationId === undefined || selfId === undefined) {
+        return;
+      }
+      // The recorder already refuses to run past the ceiling, so this is the
+      // floor: a tap too short to be a recording is discarded without a telling
+      // off, because being scolded for brushing a button is worse than nothing.
+      if (!isSendable(draft.durationMs)) {
+        return;
+      }
+      if (!canSend(useStore.getState().balance)) {
+        errorTick();
+        openRefill();
+        return;
+      }
+
+      const path = voiceObjectPath(conversationId, newUuid());
+      if (!isVoicePath(path)) {
+        // Unreachable unless the conversation id is not a uuid, which would mean
+        // the RPC would refuse the path too. Checked here so the recording is not
+        // uploaded first to find that out.
+        setNotice(NOTICE.BAD_REQUEST);
+        return;
+      }
+
+      tick();
+      const key = keys.messages(conversationId);
+      const pendingId = `${PENDING_PREFIX}${Date.now()}`;
+      const optimistic: Message = {
+        id: pendingId,
+        conversation_id: conversationId,
+        sender_id: selfId,
+        body: null,
+        reply_to_id: replyToId,
+        voice_path: path,
+        voice_duration_ms: draft.durationMs,
+        created_at: new Date().toISOString(),
+        read_at: null,
+      };
+
+      queryClient.setQueryData<TranscriptMessage[]>(key, prev =>
+        insertOptimistic(prev ?? [], optimistic),
+      );
+      setSending(true);
+
+      const withdraw = (notice: string) => {
+        queryClient.setQueryData<TranscriptMessage[]>(key, prev =>
+          settleOptimistic(prev ?? [], pendingId, null),
+        );
+        setNotice(notice);
+        errorTick();
+      };
+
+      const { data: session } = await supabase.auth.getSession();
+      const accessToken = session.session?.access_token;
+      if (accessToken === undefined) {
+        setSending(false);
+        withdraw(NOTICE.UNAUTHORIZED);
+        return;
+      }
+
+      const uploaded = await uploadRecording(path, draft.file, accessToken).catch(
+        () => false,
+      );
+      if (!uploaded) {
+        setSending(false);
+        // Counted as a rejection with its own reason, because an upload that
+        // fails at scale is a different problem from a send the server refused.
+        track('send_rejected', { reason: 'upload' });
+        withdraw(NOTICE.UPLOAD);
+        return;
+      }
+
+      const { data, error } = await supabase.rpc('send_message', {
+        p_conversation_id: conversationId,
+        p_body: null,
+        p_reply_to_id: replyToId,
+        p_voice_path: path,
+        p_voice_duration_ms: draft.durationMs,
+      });
+      setSending(false);
+
+      const result: SendResult | null = error ? null : data;
+
+      if (result === null || !result.success) {
+        const code = result?.error;
+        track('send_rejected', { reason: code ?? 'network' });
+        withdraw(
+          code !== undefined ? NOTICE[code] : 'Could not send. Check your connection.',
+        );
+        if (code === 'INSUFFICIENT_BALANCE') {
+          openRefill();
+        }
+        void queryClient.invalidateQueries({ queryKey: keys.profile });
+        return;
+      }
+
+      const confirmed: Message | null =
+        result.message_id !== undefined && result.created_at !== undefined
+          ? { ...optimistic, id: result.message_id, created_at: result.created_at }
+          : null;
+
+      queryClient.setQueryData<TranscriptMessage[]>(key, prev =>
+        settleOptimistic(prev ?? [], pendingId, confirmed),
+      );
+
+      if (typeof result.new_balance === 'number') {
+        setBalance(result.new_balance);
+      }
+      // Seconds, not the message id: `guard_event_shape` rejects any prop key
+      // matching `message`, and the length is the only interesting thing anyway.
+      track('voice_note_sent', { secs: Math.round(draft.durationMs / 1000) });
+      void queryClient.invalidateQueries({ queryKey: keys.conversationList });
+    },
+    [conversationId, selfId, queryClient, setSending, setBalance, setNotice, openRefill],
+  );
+}
+
+/**
+ * The single playhead.
+ *
+ * There is one native player, so this owns one store value and every row reads it
+ * rather than holding a position of its own. Stopping on unmount is not tidiness:
+ * without it, audio from a thread you have left keeps playing over the next
+ * screen, and the row that started it is gone so nothing can stop it.
+ */
+export function useVoicePlayer(): VoicePlayer {
+  const setPlaying = useStore(s => s.setPlaying);
+  const setNotice = useStore(s => s.setNotice);
+  // Seeded from storage so a speed chosen last week is the speed this screen
+  // opens with, then held in React state because the pill has to re-render when
+  // it changes and MMKV cannot tell anyone it was written to.
+  const [speed, setSpeed] = useState<PlaybackSpeed>(storedSpeed);
+
+  useEffect(
+    () => () => {
+      void stopPlayback();
+      setPlaying(null);
+    },
+    [setPlaying],
+  );
+
+  const toggle = useCallback(
+    (messageId: string, path: string, durationMs: number) => {
+      const current = useStore.getState().playing;
+      if (current !== null && current.messageId === messageId) {
+        void stopPlayback();
+        setPlaying(null);
+        return;
+      }
+
+      // Marked pending before the round trip. Signing a URL and opening a stream
+      // takes long enough on a slow connection that a play button with no state
+      // change reads as dead, and the second tap then stops what the first
+      // started.
+      setPlaying({ messageId, positionMs: 0, durationMs, pending: true });
+
+      void (async () => {
+        const { data, error } = await supabase.storage
+          .from(BUCKET)
+          .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
+        if (error !== null || data === null) {
+          setPlaying(null);
+          setNotice('That voice note could not be played.');
+          return;
+        }
+        // Somebody may have tapped another note while the URL was being signed.
+        if (useStore.getState().playing?.messageId !== messageId) {
+          return;
+        }
+        try {
+          await startPlayback(data.signedUrl, storedSpeed(), {
+            onPosition: (positionMs, reportedDuration) => {
+              if (useStore.getState().playing?.messageId !== messageId) {
+                return;
+              }
+              setPlaying({
+                messageId,
+                positionMs,
+                // The player's own duration once it has one: the column is what
+                // the recorder reported, and the two can differ by a frame.
+                durationMs: reportedDuration > 0 ? reportedDuration : durationMs,
+                pending: false,
+              });
+            },
+            onEnd: () => {
+              void stopPlayback();
+              setPlaying(null);
+            },
+          });
+          track('voice_note_played', { secs: Math.round(durationMs / 1000) });
+        } catch {
+          setPlaying(null);
+          setNotice('That voice note could not be played.');
+        }
+      })();
+    },
+    [setNotice, setPlaying],
+  );
+
+  const cycleSpeed = useCallback(() => {
+    setSpeed(current => {
+      const next = nextSpeed(current);
+      // Applied to whatever is playing right now and remembered for the next one.
+      // A rate that is remembered but not applied, or applied but not
+      // remembered, is the same bug from two ends.
+      void applySpeed(next);
+      rememberSpeed(next);
+      return next;
+    });
+  }, []);
+
+  // Memoised because every bubble takes this object as a prop and every bubble is
+  // memoised: a fresh object per render would re-render the whole transcript on
+  // each playhead tick, which is the opposite of the point.
+  return useMemo(() => ({ toggle, cycleSpeed, speed }), [toggle, cycleSpeed, speed]);
+}

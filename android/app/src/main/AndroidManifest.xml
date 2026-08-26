@@ -3,15 +3,36 @@
 
     <!--
       The complete permission set. INTERNET to reach Supabase, VIBRATE for the
-      10 ms send tick. Nothing else is requested, and the app has no code path
-      that could need anything else: no image input, no contacts, no location,
-      no analytics or ads SDK.
+      10 ms send tick. Everything else here is declared with a reason below, and
+      the app still has no code path that could want contacts, location, an image
+      picker or an ads SDK.
     -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Android 13+ made notifications a runtime permission. Without this the
          request in src/lib/push.ts resolves as denied and the token never rings. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!--
+      Voice notes, for members and providers alike.
+
+      react-native-nitro-sound declares this in its own library manifest, so it
+      would merge in whether or not it appeared here. It is declared here anyway,
+      because scripts/verify-manifest.mjs treats ALLOWED as the *required* set
+      precisely so that a library's permission cannot arrive as a surprise: this
+      line is the app claiming it, not tolerating it.
+
+      What uses it: Composer's record button, one recording at a time, started by
+      a tap and stopped by a tap. What does not: there is no background capture,
+      no always-on listening, no call recording, and nothing records while the app
+      is not in the foreground. The recorder is stopped in the composer's unmount
+      cleanup for that reason.
+
+      This changes the Play Data Safety declaration. docs/play/listing.md §4 now
+      carries an Audio row, and web/privacy.html says what is recorded, where it
+      lives and how long for. Uploading a build that declares this without both of
+      those being true is a policy violation rather than a paperwork nit.
+    -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <!--
       Belt and braces for the Play Data Safety declaration: a future transitive
@@ -23,7 +44,7 @@
     <uses-permission android:name="com.google.android.gms.permission.AD_ID" tools:node="remove" />
     <!--
       Contributed by @sentry/react-native, which uses it only to tag events with
-      the connection type — ambient device metadata this app does not want and
+      the connection type, ambient device metadata this app does not want and
       does not need. Sentry's AndroidConnectionStatusProvider permission-checks
       before reading it and degrades to UNKNOWN, so removing it is safe. Caught
       by scripts/verify-manifest.mjs against the *merged* manifest.
@@ -44,6 +65,48 @@
       android:theme="@style/AppTheme"
       android:usesCleartextTraffic="${usesCleartextTraffic}"
       android:supportsRtl="true">
+      <!--
+        NO `screenOrientation`, deliberately, and this is the second position on
+        it rather than an oversight.
+
+        The app WAS locked to portrait, for a real and reproducible reason: with
+        no orientation set, focusing any text field in a landscape window handed
+        the whole screen to the input method's fullscreen "extract" editor — a
+        bare white field, a grey ALL-CAPS action button and a coloured underline,
+        with the app not shrunk beside it or dimmed behind it but gone. Not one
+        token of the design system survived. Re-reproduced on API 34 with Gboard
+        12.4.05 on 2026-08-26, so it was current behaviour and not a stale note.
+
+        That lock put the app in breach of
+        https://developer.android.com/guide/topics/large-screens, which asks apps
+        not to impose orientation or resizability restrictions, and it cost real
+        users on foldables and tablets a landscape they were entitled to.
+
+        The cause is now fixed at its source rather than worked around.
+        `ReactEditText` applies `EditorInfo.IME_FLAG_NO_FULLSCREEN` only when its
+        `disableFullscreenUI` prop is true, and React Native defaults that prop to
+        FALSE. Every text field in the app now goes through
+        `src/components/TextField.tsx`, which forces it on and removes it from its
+        own prop type so no call site can turn it back off.
+        `__tests__/platform.test.ts` fails if anything imports React Native's
+        `TextInput` directly again.
+
+        Two earlier attempts, recorded so nobody repeats them:
+          - A theme-level `android:imeOptions">flagNoExtractUi` on an
+            `editTextStyle`. Does not work: `ReactEditText` assigns `imeOptions`
+            programmatically from its props and overwrites the theme default.
+            Built and reproduced unchanged.
+          - A native `ReactTextInputManager` subclass. Unnecessary once the prop
+            was found, and it would have collided on the "AndroidTextInput" view
+            manager name.
+
+        `configChanges` keeps its orientation and size entries, which matters more
+        now than it did under the lock: rotation, split screen, freeform and a
+        folding hinge all resize the window, and a restart rebuilds the surface.
+        `Composer`'s draft is local state by decision (see the comment at
+        src/components/Composer.tsx:47), so a restart costs somebody's half-typed
+        message.
+      -->
       <activity
         android:name=".MainActivity"
         android:label="@string/app_name"
@@ -68,7 +131,7 @@
         The notification small icon, and it is not optional.
 
         Without it firebase-messaging falls back to android:icon, and the status
-        bar renders a small icon from its alpha channel only — which turned the
+        bar renders a small icon from its alpha channel only, which turned the
         two-bubble mark into a featureless white ring on the lock screen. Seen on
         a device, not deduced. `ic_notification` is the monochrome silhouette the
         adaptive icon already ships, which is exactly the shape this slot wants.
@@ -79,7 +142,7 @@
         `tools:replace` on the colour is required, and finding out why explained
         the white ring: react-native-firebase_messaging already declares this
         same meta-data as @color/white. So the library was tinting our launcher
-        icon's alpha mask pure white — the two facts that produced the bug were
+        icon's alpha mask pure white, the two facts that produced the bug were
         both defaults, neither of them ours.
       -->
       <meta-data

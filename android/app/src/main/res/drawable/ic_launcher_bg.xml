@@ -3,7 +3,7 @@
   The adaptive icon's background layer, as a drawable rather than a colour.
 
   `<background android:drawable="@color/ic_launcher_background">` is legal and
-  compiles clean — the colour is in the APK as #ff2a1f1a — but on API 34 it
+  compiles clean, the colour is in the APK as #ff2a1f1a, but on API 34 it
   rendered as nothing: the mark composited over the page behind it, which left
   the paper bubble invisible and the icon looking half-finished. A ShapeDrawable
   is what the platform's own templates use, and it renders.

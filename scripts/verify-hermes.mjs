@@ -3,7 +3,7 @@
  * Asserts the release APK ships Hermes bytecode, not plain JavaScript.
  *
  * Why this is worth a gate: if `hermesEnabled` is flipped, or the bundle task
- * silently falls back, the APK still installs and still runs — just slower, with
+ * silently falls back, the APK still installs and still runs, just slower, with
  * a longer cold start and no bytecode precompilation. Nothing fails, so nobody
  * notices. The only reliable tell is the 8-byte HBC magic at the head of
  * `assets/index.android.bundle`.
@@ -26,7 +26,7 @@ function fail(message) {
 }
 
 if (!existsSync(APK_DIR)) {
-  fail(`${APK_DIR} not found — run \`npm run android:release\` first`);
+  fail(`${APK_DIR} not found, run \`npm run android:release\` first`);
 }
 
 const apks = readdirSync(APK_DIR).filter(f => f.endsWith('.apk'));
@@ -63,7 +63,7 @@ for (const apk of apks) {
     .find(l => l.includes(BUNDLE_ENTRY))
     ?.trim();
   console.log(
-    `  ok  ${apk}: Hermes bytecode confirmed — ${sizeLine ?? BUNDLE_ENTRY}`,
+    `  ok  ${apk}: Hermes bytecode confirmed, ${sizeLine ?? BUNDLE_ENTRY}`,
   );
 }
 

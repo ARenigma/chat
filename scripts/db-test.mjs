@@ -51,6 +51,8 @@ const MIGRATIONS = [
   'supabase/migrations/008_push_tokens.sql',
   'supabase/migrations/009_push_sender.sql',
   'supabase/migrations/010_phone_verification.sql',
+  'supabase/migrations/011_reactions_replies_voice_calls.sql',
+  'supabase/migrations/012_declared_presence_and_pii_guard.sql',
 ];
 
 const docker = (args, options = {}) =>
@@ -225,7 +227,7 @@ if (MANAGED) {
    * temporary server answers `pg_isready` on the same socket, so a single probe
    * can pass, and then the first real query lands in the gap between the two
    * and fails with "No such file or directory" on the socket. Seen twice on
-   * this machine — a first-migration failure with no bad SQL behind it, which
+   * this machine, a first-migration failure with no bad SQL behind it, which
    * is the worst kind of flake to debug.
    *
    * So: wait for the entrypoint to *say* it has finished initialising, and only
@@ -339,6 +341,18 @@ const suites = [
     file: join(ROOT, 'supabase/tests/080_phone_verification.sql'),
     label: 'phone verification: a claim only the server can make',
   },
+  {
+    file: join(ROOT, 'supabase/tests/090_reactions_replies_voice_presence.sql'),
+    label: 'reactions, replies, voice notes, presence, member pseudonymity',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/100_calls_and_metering.sql'),
+    label: 'calls: blocking parity, server-authoritative per-minute metering',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/110_declared_presence_and_pii_guard.sql'),
+    label: 'declared presence, and PII no client can write',
+  },
 ];
 
 let passed = 0;
@@ -354,7 +368,7 @@ for (const suite of suites) {
   const { planned, results, diagnostics } = parseTap(output);
   if (results.length === 0) {
     console.error(output);
-    quit(`${suite.label}: no TAP output — the suite did not run`);
+    quit(`${suite.label}: no TAP output, the suite did not run`);
   }
   if (planned !== results.length) {
     failures.push(
@@ -393,4 +407,4 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log(`\ndb-test OK — ${passed} pgTAP assertions passed`);
+console.log(`\ndb-test OK, ${passed} pgTAP assertions passed`);

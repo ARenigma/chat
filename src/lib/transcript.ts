@@ -1,5 +1,5 @@
 /**
- * Transcript reconciliation — pure, so it can be tested without a socket.
+ * Transcript reconciliation, pure, so it can be tested without a socket.
  *
  * Every list here is **newest-first**, because the transcript renders into an
  * inverted FlatList.
@@ -15,7 +15,7 @@
  *   - a row from this session matches the oldest pending row with the same body
  *   - anything else is inserted at its sorted position
  *
- * The alternative — a client-generated nonce column — would need a schema change
+ * The alternative, a client-generated nonce column, would need a schema change
  * and would still need the id-based idempotency below, so it buys nothing.
  */
 import type { Message } from './database.types';
@@ -32,7 +32,7 @@ import type { Message } from './database.types';
  * key changes, and FlatList unmounts one component and mounts another. Seen on a
  * 30fps screen recording of a real send: the bubble appeared, vanished for two
  * frames, and then replayed the whole squash-and-stretch launch. The animation
- * was correct both times — it simply ran twice, with a hole in the middle,
+ * was correct both times, it simply ran twice, with a hole in the middle,
  * because as far as React was concerned two different messages had arrived.
  *
  * It is never read from Postgres and never written to it.
@@ -75,7 +75,7 @@ export function mergeIncoming(
     // change its identity, and this branch is reached in the interleaving the
     // reconciliation exists for: Realtime settles the optimistic row first, then
     // the RPC response arrives for the same id. Overwriting with the bare server
-    // row dropped the key and remounted the bubble on the *second* path — the
+    // row dropped the key and remounted the bubble on the *second* path, the
     // same replayed animation, one code path further along.
     next[existing] = { ...incoming, localKey: list[existing]?.localKey };
     return next;
@@ -94,7 +94,7 @@ export function mergeIncoming(
     }
     if (match !== -1) {
       const next = [...list];
-      // Carry the optimistic id forward so the row keeps its identity — see the
+      // Carry the optimistic id forward so the row keeps its identity, see the
       // note on TranscriptMessage. Without this the send animation plays twice.
       next[match] = { ...incoming, localKey: list[match]?.localKey ?? list[match]?.id };
       return next;
@@ -106,7 +106,7 @@ export function mergeIncoming(
   return next;
 }
 
-/** Optimistic rows always go to the head — they are, by definition, newest. */
+/** Optimistic rows always go to the head, they are, by definition, newest. */
 export function insertOptimistic(
   list: readonly TranscriptMessage[],
   optimistic: Message,
@@ -118,7 +118,7 @@ export function insertOptimistic(
  * Settle an optimistic row once the RPC returns.
  *
  * `confirmed === null` means the send failed, so the row is withdrawn. If
- * Realtime already settled it, the pending row is gone and this is a no-op —
+ * Realtime already settled it, the pending row is gone and this is a no-op,
  * which is exactly why the id check comes first.
  */
 export function settleOptimistic(
@@ -166,7 +166,7 @@ export function applyReadReceipt(
 /**
  * Ids of the peer's unread messages, for the read-receipt write-back.
  *
- * Only the recipient may set `read_at` — the RLS policy on `messages` forbids
+ * Only the recipient may set `read_at`, the RLS policy on `messages` forbids
  * marking your own message read, so filtering by sender here is not merely an
  * optimisation, it is what keeps the update from being rejected.
  */

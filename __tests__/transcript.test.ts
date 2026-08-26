@@ -23,6 +23,12 @@ function message(overrides: Partial<Message> = {}): Message {
     conversation_id: CONVERSATION,
     sender_id: THEM,
     body: `body ${seq}`,
+    // A text message, so the three 011 payload columns are all null. A voice note
+    // is `body: null` with a `voice_path`; see the block at the end of this file
+    // for the settlement cases that matter for one.
+    reply_to_id: null,
+    voice_path: null,
+    voice_duration_ms: null,
     // Fixed base so ordering is deterministic and unrelated to test runtime.
     created_at: new Date(1_700_000_000_000 + seq * 1000).toISOString(),
     read_at: null,
@@ -97,7 +103,7 @@ describe('mergeIncoming', () => {
     list = mergeIncoming(list, first, ME);
 
     // The older pending row settles first, so the surviving pending one is the
-    // message composed second — otherwise the timestamps would swap.
+    // message composed second, otherwise the timestamps would swap.
     expect(list.filter(isPending)).toHaveLength(1);
     expect(list.filter(isPending)[0]?.id).toBe(`${PENDING_PREFIX}2000`);
 
@@ -236,7 +242,7 @@ describe('lastOwnMessageId', () => {
  * settlement swaps `pending-…` for a uuid, so the list key changed and FlatList
  * unmounted the component mid-animation and mounted a different one.
  *
- * Nothing else in this suite would notice — every existing assertion is about
+ * Nothing else in this suite would notice, every existing assertion is about
  * the *contents* of the list, and the contents were right both times.
  */
 describe('optimistic rows keep their identity through settlement', () => {
@@ -245,6 +251,9 @@ describe('optimistic rows keep their identity through settlement', () => {
     conversation_id: 'c1',
     sender_id: 'me',
     body: 'hello',
+    reply_to_id: null,
+    voice_path: null,
+    voice_duration_ms: null,
     created_at: '2026-01-01T00:00:00.000Z',
     read_at: null,
   };
@@ -280,5 +289,66 @@ describe('optimistic rows keep their identity through settlement', () => {
     const peer: Message = { ...CONFIRMED, id: 'peer-1', sender_id: 'them' };
     const merged = mergeIncoming([], peer, 'me');
     expect(merged[0]?.localKey).toBeUndefined();
+  });
+});
+
+/**
+ * A voice note has no body, which is the one thing the reconciliation was never
+ * written against: it matches a confirmed row from this session to the oldest
+ * pending row *with the same body*, and for two voice notes that comparison is
+ * `null === null`.
+ *
+ * That still works, and these cases are what says so. If the matcher is ever
+ * "improved" to compare on something else, this is what notices.
+ */
+describe('settling a voice note, which has no body to match on', () => {
+  const voice = (id: string, path: string, at: number): Message =>
+    message({
+      id,
+      sender_id: ME,
+      body: null,
+      voice_path: path,
+      voice_duration_ms: 4000,
+      created_at: new Date(1_700_000_000_000 + at).toISOString(),
+    });
+
+  it('settles a pending voice row against the confirmed one', () => {
+    const list = insertOptimistic([], voice(`${PENDING_PREFIX}1`, 'a/b.m4a', 10));
+    const settled = mergeIncoming(list, voice('server-1', 'a/b.m4a', 10), ME);
+    expect(settled).toHaveLength(1);
+    expect(settled[0]?.id).toBe('server-1');
+    expect(settled[0]?.localKey).toBe(`${PENDING_PREFIX}1`);
+  });
+
+  it('does not settle a voice note against a pending text message', () => {
+    // The failure this pins: `row.body === incoming.body` is false for a text
+    // draft against a null-bodied voice row, so the text bubble must survive.
+    const list = insertOptimistic([], optimistic('still typing this', 20));
+    const settled = mergeIncoming(list, voice('server-2', 'a/c.m4a', 30), ME);
+    expect(settled).toHaveLength(2);
+    expect(settled.some(m => isPending(m) && m.body === 'still typing this')).toBe(true);
+  });
+
+  it('settles two pending voice notes oldest first', () => {
+    // Both have a null body, so the matcher cannot tell them apart on content.
+    // Oldest-pending-first is what keeps them in the order they were recorded.
+    let list = insertOptimistic([], voice(`${PENDING_PREFIX}1`, 'a/b.m4a', 10));
+    list = insertOptimistic(list, voice(`${PENDING_PREFIX}2`, 'a/c.m4a', 20));
+    const settled = mergeIncoming(list, voice('server-1', 'a/b.m4a', 10), ME);
+    expect(settled.find(m => m.id === 'server-1')?.localKey).toBe(`${PENDING_PREFIX}1`);
+    expect(settled.some(m => m.id === `${PENDING_PREFIX}2`)).toBe(true);
+  });
+
+  it('withdraws the row when the upload or the RPC failed', () => {
+    const list = insertOptimistic([], voice(`${PENDING_PREFIX}1`, 'a/b.m4a', 10));
+    expect(settleOptimistic(list, `${PENDING_PREFIX}1`, null)).toHaveLength(0);
+  });
+
+  it('keeps a bodiless peer message searchable as nothing rather than as null', () => {
+    // `unreadFromPeer` reads sender and read_at only, so a voice note is marked
+    // read like anything else. Asserted because a body-based filter would silently
+    // stop marking voice notes read, and the peer would see "Sent" forever.
+    const peer = { ...voice('peer-voice', 'a/d.m4a', 40), sender_id: THEM };
+    expect(unreadFromPeer([peer], ME)).toEqual(['peer-voice']);
   });
 });

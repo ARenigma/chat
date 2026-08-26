@@ -1,20 +1,22 @@
-/* GENERATED FILE — DO NOT EDIT. Run `npm run tokens:web`.
+/* GENERATED FILE, DO NOT EDIT. Run `npm run tokens:web`.
  *
  * Source: design/tokens.json, the same file src/theme/tokens.generated.ts comes
  * from. If the site and the app ever look like different products, this file is
  * stale, not wrong.
  *
- * System: Signal on Neutral — iOS system greys carry the chrome, and hue is reserved for meaning: coral is the one call to act, sage is presence, citrus is the token balance. Nothing else gets a hue. Renamed from "Warm Signal", which described a warm paper base that no longer exists — a system whose name asserts a fact about its own palette has to be renamed when that fact changes.
+ * System: Signal on Neutral, iOS system greys carry the chrome, and hue is reserved for meaning: coral is the one call to act, sage is presence, citrus is the token balance. Nothing else gets a hue. Renamed from "Warm Signal", which described a warm paper base that no longer exists, a system whose name asserts a fact about its own palette has to be renamed when that fact changes.
  */
 
 :root {
   color-scheme: light dark;
 
-  --bg-base: #F2F2F7;
+  --bg-base: #FFFFFF;
   --bg-raised: #FFFFFF;
   --bg-sunken: #E5E5EA;
   --bg-hover: #DEDEE3;
+  --bg-grouped: #F2F2F7;
   --bg-pressed: #D1D1D6;
+  --bg-selected: #D1D1D6;
   --bg-inverse: #1C1C1E;
   --bg-accent: #F2543D;
   --bg-accent-strong: #C2401F;
@@ -29,11 +31,16 @@
   --text-on-inverse: #FFFFFF;
   --text-positive: #1F4A3F;
   --text-token: #4A4708;
-  --border-hairline: #E5E5EA;
+  --border-hairline: #C6C6C8;
   --border-strong: #C7C7CC;
   --border-accent: #F2543D;
   --state-available: #4E8B7C;
   --state-danger: #733635;
+  --mark-talk: #E0245E;
+  --mark-listen: #1D6FE0;
+  --mark-vent: #C25E00;
+  --mark-share: #7A3DE0;
+  --mark-unwind: #0F7F62;
 
   --space-2xs: 4px;
   --space-xs: 8px;
@@ -55,23 +62,27 @@
   --radius-pressbutton: 14px;
   --radius-presscard: 12px;
   --radius-presssend: 9px;
-  --radius-sheet: 28px;
+  --radius-field: 10px;
+  --radius-alert: 14px;
+  --radius-bubble: 22px;
+  --radius-thread: 24px;
+  --radius-sheet: 10px;
 
   /* One family plus a weight, unlike the app.
    *
-   * That difference is not sloppiness: on the web Urbanist arrives as a real
+   * That difference is not sloppiness: on the web Nunito arrives as a real
    * variable font from Google Fonts, so asking for weight 800 gets the 800 cut.
    * In the app the faces are separate static files and asking for a weight makes
-   * Android synthesise one it already has — which is why the app names a face
+   * Android synthesise one it already has, which is why the app names a face
    * per style and forbids fontWeight outright. */
-  --face-display: 'Urbanist', system-ui, sans-serif;
-  --face-title: 'Urbanist', system-ui, sans-serif;
-  --face-label: 'Urbanist', system-ui, sans-serif;
-  --face-body: 'Urbanist', system-ui, sans-serif;
+  --face-display: 'Nunito', system-ui, sans-serif;
+  --face-title: 'Nunito', system-ui, sans-serif;
+  --face-label: 'Nunito', system-ui, sans-serif;
+  --face-body: 'Nunito', system-ui, sans-serif;
 
   /* The springs, as the closest thing CSS has. A spring is not expressible as a
    * cubic bezier, so these approximate the settle of each one rather than
-   * pretending to be it — the app owns the real physics.
+   * pretending to be it, the app owns the real physics.
    *
    * There is deliberately no bounce curve here. The app's bounce is a spring
    * driving a discrete event (a message leaving), where overshoot is the
@@ -94,7 +105,9 @@
   --bg-raised: #1C1C1E;
   --bg-sunken: #2C2C2E;
   --bg-hover: #3A3A3C;
+  --bg-grouped: #000000;
   --bg-pressed: #48484A;
+  --bg-selected: #3A3A3C;
   --bg-inverse: #F2F2F7;
   --bg-accent: #F2543D;
   --bg-accent-strong: #F2836B;
@@ -114,5 +127,10 @@
   --border-accent: #F2543D;
   --state-available: #6BA697;
   --state-danger: #E39B92;
+  --mark-talk: #E0245E;
+  --mark-listen: #1D6FE0;
+  --mark-vent: #C25E00;
+  --mark-share: #7A3DE0;
+  --mark-unwind: #0F7F62;
   }
 }

@@ -1,14 +1,14 @@
 -- ---------------------------------------------------------------------------
--- 008 — push tokens
+-- 008, push tokens
 -- ---------------------------------------------------------------------------
 -- The one thing a chat SDK would have given us that we did not have: a message
 -- sent to a sleeping app currently arrives nowhere. Realtime only delivers to a
--- client with a live socket, so the product's core loop — someone replies, you
--- find out — silently does not work once the app is backgrounded.
+-- client with a live socket, so the product's core loop, someone replies, you
+-- find out, silently does not work once the app is backgrounded.
 --
 -- A device token is not a secret in the sense a password is, but it *is* a
 -- capability: whoever holds it can push a notification onto that lock screen.
--- So it gets the same treatment as everything else here — a client can register
+-- So it gets the same treatment as everything else here, a client can register
 -- and delete its own tokens and cannot read anybody's, and the sender reads them
 -- with the service role only.
 
@@ -30,7 +30,7 @@ create index if not exists push_tokens_user_idx on public.push_tokens (user_id);
 alter table public.push_tokens enable row level security;
 
 -- Deliberately no SELECT policy. A member has no reason to read even their own
--- token list — the client already knows its token — and "no policy" is a
+-- token list, the client already knows its token, and "no policy" is a
 -- stronger statement than a policy that happens to match nothing.
 create policy "Own tokens are removable" on public.push_tokens
   for delete using (user_id = auth.uid());
@@ -100,7 +100,7 @@ comment on column public.messages.notified_at is
 -- One row per undelivered message with everything a push needs and nothing it
 -- does not. In particular it does NOT expose the message body: a notification
 -- that quotes the message onto a lock screen is a privacy decision, not a
--- delivery detail, and for this product the answer is no — the whole point is
+-- delivery detail, and for this product the answer is no, the whole point is
 -- that nobody looking over your shoulder learns what you talked about.
 create or replace view public.pending_pushes
 with (security_invoker = true) as

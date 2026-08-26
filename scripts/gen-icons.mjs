@@ -33,7 +33,7 @@ const DENSITY = { mdpi: 1, hdpi: 1.5, xhdpi: 2, xxhdpi: 3, xxxhdpi: 4 };
 
 const ICONS = [
   // Pre-API-26 launchers use these directly. minSdk is 24, so they are not
-  // vestigial — two Android versions have no adaptive icon support at all.
+  // vestigial, two Android versions have no adaptive icon support at all.
   {
     master: 'icon-square.png',
     name: 'ic_launcher.png',
@@ -63,7 +63,7 @@ const ICONS = [
   // The notification small icon, at Android's 24dp status-bar size.
   //
   // Without this, firebase-messaging falls back to the launcher icon, and the
-  // status bar flattens whatever it is given to pure alpha — which turned our
+  // status bar flattens whatever it is given to pure alpha, which turned our
   // icon into a featureless white ring on the lock screen. Verified on device.
   // The monochrome master is already an alpha-only silhouette, which is exactly
   // what this slot wants, so it is the same art rather than a second drawing.
@@ -122,7 +122,7 @@ function topLeftPixel(file) {
 /**
  * The check that this whole file exists to make possible.
  *
- * Figma pages carry their own background — #F5F5F5 by default — and an export of
+ * Figma pages carry their own background, #F5F5F5 by default, and an export of
  * a frame with no fill composites against it. The adaptive foreground therefore
  * arrived as an opaque light slab that covered the ink background layer
  * completely: a correct APK, a correct XML, and an icon that looked half drawn.
@@ -134,7 +134,7 @@ function checkEdgeAlpha(icon, master) {
   if (icon.edge === 'alpha' && alpha !== 0) {
     return (
       `${icon.master}: corner pixel is opaque (alpha ${alpha}). This master must ` +
-      'have a transparent surround — in Figma, set the page background to opacity 0.'
+      'have a transparent surround, in Figma, set the page background to opacity 0.'
     );
   }
   if (icon.edge === 'opaque' && alpha !== 255) {
@@ -144,7 +144,7 @@ function checkEdgeAlpha(icon, master) {
 }
 
 function resize(master, out, size) {
-  // execFileSync with an argument array — never a shell string, so a path with
+  // execFileSync with an argument array, never a shell string, so a path with
   // a space cannot become two arguments.
   execFileSync(
     'sips',
@@ -221,7 +221,7 @@ if (CHECK) {
     process.exit(1);
   }
   console.log(
-    `icons:check OK — ${
+    `icons:check OK, ${
       ICONS.length * Object.keys(DENSITY).length
     } density files present and current`,
   );
@@ -235,4 +235,4 @@ if (problems.length > 0) {
   process.exit(1);
 }
 
-console.log(`icons OK — ${written.length} files\n  ${written.join('\n  ')}`);
+console.log(`icons OK, ${written.length} files\n  ${written.join('\n  ')}`);

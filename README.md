@@ -4,8 +4,8 @@ A paid chat marketplace between real people. React Native (bare, New
 Architecture) + Supabase Postgres, with Supabase Realtime carrying the messages.
 
 Members find someone to talk to and talk to them. Providers are real, admitted
-people — **there is no model in the message path**. Positioning is peer support
-and deliberately not clinical: _"Real people, ready to talk. Not therapy — just
+people, **there is no model in the message path**. Positioning is peer support
+and deliberately not clinical: _"Real people, ready to talk. Not therapy, just
 company."_ See [ADR-0001](docs/adr/0001-human-to-human-not-ai-chat.md) for why
 that sentence is load-bearing rather than marketing.
 
@@ -31,13 +31,13 @@ supabase config push       # enables anonymous sign-ins; the app dies at boot wi
 ```
 
 **Google or Facebook is the only way in.** Both need OAuth credentials before
-anyone can sign in — see [ADR-0004](docs/adr/0004-identity-is-social-login.md)
+anyone can sign in, see [ADR-0004](docs/adr/0004-identity-is-social-login.md)
 for why this is the third identity model and what it costs.
 
 Redirect URI for both providers:
 `https://uvghvhcrovmuwivgijvl.supabase.co/auth/v1/callback`
 
-**Google client type is `Web application`, not `Android`** — despite this being an
+**Google client type is `Web application`, not `Android`**, despite this being an
 Android app. Supabase exchanges the authorisation code server-side and needs the
 **client secret** to do it. An Android OAuth client is a public client with no
 secret, bound to a package name and SHA-1, and exists for the native Google
@@ -45,7 +45,7 @@ Sign-In SDK; Supabase cannot use one. Picking Android is the default mistake her
 and the form even demands a SHA-1 fingerprint, which makes it look correct.
 
 Then set the consent screen's **Audience** to Published, or add each tester
-explicitly — a new screen starts in Testing and refuses everyone else. No Google
+explicitly, a new screen starts in Testing and refuses everyone else. No Google
 verification review is needed: Supabase requests only `openid`, `email` and
 `profile`, which are non-sensitive scopes. Facebook's App Review is the slow
 dependency, not Google's.
@@ -54,7 +54,7 @@ Facebook additionally needs **App Review** before non-test users can sign in.
 Start it early; it is days, not hours.
 
 **Create the OAuth client in `chat-d8c87`**, the project that already hosts App
-Distribution — not in an unrelated project. Google renders the consent screen's
+Distribution, not in an unrelated project. Google renders the consent screen's
 app name from the _Cloud project_ that owns the client, so borrowing a client
 from another product makes the sign-in dialog say that other product's name.
 Reusing one is fine to unblock local testing and must not ship: an unfamiliar
@@ -65,7 +65,7 @@ per-brand.
 **brand verification** passes. That is a different track from scope verification:
 non-sensitive scopes (`openid`, `email`, `profile`) skip the "app isn't verified"
 warning, and the app _name and logo_ still stay hidden until the brand is
-verified and published. Google shows the domain instead, deliberately — an
+verified and published. Google shows the domain instead, deliberately, an
 unverified app must not be able to claim an arbitrary name.
 
 Brand verification cannot be completed from the console alone. It requires a
@@ -76,7 +76,7 @@ blocked on owning a domain, not on a setting.
 
 **Three things that block launch and are not in this repo:**
 
-- a hosted **privacy policy URL** — required by the Google consent screen _and_
+- a hosted **privacy policy URL**, required by the Google consent screen _and_
   by Play. It has to match what the app actually does, including the report
   retention exception in migration 005: abuse reports outlive deleted accounts.
 - a **data deletion URL** for Play's data-safety form. The in-app path exists
@@ -98,7 +98,7 @@ single Postgres RPC, so there is nothing between the client and the database.
 | `npm test`                | Jest: transcript reconciliation, token ledger, Sentry scrubber, contracts |
 | `npm run test:db`         | Migrations + RLS + grants + ledger parity against real Postgres (Docker)  |
 | `npm run verify:manifest` | Play Store permission gate, source and merged manifests                   |
-| `npm run bundle:android`  | Metro production bundle — resolves every import for real                  |
+| `npm run bundle:android`  | Metro production bundle, resolves every import for real                   |
 | `npm run verify`          | tokens + typecheck + lint + tests + manifest + bundle                     |
 | `npm run verify:full`     | adds pgTAP                                                                |
 | `npm run verify:hermes`   | the shipped APK really contains Hermes bytecode                           |
@@ -116,7 +116,7 @@ directory boundary, blocking, reporting, suspension, rate limits, the
 append-only audit trail, PII-free telemetry, and that `deduct_user_token` agrees
 with its TypeScript mirror on every row of `supabase/tests/ledger_cases.json`.
 
-> `npm run verify` is **not** the command CI runs — CI adds `--coverage`. That
+> `npm run verify` is **not** the command CI runs, CI adds `--coverage`. That
 > one flag difference hid three real failures until the first GitLab pipeline
 > executed. Reproduce CI failures with the exact CI invocation.
 
@@ -155,7 +155,7 @@ scripts/                 verify-manifest, verify-hermes, db-test, e2e,
 
 Two destinations, one auth deep link, no stack worth persisting. React
 Navigation would add a native-screens dependency and ~15 packages to express
-`provider ?? directory`. `App.tsx` holds one piece of state instead — and that
+`provider ?? directory`. `App.tsx` holds one piece of state instead, and that
 same seam is where the provider role switch attaches, since the server-supplied
 role selects the navigation root.
 
@@ -165,17 +165,17 @@ role selects the navigation root.
 
 ### Members: one tap, Google or Facebook
 
-No form at all, which recovers most of what the phone screen took away — the
+No form at all, which recovers most of what the phone screen took away, the
 first frame is one tap from a session again.
 
 This is the app's **third** identity model, and [ADR-0004](docs/adr/0004-identity-is-social-login.md)
 records all three with the trade-offs, because the churn is real:
 
-| Model             | Onboarding | Accountability                     | Cost                       |
-| ----------------- | ---------- | ---------------------------------- | -------------------------- |
-| Anonymous         | Perfect    | **None** — banned user back in 10s | Free                       |
-| Phone + OTP       | One form   | **Strongest** short of ID          | Per-SMS + DLT registration |
-| Google / Facebook | One tap    | **Middling** — free accounts       | Free                       |
+| Model             | Onboarding | Accountability                    | Cost                       |
+| ----------------- | ---------- | --------------------------------- | -------------------------- |
+| Anonymous         | Perfect    | **None**, banned user back in 10s | Free                       |
+| Phone + OTP       | One form   | **Strongest** short of ID         | Per-SMS + DLT registration |
+| Google / Facebook | One tap    | **Middling**, free accounts       | Free                       |
 
 Two costs worth knowing rather than discovering:
 
@@ -197,7 +197,7 @@ Login for Business. There is no Supabase provider for it.
 Name, gender, date of birth, headline, languages, about. Reviewed by hand.
 
 **The age gate is a CHECK constraint**, not a form field. `provider_is_adult`
-makes an underage provider unrepresentable — there is no route to one through the
+makes an underage provider unrepresentable, there is no route to one through the
 app, through the approval function, or through a manual `UPDATE` by an operator
 in a hurry. pgTAP asserts that even `service_role` cannot promote a minor.
 `date_of_birth` is write-once, so an applicant cannot pass review and then edit
@@ -211,7 +211,7 @@ returned to the form so it can mark the inputs. `needs_info` is resolvable by th
 applicant alone, without contacting support.
 
 That design is a direct response to the most instructive thing in the
-competitor research — see [docs/clarity-learnings.md](docs/clarity-learnings.md).
+competitor research, see [docs/clarity-learnings.md](docs/clarity-learnings.md).
 
 Ops side:
 
@@ -242,13 +242,13 @@ while the other person said nothing.
 One channel per conversation carries three signals with three different
 durabilities, which is why they are not handled the same way:
 
-- **`postgres_changes` on `messages` — durable.** The message exists whether or
+- **`postgres_changes` on `messages`, durable.** The message exists whether or
   not anyone is listening, so the socket is a delivery optimisation, not the
   source of truth. On `SUBSCRIBED` the query is invalidated, which is what makes
   a dropped connection self-healing.
-- **`presence` — connection-scoped.** If the socket drops, "is the other person
+- **`presence`, connection-scoped.** If the socket drops, "is the other person
   here" is genuinely no. Nothing to persist.
-- **`broadcast` typing — disposable.** Throttled at the source, never written
+- **`broadcast` typing, disposable.** Throttled at the source, never written
   down.
 
 Realtime enforces RLS on `postgres_changes`, so a client is only ever sent rows
@@ -256,8 +256,8 @@ it could have selected. The `conversation_id` filter on the subscription is
 bandwidth, not security.
 
 The subtle part is receiving **your own** messages. A send comes back by two
-independent paths — the `send_message` response and a Realtime INSERT for the row
-it wrote — and either can arrive first. So
+independent paths, the `send_message` response and a Realtime INSERT for the row
+it wrote, and either can arrive first. So
 [`src/lib/transcript.ts`](src/lib/transcript.ts) is pure and order-independent:
 a row whose id is already present replaces it, a row from this session settles
 the oldest pending row with the same body, anything else is inserted at its
@@ -279,7 +279,7 @@ per turn; against a person, sending two messages in a row is normal conversation
 1 message = 1 token, paid by the member. A provider replying costs nothing.
 
 - `send_message` debits and inserts in **one transaction**. The Edge Function it
-  replaced had to debit, call a model, then insert — three steps that could fail
+  replaced had to debit, call a model, then insert, three steps that could fail
   apart, which is why it carried refund logic. There is now no refund path
   because there is nothing to refund: a failed send never began a transaction.
 - The balance shown in the top bar comes from the RPC's own return value.
@@ -296,21 +296,21 @@ Four things here were bugs first and are now assertions:
 
 **`deduct_user_token` was PUBLIC-executable.** It is `SECURITY DEFINER`, and
 Postgres grants `EXECUTE` to `PUBLIC` by default. Left that way, any signed-in
-client could call it with someone else's id, or with a negative cost —
-`50 - (-100) = 150` — and mint tokens. Migration 002 revokes it and grants it to
+client could call it with someone else's id, or with a negative cost,
+`50 - (-100) = 150`, and mint tokens. Migration 002 revokes it and grants it to
 `service_role` only; the pgTAP suite asserts that with `function_privs_are`,
 which reads the catalog rather than trusting the migration.
 
 **Self-referential RLS silently rejected everything.** Comparing `NEW` against a
 subquery on `profiles` inside a policy on `profiles` does not work: the subquery
-is itself RLS-filtered, resolves to NULL, and the check is never true — so every
+is itself RLS-filtered, resolves to NULL, and the check is never true, so every
 update fails, including harmless ones. Column immutability is a `BEFORE UPDATE`
 trigger instead, which sees `OLD` directly.
 
 **That guard was `SECURITY DEFINER`, which disabled it.** Under `SECURITY
 DEFINER` `current_user` is the function owner, so the client-role branch is never
 taken and a member could set its own `role`, `token_balance` and
-`identity_verified_at` — invalidating the entire basis of ADR-0002. Both guards
+`identity_verified_at`, invalidating the entire basis of ADR-0002. Both guards
 are `SECURITY INVOKER`, and a contract test fails if either regains `DEFINER`.
 
 **A recipient could rewrite the message sent to them.** Migration 003 gave the
@@ -323,7 +323,7 @@ column guard: only `read_at` is client-writable, and only as a one-way latch.
 
 **The directory leaked every provider's wallet.** RLS policies for the same
 command are OR'd, so 003's "providers are discoverable" SELECT policy did not
-merely feed the directory view — it widened `profiles` itself, and any member
+merely feed the directory view, it widened `profiles` itself, and any member
 could read every provider's balance and verification timestamp. Migration 004
 inverts it: `provider_directory` becomes the privileged boundary and the policy
 is dropped, so the view's explicit column list is load-bearing rather than
@@ -339,7 +339,7 @@ so no future transitive dependency can reintroduce them through manifest
 merging. `npm run verify:manifest` fails the build if anything else appears, and
 checks the _merged_ manifest too when a release build exists.
 
-Checking the merged manifest is not theatre — the first release build caught two
+Checking the merged manifest is not theatre, the first release build caught two
 permissions the source manifest never asked for:
 
 - `ACCESS_NETWORK_STATE`, contributed by `@sentry/react-native` to tag events
@@ -356,7 +356,7 @@ permissions the source manifest never asked for:
 input at all, so it needs no storage or photo permission. If avatar upload is
 ever added, the route is the system photo picker
 (`MediaStore.ACTION_PICK_IMAGES` / `PickVisualMedia`), which needs no runtime
-permission — see the note in the manifest.
+permission, see the note in the manifest.
 
 **`allowBackup="false"`** so auth tokens and cached messages cannot be pulled out
 of an adb backup.
@@ -370,20 +370,32 @@ Migration 005 introduced a deliberate exception, and it is stated here rather
 than buried because it makes the previous paragraph less absolute than it was.
 **Abuse reports outlive the accounts involved.** A report has to survive the
 reported message, or the remedy for "he sent me something illegal" is to destroy
-the only evidence of it — and the accused can erase the case against them by
+the only evidence of it, and the accused can erase the case against them by
 deleting their account. So `reports` keeps a snapshot of the reported text, and
 `reporter_id` / `subject_user_id` are `on delete set null`: the report survives,
 de-identified.
 
 Retention is bounded in code rather than promised in a policy:
 `purge_expired_reports()` drops resolved reports 90 days after resolution, and
-`npm run moderate purge` runs it. Nothing else survives deletion.
+`npm run moderate purge` runs it.
+
+**Voice note audio needs its own sweep, and this is why.** The recordings live in
+a private Supabase Storage bucket, and storage has no foreign key to `messages`.
+So deleting an account cascades the rows away and leaves the audio behind:
+orphaned, unreachable through the app, and still stored. `purge_orphaned_voice_notes()`
+deletes any object with no live message and no live report pointing at it, after a
+24 hour grace period so a recording that is uploaded but not yet sent is not
+deleted out from under the composer. It runs nightly on pg_cron and
+`npm run moderate maintenance` runs it too. Reported audio is exempt, for the same
+reason the reported text is: it is the evidence.
+
+Nothing else survives deletion.
 
 **Sentry.** `src/lib/sentry.ts` scrubs in two layers before anything leaves the
 device: whole fields that exist to carry payloads are deleted (`request.data`,
 breadcrumb `data`, stack-frame locals, any key named like content), and the
 free-text that remains is stripped of emails, IPs, phone numbers and
-bearer/JWT credentials. `event.message` is redacted wholesale — the app never
+bearer/JWT credentials. `event.message` is redacted wholesale, the app never
 calls `captureMessage`, so anything appearing there came from an integration we
 did not write. 30 unit tests cover the scrubber.
 
@@ -394,7 +406,7 @@ did not write. 30 unit tests cover the scrubber.
 Five primitives, in the order an incident actually moves through them.
 
 **Blocking** is the remedy that needs no operator and no waiting, so it is a
-direct table write under RLS. It is **symmetric** — blocking someone also stops
+direct table write under RLS. It is **symmetric**, blocking someone also stops
 them reaching you, because a one-way block would hand the blocker a megaphone
 aimed at someone who wanted them gone. And the blocked party is **never told**:
 there is no policy that lets anyone read who blocked them, and `is_blocked_pair`
@@ -406,7 +418,7 @@ participant, infers the subject from the thread rather than trusting the client,
 and snapshots the reported message. It refuses to snapshot the reporter's own
 message, so a report cannot be used to pin your words on the other party, and it
 only reads messages from the reported conversation, so it cannot exfiltrate text
-from a thread you are not in. Reporting is itself rate limited at 10/hour —
+from a thread you are not in. Reporting is itself rate limited at 10/hour,
 mass false reports are a harassment vector and they bury the real queue.
 
 **The audit trail** (`moderation_actions`) is append-only, enforced by a trigger
@@ -418,7 +430,7 @@ free to rewrite history. No client role can read it at all.
 around it. A ban is a suspension with no end, so there is one code path instead
 of two that can disagree. A suspended provider also drops out of the directory.
 
-**Rate limiting** is 20 messages/minute — high enough that a fast human typing
+**Rate limiting** is 20 messages/minute, high enough that a fast human typing
 short lines never sees it, low enough that scripted flooding stops being viable.
 
 None of these debit a token. Every rejection happens before the wallet is
@@ -448,8 +460,8 @@ ordered it.
 ### Still missing
 
 **Classification.** Everything above is reactive: it needs a human to be harmed
-and then to report. Proactive detection — CSAM hashing, grooming and
-solicitation classifiers, off-platform contact detection — is not built. This is
+and then to report. Proactive detection, CSAM hashing, grooming and
+solicitation classifiers, off-platform contact detection, is not built. This is
 where AI legitimately belongs in this product: classification, not generation.
 
 **A staffed queue.** A queue nobody reads is theatre. The tooling exists; the
@@ -458,7 +470,7 @@ rota does not.
 **KYC.** The age gate is enforced, but on a self-declared date of birth.
 `identity_verified_at` is set by the approval function, not by a vendor. A
 document check (Persona, Veriff, Stripe Identity) is a launch requirement, not a
-nice-to-have — a constraint on a number someone typed is a floor, not proof.
+nice-to-have, a constraint on a number someone typed is a floor, not proof.
 
 **Payouts.** Earnings are counted in tokens because that is true. Stripe Connect
 is unbuilt, so no money moves yet.
@@ -481,14 +493,14 @@ false and would likely add a permission through manifest merging.
 
 The table is structurally unable to carry a message:
 
-- `name` must be on an allowlist — an unknown event is rejected at insert rather
+- `name` must be on an allowlist, an unknown event is rejected at insert rather
   than quietly stored, so the column cannot be used to smuggle free text
 - `props` keys matching `body|message|content|text|detail|email|phone|name|token`
   are **rejected by a trigger**, not filtered client-side, because the client is
   the least trustworthy place to enforce that
 - `props` is capped at 2 KB
 - the client has `INSERT` and nothing else: there is no SELECT policy _and_ the
-  grant is revoked, so a client cannot read events back — not even its own
+  grant is revoked, so a client cannot read events back, not even its own
 
 `__tests__/telemetry.test.ts` asserts the TypeScript union and the SQL allowlist
 are identical, so adding an event in one place and not the other is a failing
@@ -505,7 +517,7 @@ npm run moderate metrics --days=14
 
 For Grafana, add a **PostgreSQL** datasource pointing at the Supabase connection
 string with a read-only role, and query `safety_metrics` and `moderation_queue`
-directly — no exporter and no extra service. Create the role rather than reusing
+directly, no exporter and no extra service. Create the role rather than reusing
 `postgres`:
 
 ```sql
@@ -524,7 +536,7 @@ abuse signal. Raw counts just track growth.
 - Body text is 16sp and every `Text` allows font scaling.
 - The theme is light-first with a full dark mode, generated from
   `design/tokens.json`. Primary **and** secondary text clear WCAG AAA (7:1) in
-  **both** modes — asserted in `__tests__/theme.test.ts`, which computes the
+  **both** modes, asserted in `__tests__/theme.test.ts`, which computes the
   ratios rather than trusting a comment. Secondary text was `#8A8A8E` at 3.13:1
   and failed AA outright until that test was written.
 - **The accent never carries small text.** It is used for the send button, the
@@ -570,14 +582,14 @@ Runner selection is a CI variable rather than a hardcoded tag: `RUNNER_TAG` and
 shared minutes run out.
 
 `publish-pgtap-image` is a **manual** job that must run once before `database`
-can pass — it builds `supabase/tests/Dockerfile` into the project registry.
+can pass, it builds `supabase/tests/Dockerfile` into the project registry.
 
 ### static
 
 The secret scan is gitleaks with [.gitleaks.toml](.gitleaks.toml) (patterns for
 Supabase service-role JWTs, `sbp_` tokens and Play service accounts) plus a plain
 `git grep` for the ones that would be catastrophic. The Supabase anon key and the
-Sentry DSN are deliberately _not_ flagged — both are public by design. The Figma
+Sentry DSN are deliberately _not_ flagged, both are public by design. The Figma
 file key in `design/tokens.json` is allowlisted by field name with
 `condition = "AND"`, so the file is still scanned and a real key pasted into it
 still fails the build.
@@ -587,7 +599,7 @@ The database job is real pgTAP against a real Postgres, not a mock. It uses
 policy or a revoke silently dropped by a future migration fails the build rather
 than passing on a technicality.
 
-### build — headless compliance
+### build, headless compliance
 
 Three checks that only mean anything against a built artefact:
 
@@ -595,7 +607,7 @@ Three checks that only mean anything against a built artefact:
   manifest is what ships. See the permissions section for the two entries this
   caught.
 - **Hermes bytecode.** If `hermesEnabled` gets flipped, the APK still installs
-  and still runs — just slower, with no bytecode precompilation and nothing in
+  and still runs, just slower, with no bytecode precompilation and nothing in
   the logs. [verify-hermes.mjs](scripts/verify-hermes.mjs) reads the 8-byte HBC
   magic out of `assets/index.android.bundle` inside the APK.
 - **Signing.** The release build refuses the debug keystore and comes out
@@ -610,7 +622,7 @@ only ever need the accessibility tree. The build under test stays byte-identical
 to the one that ships.
 
 Maestro cannot cut the network, seed a wallet, admit a provider or read a
-database, and most of the journeys need exactly that — so
+database, and most of the journeys need exactly that, so
 [e2e.mjs](scripts/e2e.mjs) owns everything around the flows, including seeding an
 admitted provider in SQL (admission is service-role only by design, so a client
 cannot create one).
@@ -626,7 +638,7 @@ cannot create one).
 
 **Known gap.** These prove the sender's half. Delivery, typing, presence and
 receipts need a second authenticated session driving the provider side, which a
-single device cannot do. Tracked as a follow-up rather than faked with a stub — a
+single device cannot do. Tracked as a follow-up rather than faked with a stub, a
 stub would prove nothing about Realtime.
 
 ### release
@@ -636,7 +648,7 @@ the reverse is fine. Release health is watched by
 [ci-release-health.mjs](scripts/ci-release-health.mjs), which exits non-zero
 below 99.8% crash-free so the pipeline can run `fastlane halt_rollout` before the
 build reaches more users. It reports "pending" rather than "healthy" when there
-are too few sessions to judge — treating silence as success is how a bad build
+are too few sessions to judge, treating silence as success is how a bad build
 gets promoted. Halting sets the rollout to 0%: Play cannot un-publish a version
 code, so the recovery path is halt, then ship a fix forward.
 
@@ -656,7 +668,7 @@ There is **no** `FIREBASE_SERVICE_ACCOUNT_JSON`, and there cannot be: the GCP
 project sits under an organisation enforcing
 `constraints/iam.disableServiceAccountKeyCreation`. Rather than ask for the
 policy to be weakened, `distribute` uses Workload Identity Federation, which is
-the better answer anyway — nothing long-lived exists to leak, rotate or forget.
+the better answer anyway, nothing long-lived exists to leak, rotate or forget.
 
 GitLab signs a short-lived OIDC token for the job; Google STS verifies it against
 the `gitlab` provider in the `gitlab-pool` pool and returns a federated token
@@ -672,7 +684,7 @@ release identity":
 `main` is a protected branch, so the second condition holds for real releases
 while refusing a token minted from a fork or an unprotected feature branch. The
 service account holds only `roles/firebaseappdistro.admin`, which already
-includes `firebase.projects.get` — no broader grant was needed.
+includes `firebase.projects.get`, no broader grant was needed.
 
 Setup, for the record (one-off, already applied):
 
@@ -701,8 +713,8 @@ npm run android:bundle                                              # -> AAB
 
 R8 with resource shrinking is on, the release build refuses to use the debug
 keystore, and native symbols ship at `SYMBOL_TABLE` level for Play Console crash
-reports. Without `keystore.properties` the release build still assembles —
-unsigned — so CI can verify the build without holding the upload key.
+reports. Without `keystore.properties` the release build still assembles,
+unsigned, so CI can verify the build without holding the upload key.
 
 Verified on this toolchain (JDK 17.0.20, AGP via RN 0.86.2, Gradle 9.3.1, SDK 36,
 NDK 27.1.12297006):

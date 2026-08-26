@@ -87,7 +87,7 @@ reset role;
 -- ---------------------------------------------------------------------------
 -- Both halves of this are contracts with code outside the database, which is
 -- exactly why they belong here. `src/lib/push.ts` routes on `data.peerId`, and
--- the sender can only put a peer id in the payload if the view hands it one —
+-- the sender can only put a peer id in the payload if the view hands it one,
 -- it did not, originally, so notifications would have arrived and gone nowhere.
 --
 -- The negative assertion is the more important one. The privacy promise in

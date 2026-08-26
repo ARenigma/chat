@@ -144,17 +144,54 @@ async function send(
       body: JSON.stringify({
         message: {
           token: row.token,
-          // Title and body only. No message content reaches this payload
-          // because the view it came from does not carry any.
+          /*
+           * STAGE 1 OF 2. Read this before touching it.
+           *
+           * The goal is a conversation notification — `MessagingStyle`, a
+           * `Person` and a long-lived shortcut — which Android only allows when
+           * the APP builds the notification. That requires a DATA-ONLY payload,
+           * because a `notification` block is rendered by the system and never
+           * reaches the app while it is backgrounded.
+           *
+           * The `notification` block below therefore has to go. It cannot go
+           * yet. A data-only message is invisible to any client without the
+           * background handler, so removing this before the fleet has updated
+           * would silence notifications completely for everyone still on an
+           * older build — a silent outage with no error on either side.
+           *
+           * So: the data map is populated NOW, which is backward compatible and
+           * inert on old clients. Once every tester is on a build containing
+           * `index.js`'s `setBackgroundMessageHandler` and
+           * `Conversations.kt`, delete the `notification` block and the
+           * `android.notification` block, and this becomes stage 2. Nothing else
+           * needs to change.
+           *
+           * No message text in either half, and that is not an oversight: the
+           * view this is generated from carries none, and given who these
+           * conversations are with, message content on a lock screen is a
+           * disclosure this product cannot make.
+           */
           notification: { title: who, body: 'replied' },
           android: {
             priority: 'high',
-            // No channel_id: the app declares none, so naming one here would
-            // route the notification to a channel Android has never created.
+            // No channel_id here: naming one the app has not created routes the
+            // notification nowhere. The app owns `conversations`, created in
+            // Conversations.ensureChannel before any push can arrive.
             notification: { tag: row.conversation_id },
           },
-          // The client validates this with isUuid before routing on it.
-          data: { peerId: row.peer_id },
+          /*
+           * FCM's data map is Map<String, String>, so everything is stringified
+           * here and parsed in `src/lib/conversations.ts`. `sentAt` is epoch
+           * milliseconds because `MessagingStyle.addMessage` takes a timestamp
+           * and orders the transcript by it.
+           */
+          data: {
+            // The client validates this with isUuid before routing on it.
+            peerId: row.peer_id,
+            conversationId: row.conversation_id,
+            senderName: who,
+            sentAt: String(Date.parse(row.created_at)),
+          },
         },
       }),
     },
@@ -205,7 +242,7 @@ Deno.serve(async request => {
   }
 
   // Parsed defensively because the secret is set from a shell, and the natural
-  // way to get a multi-line JSON file onto one env line is JSON.stringify —
+  // way to get a multi-line JSON file onto one env line is JSON.stringify,
   // which double-encodes it. That produces a *string* here rather than an
   // object, and the failure surfaces four calls later inside pemToDer as an
   // opaque 500. Unwrap one layer if we were handed one.
@@ -237,7 +274,7 @@ Deno.serve(async request => {
 
   const bearer = await accessToken(sa);
 
-  // A message can have several rows — one per device the recipient has
+  // A message can have several rows, one per device the recipient has
   // registered. It counts as notified if any device took it, and as dead only
   // if every device rejected it.
   const outcomes = new Map<string, Set<string>>();

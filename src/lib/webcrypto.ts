@@ -30,7 +30,7 @@
  *   - `subtle.digest` is SHA-256 from `js-sha256`, a pure-JS implementation with
  *     no native module and no new Gradle dependency. SHA-256 is a public hash of
  *     a value we generated, so a JS implementation is a performance question, not
- *     a security one — unlike the RNG, which is why that one is native.
+ *     a security one, unlike the RNG, which is why that one is native.
  *
  * Only `SHA-256` is implemented. Anything else throws rather than silently
  * returning the wrong digest, because a hash function that quietly does
@@ -51,7 +51,7 @@ function toBytes(data: Digestible): Uint8Array {
  * The SHA-256 digest itself, exported so it can be tested directly.
  *
  * Necessary because the installer below defers to a real `crypto.subtle` when
- * one already exists — which it does under Node. Testing through the global
+ * one already exists, which it does under Node. Testing through the global
  * would therefore test Node's WebCrypto and not a line of this file.
  */
 export async function digestSha256(
@@ -78,7 +78,7 @@ if (typeof globalScope.crypto.subtle === 'undefined') {
 
 /**
  * Hermes ships TextEncoder in recent versions, but supabase-js checks for it as
- * part of the same capability gate — so a missing one silently reinstates the
+ * part of the same capability gate, so a missing one silently reinstates the
  * `plain` fallback. Encoding UTF-8 is unambiguous and safe to provide.
  */
 if (typeof globalScope.TextEncoder === 'undefined') {

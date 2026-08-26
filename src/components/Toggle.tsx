@@ -19,13 +19,13 @@ interface Props {
    * Which token fills the track when on.
    *
    * `accent` is the default because the coral is the app's signal and a toggle
-   * is an action — a control in a colour that appears nowhere else reads as
+   * is an action, a control in a colour that appears nowhere else reads as
    * belonging to a different system, which is exactly how the stock Android teal
    * looked before this component existed.
    *
    * `presence` exists for one switch: the provider's availability. Sage means
-   * "someone is there" everywhere else in the app — on the dot, on the rail, on
-   * the "Here now" label — so the control that *sets* that state should be the
+   * "someone is there" everywhere else in the app, on the dot, on the rail, on
+   * the "Here now" label, so the control that *sets* that state should be the
    * same colour as the state it sets.
    */
   tone?: 'accent' | 'presence';
@@ -40,7 +40,7 @@ const BORDER = 2;
  * M3 centres the off thumb in the leading 32dp of a 52dp track and the on thumb
  * the same distance from the trailing edge, so the centre runs from 16 to 36.
  * The first version animated a left offset instead and the thumb hung off the
- * right edge of the track at rest and burst out of it while held — both visible
+ * right edge of the track at rest and burst out of it while held, both visible
  * in a screenshot, neither caught by the token test, which was only ever
  * checking that the *numbers* were M3's.
  */
@@ -59,15 +59,15 @@ const BOX = T.thumbPressed;
  * `trackColor` fixes the colour and still leaves the anatomy wrong.
  *
  * M3's anatomy is the point. A 52×32 track, and a thumb that is **16dp when
- * off, 24dp when on, and 28dp while held** — the thumb growing as you commit is
+ * off, 24dp when on, and 28dp while held**, the thumb growing as you commit is
  * what makes an M3 switch read as a physical latch rather than a dot sliding in
  * a slot. RN's Switch cannot express any of that.
  *
  * Building it also buys backward compatibility outright: this renders
  * identically on API 24 and API 36, whereas a platform widget renders whatever
  * that OEM's framework version draws, and Material You would recolour it from
- * the user's wallpaper on API 31+. For a product whose colour carries meaning —
- * coral is "act", sage is "present" — letting the wallpaper pick is not a
+ * the user's wallpaper on API 31+. For a product whose colour carries meaning,
+ * coral is "act", sage is "present", letting the wallpaper pick is not a
  * feature.
  *
  * One spring drives offset, size and colour together, so the thumb arrives as
@@ -104,7 +104,7 @@ function ToggleView({
 
   const thumb = useAnimatedStyle(() => {
     // The pressed thumb is 28 in BOTH states, so `held` interpolates from
-    // whichever size the current state has rather than adding a fixed amount —
+    // whichever size the current state has rather than adding a fixed amount,
     // adding made the held-while-off thumb 20 instead of 28.
     const resting = T.thumbOff + (T.thumbOn - T.thumbOff) * on.value;
     const size = resting + (T.thumbPressed - resting) * held.value;

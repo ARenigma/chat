@@ -3,7 +3,7 @@
  * Stage 3 driver: the real-device critical user journeys.
  *
  * Maestro can drive the UI but it cannot cut the network, seed a wallet, or read
- * the database — and three of the five journeys need exactly that. So the flows
+ * the database, and three of the five journeys need exactly that. So the flows
  * stay declarative and this script owns everything around them:
  *
  *   - stands up the local Supabase stack, so the cascade can be checked in SQL
@@ -157,8 +157,11 @@ const PROVIDER_ID = '11111111-1111-4111-8111-111111111111';
 sql(
   `insert into auth.users (id) values ('${PROVIDER_ID}') on conflict do nothing`,
 );
+// `presence` alongside `is_available` since 012 split them: the flow checks a
+// directory row, and without a declared presence the row renders no dot.
 sql(
-  `update public.profiles set display_name = 'Ada', is_available = true where id = '${PROVIDER_ID}'`,
+  `update public.profiles set display_name = 'Ada', is_available = true,
+     presence = 'here', presence_visible = true where id = '${PROVIDER_ID}'`,
 );
 // Migration 006 made admission conditional on a complete application and a
 // verifiable adult date of birth, so the fixture supplies both.
@@ -180,7 +183,7 @@ console.log('   provider "Ada" admitted and discoverable');
 // A member session, injected rather than earned.
 //
 // Sign-in is now Google/Facebook OAuth (ADR-0004), which Maestro cannot drive
-// without automating Google's own consent page — brittle, and a test of Google
+// without automating Google's own consent page, brittle, and a test of Google
 // rather than of us. So the member is created with the admin API and the journeys
 // after 01 run against a session that already exists. Journey 01 still asserts
 // the real sign-in screen.
@@ -286,7 +289,7 @@ const journeys = [
       };
       // The flow starts a fresh anonymous session afterwards, and the seeded
       // provider is not the member being deleted, so the correct end state is
-      // the provider plus exactly one new member — and no transcript at all.
+      // the provider plus exactly one new member, and no transcript at all.
       if (
         counts.profiles !== 2 ||
         counts.conversations !== 0 ||
@@ -340,5 +343,5 @@ if (failedFlow) {
 }
 
 console.log(
-  `\ne2e OK — ${journeys.length} critical user journey(s) passed on ${APP_ID}`,
+  `\ne2e OK, ${journeys.length} critical user journey(s) passed on ${APP_ID}`,
 );

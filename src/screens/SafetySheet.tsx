@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ReportReason } from '../lib/database.types';
 import { useBlockUser, useIsBlocked, useSubmitReport, useUnblockUser } from '../api/safety';
 import { Button } from '../components/Button';
+import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { Sheet } from '../components/Sheet';
+import { TextField } from '../components/TextField';
 
 interface Props {
   visible: boolean;
@@ -21,7 +23,7 @@ interface Props {
 /**
  * Reasons, in the order a distressed person scans them rather than alphabetically
  * or by internal severity. `self_harm` is worded as concern for the other person
- * because that is what it is — it routes to support, not enforcement.
+ * because that is what it is, it routes to support, not enforcement.
  */
 const REASONS: ReadonlyArray<{ value: ReportReason; label: string }> = [
   { value: 'harassment', label: 'Harassment or abuse' },
@@ -88,27 +90,37 @@ export function SafetySheet({
       <Sheet
         visible={visible}
         testID="report-reasons"
-        title="What happened?"
+        title="What Happened?"
         body="This goes to a person on our team. Nothing you pick here is shared with them."
+        onCancel={() => setStep('menu')}
+        cancelLabel="Back"
         onClose={dismiss}>
+        {/* iOS table cells, not Material list items. They carried radius.md, no
+            separators, no chevrons and no `press` prop at all, so each one
+            inherited `press="card"` and a full-width row visibly shrank 2.5% under
+            the finger, which on a list of eight reads as the row wobbling. */}
         <View style={styles.reasons}>
-          {REASONS.map(r => (
-            <Pressable
-              key={r.value}
-              testID={`reason-${r.value}`}
-              accessibilityLabel={r.label}
-              onPress={() => {
-                setReason(r.value);
-                setStep('detail');
-              }}
-              style={styles.reasonRow}>
-              <Text allowFontScaling style={styles.reasonLabel}>
-                {r.label}
-              </Text>
-            </Pressable>
+          {REASONS.map((r, i) => (
+            <React.Fragment key={r.value}>
+              <Pressable
+                testID={`reason-${r.value}`}
+                accessibilityLabel={r.label}
+                press="none"
+                highlight="ios"
+                onPress={() => {
+                  setReason(r.value);
+                  setStep('detail');
+                }}
+                style={styles.reasonRow}>
+                <Text allowFontScaling style={styles.reasonLabel}>
+                  {r.label}
+                </Text>
+                <Icon name="chevronRight" size={13} color={theme.color.text.tertiary} />
+              </Pressable>
+              {i === REASONS.length - 1 ? null : <View style={styles.reasonSeparator} />}
+            </React.Fragment>
           ))}
         </View>
-        <Button label="Back" kind="secondary" onPress={() => setStep('menu')} />
       </Sheet>
     );
   }
@@ -118,42 +130,45 @@ export function SafetySheet({
       <Sheet
         visible={visible}
         testID="report-detail"
-        title="Anything to add?"
+        title="Anything to Add?"
         body="Optional. The message you reported is already attached."
+        onCancel={() => setStep('reasons')}
+        cancelLabel="Back"
         onClose={dismiss}>
-        <TextInput
+        <TextField
           testID="report-detail-input"
           style={styles.input}
           value={detail}
           onChangeText={setDetail}
           placeholder="What should we know?"
-          placeholderTextColor={theme.color.text.secondary}
+          placeholderTextColor={theme.color.text.tertiary}
           multiline
           maxLength={2000}
           allowFontScaling
           underlineColorAndroid="transparent"
         />
         <Button
-          label={report.isPending ? 'Sending…' : 'Submit report'}
+          label="Submit Report"
+          busy={report.isPending}
+          busyLabel="Submitting report"
           onPress={submit}
-          disabled={report.isPending}
           testID="report-submit"
         />
-        {/* Reporting without blocking is a real choice — the reporter may want
+        {/* Reporting without blocking is a real choice, the reporter may want
             the conversation to continue while a human looks at it. */}
         <Button
-          label={`Submit and block ${peerName}`}
+          label="Submit and Block"
           kind="danger"
+          busy={report.isPending}
+          busyLabel="Submitting report"
           onPress={() => {
             if (peerId !== undefined) {
               block.mutate(peerId);
             }
             submit();
           }}
-          disabled={report.isPending}
           testID="report-submit-and-block"
         />
-        <Button label="Back" kind="secondary" onPress={() => setStep('reasons')} />
       </Sheet>
     );
   }
@@ -168,38 +183,43 @@ export function SafetySheet({
           ? 'You have blocked this person. Neither of you can message the other.'
           : 'Blocking is immediate and they are not told. Reporting asks our team to look.'
       }
+      onCancel={dismiss}
       onClose={dismiss}>
+      {/* Both of these had a pending `disabled` and no label for it, so the one
+          action in the app somebody takes while frightened gave no feedback at
+          all until it finished. */}
       {blocked ? (
         <Button
           label="Unblock"
+          busy={unblock.isPending}
+          busyLabel="Unblocking"
           onPress={() => {
             if (peerId !== undefined) {
               unblock.mutate(peerId, { onSuccess: dismiss });
             }
           }}
-          disabled={unblock.isPending}
           testID="unblock-user"
         />
       ) : (
         <Button
           label={`Block ${peerName}`}
           kind="danger"
+          busy={block.isPending}
+          busyLabel="Blocking"
           onPress={() => {
             if (peerId !== undefined) {
               block.mutate(peerId, { onSuccess: dismiss });
             }
           }}
-          disabled={block.isPending}
           testID="block-user"
         />
       )}
       <Button
-        label="Report a problem"
+        label="Report a Problem"
         kind="secondary"
         onPress={() => setStep('reasons')}
         testID="open-report"
       />
-      <Button label="Cancel" kind="secondary" onPress={dismiss} />
     </Sheet>
   );
 }
@@ -207,13 +227,19 @@ export function SafetySheet({
 const makeStyles = (t: Theme) => StyleSheet.create({
   reasons: {
     alignSelf: 'stretch',
-    gap: 2,
     paddingBottom: TOKENS.space.sm,
   },
   reasonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: TOKENS.space.sm,
+    // space.sm already yields a 44pt cell, so the target needs nothing added.
     paddingVertical: TOKENS.space.sm,
-    paddingHorizontal: TOKENS.space.xs,
-    borderRadius: TOKENS.radius.md,
+  },
+  reasonSeparator: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: t.color.border.hairline,
   },
   reasonLabel: {
     ...TOKENS.typography.bodyMedium,
@@ -225,7 +251,8 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     maxHeight: 160,
     padding: TOKENS.space.md,
     marginBottom: TOKENS.space.sm,
-    borderRadius: TOKENS.radius.md,
+    borderRadius: TOKENS.radius.field,
+    borderCurve: 'continuous',
     backgroundColor: t.color.bg.sunken,
     ...TOKENS.typography.bodyMedium,
     color: t.color.text.primary,

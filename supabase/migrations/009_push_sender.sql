@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- 009 — what the sender needs that 008 did not provide
+-- 009, what the sender needs that 008 did not provide
 -- ---------------------------------------------------------------------------
 -- 008 built the table, the registration RPC and the view, and the client half
 -- was verified on a device. Writing the sender surfaced one gap and one choice.
@@ -7,7 +7,7 @@
 -- The gap: `pending_pushes` exposed no sender id, so a notification could be
 -- delivered but not *opened* anywhere. `src/lib/push.ts` reads `data.peerId` and
 -- routes to that conversation; without it, tapping the notification lands on the
--- inbox and the user has to find the thread again. Adding it costs nothing —
+-- inbox and the user has to find the thread again. Adding it costs nothing,
 -- the sender id is already on the row being joined.
 --
 -- The choice: the peer id is a user id, and this view is service-role only, so
@@ -53,13 +53,13 @@ comment on view public.pending_pushes is
 -- pg_cron on a one-minute tick, which is its floor. That is a real latency
 -- decision, so it is written down rather than inherited: while the app is
 -- foregrounded Realtime already delivers instantly, so this only governs how
--- long a *backgrounded* reply waits — up to 60 seconds. A database webhook on
+-- long a *backgrounded* reply waits, up to 60 seconds. A database webhook on
 -- insert would make it immediate, at the cost of putting the service-role key
 -- in the database (Vault) and a cold start per message. Worth doing; not worth
 -- blocking the first release on.
 -- Everything from here to the end is Supabase-only, and it is guarded rather
 -- than assumed. `scripts/db-test.mjs` runs these migrations against a plain
--- postgres+pgTAP image that has no pg_cron, no pg_net and no Vault — and it must
+-- postgres+pgTAP image that has no pg_cron, no pg_net and no Vault, and it must
 -- keep working, because that harness is what proves RLS actually isolates users.
 -- A migration that only applies on the hosted project is a migration the tests
 -- cannot see.
@@ -75,7 +75,7 @@ begin
     create extension if not exists pg_cron;
     create extension if not exists pg_net;
   else
-    raise notice 'pg_cron/pg_net unavailable — skipping push scheduling (expected in the test harness)';
+    raise notice 'pg_cron/pg_net unavailable, skipping push scheduling (expected in the test harness)';
   end if;
 end
 $$;

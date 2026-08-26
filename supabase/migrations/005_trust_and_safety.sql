@@ -5,11 +5,11 @@
 --
 -- Five primitives, in the order an incident actually moves through them:
 --
---   1. blocks               — the user's own immediate remedy, needs no operator
---   2. reports              — evidence capture, because messages cascade-delete
---   3. moderation_actions   — an append-only record of what an operator did
---   4. suspension           — enforcement, checked in the send path
---   5. rate limiting        — the cheap structural defence against spam/flooding
+--   1. blocks             , the user's own immediate remedy, needs no operator
+--   2. reports            , evidence capture, because messages cascade-delete
+--   3. moderation_actions , an append-only record of what an operator did
+--   4. suspension         , enforcement, checked in the send path
+--   5. rate limiting      , the cheap structural defence against spam/flooding
 --
 -- Plus `events`, the first-party telemetry table. It lives here rather than in
 -- its own migration because the abuse signals worth alerting on (report rate,
@@ -25,14 +25,14 @@
 -- A report has to outlive the reported message, or the remedy for "he sent me
 -- something illegal" is to destroy the only evidence of it. So `reports` keeps a
 -- snapshot of the reported text, and reporter/subject ids are `on delete set
--- null` rather than cascade — the report survives, de-identified.
+-- null` rather than cascade, the report survives, de-identified.
 --
 -- Retention is therefore bounded in code, not in a policy document:
 -- `purge_expired_reports()` drops resolved reports after 90 days. The README's
 -- data-deletion section is updated to say this plainly.
 
 -- ---------------------------------------------------------------------------
--- 1. Blocking — the remedy that needs no operator and no waiting
+-- 1. Blocking, the remedy that needs no operator and no waiting
 -- ---------------------------------------------------------------------------
 create table if not exists public.blocks (
   blocker_id uuid not null references public.profiles(id) on delete cascade,
@@ -79,7 +79,7 @@ $$;
 revoke all on function public.is_blocked_pair(uuid, uuid) from public;
 
 -- ---------------------------------------------------------------------------
--- 2. Reports — evidence, captured at report time
+-- 2. Reports, evidence, captured at report time
 -- ---------------------------------------------------------------------------
 do $$
 begin
@@ -136,7 +136,7 @@ create index if not exists reports_subject_idx
 
 alter table public.reports enable row level security;
 
--- A reporter may see that their report exists and its status — closing the loop
+-- A reporter may see that their report exists and its status, closing the loop
 -- matters, an unacknowledged report reads as "nothing happened". They may not
 -- see the resolver note, so the view below narrows the columns.
 create policy "Reporter reads own reports"
@@ -156,7 +156,7 @@ with (security_invoker = true) as
 grant select on public.my_reports to authenticated;
 
 -- ---------------------------------------------------------------------------
--- 3. Moderation actions — append-only, no client access whatsoever
+-- 3. Moderation actions, append-only, no client access whatsoever
 -- ---------------------------------------------------------------------------
 create table if not exists public.moderation_actions (
   id uuid primary key default gen_random_uuid(),
@@ -194,7 +194,7 @@ create trigger moderation_actions_no_update
   for each row execute function public.moderation_actions_are_immutable();
 
 -- ---------------------------------------------------------------------------
--- 4. Enforcement — suspension, checked where it bites
+-- 4. Enforcement, suspension, checked where it bites
 -- ---------------------------------------------------------------------------
 alter table public.profiles
   add column if not exists suspended_until timestamptz;
@@ -518,7 +518,7 @@ revoke all on function public.purge_expired_reports() from public;
 grant execute on function public.purge_expired_reports() to service_role;
 
 -- ---------------------------------------------------------------------------
--- 7. Telemetry — first-party, and structurally unable to carry a message
+-- 7. Telemetry, first-party, and structurally unable to carry a message
 -- ---------------------------------------------------------------------------
 -- No third-party analytics SDK. That is not squeamishness: the manifest gate
 -- allows exactly INTERNET and VIBRATE, the Play data-safety declaration says no
@@ -664,7 +664,7 @@ revoke all on public.safety_metrics from anon, authenticated;
 -- is definer precisely because it must cross that boundary.
 --
 -- The display name comes from provider_directory rather than a join on profiles,
--- because migration 004 removed the policy that let members read provider rows —
+-- because migration 004 removed the policy that let members read provider rows,
 -- the directory view is now the only sanctioned path to a provider's name.
 create or replace view public.conversation_summaries
 with (security_invoker = true) as

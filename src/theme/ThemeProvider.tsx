@@ -22,13 +22,13 @@ import { DURATION } from './motion';
  * Light and dark, and the transition between them.
  *
  * Only **colour** is reactive. `space`, `radius`, `typography` and `motion` are
- * byte-identical across the two modes — a test asserts it — so making them
+ * byte-identical across the two modes, a test asserts it, so making them
  * reactive would re-render the app to hand every component the same numbers back.
  * That single observation is what keeps this a context read rather than a
  * styling engine.
  *
  * Styles are built by `useStyles(makeStyles)`, memoised on theme identity. The
- * alternative that looks simpler — leaving `StyleSheet.create` at module scope —
+ * alternative that looks simpler, leaving `StyleSheet.create` at module scope,
  * cannot work: module scope evaluates once per bundle load, so the first theme
  * the app ever saw would be frozen into every stylesheet.
  */
@@ -70,7 +70,7 @@ function readStoredMode(): ThemeMode {
  *
  * So the content switches instantly underneath, and a full-screen pane of the
  * *outgoing* background colour is laid over the top and faded out. The eye reads
- * the old scene dissolving into the new one, which is what actually happened —
+ * the old scene dissolving into the new one, which is what actually happened,
  * it just did not happen gradually. `pointerEvents="none"` because a transition
  * that eats a tap is worse than a hard cut.
  */
@@ -132,7 +132,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   );
 
   // The system flipping under a `system` preference deserves the same dissolve
-  // as a deliberate tap — it is the same visual event.
+  // as a deliberate tap, it is the same visual event.
   useEffect(() => {
     if (mode !== 'system') {
       return;
@@ -165,7 +165,7 @@ export function useThemeMode(): Omit<ThemeState, 'theme'> {
 /**
  * Build a stylesheet from the active theme, memoised on theme identity.
  *
- * `makeStyles` must be declared at module scope so the reference is stable —
+ * `makeStyles` must be declared at module scope so the reference is stable,
  * an inline arrow would be a new function every render and defeat the memo. A
  * test enforces it.
  */

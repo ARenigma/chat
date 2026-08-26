@@ -1,10 +1,10 @@
-# ADR-0010 — Components stay hand-rolled, for now
+# ADR-0010, Components stay hand-rolled, for now
 
 Status: **accepted, with a review trigger**
 Date: 2026-08-22
 
-The question was asked directly — why is everything hand-rolled rather than from a
-standard library — and it deserves an answer on the record rather than a shrug,
+The question was asked directly, why is everything hand-rolled rather than from a
+standard library, and it deserves an answer on the record rather than a shrug,
 because the honest answer is partly "history" and partly "we tried".
 
 ## The surface being defended
@@ -25,7 +25,7 @@ weighing anything else.
 Not preference. The platform components were tried and failed:
 
 - **`Switch`** renders Android's stock teal and cannot express the M3 switch
-  anatomy — 52×32 track, thumb 16 → 24 → 28. That is recorded in
+  anatomy, 52×32 track, thumb 16 → 24 → 28. That is recorded in
   `src/components/Toggle.tsx`, which exists because of it.
 - **`Button`** cannot be styled meaningfully at all.
 
@@ -59,7 +59,7 @@ while shipping.
 these becomes true.
 
 1. A second developer joins and the bespoke components are what slows them down.
-2. A component needs a behaviour the hand-rolled version cannot reach — nested
+2. A component needs a behaviour the hand-rolled version cannot reach, nested
    scroll, complex text selection, a date picker.
 3. iOS ships, and the platform-conformance cost doubles.
 
@@ -71,5 +71,5 @@ existing tests rather than in a single pass.
 
 ## What is not in scope
 
-The hand-rolled _screens_ — Inbox, Chat, Directory — are not the subject here.
+The hand-rolled _screens_, Inbox, Chat, Directory, are not the subject here.
 Screens are composition and would be hand-written under any component library.

@@ -1,26 +1,37 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Linking, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { BackHandler, Linking, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from './src/theme/tokens';
 import { ThemeProvider, useStyles, useThemeMode } from './src/theme/ThemeProvider';
 import { UpdateBanner } from './src/components/UpdateBanner';
+import { BLOOM_CONTENT_MS } from './src/lib/bloom';
 import { assertEnv } from './src/lib/env';
 import { migrateLegacyStorage, storage } from './src/lib/storage';
 import { initialNotificationPeer, onNotificationOpen, startPush } from './src/lib/push';
+import {
+  memberParent,
+  providerParent,
+  type MemberRoute,
+  type ProviderRoute,
+} from './src/lib/routes';
 import { initSentry } from './src/lib/sentry';
 import { isUuid } from './src/lib/ids';
 import { track } from './src/lib/telemetry';
 import { currentSession, handleAuthDeepLink } from './src/api/auth';
+import { CALLS_ENABLED } from './src/api/calls';
 import { useRole } from './src/api/provider';
 import { useStore } from './src/store/useStore';
 import { RefillSheet } from './src/screens/RefillSheet';
 import { Button } from './src/components/Button';
+import { FloatingToolbar } from './src/components/FloatingToolbar';
 import { ChatScreen } from './src/screens/ChatScreen';
-import { InboxScreen } from './src/screens/InboxScreen';
+import { HomeScreen } from './src/screens/HomeScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
-import { ProvidersScreen } from './src/screens/ProvidersScreen';
+import { OnboardingScreen } from './src/screens/OnboardingScreen';
+import { ProviderDetailScreen } from './src/screens/ProviderDetailScreen';
 import { ProviderApplicationScreen } from './src/screens/ProviderApplicationScreen';
 import { ProviderHomeScreen } from './src/screens/ProviderHomeScreen';
 import { ProviderStatusScreen } from './src/screens/ProviderStatusScreen';
@@ -53,15 +64,6 @@ type Boot =
  * path can reach a provider screen, because they are different trees rather than
  * different branches.
  */
-type MemberRoute =
-  | { name: 'inbox' }
-  | { name: 'directory' }
-  | { name: 'chat'; providerId: string }
-  | { name: 'apply' }
-  | { name: 'applicationStatus' };
-
-type ProviderRoute = { name: 'home' } | { name: 'chat'; peerId: string };
-
 /**
  * Navigation is still a single piece of state per tree, deliberately.
  *
@@ -75,9 +77,10 @@ function Root() {
   const styles = useStyles(makeStyles);
   const [boot, setBoot] = useState<Boot>({ phase: 'loading' });
   const [attempt, setAttempt] = useState(0);
-  const [route, setRoute] = useState<MemberRoute>({ name: 'inbox' });
+  const [route, setRoute] = useState<MemberRoute>({ name: 'home' });
   const [providerRoute, setProviderRoute] = useState<ProviderRoute>({ name: 'home' });
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [welcomeSeen, setWelcomeSeen] = useState(false);
   const resetConversation = useStore(s => s.resetConversation);
 
   useEffect(() => {
@@ -87,7 +90,7 @@ function Root() {
       try {
         assertEnv();
         // One-time move of anything the previous AsyncStorage build left behind,
-        // before the session is read — otherwise the first boot after the switch
+        // before the session is read, otherwise the first boot after the switch
         // signs everybody out.
         await migrateLegacyStorage();
         const session = await currentSession();
@@ -101,14 +104,14 @@ function Root() {
         // Synchronous, so the first frame can already be the right screen.
         const stored = storage.get(LAST_PROVIDER_KEY);
         if (isUuid(stored)) {
-          setRoute({ name: 'chat', providerId: stored });
+          setRoute({ name: 'chat', providerId: stored, from: 'home' });
         }
         // A notification tap outranks the remembered conversation: it is the
         // more recent, more explicit statement of what this person opened the
         // app to do.
         const tapped = await initialNotificationPeer();
         if (tapped !== null) {
-          setRoute({ name: 'chat', providerId: tapped });
+          setRoute({ name: 'chat', providerId: tapped, from: 'home' });
         }
         setBoot({ phase: 'ready' });
         track('app_open');
@@ -135,6 +138,29 @@ function Root() {
   useEffect(() => {
     const consume = (url: string | null): void => {
       if (url === null) {
+        return;
+      }
+      /*
+       * A conversation deep link, checked before the auth handler.
+       *
+       * `companionchat://peer/<id>` is what a tapped conversation notification
+       * fires once the push payload is data-only — see `Conversations.peerIntent`
+       * on the native side. It arrives here through `Linking` rather than through
+       * Firebase's notification-open handler, because a self-built notification's
+       * PendingIntent is not a Firebase notification event.
+       *
+       * `isUuid` gates it because a deep-link URL is remote input: any value
+       * could arrive on this scheme, and it must not reach a query unchecked —
+       * the same guard `openedPeerId` applies on the Firebase path. Routing only
+       * happens once signed in; a peer link that lands pre-session is dropped
+       * rather than queued, because the id belongs to a session that is not the
+       * current one.
+       */
+      const peer = url.match(/^companionchat:\/\/peer\/(.+)$/)?.[1];
+      if (peer !== undefined) {
+        if (isUuid(peer)) {
+          setRoute({ name: 'chat', providerId: peer, from: 'home' });
+        }
         return;
       }
       handleAuthDeepLink(url)
@@ -179,7 +205,7 @@ function Root() {
       unsubscribeToken = unsub;
     });
     const unsubscribeOpen = onNotificationOpen(peerId => {
-      setRoute({ name: 'chat', providerId: peerId });
+      setRoute({ name: 'chat', providerId: peerId, from: 'home' });
     });
     return () => {
       unsubscribeToken?.();
@@ -187,24 +213,63 @@ function Root() {
     };
   }, [boot.phase]);
 
-  const openChat = useCallback((id: string) => {
-    setRoute({ name: 'chat', providerId: id });
+  const openChat = useCallback((id: string, from: 'home' | 'detail' = 'home') => {
+    setRoute({ name: 'chat', providerId: id, from });
     track('conversation_opened');
     storage.set(LAST_PROVIDER_KEY, id);
   }, []);
 
+  const openProvider = useCallback((id: string) => {
+    setRoute({ name: 'providerDetail', providerId: id });
+    track('directory_viewed');
+  }, []);
+
+  // Back from a chat honours the door it was opened from (Home or a profile),
+  // matching the hardware-back handler rather than always dumping to Home.
   const leaveChat = useCallback(() => {
-    setRoute({ name: 'inbox' });
+    setRoute(prev =>
+      prev.name === 'chat' ? (memberParent(prev) ?? { name: 'home' }) : { name: 'home' },
+    );
     resetConversation();
     storage.remove(LAST_PROVIDER_KEY);
   }, [resetConversation]);
 
-  const browse = useCallback(() => {
-    setRoute({ name: 'directory' });
-    track('directory_viewed');
-  }, []);
+  const backToHome = useCallback(() => setRoute({ name: 'home' }), []);
 
-  const backToInbox = useCallback(() => setRoute({ name: 'inbox' }), []);
+  /**
+   * The hardware and gesture back button.
+   *
+   * Order matters and is the whole design: a sheet closes before a screen pops,
+   * because a sheet is the thing most recently opened and therefore the thing the
+   * user means. Returning `false` hands the gesture to Android, which closes the
+   * app; that only happens at a root, where trapping back would leave no way out
+   * but the task switcher.
+   */
+  useEffect(() => {
+    const onBack = () => {
+      if (settingsOpen) {
+        setSettingsOpen(false);
+        return true;
+      }
+      const parent = memberParent(route);
+      if (parent !== null) {
+        if (route.name === 'chat') {
+          resetConversation();
+          storage.remove(LAST_PROVIDER_KEY);
+        }
+        setRoute(parent);
+        return true;
+      }
+      const providerBack = providerParent(providerRoute);
+      if (providerBack !== null) {
+        setProviderRoute(providerBack);
+        return true;
+      }
+      return false;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
+    return () => sub.remove();
+  }, [route, providerRoute, settingsOpen, resetConversation]);
 
   if (boot.phase === 'loading') {
     return (
@@ -218,6 +283,67 @@ function Root() {
   }
 
   if (boot.phase === 'signedOut') {
+    /*
+     * The welcome screen sits in front of sign-in rather than replacing it.
+     *
+     * It exists to be FELT: the field draining upward and the 1.2s hold are the
+     * whole point of it, and neither can be judged from a still. It is skipped
+     * once somebody has seen it, and skipped entirely when an error brought them
+     * back here, because an atmospheric entry in front of "that code was wrong"
+     * is the wrong tone and an extra two seconds between a user and their retry.
+     */
+    if (!welcomeSeen && boot.message === undefined) {
+      /*
+       * The whole onboarding, not just a welcome screen.
+       *
+       * It owns sign-in now, so reaching `onDone` means a session already
+       * exists and this branch will not be taken again. The old split — a
+       * welcome screen that handed off to a separate AuthScreen — is what the
+       * Fuse translation replaced, because a hand-off between two screens is
+       * exactly the seam the reference does not have.
+       *
+       * `onDone` does two things, and the second is load-bearing. The browser
+       * path never reaches here — its deep-link handler sets `boot: 'ready'`
+       * and this screen unmounts first. But the Credential Manager path returns
+       * a session synchronously without any deep link, so nothing else re-reads
+       * it: `setWelcomeSeen(true)` alone would leave `boot` on `signedOut` and
+       * drop the user onto `AuthScreen` with a live session behind it — the
+       * exact "signed in but stuck on the sign-in screen" bug. Bumping `attempt`
+       * re-runs the boot effect, which reads the now-present session and lands
+       * on `ready`. `welcomeSeen` guards the rare case where the re-read finds
+       * no session: AuthScreen, not a replayed welcome animation.
+       */
+      return (
+        <OnboardingScreen
+          onDone={() => {
+            setWelcomeSeen(true);
+            setAttempt(a => a + 1);
+          }}
+        />
+      );
+    }
+    /*
+     * Arriving from the welcome screen, sign-in fades up rather than cutting in.
+     *
+     * The source gives both halves of the swap the same transition —
+     * `.opacity.combined(with: .offset(y: 20))` — so the field is never
+     * interrupted by something appearing at full strength on top of it. Without
+     * this the 1.2s of moving colour ends in a hard cut, which throws away the
+     * part the pause was buying.
+     *
+     * Only on that path: reaching sign-in with a `boot.message` means an error
+     * sent somebody back, and an entrance animation in front of "that code was
+     * wrong" is the wrong tone.
+     */
+    if (welcomeSeen && boot.message === undefined) {
+      return (
+        <Animated.View
+          style={styles.fill}
+          entering={FadeIn.duration(BLOOM_CONTENT_MS)}>
+          <AuthScreen />
+        </Animated.View>
+      );
+    }
     return <AuthScreen initialError={boot.message} />;
   }
 
@@ -232,7 +358,7 @@ function Root() {
         </Text>
         <View style={styles.retryWrap}>
           <Button
-            label="Try again"
+            label="Try Again"
             onPress={() => {
               setBoot({ phase: 'loading' });
               setAttempt(n => n + 1);
@@ -248,9 +374,9 @@ function Root() {
       route={route}
       providerRoute={providerRoute}
       openChat={openChat}
+      openProvider={openProvider}
       leaveChat={leaveChat}
-      browse={browse}
-      backToInbox={backToInbox}
+      backToHome={backToHome}
       setRoute={setRoute}
       setProviderRoute={setProviderRoute}
       settingsOpen={settingsOpen}
@@ -263,10 +389,11 @@ function Root() {
 interface SignedInProps {
   route: MemberRoute;
   providerRoute: ProviderRoute;
-  openChat: (id: string) => void;
+  /** `from` names the door, so back returns where the member actually came from. */
+  openChat: (id: string, from?: 'home' | 'detail') => void;
+  openProvider: (id: string) => void;
   leaveChat: () => void;
-  browse: () => void;
-  backToInbox: () => void;
+  backToHome: () => void;
   setRoute: (r: MemberRoute) => void;
   setProviderRoute: (r: ProviderRoute) => void;
   settingsOpen: boolean;
@@ -276,15 +403,15 @@ interface SignedInProps {
 
 /**
  * Split out because the role query needs a session, and hooks cannot be called
- * conditionally — putting `useRole` in `Root` would run it before sign-in.
+ * conditionally, putting `useRole` in `Root` would run it before sign-in.
  */
 function SignedIn({
   route,
   providerRoute,
   openChat,
+  openProvider,
   leaveChat,
-  browse,
-  backToInbox,
+  backToHome,
   setRoute,
   setProviderRoute,
   settingsOpen,
@@ -333,29 +460,53 @@ function SignedIn({
     <View style={styles.host}>
       {route.name === 'chat' ? (
         <ChatScreen providerId={route.providerId} onBack={leaveChat} />
-      ) : route.name === 'directory' ? (
-        <ProvidersScreen
-          onSelect={openChat}
-          onBack={backToInbox}
-          onOpenSettings={() => setSettingsOpen(true)}
+      ) : route.name === 'providerDetail' ? (
+        <ProviderDetailScreen
+          providerId={route.providerId}
+          onBack={backToHome}
+          // Opened from a profile, so back from the chat returns to the profile.
+          onOpenChat={id => openChat(id, 'detail')}
+          onStartCall={id => openChat(id, 'detail')}
         />
       ) : route.name === 'apply' ? (
         <ProviderApplicationScreen
-          onBack={backToInbox}
+          onBack={backToHome}
           onSubmitted={() => setRoute({ name: 'applicationStatus' })}
         />
       ) : route.name === 'applicationStatus' ? (
         <ProviderStatusScreen
-          onBack={backToInbox}
+          onBack={backToHome}
           onEdit={() => setRoute({ name: 'apply' })}
         />
       ) : (
-        <InboxScreen
+        <HomeScreen
           onOpenConversation={openChat}
-          onBrowse={browse}
+          onOpenProvider={openProvider}
           onOpenSettings={() => setSettingsOpen(true)}
         />
       )}
+      {/*
+        * The floating toolbar renders on Home and nowhere else.
+        *
+        * Chat, providerDetail, apply and applicationStatus are pushed screens: they
+        * are somewhere you go and come back from, and leaving the toolbar under them
+        * would offer a sideways exit out of a half-finished thing. iOS hides the tab
+        * bar on a push for the same reason.
+        *
+        * Calls are gated (`CALLS_ENABLED`); the Call tab is dimmed until they ship.
+        * Settings opens the sheet rather than being a destination in the tree.
+        */}
+      {route.name === 'home' ? (
+        <FloatingToolbar
+          active="home"
+          callEnabled={CALLS_ENABLED}
+          onSelect={key => {
+            if (key === 'settings') {
+              setSettingsOpen(true);
+            }
+          }}
+        />
+      ) : null}
       <RefillSheet />
       <SettingsSheet
         visible={settingsOpen}
@@ -383,7 +534,7 @@ function SignedIn({
  *
  * Android draws the clock and battery over our background once edge-to-edge is
  * on, so this is not cosmetic: with light content on a light background the
- * status bar is simply blank. No `backgroundColor` — unsupported from Android 15.
+ * status bar is simply blank. No `backgroundColor`, unsupported from Android 15.
  */
 function Shell() {
   const { isDark } = useThemeMode();
@@ -392,7 +543,7 @@ function Shell() {
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} translucent />
       <Root />
       {/* Outside Root on purpose. A downloaded update has to survive every route
-          change and both the signed-in and signed-out trees — the one thing
+          change and both the signed-in and signed-out trees, the one thing
           worse than not prompting is prompting and then losing it when the user
           navigates. */}
       <UpdateBanner />
@@ -406,7 +557,7 @@ export default function App() {
      * GestureHandlerRootView has to be the outermost view, not a wrapper inside
      * a screen: on Android it installs the touch interceptor that lets a pan
      * compete with the scroll views above it. Without it at the root, the sheet
-     * drag silently does nothing — the gesture is created, recognised by nobody,
+     * drag silently does nothing, the gesture is created, recognised by nobody,
      * and there is no warning.
      */
     <GestureHandlerRootView style={fill.root}>
@@ -440,6 +591,9 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   blank: {
     flex: 1,
     backgroundColor: t.color.bg.base,
+  },
+  fill: {
+    flex: 1,
   },
   fatal: {
     flex: 1,

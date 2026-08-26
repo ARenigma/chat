@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>CompanionChat — privacy</title>
+    <title>Papal, privacy</title>
     <meta name="theme-color" content="#FBF8F5" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#14110F" media="(prefers-color-scheme: dark)" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -16,7 +16,7 @@
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <header><a href="/" class="mark">CompanionChat</a></header>
+    <header><a href="/" class="mark">Papal</a></header>
 
     <h1>Privacy</h1>
     <p class="lede">
@@ -28,9 +28,16 @@
     <ul>
       <li>
         <strong>Your name and email</strong>, from Google. Neither is shown to
-        anyone you talk to — a separate display name is.
+        anyone you talk to, a separate display name is.
       </li>
       <li><strong>Your messages</strong>, so a conversation can continue.</li>
+      <li>
+        <strong>Voice notes you record</strong>, if you send one. The microphone
+        is used only while you are recording, never in the background. The audio
+        goes into a private store that only the two people in that conversation
+        can open, and it is deleted when the conversation or the account is. A
+        recording you never send is deleted within a day.
+      </li>
       <li>
         <strong>Your token balance</strong> and when you last claimed free ones.
       </li>
@@ -42,38 +49,56 @@
         <strong>A notification token</strong> for your device, so a reply can
         reach you. Deleted when you sign out.
       </li>
+      <li>
+        <strong>Whether you are here</strong>, but only because you said so.
+        Presence is a setting with three positions and it starts at hidden. It is
+        never guessed from whether the app is open. Unless you are listed as
+        someone who listens, only people you already have a conversation with can
+        see it, and turning it off stops us recording when you were last here at
+        all.
+      </li>
     </ul>
 
     <h2>What we do not hold</h2>
     <ul>
-      <li>No contacts, location, photos, microphone or camera.</li>
-      <li>No advertising ID. The app requests three Android permissions in total.</li>
+      <li>
+        No contacts, location, photos or camera. The microphone is used only for
+        the seconds you spend recording a voice note, and never otherwise.
+      </li>
+      <li>No advertising ID. The app requests four Android permissions in total.</li>
       <li>
         No analytics on what you say. We count events like “a message was sent”,
-        never their contents — a database trigger rejects any event carrying free
+        never their contents, a database trigger rejects any event carrying free
         text.
       </li>
     </ul>
 
     <h2>Who can see your messages</h2>
     <p>
-      The person you are talking to, and nobody else — enforced by row-level
+      The person you are talking to, and nobody else, enforced by row-level
       security in the database, so it holds even if the app is wrong. Our team
       can read a specific message only when you report it: reporting attaches a
       copy of that message to the report, and that copy is what a human reviews.
     </p>
     <p>
       A notification never contains what was said. It tells you who replied, and
-      that is deliberate — a lock screen is read by whoever is holding the phone.
+      that is deliberate, a lock screen is read by whoever is holding the phone.
     </p>
 
     <h2>What survives deleting your account</h2>
     <p>
       Your profile, conversations, messages and tokens are deleted immediately
       and permanently. <strong>Abuse reports do not.</strong> A report is kept,
-      with the reporter’s identity removed, for 90 days — because a report that
+      with the reporter’s identity removed, for 90 days, because a report that
       vanished when the reported account was deleted would make deletion a way to
       destroy the evidence against you.
+    </p>
+    <p>
+      If the thing reported was a voice note, the recording is kept with the
+      report for the same 90 days and a reviewer can listen to it. That is the
+      same trade as a reported message, said plainly because it is a louder one:
+      it is a recording of somebody’s voice, and the alternative is a report about
+      audio that points at nothing.
     </p>
 
     <h2>Where it lives</h2>

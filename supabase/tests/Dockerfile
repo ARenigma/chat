@@ -3,7 +3,7 @@
 # Built from the alpine base rather than the Debian one (which has a
 # `postgresql-16-pgtap` package) because alpine ships no pgTAP package at all and
 # the image is a third of the size. pgTAP is pure SQL plus a PGXS makefile, so
-# building it from a pinned release tarball is quick and fully reproducible — and
+# building it from a pinned release tarball is quick and fully reproducible, and
 # it keeps this suite off the multi-gigabyte supabase/postgres image.
 #
 # Docker caches the whole thing, so this cost is paid once.

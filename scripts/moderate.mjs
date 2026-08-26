@@ -20,7 +20,8 @@
  *   dismiss <report-id> [--note=...]    close with no action
  *   purge                               drop resolved reports past retention
  *   maintenance                          refund unanswered messages, refresh
- *                                        published reply latencies (cron this)
+ *                                        published reply latencies, delete
+ *                                        orphaned voice audio (cron this)
  *   metrics [--days=n]                  the safety counters
  *   applications [--status=s]            the provider application queue
  *   admit <user-id> [--note=...]         approve an application
@@ -58,7 +59,7 @@ if (URL_BASE === '' || KEY === '') {
   fail(
     'SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set.\n' +
       '  Get the key from the Supabase dashboard -> Project Settings -> API.\n' +
-      '  Never put it in .env — that file is bundled into the app.',
+      '  Never put it in .env, that file is bundled into the app.',
   );
 }
 
@@ -89,7 +90,7 @@ async function rpc(fn, body = {}) {
 const short = id => (id ?? '').slice(0, 8);
 const clip = (s, n) => {
   if (s === null || s === undefined) {
-    return '—';
+    return ',';
   }
   const flat = String(s).replace(/\s+/g, ' ');
   return flat.length > n ? `${flat.slice(0, n - 1)}…` : flat;
@@ -108,7 +109,7 @@ async function list() {
   const limit = Number(flag('limit') ?? 40);
   const rows = await rest(`moderation_queue?limit=${limit}`);
   if (rows.length === 0) {
-    console.log('queue empty — no open reports');
+    console.log('queue empty, no open reports');
     return;
   }
   console.log(
@@ -156,10 +157,47 @@ async function show() {
   console.log(`reporter      ${r.reporter_id ?? '(deleted account)'}`);
   console.log(`subject       ${r.subject_user_id ?? '(deleted account)'}`);
   console.log(`priors        ${priors.length} report(s) against this subject`);
-  console.log(`conversation  ${r.conversation_id ?? '—'}`);
+  console.log(`conversation  ${r.conversation_id ?? ','}`);
   console.log(`\nreporter said:\n  ${clip(r.detail, 500)}`);
   console.log(`\nreported message (snapshot at ${r.evidence_at ?? 'n/a'}):`);
   console.log(`  ${clip(r.evidence_body, 2000)}`);
+  if (r.evidence_voice_path) {
+    // A reported voice note is unreadable, so the queue has to hand over
+    // something playable or "he sent me something vile" is unactionable the
+    // moment it was spoken rather than typed. Ten minutes: long enough to listen
+    // twice, short enough that a pasted link in a chat log expires.
+    const signed = await sign(r.evidence_voice_path, 600);
+    console.log('\nreported voice note:');
+    console.log(`  ${signed ?? '(the audio is gone; the report outlived it)'}`);
+    console.log('  link expires in 10 minutes');
+  }
+}
+
+/**
+ * A short-lived URL for a private object.
+ *
+ * Storage is not PostgREST, so this cannot go through `rest`. Returns null rather
+ * than failing the command: a report whose audio has already been purged is still
+ * a report worth reading.
+ */
+async function sign(path, seconds) {
+  const response = await fetch(
+    `${URL_BASE}/storage/v1/object/sign/voice-notes/${path}`,
+    {
+      method: 'POST',
+      headers: {
+        apikey: KEY,
+        Authorization: `Bearer ${KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ expiresIn: seconds }),
+    },
+  );
+  if (!response.ok) {
+    return null;
+  }
+  const { signedURL } = await response.json();
+  return signedURL === undefined ? null : `${URL_BASE}/storage/v1${signedURL}`;
 }
 
 const ACTIONS = new Set([
@@ -212,7 +250,7 @@ async function act() {
     console.log(`reason   ${r.reason}`);
     console.log(`evidence ${clip(r.evidence_body ?? r.detail, 200)}`);
     if (!(await confirm(`${action} until ${suspendedUntil}?`))) {
-      console.log('aborted — nothing was written');
+      console.log('aborted, nothing was written');
       return;
     }
   }
@@ -366,7 +404,7 @@ async function admit() {
     p_user_id: id,
     p_note: flag('note') ?? null,
   });
-  console.log(`admitted ${short(id)} — they are now in the directory`);
+  console.log(`admitted ${short(id)}, they are now in the directory`);
 }
 
 async function needinfo() {
@@ -403,8 +441,19 @@ async function decline() {
 async function maintenance() {
   const refunded = await rpc('refund_unanswered_messages');
   const latencies = await rpc('refresh_reply_latencies');
+  /**
+   * Storage has no foreign key to `messages`, so deleting an account cascades the
+   * rows away and leaves the audio behind, orphaned and unreachable. Without this
+   * the deletion promise in web/privacy.html is false for voice notes.
+   *
+   * The function is server-side rather than a listing sweep here, so the 24 hour
+   * grace period and the "reported audio is exempt" rule live next to the
+   * constraint they protect. See `purge_orphaned_voice_notes` in migration 011.
+   */
+  const audio = await rpc('purge_orphaned_voice_notes');
   console.log(`refunded ${refunded} unanswered message(s)`);
   console.log(`refreshed reply latency for ${latencies} provider(s)`);
+  console.log(`deleted ${audio} orphaned voice note(s)`);
 }
 
 const COMMANDS = {

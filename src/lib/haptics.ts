@@ -2,7 +2,7 @@ import { Vibration } from 'react-native';
 
 /**
  * The only reason the app requests `android.permission.VIBRATE`: a 10 ms tick
- * on send and a double tick on failure. No haptics library — `Vibration` ships
+ * on send and a double tick on failure. No haptics library, `Vibration` ships
  * with React Native.
  */
 export function tick(): void {

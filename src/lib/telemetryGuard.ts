@@ -10,7 +10,7 @@
 
 /**
  * Mirrors the `guard_event_shape` trigger in migration 005. The server is the
- * real enforcement — this exists so a mistake surfaces in a test rather than as
+ * real enforcement, this exists so a mistake surfaces in a test rather than as
  * a silent insert rejection nobody is watching.
  */
 export const FORBIDDEN_PROP_KEY =

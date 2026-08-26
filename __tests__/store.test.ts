@@ -11,13 +11,12 @@ describe('useStore', () => {
     expect(s.balance).toBeNull();
     expect(s.sending).toBe(false);
     expect(s.peerTyping).toBe(false);
-    expect(s.peerOnline).toBe(false);
     expect(s.refillVisible).toBe(false);
   });
 
   /**
    * `sending` is about this device's outbound RPC and `peerTyping` about the
-   * other person. Conflating them — as a single `isStreaming` flag would — is
+   * other person. Conflating them, as a single `isStreaming` flag would, is
    * what makes a UI show "replying…" because *you* are typing.
    */
   it('keeps our own send state independent of the peer typing', () => {
@@ -56,7 +55,6 @@ describe('useStore', () => {
     const s = useStore.getState();
     s.setBalance(12);
     s.setPeerTyping(true);
-    s.setPeerOnline(true);
     s.setSending(true);
     s.setNotice('boom');
 
@@ -66,16 +64,46 @@ describe('useStore', () => {
       balance: 12,
       sending: false,
       peerTyping: false,
-      peerOnline: false,
       notice: null,
     });
+  });
+
+  /**
+   * There is one native audio player, so there can only be one playhead. These
+   * assertions are about the shape of that: `setPlaying` replaces rather than
+   * merges, and leaving the thread stops the sound.
+   */
+  it('holds one playing voice note at a time', () => {
+    const s = useStore.getState();
+    s.setPlaying({ messageId: 'a', positionMs: 1200, durationMs: 4000, pending: false });
+    expect(useStore.getState().playing?.messageId).toBe('a');
+
+    // Starting b while a is playing must not leave a's position behind: the
+    // player has already stopped a, and a merged update would move the playhead
+    // on the row that took over.
+    s.setPlaying({ messageId: 'b', positionMs: 0, durationMs: 9000, pending: true });
+    expect(useStore.getState().playing).toEqual({
+      messageId: 'b',
+      positionMs: 0,
+      durationMs: 9000,
+      pending: true,
+    });
+  });
+
+  it('stops the playhead when the conversation is left', () => {
+    // Audio from the thread you just walked out of should not keep playing over
+    // the next one, and the marker has to clear with the sound.
+    useStore
+      .getState()
+      .setPlaying({ messageId: 'a', positionMs: 10, durationMs: 4000, pending: false });
+    useStore.getState().resetConversation();
+    expect(useStore.getState().playing).toBeNull();
   });
 
   it('resets everything, as account deletion requires', () => {
     const s = useStore.getState();
     s.setBalance(12);
     s.setSending(true);
-    s.setPeerOnline(true);
     s.openRefill();
     s.setNotice('boom');
 
@@ -85,7 +113,6 @@ describe('useStore', () => {
       balance: null,
       sending: false,
       peerTyping: false,
-      peerOnline: false,
       refillVisible: false,
       notice: null,
     });
@@ -96,7 +123,7 @@ describe('useStore', () => {
  * A confirmation must not be able to arrive wearing the failure surface.
  *
  * There was one channel and one appearance, so "Blocked.", "Reported.",
- * "Application submitted." and "Thanks — that helps the next person choose."
+ * "Application submitted." and "Thanks, that helps the next person choose."
  * all rendered inside a red-bordered bar. It was visible on a device the
  * instant a rating was submitted: a thank-you in an error box.
  */
@@ -124,7 +151,7 @@ describe('notice tone', () => {
 /**
  * Every message the app phrases as good news is tagged as one. Source-level,
  * because the alternative is rendering each mutation and asserting a border
- * colour — far more machinery for a weaker claim.
+ * colour, far more machinery for a weaker claim.
  */
 describe('success messages are tagged as confirmations', () => {
   const sources = ['src/api/safety.ts', 'src/api/provider.ts', 'src/api/chat.ts']
@@ -136,7 +163,7 @@ describe('success messages are tagged as confirmations', () => {
     'Unblocked.',
     'Reported. Our team will review this.',
     'Application submitted. We will be in touch.',
-    'Thanks — that helps the next person choose.',
+    'Thanks, that helps the next person choose.',
   ])('tags %s', message => {
     expect(sources).toContain(`setNotice('${message}', 'confirm')`);
   });

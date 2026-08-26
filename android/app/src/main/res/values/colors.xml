@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Native-side colours. Two of them, and both are the same values as
-  design/tokens.json — they cannot be generated from it because they are read by
+  design/tokens.json, they cannot be generated from it because they are read by
   the platform before any JavaScript exists.
 
   ic_launcher_background is bg/inverse (Light): ink, not black. It is the icon's

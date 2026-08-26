@@ -16,7 +16,7 @@ const PATIENCE_MS = 6000;
  * What used to be `<View style={styles.blank} />`.
  *
  * That was the bug behind "blank white screen after signing in": every
- * indeterminate state — session check, profile fetch, OAuth hand-back — rendered
+ * indeterminate state, session check, profile fetch, OAuth hand-back, rendered
  * an empty view with no spinner, no timeout and no way out. If any of those
  * hung, the app was a white rectangle forever and there was nothing on screen to
  * even tell you it was waiting.
@@ -45,7 +45,7 @@ export function SplashScreen({ onRetry }: Props) {
           </Text>
           {onRetry !== undefined ? (
             <View style={styles.action}>
-              <Button label="Try again" onPress={onRetry} testID="splash-retry" />
+              <Button label="Try Again" onPress={onRetry} testID="splash-retry" />
             </View>
           ) : null}
         </View>

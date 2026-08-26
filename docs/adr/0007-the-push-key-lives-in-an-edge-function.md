@@ -1,4 +1,4 @@
-# ADR-0007 — The push key lives in an Edge Function
+# ADR-0007, The push key lives in an Edge Function
 
 Status: **accepted, and working end to end**
 Date: 2026-08-21
@@ -37,8 +37,8 @@ single hop is what you get for it.
 The account held `roles/resourcemanager.organizationAdmin` at the org but not
 `orgpolicy.policyAdmin`, so the sequence was: grant the policy role, disable the
 constraint **scoped to this one project** (not the org), enable
-`orgpolicy.googleapis.com`, wait for propagation — the first key attempt failed
-because the policy had not propagated yet, not because it was still set — create
+`orgpolicy.googleapis.com`, wait for propagation, the first key attempt failed
+because the policy had not propagated yet, not because it was still set, create
 the key, then re-enforce.
 
 The window was minutes and the scope was one project. The constraint is enforced
@@ -55,7 +55,7 @@ gcloud resource-manager org-policies describe \
 `fcm-sender@chat-d8c87.iam.gserviceaccount.com` holds exactly
 `roles/firebasecloudmessaging.admin`. If it leaked, the holder could send
 notifications to devices registered to this Firebase project. They could not read
-messages, reach the database, or touch anything in GCP — it is not an owner key,
+messages, reach the database, or touch anything in GCP, it is not an owner key,
 and this is why the sender got its own service account rather than reusing
 anything broader.
 
@@ -83,7 +83,7 @@ gcloud resource-manager org-policies enable-enforce \
 
 **Migrate to Cloud Run when billing is open.** This is not a permanent
 architecture; it is the right one while a card on file is the blocker. The Edge
-Function's logic does not change — only where the bearer token comes from.
+Function's logic does not change, only where the bearer token comes from.
 
 ## Latency, stated rather than discovered
 
@@ -98,7 +98,7 @@ start per message. Worth doing; not worth blocking the first release on.
 ## Three things this cost that the design did not predict
 
 1. **`pending_pushes` had no sender id.** The notification could be delivered but
-   not _opened_ — `src/lib/push.ts` routes on `data.peerId`. Migration 009 adds
+   not _opened_, `src/lib/push.ts` routes on `data.peerId`. Migration 009 adds
    `peer_id`. It had to `drop view` rather than `create or replace`, because a
    replace can only append columns and the id belongs next to
    `conversation_id`.
@@ -119,5 +119,5 @@ All three were found on a device. None of them would have failed a build.
 ## What the notification says
 
 "Ada / replied". Never the message. `pending_pushes` does not select a body, so
-there is no code path that could leak one even by mistake — the privacy decision
+there is no code path that could leak one even by mistake, the privacy decision
 is enforced by the shape of the view rather than by remembering not to.

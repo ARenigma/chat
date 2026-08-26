@@ -54,7 +54,7 @@ async function requireUserId(): Promise<string> {
   return data.user.id;
 }
 
-/** The session's own profile id — every "is this mine" comparison needs it. */
+/** The session's own profile id, every "is this mine" comparison needs it. */
 export function useSelfId() {
   return useQuery<string>({
     queryKey: ['self'],
@@ -187,7 +187,7 @@ export function useMessages(conversationId: string | undefined) {
 /**
  * The send path: one RPC, one transaction.
  *
- * The Edge Function this replaced had to debit, call a model, then insert —
+ * The Edge Function this replaced had to debit, call a model, then insert,
  * three steps that could fail apart, which is why it carried refund logic.
  * `send_message` debits and inserts in a single statement pair, so a failure
  * leaves nothing behind and there is no refund to get wrong.
@@ -204,7 +204,7 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
   const openRefill = useStore(s => s.openRefill);
 
   return useCallback(
-    async (raw: string): Promise<void> => {
+    async (raw: string, replyToId: string | null = null): Promise<void> => {
       const body = raw.trim();
       if (body === '' || conversationId === undefined || selfId === undefined) {
         return;
@@ -223,6 +223,16 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
         conversation_id: conversationId,
         sender_id: selfId,
         body,
+        // Carried on the optimistic row so the quote block renders on the same
+        // frame as the keypress. Without it a reply appears as a plain bubble and
+        // then grows a quote when the server confirms, which is the one place a
+        // reply looks like a bug.
+        reply_to_id: replyToId,
+        // 011 made `body` nullable so a row can carry audio instead. Stating the
+        // voice columns here rather than leaving them off means a voice send path
+        // has to be written, not inherited by accident.
+        voice_path: null,
+        voice_duration_ms: null,
         created_at: new Date().toISOString(),
         read_at: null,
       };
@@ -235,6 +245,7 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
       const { data, error } = await supabase.rpc('send_message', {
         p_conversation_id: conversationId,
         p_body: body,
+        p_reply_to_id: replyToId,
       });
       setSending(false);
 
@@ -267,6 +278,9 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
               conversation_id: conversationId,
               sender_id: selfId,
               body,
+              reply_to_id: replyToId,
+              voice_path: null,
+              voice_duration_ms: null,
               created_at: result.created_at,
               read_at: null,
             }
@@ -279,7 +293,7 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
       if (typeof result.new_balance === 'number') {
         setBalance(result.new_balance);
       }
-      track('message_sent');
+      track(replyToId === null ? 'message_sent' : 'reply_sent');
       // The inbox preview and unread counts are now stale.
       void queryClient.invalidateQueries({ queryKey: keys.conversationList });
     },

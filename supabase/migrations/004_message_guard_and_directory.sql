@@ -13,7 +13,7 @@
 --
 -- The intent was "may set read_at". What it actually says is "may update this
 -- row", and `body` is a column on that row. So the recipient of a message could
--- rewrite its text — and because `replica identity full` is on, ship the edit to
+-- rewrite its text, and because `replica identity full` is on, ship the edit to
 -- the other participant over Realtime as an authentic-looking row. In a product
 -- whose whole safety story rests on "we can prove who said what", a recipient
 -- being able to edit the other side's words destroys every transcript as
@@ -62,7 +62,7 @@ create trigger guard_message_columns
 -- ---------------------------------------------------------------------------
 -- 003 added a second SELECT policy on `profiles` so members could discover
 -- providers. RLS policies for the same command are OR'd together, so that
--- policy did not merely feed the view — it widened `profiles` itself. Any
+-- policy did not merely feed the view, it widened `profiles` itself. Any
 -- authenticated member could run
 --
 --   select id, token_balance, identity_verified_at from profiles

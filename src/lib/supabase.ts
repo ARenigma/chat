@@ -4,7 +4,7 @@ import { supabaseStorage } from './storage';
 import type { Database } from './database.types';
 
 /**
- * `detectSessionInUrl: false` because React Native has no URL bar — the OAuth
+ * `detectSessionInUrl: false` because React Native has no URL bar, the OAuth
  * code arrives through a deep link and is exchanged explicitly in
  * `src/api/auth.ts`. `flowType: 'pkce'` is what makes that exchange safe on a
  * device that cannot hold a client secret.

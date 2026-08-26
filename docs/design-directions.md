@@ -1,25 +1,25 @@
-# Design directions — three production-grade options
+# Design directions, three production-grade options
 
 The brief: **lighter, more interactive, less serious, with character.** The current
-theme is competent and cold — a monochrome grey system with one rose accent on a
+theme is competent and cold, a monochrome grey system with one rose accent on a
 strict five-use budget. It reads as restrained, which was right when the product
 was an AI companion trying not to seem creepy, and is wrong now that the product
 is "a real person will listen."
 
 This document is the research, then three complete directions to choose between.
-Each one specifies the whole system — colour, type, shape, motion, buttons — so
+Each one specifies the whole system, colour, type, shape, motion, buttons, so
 whichever is picked can be implemented without further design decisions.
 
 ---
 
-## Part 1 — What the research actually says
+## Part 1, What the research actually says
 
 ### Google's own data backs "less serious"
 
 [Material 3 Expressive](https://design.google/library/expressive-material-design-google-research)
 is the most-researched update Google has made to a design system: three years,
 net-positive across all age groups, and **younger users showed the strongest
-preference**. They scored designs against emotional attributes — _playful,
+preference**. They scored designs against emotional attributes, _playful,
 energetic, creative, friendly, positive vibe_. The mechanisms they landed on are
 specific and worth copying:
 
@@ -34,7 +34,7 @@ with evidence behind it.
 ### The restraint caveat, which cuts against overdoing it
 
 Every 2026 motion round-up says the same thing: the shift is toward
-_whisper-level_ feedback — a faint glow on long-press, not a confetti burst — and
+_whisper-level_ feedback, a faint glow on long-press, not a confetti burst, and
 **don't animate everything, because users tune out noise.** The performance bar
 is concrete: anything slower than **100ms reads as lag**, and on 120Hz screens
 janky 60fps is visible.
@@ -68,18 +68,18 @@ fifth of it.
 
 **21st.dev, shadcn/ui, WatermelonUI and GSAP are all web libraries.** They are
 React DOM + Tailwind + CSS/JS animation. None of their code can be dropped into
-this app — React Native has no DOM, no CSS cascade, and GSAP has no supported RN
+this app, React Native has no DOM, no CSS cascade, and GSAP has no supported RN
 target. Their _ideas_ transfer completely; their implementations do not.
 
 The React Native equivalents, which is what we would actually build on:
 
-| Web thing in the brief                | React Native equivalent                                                                                                               |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| shadcn/ui                             | [react-native-reusables](https://reactnativereusables.com/) — the same copy-paste philosophy, Nativewind + a port of Radix primitives |
-| GSAP timelines                        | Reanimated 4 (`withSpring`, `withSequence`, layout animations)                                                                        |
-| Framer Motion's declarative `animate` | **Moti** — a Framer-Motion-style wrapper over Reanimated                                                                              |
-| CSS filters / canvas tricks           | **Skia** (Shopify) — GPU 2D canvas, shaders, blur                                                                                     |
-| Lottie for designer motion            | Lottie, or **Rive** when the animation needs _state_                                                                                  |
+| Web thing in the brief                | React Native equivalent                                                                                                              |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| shadcn/ui                             | [react-native-reusables](https://reactnativereusables.com/), the same copy-paste philosophy, Nativewind + a port of Radix primitives |
+| GSAP timelines                        | Reanimated 4 (`withSpring`, `withSequence`, layout animations)                                                                       |
+| Framer Motion's declarative `animate` | **Moti**, a Framer-Motion-style wrapper over Reanimated                                                                              |
+| CSS filters / canvas tricks           | **Skia** (Shopify), GPU 2D canvas, shaders, blur                                                                                     |
+| Lottie for designer motion            | Lottie, or **Rive** when the animation needs _state_                                                                                 |
 
 Recommended stack if we go beyond what we have: **Reanimated (core) + Moti
 (declarative micro-interactions) + Rive (one signature moment) **. Skia only if
@@ -87,7 +87,7 @@ we later need charts or real blur. Adding all four now would be gold-plating.
 
 ---
 
-## Part 2 — Fifteen apps, and what is worth stealing from each
+## Part 2, Fifteen apps, and what is worth stealing from each
 
 Grouped by what they are actually good at rather than by category.
 
@@ -97,35 +97,35 @@ Grouped by what they are actually good at rather than by category.
 | -------------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | **Finch**      | A pet you care for _by_ caring for yourself. Character carried by one illustrated creature, not by the whole UI shouting. | **Yes, the principle.** One warm character element, everything else calm.          |
 | **Duolingo**   | Mascot-led, heavy gamification, loud colour, streak pressure.                                                             | **The mascot idea, not the pressure.** Streaks and guilt are wrong for loneliness. |
-| **Headspace**  | Warm illustration, generous whitespace, slow motion, orange. Calm _is_ the brand.                                         | **Yes** — the pacing and the warmth.                                               |
-| **Clubhouse**  | Hand-drawn avatars and warm off-white made a social app feel like a living room.                                          | **Yes** — hand-drawn beats stock photography for human warmth.                     |
+| **Headspace**  | Warm illustration, generous whitespace, slow motion, orange. Calm _is_ the brand.                                         | **Yes**, the pacing and the warmth.                                                |
+| **Clubhouse**  | Hand-drawn avatars and warm off-white made a social app feel like a living room.                                          | **Yes**, hand-drawn beats stock photography for human warmth.                      |
 | **Marco Polo** | Video messaging that feels like a letter, not a broadcast. Soft, unhurried.                                               | The unhurried framing.                                                             |
 
 ### Fluidity as the product
 
-| App                 | The move                                                                                              | Take it?                                                                     |
-| ------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| **Family (wallet)** | Famous for motion: everything springs, nothing cuts. Motion _is_ the differentiator.                  | **Yes** — spring-everything discipline.                                      |
-| **Arc Search**      | Aggressive, confident motion on a browser. Proof that motion can carry a brand with almost no colour. | The confidence; not the aggression.                                          |
-| **Copilot Money**   | "Delightful" finance — restrained palette, immaculate transitions, no gimmicks.                       | **Yes** — this is the closest tonal target for "less serious but not silly". |
-| **Cash App**        | Huge type, flat bold colour, tactile number entry.                                                    | Big type for the one number that matters (tokens).                           |
-| **Revolut / Monzo** | Fintech that earned character through colour and micro-copy while handling money.                     | Micro-copy tone.                                                             |
+| App                 | The move                                                                                              | Take it?                                                                    |
+| ------------------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| **Family (wallet)** | Famous for motion: everything springs, nothing cuts. Motion _is_ the differentiator.                  | **Yes**, spring-everything discipline.                                      |
+| **Arc Search**      | Aggressive, confident motion on a browser. Proof that motion can carry a brand with almost no colour. | The confidence; not the aggression.                                         |
+| **Copilot Money**   | "Delightful" finance, restrained palette, immaculate transitions, no gimmicks.                        | **Yes**, this is the closest tonal target for "less serious but not silly". |
+| **Cash App**        | Huge type, flat bold colour, tactile number entry.                                                    | Big type for the one number that matters (tokens).                          |
+| **Revolut / Monzo** | Fintech that earned character through colour and micro-copy while handling money.                     | Micro-copy tone.                                                            |
 
 ### Systems worth copying wholesale
 
-| App / system     | The move                                                                         | Take it?                                                               |
-| ---------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| **Linear**       | Dark, precise, fast. Motion is short and confident. Best-in-class _restraint_.   | Motion timing discipline.                                              |
-| **Notion**       | Character entirely via illustration and copy on a neutral base.                  | **Yes** — cheapest way to get character.                               |
-| **Airbnb (DLS)** | Warm neutral + one strong accent, and a real token pipeline.                     | **Yes** — the pipeline model, which we already have.                   |
-| **Hinge**        | Human warmth in a dating app without sleaze: warm neutrals, real editorial type. | **Yes, carefully** — closest adjacent-risk product that stayed classy. |
-| **Discord**      | Blurple, rounded everything, jokes in the loading strings. Character via voice.  | Voice and rounding; not the density.                                   |
+| App / system     | The move                                                                         | Take it?                                                              |
+| ---------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| **Linear**       | Dark, precise, fast. Motion is short and confident. Best-in-class _restraint_.   | Motion timing discipline.                                             |
+| **Notion**       | Character entirely via illustration and copy on a neutral base.                  | **Yes**, cheapest way to get character.                               |
+| **Airbnb (DLS)** | Warm neutral + one strong accent, and a real token pipeline.                     | **Yes**, the pipeline model, which we already have.                   |
+| **Hinge**        | Human warmth in a dating app without sleaze: warm neutrals, real editorial type. | **Yes, carefully**, closest adjacent-risk product that stayed classy. |
+| **Discord**      | Blurple, rounded everything, jokes in the loading strings. Character via voice.  | Voice and rounding; not the density.                                  |
 
 ### The three lessons that survive all fifteen
 
 1. **Character comes from one or two elements, not from everything.** Finch has a
    bird. Notion has doodles. Duolingo has an owl. The rest of the UI is quiet.
-2. **Warm neutral bases beat pure grey** for anything human. Grey reads clinical —
+2. **Warm neutral bases beat pure grey** for anything human. Grey reads clinical,
    which is precisely the word we are trying to avoid.
 3. **Motion earns the "premium" read, colour earns the "fun" read.** Family is
    almost monochrome and feels alive; Duolingo is loud and feels fun. We need a
@@ -133,7 +133,7 @@ Grouped by what they are actually good at rather than by category.
 
 ---
 
-## Part 3 — The shared foundation (applies to whichever direction wins)
+## Part 3, The shared foundation (applies to whichever direction wins)
 
 ### Move the colour system to a 12-step semantic scale
 
@@ -142,19 +142,19 @@ per mode, which already failed once: `text/secondary` shipped at **3.13:1** and
 broke AA until a test caught it.
 
 [Radix Colors](https://www.radix-ui.com/colors/docs/palette-composition/understanding-the-scale)
-solves this properly, and the reason is structural — **the semantic contract lives
+solves this properly, and the reason is structural, **the semantic contract lives
 in the step number, not the hex**:
 
-| Steps | Role                                                 |
-| ----- | ---------------------------------------------------- |
-| 1–2   | App background, subtle background                    |
-| 3–5   | Component background — resting / hover / pressed     |
-| 6–8   | Borders — subtle / interactive / strong + focus ring |
-| 9–10  | Solid fills (9 is the highest-chroma step)           |
-| 11–12 | Low-contrast text / high-contrast text               |
+| Steps | Role                                                |
+| ----- | --------------------------------------------------- |
+| 1–2   | App background, subtle background                   |
+| 3–5   | Component background, resting / hover / pressed     |
+| 6–8   | Borders, subtle / interactive / strong + focus ring |
+| 9–10  | Solid fills (9 is the highest-chroma step)          |
+| 11–12 | Low-contrast text / high-contrast text              |
 
 Steps 11 and 12 are **guaranteed** Lc 60 and Lc 90 APCA contrast on step 2 of the
-same scale. Because the guarantee is perceptual, it survives dark-mode inversion —
+same scale. Because the guarantee is perceptual, it survives dark-mode inversion,
 which is exactly what our hand-tuned pairs did not.
 
 Practically: `surface.raised → step 3` needs no per-mode override, and the
@@ -166,10 +166,10 @@ We keep our generator; only the input scale changes.
 Springs, not milliseconds. Four named springs cover everything:
 
 ```
-spring.snap    damping 30  stiffness 400  mass 0.7   — taps, toggles, chips
-spring.smooth  damping 26  stiffness 220  mass 1.0   — sheets, screens, layout
-spring.bounce  damping 14  stiffness 260  mass 0.9   — the signature moment only
-spring.breath  duration 4000  sine in-out            — the one non-spring: presence
+spring.snap    damping 30  stiffness 400  mass 0.7 , taps, toggles, chips
+spring.smooth  damping 26  stiffness 220  mass 1.0 , sheets, screens, layout
+spring.bounce  damping 14  stiffness 260  mass 0.9 , the signature moment only
+spring.breath  duration 4000  sine in-out          , the one non-spring: presence
 ```
 
 Rules: nothing over **300ms** for feedback; **100ms** is the lag threshold; every
@@ -180,14 +180,14 @@ scope.
 
 - The token pipeline (Figma → `tokens.json` → generated theme → drift gate).
 - The accent-budget test. It has already forced two good arguments.
-- No SVG in animated subtrees — that crash is documented and real.
+- No SVG in animated subtrees, that crash is documented and real.
 - AAA on body text in both modes.
 
 ---
 
-## Part 4 — The three directions
+## Part 4, The three directions
 
-### Direction A — "Warm Paper"
+### Direction A, "Warm Paper"
 
 _Calm with character. A well-made paperback, not a clinic._
 
@@ -208,7 +208,7 @@ _Calm with character. A well-made paperback, not a clinic._
 
 ---
 
-### Direction B — "Soft Pop" ← my recommendation
+### Direction B, "Soft Pop" ← my recommendation
 
 _The direct answer to the brief. M3-Expressive logic, adult execution._
 
@@ -217,21 +217,21 @@ _The direct answer to the brief. M3-Expressive logic, adult execution._
 | **Base**      | Near-white `slate.1`, cards pure white, generous air.                                                                                                             |
 | **Accent**    | **Three** small-dose accents: rose `#E45C7F` (primary action), citrus `#F2A93B` (tokens, energy), sky `#4A9DE0` (presence, info). High chroma, tiny surface area. |
 | **Type**      | Big friendly sans (Plus Jakarta / Geist), heavy display weights, tabular numerals for the token count.                                                            |
-| **Shape**     | **Heavy rounding** — radii 16/24/full. Chips everywhere. **Shape morphs on press** (radius animates), straight from M3 Expressive.                                |
+| **Shape**     | **Heavy rounding**, radii 16/24/full. Chips everywhere. **Shape morphs on press** (radius animates), straight from M3 Expressive.                                 |
 | **Motion**    | `spring.snap` for taps, `spring.bounce` for send. Squash-and-stretch on the send button.                                                                          |
 | **Signature** | **Send**: the button squashes, the bubble launches with slight overshoot and settles. One moment, done extremely well.                                            |
 | **Buttons**   | Primary rose fill, radius morphs 24→16 on press with scale 0.96; secondary white with step 6 border; chips are tappable pills that fill on select.                |
 
 **Reads as:** modern, alive, friendly, unmistakably 2026.
 **Risk:** playfulness in an intimacy-adjacent product can drift toward flirty.
-**Mitigation:** accents on _actions and states only_ — never on avatars, never on
+**Mitigation:** accents on _actions and states only_, never on avatars, never on
 message bubbles, never a heart or a spark anywhere.
-**Best if:** the priority is retention and feeling current — which the brief says
+**Best if:** the priority is retention and feeling current, which the brief says
 it is.
 
 ---
 
-### Direction C — "Quiet Neon"
+### Direction C, "Quiet Neon"
 
 _Dark-first, cool, precise. Linear or Arc, softened._
 
@@ -246,22 +246,22 @@ _Dark-first, cool, precise. Linear or Arc, softened._
 | **Buttons**   | Mint fill with dark label; ghost buttons with a 1px step-7 border.         |
 
 **Reads as:** premium, modern, cool, a little exclusive.
-**Risk — and I would weigh this heavily:** dark + glow + one-to-one paid chat is
+**Risk, and I would weigh this heavily:** dark + glow + one-to-one paid chat is
 the visual signature of hookup and cam apps. This is the direction most likely to
 cost us a Play review, and it fights ADR-0001's whole positioning.
 **Best if:** we later decide the audience wants something that feels private and
-premium — and we accept that review risk knowingly.
+premium, and we accept that review risk knowingly.
 
 ---
 
-## Part 5 — Recommendation
+## Part 5, Recommendation
 
 **Direction B, "Soft Pop", with two constraints from A.**
 
 1. It is the only one that actually answers "lighter, interactive, less serious",
    and Google's own research says that preference is real and strongest among
    younger users.
-2. Keep **A's warm base** rather than a cold white — warmth is what stops
+2. Keep **A's warm base** rather than a cold white, warmth is what stops
    playfulness reading as juvenile, and stops the app reading as clinical.
 3. Keep the **accent budget**, widened to three hues but with the same rule:
    actions and states only. That single rule is what separates "friendly" from
@@ -288,9 +288,9 @@ schema, the safety model, or the auth flow.
 
 ---
 
-## Part 6 — What was actually chosen and built
+## Part 6, What was actually chosen and built
 
-None of the three, in the end. A fourth direction — **"Warm Signal"** — was
+None of the three, in the end. A fourth direction, **"Warm Signal"**, was
 synthesised from nine references supplied afterwards (a Dribbble chat concept,
 a Savee pin of Kretya's _Mengobrol_, and seven Pinterest boards including five
 colour systems). It keeps Direction A's warm base and Direction B's energy, and
@@ -302,9 +302,9 @@ takes the structure from the references rather than from either.
 | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
 | _Mengobrol_ (Kretya)                             | The structural spine: warm off-white page, **pure-white cards**, one accent, avatar rail with `+` first, floating pill action |
 | Dribbble _Chat App Concept_ + its Pinterest twin | Counting display headline, search pill, dashed "add" ring, circular icon buttons, dense list under a hero                     |
-| Yellow social pin                                | The inline coloured band that interrupts a list to ask one thing — now the rating prompt                                      |
+| Yellow social pin                                | The inline coloured band that interrupts a list to ask one thing, now the rating prompt                                       |
 | Urbanist pin                                     | The typeface, and "muted neutrals + a near-black that is not black"                                                           |
-| WW/STUDIO _Coral_                                | The palette's bones — Paper / Stone / Coral / Ink                                                                             |
+| WW/STUDIO _Coral_                                | The palette's bones, Paper / Stone / Coral / Ink                                                                              |
 | MP069 + MP072                                    | Warm off-white over cool grey, deep warm ink instead of black, and publishing a contrast figure per swatch                    |
 | FEST / Bolt                                      | Three-colour discipline, sand as the neutral                                                                                  |
 
@@ -316,7 +316,7 @@ takes the structure from the references rather than from either.
 - **Glass bubbles over a colour field.** They fail AA at body size, and Android
   blur in React Native is expensive for what it buys.
 - **A four-tab bar and a stories rail.** Two destinations is one too few for a
-  tab bar, and we are not a stories product — the rail carries _who is free now_,
+  tab bar, and we are not a stories product, the rail carries _who is free now_,
   which is information rather than decoration.
 
 ### One correction to the sources
@@ -326,24 +326,24 @@ The contrast ratios printed on those colour-system boards do not reproduce.
 against white; "Aqua Mist 11.71" measures 8.63. Every pair in
 `design/tokens.json` was therefore measured rather than copied, and the file
 says so. One measurement is load-bearing: **white on coral `#F2543D` is 3.4:1**,
-a fail, which is why the accent is two tokens — `bg.accent` for marks and
+a fail, which is why the accent is two tokens, `bg.accent` for marks and
 `bg.accentStrong` for anything under a label.
 
 ### The system
 
-- **Colour** — warm paper 1–7, coral 3/9/10/11, sage (presence), citrus (tokens
+- **Colour**, warm paper 1–7, coral 3/9/10/11, sage (presence), citrus (tokens
   only), warm ink 11/12, garnet for danger. Danger is deliberately _not_ a red:
   a red beside a coral accent is two signals the eye cannot separate.
-- **Type** — Urbanist (OFL), five static faces bundled from `assets/fonts`,
+- **Type**, Urbanist (OFL), five static faces bundled from `assets/fonts`,
   mounted into the APK by Gradle. Every style names its own face and **nothing
-  sets a `fontWeight`** — a concrete family plus a weight makes Android
+  sets a `fontWeight`**, a concrete family plus a weight makes Android
   synthesise a weight the family already ships.
-- **Motion** — four springs as physical triplets, with the perceptual damping
+- **Motion**, four springs as physical triplets, with the perceptual damping
   ratio _derived_ by the generator so the prose cannot drift from the physics:
   `snap` 0.93, `smooth` 1.01 (critically damped), `bounce` 0.59 (the send, and
   nothing else), `gentle` 0.85. Press scales, radius-morph targets, stagger
   delays, decay and the gesture thresholds are all tokens too.
-- **Physics** — Reanimated for the springs, `react-native-gesture-handler` for
+- **Physics**, Reanimated for the springs, `react-native-gesture-handler` for
   velocity. Moti and the other wrappers were skipped: they sit on top of
   Reanimated and would duplicate what a token-driven `springTo` already gives.
 
