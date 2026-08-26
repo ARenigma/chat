@@ -133,7 +133,7 @@ export function HomeScreen({ onOpenConversation, onOpenProvider, onOpenSettings 
           {chats.length > 0 ? (
             <View style={styles.rail}>
               <Text allowFontScaling style={styles.railLabel}>
-                CHATS
+                chats
               </Text>
               <ScrollView
                 horizontal
@@ -327,8 +327,29 @@ function FeaturedCard({
             {tagline}
           </Text>
         ) : null}
+        {/* Cute badges — age + languages — the Sweprek "Best Matches" chip idiom,
+            glassy over the photo. Age and languages are what we hold; richer
+            interest/category tags come when the schema carries them. */}
+        <View style={styles.featuredBadges}>
+          {provider.age !== null ? <Badge label={`${provider.age}`} /> : null}
+          {provider.languages.slice(0, 2).map(lang => (
+            <Badge key={lang} label={lang} />
+          ))}
+        </View>
       </View>
     </Pressable>
+  );
+}
+
+/** A small glassy pill for a fact on a photo card (age, language, category). */
+function Badge({ label }: { label: string }) {
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={styles.badge}>
+      <Text allowFontScaling style={styles.badgeText}>
+        {label}
+      </Text>
+    </View>
   );
 }
 
@@ -517,6 +538,23 @@ const makeStyles = (t: Theme) =>
     featuredTagline: {
       ...TOKENS.typography.subhead,
       color: 'rgba(255,255,255,0.92)',
+    },
+    featuredBadges: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: TOKENS.space['2xs'],
+      paddingTop: TOKENS.space.xs,
+    },
+    badge: {
+      paddingHorizontal: TOKENS.space.sm,
+      paddingVertical: 3,
+      borderRadius: TOKENS.radius.pill,
+      borderCurve: 'continuous',
+      backgroundColor: 'rgba(255,255,255,0.22)',
+    },
+    badgeText: {
+      ...TOKENS.typography.captionSmall,
+      color: '#FFFFFF',
     },
     rows: {
       paddingTop: TOKENS.space.sm,
