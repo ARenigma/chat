@@ -782,6 +782,12 @@ describe('accent budget is enforced in code, not just documented', () => {
     expect(users).toEqual([
       'Avatar.tsx',
       /*
+       * The call surfaces (gated, ADR-0019). The warm field IS the call
+       * background — same class as the bloom — built from the accent tokens; the
+       * accept button is sage, the end/decline button state/danger.
+       */
+      'CallScreen.tsx',
+      /*
        * The talk-time meter's Recharge CTA and its live dot (ADR-0019 made chat
        * per-minute). The Recharge button is an action and the dot is a live-state
        * signal — the two things the budget reserves the coral for — and the low
@@ -887,6 +893,9 @@ describe('accent budget is enforced in code, not just documented', () => {
       // sheen on a list row — and built from the accent tokens, not raw hex.
       'HomeScreen.tsx',
       'ProviderDetailScreen.tsx',
+      // The call background is a warm field (gated, ADR-0019), same exemption
+      // class as the hero surfaces, built from accent tokens not raw hex.
+      'CallScreen.tsx',
     ]);
     for (const s of componentSources.concat(screenSources)) {
       if (EXEMPT.has(s.file.split('/').pop() ?? '')) {

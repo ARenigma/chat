@@ -32,6 +32,7 @@ import { HomeScreen } from './src/screens/HomeScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
 import { ProviderDetailScreen } from './src/screens/ProviderDetailScreen';
+import { CallScreen } from './src/screens/CallScreen';
 import { ProviderApplicationScreen } from './src/screens/ProviderApplicationScreen';
 import { ProviderHomeScreen } from './src/screens/ProviderHomeScreen';
 import { ProviderStatusScreen } from './src/screens/ProviderStatusScreen';
@@ -460,13 +461,24 @@ function SignedIn({
     <View style={styles.host}>
       {route.name === 'chat' ? (
         <ChatScreen providerId={route.providerId} onBack={leaveChat} />
+      ) : route.name === 'call' ? (
+        <CallScreen
+          providerId={route.providerId}
+          mode={route.mode}
+          // A call ends back on the profile it started from.
+          onEnd={() => setRoute({ name: 'providerDetail', providerId: route.providerId })}
+          onAccept={() =>
+            setRoute({ name: 'call', providerId: route.providerId, mode: 'audio' })
+          }
+        />
       ) : route.name === 'providerDetail' ? (
         <ProviderDetailScreen
           providerId={route.providerId}
           onBack={backToHome}
           // Opened from a profile, so back from the chat returns to the profile.
           onOpenChat={id => openChat(id, 'detail')}
-          onStartCall={id => openChat(id, 'detail')}
+          // Only fires while CALLS_ENABLED (the buttons are disabled otherwise).
+          onStartCall={(id, channel) => setRoute({ name: 'call', providerId: id, mode: channel })}
         />
       ) : route.name === 'apply' ? (
         <ProviderApplicationScreen
