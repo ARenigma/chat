@@ -17,14 +17,8 @@ import { supabase } from '../lib/supabase';
 import { ENV } from '../lib/env';
 import type { CallMedium, CallResult } from '../lib/database.types';
 
-/**
- * Calling is ON. The client media layer (WebRTC + Realtime signalling) exists
- * now, so `start_call` no longer rings a phone that can never connect. Off for
- * years precisely so a control could not accept a tap and silently fail; this is
- * the commit that lands the media path, which is the only thing that earns the
- * flip.
- */
-export const CALLS_ENABLED = true;
+// Defined in src/config.ts — the single home for all feature flags.
+export { CALLS_ENABLED } from '../config';
 
 /**
  * ICE servers. Google's public STUN is always included; a TURN relay is

@@ -456,6 +456,13 @@ export type ClaimResult = {
   retry_after?: string;
 };
 
+/** Returned by the `spend_chat_minute` RPC (migration 021). */
+export type SpendChatMinuteResult = {
+  success: boolean;
+  new_balance?: number;
+  error?: 'UNAUTHORIZED' | 'INSUFFICIENT_BALANCE';
+};
+
 /** Returned by the `mock_recharge` RPC (migration 020). Only callable when
  *  `app_flags.mock_payments = true`; inert (MOCK_DISABLED) in production. */
 export type MockRechargeResult = {
@@ -775,6 +782,15 @@ export type Database = {
       mock_recharge: {
         Args: { p_amount_paise: number; p_tokens: number };
         Returns: MockRechargeResult;
+      };
+      /**
+       * Deducts one chat minute (22 tokens) from the calling user's balance.
+       * Self-scoped SECURITY DEFINER (migration 021). Returns success +
+       * new_balance, or INSUFFICIENT_BALANCE if the balance is too low.
+       */
+      spend_chat_minute: {
+        Args: Record<string, never>;
+        Returns: SpendChatMinuteResult;
       };
       delete_user_account: {
         Args: Record<string, never>;

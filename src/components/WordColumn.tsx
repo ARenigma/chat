@@ -40,7 +40,7 @@ import {
  * Matching the reference's number here would mean matching it in the one place
  * our materials differ from theirs.
  */
-const GLYPH = 28;
+const GLYPH = 32;
 
 /**
  * A word and the mark that rides with it.

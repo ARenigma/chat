@@ -359,6 +359,7 @@ describe('pipeline wiring', () => {
     // 020's suite. has_table + ok (×2) + function_privs_are + is = 5 counted by
     // the regex; plan(5) must stay in sync with that count.
     'supabase/tests/130_mock_recharge.sql',
+    'supabase/tests/140_chat_minute.sql',
   ])('keeps the pgTAP plan in step with the assertions in %s', file => {
     const sql = read(file);
     const planned = Number(/select plan\((\d+)\)/.exec(sql)?.[1]);
@@ -781,7 +782,9 @@ describe('secrets are untrackable', () => {
  */
 describe('phone sign-in stays off until it can deliver', () => {
   const auth = read('src/api/auth.ts');
-  const enabled = /export const PHONE_AUTH_ENABLED = (true|false);/.exec(auth)?.[1];
+  // PHONE_AUTH_ENABLED is now defined in src/config.ts; auth.ts re-exports it.
+  const featureFlags = read('src/config.ts');
+  const enabled = /export const PHONE_AUTH_ENABLED = (true|false);/.exec(featureFlags)?.[1];
 
   it('declares the flag explicitly', () => {
     expect(enabled).toBeDefined();
@@ -1429,8 +1432,13 @@ describe('the chat restyle is wired, not just drawn', () => {
     expect(chatCode).not.toMatch(/ListFooterComponent=\{\s*\(\)\s*=>\s*<DayDivider/);
     expect(chatCode).not.toMatch(/DayDivider label=/);
     expect(chatCode).toContain('<DayDivider iso={message.created_at} />');
-    // Computed once per data change in the memo, not per row in renderItem.
-    expect(chatCode).toContain('opensDay: opensDay(m, older)');
+    // opensDay is now computed in a single post-sort pass over the merged
+    // message+call list (so call rows also get dividers). The pass uses the
+    // opensDay helper from datetime.ts, applied to each row's sortAt field.
+    expect(chatCode).toContain("row.opensDay = opensDay(");
+    // The pass must run AFTER the sort so mixed message/call neighbours are
+    // compared correctly (not just adjacent messages).
+    expect(chatCode).toContain('sorted.length');
   });
 
   it('takes clock format from the device rather than hardcoding 24 hours', () => {
@@ -1734,8 +1742,11 @@ describe('calling ships visible and on, wired to a real media layer', () => {
     // signalling) now exists too, so start_call no longer rings a phone that can
     // never connect. Flipped in the same commit that landed the media path, which
     // is the only thing the flag's contract says earns the flip.
-    const calls = read('src/api/calls.ts');
-    const flag = /export const CALLS_ENABLED = (true|false);/.exec(calls)?.[1];
+    //
+    // CALLS_ENABLED is now defined in src/config.ts (the single flag home);
+    // src/api/calls.ts re-exports it so all existing import sites are unchanged.
+    const appConfig = read('src/config.ts');
+    const flag = /export const CALLS_ENABLED = (true|false);/.exec(appConfig)?.[1];
     expect(flag).toBe('true');
   });
 

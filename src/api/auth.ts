@@ -69,27 +69,12 @@ export const PROVIDER_LABEL: Record<SocialProvider, string> = {
   google: 'Continue with Google',
 };
 
-/**
- * Phone sign-in: implemented, and off until the DLT template is approved.
- *
- * This flag exists because of the Facebook mistake, which shipped. A sign-in
- * option that accepts input and then fails is worse than an absent one, and
- * Indian transactional SMS cannot be delivered at all until DLT registration
- * completes, entity, sender ID, then template, one to three weeks. Until then
- * `signInWithOtp` would take a number, look like it worked, and deliver nothing.
- *
- * Turning it on is three things, in this order:
- *   1. DLT template approved, with the SMS-autofill app hash inside it
- *      (ADR-0009 §1, the hash depends on Google's app signing certificate, so
- *      it cannot be computed before the first Play upload).
- *   2. Uncomment `[auth.hook.send_sms]` in supabase/config.toml and push, with
- *      SEND_SMS_HOOK_SECRET, MSG91_AUTHKEY and MSG91_TEMPLATE_ID set.
- *   3. Flip this to true.
- *
- * A contract test asserts the sign-in screen offers no phone entry while this is
- * false, so the flag cannot be quietly bypassed by adding a button.
- */
-export const PHONE_AUTH_ENABLED = true;
+// Defined in src/config.ts — the single home for all feature flags.
+// Imported here so the function bodies in this file can reference it directly,
+// and re-exported so callers that import from auth.ts keep working.
+// A contract test asserts this flag: see contract.test.ts 'phone sign-in stays off'.
+import { PHONE_AUTH_ENABLED } from '../config';
+export { PHONE_AUTH_ENABLED };
 
 /**
  * Which mechanism delivers and verifies the phone OTP. Build-time, not runtime —
