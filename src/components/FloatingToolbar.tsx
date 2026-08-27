@@ -111,7 +111,7 @@ function FloatingToolbarView({ active, onSelect, callEnabled = false }: Props) {
                   size={20}
                   color={
                     on
-                      ? theme.color.text.primary
+                      ? theme.color.bg.accent
                       : disabled
                         ? theme.color.text.tertiary
                         : theme.color.text.secondary
@@ -153,10 +153,11 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
     },
     // The active indicator: Material 3's 64×32 stadium behind the glyph, fixed at
-    // every state so nothing reflows on select. Was 56×34 with a solid-black fill,
-    // which read as a floating block ("the odd highlight"); M3's own spec is this
-    // size with a subtle secondary-container tint, which is what `bg/sunken` is
-    // here — a quiet "you are here" rather than a slab.
+    // every state so nothing reflows on select. It went black → grey → here: black
+    // read as a slab, and the pale grey (`bg/sunken`) read as a dull box. This is
+    // a soft coral wash (`bg/accentTint`) with a coral filled glyph — a highlight
+    // that clearly says "selected" and is on-brand, the way an icon-only tab bar
+    // (iMessage, Telegram) colours its chosen destination.
     indicator: {
       width: 64,
       height: 32,
@@ -166,6 +167,6 @@ const makeStyles = (t: Theme) =>
       borderCurve: 'continuous',
     },
     indicatorOn: {
-      backgroundColor: t.color.bg.sunken,
+      backgroundColor: t.color.bg.accentTint,
     },
   });

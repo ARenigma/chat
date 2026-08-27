@@ -2,16 +2,6 @@ pluginManagement { includeBuild("../node_modules/@react-native/gradle-plugin") }
 plugins { id("com.facebook.react.settings") }
 extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autolinkLibrariesFromCommand() }
 
-// JitPack, for @react-native-community/blur's transitive `com.github.Dimezis:BlurView`
-// (a JitPack-only artifact). Added here rather than in an `allprojects` block so it
-// merges with whatever repositoriesMode the React settings plugin configures instead
-// of fighting a FAIL_ON_PROJECT_REPOS. Default PREFER_PROJECT mode keeps this additive.
-dependencyResolutionManagement {
-    repositories {
-        maven { url = uri("https://www.jitpack.io") }
-    }
-}
-
 rootProject.name = 'CompanionChat'
 include ':app'
 include ':baselineprofile'
