@@ -3,123 +3,212 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Papal, privacy</title>
-    <meta name="theme-color" content="#FBF8F5" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#14110F" media="(prefers-color-scheme: dark)" />
+    <title>Pappal — privacy policy</title>
+    <meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Urbanist:wght@400;600;700;800&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/tokens.css" />
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <header><a href="/" class="mark">Papal</a></header>
 
-    <h1>Privacy</h1>
-    <p class="lede">
-      Written to be checked against the app rather than to cover us. Every claim
-      here is enforced in the database, not in a policy document.
-    </p>
+    <header class="site-header">
+      <div class="site-container header-inner">
+        <a href="/" class="mark" aria-label="Pappal home">Pappal</a>
+        <nav class="site-nav" aria-label="Main navigation">
+          <a href="/#how-it-works">How it works</a>
+          <a href="/pricing.html">Pricing</a>
+          <a href="/#become-a-partner">Become a partner</a>
+          <a href="/about.html">About</a>
+        </nav>
+        <div class="header-spacer"></div>
+        <a
+          class="cta cta--accent cta--sm"
+          href="https://gitlab.com/ARenigma/chat/-/releases"
+          rel="noopener noreferrer"
+        >Download</a>
+      </div>
+    </header>
 
-    <h2>What we hold</h2>
-    <ul>
-      <li>
-        <strong>Your name and email</strong>, from Google. Neither is shown to
-        anyone you talk to, a separate display name is.
-      </li>
-      <li><strong>Your messages</strong>, so a conversation can continue.</li>
-      <li>
-        <strong>Voice notes you record</strong>, if you send one. The microphone
-        is used only while you are recording, never in the background. The audio
-        goes into a private store that only the two people in that conversation
-        can open, and it is deleted when the conversation or the account is. A
-        recording you never send is deleted within a day.
-      </li>
-      <li>
-        <strong>Your token balance</strong> and when you last claimed free ones.
-      </li>
-      <li>
-        <strong>A date of birth</strong>, only if you apply to be someone who
-        listens. It is never shown; an age is computed from it.
-      </li>
-      <li>
-        <strong>A notification token</strong> for your device, so a reply can
-        reach you. Deleted when you sign out.
-      </li>
-      <li>
-        <strong>Whether you are here</strong>, but only because you said so.
-        Presence is a setting with three positions and it starts at hidden. It is
-        never guessed from whether the app is open. Unless you are listed as
-        someone who listens, only people you already have a conversation with can
-        see it, and turning it off stops us recording when you were last here at
-        all.
-      </li>
-    </ul>
+    <main>
+      <div class="page-content">
 
-    <h2>What we do not hold</h2>
-    <ul>
-      <li>
-        No contacts, location, photos or camera. The microphone is used only for
-        the seconds you spend recording a voice note, and never otherwise.
-      </li>
-      <li>No advertising ID. The app requests four Android permissions in total.</li>
-      <li>
-        No analytics on what you say. We count events like “a message was sent”,
-        never their contents, a database trigger rejects any event carrying free
-        text.
-      </li>
-    </ul>
+        <h1>Privacy policy</h1>
+        <p class="lede">
+          Written to be checked against the app rather than to cover us. Every
+          claim here is enforced in the database, not just in a policy document.
+        </p>
 
-    <h2>Who can see your messages</h2>
-    <p>
-      The person you are talking to, and nobody else, enforced by row-level
-      security in the database, so it holds even if the app is wrong. Our team
-      can read a specific message only when you report it: reporting attaches a
-      copy of that message to the report, and that copy is what a human reviews.
-    </p>
-    <p>
-      A notification never contains what was said. It tells you who replied, and
-      that is deliberate, a lock screen is read by whoever is holding the phone.
-    </p>
+        <h2>What we hold</h2>
+        <ul>
+          <li>
+            <strong>Your name and email</strong>, from Google. Neither is shown
+            to anyone you talk to — a separate display name is.
+          </li>
+          <li>
+            <strong>Your messages</strong>, so a conversation can continue.
+          </li>
+          <li>
+            <strong>Voice recordings you send</strong>, if you send one. The
+            microphone is used only while you are recording, never in the
+            background. Audio goes into a private store that only the two people
+            in that conversation can open, and it is deleted when the
+            conversation or the account is. A recording you never send is
+            deleted within a day.
+          </li>
+          <li>
+            <strong>Your token balance</strong> and when you last recharged.
+          </li>
+          <li>
+            <strong>A date of birth</strong>, only if you apply to be someone
+            who listens. It is never shown; an age is computed from it.
+          </li>
+          <li>
+            <strong>A notification token</strong> for your device, so a reply
+            can reach you. Deleted when you sign out.
+          </li>
+          <li>
+            <strong>Whether you are here</strong>, but only because you said so.
+            Presence is a setting with three positions and it starts at hidden.
+            It is never guessed from whether the app is open. Unless you are
+            listed as someone who listens, only people you already have a
+            conversation with can see it, and turning it off stops us recording
+            when you were last here at all.
+          </li>
+        </ul>
 
-    <h2>What survives deleting your account</h2>
-    <p>
-      Your profile, conversations, messages and tokens are deleted immediately
-      and permanently. <strong>Abuse reports do not.</strong> A report is kept,
-      with the reporter’s identity removed, for 90 days, because a report that
-      vanished when the reported account was deleted would make deletion a way to
-      destroy the evidence against you.
-    </p>
-    <p>
-      If the thing reported was a voice note, the recording is kept with the
-      report for the same 90 days and a reviewer can listen to it. That is the
-      same trade as a reported message, said plainly because it is a louder one:
-      it is a recording of somebody’s voice, and the alternative is a report about
-      audio that points at nothing.
-    </p>
+        <h2>What we do not hold</h2>
+        <ul>
+          <li>
+            No contacts, location, photos, or camera. The microphone is used
+            only for the seconds you spend recording a voice note, and never
+            otherwise.
+          </li>
+          <li>No advertising ID. The app requests four Android permissions in total.</li>
+          <li>
+            No analytics on what you say. We count events like "a message was
+            sent", never their contents — a database trigger rejects any event
+            carrying free text.
+          </li>
+        </ul>
 
-    <h2>Where it lives</h2>
-    <p>
-      Supabase (Postgres) for data, Google Firebase for notifications and app
-      distribution, Sentry for crash reports. Crash reports are scrubbed of
-      message contents before they are sent.
-    </p>
+        <h2>Who can see your messages</h2>
+        <p>
+          The person you are talking to, and nobody else, enforced by row-level
+          security in the database, so it holds even if the app is wrong. Our
+          team can read a specific message only when you report it: reporting
+          attaches a copy of that message to the report, and that copy is what
+          a human reviews.
+        </p>
+        <p>
+          A notification never contains what was said. It tells you who replied,
+          and that is deliberate — a lock screen is read by whoever is holding
+          the phone.
+        </p>
 
-    <h2>Contact</h2>
-    <p>
-      Questions, or a request to see what we hold about you:
-      <a href="mailto:testrelay97@gmail.com">testrelay97@gmail.com</a>.
-    </p>
+        <h2>Payment data</h2>
+        <p>
+          Token recharges are processed by our payment gateway partner. We do
+          not store your card details. The gateway is subject to its own PCI-DSS
+          obligations. We store your token balance and transaction history (pack
+          name, amount, timestamp) so you can see what you purchased.
+        </p>
 
-    <footer>
-      <a href="/">Home</a>
-      <a href="/about.html">About</a>
-      <a href="/terms.html">Terms</a>
-      <a href="/delete.html">Delete your data</a>
-      <span>Last updated 21 August 2026</span>
+        <h2>What survives deleting your account</h2>
+        <p>
+          Your profile, conversations, messages, and tokens are deleted
+          immediately and permanently. <strong>Abuse reports do not.</strong> A
+          report is kept, with the reporter's identity removed, for 90 days,
+          because a report that vanished when the reported account was deleted
+          would make deletion a way to destroy the evidence against you.
+        </p>
+        <p>
+          If the thing reported was a voice note, the recording is kept with the
+          report for the same 90 days and a reviewer can listen to it. That is
+          the same trade as a reported message, said plainly because it is a
+          louder one: it is a recording of somebody's voice, and the alternative
+          is a report about audio that points at nothing.
+        </p>
+
+        <h2>Where it lives</h2>
+        <p>
+          Supabase (PostgreSQL) for data, Google Firebase for notifications and
+          app distribution, Sentry for crash reports. Crash reports are scrubbed
+          of message contents before they are sent.
+        </p>
+
+        <h2>Retention</h2>
+        <p>
+          Active account data is retained for as long as your account exists.
+          On deletion: see above. Aggregated, non-personal usage counts (e.g.
+          total messages sent in a day) may be retained for operational
+          reporting indefinitely; they contain no personal information.
+        </p>
+
+        <h2>Your rights</h2>
+        <p>
+          You have the right to access, correct, or request deletion of your
+          personal data at any time. Write to us at
+          <a href="mailto:hello@axionix.tech"><span>hello@axionix.tech</span></a>. We respond within 30 days, and usually much sooner.
+        </p>
+
+        <h2>Contact</h2>
+        <p>
+          Questions, or a request to see what we hold about you:
+          <a href="mailto:hello@axionix.tech"><span>hello@axionix.tech</span></a>.
+        </p>
+
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <div class="site-container">
+        <div class="footer-inner">
+          <div class="footer-brand">
+            <a href="/" class="mark" aria-label="Pappal home">Pappal</a>
+            <p>
+              Someone to talk to, tonight.<br />
+              &copy; 2026 <span>Axionix Technologies</span>
+            </p>
+          </div>
+          <div class="footer-links">
+            <div class="footer-col">
+              <strong>Product</strong>
+              <a href="/#how-it-works">How it works</a>
+              <a href="/pricing.html">Pricing</a>
+              <a href="/about.html">About</a>
+            </div>
+            <div class="footer-col">
+              <strong>Partners</strong>
+              <a href="/#become-a-partner">Become a partner</a>
+            </div>
+            <div class="footer-col">
+              <strong>Legal</strong>
+              <a href="/terms.html">Terms</a>
+              <a href="/privacy.html">Privacy</a>
+              <a href="/refund.html">Refund policy</a>
+              <a href="/delete.html">Delete your data</a>
+            </div>
+            <div class="footer-col">
+              <strong>Contact</strong>
+              <a href="mailto:hello@axionix.tech">
+                <span>hello@axionix.tech</span>
+              </a>
+            </div>
+          </div>
+        </div>
+        <div class="footer-meta">
+          <span>Last updated 27 August 2026</span>
+          <span><span>Axionix Technologies</span></span>
+          <span><span>Noida, Uttar Pradesh, India</span></span>
+        </div>
+      </div>
     </footer>
+
   </body>
 </html>
