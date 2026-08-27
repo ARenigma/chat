@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
@@ -38,6 +39,7 @@ import { SCROLL_PHYSICS } from '../lib/scroll';
 import { DEFAULT_RATES, isLowBalance, talkTimeLeft } from '../lib/rates';
 import { ownReaction, tallyByMessage } from '../lib/reactions';
 import type { ReactionEmoji } from '../lib/database.types';
+import { supabase } from '../lib/supabase';
 import { useStore } from '../store/useStore';
 import { Avatar } from '../components/Avatar';
 import { ChatWallpaper } from '../components/ChatWallpaper';
@@ -104,6 +106,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const balance = useStore(s => s.balance);
+  const setBalance = useStore(s => s.setBalance);
   const openRefill = useStore(s => s.openRefill);
   const [bloomKey, setBloomKey] = useState(0);
   // Which message the safety sheet was opened from, so a report can attach the
@@ -323,6 +326,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
       localKey: string;
       sortAt: string;
       call: NonNullable<typeof callRecords>[number];
+      opensDay: boolean;
     };
 
     const messageRows: MessageRow[] = list.map((m, i) => {
@@ -339,7 +343,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
         first: !older || older.sender_id !== m.sender_id,
         last: !newer || newer.sender_id !== m.sender_id,
         showReceipt: m.id === receiptFor,
-        opensDay: opensDay(m, older),
+        // opensDay is false here and recomputed in the single pass below.
+        opensDay: false,
         // Built here rather than in `renderItem` so its identity is stable across
         // renders and the memo on the bubble still holds. A fresh object literal
         // per render would re-render every row on every playhead tick.
@@ -365,12 +370,32 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
       localKey: `call-${c.id}`,
       sortAt: c.created_at,
       call: c,
+      opensDay: false,
     }));
 
     // Merge and sort newest-first (matches the inverted FlatList).
-    return [...messageRows, ...callRows].sort(
+    const sorted = [...messageRows, ...callRows].sort(
       (a, b) => new Date(b.sortAt).getTime() - new Date(a.sortAt).getTime(),
     );
+
+    // Single pass over the merged list to compute day dividers.
+    //
+    // `opensDay` was previously computed in messageRows.map() against adjacent
+    // messages only, so a call row between two days broke the divider (the day
+    // whose first row was a call showed no divider, and calls between days
+    // swallowed the boundary).  Computing it here — after sorting — means every
+    // row compares against its actual older neighbour regardless of kind.
+    for (let i = 0; i < sorted.length; i++) {
+      const row = sorted[i];
+      const olderNeighbour = sorted[i + 1];
+      if (row === undefined) continue;
+      row.opensDay = opensDay(
+        { created_at: row.sortAt },
+        olderNeighbour !== undefined ? { created_at: olderNeighbour.sortAt } : undefined,
+      );
+    }
+
+    return sorted;
   }, [messages, selfId, callRecords]);
 
   /**
@@ -436,6 +461,47 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   }, [messages, selfId]);
 
   const thread = threads?.find(t => t.id === conversationId);
+
+  /**
+   * Per-minute chat token meter (member side only).
+   *
+   * Deducts DEFAULT_RATES.chat tokens once per minute while the screen is
+   * mounted and the app is in the foreground.  This is ADDITIONAL to the
+   * per-message 1-token debit: it gates the active-session cost so seed and
+   * mock accounts deplete their balance realistically and the low-balance
+   * warning + recharge flow can be exercised without sending 22 messages.
+   *
+   * The interval is a single const per mount — no double-charging.  AppState
+   * gates each tick so background time is not billed.  On INSUFFICIENT_BALANCE
+   * or zero balance the interval stops itself and openRefill() is called.
+   * Migration 021 owns the RPC (spend_chat_minute); it is SECURITY DEFINER and
+   * self-scoped so no client-side trust is required.
+   */
+  useEffect(() => {
+    if (!thread?.i_am_member || conversationId === undefined) {
+      return;
+    }
+    const timerId = setInterval(() => {
+      // Skip billing while the app is backgrounded.
+      if (AppState.currentState !== 'active') {
+        return;
+      }
+      void (async () => {
+        const { data: result } = await supabase.rpc('spend_chat_minute');
+        if (result === null) {
+          return;
+        }
+        if (result.success && result.new_balance != null) {
+          setBalance(result.new_balance);
+        } else if (result.error === 'INSUFFICIENT_BALANCE') {
+          clearInterval(timerId);
+          openRefill();
+        }
+      })();
+    }, 60_000);
+    return () => clearInterval(timerId);
+  }, [thread?.i_am_member, conversationId, setBalance, openRefill]);
+
   const offerReview =
     thread !== undefined &&
     thread.i_am_member &&
@@ -489,6 +555,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
       if (item.kind === 'call') {
         return (
           <View style={styles.turn}>
+            {item.opensDay ? <DayDivider iso={item.call.created_at} /> : null}
             <CallLogRow call={item.call} />
           </View>
         );

@@ -486,7 +486,7 @@ function ComposerView({
             affordance, sized to match the trailing mic (24 glyph) so it doesn't
             read as the smaller of the two. */}
         <View style={styles.attachCircle}>
-          <Icon name="plus" size={24} color={theme.color.text.onAccent} />
+          <Icon name="plus" size={16} color={theme.color.text.onAccent} />
         </View>
       </Pressable>
       <View style={styles.field}>

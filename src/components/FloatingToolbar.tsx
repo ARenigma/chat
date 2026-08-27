@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { tick } from '../lib/haptics';
+import { CALLS_TAB_ENABLED } from '../config';
 import { Frost } from './Frost';
 import { Icon, type IconName } from './Icon';
 import { Pressable } from './Pressable';
@@ -72,6 +73,12 @@ function FloatingToolbarView({ active, onSelect, callEnabled = false }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
 
+  // When CALLS_TAB_ENABLED is false the 'call' tab is absent entirely and the
+  // remaining three tabs fill the bar via `space-around`. The ToolbarKey union
+  // and the routes.ts 'calls' route type are unchanged so the tab can be
+  // re-enabled by flipping the flag.
+  const visibleTabs = CALLS_TAB_ENABLED ? TABS : TABS.filter(t => t.key !== 'call');
+
   return (
     // A frosted overlay pinned to the bottom edge (Amit's call, 2026-08-27): the
     // Home/Settings list scrolls *under* it so the real blur has live content to
@@ -83,7 +90,7 @@ function FloatingToolbarView({ active, onSelect, callEnabled = false }: Props) {
     <Frost
       edge="top"
       style={[styles.bar, { paddingBottom: insets.bottom + TOKENS.space['2xs'] }]}>
-        {TABS.map(tab => {
+        {visibleTabs.map(tab => {
           const on = tab.key === active;
           const disabled = tab.key === 'call' && !callEnabled;
           return (

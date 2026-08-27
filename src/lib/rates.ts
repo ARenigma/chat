@@ -1,4 +1,5 @@
-import { APP_ENV } from '@env';
+// PAYMENTS_ENABLED and MOCK_PAYMENTS are defined in src/config.ts.
+export { PAYMENTS_ENABLED, MOCK_PAYMENTS } from '../config';
 
 /**
  * Per-minute pricing, kept pure so it can be tested without a device.
@@ -82,28 +83,6 @@ export const LOW_BALANCE_TOKENS = DEFAULT_RATES.chat;
 export function isLowBalance(tokens: number | null): boolean {
   return tokens !== null && tokens <= LOW_BALANCE_TOKENS;
 }
-
-/**
- * Whether a real payment can be taken.
- *
- * Off, and gated the same way `CALLS_ENABLED` is: the UPI intent / Play Billing
- * rail is a follow-up, so the Recharge screen shows the packs and the Pay button
- * but does not pretend to charge. The daily starter credit is a separate, real
- * path that stays live. Flip this when the rail is wired.
- */
-export const PAYMENTS_ENABLED = false;
-
-/**
- * Whether the mock-payment flow is available.
- *
- * True in every non-production build so the pay→success→credit→warning loop
- * can be exercised end-to-end without a live UPI rail.  The server-side gate
- * (app_flags.mock_payments) is a second, independent guard: the client must
- * send the RPC AND the flag must be flipped on the server before any tokens
- * are credited.  A production build (APP_ENV === 'production') never shows
- * the mock Pay button regardless of the server flag.
- */
-export const MOCK_PAYMENTS = APP_ENV !== 'production';
 
 /**
  * The top-up packs offered on the Recharge screen, in ₹ (1 token = ₹1). A ladder

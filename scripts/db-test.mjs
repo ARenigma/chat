@@ -61,6 +61,7 @@ const MIGRATIONS = [
   'supabase/migrations/018_firebase_phone_exchange.sql',
   'supabase/migrations/019_token_ledger_and_invoices.sql',
   'supabase/migrations/020_mock_recharge.sql',
+  'supabase/migrations/021_chat_minute.sql',
 ];
 
 const docker = (args, options = {}) =>
@@ -368,6 +369,10 @@ const suites = [
   {
     file: join(ROOT, 'supabase/tests/130_mock_recharge.sql'),
     label: 'mock recharge: app_flags, function grant, and MOCK_DISABLED gate',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/140_chat_minute.sql'),
+    label: 'spend_chat_minute: grant, shape, and balance gate',
   },
 ];
 

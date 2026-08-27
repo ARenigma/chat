@@ -3,6 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import type { CallRecord } from '../api/chat';
+import { timeOfDay } from '../lib/datetime';
 import { Icon } from './Icon';
 
 /**
@@ -34,19 +35,20 @@ function CallLogRowView({ call }: { call: CallRecord }) {
   const iconName = isVideo ? 'video' : 'call';
   const mediumLabel = isVideo ? 'Video' : 'Voice';
 
+  const stamp = timeOfDay(call.created_at);
   let label: string;
   switch (call.status) {
     case 'ended':
-      label = `${mediumLabel} call${formatDuration(call.started_at, call.ended_at)}`;
+      label = `${mediumLabel} call${formatDuration(call.started_at, call.ended_at)} · ${stamp}`;
       break;
     case 'missed':
-      label = `Missed ${mediumLabel.toLowerCase()} call`;
+      label = `Missed ${mediumLabel.toLowerCase()} call · ${stamp}`;
       break;
     case 'declined':
-      label = 'Declined call';
+      label = `Declined call · ${stamp}`;
       break;
     case 'failed':
-      label = 'Call failed';
+      label = `Call failed · ${stamp}`;
       break;
   }
 
