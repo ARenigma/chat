@@ -1472,9 +1472,12 @@ describe('the chat restyle is wired, not just drawn', () => {
 
   it('mounts the actions sheet and long-presses both sides into it', () => {
     expect(chat).toMatch(/<MessageActionsSheet[\s/>]/);
-    // Both, because you could not act on your own message at all before, which
-    // made Reply a one-way affordance.
-    expect(chatCode).toContain('onLongPress={onLongPress}');
+    // Both sides receive the stable openActions reference so either bubble can
+    // long-press into the sheet. The per-render closure that used to live in
+    // renderItem is now built inside each bubble via useCallback (A5), so the
+    // parent passes onRequestActions={openActions} rather than onLongPress.
+    expect(chatCode).toContain('onRequestActions={openActions}');
+    // mine is still destructured from the row — used for author label and receipt.
     expect(chatCode).toContain('mine,');
   });
 

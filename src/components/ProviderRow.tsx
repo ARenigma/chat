@@ -20,14 +20,19 @@ interface Props {
    * a list that has been cut off rather than one that has ended.
    */
   isLast: boolean;
-  /** Row body tap: open the conversation. */
-  onPress: (provider: ProviderSummary) => void;
   /**
-   * Avatar tap: open the profile card. Two targets in one row — the photo is a
-   * peek at who they are, the rest of the row is "talk to them" — which is the
-   * split every dating/marketplace list uses and what v13 intends.
+   * Row body tap: receives the provider id rather than the full summary.
+   *
+   * Changed from `(provider: ProviderSummary) => void` so call sites can pass a
+   * stable `useCallback((id: string) => ...)` without re-wrapping the full object
+   * — which was the reason memo never held across balance ticks.
    */
-  onPressAvatar?: (provider: ProviderSummary) => void;
+  onPress: (id: string) => void;
+  /**
+   * Avatar tap: open the profile card. Same id-only contract as `onPress` so both
+   * can be hoisted as stable callbacks in the parent.
+   */
+  onPressAvatar?: (id: string) => void;
 }
 
 /**
@@ -146,7 +151,7 @@ function ProviderRowView({ provider, index, isLast, onPress, onPressAvatar }: Pr
   return (
     <Animated.View entering={enterRow(index)}>
       <Pressable
-        onPress={() => onPress(provider)}
+        onPress={() => onPress(provider.id)}
         testID={`provider-${provider.id}`}
         accessibilityLabel={accessibility}
         press="none"
@@ -156,7 +161,7 @@ function ProviderRowView({ provider, index, isLast, onPress, onPressAvatar }: Pr
             rest of the row opens the conversation. Nested inside the row
             Pressable, the inner one captures taps that land on the photo. */}
         <Pressable
-          onPress={() => (onPressAvatar ?? onPress)(provider)}
+          onPress={() => (onPressAvatar ?? onPress)(provider.id)}
           testID={`provider-avatar-${provider.id}`}
           accessibilityLabel={`${provider.display_name}'s profile`}
           // Folded into the row for TalkBack: the avatar is a sighted-tap

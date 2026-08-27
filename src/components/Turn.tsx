@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -86,6 +86,17 @@ export interface ReactionTally {
 }
 
 /**
+ * The payload the actions sheet needs, exported so ChatScreen can type it
+ * without duplicating the definition and so Turn.tsx can build it internally.
+ */
+export interface ActionTarget {
+  id: string;
+  mine: boolean;
+  author: string;
+  body: string | null;
+}
+
+/**
  * A voice note's payload, built in the transcript memo so its identity is stable
  * and the bubble's `memo` still does its job.
  */
@@ -124,10 +135,21 @@ interface Shared {
   /** Required whenever `voice` is set: the single playhead, shared by every row. */
   voicePlayer?: VoicePlayer;
   /**
-   * Opens the actions sheet. On both sides now: you could not act on your own
-   * message at all before, which made Reply a one-way affordance.
+   * Primitive props used to build the long-press handler INSIDE the bubble.
+   *
+   * Passing the handler as `() => void` from renderItem created a new closure
+   * per row per render (because it closed over message-specific values), which
+   * broke memo on every balance tick. Instead the parent passes a stable
+   * `onRequestActions` (already useCallback'd at the screen level) and the
+   * primitive data the bubble needs to build the specific target. The bubble
+   * constructs `() => void` itself via useCallback keyed on those primitives.
    */
-  onLongPress?: () => void;
+  messageId?: string;
+  author?: string;
+  /** The raw database body, which may be null for voice/image messages. */
+  rawBody?: string | null;
+  /** Stable reference to the screen-level action opener. */
+  onRequestActions?: (target: ActionTarget) => void;
 }
 
 /**
@@ -289,9 +311,23 @@ function PeerTurnView({
   voice,
   image,
   voicePlayer,
-  onLongPress,
+  messageId,
+  author,
+  rawBody,
+  onRequestActions,
 }: PeerProps) {
   const styles = useStyles(makeStyles);
+  // Construct the long-press handler inside the component so the parent can
+  // pass a stable `onRequestActions` reference rather than a per-render closure.
+  // useMemo (not useCallback) because the result can be undefined when the
+  // component has no messageId yet; useCallback's type signature requires Function.
+  const onLongPress = useMemo(
+    () =>
+      messageId !== undefined && onRequestActions !== undefined
+        ? () => onRequestActions({ id: messageId, mine: false, author: author ?? '', body: rawBody ?? null })
+        : undefined,
+    [messageId, onRequestActions, author, rawBody],
+  );
   return (
     <Animated.View
       entering={animate === true ? bubbleArrive : undefined}
@@ -360,6 +396,12 @@ interface MineProps extends Shared {
    * question the others would.
    */
   receipt?: 'sent' | 'read';
+  /**
+   * Only newly-sent (optimistic) rows animate in. History bubbles that are
+   * already settled should mount silently so opening a chat does not play up
+   * to 12 simultaneous launch springs at once.
+   */
+  isNew?: boolean;
 }
 
 /**
@@ -389,12 +431,25 @@ function MyTurnView({
   voice,
   image,
   voicePlayer,
-  onLongPress,
+  isNew,
+  messageId,
+  author,
+  rawBody,
+  onRequestActions,
 }: MineProps) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
+  // Construct the long-press handler inside the component so the parent passes
+  // only stable references. Pending rows intentionally get no handler.
+  const onLongPress = useMemo(
+    () =>
+      !pending && messageId !== undefined && onRequestActions !== undefined
+        ? () => onRequestActions({ id: messageId, mine: true, author: author ?? 'You', body: rawBody ?? null })
+        : undefined,
+    [pending, messageId, onRequestActions, author, rawBody],
+  );
   return (
-    <Animated.View entering={bubbleLaunch} style={styles.myColumn}>
+    <Animated.View entering={isNew === true ? bubbleLaunch : undefined} style={styles.myColumn}>
       {/* Time above the message (#7, Amit). The receipt ("Sent"/"Read") still
           trails below, where iOS keeps it. */}
       {timestamp !== undefined ? (

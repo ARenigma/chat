@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
@@ -33,6 +33,12 @@ export function FavouritesScreen({ onOpenProvider }: Props) {
     [providers, ids],
   );
 
+  // A3: stable callback so ProviderRow.memo holds across re-renders.
+  const handleOpenProvider = useCallback(
+    (id: string) => onOpenProvider(id),
+    [onOpenProvider],
+  );
+
   return (
     <View style={[styles.root, { paddingTop: insets.top + TOKENS.space['2xs'] }]}>
       <View style={styles.nav}>
@@ -55,8 +61,8 @@ export function FavouritesScreen({ onOpenProvider }: Props) {
                 provider={p}
                 index={i}
                 isLast={i === favourites.length - 1}
-                onPress={() => onOpenProvider(p.id)}
-                onPressAvatar={() => onOpenProvider(p.id)}
+                onPress={handleOpenProvider}
+                onPressAvatar={handleOpenProvider}
               />
             ))}
           </View>
