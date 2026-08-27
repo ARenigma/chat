@@ -153,10 +153,10 @@ export function useCallSession(
                 const params = sender.getParameters();
                 const enc = params.encodings[0] as RTCRtpEncodingParameters | undefined;
                 if (enc) {
-                  enc.maxBitrate = 600_000;
+                  enc.maxBitrate = 1_500_000;
                   enc.maxFramerate = 24;
                 }
-                params.degradationPreference = 'maintain-framerate';
+                params.degradationPreference = 'balanced';
                 await sender.setParameters(params);
               } catch {
                 // Bitrate cap is a best-effort optimisation.
@@ -269,9 +269,9 @@ export function useCallSession(
       audio: false,
       video: {
         facingMode: 'user',
-        width: { ideal: 640 },
-        height: { ideal: 480 },
-        frameRate: { ideal: 24 },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        frameRate: { ideal: 24, max: 30 },
       },
     });
     const videoTrack = videoStream.getVideoTracks()[0];

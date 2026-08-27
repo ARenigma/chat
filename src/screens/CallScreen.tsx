@@ -221,20 +221,36 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
           zOrder={0}
           style={StyleSheet.absoluteFill}
         />
+      ) : provider?.avatar_url ? (
+        /* Big poster: provider photo full-bleed with a dark bottom scrim so the
+           name and status sit legibly over the lower portion. Falls back to the
+           coral gradient + monogram when there is no photo. */
+        <>
+          <Image
+            source={{ uri: provider.avatar_url }}
+            resizeMode="cover"
+            style={StyleSheet.absoluteFill}
+            accessibilityIgnoresInvertColors
+          />
+          <View style={styles.posterScrim} />
+          <View style={styles.posterMeta}>
+            <Text allowFontScaling numberOfLines={1} style={styles.name}>
+              {name}
+            </Text>
+            <Text allowFontScaling style={phase === 'active' ? styles.timer : styles.status}>
+              {status}
+            </Text>
+          </View>
+        </>
       ) : (
+        /* Fallback: coral gradient (already rendered by styles.fill) + centred monogram. */
         <View style={[styles.center, { paddingTop: insets.top }]}>
           <View style={styles.avatarRings}>
             {phase === 'incoming' ? <View style={styles.ring} /> : null}
             <View style={styles.avatar}>
-              {/* The caller's photo, not their initial (#2). Falls back to the
-                  monogram only when there is no avatar. */}
-              {provider?.avatar_url ? (
-                <Image source={{ uri: provider.avatar_url }} style={styles.avatarImage} />
-              ) : (
-                <Text allowFontScaling={false} style={styles.avatarInitial}>
-                  {initial}
-                </Text>
-              )}
+              <Text allowFontScaling={false} style={styles.avatarInitial}>
+                {initial}
+              </Text>
             </View>
           </View>
           <Text allowFontScaling numberOfLines={1} style={styles.name}>
@@ -294,7 +310,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
                 label="Flip camera"
               />
             ) : null}
-            <BarButton testID="call-end" glyph="callEnd" tone="danger" onPress={onEnd} label="End call" />
+            <BarButton testID="call-end" glyph="callEnd" tone="danger" onPress={onEnd} label="End call" large />
           </View>
         )}
       </View>
@@ -335,7 +351,14 @@ function CallAction({
   );
 }
 
-/** A round control in the in-call bar. `active` fills white (on), `danger` red. */
+/**
+ * A round control in the in-call bar.
+ *
+ * `active` fills white (on), `tone="danger"` fills the danger red.
+ * `large` makes the button 64×64 instead of 56×56 — used exclusively for the
+ * end-call button so it reads as THE primary action vs the neutral/translucent
+ * peers around it (WhatsApp / Instagram call UI convention).
+ */
 function BarButton({
   glyph,
   active = false,
@@ -343,6 +366,7 @@ function BarButton({
   onPress,
   label,
   testID,
+  large = false,
 }: {
   glyph: IconName;
   active?: boolean;
@@ -350,6 +374,7 @@ function BarButton({
   onPress: () => void;
   label: string;
   testID: string;
+  large?: boolean;
 }) {
   const styles = useStyles(makeStyles);
   // The call screen is a FIXED coral surface, not a themed one, so these colours
@@ -365,13 +390,14 @@ function BarButton({
         testID={testID}
         accessibilityLabel={label}
         press="chip"
-        size={56}
+        size={large ? 64 : 56}
         style={[
           styles.barButton,
+          large && styles.barButtonLarge,
           tone === 'danger' && styles.danger,
           active && tone !== 'danger' && styles.barButtonOn,
         ]}>
-        <Icon name={glyph} size={24} color={fg} />
+        <Icon name={glyph} size={large ? 28 : 24} color={fg} />
       </Pressable>
     </View>
   );
@@ -493,6 +519,11 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
       backgroundColor: 'rgba(255,255,255,0.16)',
     },
+    barButtonLarge: {
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+    },
     barButtonOn: {
       backgroundColor: '#FFFFFF',
     },
@@ -501,6 +532,25 @@ const makeStyles = (t: Theme) =>
     },
     accept: {
       backgroundColor: t.color.state.available,
+    },
+    /** Full-bleed bottom gradient scrim over the poster photo. */
+    posterScrim: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      experimental_backgroundImage: 'linear-gradient(0deg, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0) 55%)',
+    },
+    /** Name + status anchored above the controls bar when a photo poster is shown. */
+    posterMeta: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: CONTROLS_CLEARANCE + TOKENS.space.xl,
+      paddingHorizontal: TOKENS.space['2xl'],
+      alignItems: 'center',
+      gap: TOKENS.space.xs,
     },
     /** Local camera PiP: bottom-right, above the controls bar. */
     localPip: {
