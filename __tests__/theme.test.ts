@@ -286,13 +286,20 @@ describe('typography is bound to real font files', () => {
       Object.values(LIGHT.typography).map(style => `${style.fontFamily}.ttf`),
     );
     /*
-     * The Lucide icon font is referenced by icons.generated.ts, not by a
-     * typography token, because it is the icon set rather than a text style.
-     * One face ships (Lucide has no filled twin; the active state is colour
-     * only). Allowlisted here for the same reason Material Symbols once was: it
-     * is real, used, and not chosen per-typography-style.
+     * Icon fonts are referenced by code, not by a typography token, because they
+     * are icon sets rather than text styles. Allowlisted here for the same reason
+     * Material Symbols once was: each is real, used, and not chosen
+     * per-typography-style.
+     *
+     * Lucide: the outline icon set, referenced by icons.generated.ts. One face
+     * ships (Lucide has no filled twin; the active state is colour only for most
+     * icons).
+     *
+     * PappalGlyphs: the filled-heart icon face, referenced by Icon.tsx. Provides
+     * a FILLED heart glyph at U+2665 for the favourite toggle active state, since
+     * Lucide ships no filled 'heart' twin.
      */
-    const ICON_FONTS = /^Lucide/;
+    const ICON_FONTS = /^(Lucide|PappalGlyphs)/;
     const orphans = FACES.filter(
       face => !referenced.has(face) && !ICON_FONTS.test(face),
     );
@@ -360,6 +367,11 @@ describe('typography is bound to real font files', () => {
       // mandatory to ship. Both instances map to the one notice.
       // Lucide is ISC, not OFL — a different licence, still mandatory to ship.
       Lucide: 'LICENSE-Lucide.txt',
+      // Geist is OFL (Vercel, 2023).
+      Geist: 'OFL-Geist.txt',
+      // PappalGlyphs is Apache-2.0: the filled-heart glyph is derived from
+      // Google Material Symbols 'favorite', which ships under Apache License 2.0.
+      PappalGlyphs: 'LICENSE-PappalGlyphs.txt',
     };
     // `?? name` rather than a non-null assertion: a face called exactly `X.ttf`
     // with no weight suffix is its own family, and split always yields at least
@@ -987,10 +999,11 @@ describe('iOS conformance', () => {
     // every one of them was two points small. iOS's headline is 17 semibold and
     // it is also a list row's name and a filled button's label.
     expect(typography.headline.fontSize).toBe(17);
-    expect(typography.headline.fontFamily).toBe('Inter-SemiBold');
+    expect(typography.headline.fontFamily).toBe('Geist-SemiBold');
     expect(typography.subhead.fontSize).toBe(15);
     expect(typography.bodyLarge.fontSize).toBe(17);
-    expect(typography.displayLarge.fontSize).toBe(34);
+    // displayLarge reduced from 34 to 30 to ease onboarding density (user feedback).
+    expect(typography.displayLarge.fontSize).toBe(30);
   });
 
   it('opens the display sizes and tightens body, the iOS direction', () => {

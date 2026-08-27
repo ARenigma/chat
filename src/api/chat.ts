@@ -1,5 +1,5 @@
 import { useCallback, useEffect } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import type {
   ClaimResult,
@@ -185,6 +185,31 @@ export function useMessages(conversationId: string | undefined) {
 }
 
 /**
+ * Prefetch messages for a conversation into the React Query cache.
+ *
+ * Called on `onPressIn` from the CHATS rail so the fetch is already in flight
+ * when the navigation animation finishes and ChatScreen mounts. No-op if the
+ * data is already fresh in cache (React Query's default behaviour).
+ */
+export function prefetchMessages(qc: QueryClient, conversationId: string): void {
+  void qc.prefetchQuery({
+    queryKey: keys.messages(conversationId),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: false })
+        .limit(PAGE_SIZE);
+      if (error) {
+        throw new Error(error.message);
+      }
+      return data;
+    },
+  });
+}
+
+/**
  * The send path: one RPC, one transaction.
  *
  * The Edge Function this replaced had to debit, call a model, then insert,
@@ -309,6 +334,40 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
     },
     [conversationId, selfId, queryClient, setSending, setBalance, setNotice, openRefill],
   );
+}
+
+/**
+ * Call log for a conversation: ended/missed/declined/failed calls only.
+ * The display-only inline rows in the transcript read from this.
+ */
+export interface CallRecord {
+  id: string;
+  conversation_id: string;
+  medium: 'voice' | 'video';
+  status: 'ended' | 'missed' | 'declined' | 'failed';
+  started_at: string | null;
+  ended_at: string | null;
+  created_at: string;
+}
+
+export function useCalls(conversationId: string | undefined) {
+  return useQuery<CallRecord[]>({
+    queryKey: ['calls', conversationId ?? ''],
+    enabled: conversationId !== undefined,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('calls')
+        .select('id, conversation_id, medium, status, started_at, ended_at, created_at')
+        .eq('conversation_id', conversationId as string)
+        .in('status', ['ended', 'missed', 'declined', 'failed'])
+        .order('created_at', { ascending: false });
+      if (error) {
+        throw new Error(error.message);
+      }
+      return (data ?? []) as CallRecord[];
+    },
+    staleTime: 30_000,
+  });
 }
 
 /** The refill trigger behind the low-balance sheet. */

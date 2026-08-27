@@ -77,6 +77,22 @@ export function spokeOpacity(index: number, progress: number): number {
 }
 
 /**
+ * Border width for the ring-style spinner.
+ *
+ * Scales with `size`, floored at 2 pt so the ring remains visible at the
+ * smallest sizes this component is used at (12–16 pt). Rounded to the nearest
+ * 0.5 to stay on the sub-pixel grid on both 2× and 3× densities without
+ * hairline bleed on either side.
+ *
+ * At the sizes in practice:
+ *   12 pt → 2 pt   16 pt → 2 pt   20 pt → 2 pt
+ *   28 pt → 3 pt   44 pt → 4.5 pt
+ */
+export function ringBorderWidth(size: number): number {
+  return Math.max(2, Math.round(size * 0.1 * 2) / 2);
+}
+
+/**
  * Spoke dimensions for a given overall diameter, in points.
  *
  * Proportions taken from UIKit's medium indicator (20pt) and kept as ratios so

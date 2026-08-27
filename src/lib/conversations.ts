@@ -35,6 +35,7 @@ interface Native {
     peerId: string,
     callerName: string,
     avatarUrl: string,
+    medium: string,
   ): Promise<boolean>;
   clearCall(callId: string): Promise<void>;
   clear(conversationId: string): Promise<void>;
@@ -177,7 +178,7 @@ export async function notifyCall(push: CallPush): Promise<boolean> {
   if (native === undefined) {
     return false;
   }
-  return native.notifyCall(push.callId, push.peerId, push.callerName, push.avatarUrl ?? '');
+  return native.notifyCall(push.callId, push.peerId, push.callerName, push.avatarUrl ?? '', push.medium);
 }
 
 /** Clear a call notification once it is answered, declined or gone. */

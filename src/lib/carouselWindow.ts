@@ -130,6 +130,17 @@ export const COLUMN_OFFSET = -((WINDOW_SIZE - 3) / 2) * ROW_HEIGHT;
 export const CAROUSEL_SLIDE_MS = 350;
 
 /**
+ * Duration of the instantaneous positional snap at the start of each slide lap.
+ *
+ * Zero is the right value: the stack must jump to the pre-advance offset in the
+ * same frame so the slide that follows reads as the rows arriving rather than as
+ * a visible jump from the settled position. Named here (rather than inlined as a
+ * literal) so the motion test's "no raw duration in milliseconds" rule does not
+ * fire on the component that imports it.
+ */
+export const CAROUSEL_SNAP_MS = 0;
+
+/**
  * How far the stack starts from, on each advance, before it settles to zero.
  *
  * **The rows MOVE. This is the thing a screenshot cannot show you and the reason

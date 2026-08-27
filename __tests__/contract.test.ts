@@ -1263,43 +1263,35 @@ describe('the busy button does not move', () => {
     expect(button).not.toMatch(/<ActivityIndicator|ActivityIndicator[,}]|ActivityIndicator\s*from/);
   });
 
-  it('animates only opacity, so the indicator cannot trigger a layout pass', () => {
-    // It sits inside a button that must not resize. Opacity is the one property
-    // that cannot reflow, and one shared clock drives all eight spokes.
+  it('is a continuously rotating ring driven by a single shared value', () => {
+    // The ring replaces the eight-spoke opacity cascade. One `rotate` transform
+    // on the UI thread never stalls during JS pressure (OAuth hand-offs, heavy
+    // renders) and produces the smooth Fuse / SwiftUI ProgressView look.
     const spinner = read('src/components/Spinner.tsx');
-    expect(spinner).toContain('opacity: spinning ? spokeOpacity(index, progress.value)');
+    // One shared value drives one rotation — not eight opacity writes.
     expect(spinner).toContain('useSharedValue(0)');
+    // The arc rotates a full revolution per cycle (withRepeat wraps withTiming(360)).
+    expect(spinner).toContain('withRepeat(');
+    expect(spinner).toContain('withTiming(360,');
+    // Linear easing: no ease-in or ease-out within a revolution (same as before).
+    expect(spinner).toContain('Easing.linear');
+    // Honour the OS reduce-motion setting.
     expect(spinner).toContain('ReduceMotion.System');
-    // No rotating parent transform: the spokes are placed once and never move.
-    expect(spinner).not.toContain('withRepeat(withTiming(360');
+    // The arc is a border trick: only the top border carries colour.
+    expect(spinner).toContain('borderTopColor');
+    // The component must NOT import SVG (banned in this project).
+    expect(spinner).not.toContain('react-native-svg');
+    // Layout pass: `transform` never causes a reflow, so the button cannot resize.
+    expect(spinner).not.toContain('opacity: spinning ? spokeOpacity');
   });
 
-  it('marks every function a worklet calls as a worklet', () => {
-    /*
-     * The crash this prevents, and the reason it is asserted rather than trusted:
-     * `spokeOpacity` is called inside `useAnimatedStyle`, which runs on the UI
-     * runtime. Without a `'worklet'` directive Reanimated treats an imported
-     * function as a remote function and throws
-     * `[Worklets] Tried to synchronously call a Remote Function`, taking the app
-     * down on the first frame the spinner renders.
-     *
-     * No unit test can see it. jest imports the module into the JS runtime where
-     * the function is perfectly callable, so the eight tests in spinner.test.ts
-     * passed against code that crashed on a device.
-     */
-    const lib = read('src/lib/spinner.ts');
+  it('derives its border width from a shared formula rather than hardcoding it', () => {
+    // `ringBorderWidth` is exported from spinner.ts so it can be tested and
+    // changed in one place, matching the policy for `spokeMetrics` before it.
     const spinner = read('src/components/Spinner.tsx');
-    const calledInWorklet = ['spokeOpacity'];
-    for (const name of calledInWorklet) {
-      expect(spinner).toContain(name);
-      const start = lib.indexOf(`export function ${name}`);
-      expect(start).toBeGreaterThan(-1);
-      // The directive must be inside the body, before any statement that runs.
-      const body = lib.slice(start, lib.indexOf('\n}', start));
-      expect(body).toContain("'worklet';");
-    }
-    // `src/lib/collapse.ts` has the same hazard and guards it in its own suite,
-    // next to the arithmetic the guard protects. See __tests__/collapse.test.ts.
+    expect(spinner).toContain('ringBorderWidth');
+    const lib = read('src/lib/spinner.ts');
+    expect(lib).toContain('export function ringBorderWidth');
   });
 
   it('keeps the spinner period in the tokens', () => {

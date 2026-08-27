@@ -23,7 +23,7 @@
  * the peer so it can show/hide the remote video surface.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { PermissionsAndroid } from 'react-native';
+import { PermissionsAndroid, Platform } from 'react-native';
 import {
   RTCPeerConnection,
   RTCIceCandidate,
@@ -89,6 +89,25 @@ export function useCallSession(
     };
 
     (async () => {
+      // On Android, calling getUserMedia without a runtime RECORD_AUDIO grant
+      // throws "mic could not be started" and crashes call setup. Request it
+      // here, mirroring the CAMERA request in enableVideo(). Mirror approach:
+      // on iOS the system permission sheet fires automatically from getUserMedia.
+      if (Platform.OS === 'android') {
+        const micOk = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+          {
+            title: 'Microphone',
+            message: 'Pappal needs your microphone for calls.',
+            buttonPositive: 'Allow',
+          },
+        );
+        if (micOk !== PermissionsAndroid.RESULTS.GRANTED) {
+          setConnState('failed');
+          return;
+        }
+      }
+
       // Audio-only initial stream; the video transceiver is added to the peer
       // connection separately so the SDP always has a video m-line.
       const stream = await mediaDevices.getUserMedia({ audio: true, video: false });
