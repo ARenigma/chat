@@ -90,7 +90,12 @@ function SheetView({
   doneLabel = 'Done',
 }: Props) {
   const styles = useStyles(makeStyles);
-  const y = useSharedValue(0);
+  // Initialised OFF-SCREEN, not at rest. A shared value starting at 0 meant the
+  // Modal's first painted frame showed the sheet at its resting position — for one
+  // frame, mid-fade, so it read as a faint "ghost" of the sheet sitting in place
+  // before it slid up (Amit, 2026-08-27, recharge pay tap). Starting off-screen
+  // means the first frame is already off-screen and only the spring brings it in.
+  const y = useSharedValue(SHEET_ENTRY_OFFSET);
   const [height, setHeight] = useState(0);
 
   // Entry is driven here, by Reanimated, not by the Modal's own animation. The
@@ -100,10 +105,16 @@ function SheetView({
   // 2026-08-27). Now the Modal only fades (the scrim fades in place) and the sheet
   // alone slides: start it below the screen and spring to rest. The offset is a
   // constant safely past any sheet height; the exact resting position is 0.
+  //
+  // Parked back off-screen whenever hidden so the NEXT open's first painted frame
+  // is off-screen too — without this, a second open would flash the ghost again
+  // because the value had settled at 0 from the previous open.
   useEffect(() => {
     if (visible) {
       y.value = SHEET_ENTRY_OFFSET;
       y.value = springTo(0, 'smooth');
+    } else {
+      y.value = SHEET_ENTRY_OFFSET;
     }
   }, [visible, y]);
 
