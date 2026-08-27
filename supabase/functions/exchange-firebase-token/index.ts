@@ -25,11 +25,10 @@
  * This keeps the "Supabase is the only thing that mints a session" rule the
  * Supabase-native OTP path was built on — Firebase only proves the number.
  *
- * PHONE → USER LOOKUP. supabase-js has no `getUserByPhone`, so this paginates
- * `admin.listUsers` and matches on `phone`. That is O(users) per sign-in, which
- * is fine at this stage; when the user base grows, replace `findUserIdByPhone`
- * with a `service_role`-only SECURITY DEFINER RPC (`select id from auth.users
- * where phone = $1`) and call it via `admin.rpc(...)`.
+ * PHONE → USER LOOKUP. supabase-js has no `getUserByPhone`, and GoTrue's admin
+ * `listUsers` was unreliable here ("Database error finding users"), so this calls
+ * a `service_role`-only SECURITY DEFINER RPC (`get_user_id_by_phone`, migration
+ * 018) that reads auth.users directly.
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { createRemoteJWKSet, jwtVerify } from 'npm:jose@5';
@@ -51,30 +50,18 @@ function placeholderEmail(): string {
 }
 
 /**
- * Find an existing user's id by E.164 phone via paginated listUsers. Returns null
- * if no user has that phone. Bounded so a runaway can't page forever.
+ * Find an existing user's id by E.164 phone via the SECURITY DEFINER RPC
+ * (migration 018). Returns null if no user has that phone.
  */
 async function findUserIdByPhone(
   admin: ReturnType<typeof createClient>,
   phone: string,
 ): Promise<string | null> {
-  const PER_PAGE = 200;
-  const MAX_PAGES = 50; // 10k users before this needs the RPC noted above.
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: PER_PAGE });
-    if (error != null) {
-      throw error;
-    }
-    const users: Array<{ id: string; phone?: string | null }> = data?.users ?? [];
-    const match = users.find(u => (u.phone ?? '') === phone.replace(/^\+/, '') || u.phone === phone);
-    if (match != null) {
-      return match.id;
-    }
-    if (users.length < PER_PAGE) {
-      return null; // last page
-    }
+  const { data, error } = await admin.rpc('get_user_id_by_phone', { p_phone: phone });
+  if (error != null) {
+    throw error;
   }
-  return null;
+  return typeof data === 'string' && data !== '' ? data : null;
 }
 
 Deno.serve(async request => {
