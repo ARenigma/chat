@@ -249,19 +249,18 @@ function Root() {
       return;
     }
     let unsubscribeToken: (() => void) | undefined;
-    void startPush().then(unsub => {
-      unsubscribeToken = unsub;
-    });
 
     // Prime runtime permissions once per sign-in so the first call, voice note,
-    // or video does not hit a missing-grant crash. POST_NOTIFICATIONS is already
-    // handled by startPush(); we request the remaining two here, sequentially
-    // (Android shows each dialog in turn before proceeding to the next).
-    // Fire-and-forget: a denial just means the event-time guards in
+    // or video does not hit a missing-grant crash. These MUST run strictly one at
+    // a time: Android silently drops a permission request while another dialog is
+    // already pending, so `startPush()` (POST_NOTIFICATIONS) is awaited before the
+    // mic request, and mic before camera. Requesting them concurrently made the
+    // OS return the later two as denied without ever showing a dialog.
+    // Fire-and-forget for boot: a denial just means the event-time guards in
     // callSession / recorder / composer remain the fallback for that feature.
-    // Do NOT block boot or rendering — this is a background operation.
     void (async () => {
       try {
+        unsubscribeToken = await startPush();
         if (Platform.OS !== 'android') {
           return;
         }
