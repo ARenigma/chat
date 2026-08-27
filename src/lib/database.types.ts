@@ -456,11 +456,19 @@ export type ClaimResult = {
   retry_after?: string;
 };
 
-/** Returned by the `spend_chat_minute` RPC (migration 021). */
+/**
+ * Returned by the `spend_chat_minute` RPC (migration 022).
+ *
+ * On success: new_balance is the balance after the debit; last=true means it
+ * just hit 0 and the session should end on the NEXT charge (OUT_OF_TOKENS).
+ * On failure: error identifies why the charge was refused.
+ */
 export type SpendChatMinuteResult = {
   success: boolean;
   new_balance?: number;
-  error?: 'UNAUTHORIZED' | 'INSUFFICIENT_BALANCE';
+  /** True when new_balance just reached 0: serve this minute, then stop. */
+  last?: boolean;
+  error?: 'NOT_AUTHENTICATED' | 'NO_PROFILE' | 'OUT_OF_TOKENS';
 };
 
 /** Returned by the `mock_recharge` RPC (migration 020). Only callable when
@@ -785,8 +793,10 @@ export type Database = {
       };
       /**
        * Deducts one chat minute (22 tokens) from the calling user's balance.
-       * Self-scoped SECURITY DEFINER (migration 021). Returns success +
-       * new_balance, or INSUFFICIENT_BALANCE if the balance is too low.
+       * Self-scoped SECURITY DEFINER (migration 022). Sub-minute remainders are
+       * drained to exactly 0 (never stranded). Returns OUT_OF_TOKENS only when
+       * the balance is already 0 — positive balances always yield a successful
+       * debit, and last=true signals the final minute was just served.
        */
       spend_chat_minute: {
         Args: Record<string, never>;

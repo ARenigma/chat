@@ -62,6 +62,7 @@ const MIGRATIONS = [
   'supabase/migrations/019_token_ledger_and_invoices.sql',
   'supabase/migrations/020_mock_recharge.sql',
   'supabase/migrations/021_chat_minute.sql',
+  'supabase/migrations/022_chat_minute_drain.sql',
 ];
 
 const docker = (args, options = {}) =>

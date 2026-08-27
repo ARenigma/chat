@@ -473,12 +473,14 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
    *
    * The first minute is charged immediately when the screen mounts and the
    * conversation is known (prepaid — you pay before you talk, not after). A
-   * 60 s interval then charges each subsequent minute. On INSUFFICIENT_BALANCE
-   * at any point: the meter stops, `sessionEnded` is set so the composer and
-   * call buttons are gated, and the refill sheet opens.
+   * 60 s interval then charges each subsequent minute.
    *
-   * Migration 021 owns the RPC (spend_chat_minute); it is SECURITY DEFINER
-   * and self-scoped so no client-side trust is required.
+   * Drain-to-zero model (migration 022): a sub-minute balance (1–21 tokens)
+   * is still granted as a full minute, draining to 0. The session ends only
+   * when the RPC returns OUT_OF_TOKENS (balance already 0 at charge time).
+   *
+   * `spend_chat_minute` is SECURITY DEFINER and self-scoped so no client-side
+   * trust is required.
    */
   const [sessionEnded, setSessionEnded] = useState(false);
   // Single slot for the running interval — shared between initial start and
@@ -486,9 +488,13 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   const meterRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   /**
-   * Debit one minute atomically. Returns true on success (or when the app is
-   * backgrounded — background time is not billed), false on
-   * INSUFFICIENT_BALANCE. Stable: setBalance is a Zustand action.
+   * Debit one minute atomically. Returns true to keep the session running,
+   * false to end it. Background time is never billed (returns true).
+   *
+   * Drain-to-zero semantics: success with last=true means the balance just hit
+   * 0; the session keeps running this final minute and ends only on the NEXT
+   * charge when OUT_OF_TOKENS is returned. Stable: setBalance is a Zustand
+   * action.
    */
   const chargeMinute = useCallback(async (): Promise<boolean> => {
     if (AppState.currentState !== 'active') {
@@ -500,13 +506,24 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
     }
     if (result.success && result.new_balance != null) {
       setBalance(result.new_balance);
+      // result.last=true: balance hit 0 this minute. The session keeps running;
+      // the NEXT charge will return OUT_OF_TOKENS and end it then.
       return true;
     }
-    return result.error === 'INSUFFICIENT_BALANCE' ? false : true;
+    // OUT_OF_TOKENS: balance was already 0 — end the session.
+    // NOT_AUTHENTICATED / NO_PROFILE: stop the meter gracefully.
+    if (
+      result.error === 'OUT_OF_TOKENS' ||
+      result.error === 'NOT_AUTHENTICATED' ||
+      result.error === 'NO_PROFILE'
+    ) {
+      return false;
+    }
+    return true;
   }, [setBalance]);
 
   // Derived gate: meter runs when the member is in an active conversation and
-  // the session has not been ended by an INSUFFICIENT_BALANCE response.
+  // the session has not been ended by an OUT_OF_TOKENS response.
   // Balance is intentionally NOT a dep: the session ends only when the RPC
   // says so, not when the client-side balance crosses a threshold, and
   // including balance would restart the meter on every successful charge.
@@ -556,11 +573,12 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
     // !sessionEnded. chargeMinute and openRefill are stable references.
   }, [shouldMeter, chargeMinute, openRefill]);
 
-  // Effect B — resume. Clears sessionEnded when the balance recovers to ≥ one
-  // full minute's cost after a recharge, which flips shouldMeter back to true
-  // and causes Effect A to restart the meter with a fresh prepaid charge.
+  // Effect B — resume. Clears sessionEnded when the balance is any positive
+  // value after a recharge (any positive balance starts a fresh last-or-more
+  // minute under the drain-to-zero model), which flips shouldMeter back to
+  // true and causes Effect A to restart the meter with a fresh prepaid charge.
   useEffect(() => {
-    if (sessionEnded && balance !== null && balance >= DEFAULT_RATES.chat) {
+    if (sessionEnded && balance !== null && balance > 0) {
       setSessionEnded(false);
     }
   }, [sessionEnded, balance]);
@@ -1254,7 +1272,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     justifyContent: 'center',
   },
   // Shown above the composer when the session has been ended by an
-  // INSUFFICIENT_BALANCE response, so the member knows why the field is locked.
+  // OUT_OF_TOKENS response, so the member knows why the field is locked.
   sessionEndedText: {
     ...TOKENS.typography.captionRegular,
     color: t.color.text.accent,
