@@ -102,7 +102,7 @@ describe('the AI path is gone, not dormant', () => {
     if (!existsSync(dir)) {
       return;
     }
-    const allowed = ['send-engagement', 'send-push', 'send-sms', 'verify-phone'];
+    const allowed = ['send-call', 'send-engagement', 'send-push', 'send-sms', 'verify-phone'];
     const present = readdirSync(dir, { withFileTypes: true })
       .filter(entry => entry.isDirectory())
       .map(entry => entry.name);
@@ -208,23 +208,24 @@ describe('Android manifest', () => {
     .filter(attrs => !attrs.includes('tools:node="remove"'))
     .map(attrs => attrs.match(/android:name="([^"]+)"/)?.[1] ?? '');
 
-  it('requests exactly INTERNET, VIBRATE, POST_NOTIFICATIONS, RECORD_AUDIO and CAMERA', () => {
+  it('requests exactly INTERNET, VIBRATE, POST_NOTIFICATIONS, RECORD_AUDIO, CAMERA and USE_FULL_SCREEN_INTENT', () => {
     // The list is asserted exactly rather than as a subset, because the cost of
     // a permission is paid on the Play listing and in the install dialog, a
     // library quietly merging one in is the failure this catches. POST_NOTIFICATIONS
     // was added deliberately for push and grants no access to data.
     //
-    // RECORD_AUDIO reaches a sensor (voice notes); CAMERA is the fifth and the
-    // second sensor, added deliberately for capturing a photo to send in chat
-    // (#8, Composer's "+" → Camera). Both are declared by us rather than merely
-    // tolerated from a dependency's manifest, because verify-manifest.mjs treats
-    // its allowlist as the required set: a permission this app uses should be a
-    // claim it makes.
+    // RECORD_AUDIO reaches a sensor (voice notes); CAMERA is a second sensor for
+    // capturing a photo to send (#8). USE_FULL_SCREEN_INTENT is not a sensor but a
+    // capability: posting the CallStyle full-screen incoming-call notification
+    // (#call). All are declared by us rather than tolerated from a dependency's
+    // manifest, because verify-manifest.mjs treats its allowlist as the required
+    // set: a permission this app uses should be a claim it makes.
     expect(declared.sort()).toEqual([
       'android.permission.CAMERA',
       'android.permission.INTERNET',
       'android.permission.POST_NOTIFICATIONS',
       'android.permission.RECORD_AUDIO',
+      'android.permission.USE_FULL_SCREEN_INTENT',
       'android.permission.VIBRATE',
     ]);
   });

@@ -66,6 +66,12 @@ object Conversations {
      */
     private const val CHANNEL_ENGAGEMENT = "engagement"
 
+    /**
+     * The incoming-call channel: IMPORTANCE_HIGH so it can heads-up and ring, and
+     * its own channel so a user can control call alerts separately from messages.
+     */
+    private const val CHANNEL_CALLS = "calls"
+
     fun ensureChannel(context: Context) {
         val channel = NotificationChannelCompat
             .Builder(CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_HIGH)
@@ -82,6 +88,16 @@ object Conversations {
             .setName(context.getString(R.string.channel_engagement))
             .setDescription(context.getString(R.string.channel_engagement_desc))
             .setShowBadge(true)
+            .build()
+        NotificationManagerCompat.from(context).createNotificationChannel(channel)
+    }
+
+    fun ensureCallChannel(context: Context) {
+        val channel = NotificationChannelCompat
+            .Builder(CHANNEL_CALLS, NotificationManagerCompat.IMPORTANCE_HIGH)
+            .setName(context.getString(R.string.channel_calls))
+            .setDescription(context.getString(R.string.channel_calls_desc))
+            .setShowBadge(false)
             .build()
         NotificationManagerCompat.from(context).createNotificationChannel(channel)
     }
@@ -237,6 +253,92 @@ object Conversations {
             // POST_NOTIFICATIONS revoked; swallowed as in notify().
         }
     }
+
+    /**
+     * Ring an incoming call — the third notification type.
+     *
+     * A `CallStyle.forIncomingCall` notification with a full-screen intent, which
+     * is what makes the phone show a full ringing screen (over the lock screen)
+     * and use the ringtone, rather than a quiet heads-up. `setOngoing` so it
+     * cannot be swiped away while ringing.
+     *
+     * Both actions open the app rather than acting silently: Answer and Decline
+     * route to MainActivity with an `action` on the deep link, and the in-app
+     * incoming-call screen calls `answer_call` / `end_call` with the user's own
+     * session. A BroadcastReceiver could not reach those RPCs — it has no auth —
+     * so the notification's job is to ring and wake, and the app's job is the RPC.
+     */
+    fun notifyCall(
+        context: Context,
+        callId: String,
+        peerId: String,
+        callerName: String,
+        avatarUrl: String? = null,
+    ) {
+        ensureCallChannel(context)
+
+        val avatarIcon = avatarUrl
+            ?.let { loadAvatarBitmap(it) }
+            ?.let { IconCompat.createWithBitmap(it) }
+        val caller = Person.Builder()
+            .setKey(peerId)
+            .setName(callerName)
+            .setImportant(true)
+            .apply { if (avatarIcon != null) setIcon(avatarIcon) }
+            .build()
+
+        val answer = callActionIntent(context, peerId, callId, "answer")
+        val decline = callActionIntent(context, peerId, callId, "decline")
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_CALLS)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setStyle(NotificationCompat.CallStyle.forIncomingCall(caller, decline, answer))
+            .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setOngoing(true)
+            .setAutoCancel(true)
+            .setFullScreenIntent(answer, true)
+            .setContentIntent(answer)
+            .build()
+
+        try {
+            NotificationManagerCompat.from(context).notify(callNotificationId(callId), notification)
+        } catch (denied: SecurityException) {
+            // POST_NOTIFICATIONS revoked; swallowed as in notify().
+        }
+    }
+
+    /** Clear a call's notification (answered elsewhere, cancelled, timed out). */
+    fun clearCall(context: Context, callId: String) {
+        NotificationManagerCompat.from(context).cancel(callNotificationId(callId))
+    }
+
+    /**
+     * The PendingIntent for a call action, addressed explicitly to MainActivity
+     * (not a manifest-declared browsable filter — same private-target reasoning as
+     * `peerIntent`). The `action` query tells the app to answer or decline.
+     */
+    private fun callActionIntent(
+        context: Context,
+        peerId: String,
+        callId: String,
+        action: String,
+    ): android.app.PendingIntent {
+        val intent = Intent(context, MainActivity::class.java)
+            .setAction(Intent.ACTION_VIEW)
+            .setData(Uri.parse("companionchat://call/$peerId?callId=$callId&action=$action"))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        return android.app.PendingIntent.getActivity(
+            context,
+            (callId + action).hashCode(),
+            intent,
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+    }
+
+    // Negated-plus-offset namespace so a call notification never collides with a
+    // message (conversation hash) or an engagement nudge (negated peer hash).
+    private fun callNotificationId(callId: String): Int = callId.hashCode() xor 0x5CA11
 
     /**
      * Download the sender's photo and decode it, for both the collapsed large

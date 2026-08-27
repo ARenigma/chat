@@ -21,6 +21,8 @@
     <string name="channel_conversations_desc">Someone you are talking to has replied</string>
     <string name="channel_engagement">Suggestions</string>
     <string name="channel_engagement_desc">Nudges when someone new is around to talk</string>
+    <string name="channel_calls">Incoming calls</string>
+    <string name="channel_calls_desc">Rings when someone calls you</string>
 
     <!-- MessagingStyle needs a name for the device owner to attribute outgoing
          lines to. It is never displayed for a one-to-one thread, but a null here

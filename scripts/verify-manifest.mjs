@@ -49,6 +49,10 @@ const ALLOWED = new Set([
   // Safety form gains a Photos/Camera row and the privacy page must say a photo
   // is only captured when the user taps Camera and is sent as a message.
   'android.permission.CAMERA',
+  // Not a sensor but a capability: posting the CallStyle full-screen incoming-call
+  // notification that rings over the lock screen. An app in the Calling category
+  // is exempt from Android 14's install-time gating, but it must still declare it.
+  'android.permission.USE_FULL_SCREEN_INTENT',
 ]);
 
 /**

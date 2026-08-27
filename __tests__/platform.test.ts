@@ -229,6 +229,18 @@ describe('message + engagement notifications', () => {
     expect(body).toContain('CHANNEL_ENGAGEMENT');
   });
 
+  it('builds an incoming call as a CallStyle with a full-screen intent', () => {
+    const body = read(CONVERSATIONS);
+    expect(body).toContain('fun notifyCall(');
+    expect(body).toContain('CallStyle.forIncomingCall(');
+    // The full-screen intent is what makes it ring over the lock screen rather
+    // than show a quiet heads-up.
+    expect(body).toContain('.setFullScreenIntent(');
+    expect(body).toContain('CATEGORY_CALL');
+    // Its own high-importance channel, separate from messages.
+    expect(body).toContain('CHANNEL_CALLS');
+  });
+
   it('never stops posting when a photo cannot be fetched', () => {
     /*
      * The avatar download runs on the FCM background thread and can fail
