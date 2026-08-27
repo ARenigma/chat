@@ -3,19 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Papal, someone to talk to</title>
-    <!--
-      The description is the positioning, verbatim from ADR-0001. It is also what
-      an ad's landing-page relevance is judged on, so it is not a place to get
-      creative: "peer support, explicitly not clinical".
-    -->
+    <title>Pappal — someone to talk to</title>
     <meta
       name="description"
-      content="Real people, ready to talk. Not therapy, just company. Message someone who listens, whenever you need to."
+      content="Real people, ready to talk. Not therapy, just company. Chat or call someone who listens, pay only for the time you spend."
     />
-    <meta name="theme-color" content="#FBF8F5" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#14110F" media="(prefers-color-scheme: dark)" />
-    <meta property="og:title" content="Papal, someone to talk to" />
+    <meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+    <meta property="og:title" content="Pappal — someone to talk to" />
     <meta
       property="og:description"
       content="Real people, ready to talk. Not therapy, just company."
@@ -23,76 +18,286 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Urbanist:wght@400;600;700;800&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/tokens.css" />
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <header>
-      <span class="mark">Papal</span>
+
+    <header class="site-header">
+      <div class="site-container header-inner">
+        <a href="/" class="mark" aria-label="Pappal home">Pappal</a>
+        <nav class="site-nav" aria-label="Main navigation">
+          <a href="#how-it-works">How it works</a>
+          <a href="/pricing.html">Pricing</a>
+          <a href="#become-a-partner">Become a partner</a>
+          <a href="/about.html">About</a>
+        </nav>
+        <div class="header-spacer"></div>
+        <a
+          class="cta cta--accent cta--sm"
+          href="https://gitlab.com/ARenigma/chat/-/releases"
+          rel="noopener noreferrer"
+        >Download</a>
+      </div>
     </header>
 
-    <h1>Someone’s here to&nbsp;listen.</h1>
-    <p class="lede">
-      Real people, ready to talk, about a long week, a bad night, or nothing in
-      particular. You pick who. They reply.
-    </p>
+    <main id="main-content">
 
-    <p class="disclaim">Not therapy, not counselling. Just company.</p>
+      <!-- ── Hero ──────────────────────────────────────────────────────────── -->
+      <section class="hero" aria-label="Introduction">
+        <div class="site-container hero-inner">
 
-    <!--
-      Points at the GitLab release rather than a file on Vercel: the APK is tens
-      of megabytes and Vercel is not a binary host. It also means the download
-      URL keeps working when a new version ships, without a redeploy.
-    -->
-    <a class="cta" href="https://gitlab.com/ARenigma/chat/-/releases" rel="noopener"
-      >Download for Android</a
-    >
-    <p class="meta">
-      Android 7 and up · You’ll need to allow install from your browser
-    </p>
+          <div class="hero-copy">
+            <span class="hero-eyebrow">Peer support · not therapy</span>
+            <h1 class="hero-title">Someone to talk&nbsp;to,&nbsp;tonight.</h1>
+            <p class="hero-lede">
+              Real people, ready when you are. Browse who's available, start a
+              chat or call, and pay only for the time you spend.
+            </p>
+            <div class="hero-actions">
+              <a
+                class="cta cta--accent"
+                href="https://gitlab.com/ARenigma/chat/-/releases"
+                rel="noopener noreferrer"
+              >Download for Android</a>
+              <p class="hero-meta">Android 7 and up · 50 tokens free to start</p>
+            </div>
+          </div>
 
-    <h2>How it works</h2>
+          <!-- Decorative provider card mockup — hidden on mobile -->
+          <div class="hero-visual" aria-hidden="true">
+            <div class="mock-card">
+              <span class="mock-presence available"></span>
+              <div class="mock-info">
+                <strong>Priya, 24</strong>
+                <p>English · Hindi · Replies in minutes</p>
+              </div>
+            </div>
+            <div class="mock-card">
+              <span class="mock-presence available"></span>
+              <div class="mock-info">
+                <strong>Rohan, 29</strong>
+                <p>English · Kannada · Replies quickly</p>
+              </div>
+            </div>
+            <div class="mock-card">
+              <span class="mock-presence"></span>
+              <div class="mock-info">
+                <strong>Sneha, 26</strong>
+                <p>English · Marathi · Usually in an hour</p>
+              </div>
+            </div>
+          </div>
 
-    <div class="card">
-      <strong>Sign in with Google</strong>
-      <p>
-        No phone number, no forms. We read your name and email, and neither is
-        shown to anyone you talk to, you pick a separate display name.
-      </p>
-    </div>
-    <div class="card">
-      <strong>Pick someone who’s free</strong>
-      <p>
-        Everyone shows their age, the languages they speak, how they describe
-        themselves, and how quickly they usually reply.
-      </p>
-    </div>
-    <div class="card">
-      <strong>One message, one token</strong>
-      <p>
-        You start with 50, free. Their replies cost you nothing. If someone never
-        answers, the token comes back.
-      </p>
-    </div>
+        </div>
+      </section>
 
-    <h2>The rules</h2>
-    <ul>
-      <li>Everyone who listens is 18 or over. We check the date of birth.</li>
-      <li>You can block anyone instantly. They are not told.</li>
-      <li>Reporting a message sends the message itself to our team.</li>
-      <li>Deleting your account deletes your conversations with it.</li>
-      <li>No contacts, no location, no photos, no advertising ID.</li>
-    </ul>
+      <!-- ── How it works ───────────────────────────────────────────────────── -->
+      <section class="section" id="how-it-works" aria-labelledby="how-title">
+        <div class="site-container">
+          <div class="section-head">
+            <span class="section-eyebrow">Simple by design</span>
+            <h2 id="how-title">How it works</h2>
+            <p>Three steps, no forms, no waiting room.</p>
+          </div>
+          <div class="card-grid card-grid--3">
+            <div class="card">
+              <div class="card-step">
+                <span class="step-number" aria-hidden="true">1</span>
+                <div>
+                  <h3>Sign in</h3>
+                  <p>
+                    One tap with Google. Your name and email stay private — you
+                    pick a display name the app shows instead.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-step">
+                <span class="step-number" aria-hidden="true">2</span>
+                <div>
+                  <h3>Browse and pick someone</h3>
+                  <p>
+                    See who is available right now — their languages, a short
+                    intro, and how quickly they usually reply.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-step">
+                <span class="step-number" aria-hidden="true">3</span>
+                <div>
+                  <h3>Chat or call</h3>
+                  <p>
+                    Start a text chat or audio call. You are charged per minute
+                    while you talk. A message that goes unanswered costs nothing.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
-    <footer>
-      <a href="/about.html">About</a>
-      <a href="/terms.html">Terms</a>
-      <a href="/privacy.html">Privacy</a>
-      <a href="/delete.html">Delete your data</a>
-      <span>© 2026 Papal</span>
+      <!-- ── Trust and safety ───────────────────────────────────────────────── -->
+      <section class="section" aria-labelledby="trust-title">
+        <div class="site-container">
+          <div class="section-head">
+            <span class="section-eyebrow">Your safety, by default</span>
+            <h2 id="trust-title">Private and secure</h2>
+          </div>
+          <ul class="trust-list" role="list">
+            <li class="trust-item">
+              <span class="trust-marker" aria-hidden="true"></span>
+              <div>
+                <strong>Only the two of you</strong>
+                <p>
+                  Conversations are readable only by the two people in them —
+                  enforced in the database, not just in the app.
+                </p>
+              </div>
+            </li>
+            <li class="trust-item">
+              <span class="trust-marker" aria-hidden="true"></span>
+              <div>
+                <strong>No data sold</strong>
+                <p>
+                  No advertising ID, no contacts, no location. We count events
+                  like "a message was sent", never their contents.
+                </p>
+              </div>
+            </li>
+            <li class="trust-item">
+              <span class="trust-marker" aria-hidden="true"></span>
+              <div>
+                <strong>Block and report</strong>
+                <p>
+                  Block anyone instantly — they are not told. Reports go to a
+                  person who reads them, not an automated queue.
+                </p>
+              </div>
+            </li>
+            <li class="trust-item">
+              <span class="trust-marker" aria-hidden="true"></span>
+              <div>
+                <strong>Adults only</strong>
+                <p>
+                  Everyone who listens is verified 18 or over. Applications are
+                  reviewed by a person, not a bot.
+                </p>
+              </div>
+            </li>
+          </ul>
+          <p class="disclaim">
+            Pappal is peer support, not therapy or counselling. The people who
+            listen are not licensed clinicians.
+          </p>
+        </div>
+      </section>
+
+      <!-- ── Pricing teaser ──────────────────────────────────────────────────── -->
+      <section class="section" aria-labelledby="pricing-title">
+        <div class="site-container">
+          <div class="section-head">
+            <span class="section-eyebrow">Fair and transparent</span>
+            <h2 id="pricing-title">Pay only for the time you spend</h2>
+            <p>
+              1 token = &#x20B9;1. Chat and audio calls cost 22 tokens a
+              minute. You start with 50 tokens free — no card required.
+            </p>
+          </div>
+          <a class="cta" href="/pricing.html">See full pricing</a>
+        </div>
+      </section>
+
+      <!-- ── Become a partner (secondary) ───────────────────────────────────── -->
+      <section class="section" id="become-a-partner" aria-labelledby="partner-title">
+        <div class="site-container">
+          <div class="partner-section">
+            <div class="section-head">
+              <span class="section-eyebrow">Become a partner</span>
+              <h2 id="partner-title">Share your time, earn per minute</h2>
+              <p>
+                If you're someone people naturally turn to, Pappal lets you do
+                that on your own terms. Set your availability, choose the
+                languages you speak, and earn for every minute a member spends
+                in conversation with you.
+              </p>
+            </div>
+            <div class="card-grid" style="margin-bottom: var(--space-xl);">
+              <div class="card">
+                <h3>Your schedule, your rules</h3>
+                <p>
+                  Go available when you want, go offline when you don't. No
+                  shifts, no minimums, no commitment to hours.
+                </p>
+              </div>
+              <div class="card">
+                <h3>Transparent pay</h3>
+                <p>
+                  You earn for every minute a member is in a session with you.
+                  Payouts are stated clearly — no hidden deductions.
+                </p>
+              </div>
+            </div>
+            <a
+              class="cta cta--outline"
+              href="https://gitlab.com/ARenigma/chat/-/releases"
+              rel="noopener noreferrer"
+            >Download the app and apply</a>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <footer class="site-footer">
+      <div class="site-container">
+        <div class="footer-inner">
+          <div class="footer-brand">
+            <a href="/" class="mark" aria-label="Pappal home">Pappal</a>
+            <p>
+              Someone to talk to, tonight.<br />
+              &copy; 2026 <span>Axionix Technologies</span>
+            </p>
+          </div>
+          <div class="footer-links">
+            <div class="footer-col">
+              <strong>Product</strong>
+              <a href="#how-it-works">How it works</a>
+              <a href="/pricing.html">Pricing</a>
+              <a href="/about.html">About</a>
+            </div>
+            <div class="footer-col">
+              <strong>Partners</strong>
+              <a href="#become-a-partner">Become a partner</a>
+            </div>
+            <div class="footer-col">
+              <strong>Legal</strong>
+              <a href="/terms.html">Terms</a>
+              <a href="/privacy.html">Privacy</a>
+              <a href="/refund.html">Refund policy</a>
+              <a href="/delete.html">Delete your data</a>
+            </div>
+            <div class="footer-col">
+              <strong>Contact</strong>
+              <a href="mailto:hello@axionix.tech">
+                <span>hello@axionix.tech</span>
+              </a>
+            </div>
+          </div>
+        </div>
+        <div class="footer-meta">
+          <span><span>Axionix Technologies</span></span>
+          <span><span>Noida, Uttar Pradesh, India</span></span>
+        </div>
+      </div>
     </footer>
+
   </body>
 </html>
