@@ -48,7 +48,8 @@ import {
  * `android/app/src/main/java/com/companionchat/Conversations.kt`.
  *
  * Three notification types are routed here (Amit, 2026-08-27):
- *   - `kind: 'call'` → a CallStyle full-screen incoming-call notification.
+ *   - `kind: 'call'` → a CallStyle incoming-call notification that rings as a
+ *     branded heads-up popup (not a full-screen takeover — Amit, 2026-08-27).
  *   - `kind: 'engagement'` → a BigPicture re-engagement nudge (an SP photo plus a
  *     call to action), for when there is no real message.
  *   - anything else → a MessagingStyle conversation notification for a real

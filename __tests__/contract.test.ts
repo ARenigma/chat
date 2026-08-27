@@ -208,24 +208,23 @@ describe('Android manifest', () => {
     .filter(attrs => !attrs.includes('tools:node="remove"'))
     .map(attrs => attrs.match(/android:name="([^"]+)"/)?.[1] ?? '');
 
-  it('requests exactly INTERNET, VIBRATE, POST_NOTIFICATIONS, RECORD_AUDIO, CAMERA and USE_FULL_SCREEN_INTENT', () => {
+  it('requests exactly INTERNET, VIBRATE, POST_NOTIFICATIONS, RECORD_AUDIO and CAMERA', () => {
     // The list is asserted exactly rather than as a subset, because the cost of
     // a permission is paid on the Play listing and in the install dialog, a
     // library quietly merging one in is the failure this catches. POST_NOTIFICATIONS
     // was added deliberately for push and grants no access to data.
     //
     // RECORD_AUDIO reaches a sensor (voice notes); CAMERA is a second sensor for
-    // capturing a photo to send (#8). USE_FULL_SCREEN_INTENT is not a sensor but a
-    // capability: posting the CallStyle full-screen incoming-call notification
-    // (#call). All are declared by us rather than tolerated from a dependency's
-    // manifest, because verify-manifest.mjs treats its allowlist as the required
-    // set: a permission this app uses should be a claim it makes.
+    // capturing a photo to send (#8). Both are declared by us rather than tolerated
+    // from a dependency's manifest, because verify-manifest.mjs treats its allowlist
+    // as the required set. USE_FULL_SCREEN_INTENT was here for a ringing call that
+    // took over the screen; the call is a heads-up popup now, so the permission is
+    // gone.
     expect(declared.sort()).toEqual([
       'android.permission.CAMERA',
       'android.permission.INTERNET',
       'android.permission.POST_NOTIFICATIONS',
       'android.permission.RECORD_AUDIO',
-      'android.permission.USE_FULL_SCREEN_INTENT',
       'android.permission.VIBRATE',
     ]);
   });

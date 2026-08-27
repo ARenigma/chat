@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NAV_BAR_HEIGHT } from '../components/FloatingToolbar';
 import { SCROLL_PHYSICS } from '../lib/scroll';
@@ -353,6 +353,25 @@ export function SettingsSheet({
           </Pressable>
         </View>
 
+        {/* Rate us (#9): opens the Play listing (market:// first, then the https
+            fallback for devices without the Play app). The 🙏 carries the thanks. */}
+        <Pressable
+          onPress={() => {
+            void Linking.openURL('market://details?id=com.companionchat').catch(() =>
+              Linking.openURL(
+                'https://play.google.com/store/apps/details?id=com.companionchat',
+              ),
+            );
+          }}
+          testID="settings-rate"
+          accessibilityLabel="Rate us on the Play Store"
+          press="none"
+          highlight="ios"
+          style={styles.rateRow}>
+          <Text allowFontScaling style={styles.rateText}>
+            Rate us on the Play Store 🙏
+          </Text>
+        </Pressable>
         <Text allowFontScaling={false} style={styles.brandFooter}>
           Pappal
         </Text>
@@ -430,14 +449,14 @@ const makeStyles = (t: Theme) =>
       paddingTop: TOKENS.space.lg,
       paddingBottom: TOKENS.space.xs,
     },
-    // Plain white sections, not the grey inset-grouped card (Amit, 2026-08-27,
-    // "simple on white like v10, not this grey blob"). A hairline top and bottom
-    // bounds the section; the rows inside are the page colour and separated by
-    // hairlines — iOS's grouped-PLAIN table rather than grouped-inset.
+    // Plain white sections, not the grey inset-grouped card. A single hairline at
+    // the TOP opens each section; there is no bottom hairline, because a bottom
+    // rule plus the next section's top rule framed the gap between two sections as
+    // an empty "ghost" row (Amit, 2026-08-27). iOS grouped-PLAIN does the same:
+    // one rule per section boundary, not two.
     group: {
       backgroundColor: t.color.bg.base,
       borderTopWidth: StyleSheet.hairlineWidth,
-      borderBottomWidth: StyleSheet.hairlineWidth,
       borderColor: t.color.border.hairline,
     },
     groupSpaced: {
@@ -474,12 +493,21 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: TOKENS.space.xs,
       paddingTop: TOKENS.space.xs,
     },
+    rateRow: {
+      alignItems: 'center',
+      paddingTop: TOKENS.space['2xl'],
+    },
+    rateText: {
+      ...TOKENS.typography.bodyMedium,
+      color: t.color.text.secondary,
+    },
     brandFooter: {
       fontFamily: TOKENS.typography.wordmark.fontFamily,
       fontSize: 15,
-      color: t.color.text.tertiary,
+      // The brand colour, not a grey whisper (#9): the wordmark is the brand.
+      color: t.color.bg.accent,
       textAlign: 'center',
-      paddingTop: TOKENS.space.xl,
+      paddingTop: TOKENS.space.sm,
       paddingBottom: TOKENS.space.md,
     },
   });

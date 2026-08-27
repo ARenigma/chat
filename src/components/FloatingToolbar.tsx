@@ -7,7 +7,7 @@ import { Frost } from './Frost';
 import { Icon, type IconName } from './Icon';
 import { Pressable } from './Pressable';
 
-export type ToolbarKey = 'home' | 'call' | 'settings';
+export type ToolbarKey = 'home' | 'favourites' | 'call' | 'settings';
 
 /**
  * The bar's own height, without the safe-area inset. Exported so the two tab
@@ -26,8 +26,10 @@ interface Tab {
 
 const TABS: readonly Tab[] = [
   { key: 'home', glyph: 'home', label: 'Home', hint: 'People and conversations' },
+  { key: 'favourites', glyph: 'heart', label: 'Favourites', hint: 'People you saved' },
   { key: 'call', glyph: 'call', label: 'Calls', hint: 'Your recent calls' },
-  { key: 'settings', glyph: 'settings', label: 'Settings', hint: 'Account and privacy' },
+  // A person, not a gear (Amit's call): Settings here is "you and your account".
+  { key: 'settings', glyph: 'person', label: 'Settings', hint: 'Account and privacy' },
 ];
 
 interface Props {

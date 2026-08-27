@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -186,9 +186,15 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, onEn
         <View style={styles.avatarRings}>
           {phase === 'incoming' ? <View style={styles.ring} /> : null}
           <View style={styles.avatar}>
-            <Text allowFontScaling={false} style={styles.avatarInitial}>
-              {initial}
-            </Text>
+            {/* The caller's photo, not their initial (#2). Falls back to the
+                monogram only when there is no avatar. */}
+            {provider?.avatar_url ? (
+              <Image source={{ uri: provider.avatar_url }} style={styles.avatarImage} />
+            ) : (
+              <Text allowFontScaling={false} style={styles.avatarInitial}>
+                {initial}
+              </Text>
+            )}
           </View>
         </View>
         <Text allowFontScaling numberOfLines={1} style={styles.name}>
@@ -337,7 +343,12 @@ const makeStyles = (t: Theme) =>
       borderRadius: AVATAR / 2,
       alignItems: 'center',
       justifyContent: 'center',
+      overflow: 'hidden',
       backgroundColor: 'rgba(255,255,255,0.24)',
+    },
+    avatarImage: {
+      width: '100%',
+      height: '100%',
     },
     avatarInitial: {
       fontFamily: TOKENS.typography.displayLarge.fontFamily,

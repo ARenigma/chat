@@ -46,8 +46,12 @@ export type MemberRoute =
   | { readonly name: 'apply' }
   | { readonly name: 'applicationStatus' }
   | { readonly name: 'blocked' }
+  /** The full chats list, reached from the Home rail's "See all". */
+  | { readonly name: 'chatsList' }
   /** The Calls tab (empty state for now); a top-level nav destination. */
   | { readonly name: 'calls' }
+  /** The Favourites tab — saved providers; a top-level nav destination. */
+  | { readonly name: 'favourites' }
   /** Account & privacy, a mounted screen now rather than a bottom sheet. */
   | { readonly name: 'settings' };
 
@@ -89,7 +93,9 @@ export function memberParent(route: MemberRoute): MemberRoute | null {
     case 'apply':
     case 'applicationStatus':
     case 'blocked':
+    case 'chatsList':
     case 'calls':
+    case 'favourites':
     case 'settings':
       return { name: 'home' };
   }

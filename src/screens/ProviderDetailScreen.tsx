@@ -11,6 +11,7 @@ import { DEFAULT_RATES, rateLabel, type Channel } from '../lib/rates';
 import { useConversations, useProfile, useProviders } from '../api/chat';
 import { CALLS_ENABLED } from '../api/calls';
 import { useStore } from '../store/useStore';
+import { useFavorites } from '../store/useFavorites';
 import { BackButton } from '../components/BackButton';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
@@ -47,7 +48,10 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
   useProfile();
   const { data: providers, isPending } = useProviders();
   const { data: conversations } = useConversations();
-  const [favorite, setFavorite] = useState(false);
+  // Favourites are persisted now (#10), not throwaway local state — the heart
+  // reads and writes the saved-favourites store, which the Favourites tab lists.
+  const favorite = useFavorites(s => s.ids.includes(providerId));
+  const toggleFavorite = useFavorites(s => s.toggle);
   const [safetyOpen, setSafetyOpen] = useState(false);
 
   // Block/report is offered ONLY when there is an existing conversation with this
@@ -90,7 +94,11 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
           showsVerticalScrollIndicator={false}
           {...SCROLL_PHYSICS}
           contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + TOKENS.space.xl }]}>
-          <Hero provider={provider} favorite={favorite} onToggleFavorite={() => setFavorite(v => !v)} />
+          <Hero
+            provider={provider}
+            favorite={favorite}
+            onToggleFavorite={() => toggleFavorite(providerId)}
+          />
 
           <View style={styles.actions}>
             <ActionButton
