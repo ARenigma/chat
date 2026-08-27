@@ -32,16 +32,18 @@ export type MemberRoute =
    */
   | { readonly name: 'chat'; readonly providerId: string; readonly from: 'home' | 'detail' }
   /**
-   * A voice call. `direction` is 'out' (we dialled; `callId` is null until
-   * `start_call` returns one) or 'in' (someone is ringing us; `callId` is set).
-   * Reached from a chat/profile call button (out) or the incoming-call
-   * subscription (in).
+   * A voice or video call. `direction` is 'out' (we dialled; `callId` is null
+   * until `start_call` returns one) or 'in' (someone is ringing us; `callId`
+   * is set). Reached from a chat/profile call button (out) or the incoming-call
+   * subscription (in). `medium` determines whether audio-only or video is
+   * negotiated; the peer's camera starts off and can be toggled mid-call.
    */
   | {
       readonly name: 'call';
       readonly providerId: string;
       readonly direction: 'out' | 'in';
       readonly callId: string | null;
+      readonly medium: 'voice' | 'video';
     }
   | { readonly name: 'apply' }
   | { readonly name: 'applicationStatus' }
@@ -59,12 +61,13 @@ export type ProviderRoute =
   | { readonly name: 'home' }
   | { readonly name: 'chat'; readonly peerId: string }
   | { readonly name: 'settings' }
-  /** A voice call on the provider tree; incoming for now (`direction: 'in'`). */
+  /** A voice or video call on the provider tree. */
   | {
       readonly name: 'call';
       readonly peerId: string;
       readonly direction: 'out' | 'in';
       readonly callId: string | null;
+      readonly medium: 'voice' | 'video';
     };
 
 /**

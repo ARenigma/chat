@@ -3,71 +3,143 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Papal, delete your data</title>
-    <meta name="theme-color" content="#FBF8F5" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#14110F" media="(prefers-color-scheme: dark)" />
+    <title>Pappal — delete your data</title>
+    <meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Urbanist:wght@400;600;700;800&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/tokens.css" />
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <header><a href="/" class="mark">Papal</a></header>
 
-    <h1>Delete your data</h1>
-    <p class="lede">
-      In the app, in two taps, with no email to anyone and no waiting period.
-      Google Play requires this page; the app had the button before the page
-      existed.
-    </p>
+    <header class="site-header">
+      <div class="site-container header-inner">
+        <a href="/" class="mark" aria-label="Pappal home">Pappal</a>
+        <nav class="site-nav" aria-label="Main navigation">
+          <a href="/#how-it-works">How it works</a>
+          <a href="/pricing.html">Pricing</a>
+          <a href="/#become-a-partner">Become a partner</a>
+          <a href="/about.html">About</a>
+        </nav>
+        <div class="header-spacer"></div>
+        <a
+          class="cta cta--accent cta--sm"
+          href="https://gitlab.com/ARenigma/chat/-/releases"
+          rel="noopener noreferrer"
+        >Download</a>
+      </div>
+    </header>
 
-    <h2>In the app</h2>
-    <ol>
-      <li>Open the <strong>⋯</strong> menu, top right.</li>
-      <li>Tap <strong>Delete account &amp; all data</strong>, then confirm.</li>
-    </ol>
-    <p>
-      It is one operation on the server, so it either happens completely or not at
-      all, there is no state where the account is gone and the messages are not.
-    </p>
+    <main>
+      <div class="page-content">
 
-    <h2>What is deleted</h2>
-    <ul>
-      <li>Your account and sign-in</li>
-      <li>Your display name and profile</li>
-      <li>Every conversation and every message you sent</li>
-      <li>Your token balance</li>
-      <li>Your device’s notification token</li>
-      <li>Your provider application, if you made one</li>
-    </ul>
+        <h1>Delete your data</h1>
+        <p class="lede">
+          In the app, in two taps, with no email to anyone and no waiting period.
+          Google Play requires this page; the app had the button before the page
+          existed.
+        </p>
 
-    <h2>What is kept, and for how long</h2>
-    <p>
-      <strong>Abuse reports: 90 days, de-identified.</strong> If someone reported
-      you, or you reported someone, that report survives with the reporter’s
-      identity removed. A report that disappeared with the account would turn
-      deletion into a way of destroying the evidence, so this one exception is
-      deliberate, and it is the only one.
-    </p>
-    <p>Nothing else is retained. There are no backups that outlive the delete.</p>
+        <h2>In the app</h2>
+        <ol>
+          <li>Open the <strong>&#x22EF;</strong> menu, top right.</li>
+          <li>Tap <strong>Delete account &amp; all data</strong>, then confirm.</li>
+        </ol>
+        <p>
+          It is one operation on the server, so it either happens completely or
+          not at all — there is no state where the account is gone but the
+          messages are not.
+        </p>
 
-    <h2>If you cannot open the app</h2>
-    <p>
-      Email <a href="mailto:testrelay97@gmail.com">testrelay97@gmail.com</a>
-      from the address you signed in with, and ask for deletion. We do it by hand
-      within 30 days, which is the outer bound rather than the expectation.
-    </p>
+        <h2>What is deleted</h2>
+        <ul>
+          <li>Your account and sign-in</li>
+          <li>Your display name and profile</li>
+          <li>Every conversation and every message you sent</li>
+          <li>Your token balance</li>
+          <li>Your device's notification token</li>
+          <li>Your partner application, if you made one</li>
+        </ul>
 
-    <footer>
-      <a href="/">Home</a>
-      <a href="/about.html">About</a>
-      <a href="/terms.html">Terms</a>
-      <a href="/privacy.html">Privacy</a>
-      <span>Last updated 21 August 2026</span>
+        <h2>What is kept, and for how long</h2>
+        <p>
+          <strong>Abuse reports: 90 days, de-identified.</strong> If someone
+          reported you, or you reported someone, that report survives with the
+          reporter's identity removed. A report that disappeared with the account
+          would turn deletion into a way of destroying evidence, so this one
+          exception is deliberate, and it is the only one.
+        </p>
+        <p>Nothing else is retained. There are no backups that outlive the delete.</p>
+
+        <h2>Unused token balance</h2>
+        <p>
+          If you have a remaining token balance at the time of deletion and you
+          would like a refund of unused purchased tokens, write to us before
+          deleting your account. See the <a href="/refund.html">refund policy</a>
+          for details.
+        </p>
+
+        <h2>If you cannot open the app</h2>
+        <p>
+          Email
+          <a href="mailto:{{SUPPORT_EMAIL}}"><span class="placeholder">{{SUPPORT_EMAIL}}</span></a>
+          from the address you signed in with, and ask for deletion. We do it by
+          hand within 30 days, which is the outer bound rather than the
+          expectation.
+        </p>
+
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <div class="site-container">
+        <div class="footer-inner">
+          <div class="footer-brand">
+            <a href="/" class="mark" aria-label="Pappal home">Pappal</a>
+            <p>
+              Someone to talk to, tonight.<br />
+              &copy; 2026 <span class="placeholder">{{LEGAL_BUSINESS_NAME}}</span>
+            </p>
+          </div>
+          <div class="footer-links">
+            <div class="footer-col">
+              <strong>Product</strong>
+              <a href="/#how-it-works">How it works</a>
+              <a href="/pricing.html">Pricing</a>
+              <a href="/about.html">About</a>
+            </div>
+            <div class="footer-col">
+              <strong>Partners</strong>
+              <a href="/#become-a-partner">Become a partner</a>
+            </div>
+            <div class="footer-col">
+              <strong>Legal</strong>
+              <a href="/terms.html">Terms</a>
+              <a href="/privacy.html">Privacy</a>
+              <a href="/refund.html">Refund policy</a>
+              <a href="/grievance.html">Grievance</a>
+              <a href="/delete.html">Delete your data</a>
+            </div>
+            <div class="footer-col">
+              <strong>Contact</strong>
+              <a href="mailto:{{SUPPORT_EMAIL}}">
+                <span class="placeholder">{{SUPPORT_EMAIL}}</span>
+              </a>
+            </div>
+          </div>
+        </div>
+        <div class="footer-meta">
+          <span>Last updated 27 August 2026</span>
+          <span><span class="placeholder">{{LEGAL_BUSINESS_NAME}}</span></span>
+          <span><span class="placeholder">{{REGISTERED_ADDRESS}}</span></span>
+        </div>
+      </div>
     </footer>
+
   </body>
 </html>

@@ -5,6 +5,9 @@ import {
   SENTRY_DSN,
   SUPABASE_ANON_KEY,
   SUPABASE_URL,
+  TURN_CREDENTIAL,
+  TURN_URL,
+  TURN_USERNAME,
 } from '@env';
 
 /**
@@ -25,6 +28,9 @@ export const ENV = {
   appEnv: APP_ENV ?? 'development',
   msg91WidgetId: MSG91_WIDGET_ID ?? '',
   msg91WidgetToken: MSG91_WIDGET_TOKEN ?? '',
+  turnUrl: TURN_URL ?? '',
+  turnUsername: TURN_USERNAME ?? '',
+  turnCredential: TURN_CREDENTIAL ?? '',
 } as const;
 
 /** Deep-link target for the optional OAuth account link. */

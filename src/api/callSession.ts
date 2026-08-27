@@ -1,5 +1,5 @@
 /**
- * A live audio call over WebRTC, with signalling on a Realtime channel.
+ * A live audio/video call over WebRTC, with signalling on a Realtime channel.
  *
  * The `calls` row (server) is the authoritative record of who called whom and
  * what it cost; this is the media that row bills for. SDP offers/answers and ICE
@@ -16,16 +16,20 @@
  * The caller joins first (it is on the outgoing screen before the callee
  * accepts), so it is always listening when `ready` arrives.
  *
- * Audio only. react-native-webrtc plays a remote audio track through the device
- * automatically once it is added to the connection, so there is nothing to
- * render — the hook returns connection state and a mute toggle, not a stream.
- * Video is a follow-up (it needs RTCView surfaces and a camera permission).
+ * Video architecture: every call negotiates a video transceiver from the start
+ * with the camera off. Toggling video uses `RTCRtpSender.replaceTrack(track|null)`
+ * — never add/remove-track mid-call — so no renegotiation is required. A
+ * `video_toggle` broadcast on the same channel propagates the camera state to
+ * the peer so it can show/hide the remote video surface.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { PermissionsAndroid } from 'react-native';
 import {
   RTCPeerConnection,
   RTCIceCandidate,
   RTCSessionDescription,
+  RTCRtpSender,
+  RTCRtpEncodingParameters,
   mediaDevices,
   type MediaStream,
 } from 'react-native-webrtc';
@@ -39,6 +43,13 @@ interface Session {
   connState: CallConnState;
   muted: boolean;
   toggleMute: () => void;
+  localStream: MediaStream | null;
+  remoteStream: MediaStream | null;
+  videoEnabled: boolean;
+  remoteVideoEnabled: boolean;
+  enableVideo: () => Promise<void>;
+  disableVideo: () => void;
+  switchCamera: () => void;
 }
 
 /**
@@ -56,31 +67,70 @@ export function useCallSession(
 ): Session {
   const [connState, setConnState] = useState<CallConnState>('connecting');
   const [muted, setMuted] = useState(false);
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [videoEnabled, setVideoEnabled] = useState(false);
+  const [remoteVideoEnabled, setRemoteVideoEnabled] = useState(false);
+
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localRef = useRef<MediaStream | null>(null);
+  const channelRef = useRef<RealtimeChannel | null>(null);
+  const videoSenderRef = useRef<RTCRtpSender | null>(null);
+  const facingModeRef = useRef<'user' | 'environment'>('user');
 
   useEffect(() => {
     if (!enabled || callId === null) {
       return;
     }
     let cancelled = false;
-    let channel: RealtimeChannel | null = null;
 
     const send = (event: string, payload: Record<string, unknown>) => {
-      void channel?.send({ type: 'broadcast', event, payload });
+      void channelRef.current?.send({ type: 'broadcast', event, payload });
     };
 
     (async () => {
+      // Audio-only initial stream; the video transceiver is added to the peer
+      // connection separately so the SDP always has a video m-line.
       const stream = await mediaDevices.getUserMedia({ audio: true, video: false });
       if (cancelled) {
         stream.getTracks().forEach(t => t.stop());
         return;
       }
       localRef.current = stream;
+      setLocalStream(stream);
 
       const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
       pcRef.current = pc;
-      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+      // Add only the audio track. Video starts off and is added via replaceTrack.
+      stream.getAudioTracks().forEach(track => pc.addTrack(track, stream));
+
+      // Negotiate a video m-line from the start (direction sendrecv, camera off)
+      // so the SDP is stable throughout the call and no renegotiation is needed
+      // when video is toggled. The sender has no track until enableVideo().
+      const videoTransceiver = pc.addTransceiver('video', { direction: 'sendrecv' });
+      videoSenderRef.current = videoTransceiver.sender;
+
+      // Prefer H.264 for lower CPU decoding on Android. VP8 is the fallback when
+      // H.264 capabilities are not reported by the platform (rare, not fatal).
+      try {
+        const caps = RTCRtpSender.getCapabilities('video');
+        const h264 = caps.codecs.filter(c => c.mimeType.toLowerCase().includes('h264'));
+        if (h264.length > 0) {
+          videoTransceiver.setCodecPreferences(h264);
+        }
+      } catch {
+        // setCodecPreferences is a best-effort optimisation; VP8 is fine.
+      }
+
+      // Capture the remote stream. The event fires once per track, but both the
+      // audio and video track of a 1:1 call arrive on the same stream.
+      // @ts-expect-error react-native-webrtc's event target types lag its runtime
+      pc.addEventListener('track', (e: { streams: MediaStream[] }) => {
+        if (e.streams[0]) {
+          setRemoteStream(e.streams[0]);
+        }
+      });
 
       // @ts-expect-error react-native-webrtc's event target types lag its runtime
       pc.addEventListener('icecandidate', (e: { candidate: RTCIceCandidate | null }) => {
@@ -88,11 +138,31 @@ export function useCallSession(
           send('ice', { candidate: e.candidate.toJSON() });
         }
       });
+
       // @ts-expect-error see above
       pc.addEventListener('connectionstatechange', () => {
         const s = pc.connectionState;
         if (s === 'connected') {
           setConnState('connected');
+          // Cap the video sender to a mobile-friendly bitrate once the connection
+          // is live. Best-effort: a failure here does not affect audio.
+          const sender = videoSenderRef.current;
+          if (sender) {
+            void (async () => {
+              try {
+                const params = sender.getParameters();
+                const enc = params.encodings[0] as RTCRtpEncodingParameters | undefined;
+                if (enc) {
+                  enc.maxBitrate = 600_000;
+                  enc.maxFramerate = 24;
+                }
+                params.degradationPreference = 'maintain-framerate';
+                await sender.setParameters(params);
+              } catch {
+                // Bitrate cap is a best-effort optimisation.
+              }
+            })();
+          }
         } else if (s === 'failed') {
           setConnState('failed');
         } else if (s === 'closed' || s === 'disconnected') {
@@ -100,9 +170,10 @@ export function useCallSession(
         }
       });
 
-      channel = supabase.channel(`call:${callId}`, {
+      const channel = supabase.channel(`call:${callId}`, {
         config: { broadcast: { self: false } },
       });
+      channelRef.current = channel;
 
       channel.on('broadcast', { event: 'offer' }, async ({ payload }) => {
         if (isCaller || pc.signalingState === 'closed') {
@@ -126,7 +197,7 @@ export function useCallSession(
           await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
         } catch {
           // A candidate arriving before the remote description is set is normal
-          // early in the handshake; the ret/renegotiation covers it.
+          // early in the handshake; the retransmit covers it.
         }
       });
 
@@ -138,6 +209,11 @@ export function useCallSession(
         const offer = await pc.createOffer({});
         await pc.setLocalDescription(offer);
         send('offer', { sdp: offer });
+      });
+
+      // Remote peer's camera state changed.
+      channel.on('broadcast', { event: 'video_toggle' }, ({ payload }) => {
+        setRemoteVideoEnabled(Boolean(payload.enabled));
       });
 
       channel.subscribe(status => {
@@ -152,10 +228,16 @@ export function useCallSession(
       cancelled = true;
       localRef.current?.getTracks().forEach(t => t.stop());
       localRef.current = null;
+      setLocalStream(null);
+      setRemoteStream(null);
+      setVideoEnabled(false);
+      setRemoteVideoEnabled(false);
+      videoSenderRef.current = null;
       pcRef.current?.close();
       pcRef.current = null;
-      if (channel) {
-        void supabase.removeChannel(channel);
+      if (channelRef.current) {
+        void supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
       }
     };
   }, [callId, isCaller, enabled]);
@@ -169,5 +251,88 @@ export function useCallSession(
     setMuted(next);
   };
 
-  return { connState, muted, toggleMute };
+  /**
+   * Request the camera permission, acquire a video track, and replace the
+   * null track on the video sender so the remote peer receives video.
+   * All state changes (videoEnabled, localStream) happen after the track is
+   * in place, so the RTCView is never mounted on a stream without video.
+   */
+  const enableVideo = useCallback(async () => {
+    const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA);
+    if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+      return;
+    }
+    if (!videoSenderRef.current) {
+      return;
+    }
+    const videoStream = await mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        facingMode: 'user',
+        width: { ideal: 640 },
+        height: { ideal: 480 },
+        frameRate: { ideal: 24 },
+      },
+    });
+    const videoTrack = videoStream.getVideoTracks()[0];
+    if (!videoTrack) {
+      videoStream.getTracks().forEach(t => t.stop());
+      return;
+    }
+    facingModeRef.current = 'user';
+    await videoSenderRef.current.replaceTrack(videoTrack);
+    localRef.current?.addTrack(videoTrack);
+    setVideoEnabled(true);
+    void channelRef.current?.send({
+      type: 'broadcast',
+      event: 'video_toggle',
+      payload: { enabled: true },
+    });
+  }, []);
+
+  /**
+   * Stop the local video track and send a null track to the sender so the
+   * remote peer's video surface goes black.
+   */
+  const disableVideo = useCallback(() => {
+    const tracks = localRef.current?.getVideoTracks() ?? [];
+    tracks.forEach(t => {
+      t.stop();
+      localRef.current?.removeTrack(t);
+    });
+    void videoSenderRef.current?.replaceTrack(null);
+    setVideoEnabled(false);
+    void channelRef.current?.send({
+      type: 'broadcast',
+      event: 'video_toggle',
+      payload: { enabled: false },
+    });
+  }, []);
+
+  /**
+   * Toggle between the front and rear cameras using applyConstraints.
+   * `_switchCamera()` is deprecated in react-native-webrtc 124.x.
+   */
+  const switchCamera = useCallback(() => {
+    const track = (localRef.current?.getVideoTracks() ?? [])[0];
+    if (track === undefined) {
+      return;
+    }
+    const next = facingModeRef.current === 'user' ? 'environment' : 'user';
+    facingModeRef.current = next;
+    void track.applyConstraints({ facingMode: next });
+  }, []);
+
+  return {
+    connState,
+    muted,
+    toggleMute,
+    localStream,
+    remoteStream,
+    videoEnabled,
+    remoteVideoEnabled,
+    enableVideo,
+    disableVideo,
+    switchCamera,
+  };
 }
