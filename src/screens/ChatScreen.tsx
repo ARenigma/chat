@@ -85,6 +85,18 @@ const STARTERS: ReadonlyArray<{ label: string; tone: 'neutral' | 'warm' }> = [
 // ActionTarget is defined and exported from Turn.tsx; imported above.
 
 /**
+ * Prepaid-minute guard, module-level so it survives ChatScreen remounts and the
+ * boot double-mount. The meter must bill AT MOST ONCE PER 60s PER CONVERSATION:
+ * without this, render-churn and remounts (boot restores the chat route, data
+ * loads, AfterPaint toggles) each re-run the metering effect and fire an
+ * immediate charge, draining a balance in seconds. Keyed by conversationId ->
+ * ms of the last successful (or reserved) charge. A no-op re-entry within the
+ * minute is also correct: you keep the minute you already paid for.
+ */
+const MINUTE_MS = 60_000;
+const lastChatChargeAt = new Map<string, number>();
+
+/**
  * `inverted` is load-bearing: it anchors the transcript to the bottom, so a
  * keyboard opening or a bubble arriving changes nobody's scroll offset. Combined
  * with a stable `data` reference (the typing indicator lives in
@@ -500,16 +512,34 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
     if (AppState.currentState !== 'active') {
       return true;
     }
+    if (conversationId === undefined) {
+      return true;
+    }
+    // Bill at most once per minute per conversation. Reserve the slot BEFORE the
+    // await so two calls in the same tick (effect re-run + interval, or a double
+    // mount) cannot both charge; a genuine remount within the paid minute is a
+    // no-op (the minute is already paid for).
+    const now = Date.now();
+    const last = lastChatChargeAt.get(conversationId);
+    if (last !== undefined && now - last < MINUTE_MS - 1_000) {
+      return true;
+    }
+    lastChatChargeAt.set(conversationId, now);
     const { data: result } = await supabase.rpc('spend_chat_minute');
     if (result === null) {
+      // Transient (no response): release the reservation so the next tick retries.
+      lastChatChargeAt.delete(conversationId);
       return true;
     }
     if (result.success && result.new_balance != null) {
       setBalance(result.new_balance);
       // result.last=true: balance hit 0 this minute. The session keeps running;
-      // the NEXT charge will return OUT_OF_TOKENS and end it then.
+      // the NEXT charge (60s later) returns OUT_OF_TOKENS and ends it then.
       return true;
     }
+    // Not a real charge — release the reservation so a resume after recharge (or a
+    // retry) can bill immediately rather than being blocked by the minute guard.
+    lastChatChargeAt.delete(conversationId);
     // OUT_OF_TOKENS: balance was already 0 — end the session.
     // NOT_AUTHENTICATED / NO_PROFILE: stop the meter gracefully.
     if (
@@ -520,7 +550,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
       return false;
     }
     return true;
-  }, [setBalance]);
+  }, [setBalance, conversationId]);
 
   // Derived gate: meter runs when the member is in an active conversation and
   // the session has not been ended by an OUT_OF_TOKENS response.
