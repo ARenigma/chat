@@ -1664,12 +1664,14 @@ describe('voice notes are recorded, uploaded and sent through the one send path'
     // a *member's* id. So on that side the id never resolved, the transcript never
     // loaded and the composer stayed disabled: a recorder shipped to both roles
     // and reachable by one. The summary row already carries the id.
+    // The id comes from the cached thread whenever it is known (either side), and
+    // open_conversation is called ONLY to create a conversation that does not
+    // exist yet. A provider always has a known thread, so it never calls the RPC;
+    // and a member reopening a chat skips the extra round-trip too.
     const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
-    expect(chat).toContain('!knownThread.i_am_member');
-    expect(chat).toContain('asProvider ? knownThread.id : openedId');
-    // A disabled query reports isPending true in React Query v5, so the provider
-    // branch has to say otherwise or the screen sits on a spinner forever.
-    expect(chat).toContain('asProvider ? false : openPending');
+    expect(chat).toContain('const needsOpen = knownThread === undefined');
+    expect(chat).toContain('useConversationId(needsOpen ? providerId : null)');
+    expect(chat).toContain('knownThread?.id ?? openedId');
   });
 
   it('gives both roles the recorder', () => {
