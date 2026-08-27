@@ -91,5 +91,9 @@ export function isLowBalance(tokens: number | null): boolean {
  */
 export const PAYMENTS_ENABLED = false;
 
-/** The token top-up packs offered on the Recharge screen. */
-export const RECHARGE_PACKS: readonly number[] = [25, 60, 100, 180];
+/**
+ * The top-up packs offered on the Recharge screen, in ₹ (1 token = ₹1). A ladder
+ * up to ₹5000 (Amit, 2026-08-27), six values for a clean 2×3 grid — small enough
+ * for a first try, large enough for a regular who tops up once.
+ */
+export const RECHARGE_PACKS: readonly number[] = [100, 300, 500, 1000, 2500, 5000];

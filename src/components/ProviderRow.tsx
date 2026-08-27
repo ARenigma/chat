@@ -201,15 +201,12 @@ function ProviderRowView({ provider, index, isLast, onPress, onPressAvatar }: Pr
         <View style={styles.trailing}>
           {/* A rating with two reviews behind it is noise dressed as signal, so
               the count is always next to it. */}
-          {provider.rating_count > 0 ? (
-            <Text testID="provider-rating" allowFontScaling style={styles.rating}>
-              ★ {provider.rating_avg?.toFixed(1)}
-            </Text>
-          ) : (
-            <Text allowFontScaling style={styles.meta}>
-              New here
-            </Text>
-          )}
+          {/* Every card carries a star (#2). Rated shows the score; unrated shows
+              "★ New" rather than a plain "New here", so the column reads as one
+              rating scale rather than two different trailing treatments. */}
+          <Text testID="provider-rating" allowFontScaling style={styles.rating}>
+            ★ {provider.rating_count > 0 ? provider.rating_avg?.toFixed(1) : 'New'}
+          </Text>
           {/* No presence line here any more (Amit's call): the green dot on the
               avatar is the online signal, so a "Here now" text beside it was
               saying the same thing twice. Presence still drives the dot and the

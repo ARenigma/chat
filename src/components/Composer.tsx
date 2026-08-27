@@ -1,5 +1,12 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, PermissionsAndroid, StyleSheet, Text, View } from 'react-native';
+import {
+  AppState,
+  PermissionsAndroid,
+  StyleSheet,
+  Text,
+  type TextInput,
+  View,
+} from 'react-native';
 import {
   launchCamera,
   launchImageLibrary,
@@ -113,6 +120,9 @@ function ComposerView({
   // stop that raced a re-render would otherwise stop a recorder that had already
   // been replaced.
   const handle = useRef<RecordingHandle | null>(null);
+  // The field, so the emoji button can focus it (and raise the keyboard, where
+  // the emoji key lives — a full in-app picker is a follow-up).
+  const inputRef = useRef<TextInput>(null);
   /**
    * Which attempt is current, bumped by every start, stop, discard and unmount.
    *
@@ -475,7 +485,21 @@ function ComposerView({
         <Icon name="plus" size={24} color={theme.color.text.secondary} />
       </Pressable>
       <View style={styles.field}>
+        {/* Emoji, docked at the leading edge of the field (#4, the WhatsApp
+            position). It focuses the input so the keyboard — and its emoji key —
+            comes up; a full in-app emoji picker is a follow-up. */}
+        <Pressable
+          onPress={() => inputRef.current?.focus()}
+          disabled={disabled}
+          testID="composer-emoji"
+          accessibilityLabel="Emoji"
+          press="chip"
+          size={30}
+          style={styles.emoji}>
+          <Icon name="smile" size={22} color={theme.color.text.secondary} />
+        </Pressable>
         <TextField
+          ref={inputRef}
           testID="composer-input"
           style={styles.input}
           value={value}
@@ -593,12 +617,22 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // The emoji button inside the field's leading edge. Sized to sit on the same
+  // baseline as the trailing mic when the field is a single line.
+  emoji: {
+    width: 30,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   field: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: TOKENS.space.xs,
-    paddingLeft: TOKENS.space.md,
+    // Small leading inset now that the emoji button sits at the field's edge and
+    // carries the spacing itself (was space.md when text led the field).
+    paddingLeft: TOKENS.space['2xs'],
     paddingRight: 5,
     paddingVertical: 4,
     // Still a capsule: the field is a capsule on iOS too. What changed is what
