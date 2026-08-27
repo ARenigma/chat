@@ -1,12 +1,14 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
   AppState,
+  Linking,
   PermissionsAndroid,
   StyleSheet,
   Text,
   type TextInput,
   View,
 } from 'react-native';
+import { requestAndroidPermission } from '../lib/permissions';
 import {
   launchCamera,
   launchImageLibrary,
@@ -357,10 +359,19 @@ function ComposerView({
     if (disabled) {
       return;
     }
-    const granted = await PermissionsAndroid.request(
+    const outcome = await requestAndroidPermission(
       PermissionsAndroid.PERMISSIONS.CAMERA,
     );
-    if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+    if (outcome === 'never_ask_again') {
+      errorTick();
+      // Surface a notice with a direct link to Settings; Alert would block the
+      // composer which is disruptive, so we use the store notice + a Linking
+      // call so the user can dismiss and continue composing text instead.
+      setNotice('Camera blocked. Open Settings to allow it.');
+      Linking.openSettings().catch(() => undefined);
+      return;
+    }
+    if (outcome !== 'granted') {
       errorTick();
       setNotice('The camera needs permission. Turn it on in Settings.');
       return;

@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   AppState,
   FlatList,
+  InteractionManager,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -53,7 +54,7 @@ import { PeerTyping } from '../components/PeerTyping';
 import { Pressable } from '../components/Pressable';
 import { TokenCounter } from '../components/TokenCounter';
 import { CallLogRow } from '../components/CallLogRow';
-import { MyTurn, PeerTurn, type ImageBody, type Quote, type VoiceBody } from '../components/Turn';
+import { MyTurn, PeerTurn, type ActionTarget, type ImageBody, type Quote, type VoiceBody } from '../components/Turn';
 import { MessageActionsSheet } from './MessageActionsSheet';
 import { ReviewSheet } from './ReviewSheet';
 import { SafetySheet } from './SafetySheet';
@@ -81,13 +82,7 @@ const STARTERS: ReadonlyArray<{ label: string; tone: 'neutral' | 'warm' }> = [
   { label: 'I just need to vent', tone: 'neutral' },
 ];
 
-/** Which message the actions sheet is open on. */
-interface ActionTarget {
-  id: string;
-  mine: boolean;
-  author: string;
-  body: string | null;
-}
+// ActionTarget is defined and exported from Turn.tsx; imported above.
 
 /**
  * `inverted` is load-bearing: it anchors the transcript to the bottom, so a
@@ -109,6 +104,17 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   const setBalance = useStore(s => s.setBalance);
   const openRefill = useStore(s => s.openRefill);
   const [bloomKey, setBloomKey] = useState(0);
+  // A1: defer ChatWallpaper's ~800 View+Text nodes until after the SlideInRight
+  // open animation completes, so the transition frame budget is not eaten by
+  // a synchronous mount. The transcript sits above the wallpaper, so a 1-frame-
+  // late wallpaper is invisible to the user.
+  const [wallpaperReady, setWallpaperReady] = useState(false);
+  useEffect(() => {
+    const handle = InteractionManager.runAfterInteractions(() => {
+      setWallpaperReady(true);
+    });
+    return () => handle.cancel();
+  }, []);
   // Which message the safety sheet was opened from, so a report can attach the
   // specific message rather than only the thread.
   const [safety, setSafety] = useState<{ open: boolean; messageId: string | null }>({
@@ -570,15 +576,9 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
       const quote =
         message.reply_to_id !== null ? parents.get(message.reply_to_id) : undefined;
       const reactions = tallies.get(message.id);
-      const onLongPress = isPending(message)
-        ? undefined
-        : () =>
-            openActions({
-              id: message.id,
-              mine,
-              author: mine ? 'You' : name,
-              body: message.body,
-            });
+      // A5: pass primitive props + a stable openActions reference so each bubble
+      // can build its own `onLongPress` via useCallback internally, rather than
+      // receiving a new per-render closure from renderItem.
       return (
         <View style={[styles.turn, first && styles.turnOpensGroup]}>
           {/* Above the bubble in the cell, which on an inverted list is visually
@@ -590,12 +590,16 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
               message={text}
               timestamp={stamp}
               pending={isPending(message)}
+              isNew={isPending(message)}
               quote={quote}
               reactions={reactions}
               voice={voice}
               image={image}
               voicePlayer={voicePlayer}
-              onLongPress={onLongPress}
+              messageId={message.id}
+              author="You"
+              rawBody={message.body}
+              onRequestActions={openActions}
               receipt={
                 showReceipt && !isPending(message)
                   ? message.read_at !== null
@@ -615,12 +619,17 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
               voice={voice}
               image={image}
               voicePlayer={voicePlayer}
-              onLongPress={onLongPress}
+              messageId={message.id}
+              author={name}
+              rawBody={message.body}
+              onRequestActions={openActions}
             />
           )}
         </View>
       );
     },
+    // openActions is stable (useCallback with empty deps); messageId/author/rawBody
+    // are primitives from the row data. No per-render closures over openActions needed.
     [initial, name, openActions, parents, styles, tallies, voicePlayer],
   );
 
@@ -819,10 +828,11 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
       <KeyboardAvoidingView
         style={styles.body}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        {/* The chat wallpaper: a faint ORIGINAL doodle field tiled from our own
-            icon glyphs (#19), replacing the coral wash. Behind the list,
-            non-interactive. */}
-        <ChatWallpaper />
+        {/* The chat wallpaper deferred until after the open animation (A1):
+            ~800 View+Text nodes mount after InteractionManager fires so they
+            don't compete with SlideInRight for frame budget. The transcript
+            sits above it, so the 1-frame delay is invisible. */}
+        {wallpaperReady ? <ChatWallpaper /> : null}
         {loading ? (
           <View style={styles.loading}>
             <ActivityIndicator color={theme.color.text.secondary} />

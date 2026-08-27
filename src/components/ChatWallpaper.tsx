@@ -19,14 +19,14 @@ import { Icon, type IconName } from './Icon';
  */
 const GLYPHS: readonly IconName[] = ['heart', 'chat', 'listen', 'unwind', 'star', 'people'];
 
-// A dense micro-glyph field (Amit, 2026-08-27, 5× denser): thousands of tiny
-// marks rather than a sparse scatter, past WhatsApp's texture density. A fixed
-// count keeps this a pure, memoisable static field rather than a measured
-// layout; it is behind everything, non-interactive, mounted once and never
-// re-rendered (memo), and each glyph is a single <Text>. 5× the mark density is
-// smaller cells (12 vs 28) and more of them (3000 vs 600).
+// A dense micro-glyph field: a fixed count keeps this a pure, memoisable static
+// field rather than a measured layout; it is behind everything, non-interactive,
+// mounted once and never re-rendered (memo), and each glyph is a single <Text>.
+// 800 cells instead of 3000: still dense enough to read as a full texture at
+// 12pt cells, but ~3.75x fewer nodes to mount, which eliminates the jank spike
+// during ChatScreen's SlideInRight open animation.
 const CELLS: IconName[] = Array.from(
-  { length: 3000 },
+  { length: 800 },
   (_, i) => GLYPHS[i % GLYPHS.length] ?? 'heart',
 );
 

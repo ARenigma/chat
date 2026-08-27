@@ -41,7 +41,8 @@
  * playing" is one value in the store rather than per-row component state, and
  * why `stopPlayback` is safe to call speculatively.
  */
-import { PermissionsAndroid, Platform } from 'react-native';
+import { PermissionsAndroid } from 'react-native';
+import { alertPermissionBlocked, requestAndroidPermission } from './permissions';
 import Sound, {
   AudioEncoderAndroidType,
   AudioSourceAndroidType,
@@ -125,10 +126,7 @@ export function rememberSpeed(speed: PlaybackSpeed): void {
  * correct response is a sentence explaining where the switch is, not an error.
  */
 export async function ensureMicrophone(): Promise<boolean> {
-  if (Platform.OS !== 'android') {
-    return true;
-  }
-  const granted = await PermissionsAndroid.request(
+  const outcome = await requestAndroidPermission(
     PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
     {
       title: 'Record a voice note',
@@ -137,7 +135,10 @@ export async function ensureMicrophone(): Promise<boolean> {
       buttonNegative: 'Not now',
     },
   );
-  return granted === PermissionsAndroid.RESULTS.GRANTED;
+  if (outcome === 'never_ask_again') {
+    alertPermissionBlocked('Microphone (voice notes)');
+  }
+  return outcome === 'granted';
 }
 
 interface RecordingCallbacks {

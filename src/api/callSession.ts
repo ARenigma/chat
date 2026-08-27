@@ -24,6 +24,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { PermissionsAndroid, Platform } from 'react-native';
+import { alertPermissionBlocked, requestAndroidPermission } from '../lib/permissions';
 import {
   RTCPeerConnection,
   RTCIceCandidate,
@@ -94,7 +95,7 @@ export function useCallSession(
       // here, mirroring the CAMERA request in enableVideo(). Mirror approach:
       // on iOS the system permission sheet fires automatically from getUserMedia.
       if (Platform.OS === 'android') {
-        const micOk = await PermissionsAndroid.request(
+        const micOutcome = await requestAndroidPermission(
           PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
           {
             title: 'Microphone',
@@ -102,7 +103,12 @@ export function useCallSession(
             buttonPositive: 'Allow',
           },
         );
-        if (micOk !== PermissionsAndroid.RESULTS.GRANTED) {
+        if (micOutcome === 'never_ask_again') {
+          alertPermissionBlocked('Microphone (calls)');
+          setConnState('failed');
+          return;
+        }
+        if (micOutcome !== 'granted') {
           setConnState('failed');
           return;
         }
@@ -277,8 +283,12 @@ export function useCallSession(
    * in place, so the RTCView is never mounted on a stream without video.
    */
   const enableVideo = useCallback(async () => {
-    const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA);
-    if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+    const camOutcome = await requestAndroidPermission(PermissionsAndroid.PERMISSIONS.CAMERA);
+    if (camOutcome === 'never_ask_again') {
+      alertPermissionBlocked('Camera (video calls)');
+      return;
+    }
+    if (camOutcome !== 'granted') {
       return;
     }
     if (!videoSenderRef.current) {

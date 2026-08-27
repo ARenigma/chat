@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { memo, useCallback, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   ActivityIndicator,
@@ -102,6 +102,20 @@ export function HomeScreen({
       onOpenProvider(featured.id);
     }
   }, [featured, onOpenProvider]);
+
+  // A3: stable callbacks so ProviderRow.memo holds across balance ticks.
+  // An inline `onPress={() => onOpenProvider(p.id)}` creates a new function on
+  // every render of HomeScreen; these hoisted versions are referentially stable
+  // as long as the underlying props are stable (nav props typically are).
+  const handleOpenProvider = useCallback(
+    (id: string) => onOpenProvider(id),
+    [onOpenProvider],
+  );
+  // A4: stable callback for RailItem so memo holds when balance ticks.
+  const handleOpenConversation = useCallback(
+    (peerId: string) => onOpenConversation(peerId),
+    [onOpenConversation],
+  );
 
   // Inline search (#5). Replaces the placeholder that opened Recharge. Filters the
   // directory by name or language, client-side over the already-loaded list — no
@@ -208,8 +222,8 @@ export function HomeScreen({
                   // The whole row opens the detailed profile card (#1), matching
                   // the featured hero — you decide from the profile, then Message
                   // from there. The avatar opens the same place.
-                  onPress={() => onOpenProvider(p.id)}
-                  onPressAvatar={() => onOpenProvider(p.id)}
+                  onPress={handleOpenProvider}
+                  onPressAvatar={handleOpenProvider}
                 />
               ))}
             </View>
@@ -263,7 +277,7 @@ export function HomeScreen({
                 {...SCROLL_PHYSICS}
                 contentContainerStyle={styles.railScroll}>
                 {chats.map(chat => (
-                  <RailItem key={chat.id} chat={chat} onPress={onOpenConversation} />
+                  <RailItem key={chat.id} chat={chat} onPress={handleOpenConversation} />
                 ))}
               </ScrollView>
             </View>
@@ -290,8 +304,8 @@ export function HomeScreen({
                   // The whole row opens the detailed profile card (#1), matching
                   // the featured hero — you decide from the profile, then Message
                   // from there. The avatar opens the same place.
-                  onPress={() => onOpenProvider(p.id)}
-                  onPressAvatar={() => onOpenProvider(p.id)}
+                  onPress={handleOpenProvider}
+                  onPressAvatar={handleOpenProvider}
                 />
               ))}
             </View>
@@ -325,8 +339,13 @@ export function HomeScreen({
  * One face in the CHATS rail: 54pt mark, presence, and — when there is unread —
  * a coral ring and a count badge. The ring and badge are the rail's own signals;
  * `Avatar` carries the mark and the presence dot.
+ *
+ * A4: wrapped in React.memo and the onPress constructed inside via useCallback
+ * so re-renders of HomeScreen (e.g. balance ticks) do not cascade into every
+ * rail item. The parent passes a stable `(peerId: string) => void`; the item
+ * binds the specific peer id here rather than at the call site.
  */
-function RailItem({
+const RailItem = memo(function ({
   chat,
   onPress,
 }: {
@@ -338,10 +357,12 @@ function RailItem({
   const name = chat.peer_display_name ?? 'Conversation';
   const unread = Number(chat.unread_count) > 0;
   const presence = readPresence(chat.peer_presence, chat.peer_last_active_at);
+  const handlePress = useCallback(() => onPress(chat.peer_id), [onPress, chat.peer_id]);
+  const handlePressIn = useCallback(() => prefetchMessages(qc, chat.id), [qc, chat.id]);
   return (
     <Pressable
-      onPress={() => onPress(chat.peer_id)}
-      onPressIn={() => prefetchMessages(qc, chat.id)}
+      onPress={handlePress}
+      onPressIn={handlePressIn}
       testID={`rail-${chat.peer_id}`}
       accessibilityLabel={
         unread ? `${name}, ${chat.unread_count} unread` : name
@@ -368,7 +389,7 @@ function RailItem({
       </Text>
     </Pressable>
   );
-}
+});
 
 /**
  * The featured pick. A warm gradient card with the person's mark, presence,
