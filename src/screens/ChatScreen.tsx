@@ -176,18 +176,24 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
    * The RPC raises before it writes anything, so the wasted call costs a request.
    */
   const knownThread = threads?.find(t => t.peer_id === providerId);
-  const asProvider = knownThread !== undefined && !knownThread.i_am_member;
 
-  const { data: openedId, isPending: openPending } = useConversationId(
-    asProvider ? null : providerId,
-  );
-  const conversationId = asProvider ? knownThread.id : openedId;
   /**
-   * A *disabled* query reports `isPending: true` in React Query v5, because it has
-   * no data and never will. So the provider branch has to say so explicitly, or
-   * the screen sits on a spinner forever with the transcript already in hand.
+   * If the thread is already in the cached conversation list (either side), use
+   * its id directly — `open_conversation` would just round-trip back the same id.
+   * That RPC is only needed to CREATE a conversation that does not exist yet: a
+   * member opening a brand-new chat from the directory (`needsOpen`). Skipping it
+   * for a known thread is what makes reopening a chat land on the transcript in a
+   * single round-trip (messages) instead of two (open_conversation, then
+   * messages) — the "tap Chat, wait, then it loads" the detail card showed.
+   *
+   * It also keeps the provider-side correct for free: a provider only ever
+   * reaches threads they are in, so `knownThread` is always set there and
+   * `open_conversation` (which takes a *provider* id and rejects a member id) is
+   * never called on that side.
    */
-  const conversationPending = asProvider ? false : openPending;
+  const needsOpen = knownThread === undefined;
+  const { data: openedId } = useConversationId(needsOpen ? providerId : null);
+  const conversationId = knownThread?.id ?? openedId;
   const { data: messages, isPending: messagesPending } = useMessages(conversationId);
 
   const { notifyTyping } = useLiveConversation(conversationId, selfId);
@@ -519,10 +525,15 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
    * without this the screen shows its empty state for a beat and then swaps in a
    * transcript, which reads as the thread having been lost.
    */
+  // A brand-new chat (no known thread) has nothing to load: show the "Say hi"
+  // empty state the instant the screen mounts rather than a spinner while
+  // `open_conversation` creates the row in the background. The transcript spinner
+  // is reserved for a KNOWN thread whose messages are still in flight — the only
+  // case where content is genuinely coming. `conversationPending` no longer gates
+  // the view: creating a conversation is a background write, not a load.
   const loading =
-    conversationPending ||
     (conversationId === undefined && threads === undefined) ||
-    (conversationId !== undefined && messagesPending);
+    (knownThread !== undefined && conversationId !== undefined && messagesPending);
   const empty = !loading && rows.length === 0;
 
   /**
