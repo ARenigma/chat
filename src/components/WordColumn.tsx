@@ -1,11 +1,14 @@
-import React, { memo, useEffect, useRef, useState } from 'react';
+import React, { memo, useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
   ZoomInLeft,
+  cancelAnimation,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
+  withRepeat,
+  withSequence,
   withTiming,
 } from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
@@ -14,14 +17,15 @@ import { Icon, type IconName } from './Icon';
 import {
   CAROUSEL_ENTER_OFFSET,
   CAROUSEL_SLIDE_MS,
+  CAROUSEL_SNAP_MS,
   COLUMN_HEIGHT,
   COLUMN_OFFSET,
   DIM_OPACITY,
   DWELL_MS,
   HIGHLIGHT_INDEX,
+  ROW_HEIGHT,
   windowAt,
 } from '../lib/carouselWindow';
-import { ROW_HEIGHT } from '../lib/carouselWindow';
 
 /**
  * Deliberately NOT the source's `maxHeight: 38`.
@@ -94,6 +98,13 @@ interface Props {
  * **Reduce Motion stops the rotation.** A word that changes every two seconds
  * forever is exactly what somebody who asked the OS for less movement asked to
  * be rid of, so the column holds one word.
+ *
+ * **Slide is UI-thread-driven.** A `withRepeat` shared value owns the vertical
+ * translate so the slide never depends on the JS-thread `setInterval` callback.
+ * Under JS pressure (e.g. a Google OAuth hand-off) the slide continues
+ * uninterrupted on the UI thread. A lightweight JS timer still fires every
+ * `DWELL_MS` to advance the word index and re-key the glyph, which is cheap
+ * work and cannot stall the visual slide even if it is delayed.
  */
 function WordColumnView({ words, testID }: Props) {
   const styles = useStyles(makeStyles);
@@ -101,6 +112,13 @@ function WordColumnView({ words, testID }: Props) {
   const reduced = useReducedMotion();
   const [tick, setTick] = useState(0);
 
+  /*
+   * Lightweight JS timer: advances the word index once per dwell.
+   * This is the ONLY JS-thread involvement in the cycle. The slide itself
+   * runs on the UI thread independently (see shift below), so a delayed
+   * callback here only affects which words are shown, not whether the slide
+   * looks smooth.
+   */
   useEffect(() => {
     if (reduced || words.length < 2) {
       return;
@@ -110,31 +128,50 @@ function WordColumnView({ words, testID }: Props) {
   }, [reduced, words.length]);
 
   /*
-   * The slide. See `CAROUSEL_ENTER_OFFSET` for why this exists at all.
+   * UI-thread continuous slide loop.
    *
-   * Every advance renders the new window already translated up by one row, which
-   * is pixel-identical to the picture before the advance, and then settles it to
-   * zero. The eye sees every row travel one slot downward, which is what the
-   * source's `insert(at: 0)` produces and what a still frame cannot show.
+   * A single `withRepeat(withSequence(...))` drives the vertical translate
+   * entirely on the UI thread — no React re-render is involved in the motion.
+   * Each lap:
+   *   1. Snap to CAROUSEL_ENTER_OFFSET (instant, 0 ms) — pre-positions the
+   *      stack one row above where the eye sees it, pixel-identical to the
+   *      settled state before any advance.
+   *   2. Slide to 0 over CAROUSEL_SLIDE_MS — the visible movement.
+   *   3. Dwell at 0 for the remaining time until the next lap.
+   * One lap total = CAROUSEL_SLIDE_MS + (DWELL_MS − CAROUSEL_SLIDE_MS) = DWELL_MS,
+   * keeping the slide in step with the JS word-index timer.
    *
-   * Skipped on the first render, because there is nothing to slide from.
+   * `ReduceMotion.Never` is intentional and matches the pattern in
+   * `carouselLoop()` in motion.ts: the reduce-motion gate is the `if (reduced)`
+   * guard above this effect, not a flag inside the animation. Passing
+   * `ReduceMotion.System` to a `withRepeat` that drives a
+   * `withTiming(0, {duration: 0})` final step would spin at frame rate forever
+   * doing nothing instead of stopping.
    */
   const shift = useSharedValue(0);
-  const mounted = useRef(false);
   useEffect(() => {
-    if (!mounted.current) {
-      mounted.current = true;
+    if (reduced || words.length < 2) {
+      shift.value = 0;
       return;
     }
-    if (reduced) {
-      return;
-    }
-    shift.value = CAROUSEL_ENTER_OFFSET;
-    shift.value = withTiming(0, {
-      duration: CAROUSEL_SLIDE_MS,
-      easing: Easing.out(Easing.quad),
-    });
-  }, [tick, reduced, shift]);
+    shift.value = withRepeat(
+      withSequence(
+        // 1. Instant snap to the pre-advance offset. CAROUSEL_SNAP_MS = 0 so
+        //    the stack jumps in the same frame — no visible flash.
+        withTiming(CAROUSEL_ENTER_OFFSET, { duration: CAROUSEL_SNAP_MS }),
+        // 2. Slide the stack into place.
+        withTiming(0, { duration: CAROUSEL_SLIDE_MS, easing: Easing.out(Easing.quad) }),
+        // 3. Dwell: `withTiming(0, …)` that starts and ends at 0 is a no-op
+        //    whose only purpose is to spend time before the next snap.
+        withTiming(0, { duration: DWELL_MS - CAROUSEL_SLIDE_MS }),
+      ),
+      -1,
+      // Reduce-motion is gated by the `if (reduced)` check above; this block
+      // is never reached when the system flag is on, so no ReduceMotion arg
+      // is needed — the default (System) is unreachable here.
+    );
+    return () => cancelAnimation(shift);
+  }, [reduced, words.length, shift]);
 
   const sliding = useAnimatedStyle(() => ({
     transform: [{ translateY: shift.value }],
@@ -178,6 +215,11 @@ function WordColumnView({ words, testID }: Props) {
                    * once. Hand-combining them via `withInitialValues` does not
                    * compile: that option is typed per-animation, so `ZoomIn`
                    * accepts only a scale and `FadeIn` only an opacity.
+                   *
+                   * The glyph entrance re-fires whenever `wordIndex` changes,
+                   * which happens on the JS tick. The UI-thread slide is
+                   * independent, so both animations coexist without blocking
+                   * each other.
                    */
                   entering={
                     reduced ? undefined : ZoomInLeft.duration(TOKENS.motion.duration.base)

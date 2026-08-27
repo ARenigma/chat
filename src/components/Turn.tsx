@@ -11,12 +11,13 @@ import {
 } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
-import { useStyles } from '../theme/ThemeProvider';
+import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { bubbleArrive, bubbleLaunch } from '../theme/motion';
 import type { ReactionEmoji } from '../lib/database.types';
 import type { VoicePlayer } from '../lib/voice';
 import { useAttachmentUrl } from '../api/attachments';
 import { Avatar } from './Avatar';
+import { Icon } from './Icon';
 import { VoiceNote } from './VoiceNote';
 
 const AVATAR_SLOT = 26;
@@ -391,6 +392,7 @@ function MyTurnView({
   onLongPress,
 }: MineProps) {
   const styles = useStyles(makeStyles);
+  const theme = useTheme();
   return (
     <Animated.View entering={bubbleLaunch} style={styles.myColumn}>
       {/* Time above the message (#7, Amit). The receipt ("Sent"/"Read") still
@@ -435,12 +437,21 @@ function MyTurnView({
         <ReactionRow reactions={reactions} testID="reactions-mine" />
       ) : null}
       {receipt !== undefined ? (
-        <Text
-          testID="read-receipt"
-          style={[styles.stamp, receipt === 'read' && styles.receiptRead]}
-        >
-          {receipt === 'read' ? 'Read' : 'Sent'}
-        </Text>
+        <View testID="read-receipt" style={styles.receiptRow}>
+          {receipt === 'read' ? (
+            <Icon
+              name="checkCheck"
+              size={13}
+              color={theme.color.text.positive}
+            />
+          ) : (
+            <Icon
+              name="check"
+              size={13}
+              color={theme.color.text.tertiary}
+            />
+          )}
+        </View>
       ) : null}
     </Animated.View>
   );
@@ -620,8 +631,9 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.captionSmall,
       color: t.color.text.tertiary,
     },
-    receiptRead: {
-      ...TOKENS.typography.labelSmall,
+    receiptRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
     },
     quote: {
       borderLeftWidth: 2,

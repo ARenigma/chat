@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   ActivityIndicator,
   Image,
@@ -14,7 +15,7 @@ import type { ConversationSummary, ProviderSummary } from '../lib/database.types
 import { initialOf } from '../lib/display';
 import { readPresence } from '../lib/presence';
 import { SCROLL_PHYSICS } from '../lib/scroll';
-import { useConversations, useProfile, useProviders } from '../api/chat';
+import { useConversations, prefetchMessages, useProfile, useProviders } from '../api/chat';
 import { useBlockedPeerIds } from '../api/safety';
 import { useStore } from '../store/useStore';
 import { Avatar } from '../components/Avatar';
@@ -333,12 +334,14 @@ function RailItem({
   onPress: (peerId: string) => void;
 }) {
   const styles = useStyles(makeStyles);
+  const qc = useQueryClient();
   const name = chat.peer_display_name ?? 'Conversation';
   const unread = Number(chat.unread_count) > 0;
   const presence = readPresence(chat.peer_presence, chat.peer_last_active_at);
   return (
     <Pressable
       onPress={() => onPress(chat.peer_id)}
+      onPressIn={() => prefetchMessages(qc, chat.id)}
       testID={`rail-${chat.peer_id}`}
       accessibilityLabel={
         unread ? `${name}, ${chat.unread_count} unread` : name

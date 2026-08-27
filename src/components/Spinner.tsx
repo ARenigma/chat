@@ -2,7 +2,6 @@ import React, { memo, useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
-  type SharedValue,
   ReduceMotion,
   cancelAnimation,
   useAnimatedStyle,
@@ -11,139 +10,104 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { DURATION } from '../theme/motion';
-import { MIN_OPACITY, SPOKES, spokeAngle, spokeMetrics, spokeOpacity } from '../lib/spinner';
+import { ringBorderWidth } from '../lib/spinner';
 
 interface Props {
-  /** Overall diameter in points. Spoke geometry is derived from it. */
+  /** Overall diameter in points. Border width is derived from it. */
   size?: number;
   color: string;
-  /** Stops the clock and leaves the ring at rest. */
+  /** Stops the ring and leaves it at rest. */
   spinning?: boolean;
   testID?: string;
 }
 
 /**
- * The iOS activity indicator, drawn with eight Views.
+ * A smooth rotating ring (Fuse / SwiftUI ProgressView look).
  *
- * **One clock drives eight styles.** A shared value runs 0 to 1 on repeat and
- * every spoke derives its own opacity from it inside a worklet, so the whole
- * indicator is one animation on the UI thread rather than eight. That is the
- * difference between this being free at 120Hz and it being eight timers
- * competing for the same frame.
+ * **One shared value drives one transform.** A single `rotate` on the UI thread
+ * replaces the eight-spoke opacity cascade. The ring never blocks on the JS
+ * thread, so it keeps spinning during OAuth hand-offs and heavy renders.
  *
- * **Nothing rotates.** The obvious implementation spins a parent transform, and
- * that is wrong twice: a rotating transform on eight children is more work per
- * frame than eight opacity writes, and a rotation is continuous while the real
- * indicator steps from spoke to spoke. Opacity is also the one property that
- * cannot cause a layout pass, which matters because this appears inside a button
- * that must not resize while it is busy.
+ * **Two concentric views, no SVG.**
+ * - A static `View` with `opacity: 0.2` is the faint track.
+ * - An `Animated.View` with only `borderTopColor` set is the bright arc; it
+ *   rotates via `useAnimatedStyle`. Putting the opacity on the track view rather
+ *   than the border colour avoids any need to parse or modify the colour string
+ *   that the caller supplies.
  *
- * **`ReduceMotion.System`.** A user who has asked the OS to reduce motion gets a
- * static ring at its resting opacities rather than nothing at all: the control
- * still says "working", it just does not move. Removing the indicator entirely
- * would take the information away with the animation.
+ * **`ReduceMotion.System`.** Passing `ReduceMotion.System` to `withRepeat` means
+ * the OS's Reduce Motion flag is respected without any JS-side check: the loop
+ * simply does not restart after the first revolution, leaving a static ring that
+ * still communicates "working". `cancelAnimation` on unmount prevents a dangling
+ * loop from accumulating on the UI runtime.
  */
 function SpinnerView({ size = 16, color, spinning = true, testID }: Props) {
-  const progress = useSharedValue(0);
-  const { length, thickness, radius, inset } = spokeMetrics(size);
+  const rot = useSharedValue(0);
+  const borderWidth = ringBorderWidth(size);
 
   useEffect(() => {
     if (!spinning) {
-      cancelAnimation(progress);
-      progress.value = 0;
+      cancelAnimation(rot);
+      rot.value = 0;
       return;
     }
-    progress.value = 0;
-    progress.value = withRepeat(
-      // Linear, and it must be: an eased revolution speeds up and slows down
-      // within one turn, which reads as the indicator hesitating.
-      withTiming(1, { duration: DURATION.spinnerCycle, easing: Easing.linear }),
+    rot.value = 0;
+    rot.value = withRepeat(
+      withTiming(360, { duration: DURATION.spinnerCycle, easing: Easing.linear }),
       -1,
       false,
       undefined,
       ReduceMotion.System,
     );
-    return () => cancelAnimation(progress);
-  }, [progress, spinning]);
+    return () => cancelAnimation(rot);
+  }, [rot, spinning]);
+
+  const animated = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${rot.value}deg` }],
+  }));
 
   return (
     <View
       testID={testID}
       accessible={false}
       // Hidden from screen readers on purpose. The control that owns this already
-      // announces its own busy state through its label, and a second
-      // announcement of "loading" is noise on top of the sentence that matters.
+      // announces its busy state through its label; a second announcement is noise.
       importantForAccessibility="no-hide-descendants"
       style={[styles.root, { width: size, height: size }]}>
-      {Array.from({ length: SPOKES }, (_, index) => (
-        <Spoke
-          key={index}
-          index={index}
-          progress={progress}
-          spinning={spinning}
-          color={color}
-          size={size}
-          length={length}
-          thickness={thickness}
-          radius={radius}
-          inset={inset}
-        />
-      ))}
+      {/* Faint track ring: always visible so the control reads as "working" even
+          when Reduce Motion is on and the arc is static. */}
+      <View
+        pointerEvents="none"
+        style={[
+          styles.ring,
+          styles.track,
+          {
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            borderWidth,
+            borderColor: color,
+          },
+        ]}
+      />
+      {/* Rotating arc: only the top border is coloured; the other three sides are
+          transparent, producing the single-stroke arc that spins. */}
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.ring,
+          styles.arc,
+          {
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            borderWidth,
+            borderTopColor: color,
+          },
+          animated,
+        ]}
+      />
     </View>
-  );
-}
-
-interface SpokeProps {
-  index: number;
-  progress: SharedValue<number>;
-  spinning: boolean;
-  color: string;
-  size: number;
-  length: number;
-  thickness: number;
-  radius: number;
-  inset: number;
-}
-
-function Spoke({
-  index,
-  progress,
-  spinning,
-  color,
-  size,
-  length,
-  thickness,
-  radius,
-  inset,
-}: SpokeProps) {
-  const animated = useAnimatedStyle(() => ({
-    opacity: spinning ? spokeOpacity(index, progress.value) : MIN_OPACITY * 2,
-  }));
-
-  return (
-    <Animated.View
-      pointerEvents="none"
-      style={[
-        styles.spoke,
-        {
-          width: thickness,
-          height: length,
-          borderRadius: radius,
-          backgroundColor: color,
-          left: size / 2 - thickness / 2,
-          top: size / 2 - inset - length,
-          // Rotation about the centre of the ring rather than the centre of the
-          // capsule, which is what puts each spoke on the circle instead of
-          // stacking all eight on top of each other.
-          transform: [
-            { translateY: inset + length / 2 },
-            { rotate: `${spokeAngle(index)}deg` },
-            { translateY: -(inset + length / 2) },
-          ],
-        },
-        animated,
-      ]}
-    />
   );
 }
 
@@ -154,9 +118,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // The only static property a spoke has. Everything else is derived from the
-  // requested diameter, so it cannot live in a stylesheet.
-  spoke: {
+  ring: {
     position: 'absolute',
+  },
+  // Faint circular track behind the arc. opacity + color = ~20% tint without
+  // needing to know the color format the caller passes.
+  track: {
+    opacity: 0.2,
+  },
+  // The arc itself: only borderTopColor is populated; the other three sides are
+  // transparent so only one stroke is visible as the ring rotates.
+  arc: {
+    borderColor: 'transparent',
   },
 });

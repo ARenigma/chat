@@ -9,6 +9,16 @@ import {
 } from '../theme/icons.generated';
 
 /**
+ * PappalGlyphs — custom icon font that ships a FILLED heart at U+2665.
+ * Used instead of the Lucide filled face for the favourite toggle, because
+ * Lucide has no filled twin for 'heart'; the active state is colour-only in
+ * the standard pipeline. PappalGlyphs fills that gap for this one glyph.
+ */
+const PAPPAL_GLYPHS_FAMILY = 'PappalGlyphs';
+/** U+2665 BLACK HEART SUIT — the filled-heart glyph in PappalGlyphs.ttf. */
+const FILLED_HEART_CHAR = '♥';
+
+/**
  * Every icon in the app, rendered as a Lucide glyph in a font.
  *
  * **A font, not SVG and not hand-drawn geometry.** react-native-svg is banned
@@ -59,8 +69,39 @@ const ICON_SCALE = 1.2;
 
 function IconView({ name, active = false, size = DEFAULT_SIZE, color, testID, accessibilityLabel }: Props) {
   const theme = useTheme();
-  const glyph = ICON_GLYPH[name];
   const px = Math.round(size * ICON_SCALE);
+  const resolvedColor = color ?? theme.color.text.primary;
+
+  // Filled heart: PappalGlyphs provides a solid filled heart at U+2665.
+  // Lucide ships no filled 'heart' twin, so the active state would otherwise
+  // be colour-only. This branch adds the shape signal for the favourite toggle.
+  if (active && name === 'heart') {
+    return (
+      <Text
+        testID={testID}
+        allowFontScaling={false}
+        accessible={accessibilityLabel !== undefined}
+        accessibilityLabel={accessibilityLabel}
+        importantForAccessibility={
+          accessibilityLabel === undefined ? 'no-hide-descendants' : 'yes'
+        }
+        style={[
+          styles.glyph,
+          {
+            fontFamily: PAPPAL_GLYPHS_FAMILY,
+            fontSize: px,
+            lineHeight: px,
+            width: px,
+            height: px,
+            color: resolvedColor,
+          },
+        ]}>
+        {FILLED_HEART_CHAR}
+      </Text>
+    );
+  }
+
+  const glyph = ICON_GLYPH[name];
   return (
     <Text
       testID={testID}
@@ -80,7 +121,7 @@ function IconView({ name, active = false, size = DEFAULT_SIZE, color, testID, ac
           lineHeight: px,
           width: px,
           height: px,
-          color: color ?? theme.color.text.primary,
+          color: resolvedColor,
         },
       ]}>
       {glyph}

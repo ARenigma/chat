@@ -19,6 +19,7 @@ import {
   useConversationId,
   useConversations,
   useMessages,
+  useCalls,
   useProfile,
   useProviders,
   useSelfId,
@@ -49,6 +50,7 @@ import { NoticeBar } from '../components/NoticeBar';
 import { PeerTyping } from '../components/PeerTyping';
 import { Pressable } from '../components/Pressable';
 import { TokenCounter } from '../components/TokenCounter';
+import { CallLogRow } from '../components/CallLogRow';
 import { MyTurn, PeerTurn, type ImageBody, type Quote, type VoiceBody } from '../components/Turn';
 import { MessageActionsSheet } from './MessageActionsSheet';
 import { ReviewSheet } from './ReviewSheet';
@@ -195,6 +197,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   const { data: openedId } = useConversationId(needsOpen ? providerId : null);
   const conversationId = knownThread?.id ?? openedId;
   const { data: messages, isPending: messagesPending } = useMessages(conversationId);
+  const { data: callRecords } = useCalls(conversationId);
 
   const { notifyTyping } = useLiveConversation(conversationId, selfId);
   useMarkRead(conversationId, selfId);
@@ -301,12 +304,36 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   const rows = useMemo(() => {
     const list = messages ?? [];
     const receiptFor = lastOwnMessageId(list, selfId);
-    return list.map((m, i) => {
+
+    type MessageRow = {
+      kind: 'message';
+      localKey: string;
+      sortAt: string;
+      message: (typeof list)[number];
+      mine: boolean;
+      first: boolean;
+      last: boolean;
+      showReceipt: boolean;
+      opensDay: boolean;
+      voice?: VoiceBody;
+      image?: ImageBody;
+    };
+    type CallRow = {
+      kind: 'call';
+      localKey: string;
+      sortAt: string;
+      call: NonNullable<typeof callRecords>[number];
+    };
+
+    const messageRows: MessageRow[] = list.map((m, i) => {
       const newer = list[i - 1];
       const older = list[i + 1];
       const audio = voiceOf(m);
       const picture = imageOf(m);
       return {
+        kind: 'message' as const,
+        localKey: m.localKey ?? m.id,
+        sortAt: m.created_at,
         message: m,
         mine: m.sender_id === selfId,
         first: !older || older.sender_id !== m.sender_id,
@@ -332,7 +359,19 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
               } as ImageBody),
       };
     });
-  }, [messages, selfId]);
+
+    const callRows: CallRow[] = (callRecords ?? []).map(c => ({
+      kind: 'call' as const,
+      localKey: `call-${c.id}`,
+      sortAt: c.created_at,
+      call: c,
+    }));
+
+    // Merge and sort newest-first (matches the inverted FlatList).
+    return [...messageRows, ...callRows].sort(
+      (a, b) => new Date(b.sortAt).getTime() - new Date(a.sortAt).getTime(),
+    );
+  }, [messages, selfId, callRecords]);
 
   /**
    * Reactions for the loaded page, and the parents of any replies in it.
@@ -446,6 +485,15 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
 
   const renderItem = useCallback(
     ({ item }: ListRenderItemInfo<(typeof rows)[number]>) => {
+      // Call log row: non-interactive inline entry.
+      if (item.kind === 'call') {
+        return (
+          <View style={styles.turn}>
+            <CallLogRow call={item.call} />
+          </View>
+        );
+      }
+
       const { message, mine, first, last, showReceipt, voice, image } = item;
       const stamp = last ? timeOfDay(message.created_at) : undefined;
       // Only reached when `voice` and `image` are unset, which the payload
@@ -528,12 +576,12 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   // A brand-new chat (no known thread) has nothing to load: show the "Say hi"
   // empty state the instant the screen mounts rather than a spinner while
   // `open_conversation` creates the row in the background. The transcript spinner
-  // is reserved for a KNOWN thread whose messages are still in flight — the only
-  // case where content is genuinely coming. `conversationPending` no longer gates
-  // the view: creating a conversation is a background write, not a load.
+  // is reserved for a KNOWN thread whose messages have NEVER been fetched before
+  // (messages === undefined). If React Query has stale cached data, render it
+  // immediately — no spinner on a background refetch.
   const loading =
     (conversationId === undefined && threads === undefined) ||
-    (knownThread !== undefined && conversationId !== undefined && messagesPending);
+    (knownThread !== undefined && conversationId !== undefined && messages === undefined && messagesPending);
   const empty = !loading && rows.length === 0;
 
   /**
@@ -738,10 +786,9 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
           <FlatList
             data={rows}
             inverted
-            // localKey, not id: a settled row keeps the key its optimistic
-            // version had, so the bubble's component survives confirmation and
-            // the launch animation does not replay. See lib/transcript.ts.
-            keyExtractor={r => r.message.localKey ?? r.message.id}
+            // localKey carries the stable key for both message rows and call rows.
+            // Message rows use localKey from transcript; call rows use `call-${id}`.
+            keyExtractor={r => r.localKey}
             renderItem={renderItem}
             ListHeaderComponent={header}
             ListFooterComponent={footer}

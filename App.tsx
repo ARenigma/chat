@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, BackHandler, Linking, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { Alert, BackHandler, Linking, PermissionsAndroid, Platform, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { FadeIn, FadeOut, SlideInRight, SlideOutRight } from 'react-native-reanimated';
@@ -252,6 +252,40 @@ function Root() {
     void startPush().then(unsub => {
       unsubscribeToken = unsub;
     });
+
+    // Prime runtime permissions once per sign-in so the first call, voice note,
+    // or video does not hit a missing-grant crash. POST_NOTIFICATIONS is already
+    // handled by startPush(); we request the remaining two here, sequentially
+    // (Android shows each dialog in turn before proceeding to the next).
+    // Fire-and-forget: a denial just means the event-time guards in
+    // callSession / recorder / composer remain the fallback for that feature.
+    // Do NOT block boot or rendering — this is a background operation.
+    void (async () => {
+      try {
+        if (Platform.OS !== 'android') {
+          return;
+        }
+        await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+          {
+            title: 'Microphone',
+            message: 'Pappal needs your mic for calls and voice notes.',
+            buttonPositive: 'Allow',
+          },
+        );
+        await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.CAMERA,
+          {
+            title: 'Camera',
+            message: 'Pappal needs your camera for video calls.',
+            buttonPositive: 'Allow',
+          },
+        );
+      } catch {
+        // Permission priming is best-effort; failures here do not affect boot.
+      }
+    })();
+
     const unsubscribeOpen = onNotificationOpen(peerId => {
       setRoute({ name: 'chat', providerId: peerId, from: 'home' });
     });
@@ -620,8 +654,8 @@ function SignedIn({
         // The transition runs on the UI thread (Reanimated), off the JS thread.
         <Animated.View
           style={styles.overlay}
-          entering={SlideInRight.duration(240)}
-          exiting={SlideOutRight.duration(200)}>
+          entering={SlideInRight.duration(160)}
+          exiting={SlideOutRight.duration(150)}>
           {route.name === 'chat' ? (
             <ChatScreen
               providerId={route.providerId}

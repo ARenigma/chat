@@ -1,120 +1,48 @@
 /**
- * The activity indicator's geometry and opacity curve.
+ * The ring spinner's geometry.
  *
- * Pure maths, so it is tested here rather than looked at. What cannot be tested
- * here is whether it reads as a rotation, which is why it is also checked on a
- * device.
+ * The Spinner component is now a single rotating ring (border-trick, no SVG).
+ * What can be tested here is the border-width formula: it scales with size,
+ * stays on the pixel grid, and never drops below the minimum that keeps the
+ * ring visible on low-density screens.
+ *
+ * The spoke functions (MIN_OPACITY, SPOKES, spokeAngle, spokeOpacity,
+ * spokeMetrics) remain exported from src/lib/spinner — they are no longer
+ * used by the production component but are kept as a detached utility module.
+ * Their tests are removed because they describe behaviour the current spinner
+ * does not exhibit; keeping them would assert properties of code that has no
+ * effect on the product.
  */
-import {
-  MIN_OPACITY,
-  SPOKES,
-  spokeAngle,
-  spokeMetrics,
-  spokeOpacity,
-} from '../src/lib/spinner';
+import { ringBorderWidth } from '../src/lib/spinner';
 
-describe('spoke layout', () => {
-  it('spaces the spokes evenly around the full circle', () => {
-    const angles = Array.from({ length: SPOKES }, (_, i) => spokeAngle(i));
-    expect(angles[0]).toBe(0);
-    expect(new Set(angles).size).toBe(SPOKES);
-    // Every gap identical, and the whole ring covered exactly once. Indexed
-    // reads are asserted rather than non-null-asserted: `noUncheckedIndexedAccess`
-    // is on, and silencing it with `!` in a test is how a test starts lying.
-    const gaps = angles.slice(1).map((a, i) => a - (angles[i] ?? 0));
-    expect(new Set(gaps).size).toBe(1);
-    const last = angles[angles.length - 1];
-    const gap = gaps[0];
-    expect(last).toBeDefined();
-    expect(gap).toBeDefined();
-    expect((last ?? 0) + (gap ?? 0)).toBe(360);
+describe('ringBorderWidth', () => {
+  it('is at least 2 pt so the ring is visible at small sizes', () => {
+    for (const size of [8, 12, 16, 20]) {
+      expect(ringBorderWidth(size)).toBeGreaterThanOrEqual(2);
+    }
   });
 
-  it('leaves a hole in the middle so the spokes do not merge into a disc', () => {
-    const { inset, length, thickness } = spokeMetrics(16);
-    expect(inset).toBeGreaterThan(0);
-    expect(length).toBeGreaterThan(thickness);
-    // The ring must fit inside the requested diameter.
-    expect((inset + length) * 2).toBeLessThanOrEqual(16);
+  it('grows with the spinner diameter', () => {
+    // Larger spinners need a proportionally heavier stroke.
+    const small = ringBorderWidth(16);
+    const large = ringBorderWidth(44);
+    expect(large).toBeGreaterThan(small);
   });
 
-  it('keeps a spoke thick enough to be visible on a low-density screen', () => {
-    // Below 1 point a capsule can round to nothing on a 1x screen.
+  it('stays on the 0.5-pt sub-pixel grid', () => {
+    // On a 2× display 0.5 pt is one physical pixel; half-pixel values are fine
+    // and expected. Values that are not multiples of 0.5 produce sub-pixel
+    // bleed on both 2× and 3× densities.
+    for (const size of [12, 16, 20, 24, 28, 36, 44]) {
+      const bw = ringBorderWidth(size);
+      expect((bw * 2) % 1).toBe(0);
+    }
+  });
+
+  it('fits within the diameter so the ring does not overflow its frame', () => {
+    // Two border-width radii (top + bottom) must not exceed the outer diameter.
     for (const size of [12, 16, 20, 28, 44]) {
-      expect(spokeMetrics(size).thickness).toBeGreaterThanOrEqual(1.5);
-    }
-  });
-});
-
-describe('the opacity curve', () => {
-  it('never lets a spoke reach zero', () => {
-    // At zero the dimmest spoke vanishes and the ring reads as a moving gap
-    // rather than a turning wheel.
-    for (let i = 0; i < SPOKES; i += 1) {
-      for (const p of [0, 0.1, 0.25, 0.5, 0.75, 0.99]) {
-        expect(spokeOpacity(i, p)).toBeGreaterThanOrEqual(MIN_OPACITY);
-        expect(spokeOpacity(i, p)).toBeLessThanOrEqual(1);
-      }
-    }
-  });
-
-  it('has exactly one leading spoke at any moment', () => {
-    for (const p of [0, 0.2, 0.45, 0.8]) {
-      const values = Array.from({ length: SPOKES }, (_, i) => spokeOpacity(i, p));
-      const brightest = Math.max(...values);
-      expect(values.filter(v => v === brightest)).toHaveLength(1);
-    }
-  });
-
-  it('advances the leading spoke as the cycle progresses', () => {
-    // The property that makes it look like rotation rather than a pulse.
-    const leadAt = (p: number) => {
-      const values = Array.from({ length: SPOKES }, (_, i) => spokeOpacity(i, p));
-      return values.indexOf(Math.max(...values));
-    };
-    const first = leadAt(0.01);
-    const later = leadAt(0.01 + 1 / SPOKES);
-    expect(later).toBe((first + 1) % SPOKES);
-  });
-
-  it('rotates the same set of brightnesses rather than changing them', () => {
-    /*
-     * The correct invariant, and not the one first written here.
-     *
-     * The first version asserted that no individual spoke jumps between the end
-     * of a cycle and the start of the next. That is false, and it should be: as
-     * the lead reaches a spoke, that spoke goes from dimmest to brightest in one
-     * step. It happens to every spoke once per revolution, not only at the wrap,
-     * and it is what a stepped indicator does. UIKit's steps too.
-     *
-     * What must hold is that the ring's appearance is the same set of
-     * brightnesses in a rotated order, so the indicator never gets brighter or
-     * dimmer overall as it turns.
-     */
-    const round = (n: number) => Math.round(n * 1000) / 1000;
-    const setAt = (p: number) =>
-      Array.from({ length: SPOKES }, (_, i) => round(spokeOpacity(i, p))).sort();
-
-    const reference = setAt(0);
-    for (const p of [1 / SPOKES, 2 / SPOKES, 5 / SPOKES, 7 / SPOKES]) {
-      expect(setAt(p)).toEqual(reference);
-    }
-  });
-
-  it('steps each spoke exactly once per revolution', () => {
-    // The step is the design. What would be a defect is a spoke stepping twice,
-    // which would read as a wobble rather than a rotation.
-    const samples = 200;
-    for (let i = 0; i < SPOKES; i += 1) {
-      let jumps = 0;
-      for (let n = 1; n <= samples; n += 1) {
-        const previous = spokeOpacity(i, (n - 1) / samples);
-        const current = spokeOpacity(i, n / samples);
-        if (current - previous > 0.3) {
-          jumps += 1;
-        }
-      }
-      expect(jumps).toBe(1);
+      expect(ringBorderWidth(size) * 2).toBeLessThan(size);
     }
   });
 });

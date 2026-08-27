@@ -90,6 +90,7 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
         peerId: String,
         callerName: String,
         avatarUrl: String,
+        medium: String,
         promise: Promise,
     ) {
         try {
@@ -99,6 +100,7 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
                 peerId = peerId,
                 callerName = callerName,
                 avatarUrl = avatarUrl.ifEmpty { null },
+                medium = medium,
             )
             promise.resolve(true)
         } catch (error: Exception) {
