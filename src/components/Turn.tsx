@@ -300,6 +300,9 @@ function PeerTurnView({
         {first ? <Avatar initial={initial} size={26} /> : null}
       </View>
       <View style={styles.peerColumn}>
+        {/* Time above the message (#7, Amit): the stamp leads the group's last
+            bubble rather than trailing under it. */}
+        {timestamp ? <Text style={styles.stamp}>{timestamp}</Text> : null}
         {/* A plain RN Pressable, not the animated one: a scale spring on a
             long-press over body text reads as an accident, and this must not
             look like a tap target during normal reading. */}
@@ -339,7 +342,6 @@ function PeerTurnView({
         {reactions && reactions.length > 0 ? (
           <ReactionRow reactions={reactions} testID="reactions-peer" />
         ) : null}
-        {timestamp ? <Text style={styles.stamp}>{timestamp}</Text> : null}
       </View>
     </Animated.View>
   );
@@ -391,6 +393,11 @@ function MyTurnView({
   const styles = useStyles(makeStyles);
   return (
     <Animated.View entering={bubbleLaunch} style={styles.myColumn}>
+      {/* Time above the message (#7, Amit). The receipt ("Sent"/"Read") still
+          trails below, where iOS keeps it. */}
+      {timestamp !== undefined ? (
+        <Text style={styles.stamp}>{timestamp}</Text>
+      ) : null}
       <Pressable
         onLongPress={onLongPress}
         delayLongPress={450}
@@ -426,9 +433,6 @@ function MyTurnView({
       </Pressable>
       {reactions && reactions.length > 0 ? (
         <ReactionRow reactions={reactions} testID="reactions-mine" />
-      ) : null}
-      {timestamp !== undefined ? (
-        <Text style={styles.stamp}>{timestamp}</Text>
       ) : null}
       {receipt !== undefined ? (
         <Text

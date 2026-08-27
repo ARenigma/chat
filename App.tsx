@@ -6,6 +6,7 @@ import Animated, { FadeIn, SlideInRight, SlideOutRight } from 'react-native-rean
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from './src/theme/tokens';
 import { ThemeProvider, useStyles, useThemeMode } from './src/theme/ThemeProvider';
+import { fadeSwapFast } from './src/theme/motion';
 import { UpdateBanner } from './src/components/UpdateBanner';
 import { BLOOM_CONTENT_MS } from './src/lib/bloom';
 import { assertEnv } from './src/lib/env';
@@ -539,7 +540,7 @@ function SignedIn({
 
       {/* Favourites is a top-level tab: the people this member has hearted. */}
       {route.name === 'favourites' ? (
-        <Animated.View style={styles.tabLayer} entering={FadeIn.duration(160)}>
+        <Animated.View style={styles.tabLayer} entering={fadeSwapFast}>
           <FavouritesScreen onOpenProvider={openProvider} />
         </Animated.View>
       ) : null}
@@ -547,7 +548,7 @@ function SignedIn({
       {/* Calls is a top-level tab (empty state for now). A real destination so
           the nav's Calls icon does something on tap rather than reading as dead. */}
       {route.name === 'calls' ? (
-        <Animated.View style={styles.tabLayer} entering={FadeIn.duration(160)}>
+        <Animated.View style={styles.tabLayer} entering={fadeSwapFast}>
           <CallsScreen />
         </Animated.View>
       ) : null}
@@ -558,7 +559,7 @@ function SignedIn({
       {route.name === 'settings' ? (
         // A tab switch, not a push: a quick cross-fade rather than a slide, so
         // Home↔Settings does not read as a sideways jump.
-        <Animated.View style={styles.tabLayer} entering={FadeIn.duration(160)}>
+        <Animated.View style={styles.tabLayer} entering={fadeSwapFast}>
           <SettingsSheet
             onBack={backToHome}
             // A fixed bottom-nav tab on the member tree: the Home tab is the way

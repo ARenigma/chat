@@ -8,6 +8,7 @@ import Animated, {
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { INTERACTION, springTo } from '../theme/motion';
+import { tick } from '../lib/haptics';
 import { Icon } from './Icon';
 
 interface Props {
@@ -141,7 +142,12 @@ function ToggleView({
 
   return (
     <RNPressable
-      onPress={() => onValueChange(!value)}
+      onPress={() => {
+        // A latch commit is a discrete, physical action — a 10ms tick completes
+        // the Fuse feedback the spring already carries visually (#16).
+        tick();
+        onValueChange(!value);
+      }}
       onPressIn={() => {
         held.value = springTo(1, 'snap');
       }}

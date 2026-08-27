@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { formatRupees, formatTokens, PAYMENTS_ENABLED, RECHARGE_PACKS } from '../lib/rates';
+import { tick } from '../lib/haptics';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { useStore } from '../store/useStore';
 import { Button } from '../components/Button';
@@ -82,8 +83,17 @@ export function RechargeScreen() {
         showsVerticalScrollIndicator={false}
         {...SCROLL_PHYSICS}
         contentContainerStyle={styles.scroll}>
-        {/* The dark balance card. */}
-        <View style={styles.balanceCard}>
+        {/* The balance banner (#13, Amit): a warm gradient field in the same
+            language as the onboarding/hero surfaces, built from the accent tokens
+            (not raw hex) so it follows a theme change and stays inside the accent
+            budget. */}
+        <View
+          style={[
+            styles.balanceCard,
+            {
+              experimental_backgroundImage: `linear-gradient(140deg, ${theme.color.bg.accent} 0%, ${theme.color.bg.accentStrong} 100%)`,
+            },
+          ]}>
           <Text allowFontScaling style={styles.balanceLabel}>
             Balance
           </Text>
@@ -111,7 +121,10 @@ export function RechargeScreen() {
               // which collapsed each card to one character wide.
               <View key={pack} style={styles.cardSlot}>
                 <Pressable
-                  onPress={() => setAmount(pack)}
+                  onPress={() => {
+                    tick();
+                    setAmount(pack);
+                  }}
                   testID={`pack-${pack}`}
                   accessibilityLabel={`Add ${formatTokens(pack)} tokens${on ? ', selected' : ''}`}
                   press="card"
@@ -210,7 +223,9 @@ const makeStyles = (t: Theme) =>
       paddingBottom: TOKENS.space.xl,
     },
     balanceCard: {
-      backgroundColor: t.color.bg.inverse,
+      // Fallback fill under the gradient (older paint paths); the warm coral
+      // gradient is applied inline in the component from the accent tokens.
+      backgroundColor: t.color.bg.accentStrong,
       borderRadius: TOKENS.radius.lg,
       borderCurve: 'continuous',
       padding: TOKENS.space.lg,
@@ -219,17 +234,17 @@ const makeStyles = (t: Theme) =>
     },
     balanceLabel: {
       ...TOKENS.typography.subhead,
-      color: t.color.text.onInverse,
-      opacity: 0.7,
+      color: t.color.text.onAccent,
+      opacity: 0.8,
     },
     balanceValue: {
       ...TOKENS.typography.displayLarge,
-      color: t.color.text.onInverse,
+      color: t.color.text.onAccent,
     },
     balanceHint: {
       ...TOKENS.typography.captionSmall,
-      color: t.color.text.onInverse,
-      opacity: 0.6,
+      color: t.color.text.onAccent,
+      opacity: 0.7,
     },
     section: {
       ...TOKENS.typography.headline,

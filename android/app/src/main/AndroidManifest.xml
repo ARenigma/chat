@@ -41,6 +41,16 @@
       only — no video, no background use.
     -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <!--
+      Camera is optional hardware, not a requirement (#18). Without this, declaring
+      CAMERA makes Play treat a camera as required and hides the app from
+      camera-less devices (some tablets/Chromebooks/foldables) — which cuts against
+      the large-screen posture. The photo-capture "+" is one optional entry point,
+      so the app must install everywhere and simply not offer capture where there
+      is no camera.
+    -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
     <!--
       Belt and braces for the Play Data Safety declaration: a future transitive

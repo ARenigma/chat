@@ -6,6 +6,7 @@ import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ConversationSummary } from '../lib/database.types';
 import { initialOf } from '../lib/display';
 import { readPresence } from '../lib/presence';
+import { SCROLL_PHYSICS } from '../lib/scroll';
 import { listStamp } from '../lib/datetime';
 import { track } from '../lib/telemetry';
 import { useConversations, useProfile } from '../api/chat';
@@ -253,6 +254,7 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings }: Props
         </View>
       ) : (
         <SectionList
+          {...SCROLL_PHYSICS}
           sections={sections}
           keyExtractor={t => t.id}
           renderItem={renderItem}
