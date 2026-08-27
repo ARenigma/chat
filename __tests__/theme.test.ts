@@ -813,14 +813,14 @@ describe('accent budget is enforced in code, not just documented', () => {
       'CompletionRow.tsx',
       'EmptyMark.tsx',
       /*
-       * The docked bottom bar (FloatingToolbar) is deliberately NOT on this list
-       * any more. It carried coral on the active tab's disc through v13; the
-       * Sweprek redesign moved the active signal to a black pill (bg/inverse),
-       * because black is reserved for nav highlight only and the coral stays the
-       * brand accent. A nav that no longer uses the accent has no place in the
-       * accent budget, and leaving it here would let the coral creep back in
-       * unremarked.
+       * The bottom bar's active tab (FloatingToolbar). It went coral → black slab
+       * → grey box, and both read badly on device (Amit, 2026-08-27). The selected
+       * destination is now a soft accent-tint pill with a coral filled glyph — the
+       * "you are here" signal, which is a state, exactly what the budget reserves
+       * the coral for. An icon-only tab bar (iMessage/Telegram) colours its chosen
+       * tab; this is that.
        */
+      'FloatingToolbar.tsx',
       /*
        * v13 Home. Two accent uses, both states/actions: the featured hero's warm
        * field (the one designed coral surface on the screen, same class as the

@@ -1,7 +1,6 @@
 import React from 'react';
 import { StyleSheet, View, type ViewProps } from 'react-native';
-import { BlurView } from '@react-native-community/blur';
-import { useTheme, useThemeMode } from '../theme/ThemeProvider';
+import { useTheme } from '../theme/ThemeProvider';
 
 interface Props extends ViewProps {
   children: React.ReactNode;
@@ -14,40 +13,25 @@ interface Props extends ViewProps {
 }
 
 /**
- * A frosted bar: real Gaussian backdrop blur of whatever scrolls behind it.
+ * A frosted bar: a translucent `bg/chrome` pane the content scrolls under, with a
+ * single hairline for the edge.
  *
- * S22-TRIAL MODE (Amit, 2026-08-27). This uses `@react-native-community/blur`'s
- * `BlurView`, whose Android backend (Dimezis) applies `RenderEffect` on API 31+.
- * Research verdict: the fullscreen milky haze this produced earlier was the
- * EMULATOR's software GL failing RenderEffect — on a real S22 Ultra (Adreno,
- * hardware GPU) it renders true localized blur. So expect haze on the emulator
- * and judge this on the device.
- *
- * Caveat, also from research: this library is not migrated to the New
- * Architecture ("Could not find generated setter for BlurViewManager"), so its
- * props may not bind and the tint can fall back to the library's dark default. If
- * the blur looks right on the S22 but the tint is off, the fix is a small custom
- * Fabric/Kotlin module wrapping the same Dimezis view with proper prop binding —
- * a drop-in swap for this component. If the blur itself is bad, revert `BlurView`
- * to a plain `bg/chrome` fill (the previous, reliable translucent frost).
- *
- * A `bg/chrome` View sits BEHIND the blur as the fallback surface, so if the blur
- * fails to render anything the bar is still a translucent pane rather than
- * transparent.
+ * Real Gaussian `BlurView` (`@react-native-community/blur`) was tried and pulled
+ * out twice — once on the New-Architecture emulator, then confirmed on a real
+ * Galaxy S22 Ultra (Amit, 2026-08-27): it rendered a full-window white veil on
+ * hardware too, not a localized blur, because the library never bound its props
+ * under the New Architecture. So this is the reliable half: `bg/chrome` (white/
+ * black at 0.80) as a translucent fill, which over an *overlay* bar still lets the
+ * content scrolling beneath read through — a genuine pane of frosted glass, just
+ * without the Gaussian softening. If a real blur is ever wanted it needs a custom
+ * Fabric/RenderEffect module, not that library.
  */
 export function Frost({ children, style, edge, ...rest }: Props) {
   const theme = useTheme();
-  const { isDark } = useThemeMode();
   return (
     <View style={style} {...rest}>
       <View
         style={[StyleSheet.absoluteFill, { backgroundColor: theme.color.bg.chrome }]}
-      />
-      <BlurView
-        style={StyleSheet.absoluteFill}
-        blurType={isDark ? 'dark' : 'light'}
-        blurAmount={16}
-        overlayColor={theme.color.bg.chrome}
       />
       {edge !== undefined ? (
         <View
