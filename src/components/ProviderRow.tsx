@@ -33,6 +33,14 @@ interface Props {
    * can be hoisted as stable callbacks in the parent.
    */
   onPressAvatar?: (id: string) => void;
+  /**
+   * Whether to run the entrance animation. Defaults to true.
+   *
+   * Set to false for cells that FlashList has already shown once (tracked by the
+   * parent via a useRef Set) so that scroll-recycling a cell does not re-fire the
+   * stagger animation on every appearance.
+   */
+  animateEntrance?: boolean;
 }
 
 /**
@@ -112,7 +120,7 @@ export const ROW_SEPARATOR_INSET = ROW_AVATAR + TOKENS.space.sm;
  * making rows variable-height, and a list whose rows disagree about their height
  * cannot carry a hairline convincingly.
  */
-function ProviderRowView({ provider, index, isLast, onPress, onPressAvatar }: Props) {
+function ProviderRowView({ provider, index, isLast, onPress, onPressAvatar, animateEntrance }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const initial = initialOf(provider.display_name);
@@ -149,7 +157,7 @@ function ProviderRowView({ provider, index, isLast, onPress, onPressAvatar }: Pr
     .join(', ');
 
   return (
-    <Animated.View entering={enterRow(index)}>
+    <Animated.View entering={animateEntrance !== false ? enterRow(index) : undefined}>
       <Pressable
         onPress={() => onPress(provider.id)}
         testID={`provider-${provider.id}`}

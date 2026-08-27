@@ -1,5 +1,6 @@
-import React, { memo, useCallback, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { FlashList } from '@shopify/flash-list';
 import {
   ActivityIndicator,
   Image,
@@ -141,6 +142,147 @@ export function HomeScreen({
 
   const loading = convosPending || providersPending;
 
+  // Track which provider ids have already received their entrance animation so
+  // FlashList recycling does not re-fire the stagger on every scroll-back.
+  const seenIds = useRef(new Set<string>());
+  const searchSeenIds = useRef(new Set<string>());
+
+  // When the search query changes the result set changes entirely, so reset the
+  // search-seen set so newly visible items animate in fresh.
+  useEffect(() => {
+    searchSeenIds.current.clear();
+  }, [trimmed]);
+
+  const renderExploreRow = useCallback(
+    ({ item, index }: { item: ProviderSummary; index: number }) => {
+      const animate = !seenIds.current.has(item.id);
+      if (animate) {
+        seenIds.current.add(item.id);
+      }
+      return (
+        <ProviderRow
+          provider={item}
+          index={index}
+          isLast={index === rows.length - 1}
+          onPress={handleOpenProvider}
+          onPressAvatar={handleOpenProvider}
+          animateEntrance={animate}
+        />
+      );
+    },
+    [rows.length, handleOpenProvider],
+  );
+
+  const renderSearchRow = useCallback(
+    ({ item, index }: { item: ProviderSummary; index: number }) => {
+      const animate = !searchSeenIds.current.has(item.id);
+      if (animate) {
+        searchSeenIds.current.add(item.id);
+      }
+      return (
+        <ProviderRow
+          provider={item}
+          index={index}
+          isLast={index === results.length - 1}
+          onPress={handleOpenProvider}
+          onPressAvatar={handleOpenProvider}
+          animateEntrance={animate}
+        />
+      );
+    },
+    [results.length, handleOpenProvider],
+  );
+
+  // ListHeaderComponent for the main Explore FlashList: chats rail + section
+  // head + featured card. Kept outside the FlashList data so only the provider
+  // rows are virtualised; the chrome above them is always rendered.
+  const ExploreHeader = useCallback(
+    () => (
+      <>
+        {chats.length > 0 ? (
+          <View style={styles.rail}>
+            <View style={styles.railHeader}>
+              <Text allowFontScaling style={styles.railLabel}>
+                Chats
+              </Text>
+              <Pressable
+                onPress={onSeeAllChats}
+                testID="chats-see-all"
+                accessibilityLabel="See all chats"
+                press="none"
+                style={styles.seeAll}>
+                <Text allowFontScaling style={styles.seeAllText}>
+                  See all
+                </Text>
+                <Icon name="chevronRight" size={14} color={theme.color.text.secondary} />
+              </Pressable>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              {...SCROLL_PHYSICS}
+              contentContainerStyle={styles.railScroll}>
+              {chats.map(chat => (
+                <RailItem key={chat.id} chat={chat} onPress={handleOpenConversation} />
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
+        <View style={styles.exploreHead}>
+          <Text allowFontScaling style={styles.exploreTitle}>
+            Explore
+          </Text>
+        </View>
+        {featured ? <FeaturedCard provider={featured} onPress={onFeatured} /> : null}
+        {/* Spacing that separates the featured card (or explore heading) from
+            the first provider row — matches the original styles.rows paddingTop. */}
+        <View style={{ height: TOKENS.space.sm }} />
+      </>
+    ),
+    [chats, styles, featured, onFeatured, handleOpenConversation, onSeeAllChats, theme],
+  );
+
+  // ListFooterComponent for the main Explore FlashList: the "tap someone above"
+  // hint that shows only on a fresh install before any conversation exists.
+  const ExploreFooter = useCallback(
+    () =>
+      chats.length === 0 && directory.length > 0 ? (
+        <Pressable
+          onPress={onOpenSettings}
+          testID="home-settings-hint"
+          accessibilityLabel="Account and privacy"
+          press="none"
+          style={styles.settingsHint}>
+          <Text allowFontScaling style={styles.emptyText}>
+            Tap someone above to start a conversation.
+          </Text>
+        </Pressable>
+      ) : null,
+    [chats.length, directory.length, onOpenSettings, styles],
+  );
+
+  // SearchFlashList header and empty components defined as variables to avoid
+  // embedding double-quote literals inside JSX prop expressions (a TSX parser
+  // quirk that causes spurious "Invalid character" errors).
+  const searchListHeader =
+    trimmed === '' ? (
+      <View style={styles.empty}>
+        <Text allowFontScaling style={styles.emptyText}>
+          Search for someone by name or language.
+        </Text>
+      </View>
+    ) : null;
+
+  const noMatchLabel = `No one matches ${JSON.stringify(query.trim())}.`;
+  const searchListEmpty =
+    trimmed !== '' ? (
+      <View style={styles.empty}>
+        <Text allowFontScaling style={styles.emptyText}>
+          {noMatchLabel}
+        </Text>
+      </View>
+    ) : null;
+
   return (
     <View style={styles.root}>
       {/* Nav Row — wordmark, search, ₹ balance. Not the collapsing LargeTitleBar:
@@ -197,139 +339,54 @@ export function HomeScreen({
       </View>
 
       {searching ? (
-        <ScrollView
+        <FlashList
+          data={trimmed === '' ? [] : results}
+          keyExtractor={p => p.id}
+          renderItem={renderSearchRow}
+          ListHeaderComponent={searchListHeader}
+          ListEmptyComponent={searchListEmpty}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           {...SCROLL_PHYSICS}
           contentContainerStyle={[
             styles.scroll,
             { paddingBottom: insets.bottom + NAV_BAR_HEIGHT + TOKENS.space.xl },
-          ]}>
-          {trimmed === '' ? (
-            <View style={styles.empty}>
-              <Text allowFontScaling style={styles.emptyText}>
-                Search for someone by name or language.
-              </Text>
-            </View>
-          ) : results.length > 0 ? (
-            <View style={styles.rows}>
-              {results.map((p, i) => (
-                <ProviderRow
-                  key={p.id}
-                  provider={p}
-                  index={i}
-                  isLast={i === results.length - 1}
-                  // The whole row opens the detailed profile card (#1), matching
-                  // the featured hero — you decide from the profile, then Message
-                  // from there. The avatar opens the same place.
-                  onPress={handleOpenProvider}
-                  onPressAvatar={handleOpenProvider}
-                />
-              ))}
-            </View>
-          ) : (
-            <View style={styles.empty}>
-              <Text allowFontScaling style={styles.emptyText}>
-                No one matches “{query.trim()}”.
-              </Text>
-            </View>
-          )}
-        </ScrollView>
+          ]}
+        />
       ) : loading ? (
         <View style={styles.state}>
           <ActivityIndicator color={theme.color.text.secondary} />
         </View>
       ) : (
-        <ScrollView
+        // Only the provider rows are virtualised. The chats rail, explore head
+        // and featured card live in ListHeaderComponent so they scroll together
+        // with the list but are always fully rendered.
+        <FlashList
+          data={rows}
+          keyExtractor={p => p.id}
+          renderItem={renderExploreRow}
+          ListHeaderComponent={ExploreHeader}
+          ListFooterComponent={ExploreFooter}
+          ListEmptyComponent={
+            featured === null ? (
+              <View style={styles.empty}>
+                <Text allowFontScaling style={styles.emptyText}>
+                  Nobody is available just yet. Check back shortly.
+                </Text>
+              </View>
+            ) : null
+          }
           showsVerticalScrollIndicator={false}
           {...SCROLL_PHYSICS}
           contentContainerStyle={[
             styles.scroll,
-            // The nav is a frosted overlay again, so the list scrolls under it.
+            // The nav is a frosted overlay, so the list scrolls under it.
             // Clear its full height (bar + safe-area inset) plus the usual end
             // breathing room, so the last row lands above the bar rather than
-            // behind it — which is also what keeps any full-width row from
-            // underlapping the bar and stealing its taps.
+            // behind it.
             { paddingBottom: insets.bottom + NAV_BAR_HEIGHT + TOKENS.space.xl },
-          ]}>
-          {/* CHATS rail — horizontal, with a "See all" into the full list (#12). */}
-          {chats.length > 0 ? (
-            <View style={styles.rail}>
-              <View style={styles.railHeader}>
-                <Text allowFontScaling style={styles.railLabel}>
-                  Chats
-                </Text>
-                <Pressable
-                  onPress={onSeeAllChats}
-                  testID="chats-see-all"
-                  accessibilityLabel="See all chats"
-                  press="none"
-                  style={styles.seeAll}>
-                  <Text allowFontScaling style={styles.seeAllText}>
-                    See all
-                  </Text>
-                  <Icon name="chevronRight" size={14} color={theme.color.text.secondary} />
-                </Pressable>
-              </View>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                {...SCROLL_PHYSICS}
-                contentContainerStyle={styles.railScroll}>
-                {chats.map(chat => (
-                  <RailItem key={chat.id} chat={chat} onPress={handleOpenConversation} />
-                ))}
-              </ScrollView>
-            </View>
-          ) : null}
-
-          {/* Explore head */}
-          <View style={styles.exploreHead}>
-            <Text allowFontScaling style={styles.exploreTitle}>
-              Explore
-            </Text>
-          </View>
-
-          {featured ? <FeaturedCard provider={featured} onPress={onFeatured} /> : null}
-
-          {rows.length > 0 ? (
-            <View style={styles.rows}>
-              {rows.map((p, i) => (
-                <ProviderRow
-                  key={p.id}
-                  provider={p}
-                  index={i}
-                  isLast={i === rows.length - 1}
-                  // Row opens the conversation; the avatar opens the profile card.
-                  // The whole row opens the detailed profile card (#1), matching
-                  // the featured hero — you decide from the profile, then Message
-                  // from there. The avatar opens the same place.
-                  onPress={handleOpenProvider}
-                  onPressAvatar={handleOpenProvider}
-                />
-              ))}
-            </View>
-          ) : featured === null ? (
-            <View style={styles.empty}>
-              <Text allowFontScaling style={styles.emptyText}>
-                Nobody is available just yet. Check back shortly.
-              </Text>
-            </View>
-          ) : null}
-
-          {chats.length === 0 && directory.length > 0 ? (
-            <Pressable
-              onPress={onOpenSettings}
-              testID="home-settings-hint"
-              accessibilityLabel="Account and privacy"
-              press="none"
-              style={styles.settingsHint}>
-              <Text allowFontScaling style={styles.emptyText}>
-                Tap someone above to start a conversation.
-              </Text>
-            </Pressable>
-          ) : null}
-        </ScrollView>
+          ]}
+        />
       )}
     </View>
   );
