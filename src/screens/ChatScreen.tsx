@@ -531,13 +531,13 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
    * exists for, so `setActions(null)` happens in the same tick as the open.
    */
   const openActions = useCallback((target: ActionTarget) => {
-    setActions(target);
+    requestAnimationFrame(() => setActions(target));
   }, []);
 
   const reportFromActions = useCallback(() => {
     const target = actions;
     setActions(null);
-    setSafety({ open: true, messageId: target?.id ?? null });
+    requestAnimationFrame(() => setSafety({ open: true, messageId: target?.id ?? null }));
   }, [actions]);
 
   const replyFromActions = useCallback(() => {
@@ -883,7 +883,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
                 a plain View around it or the row does not stretch. */}
             <View style={styles.promptFill}>
               <Pressable
-                onPress={() => setReviewOpen(true)}
+                onPress={() => requestAnimationFrame(() => setReviewOpen(true))}
                 testID="open-review"
                 accessibilityLabel={`Rate your conversation with ${name}`}
                 accessibilityHint="Opens a rating sheet"

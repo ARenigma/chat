@@ -172,7 +172,7 @@ export function RechargeScreen() {
             tested; the gate lives on the sheet's own confirm. */}
         <Button
           label={`Continue ${formatRupees(amount)}`}
-          onPress={() => setPayOpen(true)}
+          onPress={() => requestAnimationFrame(() => setPayOpen(true))}
           testID="recharge-pay"
         />
       </View>

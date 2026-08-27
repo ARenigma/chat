@@ -485,7 +485,7 @@ function ComposerView({
           the trailing control is the send/mic either-or, and a third thing crammed
           in there is the "which does return mean" problem the mic note warns of. */}
       <Pressable
-        onPress={() => setMediaOpen(true)}
+        onPress={() => requestAnimationFrame(() => setMediaOpen(true))}
         disabled={disabled}
         testID="composer-attach"
         accessibilityLabel="Add media"
