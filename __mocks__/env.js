@@ -14,4 +14,8 @@ module.exports = {
   // by default rather than the one nobody ever runs.
   MSG91_WIDGET_ID: '',
   MSG91_WIDGET_TOKEN: '',
+  // Blank so tests run STUN-only; no TURN server is required for unit tests.
+  TURN_URL: '',
+  TURN_USERNAME: '',
+  TURN_CREDENTIAL: '',
 };

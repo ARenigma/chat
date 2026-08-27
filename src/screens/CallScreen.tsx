@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
+import { RTCView } from 'react-native-webrtc';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { CallResult, ProviderSummary } from '../lib/database.types';
+import type { CallMedium } from '../lib/database.types';
 import { initialOf } from '../lib/display';
 import { useConversationId, useProviders } from '../api/chat';
 import { answerCall, endCall, heartbeatCall, startCall } from '../api/calls';
@@ -21,6 +23,8 @@ interface Props {
   direction: CallDirection;
   /** Set for an incoming call; null outgoing until `start_call` returns one. */
   callId: string | null;
+  /** 'voice' for audio-only; 'video' auto-enables the camera on connect. */
+  medium: CallMedium;
   /** Decline (incoming, ringing) or hang up (in call). Leaving the screen ends it. */
   onEnd: () => void;
 }
@@ -52,9 +56,13 @@ type Phase = 'starting' | 'ringing' | 'connecting' | 'active' | 'incoming';
  *
  * Leaving the screen ends the call: an unmount hangs up on the server if the
  * call was live, so End, Decline, and the hardware back button all resolve
- * through one path. Audio only for now; video is a follow-up.
+ * through one path.
+ *
+ * Video: every call negotiates a video transceiver from the start (camera off).
+ * Toggling uses RTCRtpSender.replaceTrack so no renegotiation is needed. If the
+ * call was started as `medium='video'`, the camera is auto-enabled on connect.
  */
-export function CallScreen({ providerId, direction, callId: incomingCallId, onEnd }: Props) {
+export function CallScreen({ providerId, direction, callId: incomingCallId, medium, onEnd }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -97,7 +105,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, onEn
       return;
     }
     let live = true;
-    void startCall(openedId, 'voice').then((r: CallResult | null) => {
+    void startCall(openedId, medium).then((r: CallResult | null) => {
       if (!live) {
         return;
       }
@@ -116,20 +124,40 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, onEn
     return () => {
       live = false;
     };
-  }, [direction, openedId, callId, onEnd, setNotice, openRefill]);
+  }, [direction, openedId, callId, medium, onEnd, setNotice, openRefill]);
 
   const enabled = callId !== null && accepted;
-  const { connState, muted, toggleMute } = useCallSession(callId, direction === 'out', enabled);
+  const {
+    connState,
+    muted,
+    toggleMute,
+    localStream,
+    remoteStream,
+    videoEnabled,
+    remoteVideoEnabled,
+    enableVideo,
+    disableVideo,
+    switchCamera,
+  } = useCallSession(callId, direction === 'out', enabled);
 
-  // Media connected → active; failed → tell the user and leave.
+  // Keep the latest enableVideo in a ref so the connection effect can call it
+  // without becoming a dependency that changes on every render.
+  const enableVideoRef = useRef(enableVideo);
+  enableVideoRef.current = enableVideo;
+
+  // Media connected → active; failed → tell the user and leave. When the call
+  // was started as video, auto-enable the camera once the connection is live.
   useEffect(() => {
     if (connState === 'connected') {
       setPhase('active');
+      if (medium === 'video') {
+        void enableVideoRef.current();
+      }
     } else if (connState === 'failed') {
       setNotice('The call could not connect.');
       onEnd();
     }
-  }, [connState, onEnd, setNotice]);
+  }, [connState, medium, onEnd, setNotice]);
 
   // The in-call timer, once live.
   useEffect(() => {
@@ -167,43 +195,68 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, onEn
 
   const timer = `${Math.floor(elapsed / 60)}:${(elapsed % 60).toString().padStart(2, '0')}`;
   const gradient = `linear-gradient(160deg, ${theme.color.bg.accent} 0%, ${theme.color.bg.accentStrong} 100%)`;
+  const incomingLabel = medium === 'video' ? 'Incoming video call…' : 'Incoming voice call…';
   const status =
     phase === 'active'
       ? timer
       : phase === 'incoming'
-        ? 'Incoming voice call…'
+        ? incomingLabel
         : phase === 'ringing'
           ? 'Ringing…'
           : phase === 'connecting'
             ? 'Connecting…'
             : 'Calling…';
 
+  const showRemoteVideo = remoteVideoEnabled && remoteStream !== null;
+
   return (
     <View style={styles.root}>
       <View style={[styles.fill, { experimental_backgroundImage: gradient }]} />
 
-      <View style={[styles.center, { paddingTop: insets.top }]}>
-        <View style={styles.avatarRings}>
-          {phase === 'incoming' ? <View style={styles.ring} /> : null}
-          <View style={styles.avatar}>
-            {/* The caller's photo, not their initial (#2). Falls back to the
-                monogram only when there is no avatar. */}
-            {provider?.avatar_url ? (
-              <Image source={{ uri: provider.avatar_url }} style={styles.avatarImage} />
-            ) : (
-              <Text allowFontScaling={false} style={styles.avatarInitial}>
-                {initial}
-              </Text>
-            )}
+      {/* Remote video fills the screen when the peer's camera is on. */}
+      {showRemoteVideo ? (
+        <RTCView
+          streamURL={remoteStream.toURL()}
+          objectFit="cover"
+          zOrder={0}
+          style={StyleSheet.absoluteFill}
+        />
+      ) : (
+        <View style={[styles.center, { paddingTop: insets.top }]}>
+          <View style={styles.avatarRings}>
+            {phase === 'incoming' ? <View style={styles.ring} /> : null}
+            <View style={styles.avatar}>
+              {/* The caller's photo, not their initial (#2). Falls back to the
+                  monogram only when there is no avatar. */}
+              {provider?.avatar_url ? (
+                <Image source={{ uri: provider.avatar_url }} style={styles.avatarImage} />
+              ) : (
+                <Text allowFontScaling={false} style={styles.avatarInitial}>
+                  {initial}
+                </Text>
+              )}
+            </View>
           </View>
+          <Text allowFontScaling numberOfLines={1} style={styles.name}>
+            {name}
+          </Text>
+          <Text allowFontScaling style={phase === 'active' ? styles.timer : styles.status}>
+            {status}
+          </Text>
         </View>
-        <Text allowFontScaling numberOfLines={1} style={styles.name}>
-          {name}
-        </Text>
-        <Text allowFontScaling style={phase === 'active' ? styles.timer : styles.status}>
-          {status}
-        </Text>
-      </View>
+      )}
+
+      {/* Local camera preview (picture-in-picture), bottom-right. Only shown
+          when our own camera is on; zOrder=1 places it above the remote feed. */}
+      {videoEnabled && localStream !== null ? (
+        <RTCView
+          streamURL={localStream.toURL()}
+          objectFit="cover"
+          mirror
+          zOrder={1}
+          style={styles.localPip}
+        />
+      ) : null}
 
       <View style={[styles.controls, { paddingBottom: insets.bottom + TOKENS.space.lg }]}>
         {phase === 'incoming' ? (
@@ -220,6 +273,27 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, onEn
               onPress={toggleMute}
               label={muted ? 'Unmute' : 'Mute'}
             />
+            <BarButton
+              testID="call-video-toggle"
+              glyph={videoEnabled ? 'video' : 'videoOff'}
+              active={videoEnabled}
+              onPress={() => {
+                if (videoEnabled) {
+                  disableVideo();
+                } else {
+                  void enableVideo();
+                }
+              }}
+              label={videoEnabled ? 'Camera off' : 'Camera on'}
+            />
+            {videoEnabled ? (
+              <BarButton
+                testID="call-camera-flip"
+                glyph="camera"
+                onPress={switchCamera}
+                label="Flip camera"
+              />
+            ) : null}
             <BarButton testID="call-end" glyph="callEnd" tone="danger" onPress={onEnd} label="End call" />
           </View>
         )}
@@ -304,6 +378,8 @@ function BarButton({
 }
 
 const AVATAR = 120;
+/** Approximate height of the in-call bar + padding, to keep the PiP clear. */
+const CONTROLS_CLEARANCE = 108;
 
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
@@ -425,5 +501,16 @@ const makeStyles = (t: Theme) =>
     },
     accept: {
       backgroundColor: t.color.state.available,
+    },
+    /** Local camera PiP: bottom-right, above the controls bar. */
+    localPip: {
+      position: 'absolute',
+      right: TOKENS.space.md,
+      bottom: CONTROLS_CLEARANCE,
+      width: 120,
+      height: 160,
+      borderRadius: TOKENS.radius.lg,
+      borderCurve: 'continuous',
+      overflow: 'hidden',
     },
   });

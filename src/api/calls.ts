@@ -14,6 +14,7 @@
  */
 import { useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { ENV } from '../lib/env';
 import type { CallMedium, CallResult } from '../lib/database.types';
 
 /**
@@ -26,12 +27,17 @@ import type { CallMedium, CallResult } from '../lib/database.types';
 export const CALLS_ENABLED = true;
 
 /**
- * STUN only. Two peers behind ordinary NATs connect on server-reflexive
- * candidates; a TURN relay for symmetric-NAT cases is a follow-up (it needs a
- * credentialed server, which STUN does not). Google's public STUN is the
- * standard default and costs nothing.
+ * ICE servers. Google's public STUN is always included; a TURN relay is
+ * added only when `TURN_URL` is set in the environment so that development
+ * runs STUN-only without requiring credentials. TURN credentials are read
+ * exclusively from ENV — never hardcoded.
  */
-export const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+export const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  ...(ENV.turnUrl
+    ? [{ urls: ENV.turnUrl, username: ENV.turnUsername, credential: ENV.turnCredential }]
+    : []),
+];
 
 /** Ring someone. Returns the call id, or the reason it was refused. */
 export async function startCall(

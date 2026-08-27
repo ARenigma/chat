@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pappal — grievance redressal</title>
+    <meta
+      name="description"
+      content="Pappal grievance redressal: contact the Grievance Officer, how to file a complaint, and our response timelines."
+    />
+    <meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/tokens.css" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+
+    <header class="site-header">
+      <div class="site-container header-inner">
+        <a href="/" class="mark" aria-label="Pappal home">Pappal</a>
+        <nav class="site-nav" aria-label="Main navigation">
+          <a href="/#how-it-works">How it works</a>
+          <a href="/pricing.html">Pricing</a>
+          <a href="/#become-a-partner">Become a partner</a>
+          <a href="/about.html">About</a>
+        </nav>
+        <div class="header-spacer"></div>
+        <a
+          class="cta cta--accent cta--sm"
+          href="https://gitlab.com/ARenigma/chat/-/releases"
+          rel="noopener noreferrer"
+        >Download</a>
+      </div>
+    </header>
+
+    <main>
+      <div class="page-content">
+
+        <h1>Grievance redressal</h1>
+        <p class="lede">
+          In compliance with the Information Technology (Intermediary Guidelines
+          and Digital Media Ethics Code) Rules, 2021, Pappal has designated a
+          Grievance Officer to address complaints from users.
+        </p>
+
+        <h2>Grievance Officer</h2>
+        <div class="card" style="margin-bottom: var(--space-xl);">
+          <strong>Name</strong>
+          <p>
+            <span class="placeholder">{{GRIEVANCE_OFFICER}}</span><br />
+            <span class="placeholder">{{LEGAL_BUSINESS_NAME}}</span><br />
+            <span class="placeholder">{{REGISTERED_ADDRESS}}</span>
+          </p>
+        </div>
+
+        <p>
+          <strong>Email:</strong>
+          <a href="mailto:{{GRIEVANCE_EMAIL}}"><span class="placeholder">{{GRIEVANCE_EMAIL}}</span></a><br />
+          <strong>Hours:</strong> Monday to Friday, 10:00&ndash;18:00 IST
+          (excluding public holidays)
+        </p>
+
+        <h2>What you can raise here</h2>
+        <ul>
+          <li>A complaint about content or user conduct on the platform</li>
+          <li>A request relating to your personal data (access, correction, deletion)</li>
+          <li>A complaint about how a support request or refund was handled</li>
+          <li>Any other complaint regarding Pappal's services</li>
+        </ul>
+
+        <h2>How to file a grievance</h2>
+        <p>
+          Send an email to the Grievance Officer address above with the subject
+          line "Grievance — [brief topic]". Your email should include:
+        </p>
+        <ul>
+          <li>Your name and the email address you use on Pappal</li>
+          <li>A clear description of your complaint</li>
+          <li>The date the issue occurred</li>
+          <li>Any relevant transaction IDs, message IDs, or screenshots</li>
+        </ul>
+        <p>
+          You may also write by post to the registered address above, marking
+          the envelope "Grievance — Pappal".
+        </p>
+
+        <h2>Response timelines</h2>
+        <div class="card-grid" style="margin-bottom: var(--space-xl);">
+          <div class="card">
+            <strong>Acknowledgement</strong>
+            <p>
+              We acknowledge every grievance within <strong>24 hours</strong> of
+              receipt on business days. If you file outside business hours, the
+              clock starts on the next business day.
+            </p>
+          </div>
+          <div class="card">
+            <strong>Resolution</strong>
+            <p>
+              We aim to resolve most grievances within <strong>15 days</strong>
+              of acknowledgement. Complex matters that require investigation may
+              take up to 30 days; we will notify you if that is the case.
+            </p>
+          </div>
+        </div>
+
+        <h2>Escalation</h2>
+        <p>
+          If you are not satisfied with our response, you may escalate to the
+          relevant regulatory authority. For digital intermediary matters in
+          India, this is the Appellate Committee established under the IT Rules,
+          2021.
+        </p>
+
+        <h2>Data-related requests</h2>
+        <p>
+          Requests to access, correct, or delete your personal data can be sent
+          to the Grievance Officer or to our general support address. See the
+          <a href="/privacy.html">privacy policy</a> and
+          <a href="/delete.html">delete your data</a> for more detail.
+        </p>
+
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <div class="site-container">
+        <div class="footer-inner">
+          <div class="footer-brand">
+            <a href="/" class="mark" aria-label="Pappal home">Pappal</a>
+            <p>
+              Someone to talk to, tonight.<br />
+              &copy; 2026 <span class="placeholder">{{LEGAL_BUSINESS_NAME}}</span>
+            </p>
+          </div>
+          <div class="footer-links">
+            <div class="footer-col">
+              <strong>Product</strong>
+              <a href="/#how-it-works">How it works</a>
+              <a href="/pricing.html">Pricing</a>
+              <a href="/about.html">About</a>
+            </div>
+            <div class="footer-col">
+              <strong>Partners</strong>
+              <a href="/#become-a-partner">Become a partner</a>
+            </div>
+            <div class="footer-col">
+              <strong>Legal</strong>
+              <a href="/terms.html">Terms</a>
+              <a href="/privacy.html">Privacy</a>
+              <a href="/refund.html">Refund policy</a>
+              <a href="/grievance.html">Grievance</a>
+              <a href="/delete.html">Delete your data</a>
+            </div>
+            <div class="footer-col">
+              <strong>Contact</strong>
+              <a href="mailto:{{SUPPORT_EMAIL}}">
+                <span class="placeholder">{{SUPPORT_EMAIL}}</span>
+              </a>
+            </div>
+          </div>
+        </div>
+        <div class="footer-meta">
+          <span>Last updated 27 August 2026</span>
+          <span><span class="placeholder">{{LEGAL_BUSINESS_NAME}}</span></span>
+          <span><span class="placeholder">{{REGISTERED_ADDRESS}}</span></span>
+        </div>
+      </div>
+    </footer>
+
+  </body>
+</html>

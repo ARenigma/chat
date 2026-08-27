@@ -180,7 +180,7 @@ function Root() {
         const callId = callMatch[2]?.match(/callId=([^&]+)/)?.[1];
         if (isUuid(callPeer) && callId !== undefined && isUuid(callId)) {
           void clearCall(callId);
-          setRoute({ name: 'call', providerId: callPeer, direction: 'in', callId });
+          setRoute({ name: 'call', providerId: callPeer, direction: 'in', callId, medium: 'voice' });
         }
         return;
       }
@@ -471,9 +471,9 @@ function SignedIn({
   const onIncoming = useCallback(
     (incoming: IncomingCall) => {
       if (role === 'provider') {
-        setProviderRoute({ name: 'call', peerId: incoming.callerId, direction: 'in', callId: incoming.callId });
+        setProviderRoute({ name: 'call', peerId: incoming.callerId, direction: 'in', callId: incoming.callId, medium: incoming.medium });
       } else {
-        setRoute({ name: 'call', providerId: incoming.callerId, direction: 'in', callId: incoming.callId });
+        setRoute({ name: 'call', providerId: incoming.callerId, direction: 'in', callId: incoming.callId, medium: incoming.medium });
       }
     },
     [role, setRoute, setProviderRoute],
@@ -496,6 +496,7 @@ function SignedIn({
             providerId={providerRoute.peerId}
             direction={providerRoute.direction}
             callId={providerRoute.callId}
+            medium={providerRoute.medium}
             onEnd={() => setProviderRoute({ name: 'home' })}
           />
         ) : providerRoute.name === 'chat' ? (
@@ -594,8 +595,8 @@ function SignedIn({
               providerId={route.providerId}
               onBack={leaveChat}
               onOpenProfile={openProvider}
-              onStartCall={() =>
-                setRoute({ name: 'call', providerId: route.providerId, direction: 'out', callId: null })
+              onStartCall={channel =>
+                setRoute({ name: 'call', providerId: route.providerId, direction: 'out', callId: null, medium: channel === 'video' ? 'video' : 'voice' })
               }
             />
           ) : route.name === 'call' ? (
@@ -603,6 +604,7 @@ function SignedIn({
               providerId={route.providerId}
               direction={route.direction}
               callId={route.callId}
+              medium={route.medium}
               onEnd={backToHome}
             />
           ) : route.name === 'providerDetail' ? (
@@ -611,8 +613,14 @@ function SignedIn({
               onBack={backToHome}
               // Opened from a profile, so back from the chat returns to the profile.
               onOpenChat={id => openChat(id, 'detail')}
-              onStartCall={id =>
-                setRoute({ name: 'call', providerId: id, direction: 'out', callId: null })
+              onStartCall={(id, channel) =>
+                setRoute({
+                  name: 'call',
+                  providerId: id,
+                  direction: 'out',
+                  callId: null,
+                  medium: channel === 'video' ? 'video' : 'voice',
+                })
               }
             />
           ) : route.name === 'apply' ? (

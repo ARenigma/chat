@@ -3,108 +3,173 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Papal, about &amp; contact</title>
+    <title>Pappal — about &amp; contact</title>
     <meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Urbanist:wght@400;600;700;800&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/tokens.css" />
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <header><a href="/" class="mark">Papal</a></header>
 
-    <h1>About &amp; contact</h1>
-    <p class="lede">
-      Who runs this, what it is, and how to reach a person about it.
-    </p>
-
-    <h2>What Papal is</h2>
-    <p>
-      A paid chat service that connects people who want to talk with people who
-      are willing to listen. Members start a conversation and spend tokens to send
-      messages; the people who listen are ordinary adults who applied and were
-      admitted, not clinicians.
-    </p>
-
-    <div class="disclaim">
-      It is peer support and company, not therapy, counselling or medical care.
-    </div>
-
-    <h2>How it works</h2>
-    <div class="card">
-      <strong>For members</strong>
-      <p>
-        Sign in, see who is free, start talking. 50 tokens to begin and 25 free
-        every day; one token sends one message. A message that is never answered
-        refunds its token automatically.
-      </p>
-    </div>
-    <div class="card">
-      <strong>For people who listen</strong>
-      <p>
-        Apply from inside the app. You confirm you are over 18, write a short
-        introduction, and choose the languages you speak. Applications are
-        reviewed by a person.
-      </p>
-    </div>
-    <div class="card">
-      <strong>Safety</strong>
-      <p>
-        Every conversation can be reported from the message itself, and reports go
-        to a human. Blocking is immediate and mutual. Only the two people in a
-        conversation can read it, enforced by the database, not by a promise.
-      </p>
-    </div>
-
-    <h2>Contact</h2>
-    <p>
-      <a href="mailto:testrelay97@gmail.com">testrelay97@gmail.com</a> reaches a
-      person for support, privacy requests, abuse reports and press. We answer in
-      English and Hindi.
-    </p>
-
-    <!--
-      BUSINESS IDENTITY, deliberately not filled in with invented values.
-
-      Meta business verification and Google Play both read this page and compare
-      it against the details submitted in their consoles. A legal name or address
-      that does not match official documents is worse than an absent one: it is a
-      mismatch, and a mismatch is a rejection rather than a gap.
-
-      Paste the real values here once the entity details are known, and they must
-      match the Meta business portfolio (Business info) and the registration
-      documents exactly:
-
-      <h2>Operating entity</h2>
-      <div class="card">
-        <strong>LEGAL BUSINESS NAME</strong>
-        <p>
-          REGISTERED ADDRESS<br />
-          BUSINESS PHONE<br />
-          GSTIN or CIN, if registered
-        </p>
+    <header class="site-header">
+      <div class="site-container header-inner">
+        <a href="/" class="mark" aria-label="Pappal home">Pappal</a>
+        <nav class="site-nav" aria-label="Main navigation">
+          <a href="/#how-it-works">How it works</a>
+          <a href="/pricing.html">Pricing</a>
+          <a href="/#become-a-partner">Become a partner</a>
+          <a href="/about.html" aria-current="page">About</a>
+        </nav>
+        <div class="header-spacer"></div>
+        <a
+          class="cta cta--accent cta--sm"
+          href="https://gitlab.com/ARenigma/chat/-/releases"
+          rel="noopener noreferrer"
+        >Download</a>
       </div>
-    -->
+    </header>
 
-    <h2>Where your data lives</h2>
-    <p>
-      Supabase (PostgreSQL) for the database, Google Firebase for notifications,
-      Sentry for crash reports. Crash reports are scrubbed of message contents
-      before they are sent. The full detail is on the
-      <a href="/privacy.html">privacy page</a>.
-    </p>
+    <main>
+      <div class="page-content">
 
-    <footer>
-      <a href="/">Home</a>
-      <a href="/terms.html">Terms</a>
-      <a href="/privacy.html">Privacy</a>
-      <a href="/delete.html">Delete your data</a>
-      <span>© 2026 Papal</span>
+        <h1>About &amp; contact</h1>
+        <p class="lede">
+          Who runs this, what it is, and how to reach a person about it.
+        </p>
+
+        <h2>What Pappal is</h2>
+        <p>
+          A paid chat and calling service that connects people who want to talk
+          with people who are willing to listen. Members browse who is available,
+          start a conversation, and pay per minute for the time they spend. The
+          people who listen are ordinary adults who applied and were admitted —
+          not clinicians.
+        </p>
+
+        <div class="disclaim">
+          Pappal is peer support and company, not therapy, counselling, or
+          medical care.
+        </div>
+
+        <h2>How it works</h2>
+        <div class="card-grid" style="margin-bottom: var(--space-xl);">
+          <div class="card">
+            <strong>For members</strong>
+            <p>
+              Sign in with Google, browse who is available, and start a chat or
+              call. You begin with 50 free tokens (1 token = &#x20B9;1). Chat
+              and audio cost 22 tokens a minute; video costs 35. A message that
+              is never answered refunds its tokens automatically.
+            </p>
+          </div>
+          <div class="card">
+            <strong>For partners (people who listen)</strong>
+            <p>
+              Apply from inside the app. You confirm you are over 18, write a
+              short introduction, and choose the languages you speak.
+              Applications are reviewed by a person. You earn per minute of
+              active conversation.
+            </p>
+          </div>
+          <div class="card">
+            <strong>Safety</strong>
+            <p>
+              Every conversation can be reported from the message itself, and
+              reports go to a human. Blocking is immediate. Only the two people
+              in a conversation can read it — enforced by the database, not by
+              a promise.
+            </p>
+          </div>
+        </div>
+
+        <h2>Operating entity</h2>
+        <!--
+          BUSINESS IDENTITY — do not invent values.
+
+          Meta business verification and Google Play both read this page and
+          compare it against the details submitted in their consoles. A legal
+          name or address that does not match official documents is worse than
+          an absent one: it is a mismatch, and a mismatch is a rejection rather
+          than a gap. Fill these once the entity details are confirmed, and they
+          must match the registration documents exactly.
+        -->
+        <div class="card">
+          <strong><span class="placeholder">{{LEGAL_BUSINESS_NAME}}</span></strong>
+          <p>
+            <span class="placeholder">{{REGISTERED_ADDRESS}}</span><br />
+            GSTIN: <span class="placeholder">{{GSTIN}}</span><br />
+            CIN: <span class="placeholder">{{CIN}}</span>
+          </p>
+        </div>
+
+        <h2>Contact</h2>
+        <p>
+          <a href="mailto:{{SUPPORT_EMAIL}}"><span class="placeholder">{{SUPPORT_EMAIL}}</span></a>
+          reaches a person for support, privacy requests, abuse reports, and
+          press. We answer in English and Hindi.
+        </p>
+
+        <h2>Where your data lives</h2>
+        <p>
+          Supabase (PostgreSQL) for the database, Google Firebase for
+          notifications, Sentry for crash reports. Crash reports are scrubbed
+          of message contents before they leave the device. The full detail is
+          on the <a href="/privacy.html">privacy page</a>.
+        </p>
+
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <div class="site-container">
+        <div class="footer-inner">
+          <div class="footer-brand">
+            <a href="/" class="mark" aria-label="Pappal home">Pappal</a>
+            <p>
+              Someone to talk to, tonight.<br />
+              &copy; 2026 <span class="placeholder">{{LEGAL_BUSINESS_NAME}}</span>
+            </p>
+          </div>
+          <div class="footer-links">
+            <div class="footer-col">
+              <strong>Product</strong>
+              <a href="/#how-it-works">How it works</a>
+              <a href="/pricing.html">Pricing</a>
+              <a href="/about.html">About</a>
+            </div>
+            <div class="footer-col">
+              <strong>Partners</strong>
+              <a href="/#become-a-partner">Become a partner</a>
+            </div>
+            <div class="footer-col">
+              <strong>Legal</strong>
+              <a href="/terms.html">Terms</a>
+              <a href="/privacy.html">Privacy</a>
+              <a href="/refund.html">Refund policy</a>
+              <a href="/grievance.html">Grievance</a>
+              <a href="/delete.html">Delete your data</a>
+            </div>
+            <div class="footer-col">
+              <strong>Contact</strong>
+              <a href="mailto:{{SUPPORT_EMAIL}}">
+                <span class="placeholder">{{SUPPORT_EMAIL}}</span>
+              </a>
+            </div>
+          </div>
+        </div>
+        <div class="footer-meta">
+          <span><span class="placeholder">{{LEGAL_BUSINESS_NAME}}</span></span>
+          <span><span class="placeholder">{{REGISTERED_ADDRESS}}</span></span>
+          <span>GSTIN: <span class="placeholder">{{GSTIN}}</span></span>
+        </div>
+      </div>
     </footer>
+
   </body>
 </html>
