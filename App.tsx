@@ -40,6 +40,8 @@ import { ProviderHomeScreen } from './src/screens/ProviderHomeScreen';
 import { ProviderStatusScreen } from './src/screens/ProviderStatusScreen';
 import { BlockedUsersScreen } from './src/screens/BlockedUsersScreen';
 import { CallsScreen } from './src/screens/CallsScreen';
+import { FavouritesScreen } from './src/screens/FavouritesScreen';
+import { ChatsListScreen } from './src/screens/ChatsListScreen';
 import { SettingsSheet } from './src/screens/SettingsSheet';
 import { SplashScreen } from './src/screens/SplashScreen';
 
@@ -532,7 +534,15 @@ function SignedIn({
         onOpenConversation={openChat}
         onOpenProvider={openProvider}
         onOpenSettings={() => setRoute({ name: 'settings' })}
+        onSeeAllChats={() => setRoute({ name: 'chatsList' })}
       />
+
+      {/* Favourites is a top-level tab: the people this member has hearted. */}
+      {route.name === 'favourites' ? (
+        <Animated.View style={styles.tabLayer} entering={FadeIn.duration(160)}>
+          <FavouritesScreen onOpenProvider={openProvider} />
+        </Animated.View>
+      ) : null}
 
       {/* Calls is a top-level tab (empty state for now). A real destination so
           the nav's Calls icon does something on tap rather than reading as dead. */}
@@ -566,7 +576,10 @@ function SignedIn({
         </Animated.View>
       ) : null}
 
-      {route.name !== 'home' && route.name !== 'settings' && route.name !== 'calls' ? (
+      {route.name !== 'home' &&
+      route.name !== 'settings' &&
+      route.name !== 'calls' &&
+      route.name !== 'favourites' ? (
         // A pushed screen: slide in from the right over the persistent Home, and
         // out the same way on back — the Android forward-navigation gesture, so
         // opening a chat/profile/call reads as a push rather than an instant swap.
@@ -610,6 +623,8 @@ function SignedIn({
             <ProviderStatusScreen onBack={backToHome} onEdit={() => setRoute({ name: 'apply' })} />
           ) : route.name === 'blocked' ? (
             <BlockedUsersScreen onBack={backToHome} />
+          ) : route.name === 'chatsList' ? (
+            <ChatsListScreen onBack={backToHome} onOpenConversation={openChat} />
           ) : null}
         </Animated.View>
       ) : null}
@@ -623,10 +638,19 @@ function SignedIn({
         * route; on chat/call/detail and the other pushed screens it is simply not
         * rendered, giving them the full height. Calls stay gated (`CALLS_ENABLED`).
         */}
-      {route.name === 'home' || route.name === 'settings' || route.name === 'calls' ? (
+      {route.name === 'home' ||
+      route.name === 'settings' ||
+      route.name === 'calls' ||
+      route.name === 'favourites' ? (
         <FloatingToolbar
           active={
-            route.name === 'settings' ? 'settings' : route.name === 'calls' ? 'call' : 'home'
+            route.name === 'settings'
+              ? 'settings'
+              : route.name === 'calls'
+                ? 'call'
+                : route.name === 'favourites'
+                  ? 'favourites'
+                  : 'home'
           }
           callEnabled={CALLS_ENABLED}
           onSelect={key => {
@@ -636,6 +660,8 @@ function SignedIn({
               setRoute({ name: 'settings' });
             } else if (key === 'call') {
               setRoute({ name: 'calls' });
+            } else if (key === 'favourites') {
+              setRoute({ name: 'favourites' });
             }
           }}
         />

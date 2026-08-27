@@ -229,16 +229,18 @@ describe('message + engagement notifications', () => {
     expect(body).toContain('CHANNEL_ENGAGEMENT');
   });
 
-  it('builds an incoming call as a CallStyle with a full-screen intent', () => {
+  it('builds an incoming call as a CallStyle heads-up, not a full-screen takeover', () => {
     const body = read(CONVERSATIONS);
     expect(body).toContain('fun notifyCall(');
     expect(body).toContain('CallStyle.forIncomingCall(');
-    // The full-screen intent is what makes it ring over the lock screen rather
-    // than show a quiet heads-up.
-    expect(body).toContain('.setFullScreenIntent(');
+    // A heads-up popup, never full-screen: the call must not take over a running
+    // foreground app (Amit, 2026-08-27). So no full-screen intent.
+    expect(body).not.toContain('setFullScreenIntent');
     expect(body).toContain('CATEGORY_CALL');
     // Its own high-importance channel, separate from messages.
     expect(body).toContain('CHANNEL_CALLS');
+    // All three types are brand-coloured (#3, "with our brand token").
+    expect(body).toContain('BRAND_COLOR');
   });
 
   it('never stops posting when a photo cannot be fetched', () => {

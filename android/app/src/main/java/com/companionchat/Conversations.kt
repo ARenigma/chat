@@ -72,6 +72,10 @@ object Conversations {
      */
     private const val CHANNEL_CALLS = "calls"
 
+    // Pappal coral (#F2543D). Tints all three notification types so they read as
+    // one brand (Amit, 2026-08-27) — the small icon and the CallStyle accent.
+    private const val BRAND_COLOR = 0xFFF2543D.toInt()
+
     fun ensureChannel(context: Context) {
         val channel = NotificationChannelCompat
             .Builder(CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_HIGH)
@@ -84,7 +88,7 @@ object Conversations {
 
     fun ensureEngagementChannel(context: Context) {
         val channel = NotificationChannelCompat
-            .Builder(CHANNEL_ENGAGEMENT, NotificationManagerCompat.IMPORTANCE_DEFAULT)
+            .Builder(CHANNEL_ENGAGEMENT, NotificationManagerCompat.IMPORTANCE_HIGH)
             .setName(context.getString(R.string.channel_engagement))
             .setDescription(context.getString(R.string.channel_engagement_desc))
             .setShowBadge(true)
@@ -179,6 +183,7 @@ object Conversations {
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
+            .setColor(BRAND_COLOR)
             .setStyle(style)
             // The three together are what Android looks for; `setShortcutId` is the
             // link that ties the style and the shortcut.
@@ -230,10 +235,13 @@ object Conversations {
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ENGAGEMENT)
             .setSmallIcon(R.drawable.ic_notification)
+            .setColor(BRAND_COLOR)
             .setContentTitle(title)
             .setContentText(body)
             .setCategory(NotificationCompat.CATEGORY_SOCIAL)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            // HIGH so a nudge heads-up like the others (Amit: "notify like calls
+            // for all three"); the channel is IMPORTANCE_HIGH to match.
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(openConversation(context, peerId))
 
@@ -292,12 +300,16 @@ object Conversations {
 
         val notification = NotificationCompat.Builder(context, CHANNEL_CALLS)
             .setSmallIcon(R.drawable.ic_notification)
+            .setColor(BRAND_COLOR)
             .setStyle(NotificationCompat.CallStyle.forIncomingCall(caller, decline, answer))
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setOngoing(true)
             .setAutoCancel(true)
-            .setFullScreenIntent(answer, true)
+            // No full-screen intent: the call rings as a heads-up popup, but must
+            // never take over the whole screen on top of whatever is running
+            // (Amit, 2026-08-27). CallStyle + IMPORTANCE_HIGH is the popup; the tap
+            // target is the content intent.
             .setContentIntent(answer)
             .build()
 

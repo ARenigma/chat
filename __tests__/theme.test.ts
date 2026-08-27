@@ -802,6 +802,9 @@ describe('accent budget is enforced in code, not just documented', () => {
        * variant reuses the same token-tint the balance pill flinches to.
        */
       'ChatScreen.tsx',
+      // The full chats list's unread count badge — the same accentStrong pill the
+      // Home rail and provider tree use for "unread", a live-state signal.
+      'ChatsListScreen.tsx',
       'Chip.tsx',
       /*
        * The completed mark. Green is the source's colour and appears nowhere in
@@ -855,6 +858,9 @@ describe('accent budget is enforced in code, not just documented', () => {
        */
       'RechargeScreen.tsx',
       'SendButton.tsx',
+      // The Settings footer wordmark is the brand mark in the brand colour (#9),
+      // and "Rate us" — a brand signature and an action, not chrome.
+      'SettingsSheet.tsx',
       'Sheet.tsx',
       'Stepper.tsx',
       'ThreadBubble.tsx',

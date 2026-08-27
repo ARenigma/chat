@@ -482,7 +482,11 @@ function ComposerView({
         press="chip"
         size={32}
         style={styles.attach}>
-        <Icon name="plus" size={24} color={theme.color.text.secondary} />
+        {/* The plus sits in a filled circle (Sweprek, #7), so it reads as a media
+            button rather than a bare glyph next to the field. */}
+        <View style={styles.attachCircle}>
+          <Icon name="plus" size={20} color={theme.color.text.secondary} />
+        </View>
       </Pressable>
       <View style={styles.field}>
         {/* Emoji, docked at the leading edge of the field (#4, the WhatsApp
@@ -616,6 +620,14 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     height: 40,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  attachCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: t.color.bg.sunken,
   },
   // The emoji button inside the field's leading edge. Sized to sit on the same
   // baseline as the trailing mic when the field is a single line.

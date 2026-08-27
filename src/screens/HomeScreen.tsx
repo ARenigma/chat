@@ -29,6 +29,8 @@ interface Props {
   onOpenConversation: (peerId: string) => void;
   onOpenProvider: (providerId: string) => void;
   onOpenSettings: () => void;
+  /** Open the full chats list from the rail's "See all". */
+  onSeeAllChats: () => void;
 }
 
 /**
@@ -47,7 +49,12 @@ interface Props {
  * until a provider-photo pipeline exists. Structure matches v13; the fill does
  * not pretend to a photo it does not have.
  */
-export function HomeScreen({ onOpenConversation, onOpenProvider, onOpenSettings }: Props) {
+export function HomeScreen({
+  onOpenConversation,
+  onOpenProvider,
+  onOpenSettings,
+  onSeeAllChats,
+}: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -230,15 +237,29 @@ export function HomeScreen({ onOpenConversation, onOpenProvider, onOpenSettings 
             // underlapping the bar and stealing its taps.
             { paddingBottom: insets.bottom + NAV_BAR_HEIGHT + TOKENS.space.xl },
           ]}>
-          {/* CHATS rail */}
+          {/* CHATS rail — horizontal, with a "See all" into the full list (#12). */}
           {chats.length > 0 ? (
             <View style={styles.rail}>
-              <Text allowFontScaling style={styles.railLabel}>
-                Chats
-              </Text>
+              <View style={styles.railHeader}>
+                <Text allowFontScaling style={styles.railLabel}>
+                  Chats
+                </Text>
+                <Pressable
+                  onPress={onSeeAllChats}
+                  testID="chats-see-all"
+                  accessibilityLabel="See all chats"
+                  press="none"
+                  style={styles.seeAll}>
+                  <Text allowFontScaling style={styles.seeAllText}>
+                    See all
+                  </Text>
+                  <Icon name="chevronRight" size={14} color={theme.color.text.secondary} />
+                </Pressable>
+              </View>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
+                {...SCROLL_PHYSICS}
                 contentContainerStyle={styles.railScroll}>
                 {chats.map(chat => (
                   <RailItem key={chat.id} chat={chat} onPress={onOpenConversation} />
@@ -393,7 +414,9 @@ function FeaturedCard({
       )}
       <View style={styles.featuredBadge}>
         <Text allowFontScaling style={styles.featuredBadgeText}>
-          Top rated
+          {provider.rating_count > 0
+            ? `★ ${provider.rating_avg?.toFixed(1)} · Top rated`
+            : 'Top rated'}
         </Text>
       </View>
       {/* Presence is a shape, not a word, and it lives top-right of the card
@@ -401,16 +424,12 @@ function FeaturedCard({
           white ring keeps it legible over any photo. */}
       <View style={styles.featuredOnline} />
       <View style={styles.featuredBody}>
-        {/* Name and rating share one line (#3): the lone "★ 5.0" on its own row
-            between the name and tagline read as an orphan. On the name line, right-
-            aligned, it matches how the list rows carry their rating. */}
+        {/* The rating lives in the "Top rated" chip now (#4), so the name line is
+            just the name and age. */}
         <View style={styles.featuredNameRow}>
           <Text allowFontScaling numberOfLines={1} style={styles.featuredName}>
             {provider.display_name}
             <Text style={styles.featuredAge}>{age}</Text>
-          </Text>
-          <Text allowFontScaling style={styles.featuredRating}>
-            ★ {provider.rating_count > 0 ? provider.rating_avg?.toFixed(1) : 'New'}
           </Text>
         </View>
         {tagline !== '' ? (
@@ -512,11 +531,24 @@ const makeStyles = (t: Theme) =>
       paddingTop: TOKENS.space.xs,
       paddingBottom: TOKENS.space.sm,
     },
+    railHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: TOKENS.space.md,
+      paddingBottom: TOKENS.space.xs,
+    },
     railLabel: {
       ...TOKENS.typography.labelSmall,
       color: t.color.text.secondary,
-      paddingHorizontal: TOKENS.space.md,
-      paddingBottom: TOKENS.space.xs,
+    },
+    seeAll: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    seeAllText: {
+      ...TOKENS.typography.labelSmall,
+      color: t.color.text.secondary,
     },
     railScroll: {
       paddingHorizontal: TOKENS.space.md,

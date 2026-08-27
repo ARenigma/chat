@@ -19,10 +19,12 @@ import { Icon, type IconName } from './Icon';
  */
 const GLYPHS: readonly IconName[] = ['heart', 'chat', 'listen', 'unwind', 'star', 'people'];
 
-// Enough cells to cover a tall screen at the tile size below; a fixed count
-// keeps this a pure, memoisable static field rather than a measured layout.
+// A dense micro-glyph field (Amit, 2026-08-27): hundreds of tiny marks rather
+// than a sparse scatter, WhatsApp's texture density. A fixed count keeps this a
+// pure, memoisable static field rather than a measured layout; it is behind
+// everything, non-interactive, and each glyph is a single <Text>.
 const CELLS: IconName[] = Array.from(
-  { length: 140 },
+  { length: 600 },
   (_, i) => GLYPHS[i % GLYPHS.length] ?? 'heart',
 );
 
@@ -36,7 +38,7 @@ function ChatWallpaperView() {
           <View
             key={i}
             style={[styles.cell, i % 2 === 0 ? styles.tiltA : styles.tiltB]}>
-            <Icon name={glyph} size={22} color={theme.color.text.primary} />
+            <Icon name={glyph} size={13} color={theme.color.text.primary} />
           </View>
         ))}
       </View>
@@ -68,8 +70,8 @@ const makeStyles = (_t: Theme) =>
       marginLeft: -TOKENS.space.md,
     },
     cell: {
-      width: 66,
-      height: 66,
+      width: 28,
+      height: 28,
       alignItems: 'center',
       justifyContent: 'center',
     },

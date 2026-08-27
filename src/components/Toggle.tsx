@@ -101,7 +101,10 @@ function ToggleView({
   const held = useSharedValue(0);
 
   useEffect(() => {
-    on.value = springTo(value ? 1 : 0, 'snap');
+    // 'smooth', not 'snap': the state change should glide (Amit, 2026-08-27), so
+    // the thumb, track colour and check ease across rather than snapping. The
+    // press feedback below keeps 'snap' — that one should feel instant.
+    on.value = springTo(value ? 1 : 0, 'smooth');
   }, [value, on]);
 
   const track = useAnimatedStyle(() => ({
