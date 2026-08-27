@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, BackHandler, Linking, PermissionsAndroid, Platform, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from './src/theme/tokens';
 import { ThemeProvider, useStyles, useThemeMode } from './src/theme/ThemeProvider';
 import { DURATION, fadeSwapFast } from './src/theme/motion';
+import { AfterPaint } from './src/components/AfterPaint';
 import { UpdateBanner } from './src/components/UpdateBanner';
 import { BLOOM_CONTENT_MS } from './src/lib/bloom';
 import { assertEnv } from './src/lib/env';
@@ -88,6 +89,14 @@ function Root() {
   const [attempt, setAttempt] = useState(0);
   const [route, setRoute] = useState<MemberRoute>({ name: 'home' });
   const [providerRoute, setProviderRoute] = useState<ProviderRoute>({ name: 'home' });
+  // Refs so the BackHandler closure reads the current route without being in its
+  // dep array — adding route/providerRoute caused the listener to tear down and
+  // re-add itself on every navigation, producing a measurable re-subscription
+  // jank on Android on every setRoute call.
+  const routeRef = useRef(route);
+  routeRef.current = route;
+  const providerRouteRef = useRef(providerRoute);
+  providerRouteRef.current = providerRoute;
   const [welcomeSeen, setWelcomeSeen] = useState(false);
   const resetConversation = useStore(s => s.resetConversation);
   const refillVisible = useStore(s => s.refillVisible);
@@ -336,6 +345,14 @@ function Root() {
         closeRefill();
         return true;
       }
+      // Read from refs so that route changes do NOT cause the listener to tear
+      // down and re-subscribe on every navigation (which produced a measurable
+      // jank spike on Android with each setRoute call). Local names shadow the
+      // outer state values intentionally — all reads here must go through refs.
+      // eslint-disable-next-line @typescript-eslint/no-shadow
+      const route = routeRef.current;
+      // eslint-disable-next-line @typescript-eslint/no-shadow
+      const providerRoute = providerRouteRef.current;
       const parent = memberParent(route);
       if (parent !== null) {
         if (route.name === 'chat') {
@@ -371,7 +388,9 @@ function Root() {
     };
     const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
     return () => sub.remove();
-  }, [route, providerRoute, refillVisible, closeRefill, resetConversation]);
+  // route and providerRoute are intentionally omitted: they are read via refs
+  // inside onBack so the listener is stable across navigations.
+  }, [refillVisible, closeRefill, resetConversation]);
 
   if (boot.phase === 'loading') {
     return (
@@ -594,7 +613,9 @@ function SignedIn({
       {/* Favourites is a top-level tab: the people this member has hearted. */}
       {route.name === 'favourites' ? (
         <Animated.View style={styles.tabLayer} entering={fadeSwapFast} exiting={FadeOut.duration(DURATION.fast)}>
-          <FavouritesScreen onOpenProvider={openProvider} />
+          <AfterPaint>
+            <FavouritesScreen onOpenProvider={openProvider} />
+          </AfterPaint>
         </Animated.View>
       ) : null}
 
@@ -602,7 +623,9 @@ function SignedIn({
           the nav's Calls icon does something on tap rather than reading as dead. */}
       {route.name === 'calls' ? (
         <Animated.View style={styles.tabLayer} entering={fadeSwapFast} exiting={FadeOut.duration(DURATION.fast)}>
-          <CallsScreen />
+          <AfterPaint>
+            <CallsScreen />
+          </AfterPaint>
         </Animated.View>
       ) : null}
 
@@ -613,21 +636,23 @@ function SignedIn({
         // A tab switch, not a push: a quick cross-fade rather than a slide, so
         // Home↔Settings does not read as a sideways jump.
         <Animated.View style={styles.tabLayer} entering={fadeSwapFast} exiting={FadeOut.duration(DURATION.fast)}>
-          <SettingsSheet
-            onBack={backToHome}
-            // A fixed bottom-nav tab on the member tree: the Home tab is the way
-            // back, so no app-bar back action (WhatsApp's model).
-            showBack={false}
-            onDeleted={() => {
-              backToHome();
-              onSignedOut();
-            }}
-            onSignedOut={onSignedOut}
-            onApply={() => setRoute({ name: 'apply' })}
-            onApplicationStatus={() => setRoute({ name: 'applicationStatus' })}
-            onBlocked={() => setRoute({ name: 'blocked' })}
-            onTransactions={() => setRoute({ name: 'transactions' })}
-          />
+          <AfterPaint>
+            <SettingsSheet
+              onBack={backToHome}
+              // A fixed bottom-nav tab on the member tree: the Home tab is the way
+              // back, so no app-bar back action (WhatsApp's model).
+              showBack={false}
+              onDeleted={() => {
+                backToHome();
+                onSignedOut();
+              }}
+              onSignedOut={onSignedOut}
+              onApply={() => setRoute({ name: 'apply' })}
+              onApplicationStatus={() => setRoute({ name: 'applicationStatus' })}
+              onBlocked={() => setRoute({ name: 'blocked' })}
+              onTransactions={() => setRoute({ name: 'transactions' })}
+            />
+          </AfterPaint>
         </Animated.View>
       ) : null}
 
@@ -656,38 +681,44 @@ function SignedIn({
           entering={SlideInRight.duration(160)}
           exiting={SlideOutRight.duration(150)}>
           {route.name === 'chat' ? (
-            <ChatScreen
-              providerId={route.providerId}
-              onBack={leaveChat}
-              onOpenProfile={openProvider}
-              onStartCall={channel =>
-                setRoute({ name: 'call', providerId: route.providerId, direction: 'out', callId: null, medium: channel === 'video' ? 'video' : 'voice' })
-              }
-            />
+            <AfterPaint>
+              <ChatScreen
+                providerId={route.providerId}
+                onBack={leaveChat}
+                onOpenProfile={openProvider}
+                onStartCall={channel =>
+                  setRoute({ name: 'call', providerId: route.providerId, direction: 'out', callId: null, medium: channel === 'video' ? 'video' : 'voice' })
+                }
+              />
+            </AfterPaint>
           ) : route.name === 'call' ? (
-            <CallScreen
-              providerId={route.providerId}
-              direction={route.direction}
-              callId={route.callId}
-              medium={route.medium}
-              onEnd={backToHome}
-            />
+            <AfterPaint>
+              <CallScreen
+                providerId={route.providerId}
+                direction={route.direction}
+                callId={route.callId}
+                medium={route.medium}
+                onEnd={backToHome}
+              />
+            </AfterPaint>
           ) : route.name === 'providerDetail' ? (
-            <ProviderDetailScreen
-              providerId={route.providerId}
-              onBack={backToHome}
-              // Opened from a profile, so back from the chat returns to the profile.
-              onOpenChat={id => openChat(id, 'detail')}
-              onStartCall={(id, channel) =>
-                setRoute({
-                  name: 'call',
-                  providerId: id,
-                  direction: 'out',
-                  callId: null,
-                  medium: channel === 'video' ? 'video' : 'voice',
-                })
-              }
-            />
+            <AfterPaint>
+              <ProviderDetailScreen
+                providerId={route.providerId}
+                onBack={backToHome}
+                // Opened from a profile, so back from the chat returns to the profile.
+                onOpenChat={id => openChat(id, 'detail')}
+                onStartCall={(id, channel) =>
+                  setRoute({
+                    name: 'call',
+                    providerId: id,
+                    direction: 'out',
+                    callId: null,
+                    medium: channel === 'video' ? 'video' : 'voice',
+                  })
+                }
+              />
+            </AfterPaint>
           ) : route.name === 'apply' ? (
             <ProviderApplicationScreen
               onBack={backToHome}

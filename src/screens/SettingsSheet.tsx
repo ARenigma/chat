@@ -254,7 +254,7 @@ export function SettingsSheet({
             <View style={styles.group}>
               {canVerifyPhone ? (
                 <Pressable
-                  onPress={() => setVerifying(true)}
+                  onPress={() => requestAnimationFrame(() => setVerifying(true))}
                   testID="settings-verify-phone"
                   accessibilityLabel="Verify Phone Number"
                   press="none"
@@ -368,7 +368,7 @@ export function SettingsSheet({
               which is how a destructive action is kept from sitting flush against
               a benign one. */}
           <Pressable
-            onPress={() => setConfirming(true)}
+            onPress={() => requestAnimationFrame(() => setConfirming(true))}
             testID="delete-account"
             accessibilityLabel="Delete Account"
             press="none"

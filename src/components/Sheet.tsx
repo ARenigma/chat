@@ -96,7 +96,7 @@ function SheetView({
   // before it slid up (Amit, 2026-08-27, recharge pay tap). Starting off-screen
   // means the first frame is already off-screen and only the spring brings it in.
   const y = useSharedValue(SHEET_ENTRY_OFFSET);
-  const [height, setHeight] = useState(0);
+  const [height, setHeight] = useState<number | null>(null);
 
   // Entry is driven here, by Reanimated, not by the Modal's own animation. The
   // Modal used `animationType="slide"`, which slides the WHOLE window up — and the
@@ -129,11 +129,12 @@ function SheetView({
       y.value = e.translationY > 0 ? e.translationY : e.translationY / 3;
     })
     .onEnd(e => {
-      const far = height > 0 && y.value > height * GESTURE.dismissDistance;
+      const measuredHeight = height ?? 0;
+      const far = measuredHeight > 0 && y.value > measuredHeight * GESTURE.dismissDistance;
       const fast = e.velocityY > GESTURE.dismissVelocity;
       if (far || fast) {
         // Carry the throw through to the bottom, then close once it is gone.
-        y.value = springTo(height > 0 ? height : 600, 'smooth', e.velocityY);
+        y.value = springTo(measuredHeight > 0 ? measuredHeight : 600, 'smooth', e.velocityY);
         runOnJS(onClose)();
         return;
       }
@@ -159,7 +160,9 @@ function SheetView({
    */
   const scrimStyle = useAnimatedStyle(() => ({
     opacity:
-      height > 0
+      height === null
+        ? 0
+        : height > 0
         ? interpolate(y.value, [0, height * 0.9, height], [0.4, 0.4, 0], 'clamp')
         : 0.4,
   }));
