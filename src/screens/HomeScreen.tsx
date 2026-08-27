@@ -197,7 +197,10 @@ export function HomeScreen({ onOpenConversation, onOpenProvider, onOpenSettings 
                   provider={p}
                   index={i}
                   isLast={i === results.length - 1}
-                  onPress={() => onOpenConversation(p.id)}
+                  // The whole row opens the detailed profile card (#1), matching
+                  // the featured hero — you decide from the profile, then Message
+                  // from there. The avatar opens the same place.
+                  onPress={() => onOpenProvider(p.id)}
                   onPressAvatar={() => onOpenProvider(p.id)}
                 />
               ))}
@@ -262,7 +265,10 @@ export function HomeScreen({ onOpenConversation, onOpenProvider, onOpenSettings 
                   index={i}
                   isLast={i === rows.length - 1}
                   // Row opens the conversation; the avatar opens the profile card.
-                  onPress={() => onOpenConversation(p.id)}
+                  // The whole row opens the detailed profile card (#1), matching
+                  // the featured hero — you decide from the profile, then Message
+                  // from there. The avatar opens the same place.
+                  onPress={() => onOpenProvider(p.id)}
                   onPressAvatar={() => onOpenProvider(p.id)}
                 />
               ))}

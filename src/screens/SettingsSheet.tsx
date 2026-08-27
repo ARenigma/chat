@@ -430,12 +430,15 @@ const makeStyles = (t: Theme) =>
       paddingTop: TOKENS.space.lg,
       paddingBottom: TOKENS.space.xs,
     },
-    // The inset-grouped table, same idiom as PaymentSheet/SafetySheet.
+    // Plain white sections, not the grey inset-grouped card (Amit, 2026-08-27,
+    // "simple on white like v10, not this grey blob"). A hairline top and bottom
+    // bounds the section; the rows inside are the page colour and separated by
+    // hairlines — iOS's grouped-PLAIN table rather than grouped-inset.
     group: {
-      borderRadius: TOKENS.radius.field,
-      borderCurve: 'continuous',
-      overflow: 'hidden',
-      backgroundColor: t.color.bg.sunken,
+      backgroundColor: t.color.bg.base,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderColor: t.color.border.hairline,
     },
     groupSpaced: {
       marginTop: TOKENS.space.xl,
@@ -447,7 +450,7 @@ const makeStyles = (t: Theme) =>
       minHeight: 52,
       paddingHorizontal: TOKENS.space.md,
       paddingVertical: TOKENS.space.sm,
-      backgroundColor: t.color.bg.sunken,
+      backgroundColor: t.color.bg.base,
     },
     rowChevron: {
       // A row that navigates; the chevron already sits at the trailing edge via

@@ -62,6 +62,13 @@ interface Props {
    * (the buttons are disabled otherwise); omitted on the provider tree.
    */
   onStartCall?: (channel: 'audio' | 'video') => void;
+  /**
+   * Open the peer's detail card. Passed on the member tree (the peer is a
+   * provider with a profile); tapping the header identity goes there (#2). Absent
+   * on the provider tree, where the peer is a member with no profile card — there
+   * the identity still opens the safety sheet.
+   */
+  onOpenProfile?: (providerId: string) => void;
 }
 
 const STARTERS: ReadonlyArray<{ label: string; tone: 'neutral' | 'warm' }> = [
@@ -90,7 +97,7 @@ interface ActionTarget {
  * one reply per turn; against a person, sending two messages in a row is normal
  * conversation and the UI should not fight it.
  */
-export function ChatScreen({ providerId, onBack, onStartCall }: Props) {
+export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -589,10 +596,18 @@ export function ChatScreen({ providerId, onBack, onStartCall }: Props) {
             "Online" clipped to nothing. */}
         <View style={styles.identitySlot}>
         <Pressable
-          onPress={() => setSafety({ open: true, messageId: null })}
+          onPress={() =>
+            onOpenProfile !== undefined
+              ? onOpenProfile(providerId)
+              : setSafety({ open: true, messageId: null })
+          }
           testID="open-safety"
-          accessibilityLabel={`${name}. Block or report`}
-          accessibilityHint="Opens safety options"
+          accessibilityLabel={
+            onOpenProfile !== undefined ? `${name}. View profile` : `${name}. Block or report`
+          }
+          accessibilityHint={
+            onOpenProfile !== undefined ? 'Opens their profile' : 'Opens safety options'
+          }
           press="none"
           highlight="ios"
           style={styles.identity}>

@@ -102,7 +102,7 @@ function FloatingToolbarView({ active, onSelect, callEnabled = false }: Props) {
                   width never changes and the bar cannot reflow or shove the icons
                   when you switch. Layout lives on this wrapper, never on the
                   Pressable, whose layout style reaches an inner view. */}
-              <View style={[styles.indicator, on && styles.indicatorOn]}>
+              <View style={styles.indicator}>
                 <Icon
                   name={tab.glyph}
                   active={on}
@@ -127,7 +127,9 @@ function FloatingToolbarView({ active, onSelect, callEnabled = false }: Props) {
 
 export const FloatingToolbar = memo(FloatingToolbarView);
 
-const makeStyles = (t: Theme) =>
+// No theme colours here any more: the bar is transparent (Frost fills it) and the
+// active tab is signalled by the glyph's own colour, set in the component.
+const makeStyles = (_t: Theme) =>
   StyleSheet.create({
     // Pinned to the bottom edge as an overlay, so the list frosts as it passes
     // under it. Transparent: `Frost` draws the blur, the chrome tint and the top
@@ -152,21 +154,15 @@ const makeStyles = (t: Theme) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
-    // The active indicator: Material 3's 64×32 stadium behind the glyph, fixed at
-    // every state so nothing reflows on select. It went black → grey → here: black
-    // read as a slab, and the pale grey (`bg/sunken`) read as a dull box. This is
-    // a soft coral wash (`bg/accentTint`) with a coral filled glyph — a highlight
-    // that clearly says "selected" and is on-brand, the way an icon-only tab bar
-    // (iMessage, Telegram) colours its chosen destination.
+    // No pill, no disc — the selected tab is signalled by the glyph alone: a coral
+    // FILLED glyph when active, a grey outline glyph otherwise (Amit, 2026-08-27,
+    // after black-slab and grey-box and accent-pill all read as "a shape around
+    // the icon"). This wrapper only reserves a fixed box so switching tabs never
+    // reflows the row; it draws nothing itself.
     indicator: {
       width: 64,
       height: 32,
       alignItems: 'center',
       justifyContent: 'center',
-      borderRadius: 16,
-      borderCurve: 'continuous',
-    },
-    indicatorOn: {
-      backgroundColor: t.color.bg.accentTint,
     },
   });

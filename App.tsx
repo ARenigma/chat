@@ -39,6 +39,7 @@ import { ProviderApplicationScreen } from './src/screens/ProviderApplicationScre
 import { ProviderHomeScreen } from './src/screens/ProviderHomeScreen';
 import { ProviderStatusScreen } from './src/screens/ProviderStatusScreen';
 import { BlockedUsersScreen } from './src/screens/BlockedUsersScreen';
+import { CallsScreen } from './src/screens/CallsScreen';
 import { SettingsSheet } from './src/screens/SettingsSheet';
 import { SplashScreen } from './src/screens/SplashScreen';
 
@@ -533,6 +534,14 @@ function SignedIn({
         onOpenSettings={() => setRoute({ name: 'settings' })}
       />
 
+      {/* Calls is a top-level tab (empty state for now). A real destination so
+          the nav's Calls icon does something on tap rather than reading as dead. */}
+      {route.name === 'calls' ? (
+        <Animated.View style={styles.tabLayer} entering={FadeIn.duration(160)}>
+          <CallsScreen />
+        </Animated.View>
+      ) : null}
+
       {/* Settings is a top-level tab: its own layer filling the content area
           (which ends at the docked nav's top edge), not inside the pushed overlay
           that the nav does not survive. */}
@@ -557,7 +566,7 @@ function SignedIn({
         </Animated.View>
       ) : null}
 
-      {route.name !== 'home' && route.name !== 'settings' ? (
+      {route.name !== 'home' && route.name !== 'settings' && route.name !== 'calls' ? (
         // A pushed screen: slide in from the right over the persistent Home, and
         // out the same way on back — the Android forward-navigation gesture, so
         // opening a chat/profile/call reads as a push rather than an instant swap.
@@ -570,6 +579,7 @@ function SignedIn({
             <ChatScreen
               providerId={route.providerId}
               onBack={leaveChat}
+              onOpenProfile={openProvider}
               onStartCall={() =>
                 setRoute({ name: 'call', providerId: route.providerId, direction: 'out', callId: null })
               }
@@ -613,15 +623,19 @@ function SignedIn({
         * route; on chat/call/detail and the other pushed screens it is simply not
         * rendered, giving them the full height. Calls stay gated (`CALLS_ENABLED`).
         */}
-      {route.name === 'home' || route.name === 'settings' ? (
+      {route.name === 'home' || route.name === 'settings' || route.name === 'calls' ? (
         <FloatingToolbar
-          active={route.name === 'settings' ? 'settings' : 'home'}
+          active={
+            route.name === 'settings' ? 'settings' : route.name === 'calls' ? 'call' : 'home'
+          }
           callEnabled={CALLS_ENABLED}
           onSelect={key => {
             if (key === 'home') {
               setRoute({ name: 'home' });
             } else if (key === 'settings') {
               setRoute({ name: 'settings' });
+            } else if (key === 'call') {
+              setRoute({ name: 'calls' });
             }
           }}
         />

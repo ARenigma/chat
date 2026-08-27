@@ -13,25 +13,24 @@ interface Props extends ViewProps {
 }
 
 /**
- * A frosted bar: a translucent `bg/chrome` pane the content scrolls under, with a
+ * A bar the content scrolls under, filled OPAQUE with the page colour, with a
  * single hairline for the edge.
  *
- * Real Gaussian `BlurView` (`@react-native-community/blur`) was tried and pulled
- * out twice — once on the New-Architecture emulator, then confirmed on a real
- * Galaxy S22 Ultra (Amit, 2026-08-27): it rendered a full-window white veil on
- * hardware too, not a localized blur, because the library never bound its props
- * under the New Architecture. So this is the reliable half: `bg/chrome` (white/
- * black at 0.80) as a translucent fill, which over an *overlay* bar still lets the
- * content scrolling beneath read through — a genuine pane of frosted glass, just
- * without the Gaussian softening. If a real blur is ever wanted it needs a custom
- * Fabric/RenderEffect module, not that library.
+ * It was translucent `bg/chrome` for a spell, standing in for a real blur. Two
+ * things killed that: `@react-native-community/blur` rendered a full-window white
+ * veil on both the emulator and a real Galaxy S22 Ultra (never binds props under
+ * the New Architecture), and the translucent fallback "did not look good" on
+ * device (Amit, 2026-08-27). So the fill is now the opaque page colour — a clean
+ * flat bar with a hairline. A real frosted blur is deferred until it can be done
+ * with a custom Fabric/RenderEffect module; this component is where it would slot
+ * back in behind the same bars.
  */
 export function Frost({ children, style, edge, ...rest }: Props) {
   const theme = useTheme();
   return (
     <View style={style} {...rest}>
       <View
-        style={[StyleSheet.absoluteFill, { backgroundColor: theme.color.bg.chrome }]}
+        style={[StyleSheet.absoluteFill, { backgroundColor: theme.color.bg.base }]}
       />
       {edge !== undefined ? (
         <View
