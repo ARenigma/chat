@@ -102,7 +102,17 @@ describe('the AI path is gone, not dormant', () => {
     if (!existsSync(dir)) {
       return;
     }
-    const allowed = ['send-call', 'send-engagement', 'send-push', 'send-sms', 'verify-phone'];
+    // exchange-firebase-token: verifies a Firebase phone ID token (JWKS) and
+    // mints a Supabase session — an auth bridge, not a model path. Added with
+    // AUTH_PHONE_PROVIDER='firebase'.
+    const allowed = [
+      'exchange-firebase-token',
+      'send-call',
+      'send-engagement',
+      'send-push',
+      'send-sms',
+      'verify-phone',
+    ];
     const present = readdirSync(dir, { withFileTypes: true })
       .filter(entry => entry.isDirectory())
       .map(entry => entry.name);
