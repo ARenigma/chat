@@ -50,6 +50,7 @@ import { DayDivider } from '../components/DayDivider';
 import { Frost } from '../components/Frost';
 import { Icon } from '../components/Icon';
 import { NoticeBar } from '../components/NoticeBar';
+import { HeaderSubtitle } from '../components/HeaderSubtitle';
 import { PeerTyping } from '../components/PeerTyping';
 import { Pressable } from '../components/Pressable';
 import { TokenCounter } from '../components/TokenCounter';
@@ -754,16 +755,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
             {/* Rendered even when it has nothing to say, so the header does not
                 change height as presence arrives and goes. `line` is null for
                 'hidden' and the empty string keeps the row reserved. */}
-            <Text
-              testID="peer-presence"
-              allowFontScaling
-              numberOfLines={1}
-              style={[styles.presence, !presence.here && styles.presenceQuiet]}>
-              {/* v13 says "Online" out loud when present, where the first-gen
-                  header left it blank (`line` is null for 'here'). Away/last-seen
-                  keep their quieter line. */}
-              {presence.here ? 'Online' : (presence.line ?? '')}
-            </Text>
+            <HeaderSubtitle presence={presence} />
           </View>
         </Pressable>
         </View>
@@ -1094,13 +1086,6 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   title: {
     ...TOKENS.typography.headline,
     color: t.color.text.primary,
-  },
-  presence: {
-    ...TOKENS.typography.captionSmall,
-    color: t.color.text.positive,
-  },
-  presenceQuiet: {
-    color: t.color.text.tertiary,
   },
   body: {
     flex: 1,
