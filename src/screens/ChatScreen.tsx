@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlashList, type ListRenderItemInfo } from '@shopify/flash-list';
 import {
   ActivityIndicator,
@@ -469,44 +469,101 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   const thread = threads?.find(t => t.id === conversationId);
 
   /**
-   * Per-minute chat token meter (member side only).
+   * Prepaid per-minute chat meter (member side only).
    *
-   * Deducts DEFAULT_RATES.chat tokens once per minute while the screen is
-   * mounted and the app is in the foreground.  This is ADDITIONAL to the
-   * per-message 1-token debit: it gates the active-session cost so seed and
-   * mock accounts deplete their balance realistically and the low-balance
-   * warning + recharge flow can be exercised without sending 22 messages.
+   * The first minute is charged immediately when the screen mounts and the
+   * conversation is known (prepaid — you pay before you talk, not after). A
+   * 60 s interval then charges each subsequent minute. On INSUFFICIENT_BALANCE
+   * at any point: the meter stops, `sessionEnded` is set so the composer and
+   * call buttons are gated, and the refill sheet opens.
    *
-   * The interval is a single const per mount — no double-charging.  AppState
-   * gates each tick so background time is not billed.  On INSUFFICIENT_BALANCE
-   * or zero balance the interval stops itself and openRefill() is called.
-   * Migration 021 owns the RPC (spend_chat_minute); it is SECURITY DEFINER and
-   * self-scoped so no client-side trust is required.
+   * Migration 021 owns the RPC (spend_chat_minute); it is SECURITY DEFINER
+   * and self-scoped so no client-side trust is required.
    */
+  const [sessionEnded, setSessionEnded] = useState(false);
+  // Single slot for the running interval — shared between initial start and
+  // the resume restart so there is never more than one running timer.
+  const meterRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  /**
+   * Debit one minute atomically. Returns true on success (or when the app is
+   * backgrounded — background time is not billed), false on
+   * INSUFFICIENT_BALANCE. Stable: setBalance is a Zustand action.
+   */
+  const chargeMinute = useCallback(async (): Promise<boolean> => {
+    if (AppState.currentState !== 'active') {
+      return true;
+    }
+    const { data: result } = await supabase.rpc('spend_chat_minute');
+    if (result === null) {
+      return true;
+    }
+    if (result.success && result.new_balance != null) {
+      setBalance(result.new_balance);
+      return true;
+    }
+    return result.error === 'INSUFFICIENT_BALANCE' ? false : true;
+  }, [setBalance]);
+
+  // Derived gate: meter runs when the member is in an active conversation and
+  // the session has not been ended by an INSUFFICIENT_BALANCE response.
+  // Balance is intentionally NOT a dep: the session ends only when the RPC
+  // says so, not when the client-side balance crosses a threshold, and
+  // including balance would restart the meter on every successful charge.
+  const shouldMeter =
+    (thread?.i_am_member ?? false) && conversationId !== undefined && !sessionEnded;
+
+  // Effect A — meter lifecycle. Starts a prepaid minute immediately when
+  // shouldMeter becomes true (chat open or session resumed), then ticks every
+  // 60 s. Cleanup clears the interval on unmount or when shouldMeter goes false
+  // (session ends or the component leaves the screen).
   useEffect(() => {
-    if (!thread?.i_am_member || conversationId === undefined) {
+    if (!shouldMeter) {
       return;
     }
-    const timerId = setInterval(() => {
-      // Skip billing while the app is backgrounded.
-      if (AppState.currentState !== 'active') {
+
+    let cancelled = false;
+
+    void chargeMinute().then(ok => {
+      if (cancelled) return;
+      if (!ok) {
+        setSessionEnded(true);
+        openRefill();
         return;
       }
-      void (async () => {
-        const { data: result } = await supabase.rpc('spend_chat_minute');
-        if (result === null) {
-          return;
-        }
-        if (result.success && result.new_balance != null) {
-          setBalance(result.new_balance);
-        } else if (result.error === 'INSUFFICIENT_BALANCE') {
-          clearInterval(timerId);
-          openRefill();
-        }
-      })();
-    }, 60_000);
-    return () => clearInterval(timerId);
-  }, [thread?.i_am_member, conversationId, setBalance, openRefill]);
+      meterRef.current = setInterval(() => {
+        void chargeMinute().then(tickOk => {
+          if (!tickOk) {
+            if (meterRef.current !== null) {
+              clearInterval(meterRef.current);
+              meterRef.current = null;
+            }
+            setSessionEnded(true);
+            openRefill();
+          }
+        });
+      }, 60_000);
+    });
+
+    return () => {
+      cancelled = true;
+      if (meterRef.current !== null) {
+        clearInterval(meterRef.current);
+        meterRef.current = null;
+      }
+    };
+    // shouldMeter encapsulates thread?.i_am_member, conversationId, and
+    // !sessionEnded. chargeMinute and openRefill are stable references.
+  }, [shouldMeter, chargeMinute, openRefill]);
+
+  // Effect B — resume. Clears sessionEnded when the balance recovers to ≥ one
+  // full minute's cost after a recharge, which flips shouldMeter back to true
+  // and causes Effect A to restart the meter with a fresh prepaid charge.
+  useEffect(() => {
+    if (sessionEnded && balance !== null && balance >= DEFAULT_RATES.chat) {
+      setSessionEnded(false);
+    }
+  }, [sessionEnded, balance]);
 
   const offerReview =
     thread !== undefined &&
@@ -769,22 +826,22 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
             honest gate (CALLS_ENABLED) rather than a role that never fires. */}
         <Pressable
           onPress={() => onStartCall?.('video')}
-          disabled={!CALLS_ENABLED}
+          disabled={!CALLS_ENABLED || sessionEnded}
           testID="call-video"
           accessibilityLabel={`Video call ${name}`}
           press="none"
           size={28}
-          style={[styles.navButton, !CALLS_ENABLED && styles.navDisabled]}>
+          style={[styles.navButton, (!CALLS_ENABLED || sessionEnded) && styles.navDisabled]}>
           <Icon name="video" size={20} color={theme.color.text.secondary} />
         </Pressable>
         <Pressable
           onPress={() => onStartCall?.('audio')}
-          disabled={!CALLS_ENABLED}
+          disabled={!CALLS_ENABLED || sessionEnded}
           testID="call-voice"
           accessibilityLabel={`Voice call ${name}`}
           press="none"
           size={28}
-          style={[styles.navButton, !CALLS_ENABLED && styles.navDisabled]}>
+          style={[styles.navButton, (!CALLS_ENABLED || sessionEnded) && styles.navDisabled]}>
           {/* 18, not 20: Lucide's phone glyph fills more of its em vertically than
               the video glyph, so at a matched fontSize it read visibly taller next
               to it (#1). Two points down evens the pair. */}
@@ -932,13 +989,19 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
           </View>
         ) : null}
 
+        {sessionEnded ? (
+          <Text allowFontScaling style={styles.sessionEndedText}>
+            Out of tokens — recharge to keep talking
+          </Text>
+        ) : null}
+
         <View style={{ paddingBottom: composerInset }}>
           <Composer
             onSend={onSend}
             onSendVoice={onSendVoice}
             onSendImage={onSendImage}
             onTyping={notifyTyping}
-            disabled={conversationId === undefined}
+            disabled={conversationId === undefined || sessionEnded}
             placeholder={replyTo !== null ? 'Reply' : 'Message'}
             bloomKey={bloomKey}
           />
@@ -1189,5 +1252,14 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     height: 40,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Shown above the composer when the session has been ended by an
+  // INSUFFICIENT_BALANCE response, so the member knows why the field is locked.
+  sessionEndedText: {
+    ...TOKENS.typography.captionRegular,
+    color: t.color.text.accent,
+    textAlign: 'center',
+    paddingHorizontal: TOKENS.space.md,
+    paddingVertical: TOKENS.space['2xs'],
   },
 });

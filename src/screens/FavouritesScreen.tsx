@@ -87,6 +87,7 @@ export function FavouritesScreen({ onOpenProvider }: Props) {
               paddingBottom: insets.bottom + NAV_BAR_HEIGHT + TOKENS.space.xl,
             },
           ]}
+          overrideItemLayout={layout => { (layout as { span?: number; size?: number }).size = 97; }}
         />
       ) : (
         <View style={styles.empty}>

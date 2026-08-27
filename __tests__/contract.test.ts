@@ -1763,7 +1763,9 @@ describe('calling ships visible and on, wired to a real media layer', () => {
     expect(chat).toContain('CALLS_ENABLED');
     expect(chat).toContain('testID="call-video"');
     expect(chat).toContain('testID="call-voice"');
-    expect(chat).toContain('disabled={!CALLS_ENABLED}');
+    // CALLS_ENABLED remains the primary gate; sessionEnded is an additional
+    // runtime gate applied when the member runs out of tokens mid-session.
+    expect(chat).toContain('!CALLS_ENABLED || sessionEnded');
     // Real, and ready for the flag flip: the tap starts a call.
     expect(chat).toContain("onStartCall?.('video')");
     expect(chat).toContain("onStartCall?.('audio')");

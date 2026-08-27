@@ -352,6 +352,7 @@ export function HomeScreen({
             styles.scroll,
             { paddingBottom: insets.bottom + NAV_BAR_HEIGHT + TOKENS.space.xl },
           ]}
+          overrideItemLayout={layout => { (layout as { span?: number; size?: number }).size = 97; }}
         />
       ) : loading ? (
         <View style={styles.state}>
@@ -386,6 +387,7 @@ export function HomeScreen({
             // behind it.
             { paddingBottom: insets.bottom + NAV_BAR_HEIGHT + TOKENS.space.xl },
           ]}
+          overrideItemLayout={layout => { (layout as { span?: number; size?: number }).size = 97; }}
         />
       )}
     </View>

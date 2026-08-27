@@ -106,6 +106,7 @@ export function ChatsListScreen({ onBack, onOpenConversation }: Props) {
           {...SCROLL_PHYSICS}
           contentContainerStyle={{ paddingBottom: insets.bottom + TOKENS.space.xl }}
           renderItem={renderRow}
+          overrideItemLayout={layout => { (layout as { span?: number; size?: number }).size = 72; }}
         />
       ) : (
         <View style={styles.empty}>
