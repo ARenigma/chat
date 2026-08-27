@@ -295,9 +295,11 @@ const makeStyles = (t: Theme) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: TOKENS.space.sm,
-      backgroundColor: t.color.bg.sunken,
+      backgroundColor: t.color.bg.raised,
       borderRadius: TOKENS.radius.md,
       borderCurve: 'continuous',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: t.color.border.hairline,
       padding: TOKENS.space.md,
     },
     payIcon: {

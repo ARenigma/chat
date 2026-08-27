@@ -40,7 +40,7 @@ import {
  * Matching the reference's number here would mean matching it in the one place
  * our materials differ from theirs.
  */
-const GLYPH = 32;
+const GLYPH = 20;
 
 /**
  * A word and the mark that rides with it.
@@ -276,11 +276,10 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     width: GLYPH,
     alignItems: 'center',
   },
-  // 40pt medium, the source's `.system(size: 40, weight: .medium)`.
   word: {
     fontFamily: TOKENS.typography.displayLarge.fontFamily,
-    fontSize: 40,
-    lineHeight: 50,
+    fontSize: 28,
+    lineHeight: 36,
     letterSpacing: -1,
     color: t.color.text.primary,
   },
