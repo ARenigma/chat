@@ -234,6 +234,12 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
           />
           <View style={styles.posterScrim} />
           <View style={styles.posterMeta}>
+            <View testID="call-medium-cue" style={styles.mediumCue}>
+              <Icon name={medium === 'video' ? 'video' : 'mic'} size={14} color="rgba(255,255,255,0.8)" />
+              <Text allowFontScaling style={styles.mediumLabel}>
+                {medium === 'video' ? 'Video call' : 'Voice call'}
+              </Text>
+            </View>
             <Text allowFontScaling numberOfLines={1} style={styles.name}>
               {name}
             </Text>
@@ -243,23 +249,34 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
           </View>
         </>
       ) : (
-        /* Fallback: coral gradient (already rendered by styles.fill) + centred monogram. */
-        <View style={[styles.center, { paddingTop: insets.top }]}>
-          <View style={styles.avatarRings}>
-            {phase === 'incoming' ? <View style={styles.ring} /> : null}
-            <View style={styles.avatar}>
-              <Text allowFontScaling={false} style={styles.avatarInitial}>
-                {initial}
-              </Text>
+        /* Fallback: coral gradient (already rendered by styles.fill) + centred monogram
+           with name/status anchored above the controls via an absolute centerMeta block. */
+        <>
+          <View style={[styles.center, { paddingTop: insets.top }]}>
+            <View style={styles.avatarRings}>
+              {phase === 'incoming' ? <View style={styles.ring} /> : null}
+              <View style={styles.avatar}>
+                <Text allowFontScaling={false} style={styles.avatarInitial}>
+                  {initial}
+                </Text>
+              </View>
             </View>
           </View>
-          <Text allowFontScaling numberOfLines={1} style={styles.name}>
-            {name}
-          </Text>
-          <Text allowFontScaling style={phase === 'active' ? styles.timer : styles.status}>
-            {status}
-          </Text>
-        </View>
+          <View style={styles.centerMeta}>
+            <View testID="call-medium-cue" style={styles.mediumCue}>
+              <Icon name={medium === 'video' ? 'video' : 'mic'} size={14} color="rgba(255,255,255,0.8)" />
+              <Text allowFontScaling style={styles.mediumLabel}>
+                {medium === 'video' ? 'Video call' : 'Voice call'}
+              </Text>
+            </View>
+            <Text allowFontScaling numberOfLines={1} style={styles.name}>
+              {name}
+            </Text>
+            <Text allowFontScaling style={phase === 'active' ? styles.timer : styles.status}>
+              {status}
+            </Text>
+          </View>
+        </>
       )}
 
       {/* Local camera preview (picture-in-picture), bottom-right. Only shown
@@ -547,10 +564,32 @@ const makeStyles = (t: Theme) =>
       position: 'absolute',
       left: 0,
       right: 0,
-      bottom: CONTROLS_CLEARANCE + TOKENS.space.xl,
+      bottom: CONTROLS_CLEARANCE + TOKENS.space.sm,
       paddingHorizontal: TOKENS.space['2xl'],
       alignItems: 'center',
       gap: TOKENS.space.xs,
+    },
+    /** Name + status anchored above the controls bar for the no-avatar layout.
+     *  Sits a little higher than posterMeta to clear the monogram avatar. */
+    centerMeta: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: CONTROLS_CLEARANCE + TOKENS.space.lg,
+      paddingHorizontal: TOKENS.space['2xl'],
+      alignItems: 'center',
+      gap: TOKENS.space.xs,
+    },
+    /** Pill row indicating call medium — icon + label — above the peer name. */
+    mediumCue: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.xs,
+    },
+    mediumLabel: {
+      ...TOKENS.typography.captionSmall,
+      color: 'rgba(255,255,255,0.8)',
+      letterSpacing: 1,
     },
     /** Local camera PiP: bottom-right, above the controls bar. */
     localPip: {

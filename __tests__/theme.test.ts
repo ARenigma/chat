@@ -728,10 +728,6 @@ describe('accent budget is enforced in code, not just documented', () => {
     // flirty:
     //   Avatar      , the warm wash on *your* mark, never a stranger's
     //   Chip        , at most one warm starter per screen
-    //   OnboardingScreen, the mark's letter on the entry screen. The white tile it
-    //                   sits in is the only opaque white above the button pair,
-    //                   so the letter is the one place the brand hue appears at
-    //                   display size on that surface
     //   WordColumn  , the glyph beside the highlighted word. It marks WHICH word
     //                   is active, which is a state rather than an ornament, and
     //                   it is the only thing distinguishing the live row from
@@ -836,9 +832,6 @@ describe('accent budget is enforced in code, not just documented', () => {
        * a stranger's avatar.
        */
       'HomeScreen.tsx',
-      // The entry surface's mark and CTA, unchanged in intent from the screen
-      // this replaced.
-      'OnboardingScreen.tsx',
       /*
        * Added with the Fuse translation, and it earns its place rather than
        * widening the budget by accident: the coral here is the ACTIVE step's
@@ -848,6 +841,14 @@ describe('accent budget is enforced in code, not just documented', () => {
        * for — one meaning, one place, at a moment where it is the whole signal.
        */
       'OnboardingStep.tsx',
+      /*
+       * The mock-payment success circle (behind the MOCK_PAYMENTS gate; never
+       * visible in a production build).  A payment-success confirmation is an
+       * action-affirming moment — the one use the accent budget reserves the
+       * coral for — and the circle appears exactly once, after real tokens have
+       * been credited, at the end of the recharge flow.
+       */
+      'PaymentSheet.tsx',
       /*
        * The v13 provider profile. The coral is the primary Call action and the
        * favourite-when-set, plus the hero's warm field — actions and a live
