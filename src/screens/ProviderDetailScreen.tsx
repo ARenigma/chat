@@ -1,5 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated, { useSharedValue } from 'react-native-reanimated';
+import { heartBounce } from '../theme/motion';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -194,6 +196,7 @@ function Hero({
     languages.join(' · '),
     provider.rating_count > 0 ? `★ ${provider.rating_avg?.toFixed(1)}` : 'New here',
   ].filter(s => s !== '');
+  const heartScale = useSharedValue(1);
   return (
     <View style={styles.hero}>
       {provider.avatar_url ? (
@@ -215,18 +218,23 @@ function Hero({
           than to the hero — which put the heart mid-right instead of top-right. */}
       <View style={styles.favoriteSlot}>
         <Pressable
-          onPress={onToggleFavorite}
+          onPress={() => {
+            heartScale.value = heartBounce();
+            onToggleFavorite();
+          }}
           testID="detail-favorite"
           accessibilityLabel={favorite ? 'Remove from favourites' : 'Add to favourites'}
           press="chip"
           size={40}
           style={styles.favorite}>
-          <Icon
-            name="heart"
-            active={favorite}
-            size={22}
-            color={favorite ? theme.color.bg.accent : '#FFFFFF'}
-          />
+          <Animated.View style={{ transform: [{ scale: heartScale }] }}>
+            <Icon
+              name="heart"
+              active={favorite}
+              size={22}
+              color={favorite ? theme.color.bg.accent : '#FFFFFF'}
+            />
+          </Animated.View>
         </Pressable>
       </View>
       <View style={styles.heroBody}>

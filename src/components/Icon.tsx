@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../theme/ThemeProvider';
 import {
   ICON_FAMILY,
@@ -77,31 +77,60 @@ function IconView({ name, active = false, size = DEFAULT_SIZE, color, testID, ac
   // be colour-only. This branch adds the shape signal for the favourite toggle.
   if (active && name === 'heart') {
     return (
-      <Text
-        testID={testID}
-        allowFontScaling={false}
-        accessible={accessibilityLabel !== undefined}
-        accessibilityLabel={accessibilityLabel}
-        importantForAccessibility={
-          accessibilityLabel === undefined ? 'no-hide-descendants' : 'yes'
-        }
-        style={[
-          styles.glyph,
-          {
-            fontFamily: PAPPAL_GLYPHS_FAMILY,
-            fontSize: px,
-            lineHeight: px,
-            width: px,
-            height: px,
-            color: resolvedColor,
-          },
-        ]}>
-        {FILLED_HEART_CHAR}
-      </Text>
+      <View
+        style={[styles.heartBox, { width: px, height: px }]}>
+        <Text
+          testID={testID}
+          allowFontScaling={false}
+          accessible={accessibilityLabel !== undefined}
+          accessibilityLabel={accessibilityLabel}
+          importantForAccessibility={
+            accessibilityLabel === undefined ? 'no-hide-descendants' : 'yes'
+          }
+          style={[
+            styles.glyph,
+            {
+              fontFamily: PAPPAL_GLYPHS_FAMILY,
+              fontSize: px,
+              lineHeight: px,
+              color: resolvedColor,
+            },
+          ]}>
+          {FILLED_HEART_CHAR}
+        </Text>
+      </View>
     );
   }
 
   const glyph = ICON_GLYPH[name];
+  // Outline heart: same fixed-container centering so toggling active never shifts position.
+  if (name === 'heart') {
+    return (
+      <View
+        style={[styles.heartBox, { width: px, height: px }]}>
+        <Text
+          testID={testID}
+          allowFontScaling={false}
+          accessible={accessibilityLabel !== undefined}
+          accessibilityLabel={accessibilityLabel}
+          importantForAccessibility={
+            accessibilityLabel === undefined ? 'no-hide-descendants' : 'yes'
+          }
+          style={[
+            styles.glyph,
+            {
+              fontFamily: ICON_FAMILY,
+              fontSize: px,
+              lineHeight: px,
+              color: resolvedColor,
+            },
+          ]}>
+          {glyph}
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <Text
       testID={testID}
@@ -139,5 +168,12 @@ const styles = StyleSheet.create({
     textAlignVertical: 'center',
     // A Material Symbols glyph is centred in an em square; no extra padding.
     includeFontPadding: false,
+  },
+  // Fixed-size container that centres the glyph via flexbox rather than relying
+  // on the em box. Used for the heart variants (filled PappalGlyphs and outline
+  // Lucide) so that toggling between the two families never shifts position.
+  heartBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
