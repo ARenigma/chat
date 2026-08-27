@@ -45,6 +45,7 @@ import { FavouritesScreen } from './src/screens/FavouritesScreen';
 import { ChatsListScreen } from './src/screens/ChatsListScreen';
 import { SettingsSheet } from './src/screens/SettingsSheet';
 import { SplashScreen } from './src/screens/SplashScreen';
+import { TransactionHistoryScreen } from './src/screens/TransactionHistoryScreen';
 
 initSentry();
 
@@ -574,6 +575,7 @@ function SignedIn({
             onApply={() => setRoute({ name: 'apply' })}
             onApplicationStatus={() => setRoute({ name: 'applicationStatus' })}
             onBlocked={() => setRoute({ name: 'blocked' })}
+            onTransactions={() => setRoute({ name: 'transactions' })}
           />
         </Animated.View>
       ) : null}
@@ -634,6 +636,8 @@ function SignedIn({
             <BlockedUsersScreen onBack={backToHome} />
           ) : route.name === 'chatsList' ? (
             <ChatsListScreen onBack={backToHome} onOpenConversation={openChat} />
+          ) : route.name === 'transactions' ? (
+            <TransactionHistoryScreen onBack={() => setRoute({ name: 'settings' })} />
           ) : null}
         </Animated.View>
       ) : null}

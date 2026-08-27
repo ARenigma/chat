@@ -55,7 +55,9 @@ export type MemberRoute =
   /** The Favourites tab — saved providers; a top-level nav destination. */
   | { readonly name: 'favourites' }
   /** Account & privacy, a mounted screen now rather than a bottom sheet. */
-  | { readonly name: 'settings' };
+  | { readonly name: 'settings' }
+  /** Recharge history and invoice downloads. */
+  | { readonly name: 'transactions' };
 
 export type ProviderRoute =
   | { readonly name: 'home' }
@@ -101,6 +103,8 @@ export function memberParent(route: MemberRoute): MemberRoute | null {
     case 'favourites':
     case 'settings':
       return { name: 'home' };
+    case 'transactions':
+      return { name: 'settings' };
   }
 }
 
