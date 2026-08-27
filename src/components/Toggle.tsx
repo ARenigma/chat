@@ -8,6 +8,7 @@ import Animated, {
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { INTERACTION, springTo } from '../theme/motion';
+import { Icon } from './Icon';
 
 interface Props {
   value: boolean;
@@ -48,6 +49,12 @@ const CENTRE_OFF = T.trackHeight / 2;
 const CENTRE_ON = T.trackWidth - T.trackHeight / 2;
 /** The thumb renders at its largest and scales down, so only transforms animate. */
 const BOX = T.thumbPressed;
+/**
+ * The check glyph inside the on thumb, M3's own selection cue. Sized against the
+ * BOX (28) it renders in, so at the on scale (24/28) it settles to ~14dp, about
+ * 57% of the thumb — Material's proportion.
+ */
+const CHECK = 16;
 
 /**
  * A Material 3 switch, built rather than borrowed.
@@ -125,6 +132,10 @@ function ToggleView({
     };
   });
 
+  // The check fades in with the on state. It rides inside the thumb, so it
+  // scales with it; only the opacity animates here.
+  const check = useAnimatedStyle(() => ({ opacity: on.value }));
+
   return (
     <RNPressable
       onPress={() => onValueChange(!value)}
@@ -142,7 +153,11 @@ function ToggleView({
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ checked: value, disabled }}>
       <Animated.View style={[styles.track, disabled && styles.disabled, track]}>
-        <Animated.View style={[styles.thumb, thumb]} />
+        <Animated.View style={[styles.thumb, thumb]}>
+          <Animated.View style={check}>
+            <Icon name="check" size={CHECK} color={fill} />
+          </Animated.View>
+        </Animated.View>
       </Animated.View>
     </RNPressable>
   );
@@ -168,6 +183,8 @@ const makeStyles = (_t: Theme) => StyleSheet.create({
     width: BOX,
     height: BOX,
     borderRadius: BOX / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   disabled: {
     opacity: 0.45,

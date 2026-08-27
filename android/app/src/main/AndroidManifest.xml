@@ -35,6 +35,14 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <!--
+      Camera, for capturing a photo to send in chat (#8). Requested at runtime in
+      Composer before launchCamera; declared here because react-native-image-picker
+      requires the permission to be present once the app asks for it. Photo capture
+      only — no video, no background use.
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!--
       Belt and braces for the Play Data Safety declaration: a future transitive
       dependency cannot reintroduce these through manifest merging. If any
       library ever tries, the merger removes it here instead of shipping it.

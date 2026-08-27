@@ -2,10 +2,11 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, BackHandler, Linking, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated, { FadeIn } from 'react-native-reanimated';
+import Animated, { FadeIn, SlideInRight, SlideOutRight } from 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from './src/theme/tokens';
 import { ThemeProvider, useStyles, useThemeMode } from './src/theme/ThemeProvider';
+import { PaperHost } from './src/theme/PaperHost';
 import { UpdateBanner } from './src/components/UpdateBanner';
 import { BLOOM_CONTENT_MS } from './src/lib/bloom';
 import { assertEnv } from './src/lib/env';
@@ -21,7 +22,8 @@ import { initSentry } from './src/lib/sentry';
 import { isUuid } from './src/lib/ids';
 import { track } from './src/lib/telemetry';
 import { currentSession, handleAuthDeepLink } from './src/api/auth';
-import { CALLS_ENABLED } from './src/api/calls';
+import { CALLS_ENABLED, useIncomingCalls, type IncomingCall } from './src/api/calls';
+import { useSelfId } from './src/api/chat';
 import { useRole } from './src/api/provider';
 import { useStore } from './src/store/useStore';
 import { RechargeScreen } from './src/screens/RechargeScreen';
@@ -81,7 +83,6 @@ function Root() {
   const [attempt, setAttempt] = useState(0);
   const [route, setRoute] = useState<MemberRoute>({ name: 'home' });
   const [providerRoute, setProviderRoute] = useState<ProviderRoute>({ name: 'home' });
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [welcomeSeen, setWelcomeSeen] = useState(false);
   const resetConversation = useStore(s => s.resetConversation);
   const refillVisible = useStore(s => s.refillVisible);
@@ -251,13 +252,10 @@ function Root() {
    */
   useEffect(() => {
     const onBack = () => {
-      // Overlays close before screens pop, most-recent first: the settings sheet,
-      // then the Recharge overlay. Each is the thing the user most recently
-      // opened and therefore the thing back means.
-      if (settingsOpen) {
-        setSettingsOpen(false);
-        return true;
-      }
+      // The Recharge overlay closes before any screen pops: it sits above
+      // everything (zIndex 20) and is the thing the user most recently opened, so
+      // back means it first. Settings is a normal route now (not an overlay), so
+      // it pops through the parent map below like every other screen.
       if (refillVisible) {
         closeRefill();
         return true;
@@ -297,7 +295,7 @@ function Root() {
     };
     const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
     return () => sub.remove();
-  }, [route, providerRoute, settingsOpen, refillVisible, closeRefill, resetConversation]);
+  }, [route, providerRoute, refillVisible, closeRefill, resetConversation]);
 
   if (boot.phase === 'loading') {
     return (
@@ -407,8 +405,6 @@ function Root() {
       backToHome={backToHome}
       setRoute={setRoute}
       setProviderRoute={setProviderRoute}
-      settingsOpen={settingsOpen}
-      setSettingsOpen={setSettingsOpen}
       onSignedOut={() => setBoot({ phase: 'signedOut' })}
     />
   );
@@ -424,8 +420,6 @@ interface SignedInProps {
   backToHome: () => void;
   setRoute: (r: MemberRoute) => void;
   setProviderRoute: (r: ProviderRoute) => void;
-  settingsOpen: boolean;
-  setSettingsOpen: (open: boolean) => void;
   onSignedOut: () => void;
 }
 
@@ -442,12 +436,25 @@ function SignedIn({
   backToHome,
   setRoute,
   setProviderRoute,
-  settingsOpen,
-  setSettingsOpen,
   onSignedOut,
 }: SignedInProps) {
   const styles = useStyles(makeStyles);
   const { role, isPending } = useRole();
+  const { data: selfId } = useSelfId();
+
+  // A ring, foreground: route the incoming call to the right tree's call screen.
+  // Declared before the early return so the hook order is stable.
+  const onIncoming = useCallback(
+    (incoming: IncomingCall) => {
+      if (role === 'provider') {
+        setProviderRoute({ name: 'call', peerId: incoming.callerId, direction: 'in', callId: incoming.callId });
+      } else {
+        setRoute({ name: 'call', providerId: incoming.callerId, direction: 'in', callId: incoming.callId });
+      }
+    },
+    [role, setRoute, setProviderRoute],
+  );
+  useIncomingCalls(selfId, onIncoming);
 
   // No retry handler here on purpose: the profile query owns its own retries, and
   // a button that re-runs a query React Query is already retrying would only
@@ -460,65 +467,99 @@ function SignedIn({
   if (role === 'provider') {
     return (
       <View style={styles.host}>
-        {providerRoute.name === 'chat' ? (
+        {providerRoute.name === 'call' ? (
+          <CallScreen
+            providerId={providerRoute.peerId}
+            direction={providerRoute.direction}
+            callId={providerRoute.callId}
+            onEnd={() => setProviderRoute({ name: 'home' })}
+          />
+        ) : providerRoute.name === 'chat' ? (
           <ChatScreen
             providerId={providerRoute.peerId}
             onBack={() => setProviderRoute({ name: 'home' })}
           />
+        ) : providerRoute.name === 'settings' ? (
+          <SettingsSheet
+            onBack={() => setProviderRoute({ name: 'home' })}
+            onDeleted={() => {
+              setProviderRoute({ name: 'home' });
+              onSignedOut();
+            }}
+            onSignedOut={onSignedOut}
+          />
         ) : (
           <ProviderHomeScreen
             onOpenConversation={peerId => setProviderRoute({ name: 'chat', peerId })}
-            onOpenSettings={() => setSettingsOpen(true)}
+            onOpenSettings={() => setProviderRoute({ name: 'settings' })}
           />
         )}
-        <SettingsSheet
-          visible={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
-          onDeleted={() => {
-            setSettingsOpen(false);
-            onSignedOut();
-          }}
-          onSignedOut={onSignedOut}
-        />
       </View>
     );
   }
 
   return (
     <View style={styles.host}>
-      {/*
-        * Home stays mounted underneath, always. Pushed screens render as an
-        * opaque overlay on top and unmount on back, so returning to Home never
-        * remounts its lists, loses scroll position, or replays entry animations —
-        * which is exactly the "the home screen rebuilds every time I come back"
-        * jank. This is what a native back stack gives for free and what a single
-        * swapped-in screen threw away.
-        */}
+      {/* The content area, above the docked nav. Home stays mounted underneath,
+        * always; the Settings tab and the pushed screens are absolute layers that
+        * fill THIS view (not the whole host), so they end at the nav's top edge
+        * and the fixed bar never has to move or be overlapped. Returning to Home
+        * never remounts its lists or replays entry animations — the native
+        * back-stack behaviour a single swapped-in screen threw away. */}
+      <View style={styles.content}>
       <HomeScreen
         onOpenConversation={openChat}
         onOpenProvider={openProvider}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={() => setRoute({ name: 'settings' })}
       />
 
-      {route.name !== 'home' ? (
-        <View style={styles.overlay}>
+      {/* Settings is a top-level tab: its own layer filling the content area
+          (which ends at the docked nav's top edge), not inside the pushed overlay
+          that the nav does not survive. */}
+      {route.name === 'settings' ? (
+        // A tab switch, not a push: a quick cross-fade rather than a slide, so
+        // Home↔Settings does not read as a sideways jump.
+        <Animated.View style={styles.tabLayer} entering={FadeIn.duration(160)}>
+          <SettingsSheet
+            onBack={backToHome}
+            // A fixed bottom-nav tab on the member tree: the Home tab is the way
+            // back, so no app-bar back action (WhatsApp's model).
+            showBack={false}
+            onDeleted={() => {
+              backToHome();
+              onSignedOut();
+            }}
+            onSignedOut={onSignedOut}
+            onApply={() => setRoute({ name: 'apply' })}
+            onApplicationStatus={() => setRoute({ name: 'applicationStatus' })}
+            onBlocked={() => setRoute({ name: 'blocked' })}
+          />
+        </Animated.View>
+      ) : null}
+
+      {route.name !== 'home' && route.name !== 'settings' ? (
+        // A pushed screen: slide in from the right over the persistent Home, and
+        // out the same way on back — the Android forward-navigation gesture, so
+        // opening a chat/profile/call reads as a push rather than an instant swap.
+        // The transition runs on the UI thread (Reanimated), off the JS thread.
+        <Animated.View
+          style={styles.overlay}
+          entering={SlideInRight.duration(240)}
+          exiting={SlideOutRight.duration(200)}>
           {route.name === 'chat' ? (
             <ChatScreen
               providerId={route.providerId}
               onBack={leaveChat}
-              onStartCall={channel =>
-                setRoute({ name: 'call', providerId: route.providerId, mode: channel })
+              onStartCall={() =>
+                setRoute({ name: 'call', providerId: route.providerId, direction: 'out', callId: null })
               }
             />
           ) : route.name === 'call' ? (
             <CallScreen
               providerId={route.providerId}
-              mode={route.mode}
-              // A call ends back on the profile it started from.
-              onEnd={() => setRoute({ name: 'providerDetail', providerId: route.providerId })}
-              onAccept={() =>
-                setRoute({ name: 'call', providerId: route.providerId, mode: 'audio' })
-              }
+              direction={route.direction}
+              callId={route.callId}
+              onEnd={backToHome}
             />
           ) : route.name === 'providerDetail' ? (
             <ProviderDetailScreen
@@ -526,9 +567,8 @@ function SignedIn({
               onBack={backToHome}
               // Opened from a profile, so back from the chat returns to the profile.
               onOpenChat={id => openChat(id, 'detail')}
-              // Only fires while CALLS_ENABLED (the buttons are disabled otherwise).
-              onStartCall={(id, channel) =>
-                setRoute({ name: 'call', providerId: id, mode: channel })
+              onStartCall={id =>
+                setRoute({ name: 'call', providerId: id, direction: 'out', callId: null })
               }
             />
           ) : route.name === 'apply' ? (
@@ -541,48 +581,32 @@ function SignedIn({
           ) : route.name === 'blocked' ? (
             <BlockedUsersScreen onBack={backToHome} />
           ) : null}
-        </View>
+        </Animated.View>
       ) : null}
+      </View>
 
       {/*
-        * The floating toolbar renders on Home only. Pushed screens are somewhere
-        * you go and come back from; leaving the toolbar under them would offer a
-        * sideways exit out of a half-finished thing. Calls are gated
-        * (`CALLS_ENABLED`); Settings opens the sheet rather than being a route.
+        * The docked bottom bar (WhatsApp/iMessage): in the layout flow BELOW the
+        * content area, taking its own height, so nothing scrolls under it and a
+        * list row can never steal a tab's tap. Home and Settings are the two
+        * top-level tabs, so it renders on both and its active pill follows the
+        * route; on chat/call/detail and the other pushed screens it is simply not
+        * rendered, giving them the full height. Calls stay gated (`CALLS_ENABLED`).
         */}
-      {route.name === 'home' ? (
+      {route.name === 'home' || route.name === 'settings' ? (
         <FloatingToolbar
-          active="home"
+          active={route.name === 'settings' ? 'settings' : 'home'}
           callEnabled={CALLS_ENABLED}
           onSelect={key => {
-            if (key === 'settings') {
-              setSettingsOpen(true);
+            if (key === 'home') {
+              setRoute({ name: 'home' });
+            } else if (key === 'settings') {
+              setRoute({ name: 'settings' });
             }
           }}
         />
       ) : null}
       <RechargeScreen />
-      <SettingsSheet
-        visible={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        onDeleted={() => {
-          setSettingsOpen(false);
-          onSignedOut();
-        }}
-        onSignedOut={onSignedOut}
-        onApply={() => {
-          setSettingsOpen(false);
-          setRoute({ name: 'apply' });
-        }}
-        onApplicationStatus={() => {
-          setSettingsOpen(false);
-          setRoute({ name: 'applicationStatus' });
-        }}
-        onBlocked={() => {
-          setSettingsOpen(false);
-          setRoute({ name: 'blocked' });
-        }}
-      />
     </View>
   );
 }
@@ -622,7 +646,9 @@ export default function App() {
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
           <ThemeProvider>
-            <Shell />
+            <PaperHost>
+              <Shell />
+            </PaperHost>
           </ThemeProvider>
         </QueryClientProvider>
       </SafeAreaProvider>
@@ -646,8 +672,17 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     flex: 1,
     backgroundColor: t.color.bg.base,
   },
+  // The content area above the docked nav. flex:1 so it takes all the space the
+  // bar leaves, and position relative so the Settings tab and pushed-screen
+  // overlays (absolute) fill THIS, ending at the bar's top edge rather than
+  // under it. This is what makes the fixed bar not shift or get overlapped.
+  content: {
+    flex: 1,
+    position: 'relative',
+  },
   // Opaque cover for a pushed screen, above the always-mounted Home and below
-  // the Recharge overlay (zIndex 20) and the settings sheet.
+  // the Recharge overlay (zIndex 20). Its zIndex 10 is also what hides the fixed
+  // nav (no zIndex) on pushed screens, which is the whole point of the split.
   overlay: {
     position: 'absolute',
     top: 0,
@@ -656,6 +691,18 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     bottom: 0,
     backgroundColor: t.color.bg.base,
     zIndex: 10,
+  },
+  // A top-level tab (Settings) covering Home. Deliberately NO zIndex: it paints
+  // over Home by document order, and the nav — rendered after it, also without a
+  // zIndex — paints over it, so the fixed bar stays visible on the tab. Giving
+  // this or the nav a zIndex is what broke the nav's touch handling on Android.
+  tabLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: t.color.bg.base,
   },
   blank: {
     flex: 1,

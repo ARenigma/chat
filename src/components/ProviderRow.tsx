@@ -30,7 +30,23 @@ interface Props {
   onPressAvatar?: (provider: ProviderSummary) => void;
 }
 
-const GENDER_SHORT: Record<string, string> = { female: 'F', male: 'M', other: '' };
+/**
+ * A seeded years-of-experience, 2 to 8, stable per provider.
+ *
+ * A placeholder (Amit's "seeded for now"): the directory has no experience
+ * column, so this derives a deterministic number from the id rather than
+ * inventing one per render. Swap for a real `experience_years` field when the
+ * schema carries it; this is the one number in the row that is not yet true.
+ */
+function seededExperienceYears(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i += 1) {
+    // `% 100000` keeps the running hash bounded (no overflow) without a bitwise
+    // op, which the lint config forbids.
+    h = (h * 31 + id.charCodeAt(i)) % 100000;
+  }
+  return 2 + (h % 7);
+}
 
 /** "replies in ~4m". Rounded hard, because precision here would be false. */
 function replyLatency(seconds: number | null): string | null {
@@ -95,12 +111,16 @@ function ProviderRowView({ provider, index, isLast, onPress, onPressAvatar }: Pr
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const initial = initialOf(provider.display_name);
-  const shortGender = provider.gender ? (GENDER_SHORT[provider.gender] ?? '') : '';
-  const identity = [shortGender, provider.age !== null ? `${provider.age}` : null]
-    .filter(part => part !== null && part !== '')
-    .join(' · ');
   const latency = replyLatency(provider.median_reply_seconds);
-  const languages = provider.languages.slice(0, 2).join(', ');
+  // Fact chips: experience + the top languages. Age moved up to sit beside the
+  // name (subscript, like the detail card). Experience is SEEDED for now — the
+  // directory has no such column yet — so it is derived deterministically from
+  // the id, stable per provider, and clearly a placeholder until a real field
+  // lands. One non-wrapping line so every row stays the same height.
+  const chips = [
+    `${seededExperienceYears(provider.id)} yrs`,
+    ...provider.languages.slice(0, 2),
+  ].filter(c => c !== '');
 
   /**
    * The dot and the trailing line both come from `presence` now. They used to
@@ -154,23 +174,28 @@ function ProviderRowView({ provider, index, isLast, onPress, onPressAvatar }: Pr
           />
         </Pressable>
         <View style={styles.label}>
-          <View style={styles.topLine}>
-            <Text allowFontScaling numberOfLines={1} style={styles.name}>
-              {provider.display_name}
-            </Text>
-            {identity !== '' ? (
-              <Text allowFontScaling style={styles.identity}>
-                · {identity}
-              </Text>
+          <Text allowFontScaling numberOfLines={1} style={styles.name}>
+            {provider.display_name}
+            {provider.age !== null ? (
+              <Text style={styles.nameAge}> {provider.age}</Text>
             ) : null}
-          </View>
+          </Text>
           <Text allowFontScaling numberOfLines={1} style={styles.secondary}>
             {provider.headline !== null && provider.headline !== ''
               ? provider.headline
-              : languages !== ''
-                ? languages
-                : 'Here to listen'}
+              : 'Here to listen'}
           </Text>
+          {chips.length > 0 ? (
+            <View style={styles.chips}>
+              {chips.map(chip => (
+                <View key={chip} style={styles.chip}>
+                  <Text allowFontScaling numberOfLines={1} style={styles.chipText}>
+                    {chip}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.trailing}>
@@ -179,28 +204,16 @@ function ProviderRowView({ provider, index, isLast, onPress, onPressAvatar }: Pr
           {provider.rating_count > 0 ? (
             <Text testID="provider-rating" allowFontScaling style={styles.rating}>
               ★ {provider.rating_avg?.toFixed(1)}
-              <Text style={styles.ratingCount}> · {provider.rating_count}</Text>
             </Text>
           ) : (
             <Text allowFontScaling style={styles.meta}>
               New here
             </Text>
           )}
-          {/* Three cases, one rendered. `here` gets the sage line, `away` gets the
-              same line in the quiet colour (it is presence either way, and putting
-              it in `meta` would make it look like a reply latency), and `hidden`
-              falls through to the latency it always fell through to. */}
-          {presence.line !== null ? (
-            <Text
-              allowFontScaling
-              style={[styles.presenceText, !presence.here && styles.presenceQuiet]}>
-              {presence.line}
-            </Text>
-          ) : latency !== null ? (
-            <Text testID="provider-latency" allowFontScaling style={styles.meta}>
-              {latency}
-            </Text>
-          ) : null}
+          {/* No presence line here any more (Amit's call): the green dot on the
+              avatar is the online signal, so a "Here now" text beside it was
+              saying the same thing twice. Presence still drives the dot and the
+              screen-reader label above. */}
         </View>
 
         {/* The disclosure indicator, which this list had no version of at all.
@@ -245,11 +258,6 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     flex: 1,
     gap: 2,
   },
-  topLine: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: TOKENS.space['2xs'],
-  },
   // 17/15, which is what an iOS Messages cell is. It was 15/14, one step down the
   // ladder on both lines.
   name: {
@@ -257,7 +265,33 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     color: t.color.text.primary,
     flexShrink: 1,
   },
-  identity: {
+  // Age beside the name, subscript — the detail/hero card idiom. Quieter weight
+  // and colour so it reads as a modifier of the name, not a second word.
+  nameAge: {
+    ...TOKENS.typography.subhead,
+    color: t.color.text.tertiary,
+  },
+  // The fact-chip strip. Modern outlined tags (a hairline ring on a whisper of
+  // grouped grey) rather than the flat grey slabs, which read as filled blocks
+  // fighting the row. Clipped to one line so a chip can never make one row
+  // taller than its neighbours.
+  chips: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: TOKENS.space['2xs'],
+    marginTop: 3,
+    overflow: 'hidden',
+  },
+  chip: {
+    paddingHorizontal: TOKENS.space.sm,
+    paddingVertical: 3,
+    borderRadius: TOKENS.radius.pill,
+    borderCurve: 'continuous',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: t.color.border.hairline,
+    backgroundColor: t.color.bg.grouped,
+  },
+  chipText: {
     ...TOKENS.typography.captionSmall,
     color: t.color.text.secondary,
   },
@@ -279,16 +313,6 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   },
   meta: {
     ...TOKENS.typography.captionSmall,
-    color: t.color.text.secondary,
-  },
-  presenceText: {
-    ...TOKENS.typography.labelSmall,
-    color: t.color.text.positive,
-  },
-  // 'Away' and 'Last seen ...' are presence, so they keep the presence type
-  // style, but sage means here. In the secondary ink they read as the same fact
-  // in a quieter voice rather than as a different kind of information.
-  presenceQuiet: {
     color: t.color.text.secondary,
   },
 });

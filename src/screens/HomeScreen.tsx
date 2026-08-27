@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -13,13 +13,16 @@ import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ConversationSummary, ProviderSummary } from '../lib/database.types';
 import { initialOf } from '../lib/display';
 import { readPresence } from '../lib/presence';
+import { SCROLL_PHYSICS } from '../lib/scroll';
 import { useConversations, useProfile, useProviders } from '../api/chat';
 import { useBlockedPeerIds } from '../api/safety';
 import { useStore } from '../store/useStore';
 import { Avatar } from '../components/Avatar';
+import { NAV_BAR_HEIGHT } from '../components/FloatingToolbar';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { ProviderRow } from '../components/ProviderRow';
+import { TextField } from '../components/TextField';
 import { TokenCounter } from '../components/TokenCounter';
 
 interface Props {
@@ -92,6 +95,28 @@ export function HomeScreen({ onOpenConversation, onOpenProvider, onOpenSettings 
     }
   }, [featured, onOpenProvider]);
 
+  // Inline search (#5). Replaces the placeholder that opened Recharge. Filters the
+  // directory by name or language, client-side over the already-loaded list — no
+  // round trip, and it works the instant the directory is in hand.
+  const [searching, setSearching] = useState(false);
+  const [query, setQuery] = useState('');
+  const trimmed = query.trim().toLowerCase();
+  const results = useMemo(() => {
+    if (trimmed === '') {
+      return [];
+    }
+    return directory.filter(
+      p =>
+        p.display_name.toLowerCase().includes(trimmed) ||
+        p.languages.some(l => l.toLowerCase().includes(trimmed)),
+    );
+  }, [directory, trimmed]);
+
+  const closeSearch = useCallback(() => {
+    setSearching(false);
+    setQuery('');
+  }, []);
+
   const loading = convosPending || providersPending;
 
   return (
@@ -100,40 +125,113 @@ export function HomeScreen({ onOpenConversation, onOpenProvider, onOpenSettings 
           v13 Home has a fixed nav row, and the large title belongs to the Explore
           section header below it. */}
       <View style={[styles.nav, { paddingTop: insets.top + TOKENS.space['2xs'] }]}>
-        <Text allowFontScaling={false} style={styles.wordmark}>
-          pappal
-        </Text>
-        <View style={styles.navTrailing}>
-          <Pressable
-            onPress={openRefill}
-            testID="home-search"
-            accessibilityLabel="Search people"
-            press="none"
-            size={28}
-            style={styles.navIcon}>
-            <Icon name="search" size={24} color={theme.color.text.secondary} />
-          </Pressable>
-          <TokenCounter balance={balance} onPress={openRefill} />
-        </View>
+        {searching ? (
+          <>
+            <View style={styles.searchField}>
+              <Icon name="search" size={18} color={theme.color.text.tertiary} />
+              <TextField
+                testID="home-search-input"
+                style={styles.searchInput}
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Search by name or language"
+                placeholderTextColor={theme.color.text.tertiary}
+                autoFocus
+                returnKeyType="search"
+                allowFontScaling
+                accessibilityLabel="Search people"
+                underlineColorAndroid="transparent"
+              />
+            </View>
+            <Pressable
+              onPress={closeSearch}
+              testID="home-search-close"
+              accessibilityLabel="Close search"
+              press="none"
+              size={28}
+              style={styles.navIcon}>
+              <Icon name="close" size={20} color={theme.color.text.secondary} />
+            </Pressable>
+          </>
+        ) : (
+          <>
+            <Text allowFontScaling={false} style={styles.wordmark}>
+              Pappal
+            </Text>
+            <View style={styles.navTrailing}>
+              <Pressable
+                onPress={() => setSearching(true)}
+                testID="home-search"
+                accessibilityLabel="Search people"
+                press="none"
+                size={28}
+                style={styles.navIcon}>
+                <Icon name="search" size={24} color={theme.color.text.secondary} />
+              </Pressable>
+              <TokenCounter balance={balance} onPress={openRefill} />
+            </View>
+          </>
+        )}
       </View>
 
-      {loading ? (
+      {searching ? (
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          {...SCROLL_PHYSICS}
+          contentContainerStyle={[
+            styles.scroll,
+            { paddingBottom: insets.bottom + NAV_BAR_HEIGHT + TOKENS.space.xl },
+          ]}>
+          {trimmed === '' ? (
+            <View style={styles.empty}>
+              <Text allowFontScaling style={styles.emptyText}>
+                Search for someone by name or language.
+              </Text>
+            </View>
+          ) : results.length > 0 ? (
+            <View style={styles.rows}>
+              {results.map((p, i) => (
+                <ProviderRow
+                  key={p.id}
+                  provider={p}
+                  index={i}
+                  isLast={i === results.length - 1}
+                  onPress={() => onOpenConversation(p.id)}
+                  onPressAvatar={() => onOpenProvider(p.id)}
+                />
+              ))}
+            </View>
+          ) : (
+            <View style={styles.empty}>
+              <Text allowFontScaling style={styles.emptyText}>
+                No one matches “{query.trim()}”.
+              </Text>
+            </View>
+          )}
+        </ScrollView>
+      ) : loading ? (
         <View style={styles.state}>
           <ActivityIndicator color={theme.color.text.secondary} />
         </View>
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
+          {...SCROLL_PHYSICS}
           contentContainerStyle={[
             styles.scroll,
-            // Clear the floating toolbar (64) + its bottom offset + safe inset.
-            { paddingBottom: insets.bottom + 64 + TOKENS.space.xl },
+            // The nav is a frosted overlay again, so the list scrolls under it.
+            // Clear its full height (bar + safe-area inset) plus the usual end
+            // breathing room, so the last row lands above the bar rather than
+            // behind it — which is also what keeps any full-width row from
+            // underlapping the bar and stealing its taps.
+            { paddingBottom: insets.bottom + NAV_BAR_HEIGHT + TOKENS.space.xl },
           ]}>
           {/* CHATS rail */}
           {chats.length > 0 ? (
             <View style={styles.rail}>
               <Text allowFontScaling style={styles.railLabel}>
-                chats
+                Chats
               </Text>
               <ScrollView
                 horizontal
@@ -260,7 +358,6 @@ function FeaturedCard({
   // The gradient is built from the accent tokens rather than raw hex, so the
   // featured hero stays inside the accent budget and follows a theme change.
   const gradient = `linear-gradient(140deg, ${theme.color.bg.accent} 0%, ${theme.color.bg.accentStrong} 100%)`;
-  const presence = readPresence(provider.presence, provider.last_active_at);
   const age = provider.age !== null ? ` ${provider.age}` : '';
   const tagline =
     provider.headline && provider.headline !== ''
@@ -293,6 +390,10 @@ function FeaturedCard({
           Top rated
         </Text>
       </View>
+      {/* Presence is a shape, not a word, and it lives top-right of the card
+          (Amit's call): a green dot balancing the "Top rated" badge top-left. A
+          white ring keeps it legible over any photo. */}
+      <View style={styles.featuredOnline} />
       <View style={styles.featuredBody}>
         <View style={styles.featuredNameRow}>
           <Text allowFontScaling numberOfLines={1} style={styles.featuredName}>
@@ -301,17 +402,6 @@ function FeaturedCard({
           </Text>
         </View>
         <View style={styles.featuredMeta}>
-          {presence.here ? (
-            <>
-              <View style={styles.featuredDot} />
-              <Text allowFontScaling style={styles.featuredMetaText}>
-                Available
-              </Text>
-              <Text allowFontScaling style={styles.featuredMetaDim}>
-                {'  ·  '}
-              </Text>
-            </>
-          ) : null}
           {provider.rating_count > 0 ? (
             <Text allowFontScaling style={styles.featuredMetaText}>
               ★ {provider.rating_avg?.toFixed(1)}
@@ -386,6 +476,28 @@ const makeStyles = (t: Theme) =>
       height: 40,
       alignItems: 'center',
       justifyContent: 'center',
+    },
+    // The search field that takes the nav row's place while searching: a capsule
+    // on the page colour with a leading glyph, the same anatomy as the composer.
+    searchField: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.xs,
+      height: 40,
+      paddingHorizontal: TOKENS.space.md,
+      marginRight: TOKENS.space.xs,
+      borderRadius: TOKENS.radius.pill,
+      borderCurve: 'continuous',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: t.color.border.hairline,
+      backgroundColor: t.color.bg.sunken,
+    },
+    searchInput: {
+      flex: 1,
+      padding: 0,
+      ...TOKENS.typography.bodyMedium,
+      color: t.color.text.primary,
     },
     scroll: {
       paddingTop: TOKENS.space['2xs'],
@@ -521,19 +633,22 @@ const makeStyles = (t: Theme) =>
       alignItems: 'center',
       gap: TOKENS.space['2xs'],
     },
-    featuredDot: {
-      width: 8,
-      height: 8,
-      borderRadius: 4,
-      backgroundColor: '#FFFFFF',
+    // The presence dot, top-right of the card: sage (the system's one presence
+    // hue) with a white ring so it stays legible over any photo.
+    featuredOnline: {
+      position: 'absolute',
+      top: TOKENS.space.md,
+      right: TOKENS.space.md,
+      width: 14,
+      height: 14,
+      borderRadius: 7,
+      backgroundColor: t.color.state.available,
+      borderWidth: 2,
+      borderColor: '#FFFFFF',
     },
     featuredMetaText: {
       ...TOKENS.typography.labelSmall,
       color: '#FFFFFF',
-    },
-    featuredMetaDim: {
-      ...TOKENS.typography.labelSmall,
-      color: 'rgba(255,255,255,0.6)',
     },
     featuredTagline: {
       ...TOKENS.typography.subhead,

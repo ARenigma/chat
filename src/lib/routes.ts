@@ -32,18 +32,34 @@ export type MemberRoute =
    */
   | { readonly name: 'chat'; readonly providerId: string; readonly from: 'home' | 'detail' }
   /**
-   * A voice/video call. Reached only from a provider's profile and only while
-   * `CALLS_ENABLED` (the buttons are disabled otherwise), so back always returns
-   * to that profile.
+   * A voice call. `direction` is 'out' (we dialled; `callId` is null until
+   * `start_call` returns one) or 'in' (someone is ringing us; `callId` is set).
+   * Reached from a chat/profile call button (out) or the incoming-call
+   * subscription (in).
    */
-  | { readonly name: 'call'; readonly providerId: string; readonly mode: 'incoming' | 'audio' | 'video' }
+  | {
+      readonly name: 'call';
+      readonly providerId: string;
+      readonly direction: 'out' | 'in';
+      readonly callId: string | null;
+    }
   | { readonly name: 'apply' }
   | { readonly name: 'applicationStatus' }
-  | { readonly name: 'blocked' };
+  | { readonly name: 'blocked' }
+  /** Account & privacy, a mounted screen now rather than a bottom sheet. */
+  | { readonly name: 'settings' };
 
 export type ProviderRoute =
   | { readonly name: 'home' }
-  | { readonly name: 'chat'; readonly peerId: string };
+  | { readonly name: 'chat'; readonly peerId: string }
+  | { readonly name: 'settings' }
+  /** A voice call on the provider tree; incoming for now (`direction: 'in'`). */
+  | {
+      readonly name: 'call';
+      readonly peerId: string;
+      readonly direction: 'out' | 'in';
+      readonly callId: string | null;
+    };
 
 /**
  * The route back, or `null` when there is nowhere left to go.
@@ -63,11 +79,15 @@ export function memberParent(route: MemberRoute): MemberRoute | null {
         ? { name: 'providerDetail', providerId: route.providerId }
         : { name: 'home' };
     case 'call':
-      return { name: 'providerDetail', providerId: route.providerId };
+      // Home for either direction: an incoming call's `providerId` is the caller,
+      // who may be a member (no profile screen), so the profile is the wrong
+      // parent. Ending a call lands you home.
+      return { name: 'home' };
     case 'providerDetail':
     case 'apply':
     case 'applicationStatus':
     case 'blocked':
+    case 'settings':
       return { name: 'home' };
   }
 }

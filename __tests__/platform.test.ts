@@ -195,37 +195,48 @@ describe('large screens and orientation', () => {
 });
 
 /**
- * Conversation notifications.
- * https://developer.android.com/develop/ui/views/notifications/conversations
- *
- * Android promotes a notification into the conversation section only when a
- * long-lived shortcut, a `Person`-bearing `MessagingStyle` and a matching
- * `shortcutId` are all present. Miss one and it silently demotes to an ordinary
- * alert with no error anywhere, which is exactly the failure mode a test is for.
+ * Two notification types (Amit, 2026-08-27):
+ *   - a MessagingStyle conversation notification for a real message, promoted to
+ *     the conversation section by a long-lived shortcut + a Person-bearing
+ *     MessagingStyle + a matching shortcutId (miss one and it silently demotes);
+ *   - a BigPictureStyle engagement nudge (an SP photo, full on expand) for when
+ *     there is no message. Android allows one style per notification, so they are
+ *     separate builders on separate channels.
  */
-describe('conversation notifications', () => {
+describe('message + engagement notifications', () => {
   const CONVERSATIONS = 'android/app/src/main/java/com/companionchat/Conversations.kt';
 
-  it('assembles all three things Android looks for', () => {
+  it('builds the message notification as a conversation MessagingStyle', () => {
     const body = read(CONVERSATIONS);
     expect(body).toContain('MessagingStyle');
     expect(body).toContain('Person.Builder()');
     expect(body).toContain('ShortcutManagerCompat.pushDynamicShortcut');
-    // The link between the shortcut and the notification. Without it the other
-    // two are assembled and then ignored.
     expect(body).toContain('.setShortcutId(conversationId)');
-    // `setLongLived` is what lets the system keep the shortcut; a notification
-    // pointing at a short-lived shortcut is demoted.
     expect(body).toContain('.setLongLived(true)');
+    // Keyed on an id, not a display name: names here are user-chosen and not
+    // unique, so name-matching would merge two providers into one thread.
+    expect(body).toContain('.setKey(peerId)');
   });
 
-  it('keys the Person on an id, not a display name', () => {
+  it('builds the engagement nudge as a BigPictureStyle on its own channel', () => {
+    const body = read(CONVERSATIONS);
+    expect(body).toContain('fun notifyEngagement(');
+    expect(body).toContain('BigPictureStyle()');
+    expect(body).toContain('.bigPicture(avatar)');
+    // Hiding the large icon on expand is what makes the photo take the full width.
+    expect(body).toContain('.bigLargeIcon(null');
+    // A separate channel so a nudge can be silenced without silencing messages.
+    expect(body).toContain('CHANNEL_ENGAGEMENT');
+  });
+
+  it('never stops posting when a photo cannot be fetched', () => {
     /*
-     * Display names here are user-chosen and not unique. Without `setKey`,
-     * Android matches Person objects by name, so two providers who picked the
-     * same name would merge into a single conversation thread.
+     * The avatar download runs on the FCM background thread and can fail
+     * (offline, timeout, 404). A missing photo must degrade to a plain
+     * notification, never throw — so the loader swallows its errors to null.
      */
-    expect(read(CONVERSATIONS)).toContain('.setKey(peerId)');
+    const body = read(CONVERSATIONS);
+    expect(body).toMatch(/loadAvatarBitmap[\s\S]*catch[\s\S]*null/);
   });
 
   it('declares a notification channel of its own', () => {

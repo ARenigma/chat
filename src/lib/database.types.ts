@@ -316,6 +316,16 @@ export type Message = {
   /** `<conversation uuid>/<uuid>.m4a` in the private `voice-notes` bucket. */
   voice_path: string | null;
   voice_duration_ms: number | null;
+  /**
+   * `<conversation uuid>/<uuid>.<ext>` in the private `attachments` bucket, or
+   * null. The third payload (014): a message carries text, audio, OR a photo.
+   * The intrinsic pixel size rides with it so the bubble can reserve the aspect
+   * box before the image decodes and the transcript does not reflow.
+   */
+  attachment_path: string | null;
+  attachment_type: 'image' | null;
+  attachment_width: number | null;
+  attachment_height: number | null;
   created_at: string;
   read_at: string | null;
 };
@@ -577,9 +587,10 @@ export type Database = {
         Returns: string;
       };
       /**
-       * One send path for all three payload shapes. Every argument after the
+       * One send path for all payload shapes. Every argument after the
        * conversation id is defaulted, so the existing two-argument call site is
-       * unchanged, but exactly one of `p_body` and `p_voice_path` may be set.
+       * unchanged, but exactly one of `p_body`, `p_voice_path` and
+       * `p_attachment_path` may be set (014 made the payload three-way).
        */
       send_message: {
         Args: {
@@ -588,6 +599,9 @@ export type Database = {
           p_reply_to_id?: string | null;
           p_voice_path?: string | null;
           p_voice_duration_ms?: number | null;
+          p_attachment_path?: string | null;
+          p_attachment_width?: number | null;
+          p_attachment_height?: number | null;
         };
         Returns: SendResult;
       };

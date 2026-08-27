@@ -6,6 +6,7 @@ import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ProviderSummary } from '../lib/database.types';
 import { initialOf } from '../lib/display';
 import { presenceForSpeech, readPresence } from '../lib/presence';
+import { SCROLL_PHYSICS } from '../lib/scroll';
 import { DEFAULT_RATES, rateLabel, type Channel } from '../lib/rates';
 import { useProfile, useProviders } from '../api/chat';
 import { CALLS_ENABLED } from '../api/calls';
@@ -82,6 +83,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
+          {...SCROLL_PHYSICS}
           contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + TOKENS.space.xl }]}>
           <Hero provider={provider} favorite={favorite} onToggleFavorite={() => setFavorite(v => !v)} />
 

@@ -28,23 +28,28 @@ import { useLiveConversation, useMarkRead } from '../api/realtime';
 import { useReactions, useToggleReaction } from '../api/reactions';
 import { CALLS_ENABLED } from '../api/calls';
 import { useSendVoiceNote, useVoicePlayer } from '../api/voice';
+import { useSendImage } from '../api/attachments';
 import { opensDay, timeOfDay } from '../lib/datetime';
 import { voiceOf, type VoiceDraft } from '../lib/voice';
+import { imageOf, type ImageDraft } from '../lib/attachments';
 import { readPresence } from '../lib/presence';
+import { SCROLL_PHYSICS } from '../lib/scroll';
 import { DEFAULT_RATES, isLowBalance, talkTimeLeft } from '../lib/rates';
 import { ownReaction, tallyByMessage } from '../lib/reactions';
 import type { ReactionEmoji } from '../lib/database.types';
 import { useStore } from '../store/useStore';
 import { Avatar } from '../components/Avatar';
+import { ChatWallpaper } from '../components/ChatWallpaper';
 import { Chip } from '../components/Chip';
 import { Composer } from '../components/Composer';
 import { DayDivider } from '../components/DayDivider';
+import { Frost } from '../components/Frost';
 import { Icon } from '../components/Icon';
 import { NoticeBar } from '../components/NoticeBar';
 import { PeerTyping } from '../components/PeerTyping';
 import { Pressable } from '../components/Pressable';
 import { TokenCounter } from '../components/TokenCounter';
-import { MyTurn, PeerTurn, type Quote, type VoiceBody } from '../components/Turn';
+import { MyTurn, PeerTurn, type ImageBody, type Quote, type VoiceBody } from '../components/Turn';
 import { MessageActionsSheet } from './MessageActionsSheet';
 import { ReviewSheet } from './ReviewSheet';
 import { SafetySheet } from './SafetySheet';
@@ -111,6 +116,10 @@ export function ChatScreen({ providerId, onBack, onStartCall }: Props) {
   // second ago, and persisting it would need a key per conversation for a
   // decision worth almost nothing.
   const [promptHidden, setPromptHidden] = useState(false);
+  // Height of the frosted top bar (header + talk strip + status-bar inset),
+  // measured rather than guessed: the strip is conditional on balance and the
+  // inset varies by device, so the transcript's top spacer has to track it.
+  const [barHeight, setBarHeight] = useState(0);
 
   // `Will` rather than `Did` on iOS: the padding has to change on the same frame
   // the keyboard starts moving, or the composer visibly jumps 34pt at the end of
@@ -178,6 +187,7 @@ export function ChatScreen({ providerId, onBack, onStartCall }: Props) {
   useMarkRead(conversationId, selfId);
   const send = useSendMessage(conversationId, selfId);
   const sendVoice = useSendVoiceNote(conversationId, selfId);
+  const sendImage = useSendImage(conversationId, selfId);
   /**
    * One playhead for the whole transcript, because the recorder exposes one
    * player object. Held here rather than per bubble so starting a second note
@@ -253,6 +263,17 @@ export function ChatScreen({ providerId, onBack, onStartCall }: Props) {
     [sendVoice, replyTo],
   );
 
+  /** A picked photo, sent. Clears the reply bar for the same reason text does. */
+  const onSendImage = useCallback(
+    (draft: ImageDraft) => {
+      setBloomKey(n => n + 1);
+      const parent = replyTo;
+      setReplyTo(null);
+      void sendImage(draft, parent?.id ?? null);
+    },
+    [sendImage, replyTo],
+  );
+
   /**
    * Grouping is computed once per data change, not per row: a row needs to know
    * whether it opens a group and whether it closes one, which depends on its
@@ -271,6 +292,7 @@ export function ChatScreen({ providerId, onBack, onStartCall }: Props) {
       const newer = list[i - 1];
       const older = list[i + 1];
       const audio = voiceOf(m);
+      const picture = imageOf(m);
       return {
         message: m,
         mine: m.sender_id === selfId,
@@ -285,6 +307,16 @@ export function ChatScreen({ providerId, onBack, onStartCall }: Props) {
           audio === null
             ? undefined
             : ({ messageId: m.id, path: audio.path, durationMs: audio.durationMs } as VoiceBody),
+        image:
+          picture === null
+            ? undefined
+            : ({
+                messageId: m.id,
+                path: picture.path,
+                width: picture.width,
+                height: picture.height,
+                localUri: m.localImageUri,
+              } as ImageBody),
       };
     });
   }, [messages, selfId]);
@@ -401,12 +433,12 @@ export function ChatScreen({ providerId, onBack, onStartCall }: Props) {
 
   const renderItem = useCallback(
     ({ item }: ListRenderItemInfo<(typeof rows)[number]>) => {
-      const { message, mine, first, last, showReceipt, voice } = item;
+      const { message, mine, first, last, showReceipt, voice, image } = item;
       const stamp = last ? timeOfDay(message.created_at) : undefined;
-      // Only reached when `voice` is unset, which the payload constraint
-      // guarantees means the row has a body. The fallback covers a row that
-      // somehow has neither rather than rendering an empty bubble.
-      const text = message.body ?? 'Voice note';
+      // Only reached when `voice` and `image` are unset, which the payload
+      // constraint guarantees means the row has a body. The fallback covers a row
+      // that somehow has none rather than rendering an empty bubble.
+      const text = message.body ?? (image !== undefined ? 'Photo' : 'Voice note');
       const quote =
         message.reply_to_id !== null ? parents.get(message.reply_to_id) : undefined;
       const reactions = tallies.get(message.id);
@@ -433,6 +465,7 @@ export function ChatScreen({ providerId, onBack, onStartCall }: Props) {
               quote={quote}
               reactions={reactions}
               voice={voice}
+              image={image}
               voicePlayer={voicePlayer}
               onLongPress={onLongPress}
               receipt={
@@ -452,6 +485,7 @@ export function ChatScreen({ providerId, onBack, onStartCall }: Props) {
               quote={quote}
               reactions={reactions}
               voice={voice}
+              image={image}
               voicePlayer={voicePlayer}
               onLongPress={onLongPress}
             />
@@ -466,6 +500,10 @@ export function ChatScreen({ providerId, onBack, onStartCall }: Props) {
     () => <PeerTyping initial={initial} name={name} />,
     [initial, name],
   );
+  // On an inverted list the footer renders at the visual TOP, so this reserves
+  // the frosted bar's height there: the oldest message scrolls clear of the
+  // frost instead of resting permanently behind it.
+  const footer = useCallback(() => <View style={{ height: barHeight }} />, [barHeight]);
   /**
    * Still resolving covers three cases, not one.
    *
@@ -493,7 +531,23 @@ export function ChatScreen({ providerId, onBack, onStartCall }: Props) {
     Platform.OS === 'ios' && keyboardUp ? 0 : insets.bottom + TOKENS.space['2xs'];
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
+    <View style={styles.root}>
+      {/**
+       * The header + talk-time strip, now a single frosted overlay.
+       *
+       * Lifted out of the layout flow (absolute, `zIndex` above the body) so the
+       * transcript scrolls *under* it and `Frost`'s real blur has live content to
+       * frost — an in-flow bar sits over the page and would frost nothing. This is
+       * the top-bar case, not the bottom-nav one: a message bubble is not a
+       * full-width touch target, so nothing underneath can steal the bar's taps,
+       * and the bar renders last in z-order so its own controls take them. The
+       * inverted list reserves `barHeight` at its visual top (a footer spacer, see
+       * below) so the oldest message can still scroll clear of the frost.
+       */}
+      <Frost
+        edge="bottom"
+        style={[styles.barStack, { paddingTop: insets.top }]}
+        onLayout={e => setBarHeight(e.nativeEvent.layout.height)}>
       {/**
        * The header, and it is a restructure rather than a restyle.
        *
@@ -616,10 +670,15 @@ export function ChatScreen({ providerId, onBack, onStartCall }: Props) {
           </Pressable>
         </View>
       ) : null}
+      </Frost>
 
       <KeyboardAvoidingView
         style={styles.body}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        {/* The chat wallpaper: a faint ORIGINAL doodle field tiled from our own
+            icon glyphs (#19), replacing the coral wash. Behind the list,
+            non-interactive. */}
+        <ChatWallpaper />
         {loading ? (
           <View style={styles.loading}>
             <ActivityIndicator color={theme.color.text.secondary} />
@@ -633,7 +692,7 @@ export function ChatScreen({ providerId, onBack, onStartCall }: Props) {
               {name}
             </Text>
             <Text allowFontScaling style={styles.emptyLine}>
-              Say hello.
+              Say hi 👋
             </Text>
             <View style={styles.starters}>
               {STARTERS.map(s => (
@@ -656,6 +715,7 @@ export function ChatScreen({ providerId, onBack, onStartCall }: Props) {
             keyExtractor={r => r.message.localKey ?? r.message.id}
             renderItem={renderItem}
             ListHeaderComponent={header}
+            ListFooterComponent={footer}
             contentContainerStyle={styles.list}
             keyboardDismissMode="interactive"
             keyboardShouldPersistTaps="handled"
@@ -664,6 +724,7 @@ export function ChatScreen({ providerId, onBack, onStartCall }: Props) {
             windowSize={9}
             removeClippedSubviews
             showsVerticalScrollIndicator={false}
+            {...SCROLL_PHYSICS}
           />
         )}
 
@@ -730,6 +791,7 @@ export function ChatScreen({ providerId, onBack, onStartCall }: Props) {
           <Composer
             onSend={onSend}
             onSendVoice={onSendVoice}
+            onSendImage={onSendImage}
             onTyping={notifyTyping}
             disabled={conversationId === undefined}
             placeholder={replyTo !== null ? 'Reply' : 'Message'}
@@ -784,6 +846,16 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     flex: 1,
     backgroundColor: t.color.bg.base,
   },
+  // The frosted top overlay: header + talk strip, lifted above the transcript.
+  // zIndex (not elevation) so it paints over the list without an Android drop
+  // shadow, which under a translucent bar reads as a smudge.
+  barStack: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -793,8 +865,8 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     paddingHorizontal: TOKENS.space.md,
     paddingTop: TOKENS.space.xs,
     paddingBottom: TOKENS.space.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: t.color.border.hairline,
+    // No hairline here: `Frost edge="bottom"` draws the one edge, so the header
+    // stays fully transparent and the blur reads to the bar's bottom lip.
   },
   // The talk-time meter strip under the header. Quiet by default; the low
   // variant borrows the token-tint the balance pill uses so scarcity reads the
@@ -805,8 +877,13 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     gap: TOKENS.space.xs,
     paddingHorizontal: TOKENS.space.md,
     paddingVertical: TOKENS.space.xs,
-    backgroundColor: t.color.bg.sunken,
+    // Transparent by default so the frost shows through the strip too, making
+    // the header and the meter read as one pane of glass rather than a clear
+    // bar stacked on a grey one.
   },
+  // Low balance keeps its coral wash: scarcity is the one thing here worth
+  // overriding the glass for, and the tint is the same signal the balance pill
+  // and the recharge banner use.
   talkBarLow: {
     backgroundColor: t.color.bg.accentTint,
   },

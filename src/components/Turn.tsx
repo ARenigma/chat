@@ -1,5 +1,7 @@
 import React, { memo } from 'react';
 import {
+  ActivityIndicator,
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -13,6 +15,7 @@ import { useStyles } from '../theme/ThemeProvider';
 import { bubbleArrive, bubbleLaunch } from '../theme/motion';
 import type { ReactionEmoji } from '../lib/database.types';
 import type { VoicePlayer } from '../lib/voice';
+import { useAttachmentUrl } from '../api/attachments';
 import { Avatar } from './Avatar';
 import { VoiceNote } from './VoiceNote';
 
@@ -50,11 +53,10 @@ const BUBBLE_RADIUS = TOKENS.radius.bubble;
  * outer radius moved, and it should be impossible to change one without the
  * other.
  *
- * There is no media bubble yet and this is deliberate. `messages` has a `body`
- * column and nothing else: no attachment column, no images bucket, and the
- * manifest actively removes `READ_MEDIA_IMAGES`. So the geometry lands now, with
- * the radius change that motivated it, and the feature that consumes it is a
- * separate piece of work.
+ * Consumed since 014: `messages` now carries an `attachment_path` into the
+ * private `attachments` bucket, and `MediaBubble` below is the reader. The
+ * geometry that motivated the radius change is the geometry the photo now uses,
+ * `inner = outer - inset`, so the picture reads as inside the bubble.
  */
 export const MEDIA_INSET = 3;
 
@@ -62,6 +64,11 @@ export const MEDIA_INSET = 3;
 export function mediaInnerRadius(): number {
   return BUBBLE_RADIUS - MEDIA_INSET;
 }
+
+/** The widest a photo bubble draws; height follows the image's own aspect. */
+const MEDIA_WIDTH = 240;
+const MEDIA_MIN_HEIGHT = 120;
+const MEDIA_MAX_HEIGHT = 320;
 
 /** The message this one is replying to, rendered inside the bubble above the body. */
 export interface Quote {
@@ -87,16 +94,32 @@ export interface VoiceBody {
   durationMs: number;
 }
 
+/**
+ * An image payload, built in the transcript memo like VoiceBody so its identity
+ * is stable and the bubble's `memo` holds. `localUri` is set only while the row
+ * is optimistic, so the pick shows before it is in the bucket; once settled the
+ * bubble resolves through a signed URL minted from `path`.
+ */
+export interface ImageBody {
+  messageId: string;
+  path: string;
+  width: number;
+  height: number;
+  localUri?: string;
+}
+
 interface Shared {
   timestamp?: string;
   quote?: Quote;
   reactions?: readonly ReactionTally[];
   /**
-   * Set when this row carries audio instead of text. The two are mutually
-   * exclusive by the `message_carries_one_payload` constraint, so the bubble
-   * renders one or the other and never both.
+   * Set when this row carries audio instead of text. The three payloads are
+   * mutually exclusive by `message_carries_one_payload`, so the bubble renders
+   * one and never more than one.
    */
   voice?: VoiceBody;
+  /** Set when this row carries a photo. Mutually exclusive with text and voice. */
+  image?: ImageBody;
   /** Required whenever `voice` is set: the single playhead, shared by every row. */
   voicePlayer?: VoicePlayer;
   /**
@@ -151,6 +174,70 @@ function Body({
   );
 }
 
+/**
+ * A photo, in a bubble whose 3dp frame is the speaker's colour and whose corner
+ * is concentric with the image inside it.
+ *
+ * The box is a fixed width with the height derived from the image's own aspect,
+ * clamped so a panorama does not become a hairline and a tall shot does not eat
+ * the screen. The height is known before the bytes arrive (the row carries the
+ * intrinsic size), so the bubble reserves its space and the transcript does not
+ * reflow when the picture decodes.
+ *
+ * The source is the local pick while the row is optimistic, then a signed URL.
+ * `useAttachmentUrl` is a no-op until there is a real path, so the pending bubble
+ * pays for no credential.
+ */
+function MediaBubble({
+  image,
+  onAccent,
+  pending,
+}: {
+  image: ImageBody;
+  onAccent: boolean;
+  pending: boolean;
+}) {
+  const styles = useStyles(makeStyles);
+  const { data: signedUrl } = useAttachmentUrl(image.localUri ? null : image.path);
+  const uri = image.localUri ?? signedUrl;
+  const ratio = image.width / image.height;
+  const height = Math.max(
+    MEDIA_MIN_HEIGHT,
+    Math.min(MEDIA_MAX_HEIGHT, Math.round(MEDIA_WIDTH / ratio)),
+  );
+  return (
+    <View
+      style={[
+        styles.mediaBubble,
+        onAccent ? styles.mediaFrameMine : styles.mediaFramePeer,
+      ]}
+    >
+      {/* The inner box carries the neutral placeholder fill so a photo still
+          resolving its signed URL reads as loading grey, not as the coral frame
+          showing through an empty image. The Image paints over it once ready. */}
+      <View style={[styles.mediaInner, { width: MEDIA_WIDTH, height }]}>
+        {uri !== undefined ? (
+          <Image
+            testID="bubble-image"
+            source={{ uri }}
+            style={styles.mediaImage}
+            resizeMode="cover"
+            accessibilityLabel="Photo"
+          />
+        ) : null}
+        {/* Sending, or still minting the URL: a scrim + spinner over the pick,
+            WhatsApp-style, so the bubble never sits as an empty coral frame while
+            bytes are in flight. */}
+        {pending || uri === undefined ? (
+          <View style={styles.mediaLoading}>
+            <ActivityIndicator color="#FFFFFF" />
+          </View>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
 interface PeerProps extends Shared {
   message: string;
   initial: string;
@@ -199,6 +286,7 @@ function PeerTurnView({
   quote,
   reactions,
   voice,
+  image,
   voicePlayer,
   onLongPress,
 }: PeerProps) {
@@ -231,18 +319,22 @@ function PeerTurnView({
             onLongPress ? 'Long press for message actions' : undefined
           }
         >
-          <View style={styles.peerBubble}>
-            {quote ? <QuoteBlock quote={quote} onAccent={false} /> : null}
-            <Body
-              message={message}
-              voice={voice}
-              voicePlayer={voicePlayer}
-              pending={false}
-              onAccent={false}
-              textStyle={styles.peerText}
-              testID="bubble-peer"
-            />
-          </View>
+          {image !== undefined ? (
+            <MediaBubble image={image} onAccent={false} pending={false} />
+          ) : (
+            <View style={styles.peerBubble}>
+              {quote ? <QuoteBlock quote={quote} onAccent={false} /> : null}
+              <Body
+                message={message}
+                voice={voice}
+                voicePlayer={voicePlayer}
+                pending={false}
+                onAccent={false}
+                textStyle={styles.peerText}
+                testID="bubble-peer"
+              />
+            </View>
+          )}
         </Pressable>
         {reactions && reactions.length > 0 ? (
           <ReactionRow reactions={reactions} testID="reactions-peer" />
@@ -292,6 +384,7 @@ function MyTurnView({
   quote,
   reactions,
   voice,
+  image,
   voicePlayer,
   onLongPress,
 }: MineProps) {
@@ -314,18 +407,22 @@ function MyTurnView({
           onLongPress ? 'Long press for message actions' : undefined
         }
       >
-        <View style={[styles.bubble, pending === true && styles.pending]}>
-          {quote ? <QuoteBlock quote={quote} onAccent /> : null}
-          <Body
-            message={message}
-            voice={voice}
-            voicePlayer={voicePlayer}
-            pending={pending === true}
-            onAccent
-            textStyle={styles.myText}
-            testID="bubble-mine"
-          />
-        </View>
+        {image !== undefined ? (
+          <MediaBubble image={image} onAccent pending={pending === true} />
+        ) : (
+          <View style={[styles.bubble, pending === true && styles.pending]}>
+            {quote ? <QuoteBlock quote={quote} onAccent /> : null}
+            <Body
+              message={message}
+              voice={voice}
+              voicePlayer={voicePlayer}
+              pending={pending === true}
+              onAccent
+              textStyle={styles.myText}
+              testID="bubble-mine"
+            />
+          </View>
+        )}
       </Pressable>
       {reactions && reactions.length > 0 ? (
         <ReactionRow reactions={reactions} testID="reactions-mine" />
@@ -469,6 +566,45 @@ const makeStyles = (t: Theme) =>
     // confirm; a spinner would promise more uncertainty than there is.
     pending: {
       opacity: 0.55,
+    },
+    // The photo bubble: a MEDIA_INSET frame in the speaker's colour, corner
+    // concentric with the image inside it.
+    mediaBubble: {
+      maxWidth: '80%',
+      padding: MEDIA_INSET,
+      borderRadius: BUBBLE_RADIUS,
+      borderCurve: 'continuous',
+      overflow: 'hidden',
+    },
+    mediaFrameMine: {
+      backgroundColor: t.color.bg.accentStrong,
+    },
+    mediaFramePeer: {
+      backgroundColor: t.color.bg.sunken,
+    },
+    // The image area: a neutral loading fill under a concentric-radius clip, the
+    // Image fills it once its source resolves.
+    mediaInner: {
+      borderRadius: mediaInnerRadius(),
+      borderCurve: 'continuous',
+      overflow: 'hidden',
+      backgroundColor: t.color.bg.hover,
+    },
+    mediaImage: {
+      width: '100%',
+      height: '100%',
+    },
+    // The sending scrim: a dim wash under a spinner, so the picked photo shows
+    // through while it uploads rather than the bubble reading as empty or broken.
+    mediaLoading: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(0,0,0,0.28)',
     },
     myText: {
       ...TOKENS.typography.bodyLarge,

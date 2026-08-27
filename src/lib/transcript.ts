@@ -37,7 +37,15 @@ import type { Message } from './database.types';
  *
  * It is never read from Postgres and never written to it.
  */
-export type TranscriptMessage = Message & { localKey?: string };
+export type TranscriptMessage = Message & {
+  localKey?: string;
+  /**
+   * The picked photo's local uri, set only on an optimistic image row so the
+   * bubble can show the pick before it is in the bucket. Dropped when the row
+   * settles, at which point the bubble re-resolves through a signed URL.
+   */
+  localImageUri?: string;
+};
 
 /** Marks a locally-created row that the server has not yet confirmed. */
 export const PENDING_PREFIX = 'pending-';

@@ -9,7 +9,7 @@ import {
 } from '../theme/icons.generated';
 
 /**
- * Every icon in the app, rendered as a Material Symbols glyph in a font.
+ * Every icon in the app, rendered as a Lucide glyph in a font.
  *
  * **A font, not SVG and not hand-drawn geometry.** react-native-svg is banned
  * here — it throws `synchronouslyUpdateUIProps` inside Reanimated views and
@@ -48,9 +48,19 @@ interface Props {
 
 const DEFAULT_SIZE = 24;
 
+/**
+ * Lucide draws its glyphs on a 24-unit grid inset a couple of units inside the
+ * em, so at a given `fontSize` a Lucide glyph renders visibly smaller than the
+ * Material Symbols set it replaced (which filled the em). This scale compensates
+ * app-wide from one place — a `size={24}` still means "a 24-ish icon" — rather
+ * than bumping every call site. Amit's call: the icons were reading too small.
+ */
+const ICON_SCALE = 1.2;
+
 function IconView({ name, active = false, size = DEFAULT_SIZE, color, testID, accessibilityLabel }: Props) {
   const theme = useTheme();
   const glyph = ICON_GLYPH[name];
+  const px = Math.round(size * ICON_SCALE);
   return (
     <Text
       testID={testID}
@@ -66,10 +76,10 @@ function IconView({ name, active = false, size = DEFAULT_SIZE, color, testID, ac
           fontFamily: active ? ICON_FAMILY_FILLED : ICON_FAMILY,
           // Square line height so the glyph box is not taller than the glyph,
           // which would misalign it against adjacent text.
-          fontSize: size,
-          lineHeight: size,
-          width: size,
-          height: size,
+          fontSize: px,
+          lineHeight: px,
+          width: px,
+          height: px,
           color: color ?? theme.color.text.primary,
         },
       ]}>

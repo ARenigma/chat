@@ -19,6 +19,16 @@ interface Native {
     senderName: string,
     body: string,
     sentAt: number,
+    // The sender's public photo URL, or '' for none. Empty rather than nullable
+    // because the bridge marshals a non-optional String; the native side treats
+    // '' as "no icon" and builds the Person without one.
+    avatarUrl: string,
+  ): Promise<boolean>;
+  notifyEngagement(
+    peerId: string,
+    title: string,
+    body: string,
+    avatarUrl: string,
   ): Promise<boolean>;
   clear(conversationId: string): Promise<void>;
   ensureChannel(): Promise<void>;
@@ -39,6 +49,9 @@ export interface ConversationPush {
   readonly peerId: string;
   readonly senderName: string;
   readonly sentAt: number;
+  // The sender's public photo, when the sender is a provider; null otherwise.
+  // Rendered as the notification's Person icon — the SP-photo hero (#6).
+  readonly avatarUrl: string | null;
 }
 
 /**
@@ -70,12 +83,63 @@ export function readConversationPush(
     // A malformed timestamp becomes "now" rather than NaN: an approximately
     // right ordering is worth more than a notification that refuses to build.
     sentAt: Number.isFinite(parsed) && parsed > 0 ? parsed : Date.now(),
+    // Absent for a member sender (no public photo) and for older server builds;
+    // '' from `asString` becomes null so the native side skips the icon.
+    avatarUrl: asString('senderAvatar') || null,
+  };
+}
+
+/**
+ * What an engagement push carries — the second notification type. No
+ * `conversationId` (there may be no conversation yet); it is a nudge to open a
+ * provider, so `peerId` plus the copy is enough. `kind: 'engagement'` in the data
+ * map is what routes a push here rather than to the message path.
+ */
+export interface EngagementPush {
+  readonly peerId: string;
+  readonly title: string;
+  readonly body: string;
+  readonly avatarUrl: string | null;
+}
+
+/** Read an engagement payload, or `null` if it is not one. */
+export function readEngagementPush(
+  data: Readonly<Record<string, string | object>> | undefined,
+): EngagementPush | null {
+  if (data === undefined || data.kind !== 'engagement') {
+    return null;
+  }
+  const asString = (key: string): string =>
+    typeof data[key] === 'string' ? (data[key] as string) : '';
+  const peerId = asString('peerId');
+  const title = asString('title');
+  if (peerId === '' || title === '') {
+    return null;
+  }
+  return {
+    peerId,
+    title,
+    body: asString('body'),
+    avatarUrl: asString('senderAvatar') || null,
   };
 }
 
 /** Whether the native module is present. False under jest and in any build without it. */
 export function conversationsAvailable(): boolean {
   return native !== undefined;
+}
+
+/** Post an engagement nudge (BigPicture). Resolves `false` when the module is absent. */
+export async function notifyEngagement(push: EngagementPush): Promise<boolean> {
+  if (native === undefined) {
+    return false;
+  }
+  return native.notifyEngagement(
+    push.peerId,
+    push.title,
+    push.body,
+    push.avatarUrl ?? '',
+  );
 }
 
 /**
@@ -97,6 +161,7 @@ export async function notifyConversation(
     push.senderName,
     body,
     push.sentAt,
+    push.avatarUrl ?? '',
   );
 }
 

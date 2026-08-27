@@ -27,6 +27,7 @@ export const LIGHT = {
       sunken: '#E5E5EA',
       hover: '#DEDEE3',
       grouped: '#F2F2F7',
+      chrome: 'rgba(255,255,255,0.80)',
       pressed: '#D1D1D6',
       selected: '#D1D1D6',
       inverse: '#1C1C1E',
@@ -199,7 +200,7 @@ export const LIGHT = {
   },
   typography: {
     wordmark: {
-      fontFamily: 'LilitaOne',
+      fontFamily: 'TitanOne',
       fontSize: 34,
       lineHeight: 41,
       letterSpacing: 0,
@@ -327,6 +328,7 @@ export const DARK = {
       sunken: '#2C2C2E',
       hover: '#3A3A3C',
       grouped: '#000000',
+      chrome: 'rgba(0,0,0,0.80)',
       pressed: '#48484A',
       selected: '#3A3A3C',
       inverse: '#F2F2F7',
@@ -499,7 +501,7 @@ export const DARK = {
   },
   typography: {
     wordmark: {
-      fontFamily: 'LilitaOne',
+      fontFamily: 'TitanOne',
       fontSize: 34,
       lineHeight: 41,
       letterSpacing: 0,

@@ -1,147 +1,209 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import type { ProviderSummary } from '../lib/database.types';
+import type { CallResult, ProviderSummary } from '../lib/database.types';
 import { initialOf } from '../lib/display';
-import { useProviders } from '../api/chat';
+import { useConversationId, useProviders } from '../api/chat';
+import { answerCall, endCall, heartbeatCall, startCall } from '../api/calls';
+import { useCallSession } from '../api/callSession';
+import { useStore } from '../store/useStore';
 import { Icon, type IconName } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 
-export type CallMode = 'incoming' | 'audio' | 'video';
+/** Which way the call goes. Outgoing dials; incoming rings and offers Accept. */
+export type CallDirection = 'out' | 'in';
 
 interface Props {
+  /** The peer: the provider being called, or the caller ringing us. */
   providerId: string;
-  mode: CallMode;
-  /** Decline (incoming) or hang up (in call). */
+  direction: CallDirection;
+  /** Set for an incoming call; null outgoing until `start_call` returns one. */
+  callId: string | null;
+  /** Decline (incoming, ringing) or hang up (in call). Leaving the screen ends it. */
   onEnd: () => void;
-  /** Accept an incoming call, moving it to the audio mode. */
-  onAccept?: () => void;
 }
 
+/** How long between heartbeats while a call is up; the ticker reads last_seen_at. */
+const HEARTBEAT_MS = 20_000;
+
+/** start_call refusals, in words. */
+const START_NOTICE: Record<string, string> = {
+  INSUFFICIENT_BALANCE: 'You need more tokens to start a call.',
+  BUSY: 'One of you is already on a call.',
+  BLOCKED: 'You can no longer call each other.',
+  SUSPENDED: 'Your account is under review and cannot call.',
+  RATE_LIMITED: 'Too many calls just now. Try again shortly.',
+  FORBIDDEN: 'That conversation is not available.',
+  NOT_FOUND: 'That conversation no longer exists.',
+};
+
+type Phase = 'starting' | 'ringing' | 'connecting' | 'active' | 'incoming';
+
 /**
- * The call surfaces — incoming, voice, video — as one mode-driven screen, on the
- * Fuse system from the v12 frames (v13 did not redraw calls).
+ * The call, over WebRTC. One screen for both directions, driven by phase.
  *
- * **UI only, and gated.** `CALLS_ENABLED` is false: this screen is built and
- * wired but not reachable in a shipped build, because the media/foreground-
- * service/Telecom `ConnectionService` layer is a native follow-up (PRODUCT.md,
- * migration 011 shipped the server half). So there is no real audio/video here —
- * the controls toggle local state, the timer counts, and ending returns to the
- * profile. Photos degrade to the warm mark, same as Home and Provider detail,
- * since the data model has no `avatar_url`.
+ * Outgoing: resolves the conversation from the peer, calls `start_call`, then
+ * runs the session as the offerer while it rings. Incoming: shows Accept /
+ * Decline, and on Accept calls `answer_call` (which starts the meter) and runs
+ * the session as the answerer. `useCallSession` carries the media; this screen
+ * carries the server row (start/answer/heartbeat/end) and the UI.
  *
- * Per-minute billing (ADR-0019) meters a live call against the ₹ balance; that
- * meter is part of the same gated backend and is not simulated here.
+ * Leaving the screen ends the call: an unmount hangs up on the server if the
+ * call was live, so End, Decline, and the hardware back button all resolve
+ * through one path. Audio only for now; video is a follow-up.
  */
-export function CallScreen({ providerId, mode, onEnd, onAccept }: Props) {
+export function CallScreen({ providerId, direction, callId: incomingCallId, onEnd }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const setNotice = useStore(s => s.setNotice);
+  const openRefill = useStore(s => s.openRefill);
   const { data: providers } = useProviders();
   const provider = useMemo<ProviderSummary | null>(
     () => (providers ?? []).find(p => p.id === providerId) ?? null,
     [providers, providerId],
   );
-  const name = provider?.display_name ?? 'Calling';
+  const name = provider?.display_name ?? (direction === 'in' ? 'Incoming call' : 'Calling');
   const initial = initialOf(provider?.display_name);
 
+  const [callId, setCallId] = useState<string | null>(incomingCallId);
+  const [accepted, setAccepted] = useState(direction === 'out');
+  const [phase, setPhase] = useState<Phase>(direction === 'in' ? 'incoming' : 'starting');
   const [elapsed, setElapsed] = useState(0);
-  const [muted, setMuted] = useState(false);
-  const [speaker, setSpeaker] = useState(mode === 'video');
-  const [cameraOff, setCameraOff] = useState(false);
 
-  // The duration counter runs once a call is live (not while ringing). No real
-  // media backs it; it is the honest shape of an in-call timer.
+  // Outgoing needs the conversation the call belongs to; a member calling a
+  // provider resolves it exactly as opening a chat does.
+  const { data: openedId } = useConversationId(direction === 'out' ? providerId : null);
+
+  // End on unmount if the call was live, so End / Decline / hardware-back all
+  // hang up through one path. Refs so the cleanup sees the latest without
+  // re-subscribing.
+  const callIdRef = useRef<string | null>(callId);
+  callIdRef.current = callId;
+  useEffect(
+    () => () => {
+      if (callIdRef.current !== null) {
+        void endCall(callIdRef.current);
+      }
+    },
+    [],
+  );
+
+  // Outgoing: place the call once the conversation resolves.
   useEffect(() => {
-    if (mode === 'incoming') {
+    if (direction !== 'out' || callId !== null || openedId === undefined) {
+      return;
+    }
+    let live = true;
+    void startCall(openedId, 'voice').then((r: CallResult | null) => {
+      if (!live) {
+        return;
+      }
+      if (r && r.success && r.call_id) {
+        setCallId(r.call_id);
+        setPhase('ringing');
+      } else {
+        const code = r?.error;
+        setNotice(code ? (START_NOTICE[code] ?? 'Could not start the call.') : 'Could not start the call. Check your connection.');
+        if (code === 'INSUFFICIENT_BALANCE') {
+          openRefill();
+        }
+        onEnd();
+      }
+    });
+    return () => {
+      live = false;
+    };
+  }, [direction, openedId, callId, onEnd, setNotice, openRefill]);
+
+  const enabled = callId !== null && accepted;
+  const { connState, muted, toggleMute } = useCallSession(callId, direction === 'out', enabled);
+
+  // Media connected → active; failed → tell the user and leave.
+  useEffect(() => {
+    if (connState === 'connected') {
+      setPhase('active');
+    } else if (connState === 'failed') {
+      setNotice('The call could not connect.');
+      onEnd();
+    }
+  }, [connState, onEnd, setNotice]);
+
+  // The in-call timer, once live.
+  useEffect(() => {
+    if (phase !== 'active') {
       return;
     }
     const id = setInterval(() => setElapsed(s => s + 1), 1000);
     return () => clearInterval(id);
-  }, [mode]);
+  }, [phase]);
+
+  // Heartbeat + settle while active. If the server ends it (out of tokens), leave.
+  useEffect(() => {
+    if (phase !== 'active' || callId === null) {
+      return;
+    }
+    const id = setInterval(() => {
+      void heartbeatCall(callId).then(r => {
+        if (r && r.success && r.status && r.status !== 'active') {
+          setNotice(r.status === 'ended' ? 'Call ended.' : 'The call ran out of tokens.');
+          onEnd();
+        }
+      });
+    }, HEARTBEAT_MS);
+    return () => clearInterval(id);
+  }, [phase, callId, onEnd, setNotice]);
+
+  const accept = useCallback(() => {
+    if (callId === null) {
+      return;
+    }
+    setAccepted(true);
+    setPhase('connecting');
+    void answerCall(callId);
+  }, [callId]);
 
   const timer = `${Math.floor(elapsed / 60)}:${(elapsed % 60).toString().padStart(2, '0')}`;
   const gradient = `linear-gradient(160deg, ${theme.color.bg.accent} 0%, ${theme.color.bg.accentStrong} 100%)`;
+  const status =
+    phase === 'active'
+      ? timer
+      : phase === 'incoming'
+        ? 'Incoming voice call…'
+        : phase === 'ringing'
+          ? 'Ringing…'
+          : phase === 'connecting'
+            ? 'Connecting…'
+            : 'Calling…';
 
   return (
     <View style={styles.root}>
       <View style={[styles.fill, { experimental_backgroundImage: gradient }]} />
 
-      {/* Video shows the peer's camera full-bleed; with no media that is the same
-          warm field carrying their mark, plus a self-view tile. */}
-      {mode === 'video' ? (
-        <>
-          <Text allowFontScaling style={styles.videoWatermark}>
-            {initial}
-          </Text>
-          <View style={[styles.selfView, { top: insets.top + TOKENS.space.md }]}>
-            <Text allowFontScaling style={styles.selfLabel}>
-              You
+      <View style={[styles.center, { paddingTop: insets.top }]}>
+        <View style={styles.avatarRings}>
+          {phase === 'incoming' ? <View style={styles.ring} /> : null}
+          <View style={styles.avatar}>
+            <Text allowFontScaling={false} style={styles.avatarInitial}>
+              {initial}
             </Text>
           </View>
-        </>
-      ) : null}
-
-      {/* Identity. Top-left on video (over the frame), centred otherwise. */}
-      {mode === 'video' ? (
-        <View style={[styles.videoHead, { top: insets.top + TOKENS.space.sm }]}>
-          <Text allowFontScaling numberOfLines={1} style={styles.videoName}>
-            {name}
-          </Text>
-          <Text allowFontScaling style={styles.videoTimer}>
-            {timer}
-          </Text>
         </View>
-      ) : (
-        <View style={[styles.center, { paddingTop: insets.top }]}>
-          <View style={styles.avatarRings}>
-            {mode === 'incoming' ? <View style={styles.ring} /> : null}
-            <View style={styles.avatar}>
-              <Text allowFontScaling={false} style={styles.avatarInitial}>
-                {initial}
-              </Text>
-            </View>
-          </View>
-          <Text allowFontScaling numberOfLines={1} style={styles.name}>
-            {name}
-          </Text>
-          {mode === 'incoming' ? (
-            <Text allowFontScaling style={styles.status}>
-              Incoming voice call…
-            </Text>
-          ) : (
-            <>
-              <Text allowFontScaling style={styles.timer}>
-                {timer}
-              </Text>
-              <Text allowFontScaling style={styles.status}>
-                VOICE CALL
-              </Text>
-            </>
-          )}
-        </View>
-      )}
+        <Text allowFontScaling numberOfLines={1} style={styles.name}>
+          {name}
+        </Text>
+        <Text allowFontScaling style={phase === 'active' ? styles.timer : styles.status}>
+          {status}
+        </Text>
+      </View>
 
-      {/* Controls. */}
       <View style={[styles.controls, { paddingBottom: insets.bottom + TOKENS.space.lg }]}>
-        {mode === 'incoming' ? (
+        {phase === 'incoming' ? (
           <View style={styles.incomingRow}>
-            <CallAction
-              testID="call-decline"
-              glyph="callEnd"
-              label="Decline"
-              tone="danger"
-              onPress={onEnd}
-            />
-            <CallAction
-              testID="call-accept"
-              glyph="call"
-              label="Accept"
-              tone="accept"
-              onPress={onAccept ?? onEnd}
-            />
+            <CallAction testID="call-decline" glyph="callEnd" label="Decline" tone="danger" onPress={onEnd} />
+            <CallAction testID="call-accept" glyph="call" label="Accept" tone="accept" onPress={accept} />
           </View>
         ) : (
           <View style={styles.bar}>
@@ -149,32 +211,10 @@ export function CallScreen({ providerId, mode, onEnd, onAccept }: Props) {
               testID="call-mute"
               glyph={muted ? 'micOff' : 'mic'}
               active={muted}
-              onPress={() => setMuted(m => !m)}
+              onPress={toggleMute}
               label={muted ? 'Unmute' : 'Mute'}
             />
-            {mode === 'video' ? (
-              <BarButton
-                testID="call-camera"
-                glyph={cameraOff ? 'videoOff' : 'video'}
-                active={cameraOff}
-                onPress={() => setCameraOff(c => !c)}
-                label={cameraOff ? 'Camera on' : 'Camera off'}
-              />
-            ) : null}
-            <BarButton
-              testID="call-speaker"
-              glyph="speaker"
-              active={speaker}
-              onPress={() => setSpeaker(s => !s)}
-              label="Speaker"
-            />
-            <BarButton
-              testID="call-end"
-              glyph="callEnd"
-              tone="danger"
-              onPress={onEnd}
-              label="End call"
-            />
+            <BarButton testID="call-end" glyph="callEnd" tone="danger" onPress={onEnd} label="End call" />
           </View>
         )}
       </View>
@@ -314,42 +354,6 @@ const makeStyles = (t: Theme) =>
       color: 'rgba(255,255,255,0.8)',
       letterSpacing: 0.5,
     },
-    videoWatermark: {
-      position: 'absolute',
-      alignSelf: 'center',
-      top: '32%',
-      fontFamily: TOKENS.typography.displayLarge.fontFamily,
-      fontSize: 220,
-      lineHeight: 250,
-      color: 'rgba(255,255,255,0.16)',
-    },
-    videoHead: {
-      position: 'absolute',
-      left: TOKENS.space.lg,
-    },
-    videoName: {
-      ...TOKENS.typography.headline,
-      color: '#FFFFFF',
-    },
-    videoTimer: {
-      ...TOKENS.typography.subhead,
-      color: 'rgba(255,255,255,0.8)',
-    },
-    selfView: {
-      position: 'absolute',
-      right: TOKENS.space.md,
-      width: 96,
-      height: 132,
-      borderRadius: TOKENS.radius.md,
-      borderCurve: 'continuous',
-      backgroundColor: 'rgba(0,0,0,0.35)',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    selfLabel: {
-      ...TOKENS.typography.captionSmall,
-      color: 'rgba(255,255,255,0.85)',
-    },
     controls: {
       position: 'absolute',
       left: 0,
@@ -377,7 +381,6 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.subhead,
       color: '#FFFFFF',
     },
-    // The dark control pill, from v12.
     bar: {
       flexDirection: 'row',
       alignItems: 'center',
