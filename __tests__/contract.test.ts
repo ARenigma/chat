@@ -356,6 +356,9 @@ describe('pipeline wiring', () => {
     // habit and several put a helper somewhere the counting regex cannot see.
     'supabase/tests/090_reactions_replies_voice_presence.sql',
     'supabase/tests/100_calls_and_metering.sql',
+    // 020's suite. has_table + ok (×2) + function_privs_are + is = 5 counted by
+    // the regex; plan(5) must stay in sync with that count.
+    'supabase/tests/130_mock_recharge.sql',
   ])('keeps the pgTAP plan in step with the assertions in %s', file => {
     const sql = read(file);
     const planned = Number(/select plan\((\d+)\)/.exec(sql)?.[1]);
@@ -814,10 +817,13 @@ describe('phone sign-in stays off until it can deliver', () => {
   });
 
   it('still offers Google as a primary button when phone is off', () => {
-    // With the flag false there is exactly one way in, and it must not render as
-    // a secondary action with nothing above it.
+    // The Google button is a bespoke white-pill Pressable: always full-width and
+    // visually prominent regardless of whether phone auth is enabled.
+    // `testID="signin-google"` is the stable identifier the Maestro flows select.
     const screen = withoutComments(read('src/screens/AuthScreen.tsx'));
-    expect(screen).toMatch(/kind=\{PHONE_AUTH_ENABLED \? 'secondary' : 'primary'\}/);
+    expect(screen).toContain('testID="signin-google"');
+    // Rendered only in the 'choose' step, where it is the sole or co-primary action.
+    expect(screen).toContain("step === 'choose'");
   });
 
   it('refuses to call Supabase while the flag is false', () => {

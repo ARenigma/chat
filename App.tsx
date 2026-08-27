@@ -2,11 +2,11 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, BackHandler, Linking, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated, { FadeIn, SlideInRight, SlideOutRight } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOut, SlideInRight, SlideOutRight } from 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from './src/theme/tokens';
 import { ThemeProvider, useStyles, useThemeMode } from './src/theme/ThemeProvider';
-import { fadeSwapFast } from './src/theme/motion';
+import { DURATION, fadeSwapFast } from './src/theme/motion';
 import { UpdateBanner } from './src/components/UpdateBanner';
 import { BLOOM_CONTENT_MS } from './src/lib/bloom';
 import { assertEnv } from './src/lib/env';
@@ -92,6 +92,8 @@ function Root() {
   const resetConversation = useStore(s => s.resetConversation);
   const refillVisible = useStore(s => s.refillVisible);
   const closeRefill = useStore(s => s.closeRefill);
+  const pendingProviderApply = useStore(s => s.pendingProviderApply);
+  const setPendingProviderApply = useStore(s => s.setPendingProviderApply);
 
   useEffect(() => {
     let cancelled = false;
@@ -139,6 +141,22 @@ function Root() {
       cancelled = true;
     };
   }, [attempt]);
+
+  /**
+   * After sign-in completes, check whether the member tapped "Become a partner"
+   * before authenticating and, if so, route directly to the application screen.
+   *
+   * The flag is set in OnboardingScreen before triggering Google sign-in; this
+   * effect fires once the boot transitions to `ready` (session confirmed) and the
+   * member tree is about to mount. Clearing the flag here prevents a stale
+   * redirect on subsequent cold starts.
+   */
+  useEffect(() => {
+    if (boot.phase === 'ready' && pendingProviderApply) {
+      setRoute({ name: 'apply' });
+      setPendingProviderApply(false);
+    }
+  }, [boot.phase, pendingProviderApply, setPendingProviderApply]);
 
   /**
    * The only deep link the app handles, and now it is load-bearing rather than
@@ -542,7 +560,7 @@ function SignedIn({
 
       {/* Favourites is a top-level tab: the people this member has hearted. */}
       {route.name === 'favourites' ? (
-        <Animated.View style={styles.tabLayer} entering={fadeSwapFast}>
+        <Animated.View style={styles.tabLayer} entering={fadeSwapFast} exiting={FadeOut.duration(DURATION.fast)}>
           <FavouritesScreen onOpenProvider={openProvider} />
         </Animated.View>
       ) : null}
@@ -550,7 +568,7 @@ function SignedIn({
       {/* Calls is a top-level tab (empty state for now). A real destination so
           the nav's Calls icon does something on tap rather than reading as dead. */}
       {route.name === 'calls' ? (
-        <Animated.View style={styles.tabLayer} entering={fadeSwapFast}>
+        <Animated.View style={styles.tabLayer} entering={fadeSwapFast} exiting={FadeOut.duration(DURATION.fast)}>
           <CallsScreen />
         </Animated.View>
       ) : null}
@@ -561,7 +579,7 @@ function SignedIn({
       {route.name === 'settings' ? (
         // A tab switch, not a push: a quick cross-fade rather than a slide, so
         // Home↔Settings does not read as a sideways jump.
-        <Animated.View style={styles.tabLayer} entering={fadeSwapFast}>
+        <Animated.View style={styles.tabLayer} entering={fadeSwapFast} exiting={FadeOut.duration(DURATION.fast)}>
           <SettingsSheet
             onBack={backToHome}
             // A fixed bottom-nav tab on the member tree: the Home tab is the way
@@ -578,6 +596,18 @@ function SignedIn({
             onTransactions={() => setRoute({ name: 'transactions' })}
           />
         </Animated.View>
+      ) : null}
+
+      {/* Opaque cover rendered at zIndex 9 — above the always-mounted Home (no
+          zIndex) and below the sliding overlay (zIndex 10) — so the slide
+          reveals this neutral surface instead of the Home feed.  Not animated:
+          it must be instant to black out Home before the overlay arrives.
+          pointerEvents="none" keeps all touches falling through to the overlay. */}
+      {route.name !== 'home' &&
+      route.name !== 'settings' &&
+      route.name !== 'calls' &&
+      route.name !== 'favourites' ? (
+        <View style={styles.coverHome} pointerEvents="none" />
       ) : null}
 
       {route.name !== 'home' &&
@@ -750,6 +780,21 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   content: {
     flex: 1,
     position: 'relative',
+  },
+  // Instant, non-animated cover that sits between the always-mounted Home
+  // (no zIndex) and the sliding overlay (zIndex 10).  Its purpose is to
+  // prevent the Home feed from being visible UNDER the arriving slide during
+  // the 240ms entrance — zIndex 9 means it paints over Home but the overlay
+  // paints over it.  pointerEvents="none" is set on the element so all touches
+  // pass straight through to the overlay above.
+  coverHome: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: t.color.bg.base,
+    zIndex: 9,
   },
   // Opaque cover for a pushed screen, above the always-mounted Home and below
   // the Recharge overlay (zIndex 20). Its zIndex 10 is also what hides the fixed

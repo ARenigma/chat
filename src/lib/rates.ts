@@ -1,3 +1,5 @@
+import { APP_ENV } from '@env';
+
 /**
  * Per-minute pricing, kept pure so it can be tested without a device.
  *
@@ -90,6 +92,18 @@ export function isLowBalance(tokens: number | null): boolean {
  * path that stays live. Flip this when the rail is wired.
  */
 export const PAYMENTS_ENABLED = false;
+
+/**
+ * Whether the mock-payment flow is available.
+ *
+ * True in every non-production build so the pay→success→credit→warning loop
+ * can be exercised end-to-end without a live UPI rail.  The server-side gate
+ * (app_flags.mock_payments) is a second, independent guard: the client must
+ * send the RPC AND the flag must be flipped on the server before any tokens
+ * are credited.  A production build (APP_ENV === 'production') never shows
+ * the mock Pay button regardless of the server flag.
+ */
+export const MOCK_PAYMENTS = APP_ENV !== 'production';
 
 /**
  * The top-up packs offered on the Recharge screen, in ₹ (1 token = ₹1). A ladder

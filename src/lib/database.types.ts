@@ -456,6 +456,15 @@ export type ClaimResult = {
   retry_after?: string;
 };
 
+/** Returned by the `mock_recharge` RPC (migration 020). Only callable when
+ *  `app_flags.mock_payments = true`; inert (MOCK_DISABLED) in production. */
+export type MockRechargeResult = {
+  success: boolean;
+  transaction_id?: string;
+  new_balance?: number;
+  error?: 'NOT_AUTHENTICATED' | 'MOCK_DISABLED' | 'INVALID_AMOUNT';
+};
+
 /** Added by migration 019. */
 export type TokenTransactionKind = 'recharge' | 'refund' | 'adjustment';
 export type TokenTransactionStatus = 'created' | 'succeeded' | 'failed' | 'refunded';
@@ -757,6 +766,15 @@ export type Database = {
       claim_daily_tokens: {
         Args: Record<string, never>;
         Returns: ClaimResult;
+      };
+      /**
+       * Dev-only mock payment that writes a real ledger row and credits the
+       * balance. Gated by app_flags.mock_payments; returns MOCK_DISABLED when
+       * the flag is false (which it is in production).
+       */
+      mock_recharge: {
+        Args: { p_amount_paise: number; p_tokens: number };
+        Returns: MockRechargeResult;
       };
       delete_user_account: {
         Args: Record<string, never>;

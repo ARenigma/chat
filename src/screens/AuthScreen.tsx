@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AppState,
+  Image,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -25,11 +26,13 @@ import { fadeSwap } from '../theme/motion';
 import { Button } from '../components/Button';
 import { CodeField } from '../components/CodeField';
 import { Pressable } from '../components/Pressable';
+import { Spinner } from '../components/Spinner';
+import { CountryPicker, DEFAULT_DIAL_CODE } from '../components/CountryPicker';
 
 /** How long "Resend code" stays unavailable. ADR-0009 §3. */
 const RESEND_SECONDS = 30;
 
-type Step = 'choose' | 'number' | 'code';
+type Step = 'choose' | 'number' | 'confirm' | 'code';
 
 /**
  * Two ways in, phone first.
@@ -64,6 +67,7 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
   const [busy, setBusy] = useState<SocialProvider | 'phone' | 'verify' | null>(null);
   const [error, setError] = useState<string | null>(initialError ?? null);
   const [step, setStep] = useState<Step>('choose');
+  const [dialCode, setDialCode] = useState(DEFAULT_DIAL_CODE);
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [errorNonce, setErrorNonce] = useState(0);
@@ -127,20 +131,35 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
     }
   }, []);
 
+  /**
+   * Actually send the OTP to the composed E.164 number and advance to `code`.
+   *
+   * Called from the 'confirm' step ("Yes, send code") and from the 'code' step
+   * ("Resend code"). The 'number' step's "Send Code" button now calls
+   * `showConfirm` instead, so the user can verify the number before we bill an
+   * SMS.
+   */
   const requestCode = useCallback(async () => {
     setError(null);
     setBusy('phone');
-    const result = await sendPhoneOtp(phone);
+    const fullPhone = `${dialCode} ${phone.trim()}`;
+    const result = await sendPhoneOtp(fullPhone);
     setBusy(null);
     if (result.status === 'failed') {
       setError(result.message);
       return;
     }
-    sentTo.current = phone;
+    sentTo.current = fullPhone;
     setCode('');
     setCooldown(RESEND_SECONDS);
     setStep('code');
-  }, [phone]);
+  }, [dialCode, phone]);
+
+  /** Advance to the confirm sub-step without sending an OTP. */
+  const showConfirm = useCallback(() => {
+    setError(null);
+    setStep('confirm');
+  }, []);
 
   /**
    * Submit. Called by CodeField the moment six digits exist, once per value.
@@ -165,14 +184,14 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
     [],
   );
 
-  const canSend = normalisePhone(phone) !== null && busy === null;
+  const fullPhone = `${dialCode} ${phone.trim()}`;
+  const canSend = normalisePhone(fullPhone) !== null && busy === null;
   // On the code step, a code request can only have come from Resend.
   const resending = step === 'code' && busy === 'phone';
-  const pretty = phone.trim() === '' ? '' : `+${normalisePhone(phone) ?? phone}`;
-  const title = step === 'code' ? 'Enter the code' : 'Someone’s here to listen';
+  const title = step === 'code' ? 'Enter the code' : "Someone's here to listen";
   // The number stays visible: "which number did I just type" is the question
   // people actually have at this moment.
-  const subtitle = step === 'code' ? `Sent to ${pretty}.` : 'Real people, ready to talk.';
+  const subtitle = step === 'code' ? `Sent to ${dialCode} ${phone.trim()}.` : 'Real people, ready to talk.';
 
   return (
     /**
@@ -249,6 +268,10 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
                 </View>
               ))}
             </Animated.View>
+          ) : step === 'confirm' ? (
+            <Animated.Text key={subtitle} entering={fadeSwap} allowFontScaling style={styles.subtitle}>
+              Is this the correct number?
+            </Animated.Text>
           ) : (
             <Animated.Text key={subtitle} entering={fadeSwap} allowFontScaling style={styles.subtitle}>
               {subtitle}
@@ -273,8 +296,12 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
           <Animated.View
             entering={FadeInDown.duration(TOKENS.motion.duration.fast)}
             style={styles.field}>
-            {/* +91 is shown and still editable. A hard-locked country code is a
-                bug for anyone travelling or holding a foreign number. */}
+            {/* CountryPicker leads the national number field. Default +91 for India. */}
+            <CountryPicker
+              value={dialCode}
+              onChange={setDialCode}
+              testID="signin-country"
+            />
             <TextField
               testID="signin-phone-input"
               value={phone}
@@ -282,18 +309,28 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
               keyboardType="phone-pad"
               autoComplete="tel"
               textContentType="telephoneNumber"
-              placeholder="+91 98765 43210"
+              placeholder="Your number"
               placeholderTextColor={theme.color.text.tertiary}
               autoFocus
               returnKeyType="done"
               onSubmitEditing={() => {
                 if (canSend) {
-                  void requestCode();
+                  showConfirm();
                 }
               }}
               accessibilityLabel="Phone number"
               style={styles.input}
             />
+          </Animated.View>
+        ) : null}
+
+        {step === 'confirm' ? (
+          <Animated.View
+            entering={FadeInDown.duration(TOKENS.motion.duration.fast)}
+            style={styles.confirmBlock}>
+            <Text allowFontScaling style={styles.confirmNumber}>
+              {dialCode} {phone.trim()}
+            </Text>
           </Animated.View>
         ) : null}
 
@@ -357,11 +394,52 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
             busy={busy === 'phone'}
             busyLabel="Sending code"
             onPress={() => {
-              void requestCode();
+              if (canSend) {
+                showConfirm();
+              }
             }}
             disabled={!canSend}
             testID="signin-send-code"
           />
+        ) : null}
+
+        {step === 'confirm' ? (
+          <>
+            {/*
+             * Primary: actually sends the OTP once the user has confirmed their
+             * number. White-pill style mirrors the OnboardingScreen primary.
+             */}
+            <Pressable
+              testID="signin-confirm"
+              accessibilityLabel="Yes, send code"
+              onPress={() => {
+                void requestCode();
+              }}
+              press="button"
+              style={styles.confirmPrimary}
+            >
+              {busy === 'phone' ? (
+                <Spinner size={20} color={theme.color.text.primary} />
+              ) : (
+                <Text allowFontScaling style={styles.confirmPrimaryLabel}>
+                  Yes, send code
+                </Text>
+              )}
+            </Pressable>
+            <Pressable
+              accessibilityLabel="Edit number"
+              onPress={() => {
+                setStep('number');
+                setError(null);
+              }}
+              press="button"
+              style={styles.confirmSecondary}
+            >
+              <Text allowFontScaling style={styles.link}>
+                Edit number
+              </Text>
+            </Pressable>
+          </>
         ) : null}
 
         {step === 'code' ? (
@@ -386,25 +464,37 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
           />
         ) : null}
 
-        {/* Google is the second option on every step that offers a choice. Not
-            hidden, some people would rather not give a number to an app about
-            loneliness, but not first either, because a Google account is free to
-            replace and a number is not. */}
+        {/* Google is a bespoke white-pill button on every step that offers a
+            choice. White fill / ink text matches the OnboardingScreen primary
+            style; the G mark sits directly on white (its own brand rule).
+            Full-width and always prominent, so it is never demoted to a
+            secondary text link regardless of whether phone auth is enabled. */}
         {step === 'choose' ? (
-          <Button
-            label={PROVIDER_LABEL.google}
-            busy={busy === 'google'}
-            // Names where it is going, because it is going somewhere: this hands
-            // off to the system browser, and the label is the only warning that
-            // the app is about to disappear.
-            busyLabel="Opening Google"
-            kind={PHONE_AUTH_ENABLED ? 'secondary' : 'primary'}
+          <Pressable
+            testID="signin-google"
+            accessibilityLabel={PROVIDER_LABEL.google}
             onPress={() => {
               void startSocial('google');
             }}
-            disabled={busy !== null}
-            testID="signin-google"
-          />
+            press="button"
+            style={styles.googlePill}
+          >
+            {busy === 'google' ? (
+              <Spinner size={20} color={theme.color.text.primary} />
+            ) : (
+              <>
+                <Image
+                  source={require('../../assets/brands/google.png')}
+                  style={styles.googleMark}
+                  resizeMode="contain"
+                  accessibilityIgnoresInvertColors
+                />
+                <Text allowFontScaling style={styles.googlePillLabel}>
+                  {PROVIDER_LABEL.google}
+                </Text>
+              </>
+            )}
+          </Pressable>
         ) : null}
       </Animated.View>
 
@@ -439,7 +529,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   title: {
     ...TOKENS.typography.displayLarge,
     color: t.color.text.primary,
-    // Two lines reserved, derived rather than typed. 'Someone’s here to listen'
+    // Two lines reserved, derived rather than typed. 'Someone's here to listen'
     // wraps at 34pt and 'Enter the code' does not, so without this the whole head
     // block jumps a line high the moment the step changes, and under a cross-fade
     // that is worse than a hard cut, because the movement happens while the text
@@ -478,19 +568,73 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   },
   field: {
     gap: TOKENS.space.sm,
-  },
-  input: {
-    ...TOKENS.typography.bodyLarge,
-    color: t.color.text.primary,
-    // A filled field, not a Material outlined one: `bg/sunken`, no stroke, 10pt
-    // corner. See the same change in PhoneVerifySheet. It was `bg/raised` plus a
-    // 1px `border/strong` at radius 16, and `bg/raised` is the same white as the
-    // page in light mode, so the border was carrying the whole field.
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: t.color.bg.sunken,
     borderRadius: TOKENS.radius.field,
     borderCurve: 'continuous',
     paddingHorizontal: TOKENS.space.md,
     height: 48,
+  },
+  input: {
+    ...TOKENS.typography.bodyLarge,
+    color: t.color.text.primary,
+    flex: 1,
+  },
+  // Confirm sub-step: display the formatted number prominently.
+  confirmBlock: {
+    alignItems: 'center',
+    gap: TOKENS.space.xs,
+  },
+  confirmNumber: {
+    ...TOKENS.typography.displayLarge,
+    color: t.color.text.primary,
+    textAlign: 'center',
+  },
+  // Primary confirm pill: white fill / ink text, full-width.
+  confirmPrimary: {
+    flexDirection: 'row',
+    gap: TOKENS.space.xs,
+    height: 48,
+    borderRadius: TOKENS.radius.pill,
+    borderCurve: 'continuous',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.08)',
+  },
+  confirmPrimaryLabel: {
+    ...TOKENS.typography.headline,
+    color: t.color.text.primary,
+  },
+  // "Edit number" ghost link.
+  confirmSecondary: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Bespoke Google button: white pill / ink text / direct G mark.
+  // Always full-width and visually primary regardless of phone auth state.
+  googlePill: {
+    flexDirection: 'row',
+    gap: TOKENS.space.xs,
+    height: 48,
+    borderRadius: TOKENS.radius.pill,
+    borderCurve: 'continuous',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.08)',
+  },
+  googleMark: {
+    width: 20,
+    height: 20,
+  },
+  googlePillLabel: {
+    ...TOKENS.typography.headline,
+    color: t.color.text.primary,
   },
   // The fix for "buttons have no gap".
   actions: {

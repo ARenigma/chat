@@ -60,6 +60,7 @@ const MIGRATIONS = [
   'supabase/migrations/017_call_push.sql',
   'supabase/migrations/018_firebase_phone_exchange.sql',
   'supabase/migrations/019_token_ledger_and_invoices.sql',
+  'supabase/migrations/020_mock_recharge.sql',
 ];
 
 const docker = (args, options = {}) =>
@@ -363,6 +364,10 @@ const suites = [
   {
     file: join(ROOT, 'supabase/tests/120_token_ledger.sql'),
     label: 'token ledger, invoice counters, and GST invoices',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/130_mock_recharge.sql'),
+    label: 'mock recharge: app_flags, function grant, and MOCK_DISABLED gate',
   },
 ];
 

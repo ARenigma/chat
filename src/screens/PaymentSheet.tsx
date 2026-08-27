@@ -1,12 +1,15 @@
-import React, { useState } from 'react';
-import { Image, StyleSheet, View, type ImageSourcePropType } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Image, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
+import { useQueryClient } from '@tanstack/react-query';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { formatRupees, formatTokens, PAYMENTS_ENABLED } from '../lib/rates';
+import { formatRupees, formatTokens, MOCK_PAYMENTS, PAYMENTS_ENABLED } from '../lib/rates';
+import { supabase } from '../lib/supabase';
 import { Button } from '../components/Button';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { Sheet } from '../components/Sheet';
+import { useStore } from '../store/useStore';
 
 interface Props {
   visible: boolean;
@@ -28,6 +31,10 @@ interface Props {
  * "opening soon" rather than pretending to launch an intent that goes nowhere.
  * When the rail lands, the selected `method` is the app to deep-link into and
  * the confirm becomes the live "Pay" — no other change here.
+ *
+ * When `MOCK_PAYMENTS` is true (non-production builds), the Pay button is enabled
+ * and drives a real ledger write via `mock_recharge`, which requires the server
+ * flag `app_flags.mock_payments = true` to be flipped by an operator.
  */
 const METHODS = ['Google Pay', 'PhonePe', 'Paytm', 'BHIM'] as const;
 
@@ -50,53 +57,169 @@ const LOGOS: Record<(typeof METHODS)[number], { src: ImageSourcePropType; ratio:
 
 const LOGO_HEIGHT = 22;
 
+/** Minimum time the processing spinner stays visible, in milliseconds. */
+const MOCK_SPINNER_MS = 1200;
+/** Delay before auto-closing the success state, in milliseconds. */
+const MOCK_SUCCESS_CLOSE_MS = 1600;
+
+type MockPhase = 'idle' | 'processing' | 'success' | 'error';
+
 export function PaymentSheet({ visible, amount, onClose }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
+  const queryClient = useQueryClient();
+  const closeRefill = useStore(s => s.closeRefill);
+
   const [method, setMethod] = useState<string>(METHODS[0]);
+  const [mockPhase, setMockPhase] = useState<MockPhase>('idle');
+  const [successBalance, setSuccessBalance] = useState<number | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Reset mock state whenever the sheet closes so next open starts fresh.
+  useEffect(() => {
+    if (!visible) {
+      setMockPhase('idle');
+      setSuccessBalance(null);
+      setErrorMsg(null);
+    }
+  }, [visible]);
+
+  const handleMockPay = async () => {
+    setMockPhase('processing');
+    const pAmountPaise = amount * 100;
+    const pTokens = amount; // 1 token = 1 rupee
+
+    // Enforce a minimum visible-spinner duration so the flow feels intentional.
+    const [result] = await Promise.all([
+      supabase.rpc('mock_recharge', { p_amount_paise: pAmountPaise, p_tokens: pTokens }),
+      new Promise<void>(resolve => setTimeout(resolve, MOCK_SPINNER_MS)),
+    ]);
+
+    const data = result.data;
+    const rpcError = result.error;
+
+    if (rpcError || !data?.success) {
+      const errCode = data?.error;
+      if (errCode === 'MOCK_DISABLED') {
+        setErrorMsg('Mock payments are off. Enable app_flags.mock_payments to test.');
+      } else {
+        setErrorMsg('Something went wrong, try again');
+      }
+      setMockPhase('error');
+      return;
+    }
+
+    setSuccessBalance(data.new_balance ?? null);
+    // Refresh the balance pill in the nav and the recharge screen.
+    await queryClient.invalidateQueries({ queryKey: ['profile'] });
+    setMockPhase('success');
+
+    // Auto-close after the success moment has registered.
+    setTimeout(() => {
+      onClose();
+      closeRefill();
+    }, MOCK_SUCCESS_CLOSE_MS);
+  };
+
+  const sheetTitle =
+    mockPhase === 'success' ? 'Payment successful' : 'Pay with UPI';
+  const sheetBody =
+    mockPhase === 'success'
+      ? `${formatTokens(amount)} tokens added`
+      : `Add ${formatTokens(amount)} tokens  ·  ${formatRupees(amount)}`;
 
   return (
     <Sheet
       visible={visible}
       testID="payment-sheet"
-      title="Pay with UPI"
-      body={`Add ${formatTokens(amount)} tokens  ·  ${formatRupees(amount)}`}
+      title={sheetTitle}
+      body={sheetBody}
       onClose={onClose}
-      onCancel={onClose}
-      cancelLabel="Back">
-      <View style={styles.group}>
-        {METHODS.map((name, index) => {
-          const on = name === method;
-          return (
-            <React.Fragment key={name}>
-              {index === 0 ? null : <View style={styles.separator} />}
-              <Pressable
-                onPress={() => setMethod(name)}
-                testID={`upi-${name}`}
-                accessibilityLabel={on ? `${name}, selected` : name}
-                press="none"
-                highlight="ios"
-                style={[styles.row, index === 0 && styles.rowFirst, index === METHODS.length - 1 && styles.rowLast]}>
-                <Image
-                  source={LOGOS[name].src}
-                  style={{ height: LOGO_HEIGHT, width: LOGO_HEIGHT * LOGOS[name].ratio }}
-                  resizeMode="contain"
-                  accessibilityIgnoresInvertColors
-                />
-                <View style={styles.rowFill} />
-                {on ? <Icon name="check" size={17} color={theme.color.text.primary} /> : null}
-              </Pressable>
-            </React.Fragment>
-          );
-        })}
-      </View>
+      onCancel={mockPhase !== 'success' ? onClose : undefined}
+      cancelLabel={mockPhase !== 'success' ? 'Back' : undefined}>
 
-      <Button
-        label={PAYMENTS_ENABLED ? `Pay ${formatRupees(amount)}` : 'Payments open soon'}
-        disabled={!PAYMENTS_ENABLED}
-        onPress={onClose}
-        testID="payment-confirm"
-      />
+      {/* ── Processing state ─────────────────────────────────────────────── */}
+      {mockPhase === 'processing' ? (
+        <View style={styles.centreState}>
+          <ActivityIndicator size="large" color={theme.color.text.accent} />
+          <Text allowFontScaling style={styles.centreLabel}>
+            Processing payment…
+          </Text>
+        </View>
+      ) : mockPhase === 'success' ? (
+        /* ── Success state ───────────────────────────────────────────────── */
+        <View style={styles.centreState}>
+          <View style={[styles.successCircle, { backgroundColor: theme.color.bg.accentStrong }]}>
+            <Icon name="check" size={32} color="#FFFFFF" />
+          </View>
+          <Text allowFontScaling style={styles.successTitle}>
+            {formatTokens(amount)} tokens added
+          </Text>
+          {successBalance !== null ? (
+            <Text allowFontScaling style={styles.successBalance}>
+              New balance: {formatTokens(successBalance)} tokens
+            </Text>
+          ) : null}
+        </View>
+      ) : (
+        /* ── Idle / Error state — UPI chooser ───────────────────────────── */
+        <>
+          {mockPhase === 'error' && errorMsg !== null ? (
+            <View style={styles.errorRow}>
+              <Icon name="callEnd" size={14} color={theme.color.state.danger} />
+              <Text allowFontScaling style={[styles.errorText, { color: theme.color.state.danger }]}>
+                {errorMsg}
+              </Text>
+            </View>
+          ) : null}
+
+          <View style={styles.group}>
+            {METHODS.map((name, index) => {
+              const on = name === method;
+              return (
+                <React.Fragment key={name}>
+                  {index === 0 ? null : <View style={styles.separator} />}
+                  <Pressable
+                    onPress={() => {
+                      if (mockPhase === 'idle') {
+                        setMethod(name);
+                      }
+                    }}
+                    testID={`upi-${name}`}
+                    accessibilityLabel={on ? `${name}, selected` : name}
+                    press="none"
+                    highlight="ios"
+                    style={[styles.row, index === 0 && styles.rowFirst, index === METHODS.length - 1 && styles.rowLast]}>
+                    <Image
+                      source={LOGOS[name].src}
+                      style={{ height: LOGO_HEIGHT, width: LOGO_HEIGHT * LOGOS[name].ratio }}
+                      resizeMode="contain"
+                      accessibilityIgnoresInvertColors
+                    />
+                    <View style={styles.rowFill} />
+                    {on ? <Icon name="check" size={17} color={theme.color.text.primary} /> : null}
+                  </Pressable>
+                </React.Fragment>
+              );
+            })}
+          </View>
+
+          {MOCK_PAYMENTS ? (
+            <Button
+              label={`Pay ${formatRupees(amount)}`}
+              onPress={() => { void handleMockPay(); }}
+              testID="payment-confirm"
+            />
+          ) : (
+            <Button
+              label={PAYMENTS_ENABLED ? `Pay ${formatRupees(amount)}` : 'Payments open soon'}
+              disabled={!PAYMENTS_ENABLED}
+              onPress={onClose}
+              testID="payment-confirm"
+            />
+          )}
+        </>
+      )}
     </Sheet>
   );
 }
@@ -138,5 +261,46 @@ const makeStyles = (t: Theme) =>
       height: StyleSheet.hairlineWidth,
       marginLeft: TOKENS.space.md,
       backgroundColor: t.color.border.hairline,
+    },
+    // Centred layout shared by the processing spinner and the success confirmation.
+    centreState: {
+      alignSelf: 'stretch',
+      alignItems: 'center',
+      paddingVertical: TOKENS.space.xl,
+      gap: TOKENS.space.sm,
+    },
+    centreLabel: {
+      ...TOKENS.typography.subhead,
+      color: t.color.text.secondary,
+    },
+    // The coral confirmation circle — payment-success is an action-affirming
+    // moment, which is exactly what the accent budget reserves the coral for.
+    successCircle: {
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+      borderCurve: 'continuous',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    successTitle: {
+      ...TOKENS.typography.headline,
+      color: t.color.text.primary,
+    },
+    successBalance: {
+      ...TOKENS.typography.subhead,
+      color: t.color.text.secondary,
+    },
+    // Error inline banner above the UPI list.
+    errorRow: {
+      alignSelf: 'stretch',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.xs,
+      paddingHorizontal: TOKENS.space.xs,
+    },
+    errorText: {
+      ...TOKENS.typography.captionSmall,
+      flex: 1,
     },
   });
