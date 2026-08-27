@@ -43,6 +43,14 @@
     <uses-permission android:name="android.permission.CAMERA" />
 
     <!--
+      Full-screen incoming-call notification (CallStyle). An app in the Calling
+      category is exempt from the Android 14 install-time gating of this
+      permission, but it must still be declared to post a full-screen intent that
+      rings over the lock screen. See Conversations.notifyCall (#call notification).
+    -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+
+    <!--
       Belt and braces for the Play Data Safety declaration: a future transitive
       dependency cannot reintroduce these through manifest merging. If any
       library ever tries, the merger removes it here instead of shipping it.

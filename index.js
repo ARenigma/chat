@@ -24,8 +24,10 @@ import {
 import App from './App';
 import { name as appName } from './app.json';
 import {
+  notifyCall,
   notifyConversation,
   notifyEngagement,
+  readCallPush,
   readConversationPush,
   readEngagementPush,
 } from './src/lib/conversations';
@@ -45,7 +47,8 @@ import {
  * `Person` and the long-lived shortcut all have to be assembled by the app. See
  * `android/app/src/main/java/com/companionchat/Conversations.kt`.
  *
- * Two notification types are routed here (Amit, 2026-08-27):
+ * Three notification types are routed here (Amit, 2026-08-27):
+ *   - `kind: 'call'` → a CallStyle full-screen incoming-call notification.
  *   - `kind: 'engagement'` → a BigPicture re-engagement nudge (an SP photo plus a
  *     call to action), for when there is no real message.
  *   - anything else → a MessagingStyle conversation notification for a real
@@ -54,6 +57,11 @@ import {
  *     who the conversations are with.
  */
 setBackgroundMessageHandler(getMessaging(), async remote => {
+  const call = readCallPush(remote.data);
+  if (call !== null) {
+    await notifyCall(call);
+    return;
+  }
   const nudge = readEngagementPush(remote.data);
   if (nudge !== null) {
     await notifyEngagement(nudge);

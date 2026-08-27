@@ -30,6 +30,13 @@ interface Native {
     body: string,
     avatarUrl: string,
   ): Promise<boolean>;
+  notifyCall(
+    callId: string,
+    peerId: string,
+    callerName: string,
+    avatarUrl: string,
+  ): Promise<boolean>;
+  clearCall(callId: string): Promise<void>;
   clear(conversationId: string): Promise<void>;
   ensureChannel(): Promise<void>;
 }
@@ -124,9 +131,61 @@ export function readEngagementPush(
   };
 }
 
+/**
+ * What an incoming-call push carries — the third notification type. `kind: 'call'`
+ * routes a push here; `callId` + the caller (`peerId`) are what the CallStyle
+ * notification and the in-app answer/decline need.
+ */
+export interface CallPush {
+  readonly callId: string;
+  readonly peerId: string;
+  readonly callerName: string;
+  readonly medium: string;
+  readonly avatarUrl: string | null;
+}
+
+/** Read an incoming-call payload, or `null` if it is not one. */
+export function readCallPush(
+  data: Readonly<Record<string, string | object>> | undefined,
+): CallPush | null {
+  if (data === undefined || data.kind !== 'call') {
+    return null;
+  }
+  const asString = (key: string): string =>
+    typeof data[key] === 'string' ? (data[key] as string) : '';
+  const callId = asString('callId');
+  const peerId = asString('peerId');
+  if (callId === '' || peerId === '') {
+    return null;
+  }
+  return {
+    callId,
+    peerId,
+    callerName: asString('senderName') || 'Someone',
+    medium: asString('medium') || 'voice',
+    avatarUrl: asString('senderAvatar') || null,
+  };
+}
+
 /** Whether the native module is present. False under jest and in any build without it. */
 export function conversationsAvailable(): boolean {
   return native !== undefined;
+}
+
+/** Ring an incoming call (CallStyle). Resolves `false` when the module is absent. */
+export async function notifyCall(push: CallPush): Promise<boolean> {
+  if (native === undefined) {
+    return false;
+  }
+  return native.notifyCall(push.callId, push.peerId, push.callerName, push.avatarUrl ?? '');
+}
+
+/** Clear a call notification once it is answered, declined or gone. */
+export async function clearCall(callId: string): Promise<void> {
+  if (native === undefined) {
+    return;
+  }
+  await native.clearCall(callId);
 }
 
 /** Post an engagement nudge (BigPicture). Resolves `false` when the module is absent. */

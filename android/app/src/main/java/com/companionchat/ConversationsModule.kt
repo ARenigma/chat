@@ -83,6 +83,36 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
         }
     }
 
+    /** Ring an incoming call — the CallStyle full-screen notification. */
+    @ReactMethod
+    fun notifyCall(
+        callId: String,
+        peerId: String,
+        callerName: String,
+        avatarUrl: String,
+        promise: Promise,
+    ) {
+        try {
+            Conversations.notifyCall(
+                reactContext,
+                callId = callId,
+                peerId = peerId,
+                callerName = callerName,
+                avatarUrl = avatarUrl.ifEmpty { null },
+            )
+            promise.resolve(true)
+        } catch (error: Exception) {
+            promise.resolve(false)
+        }
+    }
+
+    /** Clear a call notification once it is answered, declined or gone. */
+    @ReactMethod
+    fun clearCall(callId: String, promise: Promise) {
+        Conversations.clearCall(reactContext, callId)
+        promise.resolve(null)
+    }
+
     /** Clear a conversation's notification once it has been read in the app. */
     @ReactMethod
     fun clear(conversationId: String, promise: Promise) {

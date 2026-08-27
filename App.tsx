@@ -11,6 +11,7 @@ import { BLOOM_CONTENT_MS } from './src/lib/bloom';
 import { assertEnv } from './src/lib/env';
 import { migrateLegacyStorage, storage } from './src/lib/storage';
 import { initialNotificationPeer, onNotificationOpen, startPush } from './src/lib/push';
+import { clearCall } from './src/lib/conversations';
 import {
   memberParent,
   providerParent,
@@ -160,6 +161,26 @@ function Root() {
        * rather than queued, because the id belongs to a session that is not the
        * current one.
        */
+      /*
+       * An incoming-call deep link, checked first. `companionchat://call/<peerId>
+       * ?callId=<id>&action=answer|decline` is fired by the CallStyle
+       * notification's Answer/Decline PendingIntents (Conversations.callActionIntent).
+       * Both open the in-app incoming-call screen, which owns the answer_call /
+       * end_call RPCs with the user's session; the notification only rings and
+       * wakes. The notification is cleared here since the app now has the call.
+       * Parsed with regex, not URLSearchParams, which Hermes does not ship.
+       */
+      const callMatch = url.match(/^companionchat:\/\/call\/([^?]+)\?(.*)$/);
+      if (callMatch) {
+        const callPeer = callMatch[1] ?? '';
+        const callId = callMatch[2]?.match(/callId=([^&]+)/)?.[1];
+        if (isUuid(callPeer) && callId !== undefined && isUuid(callId)) {
+          void clearCall(callId);
+          setRoute({ name: 'call', providerId: callPeer, direction: 'in', callId });
+        }
+        return;
+      }
+
       const peer = url.match(/^companionchat:\/\/peer\/(.+)$/)?.[1];
       if (peer !== undefined) {
         if (isUuid(peer)) {
