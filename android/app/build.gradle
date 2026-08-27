@@ -192,6 +192,12 @@ android {
         versionCode ciBuildNumber
         versionName versionNameProperty
 
+        // Ship only English resources. The app's own strings are English; this
+        // strips the 80+ locale strings that Play Services / Firebase / AndroidX
+        // bundle, which are otherwise dead weight. Revisit when the UI is localised
+        // (e.g. add "hi" for Hindi).
+        resConfigs "en"
+
         // Native symbols for Play Console crash reports. Costs nothing at
         // runtime; the symbol file is stripped out of the delivered APKs.
         ndk {

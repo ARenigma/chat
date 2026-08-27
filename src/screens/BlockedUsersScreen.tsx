@@ -2,13 +2,13 @@ import React, { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
-import { useStyles, useTheme } from '../theme/ThemeProvider';
+import { useStyles } from '../theme/ThemeProvider';
 import type { ProviderSummary } from '../lib/database.types';
 import { initialOf } from '../lib/display';
 import { useProviders } from '../api/chat';
 import { useBlockedPeerIds, useUnblockUser } from '../api/safety';
 import { Avatar } from '../components/Avatar';
-import { Icon } from '../components/Icon';
+import { BackButton } from '../components/BackButton';
 import { Pressable } from '../components/Pressable';
 
 interface Props {
@@ -30,7 +30,6 @@ interface Props {
  */
 export function BlockedUsersScreen({ onBack }: Props) {
   const styles = useStyles(makeStyles);
-  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { data: providers } = useProviders();
   const blocked = useBlockedPeerIds();
@@ -44,15 +43,7 @@ export function BlockedUsersScreen({ onBack }: Props) {
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <View style={styles.bar}>
-        <Pressable
-          onPress={onBack}
-          testID="blocked-back"
-          accessibilityLabel="Back"
-          press="none"
-          size={28}
-          style={styles.barIcon}>
-          <Icon name="chevronLeft" size={26} color={theme.color.text.primary} />
-        </Pressable>
+        <BackButton onPress={onBack} testID="blocked-back" style={styles.barIcon} />
         <Text allowFontScaling style={styles.barTitle}>
           Blocked
         </Text>

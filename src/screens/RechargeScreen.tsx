@@ -7,6 +7,7 @@ import { formatRupees, formatTokens, PAYMENTS_ENABLED, RECHARGE_PACKS } from '..
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { useStore } from '../store/useStore';
 import { Button } from '../components/Button';
+import { BackButton } from '../components/BackButton';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { TokenCounter } from '../components/TokenCounter';
@@ -57,15 +58,12 @@ export function RechargeScreen() {
       style={[styles.root, { paddingTop: insets.top }]}>
       {/* Header: back closes the overlay, balance pill mirrors the one that opened it. */}
       <View style={styles.bar}>
-        <Pressable
+        <BackButton
           onPress={close}
           testID="recharge-back"
           accessibilityLabel="Close recharge"
-          press="none"
-          size={28}
-          style={styles.barIcon}>
-          <Icon name="chevronLeft" size={26} color={theme.color.text.primary} />
-        </Pressable>
+          style={styles.barIcon}
+        />
         {/* Centred in the space BETWEEN the back button and the balance pill, not
             across the whole bar. The old title used `marginLeft: -28` to centre
             over the full width, which pushed its flex box left over the back

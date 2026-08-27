@@ -11,6 +11,7 @@ import { DEFAULT_RATES, rateLabel, type Channel } from '../lib/rates';
 import { useProfile, useProviders } from '../api/chat';
 import { CALLS_ENABLED } from '../api/calls';
 import { useStore } from '../store/useStore';
+import { BackButton } from '../components/BackButton';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { TokenCounter } from '../components/TokenCounter';
@@ -58,15 +59,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
   return (
     <View style={styles.root}>
       <View style={[styles.bar, { paddingTop: insets.top + TOKENS.space['2xs'] }]}>
-        <Pressable
-          onPress={onBack}
-          testID="detail-back"
-          accessibilityLabel="Back"
-          press="none"
-          size={28}
-          style={styles.barIcon}>
-          <Icon name="chevronLeft" size={26} color={theme.color.text.primary} />
-        </Pressable>
+        <BackButton onPress={onBack} testID="detail-back" style={styles.barIcon} />
         <TokenCounter balance={balance} onPress={openRefill} />
       </View>
 

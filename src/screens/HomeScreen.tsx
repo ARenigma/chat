@@ -543,9 +543,12 @@ const makeStyles = (t: Theme) =>
       right: 6,
       minWidth: 20,
       height: 20,
-      paddingHorizontal: 5,
-      borderRadius: 10,
-      backgroundColor: t.color.bg.accent,
+      paddingHorizontal: TOKENS.space['2xs'],
+      borderRadius: TOKENS.radius.pill,
+      // accentStrong, matching the provider tree's unread badge (ThreadBubble /
+      // ProviderHome): the deeper coral step carries white at 5.2:1, and the two
+      // trees should not show the same "unread" concept in two different corals.
+      backgroundColor: t.color.bg.accentStrong,
       alignItems: 'center',
       justifyContent: 'center',
       borderWidth: 2,
