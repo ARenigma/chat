@@ -1,23 +1,12 @@
 import React, { useCallback, useState } from 'react';
-import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-  type StyleProp,
-  type ViewStyle,
-} from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  Appbar,
-  Button as PaperButton,
-  Dialog,
-  List,
-  Portal,
-  Text as PaperText,
-} from 'react-native-paper';
 import { NAV_BAR_HEIGHT } from '../components/FloatingToolbar';
 import { SCROLL_PHYSICS } from '../lib/scroll';
+import { Button } from '../components/Button';
+import { Icon } from '../components/Icon';
+import { Pressable } from '../components/Pressable';
+import { Sheet } from '../components/Sheet';
 import { Toggle } from '../components/Toggle';
 import { useQueryClient } from '@tanstack/react-query';
 import { deleteAccount, signOut } from '../api/auth';
@@ -33,49 +22,12 @@ import { resetStore, useStore } from '../store/useStore';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme, useThemeMode } from '../theme/ThemeProvider';
 
-/**
- * List.Item `right` renderers, hoisted to module scope.
- *
- * Paper takes a render function for `right`; defined inline it is a new component
- * every render (the `no-unstable-nested-components` rule, and a real remount).
- * At module scope they are stable references. The chevron and check take Paper's
- * own props; the theme switch reads the mode from context itself, so selection is
- * expressed by *which* renderer is passed (or none), never by a closure.
- */
-type RightProps = { color: string; style?: StyleProp<ViewStyle> };
-
-function ChevronRight(props: RightProps) {
-  return <List.Icon {...props} icon="chevron-right" />;
-}
-
-function CheckIcon(props: RightProps) {
-  return <List.Icon {...props} icon="check" />;
-}
-
-function ThemeSwitchRight() {
-  const { isDark, setMode } = useThemeMode();
-  return (
-    <View style={rightStyles.switchWrap} pointerEvents="box-none">
-      <Toggle
-        testID="theme-toggle"
-        value={isDark}
-        onValueChange={next => setMode(next ? 'dark' : 'light')}
-        accessibilityLabel="Dark Mode"
-      />
-    </View>
-  );
-}
-
-const rightStyles = StyleSheet.create({
-  switchWrap: { justifyContent: 'center' },
-});
-
 interface Props {
   /** Back to the tree's home. Settings is a mounted screen, not a sheet. */
   onBack: () => void;
   /**
-   * Whether to draw a back action in the app bar. False on the member tree,
-   * where Settings is a fixed bottom-nav tab (the Home tab is the way back, like
+   * Whether to draw a back action in the header. False on the member tree, where
+   * Settings is a fixed bottom-nav tab (the Home tab is the way back, like
    * WhatsApp); true on the provider tree, which has no bottom nav. Hardware back
    * pops it either way.
    */
@@ -89,21 +41,20 @@ interface Props {
 }
 
 /**
- * Account and privacy — Material 3, our tokens.
+ * Account and privacy — hand-rolled Material 3 on the Fuse tokens, the same
+ * primitives every other screen uses (ADR-0010).
  *
- * Rebuilt on react-native-paper (wave-3 #1): a Material 3 `Appbar`, `List`,
- * `Switch` and `Dialog` instead of the hand-rolled iOS grouped list this used to
- * be. The components are Material's; the coral, the Inter type and the neutrals
- * are ours, through the theme in PaperHost. This is the pattern the rest of the
- * app's screens follow now — native M3 components wearing the design system.
+ * This was briefly rebuilt on react-native-paper (wave-3), which made it the one
+ * screen in the app drawing its header, rows and dialog from Paper's theme bridge
+ * rather than our own components — a visible seam the design audit flagged. Reverted
+ * (Amit, 2026-08-27): a bare-chevron header like ProviderStatus, the inset-grouped
+ * row table PaymentSheet/SafetySheet already use, our `Toggle`, and the app's
+ * `Sheet` for the delete confirm. Paper and its theme bridge are gone with it.
  *
- * The file keeps its name to avoid a churn of imports and test paths; it is a
- * screen, not a sheet. The two genuinely modal moments stay modal: the delete
- * confirmation is an M3 `Dialog`, and phone verification is still the OTP sheet.
- *
- * Identity linking is gone with the anonymous session: the Google account *is*
- * the account. What replaced it is the route into provider onboarding, which
- * lives here because becoming a provider is a deliberate act, not a nudge.
+ * The file keeps its name to avoid churning imports and test paths; it is a
+ * screen, not a sheet. Phone verification stays the OTP sheet, and the delete
+ * confirmation stays modal — a destructive confirm is one of the few things that
+ * should be.
  */
 export function SettingsSheet({
   onBack,
@@ -117,6 +68,7 @@ export function SettingsSheet({
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const { isDark, setMode } = useThemeMode();
   const setNotice = useStore(s => s.setNotice);
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
@@ -133,8 +85,8 @@ export function SettingsSheet({
     setBusy(true);
     try {
       // Before the account goes: the token row cascades with the user, but the
-      // *device* keeps the FCM token, and a token that outlives its row would
-      // be re-registered by the next sign-in on this phone.
+      // *device* keeps the FCM token, and a token that outlives its row would be
+      // re-registered by the next sign-in on this phone.
       await stopPush();
       await deleteAccount();
       track('account_deleted');
@@ -185,20 +137,31 @@ export function SettingsSheet({
       ? ' Anyone browsing the directory sees it too.'
       : ' Only people you have a conversation with can see it.';
 
+  const showAccountSection =
+    canVerifyPhone || hasApplication || onApply !== undefined;
+
   return (
     <View style={styles.root} testID="settings-sheet">
-      {/* Material 3 top app bar: a back action and the screen title, flat on the
-          page (no tonal elevation) so it reads as one surface. */}
-      <Appbar.Header mode="small" elevated={false} style={styles.appbar}>
-        {/* Appbar.Action, not BackAction: BackAction's built-in icon bypasses our
-            PaperProvider icon adapter and renders tofu (no vector-icons font),
-            whereas an explicit `icon` routes through the adapter to our glyph.
-            Shown only where there is no bottom nav to carry the way back. */}
+      {/* A bare-chevron header on the page colour, the same anatomy as
+          ProviderStatus/ProviderApplication — no tonal app bar, one surface. The
+          back affordance is shown only where there is no bottom nav to carry it. */}
+      <View style={[styles.header, { paddingTop: insets.top + TOKENS.space['2xs'] }]}>
         {showBack ? (
-          <Appbar.Action icon="chevron-left" onPress={onBack} accessibilityLabel="Back" testID="settings-back" />
+          <Pressable
+            onPress={onBack}
+            testID="settings-back"
+            accessibilityLabel="Back"
+            press="none"
+            highlight="ios"
+            size={28}
+            style={styles.backButton}>
+            <Icon name="chevronLeft" size={22} />
+          </Pressable>
         ) : null}
-        <Appbar.Content title="Account & Privacy" />
-      </Appbar.Header>
+        <Text allowFontScaling style={styles.title}>
+          Account &amp; Privacy
+        </Text>
+      </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -220,102 +183,177 @@ export function SettingsSheet({
         </Text>
 
         {/* Presence, first because it is the only setting that changes what
-            someone else sees. Three rows with a checkmark: a switch cannot
-            express three states, and 'hidden' must be a state, not an absence. */}
-        <List.Section>
-          <List.Subheader>Presence</List.Subheader>
-          {PRESENCE_OPTIONS.map(option => (
-            <List.Item
-              key={option.value}
-              title={option.label}
-              onPress={() => {
-                if (presence !== option.value) {
-                  setPresence.mutate(option.value);
-                }
-              }}
-              testID={`presence-${option.value}`}
-              accessibilityLabel={presence === option.value ? `${option.label}, selected` : option.label}
-              right={presence === option.value ? CheckIcon : undefined}
-            />
-          ))}
-        </List.Section>
+            someone else sees. Three rows with a checkmark: a switch cannot express
+            three states, and 'hidden' must be a state, not an absence. */}
+        <Text allowFontScaling style={styles.subheader}>
+          Presence
+        </Text>
+        <View style={styles.group}>
+          {PRESENCE_OPTIONS.map((option, index) => {
+            const on = presence === option.value;
+            return (
+              <React.Fragment key={option.value}>
+                {index === 0 ? null : <View style={styles.separator} />}
+                <Pressable
+                  onPress={() => {
+                    if (!on) {
+                      setPresence.mutate(option.value);
+                    }
+                  }}
+                  testID={`presence-${option.value}`}
+                  accessibilityLabel={on ? `${option.label}, selected` : option.label}
+                  press="none"
+                  highlight="ios"
+                  style={styles.row}>
+                  <Text allowFontScaling style={styles.rowTitle}>
+                    {option.label}
+                  </Text>
+                  {on ? (
+                    <Icon name="check" size={18} color={theme.color.text.primary} />
+                  ) : null}
+                </Pressable>
+              </React.Fragment>
+            );
+          })}
+        </View>
         <Text allowFontScaling style={styles.footer}>
           {presenceDetail(presence)}
           {providerAppearance}
         </Text>
 
-        <List.Section>
-          <List.Subheader>Appearance</List.Subheader>
-          <List.Item title="Dark Mode" right={ThemeSwitchRight} />
-        </List.Section>
+        <Text allowFontScaling style={styles.subheader}>
+          Appearance
+        </Text>
+        <View style={styles.group}>
+          {/* Not a Pressable: the Toggle is the control, and a row press that
+              fought the switch would be two targets for one setting. */}
+          <View style={styles.row}>
+            <Text allowFontScaling style={styles.rowTitle}>
+              Dark Mode
+            </Text>
+            <Toggle
+              testID="theme-toggle"
+              value={isDark}
+              onValueChange={next => setMode(next ? 'dark' : 'light')}
+              accessibilityLabel="Dark Mode"
+            />
+          </View>
+        </View>
         <Text allowFontScaling style={styles.footer}>
           Follows your phone until you choose here.
         </Text>
 
-        {canVerifyPhone || hasApplication || onApply !== undefined ? (
-          <List.Section>
-            <List.Subheader>Account</List.Subheader>
-            {canVerifyPhone ? (
-              <List.Item
-                title="Verify Phone Number"
-                onPress={() => setVerifying(true)}
-                testID="settings-verify-phone"
-                right={ChevronRight}
-              />
-            ) : null}
-            {hasApplication && onApplicationStatus !== undefined ? (
-              <List.Item
-                title="Provider Application"
-                onPress={onApplicationStatus}
-                testID="settings-application"
-                right={ChevronRight}
-              />
-            ) : onApply !== undefined ? (
-              <List.Item
-                title="Become a Provider"
-                onPress={onApply}
-                testID="settings-apply"
-                right={ChevronRight}
-              />
-            ) : null}
-          </List.Section>
+        {showAccountSection ? (
+          <>
+            <Text allowFontScaling style={styles.subheader}>
+              Account
+            </Text>
+            <View style={styles.group}>
+              {canVerifyPhone ? (
+                <Pressable
+                  onPress={() => setVerifying(true)}
+                  testID="settings-verify-phone"
+                  accessibilityLabel="Verify Phone Number"
+                  press="none"
+                  highlight="ios"
+                  style={[styles.row, styles.rowChevron]}>
+                  <Text allowFontScaling style={styles.rowTitle}>
+                    Verify Phone Number
+                  </Text>
+                  <Icon name="chevronRight" size={18} color={theme.color.text.tertiary} />
+                </Pressable>
+              ) : null}
+              {canVerifyPhone && (hasApplication || onApply !== undefined) ? (
+                <View style={styles.separator} />
+              ) : null}
+              {hasApplication && onApplicationStatus !== undefined ? (
+                <Pressable
+                  onPress={onApplicationStatus}
+                  testID="settings-application"
+                  accessibilityLabel="Provider Application"
+                  press="none"
+                  highlight="ios"
+                  style={[styles.row, styles.rowChevron]}>
+                  <Text allowFontScaling style={styles.rowTitle}>
+                    Provider Application
+                  </Text>
+                  <Icon name="chevronRight" size={18} color={theme.color.text.tertiary} />
+                </Pressable>
+              ) : onApply !== undefined ? (
+                <Pressable
+                  onPress={onApply}
+                  testID="settings-apply"
+                  accessibilityLabel="Become a Provider"
+                  press="none"
+                  highlight="ios"
+                  style={[styles.row, styles.rowChevron]}>
+                  <Text allowFontScaling style={styles.rowTitle}>
+                    Become a Provider
+                  </Text>
+                  <Icon name="chevronRight" size={18} color={theme.color.text.tertiary} />
+                </Pressable>
+              ) : null}
+            </View>
+          </>
         ) : null}
 
         {/* Managing a block is a UGC-policy requirement: Home hides blocked
             people, so this is the only route back to unblocking one. */}
         {onBlocked !== undefined ? (
-          <List.Section>
-            <List.Subheader>Privacy & Safety</List.Subheader>
-            <List.Item
-              title="Blocked Users"
-              onPress={onBlocked}
-              testID="settings-blocked"
-              right={ChevronRight}
-            />
-          </List.Section>
+          <>
+            <Text allowFontScaling style={styles.subheader}>
+              Privacy &amp; Safety
+            </Text>
+            <View style={styles.group}>
+              <Pressable
+                onPress={onBlocked}
+                testID="settings-blocked"
+                accessibilityLabel="Blocked Users"
+                press="none"
+                highlight="ios"
+                style={[styles.row, styles.rowChevron]}>
+                <Text allowFontScaling style={styles.rowTitle}>
+                  Blocked Users
+                </Text>
+                <Icon name="chevronRight" size={18} color={theme.color.text.tertiary} />
+              </Pressable>
+            </View>
+          </>
         ) : null}
 
-        <List.Section>
-          <List.Item
-            title="Sign Out"
+        <View style={[styles.group, styles.groupSpaced]}>
+          <Pressable
             onPress={() => {
               void onSignOutPress();
             }}
             disabled={busy}
             testID="sign-out"
-          />
-          {/* The destructive action in the M3 error colour, its own separated
-              item, which is how Material keeps an irreversible action from
-              sitting flush against a benign one. */}
-          <List.Item
-            title="Delete Account"
-            titleStyle={styles.dangerTitle}
+            accessibilityLabel="Sign Out"
+            press="none"
+            highlight="ios"
+            style={styles.row}>
+            <Text allowFontScaling style={styles.rowTitle}>
+              Sign Out
+            </Text>
+          </Pressable>
+          <View style={styles.separator} />
+          {/* The destructive action in the error colour, its own separated row,
+              which is how a destructive action is kept from sitting flush against
+              a benign one. */}
+          <Pressable
             onPress={() => setConfirming(true)}
             testID="delete-account"
-          />
-        </List.Section>
+            accessibilityLabel="Delete Account"
+            press="none"
+            highlight="ios"
+            style={styles.row}>
+            <Text allowFontScaling style={[styles.rowTitle, styles.rowTitleDanger]}>
+              Delete Account
+            </Text>
+          </Pressable>
+        </View>
 
-        <Text allowFontScaling style={styles.brandFooter}>
+        <Text allowFontScaling={false} style={styles.brandFooter}>
           Pappal
         </Text>
       </ScrollView>
@@ -323,36 +361,32 @@ export function SettingsSheet({
       {/* Phone verification stays the OTP sheet, layered over the screen. */}
       <PhoneVerifySheet visible={verifying} onClose={() => setVerifying(false)} />
 
-      {/* Delete confirmation: an M3 dialog, because a destructive confirm IS a
-          popup. Names the object and says what the button deletes, not 'Yes'. */}
-      <Portal>
-        <Dialog
-          visible={confirming}
-          onDismiss={() => setConfirming(false)}
-          testID="delete-confirm-sheet">
-          <Dialog.Title>Delete Account?</Dialog.Title>
-          <Dialog.Content>
-            <PaperText variant="bodyMedium" style={styles.dialogBody}>
-              {'This permanently deletes your profile, every conversation and every ' +
-                'message. It cannot be undone. Abuse reports you or someone else filed ' +
-                'are kept without your name, so they cannot be erased by deleting an ' +
-                'account.'}
-            </PaperText>
-          </Dialog.Content>
-          <Dialog.Actions>
-            <PaperButton onPress={() => setConfirming(false)}>Cancel</PaperButton>
-            <PaperButton
-              onPress={() => {
-                void onDelete();
-              }}
-              loading={busy}
-              textColor={theme.color.state.danger}
-              testID="delete-confirm">
-              Delete Account
-            </PaperButton>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
+      {/* Delete confirmation: a destructive confirm IS modal. Names the object and
+          says what the button deletes, not 'Yes'. */}
+      <Sheet
+        visible={confirming}
+        testID="delete-confirm-sheet"
+        title="Delete Account?"
+        body={
+          'This permanently deletes your profile, every conversation and every ' +
+          'message. It cannot be undone. Abuse reports you or someone else filed ' +
+          'are kept without your name, so they cannot be erased by deleting an ' +
+          'account.'
+        }
+        onClose={() => setConfirming(false)}
+        onCancel={() => setConfirming(false)}
+        cancelLabel="Cancel">
+        <Button
+          label="Delete Account"
+          kind="danger"
+          busy={busy}
+          busyLabel="Deleting Account"
+          onPress={() => {
+            void onDelete();
+          }}
+          testID="delete-confirm"
+        />
+      </Sheet>
     </View>
   );
 }
@@ -363,30 +397,79 @@ const makeStyles = (t: Theme) =>
       flex: 1,
       backgroundColor: t.color.bg.base,
     },
-    appbar: {
-      backgroundColor: t.color.bg.base,
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.xs,
+      paddingHorizontal: TOKENS.space.md,
+      paddingBottom: TOKENS.space.xs,
+    },
+    backButton: {
+      width: 28,
+      height: 40,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginLeft: -TOKENS.space['2xs'],
+    },
+    title: {
+      ...TOKENS.typography.headline,
+      color: t.color.text.primary,
     },
     scroll: {
-      paddingHorizontal: TOKENS.space['2xs'],
+      paddingHorizontal: TOKENS.space.md,
     },
     intro: {
       ...TOKENS.typography.bodyMedium,
       color: t.color.text.secondary,
-      paddingHorizontal: TOKENS.space.md,
       paddingTop: TOKENS.space['2xs'],
-      paddingBottom: TOKENS.space.sm,
+      paddingBottom: TOKENS.space.md,
+    },
+    subheader: {
+      ...TOKENS.typography.labelSmall,
+      color: t.color.text.secondary,
+      paddingTop: TOKENS.space.lg,
+      paddingBottom: TOKENS.space.xs,
+    },
+    // The inset-grouped table, same idiom as PaymentSheet/SafetySheet.
+    group: {
+      borderRadius: TOKENS.radius.field,
+      borderCurve: 'continuous',
+      overflow: 'hidden',
+      backgroundColor: t.color.bg.sunken,
+    },
+    groupSpaced: {
+      marginTop: TOKENS.space.xl,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      minHeight: 52,
+      paddingHorizontal: TOKENS.space.md,
+      paddingVertical: TOKENS.space.sm,
+      backgroundColor: t.color.bg.sunken,
+    },
+    rowChevron: {
+      // A row that navigates; the chevron already sits at the trailing edge via
+      // space-between, this is just where any future per-variant tweak lands.
+    },
+    rowTitle: {
+      ...TOKENS.typography.bodyLarge,
+      color: t.color.text.primary,
+    },
+    rowTitleDanger: {
+      color: t.color.state.danger,
+    },
+    separator: {
+      height: StyleSheet.hairlineWidth,
+      marginLeft: TOKENS.space.md,
+      backgroundColor: t.color.border.hairline,
     },
     footer: {
       ...TOKENS.typography.captionRegular,
       color: t.color.text.secondary,
-      paddingHorizontal: TOKENS.space.md,
-      paddingTop: TOKENS.space['2xs'],
-    },
-    dangerTitle: {
-      color: t.color.state.danger,
-    },
-    dialogBody: {
-      color: t.color.text.secondary,
+      paddingHorizontal: TOKENS.space.xs,
+      paddingTop: TOKENS.space.xs,
     },
     brandFooter: {
       fontFamily: TOKENS.typography.wordmark.fontFamily,
