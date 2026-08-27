@@ -401,22 +401,17 @@ function FeaturedCard({
           white ring keeps it legible over any photo. */}
       <View style={styles.featuredOnline} />
       <View style={styles.featuredBody}>
+        {/* Name and rating share one line (#3): the lone "★ 5.0" on its own row
+            between the name and tagline read as an orphan. On the name line, right-
+            aligned, it matches how the list rows carry their rating. */}
         <View style={styles.featuredNameRow}>
           <Text allowFontScaling numberOfLines={1} style={styles.featuredName}>
             {provider.display_name}
             <Text style={styles.featuredAge}>{age}</Text>
           </Text>
-        </View>
-        <View style={styles.featuredMeta}>
-          {provider.rating_count > 0 ? (
-            <Text allowFontScaling style={styles.featuredMetaText}>
-              ★ {provider.rating_avg?.toFixed(1)}
-            </Text>
-          ) : (
-            <Text allowFontScaling style={styles.featuredMetaText}>
-              New here
-            </Text>
-          )}
+          <Text allowFontScaling style={styles.featuredRating}>
+            ★ {provider.rating_count > 0 ? provider.rating_avg?.toFixed(1) : 'New'}
+          </Text>
         </View>
         {tagline !== '' ? (
           <Text allowFontScaling numberOfLines={1} style={styles.featuredTagline}>
@@ -631,16 +626,19 @@ const makeStyles = (t: Theme) =>
     featuredName: {
       ...TOKENS.typography.displaySmall,
       color: '#FFFFFF',
-      flexShrink: 1,
+      flex: 1,
     },
     featuredAge: {
       ...TOKENS.typography.headline,
       color: 'rgba(255,255,255,0.82)',
     },
-    featuredMeta: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: TOKENS.space['2xs'],
+    // The rating on the name line, trailing. marginLeft (not a row `gap`) so the
+    // Explore-list separator guard, which forbids `gap: space.sm` in this file,
+    // still holds — the rating sits on the hero, not in that list.
+    featuredRating: {
+      ...TOKENS.typography.subhead,
+      color: '#FFFFFF',
+      marginLeft: TOKENS.space.sm,
     },
     // The presence dot, top-right of the card: sage (the system's one presence
     // hue) with a white ring so it stays legible over any photo.

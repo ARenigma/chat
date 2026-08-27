@@ -659,7 +659,10 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
           press="none"
           size={28}
           style={[styles.navButton, !CALLS_ENABLED && styles.navDisabled]}>
-          <Icon name="call" size={20} color={theme.color.text.secondary} />
+          {/* 18, not 20: Lucide's phone glyph fills more of its em vertically than
+              the video glyph, so at a matched fontSize it read visibly taller next
+              to it (#1). Two points down evens the pair. */}
+          <Icon name="call" size={18} color={theme.color.text.secondary} />
         </Pressable>
         <TokenCounter balance={balance} onPress={openRefill} />
       </View>
