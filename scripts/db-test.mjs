@@ -58,6 +58,7 @@ const MIGRATIONS = [
   'supabase/migrations/015_push_avatar.sql',
   'supabase/migrations/016_engagement_nudges.sql',
   'supabase/migrations/017_call_push.sql',
+  'supabase/migrations/018_firebase_phone_exchange.sql',
 ];
 
 const docker = (args, options = {}) =>
