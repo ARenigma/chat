@@ -2212,14 +2212,14 @@ describe('the motion adoption is wired, not just drawn', () => {
     expect(stepper).toContain('promoteTo(phase === 1)');
   });
 
-  it('keeps the stepper outside the scroll view it labels', () => {
-    // "The stepper persists" is rule 4's claim, and a stepper that scrolls away
-    // is not persisting.
+  it('shows a step indicator through the bloom layout', () => {
+    // The horizontal Stepper is replaced by the OnboardingStep checklist, which
+    // shows all three rows throughout the form and always has the active step
+    // expanded. BloomField is the atmospheric surface the checklist floats on.
     const screen = read('src/screens/ProviderApplicationScreen.tsx');
-    const stepperAt = screen.indexOf('<Stepper');
-    const scrollAt = screen.indexOf('<ScrollView');
-    expect(stepperAt).toBeGreaterThan(-1);
-    expect(stepperAt).toBeLessThan(scrollAt);
+    expect(screen).toContain('<BloomField');
+    expect(screen).toContain('<OnboardingStep');
+    expect(screen).not.toContain('<Stepper');
   });
 
   it('locates every field the application form actually renders', () => {
