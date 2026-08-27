@@ -272,8 +272,12 @@ function BarButton({
   testID: string;
 }) {
   const styles = useStyles(makeStyles);
-  const theme = useTheme();
-  const fg = tone === 'danger' ? '#FFFFFF' : active ? theme.color.text.primary : '#FFFFFF';
+  // The call screen is a FIXED coral surface, not a themed one, so these colours
+  // are fixed literals rather than tokens: white on the coral for idle/danger,
+  // and a dark ink on the white "on" pill (`barButtonOn`). This used
+  // `theme.color.text.primary` for the active icon, which flips to light in dark
+  // mode and rendered light-on-white — invisible.
+  const fg = tone === 'danger' ? '#FFFFFF' : active ? '#1C1C1E' : '#FFFFFF';
   return (
     <View style={styles.barSlot}>
       <Pressable
