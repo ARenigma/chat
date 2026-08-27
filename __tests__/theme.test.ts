@@ -814,6 +814,11 @@ describe('accent budget is enforced in code, not just documented', () => {
        * — and it appears once, for one second, at the end of one flow.
        */
       'CompletionRow.tsx',
+      // The composer's media "+" is a filled coral disc (#6, Amit): the primary
+      // media action, an action in the colour the budget reserves for actions.
+      // The send button already carries the coral here; the "+" joins it as the
+      // one other affordance on the bar.
+      'Composer.tsx',
       'EmptyMark.tsx',
       /*
        * The bottom bar's active tab (FloatingToolbar). It went coral → black slab
@@ -912,6 +917,9 @@ describe('accent budget is enforced in code, not just documented', () => {
       // The call background is a warm field (gated, ADR-0019), same exemption
       // class as the hero surfaces, built from accent tokens not raw hex.
       'CallScreen.tsx',
+      // The recharge balance banner (#13) is a warm gradient field in the same
+      // language as the onboarding/hero surfaces, built from the accent tokens.
+      'RechargeScreen.tsx',
     ]);
     for (const s of componentSources.concat(screenSources)) {
       if (EXEMPT.has(s.file.split('/').pop() ?? '')) {

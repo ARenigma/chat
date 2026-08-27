@@ -482,10 +482,11 @@ function ComposerView({
         press="chip"
         size={32}
         style={styles.attach}>
-        {/* The plus sits in a filled circle (Sweprek, #7), so it reads as a media
-            button rather than a bare glyph next to the field. */}
+        {/* The plus sits in a filled coral circle (Sweprek, #6): the primary media
+            affordance, sized to match the trailing mic (24 glyph) so it doesn't
+            read as the smaller of the two. */}
         <View style={styles.attachCircle}>
-          <Icon name="plus" size={20} color={theme.color.text.secondary} />
+          <Icon name="plus" size={24} color={theme.color.text.onAccent} />
         </View>
       </Pressable>
       <View style={styles.field}>
@@ -627,7 +628,9 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: t.color.bg.sunken,
+    // Filled with the brand coral (#6): the "+" is the primary media action, so
+    // the circle carries the accent rather than a neutral sunken grey.
+    backgroundColor: t.color.bg.accent,
   },
   // The emoji button inside the field's leading edge. Sized to sit on the same
   // baseline as the trailing mic when the field is a single line.

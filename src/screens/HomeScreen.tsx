@@ -538,9 +538,12 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: TOKENS.space.md,
       paddingBottom: TOKENS.space.xs,
     },
+    // Chats is a peer section heading to Explore, not a quiet caption (#14,
+    // Amit: "bold, looks too shallow in front of Explore"). Same display weight
+    // and primary ink so the two read as equals.
     railLabel: {
-      ...TOKENS.typography.labelSmall,
-      color: t.color.text.secondary,
+      ...TOKENS.typography.displaySmall,
+      color: t.color.text.primary,
     },
     seeAll: {
       flexDirection: 'row',
@@ -551,7 +554,12 @@ const makeStyles = (t: Theme) =>
       color: t.color.text.secondary,
     },
     railScroll: {
-      paddingHorizontal: TOKENS.space.md,
+      // Pull the row left by the rail item's centring inset (3) + the ring's
+      // border+pad (5) = 8, so the first avatar's image edge lands on the md
+      // content boundary — the same left edge as "Chats", "Explore", the
+      // featured card and the provider rows (#14, Amit: align to the bubbles).
+      paddingLeft: TOKENS.space.md - 8,
+      paddingRight: TOKENS.space.md,
       gap: TOKENS.space.xs,
     },
     railItem: {

@@ -6,6 +6,7 @@ import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { Gender } from '../lib/database.types';
 import { track } from '../lib/telemetry';
+import { SCROLL_PHYSICS } from '../lib/scroll';
 import { useMyApplication, useSubmitApplication } from '../api/provider';
 import { ageFromIso, dobToIso, formatDobInput } from '../lib/dob';
 import {
@@ -178,6 +179,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
       </View>
 
       <ScrollView
+        {...SCROLL_PHYSICS}
         contentContainerStyle={[
           styles.body,
           { paddingBottom: insets.bottom + TOKENS.space['2xl'] },

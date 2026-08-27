@@ -6,6 +6,7 @@ import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ProviderSummary } from '../lib/database.types';
 import { initialOf } from '../lib/display';
 import { presenceForSpeech, readPresence } from '../lib/presence';
+import { tick } from '../lib/haptics';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { DEFAULT_RATES, rateLabel, type Channel } from '../lib/rates';
 import { useConversations, useProfile, useProviders } from '../api/chat';
@@ -97,7 +98,10 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
           <Hero
             provider={provider}
             favorite={favorite}
-            onToggleFavorite={() => toggleFavorite(providerId)}
+            onToggleFavorite={() => {
+              tick();
+              toggleFavorite(providerId);
+            }}
           />
 
           <View style={styles.actions}>

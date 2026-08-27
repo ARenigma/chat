@@ -185,34 +185,30 @@ function ProviderRowView({ provider, index, isLast, onPress, onPressAvatar }: Pr
               ? provider.headline
               : 'Here to listen'}
           </Text>
-          {chips.length > 0 ? (
-            <View style={styles.chips}>
-              {chips.map(chip => (
-                <View key={chip} style={styles.chip}>
-                  <Text allowFontScaling numberOfLines={1} style={styles.chipText}>
-                    {chip}
-                  </Text>
-                </View>
-              ))}
+          {/* The fact-chip strip, now led by the rating (#10/#12, Amit): every
+              card carries a star at the bottom next to the info chips. Rated
+              cards show the score; unrated read "New" (an inline rating chip, not
+              the old floating badge). */}
+          <View style={styles.chips}>
+            <View style={[styles.chip, styles.ratingChip]}>
+              <Text
+                testID="provider-rating"
+                allowFontScaling
+                numberOfLines={1}
+                style={styles.ratingChipText}>
+                {provider.rating_count > 0
+                  ? `★ ${provider.rating_avg?.toFixed(1)}`
+                  : '★ New'}
+              </Text>
             </View>
-          ) : null}
-        </View>
-
-        <View style={styles.trailing}>
-          {/* A rating with two reviews behind it is noise dressed as signal, so
-              the count is always next to it. */}
-          {/* Rated cards show the score; unrated show nothing (Amit, 2026-08-27,
-              "remove the New badge — no need"). A rating that does not exist is
-              better left blank than labelled. */}
-          {provider.rating_count > 0 ? (
-            <Text testID="provider-rating" allowFontScaling style={styles.rating}>
-              ★ {provider.rating_avg?.toFixed(1)}
-            </Text>
-          ) : null}
-          {/* No presence line here any more (Amit's call): the green dot on the
-              avatar is the online signal, so a "Here now" text beside it was
-              saying the same thing twice. Presence still drives the dot and the
-              screen-reader label above. */}
+            {chips.map(chip => (
+              <View key={chip} style={styles.chip}>
+                <Text allowFontScaling numberOfLines={1} style={styles.chipText}>
+                  {chip}
+                </Text>
+              </View>
+            ))}
+          </View>
         </View>
 
         {/* The disclosure indicator, which this list had no version of at all.
@@ -265,9 +261,10 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     flexShrink: 1,
   },
   // Age beside the name, subscript — the detail/hero card idiom. Quieter weight
-  // and colour so it reads as a modifier of the name, not a second word.
+  // and colour so it reads as a modifier of the name, not a second word. A step
+  // smaller than the name's neighbours (#11, Amit: "age a little smaller").
   nameAge: {
-    ...TOKENS.typography.subhead,
+    ...TOKENS.typography.captionRegular,
     color: t.color.text.tertiary,
   },
   // The fact-chip strip. Modern outlined tags (a hairline ring on a whisper of
@@ -294,24 +291,17 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     ...TOKENS.typography.captionSmall,
     color: t.color.text.secondary,
   },
-  secondary: {
-    ...TOKENS.typography.subhead,
-    color: t.color.text.secondary,
+  // The rating chip leads the strip: same pill geometry as an info chip, but the
+  // star + score sit at primary ink and semibold so the signal reads first.
+  ratingChip: {
+    borderColor: t.color.border.strong,
   },
-  trailing: {
-    alignItems: 'flex-end',
-    gap: 2,
-  },
-  rating: {
+  ratingChipText: {
     ...TOKENS.typography.labelSmall,
     color: t.color.text.primary,
   },
-  ratingCount: {
-    ...TOKENS.typography.captionSmall,
-    color: t.color.text.secondary,
-  },
-  meta: {
-    ...TOKENS.typography.captionSmall,
+  secondary: {
+    ...TOKENS.typography.subhead,
     color: t.color.text.secondary,
   },
 });

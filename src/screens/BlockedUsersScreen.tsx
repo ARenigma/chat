@@ -5,6 +5,7 @@ import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import type { ProviderSummary } from '../lib/database.types';
 import { initialOf } from '../lib/display';
+import { SCROLL_PHYSICS } from '../lib/scroll';
 import { useProviders } from '../api/chat';
 import { useBlockedPeerIds, useUnblockUser } from '../api/safety';
 import { Avatar } from '../components/Avatar';
@@ -58,6 +59,7 @@ export function BlockedUsersScreen({ onBack }: Props) {
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
+          {...SCROLL_PHYSICS}
           contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + TOKENS.space.xl }]}>
           <Text allowFontScaling style={styles.hint}>
             Unblocking lets this person message you again. They are never told

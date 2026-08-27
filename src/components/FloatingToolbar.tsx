@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
+import { tick } from '../lib/haptics';
 import { Frost } from './Frost';
 import { Icon, type IconName } from './Icon';
 import { Pressable } from './Pressable';
@@ -88,7 +89,12 @@ function FloatingToolbarView({ active, onSelect, callEnabled = false }: Props) {
           return (
             <Pressable
               key={tab.key}
-              onPress={() => onSelect(tab.key)}
+              onPress={() => {
+                // A tab switch is a selection commit — a light tick, the same
+                // Fuse feedback a tab bar gives on both platforms (#16).
+                tick();
+                onSelect(tab.key);
+              }}
               disabled={disabled}
               testID={`nav-${tab.key}`}
               accessibilityLabel={tab.label}
