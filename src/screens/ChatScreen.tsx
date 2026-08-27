@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { FlashList, type ListRenderItemInfo } from '@shopify/flash-list';
 import {
   ActivityIndicator,
   AppState,
-  FlatList,
   InteractionManager,
   Keyboard,
   KeyboardAvoidingView,
@@ -10,7 +10,6 @@ import {
   StyleSheet,
   Text,
   View,
-  type ListRenderItemInfo,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
@@ -852,7 +851,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
             <PeerTyping initial={initial} name={name} />
           </View>
         ) : (
-          <FlatList
+          <FlashList
             data={rows}
             inverted
             // localKey carries the stable key for both message rows and call rows.
@@ -864,10 +863,11 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
             contentContainerStyle={styles.list}
             keyboardDismissMode="interactive"
             keyboardShouldPersistTaps="handled"
-            initialNumToRender={12}
-            maxToRenderPerBatch={8}
-            windowSize={9}
-            removeClippedSubviews
+            // Two recycle pools: message bubbles and call-log rows have very
+            // different heights and layouts. Keeping them separate prevents
+            // FlashList from handing a recycled bubble cell to a call row (or
+            // vice versa), which would produce a visible layout jump on scroll.
+            getItemType={item => item.kind}
             showsVerticalScrollIndicator={false}
             {...SCROLL_PHYSICS}
           />

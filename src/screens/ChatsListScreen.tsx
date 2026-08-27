@@ -1,5 +1,6 @@
-import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useMemo } from 'react';
+import { FlashList } from '@shopify/flash-list';
+import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
@@ -41,6 +42,54 @@ export function ChatsListScreen({ onBack, onOpenConversation }: Props) {
     [conversations, blocked],
   );
 
+  const renderRow = useCallback(
+    ({ item: c, index: i }: { item: (typeof rows)[number]; index: number }) => {
+      const name = c.peer_display_name ?? 'Conversation';
+      const unread = Number(c.unread_count) > 0;
+      const presence = readPresence(c.peer_presence, c.peer_last_active_at);
+      return (
+        <Pressable
+          onPress={() => onOpenConversation(c.peer_id)}
+          testID={`chatlist-${c.peer_id}`}
+          accessibilityLabel={unread ? `${name}, ${c.unread_count} unread` : name}
+          press="none"
+          highlight="ios"
+          style={[styles.row, i === rows.length - 1 && styles.rowLast]}>
+          <Avatar
+            initial={initialOf(c.peer_display_name)}
+            uri={c.peer_avatar_url}
+            size={48}
+            online={presence.here}
+          />
+          <View style={styles.rowBody}>
+            <Text allowFontScaling numberOfLines={1} style={styles.rowName}>
+              {name}
+            </Text>
+            <Text
+              allowFontScaling
+              numberOfLines={1}
+              style={[styles.rowPreview, unread && styles.rowPreviewUnread]}>
+              {c.last_body ?? 'Media'}
+            </Text>
+          </View>
+          <View style={styles.rowTrailing}>
+            <Text allowFontScaling style={styles.rowTime}>
+              {timeOfDay(c.last_message_at)}
+            </Text>
+            {unread ? (
+              <View style={styles.badge}>
+                <Text allowFontScaling style={styles.badgeText}>
+                  {c.unread_count}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        </Pressable>
+      );
+    },
+    [rows, styles, onOpenConversation],
+  );
+
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <View style={styles.bar}>
@@ -50,56 +99,14 @@ export function ChatsListScreen({ onBack, onOpenConversation }: Props) {
         </Text>
       </View>
       {rows.length > 0 ? (
-        <ScrollView
+        <FlashList
+          data={rows}
+          keyExtractor={c => c.id}
           showsVerticalScrollIndicator={false}
           {...SCROLL_PHYSICS}
-          contentContainerStyle={{ paddingBottom: insets.bottom + TOKENS.space.xl }}>
-          {rows.map((c, i) => {
-            const name = c.peer_display_name ?? 'Conversation';
-            const unread = Number(c.unread_count) > 0;
-            const presence = readPresence(c.peer_presence, c.peer_last_active_at);
-            return (
-              <Pressable
-                key={c.id}
-                onPress={() => onOpenConversation(c.peer_id)}
-                testID={`chatlist-${c.peer_id}`}
-                accessibilityLabel={unread ? `${name}, ${c.unread_count} unread` : name}
-                press="none"
-                highlight="ios"
-                style={[styles.row, i === rows.length - 1 && styles.rowLast]}>
-                <Avatar
-                  initial={initialOf(c.peer_display_name)}
-                  uri={c.peer_avatar_url}
-                  size={48}
-                  online={presence.here}
-                />
-                <View style={styles.rowBody}>
-                  <Text allowFontScaling numberOfLines={1} style={styles.rowName}>
-                    {name}
-                  </Text>
-                  <Text
-                    allowFontScaling
-                    numberOfLines={1}
-                    style={[styles.rowPreview, unread && styles.rowPreviewUnread]}>
-                    {c.last_body ?? 'Media'}
-                  </Text>
-                </View>
-                <View style={styles.rowTrailing}>
-                  <Text allowFontScaling style={styles.rowTime}>
-                    {timeOfDay(c.last_message_at)}
-                  </Text>
-                  {unread ? (
-                    <View style={styles.badge}>
-                      <Text allowFontScaling style={styles.badgeText}>
-                        {c.unread_count}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+          contentContainerStyle={{ paddingBottom: insets.bottom + TOKENS.space.xl }}
+          renderItem={renderRow}
+        />
       ) : (
         <View style={styles.empty}>
           <Text allowFontScaling style={styles.emptyText}>
