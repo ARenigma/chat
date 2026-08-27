@@ -59,6 +59,7 @@ const MIGRATIONS = [
   'supabase/migrations/016_engagement_nudges.sql',
   'supabase/migrations/017_call_push.sql',
   'supabase/migrations/018_firebase_phone_exchange.sql',
+  'supabase/migrations/019_token_ledger_and_invoices.sql',
 ];
 
 const docker = (args, options = {}) =>
@@ -358,6 +359,10 @@ const suites = [
   {
     file: join(ROOT, 'supabase/tests/110_declared_presence_and_pii_guard.sql'),
     label: 'declared presence, and PII no client can write',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/120_token_ledger.sql'),
+    label: 'token ledger, invoice counters, and GST invoices',
   },
 ];
 

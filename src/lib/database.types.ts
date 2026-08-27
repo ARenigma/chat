@@ -456,6 +456,51 @@ export type ClaimResult = {
   retry_after?: string;
 };
 
+/** Added by migration 019. */
+export type TokenTransactionKind = 'recharge' | 'refund' | 'adjustment';
+export type TokenTransactionStatus = 'created' | 'succeeded' | 'failed' | 'refunded';
+
+/**
+ * One immutable ledger row per wallet event. Readable by the member who owns
+ * it; written only by service_role via complete_recharge.
+ */
+export type TokenTransactionRow = {
+  id: string;
+  user_id: string;
+  kind: TokenTransactionKind;
+  status: TokenTransactionStatus;
+  amount_paise: number;
+  tokens_delta: number;
+  gateway: string | null;
+  gateway_ref: string | null;
+  gateway_order_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type InvoiceDocumentType = 'tax_invoice' | 'bill_of_supply';
+
+/** GST invoice record. Readable by the member who owns the linked transaction. */
+export type InvoiceRow = {
+  id: string;
+  transaction_id: string;
+  invoice_number: string;
+  document_type: InvoiceDocumentType;
+  fy: string;
+  issued_at: string;
+  seller: Record<string, unknown>;
+  buyer: Record<string, unknown>;
+  place_of_supply: string | null;
+  taxable_paise: number;
+  cgst_paise: number;
+  sgst_paise: number;
+  igst_paise: number;
+  total_paise: number;
+  gst_rate_bps: number;
+  pdf_path: string | null;
+  created_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -553,6 +598,43 @@ export type Database = {
         Insert: never;
         Update: never;
         Relationships: [];
+      };
+      /**
+       * Event-sourced ledger: one immutable row per wallet movement.
+       * Clients may SELECT their own rows; all writes go through complete_recharge
+       * (service_role). The `invoices` table has a unique FK to this.
+       */
+      token_transactions: {
+        Row: TokenTransactionRow;
+        Insert: never;
+        Update: never;
+        Relationships: [
+          {
+            foreignKeyName: 'invoices_transaction_id_fkey';
+            columns: ['id'];
+            isOneToOne: true;
+            referencedRelation: 'invoices';
+            referencedColumns: ['transaction_id'];
+          },
+        ];
+      };
+      /**
+       * GST invoice record linked 1:1 to a token_transaction. Clients may SELECT
+       * invoices for transactions they own; only service_role writes.
+       */
+      invoices: {
+        Row: InvoiceRow;
+        Insert: never;
+        Update: never;
+        Relationships: [
+          {
+            foreignKeyName: 'invoices_transaction_id_fkey';
+            columns: ['transaction_id'];
+            isOneToOne: true;
+            referencedRelation: 'token_transactions';
+            referencedColumns: ['id'];
+          },
+        ];
       };
     };
     Views: {

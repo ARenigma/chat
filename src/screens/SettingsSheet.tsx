@@ -38,6 +38,8 @@ interface Props {
   onApply?: () => void;
   onApplicationStatus?: () => void;
   onBlocked?: () => void;
+  /** Opens the recharge history + invoice download screen. Member tree only. */
+  onTransactions?: () => void;
 }
 
 /**
@@ -64,6 +66,7 @@ export function SettingsSheet({
   onApply,
   onApplicationStatus,
   onBlocked,
+  onTransactions,
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -293,6 +296,30 @@ export function SettingsSheet({
                   <Icon name="chevronRight" size={18} color={theme.color.text.tertiary} />
                 </Pressable>
               ) : null}
+            </View>
+          </>
+        ) : null}
+
+        {/* Recharge history: top-ups and GST invoice downloads. Shown only on
+            the member tree (provider tree has no onTransactions). */}
+        {onTransactions !== undefined ? (
+          <>
+            <Text allowFontScaling style={styles.subheader}>
+              Billing
+            </Text>
+            <View style={styles.group}>
+              <Pressable
+                onPress={onTransactions}
+                testID="settings-transactions"
+                accessibilityLabel="Recharge history"
+                press="none"
+                highlight="ios"
+                style={[styles.row, styles.rowChevron]}>
+                <Text allowFontScaling style={styles.rowTitle}>
+                  Recharge history
+                </Text>
+                <Icon name="chevronRight" size={18} color={theme.color.text.tertiary} />
+              </Pressable>
             </View>
           </>
         ) : null}

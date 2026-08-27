@@ -107,6 +107,7 @@ describe('the AI path is gone, not dormant', () => {
     // AUTH_PHONE_PROVIDER='firebase'.
     const allowed = [
       'exchange-firebase-token',
+      'generate-invoice',
       'send-call',
       'send-engagement',
       'send-push',
