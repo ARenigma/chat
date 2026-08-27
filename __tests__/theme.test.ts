@@ -286,14 +286,13 @@ describe('typography is bound to real font files', () => {
       Object.values(LIGHT.typography).map(style => `${style.fontFamily}.ttf`),
     );
     /*
-     * The Material Symbols faces are referenced by icons.generated.ts, not by a
-     * typography token, because they are the icon set rather than a text style.
-     * Two static instances ship — outlined and filled — for the active-state
-     * swap RN Android cannot do on the FILL axis at runtime. Allowlisted here
-     * for the same reason Noto once was: they are real, used, and not chosen
-     * per-typography-style.
+     * The Lucide icon font is referenced by icons.generated.ts, not by a
+     * typography token, because it is the icon set rather than a text style.
+     * One face ships (Lucide has no filled twin; the active state is colour
+     * only). Allowlisted here for the same reason Material Symbols once was: it
+     * is real, used, and not chosen per-typography-style.
      */
-    const ICON_FONTS = /^MaterialSymbols/;
+    const ICON_FONTS = /^Lucide/;
     const orphans = FACES.filter(
       face => !referenced.has(face) && !ICON_FONTS.test(face),
     );
@@ -356,11 +355,11 @@ describe('typography is bound to real font files', () => {
     const files = readdirSync(join(ROOT, 'assets/fonts'));
     const NOTICE: Record<string, string> = {
       Inter: 'OFL-Inter.txt',
-      LilitaOne: 'OFL-LilitaOne.txt',
+      TitanOne: 'OFL-TitanOne.txt',
       // Material Symbols is Apache-2.0, not OFL — a different licence, still
       // mandatory to ship. Both instances map to the one notice.
-      MaterialSymbolsOutlined: 'LICENSE-MaterialSymbols.txt',
-      MaterialSymbolsOutlinedFill: 'LICENSE-MaterialSymbols.txt',
+      // Lucide is ISC, not OFL — a different licence, still mandatory to ship.
+      Lucide: 'LICENSE-Lucide.txt',
     };
     // `?? name` rather than a non-null assertion: a face called exactly `X.ttf`
     // with no weight suffix is its own family, and split always yields at least
@@ -814,12 +813,14 @@ describe('accent budget is enforced in code, not just documented', () => {
       'CompletionRow.tsx',
       'EmptyMark.tsx',
       /*
-       * The v13 floating nav. The coral is the ACTIVE destination's disc — the
-       * only thing distinguishing Home from Calls and Settings, which are
-       * otherwise identical grey glyphs. Same "colour is the state" argument the
-       * old TabBar made; this replaced it.
+       * The docked bottom bar (FloatingToolbar) is deliberately NOT on this list
+       * any more. It carried coral on the active tab's disc through v13; the
+       * Sweprek redesign moved the active signal to a black pill (bg/inverse),
+       * because black is reserved for nav highlight only and the coral stays the
+       * brand accent. A nav that no longer uses the accent has no place in the
+       * accent budget, and leaving it here would let the coral creep back in
+       * unremarked.
        */
-      'FloatingToolbar.tsx',
       /*
        * v13 Home. Two accent uses, both states/actions: the featured hero's warm
        * field (the one designed coral surface on the screen, same class as the

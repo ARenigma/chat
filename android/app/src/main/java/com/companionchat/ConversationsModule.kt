@@ -36,6 +36,7 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
         senderName: String,
         body: String,
         sentAt: Double,
+        avatarUrl: String,
         promise: Promise,
     ) {
         try {
@@ -46,6 +47,35 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
                 senderName = senderName,
                 body = body,
                 sentAt = sentAt.toLong(),
+                // '' means "no photo": a member sender, or an older server build.
+                avatarUrl = avatarUrl.ifEmpty { null },
+            )
+            promise.resolve(true)
+        } catch (error: Exception) {
+            promise.resolve(false)
+        }
+    }
+
+    /**
+     * Post an engagement nudge — the BigPicture re-engagement notification, the
+     * second notification type. Resolves rather than rejects on failure, same as
+     * `notify`, because it runs inside the headless FCM handler.
+     */
+    @ReactMethod
+    fun notifyEngagement(
+        peerId: String,
+        title: String,
+        body: String,
+        avatarUrl: String,
+        promise: Promise,
+    ) {
+        try {
+            Conversations.notifyEngagement(
+                reactContext,
+                peerId = peerId,
+                title = title,
+                body = body,
+                avatarUrl = avatarUrl.ifEmpty { null },
             )
             promise.resolve(true)
         } catch (error: Exception) {

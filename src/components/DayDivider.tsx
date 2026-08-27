@@ -23,10 +23,15 @@ function DayDividerView({ iso }: { iso: string }) {
   const styles = useStyles(makeStyles);
   return (
     <View style={styles.host}>
-      <Text allowFontScaling style={styles.day}>
-        {dayLabel(iso)}
-        <Text style={styles.time}> {timeOfDay(iso)}</Text>
-      </Text>
+      {/* A centred date pill (Sweprek): a soft rounded chip rather than bare
+          text, so the day-break reads as a deliberate marker floating over the
+          wallpaper instead of a stray line. */}
+      <View style={styles.pill}>
+        <Text allowFontScaling style={styles.day}>
+          {dayLabel(iso)}
+          <Text style={styles.time}> {timeOfDay(iso)}</Text>
+        </Text>
+      </View>
     </View>
   );
 }
@@ -37,6 +42,13 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   host: {
     alignItems: 'center',
     paddingVertical: TOKENS.space.md,
+  },
+  pill: {
+    paddingHorizontal: TOKENS.space.sm,
+    paddingVertical: TOKENS.space['2xs'],
+    borderRadius: TOKENS.radius.pill,
+    borderCurve: 'continuous',
+    backgroundColor: t.color.bg.grouped,
   },
   day: {
     ...TOKENS.typography.labelSmall,

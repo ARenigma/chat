@@ -208,18 +208,20 @@ describe('Android manifest', () => {
     .filter(attrs => !attrs.includes('tools:node="remove"'))
     .map(attrs => attrs.match(/android:name="([^"]+)"/)?.[1] ?? '');
 
-  it('requests exactly INTERNET, VIBRATE, POST_NOTIFICATIONS and RECORD_AUDIO', () => {
+  it('requests exactly INTERNET, VIBRATE, POST_NOTIFICATIONS, RECORD_AUDIO and CAMERA', () => {
     // The list is asserted exactly rather than as a subset, because the cost of
     // a permission is paid on the Play listing and in the install dialog, a
     // library quietly merging one in is the failure this catches. POST_NOTIFICATIONS
     // was added deliberately for push and grants no access to data.
     //
-    // RECORD_AUDIO is the fourth and the first that reaches a sensor. It is
-    // declared by us rather than merely tolerated from
-    // react-native-nitro-sound's own manifest, because verify-manifest.mjs
-    // treats its allowlist as the required set: a permission this app uses
-    // should be a claim it makes.
+    // RECORD_AUDIO reaches a sensor (voice notes); CAMERA is the fifth and the
+    // second sensor, added deliberately for capturing a photo to send in chat
+    // (#8, Composer's "+" → Camera). Both are declared by us rather than merely
+    // tolerated from a dependency's manifest, because verify-manifest.mjs treats
+    // its allowlist as the required set: a permission this app uses should be a
+    // claim it makes.
     expect(declared.sort()).toEqual([
+      'android.permission.CAMERA',
       'android.permission.INTERNET',
       'android.permission.POST_NOTIFICATIONS',
       'android.permission.RECORD_AUDIO',
@@ -227,18 +229,18 @@ describe('Android manifest', () => {
     ]);
   });
 
-  it('declares none of the tracking or media permissions', () => {
-    // RECORD_AUDIO left this list on purpose when voice notes shipped. CAMERA
-    // stays: there is no video call and no photo input, so a camera permission
-    // appearing here would still mean a dependency wants something the product
-    // does not do.
+  it('declares none of the tracking or storage permissions', () => {
+    // RECORD_AUDIO and CAMERA left this list on purpose when voice notes and
+    // photo capture shipped — both are sensor permissions the product now uses on
+    // purpose. The rest stay forbidden: the app reads no media library
+    // (Android 13+ system photo picker needs no permission), no location, no
+    // contacts, and never an advertising id.
     for (const forbidden of [
       'com.google.android.gms.permission.AD_ID',
       'android.permission.READ_EXTERNAL_STORAGE',
       'android.permission.READ_MEDIA_IMAGES',
       'android.permission.ACCESS_FINE_LOCATION',
       'android.permission.READ_CONTACTS',
-      'android.permission.CAMERA',
     ]) {
       expect(declared).not.toContain(forbidden);
     }
@@ -1111,10 +1113,12 @@ describe('the redesign holds its own invariants', () => {
     expect(app).toContain("BackHandler.addEventListener('hardwareBackPress'");
     expect(app).toContain('memberParent(route)');
     expect(app).toContain('providerParent(providerRoute)');
-    // A sheet closes before a screen pops, because the sheet is what the user
-    // most recently opened and therefore what they mean.
+    // The Recharge overlay closes before a screen pops: it sits above everything
+    // (zIndex 20) and is what the user most recently opened. Settings used to be a
+    // sheet that closed here too; it is a mounted route now and pops through the
+    // parent map like every other screen.
     const handler = app.slice(app.indexOf('const onBack ='), app.indexOf('BackHandler.addEventListener'));
-    expect(handler.indexOf('setSettingsOpen(false)')).toBeLessThan(handler.indexOf('memberParent'));
+    expect(handler.indexOf('closeRefill()')).toBeLessThan(handler.indexOf('memberParent'));
   });
 
   // Retired with InboxScreen.tsx: v13 HomeScreen has no typed search field and
@@ -1183,15 +1187,21 @@ describe('the redesign holds its own invariants', () => {
      * `inner = outer - inset`. At a 3dp inset that is a 19dp image corner, and
      * 19 inside 18 bulges past the curve it is meant to sit within.
      *
-     * There is no media bubble yet: `messages` has a `body` column and no
-     * attachment, and the manifest removes READ_MEDIA_IMAGES on purpose. The
-     * geometry is asserted now because it is what justified the radius change.
+     * The media bubble consumes this since 014: `messages.attachment_path` points
+     * into the private `attachments` bucket and `MediaBubble` in Turn.tsx renders
+     * the photo at `mediaInnerRadius()`. The manifest still removes
+     * READ_MEDIA_IMAGES on purpose, because the system Photo Picker needs no
+     * permission. The geometry that justified the radius change is the geometry
+     * the photo now uses.
      */
     const turn = read('src/components/Turn.tsx');
     expect(turn).toContain('TOKENS.radius.bubble');
     expect(turn).not.toMatch(/BUBBLE_RADIUS = \d/);
     expect(TOKENS.radius.bubble).toBe(22);
     expect(TOKENS.radius.bubble - 3).toBe(19);
+    // The consumer exists now: the media bubble reads the attachment at the
+    // concentric inner radius.
+    expect(turn).toContain('mediaInnerRadius');
   });
 
   it('never puts a neutral avatar on a surface its own fill matches', () => {
@@ -1403,7 +1413,11 @@ describe('the chat restyle is wired, not just drawn', () => {
     // `inverted` list renders at the visual TOP of the transcript, so a single
     // divider reading 'Today' sat above the OLDEST message the client held,
     // whatever date that message was on.
-    expect(chatCode).not.toContain('ListFooterComponent');
+    //
+    // A ListFooterComponent exists again, but ONLY as the frosted-bar spacer that
+    // reserves the overlay header's height at the list's visual top. Guard the
+    // actual anti-pattern — a DayDivider living in the footer — not the API.
+    expect(chatCode).not.toMatch(/ListFooterComponent=\{\s*\(\)\s*=>\s*<DayDivider/);
     expect(chatCode).not.toMatch(/DayDivider label=/);
     expect(chatCode).toContain('<DayDivider iso={message.created_at} />');
     // Computed once per data change in the memo, not per row in renderItem.
@@ -1702,14 +1716,16 @@ describe('voice notes are recorded, uploaded and sent through the one send path'
   });
 });
 
-describe('calling ships visible and off, never silently dead', () => {
-  it('states the flag and why it is false', () => {
+describe('calling ships visible and on, wired to a real media layer', () => {
+  it('is enabled now that the WebRTC client landed', () => {
     // Migration 011 shipped start_call, the per-minute meter and the blocking
-    // gate. There is no media layer on the client, so a tap would ring a phone
-    // that can never connect. Same shape as PHONE_VERIFY_ENABLED.
+    // gate; the client half (src/api/callSession.ts: RTCPeerConnection + Realtime
+    // signalling) now exists too, so start_call no longer rings a phone that can
+    // never connect. Flipped in the same commit that landed the media path, which
+    // is the only thing the flag's contract says earns the flip.
     const calls = read('src/api/calls.ts');
     const flag = /export const CALLS_ENABLED = (true|false);/.exec(calls)?.[1];
-    expect(flag).toBe('false');
+    expect(flag).toBe('true');
   });
 
   it('gates the two call buttons rather than hiding them, as real controls', () => {

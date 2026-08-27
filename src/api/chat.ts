@@ -233,6 +233,12 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
         // has to be written, not inherited by accident.
         voice_path: null,
         voice_duration_ms: null,
+        // Text send: no attachment. Stated rather than left off for the same
+        // reason as the voice columns, so an image path has to be written.
+        attachment_path: null,
+        attachment_type: null,
+        attachment_width: null,
+        attachment_height: null,
         created_at: new Date().toISOString(),
         read_at: null,
       };
@@ -281,6 +287,10 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
               reply_to_id: replyToId,
               voice_path: null,
               voice_duration_ms: null,
+              attachment_path: null,
+              attachment_type: null,
+              attachment_width: null,
+              attachment_height: null,
               created_at: result.created_at,
               read_at: null,
             }

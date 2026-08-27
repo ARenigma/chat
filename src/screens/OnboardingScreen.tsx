@@ -6,6 +6,7 @@ import React, {
   useState,
 } from 'react';
 import {
+  Image,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -42,10 +43,10 @@ import {
 import { BloomField } from '../components/BloomField';
 import { OnboardingStep } from '../components/OnboardingStep';
 import { WordColumn, type Word } from '../components/WordColumn';
+import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { CodeField } from '../components/CodeField';
 import { Spinner } from '../components/Spinner';
-import { Icon } from '../components/Icon';
 import { CompletionRow } from '../components/CompletionRow';
 import { TextField } from '../components/TextField';
 import {
@@ -405,11 +406,12 @@ export function OnboardingScreen({ onDone }: Props) {
               welcomeStyle,
             ]}
           >
-            <View style={styles.mark}>
-              <Text allowFontScaling={false} style={styles.markLetter}>
-                p
-              </Text>
-            </View>
+            {/* The Pappal wordmark (#9) — the same brand title face as Home, not
+                a stand-in "p" glyph. Coral on the dark welcome block, the way the
+                brand reads on Home. */}
+            <Text allowFontScaling={false} style={styles.brand}>
+              Pappal
+            </Text>
             <Text allowFontScaling style={styles.title}>
               Someone to talk to,{'\n'}tonight.
             </Text>
@@ -546,15 +548,23 @@ export function OnboardingScreen({ onDone }: Props) {
                         {/*
                          * The source's `ContinueButton` is a mark then a label —
                          * `Image(systemName: icon)` before `Text(title)` — so the
-                         * button restates what it is about to do rather than
-                         * relying on the step title above it. Ours was the label
-                         * alone.
+                         * button restates what it is about to do. The mark is now
+                         * Google's own official "G" (#4), the one Credential
+                         * Manager actually signs in with, instead of a stand-in
+                         * chat glyph. It rides a white chip because the G is a
+                         * multicolour mark with transparent counters: on the coral
+                         * button the accent would bleed through its whites, which
+                         * also happens to be Google's own rule — the mark sits on a
+                         * light surface, never tinted.
                          */}
-                        <Icon
-                          name="chat"
-                          size={20}
-                          color={theme.color.text.onAccent}
-                        />
+                        <View style={styles.googleChip}>
+                          <Image
+                            source={require('../../assets/brands/google.png')}
+                            style={styles.googleMark}
+                            resizeMode="contain"
+                            accessibilityIgnoresInvertColors
+                          />
+                        </View>
                         <Text allowFontScaling style={styles.primaryLabel}>
                           Continue with Google
                         </Text>
@@ -678,19 +688,11 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: BLOCK_PAD,
       gap: SOURCE_METRICS.welcomeGap,
     },
-    mark: {
-      width: SOURCE_METRICS.logo,
-      height: SOURCE_METRICS.logo,
-      borderRadius: 14,
-      borderCurve: 'continuous',
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: t.color.bg.base,
-    },
-    markLetter: {
+    // The brand wordmark, same face as Home's title, coral on the dark block.
+    brand: {
       ...TOKENS.typography.wordmark,
-      fontSize: 30,
-      lineHeight: 34,
+      fontSize: 34,
+      lineHeight: 38,
       color: t.color.bg.accent,
     },
     // White on the field, which is only legal because the block is pinned to the
@@ -781,6 +783,21 @@ const makeStyles = (t: Theme) =>
     primaryLabel: {
       ...TOKENS.typography.headline,
       color: t.color.text.onAccent,
+    },
+    // A white chip so Google's multicolour "G" sits on the light surface its
+    // brand rules require, rather than on the dark button where the accent would
+    // show through the mark's transparent counters.
+    googleChip: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      backgroundColor: '#FFFFFF',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    googleMark: {
+      width: 17,
+      height: 17,
     },
     alt: {
       height: 44,

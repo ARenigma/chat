@@ -1,6 +1,6 @@
 # CUJ 3 — the token economy is visible and honest.
 # Drains the wallet to the low-balance threshold, checks the badge flips to a
-# nudge without interrupting the conversation, then claims a refill.
+# nudge without interrupting the conversation, then opens and dismisses Recharge.
 #
 # A member pays on send, not on reply, so this journey needs nobody on the other
 # end — which is why it survived the pivot unchanged in spirit.
@@ -40,8 +40,12 @@ name: Low balance nudges, never blocks
     id: 'token-badge'
 - assertVisible:
     id: 'refill-sheet'
+# Closing Recharge is the back button, not a claim: the daily check-in that used
+# to live here is gone (a paid marketplace hands out no free credit). This also
+# guards the back button itself, which a mis-centred title once covered and left
+# unable to close the screen.
 - tapOn:
-    id: 'refill-claim'
+    id: 'recharge-back'
 - assertNotVisible:
     id: 'refill-sheet'
 
