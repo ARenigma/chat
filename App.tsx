@@ -6,7 +6,6 @@ import Animated, { FadeIn, SlideInRight, SlideOutRight } from 'react-native-rean
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from './src/theme/tokens';
 import { ThemeProvider, useStyles, useThemeMode } from './src/theme/ThemeProvider';
-import { PaperHost } from './src/theme/PaperHost';
 import { UpdateBanner } from './src/components/UpdateBanner';
 import { BLOOM_CONTENT_MS } from './src/lib/bloom';
 import { assertEnv } from './src/lib/env';
@@ -646,9 +645,7 @@ export default function App() {
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
           <ThemeProvider>
-            <PaperHost>
-              <Shell />
-            </PaperHost>
+            <Shell />
           </ThemeProvider>
         </QueryClientProvider>
       </SafeAreaProvider>
