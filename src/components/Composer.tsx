@@ -501,7 +501,7 @@ function ComposerView({
           press="chip"
           size={30}
           style={styles.emoji}>
-          <Icon name="smile" size={22} color={theme.color.text.secondary} />
+          <Icon name="sticker" size={22} color={theme.color.text.secondary} />
         </Pressable>
         <TextField
           ref={inputRef}
