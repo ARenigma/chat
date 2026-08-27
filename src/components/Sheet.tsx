@@ -22,6 +22,10 @@ import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import { GESTURE, springTo } from '../theme/motion';
 
+// Where the sheet starts its entry slide: safely below the tallest sheet, so it
+// begins off-screen and springs up into view. Only the last stretch is visible.
+const SHEET_ENTRY_OFFSET = 1000;
+
 interface Props {
   visible: boolean;
   title: string;
@@ -89,12 +93,17 @@ function SheetView({
   const y = useSharedValue(0);
   const [height, setHeight] = useState(0);
 
-  // Re-entry has to reset the offset. Without this, a sheet dismissed by a drag
-  // reopens already pushed halfway down, because the shared value survives the
-  // Modal unmounting its children.
+  // Entry is driven here, by Reanimated, not by the Modal's own animation. The
+  // Modal used `animationType="slide"`, which slides the WHOLE window up — and the
+  // full-screen scrim is inside that window, so the dim rose from the bottom as a
+  // grey rectangle trailing the sheet ("a grey second layer following it", Amit
+  // 2026-08-27). Now the Modal only fades (the scrim fades in place) and the sheet
+  // alone slides: start it below the screen and spring to rest. The offset is a
+  // constant safely past any sheet height; the exact resting position is 0.
   useEffect(() => {
     if (visible) {
-      y.value = 0;
+      y.value = SHEET_ENTRY_OFFSET;
+      y.value = springTo(0, 'smooth');
     }
   }, [visible, y]);
 
@@ -148,7 +157,12 @@ function SheetView({
     <Modal
       visible={visible}
       transparent
-      animationType="slide"
+      // Fade, not slide: the sheet itself slides via Reanimated (see the entry
+      // effect), and a fading window means the scrim dims in place instead of a
+      // grey panel rising with the sheet. hardwareAccelerated so the window
+      // composites on the GPU and the fade does not lag the slide.
+      animationType="fade"
+      hardwareAccelerated
       statusBarTranslucent
       onRequestClose={onClose}>
       {/**
@@ -274,7 +288,10 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     borderTopRightRadius: TOKENS.radius.sheet,
     borderCurve: 'continuous',
     backgroundColor: t.color.bg.raised,
-    ...TOKENS.elevation.sheet,
+    // No elevation. On Android the elevation shadow is a separate compositing pass
+    // that lags a `translateY`, so it trailed the sheet as a grey ghost during the
+    // slide. The dark scrim already separates the sheet from the page; a shadow on
+    // top of a scrim is invisible anyway.
   },
   grabberRow: {
     alignItems: 'center',

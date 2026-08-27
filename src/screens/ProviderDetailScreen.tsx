@@ -8,13 +8,14 @@ import { initialOf } from '../lib/display';
 import { presenceForSpeech, readPresence } from '../lib/presence';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { DEFAULT_RATES, rateLabel, type Channel } from '../lib/rates';
-import { useProfile, useProviders } from '../api/chat';
+import { useConversations, useProfile, useProviders } from '../api/chat';
 import { CALLS_ENABLED } from '../api/calls';
 import { useStore } from '../store/useStore';
 import { BackButton } from '../components/BackButton';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { TokenCounter } from '../components/TokenCounter';
+import { SafetySheet } from './SafetySheet';
 
 interface Props {
   providerId: string;
@@ -45,7 +46,18 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
   const openRefill = useStore(s => s.openRefill);
   useProfile();
   const { data: providers, isPending } = useProviders();
+  const { data: conversations } = useConversations();
   const [favorite, setFavorite] = useState(false);
+  const [safetyOpen, setSafetyOpen] = useState(false);
+
+  // Block/report is offered ONLY when there is an existing conversation with this
+  // provider (#3): you cannot block someone you have never talked to. Reaching the
+  // profile from Explore (no thread) shows no block; reaching it from an active
+  // chat's header (a thread exists) does.
+  const thread = useMemo(
+    () => (conversations ?? []).find(c => c.peer_id === providerId),
+    [conversations, providerId],
+  );
 
   const provider = useMemo<ProviderSummary | null>(
     () => (providers ?? []).find(p => p.id === providerId) ?? null,
@@ -117,8 +129,36 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
               ? provider.headline
               : 'Here to listen. Talk about anything, or nothing.'}
           </Text>
+
+          {/* Block / report — only once a conversation exists (#3). Quiet and last,
+              the way iOS puts a destructive contact action at the foot of a card. */}
+          {thread !== undefined ? (
+            <Pressable
+              onPress={() => setSafetyOpen(true)}
+              testID="detail-safety"
+              accessibilityLabel={`Block or report ${provider.display_name}`}
+              accessibilityHint="Opens safety options"
+              press="row"
+              style={styles.safetyRow}>
+              <Icon name="block" size={18} color={theme.color.text.secondary} />
+              <Text allowFontScaling style={styles.safetyLabel}>
+                Block or report {provider.display_name}
+              </Text>
+            </Pressable>
+          ) : null}
         </ScrollView>
       )}
+
+      {provider !== null && thread !== undefined ? (
+        <SafetySheet
+          visible={safetyOpen}
+          onClose={() => setSafetyOpen(false)}
+          conversationId={thread.id}
+          peerId={providerId}
+          peerName={provider.display_name}
+          messageId={null}
+        />
+      ) : null}
     </View>
   );
 }
@@ -423,5 +463,16 @@ const makeStyles = (t: Theme) =>
     aboutBody: {
       ...TOKENS.typography.bodyMedium,
       color: t.color.text.primary,
+    },
+    safetyRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.sm,
+      marginTop: TOKENS.space['2xl'],
+      paddingVertical: TOKENS.space.sm,
+    },
+    safetyLabel: {
+      ...TOKENS.typography.bodyMedium,
+      color: t.color.text.secondary,
     },
   });

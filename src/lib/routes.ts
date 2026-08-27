@@ -46,6 +46,8 @@ export type MemberRoute =
   | { readonly name: 'apply' }
   | { readonly name: 'applicationStatus' }
   | { readonly name: 'blocked' }
+  /** The Calls tab (empty state for now); a top-level nav destination. */
+  | { readonly name: 'calls' }
   /** Account & privacy, a mounted screen now rather than a bottom sheet. */
   | { readonly name: 'settings' };
 
@@ -87,6 +89,7 @@ export function memberParent(route: MemberRoute): MemberRoute | null {
     case 'apply':
     case 'applicationStatus':
     case 'blocked':
+    case 'calls':
     case 'settings':
       return { name: 'home' };
   }
