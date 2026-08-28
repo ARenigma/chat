@@ -317,6 +317,12 @@ export type Message = {
   voice_path: string | null;
   voice_duration_ms: number | null;
   /**
+   * Normalised (0..1) amplitude samples captured by the recorder, downsampled
+   * to VOICE_BARS before send. Null on pre-023 rows and on text/image messages;
+   * the client falls back to flat bars when absent. Added by migration 023.
+   */
+  voice_peaks: number[] | null;
+  /**
    * `<conversation uuid>/<uuid>.<ext>` in the private `attachments` bucket, or
    * null. The third payload (014): a message carries text, audio, OR a photo.
    * The intrinsic pixel size rides with it so the bubble can reserve the aspect
@@ -419,7 +425,7 @@ export type SendResult = {
   message_id?: string;
   created_at?: string;
   /** Which payload shape landed, so a caller need not re-derive it. */
-  kind?: 'text' | 'voice';
+  kind?: 'text' | 'voice' | 'image';
   /** Null when the sender is the provider: a reply costs nothing. */
   new_balance?: number | null;
   error?: SendError;
@@ -708,6 +714,8 @@ export type Database = {
           p_attachment_path?: string | null;
           p_attachment_width?: number | null;
           p_attachment_height?: number | null;
+          /** Waveform peaks for a voice message; ignored for text and image sends. Added by 023. */
+          p_voice_peaks?: number[] | null;
         };
         Returns: SendResult;
       };

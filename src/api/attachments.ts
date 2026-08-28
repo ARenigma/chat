@@ -161,6 +161,7 @@ export function useSendImage(
         reply_to_id: replyToId,
         voice_path: null,
         voice_duration_ms: null,
+        voice_peaks: null,
         attachment_path: path,
         attachment_type: 'image',
         attachment_width: draft.width,
