@@ -79,10 +79,18 @@ export function springTo(
   return withSpring(to, config);
 }
 
-/** Opacity and colour only. */
+/**
+ * Opacity and colour only.
+ *
+ * Eased with Material 3 Expressive's `emphasized_decelerate` curve
+ * (`cubic-bezier(0.05, 0.7, 0.1, 1.0)`) rather than a plain `out(quad)`: it
+ * moves faster in the first phase and settles softer at the end, which is the
+ * single most noticeable step toward the M3 motion feel (#7). Timing-only —
+ * no spring or duration change, so no device rebuild needed.
+ */
 export function fadeTo(to: number, ms: number = DURATION.fast): number {
   'worklet';
-  return withTiming(to, { duration: ms, easing: Easing.out(Easing.quad) });
+  return withTiming(to, { duration: ms, easing: Easing.bezier(0.05, 0.7, 0.1, 1.0) });
 }
 
 /**
