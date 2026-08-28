@@ -102,7 +102,18 @@ describe('the AI path is gone, not dormant', () => {
     if (!existsSync(dir)) {
       return;
     }
-    const allowed = ['send-push', 'send-sms', 'verify-phone'];
+    // exchange-firebase-token: verifies a Firebase phone ID token (JWKS) and
+    // mints a Supabase session — an auth bridge, not a model path. Added with
+    // AUTH_PHONE_PROVIDER='firebase'.
+    const allowed = [
+      'exchange-firebase-token',
+      'generate-invoice',
+      'send-call',
+      'send-engagement',
+      'send-push',
+      'send-sms',
+      'verify-phone',
+    ];
     const present = readdirSync(dir, { withFileTypes: true })
       .filter(entry => entry.isDirectory())
       .map(entry => entry.name);
@@ -208,18 +219,20 @@ describe('Android manifest', () => {
     .filter(attrs => !attrs.includes('tools:node="remove"'))
     .map(attrs => attrs.match(/android:name="([^"]+)"/)?.[1] ?? '');
 
-  it('requests exactly INTERNET, VIBRATE, POST_NOTIFICATIONS and RECORD_AUDIO', () => {
+  it('requests exactly INTERNET, VIBRATE, POST_NOTIFICATIONS, RECORD_AUDIO and CAMERA', () => {
     // The list is asserted exactly rather than as a subset, because the cost of
     // a permission is paid on the Play listing and in the install dialog, a
     // library quietly merging one in is the failure this catches. POST_NOTIFICATIONS
     // was added deliberately for push and grants no access to data.
     //
-    // RECORD_AUDIO is the fourth and the first that reaches a sensor. It is
-    // declared by us rather than merely tolerated from
-    // react-native-nitro-sound's own manifest, because verify-manifest.mjs
-    // treats its allowlist as the required set: a permission this app uses
-    // should be a claim it makes.
+    // RECORD_AUDIO reaches a sensor (voice notes); CAMERA is a second sensor for
+    // capturing a photo to send (#8). Both are declared by us rather than tolerated
+    // from a dependency's manifest, because verify-manifest.mjs treats its allowlist
+    // as the required set. USE_FULL_SCREEN_INTENT was here for a ringing call that
+    // took over the screen; the call is a heads-up popup now, so the permission is
+    // gone.
     expect(declared.sort()).toEqual([
+      'android.permission.CAMERA',
       'android.permission.INTERNET',
       'android.permission.POST_NOTIFICATIONS',
       'android.permission.RECORD_AUDIO',
@@ -227,18 +240,18 @@ describe('Android manifest', () => {
     ]);
   });
 
-  it('declares none of the tracking or media permissions', () => {
-    // RECORD_AUDIO left this list on purpose when voice notes shipped. CAMERA
-    // stays: there is no video call and no photo input, so a camera permission
-    // appearing here would still mean a dependency wants something the product
-    // does not do.
+  it('declares none of the tracking or storage permissions', () => {
+    // RECORD_AUDIO and CAMERA left this list on purpose when voice notes and
+    // photo capture shipped — both are sensor permissions the product now uses on
+    // purpose. The rest stay forbidden: the app reads no media library
+    // (Android 13+ system photo picker needs no permission), no location, no
+    // contacts, and never an advertising id.
     for (const forbidden of [
       'com.google.android.gms.permission.AD_ID',
       'android.permission.READ_EXTERNAL_STORAGE',
       'android.permission.READ_MEDIA_IMAGES',
       'android.permission.ACCESS_FINE_LOCATION',
       'android.permission.READ_CONTACTS',
-      'android.permission.CAMERA',
     ]) {
       expect(declared).not.toContain(forbidden);
     }
@@ -343,6 +356,10 @@ describe('pipeline wiring', () => {
     // habit and several put a helper somewhere the counting regex cannot see.
     'supabase/tests/090_reactions_replies_voice_presence.sql',
     'supabase/tests/100_calls_and_metering.sql',
+    // 020's suite. has_table + ok (×2) + function_privs_are + is = 5 counted by
+    // the regex; plan(5) must stay in sync with that count.
+    'supabase/tests/130_mock_recharge.sql',
+    'supabase/tests/140_chat_minute.sql',
   ])('keeps the pgTAP plan in step with the assertions in %s', file => {
     const sql = read(file);
     const planned = Number(/select plan\((\d+)\)/.exec(sql)?.[1]);
@@ -765,7 +782,9 @@ describe('secrets are untrackable', () => {
  */
 describe('phone sign-in stays off until it can deliver', () => {
   const auth = read('src/api/auth.ts');
-  const enabled = /export const PHONE_AUTH_ENABLED = (true|false);/.exec(auth)?.[1];
+  // PHONE_AUTH_ENABLED is now defined in src/config.ts; auth.ts re-exports it.
+  const featureFlags = read('src/config.ts');
+  const enabled = /export const PHONE_AUTH_ENABLED = (true|false);/.exec(featureFlags)?.[1];
 
   it('declares the flag explicitly', () => {
     expect(enabled).toBeDefined();
@@ -801,10 +820,13 @@ describe('phone sign-in stays off until it can deliver', () => {
   });
 
   it('still offers Google as a primary button when phone is off', () => {
-    // With the flag false there is exactly one way in, and it must not render as
-    // a secondary action with nothing above it.
+    // The Google button is a bespoke white-pill Pressable: always full-width and
+    // visually prominent regardless of whether phone auth is enabled.
+    // `testID="signin-google"` is the stable identifier the Maestro flows select.
     const screen = withoutComments(read('src/screens/AuthScreen.tsx'));
-    expect(screen).toMatch(/kind=\{PHONE_AUTH_ENABLED \? 'secondary' : 'primary'\}/);
+    expect(screen).toContain('testID="signin-google"');
+    // Rendered only in the 'choose' step, where it is the sole or co-primary action.
+    expect(screen).toContain("step === 'choose'");
   });
 
   it('refuses to call Supabase while the flag is false', () => {
@@ -1111,10 +1133,12 @@ describe('the redesign holds its own invariants', () => {
     expect(app).toContain("BackHandler.addEventListener('hardwareBackPress'");
     expect(app).toContain('memberParent(route)');
     expect(app).toContain('providerParent(providerRoute)');
-    // A sheet closes before a screen pops, because the sheet is what the user
-    // most recently opened and therefore what they mean.
+    // The Recharge overlay closes before a screen pops: it sits above everything
+    // (zIndex 20) and is what the user most recently opened. Settings used to be a
+    // sheet that closed here too; it is a mounted route now and pops through the
+    // parent map like every other screen.
     const handler = app.slice(app.indexOf('const onBack ='), app.indexOf('BackHandler.addEventListener'));
-    expect(handler.indexOf('setSettingsOpen(false)')).toBeLessThan(handler.indexOf('memberParent'));
+    expect(handler.indexOf('closeRefill()')).toBeLessThan(handler.indexOf('memberParent'));
   });
 
   // Retired with InboxScreen.tsx: v13 HomeScreen has no typed search field and
@@ -1183,15 +1207,21 @@ describe('the redesign holds its own invariants', () => {
      * `inner = outer - inset`. At a 3dp inset that is a 19dp image corner, and
      * 19 inside 18 bulges past the curve it is meant to sit within.
      *
-     * There is no media bubble yet: `messages` has a `body` column and no
-     * attachment, and the manifest removes READ_MEDIA_IMAGES on purpose. The
-     * geometry is asserted now because it is what justified the radius change.
+     * The media bubble consumes this since 014: `messages.attachment_path` points
+     * into the private `attachments` bucket and `MediaBubble` in Turn.tsx renders
+     * the photo at `mediaInnerRadius()`. The manifest still removes
+     * READ_MEDIA_IMAGES on purpose, because the system Photo Picker needs no
+     * permission. The geometry that justified the radius change is the geometry
+     * the photo now uses.
      */
     const turn = read('src/components/Turn.tsx');
     expect(turn).toContain('TOKENS.radius.bubble');
     expect(turn).not.toMatch(/BUBBLE_RADIUS = \d/);
     expect(TOKENS.radius.bubble).toBe(22);
     expect(TOKENS.radius.bubble - 3).toBe(19);
+    // The consumer exists now: the media bubble reads the attachment at the
+    // concentric inner radius.
+    expect(turn).toContain('mediaInnerRadius');
   });
 
   it('never puts a neutral avatar on a surface its own fill matches', () => {
@@ -1236,43 +1266,35 @@ describe('the busy button does not move', () => {
     expect(button).not.toMatch(/<ActivityIndicator|ActivityIndicator[,}]|ActivityIndicator\s*from/);
   });
 
-  it('animates only opacity, so the indicator cannot trigger a layout pass', () => {
-    // It sits inside a button that must not resize. Opacity is the one property
-    // that cannot reflow, and one shared clock drives all eight spokes.
+  it('is a continuously rotating ring driven by a single shared value', () => {
+    // The ring replaces the eight-spoke opacity cascade. One `rotate` transform
+    // on the UI thread never stalls during JS pressure (OAuth hand-offs, heavy
+    // renders) and produces the smooth Fuse / SwiftUI ProgressView look.
     const spinner = read('src/components/Spinner.tsx');
-    expect(spinner).toContain('opacity: spinning ? spokeOpacity(index, progress.value)');
+    // One shared value drives one rotation — not eight opacity writes.
     expect(spinner).toContain('useSharedValue(0)');
+    // The arc rotates a full revolution per cycle (withRepeat wraps withTiming(360)).
+    expect(spinner).toContain('withRepeat(');
+    expect(spinner).toContain('withTiming(360,');
+    // Linear easing: no ease-in or ease-out within a revolution (same as before).
+    expect(spinner).toContain('Easing.linear');
+    // Honour the OS reduce-motion setting.
     expect(spinner).toContain('ReduceMotion.System');
-    // No rotating parent transform: the spokes are placed once and never move.
-    expect(spinner).not.toContain('withRepeat(withTiming(360');
+    // The arc is a border trick: only the top border carries colour.
+    expect(spinner).toContain('borderTopColor');
+    // The component must NOT import SVG (banned in this project).
+    expect(spinner).not.toContain('react-native-svg');
+    // Layout pass: `transform` never causes a reflow, so the button cannot resize.
+    expect(spinner).not.toContain('opacity: spinning ? spokeOpacity');
   });
 
-  it('marks every function a worklet calls as a worklet', () => {
-    /*
-     * The crash this prevents, and the reason it is asserted rather than trusted:
-     * `spokeOpacity` is called inside `useAnimatedStyle`, which runs on the UI
-     * runtime. Without a `'worklet'` directive Reanimated treats an imported
-     * function as a remote function and throws
-     * `[Worklets] Tried to synchronously call a Remote Function`, taking the app
-     * down on the first frame the spinner renders.
-     *
-     * No unit test can see it. jest imports the module into the JS runtime where
-     * the function is perfectly callable, so the eight tests in spinner.test.ts
-     * passed against code that crashed on a device.
-     */
-    const lib = read('src/lib/spinner.ts');
+  it('derives its border width from a shared formula rather than hardcoding it', () => {
+    // `ringBorderWidth` is exported from spinner.ts so it can be tested and
+    // changed in one place, matching the policy for `spokeMetrics` before it.
     const spinner = read('src/components/Spinner.tsx');
-    const calledInWorklet = ['spokeOpacity'];
-    for (const name of calledInWorklet) {
-      expect(spinner).toContain(name);
-      const start = lib.indexOf(`export function ${name}`);
-      expect(start).toBeGreaterThan(-1);
-      // The directive must be inside the body, before any statement that runs.
-      const body = lib.slice(start, lib.indexOf('\n}', start));
-      expect(body).toContain("'worklet';");
-    }
-    // `src/lib/collapse.ts` has the same hazard and guards it in its own suite,
-    // next to the arithmetic the guard protects. See __tests__/collapse.test.ts.
+    expect(spinner).toContain('ringBorderWidth');
+    const lib = read('src/lib/spinner.ts');
+    expect(lib).toContain('export function ringBorderWidth');
   });
 
   it('keeps the spinner period in the tokens', () => {
@@ -1403,11 +1425,20 @@ describe('the chat restyle is wired, not just drawn', () => {
     // `inverted` list renders at the visual TOP of the transcript, so a single
     // divider reading 'Today' sat above the OLDEST message the client held,
     // whatever date that message was on.
-    expect(chatCode).not.toContain('ListFooterComponent');
+    //
+    // A ListFooterComponent exists again, but ONLY as the frosted-bar spacer that
+    // reserves the overlay header's height at the list's visual top. Guard the
+    // actual anti-pattern — a DayDivider living in the footer — not the API.
+    expect(chatCode).not.toMatch(/ListFooterComponent=\{\s*\(\)\s*=>\s*<DayDivider/);
     expect(chatCode).not.toMatch(/DayDivider label=/);
     expect(chatCode).toContain('<DayDivider iso={message.created_at} />');
-    // Computed once per data change in the memo, not per row in renderItem.
-    expect(chatCode).toContain('opensDay: opensDay(m, older)');
+    // opensDay is now computed in a single post-sort pass over the merged
+    // message+call list (so call rows also get dividers). The pass uses the
+    // opensDay helper from datetime.ts, applied to each row's sortAt field.
+    expect(chatCode).toContain("row.opensDay = opensDay(");
+    // The pass must run AFTER the sort so mixed message/call neighbours are
+    // compared correctly (not just adjacent messages).
+    expect(chatCode).toContain('sorted.length');
   });
 
   it('takes clock format from the device rather than hardcoding 24 hours', () => {
@@ -1441,9 +1472,12 @@ describe('the chat restyle is wired, not just drawn', () => {
 
   it('mounts the actions sheet and long-presses both sides into it', () => {
     expect(chat).toMatch(/<MessageActionsSheet[\s/>]/);
-    // Both, because you could not act on your own message at all before, which
-    // made Reply a one-way affordance.
-    expect(chatCode).toContain('onLongPress={onLongPress}');
+    // Both sides receive the stable openActions reference so either bubble can
+    // long-press into the sheet. The per-render closure that used to live in
+    // renderItem is now built inside each bubble via useCallback (A5), so the
+    // parent passes onRequestActions={openActions} rather than onLongPress.
+    expect(chatCode).toContain('onRequestActions={openActions}');
+    // mine is still destructured from the row — used for author label and receipt.
     expect(chatCode).toContain('mine,');
   });
 
@@ -1640,12 +1674,14 @@ describe('voice notes are recorded, uploaded and sent through the one send path'
     // a *member's* id. So on that side the id never resolved, the transcript never
     // loaded and the composer stayed disabled: a recorder shipped to both roles
     // and reachable by one. The summary row already carries the id.
+    // The id comes from the cached thread whenever it is known (either side), and
+    // open_conversation is called ONLY to create a conversation that does not
+    // exist yet. A provider always has a known thread, so it never calls the RPC;
+    // and a member reopening a chat skips the extra round-trip too.
     const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
-    expect(chat).toContain('!knownThread.i_am_member');
-    expect(chat).toContain('asProvider ? knownThread.id : openedId');
-    // A disabled query reports isPending true in React Query v5, so the provider
-    // branch has to say otherwise or the screen sits on a spinner forever.
-    expect(chat).toContain('asProvider ? false : openPending');
+    expect(chat).toContain('const needsOpen = knownThread === undefined');
+    expect(chat).toContain('useConversationId(needsOpen ? providerId : null)');
+    expect(chat).toContain('knownThread?.id ?? openedId');
   });
 
   it('gives both roles the recorder', () => {
@@ -1702,14 +1738,19 @@ describe('voice notes are recorded, uploaded and sent through the one send path'
   });
 });
 
-describe('calling ships visible and off, never silently dead', () => {
-  it('states the flag and why it is false', () => {
+describe('calling ships visible and on, wired to a real media layer', () => {
+  it('is enabled now that the WebRTC client landed', () => {
     // Migration 011 shipped start_call, the per-minute meter and the blocking
-    // gate. There is no media layer on the client, so a tap would ring a phone
-    // that can never connect. Same shape as PHONE_VERIFY_ENABLED.
-    const calls = read('src/api/calls.ts');
-    const flag = /export const CALLS_ENABLED = (true|false);/.exec(calls)?.[1];
-    expect(flag).toBe('false');
+    // gate; the client half (src/api/callSession.ts: RTCPeerConnection + Realtime
+    // signalling) now exists too, so start_call no longer rings a phone that can
+    // never connect. Flipped in the same commit that landed the media path, which
+    // is the only thing the flag's contract says earns the flip.
+    //
+    // CALLS_ENABLED is now defined in src/config.ts (the single flag home);
+    // src/api/calls.ts re-exports it so all existing import sites are unchanged.
+    const appConfig = read('src/config.ts');
+    const flag = /export const CALLS_ENABLED = (true|false);/.exec(appConfig)?.[1];
+    expect(flag).toBe('true');
   });
 
   it('gates the two call buttons rather than hiding them, as real controls', () => {
@@ -1722,7 +1763,9 @@ describe('calling ships visible and off, never silently dead', () => {
     expect(chat).toContain('CALLS_ENABLED');
     expect(chat).toContain('testID="call-video"');
     expect(chat).toContain('testID="call-voice"');
-    expect(chat).toContain('disabled={!CALLS_ENABLED}');
+    // CALLS_ENABLED remains the primary gate; sessionEnded is an additional
+    // runtime gate applied when the member runs out of tokens mid-session.
+    expect(chat).toContain('!CALLS_ENABLED || sessionEnded');
     // Real, and ready for the flag flip: the tap starts a call.
     expect(chat).toContain("onStartCall?.('video')");
     expect(chat).toContain("onStartCall?.('audio')");
@@ -2184,14 +2227,14 @@ describe('the motion adoption is wired, not just drawn', () => {
     expect(stepper).toContain('promoteTo(phase === 1)');
   });
 
-  it('keeps the stepper outside the scroll view it labels', () => {
-    // "The stepper persists" is rule 4's claim, and a stepper that scrolls away
-    // is not persisting.
+  it('shows a step indicator through the bloom layout', () => {
+    // The horizontal Stepper is replaced by the OnboardingStep checklist, which
+    // shows all three rows throughout the form and always has the active step
+    // expanded. BloomField is the atmospheric surface the checklist floats on.
     const screen = read('src/screens/ProviderApplicationScreen.tsx');
-    const stepperAt = screen.indexOf('<Stepper');
-    const scrollAt = screen.indexOf('<ScrollView');
-    expect(stepperAt).toBeGreaterThan(-1);
-    expect(stepperAt).toBeLessThan(scrollAt);
+    expect(screen).toContain('<BloomField');
+    expect(screen).toContain('<OnboardingStep');
+    expect(screen).not.toContain('<Stepper');
   });
 
   it('locates every field the application form actually renders', () => {

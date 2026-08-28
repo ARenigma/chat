@@ -316,6 +316,22 @@ export type Message = {
   /** `<conversation uuid>/<uuid>.m4a` in the private `voice-notes` bucket. */
   voice_path: string | null;
   voice_duration_ms: number | null;
+  /**
+   * Normalised (0..1) amplitude samples captured by the recorder, downsampled
+   * to VOICE_BARS before send. Null on pre-023 rows and on text/image messages;
+   * the client falls back to flat bars when absent. Added by migration 023.
+   */
+  voice_peaks: number[] | null;
+  /**
+   * `<conversation uuid>/<uuid>.<ext>` in the private `attachments` bucket, or
+   * null. The third payload (014): a message carries text, audio, OR a photo.
+   * The intrinsic pixel size rides with it so the bubble can reserve the aspect
+   * box before the image decodes and the transcript does not reflow.
+   */
+  attachment_path: string | null;
+  attachment_type: 'image' | null;
+  attachment_width: number | null;
+  attachment_height: number | null;
   created_at: string;
   read_at: string | null;
 };
@@ -409,7 +425,7 @@ export type SendResult = {
   message_id?: string;
   created_at?: string;
   /** Which payload shape landed, so a caller need not re-derive it. */
-  kind?: 'text' | 'voice';
+  kind?: 'text' | 'voice' | 'image';
   /** Null when the sender is the provider: a reply costs nothing. */
   new_balance?: number | null;
   error?: SendError;
@@ -444,6 +460,75 @@ export type ClaimResult = {
   new_balance?: number;
   error?: 'UNAUTHORIZED' | 'NO_PROFILE' | 'TOO_SOON';
   retry_after?: string;
+};
+
+/**
+ * Returned by the `spend_chat_minute` RPC (migration 022).
+ *
+ * On success: new_balance is the balance after the debit; last=true means it
+ * just hit 0 and the session should end on the NEXT charge (OUT_OF_TOKENS).
+ * On failure: error identifies why the charge was refused.
+ */
+export type SpendChatMinuteResult = {
+  success: boolean;
+  new_balance?: number;
+  /** True when new_balance just reached 0: serve this minute, then stop. */
+  last?: boolean;
+  error?: 'NOT_AUTHENTICATED' | 'NO_PROFILE' | 'OUT_OF_TOKENS';
+};
+
+/** Returned by the `mock_recharge` RPC (migration 020). Only callable when
+ *  `app_flags.mock_payments = true`; inert (MOCK_DISABLED) in production. */
+export type MockRechargeResult = {
+  success: boolean;
+  transaction_id?: string;
+  new_balance?: number;
+  error?: 'NOT_AUTHENTICATED' | 'MOCK_DISABLED' | 'INVALID_AMOUNT';
+};
+
+/** Added by migration 019. */
+export type TokenTransactionKind = 'recharge' | 'refund' | 'adjustment';
+export type TokenTransactionStatus = 'created' | 'succeeded' | 'failed' | 'refunded';
+
+/**
+ * One immutable ledger row per wallet event. Readable by the member who owns
+ * it; written only by service_role via complete_recharge.
+ */
+export type TokenTransactionRow = {
+  id: string;
+  user_id: string;
+  kind: TokenTransactionKind;
+  status: TokenTransactionStatus;
+  amount_paise: number;
+  tokens_delta: number;
+  gateway: string | null;
+  gateway_ref: string | null;
+  gateway_order_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type InvoiceDocumentType = 'tax_invoice' | 'bill_of_supply';
+
+/** GST invoice record. Readable by the member who owns the linked transaction. */
+export type InvoiceRow = {
+  id: string;
+  transaction_id: string;
+  invoice_number: string;
+  document_type: InvoiceDocumentType;
+  fy: string;
+  issued_at: string;
+  seller: Record<string, unknown>;
+  buyer: Record<string, unknown>;
+  place_of_supply: string | null;
+  taxable_paise: number;
+  cgst_paise: number;
+  sgst_paise: number;
+  igst_paise: number;
+  total_paise: number;
+  gst_rate_bps: number;
+  pdf_path: string | null;
+  created_at: string;
 };
 
 export type Database = {
@@ -544,6 +629,43 @@ export type Database = {
         Update: never;
         Relationships: [];
       };
+      /**
+       * Event-sourced ledger: one immutable row per wallet movement.
+       * Clients may SELECT their own rows; all writes go through complete_recharge
+       * (service_role). The `invoices` table has a unique FK to this.
+       */
+      token_transactions: {
+        Row: TokenTransactionRow;
+        Insert: never;
+        Update: never;
+        Relationships: [
+          {
+            foreignKeyName: 'invoices_transaction_id_fkey';
+            columns: ['id'];
+            isOneToOne: true;
+            referencedRelation: 'invoices';
+            referencedColumns: ['transaction_id'];
+          },
+        ];
+      };
+      /**
+       * GST invoice record linked 1:1 to a token_transaction. Clients may SELECT
+       * invoices for transactions they own; only service_role writes.
+       */
+      invoices: {
+        Row: InvoiceRow;
+        Insert: never;
+        Update: never;
+        Relationships: [
+          {
+            foreignKeyName: 'invoices_transaction_id_fkey';
+            columns: ['transaction_id'];
+            isOneToOne: true;
+            referencedRelation: 'token_transactions';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
     };
     Views: {
       provider_directory: {
@@ -577,9 +699,10 @@ export type Database = {
         Returns: string;
       };
       /**
-       * One send path for all three payload shapes. Every argument after the
+       * One send path for all payload shapes. Every argument after the
        * conversation id is defaulted, so the existing two-argument call site is
-       * unchanged, but exactly one of `p_body` and `p_voice_path` may be set.
+       * unchanged, but exactly one of `p_body`, `p_voice_path` and
+       * `p_attachment_path` may be set (014 made the payload three-way).
        */
       send_message: {
         Args: {
@@ -588,6 +711,11 @@ export type Database = {
           p_reply_to_id?: string | null;
           p_voice_path?: string | null;
           p_voice_duration_ms?: number | null;
+          p_attachment_path?: string | null;
+          p_attachment_width?: number | null;
+          p_attachment_height?: number | null;
+          /** Waveform peaks for a voice message; ignored for text and image sends. Added by 023. */
+          p_voice_peaks?: number[] | null;
         };
         Returns: SendResult;
       };
@@ -661,6 +789,26 @@ export type Database = {
       claim_daily_tokens: {
         Args: Record<string, never>;
         Returns: ClaimResult;
+      };
+      /**
+       * Dev-only mock payment that writes a real ledger row and credits the
+       * balance. Gated by app_flags.mock_payments; returns MOCK_DISABLED when
+       * the flag is false (which it is in production).
+       */
+      mock_recharge: {
+        Args: { p_amount_paise: number; p_tokens: number };
+        Returns: MockRechargeResult;
+      };
+      /**
+       * Deducts one chat minute (22 tokens) from the calling user's balance.
+       * Self-scoped SECURITY DEFINER (migration 022). Sub-minute remainders are
+       * drained to exactly 0 (never stranded). Returns OUT_OF_TOKENS only when
+       * the balance is already 0 — positive balances always yield a successful
+       * debit, and last=true signals the final minute was just served.
+       */
+      spend_chat_minute: {
+        Args: Record<string, never>;
+        Returns: SpendChatMinuteResult;
       };
       delete_user_account: {
         Args: Record<string, never>;

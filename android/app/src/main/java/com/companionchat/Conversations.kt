@@ -2,6 +2,7 @@ package com.companionchat
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationCompat
@@ -10,6 +11,8 @@ import androidx.core.app.Person
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
+import java.net.HttpURLConnection
+import java.net.URL
 
 /**
  * Conversation notifications, built the way Android asks a messaging app to
@@ -55,12 +58,50 @@ object Conversations {
      */
     private const val CHANNEL_ID = "conversations"
 
+    /**
+     * The engagement channel, separate from conversations so a re-engagement nudge
+     * can be silenced on its own and rings at DEFAULT rather than a message's HIGH
+     * — a marketing nudge in the same high-importance channel as real messages is
+     * exactly the pattern Play discourages.
+     */
+    private const val CHANNEL_ENGAGEMENT = "engagement"
+
+    /**
+     * The incoming-call channel: IMPORTANCE_HIGH so it can heads-up and ring, and
+     * its own channel so a user can control call alerts separately from messages.
+     */
+    private const val CHANNEL_CALLS = "calls"
+
+    // Pappal coral (#F2543D). Tints all three notification types so they read as
+    // one brand (Amit, 2026-08-27) — the small icon and the CallStyle accent.
+    private const val BRAND_COLOR = 0xFFF2543D.toInt()
+
     fun ensureChannel(context: Context) {
         val channel = NotificationChannelCompat
             .Builder(CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_HIGH)
             .setName(context.getString(R.string.channel_conversations))
             .setDescription(context.getString(R.string.channel_conversations_desc))
             .setShowBadge(true)
+            .build()
+        NotificationManagerCompat.from(context).createNotificationChannel(channel)
+    }
+
+    fun ensureEngagementChannel(context: Context) {
+        val channel = NotificationChannelCompat
+            .Builder(CHANNEL_ENGAGEMENT, NotificationManagerCompat.IMPORTANCE_HIGH)
+            .setName(context.getString(R.string.channel_engagement))
+            .setDescription(context.getString(R.string.channel_engagement_desc))
+            .setShowBadge(true)
+            .build()
+        NotificationManagerCompat.from(context).createNotificationChannel(channel)
+    }
+
+    fun ensureCallChannel(context: Context) {
+        val channel = NotificationChannelCompat
+            .Builder(CHANNEL_CALLS, NotificationManagerCompat.IMPORTANCE_HIGH)
+            .setName(context.getString(R.string.channel_calls))
+            .setDescription(context.getString(R.string.channel_calls_desc))
+            .setShowBadge(false)
             .build()
         NotificationManagerCompat.from(context).createNotificationChannel(channel)
     }
@@ -85,31 +126,39 @@ object Conversations {
         senderName: String,
         body: String,
         sentAt: Long,
+        avatarUrl: String? = null,
     ) {
         ensureChannel(context)
 
+        // The sender's photo for the Person icon (#6), or null on any failure — a
+        // missing photo must never stop the notification from posting.
+        val avatarIcon = avatarUrl
+            ?.let { loadAvatarBitmap(it) }
+            ?.let { IconCompat.createWithBitmap(it) }
+
         /*
          * `setKey` is what makes two Person objects the same person across
-         * notifications. Without it Android matches on name, so two providers
-         * who picked the same display name would merge into one conversation —
-         * and display names here are user-chosen and not unique.
+         * notifications. Without it Android matches on name, so two providers who
+         * picked the same display name would merge into one conversation — and
+         * display names here are user-chosen and not unique.
          */
         val person = Person.Builder()
             .setKey(peerId)
             .setName(senderName)
             .setImportant(true)
+            .apply { if (avatarIcon != null) setIcon(avatarIcon) }
             .build()
 
         /*
-         * The shortcut is not optional garnish. `setLongLived(true)` is what
-         * allows the system to keep it after it is removed from the launcher,
-         * and a notification whose `shortcutId` points at a shortcut that is not
-         * long-lived is demoted out of the conversation section without an error.
+         * The shortcut is not optional garnish. `setLongLived(true)` is what lets
+         * the system keep it after it leaves the launcher, and a notification whose
+         * `shortcutId` points at a shortcut that is not long-lived is demoted out
+         * of the conversation section without an error.
          */
         val shortcut = ShortcutInfoCompat.Builder(context, conversationId)
             .setShortLabel(senderName)
             .setLongLabel(senderName)
-            .setIcon(IconCompat.createWithResource(context, R.mipmap.ic_launcher))
+            .setIcon(avatarIcon ?: IconCompat.createWithResource(context, R.mipmap.ic_launcher))
             .setLongLived(true)
             .setPerson(person)
             .setCategories(setOf(SHARE_CATEGORY))
@@ -120,8 +169,8 @@ object Conversations {
         val manager = NotificationManagerCompat.from(context)
         val id = notificationId(conversationId)
 
-        // Extend the existing transcript if one is showing, so the shade reads as
-        // a conversation rather than as the latest line repeatedly replacing itself.
+        // Extend the existing transcript if one is showing, so the shade reads as a
+        // conversation rather than the latest line repeatedly replacing itself.
         val existing = manager.activeNotifications
             .firstOrNull { it.id == id }
             ?.notification
@@ -134,9 +183,10 @@ object Conversations {
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
+            .setColor(BRAND_COLOR)
             .setStyle(style)
-            // The three together are what Android looks for. `setShortcutId` is
-            // the link; without it the style and the shortcut never meet.
+            // The three together are what Android looks for; `setShortcutId` is the
+            // link that ties the style and the shortcut.
             .setShortcutId(conversationId)
             .addPerson(person)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
@@ -155,6 +205,192 @@ object Conversations {
              */
         }
     }
+
+    /**
+     * Post an ENGAGEMENT notification — the second notification type (Amit,
+     * 2026-08-27). This is the re-engagement nudge shown when there is NO real
+     * message: an SP's photo as a full BigPicture with a call to action ("See
+     * who's around", etc.), the shape of the Clarity example.
+     *
+     * Distinct from `notify`, which is the MessagingStyle conversation
+     * notification for a real message. Android allows only one style per
+     * notification, so the two are separate builders — and they live on separate
+     * channels so a nudge can be silenced without silencing real messages, and
+     * so the nudge rings at DEFAULT importance rather than a message's HIGH.
+     *
+     * A separate id namespace (negated peer hash) so a nudge and a real message
+     * about the same person never overwrite each other.
+     */
+    fun notifyEngagement(
+        context: Context,
+        peerId: String,
+        title: String,
+        body: String,
+        avatarUrl: String? = null,
+    ) {
+        ensureEngagementChannel(context)
+        val avatar = avatarUrl?.let { loadAvatarBitmap(it) }
+        val manager = NotificationManagerCompat.from(context)
+        val id = -peerId.hashCode()
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_ENGAGEMENT)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setColor(BRAND_COLOR)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setCategory(NotificationCompat.CATEGORY_SOCIAL)
+            // HIGH so a nudge heads-up like the others (Amit: "notify like calls
+            // for all three"); the channel is IMPORTANCE_HIGH to match.
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(openConversation(context, peerId))
+
+        if (avatar != null) {
+            builder
+                .setLargeIcon(avatar)
+                .setStyle(
+                    NotificationCompat.BigPictureStyle()
+                        .bigPicture(avatar)
+                        .bigLargeIcon(null as android.graphics.Bitmap?),
+                )
+        }
+
+        try {
+            manager.notify(id, builder.build())
+        } catch (denied: SecurityException) {
+            // POST_NOTIFICATIONS revoked; swallowed as in notify().
+        }
+    }
+
+    /**
+     * Ring an incoming call — the third notification type.
+     *
+     * A `CallStyle.forIncomingCall` notification with a full-screen intent, which
+     * is what makes the phone show a full ringing screen (over the lock screen)
+     * and use the ringtone, rather than a quiet heads-up. `setOngoing` so it
+     * cannot be swiped away while ringing.
+     *
+     * Both actions open the app rather than acting silently: Answer and Decline
+     * route to MainActivity with an `action` on the deep link, and the in-app
+     * incoming-call screen calls `answer_call` / `end_call` with the user's own
+     * session. A BroadcastReceiver could not reach those RPCs — it has no auth —
+     * so the notification's job is to ring and wake, and the app's job is the RPC.
+     */
+    fun notifyCall(
+        context: Context,
+        callId: String,
+        peerId: String,
+        callerName: String,
+        avatarUrl: String? = null,
+        medium: String = "voice",
+    ) {
+        ensureCallChannel(context)
+
+        val avatarIcon = avatarUrl
+            ?.let { loadAvatarBitmap(it) }
+            ?.let { IconCompat.createWithBitmap(it) }
+        val caller = Person.Builder()
+            .setKey(peerId)
+            .setName(callerName)
+            .setImportant(true)
+            .apply { if (avatarIcon != null) setIcon(avatarIcon) }
+            .build()
+
+        val answer = callActionIntent(context, peerId, callId, "answer")
+        val decline = callActionIntent(context, peerId, callId, "decline")
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_CALLS)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setColor(BRAND_COLOR)
+            .setStyle(NotificationCompat.CallStyle.forIncomingCall(caller, decline, answer))
+            .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setOngoing(true)
+            .setAutoCancel(true)
+            // setSubText is reliably visible alongside CallStyle on API 12+; the title
+            // is overridden by CallStyle on API 31+, so this is the correct slot for
+            // the call type. "Video call" vs "Voice call" tells the user what to expect
+            // before they answer.
+            .setSubText(if (medium == "video") "Video call" else "Voice call")
+            // No full-screen intent: the call rings as a heads-up popup, but must
+            // never take over the whole screen on top of whatever is running
+            // (Amit, 2026-08-27). CallStyle + IMPORTANCE_HIGH is the popup; the tap
+            // target is the content intent.
+            .setContentIntent(answer)
+            .build()
+
+        try {
+            NotificationManagerCompat.from(context).notify(callNotificationId(callId), notification)
+        } catch (denied: SecurityException) {
+            // POST_NOTIFICATIONS revoked; swallowed as in notify().
+        }
+    }
+
+    /** Clear a call's notification (answered elsewhere, cancelled, timed out). */
+    fun clearCall(context: Context, callId: String) {
+        NotificationManagerCompat.from(context).cancel(callNotificationId(callId))
+    }
+
+    /**
+     * The PendingIntent for a call action, addressed explicitly to MainActivity
+     * (not a manifest-declared browsable filter — same private-target reasoning as
+     * `peerIntent`). The `action` query tells the app to answer or decline.
+     */
+    private fun callActionIntent(
+        context: Context,
+        peerId: String,
+        callId: String,
+        action: String,
+    ): android.app.PendingIntent {
+        val intent = Intent(context, MainActivity::class.java)
+            .setAction(Intent.ACTION_VIEW)
+            .setData(Uri.parse("companionchat://call/$peerId?callId=$callId&action=$action"))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        return android.app.PendingIntent.getActivity(
+            context,
+            (callId + action).hashCode(),
+            intent,
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+    }
+
+    // Negated-plus-offset namespace so a call notification never collides with a
+    // message (conversation hash) or an engagement nudge (negated peer hash).
+    private fun callNotificationId(callId: String): Int = callId.hashCode() xor 0x5CA11
+
+    /**
+     * Download the sender's photo and decode it, for both the collapsed large
+     * icon and the expanded BigPicture.
+     *
+     * Runs on the caller's thread, which is always a background one — the FCM
+     * headless task, never the UI. Every failure (offline, timeout, a 404, a
+     * decode error) returns null so the notification still posts without a photo:
+     * a message arriving is not a moment to throw. Timeouts are short for the same
+     * reason, a notification that takes ten seconds to appear has already failed.
+     *
+     * Decoded with `inSampleSize` against a ~1024px target: big enough for the
+     * expanded BigPicture to look sharp, small enough that a ~1MB source is not
+     * decoded at full resolution into a background-thread bitmap.
+     */
+    private fun loadAvatarBitmap(url: String): android.graphics.Bitmap? =
+        try {
+            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 4000
+                readTimeout = 4000
+            }
+            val bytes = connection.inputStream.use { it.readBytes() }
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            var sample = 1
+            val longest = maxOf(bounds.outWidth, bounds.outHeight)
+            while (longest / sample > 2048) {
+                sample *= 2
+            }
+            val options = BitmapFactory.Options().apply { inSampleSize = sample }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+        } catch (error: Exception) {
+            null
+        }
 
     /** Clear a conversation's notification once it has been read in the app. */
     fun clear(context: Context, conversationId: String) {

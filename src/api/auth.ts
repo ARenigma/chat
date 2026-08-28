@@ -6,8 +6,13 @@ import {
   credentialSheetAvailable,
   requestGoogleCredential,
 } from '../lib/googleCredential';
-import { AUTH_REDIRECT_URL } from '../lib/env';
+import { AUTH_REDIRECT_URL, ENV } from '../lib/env';
 import { normalisePhone } from '../lib/phone';
+import {
+  firebaseConfirmOtp,
+  firebaseSendOtp,
+  firebaseSignOut,
+} from '../lib/firebasePhone';
 
 /**
  * Google. No Facebook, no phone, no password, no anonymous session.
@@ -64,27 +69,31 @@ export const PROVIDER_LABEL: Record<SocialProvider, string> = {
   google: 'Continue with Google',
 };
 
+// Defined in src/config.ts — the single home for all feature flags.
+// Imported here so the function bodies in this file can reference it directly,
+// and re-exported so callers that import from auth.ts keep working.
+// A contract test asserts this flag: see contract.test.ts 'phone sign-in stays off'.
+import { PHONE_AUTH_ENABLED } from '../config';
+export { PHONE_AUTH_ENABLED };
+
 /**
- * Phone sign-in: implemented, and off until the DLT template is approved.
+ * Which mechanism delivers and verifies the phone OTP. Build-time, not runtime —
+ * "test both" is a rebuild, not a toggle, and both paths are kept code-complete.
  *
- * This flag exists because of the Facebook mistake, which shipped. A sign-in
- * option that accepts input and then fails is worse than an absent one, and
- * Indian transactional SMS cannot be delivered at all until DLT registration
- * completes, entity, sender ID, then template, one to three weeks. Until then
- * `signInWithOtp` would take a number, look like it worked, and deliver nothing.
+ *   'firebase' — Firebase phone auth (active, Amit 2026-08-27). Free SMS quota
+ *                and console test numbers, so it works before any DLT/carrier
+ *                setup. Firebase only proves the number; a Supabase session is
+ *                minted by the `exchange-firebase-token` Edge Function so RLS
+ *                (auth.uid()) is unchanged. See src/lib/firebasePhone.ts.
+ *   'supabase' — the original Supabase-native path: signInWithOtp/verifyOtp with
+ *                the `send-sms` hook (MSG91/Fast2SMS). Kept intact behind this
+ *                flag to switch back to once DLT is approved.
  *
- * Turning it on is three things, in this order:
- *   1. DLT template approved, with the SMS-autofill app hash inside it
- *      (ADR-0009 §1, the hash depends on Google's app signing certificate, so
- *      it cannot be computed before the first Play upload).
- *   2. Uncomment `[auth.hook.send_sms]` in supabase/config.toml and push, with
- *      SEND_SMS_HOOK_SECRET, MSG91_AUTHKEY and MSG91_TEMPLATE_ID set.
- *   3. Flip this to true.
- *
- * A contract test asserts the sign-in screen offers no phone entry while this is
- * false, so the flag cannot be quietly bypassed by adding a button.
+ * AuthScreen/OnboardingScreen call sendPhoneOtp/verifyPhoneOtp and never learn
+ * which path ran — the flag lives entirely here.
  */
-export const PHONE_AUTH_ENABLED = true;
+export type PhoneAuthProvider = 'firebase' | 'supabase';
+export const AUTH_PHONE_PROVIDER: PhoneAuthProvider = 'firebase';
 
 /**
  * Whether to try the Credential Manager sheet before the browser.
@@ -139,6 +148,17 @@ export async function sendPhoneOtp(phone: string): Promise<OtpResult> {
   if (normalised === null) {
     return { status: 'failed', message: 'That does not look like a phone number.' };
   }
+  if (AUTH_PHONE_PROVIDER === 'firebase') {
+    try {
+      await firebaseSendOtp(`+${normalised}`);
+      return { status: 'sent' };
+    } catch (err) {
+      return {
+        status: 'failed',
+        message: describeOtpError(err instanceof Error ? err.message : ''),
+      };
+    }
+  }
   const { error } = await supabase.auth.signInWithOtp({ phone: `+${normalised}` });
   if (error != null) {
     return { status: 'failed', message: describeOtpError(error.message) };
@@ -158,6 +178,9 @@ export async function verifyPhoneOtp(
   if (normalised === null) {
     return { status: 'failed', message: 'That does not look like a phone number.' };
   }
+  if (AUTH_PHONE_PROVIDER === 'firebase') {
+    return verifyFirebasePhone(token);
+  }
   const { error } = await supabase.auth.verifyOtp({
     phone: `+${normalised}`,
     token: token.trim(),
@@ -166,6 +189,67 @@ export async function verifyPhoneOtp(
   if (error != null) {
     return { status: 'failed', message: describeOtpError(error.message) };
   }
+  return { status: 'signedIn' };
+}
+
+/**
+ * The Firebase verify path: confirm the code with Firebase, hand its ID token to
+ * the exchange Edge Function for a real Supabase session, install that session,
+ * then drop the now-redundant Firebase session. Returns 'signedIn' only after
+ * `setSession` resolves, so the App.tsx boot re-read (attempt bump) finds it.
+ */
+async function verifyFirebasePhone(token: string): Promise<OtpResult> {
+  let idToken: string;
+  try {
+    idToken = await firebaseConfirmOtp(token.trim());
+  } catch (err) {
+    return {
+      status: 'failed',
+      message: describeOtpError(err instanceof Error ? err.message : ''),
+    };
+  }
+
+  let session: { access_token: string; refresh_token: string };
+  try {
+    const response = await fetch(
+      `${ENV.supabaseUrl}/functions/v1/exchange-firebase-token`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          // The function is not JWT-verified (there is no Supabase session yet);
+          // the anon key satisfies the platform gateway, and the Firebase ID
+          // token in the body is what actually authenticates the caller.
+          apikey: ENV.supabaseAnonKey,
+          Authorization: `Bearer ${ENV.supabaseAnonKey}`,
+        },
+        body: JSON.stringify({ idToken }),
+      },
+    );
+    if (!response.ok) {
+      return { status: 'failed', message: 'Could not finish signing in. Please try again.' };
+    }
+    session = (await response.json()) as {
+      access_token: string;
+      refresh_token: string;
+    };
+  } catch {
+    return { status: 'failed', message: 'Could not finish signing in. Please try again.' };
+  }
+
+  if (!session.access_token || !session.refresh_token) {
+    return { status: 'failed', message: 'Could not finish signing in. Please try again.' };
+  }
+
+  const { error } = await supabase.auth.setSession({
+    access_token: session.access_token,
+    refresh_token: session.refresh_token,
+  });
+  if (error != null) {
+    return { status: 'failed', message: 'Could not finish signing in. Please try again.' };
+  }
+  // The Supabase session is the source of truth now; the Firebase one is spent.
+  await firebaseSignOut();
   return { status: 'signedIn' };
 }
 
@@ -370,6 +454,11 @@ export async function handleAuthDeepLink(url: string): Promise<AuthCallbackResul
 }
 
 export async function signOut(): Promise<void> {
+  // Two independent sessions can exist after a Firebase phone sign-in — the
+  // Supabase one the app runs on, and a Firebase one that is normally already
+  // dropped at verify time. Sign both out so a stale Firebase session can never
+  // silently re-mint a Supabase session on a later exchange.
+  await firebaseSignOut();
   await supabase.auth.signOut();
 }
 
@@ -386,5 +475,6 @@ export async function deleteAccount(): Promise<void> {
   if (error) {
     throw new Error(error.message);
   }
+  await firebaseSignOut();
   await supabase.auth.signOut();
 }

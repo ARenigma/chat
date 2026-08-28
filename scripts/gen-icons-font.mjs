@@ -1,40 +1,39 @@
 #!/usr/bin/env node
 /**
- * Icon font generator: design/icons.json -> two subset static fonts + a glyph map.
+ * Icon font generator: design/icons.json -> the bundled Lucide font + a glyph map.
  *
  * Mirrors gen-tokens.mjs. The config is the source of truth; this turns it into
  * artifacts and a `--check` mode gates drift in CI, exactly like the token and
  * theme generators.
  *
- * WHY A FONT. react-native-svg is banned here (it throws
+ * WHY A FONT (not SVG). react-native-svg is banned here (it throws
  * synchronouslyUpdateUIProps inside Reanimated views and kills touch on the
- * subtree), and the previous hand-drawn Icon.tsx encoded each glyph as border
- * geometry — which is what made `bubble` an empty box and `phone` a smile arc at
- * display size. Material Symbols shipped as a font is tintable via `color`,
- * renders as plain <Text> (safe inside Reanimated), and gives the whole set from
- * one small file.
+ * subtree), and our Icon sits inside animated Pressables everywhere. A font
+ * glyph is plain <Text>: safe in Reanimated, tintable via `color`, scaled by
+ * `fontSize`.
  *
- * WHY TWO FILES. React Native Android cannot animate or even select a
- * variable-font axis at runtime. So `weight` and `style` are baked at generation
- * time, and the FILL axis — which we want for the active/selected state — is
- * shipped as two static instances (FILL 0 and FILL 1) that the Icon swaps
- * between. This is the config's `fillOnActive`.
+ * WHY LUCIDE, PREBUILT. Amit's call (wave-3): Lucide across the whole app for its
+ * clean consistent stroke. Lucide ships a ready-made icon font in the
+ * `lucide-static` package (lucide.ttf + codepoints.json), so — unlike the old
+ * Material Symbols pipeline that downloaded a variable font and instanced it —
+ * this just copies that font (renaming its family to `Lucide` so RN resolves it
+ * by the repo's family==filename convention) and reads the codepoints. The
+ * strokes are baked into the glyphs, which is why the on-device weight is
+ * Lucide's own rather than a runtime stroke width.
  *
- * WHY SUBSET. The full Material Symbols Rounded static instance is ~1.5MB and
- * carries ~3600 glyphs. We use ~30. pyftsubset cuts each instance to ~20-30KB,
- * so both instances together cost less than one weight of Nunito.
+ * NO FILL VARIANT. Lucide is a single stroke set with no filled twin, so unlike
+ * Material Symbols there is one face; the active/selected state is carried by
+ * colour alone (ICON_FILL_ON_ACTIVE = false).
  *
- * REQUIRES: python3 with fonttools + brotli (`python3 -m pip install fonttools
- * brotli`). The generator checks and prints the install line if missing rather
- * than emitting a broken font.
+ * REQUIRES: python3 with fonttools (only to rewrite the font's family name).
  */
 import { execFileSync } from 'node:child_process';
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
   writeFileSync,
-  rmSync,
 } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -43,22 +42,11 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CONFIG = join(ROOT, 'design/icons.json');
 const FONTS = join(ROOT, 'assets/fonts');
 const OUT_TS = join(ROOT, 'src/theme/icons.generated.ts');
-const CACHE = join(ROOT, '.icon-cache');
+const LUCIDE = join(ROOT, 'node_modules/lucide-static');
+const FAMILY = 'Lucide';
+const OUT_TTF = join(FONTS, `${FAMILY}.ttf`);
+const OUT_LICENSE = join(FONTS, 'LICENSE-Lucide.txt');
 const CHECK = process.argv.includes('--check');
-
-/** The variable font per style, from the google/material-design-icons repo. */
-const VARIABLE = {
-  rounded: 'MaterialSymbolsRounded%5BFILL%2CGRAD%2Copsz%2Cwght%5D',
-  outlined: 'MaterialSymbolsOutlined%5BFILL%2CGRAD%2Copsz%2Cwght%5D',
-  sharp: 'MaterialSymbolsSharp%5BFILL%2CGRAD%2Copsz%2Cwght%5D',
-};
-const REPO =
-  'https://raw.githubusercontent.com/google/material-design-icons/master/variablefont';
-
-/** The PostScript family name we reference from React Native, per style + fill. */
-const familyName = (style, fill) =>
-  `MaterialSymbols${cap(style)}${fill ? 'Fill' : ''}`;
-const cap = s => s[0].toUpperCase() + s.slice(1);
 
 function die(msg) {
   console.error(`gen-icons-font: ${msg}`);
@@ -67,130 +55,14 @@ function die(msg) {
 
 function haveFontTools() {
   try {
-    execFileSync('python3', ['-c', 'import fontTools, brotli'], {
-      stdio: 'ignore',
-    });
+    execFileSync('python3', ['-c', 'import fontTools'], { stdio: 'ignore' });
     return true;
   } catch {
     return false;
   }
 }
 
-async function download(url, dest) {
-  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-  if (!res.ok) {
-    die(`download failed ${res.status}: ${url}`);
-  }
-  writeFileSync(dest, Buffer.from(await res.arrayBuffer()));
-}
-
-async function main() {
-  const cfg = JSON.parse(readFileSync(CONFIG, 'utf8'));
-  const style = cfg.style;
-  if (!VARIABLE[style]) {
-    die(`unknown style "${style}" — expected rounded | outlined | sharp`);
-  }
-
-  // Resolve every glyph name to a codepoint from the published map, so a typo in
-  // the config fails here rather than rendering an invisible tofu box on device.
-  const names = Object.entries(cfg.glyphs).filter(([k]) => !k.startsWith('$'));
-  const cpMap = await codepoints(style);
-  const glyphs = {};
-  const missing = [];
-  const unicodes = [];
-  for (const [semantic, symbol] of names) {
-    const cp = cpMap.get(symbol);
-    if (cp === undefined) {
-      missing.push(`${semantic} -> ${symbol}`);
-      continue;
-    }
-    glyphs[semantic] = String.fromCodePoint(parseInt(cp, 16));
-    unicodes.push(`U+${cp.toUpperCase()}`);
-  }
-  if (missing.length) {
-    die(`glyph names not in Material Symbols: ${missing.join(', ')}`);
-  }
-
-  const ts = renderTs(cfg, style, glyphs);
-
-  if (CHECK) {
-    const current = existsSync(OUT_TS) ? readFileSync(OUT_TS, 'utf8') : '';
-    if (current !== ts) {
-      die('src/theme/icons.generated.ts is stale. Run `npm run icons`.');
-    }
-    // The fonts the map references must exist.
-    for (const fill of cfg.fillOnActive ? [0, 1] : [0]) {
-      const f = join(FONTS, `${familyName(style, fill)}.ttf`);
-      if (!existsSync(f)) {
-        die(`missing font ${f}. Run \`npm run icons\`.`);
-      }
-    }
-    console.log(
-      `icons OK, ${Object.keys(glyphs).length} glyphs, style=${style}`,
-    );
-    return;
-  }
-
-  if (!haveFontTools()) {
-    die('needs fonttools. Run: python3 -m pip install fonttools brotli');
-  }
-
-  mkdirSync(CACHE, { recursive: true });
-  mkdirSync(FONTS, { recursive: true });
-
-  const variableTtf = join(CACHE, `${style}-variable.ttf`);
-  if (!existsSync(variableTtf)) {
-    await download(`${REPO}/${VARIABLE[style]}.ttf`, variableTtf);
-  }
-
-  const fills = cfg.fillOnActive ? [0, 1] : [0];
-  for (const fill of fills) {
-    const family = familyName(style, fill);
-    const instanced = join(CACHE, `${family}-instance.ttf`);
-    // 1. Pin the variable axes to a single static instance.
-    execFileSync('python3', [
-      '-m',
-      'fontTools.varLib.instancer',
-      variableTtf,
-      `wght=${cfg.weight}`,
-      `opsz=${cfg.opticalSize}`,
-      `FILL=${fill}`,
-      'GRAD=0',
-      '-o',
-      instanced,
-    ]);
-    // 2. Subset to only the glyphs we use, and rename the family so RN resolves
-    //    the filled and unfilled instances as distinct faces.
-    execFileSync('python3', [
-      '-m',
-      'fontTools.subset',
-      instanced,
-      `--unicodes=${unicodes.join(',')}`,
-      `--output-file=${join(FONTS, `${family}.ttf`)}`,
-      `--name-IDs=*`,
-      `--recalc-timestamp`,
-    ]);
-    renameFamily(join(FONTS, `${family}.ttf`), family);
-  }
-
-  writeFileSync(OUT_TS, ts);
-  rmSync(CACHE, { recursive: true, force: true });
-  const sizes = fills
-    .map(f => {
-      const p = join(FONTS, `${familyName(style, f)}.ttf`);
-      return `${familyName(style, f)}=${Math.round(
-        readFileSync(p).length / 1024,
-      )}KB`;
-    })
-    .join(', ');
-  console.log(
-    `icons OK, ${Object.keys(glyphs).length} glyphs, style=${style} w${
-      cfg.weight
-    }, ${sizes}`,
-  );
-}
-
-/** Rewrite the font's family name so two instances are distinct faces on Android. */
+/** Rewrite the font's family name so RN resolves it as `Lucide` (family==file). */
 function renameFamily(ttf, family) {
   execFileSync('python3', [
     '-c',
@@ -208,23 +80,86 @@ function renameFamily(ttf, family) {
   ]);
 }
 
-async function codepoints(style) {
-  const url = `${REPO}/${VARIABLE[style]}.codepoints`;
-  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-  if (!res.ok) {
-    die(`codepoints download failed ${res.status}`);
+function main() {
+  const cfg = JSON.parse(readFileSync(CONFIG, 'utf8'));
+  const cpPath = join(LUCIDE, 'font/codepoints.json');
+  if (!existsSync(cpPath)) {
+    die(
+      'lucide-static not installed. Run: npm install --save-dev lucide-static',
+    );
   }
-  const map = new Map();
-  for (const line of (await res.text()).split('\n')) {
-    const [name, cp] = line.trim().split(' ');
-    if (name && cp) {
-      map.set(name, cp);
+  const cp = JSON.parse(readFileSync(cpPath, 'utf8'));
+
+  const names = Object.entries(cfg.glyphs).filter(([k]) => !k.startsWith('$'));
+  const glyphs = {};
+  const missing = [];
+  for (const [semantic, lucideName] of names) {
+    const code = cp[lucideName];
+    if (code === undefined) {
+      missing.push(`${semantic} -> ${lucideName}`);
+      continue;
     }
+    glyphs[semantic] = String.fromCodePoint(code);
   }
-  return map;
+  if (missing.length) {
+    die(`icon names not in Lucide: ${missing.join(', ')}`);
+  }
+
+  const ts = renderTs(glyphs);
+
+  if (CHECK) {
+    const current = existsSync(OUT_TS) ? readFileSync(OUT_TS, 'utf8') : '';
+    if (current !== ts) {
+      die('src/theme/icons.generated.ts is stale. Run `npm run icons:font`.');
+    }
+    if (!existsSync(OUT_TTF)) {
+      die(`missing font ${OUT_TTF}. Run \`npm run icons:font\`.`);
+    }
+    if (!existsSync(OUT_LICENSE)) {
+      die(`missing ${OUT_LICENSE}. Run \`npm run icons:font\`.`);
+    }
+    console.log(
+      `icons OK, ${Object.keys(glyphs).length} glyphs, family=${FAMILY}`,
+    );
+    return;
+  }
+
+  if (!haveFontTools()) {
+    die(
+      'needs fonttools (to rename the font family). Run: python3 -m pip install fonttools',
+    );
+  }
+
+  mkdirSync(FONTS, { recursive: true });
+  copyFileSync(join(LUCIDE, 'font/lucide.ttf'), OUT_TTF);
+  // Subset to only the ~40 glyphs we use: the full Lucide font is 2035 glyphs
+  // (~840KB); the app uses under forty. pyftsubset cuts it to ~30KB, the same
+  // lean-asset discipline the Material Symbols pipeline followed.
+  const unicodes = Object.values(glyphs)
+    .map(ch => `U+${ch.codePointAt(0).toString(16).toUpperCase()}`)
+    .join(',');
+  execFileSync('python3', [
+    '-m',
+    'fontTools.subset',
+    OUT_TTF,
+    `--unicodes=${unicodes}`,
+    `--output-file=${OUT_TTF}`,
+    '--name-IDs=*',
+    '--recalc-timestamp',
+  ]);
+  renameFamily(OUT_TTF, FAMILY);
+  copyFileSync(join(LUCIDE, 'LICENSE'), OUT_LICENSE);
+  writeFileSync(OUT_TS, ts);
+  console.log(
+    `icons OK, ${
+      Object.keys(glyphs).length
+    } glyphs, family=${FAMILY}, ${Math.round(
+      readFileSync(OUT_TTF).length / 1024,
+    )}KB`,
+  );
 }
 
-function renderTs(cfg, style, glyphs) {
+function renderTs(glyphs) {
   const names = Object.keys(glyphs).sort();
   const entries = names
     .map(n => `  ${n}: ${JSON.stringify(glyphs[n])},`)
@@ -233,18 +168,15 @@ function renderTs(cfg, style, glyphs) {
   return `/**
  * GENERATED by scripts/gen-icons-font.mjs from design/icons.json. Do not edit.
  *
- * Each value is the Material Symbols ${style} codepoint as a string, rendered as
- * <Text> in src/components/Icon.tsx. Family baked at weight ${cfg.weight},
- * optical size ${cfg.opticalSize}. Two faces: '${familyName(style, false)}'
- * (outlined) and '${familyName(style, true)}' (filled, the active state).
+ * Each value is a Lucide codepoint as a string, rendered as <Text> in
+ * src/components/Icon.tsx in the '${FAMILY}' family. Lucide is a single stroke
+ * set with no filled variant, so both family constants are the same face and the
+ * active state is carried by colour (ICON_FILL_ON_ACTIVE = false).
  */
 
-export const ICON_FAMILY = '${familyName(style, false)}' as const;
-export const ICON_FAMILY_FILLED = '${familyName(
-    style,
-    cfg.fillOnActive,
-  )}' as const;
-export const ICON_FILL_ON_ACTIVE = ${cfg.fillOnActive} as const;
+export const ICON_FAMILY = '${FAMILY}' as const;
+export const ICON_FAMILY_FILLED = '${FAMILY}' as const;
+export const ICON_FILL_ON_ACTIVE = false as const;
 
 export type IconName = ${union};
 
@@ -254,4 +186,4 @@ ${entries}
 `;
 }
 
-main().catch(e => die(String(e)));
+main();

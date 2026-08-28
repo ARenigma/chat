@@ -46,12 +46,16 @@ export type StepKey = 'identify' | 'verify';
  * What the flow is currently asking for, within the form.
  *
  * `choose` is the fork, and it exists because our first step is a question where
- * the source's is a command. `number` and `code` are the phone branch; Google
- * never leaves `choose`, it just goes busy in place.
+ * the source's is a command. `number`, `confirm`, and `code` are the phone
+ * branch; Google never leaves `choose`, it just goes busy in place.
+ *
+ * `confirm` sits between `number` and `code`: it shows the formatted number and
+ * asks the user to verify it before the OTP is sent, mirroring WhatsApp's
+ * confirmation step.
  *
  * This, and not `StepKey`, is what the field's colour follows — see `paletteFor`.
  */
-export type IdentifyStage = 'choose' | 'number' | 'code';
+export type IdentifyStage = 'choose' | 'number' | 'confirm' | 'code';
 
 export interface StepSpec {
   readonly key: StepKey;
@@ -148,7 +152,7 @@ export function paletteFor(phase: Phase, stage: IdentifyStage): BloomPalette {
    * interactions, so tapping "use my number" changed nothing and the field
    * shifted once in the entire flow instead of on every tap.
    */
-  if (stage === 'number') {
+  if (stage === 'number' || stage === 'confirm') {
     return BLOOM_PALETTES.number;
   }
   if (stage === 'code') {

@@ -124,9 +124,14 @@ describe('what may be sent', () => {
 });
 
 describe('reading a row', () => {
-  const row = (path: string | null, ms: number | null) => ({
+  const row = (
+    path: string | null,
+    ms: number | null,
+    peaks: number[] | null = null,
+  ) => ({
     voice_path: path,
     voice_duration_ms: ms,
+    voice_peaks: peaks,
   });
 
   it('is null for text, so the caller cannot forget the branch', () => {
@@ -142,6 +147,16 @@ describe('reading a row', () => {
     expect(voiceOf(row(`${CONVERSATION}/${OBJECT}.m4a`, 4000))).toEqual({
       path: `${CONVERSATION}/${OBJECT}.m4a`,
       durationMs: 4000,
+      peaks: null,
+    });
+  });
+
+  it('carries the stored peaks when the row has them (migration 023)', () => {
+    const peaks = [0.1, 0.5, 0.9, 0.3];
+    expect(voiceOf(row(`${CONVERSATION}/${OBJECT}.m4a`, 4000, peaks))).toEqual({
+      path: `${CONVERSATION}/${OBJECT}.m4a`,
+      durationMs: 4000,
+      peaks,
     });
   });
 });
@@ -193,7 +208,7 @@ describe('the playhead', () => {
  */
 describe('voiceOf degrades to text rather than to a broken player', () => {
   it('returns null for a plain text row', () => {
-    expect(voiceOf({ voice_path: null, voice_duration_ms: null })).toBeNull();
+    expect(voiceOf({ voice_path: null, voice_duration_ms: null, voice_peaks: null })).toBeNull();
   });
 
   it('returns null when the columns are absent, not just null', () => {
@@ -202,22 +217,23 @@ describe('voiceOf degrades to text rather than to a broken player', () => {
   });
 
   it('returns null for a half-present payload', () => {
-    expect(voiceOf({ voice_path: 'a/b.m4a', voice_duration_ms: null })).toBeNull();
-    expect(voiceOf({ voice_path: null, voice_duration_ms: 4200 })).toBeNull();
+    expect(voiceOf({ voice_path: 'a/b.m4a', voice_duration_ms: null, voice_peaks: null })).toBeNull();
+    expect(voiceOf({ voice_path: null, voice_duration_ms: 4200, voice_peaks: null })).toBeNull();
   });
 
   it('returns null rather than a NaN duration', () => {
-    expect(voiceOf({ voice_path: 'a/b.m4a', voice_duration_ms: NaN })).toBeNull();
+    expect(voiceOf({ voice_path: 'a/b.m4a', voice_duration_ms: NaN, voice_peaks: null })).toBeNull();
   });
 
   it('rejects an empty path, which is a row that lost its upload', () => {
-    expect(voiceOf({ voice_path: '', voice_duration_ms: 4200 })).toBeNull();
+    expect(voiceOf({ voice_path: '', voice_duration_ms: 4200, voice_peaks: null })).toBeNull();
   });
 
   it('still returns a real payload unchanged', () => {
-    expect(voiceOf({ voice_path: 'c/d.m4a', voice_duration_ms: 4200 })).toEqual({
+    expect(voiceOf({ voice_path: 'c/d.m4a', voice_duration_ms: 4200, voice_peaks: null })).toEqual({
       path: 'c/d.m4a',
       durationMs: 4200,
+      peaks: null,
     });
   });
 });

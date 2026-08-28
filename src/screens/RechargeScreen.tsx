@@ -4,30 +4,36 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { formatRupees, formatTokens, PAYMENTS_ENABLED, RECHARGE_PACKS } from '../lib/rates';
-import { DAILY_REFILL_TOKENS } from '../lib/tokenLedger';
-import { useClaimTokens } from '../api/chat';
+import { tick } from '../lib/haptics';
+import { SCROLL_PHYSICS } from '../lib/scroll';
 import { useStore } from '../store/useStore';
 import { Button } from '../components/Button';
+import { BackButton } from '../components/BackButton';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { TokenCounter } from '../components/TokenCounter';
+import { PaymentSheet } from './PaymentSheet';
 
 /**
  * Recharge — the v10 layout on the Fuse system, in rupees.
  *
  * Amit picked v10's visual over v12's: a dark balance card, a coral-selected
- * amount grid, a daily check-in strip and a single payment row. It fits the
- * system better than v12's token-pack list, and v10's own "1 token = ₹1" made
- * the move to a ₹ balance (ADR-0019) a relabel rather than a redraw.
+ * amount grid and a single payment row. It fits the system better than v12's
+ * token-pack list, and v10's own "1 token = ₹1" made the move to a ₹ balance
+ * (ADR-0019) a relabel rather than a redraw.
+ *
+ * The daily check-in strip that v10 carried is gone (Amit's call): a paid
+ * marketplace does not hand out a free daily credit, and the strip was the last
+ * of the free-token idiom from the AI-companion build. Recharge is now purely
+ * "add tokens", which is all a payment screen should be.
  *
  * Rendered as a full-screen overlay off the same `refillVisible` store flag the
  * interim sheet used, so every balance pill and Recharge button already routes
- * here with no new wiring. `refill-sheet` / `refill-claim` testIDs are kept so
- * the maestro token flow still targets it.
+ * here with no new wiring. The `refill-sheet` testID is kept so the maestro flow
+ * still targets it.
  *
  * The Pay button is gated behind `PAYMENTS_ENABLED` (the UPI/Play rail is a
  * follow-up): it shows the packs and the total but does not pretend to charge.
- * The daily starter credit is a separate, real path and stays live.
  */
 export function RechargeScreen() {
   const styles = useStyles(makeStyles);
@@ -36,8 +42,8 @@ export function RechargeScreen() {
   const visible = useStore(s => s.refillVisible);
   const balance = useStore(s => s.balance);
   const close = useStore(s => s.closeRefill);
-  const claim = useClaimTokens();
   const [amount, setAmount] = useState<number>(RECHARGE_PACKS[1] ?? 60);
+  const [payOpen, setPayOpen] = useState(false);
 
   if (!visible) {
     return null;
@@ -53,16 +59,21 @@ export function RechargeScreen() {
       style={[styles.root, { paddingTop: insets.top }]}>
       {/* Header: back closes the overlay, balance pill mirrors the one that opened it. */}
       <View style={styles.bar}>
-        <Pressable
+        <BackButton
           onPress={close}
           testID="recharge-back"
           accessibilityLabel="Close recharge"
-          press="none"
-          size={28}
-          style={styles.barIcon}>
-          <Icon name="chevronLeft" size={26} color={theme.color.text.primary} />
-        </Pressable>
-        <Text allowFontScaling style={styles.barTitle}>
+          style={styles.barIcon}
+        />
+        {/* Centred in the space BETWEEN the back button and the balance pill, not
+            across the whole bar. The old title used `marginLeft: -28` to centre
+            over the full width, which pushed its flex box left over the back
+            button; as a later sibling it then won the hit-test there and ate the
+            tap that closes the screen (and neither `pointerEvents` on the Text nor
+            an absolute overlay stops Android RN from swallowing it). Sitting
+            in-flow after the button, it cannot overlap, and the slight rightward
+            counterweight of the pill keeps it reading as balanced. */}
+        <Text allowFontScaling numberOfLines={1} style={styles.barTitle}>
           Recharge
         </Text>
         <TokenCounter balance={balance} onPress={() => {}} />
@@ -70,9 +81,19 @@ export function RechargeScreen() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
+        {...SCROLL_PHYSICS}
         contentContainerStyle={styles.scroll}>
-        {/* The dark balance card. */}
-        <View style={styles.balanceCard}>
+        {/* The balance banner (#13, Amit): a warm gradient field in the same
+            language as the onboarding/hero surfaces, built from the accent tokens
+            (not raw hex) so it follows a theme change and stays inside the accent
+            budget. */}
+        <View
+          style={[
+            styles.balanceCard,
+            {
+              experimental_backgroundImage: `linear-gradient(140deg, ${theme.color.bg.accent} 0%, ${theme.color.bg.accentStrong} 100%)`,
+            },
+          ]}>
           <Text allowFontScaling style={styles.balanceLabel}>
             Balance
           </Text>
@@ -100,7 +121,10 @@ export function RechargeScreen() {
               // which collapsed each card to one character wide.
               <View key={pack} style={styles.cardSlot}>
                 <Pressable
-                  onPress={() => setAmount(pack)}
+                  onPress={() => {
+                    tick();
+                    setAmount(pack);
+                  }}
                   testID={`pack-${pack}`}
                   accessibilityLabel={`Add ${formatTokens(pack)} tokens${on ? ', selected' : ''}`}
                   press="card"
@@ -118,21 +142,6 @@ export function RechargeScreen() {
             );
           })}
         </View>
-
-        {/* Daily starter credit — the one real, free path while the rail is off. */}
-        <Pressable
-          onPress={() => claim.mutate()}
-          testID="refill-claim"
-          accessibilityLabel={`Claim your daily ${formatTokens(DAILY_REFILL_TOKENS)} tokens`}
-          press="chip"
-          style={styles.checkin}>
-          <Text allowFontScaling style={styles.checkinLabel}>
-            {claim.isPending ? 'Adding tokens' : 'Daily check-in'}
-          </Text>
-          <Text allowFontScaling style={styles.checkinValue}>
-            {`+${formatTokens(DAILY_REFILL_TOKENS)}`}
-          </Text>
-        </Pressable>
 
         <Text allowFontScaling style={styles.section}>
           Payment
@@ -157,13 +166,18 @@ export function RechargeScreen() {
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + TOKENS.space.sm }]}>
+        {/* Continue raises the UPI chooser (PaymentSheet) rather than charging
+            directly, which is where the real-money step and its ₹ mark belong.
+            Not gated here: the sheet is reachable so the flow can be seen and
+            tested; the gate lives on the sheet's own confirm. */}
         <Button
-          label={PAYMENTS_ENABLED ? `Pay ${formatRupees(amount)}` : 'Payments open soon'}
-          disabled={!PAYMENTS_ENABLED}
-          onPress={() => {}}
+          label={`Continue ${formatRupees(amount)}`}
+          onPress={() => requestAnimationFrame(() => setPayOpen(true))}
           testID="recharge-pay"
         />
       </View>
+
+      <PaymentSheet visible={payOpen} amount={amount} onClose={() => setPayOpen(false)} />
     </View>
   );
 }
@@ -184,6 +198,7 @@ const makeStyles = (t: Theme) =>
     bar: {
       flexDirection: 'row',
       alignItems: 'center',
+      minHeight: 44,
       gap: TOKENS.space.xs,
       paddingHorizontal: TOKENS.space.md,
       paddingVertical: TOKENS.space.xs,
@@ -197,17 +212,20 @@ const makeStyles = (t: Theme) =>
     barTitle: {
       ...TOKENS.typography.headline,
       color: t.color.text.primary,
+      // Takes the slack between the back button and the balance pill and centres
+      // within it. No negative margin, so the box never reaches back over the
+      // button to swallow its tap.
       flex: 1,
       textAlign: 'center',
-      // Offset the back button so the title sits optically centred.
-      marginLeft: -28,
     },
     scroll: {
       paddingHorizontal: TOKENS.space.md,
       paddingBottom: TOKENS.space.xl,
     },
     balanceCard: {
-      backgroundColor: t.color.bg.inverse,
+      // Fallback fill under the gradient (older paint paths); the warm coral
+      // gradient is applied inline in the component from the accent tokens.
+      backgroundColor: t.color.bg.accentStrong,
       borderRadius: TOKENS.radius.lg,
       borderCurve: 'continuous',
       padding: TOKENS.space.lg,
@@ -216,17 +234,17 @@ const makeStyles = (t: Theme) =>
     },
     balanceLabel: {
       ...TOKENS.typography.subhead,
-      color: t.color.text.onInverse,
-      opacity: 0.7,
+      color: t.color.text.onAccent,
+      opacity: 0.8,
     },
     balanceValue: {
       ...TOKENS.typography.displayLarge,
-      color: t.color.text.onInverse,
+      color: t.color.text.onAccent,
     },
     balanceHint: {
       ...TOKENS.typography.captionSmall,
-      color: t.color.text.onInverse,
-      opacity: 0.6,
+      color: t.color.text.onAccent,
+      opacity: 0.7,
     },
     section: {
       ...TOKENS.typography.headline,
@@ -273,32 +291,15 @@ const makeStyles = (t: Theme) =>
     cardTextOn: {
       color: t.color.text.onAccent,
     },
-    checkin: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      backgroundColor: t.color.bg.accentTint,
-      borderRadius: TOKENS.radius.md,
-      borderCurve: 'continuous',
-      paddingHorizontal: TOKENS.space.md,
-      paddingVertical: TOKENS.space.sm,
-      marginTop: TOKENS.space.md,
-    },
-    checkinLabel: {
-      ...TOKENS.typography.subhead,
-      color: t.color.text.accent,
-    },
-    checkinValue: {
-      ...TOKENS.typography.labelMedium,
-      color: t.color.text.accent,
-    },
     payment: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: TOKENS.space.sm,
-      backgroundColor: t.color.bg.sunken,
+      backgroundColor: t.color.bg.raised,
       borderRadius: TOKENS.radius.md,
       borderCurve: 'continuous',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: t.color.border.hairline,
       padding: TOKENS.space.md,
     },
     payIcon: {

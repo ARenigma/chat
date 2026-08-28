@@ -3,10 +3,21 @@ import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
+import { tick } from '../lib/haptics';
+import { CALLS_TAB_ENABLED } from '../config';
+import { Frost } from './Frost';
 import { Icon, type IconName } from './Icon';
 import { Pressable } from './Pressable';
 
-export type ToolbarKey = 'home' | 'call' | 'settings';
+export type ToolbarKey = 'home' | 'favourites' | 'call' | 'settings';
+
+/**
+ * The bar's own height, without the safe-area inset. Exported so the two tab
+ * screens (Home, Settings) can pad their scroll content by exactly this much and
+ * their last row clears the frosted overlay instead of resting behind it — and,
+ * critically, so no full-width row sits *under* the bar to steal its taps.
+ */
+export const NAV_BAR_HEIGHT = 60;
 
 interface Tab {
   key: ToolbarKey;
@@ -17,8 +28,10 @@ interface Tab {
 
 const TABS: readonly Tab[] = [
   { key: 'home', glyph: 'home', label: 'Home', hint: 'People and conversations' },
+  { key: 'favourites', glyph: 'heart', label: 'Favourites', hint: 'People you saved' },
   { key: 'call', glyph: 'call', label: 'Calls', hint: 'Your recent calls' },
-  { key: 'settings', glyph: 'settings', label: 'Settings', hint: 'Account and privacy' },
+  // A person, not a gear (Amit's call): Settings here is "you and your account".
+  { key: 'settings', glyph: 'person', label: 'Settings', hint: 'Account and privacy' },
 ];
 
 interface Props {
@@ -26,41 +39,69 @@ interface Props {
   onSelect: (key: ToolbarKey) => void;
   /**
    * Calls are built but gated (`CALLS_ENABLED`). A disabled tab is dimmed and
-   * still announces its state rather than vanishing, so the toolbar's shape does
-   * not change when the flag flips.
+   * still announces its state rather than vanishing, so the bar's shape does not
+   * change when the flag flips.
    */
   callEnabled?: boolean;
 }
 
 /**
- * The v13 floating toolbar: one pill, three destinations.
+ * The docked bottom bar: one strip, three destinations.
  *
- * This replaces the first-gen two-tab bar (`TabBar`, chats/explore). v13 merges
- * Chats and Explore into a single Home, so the navigation is Home / Calls /
- * Settings — a floating capsule over the content rather than a docked bar, which
- * is why it carries an elevation the docked bar deliberately refused: a docked bar
- * on white reads a shadow as a smudge, but a floating pill needs the shadow to
- * read as lifted off the list scrolling under it.
+ * This is the Sweprek/Mengobrol idiom (Amit's call, 2026-08-26), and it is a
+ * deliberate reversal of the floating coral capsule that stood here through v13.
+ * Two things changed with it:
  *
- * The active tab is a filled coral disc under a filled-family glyph (Material's
- * own selection pattern, ADR-0018) — a shape signal, not only a colour one, which
- * also survives colour-blindness.
+ *   - **Docked, not floating.** A full-width bar pinned to the bottom edge on a
+ *     translucent `bg/chrome` fill, so the list scrolling under it shows through
+ *     as a frost. `bg/chrome` is the page colour at 80% — an approximation of a
+ *     real Gaussian blur, which needs a native BlurView dependency this app has
+ *     not taken. A top hairline and a soft upward shadow carry the edge the
+ *     translucency alone cannot. If the frost does not read on device this is the
+ *     one place a BlurView would slot in, behind the same bar.
+ *   - **Black active, not coral.** The selected tab is a black pill (`bg/inverse`)
+ *     carrying a filled white glyph and its label; the others are bare grey
+ *     glyphs. Black is reserved for nav highlight only — the coral stays the
+ *     brand accent everywhere else — so the one place the eye is told "you are
+ *     here" cannot be confused with the one place it is told "act". The pill is
+ *     both a shape signal and a colour one (Material's own selection pattern,
+ *     ADR-0018), which survives colour-blindness and now also carries the label
+ *     the floating capsule had no room for.
  */
 function FloatingToolbarView({ active, onSelect, callEnabled = false }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
 
+  // When CALLS_TAB_ENABLED is false the 'call' tab is absent entirely and the
+  // remaining three tabs fill the bar via `space-around`. The ToolbarKey union
+  // and the routes.ts 'calls' route type are unchanged so the tab can be
+  // re-enabled by flipping the flag.
+  const visibleTabs = CALLS_TAB_ENABLED ? TABS : TABS.filter(t => t.key !== 'call');
+
   return (
-    <View style={[styles.wrap, { bottom: insets.bottom + TOKENS.space.sm }]} pointerEvents="box-none">
-      <View style={styles.pill}>
-        {TABS.map(tab => {
+    // A frosted overlay pinned to the bottom edge (Amit's call, 2026-08-27): the
+    // Home/Settings list scrolls *under* it so the real blur has live content to
+    // frost. The device bug that once forced a docked bar was a full-width list
+    // row underlapping the bar and stealing its taps — fixed here not by docking
+    // but by the two tab screens padding their content by `NAV_BAR_HEIGHT`, so no
+    // row ever sits beneath the bar. The bar renders last in the tree, so its own
+    // taps are never in question.
+    <Frost
+      edge="top"
+      style={[styles.bar, { paddingBottom: insets.bottom + TOKENS.space['2xs'] }]}>
+        {visibleTabs.map(tab => {
           const on = tab.key === active;
           const disabled = tab.key === 'call' && !callEnabled;
           return (
             <Pressable
               key={tab.key}
-              onPress={() => onSelect(tab.key)}
+              onPress={() => {
+                // A tab switch is a selection commit — a light tick, the same
+                // Fuse feedback a tab bar gives on both platforms (#16).
+                tick();
+                onSelect(tab.key);
+              }}
               disabled={disabled}
               testID={`nav-${tab.key}`}
               accessibilityLabel={tab.label}
@@ -71,14 +112,21 @@ function FloatingToolbarView({ active, onSelect, callEnabled = false }: Props) {
               selected={on}
               press="none"
               style={styles.slot}>
-              <View style={[styles.disc, on && styles.discOn]}>
+              {/* Icon-only (Amit's call): a FIXED-size active indicator pill sits
+                  behind the glyph on the selected tab — no label, so the tab's
+                  width never changes and the bar cannot reflow or shove the icons
+                  when you switch. Layout lives on this wrapper, never on the
+                  Pressable, whose layout style reaches an inner view. */}
+              <View style={styles.indicator}>
                 <Icon
                   name={tab.glyph}
                   active={on}
-                  size={24}
+                  // 20 * the 1.2 icon scale = ~24px, the Material 3 nav icon size.
+                  // Was 24 (~29px), which read oversized against 14–16sp body text.
+                  size={20}
                   color={
                     on
-                      ? theme.color.text.onAccent
+                      ? theme.color.bg.accent
                       : disabled
                         ? theme.color.text.tertiary
                         : theme.color.text.secondary
@@ -88,55 +136,48 @@ function FloatingToolbarView({ active, onSelect, callEnabled = false }: Props) {
             </Pressable>
           );
         })}
-      </View>
-    </View>
+    </Frost>
   );
 }
 
 export const FloatingToolbar = memo(FloatingToolbarView);
 
-const makeStyles = (t: Theme) =>
+// No theme colours here any more: the bar is transparent (Frost fills it) and the
+// active tab is signalled by the glyph's own colour, set in the component.
+const makeStyles = (_t: Theme) =>
   StyleSheet.create({
-    // Centred over the content. `box-none` so taps outside the pill fall through
-    // to the list scrolling beneath it.
-    wrap: {
+    // Pinned to the bottom edge as an overlay, so the list frosts as it passes
+    // under it. Transparent: `Frost` draws the blur, the chrome tint and the top
+    // hairline. zIndex (not elevation) keeps it above the list without an Android
+    // drop shadow, which under a translucent bar reads as a smudge.
+    bar: {
       position: 'absolute',
       left: 0,
       right: 0,
-      alignItems: 'center',
-    },
-    // 232 x 64 from the frame. A capsule, raised off the list.
-    pill: {
+      bottom: 0,
+      zIndex: 10,
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'center',
-      gap: TOKENS.space.xl,
-      height: 64,
-      paddingHorizontal: TOKENS.space.md,
-      borderRadius: 32,
-      borderCurve: 'continuous',
-      backgroundColor: t.color.bg.raised,
-      // Soft lift. Elevation for Android, shadow for the iOS surface language.
-      elevation: 8,
-      shadowColor: '#000',
-      shadowOpacity: 0.14,
-      shadowRadius: 16,
-      shadowOffset: { width: 0, height: 6 },
+      justifyContent: 'space-around',
+      paddingTop: TOKENS.space.xs,
+      paddingHorizontal: TOKENS.space.sm,
     },
+    // Equal-width slots so the three tabs are evenly spaced and none can grow.
     slot: {
-      width: 48,
-      height: 48,
+      flex: 1,
+      minHeight: 48,
       alignItems: 'center',
       justifyContent: 'center',
     },
-    disc: {
-      width: 48,
-      height: 48,
-      borderRadius: 24,
+    // No pill, no disc — the selected tab is signalled by the glyph alone: a coral
+    // FILLED glyph when active, a grey outline glyph otherwise (Amit, 2026-08-27,
+    // after black-slab and grey-box and accent-pill all read as "a shape around
+    // the icon"). This wrapper only reserves a fixed box so switching tabs never
+    // reflows the row; it draws nothing itself.
+    indicator: {
+      width: 64,
+      height: 32,
       alignItems: 'center',
       justifyContent: 'center',
-    },
-    discOn: {
-      backgroundColor: t.color.bg.accent,
     },
   });

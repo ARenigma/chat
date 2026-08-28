@@ -1,4 +1,6 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { FlashList } from '@shopify/flash-list';
 import {
   ActivityIndicator,
   Image,
@@ -13,19 +15,24 @@ import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ConversationSummary, ProviderSummary } from '../lib/database.types';
 import { initialOf } from '../lib/display';
 import { readPresence } from '../lib/presence';
-import { useConversations, useProfile, useProviders } from '../api/chat';
+import { SCROLL_PHYSICS } from '../lib/scroll';
+import { useConversations, prefetchMessages, useProfile, useProviders } from '../api/chat';
 import { useBlockedPeerIds } from '../api/safety';
 import { useStore } from '../store/useStore';
 import { Avatar } from '../components/Avatar';
+import { NAV_BAR_HEIGHT } from '../components/FloatingToolbar';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { ProviderRow } from '../components/ProviderRow';
+import { TextField } from '../components/TextField';
 import { TokenCounter } from '../components/TokenCounter';
 
 interface Props {
   onOpenConversation: (peerId: string) => void;
   onOpenProvider: (providerId: string) => void;
   onOpenSettings: () => void;
+  /** Open the full chats list from the rail's "See all". */
+  onSeeAllChats: () => void;
 }
 
 /**
@@ -44,7 +51,12 @@ interface Props {
  * until a provider-photo pipeline exists. Structure matches v13; the fill does
  * not pretend to a photo it does not have.
  */
-export function HomeScreen({ onOpenConversation, onOpenProvider, onOpenSettings }: Props) {
+export function HomeScreen({
+  onOpenConversation,
+  onOpenProvider,
+  onOpenSettings,
+  onSeeAllChats,
+}: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -92,7 +104,184 @@ export function HomeScreen({ onOpenConversation, onOpenProvider, onOpenSettings 
     }
   }, [featured, onOpenProvider]);
 
+  // A3: stable callbacks so ProviderRow.memo holds across balance ticks.
+  // An inline `onPress={() => onOpenProvider(p.id)}` creates a new function on
+  // every render of HomeScreen; these hoisted versions are referentially stable
+  // as long as the underlying props are stable (nav props typically are).
+  const handleOpenProvider = useCallback(
+    (id: string) => onOpenProvider(id),
+    [onOpenProvider],
+  );
+  // A4: stable callback for RailItem so memo holds when balance ticks.
+  const handleOpenConversation = useCallback(
+    (peerId: string) => onOpenConversation(peerId),
+    [onOpenConversation],
+  );
+
+  // Inline search (#5). Replaces the placeholder that opened Recharge. Filters the
+  // directory by name or language, client-side over the already-loaded list — no
+  // round trip, and it works the instant the directory is in hand.
+  const [searching, setSearching] = useState(false);
+  const [query, setQuery] = useState('');
+  const trimmed = query.trim().toLowerCase();
+  const results = useMemo(() => {
+    if (trimmed === '') {
+      return [];
+    }
+    return directory.filter(
+      p =>
+        p.display_name.toLowerCase().includes(trimmed) ||
+        p.languages.some(l => l.toLowerCase().includes(trimmed)),
+    );
+  }, [directory, trimmed]);
+
+  const closeSearch = useCallback(() => {
+    setSearching(false);
+    setQuery('');
+  }, []);
+
   const loading = convosPending || providersPending;
+
+  // Track which provider ids have already received their entrance animation so
+  // FlashList recycling does not re-fire the stagger on every scroll-back.
+  const seenIds = useRef(new Set<string>());
+  const searchSeenIds = useRef(new Set<string>());
+
+  // When the search query changes the result set changes entirely, so reset the
+  // search-seen set so newly visible items animate in fresh.
+  useEffect(() => {
+    searchSeenIds.current.clear();
+  }, [trimmed]);
+
+  const renderExploreRow = useCallback(
+    ({ item, index }: { item: ProviderSummary; index: number }) => {
+      const animate = !seenIds.current.has(item.id);
+      if (animate) {
+        seenIds.current.add(item.id);
+      }
+      return (
+        <ProviderRow
+          provider={item}
+          index={index}
+          isLast={index === rows.length - 1}
+          onPress={handleOpenProvider}
+          onPressAvatar={handleOpenProvider}
+          animateEntrance={animate}
+        />
+      );
+    },
+    [rows.length, handleOpenProvider],
+  );
+
+  const renderSearchRow = useCallback(
+    ({ item, index }: { item: ProviderSummary; index: number }) => {
+      const animate = !searchSeenIds.current.has(item.id);
+      if (animate) {
+        searchSeenIds.current.add(item.id);
+      }
+      return (
+        <ProviderRow
+          provider={item}
+          index={index}
+          isLast={index === results.length - 1}
+          onPress={handleOpenProvider}
+          onPressAvatar={handleOpenProvider}
+          animateEntrance={animate}
+        />
+      );
+    },
+    [results.length, handleOpenProvider],
+  );
+
+  // ListHeaderComponent for the main Explore FlashList: chats rail + section
+  // head + featured card. Kept outside the FlashList data so only the provider
+  // rows are virtualised; the chrome above them is always rendered.
+  const ExploreHeader = useCallback(
+    () => (
+      <>
+        {chats.length > 0 ? (
+          <View style={styles.rail}>
+            <View style={styles.railHeader}>
+              <Text allowFontScaling style={styles.railLabel}>
+                Chats
+              </Text>
+              <Pressable
+                onPress={onSeeAllChats}
+                testID="chats-see-all"
+                accessibilityLabel="See all chats"
+                press="none"
+                style={styles.seeAll}>
+                <Text allowFontScaling style={styles.seeAllText}>
+                  See all
+                </Text>
+                <Icon name="chevronRight" size={14} color={theme.color.text.secondary} />
+              </Pressable>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              {...SCROLL_PHYSICS}
+              contentContainerStyle={styles.railScroll}>
+              {chats.map(chat => (
+                <RailItem key={chat.id} chat={chat} onPress={handleOpenConversation} />
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
+        <View style={styles.exploreHead}>
+          <Text allowFontScaling style={styles.exploreTitle}>
+            Explore
+          </Text>
+        </View>
+        {featured ? <FeaturedCard provider={featured} onPress={onFeatured} /> : null}
+        {/* Spacing that separates the featured card (or explore heading) from
+            the first provider row — matches the original styles.rows paddingTop. */}
+        <View style={{ height: TOKENS.space.sm }} />
+      </>
+    ),
+    [chats, styles, featured, onFeatured, handleOpenConversation, onSeeAllChats, theme],
+  );
+
+  // ListFooterComponent for the main Explore FlashList: the "tap someone above"
+  // hint that shows only on a fresh install before any conversation exists.
+  const ExploreFooter = useCallback(
+    () =>
+      chats.length === 0 && directory.length > 0 ? (
+        <Pressable
+          onPress={onOpenSettings}
+          testID="home-settings-hint"
+          accessibilityLabel="Account and privacy"
+          press="none"
+          style={styles.settingsHint}>
+          <Text allowFontScaling style={styles.emptyText}>
+            Tap someone above to start a conversation.
+          </Text>
+        </Pressable>
+      ) : null,
+    [chats.length, directory.length, onOpenSettings, styles],
+  );
+
+  // SearchFlashList header and empty components defined as variables to avoid
+  // embedding double-quote literals inside JSX prop expressions (a TSX parser
+  // quirk that causes spurious "Invalid character" errors).
+  const searchListHeader =
+    trimmed === '' ? (
+      <View style={styles.empty}>
+        <Text allowFontScaling style={styles.emptyText}>
+          Search for someone by name or language.
+        </Text>
+      </View>
+    ) : null;
+
+  const noMatchLabel = `No one matches ${JSON.stringify(query.trim())}.`;
+  const searchListEmpty =
+    trimmed !== '' ? (
+      <View style={styles.empty}>
+        <Text allowFontScaling style={styles.emptyText}>
+          {noMatchLabel}
+        </Text>
+      </View>
+    ) : null;
 
   return (
     <View style={styles.root}>
@@ -100,96 +289,106 @@ export function HomeScreen({ onOpenConversation, onOpenProvider, onOpenSettings 
           v13 Home has a fixed nav row, and the large title belongs to the Explore
           section header below it. */}
       <View style={[styles.nav, { paddingTop: insets.top + TOKENS.space['2xs'] }]}>
-        <Text allowFontScaling={false} style={styles.wordmark}>
-          pappal
-        </Text>
-        <View style={styles.navTrailing}>
-          <Pressable
-            onPress={openRefill}
-            testID="home-search"
-            accessibilityLabel="Search people"
-            press="none"
-            size={28}
-            style={styles.navIcon}>
-            <Icon name="search" size={24} color={theme.color.text.secondary} />
-          </Pressable>
-          <TokenCounter balance={balance} onPress={openRefill} />
-        </View>
+        {searching ? (
+          <>
+            <View style={styles.searchField}>
+              <Icon name="search" size={18} color={theme.color.text.tertiary} />
+              <TextField
+                testID="home-search-input"
+                style={styles.searchInput}
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Search by name or language"
+                placeholderTextColor={theme.color.text.tertiary}
+                autoFocus
+                returnKeyType="search"
+                allowFontScaling
+                accessibilityLabel="Search people"
+                underlineColorAndroid="transparent"
+              />
+            </View>
+            <Pressable
+              onPress={closeSearch}
+              testID="home-search-close"
+              accessibilityLabel="Close search"
+              press="none"
+              size={28}
+              style={styles.navIcon}>
+              <Icon name="close" size={20} color={theme.color.text.secondary} />
+            </Pressable>
+          </>
+        ) : (
+          <>
+            <Text allowFontScaling={false} style={styles.wordmark}>
+              Pappal
+            </Text>
+            <View style={styles.navTrailing}>
+              <Pressable
+                onPress={() => setSearching(true)}
+                testID="home-search"
+                accessibilityLabel="Search people"
+                press="none"
+                size={28}
+                style={styles.navIcon}>
+                <Icon name="search" size={24} color={theme.color.text.secondary} />
+              </Pressable>
+              <TokenCounter balance={balance} onPress={openRefill} />
+            </View>
+          </>
+        )}
       </View>
 
-      {loading ? (
+      {searching ? (
+        <FlashList
+          data={trimmed === '' ? [] : results}
+          keyExtractor={p => p.id}
+          renderItem={renderSearchRow}
+          ListHeaderComponent={searchListHeader}
+          ListEmptyComponent={searchListEmpty}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          {...SCROLL_PHYSICS}
+          contentContainerStyle={[
+            styles.scroll,
+            { paddingBottom: insets.bottom + NAV_BAR_HEIGHT + TOKENS.space.xl },
+          ]}
+          overrideItemLayout={layout => { (layout as { span?: number; size?: number }).size = 97; }}
+        />
+      ) : loading ? (
         <View style={styles.state}>
           <ActivityIndicator color={theme.color.text.secondary} />
         </View>
       ) : (
-        <ScrollView
+        // Only the provider rows are virtualised. The chats rail, explore head
+        // and featured card live in ListHeaderComponent so they scroll together
+        // with the list but are always fully rendered.
+        <FlashList
+          data={rows}
+          keyExtractor={p => p.id}
+          renderItem={renderExploreRow}
+          ListHeaderComponent={ExploreHeader}
+          ListFooterComponent={ExploreFooter}
+          ListEmptyComponent={
+            featured === null ? (
+              <View style={styles.empty}>
+                <Text allowFontScaling style={styles.emptyText}>
+                  Nobody is available just yet. Check back shortly.
+                </Text>
+              </View>
+            ) : null
+          }
           showsVerticalScrollIndicator={false}
+          {...SCROLL_PHYSICS}
           contentContainerStyle={[
             styles.scroll,
-            // Clear the floating toolbar (64) + its bottom offset + safe inset.
-            { paddingBottom: insets.bottom + 64 + TOKENS.space.xl },
-          ]}>
-          {/* CHATS rail */}
-          {chats.length > 0 ? (
-            <View style={styles.rail}>
-              <Text allowFontScaling style={styles.railLabel}>
-                chats
-              </Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.railScroll}>
-                {chats.map(chat => (
-                  <RailItem key={chat.id} chat={chat} onPress={onOpenConversation} />
-                ))}
-              </ScrollView>
-            </View>
-          ) : null}
-
-          {/* Explore head */}
-          <View style={styles.exploreHead}>
-            <Text allowFontScaling style={styles.exploreTitle}>
-              Explore
-            </Text>
-          </View>
-
-          {featured ? <FeaturedCard provider={featured} onPress={onFeatured} /> : null}
-
-          {rows.length > 0 ? (
-            <View style={styles.rows}>
-              {rows.map((p, i) => (
-                <ProviderRow
-                  key={p.id}
-                  provider={p}
-                  index={i}
-                  isLast={i === rows.length - 1}
-                  // Row opens the conversation; the avatar opens the profile card.
-                  onPress={() => onOpenConversation(p.id)}
-                  onPressAvatar={() => onOpenProvider(p.id)}
-                />
-              ))}
-            </View>
-          ) : featured === null ? (
-            <View style={styles.empty}>
-              <Text allowFontScaling style={styles.emptyText}>
-                Nobody is available just yet. Check back shortly.
-              </Text>
-            </View>
-          ) : null}
-
-          {chats.length === 0 && directory.length > 0 ? (
-            <Pressable
-              onPress={onOpenSettings}
-              testID="home-settings-hint"
-              accessibilityLabel="Account and privacy"
-              press="none"
-              style={styles.settingsHint}>
-              <Text allowFontScaling style={styles.emptyText}>
-                Tap someone above to start a conversation.
-              </Text>
-            </Pressable>
-          ) : null}
-        </ScrollView>
+            // The nav is a frosted overlay, so the list scrolls under it.
+            // Clear its full height (bar + safe-area inset) plus the usual end
+            // breathing room, so the last row lands above the bar rather than
+            // behind it.
+            { paddingBottom: insets.bottom + NAV_BAR_HEIGHT + TOKENS.space.xl },
+          ]}
+          overrideItemLayout={layout => { (layout as { span?: number; size?: number }).size = 97; }}
+        />
       )}
     </View>
   );
@@ -199,8 +398,13 @@ export function HomeScreen({ onOpenConversation, onOpenProvider, onOpenSettings 
  * One face in the CHATS rail: 54pt mark, presence, and — when there is unread —
  * a coral ring and a count badge. The ring and badge are the rail's own signals;
  * `Avatar` carries the mark and the presence dot.
+ *
+ * A4: wrapped in React.memo and the onPress constructed inside via useCallback
+ * so re-renders of HomeScreen (e.g. balance ticks) do not cascade into every
+ * rail item. The parent passes a stable `(peerId: string) => void`; the item
+ * binds the specific peer id here rather than at the call site.
  */
-function RailItem({
+const RailItem = memo(function ({
   chat,
   onPress,
 }: {
@@ -208,12 +412,16 @@ function RailItem({
   onPress: (peerId: string) => void;
 }) {
   const styles = useStyles(makeStyles);
+  const qc = useQueryClient();
   const name = chat.peer_display_name ?? 'Conversation';
   const unread = Number(chat.unread_count) > 0;
   const presence = readPresence(chat.peer_presence, chat.peer_last_active_at);
+  const handlePress = useCallback(() => onPress(chat.peer_id), [onPress, chat.peer_id]);
+  const handlePressIn = useCallback(() => prefetchMessages(qc, chat.id), [qc, chat.id]);
   return (
     <Pressable
-      onPress={() => onPress(chat.peer_id)}
+      onPress={handlePress}
+      onPressIn={handlePressIn}
       testID={`rail-${chat.peer_id}`}
       accessibilityLabel={
         unread ? `${name}, ${chat.unread_count} unread` : name
@@ -240,7 +448,7 @@ function RailItem({
       </Text>
     </Pressable>
   );
-}
+});
 
 /**
  * The featured pick. A warm gradient card with the person's mark, presence,
@@ -260,7 +468,6 @@ function FeaturedCard({
   // The gradient is built from the accent tokens rather than raw hex, so the
   // featured hero stays inside the accent budget and follows a theme change.
   const gradient = `linear-gradient(140deg, ${theme.color.bg.accent} 0%, ${theme.color.bg.accentStrong} 100%)`;
-  const presence = readPresence(provider.presence, provider.last_active_at);
   const age = provider.age !== null ? ` ${provider.age}` : '';
   const tagline =
     provider.headline && provider.headline !== ''
@@ -290,37 +497,23 @@ function FeaturedCard({
       )}
       <View style={styles.featuredBadge}>
         <Text allowFontScaling style={styles.featuredBadgeText}>
-          Top rated
+          {provider.rating_count > 0
+            ? `★ ${provider.rating_avg?.toFixed(1)} · Top rated`
+            : 'Top rated'}
         </Text>
       </View>
+      {/* Presence is a shape, not a word, and it lives top-right of the card
+          (Amit's call): a green dot balancing the "Top rated" badge top-left. A
+          white ring keeps it legible over any photo. */}
+      <View style={styles.featuredOnline} />
       <View style={styles.featuredBody}>
+        {/* The rating lives in the "Top rated" chip now (#4), so the name line is
+            just the name and age. */}
         <View style={styles.featuredNameRow}>
           <Text allowFontScaling numberOfLines={1} style={styles.featuredName}>
             {provider.display_name}
             <Text style={styles.featuredAge}>{age}</Text>
           </Text>
-        </View>
-        <View style={styles.featuredMeta}>
-          {presence.here ? (
-            <>
-              <View style={styles.featuredDot} />
-              <Text allowFontScaling style={styles.featuredMetaText}>
-                Available
-              </Text>
-              <Text allowFontScaling style={styles.featuredMetaDim}>
-                {'  ·  '}
-              </Text>
-            </>
-          ) : null}
-          {provider.rating_count > 0 ? (
-            <Text allowFontScaling style={styles.featuredMetaText}>
-              ★ {provider.rating_avg?.toFixed(1)}
-            </Text>
-          ) : (
-            <Text allowFontScaling style={styles.featuredMetaText}>
-              New here
-            </Text>
-          )}
         </View>
         {tagline !== '' ? (
           <Text allowFontScaling numberOfLines={1} style={styles.featuredTagline}>
@@ -387,6 +580,28 @@ const makeStyles = (t: Theme) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
+    // The search field that takes the nav row's place while searching: a capsule
+    // on the page colour with a leading glyph, the same anatomy as the composer.
+    searchField: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.xs,
+      height: 40,
+      paddingHorizontal: TOKENS.space.md,
+      marginRight: TOKENS.space.xs,
+      borderRadius: TOKENS.radius.pill,
+      borderCurve: 'continuous',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: t.color.border.hairline,
+      backgroundColor: t.color.bg.sunken,
+    },
+    searchInput: {
+      flex: 1,
+      padding: 0,
+      ...TOKENS.typography.bodyMedium,
+      color: t.color.text.primary,
+    },
     scroll: {
       paddingTop: TOKENS.space['2xs'],
     },
@@ -399,14 +614,35 @@ const makeStyles = (t: Theme) =>
       paddingTop: TOKENS.space.xs,
       paddingBottom: TOKENS.space.sm,
     },
-    railLabel: {
-      ...TOKENS.typography.labelSmall,
-      color: t.color.text.secondary,
+    railHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
       paddingHorizontal: TOKENS.space.md,
       paddingBottom: TOKENS.space.xs,
     },
+    // Chats is a peer section heading to Explore, not a quiet caption (#14,
+    // Amit: "bold, looks too shallow in front of Explore"). Same display weight
+    // and primary ink so the two read as equals.
+    railLabel: {
+      ...TOKENS.typography.displaySmall,
+      color: t.color.text.primary,
+    },
+    seeAll: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    seeAllText: {
+      ...TOKENS.typography.labelSmall,
+      color: t.color.text.secondary,
+    },
     railScroll: {
-      paddingHorizontal: TOKENS.space.md,
+      // Pull the row left by the rail item's centring inset (3) + the ring's
+      // border+pad (5) = 8, so the first avatar's image edge lands on the md
+      // content boundary — the same left edge as "Chats", "Explore", the
+      // featured card and the provider rows (#14, Amit: align to the bubbles).
+      paddingLeft: TOKENS.space.md - 8,
+      paddingRight: TOKENS.space.md,
       gap: TOKENS.space.xs,
     },
     railItem: {
@@ -431,9 +667,12 @@ const makeStyles = (t: Theme) =>
       right: 6,
       minWidth: 20,
       height: 20,
-      paddingHorizontal: 5,
-      borderRadius: 10,
-      backgroundColor: t.color.bg.accent,
+      paddingHorizontal: TOKENS.space['2xs'],
+      borderRadius: TOKENS.radius.pill,
+      // accentStrong, matching the provider tree's unread badge (ThreadBubble /
+      // ProviderHome): the deeper coral step carries white at 5.2:1, and the two
+      // trees should not show the same "unread" concept in two different corals.
+      backgroundColor: t.color.bg.accentStrong,
       alignItems: 'center',
       justifyContent: 'center',
       borderWidth: 2,
@@ -510,30 +749,36 @@ const makeStyles = (t: Theme) =>
     featuredName: {
       ...TOKENS.typography.displaySmall,
       color: '#FFFFFF',
-      flexShrink: 1,
+      flex: 1,
     },
     featuredAge: {
       ...TOKENS.typography.headline,
       color: 'rgba(255,255,255,0.82)',
     },
-    featuredMeta: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: TOKENS.space['2xs'],
+    // The rating on the name line, trailing. marginLeft (not a row `gap`) so the
+    // Explore-list separator guard, which forbids `gap: space.sm` in this file,
+    // still holds — the rating sits on the hero, not in that list.
+    featuredRating: {
+      ...TOKENS.typography.subhead,
+      color: '#FFFFFF',
+      marginLeft: TOKENS.space.sm,
     },
-    featuredDot: {
-      width: 8,
-      height: 8,
-      borderRadius: 4,
-      backgroundColor: '#FFFFFF',
+    // The presence dot, top-right of the card: sage (the system's one presence
+    // hue) with a white ring so it stays legible over any photo.
+    featuredOnline: {
+      position: 'absolute',
+      top: TOKENS.space.md,
+      right: TOKENS.space.md,
+      width: 14,
+      height: 14,
+      borderRadius: 7,
+      backgroundColor: t.color.state.available,
+      borderWidth: 2,
+      borderColor: '#FFFFFF',
     },
     featuredMetaText: {
       ...TOKENS.typography.labelSmall,
       color: '#FFFFFF',
-    },
-    featuredMetaDim: {
-      ...TOKENS.typography.labelSmall,
-      color: 'rgba(255,255,255,0.6)',
     },
     featuredTagline: {
       ...TOKENS.typography.subhead,

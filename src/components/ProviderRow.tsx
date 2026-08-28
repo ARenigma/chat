@@ -20,17 +20,46 @@ interface Props {
    * a list that has been cut off rather than one that has ended.
    */
   isLast: boolean;
-  /** Row body tap: open the conversation. */
-  onPress: (provider: ProviderSummary) => void;
   /**
-   * Avatar tap: open the profile card. Two targets in one row — the photo is a
-   * peek at who they are, the rest of the row is "talk to them" — which is the
-   * split every dating/marketplace list uses and what v13 intends.
+   * Row body tap: receives the provider id rather than the full summary.
+   *
+   * Changed from `(provider: ProviderSummary) => void` so call sites can pass a
+   * stable `useCallback((id: string) => ...)` without re-wrapping the full object
+   * — which was the reason memo never held across balance ticks.
    */
-  onPressAvatar?: (provider: ProviderSummary) => void;
+  onPress: (id: string) => void;
+  /**
+   * Avatar tap: open the profile card. Same id-only contract as `onPress` so both
+   * can be hoisted as stable callbacks in the parent.
+   */
+  onPressAvatar?: (id: string) => void;
+  /**
+   * Whether to run the entrance animation. Defaults to true.
+   *
+   * Set to false for cells that FlashList has already shown once (tracked by the
+   * parent via a useRef Set) so that scroll-recycling a cell does not re-fire the
+   * stagger animation on every appearance.
+   */
+  animateEntrance?: boolean;
 }
 
-const GENDER_SHORT: Record<string, string> = { female: 'F', male: 'M', other: '' };
+/**
+ * A seeded years-of-experience, 2 to 8, stable per provider.
+ *
+ * A placeholder (Amit's "seeded for now"): the directory has no experience
+ * column, so this derives a deterministic number from the id rather than
+ * inventing one per render. Swap for a real `experience_years` field when the
+ * schema carries it; this is the one number in the row that is not yet true.
+ */
+function seededExperienceYears(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i += 1) {
+    // `% 100000` keeps the running hash bounded (no overflow) without a bitwise
+    // op, which the lint config forbids.
+    h = (h * 31 + id.charCodeAt(i)) % 100000;
+  }
+  return 2 + (h % 7);
+}
 
 /** "replies in ~4m". Rounded hard, because precision here would be false. */
 function replyLatency(seconds: number | null): string | null {
@@ -91,16 +120,20 @@ export const ROW_SEPARATOR_INSET = ROW_AVATAR + TOKENS.space.sm;
  * making rows variable-height, and a list whose rows disagree about their height
  * cannot carry a hairline convincingly.
  */
-function ProviderRowView({ provider, index, isLast, onPress, onPressAvatar }: Props) {
+function ProviderRowView({ provider, index, isLast, onPress, onPressAvatar, animateEntrance }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const initial = initialOf(provider.display_name);
-  const shortGender = provider.gender ? (GENDER_SHORT[provider.gender] ?? '') : '';
-  const identity = [shortGender, provider.age !== null ? `${provider.age}` : null]
-    .filter(part => part !== null && part !== '')
-    .join(' · ');
   const latency = replyLatency(provider.median_reply_seconds);
-  const languages = provider.languages.slice(0, 2).join(', ');
+  // Fact chips: experience + the top languages. Age moved up to sit beside the
+  // name (subscript, like the detail card). Experience is SEEDED for now — the
+  // directory has no such column yet — so it is derived deterministically from
+  // the id, stable per provider, and clearly a placeholder until a real field
+  // lands. One non-wrapping line so every row stays the same height.
+  const chips = [
+    `${seededExperienceYears(provider.id)} yrs`,
+    ...provider.languages.slice(0, 2),
+  ].filter(c => c !== '');
 
   /**
    * The dot and the trailing line both come from `presence` now. They used to
@@ -124,9 +157,9 @@ function ProviderRowView({ provider, index, isLast, onPress, onPressAvatar }: Pr
     .join(', ');
 
   return (
-    <Animated.View entering={enterRow(index)}>
+    <Animated.View entering={animateEntrance !== false ? enterRow(index) : undefined}>
       <Pressable
-        onPress={() => onPress(provider)}
+        onPress={() => onPress(provider.id)}
         testID={`provider-${provider.id}`}
         accessibilityLabel={accessibility}
         press="none"
@@ -136,7 +169,7 @@ function ProviderRowView({ provider, index, isLast, onPress, onPressAvatar }: Pr
             rest of the row opens the conversation. Nested inside the row
             Pressable, the inner one captures taps that land on the photo. */}
         <Pressable
-          onPress={() => (onPressAvatar ?? onPress)(provider)}
+          onPress={() => (onPressAvatar ?? onPress)(provider.id)}
           testID={`provider-avatar-${provider.id}`}
           accessibilityLabel={`${provider.display_name}'s profile`}
           // Folded into the row for TalkBack: the avatar is a sighted-tap
@@ -154,53 +187,41 @@ function ProviderRowView({ provider, index, isLast, onPress, onPressAvatar }: Pr
           />
         </Pressable>
         <View style={styles.label}>
-          <View style={styles.topLine}>
-            <Text allowFontScaling numberOfLines={1} style={styles.name}>
-              {provider.display_name}
-            </Text>
-            {identity !== '' ? (
-              <Text allowFontScaling style={styles.identity}>
-                · {identity}
-              </Text>
+          <Text allowFontScaling numberOfLines={1} style={styles.name}>
+            {provider.display_name}
+            {provider.age !== null ? (
+              <Text style={styles.nameAge}> {provider.age}</Text>
             ) : null}
-          </View>
+          </Text>
           <Text allowFontScaling numberOfLines={1} style={styles.secondary}>
             {provider.headline !== null && provider.headline !== ''
               ? provider.headline
-              : languages !== ''
-                ? languages
-                : 'Here to listen'}
+              : 'Here to listen'}
           </Text>
-        </View>
-
-        <View style={styles.trailing}>
-          {/* A rating with two reviews behind it is noise dressed as signal, so
-              the count is always next to it. */}
-          {provider.rating_count > 0 ? (
-            <Text testID="provider-rating" allowFontScaling style={styles.rating}>
-              ★ {provider.rating_avg?.toFixed(1)}
-              <Text style={styles.ratingCount}> · {provider.rating_count}</Text>
-            </Text>
-          ) : (
-            <Text allowFontScaling style={styles.meta}>
-              New here
-            </Text>
-          )}
-          {/* Three cases, one rendered. `here` gets the sage line, `away` gets the
-              same line in the quiet colour (it is presence either way, and putting
-              it in `meta` would make it look like a reply latency), and `hidden`
-              falls through to the latency it always fell through to. */}
-          {presence.line !== null ? (
-            <Text
-              allowFontScaling
-              style={[styles.presenceText, !presence.here && styles.presenceQuiet]}>
-              {presence.line}
-            </Text>
-          ) : latency !== null ? (
-            <Text testID="provider-latency" allowFontScaling style={styles.meta}>
-              {latency}
-            </Text>
-          ) : null}
+          {/* The fact-chip strip, now led by the rating (#10/#12, Amit): every
+              card carries a star at the bottom next to the info chips. Rated
+              cards show the score; unrated read "New" (an inline rating chip, not
+              the old floating badge). */}
+          <View style={styles.chips}>
+            <View style={[styles.chip, styles.ratingChip]}>
+              <Text
+                testID="provider-rating"
+                allowFontScaling
+                numberOfLines={1}
+                style={styles.ratingChipText}>
+                {provider.rating_count > 0
+                  ? `★ ${provider.rating_avg?.toFixed(1)}`
+                  : '★ New'}
+              </Text>
+            </View>
+            {chips.map(chip => (
+              <View key={chip} style={styles.chip}>
+                <Text allowFontScaling numberOfLines={1} style={styles.chipText}>
+                  {chip}
+                </Text>
+              </View>
+            ))}
+          </View>
         </View>
 
         {/* The disclosure indicator, which this list had no version of at all.
@@ -245,11 +266,6 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     flex: 1,
     gap: 2,
   },
-  topLine: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: TOKENS.space['2xs'],
-  },
   // 17/15, which is what an iOS Messages cell is. It was 15/14, one step down the
   // ladder on both lines.
   name: {
@@ -257,38 +273,48 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     color: t.color.text.primary,
     flexShrink: 1,
   },
-  identity: {
+  // Age beside the name, subscript — the detail/hero card idiom. Quieter weight
+  // and colour so it reads as a modifier of the name, not a second word. A step
+  // smaller than the name's neighbours (#11, Amit: "age a little smaller").
+  nameAge: {
+    ...TOKENS.typography.captionRegular,
+    color: t.color.text.tertiary,
+  },
+  // The fact-chip strip. Modern outlined tags (a hairline ring on a whisper of
+  // grouped grey) rather than the flat grey slabs, which read as filled blocks
+  // fighting the row. Clipped to one line so a chip can never make one row
+  // taller than its neighbours.
+  chips: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: TOKENS.space['2xs'],
+    marginTop: 3,
+    overflow: 'hidden',
+  },
+  chip: {
+    paddingHorizontal: TOKENS.space.sm,
+    paddingVertical: 3,
+    borderRadius: TOKENS.radius.pill,
+    borderCurve: 'continuous',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: t.color.border.hairline,
+    backgroundColor: t.color.bg.grouped,
+  },
+  chipText: {
     ...TOKENS.typography.captionSmall,
     color: t.color.text.secondary,
   },
-  secondary: {
-    ...TOKENS.typography.subhead,
-    color: t.color.text.secondary,
+  // The rating chip leads the strip: same pill geometry as an info chip, but the
+  // star + score sit at primary ink and semibold so the signal reads first.
+  ratingChip: {
+    borderColor: t.color.border.strong,
   },
-  trailing: {
-    alignItems: 'flex-end',
-    gap: 2,
-  },
-  rating: {
+  ratingChipText: {
     ...TOKENS.typography.labelSmall,
     color: t.color.text.primary,
   },
-  ratingCount: {
-    ...TOKENS.typography.captionSmall,
-    color: t.color.text.secondary,
-  },
-  meta: {
-    ...TOKENS.typography.captionSmall,
-    color: t.color.text.secondary,
-  },
-  presenceText: {
-    ...TOKENS.typography.labelSmall,
-    color: t.color.text.positive,
-  },
-  // 'Away' and 'Last seen ...' are presence, so they keep the presence type
-  // style, but sage means here. In the secondary ink they read as the same fact
-  // in a quieter voice rather than as a different kind of information.
-  presenceQuiet: {
+  secondary: {
+    ...TOKENS.typography.subhead,
     color: t.color.text.secondary,
   },
 });

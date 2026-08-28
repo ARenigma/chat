@@ -54,6 +54,18 @@ const MIGRATIONS = [
   'supabase/migrations/011_reactions_replies_voice_calls.sql',
   'supabase/migrations/012_declared_presence_and_pii_guard.sql',
   'supabase/migrations/013_provider_avatars.sql',
+  'supabase/migrations/014_message_attachments.sql',
+  'supabase/migrations/015_push_avatar.sql',
+  'supabase/migrations/016_engagement_nudges.sql',
+  'supabase/migrations/017_call_push.sql',
+  'supabase/migrations/018_firebase_phone_exchange.sql',
+  'supabase/migrations/019_token_ledger_and_invoices.sql',
+  'supabase/migrations/020_mock_recharge.sql',
+  'supabase/migrations/021_chat_minute.sql',
+  'supabase/migrations/022_chat_minute_drain.sql',
+  'supabase/migrations/023_voice_peaks.sql',
+  'supabase/migrations/024_send_message_return.sql',
+  'supabase/migrations/025_voice_peaks_range.sql',
 ];
 
 const docker = (args, options = {}) =>
@@ -353,6 +365,18 @@ const suites = [
   {
     file: join(ROOT, 'supabase/tests/110_declared_presence_and_pii_guard.sql'),
     label: 'declared presence, and PII no client can write',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/120_token_ledger.sql'),
+    label: 'token ledger, invoice counters, and GST invoices',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/130_mock_recharge.sql'),
+    label: 'mock recharge: app_flags, function grant, and MOCK_DISABLED gate',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/140_chat_minute.sql'),
+    label: 'spend_chat_minute: grant, shape, and balance gate',
   },
 ];
 

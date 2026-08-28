@@ -1,18 +1,25 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated, { useSharedValue } from 'react-native-reanimated';
+import { heartBounce } from '../theme/motion';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ProviderSummary } from '../lib/database.types';
 import { initialOf } from '../lib/display';
 import { presenceForSpeech, readPresence } from '../lib/presence';
+import { tick } from '../lib/haptics';
+import { SCROLL_PHYSICS } from '../lib/scroll';
 import { DEFAULT_RATES, rateLabel, type Channel } from '../lib/rates';
-import { useProfile, useProviders } from '../api/chat';
+import { useConversations, useProfile, useProviders } from '../api/chat';
 import { CALLS_ENABLED } from '../api/calls';
 import { useStore } from '../store/useStore';
+import { useFavorites } from '../store/useFavorites';
+import { BackButton } from '../components/BackButton';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { TokenCounter } from '../components/TokenCounter';
+import { SafetySheet } from './SafetySheet';
 
 interface Props {
   providerId: string;
@@ -43,7 +50,21 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
   const openRefill = useStore(s => s.openRefill);
   useProfile();
   const { data: providers, isPending } = useProviders();
-  const [favorite, setFavorite] = useState(false);
+  const { data: conversations } = useConversations();
+  // Favourites are persisted now (#10), not throwaway local state — the heart
+  // reads and writes the saved-favourites store, which the Favourites tab lists.
+  const favorite = useFavorites(s => s.ids.includes(providerId));
+  const toggleFavorite = useFavorites(s => s.toggle);
+  const [safetyOpen, setSafetyOpen] = useState(false);
+
+  // Block/report is offered ONLY when there is an existing conversation with this
+  // provider (#3): you cannot block someone you have never talked to. Reaching the
+  // profile from Explore (no thread) shows no block; reaching it from an active
+  // chat's header (a thread exists) does.
+  const thread = useMemo(
+    () => (conversations ?? []).find(c => c.peer_id === providerId),
+    [conversations, providerId],
+  );
 
   const provider = useMemo<ProviderSummary | null>(
     () => (providers ?? []).find(p => p.id === providerId) ?? null,
@@ -57,15 +78,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
   return (
     <View style={styles.root}>
       <View style={[styles.bar, { paddingTop: insets.top + TOKENS.space['2xs'] }]}>
-        <Pressable
-          onPress={onBack}
-          testID="detail-back"
-          accessibilityLabel="Back"
-          press="none"
-          size={28}
-          style={styles.barIcon}>
-          <Icon name="chevronLeft" size={26} color={theme.color.text.primary} />
-        </Pressable>
+        <BackButton onPress={onBack} testID="detail-back" style={styles.barIcon} />
         <TokenCounter balance={balance} onPress={openRefill} />
       </View>
 
@@ -82,8 +95,16 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
+          {...SCROLL_PHYSICS}
           contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + TOKENS.space.xl }]}>
-          <Hero provider={provider} favorite={favorite} onToggleFavorite={() => setFavorite(v => !v)} />
+          <Hero
+            provider={provider}
+            favorite={favorite}
+            onToggleFavorite={() => {
+              tick();
+              toggleFavorite(providerId);
+            }}
+          />
 
           <View style={styles.actions}>
             <ActionButton
@@ -122,8 +143,36 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
               ? provider.headline
               : 'Here to listen. Talk about anything, or nothing.'}
           </Text>
+
+          {/* Block / report — only once a conversation exists (#3). Quiet and last,
+              the way iOS puts a destructive contact action at the foot of a card. */}
+          {thread !== undefined ? (
+            <Pressable
+              onPress={() => setSafetyOpen(true)}
+              testID="detail-safety"
+              accessibilityLabel={`Block or report ${provider.display_name}`}
+              accessibilityHint="Opens safety options"
+              press="row"
+              style={styles.safetyRow}>
+              <Icon name="block" size={18} color={theme.color.text.secondary} />
+              <Text allowFontScaling style={styles.safetyLabel}>
+                Block or report {provider.display_name}
+              </Text>
+            </Pressable>
+          ) : null}
         </ScrollView>
       )}
+
+      {provider !== null && thread !== undefined ? (
+        <SafetySheet
+          visible={safetyOpen}
+          onClose={() => setSafetyOpen(false)}
+          conversationId={thread.id}
+          peerId={providerId}
+          peerName={provider.display_name}
+          messageId={null}
+        />
+      ) : null}
     </View>
   );
 }
@@ -147,6 +196,7 @@ function Hero({
     languages.join(' · '),
     provider.rating_count > 0 ? `★ ${provider.rating_avg?.toFixed(1)}` : 'New here',
   ].filter(s => s !== '');
+  const heartScale = useSharedValue(1);
   return (
     <View style={styles.hero}>
       {provider.avatar_url ? (
@@ -168,18 +218,23 @@ function Hero({
           than to the hero — which put the heart mid-right instead of top-right. */}
       <View style={styles.favoriteSlot}>
         <Pressable
-          onPress={onToggleFavorite}
+          onPress={() => {
+            heartScale.value = heartBounce();
+            onToggleFavorite();
+          }}
           testID="detail-favorite"
           accessibilityLabel={favorite ? 'Remove from favourites' : 'Add to favourites'}
           press="chip"
           size={40}
           style={styles.favorite}>
-          <Icon
-            name="heart"
-            active={favorite}
-            size={22}
-            color={favorite ? theme.color.bg.accent : '#FFFFFF'}
-          />
+          <Animated.View style={{ transform: [{ scale: heartScale }] }}>
+            <Icon
+              name="heart"
+              active={favorite}
+              size={22}
+              color={favorite ? theme.color.bg.accent : '#FFFFFF'}
+            />
+          </Animated.View>
         </Pressable>
       </View>
       <View style={styles.heroBody}>
@@ -428,5 +483,16 @@ const makeStyles = (t: Theme) =>
     aboutBody: {
       ...TOKENS.typography.bodyMedium,
       color: t.color.text.primary,
+    },
+    safetyRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.sm,
+      marginTop: TOKENS.space['2xl'],
+      paddingVertical: TOKENS.space.sm,
+    },
+    safetyLabel: {
+      ...TOKENS.typography.bodyMedium,
+      color: t.color.text.secondary,
     },
   });

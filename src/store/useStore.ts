@@ -49,6 +49,11 @@ export interface AppState {
   notice: string | null;
   noticeTone: NoticeTone;
   playing: PlayingVoice | null;
+  /**
+   * Set before triggering Google sign-in from the "Become a partner" link.
+   * Cleared in App.tsx once the member tree mounts and the route is set.
+   */
+  pendingProviderApply: boolean;
 
   setBalance: (balance: number | null) => void;
   setSending: (sending: boolean) => void;
@@ -66,6 +71,7 @@ export interface AppState {
    * mis-styled as a confirmation is the worse of the two mistakes.
    */
   setNotice: (notice: string | null, tone?: NoticeTone) => void;
+  setPendingProviderApply: (pending: boolean) => void;
   /** Leaving a conversation must not leak its presence into the next one. */
   resetConversation: () => void;
 }
@@ -78,6 +84,7 @@ const INITIAL = {
   notice: null,
   noticeTone: 'error' as NoticeTone,
   playing: null,
+  pendingProviderApply: false,
 } satisfies Omit<
   AppState,
   | 'setBalance'
@@ -87,6 +94,7 @@ const INITIAL = {
   | 'openRefill'
   | 'closeRefill'
   | 'setNotice'
+  | 'setPendingProviderApply'
   | 'resetConversation'
 >;
 
@@ -100,6 +108,7 @@ export const useStore = create<AppState>()(set => ({
   openRefill: () => set({ refillVisible: true }),
   closeRefill: () => set({ refillVisible: false }),
   setNotice: (notice, tone = 'error') => set({ notice, noticeTone: tone }),
+  setPendingProviderApply: pending => set({ pendingProviderApply: pending }),
   // `playing` goes with it: audio from the thread you just left should not keep
   // playing over the next one, and the marker has to clear with the sound.
   resetConversation: () =>

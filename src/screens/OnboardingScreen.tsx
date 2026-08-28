@@ -6,6 +6,7 @@ import React, {
   useState,
 } from 'react';
 import {
+  Image,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -42,12 +43,14 @@ import {
 import { BloomField } from '../components/BloomField';
 import { OnboardingStep } from '../components/OnboardingStep';
 import { WordColumn, type Word } from '../components/WordColumn';
+import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { CodeField } from '../components/CodeField';
 import { Spinner } from '../components/Spinner';
-import { Icon } from '../components/Icon';
 import { CompletionRow } from '../components/CompletionRow';
 import { TextField } from '../components/TextField';
+import { CountryPicker, DEFAULT_DIAL_CODE } from '../components/CountryPicker';
+import { useStore } from '../store/useStore';
 import {
   GoogleCredentialError,
   PHONE_AUTH_ENABLED,
@@ -59,6 +62,9 @@ import {
 const BLOCK_PAD = SOURCE_METRICS.blockPad;
 const COLUMN_TOP = SOURCE_METRICS.columnTop;
 const COLUMN_INSET = SOURCE_METRICS.columnInset;
+
+/** How long "Resend code" stays unavailable after an OTP is sent. */
+const RESEND_SECONDS = 30;
 
 /*
  * Five single words, each with its own mark and its own colour.
@@ -132,15 +138,18 @@ export function OnboardingScreen({ onDone }: Props) {
   const insets = useSafeAreaInsets();
 
   const words = useWords();
+  const setPendingProviderApply = useStore(s => s.setPendingProviderApply);
 
   const [phase, setPhase] = useState<Phase>('welcome');
   const [route, setRoute] = useState<Route>('undecided');
   const [identify, setIdentify] = useState<IdentifyStage>('choose');
   const [state, setState] = useState<FieldState>('idle');
   const [failure, setFailure] = useState<string | null>(null);
+  const [dialCode, setDialCode] = useState(DEFAULT_DIAL_CODE);
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [errorNonce, setErrorNonce] = useState(0);
+  const [cooldown, setCooldown] = useState(0);
 
   /*
    * The IME is part of the layout, not something to draw behind.
@@ -169,6 +178,15 @@ export function OnboardingScreen({ onDone }: Props) {
       hide.remove();
     };
   }, []);
+
+  /** Resend countdown. A tappable button that does nothing teaches distrust. */
+  useEffect(() => {
+    if (cooldown <= 0) {
+      return;
+    }
+    const timer = setTimeout(() => setCooldown(s => s - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [cooldown]);
 
   /*
    * The field's clock, in milliseconds, driven LINEARLY.
@@ -304,6 +322,15 @@ export function OnboardingScreen({ onDone }: Props) {
     setFailure(null);
   }, []);
 
+  /**
+   * "Become a partner": store the intent, then trigger Google sign-in.
+   * App.tsx reads `pendingProviderApply` after auth completes and routes to 'apply'.
+   */
+  const onBecomePartner = useCallback(() => {
+    setPendingProviderApply(true);
+    onGoogle();
+  }, [setPendingProviderApply, onGoogle]);
+
   /*
    * The source's `isValid`, which is `!value.isEmpty`. Ours asks for a little
    * more because an Indian mobile number is ten digits and a one-character
@@ -311,28 +338,53 @@ export function OnboardingScreen({ onDone }: Props) {
    */
   const canSend = phone.trim().length >= 6 && state !== 'loading';
 
-  const onSendCode = useCallback(() => {
-    if (!canSubmit(state) || phone.trim().length < 6) {
+  /** From 'number' stage: validate and advance to the confirm sub-step. */
+  const onShowConfirm = useCallback(() => {
+    if (phone.trim().length < 6) {
+      return;
+    }
+    Keyboard.dismiss();
+    setIdentify('confirm');
+  }, [phone]);
+
+  /** From 'confirm' stage: actually send the OTP and advance to code entry. */
+  const onConfirmSend = useCallback(() => {
+    if (!canSubmit(state)) {
       return;
     }
     setState('loading');
     setFailure(null);
-    /*
-     * The source's `keyboardShown = false` inside `submitCurrentStep`. Without
-     * it the keyboard stays up over the result of the thing just submitted,
-     * which on a short window is most of the screen.
-     */
-    Keyboard.dismiss();
+    const fullPhone = `${dialCode} ${phone.trim()}`;
     void (async () => {
-      const result = await sendPhoneOtp(phone);
+      const result = await sendPhoneOtp(fullPhone);
       if (result.status !== 'failed') {
         setState('idle');
         setIdentify('code');
+        setCooldown(RESEND_SECONDS);
         return;
       }
       fail(result.message);
     })();
-  }, [state, phone, fail]);
+  }, [state, dialCode, phone, fail]);
+
+  /** Resend the OTP from the code-entry stage, respecting the cooldown. */
+  const onResend = useCallback(() => {
+    if (cooldown > 0 || !canSubmit(state)) {
+      return;
+    }
+    setState('loading');
+    setFailure(null);
+    const fullPhone = `${dialCode} ${phone.trim()}`;
+    void (async () => {
+      const result = await sendPhoneOtp(fullPhone);
+      if (result.status !== 'failed') {
+        setState('idle');
+        setCooldown(RESEND_SECONDS);
+        return;
+      }
+      fail(result.message);
+    })();
+  }, [cooldown, state, dialCode, phone, fail]);
 
   const onVerify = useCallback(
     (entered: string) => {
@@ -341,8 +393,9 @@ export function OnboardingScreen({ onDone }: Props) {
       }
       setState('loading');
       setFailure(null);
+      const fullPhone = `${dialCode} ${phone.trim()}`;
       void (async () => {
-        const result = await verifyPhoneOtp(phone, entered);
+        const result = await verifyPhoneOtp(fullPhone, entered);
         if (result.status !== 'failed') {
           setState('success');
           finish();
@@ -352,7 +405,7 @@ export function OnboardingScreen({ onDone }: Props) {
         setCode('');
       })();
     },
-    [state, phone, finish, fail],
+    [state, dialCode, phone, finish, fail],
   );
 
   /*
@@ -405,16 +458,16 @@ export function OnboardingScreen({ onDone }: Props) {
               welcomeStyle,
             ]}
           >
-            <View style={styles.mark}>
-              <Text allowFontScaling={false} style={styles.markLetter}>
-                p
-              </Text>
-            </View>
+            {/* The Pappal wordmark — white on the dark welcome bloom so it reads
+                at display size with full contrast against the dark bloom behind it. */}
+            <Text allowFontScaling={false} style={styles.brand}>
+              Pappal
+            </Text>
             <Text allowFontScaling style={styles.title}>
               Someone to talk to,{'\n'}tonight.
             </Text>
             <Text allowFontScaling style={styles.subtitle}>
-              Real people, by the minute.{'\n'}Not therapy, just company.
+              someone who listens
             </Text>
             {/*
              * No `busy` prop, deliberately, and the contract test is right to
@@ -532,6 +585,15 @@ export function OnboardingScreen({ onDone }: Props) {
                */}
               {phase !== 'done' && identify === 'choose' ? (
                 <View style={styles.choices}>
+                  {/*
+                   * PRIMARY: white-pill Google button.
+                   *
+                   * White fill on the dark bloom keeps contrast without borrowing
+                   * the brand coral. The Google "G" sits directly on white (its
+                   * own brand rule: the mark must sit on a light surface), so the
+                   * chip wrapper is gone. A 1px rgba hairline gives definition
+                   * against a lighter bloom without reading as a border.
+                   */}
                   <Pressable
                     onPress={onGoogle}
                     testID="onboard-google"
@@ -540,20 +602,14 @@ export function OnboardingScreen({ onDone }: Props) {
                     style={styles.primary}
                   >
                     {state === 'loading' ? (
-                      <Spinner size={20} color={theme.color.text.onAccent} />
+                      <Spinner size={20} color={theme.color.text.primary} />
                     ) : (
                       <>
-                        {/*
-                         * The source's `ContinueButton` is a mark then a label —
-                         * `Image(systemName: icon)` before `Text(title)` — so the
-                         * button restates what it is about to do rather than
-                         * relying on the step title above it. Ours was the label
-                         * alone.
-                         */}
-                        <Icon
-                          name="chat"
-                          size={20}
-                          color={theme.color.text.onAccent}
+                        <Image
+                          source={require('../../assets/brands/google.png')}
+                          style={styles.googleMark}
+                          resizeMode="contain"
+                          accessibilityIgnoresInvertColors
                         />
                         <Text allowFontScaling style={styles.primaryLabel}>
                           Continue with Google
@@ -561,78 +617,165 @@ export function OnboardingScreen({ onDone }: Props) {
                       </>
                     )}
                   </Pressable>
+
+                  {/*
+                   * SECONDARY: glass-pill phone link.
+                   *
+                   * Translucent white fill rather than a bare text link, so the
+                   * two-pill stack reads as a real choice pair. Same approach
+                   * as CallScreen's non-primary buttons.
+                   */}
                   {PHONE_AUTH_ENABLED ? (
                     <Pressable
                       onPress={onUsePhone}
                       testID="onboard-use-phone"
                       accessibilityLabel="Use my number instead"
-                      press="row"
-                      style={styles.alt}
+                      press="button"
+                      style={styles.secondary}
                     >
-                      <Text allowFontScaling style={styles.altLabel}>
+                      <Text allowFontScaling style={styles.secondaryLabel}>
                         Use my number instead
                       </Text>
                     </Pressable>
                   ) : null}
+
+                  {/* Ghost link — small, centered, 44pt hit target. */}
+                  <Pressable
+                    onPress={onBecomePartner}
+                    testID="onboard-become-partner"
+                    accessibilityLabel="Apply to become a partner"
+                    press="button"
+                    style={styles.partnerLink}
+                  >
+                    <Text allowFontScaling style={styles.partnerLinkLabel}>
+                      Become a partner
+                    </Text>
+                  </Pressable>
                 </View>
               ) : null}
 
               {phase !== 'done' && identify === 'number' ? (
-                <View style={styles.field}>
-                  <TextField
-                    value={phone}
-                    onChangeText={setPhone}
-                    editable={state !== 'loading'}
-                    keyboardType="phone-pad"
-                    textContentType="telephoneNumber"
-                    autoComplete="tel"
-                    placeholder="Your number"
-                    placeholderTextColor={theme.color.text.tertiary}
-                    style={styles.input}
-                    testID="onboard-phone"
-                    onSubmitEditing={onSendCode}
-                  />
-                  {/*
-                   * The submit mark is `chevron-right`, not `reply`. The source
-                   * uses `arrow.right`; `reply` in this set is the arrow head
-                   * rotated to point LEFT over a return stroke, so it reads as
-                   * going back on a button whose only job is going forward.
-                   */}
-                  {/*
-                    * Dimmed until the field holds something plausible, per the
-                    * source's `.background(.black.opacity(isValid ? 1 : 0.2))`.
-                    * A submit that looks identical whether or not it will do
-                    * anything is a control that lies about its own state.
-                    */}
-                  <Pressable
-                    onPress={onSendCode}
-                    testID="onboard-send-code"
-                    accessibilityLabel="Send code"
-                    press="button"
-                    style={[styles.go, canSend ? null : styles.goIdle]}
-                  >
-                    {state === 'loading' ? (
-                      <Spinner size={18} color={theme.color.text.onAccent} />
-                    ) : (
+                <View style={styles.numberBlock}>
+                  <View style={styles.field}>
+                    {/* Country-code selector leading the national number field. */}
+                    <CountryPicker
+                      value={dialCode}
+                      onChange={setDialCode}
+                      testID="onboard-country"
+                    />
+                    <TextField
+                      value={phone}
+                      onChangeText={setPhone}
+                      editable={state !== 'loading'}
+                      keyboardType="phone-pad"
+                      textContentType="telephoneNumber"
+                      autoComplete="tel"
+                      placeholder="Your number"
+                      placeholderTextColor={theme.color.text.tertiary}
+                      style={styles.input}
+                      testID="onboard-phone"
+                      onSubmitEditing={onShowConfirm}
+                    />
+                    {/*
+                     * The submit mark is `chevron-right`, not `reply`. The source
+                     * uses `arrow.right`; `reply` in this set is the arrow head
+                     * rotated to point LEFT over a return stroke, so it reads as
+                     * going back on a button whose only job is going forward.
+                     */}
+                    {/*
+                      * Dimmed until the field holds something plausible, per the
+                      * source's `.background(.black.opacity(isValid ? 1 : 0.2))`.
+                      * A submit that looks identical whether or not it will do
+                      * anything is a control that lies about its own state.
+                      */}
+                    <Pressable
+                      onPress={onShowConfirm}
+                      testID="onboard-send-code"
+                      accessibilityLabel="Send code"
+                      press="button"
+                      style={[styles.go, canSend ? null : styles.goIdle]}
+                    >
                       <Icon
                         name="chevronRight"
                         size={20}
                         color={theme.color.text.onAccent}
                       />
+                    </Pressable>
+                  </View>
+                  <Text allowFontScaling style={styles.numberHint}>
+                    We'll send an SMS to verify your number.
+                  </Text>
+                </View>
+              ) : null}
+
+              {phase !== 'done' && identify === 'confirm' ? (
+                <View style={styles.confirmBlock}>
+                  <Text allowFontScaling style={styles.confirmNumber}>
+                    {dialCode} {phone.trim()}
+                  </Text>
+                  <Text allowFontScaling style={styles.confirmQuestion}>
+                    Is this the correct number?
+                  </Text>
+                  <Pressable
+                    onPress={onConfirmSend}
+                    testID="onboard-confirm"
+                    accessibilityLabel="Yes, send code"
+                    press="button"
+                    style={styles.primary}
+                  >
+                    {state === 'loading' ? (
+                      <Spinner size={20} color={theme.color.text.primary} />
+                    ) : (
+                      <Text allowFontScaling style={styles.primaryLabel}>
+                        Yes, send code
+                      </Text>
                     )}
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setIdentify('number')}
+                    accessibilityLabel="Edit number"
+                    press="button"
+                    style={styles.partnerLink}
+                  >
+                    <Text allowFontScaling style={styles.partnerLinkLabel}>
+                      Edit number
+                    </Text>
                   </Pressable>
                 </View>
               ) : null}
 
               {phase !== 'done' && identify === 'code' ? (
-                <CodeField
-                  value={code}
-                  onChange={setCode}
-                  onComplete={onVerify}
-                  editable={state !== 'loading'}
-                  errorNonce={errorNonce}
-                  testID="onboard-code"
-                />
+                <View style={styles.codeBlock}>
+                  <CodeField
+                    value={code}
+                    onChange={setCode}
+                    onComplete={onVerify}
+                    editable={state !== 'loading'}
+                    errorNonce={errorNonce}
+                    testID="onboard-code"
+                  />
+                  {/* Resend affordance with cooldown, mirroring AuthScreen. */}
+                  <Pressable
+                    onPress={onResend}
+                    testID="onboard-resend"
+                    accessibilityLabel={
+                      cooldown > 0
+                        ? `Resend code in ${cooldown} seconds`
+                        : 'Resend code'
+                    }
+                    press="button"
+                    style={styles.resendLink}
+                  >
+                    <Text allowFontScaling style={[
+                      styles.resendLabel,
+                      (cooldown > 0 || state === 'loading') ? styles.resendLabelDimmed : null,
+                    ]}>
+                      {cooldown > 0
+                        ? `Resend code in ${cooldown}s`
+                        : 'Resend code'}
+                    </Text>
+                  </Pressable>
+                </View>
               ) : null}
 
               {failure !== null ? (
@@ -678,20 +821,13 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: BLOCK_PAD,
       gap: SOURCE_METRICS.welcomeGap,
     },
-    mark: {
-      width: SOURCE_METRICS.logo,
-      height: SOURCE_METRICS.logo,
-      borderRadius: 14,
-      borderCurve: 'continuous',
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: t.color.bg.base,
-    },
-    markLetter: {
+    // The brand wordmark: white on the dark bloom field so it reads at display
+    // size, with full contrast against the dark welcome bloom.
+    brand: {
       ...TOKENS.typography.wordmark,
-      fontSize: 30,
-      lineHeight: 34,
-      color: t.color.bg.accent,
+      fontSize: 34,
+      lineHeight: 38,
+      color: t.color.text.onAccent,
     },
     // White on the field, which is only legal because the block is pinned to the
     // bottom where the field is dark.
@@ -767,29 +903,60 @@ const makeStyles = (t: Theme) =>
     choices: {
       gap: TOKENS.space.sm,
     },
+    // PRIMARY: white pill. Label is ink, loading spinner is ink.
+    // 1px rgba hairline gives shape definition against the dark bloom.
     primary: {
       flexDirection: 'row',
-      // The source's `HStack` default spacing between the mark and the label.
       gap: TOKENS.space.xs,
+      minHeight: SOURCE_METRICS.buttonHeight,
+      borderRadius: TOKENS.radius.pill,
+      borderCurve: 'continuous',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#FFFFFF',
+      borderWidth: 1,
+      borderColor: 'rgba(0,0,0,0.08)',
+    },
+    primaryLabel: {
+      ...TOKENS.typography.headline,
+      color: t.color.text.primary,
+    },
+    googleMark: {
+      width: 20,
+      height: 20,
+    },
+    // SECONDARY: outline pill. The sign-in ("choose") surface is a LIGHT warm
+    // field, so a translucent-white glass fill would vanish. A transparent pill
+    // with a hairline border + ink label reads on light and adapts in dark mode,
+    // and pairs cleanly with the solid-white primary above it.
+    secondary: {
       height: SOURCE_METRICS.buttonHeight,
       borderRadius: TOKENS.radius.pill,
       borderCurve: 'continuous',
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: t.color.text.primary,
+      backgroundColor: 'transparent',
+      borderWidth: 1,
+      borderColor: t.color.border.strong,
     },
-    primaryLabel: {
+    secondaryLabel: {
       ...TOKENS.typography.headline,
-      color: t.color.text.onAccent,
+      color: t.color.text.primary,
     },
-    alt: {
-      height: 44,
+    // Ghost / tertiary text link — small, centered, 44pt hit target. Uses the
+    // muted secondary ink so it reads on the light sign-in field.
+    partnerLink: {
+      minHeight: 44,
       alignItems: 'center',
       justifyContent: 'center',
     },
-    altLabel: {
+    partnerLinkLabel: {
       ...TOKENS.typography.bodyMedium,
       color: t.color.text.secondary,
+    },
+    // Number entry: picker + field + send button in a row.
+    numberBlock: {
+      gap: TOKENS.space.xs,
     },
     field: {
       flexDirection: 'row',
@@ -802,6 +969,11 @@ const makeStyles = (t: Theme) =>
       borderRadius: TOKENS.radius.pill,
       borderCurve: 'continuous',
       backgroundColor: t.color.bg.sunken,
+    },
+    numberHint: {
+      ...TOKENS.typography.captionRegular,
+      color: t.color.text.secondary,
+      paddingHorizontal: TOKENS.space.xs,
     },
     // 20pt, from `.font(.system(size: 20, weight: .medium))`. The headline token
     // is 17 and reads small next to a 42pt step title.
@@ -825,6 +997,38 @@ const makeStyles = (t: Theme) =>
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: t.color.text.primary,
+    },
+    // Confirm sub-step: formatted number + question + action pair.
+    confirmBlock: {
+      gap: TOKENS.space.sm,
+      alignItems: 'stretch',
+    },
+    confirmNumber: {
+      ...TOKENS.typography.displayLarge,
+      color: t.color.text.primary,
+      textAlign: 'center',
+    },
+    confirmQuestion: {
+      ...TOKENS.typography.bodyMedium,
+      color: t.color.text.secondary,
+      textAlign: 'center',
+      marginBottom: TOKENS.space.xs,
+    },
+    // Code entry + resend affordance.
+    codeBlock: {
+      gap: TOKENS.space.sm,
+    },
+    resendLink: {
+      minHeight: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    resendLabel: {
+      ...TOKENS.typography.bodyMedium,
+      color: t.color.text.secondary,
+    },
+    resendLabelDimmed: {
+      opacity: 0.4,
     },
     // `HStack(alignment: .top, spacing: 24)` and `VStack(spacing: 12)`.
     doneRow: {

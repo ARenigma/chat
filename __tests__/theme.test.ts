@@ -286,14 +286,20 @@ describe('typography is bound to real font files', () => {
       Object.values(LIGHT.typography).map(style => `${style.fontFamily}.ttf`),
     );
     /*
-     * The Material Symbols faces are referenced by icons.generated.ts, not by a
-     * typography token, because they are the icon set rather than a text style.
-     * Two static instances ship — outlined and filled — for the active-state
-     * swap RN Android cannot do on the FILL axis at runtime. Allowlisted here
-     * for the same reason Noto once was: they are real, used, and not chosen
+     * Icon fonts are referenced by code, not by a typography token, because they
+     * are icon sets rather than text styles. Allowlisted here for the same reason
+     * Material Symbols once was: each is real, used, and not chosen
      * per-typography-style.
+     *
+     * Lucide: the outline icon set, referenced by icons.generated.ts. One face
+     * ships (Lucide has no filled twin; the active state is colour only for most
+     * icons).
+     *
+     * PappalGlyphs: the filled-heart icon face, referenced by Icon.tsx. Provides
+     * a FILLED heart glyph at U+2665 for the favourite toggle active state, since
+     * Lucide ships no filled 'heart' twin.
      */
-    const ICON_FONTS = /^MaterialSymbols/;
+    const ICON_FONTS = /^(Lucide|PappalGlyphs)/;
     const orphans = FACES.filter(
       face => !referenced.has(face) && !ICON_FONTS.test(face),
     );
@@ -356,11 +362,16 @@ describe('typography is bound to real font files', () => {
     const files = readdirSync(join(ROOT, 'assets/fonts'));
     const NOTICE: Record<string, string> = {
       Inter: 'OFL-Inter.txt',
-      LilitaOne: 'OFL-LilitaOne.txt',
+      TitanOne: 'OFL-TitanOne.txt',
       // Material Symbols is Apache-2.0, not OFL — a different licence, still
       // mandatory to ship. Both instances map to the one notice.
-      MaterialSymbolsOutlined: 'LICENSE-MaterialSymbols.txt',
-      MaterialSymbolsOutlinedFill: 'LICENSE-MaterialSymbols.txt',
+      // Lucide is ISC, not OFL — a different licence, still mandatory to ship.
+      Lucide: 'LICENSE-Lucide.txt',
+      // Geist is OFL (Vercel, 2023).
+      Geist: 'OFL-Geist.txt',
+      // PappalGlyphs is Apache-2.0: the filled-heart glyph is derived from
+      // Google Material Symbols 'favorite', which ships under Apache License 2.0.
+      PappalGlyphs: 'LICENSE-PappalGlyphs.txt',
     };
     // `?? name` rather than a non-null assertion: a face called exactly `X.ttf`
     // with no weight suffix is its own family, and split always yields at least
@@ -729,10 +740,6 @@ describe('accent budget is enforced in code, not just documented', () => {
     // flirty:
     //   Avatar      , the warm wash on *your* mark, never a stranger's
     //   Chip        , at most one warm starter per screen
-    //   OnboardingScreen, the mark's letter on the entry screen. The white tile it
-    //                   sits in is the only opaque white above the button pair,
-    //                   so the letter is the one place the brand hue appears at
-    //                   display size on that surface
     //   WordColumn  , the glyph beside the highlighted word. It marks WHICH word
     //                   is active, which is a state rather than an ornament, and
     //                   it is the only thing distinguishing the live row from
@@ -803,6 +810,9 @@ describe('accent budget is enforced in code, not just documented', () => {
        * variant reuses the same token-tint the balance pill flinches to.
        */
       'ChatScreen.tsx',
+      // The full chats list's unread count badge — the same accentStrong pill the
+      // Home rail and provider tree use for "unread", a live-state signal.
+      'ChatsListScreen.tsx',
       'Chip.tsx',
       /*
        * The completed mark. Green is the source's colour and appears nowhere in
@@ -812,12 +822,19 @@ describe('accent budget is enforced in code, not just documented', () => {
        * — and it appears once, for one second, at the end of one flow.
        */
       'CompletionRow.tsx',
+      // The composer's media "+" is a filled coral disc (#6, Amit): the primary
+      // media action, an action in the colour the budget reserves for actions.
+      // The send button already carries the coral here; the "+" joins it as the
+      // one other affordance on the bar.
+      'Composer.tsx',
       'EmptyMark.tsx',
       /*
-       * The v13 floating nav. The coral is the ACTIVE destination's disc — the
-       * only thing distinguishing Home from Calls and Settings, which are
-       * otherwise identical grey glyphs. Same "colour is the state" argument the
-       * old TabBar made; this replaced it.
+       * The bottom bar's active tab (FloatingToolbar). It went coral → black slab
+       * → grey box, and both read badly on device (Amit, 2026-08-27). The selected
+       * destination is now a soft accent-tint pill with a coral filled glyph — the
+       * "you are here" signal, which is a state, exactly what the budget reserves
+       * the coral for. An icon-only tab bar (iMessage/Telegram) colours its chosen
+       * tab; this is that.
        */
       'FloatingToolbar.tsx',
       /*
@@ -827,9 +844,6 @@ describe('accent budget is enforced in code, not just documented', () => {
        * a stranger's avatar.
        */
       'HomeScreen.tsx',
-      // The entry surface's mark and CTA, unchanged in intent from the screen
-      // this replaced.
-      'OnboardingScreen.tsx',
       /*
        * Added with the Fuse translation, and it earns its place rather than
        * widening the budget by accident: the coral here is the ACTIVE step's
@@ -839,6 +853,14 @@ describe('accent budget is enforced in code, not just documented', () => {
        * for — one meaning, one place, at a moment where it is the whole signal.
        */
       'OnboardingStep.tsx',
+      /*
+       * The mock-payment success circle (behind the MOCK_PAYMENTS gate; never
+       * visible in a production build).  A payment-success confirmation is an
+       * action-affirming moment — the one use the accent budget reserves the
+       * coral for — and the circle appears exactly once, after real tokens have
+       * been credited, at the end of the recharge flow.
+       */
+      'PaymentSheet.tsx',
       /*
        * The v13 provider profile. The coral is the primary Call action and the
        * favourite-when-set, plus the hero's warm field — actions and a live
@@ -854,11 +876,21 @@ describe('accent budget is enforced in code, not just documented', () => {
        */
       'RechargeScreen.tsx',
       'SendButton.tsx',
+      // The Settings footer wordmark is the brand mark in the brand colour (#9),
+      // and "Rate us" — a brand signature and an action, not chrome.
+      'SettingsSheet.tsx',
       'Sheet.tsx',
       'Stepper.tsx',
       'ThreadBubble.tsx',
       'Toggle.tsx',
       'TokenCounter.tsx',
+      /*
+       * The "Download invoice" action link in the recharge history row. A link
+       * that navigates to a file is an action, which is exactly what the budget
+       * reserves the coral for — one accent use, one actionable affordance per
+       * row, never chrome, a header or a divider.
+       */
+      'TransactionHistoryScreen.tsx',
       'Turn.tsx',
       'TypingIndicator.tsx',
       'WordColumn.tsx',
@@ -905,6 +937,9 @@ describe('accent budget is enforced in code, not just documented', () => {
       // The call background is a warm field (gated, ADR-0019), same exemption
       // class as the hero surfaces, built from accent tokens not raw hex.
       'CallScreen.tsx',
+      // The recharge balance banner (#13) is a warm gradient field in the same
+      // language as the onboarding/hero surfaces, built from the accent tokens.
+      'RechargeScreen.tsx',
     ]);
     for (const s of componentSources.concat(screenSources)) {
       if (EXEMPT.has(s.file.split('/').pop() ?? '')) {
@@ -964,10 +999,11 @@ describe('iOS conformance', () => {
     // every one of them was two points small. iOS's headline is 17 semibold and
     // it is also a list row's name and a filled button's label.
     expect(typography.headline.fontSize).toBe(17);
-    expect(typography.headline.fontFamily).toBe('Inter-SemiBold');
+    expect(typography.headline.fontFamily).toBe('Geist-SemiBold');
     expect(typography.subhead.fontSize).toBe(15);
     expect(typography.bodyLarge.fontSize).toBe(17);
-    expect(typography.displayLarge.fontSize).toBe(34);
+    // displayLarge reduced from 34 to 30 to ease onboarding density (user feedback).
+    expect(typography.displayLarge.fontSize).toBe(30);
   });
 
   it('opens the display sizes and tightens body, the iOS direction', () => {

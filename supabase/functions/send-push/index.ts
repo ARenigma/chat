@@ -35,6 +35,9 @@ interface Pending {
   token: string;
   platform: string;
   sender_display_name: string | null;
+  // The sender's public provider photo, when the sender is a provider; null for a
+  // member sender. Rendered as the notification's BigPicture (the SP-photo hero).
+  sender_avatar_url: string | null;
   created_at: string;
 }
 
@@ -133,6 +136,13 @@ async function send(
   row: Pending,
 ): Promise<'sent' | 'dead' | 'retry'> {
   const who = row.sender_display_name ?? 'Someone';
+  // The hero photo (#6): the sender's public provider photo, ridden in the data
+  // map as `senderAvatar` and rendered by the app as the Person icon. Present
+  // only for a provider sender; a public-bucket URL the app downloads itself, so
+  // FCM's ~1MB notification-image cap does not apply here (that cap only bit the
+  // old `notification.image` path). Undefined drops the key rather than sending
+  // null, which FCM rejects. Migration 015 records the lock-screen disclosure.
+  const image = row.sender_avatar_url ?? undefined;
   const response = await fetch(
     `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
     {
@@ -145,45 +155,38 @@ async function send(
         message: {
           token: row.token,
           /*
-           * STAGE 1 OF 2. Read this before touching it.
+           * STAGE 2: DATA-ONLY. Read this before touching it.
            *
-           * The goal is a conversation notification — `MessagingStyle`, a
-           * `Person` and a long-lived shortcut — which Android only allows when
-           * the APP builds the notification. That requires a DATA-ONLY payload,
-           * because a `notification` block is rendered by the system and never
-           * reaches the app while it is backgrounded.
+           * There is deliberately no `notification` block. A conversation
+           * notification — `MessagingStyle`, a `Person` with the sender's photo,
+           * and a long-lived shortcut — can only be assembled by the APP, and the
+           * app only gets the payload if the system does not render it first. So
+           * the whole payload is data: `index.js`'s `setBackgroundMessageHandler`
+           * wakes (that is what `priority: high` buys against Doze), reads this
+           * map, and builds the notification in `Conversations.kt`.
            *
-           * The `notification` block below therefore has to go. It cannot go
-           * yet. A data-only message is invisible to any client without the
-           * background handler, so removing this before the fleet has updated
-           * would silence notifications completely for everyone still on an
-           * older build — a silent outage with no error on either side.
+           * The cost, accepted with the stage-2 flip (Amit, 2026-08-27): a
+           * data-only message is invisible to any client WITHOUT that handler, so
+           * a tester on an older build stops getting notifications until they
+           * update. That is the rollout caveat this stage always carried.
            *
-           * So: the data map is populated NOW, which is backward compatible and
-           * inert on old clients. Once every tester is on a build containing
-           * `index.js`'s `setBackgroundMessageHandler` and
-           * `Conversations.kt`, delete the `notification` block and the
-           * `android.notification` block, and this becomes stage 2. Nothing else
-           * needs to change.
-           *
-           * No message text in either half, and that is not an oversight: the
-           * view this is generated from carries none, and given who these
-           * conversations are with, message content on a lock screen is a
-           * disclosure this product cannot make.
+           * Still no message text: the view this is generated from carries none,
+           * and given who these conversations are with, content on a lock screen
+           * is a disclosure this product cannot make. `senderAvatar` is the one
+           * new fact — the sender's own public photo, which the app renders as the
+           * Person icon, not the message.
            */
-          notification: { title: who, body: 'replied' },
           android: {
+            // priority high so a data-only message wakes the app out of Doze; no
+            // channel_id, because the app owns `conversations` and names it itself.
             priority: 'high',
-            // No channel_id here: naming one the app has not created routes the
-            // notification nowhere. The app owns `conversations`, created in
-            // Conversations.ensureChannel before any push can arrive.
-            notification: { tag: row.conversation_id },
           },
           /*
            * FCM's data map is Map<String, String>, so everything is stringified
            * here and parsed in `src/lib/conversations.ts`. `sentAt` is epoch
            * milliseconds because `MessagingStyle.addMessage` takes a timestamp
-           * and orders the transcript by it.
+           * and orders the transcript by it. `senderAvatar` is omitted (not sent
+           * as null, which FCM rejects) when the sender has no public photo.
            */
           data: {
             // The client validates this with isUuid before routing on it.
@@ -191,6 +194,7 @@ async function send(
             conversationId: row.conversation_id,
             senderName: who,
             sentAt: String(Date.parse(row.created_at)),
+            ...(image ? { senderAvatar: image } : {}),
           },
         },
       }),

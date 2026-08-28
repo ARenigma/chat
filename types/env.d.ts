@@ -5,4 +5,7 @@ declare module '@env' {
   export const APP_ENV: string | undefined;
   export const MSG91_WIDGET_ID: string | undefined;
   export const MSG91_WIDGET_TOKEN: string | undefined;
+  export const TURN_URL: string | undefined;
+  export const TURN_USERNAME: string | undefined;
+  export const TURN_CREDENTIAL: string | undefined;
 }

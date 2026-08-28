@@ -1,4 +1,5 @@
 import { PermissionsAndroid, Platform } from 'react-native';
+import { alertPermissionBlocked, requestAndroidPermission } from './permissions';
 import {
   AuthorizationStatus,
   deleteToken,
@@ -51,10 +52,13 @@ import { isUuid } from './ids';
 async function ensurePermission(): Promise<boolean> {
   if (Platform.OS === 'android') {
     if (Number(Platform.Version) >= 33) {
-      const result = await PermissionsAndroid.request(
+      const outcome = await requestAndroidPermission(
         PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
       );
-      return result === PermissionsAndroid.RESULTS.GRANTED;
+      if (outcome === 'never_ask_again') {
+        alertPermissionBlocked('Notifications');
+      }
+      return outcome === 'granted';
     }
     return true;
   }
