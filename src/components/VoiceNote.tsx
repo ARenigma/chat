@@ -25,6 +25,11 @@ interface Props {
   messageId: string;
   path: string;
   durationMs: number;
+  /**
+   * Stored waveform from migration 023. Absent on pre-023 rows; FLAT bars are
+   * the fallback so older messages degrade gracefully rather than crashing.
+   */
+  peaks?: readonly number[];
   /** On the coral bubble, so the tint and the labels invert. */
   onAccent: boolean;
   /** Optimistic row: the audio is on disk, not in the bucket, so nothing to play. */
@@ -37,27 +42,22 @@ interface Props {
 /**
  * A voice note inside a bubble.
  *
- * The waveform is deliberately **not** a picture of this recording. There is no
- * peaks column: migration 011 stores a path and a duration, and no platform API
- * gives amplitudes for a file you did not record, so the sender's own metering is
- * the only real waveform that ever exists and it is not persisted. Rather than
- * invent a plausible-looking shape from the message id, which is a small lie about
- * what somebody said, every bar is drawn at the same height. It reads as a track
- * with a playhead, which is what it is.
+ * Migration 023 added a `voice_peaks` column, so the waveform now shows the
+ * sender's actual amplitude profile when peaks are present. The `peaks` prop
+ * carries them here from the message row via `voiceOf()` → `VoiceBody.peaks`.
+ * FLAT (every bar at 0.42) is the fallback for rows that predate 023 and for
+ * the optimistic pending row (which clears in under a second anyway).
  *
- * Storing peaks would fix that and it is a schema change: a `voice_peaks` column,
- * a line in the guard trigger that already names `voice_path`, a pgTAP assertion,
- * and a migration. Worth doing, and not worth pretending to have done.
- *
- * The position is read from the store behind a selector keyed on this row's own id,
- * so the ten-times-a-second playhead updates re-render one bubble rather than the
- * list. Putting it in the list's data was the version of this that made scrolling
- * during playback stutter.
+ * The position is read from the store behind a selector keyed on this row's own
+ * id, so the ten-times-a-second playhead updates re-render one bubble rather
+ * than the list. Putting it in the list's data was the version of this that made
+ * scrolling during playback stutter.
  */
 function VoiceNoteView({
   messageId,
   path,
   durationMs,
+  peaks,
   onAccent,
   pending,
   onToggle,
@@ -113,7 +113,7 @@ function VoiceNoteView({
       </Pressable>
 
       <Waveform
-        peaks={FLAT}
+        peaks={peaks != null && peaks.length > 0 ? peaks : FLAT}
         progress={progress}
         tint={tint}
         dim={0.45}

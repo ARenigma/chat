@@ -13,7 +13,7 @@
 
 \set ON_ERROR_STOP on
 begin;
-select plan(19);
+select plan(24);
 
 -- ---------------------------------------------------------------------------
 -- Shape
@@ -170,6 +170,84 @@ select throws_ok(
   'a receipt is a one-way latch and cannot be withdrawn'
 );
 reset role;
+
+-- ---------------------------------------------------------------------------
+-- voice_peaks constraint (migration 023)
+-- ---------------------------------------------------------------------------
+-- These test the CHECK constraint directly via superuser inserts, not the RPC,
+-- so they prove the database-level guarantee that the RPC alone would miss.
+
+-- A voice message with peaks is valid: the constraint allows any peaks array
+-- of 1..64 elements on the voice branch.
+select lives_ok(
+  $$insert into public.messages
+      (conversation_id, sender_id, voice_path, voice_duration_ms, voice_peaks)
+    values (
+      (select v from test.fixture where k = 'thread'),
+      'aaaaaaaa-0000-4000-8000-000000000001',
+      (select v from test.fixture where k = 'thread')::text
+        || '/22222222-2222-4222-8222-222222222222.m4a',
+      5000,
+      array[0.1, 0.5, 0.8, 0.3]::real[]
+    )$$,
+  'voice_peaks is accepted on a voice message'
+);
+
+-- A text message with non-null voice_peaks violates message_carries_one_payload.
+select throws_ok(
+  $$insert into public.messages (conversation_id, sender_id, body, voice_peaks)
+    values (
+      (select v from test.fixture where k = 'thread'),
+      'aaaaaaaa-0000-4000-8000-000000000001',
+      'plain text',
+      array[0.2, 0.6]::real[]
+    )$$,
+  '23514', null,
+  'voice_peaks must be null on a text message'
+);
+
+-- Value validation (migration 025): peaks are amplitudes, so an element outside
+-- [0,1] or a non-finite value is rejected even on a voice message. The honest
+-- recorder clamps to [0,1], so these are the malformed-client cases only.
+select throws_ok(
+  $$insert into public.messages
+      (conversation_id, sender_id, voice_path, voice_duration_ms, voice_peaks)
+    values (
+      (select v from test.fixture where k = 'thread'),
+      'aaaaaaaa-0000-4000-8000-000000000001',
+      (select v from test.fixture where k = 'thread')::text
+        || '/22222222-2222-4222-8222-222222222222.m4a',
+      5000, array[0.5, 1.5]::real[]
+    )$$,
+  '23514', null,
+  'a voice_peaks element above 1 is rejected'
+);
+select throws_ok(
+  $$insert into public.messages
+      (conversation_id, sender_id, voice_path, voice_duration_ms, voice_peaks)
+    values (
+      (select v from test.fixture where k = 'thread'),
+      'aaaaaaaa-0000-4000-8000-000000000001',
+      (select v from test.fixture where k = 'thread')::text
+        || '/22222222-2222-4222-8222-222222222222.m4a',
+      5000, array[0.5, -0.2]::real[]
+    )$$,
+  '23514', null,
+  'a negative voice_peaks element is rejected'
+);
+select throws_ok(
+  $$insert into public.messages
+      (conversation_id, sender_id, voice_path, voice_duration_ms, voice_peaks)
+    values (
+      (select v from test.fixture where k = 'thread'),
+      'aaaaaaaa-0000-4000-8000-000000000001',
+      (select v from test.fixture where k = 'thread')::text
+        || '/22222222-2222-4222-8222-222222222222.m4a',
+      5000, array[0.5, 'NaN'::real]::real[]
+    )$$,
+  '23514', null,
+  'a NaN voice_peaks element is rejected'
+);
 
 select * from finish();
 rollback;

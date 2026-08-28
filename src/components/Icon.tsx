@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../theme/ThemeProvider';
 import {
   ICON_FAMILY,
@@ -9,7 +9,17 @@ import {
 } from '../theme/icons.generated';
 
 /**
- * Every icon in the app, rendered as a Material Symbols glyph in a font.
+ * PappalGlyphs — custom icon font that ships a FILLED heart at U+2665.
+ * Used instead of the Lucide filled face for the favourite toggle, because
+ * Lucide has no filled twin for 'heart'; the active state is colour-only in
+ * the standard pipeline. PappalGlyphs fills that gap for this one glyph.
+ */
+const PAPPAL_GLYPHS_FAMILY = 'PappalGlyphs';
+/** U+2665 BLACK HEART SUIT — the filled-heart glyph in PappalGlyphs.ttf. */
+const FILLED_HEART_CHAR = '♥';
+
+/**
+ * Every icon in the app, rendered as a Lucide glyph in a font.
  *
  * **A font, not SVG and not hand-drawn geometry.** react-native-svg is banned
  * here — it throws `synchronouslyUpdateUIProps` inside Reanimated views and
@@ -48,9 +58,79 @@ interface Props {
 
 const DEFAULT_SIZE = 24;
 
+/**
+ * Lucide draws its glyphs on a 24-unit grid inset a couple of units inside the
+ * em, so at a given `fontSize` a Lucide glyph renders visibly smaller than the
+ * Material Symbols set it replaced (which filled the em). This scale compensates
+ * app-wide from one place — a `size={24}` still means "a 24-ish icon" — rather
+ * than bumping every call site. Amit's call: the icons were reading too small.
+ */
+const ICON_SCALE = 1.2;
+
 function IconView({ name, active = false, size = DEFAULT_SIZE, color, testID, accessibilityLabel }: Props) {
   const theme = useTheme();
+  const px = Math.round(size * ICON_SCALE);
+  const resolvedColor = color ?? theme.color.text.primary;
+
+  // Filled heart: PappalGlyphs provides a solid filled heart at U+2665.
+  // Lucide ships no filled 'heart' twin, so the active state would otherwise
+  // be colour-only. This branch adds the shape signal for the favourite toggle.
+  if (active && name === 'heart') {
+    return (
+      <View
+        style={[styles.heartBox, { width: px, height: px }]}>
+        <Text
+          testID={testID}
+          allowFontScaling={false}
+          accessible={accessibilityLabel !== undefined}
+          accessibilityLabel={accessibilityLabel}
+          importantForAccessibility={
+            accessibilityLabel === undefined ? 'no-hide-descendants' : 'yes'
+          }
+          style={[
+            styles.glyph,
+            {
+              fontFamily: PAPPAL_GLYPHS_FAMILY,
+              fontSize: px,
+              lineHeight: px,
+              color: resolvedColor,
+            },
+          ]}>
+          {FILLED_HEART_CHAR}
+        </Text>
+      </View>
+    );
+  }
+
   const glyph = ICON_GLYPH[name];
+  // Outline heart: same fixed-container centering so toggling active never shifts position.
+  if (name === 'heart') {
+    return (
+      <View
+        style={[styles.heartBox, { width: px, height: px }]}>
+        <Text
+          testID={testID}
+          allowFontScaling={false}
+          accessible={accessibilityLabel !== undefined}
+          accessibilityLabel={accessibilityLabel}
+          importantForAccessibility={
+            accessibilityLabel === undefined ? 'no-hide-descendants' : 'yes'
+          }
+          style={[
+            styles.glyph,
+            {
+              fontFamily: ICON_FAMILY,
+              fontSize: px,
+              lineHeight: px,
+              color: resolvedColor,
+            },
+          ]}>
+          {glyph}
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <Text
       testID={testID}
@@ -66,11 +146,11 @@ function IconView({ name, active = false, size = DEFAULT_SIZE, color, testID, ac
           fontFamily: active ? ICON_FAMILY_FILLED : ICON_FAMILY,
           // Square line height so the glyph box is not taller than the glyph,
           // which would misalign it against adjacent text.
-          fontSize: size,
-          lineHeight: size,
-          width: size,
-          height: size,
-          color: color ?? theme.color.text.primary,
+          fontSize: px,
+          lineHeight: px,
+          width: px,
+          height: px,
+          color: resolvedColor,
         },
       ]}>
       {glyph}
@@ -88,5 +168,12 @@ const styles = StyleSheet.create({
     textAlignVertical: 'center',
     // A Material Symbols glyph is centred in an em square; no extra padding.
     includeFontPadding: false,
+  },
+  // Fixed-size container that centres the glyph via flexbox rather than relying
+  // on the em box. Used for the heart variants (filled PappalGlyphs and outline
+  // Lucide) so that toggling between the two families never shifts position.
+  heartBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

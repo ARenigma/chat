@@ -294,6 +294,12 @@ export const BLOOM_PALETTES = {
   number: { name: 'number', wash: '#F4785F', glow: '#FF9A4D', core: '#C42A6B' },
   code: { name: 'code', wash: '#F0629A', glow: '#FF7BAC', core: '#B0175E' },
   done: { name: 'done', wash: TRANSPARENT, glow: TRANSPARENT, core: TRANSPARENT },
+  /** Provider step 0 — "You". Warm coral, distinct from the onboarding welcome. */
+  providerYou: { name: 'providerYou', wash: '#FF6240', glow: '#FF8040', core: '#D41050' },
+  /** Provider step 1 — "How you talk". Mid salmon-coral. */
+  providerHow: { name: 'providerHow', wash: '#F07060', glow: '#FF9060', core: '#C02060' },
+  /** Provider step 2 — "Why you". Deep coral-rose. */
+  providerWhy: { name: 'providerWhy', wash: '#F04070', glow: '#FF6090', core: '#A01550' },
 } as const satisfies Record<string, BloomPalette>;
 
 export type PaletteName = keyof typeof BLOOM_PALETTES;

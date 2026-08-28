@@ -11,6 +11,11 @@ import 'react-native-url-polyfill/auto';
 // challenge. See src/lib/webcrypto.ts.
 import './src/lib/webcrypto';
 
+// WebRTC globals (navigator.mediaDevices, RTCPeerConnection, …) for audio
+// calling. Registered at module scope so they exist before any call code runs.
+import { registerGlobals } from 'react-native-webrtc';
+registerGlobals();
+
 import { AppRegistry } from 'react-native';
 import {
   getMessaging,
@@ -19,8 +24,12 @@ import {
 import App from './App';
 import { name as appName } from './app.json';
 import {
+  notifyCall,
   notifyConversation,
+  notifyEngagement,
+  readCallPush,
   readConversationPush,
+  readEngagementPush,
 } from './src/lib/conversations';
 
 /*
@@ -38,12 +47,27 @@ import {
  * `Person` and the long-lived shortcut all have to be assembled by the app. See
  * `android/app/src/main/java/com/companionchat/Conversations.kt`.
  *
- * The body is deliberately generic and does not come from the server. The view
- * the push is generated from carries no message text, and it should not: message
- * content on a lock screen is a disclosure this product cannot make, given who
- * the conversations are with.
+ * Three notification types are routed here (Amit, 2026-08-27):
+ *   - `kind: 'call'` → a CallStyle incoming-call notification that rings as a
+ *     branded heads-up popup (not a full-screen takeover — Amit, 2026-08-27).
+ *   - `kind: 'engagement'` → a BigPicture re-engagement nudge (an SP photo plus a
+ *     call to action), for when there is no real message.
+ *   - anything else → a MessagingStyle conversation notification for a real
+ *     message. Its body is deliberately generic and never carries message text:
+ *     content on a lock screen is a disclosure this product cannot make, given
+ *     who the conversations are with.
  */
 setBackgroundMessageHandler(getMessaging(), async remote => {
+  const call = readCallPush(remote.data);
+  if (call !== null) {
+    await notifyCall(call);
+    return;
+  }
+  const nudge = readEngagementPush(remote.data);
+  if (nudge !== null) {
+    await notifyEngagement(nudge);
+    return;
+  }
   const push = readConversationPush(remote.data);
   if (push === null) {
     return;

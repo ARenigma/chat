@@ -1,5 +1,19 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, StyleSheet, Text, View } from 'react-native';
+import {
+  AppState,
+  Linking,
+  PermissionsAndroid,
+  StyleSheet,
+  Text,
+  type TextInput,
+  View,
+} from 'react-native';
+import { requestAndroidPermission } from '../lib/permissions';
+import {
+  launchCamera,
+  launchImageLibrary,
+  type ImagePickerResponse,
+} from 'react-native-image-picker';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { MAX_MESSAGE_CHARS } from '../lib/tokenLedger';
@@ -10,10 +24,12 @@ import {
   type RecordingHandle,
 } from '../lib/recorder';
 import { MAX_VOICE_MS, clock, isSendable, type VoiceDraft } from '../lib/voice';
+import { MAX_ATTACHMENT_BYTES, type ImageDraft } from '../lib/attachments';
 import { useStore } from '../store/useStore';
 import { Icon } from './Icon';
 import { Pressable } from './Pressable';
 import { SendButton } from './SendButton';
+import { Sheet } from './Sheet';
 import { Waveform } from './Waveform';
 import { TextField } from './TextField';
 
@@ -22,6 +38,8 @@ interface Props {
   /** A finished recording, ready to upload. Both roles get this: the provider
    *  tree renders the same ChatScreen, and voice notes are in scope for both. */
   onSendVoice: (draft: VoiceDraft) => void;
+  /** A picked photo, ready to upload. Same shape of contract as onSendVoice. */
+  onSendImage: (draft: ImageDraft) => void;
   disabled: boolean;
   placeholder: string;
   bloomKey: number;
@@ -84,6 +102,7 @@ type Mode = 'idle' | 'recording' | 'review';
 function ComposerView({
   onSend,
   onSendVoice,
+  onSendImage,
   disabled,
   placeholder,
   bloomKey,
@@ -94,6 +113,8 @@ function ComposerView({
   const setNotice = useStore(s => s.setNotice);
   const [value, setValue] = useState('');
   const [mode, setMode] = useState<Mode>('idle');
+  // Whether the "+" media chooser (Camera / Photos) is open. iMessage's plus.
+  const [mediaOpen, setMediaOpen] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [levels, setLevels] = useState<readonly number[]>([]);
   const [draft, setDraft] = useState<VoiceDraft | null>(null);
@@ -101,6 +122,9 @@ function ComposerView({
   // stop that raced a re-render would otherwise stop a recorder that had already
   // been replaced.
   const handle = useRef<RecordingHandle | null>(null);
+  // The field, so the emoji button can focus it (and raise the keyboard, where
+  // the emoji key lives — a full in-app picker is a follow-up).
+  const inputRef = useRef<TextInput>(null);
   /**
    * Which attempt is current, bumped by every start, stop, discard and unmount.
    *
@@ -266,6 +290,101 @@ function ComposerView({
     setMode('idle');
   }, [draft, onSendVoice]);
 
+  /**
+   * Validate a picker/camera result and hand the photo up.
+   *
+   * Shared by the gallery and the camera so the size ceiling, the unreadable-asset
+   * guard and the `onSendImage` contract are identical for both — the division of
+   * labour the mic button has with `onSendVoice`. The size check mirrors the
+   * bucket's ceiling so an oversized pick is refused here rather than after the
+   * bytes are already on their way.
+   */
+  const handleAsset = useCallback(
+    (result: ImagePickerResponse | null) => {
+      if (result === null || result.didCancel) {
+        return;
+      }
+      const asset = result.assets?.[0];
+      if (
+        asset === undefined ||
+        asset.uri === undefined ||
+        asset.width === undefined ||
+        asset.height === undefined
+      ) {
+        setNotice('That photo could not be read.');
+        errorTick();
+        return;
+      }
+      if (asset.fileSize !== undefined && asset.fileSize > MAX_ATTACHMENT_BYTES) {
+        setNotice('That photo is too large. Pick one under 10 MB.');
+        errorTick();
+        return;
+      }
+      onSendImage({
+        uri: asset.uri,
+        width: asset.width,
+        height: asset.height,
+        mime: asset.type ?? null,
+      });
+    },
+    [onSendImage, setNotice],
+  );
+
+  /**
+   * Pick from the library. The Android 13+ system photo picker needs no
+   * permission at all, so there is nothing to request here.
+   */
+  const pickImage = useCallback(async () => {
+    setMediaOpen(false);
+    if (disabled) {
+      return;
+    }
+    tick();
+    const result = await launchImageLibrary({
+      mediaType: 'photo',
+      selectionLimit: 1,
+      quality: 0.9,
+    }).catch(() => null);
+    handleAsset(result);
+  }, [disabled, handleAsset]);
+
+  /**
+   * Capture a live photo (#8). Camera capture, unlike the library picker, needs
+   * the CAMERA runtime permission — requested here right before use, and a
+   * permanent denial points at Settings rather than retrying a dialog Android
+   * will not show again.
+   */
+  const takePhoto = useCallback(async () => {
+    setMediaOpen(false);
+    if (disabled) {
+      return;
+    }
+    const outcome = await requestAndroidPermission(
+      PermissionsAndroid.PERMISSIONS.CAMERA,
+    );
+    if (outcome === 'never_ask_again') {
+      errorTick();
+      // Surface a notice with a direct link to Settings; Alert would block the
+      // composer which is disruptive, so we use the store notice + a Linking
+      // call so the user can dismiss and continue composing text instead.
+      setNotice('Camera blocked. Open Settings to allow it.');
+      Linking.openSettings().catch(() => undefined);
+      return;
+    }
+    if (outcome !== 'granted') {
+      errorTick();
+      setNotice('The camera needs permission. Turn it on in Settings.');
+      return;
+    }
+    tick();
+    const result = await launchCamera({
+      mediaType: 'photo',
+      quality: 0.9,
+      saveToPhotos: false,
+    }).catch(() => null);
+    handleAsset(result);
+  }, [disabled, handleAsset, setNotice]);
+
   if (mode === 'recording') {
     return (
       <View style={styles.row}>
@@ -357,9 +476,46 @@ function ComposerView({
   }
 
   return (
+    <>
     <View style={styles.row}>
+      <View style={styles.inputBar}>
+      {/* The "+" media button (#8, iMessage/Sweprek): one target that opens a
+          Camera / Photos chooser, rather than a bare gallery shortcut. Left of the
+          field, its own target, so it is reachable whether or not there is text —
+          the trailing control is the send/mic either-or, and a third thing crammed
+          in there is the "which does return mean" problem the mic note warns of. */}
+      <Pressable
+        onPress={() => requestAnimationFrame(() => setMediaOpen(true))}
+        disabled={disabled}
+        testID="composer-attach"
+        accessibilityLabel="Add media"
+        accessibilityHint="Camera or photos. One photo costs one token"
+        press="chip"
+        size={32}
+        style={styles.attach}>
+        {/* The plus sits in a filled coral circle (Sweprek, #6): the primary media
+            affordance, sized to match the trailing mic (24 glyph) so it doesn't
+            read as the smaller of the two. */}
+        <View style={styles.attachCircle}>
+          <Icon name="plus" size={16} color={theme.color.text.onAccent} />
+        </View>
+      </Pressable>
       <View style={styles.field}>
+        {/* Emoji, docked at the leading edge of the field (#4, the WhatsApp
+            position). It focuses the input so the keyboard — and its emoji key —
+            comes up; a full in-app emoji picker is a follow-up. */}
+        <Pressable
+          onPress={() => inputRef.current?.focus()}
+          disabled={disabled}
+          testID="composer-emoji"
+          accessibilityLabel="Emoji"
+          press="chip"
+          size={30}
+          style={styles.emoji}>
+          <Icon name="sticker" size={22} color={theme.color.text.secondary} />
+        </Pressable>
         <TextField
+          ref={inputRef}
           testID="composer-input"
           style={styles.input}
           value={value}
@@ -397,11 +553,63 @@ function ComposerView({
             size={32}
             style={styles.mic}
           >
+            {/* 18, not 24: the mic is an accessory in the field, not a primary
+                action, and at 24 it read as heavy as the emoji sticker glyph
+                beside it (#2). The 32pt Pressable keeps the tap target. */}
             <Icon name="mic" size={18} color={theme.color.text.secondary} />
           </Pressable>
         )}
       </View>
+      </View>
     </View>
+
+    {/* The media chooser (#8). A bottom sheet with Camera and Photos, the same
+        inset-grouped table idiom the payment and settings lists use, so the app's
+        selectable lists read as one system. */}
+    <Sheet
+      visible={mediaOpen}
+      testID="media-sheet"
+      title="Send a photo"
+      onClose={() => setMediaOpen(false)}
+      onCancel={() => setMediaOpen(false)}
+      cancelLabel="Cancel">
+      <View style={styles.mediaGroup}>
+        <Pressable
+          onPress={() => {
+            void takePhoto();
+          }}
+          testID="media-camera"
+          accessibilityLabel="Take a photo"
+          press="none"
+          highlight="ios"
+          style={[styles.mediaRow, styles.mediaRowFirst]}>
+          <View style={styles.mediaIcon}>
+            <Icon name="camera" size={22} color={theme.color.text.primary} />
+          </View>
+          <Text allowFontScaling style={styles.mediaLabel}>
+            Camera
+          </Text>
+        </Pressable>
+        <View style={styles.mediaSep} />
+        <Pressable
+          onPress={() => {
+            void pickImage();
+          }}
+          testID="media-photos"
+          accessibilityLabel="Choose a photo"
+          press="none"
+          highlight="ios"
+          style={[styles.mediaRow, styles.mediaRowLast]}>
+          <View style={styles.mediaIcon}>
+            <Icon name="image" size={22} color={theme.color.text.primary} />
+          </View>
+          <Text allowFontScaling style={styles.mediaLabel}>
+            Photos
+          </Text>
+        </Pressable>
+      </View>
+    </Sheet>
+    </>
   );
 }
 
@@ -416,13 +624,46 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     borderTopColor: t.color.border.hairline,
     backgroundColor: t.color.bg.base,
   },
-  field: {
+  // The idle bar: attach button, then the field taking the rest of the width.
+  inputBar: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: TOKENS.space.xs,
-    paddingLeft: TOKENS.space.md,
-    paddingRight: 6,
-    paddingVertical: 5,
+  },
+  attach: {
+    width: 32,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  attachCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    // Filled with the brand coral (#6): the "+" is the primary media action, so
+    // the circle carries the accent rather than a neutral sunken grey.
+    backgroundColor: t.color.bg.accent,
+  },
+  // The emoji button inside the field's leading edge. Sized to sit on the same
+  // baseline as the trailing mic when the field is a single line.
+  emoji: {
+    width: 30,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  field: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: TOKENS.space.xs,
+    // Small leading inset now that the emoji button sits at the field's edge and
+    // carries the spacing itself (was space.md when text led the field).
+    paddingLeft: TOKENS.space['2xs'],
+    paddingRight: 5,
+    paddingVertical: 4,
     // Still a capsule: the field is a capsule on iOS too. What changed is what
     // defines its edge.
     borderRadius: TOKENS.radius.pill,
@@ -433,10 +674,13 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   },
   input: {
     flex: 1,
-    minHeight: 40,
-    maxHeight: 132,
-    paddingTop: 10,
-    paddingBottom: 10,
+    // Shorter (Amit/Sweprek): the field read too tall. 34 min with tighter
+    // vertical padding is a compact single-line pill that still grows to 120 for
+    // a multi-line draft.
+    minHeight: 34,
+    maxHeight: 120,
+    paddingTop: 7,
+    paddingBottom: 7,
     ...TOKENS.typography.bodyMedium,
     color: t.color.text.primary,
   },
@@ -485,5 +729,48 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: t.color.bg.base,
+  },
+  // The media chooser rows, same inset-grouped table as PaymentSheet/Settings.
+  mediaGroup: {
+    alignSelf: 'stretch',
+    borderRadius: TOKENS.radius.field,
+    borderCurve: 'continuous',
+    overflow: 'hidden',
+    backgroundColor: t.color.bg.sunken,
+  },
+  mediaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: TOKENS.space.sm,
+    paddingVertical: TOKENS.space.sm,
+    paddingHorizontal: TOKENS.space.md,
+    minHeight: 52,
+    backgroundColor: t.color.bg.sunken,
+  },
+  mediaRowFirst: {
+    borderTopLeftRadius: TOKENS.radius.field,
+    borderTopRightRadius: TOKENS.radius.field,
+  },
+  mediaRowLast: {
+    borderBottomLeftRadius: TOKENS.radius.field,
+    borderBottomRightRadius: TOKENS.radius.field,
+  },
+  mediaIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: t.color.bg.raised,
+  },
+  mediaLabel: {
+    ...TOKENS.typography.bodyLarge,
+    color: t.color.text.primary,
+    flex: 1,
+  },
+  mediaSep: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: TOKENS.space.md + 32 + TOKENS.space.sm,
+    backgroundColor: t.color.border.hairline,
   },
 });

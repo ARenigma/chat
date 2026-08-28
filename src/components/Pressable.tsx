@@ -60,6 +60,8 @@ interface Props {
   /** Rendered size of a round control, so the 48dp target can be guaranteed. */
   size?: number;
   onLongPress?: () => void;
+  /** Fires on finger-down, before release. Use for prefetch / head-start work. */
+  onPressIn?: () => void;
   /**
    * Override the default `button` role. A nav item is a `tab`, so TalkBack says
    * "Home, tab, selected" rather than "Home, button" — the role tells a screen
@@ -130,6 +132,7 @@ function PressableView({
   onColor,
   size,
   onLongPress,
+  onPressIn: onPressInProp,
   accessibilityRole = 'button',
   selected,
   accessible,
@@ -203,6 +206,7 @@ function PressableView({
       onLongPress={onLongPress}
       onPressIn={() => {
         p.value = springTo(1, 'snap');
+        onPressInProp?.();
       }}
       onPressOut={() => {
         p.value = springTo(0, 'snap');

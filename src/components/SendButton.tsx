@@ -14,10 +14,10 @@ interface Props {
   bloomKey: number;
 }
 
-// 32, not 40. iOS's in-field send button is about 30pt, and hitSlop derived from
-// INTERACTION.minTarget already carries the target, so the visual can shrink to
-// the platform's size without losing a pixel of tappable area.
-const SIZE = 32;
+// 38: a prominent circular send, the Sweprek proportion Amit asked to match
+// (the 32 iOS-sized button read as small against the field). hitSlop from
+// INTERACTION.minTarget still carries the target.
+const SIZE = 38;
 
 /**
  * The most-touched element in the app, and the one place the signature motion

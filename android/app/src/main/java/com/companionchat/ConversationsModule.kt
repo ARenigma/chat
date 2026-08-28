@@ -36,6 +36,7 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
         senderName: String,
         body: String,
         sentAt: Double,
+        avatarUrl: String,
         promise: Promise,
     ) {
         try {
@@ -46,11 +47,72 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
                 senderName = senderName,
                 body = body,
                 sentAt = sentAt.toLong(),
+                // '' means "no photo": a member sender, or an older server build.
+                avatarUrl = avatarUrl.ifEmpty { null },
             )
             promise.resolve(true)
         } catch (error: Exception) {
             promise.resolve(false)
         }
+    }
+
+    /**
+     * Post an engagement nudge — the BigPicture re-engagement notification, the
+     * second notification type. Resolves rather than rejects on failure, same as
+     * `notify`, because it runs inside the headless FCM handler.
+     */
+    @ReactMethod
+    fun notifyEngagement(
+        peerId: String,
+        title: String,
+        body: String,
+        avatarUrl: String,
+        promise: Promise,
+    ) {
+        try {
+            Conversations.notifyEngagement(
+                reactContext,
+                peerId = peerId,
+                title = title,
+                body = body,
+                avatarUrl = avatarUrl.ifEmpty { null },
+            )
+            promise.resolve(true)
+        } catch (error: Exception) {
+            promise.resolve(false)
+        }
+    }
+
+    /** Ring an incoming call — the CallStyle full-screen notification. */
+    @ReactMethod
+    fun notifyCall(
+        callId: String,
+        peerId: String,
+        callerName: String,
+        avatarUrl: String,
+        medium: String,
+        promise: Promise,
+    ) {
+        try {
+            Conversations.notifyCall(
+                reactContext,
+                callId = callId,
+                peerId = peerId,
+                callerName = callerName,
+                avatarUrl = avatarUrl.ifEmpty { null },
+                medium = medium,
+            )
+            promise.resolve(true)
+        } catch (error: Exception) {
+            promise.resolve(false)
+        }
+    }
+
+    /** Clear a call notification once it is answered, declined or gone. */
+    @ReactMethod
+    fun clearCall(callId: String, promise: Promise) {
+        Conversations.clearCall(reactContext, callId)
+        promise.resolve(null)
     }
 
     /** Clear a conversation's notification once it has been read in the app. */

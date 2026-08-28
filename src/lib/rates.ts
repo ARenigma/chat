@@ -1,3 +1,6 @@
+// PAYMENTS_ENABLED and MOCK_PAYMENTS are defined in src/config.ts.
+export { PAYMENTS_ENABLED, MOCK_PAYMENTS } from '../config';
+
 /**
  * Per-minute pricing, kept pure so it can be tested without a device.
  *
@@ -82,14 +85,8 @@ export function isLowBalance(tokens: number | null): boolean {
 }
 
 /**
- * Whether a real payment can be taken.
- *
- * Off, and gated the same way `CALLS_ENABLED` is: the UPI intent / Play Billing
- * rail is a follow-up, so the Recharge screen shows the packs and the Pay button
- * but does not pretend to charge. The daily starter credit is a separate, real
- * path that stays live. Flip this when the rail is wired.
+ * The top-up packs offered on the Recharge screen, in ₹ (1 token = ₹1). A ladder
+ * up to ₹5000 (Amit, 2026-08-27), six values for a clean 2×3 grid — small enough
+ * for a first try, large enough for a regular who tops up once.
  */
-export const PAYMENTS_ENABLED = false;
-
-/** The token top-up packs offered on the Recharge screen. */
-export const RECHARGE_PACKS: readonly number[] = [25, 60, 100, 180];
+export const RECHARGE_PACKS: readonly number[] = [100, 300, 500, 1000, 2500, 5000];

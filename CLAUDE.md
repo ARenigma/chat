@@ -5,6 +5,19 @@ already been broken once on this codebase.
 
 ---
 
+## Figma is connected — use it for design truth
+
+The Figma Dev Mode MCP plugin IS connected in this environment. When a design/
+Figma link or a "match the design" ask comes up, READ IT — do not claim you
+can't access Figma. Use `get_screenshot` / `get_design_context` / `get_metadata`
+/ `get_variable_defs` with the fileKey + nodeId from the URL
+(`.../design/<fileKey>/...?node-id=<a>-<b>` → nodeId `<a>:<b>`).
+
+- **v10 design set** ("bond Copy"): fileKey `2PjJLeNzXXq3Hs2ItwRWsr`
+  (recharge frame node `2024:3253`). v10 is the chosen visual direction.
+
+---
+
 ## RULE 1 — Platform docs first, every time, smallest to biggest
 
 **Before writing or changing ANY Android-facing behaviour, read the Android

@@ -42,6 +42,13 @@ const ALLOWED = new Set([
   // protection left is that recording is confined to src/lib/recorder.ts, which
   // a contract assertion checks.
   'android.permission.RECORD_AUDIO',
+  // Added with photo capture (#8): the "+" in the composer can take a live photo
+  // to send. Like RECORD_AUDIO it is a sensor permission this app owns as a
+  // product decision, declared in our own manifest and requested at runtime in
+  // Composer before launchCamera. It moved out of FORBIDDEN below. The Play Data
+  // Safety form gains a Photos/Camera row and the privacy page must say a photo
+  // is only captured when the user taps Camera and is sent as a message.
+  'android.permission.CAMERA',
 ]);
 
 /**
@@ -91,11 +98,9 @@ const FORBIDDEN = [
   'android.permission.ACCESS_FINE_LOCATION',
   'android.permission.ACCESS_COARSE_LOCATION',
   'android.permission.READ_CONTACTS',
-  'android.permission.CAMERA',
-  // RECORD_AUDIO used to be here. It is in ALLOWED now, with the reason and the
-  // cost written above. CAMERA stays: there is no video call and no photo input,
-  // so a camera permission appearing in the merged manifest would still mean a
-  // dependency wants something the product does not do.
+  // RECORD_AUDIO and CAMERA both used to be here. They are in ALLOWED now, with
+  // the reason and the cost written above — the microphone for voice notes and
+  // the camera for photo capture (#8), each a product decision the app owns.
   'android.permission.READ_PHONE_STATE',
   'android.permission.QUERY_ALL_PACKAGES',
 ];

@@ -79,10 +79,18 @@ export function springTo(
   return withSpring(to, config);
 }
 
-/** Opacity and colour only. */
+/**
+ * Opacity and colour only.
+ *
+ * Eased with Material 3 Expressive's `emphasized_decelerate` curve
+ * (`cubic-bezier(0.05, 0.7, 0.1, 1.0)`) rather than a plain `out(quad)`: it
+ * moves faster in the first phase and settles softer at the end, which is the
+ * single most noticeable step toward the M3 motion feel (#7). Timing-only —
+ * no spring or duration change, so no device rebuild needed.
+ */
 export function fadeTo(to: number, ms: number = DURATION.fast): number {
   'worklet';
-  return withTiming(to, { duration: ms, easing: Easing.out(Easing.quad) });
+  return withTiming(to, { duration: ms, easing: Easing.bezier(0.05, 0.7, 0.1, 1.0) });
 }
 
 /**
@@ -324,29 +332,16 @@ export function shakeX(): number {
 }
 
 /**
- * The collapsing large-title bar, re-exported so the design system keeps one
- * front door.
+ * A gamified pop for the favourite heart.
  *
- * The arithmetic itself lives in `src/lib/collapse.ts` rather than here, and that
- * is a deliberate exception to "motion lives in one module" rather than a hole in
- * it. This module imports `react-native-reanimated`, and reanimated cannot be
- * imported under jest: its worklets module throws while loading native unpackers.
- * So everything declared in this file is testable only by regex over its own
- * source, which is enough to prove a token is referenced and worth nothing at all
- * for proving a curve is correct.
- *
- * `src/lib/spinner.ts` set this precedent for exactly the same reason, and the
- * rule's own test agrees: it forbids raw physics in `src/components` and
- * `src/screens`, not in `src/lib`. What stays here is the policy that a component
- * imports motion from one place; what moved is the arithmetic that a test needs to
- * be able to run.
- *
- * Nothing in `collapse.ts` is a spring or an easing. The moment it wants to be
- * either, it belongs back in this file.
+ * A quick overshoot to 1.35× and spring back to 1 on the `bounce` config —
+ * the same spring that drives the send-bubble launch and the onboarding
+ * completion mark. Use it on a `scale` shared value inside an Animated.View
+ * that wraps the heart Icon, keeping the bounce separate from the Pressable's
+ * own press scale.
  */
-export {
-  COLLAPSE_TRAVEL,
-  COLLAPSE_WINDOW,
-  collapseFrame,
-  type CollapseFrame,
-} from '../lib/collapse';
+export function heartBounce(): number {
+  'worklet';
+  return withSequence(withSpring(1.35, SPRING.bounce), withSpring(1, SPRING.bounce));
+}
+
