@@ -53,13 +53,16 @@ select function_privs_are(
   'authenticated', ARRAY[]::text[],
   'authenticated cannot approve provider applications'
 );
--- The argument list moved in 011: send_message now carries a reply parent and a
--- voice payload, and the two-argument signature was DROPPED rather than
--- overloaded, because two candidates for a two-argument call leave PostgREST
--- guessing which one a client meant. Every behavioural assertion below still
--- calls it with two arguments and still passes, through the defaults.
+-- The argument list has grown as send_message learned new payloads, and each
+-- time the old signature was DROPPED rather than overloaded, because two
+-- candidates for one call leave PostgREST guessing which a client meant: 011
+-- added a reply parent + voice (5 args), 014 added an image attachment (8),
+-- 023 added the voice waveform p_voice_peaks (9). The current signature is the
+-- 9-arg one below. Every behavioural assertion still calls it with two
+-- arguments and still passes, through the defaults.
 select function_privs_are(
-  'public', 'send_message', ARRAY['uuid', 'text', 'uuid', 'text', 'integer'],
+  'public', 'send_message',
+  ARRAY['uuid', 'text', 'uuid', 'text', 'integer', 'text', 'integer', 'integer', 'real[]'],
   'authenticated', ARRAY['EXECUTE'],
   'authenticated may send a message'
 );
