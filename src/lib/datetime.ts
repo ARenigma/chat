@@ -127,6 +127,41 @@ export function longDate(iso: string): string {
 }
 
 /**
+ * A day and month with no year ("10 May"), for a transcript day divider.
+ *
+ * Composed day-then-month explicitly rather than through one `{day, month}`
+ * formatter: Hermes ships only the en-US locale, so an `undefined`-locale
+ * formatter renders "May 10", and the dividers follow the day-first order the
+ * app's readers (India) use and the reference shows. The year is dropped because
+ * the divider's relative label already fixes it in the current week.
+ */
+export function shortDate(iso: string): string {
+  const d = new Date(iso);
+  const day = d.toLocaleDateString(undefined, { day: 'numeric' });
+  const month = d.toLocaleDateString(undefined, { month: 'long' });
+  return `${day} ${month}`;
+}
+
+/**
+ * The two parts of a day-divider label: the relative `label` ("Today",
+ * "Yesterday", "Tuesday") and a `date` tail ("10 May") shown after it, so the
+ * divider reads "Today, 10 May" (the reference's metadata).
+ *
+ * Beyond a week `dayLabel` is already a full written date, so `date` is empty
+ * there rather than appending a second, redundant date.
+ */
+export function dividerParts(
+  iso: string,
+  now: Date = new Date(),
+): { label: string; date: string } {
+  const days = daysBetween(new Date(iso), now);
+  if (days >= 7) {
+    return { label: longDate(iso), date: '' };
+  }
+  return { label: dayLabel(iso, now), date: shortDate(iso) };
+}
+
+/**
  * Whether a transcript row is the first of its calendar day.
  *
  * `older` is the row below it in a newest-first list, and `undefined` at the end

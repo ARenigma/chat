@@ -56,18 +56,28 @@ function WaveformView({ peaks, progress, tint, dim, testID }: Props) {
   const bars = padBars(peaks);
   const row = (
     <View style={styles.row}>
-      {bars.map((peak, i) => (
-        <View
-          key={i}
-          style={{
-            width: BAR_WIDTH,
-            marginRight: BAR_GAP,
-            borderRadius: BAR_WIDTH / 2,
-            height: BAR_MIN + peak * (BAR_MAX - BAR_MIN),
-            backgroundColor: tint,
-          }}
-        />
-      ))}
+      {bars.map((peak, i) => {
+        // Clamp at the render boundary: a peak is amplitude in [0..1], but the
+        // value is stored data (voice_peaks) that a modified client could set to
+        // NaN, ±Infinity, or out of range. `Number.isFinite` rejects NaN/Inf
+        // (which would make `height` NaN and blank the bar), then min/max bounds
+        // it so no bar can exceed BAR_MAX. The DB CHECK (voice_peaks_ok, mig 025)
+        // is the primary guard; this keeps a legacy or malformed row from
+        // deforming the recipient's waveform.
+        const p = Number.isFinite(peak) ? Math.min(1, Math.max(0, peak)) : 0;
+        return (
+          <View
+            key={i}
+            style={{
+              width: BAR_WIDTH,
+              marginRight: BAR_GAP,
+              borderRadius: BAR_WIDTH / 2,
+              height: BAR_MIN + p * (BAR_MAX - BAR_MIN),
+              backgroundColor: tint,
+            }}
+          />
+        );
+      })}
     </View>
   );
 
