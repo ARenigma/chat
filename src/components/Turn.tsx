@@ -104,6 +104,8 @@ export interface VoiceBody {
   messageId: string;
   path: string;
   durationMs: number;
+  /** Stored waveform peaks from migration 023; absent on older rows (FLAT bars are the fallback). */
+  peaks?: readonly number[];
 }
 
 /**
@@ -182,6 +184,7 @@ function Body({
         messageId={voice.messageId}
         path={voice.path}
         durationMs={voice.durationMs}
+        peaks={voice.peaks}
         onAccent={onAccent}
         pending={pending}
         onToggle={voicePlayer.toggle}

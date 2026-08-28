@@ -553,7 +553,10 @@ function ComposerView({
             size={32}
             style={styles.mic}
           >
-            <Icon name="mic" size={24} color={theme.color.text.secondary} />
+            {/* 18, not 24: the mic is an accessory in the field, not a primary
+                action, and at 24 it read as heavy as the emoji sticker glyph
+                beside it (#2). The 32pt Pressable keeps the tap target. */}
+            <Icon name="mic" size={18} color={theme.color.text.secondary} />
           </Pressable>
         )}
       </View>
