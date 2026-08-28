@@ -115,6 +115,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   const balance = useStore(s => s.balance);
   const setBalance = useStore(s => s.setBalance);
   const openRefill = useStore(s => s.openRefill);
+  const setNotice = useStore(s => s.setNotice);
   const [bloomKey, setBloomKey] = useState(0);
   // A1: defer ChatWallpaper's ~800 View+Text nodes until after the SlideInRight
   // open animation completes, so the transition frame budget is not eaten by
@@ -369,7 +370,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
         voice:
           audio === null
             ? undefined
-            : ({ messageId: m.id, path: audio.path, durationMs: audio.durationMs } as VoiceBody),
+            : ({ messageId: m.id, path: audio.path, durationMs: audio.durationMs, peaks: audio.peaks ?? undefined } as VoiceBody),
         image:
           picture === null
             ? undefined
@@ -495,9 +496,17 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
    * trust is required.
    */
   const [sessionEnded, setSessionEnded] = useState(false);
+  // Dismisses the "Need more time?" extend card for this session.
+  const [extendCardDismissed, setExtendCardDismissed] = useState(false);
   // Single slot for the running interval — shared between initial start and
   // the resume restart so there is never more than one running timer.
   const meterRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // The three last-minute in-chat warning timeouts (+10s, +30s, +50s). Keyed
+  // as an array so they can all be cancelled in one sweep. The guard ref
+  // prevents scheduling them twice if last===true is somehow seen on two
+  // consecutive ticks (should not happen, but defensive).
+  const lastMinuteTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const lastMinuteScheduled = useRef(false);
 
   /**
    * Debit one minute atomically. Returns true to keep the session running,
@@ -533,24 +542,35 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
     }
     if (result.success && result.new_balance != null) {
       setBalance(result.new_balance);
-      // result.last=true: balance hit 0 this minute. The session keeps running;
-      // the NEXT charge (60s later) returns OUT_OF_TOKENS and ends it then.
+      // result.last=true: balance just hit 0 — this is the final paid minute.
+      // Schedule three in-chat warnings at +10s, +30s, +50s so the member has
+      // time to recharge before the next tick ends the session. The NEXT charge
+      // (60s later) returns OUT_OF_TOKENS and ends the session then.
+      if (result.last === true && !lastMinuteScheduled.current) {
+        lastMinuteScheduled.current = true;
+        const WARN = 'Less than a minute of talk time left';
+        lastMinuteTimersRef.current = [
+          setTimeout(() => { setNotice(WARN, 'confirm'); }, 10_000),
+          setTimeout(() => { setNotice(WARN, 'confirm'); }, 30_000),
+          setTimeout(() => { setNotice(WARN, 'confirm'); }, 50_000),
+        ];
+      }
       return true;
     }
     // Not a real charge — release the reservation so a resume after recharge (or a
     // retry) can bill immediately rather than being blocked by the minute guard.
     lastChatChargeAt.delete(conversationId);
     // OUT_OF_TOKENS: balance was already 0 — end the session.
-    // NOT_AUTHENTICATED / NO_PROFILE: stop the meter gracefully.
-    if (
-      result.error === 'OUT_OF_TOKENS' ||
-      result.error === 'NOT_AUTHENTICATED' ||
-      result.error === 'NO_PROFILE'
-    ) {
+    // NOT_AUTHENTICATED / NO_PROFILE are TRANSIENT errors (cold-boot, auth session
+    // not yet attached when the meter first fired). Do NOT end the session for
+    // these: the reservation was released above, so the next interval tick will
+    // retry once auth is ready. A member with a positive balance on a cold boot
+    // must NOT see "Out of tokens".
+    if (result.error === 'OUT_OF_TOKENS') {
       return false;
     }
     return true;
-  }, [setBalance, conversationId]);
+  }, [setBalance, setNotice, conversationId]);
 
   // Derived gate: meter runs when the member is in an active conversation and
   // the session has not been ended by an OUT_OF_TOKENS response.
@@ -559,6 +579,16 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   // including balance would restart the meter on every successful charge.
   const shouldMeter =
     (thread?.i_am_member ?? false) && conversationId !== undefined && !sessionEnded;
+
+  // Show a "Need more time?" card when the member has less than 5 minutes of
+  // talk time left (balance < 5 × chat rate = 110 tokens) but is still in an
+  // active session. Dismissible for the current session; resets on recharge.
+  const showExtendCard =
+    balance !== null &&
+    balance > 0 &&
+    balance < 5 * DEFAULT_RATES.chat &&
+    !sessionEnded &&
+    !extendCardDismissed;
 
   // Effect A — meter lifecycle. Starts a prepaid minute immediately when
   // shouldMeter becomes true (chat open or session resumed), then ticks every
@@ -574,6 +604,9 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
     void chargeMinute().then(ok => {
       if (cancelled) return;
       if (!ok) {
+        for (const t of lastMinuteTimersRef.current) clearTimeout(t);
+        lastMinuteTimersRef.current = [];
+        lastMinuteScheduled.current = false;
         setSessionEnded(true);
         openRefill();
         return;
@@ -585,6 +618,9 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
               clearInterval(meterRef.current);
               meterRef.current = null;
             }
+            for (const t of lastMinuteTimersRef.current) clearTimeout(t);
+            lastMinuteTimersRef.current = [];
+            lastMinuteScheduled.current = false;
             setSessionEnded(true);
             openRefill();
           }
@@ -598,6 +634,9 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
         clearInterval(meterRef.current);
         meterRef.current = null;
       }
+      for (const t of lastMinuteTimersRef.current) clearTimeout(t);
+      lastMinuteTimersRef.current = [];
+      lastMinuteScheduled.current = false;
     };
     // shouldMeter encapsulates thread?.i_am_member, conversationId, and
     // !sessionEnded. chargeMinute and openRefill are stable references.
@@ -609,6 +648,13 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   // true and causes Effect A to restart the meter with a fresh prepaid charge.
   useEffect(() => {
     if (sessionEnded && balance !== null && balance > 0) {
+      // Cancel any pending last-minute warnings from the ended session — they
+      // are stale now that the member has recharged.
+      for (const t of lastMinuteTimersRef.current) clearTimeout(t);
+      lastMinuteTimersRef.current = [];
+      lastMinuteScheduled.current = false;
+      // Reset the extend-card dismissal so the card can reappear if needed.
+      setExtendCardDismissed(false);
       setSessionEnded(false);
     }
   }, [sessionEnded, balance]);
@@ -744,8 +790,14 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   );
   // On an inverted list the footer renders at the visual TOP, so this reserves
   // the frosted bar's height there: the oldest message scrolls clear of the
-  // frost instead of resting permanently behind it.
-  const footer = useCallback(() => <View style={{ height: barHeight }} />, [barHeight]);
+  // frost instead of resting permanently behind it. (The extend card is NOT
+  // here — a ListFooterComponent on FlashList v2's inverted list does not land
+  // at the visual top reliably; the card is pinned inside the Frost header
+  // instead, which auto-grows barHeight so this spacer still tracks it.)
+  const footer = useCallback(
+    () => <View style={{ height: barHeight }} />,
+    [barHeight],
+  );
   /**
    * Still resolving covers three cases, not one.
    *
@@ -916,6 +968,45 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
             <Text allowFontScaling style={styles.talkRechargeLabel}>
               Recharge
             </Text>
+          </Pressable>
+        </View>
+      ) : null}
+      {/* "Need more time?" card (#5). Pinned inside the frosted header, directly
+          under the talk strip (matches the Sweprek reference), when the member
+          has under 5 minutes of talk time left. It lives in the Frost so it is
+          measured into `barHeight` and the transcript reserves room for it — a
+          ListFooterComponent placement did not land at the inverted list's
+          visual top on FlashList v2. Dismissible for the session; reappears on
+          recharge if the topped-up balance is still under 5 minutes. */}
+      {showExtendCard ? (
+        <View style={styles.extendCard}>
+          <View style={styles.extendCardContent}>
+            <Text allowFontScaling style={styles.extendCardTitle}>
+              Need more time?
+            </Text>
+            <Text allowFontScaling style={styles.extendCardSubtitle}>
+              Top up to keep the conversation going
+            </Text>
+          </View>
+          <Pressable
+            onPress={openRefill}
+            testID="chat-extend-refill"
+            accessibilityLabel="Recharge to extend talk time"
+            press="chip"
+            style={styles.extendCardButton}>
+            <Text allowFontScaling style={styles.extendCardButtonLabel}>
+              Recharge
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setExtendCardDismissed(true)}
+            testID="chat-extend-dismiss"
+            accessibilityLabel="Dismiss extend card"
+            press="none"
+            highlight="ios"
+            size={28}
+            style={styles.extendCardClose}>
+            <Icon name="close" size={12} color={theme.color.text.secondary} />
           </Pressable>
         </View>
       ) : null}
@@ -1309,5 +1400,53 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: TOKENS.space.md,
     paddingVertical: TOKENS.space['2xs'],
+  },
+  // "Need more time?" card pinned at the top of the transcript (inverted list
+  // footer) when the balance drops under 5 minutes. White card, hairline
+  // border, ink pill button — matches the app's card idiom without competing
+  // with the coral Recharge chip in the talkBar.
+  extendCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: TOKENS.space.xs,
+    marginHorizontal: TOKENS.space.md,
+    marginBottom: TOKENS.space.sm,
+    marginTop: TOKENS.space.xs,
+    padding: TOKENS.space.sm,
+    borderRadius: TOKENS.radius.field,
+    borderCurve: 'continuous',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: t.color.border.hairline,
+    backgroundColor: t.color.bg.raised,
+    ...TOKENS.elevation.card,
+  },
+  extendCardContent: {
+    flex: 1,
+    gap: TOKENS.space['2xs'],
+  },
+  extendCardTitle: {
+    ...TOKENS.typography.labelSmall,
+    color: t.color.text.primary,
+  },
+  extendCardSubtitle: {
+    ...TOKENS.typography.captionRegular,
+    color: t.color.text.secondary,
+  },
+  extendCardButton: {
+    paddingHorizontal: TOKENS.space.md,
+    paddingVertical: TOKENS.space['2xs'],
+    borderRadius: TOKENS.radius.pill,
+    borderCurve: 'continuous',
+    backgroundColor: t.color.bg.inverse,
+  },
+  extendCardButtonLabel: {
+    ...TOKENS.typography.labelSmall,
+    color: t.color.text.onInverse,
+  },
+  extendCardClose: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
