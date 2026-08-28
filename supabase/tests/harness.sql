@@ -55,6 +55,23 @@ begin
 end
 $$;
 
+-- Supabase Vault, reduced to the one view the push triggers read. On a real
+-- project `vault.decrypted_secrets` is a view over `vault.secrets`; a bare
+-- Postgres has neither. `dispatch_call_push` (migration 017) reads it
+-- SYNCHRONOUSLY inside the `calls` insert trigger — unlike the message-push
+-- path, which queues and reads vault only in a cron dispatcher guarded by
+-- `to_regclass`. Without this stub the very first call insert throws
+-- `relation "vault.decrypted_secrets" does not exist` and aborts the calls
+-- suite. Empty on purpose: the triggers find no `*_sender_url`, so they return
+-- before any `net.http_post`, exactly as they do on a project whose secrets are
+-- unset. `vault.secrets` is deliberately NOT stubbed, so migration 009's
+-- `to_regclass('vault.secrets')` guard keeps skipping its secret bootstrap.
+create schema if not exists vault;
+create table if not exists vault.decrypted_secrets (
+  name text,
+  decrypted_secret text
+);
+
 -- ---------------------------------------------------------------------------
 -- Test scaffolding
 -- ---------------------------------------------------------------------------

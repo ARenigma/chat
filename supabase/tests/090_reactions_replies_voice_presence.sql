@@ -62,7 +62,8 @@ select has_column(
   'the directory answers "is she around" as well as "does she reply"'
 );
 select function_privs_are(
-  'public', 'send_message', ARRAY['uuid', 'text', 'uuid', 'text', 'integer'],
+  'public', 'send_message',
+  ARRAY['uuid', 'text', 'uuid', 'text', 'integer', 'text', 'integer', 'integer', 'real[]'],
   'authenticated', ARRAY['EXECUTE'],
   'there is exactly one send path and a client may call it'
 );
