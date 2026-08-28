@@ -169,6 +169,7 @@ export function useSendVoiceNote(
         reply_to_id: replyToId,
         voice_path: path,
         voice_duration_ms: draft.durationMs,
+        voice_peaks: null,
         attachment_path: null,
         attachment_type: null,
         attachment_width: null,
@@ -216,6 +217,7 @@ export function useSendVoiceNote(
         p_reply_to_id: replyToId,
         p_voice_path: path,
         p_voice_duration_ms: draft.durationMs,
+        p_voice_peaks: [...draft.peaks],
       });
       setSending(false);
 

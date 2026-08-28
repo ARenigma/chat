@@ -224,8 +224,8 @@ export function isSendable(durationMs: number): boolean {
  * "text", which is what a row with no voice columns actually is.
  */
 export function voiceOf(
-  message: Pick<Message, 'voice_path' | 'voice_duration_ms'>,
-): { path: string; durationMs: number } | null {
+  message: Pick<Message, 'voice_path' | 'voice_duration_ms' | 'voice_peaks'>,
+): { path: string; durationMs: number; peaks: number[] | null } | null {
   const path = message.voice_path;
   const durationMs = message.voice_duration_ms;
   if (
@@ -236,7 +236,7 @@ export function voiceOf(
   ) {
     return null;
   }
-  return { path, durationMs };
+  return { path, durationMs, peaks: message.voice_peaks };
 }
 
 /**
