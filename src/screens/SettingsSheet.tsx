@@ -324,6 +324,47 @@ export function SettingsSheet({
           </>
         ) : null}
 
+        {/*
+          * Terms and Privacy links: android-audit.md launch-blocking gap.
+          * Both are `Linking.openURL` — no in-app webview, same reason as
+          * the Google sign-in: Linking opens the system browser.
+          * URLs are the same as the seeded policy_versions rows (migration 027).
+          */}
+        <Text allowFontScaling style={styles.subheader}>
+          Legal
+        </Text>
+        <View style={styles.group}>
+          <Pressable
+            onPress={() => {
+              void Linking.openURL('https://bond-app.vercel.app/terms.html');
+            }}
+            testID="settings-terms"
+            accessibilityLabel="Terms of Service"
+            press="none"
+            highlight="ios"
+            style={[styles.row, styles.rowChevron]}>
+            <Text allowFontScaling style={styles.rowTitle}>
+              Terms of Service
+            </Text>
+            <Icon name="chevronRight" size={18} color={theme.color.text.tertiary} />
+          </Pressable>
+          <View style={styles.separator} />
+          <Pressable
+            onPress={() => {
+              void Linking.openURL('https://bond-app.vercel.app/privacy.html');
+            }}
+            testID="settings-privacy"
+            accessibilityLabel="Privacy Policy"
+            press="none"
+            highlight="ios"
+            style={[styles.row, styles.rowChevron]}>
+            <Text allowFontScaling style={styles.rowTitle}>
+              Privacy Policy
+            </Text>
+            <Icon name="chevronRight" size={18} color={theme.color.text.tertiary} />
+          </Pressable>
+        </View>
+
         {/* Managing a block is a UGC-policy requirement: Home hides blocked
             people, so this is the only route back to unblocking one. */}
         {onBlocked !== undefined ? (

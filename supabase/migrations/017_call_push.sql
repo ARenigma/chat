@@ -3,7 +3,7 @@
 -- A call rings for ~30s, so unlike messages it cannot wait for a one-minute cron
 -- — the push has to go the instant the row is created. So this dispatches from an
 -- AFTER INSERT trigger on `calls`, not a schedule. The client builds a CallStyle
--- notification with a full-screen intent from `kind: 'call'`.
+-- heads-up CallStyle notification (no full-screen intent) from `kind: 'call'`.
 --
 -- `pending_call_pushes` (011) is recreated with the caller's public photo appended,
 -- for the CallStyle Person icon. Same privacy line as the message sender: who is

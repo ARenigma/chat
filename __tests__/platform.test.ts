@@ -90,6 +90,17 @@ describe('the manifest states its platform intent', () => {
     // there is no error to notice.
     expect(read(MANIFEST)).toContain('android.permission.POST_NOTIFICATIONS');
   });
+
+  // ADR-0022: Play Billing — BILLING permission is auto-embedded by billing-ktx
+  // (developer.android.com/google/play/billing/integrate#setup). We do NOT add
+  // it explicitly to the manifest; the library's aar merges it automatically.
+  // This test verifies we are NOT accidentally declaring it (which would be
+  // harmless but noisy and indicates someone read the wrong guide).
+  test('manifest does not manually declare BILLING permission', () => {
+    expect(read(MANIFEST)).not.toContain(
+      'android.permission.BILLING'
+    );
+  });
 });
 
 describe('the input method is not allowed to take the window', () => {
@@ -238,7 +249,7 @@ describe('message + engagement notifications', () => {
     expect(body).not.toContain('setFullScreenIntent');
     expect(body).toContain('CATEGORY_CALL');
     // Its own high-importance channel, separate from messages.
-    expect(body).toContain('CHANNEL_CALLS');
+    expect(body).toContain('CALL_CHANNEL_ID');
     // All three types are brand-coloured (#3, "with our brand token").
     expect(body).toContain('BRAND_COLOR');
   });
@@ -398,5 +409,146 @@ describe('the chat transcript is readable by a screen reader', () => {
     const turn = read('src/components/Turn.tsx');
     expect(turn).not.toMatch(/accessibilityLabel=\{onLongPress/);
     expect(turn).toMatch(/accessibilityHint=\{\s*onLongPress/);
+  });
+});
+
+/**
+ * Call lifecycle — foreground service, audio focus, permissions, receiver.
+ * Implementing the requirements from docs/android-audit.md (call lifecycle audit 2026-08-29).
+ *
+ * doc: developer.android.com/develop/connectivity/telecom/self-managed
+ * doc: developer.android.com/develop/background-work/services/foreground-services
+ * doc: developer.android.com/about/versions/14/changes/fgs-types-required
+ * doc: developer.android.com/media/optimize/audio-focus
+ */
+describe('call lifecycle — foreground service and permissions', () => {
+  const FGS = 'android/app/src/main/java/com/companionchat/CallForegroundService.kt';
+  const AUDIO_FOCUS =
+    'android/app/src/main/java/com/companionchat/CallAudioFocusManager.kt';
+  const SEND_CALL = 'supabase/functions/send-call/index.ts';
+
+  it('declares MANAGE_OWN_CALLS, FOREGROUND_SERVICE, and all three FGS-type permissions', () => {
+    /*
+     * MANAGE_OWN_CALLS is the OS prerequisite that unlocks
+     * FOREGROUND_SERVICE_TYPE_PHONE_CALL on API 34+. All four must be present.
+     * (developer.android.com/develop/connectivity/telecom/self-managed)
+     * (developer.android.com/about/versions/14/changes/fgs-types-required)
+     */
+    const manifest = read(MANIFEST);
+    expect(manifest).toContain('android.permission.MANAGE_OWN_CALLS');
+    expect(manifest).toContain('android.permission.FOREGROUND_SERVICE');
+    expect(manifest).toContain('android.permission.FOREGROUND_SERVICE_PHONE_CALL');
+    expect(manifest).toContain('android.permission.FOREGROUND_SERVICE_MICROPHONE');
+    expect(manifest).toContain('android.permission.FOREGROUND_SERVICE_CAMERA');
+  });
+
+  it('declares CallForegroundService with all three foregroundServiceType values', () => {
+    /*
+     * API 34+ enforces the type mask; the service element must declare the
+     * maximum capability set so the OS permits each type at runtime.
+     * (developer.android.com/develop/background-work/services/foreground-services)
+     */
+    const manifest = read(MANIFEST);
+    expect(manifest).toContain('android:name=".CallForegroundService"');
+    expect(manifest).toMatch(/foregroundServiceType="phoneCall\|microphone\|camera"/);
+  });
+
+  it('declares CallActionReceiver in the manifest', () => {
+    // The receiver must be registered so the OS delivers PendingIntent broadcasts
+    // from the CallStyle notification's answer/decline/hang-up buttons.
+    const manifest = read(MANIFEST);
+    expect(manifest).toContain('android:name=".CallActionReceiver"');
+    expect(manifest).toContain('com.companionchat.ACTION_ANSWER_CALL');
+    expect(manifest).toContain('com.companionchat.ACTION_DECLINE_CALL');
+    expect(manifest).toContain('com.companionchat.ACTION_HANG_UP');
+  });
+
+  it('CallForegroundService exists and uses ServiceCompat.startForeground', () => {
+    /*
+     * ServiceCompat.startForeground() is the back-compat path: on pre-API-29
+     * it calls the two-arg form; on API 34+ it passes the type mask.
+     * Requires androidx.core:core:1.12+.
+     * (developer.android.com/develop/background-work/services/foreground-services)
+     */
+    const fgs = read(FGS);
+    expect(fgs).toContain('ServiceCompat.startForeground(');
+    // The FGS must never use fullScreenIntent — the platform test for
+    // Conversations.kt already asserts its absence from the ring notification.
+    expect(fgs).not.toContain('setFullScreenIntent');
+  });
+
+  it('CallAudioFocusManager guards AudioFocusRequest on API 26+', () => {
+    /*
+     * minSdk is 24; AudioFocusRequest is API 26+. An unguarded call is a
+     * NoSuchMethodError on API 24-25 at runtime.
+     * (developer.android.com/media/optimize/audio-focus)
+     */
+    const af = read(AUDIO_FOCUS);
+    expect(af).toMatch(/Build\.VERSION\.SDK_INT >= Build\.VERSION_CODES\.O/);
+    expect(af).toContain('AUDIOFOCUS_GAIN_TRANSIENT');
+    expect(af).toContain('USAGE_VOICE_COMMUNICATION');
+    expect(af).toContain('MODE_IN_COMMUNICATION');
+    // Audio focus is abandoned on call end (restore MODE_NORMAL).
+    expect(af).toContain('abandonCallFocus');
+    expect(af).toContain('MODE_NORMAL');
+  });
+
+  it('ring timeout is 30 s in the FCM send function', () => {
+    /*
+     * FCM TTL must be 30 s so a stale call push is dropped by FCM rather than
+     * ringing the callee long after the caller gave up.
+     * (android-audit.md 2026-08-29 — target is 30 s)
+     */
+    const sendCall = read(SEND_CALL);
+    expect(sendCall).toContain("ttl: '30s'");
+    expect(sendCall).not.toContain("ttl: '45s'");
+  });
+
+  it('notification-driven call answer parses medium from the deep-link URL', () => {
+    /*
+     * Before the fix, App.tsx hardcoded medium: 'voice' for notification-answer
+     * deep links, dropping video for any call answered from the notification.
+     * (android-audit.md 2026-08-29)
+     */
+    const app = read('App.tsx');
+    // Must read medium from the query string, not use a literal 'voice'
+    // in the callMatch branch. The regex checks for medium= extraction.
+    expect(app).toMatch(/medium.*=.*qs\.match.*medium=.*\?.*'voice'/s);
+  });
+
+  it('dataExtractionRules is declared on the application element', () => {
+    /*
+     * allowBackup=false alone does not stop D2D transfer on Android 12+.
+     * The dataExtractionRules file with an empty device-transfer block is
+     * required. (developer.android.com/about/versions/12/behavior-changes-12#backup-restrictions)
+     */
+    const manifest = read(MANIFEST);
+    expect(manifest).toContain('android:dataExtractionRules="@xml/data_extraction_rules"');
+  });
+});
+
+/**
+ * Play Billing Library 9.1 / User Choice Billing.
+ *
+ * ADR-0022: India User-Choice Billing — Play + Cashfree.
+ * doc: developer.android.com/google/play/billing/integrate
+ * doc: developer.android.com/google/play/billing/user-choice-billing
+ */
+describe('Play Billing / UCB', () => {
+  test('billing-ktx 9.1.0 is declared in app/build.gradle', () => {
+    expect(read('android/app/build.gradle')).toContain('billing-ktx:9.1.0');
+  });
+
+  test('Kotlin plugin is 2.2.10 or above (required by billing-ktx 9.1)', () => {
+    const rootGradle = read('android/build.gradle');
+    // Extract version string and verify major.minor.patch >= 2.2.10
+    const match = rootGradle.match(/kotlinVersion\s*=\s*"(\d+)\.(\d+)\.(\d+)"/);
+    expect(match).not.toBeNull();
+    const major = parseInt(match![1]!, 10);
+    const minor = parseInt(match![2]!, 10);
+    const patch = parseInt(match![3]!, 10);
+    const version = major * 10000 + minor * 100 + patch;
+    // 2.2.10 = 20210
+    expect(version).toBeGreaterThanOrEqual(2 * 10000 + 2 * 100 + 10);
   });
 });

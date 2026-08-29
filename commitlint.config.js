@@ -23,6 +23,7 @@ module.exports = {
         'safety', // moderation, reporting, classification
         'payments', // wallet, payouts, billing
         'android', // native project, manifest, Gradle
+        'admin', // admin control plane (admin/)
         'ci', // pipeline and gates
         'test', // suites and harnesses
         'adr', // architecture decision records

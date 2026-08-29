@@ -66,6 +66,14 @@ const MIGRATIONS = [
   'supabase/migrations/023_voice_peaks.sql',
   'supabase/migrations/024_send_message_return.sql',
   'supabase/migrations/025_voice_peaks_range.sql',
+  'supabase/migrations/026_admin_config_and_policy.sql',
+  'supabase/migrations/027_policy_versions_and_acceptance.sql',
+  'supabase/migrations/028_balance_buckets_and_ledger.sql',
+  'supabase/migrations/029_billing_snapshot_and_accrual.sql',
+  'supabase/migrations/030_paid_sessions.sql',
+  'supabase/migrations/031_purge_and_evidence.sql',
+  'supabase/migrations/032_telemetry_event_extensions.sql',
+  'supabase/migrations/033_credit_purchased_recharge.sql',
 ];
 
 const docker = (args, options = {}) =>

@@ -16,6 +16,7 @@ const isEslintIgnored = file =>
   ignorePatterns.some(pattern => file.includes(pattern.replace(/\/$/, '')));
 
 module.exports = {
+  'admin/**/*.{ts,tsx}': () => 'npm --prefix admin run lint',
   '*.{ts,tsx}': files => {
     const lintable = files.filter(f => !isEslintIgnored(f));
     if (lintable.length === 0) {

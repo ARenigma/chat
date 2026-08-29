@@ -24,7 +24,11 @@ enable_manual_linking = false
 # `site_url` is set to the same deep link rather than left at the 127.0.0.1
 # placeholder, so the fallback lands somewhere useful too.
 site_url = "companionchat://auth-callback"
-additional_redirect_urls = ["companionchat://auth-callback"]
+additional_redirect_urls = [
+  "companionchat://auth-callback",
+  # Admin control plane OAuth callback — ADR-0023
+  "https://admin.pappal.live/auth/callback",
+]
 
 [auth.email]
 # Off as a user-facing path. `enabled` stays true for exactly one reason:

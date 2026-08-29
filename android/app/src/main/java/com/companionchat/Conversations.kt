@@ -69,8 +69,10 @@ object Conversations {
     /**
      * The incoming-call channel: IMPORTANCE_HIGH so it can heads-up and ring, and
      * its own channel so a user can control call alerts separately from messages.
+     * Public so CallForegroundService can build its ongoing notification on the same
+     * channel — one channel entry in Settings, consistent sound settings.
      */
-    private const val CHANNEL_CALLS = "calls"
+    const val CALL_CHANNEL_ID = "calls"
 
     // Pappal coral (#F2543D). Tints all three notification types so they read as
     // one brand (Amit, 2026-08-27) — the small icon and the CallStyle accent.
@@ -98,7 +100,7 @@ object Conversations {
 
     fun ensureCallChannel(context: Context) {
         val channel = NotificationChannelCompat
-            .Builder(CHANNEL_CALLS, NotificationManagerCompat.IMPORTANCE_HIGH)
+            .Builder(CALL_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_HIGH)
             .setName(context.getString(R.string.channel_calls))
             .setDescription(context.getString(R.string.channel_calls_desc))
             .setShowBadge(false)
@@ -299,7 +301,7 @@ object Conversations {
         val answer = callActionIntent(context, peerId, callId, "answer")
         val decline = callActionIntent(context, peerId, callId, "decline")
 
-        val notification = NotificationCompat.Builder(context, CHANNEL_CALLS)
+        val notification = NotificationCompat.Builder(context, CALL_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setColor(BRAND_COLOR)
             .setStyle(NotificationCompat.CallStyle.forIncomingCall(caller, decline, answer))

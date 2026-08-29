@@ -309,6 +309,26 @@ dependencies {
     implementation("com.facebook.react:react-android")
 
     /**
+     * Google Play Billing Library 9.1 — required for User Choice Billing (UCB).
+     *
+     * UCB is the Play Billing Programme for India that lets users pay via
+     * Google Play or an alternative billing system (Cashfree). Both options
+     * must be shown simultaneously, above the fold, with equal visual weight.
+     * This is a contractual requirement, not a suggestion.
+     *
+     * billing-ktx 9.1 requires Kotlin ≥ 2.2.10 (silently — Kotlin 2.1.x
+     * causes a metadata resolution error that does not mention billing).
+     * The version is pinned in android/build.gradle.
+     *
+     * BILLING permission is auto-embedded by billing-ktx; do NOT add it
+     * to the manifest.
+     *
+     * doc: developer.android.com/google/play/billing/integrate
+     * doc: developer.android.com/google/play/billing/user-choice-billing
+     */
+    implementation("com.android.billingclient:billing-ktx:9.1.0")
+
+    /**
      * Google Play in-app updates.
      *
      * This has to ship in the FIRST release or it is useless for the first
@@ -383,6 +403,11 @@ dependencies {
     implementation("androidx.credentials:credentials:1.3.0")
     implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
+
+    // Core-Telecom self-managed calling API (developer.android.com/develop/connectivity/telecom/self-managed)
+    implementation("androidx.core:core-telecom:1.0.0")
+    // ServiceCompat.startForeground() with type mask — requires 1.12+ (developer.android.com/develop/background-work/services/foreground-services)
+    implementation("androidx.core:core:1.12.0")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

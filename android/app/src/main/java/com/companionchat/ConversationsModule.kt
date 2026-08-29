@@ -83,7 +83,7 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
         }
     }
 
-    /** Ring an incoming call — the CallStyle full-screen notification. */
+    /** Ring an incoming call — a heads-up CallStyle notification (no full-screen intent). */
     @ReactMethod
     fun notifyCall(
         callId: String,
@@ -120,6 +120,24 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
     fun clear(conversationId: String, promise: Promise) {
         Conversations.clear(reactContext, conversationId)
         promise.resolve(null)
+    }
+
+    /**
+     * Starts the foreground service that keeps an active call alive in background.
+     * Must be called from a foreground context (user action) on API 26+.
+     * (developer.android.com/develop/background-work/services/foreground-services)
+     */
+    @ReactMethod
+    fun startCallForegroundService(callerName: String) {
+        // Starts the FGS that keeps the call alive in background.
+        // Must be called from a foreground context (user action).
+        CallForegroundService.startIncoming(reactApplicationContext, callerName)
+    }
+
+    /** Stops the call foreground service when the call ends or is declined. */
+    @ReactMethod
+    fun stopCallForegroundService() {
+        CallForegroundService.stop(reactApplicationContext)
     }
 
     /**

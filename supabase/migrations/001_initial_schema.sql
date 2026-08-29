@@ -5,7 +5,7 @@
 create table public.profiles (
   id uuid references auth.users on delete cascade primary key,
   username text default 'Friend',
-  token_balance integer default 50 not null check (token_balance >= 0),
+  token_balance integer default 0 not null check (token_balance >= 0),
   created_at timestamptz default now() not null
 );
 

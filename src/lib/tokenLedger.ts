@@ -13,21 +13,33 @@
  * RPC, there is no second runtime, and the indirection bought nothing.
  */
 
-/** One message costs one token. No per-character maths, ever. */
+/**
+ * One message costs one token. No per-character maths, ever.
+ * @deprecated Per-message billing is superseded by per-minute session metering
+ * (ADR-0021). This constant remains in use by tests and the client-side pre-flight
+ * guard until the session metering RPCs (migration 031) are wired to the app.
+ */
 export const MESSAGE_COST = 1;
 
-/** Below this, the refill affordance appears. Non-blocking. */
+/**
+ * Below this, the refill affordance appears. Non-blocking.
+ * Superseded by the admin config key `thresholds.low_balance_tokens` (default 22)
+ * read via `get_active_config('thresholds')`. This constant remains the
+ * client-side fallback until runtime config is propagated to the app. (ADR-0021)
+ */
 export const LOW_BALANCE_THRESHOLD = 3;
 
 /** Tokens granted by `claim_daily_tokens`, at most once per 24h. */
 export const DAILY_REFILL_TOKENS = 25;
 
 /**
- * Balance handed to a brand-new profile. Mirrors the column default, and a
- * contract test now asserts that rather than trusting this comment: the pgTAP
- * suite already checked the number by hand while nothing connected it to here.
+ * Balance handed to a brand-new profile. Changed from 50 → 0 per ADR-0021:
+ * the starting grant is read from admin config `wallet.starting_grant_tokens`
+ * (default 0). Migration 028 reclassified all existing balances as promo_balance;
+ * new profiles start at 0 until an admin grant or recharge is applied.
+ * Contract test in the pgTAP suite asserts the database default matches this value.
  */
-export const STARTING_BALANCE = 50;
+export const STARTING_BALANCE = 0;
 
 /** Hard input ceiling. Mirrors the CHECK constraint on `messages.body`. */
 export const MAX_MESSAGE_CHARS = 4000;
