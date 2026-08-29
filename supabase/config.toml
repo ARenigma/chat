@@ -1,5 +1,12 @@
 project_id = "uvghvhcrovmuwivgijvl"
 
+# The admin control plane uses the service role and explicit `.schema('admin')`
+# calls. RLS remains enabled with no anon/authenticated policies, so exposing
+# the schema does not expose its rows to mobile clients.
+[api]
+schemas = ["public", "graphql_public", "admin"]
+extra_search_path = ["public", "extensions"]
+
 # Auth configuration, pushed to the linked project with `supabase config push`.
 # Kept in the repo so the project's auth posture is reviewable in a diff rather
 # than living only in a dashboard someone changed six months ago.

@@ -312,7 +312,7 @@ begin
   perform cron.schedule(
     'apply-config-versions',
     '* * * * *',
-    $$select admin.apply_due_config_versions()$$
+    $cron$select admin.apply_due_config_versions()$cron$
   );
 end
 $$;
