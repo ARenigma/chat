@@ -1,6 +1,20 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { AnimatePresence, motion } from 'motion/react';
+import {
+  type DomainDef,
+  formatDisplayValue,
+  getDomain,
+  validatePayload,
+} from '@/lib/config-registry';
+import { GuidedForm } from '@/components/config/GuidedForm';
+import { Button } from '@/components/ui/Button';
+import { Dialog } from '@/components/ui/Dialog';
+import { Input, Textarea } from '@/components/ui/Input';
+import { useToast } from '@/components/ui/Toast';
+import { useMutation } from '@/lib/hooks/useMutation';
 
 interface ConfigVersion {
   id: string;
@@ -18,371 +32,405 @@ interface Props {
   draftVersion: ConfigVersion | null;
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const colours: Record<string, { bg: string; text: string }> = {
-    active: { bg: '#dcfce7', text: '#166534' },
-    draft: { bg: '#fef9c3', text: '#854d0e' },
-    superseded: { bg: '#f1f5f9', text: '#64748b' },
-    scheduled: { bg: '#dbeafe', text: '#1e40af' },
-  };
-  const c = colours[status] ?? { bg: '#f1f5f9', text: '#64748b' };
-  return (
-    <span
-      style={{
-        display: 'inline-block',
-        padding: '0.125rem 0.5rem',
-        borderRadius: '999px',
-        fontSize: '0.75rem',
-        fontWeight: 600,
-        background: c.bg,
-        color: c.text,
-      }}
-    >
-      {status}
-    </span>
-  );
+function buildDiff(
+  active: Record<string, unknown>,
+  draft: Record<string, unknown>,
+  domainDef: DomainDef
+): Array<{ key: string; label: string; old: unknown; new: unknown }> {
+  const changes: Array<{ key: string; label: string; old: unknown; new: unknown }> = [];
+  for (const field of domainDef.fields) {
+    const oldVal = active[field.key];
+    const newVal = draft[field.key];
+    if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) {
+      changes.push({
+        key: field.key,
+        label: field.label,
+        old: oldVal,
+        new: newVal,
+      });
+    }
+  }
+  return changes;
 }
 
 export function ConfigVersionEditor({ domain, activeVersion, draftVersion }: Props) {
-  const seedPayload = draftVersion?.payload ?? activeVersion?.payload ?? {};
-  const [draft, setDraft] = useState(() => JSON.stringify(seedPayload, null, 2));
-  const [parseError, setParseError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const router = useRouter();
+  const toast = useToast();
+  const domainDef = getDomain(domain);
+
+  const seedPayload = (draftVersion?.payload ?? activeVersion?.payload ?? {}) as Record<
+    string,
+    unknown
+  >;
+  const [payload, setPayload] = useState<Record<string, unknown>>(seedPayload);
+  const [isDirty, setIsDirty] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [jsonText, setJsonText] = useState(() => JSON.stringify(seedPayload, null, 2));
+  const [jsonError, setJsonError] = useState<string | null>(null);
   const [savedDraftId, setSavedDraftId] = useState<string | null>(draftVersion?.id ?? null);
 
-  // Publish confirmation state.
+  // Publish modal state
   const [showPublish, setShowPublish] = useState(false);
   const [confirmPhrase, setConfirmPhrase] = useState('');
   const [reason, setReason] = useState('');
-  const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
 
-  function handleDraftChange(v: string) {
-    setDraft(v);
+  // Track active payload (from DB) for diff
+  const activePayload = (activeVersion?.payload ?? {}) as Record<string, unknown>;
+
+  // Keep JSON textarea in sync when guided form changes
+  function handlePayloadChange(next: Record<string, unknown>) {
+    setPayload(next);
+    setJsonText(JSON.stringify(next, null, 2));
+    setIsDirty(true);
+    setSavedDraftId(null);
+  }
+
+  // When JSON editor changes, try to sync back to guided form
+  function handleJsonChange(v: string) {
+    setJsonText(v);
+    setIsDirty(true);
+    setSavedDraftId(null);
     try {
-      JSON.parse(v);
-      setParseError(null);
+      const parsed = JSON.parse(v);
+      setPayload(parsed as Record<string, unknown>);
+      setJsonError(null);
     } catch {
-      setParseError('Invalid JSON');
+      setJsonError('Invalid JSON — fix before saving.');
     }
   }
 
-  async function saveDraft() {
-    setSaving(true);
-    setSaveError(null);
-    try {
-      JSON.parse(draft); // validate before send
-    } catch {
-      setSaveError('Fix JSON errors before saving.');
-      setSaving(false);
-      return;
+  // Warn on navigation away when dirty
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty && savedDraftId == null) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty, savedDraftId]);
+
+  // Validation errors
+  const validationErrors = domainDef ? validatePayload(domainDef, payload) : [];
+
+  const saveMutation = useMutation(
+    async () => {
+      if (validationErrors.length > 0) throw new Error(validationErrors[0]);
+      if (jsonError) throw new Error(jsonError);
+
+      const res = await fetch(`/api/config/${domain}/draft`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payload }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      return (await res.json()) as { id: string; version_number: number };
+    },
+    {
+      onSuccess: (data) => {
+        setSavedDraftId(data.id);
+        setIsDirty(false);
+        toast.success('Draft saved');
+      },
+      onError: (err) => toast.error(`Save failed: ${err}`),
     }
+  );
 
-    const res = await fetch(`/api/config/${domain}/draft`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ payload: JSON.parse(draft) }),
-    });
+  const publishMutation = useMutation(
+    async () => {
+      if (confirmPhrase !== 'publish to production') throw new Error('Type the exact phrase to confirm.');
+      if (!reason.trim()) throw new Error('Reason is required.');
 
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      setSaveError(body.error ?? `HTTP ${res.status}`);
-    } else {
-      const body = (await res.json()) as { id?: string };
-      setSavedDraftId(body.id ?? null);
+      const res = await fetch(`/api/config/${domain}/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          draft_version_id: savedDraftId,
+          confirmation_phrase: confirmPhrase,
+          reason: reason.trim(),
+        }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+    {
+      onSuccess: () => {
+        setShowPublish(false);
+        toast.success('Published to production');
+        router.refresh();
+      },
+      onError: (err) => setPublishError(err),
     }
-    setSaving(false);
-  }
+  );
 
-  async function publish() {
-    if (confirmPhrase !== 'publish to production') {
-      setPublishError('Type the exact phrase to confirm.');
-      return;
-    }
-    if (!reason.trim()) {
-      setPublishError('Reason is required.');
-      return;
-    }
-    setPublishing(true);
-    setPublishError(null);
-
-    const res = await fetch(`/api/config/${domain}/publish`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        draft_version_id: savedDraftId,
-        confirmation_phrase: confirmPhrase,
-        reason: reason.trim(),
-        reauth_timestamp: new Date().toISOString(),
-      }),
-    });
-
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      setPublishError(body.error ?? `HTTP ${res.status}`);
-      setPublishing(false);
-      return;
-    }
-    // Reload to reflect the newly active version.
-    window.location.reload();
-  }
-
-  const labelStyle: React.CSSProperties = {
-    fontSize: '0.8125rem',
-    fontWeight: 600,
-    color: 'var(--text-secondary)',
-    marginBottom: '0.375rem',
-    display: 'block',
-  };
+  // Diff from active
+  const diff =
+    savedDraftId != null && domainDef
+      ? buildDiff(activePayload, payload, domainDef)
+      : [];
 
   return (
     <div>
-      {/* Active version read-only view */}
-      {activeVersion != null && (
-        <section style={{ marginBottom: '2rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
-            <h2 style={{ fontSize: '1rem', fontWeight: 600 }}>Active version</h2>
-            <StatusBadge status="active" />
-            <span style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
-              v{activeVersion.version_number}
-              {activeVersion.published_at != null && (
-                <> · published {new Date(activeVersion.published_at).toLocaleString('en-IN')}</>
-              )}
-            </span>
+      {/* Guided form */}
+      {domainDef ? (
+        <section style={{ marginBottom: '1.5rem' }}>
+          <GuidedForm
+            domain={domainDef}
+            payload={payload}
+            onChange={handlePayloadChange}
+          />
+        </section>
+      ) : (
+        /* Fallback: raw JSON for unknown domains */
+        <section style={{ marginBottom: '1.5rem' }}>
+          <div className="field">
+            <label className="field-label" htmlFor="payload-editor">Edit payload (JSON)</label>
+            <Textarea
+              id="payload-editor"
+              value={jsonText}
+              mono
+              rows={16}
+              error={jsonError != null}
+              onChange={(e) => handleJsonChange(e.target.value)}
+              spellCheck={false}
+            />
+            {jsonError && <p className="field-error">{jsonError}</p>}
           </div>
-          <pre
-            style={{
-              background: 'var(--bg-sunken)',
-              borderRadius: '10px',
-              padding: '1rem',
-              fontSize: '0.8125rem',
-              fontFamily: 'var(--font-mono)',
-              overflowX: 'auto',
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-all',
-              maxHeight: '280px',
-              overflowY: 'auto',
-            }}
-          >
-            {JSON.stringify(activeVersion.payload, null, 2)}
-          </pre>
         </section>
       )}
 
-      {/* Draft editor */}
-      <section style={{ marginBottom: '2rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
-          <h2 style={{ fontSize: '1rem', fontWeight: 600 }}>Draft editor</h2>
-          {savedDraftId != null && <StatusBadge status="draft" />}
-        </div>
-
-        <label htmlFor="payload-editor" style={labelStyle}>
-          Edit payload (JSON)
-        </label>
-        <textarea
-          id="payload-editor"
-          value={draft}
-          onChange={(e) => handleDraftChange(e.target.value)}
-          spellCheck={false}
-          rows={16}
-          style={{
-            width: '100%',
-            fontFamily: 'var(--font-mono)',
-            fontSize: '0.8125rem',
-            padding: '0.875rem',
-            border: `1px solid ${parseError != null ? 'var(--bg-accent)' : 'var(--border-hairline)'}`,
-            borderRadius: '10px',
-            background: 'var(--bg-sunken)',
-            resize: 'vertical',
-            color: 'var(--text-primary)',
-          }}
-        />
-        {parseError != null && (
-          <p style={{ color: 'var(--bg-accent-strong)', fontSize: '0.8125rem', marginTop: '0.25rem' }}>
-            {parseError}
-          </p>
-        )}
-
-        <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.75rem', alignItems: 'center' }}>
+      {/* Advanced JSON */}
+      {domainDef && (
+        <section style={{ marginBottom: '1.5rem' }}>
           <button
-            onClick={() => {
-              saveDraft().catch(() => undefined);
-            }}
-            disabled={saving || parseError != null}
-            style={{
-              padding: '0.5rem 1.125rem',
-              background: 'var(--bg-inverse)',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '8px',
-              fontWeight: 600,
-              fontSize: '0.875rem',
-              cursor: saving || parseError != null ? 'not-allowed' : 'pointer',
-              opacity: saving || parseError != null ? 0.5 : 1,
-            }}
+            type="button"
+            className="btn btn--ghost btn--sm"
+            onClick={() => setShowAdvanced((v) => !v)}
+            style={{ gap: '0.375rem' }}
           >
-            {saving ? 'Saving…' : 'Save draft'}
+            <span style={{ transform: showAdvanced ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>▶</span>
+            Advanced: raw JSON
           </button>
-
-          <button
-            onClick={() => setShowPublish(true)}
-            disabled={savedDraftId == null}
-            style={{
-              padding: '0.5rem 1.125rem',
-              background: savedDraftId != null ? 'var(--bg-accent-strong)' : 'var(--bg-sunken)',
-              color: savedDraftId != null ? '#fff' : 'var(--text-secondary)',
-              border: 'none',
-              borderRadius: '8px',
-              fontWeight: 600,
-              fontSize: '0.875rem',
-              cursor: savedDraftId == null ? 'not-allowed' : 'pointer',
-            }}
-          >
-            Publish to production…
-          </button>
-
-          {saveError != null && (
-            <p style={{ color: 'var(--bg-accent-strong)', fontSize: '0.8125rem' }}>{saveError}</p>
-          )}
-        </div>
-      </section>
-
-      {/* Publish confirmation */}
-      {showPublish && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.4)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 100,
-          }}
-        >
-          <div
-            style={{
-              background: 'var(--bg-raised)',
-              borderRadius: '16px',
-              padding: '2rem',
-              width: '480px',
-              maxWidth: '90vw',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-            }}
-          >
-            <h2 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: '0.5rem' }}>
-              Publish to production
-            </h2>
-            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
-              This immediately replaces the active prod config for{' '}
-              <strong>{domain}</strong>.
-            </p>
-
-            <label style={labelStyle} htmlFor="publish-reason">
-              Reason for this change
-            </label>
-            <input
-              id="publish-reason"
-              type="text"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g. Increase chat rate to 25 tokens/min per ADR-0020 update"
-              style={{
-                width: '100%',
-                padding: '0.625rem 0.75rem',
-                border: '1px solid var(--border-hairline)',
-                borderRadius: '8px',
-                fontSize: '0.875rem',
-                marginBottom: '1rem',
-                background: 'var(--bg-sunken)',
-                color: 'var(--text-primary)',
-              }}
-            />
-
-            <label style={labelStyle} htmlFor="confirm-phrase">
-              Type <strong>publish to production</strong> to confirm
-            </label>
-            <input
-              id="confirm-phrase"
-              type="text"
-              value={confirmPhrase}
-              onChange={(e) => setConfirmPhrase(e.target.value)}
-              placeholder="publish to production"
-              style={{
-                width: '100%',
-                padding: '0.625rem 0.75rem',
-                border: `1px solid ${confirmPhrase !== '' && confirmPhrase !== 'publish to production' ? 'var(--bg-accent)' : 'var(--border-hairline)'}`,
-                borderRadius: '8px',
-                fontSize: '0.875rem',
-                marginBottom: '1rem',
-                background: 'var(--bg-sunken)',
-                color: 'var(--text-primary)',
-              }}
-            />
-
-            {publishError != null && (
-              <p
-                style={{
-                  color: 'var(--bg-accent-strong)',
-                  fontSize: '0.8125rem',
-                  marginBottom: '1rem',
-                }}
+          <AnimatePresence initial={false}>
+            {showAdvanced && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                style={{ overflow: 'hidden' }}
               >
-                {publishError}
-              </p>
+                <div style={{ paddingTop: '0.75rem' }}>
+                  <div className="field">
+                    <label className="field-label" htmlFor="payload-json">
+                      Raw JSON — edits sync to guided controls
+                    </label>
+                    <Textarea
+                      id="payload-json"
+                      value={jsonText}
+                      mono
+                      rows={12}
+                      error={jsonError != null}
+                      onChange={(e) => handleJsonChange(e.target.value)}
+                      spellCheck={false}
+                    />
+                    {jsonError && <p className="field-error">{jsonError}</p>}
+                    {validationErrors.length > 0 && (
+                      <div style={{ marginTop: '0.5rem' }}>
+                        {validationErrors.map((e, i) => (
+                          <p key={i} className="field-error">{e}</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
             )}
+          </AnimatePresence>
+        </section>
+      )}
 
-            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => {
-                  setShowPublish(false);
-                  setConfirmPhrase('');
-                  setReason('');
-                  setPublishError(null);
-                }}
-                style={{
-                  padding: '0.5rem 1rem',
-                  background: 'var(--bg-sunken)',
-                  color: 'var(--text-primary)',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontWeight: 600,
-                  fontSize: '0.875rem',
-                  cursor: 'pointer',
-                }}
+      {/* Inline diff after save */}
+      <AnimatePresence>
+        {savedDraftId != null && diff.length > 0 && (
+          <motion.section
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            style={{ marginBottom: '1.5rem' }}
+          >
+            <p className="section-label" style={{ marginBottom: '0.5rem' }}>Changes from live</p>
+            <div className="diff-wrap">
+              {diff.map(({ key, label, old: oldVal, new: newVal }) => {
+                const field = domainDef?.fields.find((f) => f.key === key);
+                return (
+                  <div key={key} className="diff-row">
+                    <p className="diff-row-label">{label}</p>
+                    <p className="diff-old">
+                      {field ? formatDisplayValue(field, oldVal) : JSON.stringify(oldVal)}
+                    </p>
+                    <p className="diff-new">
+                      {field ? formatDisplayValue(field, newVal) : JSON.stringify(newVal)}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.section>
+        )}
+      </AnimatePresence>
+
+      {/* Save bar */}
+      <AnimatePresence>
+        {(isDirty || saveMutation.error) && (
+          <motion.div
+            className="save-bar"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            transition={{ duration: 0.18 }}
+          >
+            <span className="save-bar-info">
+              {saveMutation.error
+                ? saveMutation.error
+                : savedDraftId == null
+                ? 'Unsaved changes'
+                : 'Draft saved — ready to publish'}
+            </span>
+            <div className="save-bar-actions">
+              {isDirty && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setPayload(seedPayload);
+                    setJsonText(JSON.stringify(seedPayload, null, 2));
+                    setIsDirty(false);
+                    setSavedDraftId(draftVersion?.id ?? null);
+                  }}
+                >
+                  Discard
+                </Button>
+              )}
+              <Button
+                variant="primary"
+                size="sm"
+                loading={saveMutation.loading}
+                disabled={validationErrors.length > 0 || !!jsonError}
+                onClick={() => { saveMutation.mutate(undefined).catch(() => undefined); }}
               >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  publish().catch(() => undefined);
-                }}
-                disabled={publishing || confirmPhrase !== 'publish to production' || !reason.trim()}
-                style={{
-                  padding: '0.5rem 1.125rem',
-                  background: 'var(--bg-accent-strong)',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontWeight: 600,
-                  fontSize: '0.875rem',
-                  cursor:
-                    publishing || confirmPhrase !== 'publish to production' || !reason.trim()
-                      ? 'not-allowed'
-                      : 'pointer',
-                  opacity:
-                    publishing || confirmPhrase !== 'publish to production' || !reason.trim()
-                      ? 0.5
-                      : 1,
-                }}
-              >
-                {publishing ? 'Publishing…' : 'Publish'}
-              </button>
+                Save draft
+              </Button>
+              {savedDraftId != null && (
+                <Button
+                  variant="accent"
+                  size="sm"
+                  onClick={() => setShowPublish(true)}
+                >
+                  Publish to production…
+                </Button>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Publish confirm dialog */}
+      <Dialog
+        open={showPublish}
+        onClose={() => {
+          setShowPublish(false);
+          setConfirmPhrase('');
+          setReason('');
+          setPublishError(null);
+          publishMutation.reset();
+        }}
+        title="Publish to production"
+        description={`This immediately replaces the active config for "${domainDef?.name ?? domain}" for all users.`}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => setShowPublish(false)}
+              disabled={publishMutation.loading}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="accent"
+              loading={publishMutation.loading}
+              disabled={confirmPhrase !== 'publish to production' || !reason.trim()}
+              onClick={() => { publishMutation.mutate(undefined).catch(() => undefined); }}
+            >
+              Publish
+            </Button>
+          </>
+        }
+      >
+        {/* Diff summary inside dialog */}
+        {diff.length > 0 && (
+          <div style={{ marginBottom: '1.25rem' }}>
+            <p className="section-label" style={{ marginBottom: '0.5rem' }}>What changes</p>
+            <div className="diff-wrap" style={{ maxHeight: '180px' }}>
+              {diff.map(({ key, label, old: oldVal, new: newVal }) => {
+                const field = domainDef?.fields.find((f) => f.key === key);
+                return (
+                  <div key={key} className="diff-row">
+                    <p className="diff-row-label">{label}</p>
+                    <p className="diff-old">
+                      {field ? formatDisplayValue(field, oldVal) : JSON.stringify(oldVal)}
+                    </p>
+                    <p className="diff-new">
+                      {field ? formatDisplayValue(field, newVal) : JSON.stringify(newVal)}
+                    </p>
+                  </div>
+                );
+              })}
             </div>
           </div>
+        )}
+
+        <div className="field" style={{ marginBottom: '1rem' }}>
+          <label className="field-label" htmlFor="publish-reason">Reason for this change</label>
+          <Input
+            id="publish-reason"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. Increase chat rate per Q3 pricing review"
+            disabled={publishMutation.loading}
+          />
         </div>
-      )}
+
+        <div className="field" style={{ marginBottom: '0.5rem' }}>
+          <label className="field-label" htmlFor="confirm-phrase">
+            Type <strong>publish to production</strong> to confirm
+          </label>
+          <Input
+            id="confirm-phrase"
+            value={confirmPhrase}
+            onChange={(e) => {
+              setConfirmPhrase(e.target.value);
+              setPublishError(null);
+            }}
+            placeholder="publish to production"
+            error={confirmPhrase !== '' && confirmPhrase !== 'publish to production'}
+            disabled={publishMutation.loading}
+            autoComplete="off"
+          />
+        </div>
+
+        {publishError && (
+          <p className="alert alert--error" style={{ marginTop: '0.75rem' }}>{publishError}</p>
+        )}
+      </Dialog>
     </div>
   );
 }

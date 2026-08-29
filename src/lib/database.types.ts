@@ -899,6 +899,24 @@ export type Database = {
         Args: { p_session_id: string; p_kind: string };
         Returns: string;
       };
+      /**
+       * Returns the active production payload for a config domain.
+       * Requires authentication. Used by billing/session RPCs server-side;
+       * also callable from authenticated mobile clients. Migration 026.
+       */
+      get_active_config: {
+        Args: { p_domain: string };
+        Returns: Record<string, unknown> | null;
+      };
+      /**
+       * Returns the active production payload for a publicly-accessible
+       * config domain (kill_switches, auth_ui). Callable by anon and
+       * authenticated roles. Migration 035.
+       */
+      get_public_config: {
+        Args: { p_domain: string };
+        Returns: Record<string, unknown> | null;
+      };
     };
     Enums: {
       user_role: UserRole;

@@ -1,4 +1,9 @@
+import Link from 'next/link';
 import { createServiceClient } from '@/lib/supabase/service';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { Panel } from '@/components/ui/Card';
+import { StatusBadge } from '@/components/ui/Badge';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 const PAGE_SIZE = 50;
 
@@ -23,7 +28,7 @@ export default async function AuditPage({
 
   const svc = createServiceClient();
 
-  const { data, count } = await svc
+  const { data, count, error } = await svc
     .schema('admin')
     .from('config_audit')
     .select('id, action, domain, actor, reason, confirmation, created_at', { count: 'exact' })
@@ -34,171 +39,111 @@ export default async function AuditPage({
   const total = count ?? 0;
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
-  const ACTION_COLOUR: Record<string, string> = {
-    draft_created: '#f1f5f9',
-    published_staging: '#dbeafe',
-    promoted_prod: '#dcfce7',
-    scheduled: '#fef9c3',
-    rollback: '#fee2e2',
-    activation_cron: '#f0fdf4',
-  };
-
   return (
     <div>
-      <h1
-        style={{
-          fontSize: '1.5rem',
-          fontWeight: 700,
-          letterSpacing: '-0.02em',
-          marginBottom: '0.5rem',
-        }}
-      >
-        Audit log
-      </h1>
-      <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '2rem' }}>
-        Immutable record of all config changes. {total.toLocaleString()} entries.
-      </p>
+      <PageHeader
+        title="Audit log"
+        subtitle={`Immutable record of all config changes. ${total.toLocaleString()} entries.`}
+      />
 
-      <div
-        style={{
-          background: 'var(--bg-raised)',
-          border: '1px solid var(--border-hairline)',
-          borderRadius: '12px',
-          overflow: 'hidden',
-          marginBottom: '1.5rem',
-        }}
-      >
-        {/* Header */}
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '140px 100px 1fr 120px 160px',
-            padding: '0.75rem 1.25rem',
-            background: 'var(--bg-sunken)',
-            fontSize: '0.75rem',
-            fontWeight: 700,
-            color: 'var(--text-secondary)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            gap: '1rem',
-          }}
-        >
-          <span>Action</span>
-          <span>Domain</span>
-          <span>Reason</span>
-          <span>Actor</span>
-          <span>When</span>
+      {error != null && (
+        <div className="alert alert--error" style={{ marginBottom: '1.25rem', borderRadius: 'var(--r-lg)' }}>
+          <span>✕</span>
+          <span>Could not load audit log: {error.message}</span>
         </div>
+      )}
 
-        {rows.length === 0 ? (
-          <p style={{ padding: '1.25rem', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            No audit entries yet.
-          </p>
+      <Panel>
+        {rows.length === 0 && error == null ? (
+          <EmptyState
+            cause="cold-start"
+            icon="📋"
+            title="No audit entries yet"
+            body="Every config change is recorded here permanently once you publish a version."
+          />
         ) : (
-          rows.map((row, i) => (
-            <div
-              key={row.id}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '140px 100px 1fr 120px 160px',
-                padding: '0.75rem 1.25rem',
-                borderTop: i === 0 ? 'none' : '1px solid var(--border-hairline)',
-                fontSize: '0.8125rem',
-                gap: '1rem',
-                alignItems: 'center',
-              }}
-            >
-              <span
-                style={{
-                  display: 'inline-block',
-                  padding: '0.125rem 0.5rem',
-                  borderRadius: '6px',
-                  background: ACTION_COLOUR[row.action] ?? '#f1f5f9',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-              >
-                {row.action}
-              </span>
-              <span style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem' }}>
-                {row.domain ?? '—'}
-              </span>
-              <span
-                style={{
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  color: 'var(--text-primary)',
-                }}
-              >
-                {row.reason || '—'}
-              </span>
-              <span
-                style={{
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  color: 'var(--text-secondary)',
-                  fontSize: '0.75rem',
-                  fontFamily: 'var(--font-mono)',
-                }}
-              >
-                {row.actor}
-              </span>
-              <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
-                {new Date(row.created_at).toLocaleString('en-IN', {
-                  day: 'numeric',
-                  month: 'short',
-                  year: '2-digit',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-              </span>
-            </div>
-          ))
+          <div className="data-table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Action</th>
+                  <th>Domain</th>
+                  <th>Reason</th>
+                  <th>Actor</th>
+                  <th style={{ whiteSpace: 'nowrap' }}>When</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.id}>
+                    <td>
+                      <StatusBadge status={row.action} />
+                    </td>
+                    <td style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem' }}>
+                      {row.domain ?? '—'}
+                    </td>
+                    <td
+                      style={{
+                        maxWidth: '320px',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {row.reason || '—'}
+                    </td>
+                    <td
+                      style={{
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: '0.75rem',
+                        color: 'var(--text-secondary)',
+                        maxWidth: '160px',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {row.actor}
+                    </td>
+                    <td
+                      style={{
+                        color: 'var(--text-secondary)',
+                        fontSize: '0.75rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {new Date(row.created_at).toLocaleString('en-IN', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-      </div>
+      </Panel>
 
-      {/* Pagination */}
       {totalPages > 1 && (
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          {pageNum > 1 && (
-            <a
-              href={`/audit?page=${pageNum - 1}`}
-              style={{
-                padding: '0.375rem 0.75rem',
-                background: 'var(--bg-sunken)',
-                borderRadius: '7px',
-                fontSize: '0.875rem',
-                fontWeight: 600,
-                textDecoration: 'none',
-                color: 'var(--text-primary)',
-              }}
-            >
+        <div className="pagination">
+          {pageNum > 1 ? (
+            <Link href={`/audit?page=${pageNum - 1}`} className="btn btn--secondary btn--sm">
               ← Previous
-            </a>
+            </Link>
+          ) : (
+            <span />
           )}
-          <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+          <span className="pagination-info">
             Page {pageNum} of {totalPages}
           </span>
           {pageNum < totalPages && (
-            <a
-              href={`/audit?page=${pageNum + 1}`}
-              style={{
-                padding: '0.375rem 0.75rem',
-                background: 'var(--bg-sunken)',
-                borderRadius: '7px',
-                fontSize: '0.875rem',
-                fontWeight: 600,
-                textDecoration: 'none',
-                color: 'var(--text-primary)',
-              }}
-            >
+            <Link href={`/audit?page=${pageNum + 1}`} className="btn btn--secondary btn--sm">
               Next →
-            </a>
+            </Link>
           )}
         </div>
       )}

@@ -1,17 +1,17 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { createSessionClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { getDomain, validatePayload } from '@/lib/config-registry';
 
 // POST /api/config/[domain]/draft
-// Saves a new draft version for the given config domain.
-// Server-only: uses service_role to write into admin.config_versions.
+// Saves or replaces the current draft version for the given config domain.
+// Any existing draft for this domain is superseded; only one draft exists at a time.
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ domain: string }> }
 ) {
   const { domain } = await params;
 
-  // Verify caller has a valid session.
   const supabase = await createSessionClient();
   const {
     data: { user },
@@ -23,7 +23,6 @@ export async function POST(
 
   const svc = createServiceClient();
 
-  // Confirm allowlist membership (defence in depth; middleware also checks).
   const { data: allowed } = await svc
     .schema('admin')
     .from('founder_allowlist')
@@ -35,7 +34,6 @@ export async function POST(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  // Validate domain exists.
   const { data: domainRow } = await svc
     .schema('admin')
     .from('config_domains')
@@ -47,7 +45,6 @@ export async function POST(
     return NextResponse.json({ error: 'Unknown domain' }, { status: 404 });
   }
 
-  // Parse and validate payload.
   let body: { payload?: unknown };
   try {
     body = (await request.json()) as { payload?: unknown };
@@ -58,6 +55,27 @@ export async function POST(
   if (body.payload == null || typeof body.payload !== 'object' || Array.isArray(body.payload)) {
     return NextResponse.json({ error: 'payload must be a JSON object' }, { status: 400 });
   }
+
+  // Server-side validation via registry.
+  const domainDef = getDomain(domain);
+  if (domainDef) {
+    const errors = validatePayload(domainDef, body.payload as Record<string, unknown>);
+    if (errors.length > 0) {
+      return NextResponse.json(
+        { error: `Validation failed: ${errors[0]}`, details: errors },
+        { status: 422 }
+      );
+    }
+  }
+
+  // Remove any existing draft (one draft at a time per domain).
+  await svc
+    .schema('admin')
+    .from('config_versions')
+    .update({ status: 'superseded', superseded_at: new Date().toISOString() })
+    .eq('domain', domain)
+    .eq('environment', 'prod')
+    .eq('status', 'draft');
 
   // Determine next version number.
   const { data: maxRow } = await svc
@@ -99,7 +117,6 @@ export async function POST(
     return NextResponse.json({ error: 'Failed to save draft' }, { status: 500 });
   }
 
-  // Audit record.
   await svc.schema('admin').from('config_audit').insert({
     action: 'draft_created',
     domain,

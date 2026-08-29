@@ -29,6 +29,7 @@ import {
 import { useLiveConversation, useMarkRead } from '../api/realtime';
 import { useReactions, useToggleReaction } from '../api/reactions';
 import { CALLS_ENABLED } from '../api/calls';
+import { useKillSwitches } from '../api/appConfig';
 import { useSendVoiceNote, useVoicePlayer } from '../api/voice';
 import { useSendImage } from '../api/attachments';
 import { opensDay, timeOfDay } from '../lib/datetime';
@@ -117,6 +118,9 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   const openRefill = useStore(s => s.openRefill);
   const setNotice = useStore(s => s.setNotice);
   const [bloomKey, setBloomKey] = useState(0);
+  // Live kill switches — falls back to compile-time CALLS_ENABLED when offline.
+  const { data: killSwitches } = useKillSwitches();
+  const callsEnabled = (killSwitches?.calls_enabled ?? true) && CALLS_ENABLED;
   // A1: defer ChatWallpaper's ~800 View+Text nodes until after the SlideInRight
   // open animation completes, so the transition frame budget is not eaten by
   // a synchronous mount. The transcript sits above the wallpaper, so a 1-frame-
@@ -926,22 +930,22 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
             honest gate (CALLS_ENABLED) rather than a role that never fires. */}
         <Pressable
           onPress={() => onStartCall?.('video')}
-          disabled={!CALLS_ENABLED || sessionEnded}
+          disabled={!callsEnabled || sessionEnded}
           testID="call-video"
           accessibilityLabel={`Video call ${name}`}
           press="none"
           size={28}
-          style={[styles.navButton, (!CALLS_ENABLED || sessionEnded) && styles.navDisabled]}>
+          style={[styles.navButton, (!callsEnabled || sessionEnded) && styles.navDisabled]}>
           <Icon name="video" size={20} color={theme.color.text.secondary} />
         </Pressable>
         <Pressable
           onPress={() => onStartCall?.('audio')}
-          disabled={!CALLS_ENABLED || sessionEnded}
+          disabled={!callsEnabled || sessionEnded}
           testID="call-voice"
           accessibilityLabel={`Voice call ${name}`}
           press="none"
           size={28}
-          style={[styles.navButton, (!CALLS_ENABLED || sessionEnded) && styles.navDisabled]}>
+          style={[styles.navButton, (!callsEnabled || sessionEnded) && styles.navDisabled]}>
           {/* 18, not 20: Lucide's phone glyph fills more of its em vertically than
               the video glyph, so at a matched fontSize it read visibly taller next
               to it (#1). Two points down evens the pair. */}

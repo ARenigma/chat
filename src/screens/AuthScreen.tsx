@@ -21,6 +21,7 @@ import {
   verifyPhoneOtp,
   type SocialProvider,
 } from '../api/auth';
+import { useAuthUiConfig, FALLBACK_AUTH_UI } from '../api/appConfig';
 import { normalisePhone } from '../lib/phone';
 import { fadeSwap } from '../theme/motion';
 import { Button } from '../components/Button';
@@ -55,6 +56,12 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+
+  // Live auth UI config — falls back to compile-time defaults when offline.
+  const { data: authUi = FALLBACK_AUTH_UI } = useAuthUiConfig();
+  // PHONE_AUTH_ENABLED is also the per-provider compile-time gate (DLT registration).
+  // Both must be true for phone sign-in to show.
+  const phoneVisible = authUi.phone_auth_tab_visible && PHONE_AUTH_ENABLED;
 
   /**
    * One flag for two operations was a bug, not a shortcut.
@@ -376,7 +383,7 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
       <Animated.View
         entering={FadeInDown.delay(160).duration(TOKENS.motion.duration.base)}
         style={styles.actions}>
-        {step === 'choose' && PHONE_AUTH_ENABLED ? (
+        {step === 'choose' && phoneVisible ? (
           <Button
             label="Continue with Phone Number"
             onPress={() => {
@@ -503,7 +510,7 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
         allowFontScaling
         style={styles.legal}>
         {step === 'choose'
-          ? PHONE_AUTH_ENABLED
+          ? phoneVisible
             ? 'Your number is never shown to anyone you talk to. You pick a separate display name. Signing in with Google instead tells Google that you use this app.'
             : 'We only read your name and email, and neither is shown to anyone you talk to. You pick a separate display name. Signing in does tell Google that you use this app.'
           : 'Standard message rates may apply. The code expires in 2 minutes.'}

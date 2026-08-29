@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { formatRupees, formatTokens, PAYMENTS_ENABLED, RECHARGE_PACKS } from '../lib/rates';
+import { useRechargeConfig, useKillSwitches, FALLBACK_RECHARGE } from '../api/appConfig';
 import { tick } from '../lib/haptics';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { useStore } from '../store/useStore';
@@ -42,7 +43,15 @@ export function RechargeScreen() {
   const visible = useStore(s => s.refillVisible);
   const balance = useStore(s => s.balance);
   const close = useStore(s => s.closeRefill);
-  const [amount, setAmount] = useState<number>(RECHARGE_PACKS[1] ?? 60);
+
+  // Live config — falls back to compile-time defaults when offline or unpublished.
+  const { data: rechargeConfig = FALLBACK_RECHARGE } = useRechargeConfig();
+  const { data: killSwitches } = useKillSwitches();
+
+  const livePacks = rechargeConfig.packs_inr.length > 0 ? rechargeConfig.packs_inr : RECHARGE_PACKS;
+  const paymentsEnabled = killSwitches?.payments_enabled ?? PAYMENTS_ENABLED;
+
+  const [amount, setAmount] = useState<number>(livePacks[1] ?? 300);
   const [payOpen, setPayOpen] = useState(false);
 
   if (!visible) {
@@ -113,7 +122,7 @@ export function RechargeScreen() {
         </Text>
 
         <View style={styles.grid}>
-          {RECHARGE_PACKS.map(pack => {
+          {livePacks.map(pack => {
             const on = pack === amount;
             return (
               // width lives on this wrapper View; a `width: '48%'` on the
@@ -155,7 +164,7 @@ export function RechargeScreen() {
               UPI
             </Text>
             <Text allowFontScaling style={styles.paySub}>
-              {PAYMENTS_ENABLED ? 'Instant' : 'Opening soon'}
+              {paymentsEnabled ? 'Instant' : 'Opening soon'}
             </Text>
           </View>
         </View>

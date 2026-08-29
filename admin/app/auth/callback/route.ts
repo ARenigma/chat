@@ -1,9 +1,11 @@
 import { type CookieOptions } from '@supabase/ssr';
 import { createServerClient } from '@supabase/ssr';
 import { type NextRequest, NextResponse } from 'next/server';
+import { createServiceClient } from '@/lib/supabase/service';
 
 // OAuth callback: exchanges the code for a Supabase session and redirects to
-// the authenticated dashboard.
+// the authenticated dashboard. Also records a fresh admin_sessions reauth_at
+// row so the publish route can verify re-authentication server-side.
 // https://supabase.com/docs/guides/auth/server-side/nextjs
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
@@ -14,7 +16,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/login?error=auth_error`);
   }
 
-  // We need a mutable response to write the session cookie back to the client.
   const response = NextResponse.redirect(`${origin}${next}`);
 
   const supabase = createServerClient(
@@ -36,11 +37,26 @@ export async function GET(request: NextRequest) {
     }
   );
 
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
+  const { error, data } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error) {
     console.error('OAuth exchange error:', error.message);
     return NextResponse.redirect(`${origin}/login?error=auth_error`);
+  }
+
+  // Record a server-side reauth_at entry so the publish flow can
+  // verify the user authenticated recently without trusting client timestamps.
+  if (data.user?.email) {
+    const svc = createServiceClient();
+    try {
+      await svc.schema('admin').from('admin_sessions').insert({
+        email: data.user.email,
+        reauth_at: new Date().toISOString(),
+        user_agent: request.headers.get('user-agent') ?? '',
+      });
+    } catch {
+      // Non-fatal: publish will reject if reauth record is missing.
+    }
   }
 
   return response;

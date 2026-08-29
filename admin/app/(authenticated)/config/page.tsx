@@ -1,10 +1,10 @@
 import Link from 'next/link';
 import { createServiceClient } from '@/lib/supabase/service';
-
-interface ConfigDomain {
-  key: string;
-  description: string;
-}
+import { PageHeader } from '@/components/layout/PageHeader';
+import { Panel } from '@/components/ui/Card';
+import { StatusBadge, RuntimeBadge } from '@/components/ui/Badge';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { CONFIG_REGISTRY, formatDisplayValue } from '@/lib/config-registry';
 
 interface ActiveConfig {
   domain: string;
@@ -14,6 +14,7 @@ interface ActiveConfig {
     version_number: number;
     published_at: string | null;
   } | null;
+  payload: Record<string, unknown> | null;
 }
 
 export default async function ConfigPage() {
@@ -28,7 +29,7 @@ export default async function ConfigPage() {
   const { data: active } = await svc
     .schema('admin')
     .from('config_active')
-    .select('domain, version_id, updated_at, config_versions(version_number, published_at)')
+    .select('domain, version_id, updated_at, payload, config_versions(version_number, published_at)')
     .eq('environment', 'prod');
 
   const activeByDomain = (active ?? []).reduce<Record<string, ActiveConfig>>(
@@ -41,97 +42,99 @@ export default async function ConfigPage() {
 
   return (
     <div>
-      <h1
-        style={{
-          fontSize: '1.5rem',
-          fontWeight: 700,
-          letterSpacing: '-0.02em',
-          marginBottom: '0.5rem',
-        }}
-      >
-        Config Domains
-      </h1>
-      <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '2rem' }}>
-        Runtime configuration domains. Changes take effect immediately on publish.
-      </p>
+      <PageHeader
+        title="App config"
+        subtitle="All runtime configuration domains. Changes take effect immediately on publish."
+      />
 
-      <div
-        style={{
-          background: 'var(--bg-raised)',
-          border: '1px solid var(--border-hairline)',
-          borderRadius: '12px',
-          overflow: 'hidden',
-        }}
-      >
-        {(domains ?? []).map((domain: ConfigDomain, i: number) => {
-          const act = activeByDomain[domain.key];
-          const versionNum = act?.config_versions?.version_number;
-          const publishedAt = act?.config_versions?.published_at;
+      {(domains ?? []).length === 0 ? (
+        <EmptyState cause="cold-start" title="No config domains" body="Run migrations to seed domains." />
+      ) : (
+        <Panel>
+          {(domains ?? []).map((domain: { key: string; description: string }, i: number) => {
+            const act = activeByDomain[domain.key];
+            const versionNum = act?.config_versions?.version_number;
+            const publishedAt = act?.config_versions?.published_at;
+            const registryDef = CONFIG_REGISTRY.find((d) => d.key === domain.key);
+            const payload = act?.payload as Record<string, unknown> | null;
 
-          return (
-            <div
-              key={domain.key}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '1rem 1.25rem',
-                borderTop: i === 0 ? 'none' : '1px solid var(--border-hairline)',
-              }}
-            >
-              <div>
-                <p style={{ fontWeight: 600, fontSize: '0.9375rem' }}>{domain.key}</p>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem', marginTop: '0.125rem' }}>
-                  {domain.description}
-                </p>
-              </div>
+            // Summary: first 2 fields from active payload
+            const summaryFields = registryDef?.fields.slice(0, 2) ?? [];
+            const summary = summaryFields
+              .map((f) => {
+                const v = payload?.[f.key];
+                if (v === undefined || v === null) return null;
+                return `${f.label}: ${formatDisplayValue(f, v)}`;
+              })
+              .filter(Boolean)
+              .join(' · ');
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
-                {versionNum != null ? (
-                  <span
-                    style={{
-                      fontSize: '0.8125rem',
-                      color: 'var(--text-secondary)',
-                      textAlign: 'right',
-                    }}
-                  >
-                    v{versionNum}
-                    {publishedAt != null && (
-                      <>
-                        {' · '}
-                        {new Date(publishedAt).toLocaleDateString('en-IN', {
-                          day: 'numeric',
-                          month: 'short',
-                          year: '2-digit',
-                        })}
-                      </>
+            // Runtime status: worst status among fields
+            const runtimeStatuses = registryDef?.fields.map((f) => f.runtime) ?? [];
+            const overallRuntime =
+              runtimeStatuses.includes('seeded')
+                ? 'seeded'
+                : runtimeStatuses.includes('partial')
+                ? 'partial'
+                : 'live';
+
+            return (
+              <div key={domain.key} className="domain-row" style={{ borderTop: i === 0 ? 'none' : undefined }}>
+                <div className="domain-row-meta">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    {registryDef && (
+                      <span aria-hidden="true" style={{ fontSize: '1rem' }}>
+                        {registryDef.icon}
+                      </span>
                     )}
-                  </span>
-                ) : (
-                  <span style={{ fontSize: '0.8125rem', color: 'var(--bg-accent)' }}>
-                    no active config
-                  </span>
-                )}
-                <Link
-                  href={`/config/${domain.key}`}
-                  style={{
-                    display: 'inline-block',
-                    padding: '0.375rem 0.875rem',
-                    background: 'var(--bg-inverse)',
-                    color: '#fff',
-                    borderRadius: '7px',
-                    fontSize: '0.8125rem',
-                    fontWeight: 600,
-                    textDecoration: 'none',
-                  }}
-                >
-                  Edit
-                </Link>
+                    <p className="domain-row-name">
+                      {registryDef?.name ?? domain.key}
+                    </p>
+                    <RuntimeBadge status={overallRuntime} />
+                  </div>
+                  <p className="domain-row-desc">
+                    {summary || domain.description}
+                  </p>
+                </div>
+
+                <div className="domain-row-right">
+                  {versionNum != null ? (
+                    <div style={{ textAlign: 'right' }}>
+                      <StatusBadge status="active" />
+                      <p className="domain-row-version" style={{ marginTop: '0.25rem' }}>
+                        v{versionNum}
+                        {publishedAt != null && (
+                          <>
+                            {' · '}
+                            {new Date(publishedAt).toLocaleDateString('en-IN', {
+                              day: 'numeric',
+                              month: 'short',
+                              year: '2-digit',
+                            })}
+                          </>
+                        )}
+                      </p>
+                    </div>
+                  ) : (
+                    <span
+                      style={{
+                        fontSize: '0.8125rem',
+                        color: 'var(--bg-accent-strong)',
+                        fontWeight: 500,
+                      }}
+                    >
+                      No active config
+                    </span>
+                  )}
+                  <Link href={`/config/${domain.key}`} className="btn btn--primary btn--sm">
+                    Edit
+                  </Link>
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </Panel>
+      )}
     </div>
   );
 }
