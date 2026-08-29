@@ -75,6 +75,7 @@ const MIGRATIONS = [
   'supabase/migrations/032_telemetry_event_extensions.sql',
   'supabase/migrations/033_credit_purchased_recharge.sql',
   'supabase/migrations/034_admin_schema_api_access.sql',
+  'supabase/migrations/035_public_config_rpc.sql',
 ];
 
 const docker = (args, options = {}) =>

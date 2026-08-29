@@ -1,7 +1,11 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { createServiceClient } from '@/lib/supabase/service';
 import { ConfigVersionEditor } from './ConfigVersionEditor';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { Panel } from '@/components/ui/Card';
+import { StatusBadge } from '@/components/ui/Badge';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { CONFIG_REGISTRY } from '@/lib/config-registry';
 
 interface ConfigVersion {
   id: string;
@@ -23,7 +27,6 @@ export default async function ConfigDomainPage({
 
   const svc = createServiceClient();
 
-  // Verify domain exists.
   const { data: domainRow } = await svc
     .schema('admin')
     .from('config_domains')
@@ -35,7 +38,6 @@ export default async function ConfigDomainPage({
     notFound();
   }
 
-  // Fetch version history (newest first, limit 20).
   const { data: versions } = await svc
     .schema('admin')
     .from('config_versions')
@@ -52,26 +54,20 @@ export default async function ConfigDomainPage({
   const draftVersion = versionList.find((v) => v.status === 'draft') ?? null;
   const history = versionList.filter((v) => v.status !== 'draft');
 
+  const registryDef = CONFIG_REGISTRY.find((d) => d.key === domain);
+  const displayName = registryDef?.name ?? domain;
+  const description = (domainRow as { description: string }).description;
+
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-        <Link href="/config" style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-          ← Config
-        </Link>
-      </div>
-      <h1
-        style={{
-          fontSize: '1.5rem',
-          fontWeight: 700,
-          letterSpacing: '-0.02em',
-          marginBottom: '0.25rem',
-        }}
-      >
-        {domain}
-      </h1>
-      <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '2rem' }}>
-        {(domainRow as { description: string }).description}
-      </p>
+      <PageHeader
+        title={displayName}
+        subtitle={description}
+        breadcrumbs={[
+          { label: 'App config', href: '/config' },
+          { label: displayName },
+        ]}
+      />
 
       <ConfigVersionEditor
         domain={domain}
@@ -80,91 +76,53 @@ export default async function ConfigDomainPage({
       />
 
       {/* Version history */}
-      <section>
-        <h2
-          style={{
-            fontSize: '0.875rem',
-            fontWeight: 600,
-            color: 'var(--text-secondary)',
-            marginBottom: '0.75rem',
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-          }}
-        >
-          Version history
-        </h2>
-        <div
-          style={{
-            background: 'var(--bg-raised)',
-            border: '1px solid var(--border-hairline)',
-            borderRadius: '12px',
-            overflow: 'hidden',
-          }}
-        >
+      <section style={{ marginTop: '2.5rem' }}>
+        <p className="section-label" style={{ marginBottom: '0.75rem' }}>Version history</p>
+        <Panel>
           {history.length === 0 ? (
-            <p
-              style={{
-                padding: '1.25rem',
-                color: 'var(--text-secondary)',
-                fontSize: '0.875rem',
-              }}
-            >
-              No published versions yet.
-            </p>
+            <EmptyState
+              cause="cold-start"
+              icon="📋"
+              title="No published versions yet"
+              body="Publish a draft to create the first production version."
+            />
           ) : (
             history.map((v, i) => (
               <div
                 key={v.id}
-                style={{
-                  padding: '0.875rem 1.25rem',
-                  borderTop: i === 0 ? 'none' : '1px solid var(--border-hairline)',
-                }}
+                className="version-row"
+                style={{ borderTop: i === 0 ? 'none' : undefined }}
               >
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                  }}
-                >
-                  <div>
-                    <span style={{ fontWeight: 600, fontSize: '0.9375rem' }}>
-                      v{v.version_number}
-                    </span>{' '}
-                    <span
-                      style={{
-                        fontSize: '0.75rem',
-                        padding: '0.1rem 0.4rem',
-                        borderRadius: '999px',
-                        background: v.status === 'active' ? '#dcfce7' : '#f1f5f9',
-                        color: v.status === 'active' ? '#166534' : '#64748b',
-                        fontWeight: 600,
-                      }}
-                    >
-                      {v.status}
-                    </span>
-                    {v.publish_reason != null && (
-                      <p
-                        style={{
-                          fontSize: '0.8125rem',
-                          color: 'var(--text-secondary)',
-                          marginTop: '0.25rem',
-                        }}
-                      >
-                        {v.publish_reason}
-                      </p>
-                    )}
+                <div className="version-row-header">
+                  <div className="version-row-left">
+                    <span className="version-number">v{v.version_number}</span>
+                    <StatusBadge status={v.status} />
                   </div>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                  <span className="version-date">
                     {v.published_at != null
-                      ? new Date(v.published_at).toLocaleString('en-IN')
-                      : new Date(v.created_at).toLocaleString('en-IN')}
+                      ? new Date(v.published_at).toLocaleString('en-IN', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: '2-digit',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      : new Date(v.created_at).toLocaleString('en-IN', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: '2-digit',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
                   </span>
                 </div>
+                {v.publish_reason && (
+                  <p className="version-reason">{v.publish_reason}</p>
+                )}
               </div>
             ))
           )}
-        </div>
+        </Panel>
       </section>
     </div>
   );

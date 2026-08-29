@@ -4,6 +4,7 @@ import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ReportReason } from '../lib/database.types';
 import { useBlockUser, useIsBlocked, useSubmitReport, useUnblockUser } from '../api/safety';
+import { useReportTaxonomy, getReasonLabel, FALLBACK_REPORT_TAXONOMY } from '../api/appConfig';
 import { Button } from '../components/Button';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
@@ -20,21 +21,6 @@ interface Props {
   messageId: string | null;
 }
 
-/**
- * Reasons, in the order a distressed person scans them rather than alphabetically
- * or by internal severity. `self_harm` is worded as concern for the other person
- * because that is what it is, it routes to support, not enforcement.
- */
-const REASONS: ReadonlyArray<{ value: ReportReason; label: string }> = [
-  { value: 'harassment', label: 'Harassment or abuse' },
-  { value: 'sexual_content', label: 'Unwanted sexual content' },
-  { value: 'minor_safety', label: 'They may be under 18' },
-  { value: 'solicitation', label: 'Asking to move off the app, or for money' },
-  { value: 'impersonation', label: 'Pretending to be someone else' },
-  { value: 'spam', label: 'Spam or scam' },
-  { value: 'self_harm', label: 'I am worried about their safety' },
-  { value: 'other', label: 'Something else' },
-];
 
 type Step = 'menu' | 'reasons' | 'detail';
 
@@ -62,6 +48,13 @@ export function SafetySheet({
   const block = useBlockUser();
   const unblock = useUnblockUser();
   const report = useSubmitReport();
+
+  // Live report taxonomy — falls back to hardcoded list when offline.
+  const { data: taxonomy = FALLBACK_REPORT_TAXONOMY } = useReportTaxonomy();
+  const liveReasons = taxonomy.reasons.map(slug => ({
+    value: slug as ReportReason,
+    label: getReasonLabel(slug),
+  }));
 
   const dismiss = (): void => {
     setStep('menu');
@@ -100,7 +93,7 @@ export function SafetySheet({
             inherited `press="card"` and a full-width row visibly shrank 2.5% under
             the finger, which on a list of eight reads as the row wobbling. */}
         <View style={styles.reasons}>
-          {REASONS.map((r, i) => (
+          {liveReasons.map((r, i) => (
             <React.Fragment key={r.value}>
               <Pressable
                 testID={`reason-${r.value}`}
@@ -117,7 +110,7 @@ export function SafetySheet({
                 </Text>
                 <Icon name="chevronRight" size={13} color={theme.color.text.tertiary} />
               </Pressable>
-              {i === REASONS.length - 1 ? null : <View style={styles.reasonSeparator} />}
+              {i === liveReasons.length - 1 ? null : <View style={styles.reasonSeparator} />}
             </React.Fragment>
           ))}
         </View>

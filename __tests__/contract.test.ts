@@ -837,8 +837,10 @@ describe('phone sign-in stays off until it can deliver', () => {
       const at = screen.indexOf(marker);
       expect(at).toBeGreaterThan(-1);
       // Walk back to the enclosing JSX conditional and require the flag in it.
-      const preceding = screen.slice(Math.max(0, at - 400), at);
-      expect(preceding).toMatch(/PHONE_AUTH_ENABLED/);
+      // phoneVisible combines PHONE_AUTH_ENABLED (compile-time DLT gate) with
+      // the live admin kill switch (auth_ui.phone_auth_tab_visible).
+      const preceding = screen.slice(Math.max(0, at - 600), at);
+      expect(preceding).toMatch(/PHONE_AUTH_ENABLED|phoneVisible/);
     }
   });
 
@@ -1786,9 +1788,10 @@ describe('calling ships visible and on, wired to a real media layer', () => {
     expect(chat).toContain('CALLS_ENABLED');
     expect(chat).toContain('testID="call-video"');
     expect(chat).toContain('testID="call-voice"');
-    // CALLS_ENABLED remains the primary gate; sessionEnded is an additional
-    // runtime gate applied when the member runs out of tokens mid-session.
-    expect(chat).toContain('!CALLS_ENABLED || sessionEnded');
+    // callsEnabled combines the compile-time CALLS_ENABLED flag with the live
+    // kill switch. sessionEnded is an additional runtime gate when tokens run out.
+    expect(chat).toContain('callsEnabled');
+    expect(chat).toContain('!callsEnabled || sessionEnded');
     // Real, and ready for the flag flip: the tap starts a call.
     expect(chat).toContain("onStartCall?.('video')");
     expect(chat).toContain("onStartCall?.('audio')");

@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { createSessionClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { getDomain, validatePayload } from '@/lib/config-registry';
 
 const REQUIRED_PHRASE = 'publish to production';
 const REAUTH_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
@@ -12,13 +13,11 @@ const REAUTH_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 //   draft_version_id    — UUID of the draft to promote
 //   confirmation_phrase — must equal "publish to production"
 //   reason              — non-empty string
-//   reauth_timestamp    — ISO timestamp; must be within 15 minutes
 //
-// Implementation notes:
-//   • Supersedes the current active version before activating the draft, so
-//     the partial unique index (config_versions_one_active) is never violated.
-//   • Refreshes config_active so billing RPCs see the new payload immediately.
-//   • Writes an immutable audit record.
+// Re-authentication: the server checks admin.admin_sessions for a
+// reauth_at record within the last 15 minutes for this user.
+// The client MUST call /api/auth/reauth after a fresh Google sign-in
+// before publishing. Sending a client timestamp is no longer accepted.
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ domain: string }> }
@@ -47,11 +46,35 @@ export async function POST(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
+  // Verify re-authentication via server-side admin_sessions record.
+  const { data: reauthRow } = await svc
+    .schema('admin')
+    .from('admin_sessions')
+    .select('reauth_at')
+    .eq('email', user.email)
+    .order('reauth_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (reauthRow == null) {
+    return NextResponse.json(
+      { error: 'Re-authentication required. Sign in again before publishing.', code: 'reauth_required' },
+      { status: 403 }
+    );
+  }
+
+  const reauthAt = new Date((reauthRow as { reauth_at: string }).reauth_at);
+  if (Date.now() - reauthAt.getTime() > REAUTH_WINDOW_MS) {
+    return NextResponse.json(
+      { error: 'Re-authentication has expired. Sign in again before publishing.', code: 'reauth_expired' },
+      { status: 403 }
+    );
+  }
+
   let body: {
     draft_version_id?: string;
     confirmation_phrase?: string;
     reason?: string;
-    reauth_timestamp?: string;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -59,26 +82,12 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  // Validate confirmation phrase.
   if (body.confirmation_phrase !== REQUIRED_PHRASE) {
     return NextResponse.json({ error: 'Confirmation phrase does not match' }, { status: 400 });
   }
 
-  // Validate reason.
   if (!body.reason?.trim()) {
     return NextResponse.json({ error: 'reason is required' }, { status: 400 });
-  }
-
-  // Validate reauth timestamp (must be within 15 minutes).
-  if (!body.reauth_timestamp) {
-    return NextResponse.json({ error: 'reauth_timestamp is required' }, { status: 400 });
-  }
-  const reauthAt = new Date(body.reauth_timestamp);
-  if (Number.isNaN(reauthAt.getTime()) || Date.now() - reauthAt.getTime() > REAUTH_WINDOW_MS) {
-    return NextResponse.json(
-      { error: 'reauth_timestamp is older than 15 minutes; re-authenticate and retry' },
-      { status: 403 }
-    );
   }
 
   if (!body.draft_version_id) {
@@ -98,6 +107,7 @@ export async function POST(
   if (draftVersion == null) {
     return NextResponse.json({ error: 'Draft version not found' }, { status: 404 });
   }
+
   const draft = draftVersion as {
     id: string;
     domain: string;
@@ -106,8 +116,21 @@ export async function POST(
     status: string;
     payload: unknown;
   };
+
   if (draft.status !== 'draft') {
     return NextResponse.json({ error: `Version is ${draft.status}, not draft` }, { status: 409 });
+  }
+
+  // Server-side payload validation via registry.
+  const domainDef = getDomain(domain);
+  if (domainDef && draft.payload != null && typeof draft.payload === 'object') {
+    const errors = validatePayload(domainDef, draft.payload as Record<string, unknown>);
+    if (errors.length > 0) {
+      return NextResponse.json(
+        { error: `Payload validation failed: ${errors[0]}` },
+        { status: 422 }
+      );
+    }
   }
 
   const now = new Date().toISOString();
