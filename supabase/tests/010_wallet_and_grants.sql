@@ -68,9 +68,12 @@ select is(
   (select count(*)::int from public.profiles), 2,
   'handle_new_user provisioned one profile per auth user'
 );
+-- Migration 028 adds promo_balance/purchased_balance (both default 0) and a
+-- sync_token_balance BEFORE INSERT trigger that sets token_balance = 0 + 0 = 0,
+-- overriding the column default of 50. STARTING_BALANCE is now 0. (ADR-0021)
 select is(
   (select token_balance from public.profiles where id = '11111111-1111-4111-8111-111111111111'),
-  50, 'bootstrapped profile holds STARTING_BALANCE'
+  0, 'bootstrapped profile starts with token_balance = 0 after migration 028'
 );
 select throws_ok(
   $$update public.profiles set token_balance = -1
@@ -81,6 +84,13 @@ select throws_ok(
 -- ---------------------------------------------------------------------------
 -- Wallet behaviour. The value table itself lives in 000_ledger_parity.
 -- ---------------------------------------------------------------------------
+-- Seed 50 promo tokens so the debit/credit assertions below work. Migration 028
+-- changed STARTING_BALANCE to 0; the sync trigger fires on promo_balance updates
+-- and keeps token_balance = promo + purchased in sync.
+update public.profiles
+set promo_balance = 50
+where id = '11111111-1111-4111-8111-111111111111';
+
 select is(
   (public.deduct_user_token('11111111-1111-4111-8111-111111111111', 1) ->> 'new_balance')::int,
   49, 'a debit of one leaves 49'
@@ -105,15 +115,18 @@ select is(
 -- ---------------------------------------------------------------------------
 -- Refill window
 -- ---------------------------------------------------------------------------
+-- Migration 028 changed claim_daily_tokens() return type from json → integer.
+-- When wallet.daily_refill_enabled = false (the admin-config default), the
+-- function returns -1 immediately without consulting the 24-h window.
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}';
 select is(
-  (public.claim_daily_tokens() ->> 'new_balance')::int, 75,
-  'the first refill grants DAILY_REFILL_TOKENS on top of 50'
+  public.claim_daily_tokens(), -1,
+  'claim_daily_tokens returns -1 when daily_refill_enabled is false in admin config'
 );
 select is(
-  public.claim_daily_tokens() ->> 'error', 'TOO_SOON',
-  'a second refill inside the 24h window is refused'
+  public.claim_daily_tokens(), -1,
+  'a second call also returns -1 (disabled path skips the 24h window check)'
 );
 reset role;
 

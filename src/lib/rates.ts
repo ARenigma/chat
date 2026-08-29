@@ -17,6 +17,8 @@ export type Channel = 'audio' | 'chat' | 'video';
 /**
  * Default per-minute rates, in tokens.
  *
+ * Fallback rates: real rates read from admin config via get_active_config('economics'). (ADR-0021)
+ *
  * A placeholder for a per-provider, per-channel rate the schema does not carry
  * yet. The numbers are v13's reference (chat 22, call 22, video 35). One
  * constant, so the swap to real rates is one edit.

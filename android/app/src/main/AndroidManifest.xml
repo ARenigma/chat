@@ -74,12 +74,21 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" tools:node="remove" />
     <uses-permission android:name="android.permission.READ_CONTACTS" tools:node="remove" />
 
+    <!-- Core-Telecom self-managed calling (developer.android.com/develop/connectivity/telecom/self-managed) -->
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- FGS type permissions required on API 34+ (developer.android.com/about/versions/14/changes/fgs-types-required) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+
     <application
       android:name=".MainApplication"
       android:label="@string/app_name"
       android:icon="@mipmap/ic_launcher"
       android:roundIcon="@mipmap/ic_launcher_round"
       android:allowBackup="false"
+      android:dataExtractionRules="@xml/data_extraction_rules"
       android:theme="@style/AppTheme"
       android:usesCleartextTraffic="${usesCleartextTraffic}"
       android:supportsRtl="true">
@@ -170,5 +179,23 @@
         android:name="com.google.firebase.messaging.default_notification_color"
         android:resource="@color/notification_accent"
         tools:replace="android:resource" />
+
+      <!-- Foreground service for active calls — keeps process alive in background.
+           foregroundServiceType declares the maximum capability set for API 34+.
+           (developer.android.com/develop/background-work/services/foreground-services) -->
+      <service
+          android:name=".CallForegroundService"
+          android:exported="false"
+          android:foregroundServiceType="phoneCall|microphone|camera" />
+
+      <receiver
+          android:name=".CallActionReceiver"
+          android:exported="false">
+          <intent-filter>
+              <action android:name="com.companionchat.ACTION_ANSWER_CALL" />
+              <action android:name="com.companionchat.ACTION_DECLINE_CALL" />
+              <action android:name="com.companionchat.ACTION_HANG_UP" />
+          </intent-filter>
+      </receiver>
     </application>
 </manifest>

@@ -51,7 +51,13 @@ export type TelemetryEvent =
   // reason belongs in `props.reason`, which is why there is one name and not
   // four.
   | 'call_rejected'
-  | 'presence_changed';
+  | 'presence_changed'
+  // Added by migration 032 (policy gate + paid sessions).
+  | 'policy_accepted'
+  | 'session_requested'
+  | 'session_ended'
+  // Added by migration 033 (UCB / Cashfree billing).
+  | 'recharge_sheet_opened';
 
 export type Gender = 'female' | 'male' | 'other';
 
@@ -531,6 +537,31 @@ export type InvoiceRow = {
   created_at: string;
 };
 
+/**
+ * A published Terms or Privacy document. Managed via admin dashboard; immutable
+ * once published. Migration 027.
+ */
+export type PolicyVersion = {
+  id: string;
+  kind: 'terms' | 'privacy';
+  version: number;
+  is_material: boolean;
+  url: string;
+  summary: string;
+  effective_at: string;
+};
+
+/**
+ * Server-authoritative acceptance record. Never deleted. Migration 027.
+ */
+export type PolicyAcceptance = {
+  id: string;
+  user_id: string;
+  policy_kind: 'terms' | 'privacy';
+  version_id: string;
+  accepted_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -813,6 +844,60 @@ export type Database = {
       delete_user_account: {
         Args: Record<string, never>;
         Returns: undefined;
+      };
+      /**
+       * Returns the latest effective version per kind that the calling user has
+       * NOT yet accepted and that requires acceptance. Empty → no gate. Migration 027.
+       */
+      pending_policy_acceptances: {
+        Args: Record<string, never>;
+        Returns: Array<{
+          version_id: string;
+          kind: 'terms' | 'privacy';
+          url: string;
+          summary: string;
+          is_material: boolean;
+        }>;
+      };
+      /**
+       * Idempotent acceptance record. ON CONFLICT DO NOTHING. Migration 027.
+       */
+      accept_policy: {
+        Args: { p_version_id: string; p_device_info?: string | null };
+        Returns: void;
+      };
+      /**
+       * Request a paid session for a conversation/channel. Returns the request id.
+       * Migration 030 (pre-launch; stubs present for type-safety).
+       */
+      create_session_request: {
+        Args: { p_conversation_id: string; p_channel: string };
+        Returns: string;
+      };
+      /** Accept a pending session request. Returns the session id. Migration 030. */
+      accept_session_request: {
+        Args: { p_request_id: string };
+        Returns: string;
+      };
+      /** End an active session with an optional content report. Migration 030. */
+      end_session: {
+        Args: {
+          p_session_id: string;
+          p_end_reason?: string | null;
+          p_report_reason?: string | null;
+          p_report_message_ids?: string[] | null;
+          p_report_statement?: string | null;
+        };
+        Returns: void;
+      };
+      /**
+       * Renew a participant's foreground lease. Returns the session status
+       * string so the client can react to `'ended'` (e.g. balance exhausted).
+       * Migration 030.
+       */
+      claim_session_lease: {
+        Args: { p_session_id: string; p_kind: string };
+        Returns: string;
       };
     };
     Enums: {

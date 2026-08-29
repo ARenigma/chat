@@ -106,6 +106,13 @@ describe('the AI path is gone, not dormant', () => {
     // mints a Supabase session — an auth bridge, not a model path. Added with
     // AUTH_PHONE_PROVIDER='firebase'.
     const allowed = [
+      // cashfree-webhook: Cashfree payment gateway signature-verified callback;
+      // credits purchased tokens after server-side HMAC-SHA256 verification.
+      // ADR-0022.
+      'cashfree-webhook',
+      // create-order: creates a Cashfree order server-side (secret key required);
+      // returns paymentSessionId to the client. ADR-0022.
+      'create-order',
       'exchange-firebase-token',
       'generate-invoice',
       'send-call',
@@ -219,7 +226,7 @@ describe('Android manifest', () => {
     .filter(attrs => !attrs.includes('tools:node="remove"'))
     .map(attrs => attrs.match(/android:name="([^"]+)"/)?.[1] ?? '');
 
-  it('requests exactly INTERNET, VIBRATE, POST_NOTIFICATIONS, RECORD_AUDIO and CAMERA', () => {
+  it('requests exactly INTERNET, VIBRATE, POST_NOTIFICATIONS, RECORD_AUDIO, CAMERA, and call FGS permissions', () => {
     // The list is asserted exactly rather than as a subset, because the cost of
     // a permission is paid on the Play listing and in the install dialog, a
     // library quietly merging one in is the failure this catches. POST_NOTIFICATIONS
@@ -231,9 +238,20 @@ describe('Android manifest', () => {
     // as the required set. USE_FULL_SCREEN_INTENT was here for a ringing call that
     // took over the screen; the call is a heads-up popup now, so the permission is
     // gone.
+    //
+    // Call foreground service permissions (android-audit.md 2026-08-29):
+    //   MANAGE_OWN_CALLS — prerequisite for FOREGROUND_SERVICE_TYPE_PHONE_CALL
+    //   FOREGROUND_SERVICE — required to start any foreground service
+    //   FOREGROUND_SERVICE_PHONE_CALL/MICROPHONE/CAMERA — type permissions for API 34+
+    //   (developer.android.com/about/versions/14/changes/fgs-types-required)
     expect(declared.sort()).toEqual([
       'android.permission.CAMERA',
+      'android.permission.FOREGROUND_SERVICE',
+      'android.permission.FOREGROUND_SERVICE_CAMERA',
+      'android.permission.FOREGROUND_SERVICE_MICROPHONE',
+      'android.permission.FOREGROUND_SERVICE_PHONE_CALL',
       'android.permission.INTERNET',
+      'android.permission.MANAGE_OWN_CALLS',
       'android.permission.POST_NOTIFICATIONS',
       'android.permission.RECORD_AUDIO',
       'android.permission.VIBRATE',
@@ -311,7 +329,12 @@ describe('pipeline wiring', () => {
   const pipeline = read('.gitlab-ci.yml');
 
   it('declares every npm script the pipeline invokes', () => {
-    const invoked = [...pipeline.matchAll(/npm run ([a-z:]+)/g)].map(m => m[1] ?? '');
+    // Exclude script names that appear only in admin/ CI jobs: admin/ has its
+    // own package.json and its scripts are verified by admin-static, not here.
+    const adminJobScripts = new Set(['build']);
+    const invoked = [...pipeline.matchAll(/npm run ([a-z:]+)/g)]
+      .map(m => m[1] ?? '')
+      .filter(name => !adminJobScripts.has(name));
     expect(invoked.length).toBeGreaterThan(0);
     for (const name of invoked) {
       expect(Object.keys(scripts)).toContain(name);
@@ -2291,5 +2314,81 @@ describe('the motion adoption is wired, not just drawn', () => {
     expect(read('src/screens/AuthScreen.tsx')).toContain(
       'minHeight: TOKENS.typography.displayLarge.lineHeight * 2',
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Admin control plane security contracts
+// ---------------------------------------------------------------------------
+// These assertions are the mechanical form of ADR-0023's security constraints:
+//   • SUPABASE_SERVICE_ROLE_KEY must only live in server-side files.
+//   • All DB writes go through API routes via createServiceClient.
+//   • No page component imports the key directly.
+//
+// A failure here means a code path exists that could leak service credentials
+// into the browser bundle, which bypasses RLS on every admin.* table.
+
+describe('admin control plane key hygiene', () => {
+  const ADMIN_ROOT = join(ROOT, 'admin');
+  const adminExists = existsSync(ADMIN_ROOT);
+
+  it('admin/middleware.ts exists and imports createServiceClient from lib', () => {
+    if (!adminExists) return;
+    const middleware = read('admin/middleware.ts');
+    expect(existsSync(join(ROOT, 'admin/middleware.ts'))).toBe(true);
+    // The allowlist check requires service_role; it must come from the server helper.
+    expect(middleware).toContain('createServiceClient');
+    expect(middleware).toContain("from '@/lib/supabase/service'");
+  });
+
+  it('service.ts references SUPABASE_SERVICE_ROLE_KEY and is never prefixed NEXT_PUBLIC_', () => {
+    if (!adminExists) return;
+    const service = read('admin/lib/supabase/service.ts');
+    expect(service).toContain('SUPABASE_SERVICE_ROLE_KEY');
+    // The variable MUST NOT carry the NEXT_PUBLIC_ prefix — that would expose it
+    // to the browser bundle.
+    expect(service).not.toContain('NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY');
+  });
+
+  it('all admin API routes use createServiceClient (not raw anon client for writes)', () => {
+    if (!adminExists) return;
+    const apiDir = join(ADMIN_ROOT, 'app/api');
+    if (!existsSync(apiDir)) return;
+    const routeFiles = walk(apiDir).filter((f) => f.endsWith('route.ts'));
+    expect(routeFiles.length).toBeGreaterThan(0);
+    for (const file of routeFiles) {
+      const content = readFileSync(file, 'utf8');
+      expect(content).toContain('createServiceClient');
+    }
+  });
+
+  it('no admin page component imports SUPABASE_SERVICE_ROLE_KEY directly', () => {
+    if (!adminExists) return;
+    const appDir = join(ADMIN_ROOT, 'app/(authenticated)');
+    if (!existsSync(appDir)) return;
+    const pageFiles = walk(appDir).filter(
+      (f) => f.endsWith('page.tsx') || f.endsWith('layout.tsx'),
+    );
+    for (const file of pageFiles) {
+      const content = withoutComments(readFileSync(file, 'utf8'));
+      // Pages may import createServiceClient (which internally reads the key on
+      // the server) but must NEVER reference the env var name directly.
+      expect(content).not.toContain('SUPABASE_SERVICE_ROLE_KEY');
+    }
+  });
+
+  it('browser.ts does not reference the service role key', () => {
+    if (!adminExists) return;
+    const browserHelper = join(ADMIN_ROOT, 'lib/supabase/browser.ts');
+    if (!existsSync(browserHelper)) return;
+    const content = readFileSync(browserHelper, 'utf8');
+    expect(content).not.toContain('SERVICE_ROLE');
+    expect(content).not.toContain('service_role');
+  });
+
+  it('commitlint scope list includes admin', () => {
+    const config = read('commitlint.config.js');
+    // The scope allows commits to be tagged with the admin layer.
+    expect(config).toMatch(/'admin'/);
   });
 });

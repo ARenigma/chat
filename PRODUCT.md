@@ -35,12 +35,13 @@ Messages support replies/quotes, image attachments with reactions, read receipts
 and voice notes (ADR-0014). Presence is **declared, not derived** (ADR-0013): Here
 Now / Away / Hidden, chosen by the user.
 
-### Calls (built, gated behind `CALLS_ENABLED`)
+### Calls (`CALLS_ENABLED=true`)
 
 Voice and video, per-minute. Android requirements are non-negotiable: foreground-
 service types (microphone/camera), self-managed Telecom `ConnectionService`,
-POST full-screen-intent for incoming, audio focus. Shipped dark until the meter
-and rail land.
+audio focus. Incoming calls use a **heads-up `CallStyle` notification** (no
+full-screen intent — see `platform.test.ts`). Session billing and real payment
+rail are gated follow-ups (ADR-0020, ADR-0022).
 
 ### Notifications
 
@@ -75,5 +76,5 @@ variant for testers (App Distribution SDK never reaches the Play `release`).
 
 - Payments policy: Play Billing vs real-world-service exemption (ADR-0001 item,
   ADR-0019). Determines unit economics.
-- Provider KYC + payouts (Stripe Connect), age verification.
+- Provider KYC + payouts (Cashfree Payouts, ADR-0021/0022), age verification.
 - Whether phone becomes mandatory for providers (ADR-0009 §4).

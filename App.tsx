@@ -23,11 +23,13 @@ import {
 import { initSentry } from './src/lib/sentry';
 import { isUuid } from './src/lib/ids';
 import { track } from './src/lib/telemetry';
+import { supabase } from './src/lib/supabase';
 import { currentSession, handleAuthDeepLink } from './src/api/auth';
 import { CALLS_ENABLED, useIncomingCalls, type IncomingCall } from './src/api/calls';
 import { useSelfId } from './src/api/chat';
 import { useRole } from './src/api/provider';
 import { useStore } from './src/store/useStore';
+import { PolicyGateScreen } from './src/screens/PolicyGateScreen';
 import { RechargeScreen } from './src/screens/RechargeScreen';
 import { Button } from './src/components/Button';
 import { FloatingToolbar } from './src/components/FloatingToolbar';
@@ -65,6 +67,13 @@ const queryClient = new QueryClient({
 type Boot =
   | { phase: 'loading' }
   | { phase: 'signedOut'; message?: string }
+  /**
+   * ADR-0020: pending_policy_acceptances() returned at least one row.
+   * The user must accept before entering the app. Cannot be bypassed by deep
+   * links — the boot machine must pass through policyGate before reaching ready.
+   * Migration 027.
+   */
+  | { phase: 'policyGate' }
   | { phase: 'ready' }
   | { phase: 'error'; message: string };
 
@@ -133,6 +142,14 @@ function Root() {
         const tapped = await initialNotificationPeer();
         if (tapped !== null) {
           setRoute({ name: 'chat', providerId: tapped, from: 'home' });
+        }
+        // ADR-0020: policy gate. Check pending acceptances once per boot before
+        // entering the app. Migration 027: pending_policy_acceptances().
+        const { data: pending } = await supabase.rpc('pending_policy_acceptances');
+        if (Array.isArray(pending) && pending.length > 0) {
+          setBoot({ phase: 'policyGate' });
+          track('app_open');
+          return;
         }
         setBoot({ phase: 'ready' });
         track('app_open');
@@ -205,10 +222,13 @@ function Root() {
       const callMatch = url.match(/^companionchat:\/\/call\/([^?]+)\?(.*)$/);
       if (callMatch) {
         const callPeer = callMatch[1] ?? '';
-        const callId = callMatch[2]?.match(/callId=([^&]+)/)?.[1];
+        const qs = callMatch[2] ?? '';
+        const callId = qs.match(/callId=([^&]+)/)?.[1];
+        // Bug fix: was hardcoded 'voice', dropped video for notification-driven answers (android-audit.md 2026-08-29)
+        const medium = (qs.match(/medium=([^&]+)/)?.[1] ?? 'voice') as 'voice' | 'video';
         if (isUuid(callPeer) && callId !== undefined && isUuid(callId)) {
           void clearCall(callId);
-          setRoute({ name: 'call', providerId: callPeer, direction: 'in', callId, medium: 'voice' });
+          setRoute({ name: 'call', providerId: callPeer, direction: 'in', callId, medium });
         }
         return;
       }
@@ -221,12 +241,18 @@ function Root() {
         return;
       }
       handleAuthDeepLink(url)
-        .then(result => {
+        .then(async result => {
           if (result.status === 'signedIn') {
             track('signed_in');
             // Everything cached belongs to the previous (absent) session.
             void queryClient.invalidateQueries();
-            setBoot({ phase: 'ready' });
+            // ADR-0020: policy gate on OAuth deep-link sign-in. Migration 027.
+            const { data: pending } = await supabase.rpc('pending_policy_acceptances');
+            if (Array.isArray(pending) && pending.length > 0) {
+              setBoot({ phase: 'policyGate' });
+            } else {
+              setBoot({ phase: 'ready' });
+            }
           } else if (result.status === 'failed') {
             // Back to the auth screen *with the reason*. Advancing here was the
             // bug that produced a permanent spinner.
@@ -466,6 +492,16 @@ function Root() {
       );
     }
     return <AuthScreen initialError={boot.message} />;
+  }
+
+  // ADR-0020: gate cannot be bypassed — rendered here in the boot machine
+  // rather than inside SignedIn so deep links cannot route around it.
+  if (boot.phase === 'policyGate') {
+    return (
+      <PolicyGateScreen
+        onAccepted={() => setBoot({ phase: 'ready' })}
+      />
+    );
   }
 
   if (boot.phase === 'error') {

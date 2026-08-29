@@ -3,9 +3,9 @@
  *
  * Fired in real time by the `call_push_on_insert` trigger (migration 017) the
  * moment a ringing call row is created, because a call cannot wait for a cron.
- * Sends a data-only `kind: 'call'` push; the client builds a CallStyle
- * notification with a full-screen intent so the phone actually rings, even
- * backgrounded or locked.
+ * Sends a data-only `kind: 'call'` push; the client builds a heads-up
+ * CallStyle notification (no full-screen intent) so the phone rings even
+ * when backgrounded or locked.
  *
  * Reuses send-push's service-account OAuth and the same service_role-only guard.
  * Reads `pending_call_pushes` rather than the posted `call_id` so it naturally
@@ -111,7 +111,9 @@ async function send(bearer: string, projectId: string, row: Pending): Promise<bo
       body: JSON.stringify({
         message: {
           token: row.token,
-          android: { priority: 'high', ttl: '45s' },
+          // 30s ring timeout — matches meter_active_calls and platform.test.ts (android-audit.md)
+          // TODO: align SQL ringing expiry in meter_active_calls to 30s in migration 028+
+          android: { priority: 'high', ttl: '30s' },
           data: {
             kind: 'call',
             callId: row.call_id,

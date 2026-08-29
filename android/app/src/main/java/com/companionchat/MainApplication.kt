@@ -17,6 +17,8 @@ class MainApplication : Application(), ReactApplication {
           // Google Play in-app updates. Not autolinkable because it is this
           // app's own module rather than a node_modules package.
           add(InAppUpdatePackage())
+          // Play Billing / UCB. Not autolinkable for the same reason.
+          add(BillingPackage())
         },
     )
   }

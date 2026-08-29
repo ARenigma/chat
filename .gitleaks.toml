@@ -38,6 +38,13 @@ regex = '''MYAPP_UPLOAD_(STORE|KEY)_PASSWORD\s*=\s*\S+'''
 path = '''keystore\.properties$'''
 tags = ["android", "critical"]
 
+[[rules]]
+id = "admin-service-role-key-in-bundle"
+description = "Supabase service-role key must never appear in admin client bundle"
+regex = '''(SUPABASE_SERVICE_ROLE_KEY|sbp_)'''
+path = '''admin/\.next/static'''
+tags = ["key", "Supabase", "admin"]
+
 [[allowlists]]
 description = "Public-by-design values and generated artefacts"
 paths = [

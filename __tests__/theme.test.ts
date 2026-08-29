@@ -862,6 +862,12 @@ describe('accent budget is enforced in code, not just documented', () => {
        */
       'PaymentSheet.tsx',
       /*
+       * PolicyGateScreen: the tappable "Read full document" link uses the
+       * accent as a navigational action affordance — the same role the coral
+       * plays on call-to-action links throughout the design system.
+       */
+      'PolicyGateScreen.tsx',
+      /*
        * The v13 provider profile. The coral is the primary Call action and the
        * favourite-when-set, plus the hero's warm field — actions and a live
        * state, the priced entry points to a conversation.

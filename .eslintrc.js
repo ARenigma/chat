@@ -6,6 +6,8 @@ module.exports = {
     'android/',
     'ios/',
     'vendor/',
+    // The Next.js admin app has its own ESLint 9 flat config.
+    'admin/',
     // Generated from design/tokens.json; lint the generator, not its output.
     'src/theme/tokens.generated.ts',
   ],

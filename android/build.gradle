@@ -5,7 +5,9 @@ buildscript {
         compileSdkVersion = 36
         targetSdkVersion = 36
         ndkVersion = "27.1.12297006"
-        kotlinVersion = "2.1.20"
+        // PBL 9.1.0 silently requires Kotlin ≥ 2.2.10; do not downgrade.
+        // developer.android.com/google/play/billing/release-notes
+        kotlinVersion = "2.2.10"
     }
     repositories {
         google()

@@ -27,6 +27,15 @@
 # installs exactly those with sdkmanager before building: a no-op when the image
 # already has them, and the difference between a working build and a cryptic
 # Gradle error when it does not.
+#
+# Admin control-plane CI variables required (masked, not protected):
+#   VERCEL_TOKEN              — Vercel personal token (deploy-web and deploy-admin)
+#   SUPABASE_SERVICE_ROLE_KEY — service-role key for the admin Next.js app server;
+#                               MUST be masked; MUST NOT be prefixed NEXT_PUBLIC_
+#   CASHFREE_ENV              — 'sandbox' or 'production'; controls Cashfree API base URL
+#   CASHFREE_CLIENT_ID        — Cashfree API client ID (masked)
+#   CASHFREE_CLIENT_SECRET    — Cashfree API client secret (masked)
+#   CASHFREE_WEBHOOK_SECRET   — Cashfree webhook signature secret (masked)
 
 stages: [static, verify, build, deliver, release]
 
@@ -112,6 +121,30 @@ static:
         coverage_format: cobertura
         path: coverage/cobertura-coverage.xml
     expire_in: 1 week
+
+admin-static:
+  stage: static
+  image: node:22-bookworm-slim
+  cache:
+    key: admin-$CI_COMMIT_REF_SLUG
+    paths: [admin/node_modules/]
+  script:
+    - cd admin && npm ci
+    - npm run typecheck
+    - npm run lint
+    # Build first so we can inspect the output bundle for leaks.
+    - npm run build
+    - |
+      # Assert SUPABASE_SERVICE_ROLE_KEY cannot enter the client bundle.
+      # The key has no NEXT_PUBLIC_ prefix so Next.js strips it from the
+      # client build — but the bundle scan catches any future regression.
+      if ls .next/static/chunks/*.js 2>/dev/null | xargs grep -l 'SUPABASE_SERVICE_ROLE_KEY' 2>/dev/null | grep -q .; then
+        echo "FATAL: SUPABASE_SERVICE_ROLE_KEY found in admin client bundle"
+        exit 1
+      fi
+  rules:
+    - changes:
+        - admin/**/*
 
 # ---------------------------------------------------------------------------
 # STAGE 2 — the database, against a real Postgres with pgTAP
@@ -317,6 +350,35 @@ deploy-backend:
     - npx --yes supabase@latest link --project-ref "$SUPABASE_PROJECT_REF"
     - npx --yes supabase@latest db push --include-all
     - npx --yes supabase@latest config push --project-ref "$SUPABASE_PROJECT_REF"
+
+deploy-admin:
+  stage: release
+  image: node:22-bookworm-slim
+  needs: []
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" && $VERCEL_TOKEN'
+      changes:
+        - admin/**/*
+  variables:
+    VERCEL_ORG_ID: 'team_3gHsyR3zCdpVWtnv3r0SJ5Vq'
+  environment:
+    name: admin
+    url: https://admin.pappal.live
+  script:
+    # Build with prod environment variables so the bundle check can run before
+    # Vercel's own build; the Vercel deploy re-builds server-side, but the
+    # bundle scan here verifies the service key does not slip into static chunks.
+    - cd admin && npm ci && npm run build
+    - |
+      if ls .next/static/chunks/*.js 2>/dev/null | xargs grep -l 'SUPABASE_SERVICE_ROLE_KEY' 2>/dev/null | grep -q .; then
+        echo "FATAL: SUPABASE_SERVICE_ROLE_KEY in admin client bundle — aborting deploy"
+        exit 1
+      fi
+    - npx --yes vercel@latest deploy --prod --yes --token="$VERCEL_TOKEN"
+      --build-env NEXT_PUBLIC_SUPABASE_URL="$SUPABASE_URL"
+      --build-env NEXT_PUBLIC_SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
+      --env SUPABASE_SERVICE_ROLE_KEY="$SUPABASE_SERVICE_ROLE_KEY"
+      --env DEPLOYMENT_ENV=production
 
 play-internal:
   stage: release

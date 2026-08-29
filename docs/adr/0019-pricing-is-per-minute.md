@@ -1,5 +1,12 @@
 # ADR-0019, Pricing is per-minute, not per-message
 
+> **Follow-up ADRs:** [0020](0020-ephemeral-bilateral-paid-sessions.md) (session
+> mechanics and purge model), [0021](0021-principal-marketplace-economics.md)
+> (economics, provider split, payouts), [0022](0022-india-user-choice-billing.md)
+> (Play UCB + Cashfree billing rail), [0023](0023-versioned-admin-control-plane.md)
+> (admin control plane for rates and kill switches). Backend metering is defined
+> in ADR-0020.
+
 - **Status:** Accepted (2026-08-26)
 - **Decision by:** Amit Ranjan
 - **Resolves:** the payments question [ADR-0001](0001-human-to-human-not-ai-chat.md)
