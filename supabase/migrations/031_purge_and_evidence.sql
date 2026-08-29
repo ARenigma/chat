@@ -75,8 +75,10 @@ alter table public.report_evidence enable row level security;
 -- service_role-only; no client access.
 
 create index report_evidence_case   on public.report_evidence (case_id);
-create index report_evidence_retain on public.report_evidence (retain_until)
-  where retain_until < now() + interval '7 days';   -- warm index for purge job
+-- A normal B-tree supports `retain_until < now()` range scans. `now()` cannot
+-- appear in an index predicate because PostgreSQL requires predicates to be
+-- immutable.
+create index report_evidence_retain on public.report_evidence (retain_until);
 
 -- ---------------------------------------------------------------------------
 -- 2. Extend report_reason enum with the full taxonomy
@@ -365,7 +367,7 @@ begin
   perform cron.schedule(
     'purge-expired-evidence',
     '0 3 1 * *',
-    $$select public.purge_expired_evidence()$$
+    $cron$select public.purge_expired_evidence()$cron$
   );
 end
 $$;
@@ -549,7 +551,7 @@ begin
   perform cron.schedule(
     'meter-active-sessions',
     '* * * * *',
-    $$select public.meter_active_sessions()$$
+    $cron$select public.meter_active_sessions()$cron$
   );
 end
 $$;
