@@ -1,6 +1,7 @@
 /* Hand-written; all values come from tokens.css (generated — do not edit).
  *
- * Nunito is loaded from Google Fonts in each HTML <head>.
+ * Geist (body/titles) and Titan One (wordmark) load from Google Fonts
+ * in each HTML <head>, matching assets/fonts in the app.
  * Breakpoints: ≥768 px (tablet / desktop), ≥1100 px (wide desktop).
  * Container: max-width 1100 px, centred with padding-inline.
  *
@@ -57,10 +58,10 @@ body {
 
 /* ── Logo mark ──────────────────────────────────────────────────────────────── */
 .mark {
-  font-family: var(--face-display);
-  font-weight: 800;
+  font-family: var(--face-wordmark);
+  font-weight: 400;
   font-size: 19px;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
   color: var(--text-on-accent);
   background: var(--bg-accent);
   padding: 5px 13px;

@@ -13,14 +13,18 @@ import { deleteAccount, signOut } from '../api/auth';
 import { stopPush } from '../lib/push';
 import { track } from '../lib/telemetry';
 import { widgetConfigured } from '../lib/msg91Widget';
-import { useMyApplication, useSetPresence } from '../api/provider';
+import { useMyApplication, useSetPresence, useUploadAvatar } from '../api/provider';
 import { useProfile } from '../api/chat';
 import { PRESENCE_OPTIONS, presenceDetail } from '../lib/presence';
 import { PHONE_VERIFY_ENABLED } from '../api/phone';
+import { legalUrl } from '../lib/legal';
+import { initialOf } from '../lib/display';
+import { Avatar } from '../components/Avatar';
 import { PhoneVerifySheet } from './PhoneVerifySheet';
 import { resetStore, useStore } from '../store/useStore';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme, useThemeMode } from '../theme/ThemeProvider';
+import { launchImageLibrary } from 'react-native-image-picker';
 
 interface Props {
   /** Back to the tree's home. Settings is a mounted screen, not a sheet. */
@@ -80,9 +84,29 @@ export function SettingsSheet({
   const { data: application } = useMyApplication();
   const { data: profile } = useProfile();
   const setPresence = useSetPresence();
+  const uploadAvatar = useUploadAvatar();
   // Hidden until the profile loads, and hidden if it never does. Defaulting the
   // other way would show a checkmark against a state the person has not chosen.
   const presence = profile?.presence ?? 'hidden';
+  const isProvider = profile?.role === 'provider';
+
+  const onPickAvatar = useCallback(async () => {
+    const result = await launchImageLibrary({
+      mediaType: 'photo',
+      selectionLimit: 1,
+      quality: 0.8,
+      maxWidth: 1024,
+      maxHeight: 1024,
+    });
+    const asset = result.assets?.[0];
+    if (result.didCancel || asset?.uri === undefined) {
+      return;
+    }
+    uploadAvatar.mutate({
+      uri: asset.uri,
+      mime: asset.type ?? 'image/jpeg',
+    });
+  }, [uploadAvatar]);
 
   const onDelete = useCallback(async () => {
     setBusy(true);
@@ -182,8 +206,47 @@ export function SettingsSheet({
         ]}>
         <Text allowFontScaling style={styles.intro}>
           {'Signed in with Google. Your name and email are never shown to anyone ' +
-            'you talk to. No contacts, no location, no photos, no advertising ID.'}
+            'you talk to. No contacts, no location, no advertising ID.'}
         </Text>
+
+        {isProvider ? (
+          <>
+            <Text allowFontScaling style={styles.subheader}>
+              Directory photo
+            </Text>
+            <View style={styles.group}>
+              <Pressable
+                onPress={() => {
+                  void onPickAvatar();
+                }}
+                testID="settings-avatar"
+                accessibilityLabel={
+                  profile?.avatar_url ? 'Change directory photo' : 'Add directory photo'
+                }
+                press="none"
+                highlight="ios"
+                disabled={uploadAvatar.isPending}
+                style={styles.row}>
+                <Avatar
+                  initial={initialOf(profile?.display_name ?? 'P')}
+                  size={40}
+                  uri={profile?.avatar_url ?? null}
+                />
+                <Text allowFontScaling style={[styles.rowTitle, styles.rowTitleGrow]}>
+                  {uploadAvatar.isPending
+                    ? 'Uploading…'
+                    : profile?.avatar_url
+                      ? 'Change photo'
+                      : 'Add a photo'}
+                </Text>
+                <Icon name="chevronRight" size={18} color={theme.color.text.tertiary} />
+              </Pressable>
+            </View>
+            <Text allowFontScaling style={styles.footer}>
+              Shown on your listing and to people who message you.
+            </Text>
+          </>
+        ) : null}
 
         {/* Presence, first because it is the only setting that changes what
             someone else sees. Three rows with a checkmark: a switch cannot express
@@ -336,7 +399,7 @@ export function SettingsSheet({
         <View style={styles.group}>
           <Pressable
             onPress={() => {
-              void Linking.openURL('https://bond-app.vercel.app/terms.html');
+              void Linking.openURL(legalUrl('terms'));
             }}
             testID="settings-terms"
             accessibilityLabel="Terms of Service"
@@ -351,7 +414,7 @@ export function SettingsSheet({
           <View style={styles.separator} />
           <Pressable
             onPress={() => {
-              void Linking.openURL('https://bond-app.vercel.app/privacy.html');
+              void Linking.openURL(legalUrl('privacy'));
             }}
             testID="settings-privacy"
             accessibilityLabel="Privacy Policy"
@@ -461,18 +524,22 @@ export function SettingsSheet({
           'account.'
         }
         onClose={() => setConfirming(false)}
-        onCancel={() => setConfirming(false)}
-        cancelLabel="Cancel">
-        <Button
-          label="Delete Account"
-          kind="danger"
-          busy={busy}
-          busyLabel="Deleting Account"
-          onPress={() => {
-            void onDelete();
-          }}
-          testID="delete-confirm"
-        />
+        footer={
+          <>
+            <Button label="Cancel" onPress={() => setConfirming(false)} />
+            <Button
+              label="Delete Account"
+              kind="danger"
+              busy={busy}
+              busyLabel="Deleting Account"
+              onPress={() => {
+                void onDelete();
+              }}
+              testID="delete-confirm"
+            />
+          </>
+        }>
+        {null}
       </Sheet>
     </View>
   );
@@ -546,6 +613,10 @@ const makeStyles = (t: Theme) =>
     rowTitle: {
       ...TOKENS.typography.bodyLarge,
       color: t.color.text.primary,
+    },
+    rowTitleGrow: {
+      flex: 1,
+      marginHorizontal: TOKENS.space.sm,
     },
     rowTitleDanger: {
       color: t.color.state.danger,

@@ -1,6 +1,8 @@
 # ADR-0004, Identity is Google/Facebook sign-in
 
-- **Status:** Accepted (2026-08-20)
+- **Status:** Partially superseded (2026-08-29). Facebook was removed (ADR-0006
+  §4). Firebase phone OTP is live (`PHONE_AUTH_ENABLED=true`). Google now uses
+  Credential Manager in-app with a browser fallback. Anonymous remains disabled.
 - **Decision by:** Amit Ranjan
 - **Supersedes:** the phone-only decision in migration 006 / ADR-0001's identity note
 
@@ -17,11 +19,12 @@ recording, the churn is real and the reasons were all valid at the time.
 
 ## Decision
 
-Google and Facebook OAuth, in the system browser, PKCE, returning through the
-`companionchat://auth-callback` deep link. Phone auth is disabled. Anonymous
-stays disabled. Email remains enabled for **admin-created operational accounts
-only** (`enable_signup = false`) so `npm run provider` can test the two-sided
-conversation a single device cannot.
+Google OAuth via Credential Manager in-app sheet (API 28+) with browser
+fallback, returning through the `companionchat://auth-callback` deep link.
+Firebase phone OTP is also live. Facebook was removed, not deferred — see
+ADR-0006 §4. Anonymous remains disabled. Email remains enabled for
+**admin-created operational accounts only** (`enable_signup = false`) so
+`npm run provider` can test the two-sided conversation a single device cannot.
 
 ## What this costs, stated plainly
 
@@ -41,13 +44,13 @@ moment SMS is affordable, and the phone implementation is in git history rather
 than deleted.
 
 **2. A privacy disclosure a phone number did not require.** Signing in tells
-Google or Facebook that this user uses _this_ app. For an app about loneliness
-that is a meaningful disclosure, and some people will decline it. The auth screen
-says so rather than letting them find out later. It is the main argument for
-adding Apple sign-in when iOS ships, since Apple supports private relay.
+Google that this user uses _this_ app. For an app about loneliness that is a
+meaningful disclosure, and some people will decline it. The auth screen says
+so rather than letting them find out later. It is the main argument for adding
+Apple sign-in when iOS ships, since Apple supports private relay.
 
-**3. Facebook App Review is a launch dependency.** Test users work immediately;
-real users do not until review passes. Days, not hours.
+**3. Facebook App Review is a launch dependency.** Superseded: Facebook was
+removed in ADR-0006 §4. This cost no longer applies.
 
 ## Consequences
 

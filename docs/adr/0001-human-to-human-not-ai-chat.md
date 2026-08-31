@@ -62,6 +62,8 @@ any of it returns.
    (Persona, Veriff, Stripe Identity), not a checkbox.
 3. **Payouts.** Stripe Connect Express: onboarding, tax forms, payout schedules,
    reversal handling. The wallet stops being a counter and starts being money.
+   (Superseded by ADR-0021: Cashfree Payouts; Axionix is the principal, 60/40
+   split.)
 4. **Realtime messaging.** Supabase Realtime replaces SSE. Presence, typing and
    read receipts become real signals rather than decoration. **Done,
    2026-08-20**, see `src/api/realtime.ts` and `src/lib/transcript.ts`. Two

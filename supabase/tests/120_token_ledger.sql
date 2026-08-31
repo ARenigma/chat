@@ -123,8 +123,8 @@ select lives_ok(
 select is(
   (select token_balance from public.profiles
     where id = 'dddddddd-0000-4000-8000-000000000004'),
-  -- STARTING_BALANCE (50) + 300 tokens
-  350,
+  -- STARTING_BALANCE (0, zeroed by migration 028) + 300 tokens recharged
+  300,
   'complete_recharge credited 300 tokens on top of the starting balance'
 );
 

@@ -9,6 +9,7 @@ import { presenceForSpeech, readPresence } from '../lib/presence';
 import { enterRow } from '../theme/motion';
 import { Avatar } from './Avatar';
 import { Icon } from './Icon';
+import { MetaChip } from './MetaChip';
 import { Pressable } from './Pressable';
 
 interface Props {
@@ -51,7 +52,7 @@ interface Props {
  * inventing one per render. Swap for a real `experience_years` field when the
  * schema carries it; this is the one number in the row that is not yet true.
  */
-function seededExperienceYears(id: string): number {
+export function seededExperienceYears(id: string): number {
   let h = 0;
   for (let i = 0; i < id.length; i += 1) {
     // `% 100000` keeps the running hash bounded (no overflow) without a bitwise
@@ -62,7 +63,7 @@ function seededExperienceYears(id: string): number {
 }
 
 /** "replies in ~4m". Rounded hard, because precision here would be false. */
-function replyLatency(seconds: number | null): string | null {
+export function replyLatency(seconds: number | null): string | null {
   if (seconds === null) {
     return null;
   }
@@ -125,11 +126,8 @@ function ProviderRowView({ provider, index, isLast, onPress, onPressAvatar, anim
   const theme = useTheme();
   const initial = initialOf(provider.display_name);
   const latency = replyLatency(provider.median_reply_seconds);
-  // Fact chips: experience + the top languages. Age moved up to sit beside the
-  // name (subscript, like the detail card). Experience is SEEDED for now — the
-  // directory has no such column yet — so it is derived deterministically from
-  // the id, stable per provider, and clearly a placeholder until a real field
-  // lands. One non-wrapping line so every row stays the same height.
+  // Fact chips: experience + top languages. Experience is SEEDED until the
+  // directory carries a real column — deterministic per id, stable across renders.
   const chips = [
     `${seededExperienceYears(provider.id)} yrs`,
     ...provider.languages.slice(0, 2),
@@ -198,28 +196,21 @@ function ProviderRowView({ provider, index, isLast, onPress, onPressAvatar, anim
               ? provider.headline
               : 'Here to listen'}
           </Text>
-          {/* The fact-chip strip, now led by the rating (#10/#12, Amit): every
-              card carries a star at the bottom next to the info chips. Rated
-              cards show the score; unrated read "New" (an inline rating chip, not
-              the old floating badge). */}
+          {/* Material 3 AssistChip strip (32dp / 8dp corners / 1dp outline).
+              Rating leads; years + languages follow. One non-wrapping line so
+              every row stays the same height. */}
           <View style={styles.chips}>
-            <View style={[styles.chip, styles.ratingChip]}>
-              <Text
-                testID="provider-rating"
-                allowFontScaling
-                numberOfLines={1}
-                style={styles.ratingChipText}>
-                {provider.rating_count > 0
+            <MetaChip
+              testID="provider-rating"
+              tone="emphasis"
+              label={
+                provider.rating_count > 0
                   ? `★ ${provider.rating_avg?.toFixed(1)}`
-                  : '★ New'}
-              </Text>
-            </View>
+                  : '★ New'
+              }
+            />
             {chips.map(chip => (
-              <View key={chip} style={styles.chip}>
-                <Text allowFontScaling numberOfLines={1} style={styles.chipText}>
-                  {chip}
-                </Text>
-              </View>
+              <MetaChip key={chip} label={chip} />
             ))}
           </View>
         </View>
@@ -280,38 +271,14 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     ...TOKENS.typography.captionRegular,
     color: t.color.text.tertiary,
   },
-  // The fact-chip strip. Modern outlined tags (a hairline ring on a whisper of
-  // grouped grey) rather than the flat grey slabs, which read as filled blocks
-  // fighting the row. Clipped to one line so a chip can never make one row
-  // taller than its neighbours.
+  // M3 AssistChip strip under the headline. Clipped to one line so a chip can
+  // never make one row taller than its neighbours.
   chips: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: TOKENS.space['2xs'],
-    marginTop: 3,
+    marginTop: 4,
     overflow: 'hidden',
-  },
-  chip: {
-    paddingHorizontal: TOKENS.space.sm,
-    paddingVertical: 3,
-    borderRadius: TOKENS.radius.pill,
-    borderCurve: 'continuous',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: t.color.border.hairline,
-    backgroundColor: t.color.bg.grouped,
-  },
-  chipText: {
-    ...TOKENS.typography.captionSmall,
-    color: t.color.text.secondary,
-  },
-  // The rating chip leads the strip: same pill geometry as an info chip, but the
-  // star + score sit at primary ink and semibold so the signal reads first.
-  ratingChip: {
-    borderColor: t.color.border.strong,
-  },
-  ratingChipText: {
-    ...TOKENS.typography.labelSmall,
-    color: t.color.text.primary,
   },
   secondary: {
     ...TOKENS.typography.subhead,

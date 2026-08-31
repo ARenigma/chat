@@ -1,4 +1,3 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createMMKV } from 'react-native-mmkv';
 
 /**
@@ -16,55 +15,6 @@ import { createMMKV } from 'react-native-mmkv';
  * still settles in the same microtask, whereas a bridge call cannot.
  */
 const mmkv = createMMKV({ id: 'companionchat' });
-
-/** Keys that existed in AsyncStorage before the switch and must survive it. */
-const MIGRATED = ['companion.lastProvider'] as const;
-
-/**
- * Move anything AsyncStorage still holds into MMKV, once.
- *
- * Without this, switching storage engines silently signs everybody out and
- * forgets which conversation they were in, the data is not gone, it is just
- * behind a door nothing opens any more. Supabase's session keys are discovered
- * rather than listed, because their names include the project ref.
- *
- * Runs at import time and deliberately does not block: every consumer reads
- * through `storage`, which falls back to nothing rather than to stale data, and
- * a missed session on one cold start costs a sign-in, whereas awaiting this
- * before the first frame would cost the boot time the migration exists to save.
- */
-let migrating: Promise<void> | null = null;
-
-export function migrateLegacyStorage(): Promise<void> {
-  if (migrating !== null) {
-    return migrating;
-  }
-  migrating = (async () => {
-    if (mmkv.getBoolean('migrated.v1') === true) {
-      return;
-    }
-    try {
-      const keys = await AsyncStorage.getAllKeys();
-      const wanted = keys.filter(
-        k => k.startsWith('sb-') || (MIGRATED as readonly string[]).includes(k),
-      );
-      for (const key of wanted) {
-        if (mmkv.contains(key)) {
-          continue;
-        }
-        const value = await AsyncStorage.getItem(key);
-        if (value !== null) {
-          mmkv.set(key, value);
-        }
-      }
-      mmkv.set('migrated.v1', true);
-    } catch {
-      // A failed migration must not brick the app. Worst case the user signs in
-      // again, which is recoverable; throwing here would not be.
-    }
-  })();
-  return migrating;
-}
 
 export const storage = {
   get(key: string): string | null {

@@ -25,6 +25,11 @@ describe('memberParent', () => {
       name: 'providerDetail',
       providerId: 'p1',
     });
+    // Opened from the extended list, back returns to that list — a second
+    // back (chatsList → home) is what leaves for Home. Instagram / Signal.
+    expect(memberParent({ name: 'chat', providerId: 'p1', from: 'chatsList' })).toEqual({
+      name: 'chatsList',
+    });
   });
 
   it('sends every other member screen back to Home', () => {

@@ -1,21 +1,22 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlashList, type ListRenderItemInfo } from '@shopify/flash-list';
 import {
-  ActivityIndicator,
-  AppState,
-  InteractionManager,
+  BackHandler,
   Keyboard,
   KeyboardAvoidingView,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   Platform,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { initialOf } from '../lib/display';
-import { isPending, lastOwnMessageId } from '../lib/transcript';
+import { isPending, lastOwnMessageId, PENDING_PREFIX } from '../lib/transcript';
 import {
   useConversationId,
   useConversations,
@@ -35,17 +36,27 @@ import { useSendImage } from '../api/attachments';
 import { opensDay, timeOfDay } from '../lib/datetime';
 import { voiceOf, type VoiceDraft } from '../lib/voice';
 import { imageOf, type ImageDraft } from '../lib/attachments';
+import { useQueryClient } from '@tanstack/react-query';
+import { supabase } from '../lib/supabase';
 import { readPresence } from '../lib/presence';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { DEFAULT_RATES, isLowBalance, talkTimeLeft } from '../lib/rates';
 import { ownReaction, tallyByMessage } from '../lib/reactions';
 import type { ReactionEmoji } from '../lib/database.types';
-import { supabase } from '../lib/supabase';
 import { useStore } from '../store/useStore';
+import {
+  useActiveSession,
+  useEndSession,
+  usePendingSessionRequest,
+  useSessionLease,
+  useSessionRealtime,
+} from '../api/sessions';
 import { Avatar } from '../components/Avatar';
 import { ChatWallpaper } from '../components/ChatWallpaper';
-import { Chip } from '../components/Chip';
+import { FirstMovePills } from '../components/FirstMovePills';
+import { LoadingIndicator } from '../components/LoadingIndicator';
 import { Composer } from '../components/Composer';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { DayDivider } from '../components/DayDivider';
 import { Frost } from '../components/Frost';
 import { Icon } from '../components/Icon';
@@ -56,8 +67,6 @@ import { Pressable } from '../components/Pressable';
 import { TokenCounter } from '../components/TokenCounter';
 import { CallLogRow } from '../components/CallLogRow';
 import { MyTurn, PeerTurn, type ActionTarget, type ImageBody, type Quote, type VoiceBody } from '../components/Turn';
-import { MessageActionsSheet } from './MessageActionsSheet';
-import { ReviewSheet } from './ReviewSheet';
 import { SafetySheet } from './SafetySheet';
 
 interface Props {
@@ -77,25 +86,7 @@ interface Props {
   onOpenProfile?: (providerId: string) => void;
 }
 
-const STARTERS: ReadonlyArray<{ label: string; tone: 'neutral' | 'warm' }> = [
-  { label: 'How was your day?', tone: 'neutral' },
-  { label: 'I could use some company', tone: 'warm' },
-  { label: 'I just need to vent', tone: 'neutral' },
-];
-
 // ActionTarget is defined and exported from Turn.tsx; imported above.
-
-/**
- * Prepaid-minute guard, module-level so it survives ChatScreen remounts and the
- * boot double-mount. The meter must bill AT MOST ONCE PER 60s PER CONVERSATION:
- * without this, render-churn and remounts (boot restores the chat route, data
- * loads, AfterPaint toggles) each re-run the metering effect and fire an
- * immediate charge, draining a balance in seconds. Keyed by conversationId ->
- * ms of the last successful (or reserved) charge. A no-op re-entry within the
- * minute is also correct: you keep the minute you already paid for.
- */
-const MINUTE_MS = 60_000;
-const lastChatChargeAt = new Map<string, number>();
 
 /**
  * `inverted` is load-bearing: it anchors the transcript to the bottom, so a
@@ -114,23 +105,33 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const balance = useStore(s => s.balance);
-  const setBalance = useStore(s => s.setBalance);
   const openRefill = useStore(s => s.openRefill);
+  const openWallet = useStore(s => s.openWallet);
   const setNotice = useStore(s => s.setNotice);
-  const [bloomKey, setBloomKey] = useState(0);
-  // Live kill switches — falls back to compile-time CALLS_ENABLED when offline.
+  const queryClient = useQueryClient();
+  const firstSendRefillShown = useRef(false);
+  const [sendHaloKey, setSendHaloKey] = useState(0);
+  const [leaveDialogVisible, setLeaveDialogVisible] = useState(false);
+  // Independent live controls. CALLS_ENABLED remains the compile-time master
+  // guard; the admin pair can stop one medium without taking down the other.
+  // The same flags are enforced in start_call, so stale client config cannot
+  // bypass an operator stop.
   const { data: killSwitches } = useKillSwitches();
-  const callsEnabled = (killSwitches?.calls_enabled ?? true) && CALLS_ENABLED;
-  // A1: defer ChatWallpaper's ~800 View+Text nodes until after the SlideInRight
-  // open animation completes, so the transition frame budget is not eaten by
+  const voiceCallsEnabled =
+    (killSwitches?.voice_calls_enabled ?? true) && CALLS_ENABLED;
+  const videoCallsEnabled =
+    (killSwitches?.video_calls_enabled ?? true) && CALLS_ENABLED;
+  // A1: defer ChatWallpaper's ~800 View+Text nodes until the JS thread is idle
+  // after the SlideInRight open, so the transition frame budget is not eaten by
   // a synchronous mount. The transcript sits above the wallpaper, so a 1-frame-
-  // late wallpaper is invisible to the user.
+  // late wallpaper is invisible to the user. `InteractionManager` is deprecated
+  // — idle callback is the RN-sanctioned replacement.
   const [wallpaperReady, setWallpaperReady] = useState(false);
   useEffect(() => {
-    const handle = InteractionManager.runAfterInteractions(() => {
+    const idle = requestIdleCallback(() => {
       setWallpaperReady(true);
     });
-    return () => handle.cancel();
+    return () => cancelIdleCallback(idle);
   }, []);
   // Which message the safety sheet was opened from, so a report can attach the
   // specific message rather than only the thread.
@@ -138,11 +139,9 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
     open: false,
     messageId: null,
   });
-  const [actions, setActions] = useState<ActionTarget | null>(null);
   // The message the next send replies to. Cleared on send and on cancel, and
   // never persisted: a half-composed reply is not worth surviving a screen.
   const [replyTo, setReplyTo] = useState<ActionTarget | null>(null);
-  const [reviewOpen, setReviewOpen] = useState(false);
   // Only ever read to decide whether the safe-area inset is already covered by
   // the keyboard's own frame. See the note on the composer wrapper.
   const [keyboardUp, setKeyboardUp] = useState(false);
@@ -150,7 +149,6 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   // now" and comes back tomorrow is a different question from one who said it a
   // second ago, and persisting it would need a key per conversation for a
   // decision worth almost nothing.
-  const [promptHidden, setPromptHidden] = useState(false);
   // Height of the frosted top bar (header + talk strip + status-bar inset),
   // measured rather than guessed: the strip is conditional on balance and the
   // inset varies by device, so the transcript's top spacer has to track it.
@@ -221,9 +219,15 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
    */
   const needsOpen = knownThread === undefined;
   const { data: openedId } = useConversationId(needsOpen ? providerId : null);
-  const conversationId = knownThread?.id ?? openedId;
+  const conversationId = knownThread?.conversation_id ?? openedId;
   const { data: messages, isPending: messagesPending } = useMessages(conversationId);
   const { data: callRecords } = useCalls(conversationId);
+  const { data: activeSession } = useActiveSession(conversationId);
+  const { data: pendingRequest } = usePendingSessionRequest(conversationId);
+  const { mutate: endSessionMutate, isPending: endingSession } = useEndSession();
+
+  useSessionRealtime(conversationId);
+  useSessionLease(activeSession ?? null);
 
   const { notifyTyping } = useLiveConversation(conversationId, selfId);
   useMarkRead(conversationId, selfId);
@@ -254,6 +258,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
    * there is no summary row yet.
    */
   const peerThread = knownThread;
+  const isMemberSide = peerThread?.i_am_member ?? true;
   const provider = providers?.find(p => p.id === providerId);
   const peerName = peerThread?.peer_display_name ?? provider?.display_name;
   const name = peerName ?? 'Conversation';
@@ -281,14 +286,52 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
     peerThread?.peer_last_active_at ?? provider?.last_active_at,
   );
 
+  useEffect(() => {
+    if (!isMemberSide) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const { data, error } = await supabase.rpc('seed_conversation_openers', {
+        p_provider_id: providerId,
+      });
+      if (cancelled || error) {
+        return;
+      }
+      const convId = (data as { conversation_id?: string } | null)?.conversation_id;
+      if (convId !== undefined) {
+        void queryClient.invalidateQueries({ queryKey: ['messages', convId] });
+        void queryClient.invalidateQueries({ queryKey: ['conversation-list'] });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isMemberSide, providerId, queryClient]);
+
+  const memberHasSent = useMemo(
+    () =>
+      selfId !== undefined &&
+      (messages ?? []).some(
+        m => m.sender_id === selfId && !m.id.startsWith(PENDING_PREFIX),
+      ),
+    [messages, selfId],
+  );
+
   const onSend = useCallback(
-    (text: string) => {
-      setBloomKey(n => n + 1);
+    async (text: string) => {
+      setSendHaloKey(n => n + 1);
       const parent = replyTo;
       setReplyTo(null);
-      void send(text, parent?.id ?? null);
+      const wasFirstMemberSend =
+        isMemberSide && !memberHasSent && activeSession == null;
+      const ok = await send(text, parent?.id ?? null);
+      if (ok && wasFirstMemberSend && !firstSendRefillShown.current) {
+        firstSendRefillShown.current = true;
+        openRefill();
+      }
     },
-    [send, replyTo],
+    [send, replyTo, isMemberSide, memberHasSent, activeSession, openRefill],
   );
 
   /**
@@ -297,7 +340,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
    */
   const onSendVoice = useCallback(
     (draft: VoiceDraft) => {
-      setBloomKey(n => n + 1);
+      setSendHaloKey(n => n + 1);
       const parent = replyTo;
       setReplyTo(null);
       void sendVoice(draft, parent?.id ?? null);
@@ -308,7 +351,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   /** A picked photo, sent. Clears the reply bar for the same reason text does. */
   const onSendImage = useCallback(
     (draft: ImageDraft) => {
-      setBloomKey(n => n + 1);
+      setSendHaloKey(n => n + 1);
       const parent = replyTo;
       setReplyTo(null);
       void sendImage(draft, parent?.id ?? null);
@@ -454,261 +497,153 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
     return map;
   }, [messages, selfId, name]);
 
-  /**
-   * Whether to offer a rating, and the conditions are deliberately strict.
-   *
-   * The directory publishes a rating and a review count that are worthless if
-   * nobody rates, Clarity's rows lead with "5.0 ★ 39+ reviews", which is what a
-   * member actually picks on. But a rating prompt is the easiest thing in a
-   * product to make obnoxious, so all four of these must hold:
-   *
-   *   1. **The caller is the member of this thread**, which is `i_am_member`
-   *      and deliberately *not* `role === 'member'`. The first version used the
-   *      profile role and was wrong for the accounts the product most wants: a
-   *      member admitted as a provider keeps the threads they paid for, and
-   *      `submit_review` would happily accept them. See migration 007.
-   *   2. **A real exchange.** Both sides must have sent something. The server
-   *      requires two messages; two of your own is not a conversation, and
-   *      rating it would be a rating-farming primitive.
-   *   3. **Not already rated.** `conversation_summaries.reviewed` exists for
-   *      exactly this and was, until now, published and never read. Defaults to
-   *      not-offered while the query is in flight so the prompt cannot flash and
-   *      vanish.
-   *   4. **Not dismissed this visit.**
-   */
-  const exchanged = useMemo(() => {
-    const list = messages ?? [];
-    return (
-      list.some(m => m.sender_id === selfId) && list.some(m => m.sender_id !== selfId)
-    );
-  }, [messages, selfId]);
-
-  const thread = threads?.find(t => t.id === conversationId);
-
-  /**
-   * Prepaid per-minute chat meter (member side only).
-   *
-   * The first minute is charged immediately when the screen mounts and the
-   * conversation is known (prepaid — you pay before you talk, not after). A
-   * 60 s interval then charges each subsequent minute.
-   *
-   * Drain-to-zero model (migration 022): a sub-minute balance (1–21 tokens)
-   * is still granted as a full minute, draining to 0. The session ends only
-   * when the RPC returns OUT_OF_TOKENS (balance already 0 at charge time).
-   *
-   * `spend_chat_minute` is SECURITY DEFINER and self-scoped so no client-side
-   * trust is required.
-   */
-  const [sessionEnded, setSessionEnded] = useState(false);
-  // Dismisses the "Need more time?" extend card for this session.
+  // Postgres owns metering. The client only maintains this participant's lease
+  // and renders the authoritative request/session state returned by migration
+  // 037. There is deliberately no local minute timer or balance mutation.
   const [extendCardDismissed, setExtendCardDismissed] = useState(false);
-  // Single slot for the running interval — shared between initial start and
-  // the resume restart so there is never more than one running timer.
-  const meterRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // The three last-minute in-chat warning timeouts (+10s, +30s, +50s). Keyed
-  // as an array so they can all be cancelled in one sweep. The guard ref
-  // prevents scheduling them twice if last===true is somehow seen on two
-  // consecutive ticks (should not happen, but defensive).
-  const lastMinuteTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const lastMinuteScheduled = useRef(false);
+  // Once the transcript scrolls past the pinned extend card, the recharge
+  // talk-bar slides in from the top and the extend card stays away for this
+  // visit (Sweprek-style: extend in the header band, recharge replaces it).
+  const [extendScrolledAway, setExtendScrolledAway] = useState(false);
+  const sessionIsActive = activeSession?.status === 'active';
+  // Server pushes 'warning' when time is nearly up; 'grace' during the 30s
+  // background grace window. Surface both in the talkBar so the member knows.
+  const sessionIsWarning = activeSession?.status === 'warning';
+  const sessionIsGrace = activeSession?.status === 'grace';
+  const sessionStartedAt =
+    sessionIsActive || sessionIsWarning || sessionIsGrace
+      ? activeSession.started_at
+      : null;
+  const [sessionNow, setSessionNow] = useState(() => Date.now());
 
-  /**
-   * Debit one minute atomically. Returns true to keep the session running,
-   * false to end it. Background time is never billed (returns true).
-   *
-   * Drain-to-zero semantics: success with last=true means the balance just hit
-   * 0; the session keeps running this final minute and ends only on the NEXT
-   * charge when OUT_OF_TOKENS is returned. Stable: setBalance is a Zustand
-   * action.
-   */
-  const chargeMinute = useCallback(async (): Promise<boolean> => {
-    if (AppState.currentState !== 'active') {
-      return true;
+  // Display time follows the server's authoritative start timestamp. The local
+  // interval only repaints the clock; it never drives billing or balance.
+  useEffect(() => {
+    if (sessionStartedAt === null) {
+      return;
     }
-    if (conversationId === undefined) {
-      return true;
-    }
-    // Bill at most once per minute per conversation. Reserve the slot BEFORE the
-    // await so two calls in the same tick (effect re-run + interval, or a double
-    // mount) cannot both charge; a genuine remount within the paid minute is a
-    // no-op (the minute is already paid for).
-    const now = Date.now();
-    const last = lastChatChargeAt.get(conversationId);
-    if (last !== undefined && now - last < MINUTE_MS - 1_000) {
-      return true;
-    }
-    lastChatChargeAt.set(conversationId, now);
-    const { data: result } = await supabase.rpc('spend_chat_minute');
-    if (result === null) {
-      // Transient (no response): release the reservation so the next tick retries.
-      lastChatChargeAt.delete(conversationId);
-      return true;
-    }
-    if (result.success && result.new_balance != null) {
-      setBalance(result.new_balance);
-      // result.last=true: balance just hit 0 — this is the final paid minute.
-      // Schedule three in-chat warnings at +10s, +30s, +50s so the member has
-      // time to recharge before the next tick ends the session. The NEXT charge
-      // (60s later) returns OUT_OF_TOKENS and ends the session then.
-      if (result.last === true && !lastMinuteScheduled.current) {
-        lastMinuteScheduled.current = true;
-        const WARN = 'Less than a minute of talk time left';
-        lastMinuteTimersRef.current = [
-          setTimeout(() => { setNotice(WARN, 'confirm'); }, 10_000),
-          setTimeout(() => { setNotice(WARN, 'confirm'); }, 30_000),
-          setTimeout(() => { setNotice(WARN, 'confirm'); }, 50_000),
-        ];
-      }
-      return true;
-    }
-    // Not a real charge — release the reservation so a resume after recharge (or a
-    // retry) can bill immediately rather than being blocked by the minute guard.
-    lastChatChargeAt.delete(conversationId);
-    // OUT_OF_TOKENS: balance was already 0 — end the session.
-    // NOT_AUTHENTICATED / NO_PROFILE are TRANSIENT errors (cold-boot, auth session
-    // not yet attached when the meter first fired). Do NOT end the session for
-    // these: the reservation was released above, so the next interval tick will
-    // retry once auth is ready. A member with a positive balance on a cold boot
-    // must NOT see "Out of tokens".
-    if (result.error === 'OUT_OF_TOKENS') {
-      return false;
-    }
-    return true;
-  }, [setBalance, setNotice, conversationId]);
+    setSessionNow(Date.now());
+    const timer = setInterval(() => setSessionNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [sessionStartedAt]);
 
-  // Derived gate: meter runs when the member is in an active conversation and
-  // the session has not been ended by an OUT_OF_TOKENS response.
-  // Balance is intentionally NOT a dep: the session ends only when the RPC
-  // says so, not when the client-side balance crosses a threshold, and
-  // including balance would restart the meter on every successful charge.
-  const shouldMeter =
-    (thread?.i_am_member ?? false) && conversationId !== undefined && !sessionEnded;
+  const sessionElapsed =
+    sessionStartedAt === null
+      ? null
+      : Math.max(0, Math.floor((sessionNow - Date.parse(sessionStartedAt)) / 1000));
+  const sessionClock =
+    sessionElapsed === null
+      ? null
+      : `${Math.floor(sessionElapsed / 60)}:${String(sessionElapsed % 60).padStart(2, '0')}`;
 
   // Show a "Need more time?" card when the member has less than 5 minutes of
-  // talk time left (balance < 5 × chat rate = 110 tokens) but is still in an
-  // active session. Dismissible for the current session; resets on recharge.
+  // talk time left and an authoritative paid session is active.
   const showExtendCard =
     balance !== null &&
     balance > 0 &&
-    balance < 5 * DEFAULT_RATES.chat &&
-    !sessionEnded &&
+    balance < 5 * (activeSession?.rate_tokens_per_min ?? DEFAULT_RATES.chat) &&
+    sessionIsActive &&
     !extendCardDismissed;
 
-  // Effect A — meter lifecycle. Starts a prepaid minute immediately when
-  // shouldMeter becomes true (chat open or session resumed), then ticks every
-  // 60 s. Cleanup clears the interval on unmount or when shouldMeter goes false
-  // (session ends or the component leaves the screen).
+  const showPinnedExtend = showExtendCard && !extendScrolledAway;
+  const showStickyRecharge =
+    balance !== null && (!showExtendCard || extendScrolledAway);
+
   useEffect(() => {
-    if (!shouldMeter) {
-      return;
+    if (!showExtendCard) {
+      setExtendScrolledAway(false);
     }
+  }, [showExtendCard]);
 
-    let cancelled = false;
-
-    void chargeMinute().then(ok => {
-      if (cancelled) return;
-      if (!ok) {
-        for (const t of lastMinuteTimersRef.current) clearTimeout(t);
-        lastMinuteTimersRef.current = [];
-        lastMinuteScheduled.current = false;
-        setSessionEnded(true);
-        openRefill();
+  const onTranscriptScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (!showPinnedExtend) {
         return;
       }
-      meterRef.current = setInterval(() => {
-        void chargeMinute().then(tickOk => {
-          if (!tickOk) {
-            if (meterRef.current !== null) {
-              clearInterval(meterRef.current);
-              meterRef.current = null;
-            }
-            for (const t of lastMinuteTimersRef.current) clearTimeout(t);
-            lastMinuteTimersRef.current = [];
-            lastMinuteScheduled.current = false;
-            setSessionEnded(true);
-            openRefill();
-          }
-        });
-      }, 60_000);
-    });
-
-    return () => {
-      cancelled = true;
-      if (meterRef.current !== null) {
-        clearInterval(meterRef.current);
-        meterRef.current = null;
-      }
-      for (const t of lastMinuteTimersRef.current) clearTimeout(t);
-      lastMinuteTimersRef.current = [];
-      lastMinuteScheduled.current = false;
-    };
-    // shouldMeter encapsulates thread?.i_am_member, conversationId, and
-    // !sessionEnded. chargeMinute and openRefill are stable references.
-  }, [shouldMeter, chargeMinute, openRefill]);
-
-  // Effect B — resume. Clears sessionEnded when the balance is any positive
-  // value after a recharge (any positive balance starts a fresh last-or-more
-  // minute under the drain-to-zero model), which flips shouldMeter back to
-  // true and causes Effect A to restart the meter with a fresh prepaid charge.
-  useEffect(() => {
-    if (sessionEnded && balance !== null && balance > 0) {
-      // Cancel any pending last-minute warnings from the ended session — they
-      // are stale now that the member has recharged.
-      for (const t of lastMinuteTimersRef.current) clearTimeout(t);
-      lastMinuteTimersRef.current = [];
-      lastMinuteScheduled.current = false;
-      // Reset the extend-card dismissal so the card can reappear if needed.
-      setExtendCardDismissed(false);
-      setSessionEnded(false);
-    }
-  }, [sessionEnded, balance]);
-
-  const offerReview =
-    thread !== undefined &&
-    thread.i_am_member &&
-    !thread.reviewed &&
-    conversationId !== undefined &&
-    exchanged &&
-    !promptHidden;
-
-  /**
-   * A long press opens the actions sheet, and Report is a row inside it.
-   *
-   * It used to go straight to SafetySheet with the message attached. That path is
-   * preserved rather than dropped, it is the only route by which one specific
-   * message becomes evidence, it is simply one tap further in now, and it is
-   * reachable from your own messages' sheet too (as nothing, correctly: there is
-   * no Report row on your own words).
-   *
-   * The two sheets are never open at once. Two `Modal`s open together on Android
-   * is the exact class of bug the second `GestureHandlerRootView` inside Sheet
-   * exists for, so `setActions(null)` happens in the same tick as the open.
-   */
-  const openActions = useCallback((target: ActionTarget) => {
-    requestAnimationFrame(() => setActions(target));
-  }, []);
-
-  const reportFromActions = useCallback(() => {
-    const target = actions;
-    setActions(null);
-    requestAnimationFrame(() => setSafety({ open: true, messageId: target?.id ?? null }));
-  }, [actions]);
-
-  const replyFromActions = useCallback(() => {
-    setReplyTo(actions);
-    setActions(null);
-  }, [actions]);
-
-  const reactFromActions = useCallback(
-    (emoji: ReactionEmoji) => {
-      const target = actions;
-      setActions(null);
-      if (target !== null) {
-        void toggleReaction(target.id, emoji);
+      // Inverted FlashList: offset grows as the user scrolls toward older
+      // messages (visual top). Past one card-height, treat extend as out of sight.
+      if (e.nativeEvent.contentOffset.y > 64) {
+        setExtendScrolledAway(true);
       }
     },
-    [actions, toggleReaction],
+    [showPinnedExtend],
   );
+
+  const endCurrentSession = useCallback(() => {
+    if (!activeSession) return;
+    endSessionMutate({ sessionId: activeSession.id, reason: 'manual' });
+  }, [activeSession, endSessionMutate]);
+
+  /**
+   * Back is conditionally intercepted only while a paid session exists. Android
+   * recommends enabling a back callback only for the state that needs a decision;
+   * ordinary chat navigation remains immediate.
+   * https://developer.android.com/guide/navigation/custom-back/predictive-back-gesture
+   */
+  const requestLeave = useCallback(() => {
+    if (!activeSession) {
+      onBack();
+      return;
+    }
+    setLeaveDialogVisible(true);
+  }, [
+    activeSession,
+    onBack,
+  ]);
+
+  const confirmLeave = useCallback(() => {
+    if (!activeSession) {
+      setLeaveDialogVisible(false);
+      onBack();
+      return;
+    }
+    endSessionMutate(
+      // 'manual' is the CHECK-allowed reason for an intentional participant exit
+      // (migration 030). A bespoke 'left_chat' string fails the constraint and
+      // leaves the user stuck in a billed session.
+      { sessionId: activeSession.id, reason: 'manual' },
+      {
+        onSuccess: () => {
+          setLeaveDialogVisible(false);
+          onBack();
+        },
+        onError: () => {
+          setLeaveDialogVisible(false);
+          setNotice('Could not end session. Check your connection and try again.');
+        },
+      },
+    );
+  }, [activeSession, endSessionMutate, onBack, setNotice]);
+
+  useEffect(() => {
+    if (!activeSession) {
+      return;
+    }
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      requestLeave();
+      return true;
+    });
+    return () => sub.remove();
+  }, [activeSession, requestLeave]);
+
+  /**
+   * WhatsApp gestures: swipe quotes, long-press reacts on the bubble.
+   * Report opens SafetySheet directly so a second Modal never stacks.
+   */
+  const swipeReply = useCallback((target: ActionTarget) => {
+    setReplyTo(target);
+  }, []);
+
+  const reactOnMessage = useCallback(
+    (messageId: string, emoji: ReactionEmoji) => {
+      void toggleReaction(messageId, emoji);
+    },
+    [toggleReaction],
+  );
+
+  const reportMessage = useCallback((messageId: string) => {
+    setSafety({ open: true, messageId });
+  }, []);
 
   const renderItem = useCallback(
     ({ item }: ListRenderItemInfo<(typeof rows)[number]>) => {
@@ -722,8 +657,14 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
         );
       }
 
-      const { message, mine, first, last, showReceipt, voice, image } = item;
-      const stamp = last ? timeOfDay(message.created_at) : undefined;
+      const { message, mine, first, showReceipt, voice, image } = item;
+      const stamp = timeOfDay(message.created_at);
+      const chosen = ownReaction(
+        tallies.get(message.id),
+        reactionRows ?? [],
+        message.id,
+        selfId,
+      );
       // Only reached when `voice` and `image` are unset, which the payload
       // constraint guarantees means the row has a body. The fallback covers a row
       // that somehow has none rather than rendering an empty bubble.
@@ -754,7 +695,10 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
               messageId={message.id}
               author="You"
               rawBody={message.body}
-              onRequestActions={openActions}
+              onSwipeReply={swipeReply}
+              onReact={reactOnMessage}
+              onReportMessage={reportMessage}
+              chosenReaction={chosen}
               receipt={
                 showReceipt && !isPending(message)
                   ? message.read_at !== null
@@ -777,15 +721,28 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
               messageId={message.id}
               author={name}
               rawBody={message.body}
-              onRequestActions={openActions}
+              onSwipeReply={swipeReply}
+              onReact={reactOnMessage}
+              onReportMessage={reportMessage}
+              chosenReaction={chosen}
             />
           )}
         </View>
       );
     },
-    // openActions is stable (useCallback with empty deps); messageId/author/rawBody
-    // are primitives from the row data. No per-render closures over openActions needed.
-    [initial, name, openActions, parents, styles, tallies, voicePlayer],
+    [
+      initial,
+      name,
+      parents,
+      reactOnMessage,
+      reactionRows,
+      reportMessage,
+      selfId,
+      styles,
+      swipeReply,
+      tallies,
+      voicePlayer,
+    ],
   );
 
   const header = useCallback(
@@ -875,7 +832,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
        */}
       <View style={styles.header}>
         <Pressable
-          onPress={onBack}
+          onPress={requestLeave}
           testID="chat-back"
           accessibilityLabel="Back to the directory"
           press="none"
@@ -919,50 +876,100 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
           </View>
         </Pressable>
         </View>
-        {/* Rendered and disabled rather than hidden. Migration 011 shipped the
-            whole server half of calling, start_call, the per-minute meter, the
-            blocking gate, and there is no media layer on the client, so a tap
-            would ring a phone that can never connect. Hiding them instead would
-            mean the header changes shape on the commit that turns calling on.
-            See CALLS_ENABLED in src/api/calls.ts. */}
+        {/* Rendered and disabled rather than hidden so flipping either admin
+            control never changes the header geometry. A pending or live paid
+            session also blocks both: start_call enforces one concurrent session
+            per pair, so an enabled-looking button there would only return BUSY. */}
         {/* Real Pressables, not Views posing as buttons: TalkBack now announces a
             control that actually does something, and the disabled state is an
             honest gate (CALLS_ENABLED) rather than a role that never fires. */}
         <Pressable
           onPress={() => onStartCall?.('video')}
-          disabled={!callsEnabled || sessionEnded}
+          disabled={
+            !videoCallsEnabled ||
+            activeSession !== null ||
+            pendingRequest !== null
+          }
           testID="call-video"
           accessibilityLabel={`Video call ${name}`}
           press="none"
           size={28}
-          style={[styles.navButton, (!callsEnabled || sessionEnded) && styles.navDisabled]}>
+          style={[
+            styles.navButton,
+            (!videoCallsEnabled ||
+              activeSession !== null ||
+              pendingRequest !== null) &&
+              styles.navDisabled,
+          ]}>
           <Icon name="video" size={20} color={theme.color.text.secondary} />
         </Pressable>
         <Pressable
           onPress={() => onStartCall?.('audio')}
-          disabled={!callsEnabled || sessionEnded}
+          disabled={
+            !voiceCallsEnabled ||
+            activeSession !== null ||
+            pendingRequest !== null
+          }
           testID="call-voice"
           accessibilityLabel={`Voice call ${name}`}
           press="none"
           size={28}
-          style={[styles.navButton, (!callsEnabled || sessionEnded) && styles.navDisabled]}>
+          style={[
+            styles.navButton,
+            (!voiceCallsEnabled ||
+              activeSession !== null ||
+              pendingRequest !== null) &&
+              styles.navDisabled,
+          ]}>
           {/* 18, not 20: Lucide's phone glyph fills more of its em vertically than
               the video glyph, so at a matched fontSize it read visibly taller next
               to it (#1). Two points down evens the pair. */}
           <Icon name="call" size={18} color={theme.color.text.secondary} />
         </Pressable>
-        <TokenCounter balance={balance} onPress={openRefill} />
+        <TokenCounter balance={balance} onPress={openWallet} />
       </View>
 
-      {/* Talk-time meter + Recharge (v13). Chat is per-minute now (ADR-0019), so
-          this shows how long the balance buys at the chat rate and offers a top-up
-          without leaving the thread. Coral-tint when low, quiet otherwise. */}
-      {balance !== null ? (
-        <View style={[styles.talkBar, isLowBalance(balance) && styles.talkBarLow]}>
+      {/* Recharge talk-bar: hidden while the extend card owns the top band;
+          slides in from the top once the transcript has scrolled the extend
+          card out of sight (or when extend is not eligible). */}
+      {showStickyRecharge ? (
+        <Animated.View
+          entering={FadeInDown.duration(220)}
+          exiting={FadeOutUp.duration(160)}
+          style={[styles.talkBar, isLowBalance(balance) && styles.talkBarLow]}>
           <View style={styles.talkDot} />
+          {sessionClock !== null ? (
+            <Text
+              allowFontScaling={false}
+              testID="chat-session-timer"
+              style={styles.talkTimer}>
+              {sessionClock}
+            </Text>
+          ) : null}
           <Text allowFontScaling style={styles.talkText}>
-            {talkTimeLeft(balance, DEFAULT_RATES.chat)} of talk time left
+            {talkTimeLeft(
+              balance,
+              activeSession?.rate_tokens_per_min ?? DEFAULT_RATES.chat,
+            )}{' '}
+            of talk time left
           </Text>
+          {activeSession ? (
+            <Pressable
+              onPress={endCurrentSession}
+              disabled={endingSession}
+              testID="chat-end-session"
+              accessibilityLabel="End paid session"
+              press="chip"
+              style={styles.talkRecharge}>
+              {endingSession ? (
+                <LoadingIndicator size={16} color={theme.color.text.positive} containerColor="transparent" />
+              ) : (
+                <Text allowFontScaling style={styles.talkRechargeLabel}>
+                  End
+                </Text>
+              )}
+            </Pressable>
+          ) : null}
           <Pressable
             onPress={openRefill}
             testID="chat-recharge"
@@ -973,33 +980,28 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
               Recharge
             </Text>
           </Pressable>
-        </View>
+        </Animated.View>
       ) : null}
-      {/* "Need more time?" card (#5). Pinned inside the frosted header, directly
-          under the talk strip (matches the Sweprek reference), when the member
-          has under 5 minutes of talk time left. It lives in the Frost so it is
-          measured into `barHeight` and the transcript reserves room for it — a
-          ListFooterComponent placement did not land at the inverted list's
-          visual top on FlashList v2. Dismissible for the session; reappears on
-          recharge if the topped-up balance is still under 5 minutes. */}
-      {showExtendCard ? (
+      {/* Extend card pinned in the frost (Sweprek size/weight). Recharge bar
+          stays hidden until scroll pushes this out of the top band. */}
+      {showPinnedExtend ? (
         <View style={styles.extendCard}>
           <View style={styles.extendCardContent}>
             <Text allowFontScaling style={styles.extendCardTitle}>
               Need more time?
             </Text>
             <Text allowFontScaling style={styles.extendCardSubtitle}>
-              Top up to keep the conversation going
+              Extend this match to keep talking
             </Text>
           </View>
           <Pressable
             onPress={openRefill}
             testID="chat-extend-refill"
-            accessibilityLabel="Recharge to extend talk time"
+            accessibilityLabel="Extend talk time"
             press="chip"
             style={styles.extendCardButton}>
             <Text allowFontScaling style={styles.extendCardButtonLabel}>
-              Recharge
+              Extend
             </Text>
           </Pressable>
           <Pressable
@@ -1026,7 +1028,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
         {wallpaperReady ? <ChatWallpaper /> : null}
         {loading ? (
           <View style={styles.loading}>
-            <ActivityIndicator color={theme.color.text.secondary} />
+            <LoadingIndicator size={48} />
           </View>
         ) : empty ? (
           <View style={styles.empty}>
@@ -1036,19 +1038,13 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
             <Text allowFontScaling style={styles.emptyName}>
               {name}
             </Text>
-            <Text allowFontScaling style={styles.emptyLine}>
-              Say hi 👋
-            </Text>
-            <View style={styles.starters}>
-              {STARTERS.map(s => (
-                <Chip key={s.label} label={s.label} tone={s.tone} onPress={onSend} />
-              ))}
-            </View>
             {/* Also here, not only inside the list. The empty branch *replaces*
                 the FlatList, so PeerTyping was unmounted in exactly the case it
                 is most wanted: a new peer typing the first message in a thread
                 showed nothing at all. */}
-            <PeerTyping initial={initial} name={name} />
+            <View style={styles.starters}>
+              <PeerTyping initial={initial} name={name} />
+            </View>
           </View>
         ) : (
           <FlashList
@@ -1063,6 +1059,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
             contentContainerStyle={styles.list}
             keyboardDismissMode="interactive"
             keyboardShouldPersistTaps="handled"
+            onScroll={onTranscriptScroll}
+            scrollEventThrottle={16}
             // Two recycle pools: message bubbles and call-log rows have very
             // different heights and layouts. Keeping them separate prevents
             // FlashList from handing a recycled bubble cell to a call row (or
@@ -1073,99 +1071,67 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
           />
         )}
 
-        {/* Above the composer and below the transcript: in the flow, but never
-            over it. A modal here would interrupt the one thing the screen is
-            for. */}
-        {offerReview ? (
-          <View style={styles.prompt}>
-            {/* Wrapped rather than given `flex: 1` directly: Pressable applies
-                its `style` to the inner animated view, so layout has to live on
-                a plain View around it or the row does not stretch. */}
-            <View style={styles.promptFill}>
-              <Pressable
-                onPress={() => requestAnimationFrame(() => setReviewOpen(true))}
-                testID="open-review"
-                accessibilityLabel={`Rate your conversation with ${name}`}
-                accessibilityHint="Opens a rating sheet"
-                style={styles.promptBody}>
-                <Text allowFontScaling style={styles.promptText}>
-                  How was talking to {name}?
-                </Text>
-              </Pressable>
-            </View>
-            <Pressable
-              onPress={() => setPromptHidden(true)}
-              testID="dismiss-review-prompt"
-              accessibilityLabel="Not now"
-              style={styles.promptClose}>
-              <Icon name="close" size={12} color={theme.color.text.positive} />
-            </Pressable>
-          </View>
-        ) : null}
-
         <NoticeBar />
 
-        {/* What the next send will quote, with a way out. Above the composer
-            rather than inside it, so the field's own height behaviour is
-            untouched. */}
-        {replyTo !== null ? (
-          <View style={styles.replyBar}>
-            <View style={styles.replyRule} />
-            <View style={styles.replyFill}>
-              <Text allowFontScaling style={styles.replyAuthor}>
-                Replying to {replyTo.author}
-              </Text>
-              <Text allowFontScaling numberOfLines={1} style={styles.replyBody}>
-                {replyTo.body ?? 'Voice note'}
-              </Text>
+        {/* Blush strip sits above the white composer dock so the pills match
+            the first-move reference: soft tint behind white capsules, then
+            solid chrome for the input row. */}
+        {isMemberSide && !loading && !memberHasSent ? (
+          <FirstMovePills
+            onSendSticker={() => {
+              void onSend('👋');
+            }}
+            onSayHi={() => {
+              void onSend('Hi!');
+            }}
+          />
+        ) : null}
+
+        {/* Docked tray: hairline + page chrome, not a floating pill. Reply
+            chrome lives in the same surface so the transcript scrolls under
+            one bar. */}
+        <View style={[styles.composerDock, { paddingBottom: composerInset }]}>
+          {replyTo !== null ? (
+            <View style={styles.replyBar}>
+              <View style={styles.replyRule} />
+              <View style={styles.replyFill}>
+                <Text allowFontScaling style={styles.replyAuthor}>
+                  Replying to {replyTo.author}
+                </Text>
+                <Text allowFontScaling numberOfLines={1} style={styles.replyBody}>
+                  {replyTo.body ?? 'Voice note'}
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => setReplyTo(null)}
+                testID="cancel-reply"
+                accessibilityLabel="Cancel reply"
+                press="none"
+                highlight="ios"
+                size={32}
+                style={styles.replyClose}>
+                <Icon name="close" size={12} color={theme.color.text.secondary} />
+              </Pressable>
             </View>
-            <Pressable
-              onPress={() => setReplyTo(null)}
-              testID="cancel-reply"
-              accessibilityLabel="Cancel reply"
-              press="none"
-              highlight="ios"
-              size={32}
-              style={styles.replyClose}>
-              <Icon name="close" size={12} color={theme.color.text.secondary} />
-            </Pressable>
-          </View>
-        ) : null}
+          ) : null}
 
-        {sessionEnded ? (
-          <Text allowFontScaling style={styles.sessionEndedText}>
-            Out of tokens — recharge to keep talking
-          </Text>
-        ) : null}
-
-        <View style={{ paddingBottom: composerInset }}>
           <Composer
             onSend={onSend}
             onSendVoice={onSendVoice}
             onSendImage={onSendImage}
             onTyping={notifyTyping}
-            disabled={conversationId === undefined || sessionEnded}
-            placeholder={replyTo !== null ? 'Reply' : 'Message'}
-            bloomKey={bloomKey}
+            disabled={conversationId === undefined}
+            placeholder={
+              memberHasSent
+                ? replyTo !== null
+                  ? 'Reply'
+                  : 'Message'
+                : 'Make your first move'
+            }
+            sendHaloKey={sendHaloKey}
           />
         </View>
       </KeyboardAvoidingView>
-
-      <MessageActionsSheet
-        visible={actions !== null}
-        onClose={() => setActions(null)}
-        mine={actions?.mine ?? false}
-        author={actions?.author ?? name}
-        body={actions?.body ?? null}
-        chosen={
-          actions === null
-            ? null
-            : ownReaction(tallies.get(actions.id), reactionRows ?? [], actions.id, selfId)
-        }
-        onReact={reactFromActions}
-        onReply={replyFromActions}
-        onReport={reportFromActions}
-      />
 
       <SafetySheet
         visible={safety.open}
@@ -1176,17 +1142,22 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
         messageId={safety.messageId}
       />
 
-      <ReviewSheet
-        visible={reviewOpen}
-        onClose={() => {
-          setReviewOpen(false);
-          // Whether they submitted or backed out, do not ask again this visit.
-          // On submit the `reviewed` flag will settle it permanently once the
-          // conversation list refetches; this covers the gap in between.
-          setPromptHidden(true);
-        }}
-        conversationId={conversationId}
-        peerName={name}
+      <ConfirmDialog
+        visible={leaveDialogVisible}
+        testID="chat-leave-dialog"
+        title="End session and leave?"
+        body={
+          sessionIsActive
+            ? `Your paid session has been running for ${sessionClock ?? '0:00'}.`
+            : 'The session is still connecting. Leaving will end it.'
+        }
+        cancelLabel="Stay"
+        confirmLabel="End session"
+        destructive
+        busy={endingSession}
+        busyLabel="Ending session…"
+        onCancel={() => setLeaveDialogVisible(false)}
+        onConfirm={confirmLeave}
       />
     </View>
   );
@@ -1244,6 +1215,11 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     borderRadius: 4,
     backgroundColor: t.color.bg.accent,
   },
+  talkTimer: {
+    ...TOKENS.typography.numeralMedium,
+    color: t.color.text.primary,
+    minWidth: 42,
+  },
   talkText: {
     ...TOKENS.typography.subhead,
     color: t.color.text.secondary,
@@ -1299,6 +1275,11 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   list: {
     paddingHorizontal: TOKENS.space.md,
     paddingTop: TOKENS.space.md,
+  },
+  composerDock: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: t.color.border.hairline,
+    backgroundColor: t.color.bg.raised,
   },
   // paddingTop only, and the gap is the one between this row and the older one
   // above it, which is where a group boundary belongs. A symmetric
@@ -1365,45 +1346,6 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     alignItems: 'center',
     gap: TOKENS.space['2xs'],
     paddingTop: TOKENS.space.xl,
-  },
-  // Deliberately quieter than the NoticeBar it sits above: no accent border, no
-  // colour. This is an invitation, not a problem.
-  // The one calm band in the app. bg/positive rather than bg/sunken: this is an
-  // invitation, and the sage reads as "good news, no action required" where the
-  // grey read as another piece of chrome.
-  prompt: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: TOKENS.space.md,
-    marginBottom: TOKENS.space.xs,
-    borderRadius: TOKENS.radius.md,
-    backgroundColor: t.color.bg.positive,
-  },
-  promptFill: {
-    flex: 1,
-  },
-  promptBody: {
-    paddingHorizontal: TOKENS.space.md,
-    paddingVertical: 10,
-  },
-  promptText: {
-    ...TOKENS.typography.labelSmall,
-    color: t.color.text.positive,
-  },
-  promptClose: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  // Shown above the composer when the session has been ended by an
-  // OUT_OF_TOKENS response, so the member knows why the field is locked.
-  sessionEndedText: {
-    ...TOKENS.typography.captionRegular,
-    color: t.color.text.accent,
-    textAlign: 'center',
-    paddingHorizontal: TOKENS.space.md,
-    paddingVertical: TOKENS.space['2xs'],
   },
   // "Need more time?" card pinned at the top of the transcript (inverted list
   // footer) when the balance drops under 5 minutes. White card, hairline

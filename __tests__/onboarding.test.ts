@@ -47,7 +47,7 @@ describe('the onboarding flow is one screen', () => {
 });
 
 describe('the step list', () => {
-  it('shows one row until the phone route is taken', () => {
+  it('shows one row until the phone route is taken (no age)', () => {
     /*
      * The one structural departure from the source, and it is forced: Fuse's
      * three steps are sequential, ours are alternatives. A permanently-visible
@@ -58,9 +58,28 @@ describe('the step list', () => {
     expect(visibleSteps('phone')).toHaveLength(2);
   });
 
+  it('appends the age row when includeAge is true', () => {
+    /*
+     * Age is not shown during the auth phase — it would be a promise the
+     * flow has not earned yet. It is added after auth succeeds, so the row
+     * grows in via the same offset-plus-opacity transition as verify.
+     */
+    expect(visibleSteps('undecided', { includeAge: true })).toHaveLength(2);
+    expect(visibleSteps('google', { includeAge: true })).toHaveLength(2);
+    expect(visibleSteps('phone', { includeAge: true })).toHaveLength(3);
+  });
+
+  it('age row is always last', () => {
+    const google = visibleSteps('google', { includeAge: true });
+    expect(google[google.length - 1]?.key).toBe('age');
+    const phone = visibleSteps('phone', { includeAge: true });
+    expect(phone[phone.length - 1]?.key).toBe('age');
+  });
+
   it('always leads with identify, whichever route is taken', () => {
     for (const route of ['undecided', 'google', 'phone'] as const) {
       expect(visibleSteps(route)[0]?.key).toBe('identify');
+      expect(visibleSteps(route, { includeAge: true })[0]?.key).toBe('identify');
     }
   });
 
@@ -71,6 +90,31 @@ describe('the step list', () => {
     const map = read('src/theme/icons.generated.ts');
     for (const spec of Object.values(STEPS)) {
       expect(map).toContain(`${spec.glyph}: "`);
+    }
+  });
+
+  it('age bracket constants match the migration check constraint', () => {
+    /*
+     * The check constraint in migration 043 gates the four values at the DB
+     * layer. If the source-of-truth list in profileSetup.ts drifts, the RPC
+     * rejects a value at runtime without a TypeScript error.
+     *
+     * Both sides are read as text so no native imports are executed. The
+     * AGE_BRACKETS export is a `const` array literal; extract it by pattern
+     * rather than by require.
+     */
+    const migration = read('supabase/migrations/043_member_age_bracket.sql');
+    const setup = read('src/api/profileSetup.ts');
+    // Extract the array literal from `export const AGE_BRACKETS = [...] as const;`
+    const match = setup.match(/AGE_BRACKETS\s*=\s*\[([^\]]+)\]/);
+    expect(match).not.toBeNull();
+    const brackets = (match?.[1] ?? '')
+      .split(',')
+      .map(s => s.trim().replace(/['"]/g, ''))
+      .filter(Boolean);
+    expect(brackets.length).toBeGreaterThan(0);
+    for (const bracket of brackets) {
+      expect(migration).toContain(`'${bracket}'`);
     }
   });
 });
@@ -151,6 +195,15 @@ describe('submission guards', () => {
     expect(body).toContain("result === 'redirected'");
     const auth = read('src/api/auth.ts');
     expect(auth).toMatch(/GoogleResult\s*=\s*'session'\s*\|\s*'redirected'/);
+  });
+
+  it('sends directly and keeps a rejected code editable', () => {
+    const model = read('src/lib/onboarding.ts');
+    const screen = read('src/screens/OnboardingScreen.tsx');
+    expect(model).not.toContain("'confirm'");
+    expect(screen).not.toContain('Is this the correct number?');
+    expect(screen).not.toContain("fail(result.message);\n        setCode('');");
+    expect(screen).toContain('testID="onboard-change-number"');
   });
 });
 

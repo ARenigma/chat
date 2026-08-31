@@ -20,7 +20,7 @@ import kotlinx.coroutines.*
  * main thread. All calls gate on UiThreadUtil.runOnUiThread.
  *
  * doc: developer.android.com/google/play/billing/integrate
- * doc: developer.android.com/google/play/billing/user-choice-billing
+ * doc: developer.android.com/google/play/billing/billingchoice/integration
  * ADR-0022
  */
 class BillingModule(private val reactContext: ReactApplicationContext) :
@@ -44,7 +44,7 @@ class BillingModule(private val reactContext: ReactApplicationContext) :
         }
     }
 
-    private val alternativeBillingListener = AlternativeChoiceDetails.Listener { details ->
+    private val developerProvidedBillingListener = DeveloperProvidedBillingListener { details ->
         // User chose the alternative (Cashfree) path in the UCB sheet.
         // Forward the external transaction token to JS for the Cashfree flow.
         // ADR-0022: this token links the Play reporting record to the Cashfree order.
@@ -57,12 +57,17 @@ class BillingModule(private val reactContext: ReactApplicationContext) :
     private var billingClient: BillingClient? = null
 
     private fun getOrBuildClient(): BillingClient {
+        val billingChoiceParams = EnableBillingProgramParams.newBuilder()
+            .setBillingProgram(BillingClient.BillingProgram.BILLING_CHOICE)
+            .setDeveloperProvidedBillingListener(developerProvidedBillingListener)
+            .build()
+
         return billingClient ?: BillingClient.newBuilder(reactContext)
             .setListener(purchasesUpdatedListener)
             .enablePendingPurchases(
                 PendingPurchasesParams.newBuilder().enableOneTimeProducts().build()
             )
-            .enableUserChoiceBilling(alternativeBillingListener)
+            .enableBillingProgram(billingChoiceParams)
             .build()
             .also { billingClient = it }
     }
@@ -71,16 +76,18 @@ class BillingModule(private val reactContext: ReactApplicationContext) :
     private suspend fun ensureConnected(): Boolean {
         val client = getOrBuildClient()
         if (client.isReady) return true
-        return suspendCancellableCoroutine { cont ->
-            client.startConnection(object : BillingClientStateListener {
-                override fun onBillingSetupFinished(result: BillingResult) {
-                    cont.resume(result.responseCode == BillingClient.BillingResponseCode.OK)
-                }
-                override fun onBillingServiceDisconnected() {
-                    cont.resume(false)
-                }
-            })
-        }
+        val result = CompletableDeferred<Boolean>()
+        client.startConnection(object : BillingClientStateListener {
+            override fun onBillingSetupFinished(billingResult: BillingResult) {
+                result.complete(
+                    billingResult.responseCode == BillingClient.BillingResponseCode.OK
+                )
+            }
+            override fun onBillingServiceDisconnected() {
+                result.complete(false)
+            }
+        })
+        return result.await()
     }
 
     /**
@@ -117,7 +124,7 @@ class BillingModule(private val reactContext: ReactApplicationContext) :
      * MUST be called from JS on the main thread; this method itself gates the
      * launchBillingFlow call on UiThreadUtil.runOnUiThread as a safety net.
      *
-     * developer.android.com/google/play/billing/user-choice-billing#scenario-1a
+     * developer.android.com/google/play/billing/billingchoice/integration
      */
     @ReactMethod
     fun openRechargeSheet(sku: String, promise: Promise) {
@@ -153,31 +160,26 @@ class BillingModule(private val reactContext: ReactApplicationContext) :
 
             val productDetails = productDetailsList.first()
 
-            // UCB: create reporting details so Play can link this purchase to
-            // the billing programme report. Required for Scenario 1A.
-            val reportingDetailsResult = client.createBillingProgramReportingDetails()
-            val reportingDetails = when {
-                reportingDetailsResult.billingResult.responseCode ==
-                    BillingClient.BillingResponseCode.OK -> reportingDetailsResult.externalTransactionToken
-                else -> null
-            }
-
             val productDetailsParams = BillingFlowParams.ProductDetailsParams.newBuilder()
                 .setProductDetails(productDetails)
                 .build()
 
+            // Scenario 1A: Play renders the choice. If the developer option is
+            // chosen, DeveloperProvidedBillingListener receives the reporting
+            // token. The token is not created or attached by the app first.
+            // https://developer.android.com/google/play/billing/billingchoice/integration
+            val developerBillingOption = DeveloperBillingOptionParams.newBuilder()
+                .setBillingProgram(BillingClient.BillingProgram.BILLING_CHOICE)
+                .build()
+
             val flowParams = BillingFlowParams.newBuilder()
                 .setProductDetailsParamsList(listOf(productDetailsParams))
-                .apply {
-                    if (reportingDetails != null) {
-                        setExternalTransactionToken(reportingDetails)
-                    }
-                }
+                .enableDeveloperBillingOption(developerBillingOption)
                 .build()
 
             // launchBillingFlow must run on the main thread.
             UiThreadUtil.runOnUiThread {
-                val activity: Activity? = currentActivity
+                val activity: Activity? = reactContext.currentActivity
                 if (activity == null) {
                     promise.reject("NO_ACTIVITY", "No foreground activity")
                     return@runOnUiThread

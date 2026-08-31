@@ -1,15 +1,27 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
+import {
+  Image,
+  StyleSheet,
+  Text,
+  View,
+  type ImageSourcePropType,
+} from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSharedValue } from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
+import { BLOOM_PALETTES } from '../lib/bloom';
 import { formatRupees, formatTokens, MOCK_PAYMENTS, PAYMENTS_ENABLED } from '../lib/rates';
 import { supabase } from '../lib/supabase';
 import { Button } from '../components/Button';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
+import { BloomField, type BloomStage } from '../components/BloomField';
 import { Sheet } from '../components/Sheet';
+import { LoadingIndicator } from '../components/LoadingIndicator';
 import { useStore } from '../store/useStore';
+import { CASHFREE_SANDBOX_CHECKOUT } from '../config';
+import { productIdForPack, useCashfreeCheckout } from '../api/billing';
 
 interface Props {
   visible: boolean;
@@ -18,36 +30,20 @@ interface Props {
 }
 
 /**
- * The v10 UPI chooser, as a slide-up.
+ * UPI chooser + success, aligned to v10 recharge frames (file 2PjJLeNz… node
+ * 2024:3253) without copying stale chrome from later frames.
  *
- * Recharge itself is a full-screen surface; the payment step is the sliding
- * modal v10 had and Amit asked back for. Tapping Pay raises this sheet over the
- * screen, which is the shape a UPI hand-off wants: pick the app, confirm the
- * amount, leave to the PSP. It rides the same draggable `Sheet` every other
- * modal in the app uses, so it tracks the finger and throws to dismiss for free.
+ * Idle: brand lockups for each UPI app. Success leaves the chooser entirely and
+ * becomes a full-screen terminal bloom, using the Fuse field grammar rather
+ * than nesting a generic mint card inside the payment sheet.
  *
- * It is honest about being gated. `PAYMENTS_ENABLED` is false until the UPI/Play
- * rail is proven, so the rows and the amount are real but the confirm says
- * "opening soon" rather than pretending to launch an intent that goes nowhere.
- * When the rail lands, the selected `method` is the app to deep-link into and
- * the confirm becomes the live "Pay" — no other change here.
- *
- * When `MOCK_PAYMENTS` is true (non-production builds), the Pay button is enabled
- * and drives a real ledger write via `mock_recharge`, which requires the server
- * flag `app_flags.mock_payments = true` to be flipped by an operator.
+ * Payment routing:
+ *   - CASHFREE_SANDBOX_CHECKOUT true (non-prod): Cashfree WebCheckout via SDK.
+ *   - MOCK_PAYMENTS true + sandbox false: mock_recharge RPC (dev only).
+ *   - Production: gated behind PAYMENTS_ENABLED (ADR-0022).
  */
 const METHODS = ['Google Pay', 'PhonePe', 'Paytm', 'BHIM'] as const;
 
-/**
- * Each method's official brand lockup and its natural aspect ratio.
- *
- * The mark is the app's own trademarked logo (Google Identity, NPCI/BHIM, each
- * PSP's brand file), shipped as bundled art rather than redrawn — a wallet glyph
- * standing in for four distinct brands read as a placeholder, which is exactly
- * what #3 called out. The lockup already carries the name, so the row drops the
- * text label and sizes the image by `ratio` at a fixed height: no crop, no
- * stretch, left-aligned like a real UPI chooser.
- */
 const LOGOS: Record<(typeof METHODS)[number], { src: ImageSourcePropType; ratio: number }> = {
   'Google Pay': { src: require('../../assets/brands/gpay.png'), ratio: 330 / 60 },
   PhonePe: { src: require('../../assets/brands/phonepe.png'), ratio: 330 / 101 },
@@ -57,10 +53,11 @@ const LOGOS: Record<(typeof METHODS)[number], { src: ImageSourcePropType; ratio:
 
 const LOGO_HEIGHT = 22;
 
-/** Minimum time the processing spinner stays visible, in milliseconds. */
 const MOCK_SPINNER_MS = 1200;
-/** Delay before auto-closing the success state, in milliseconds. */
-const MOCK_SUCCESS_CLOSE_MS = 1600;
+const PAYMENT_SUCCESS_STAGE: BloomStage = {
+  palette: BLOOM_PALETTES.welcome,
+  collapsed: false,
+};
 
 type MockPhase = 'idle' | 'processing' | 'success' | 'error';
 
@@ -69,13 +66,17 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
   const theme = useTheme();
   const queryClient = useQueryClient();
   const closeRefill = useStore(s => s.closeRefill);
+  const closeWallet = useStore(s => s.closeWallet);
+  const successField = useSharedValue(0);
 
   const [method, setMethod] = useState<string>(METHODS[0]);
   const [mockPhase, setMockPhase] = useState<MockPhase>('idle');
   const [successBalance, setSuccessBalance] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Reset mock state whenever the sheet closes so next open starts fresh.
+  // Cashfree sandbox mutation.
+  const cashfreeCheckout = useCashfreeCheckout();
+
   useEffect(() => {
     if (!visible) {
       setMockPhase('idle');
@@ -84,12 +85,36 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
     }
   }, [visible]);
 
+  const finishHome = () => {
+    onClose();
+    closeRefill();
+    closeWallet();
+  };
+
+  const handleCashfreePay = (payMethod: 'upi' | 'web') => {
+    setMockPhase('processing');
+    setErrorMsg(null);
+    cashfreeCheckout.mutate(
+      { productId: productIdForPack(amount), method: payMethod },
+      {
+        onSuccess: result => {
+          setSuccessBalance(result.balance ?? null);
+          setMockPhase('success');
+        },
+        onError: (err: Error) => {
+          // Dismissed / failed — do not credit.
+          setErrorMsg(err.message ?? 'Payment cancelled or failed');
+          setMockPhase('error');
+        },
+      },
+    );
+  };
+
   const handleMockPay = async () => {
     setMockPhase('processing');
     const pAmountPaise = amount * 100;
-    const pTokens = amount; // 1 token = 1 rupee
+    const pTokens = amount;
 
-    // Enforce a minimum visible-spinner duration so the flow feels intentional.
     const [result] = await Promise.all([
       supabase.rpc('mock_recharge', { p_amount_paise: pAmountPaise, p_tokens: pTokens }),
       new Promise<void>(resolve => setTimeout(resolve, MOCK_SPINNER_MS)),
@@ -110,59 +135,81 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
     }
 
     setSuccessBalance(data.new_balance ?? null);
-    // Refresh the balance pill in the nav and the recharge screen.
     await queryClient.invalidateQueries({ queryKey: ['profile'] });
     setMockPhase('success');
-
-    // Auto-close after the success moment has registered.
-    setTimeout(() => {
-      onClose();
-      closeRefill();
-    }, MOCK_SUCCESS_CLOSE_MS);
   };
 
+  const isCashfree = CASHFREE_SANDBOX_CHECKOUT;
+
   const sheetTitle =
-    mockPhase === 'success' ? 'Payment successful' : 'Pay with UPI';
+    mockPhase === 'success'
+      ? 'Done'
+      : mockPhase === 'processing'
+        ? 'Paying'
+        : isCashfree
+          ? 'Continue to Cashfree'
+          : 'Pay with UPI';
   const sheetBody =
     mockPhase === 'success'
-      ? `${formatTokens(amount)} tokens added`
-      : `Add ${formatTokens(amount)} tokens  ·  ${formatRupees(amount)}`;
+      ? undefined
+      : mockPhase === 'processing'
+        ? `Paying ${formatRupees(amount)} via ${isCashfree ? 'Cashfree' : method}`
+        : isCashfree
+          ? `Add ${formatTokens(amount)} tokens  ·  ${formatRupees(amount)}  ·  Sandbox checkout`
+          : `Add ${formatTokens(amount)} tokens  ·  ${formatRupees(amount)}`;
+
+  if (mockPhase === 'success') {
+    return (
+      <Sheet
+        visible={visible}
+        testID="payment-success"
+        title="Done"
+        onClose={finishHome}
+        footer={
+          <Button label="Back home" onPress={finishHome} testID="payment-back-home" />
+        }>
+        <View style={styles.successBody}>
+          <BloomField
+            elapsed={successField}
+            stage={PAYMENT_SUCCESS_STAGE}
+            hidden={false}
+          />
+          <View style={styles.successCopy}>
+            <View style={styles.successCircle}>
+              <Icon name="check" size={28} color={theme.color.text.primary} />
+            </View>
+            <Text allowFontScaling style={styles.successDetail}>
+              {formatTokens(amount)} tokens added
+            </Text>
+            {successBalance !== null ? (
+              <Text allowFontScaling style={styles.successBalance}>
+                Balance {formatTokens(successBalance)} tokens
+              </Text>
+            ) : null}
+          </View>
+        </View>
+      </Sheet>
+    );
+  }
 
   return (
     <Sheet
       visible={visible}
-      testID="payment-sheet"
+      testID="refill-sheet"
       title={sheetTitle}
       body={sheetBody}
       onClose={onClose}
-      onCancel={mockPhase !== 'success' ? onClose : undefined}
-      cancelLabel={mockPhase !== 'success' ? 'Back' : undefined}>
+      onCancel={mockPhase === 'idle' || mockPhase === 'error' ? onClose : undefined}
+      cancelLabel="Back">
 
-      {/* ── Processing state ─────────────────────────────────────────────── */}
       {mockPhase === 'processing' ? (
         <View style={styles.centreState}>
-          <ActivityIndicator size="large" color={theme.color.text.accent} />
+          <LoadingIndicator size={48} color={theme.color.bg.accent} />
           <Text allowFontScaling style={styles.centreLabel}>
-            Processing payment…
+            {isCashfree ? 'Opening Cashfree…' : `Opening ${method}…`}
           </Text>
-        </View>
-      ) : mockPhase === 'success' ? (
-        /* ── Success state ───────────────────────────────────────────────── */
-        <View style={styles.centreState}>
-          <View style={[styles.successCircle, { backgroundColor: theme.color.bg.accentStrong }]}>
-            <Icon name="check" size={32} color="#FFFFFF" />
-          </View>
-          <Text allowFontScaling style={styles.successTitle}>
-            {formatTokens(amount)} tokens added
-          </Text>
-          {successBalance !== null ? (
-            <Text allowFontScaling style={styles.successBalance}>
-              New balance: {formatTokens(successBalance)} tokens
-            </Text>
-          ) : null}
         </View>
       ) : (
-        /* ── Idle / Error state — UPI chooser ───────────────────────────── */
         <>
           {mockPhase === 'error' && errorMsg !== null ? (
             <View style={styles.errorRow}>
@@ -173,46 +220,78 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
             </View>
           ) : null}
 
-          <View style={styles.group}>
-            {METHODS.map((name, index) => {
-              const on = name === method;
-              return (
-                <React.Fragment key={name}>
-                  {index === 0 ? null : <View style={styles.separator} />}
-                  <Pressable
-                    onPress={() => {
-                      if (mockPhase === 'idle') {
-                        setMethod(name);
-                      }
-                    }}
-                    testID={`upi-${name}`}
-                    accessibilityLabel={on ? `${name}, selected` : name}
-                    press="none"
-                    highlight="ios"
-                    style={[styles.row, index === 0 && styles.rowFirst, index === METHODS.length - 1 && styles.rowLast]}>
-                    <Image
-                      source={LOGOS[name].src}
-                      style={{ height: LOGO_HEIGHT, width: LOGO_HEIGHT * LOGOS[name].ratio }}
-                      resizeMode="contain"
-                      accessibilityIgnoresInvertColors
-                    />
-                    <View style={styles.rowFill} />
-                    {on ? <Icon name="check" size={17} color={theme.color.text.primary} /> : null}
-                  </Pressable>
-                </React.Fragment>
-              );
-            })}
-          </View>
+          {/* Only show UPI app picker in the mock path; Cashfree handles app selection. */}
+          {!isCashfree ? (
+            <View style={styles.group}>
+              {METHODS.map((name, index) => {
+                const on = name === method;
+                return (
+                  <React.Fragment key={name}>
+                    {index === 0 ? null : <View style={styles.separator} />}
+                    <Pressable
+                      onPress={() => {
+                        if (mockPhase === 'idle') {
+                          setMethod(name);
+                        }
+                      }}
+                      testID={`upi-${name}`}
+                      accessibilityLabel={on ? `${name}, selected` : name}
+                      press="none"
+                      highlight="ios"
+                      style={[
+                        styles.row,
+                        index === 0 && styles.rowFirst,
+                        index === METHODS.length - 1 && styles.rowLast,
+                      ]}>
+                      <Image
+                        source={LOGOS[name].src}
+                        style={{ height: LOGO_HEIGHT, width: LOGO_HEIGHT * LOGOS[name].ratio }}
+                        resizeMode="contain"
+                        accessibilityIgnoresInvertColors
+                      />
+                      <View style={styles.rowFill} />
+                      {on ? <Icon name="check" size={17} color={theme.color.text.primary} /> : null}
+                    </Pressable>
+                  </React.Fragment>
+                );
+              })}
+            </View>
+          ) : null}
 
-          {MOCK_PAYMENTS ? (
+          {isCashfree ? (
+            <>
+              {/* One-tap: fires the UPI intent chooser and deep-links into the
+                  member's own GPay / PhonePe / Paytm (research 2026-08-30). */}
+              <Button
+                label={`Pay ${formatRupees(amount)}  ·  UPI`}
+                onPress={() => handleCashfreePay('upi')}
+                testID="payment-confirm"
+              />
+              {/* Fallback for members with no UPI app: the hosted page carries
+                  cards, net-banking and wallets. */}
+              <Pressable
+                onPress={() => handleCashfreePay('web')}
+                testID="payment-web"
+                accessibilityLabel="Pay with card, net banking or wallets"
+                press="none"
+                highlight="ios"
+                style={styles.webRow}>
+                <Text allowFontScaling style={styles.webRowText}>
+                  Card, Net Banking & Wallets
+                </Text>
+              </Pressable>
+            </>
+          ) : MOCK_PAYMENTS ? (
             <Button
-              label={`Pay ${formatRupees(amount)}`}
-              onPress={() => { void handleMockPay(); }}
+              label={`Open ${method}`}
+              onPress={() => {
+                void handleMockPay();
+              }}
               testID="payment-confirm"
             />
           ) : (
             <Button
-              label={PAYMENTS_ENABLED ? `Pay ${formatRupees(amount)}` : 'Payments open soon'}
+              label={PAYMENTS_ENABLED ? `Open ${method}` : 'Payments open soon'}
               disabled={!PAYMENTS_ENABLED}
               onPress={onClose}
               testID="payment-confirm"
@@ -226,14 +305,14 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
 
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
-    // One inset-grouped table of UPI apps. Same idiom as the settings groups so
-    // the two selectable-list surfaces in the app read as one system.
     group: {
       alignSelf: 'stretch',
       borderRadius: TOKENS.radius.field,
       borderCurve: 'continuous',
       overflow: 'hidden',
-      backgroundColor: t.color.bg.sunken,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: t.color.border.hairline,
+      backgroundColor: t.color.bg.base,
     },
     row: {
       flexDirection: 'row',
@@ -242,7 +321,7 @@ const makeStyles = (t: Theme) =>
       paddingVertical: TOKENS.space.sm,
       paddingHorizontal: TOKENS.space.md,
       minHeight: 48,
-      backgroundColor: t.color.bg.sunken,
+      backgroundColor: t.color.bg.base,
     },
     rowFirst: {
       borderTopLeftRadius: TOKENS.radius.field,
@@ -252,8 +331,6 @@ const makeStyles = (t: Theme) =>
       borderBottomLeftRadius: TOKENS.radius.field,
       borderBottomRightRadius: TOKENS.radius.field,
     },
-    // Pushes the selected check to the trailing edge; the brand lockup sits at
-    // the leading edge and carries its own name.
     rowFill: {
       flex: 1,
     },
@@ -262,28 +339,52 @@ const makeStyles = (t: Theme) =>
       marginLeft: TOKENS.space.md,
       backgroundColor: t.color.border.hairline,
     },
-    // Centred layout shared by the processing spinner and the success confirmation.
+    webRow: {
+      alignSelf: 'stretch',
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: 44,
+      marginTop: TOKENS.space.xs,
+    },
+    webRowText: {
+      ...TOKENS.typography.subhead,
+      color: t.color.text.secondary,
+    },
     centreState: {
       alignSelf: 'stretch',
       alignItems: 'center',
-      paddingVertical: TOKENS.space.xl,
+      paddingVertical: TOKENS.space.lg,
       gap: TOKENS.space.sm,
     },
     centreLabel: {
       ...TOKENS.typography.subhead,
       color: t.color.text.secondary,
     },
-    // The coral confirmation circle — payment-success is an action-affirming
-    // moment, which is exactly what the accent budget reserves the coral for.
+    successBody: {
+      alignSelf: 'stretch',
+      minHeight: 220,
+      overflow: 'hidden',
+      borderRadius: TOKENS.radius.md,
+      borderCurve: 'continuous',
+    },
+    successCopy: {
+      ...StyleSheet.absoluteFill,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: TOKENS.space.xs,
+      paddingHorizontal: TOKENS.space.md,
+    },
     successCircle: {
-      width: 64,
-      height: 64,
-      borderRadius: 32,
+      width: 56,
+      height: 56,
+      borderRadius: 28,
       borderCurve: 'continuous',
       alignItems: 'center',
       justifyContent: 'center',
+      backgroundColor: 'rgba(255,255,255,0.78)',
+      marginBottom: TOKENS.space.xs,
     },
-    successTitle: {
+    successDetail: {
       ...TOKENS.typography.headline,
       color: t.color.text.primary,
     },
@@ -291,7 +392,6 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.subhead,
       color: t.color.text.secondary,
     },
-    // Error inline banner above the UPI list.
     errorRow: {
       alignSelf: 'stretch',
       flexDirection: 'row',

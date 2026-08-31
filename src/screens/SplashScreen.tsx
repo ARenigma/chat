@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { TOKENS, type Theme } from '../theme/tokens';
-import { useStyles, useTheme } from '../theme/ThemeProvider';
+import { useStyles } from '../theme/ThemeProvider';
 import { Button } from '../components/Button';
+import { LoadingIndicator } from '../components/LoadingIndicator';
 
 interface Props {
   /** Shown when the wait stops being plausible. */
@@ -27,7 +28,6 @@ const PATIENCE_MS = 6000;
  */
 export function SplashScreen({ onRetry }: Props) {
   const styles = useStyles(makeStyles);
-  const theme = useTheme();
   const [slow, setSlow] = useState(false);
 
   useEffect(() => {
@@ -37,7 +37,7 @@ export function SplashScreen({ onRetry }: Props) {
 
   return (
     <View style={styles.root}>
-      <ActivityIndicator color={theme.color.text.secondary} />
+      <LoadingIndicator size={48} />
       {slow ? (
         <View style={styles.slow}>
           <Text testID="splash-slow" allowFontScaling style={styles.text}>

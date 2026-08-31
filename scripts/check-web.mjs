@@ -60,6 +60,15 @@ for (const page of pages) {
     problems.push(`web/${page} does not link tokens.css`);
   }
 
+  // The site and the app are one product. Geist + Titan One are the shipped
+  // faces; Nunito was the previous web-only stand-in and must not return.
+  if (!body.includes('family=Geist') || !body.includes('family=Titan+One')) {
+    problems.push(`web/${page} does not load Geist and Titan One`);
+  }
+  if (body.includes('family=Nunito')) {
+    problems.push(`web/${page} still loads Nunito`);
+  }
+
   // A page with no way back is a dead end on a phone.
   if (page !== 'index.html' && !/href="\/"|href="\/index\.html"/.test(body)) {
     problems.push(`web/${page} has no link home`);

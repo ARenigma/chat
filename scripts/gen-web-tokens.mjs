@@ -24,6 +24,17 @@ const CHECK = process.argv.includes('--check');
 
 const spec = JSON.parse(readFileSync(INPUT, 'utf8'));
 
+/**
+ * App tokens name Android PostScript faces (`Geist-Regular`, `TitanOne`).
+ * CSS wants the family the Google Fonts stylesheet actually registers.
+ */
+function cssFamily(postScript) {
+  if (typeof postScript !== 'string') return 'system-ui';
+  if (postScript === 'TitanOne') return 'Titan One';
+  if (postScript.startsWith('Geist')) return 'Geist';
+  return postScript;
+}
+
 /** `bg/accentStrong` -> `--bg-accent-strong` */
 const varName = name =>
   '--' +
@@ -63,17 +74,28 @@ ${scale('space', 'space')}
 
 ${scale('radius', 'radius')}
 
-  /* One family plus a weight, unlike the app.
+  /* Same families as the app, different loading rule.
    *
-   * That difference is not sloppiness: on the web Nunito arrives as a real
-   * variable font from Google Fonts, so asking for weight 800 gets the 800 cut.
-   * In the app the faces are separate static files and asking for a weight makes
-   * Android synthesise one it already has, which is why the app names a face
-   * per style and forbids fontWeight outright. */
-  --face-display: 'Nunito', system-ui, sans-serif;
-  --face-title: 'Nunito', system-ui, sans-serif;
-  --face-label: 'Nunito', system-ui, sans-serif;
-  --face-body: 'Nunito', system-ui, sans-serif;
+   * On the web Geist arrives as a variable font from Google Fonts, so a
+   * weight axis is honest. In the app the faces are separate static files
+   * and asking for a weight makes Android synthesise one it already has,
+   * which is why the app names a face per style and forbids fontWeight.
+   * Titan One is the wordmark only — one weight, same as assets/fonts. */
+  --face-wordmark: '${cssFamily(
+    spec.typography.wordmark.fontFamily,
+  )}', system-ui, sans-serif;
+  --face-display: '${cssFamily(
+    spec.typography.displayLarge.fontFamily,
+  )}', system-ui, sans-serif;
+  --face-title: '${cssFamily(
+    spec.typography.titleMedium.fontFamily,
+  )}', system-ui, sans-serif;
+  --face-label: '${cssFamily(
+    spec.typography.headline.fontFamily,
+  )}', system-ui, sans-serif;
+  --face-body: '${cssFamily(
+    spec.typography.bodyLarge.fontFamily,
+  )}', system-ui, sans-serif;
 
   /* The springs, as the closest thing CSS has. A spring is not expressible as a
    * cubic bezier, so these approximate the settle of each one rather than

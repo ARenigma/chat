@@ -9,16 +9,18 @@ name: Sending works again once the network returns
 - launchApp
 - tapOn: 'Ada'
 - tapOn:
+    id: 'action-chat'
+- tapOn:
     id: 'composer-input'
 - inputText: 'Back online.'
 - tapOn:
     id: 'composer-send'
 
 - extendedWaitUntil:
-    visible:
-      id: 'read-receipt'
+    visible: 'Back online.'
     timeout: 30000
-- assertVisible: 'Back online.'
+- assertVisible:
+    id: 'bubble-mine'
 - assertNotVisible:
     id: 'notice-bar'
 

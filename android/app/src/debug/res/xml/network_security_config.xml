@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The emulator reaches the host's local Supabase stack through 10.0.2.2.
+  Keep that development exception on one host and in the debuggable source set;
+  all other traffic, including every non-debug build, remains TLS-only.
+  https://developer.android.com/privacy-and-security/security-config
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>

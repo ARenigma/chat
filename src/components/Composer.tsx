@@ -42,7 +42,7 @@ interface Props {
   onSendImage: (draft: ImageDraft) => void;
   disabled: boolean;
   placeholder: string;
-  bloomKey: number;
+  sendHaloKey: number;
   /**
    * Fired per keystroke so the other side can be shown a typing indicator. The
    * throttling lives in the Realtime layer, not here, the composer should not
@@ -105,7 +105,7 @@ function ComposerView({
   onSendImage,
   disabled,
   placeholder,
-  bloomKey,
+  sendHaloKey,
   onTyping,
 }: Props) {
   const styles = useStyles(makeStyles);
@@ -274,7 +274,12 @@ function ComposerView({
    */
   useEffect(() => {
     const sub = AppState.addEventListener('change', next => {
-      if (next !== 'active' && handle.current !== null) {
+      // Only `background` — not `inactive`. On Android the permission sheet,
+      // multi-window transitions and the notification shade move the app to
+      // `inactive` without the user leaving; treating that as cancel made the
+      // second voice-note attempt look like "the mic died after the first fire".
+      // https://reactnative.dev/docs/appstate
+      if (next === 'background' && handle.current !== null) {
         void discard();
       }
     });
@@ -429,7 +434,8 @@ function ComposerView({
             testID="voice-stop"
             accessibilityLabel="Stop recording"
             accessibilityHint={`Up to ${clock(MAX_VOICE_MS)}`}
-            press="chip"
+            press="none"
+            highlight="ios"
             size={32}
             style={styles.stop}
           >
@@ -469,7 +475,7 @@ function ComposerView({
             tint={theme.color.text.secondary}
             dim={1}
           />
-          <SendButton onPress={sendDraft} disabled={disabled} bloomKey={bloomKey} />
+          <SendButton onPress={sendDraft} disabled={disabled} sendHaloKey={sendHaloKey} />
         </View>
       </View>
     );
@@ -490,7 +496,8 @@ function ComposerView({
         testID="composer-attach"
         accessibilityLabel="Add media"
         accessibilityHint="Camera or photos. One photo costs one token"
-        press="chip"
+        press="none"
+        highlight="ios"
         size={32}
         style={styles.attach}>
         {/* The plus sits in a filled coral circle (Sweprek, #6): the primary media
@@ -509,7 +516,8 @@ function ComposerView({
           disabled={disabled}
           testID="composer-emoji"
           accessibilityLabel="Emoji"
-          press="chip"
+          press="none"
+          highlight="ios"
           size={30}
           style={styles.emoji}>
           <Icon name="sticker" size={22} color={theme.color.text.secondary} />
@@ -539,7 +547,7 @@ function ComposerView({
             button; with an empty field there is a microphone. A row holding both
             asks which of them the return key means. */}
         {ready ? (
-          <SendButton onPress={submit} disabled={!ready} bloomKey={bloomKey} />
+          <SendButton onPress={submit} disabled={!ready} sendHaloKey={sendHaloKey} />
         ) : (
           <Pressable
             onPress={() => {
@@ -549,7 +557,8 @@ function ComposerView({
             testID="voice-record"
             accessibilityLabel="Record a voice note"
             accessibilityHint="Recording starts on tap and stops when you tap stop. One voice note costs one token"
-            press="chip"
+            press="none"
+            highlight="ios"
             size={32}
             style={styles.mic}
           >
@@ -620,9 +629,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     paddingHorizontal: TOKENS.space.md,
     paddingTop: TOKENS.space.xs,
     paddingBottom: TOKENS.space['2xs'],
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: t.color.border.hairline,
-    backgroundColor: t.color.bg.base,
+    backgroundColor: 'transparent',
   },
   // The idle bar: attach button, then the field taking the rest of the width.
   inputBar: {
@@ -670,7 +677,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     borderCurve: 'continuous',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: t.color.border.hairline,
-    backgroundColor: t.color.bg.base,
+    backgroundColor: t.color.bg.sunken,
   },
   input: {
     flex: 1,

@@ -74,6 +74,18 @@ object Conversations {
      */
     const val CALL_CHANNEL_ID = "calls"
 
+    /**
+     * The in-progress call channel, at IMPORTANCE_LOW.
+     *
+     * Separate from CALL_CHANNEL_ID because importance is a property of the
+     * channel, not of the notification, on API 26+: an ongoing call posted on the
+     * IMPORTANCE_HIGH ring channel heads-up, so placing a call threw a "Hang up"
+     * banner over the app's own call screen. A ring must interrupt; a call
+     * already in progress must not.
+     * https://developer.android.com/develop/ui/views/notifications/channels
+     */
+    const val CALL_ONGOING_CHANNEL_ID = "call_ongoing"
+
     // Pappal coral (#F2543D). Tints all three notification types so they read as
     // one brand (Amit, 2026-08-27) — the small icon and the CallStyle accent.
     private const val BRAND_COLOR = 0xFFF2543D.toInt()
@@ -103,6 +115,16 @@ object Conversations {
             .Builder(CALL_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_HIGH)
             .setName(context.getString(R.string.channel_calls))
             .setDescription(context.getString(R.string.channel_calls_desc))
+            .setShowBadge(false)
+            .build()
+        NotificationManagerCompat.from(context).createNotificationChannel(channel)
+    }
+
+    fun ensureCallOngoingChannel(context: Context) {
+        val channel = NotificationChannelCompat
+            .Builder(CALL_ONGOING_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_LOW)
+            .setName(context.getString(R.string.channel_call_ongoing))
+            .setDescription(context.getString(R.string.channel_call_ongoing_desc))
             .setShowBadge(false)
             .build()
         NotificationManagerCompat.from(context).createNotificationChannel(channel)

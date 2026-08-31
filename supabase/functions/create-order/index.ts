@@ -4,33 +4,37 @@
  * Caller: authenticated user (Supabase JWT required).
  *
  * Flow:
- *   1. Verify JWT → get user_id and phone from profile.
+ *   1. Verify JWT → get user_id from session.
  *   2. Look up productId in RECHARGE_PACKS.
- *   3. Create a Cashfree order (server-side, idempotent by order_id = uuid).
- *   4. Insert a pending token_transactions row (kind='recharge', status='created').
- *   5. Return { orderId, paymentSessionId, amount, currency } to the client.
+ *   3. Fetch phone_e164 from profiles; strip leading '+' for Cashfree customer_phone
+ *      (Cashfree requires a 10-digit phone without country code).
+ *   4. Create a Cashfree order (server-side; secrets never leave this function).
+ *   5. Insert a pending token_transactions row (kind='recharge', status='created').
+ *   6. Return { orderId, paymentSessionId, amount, currency } to the client.
  *
- * The client passes paymentSessionId to the Cashfree SDK to open the payment
- * sheet. Tokens are never credited here; that happens after the cashfree-webhook
- * Edge Function verifies the signed payment event.
+ * Tokens are never credited here. Credit happens after cashfree-webhook or
+ * verify-order confirms payment server-side.
  *
+ * doc: https://www.cashfree.com/docs/payments/online/mobile/android
  * ADR-0022: India User Choice Billing
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
 // ---------------------------------------------------------------------------
-// Pack config — hardcoded until admin config sync is wired (ADR-0023).
-// Keys are Play product IDs.
+// Pack config — aligned to src/lib/rates.ts RECHARGE_PACKS: 1 token = ₹1.
+// Product IDs follow the pappal_pack_<amountInr> convention.
 // ---------------------------------------------------------------------------
 const RECHARGE_PACKS: Record<string, { tokens: number; amountInr: number }> = {
-  'pappal_pack_50':   { tokens: 50,   amountInr: 59  },
-  'pappal_pack_100':  { tokens: 100,  amountInr: 109 },
-  'pappal_pack_200':  { tokens: 200,  amountInr: 209 },
-  'pappal_pack_500':  { tokens: 500,  amountInr: 499 },
+  pappal_pack_100:  { tokens: 100,  amountInr: 100  },
+  pappal_pack_300:  { tokens: 300,  amountInr: 300  },
+  pappal_pack_500:  { tokens: 500,  amountInr: 500  },
+  pappal_pack_1000: { tokens: 1000, amountInr: 1000 },
+  pappal_pack_2500: { tokens: 2500, amountInr: 2500 },
+  pappal_pack_5000: { tokens: 5000, amountInr: 5000 },
 };
 
 // ---------------------------------------------------------------------------
-// Cashfree helpers
+// Cashfree helpers — secrets only via Deno.env; never returned to client.
 // ---------------------------------------------------------------------------
 function cashfreeBaseUrl(): string {
   const env = Deno.env.get('CASHFREE_ENV') ?? 'sandbox';
@@ -122,23 +126,27 @@ Deno.serve(async (request: Request) => {
       return Response.json({ error: `unknown productId: ${productId}` }, { status: 400 });
     }
 
-    // Fetch phone from profile for Cashfree customer_details.
+    // Fetch phone_e164 from profile for Cashfree customer_details.
+    // Cashfree requires a 10-digit phone number without country code or '+'.
     const admin = createClient(supabaseUrl, serviceKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
     const { data: profileRow } = await admin
       .from('profiles')
-      .select('phone')
+      .select('phone_e164')
       .eq('id', userId)
       .single();
 
-    const phone = (profileRow as { phone?: string } | null)?.phone ?? '0000000000';
+    const rawPhone = (profileRow as { phone_e164?: string } | null)?.phone_e164 ?? '';
+    // Strip leading '+91' or '+' — Cashfree expects 10-digit number only.
+    // If missing, use a sandbox-safe test number; a real number is required
+    // for production, but this never reaches production (ADR-0022).
+    const phone = rawPhone.replace(/^\+/, '').replace(/^91/, '').slice(-10) || '9999999999';
 
     // Generate a stable order id for this attempt. Using crypto.randomUUID()
-    // means each call to create-order creates a new Cashfree order — this is
-    // intentional. The idempotency guard lives in credit_purchased_recharge
-    // (migration 033), not here.
+    // means each call to create-order creates a new Cashfree order — intentional.
+    // The idempotency guard lives in credit_purchased_recharge, not here.
     const orderId = crypto.randomUUID();
 
     // Create Cashfree order first; don't insert the transaction row until
@@ -150,7 +158,8 @@ Deno.serve(async (request: Request) => {
       phone,
     });
 
-    // Insert pending transaction row. status='created'; credit happens via webhook.
+    // Insert pending transaction row. status='created'; credit happens via webhook
+    // or verify-order after server-side payment confirmation.
     const { error: insertErr } = await admin
       .from('token_transactions')
       .insert({

@@ -23,6 +23,8 @@ class InAppUpdatePackage : ReactPackage {
         InAppUpdateModule(reactContext),
         GoogleCredentialModule(reactContext),
         ConversationsModule(reactContext),
+        StartupTimingModule(reactContext),
+        WindowChromeModule(reactContext),
     )
 
     override fun createViewManagers(

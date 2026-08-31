@@ -37,8 +37,9 @@ select has_trigger(
 );
 select has_column('public', 'profiles', 'presence_visible', 'presence is a setting');
 select has_column('public', 'profiles', 'last_active_at', 'with a stamp behind it');
+-- Migration 037 renamed last_kind → last_preview_kind (ADR-0020).
 select has_column(
-  'public', 'conversation_summaries', 'last_kind',
+  'public', 'conversation_summaries', 'last_preview_kind',
   'the inbox can tell a voice note from an empty preview'
 );
 select has_column(
@@ -98,6 +99,13 @@ select lives_ok(
   'the provider is admitted'
 );
 
+-- Fund both members so the session balance gate (ADR-0020) passes on first send.
+update public.profiles set promo_balance = 500
+where id in ('bbbbbbbb-0000-4000-8000-000000000002',
+             'cccccccc-0000-4000-8000-000000000003');
+select test.accept_current_policies(id)
+from auth.users;
+
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"bbbbbbbb-0000-4000-8000-000000000002","role":"authenticated"}';
 insert into test.fixture (k, v)
@@ -146,11 +154,12 @@ select is(
 );
 -- The attack: quote somebody else's thread into yours, and the quote renders as
 -- if the other person said it here.
+-- Migration 037 changed this error from BAD_REQUEST to REPLY_NOT_FOUND.
 select is(
   public.send_message(
     (select v from test.fixture where k = 'thread'), 'they said',
     (select v from test.fixture where k = 'foreign_parent')) ->> 'error',
-  'BAD_REQUEST',
+  'REPLY_NOT_FOUND',
   'a reply cannot point at a message in another conversation'
 );
 reset role;
@@ -158,7 +167,7 @@ reset role;
 select is(
   (select token_balance from public.profiles
     where id = 'bbbbbbbb-0000-4000-8000-000000000002'),
-  49, 'and nothing about a reply changed who pays: one message, one token'
+  500, 'no per-message debit: balance unchanged regardless of reply or bad-request (ADR-0020)'
 );
 
 set local role authenticated;
@@ -211,7 +220,7 @@ select is(
 select is(
   (select token_balance from public.profiles
     where id = 'bbbbbbbb-0000-4000-8000-000000000002'),
-  49, 'none of the four rejections cost a token'
+  500, 'none of the four rejections cost a token (balance unchanged in session model)'
 );
 select is(
   (public.send_message(
@@ -228,7 +237,7 @@ select is(
 select is(
   (select token_balance from public.profiles
     where id = 'bbbbbbbb-0000-4000-8000-000000000002'),
-  48, 'and costs exactly one token, like every other message'
+  500, 'voice notes carry no per-message cost in the session model (ADR-0020)'
 );
 reset role;
 
@@ -244,9 +253,10 @@ where conversation_id = (select v from test.fixture where k = 'thread')
 
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"bbbbbbbb-0000-4000-8000-000000000002","role":"authenticated"}';
+-- Migration 037 renamed last_kind → last_preview_kind and id → conversation_id (ADR-0020).
 select is(
-  (select last_kind from public.conversation_summaries
-    where id = (select v from test.fixture where k = 'thread')),
+  (select last_preview_kind from public.conversation_summaries
+    where conversation_id = (select v from test.fixture where k = 'thread')),
   'voice', 'so the inbox can preview it without a body to read'
 );
 reset role;

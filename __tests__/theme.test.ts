@@ -43,7 +43,11 @@ describe('generated theme', () => {
     // sit on this directly, divided by border/hairline. A grouped grey with
     // nothing to group is just dirty white.
     expect(LIGHT.color.bg.base).toBe('#FFFFFF');
-    expect(DARK.color.bg.base).toBe('#000000');
+    // Dark base is the Material 3 recommended #121212, NOT pure black: Android's
+    // dark-theme guidance calls for a dark-grey surface so elevation reads as
+    // tonal lightening, eye strain and OLED black-smear drop, and content does
+    // not float on a hole. https://m3.material.io/styles/color/dark-theme
+    expect(DARK.color.bg.base).toBe('#121212');
   });
 
   it('keeps the row separator visible on the page it now sits on', () => {
@@ -349,7 +353,7 @@ describe('typography is bound to real font files', () => {
     //
     /*
      * Per family, not one file, because the directory is not single-family:
-     * Nunito carries the app and Lilita One sets the wordmark, and they are two
+     * Geist carries the app and Titan One sets the wordmark, and they are two
      * separate copyright holders with two separate reserved font names.
      *
      * The bare `OFL.txt` is gone with Urbanist. Noto Sans Devanagari is gone
@@ -586,10 +590,19 @@ describe('motion lives in one module', () => {
      * message while denying it to "you're in" would enforce the letter of the
      * restraint against its point. It appears once, for one second, at the end
      * of one flow. Everything else still uses snap or smooth.
+     *
+     * TactileCTA joined on 2026-08-31 (Option B, user-approved): the release of
+     * an *invitational* CTA — the first-move pills and the SP hero — overshoots
+     * once as the "tactile pop". It is the same argument as the completion mark:
+     * these are the product's few celebratory beats, and the pop is what makes
+     * them feel worth tapping. It is reserved for TactileCTA, never the
+     * workhorse ink Button, so the overshoot keeps meaning something.
      */
     expect(users).toEqual([
       'src/components/CompletionRow.tsx',
+      'src/components/TactileCTA.tsx',
       'src/components/TokenCounter.tsx',
+      'src/screens/ProviderDetailScreen.tsx',
     ]);
   });
 
@@ -606,26 +619,25 @@ describe('motion lives in one module', () => {
   });
 
   it('stops the carousel rather than short-circuiting it', () => {
-    // The one animation in the app that must NOT take ReduceMotion.System, and
-    // the reason is a real bug rather than a preference: a withRepeat(-1) whose
-    // inner timings have been short-circuited to their final value does not
-    // stop, it spins at frame rate running zero-length animations. So the
-    // decision has to be "do not start", which only the component can make.
-    expect(read('src/theme/motion.ts')).toContain('ReduceMotion.Never');
-    const carousel = read('src/components/WordCarousel.tsx');
-    expect(carousel).toContain('useReducedMotion()');
-    // The gate itself, not just the import: the loop is only ever armed when the
-    // component has decided it may run.
-    expect(carousel).toMatch(/const looping = !reduced/);
-    expect(carousel).toMatch(/if \(!looping\) \{\s*return;/);
+    // Reduce-motion must be "do not start", not ReduceMotion.System on a
+    // withRepeat(-1): short-circuited zero-length timings spin at frame rate.
+    // Snap and word advance also share one paint (useLayoutEffect on tick) so
+    // a drifted setInterval cannot paint the next highlight as a static ghost
+    // in the focus slot before the slide.
+    const column = read('src/components/WordColumn.tsx');
+    expect(column).toContain('useReducedMotion()');
+    expect(column).toContain('useLayoutEffect');
+    expect(column).toContain('CAROUSEL_ENTER_OFFSET');
+    expect(column).toMatch(/if \(reduced \|\| words\.length < 2\) \{\s*return;/);
+    // Free-running withRepeat + setInterval was the ghost-word defect; the
+    // slide must be armed from the tick layout effect, not a parallel loop.
+    expect(column).toMatch(/shift\.value\s*=\s*CAROUSEL_ENTER_OFFSET/);
+    expect(column).toMatch(/setInterval\(\s*\(\)\s*=>\s*setTick/);
   });
 
   it('drives the new surfaces through the shared builders', () => {
     // Nothing in this change writes its own physics. The screens ask for a named
     // builder and the builders are the only place a duration appears.
-    expect(read('src/components/WordCarousel.tsx')).toContain('carouselLoop');
-    expect(read('src/components/Stepper.tsx')).toContain('promoteTo');
-    expect(read('src/components/Stepper.tsx')).toContain('accentTo');
     expect(read('src/components/Button.tsx')).toContain('fadeSwapFast');
   });
 
@@ -705,6 +717,14 @@ describe('accessibility budget', () => {
     expect(contrast(DARK.color.text.positive, DARK.color.bg.positive)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(LIGHT.color.text.token, LIGHT.color.bg.token)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(DARK.color.text.token, DARK.color.bg.token)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(LIGHT.color.text.onTokenStrong, LIGHT.color.bg.tokenHealthy)).toBeGreaterThanOrEqual(
+      4.5,
+    );
+    expect(contrast(LIGHT.color.text.onTokenStrong, LIGHT.color.bg.tokenCritical)).toBeGreaterThanOrEqual(
+      4.5,
+    );
+    expect(contrast(DARK.color.text.onTokenStrong, DARK.color.bg.tokenHealthy)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(DARK.color.text.onTokenStrong, DARK.color.bg.tokenCritical)).toBeGreaterThanOrEqual(4.5);
   });
 
   it('makes the presence dot visible as a shape, not just as a colour', () => {
@@ -765,20 +785,7 @@ describe('accent budget is enforced in code, not just documented', () => {
     //                   moved, when the inbox row was extracted into a bubble.
     //                   InboxScreen has no accent of its own any more
     //   SendButton  , the fill and the ring
-    //   Stepper       : the active step's marker, and the ramp it walks. Added by
-    //                   the motion adoption, and it is the clearest "state" on
-    //                   this list after the unread count: the marker IS which
-    //                   step you are on, and it is the only accent anywhere on
-    //                   the provider application. Rule 2 of the Fuse system is
-    //                   "the accent changes per step and how it changes", so
-    //                   without an accent here the rule reduces to decoration and
-    //                   there is nothing left of it. The three rungs were
-    //                   measured against both page colours before this was
-    //                   accepted: 1.68:1 pending, 3.44:1 active and 5.19:1
-    //                   complete on white, 6.11:1 on black, so every state
-    //                   clears the 3:1 non-text minimum, and `bg/accentTint` is
-    //                   deliberately NOT the first rung despite looking like it
-    //                   should be, because it measures 1.22:1 on white
+    //   OnboardingStep: the active checklist row. Replaces the unused Stepper.
     //   Sheet       , the Cancel and Done actions in the sheet's own bar. Added
     //                   by the iOS pass and it is the clearest case on this list:
     //                   an iOS bar action is tintColor *text* with no fill and no
@@ -789,14 +796,22 @@ describe('accent budget is enforced in code, not just documented', () => {
     //   Toggle      , the track when on. A control in a colour that appears
     //                   nowhere else reads as a different system, which is
     //                   precisely how the stock Android teal looked
-    //   TokenCounter, the low-balance pill
     //   Turn        , the member's own bubble
     //   TypingIndicator, the three dots
+    //   TokenCounter is out of the coral budget: wallet tones use tokenHealthy /
+    //   token / tokenCritical, not accentTint.
     //
     // Nothing here is a page, a header, a divider or a provider's avatar. This
     // assertion exists to force the argument to be made, not to forbid it.
     expect(users).toEqual([
       'Avatar.tsx',
+      /*
+       * M3 Badge — the unread count pill. A state signal ("you have unread
+       * messages"), exactly what the accent budget reserves the coral for.
+       * Previously the coral pill was hand-rolled in ChatsListScreen; Badge
+       * centralises it, so ChatsListScreen no longer appears in this list.
+       */
+      'Badge.tsx',
       /*
        * The call surfaces (gated, ADR-0019). The warm field IS the call
        * background — same class as the bloom — built from the accent tokens; the
@@ -810,9 +825,15 @@ describe('accent budget is enforced in code, not just documented', () => {
        * variant reuses the same token-tint the balance pill flinches to.
        */
       'ChatScreen.tsx',
-      // The full chats list's unread count badge — the same accentStrong pill the
-      // Home rail and provider tree use for "unread", a live-state signal.
-      'ChatsListScreen.tsx',
+      /*
+       * The chat wallpaper's blush wash uses bg.accentTint — the softest tint,
+       * reserved for warm atmospheric surfaces (the same token behind Avatar's
+       * warm mark). It gives the transcript its requested pink hue (user
+       * 2026-08-31). An atmospheric field, same class as the hero surfaces, laid
+       * UNDER the bubbles as ambience — not chrome, a header or a divider.
+       */
+      'ChatWallpaper.tsx',
+      // ChatsListScreen.tsx no longer has a hand-rolled accent pill; Badge owns it.
       'Chip.tsx',
       /*
        * The completed mark. Green is the source's colour and appears nowhere in
@@ -828,6 +849,8 @@ describe('accent budget is enforced in code, not just documented', () => {
       // one other affordance on the bar.
       'Composer.tsx',
       'EmptyMark.tsx',
+      // First-message pills: the one warm starter, same Chip accent rule.
+      'FirstMovePills.tsx',
       /*
        * The bottom bar's active tab (FloatingToolbar). It went coral → black slab
        * → grey box, and both read badly on device (Amit, 2026-08-27). The selected
@@ -845,6 +868,11 @@ describe('accent budget is enforced in code, not just documented', () => {
        */
       'HomeScreen.tsx',
       /*
+       * First-Home tour "Next" is the one action on the tooltip — same role as
+       * a sheet bar action.
+       */
+      'HomeTour.tsx',
+      /*
        * Added with the Fuse translation, and it earns its place rather than
        * widening the budget by accident: the coral here is the ACTIVE step's
        * icon, and it is the only thing on the checklist that distinguishes the
@@ -854,11 +882,8 @@ describe('accent budget is enforced in code, not just documented', () => {
        */
       'OnboardingStep.tsx',
       /*
-       * The mock-payment success circle (behind the MOCK_PAYMENTS gate; never
-       * visible in a production build).  A payment-success confirmation is an
-       * action-affirming moment — the one use the accent budget reserves the
-       * coral for — and the circle appears exactly once, after real tokens have
-       * been credited, at the end of the recharge flow.
+       * UPI chooser processing spinner uses text.accent; the success card is
+       * mint (bg/positive), not coral.
        */
       'PaymentSheet.tsx',
       /*
@@ -867,6 +892,11 @@ describe('accent budget is enforced in code, not just documented', () => {
        * plays on call-to-action links throughout the design system.
        */
       'PolicyGateScreen.tsx',
+      /*
+       * Profile setup gate. text.accent on the Terms and Privacy inline links
+       * only — navigational affordances, same role as PolicyGateScreen.
+       */
+      'ProfileSetupScreen.tsx',
       /*
        * The v13 provider profile. The coral is the primary Call action and the
        * favourite-when-set, plus the hero's warm field — actions and a live
@@ -886,10 +916,16 @@ describe('accent budget is enforced in code, not just documented', () => {
       // and "Rate us" — a brand signature and an action, not chrome.
       'SettingsSheet.tsx',
       'Sheet.tsx',
-      'Stepper.tsx',
+      /*
+       * The first-visit home spotlight. Two accent uses, both sanctioned: the
+       * "Say hi" CTA fill is the one action on the card, and the no-photo
+       * fallback is a warm atmospheric field (same class as the Home featured
+       * hero and the call background). Not a page, header, divider or a
+       * stranger's list avatar.
+       */
+      'SpotlightCard.tsx',
       'ThreadBubble.tsx',
       'Toggle.tsx',
-      'TokenCounter.tsx',
       /*
        * The "Download invoice" action link in the recharge history row. A link
        * that navigates to a file is an action, which is exactly what the budget
@@ -946,6 +982,10 @@ describe('accent budget is enforced in code, not just documented', () => {
       // The recharge balance banner (#13) is a warm gradient field in the same
       // language as the onboarding/hero surfaces, built from the accent tokens.
       'RechargeScreen.tsx',
+      // The first-visit spotlight card: a gradient bottom-scrim carries white
+      // copy over any photo, and the no-photo fallback is a warm field — same
+      // atmospheric-surface exemption class as the hero surfaces above.
+      'SpotlightCard.tsx',
     ]);
     for (const s of componentSources.concat(screenSources)) {
       if (EXEMPT.has(s.file.split('/').pop() ?? '')) {
@@ -984,12 +1024,12 @@ describe('accent budget is enforced in code, not just documented', () => {
 describe('iOS conformance', () => {
   const { radius, typography, color } = LIGHT;
 
-  it('uses UIKit sheet corners, not Material bottom-sheet corners', () => {
-    // 28 was Material 3's specified bottom-sheet corner. 10 is
-    // UISheetPresentationController's default, and the sheet is the single
-    // largest surface in the app, so its corner is the loudest platform tell.
-    expect(radius.sheet).toBe(10);
+  it('uses Material 3 Paper bottom-sheet corners', () => {
+    // 28 is Material 3's specified bottom-sheet corner — M3 Paper is the product
+    // choice for every overlay (user 2026-08-30).
+    expect(radius.sheet).toBe(28);
     expect(read('src/components/Sheet.tsx')).toContain('TOKENS.radius.sheet');
+    expect(read('src/components/Sheet.tsx')).toContain('TOKENS.typography.titleMedium');
   });
 
   it('has a field radius for the iOS filled control', () => {

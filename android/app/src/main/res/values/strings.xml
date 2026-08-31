@@ -23,6 +23,8 @@
     <string name="channel_engagement_desc">Nudges when someone new is around to talk</string>
     <string name="channel_calls">Incoming calls</string>
     <string name="channel_calls_desc">Rings when someone calls you</string>
+    <string name="channel_call_ongoing">Call in progress</string>
+    <string name="channel_call_ongoing_desc">A quiet, persistent notice while you are on a call</string>
 
     <!-- MessagingStyle needs a name for the device owner to attribute outgoing
          lines to. It is never displayed for a one-to-one thread, but a null here

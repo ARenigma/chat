@@ -1,9 +1,10 @@
-import React, { memo, useCallback, useEffect, useState, type ReactNode } from 'react';
+import React, { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Modal,
   Pressable as RNPressable,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
   type LayoutChangeEvent,
 } from 'react-native';
@@ -18,9 +19,12 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
 } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import { GESTURE, springTo } from '../theme/motion';
+import { setSheetBackdropBlur } from '../lib/windowChrome';
+import { trackSheetClosed } from '../lib/perfTelemetry';
 
 // Where the sheet starts its entry slide: safely below the tallest sheet, so it
 // begins off-screen and springs up into view. Only the last stretch is visible.
@@ -49,10 +53,18 @@ interface Props {
   cancelLabel?: string;
   onDone?: () => void;
   doneLabel?: string;
+  /** Sticky footer outside scrollable children — primary CTAs live here. */
+  footer?: ReactNode;
+  /** `large` caps sheet height at ~90% of the window. */
+  detents?: 'auto' | 'large';
+  /** When false, scrim tap does not dismiss (blocking gates). Default true. */
+  dismissOnScrim?: boolean;
 }
 
 /**
- * Bottom sheet, draggable.
+ * Material 3 Paper bottom sheet — drag handle, 28dp top corners, dim scrim,
+ * optional sticky footer for CTAs.
+ * https://m3.material.io/components/bottom-sheets/overview
  *
  * The drag is the reason this file is longer than a sheet needs to be, and it is
  * the single biggest difference between the app feeling animated and feeling
@@ -71,8 +83,8 @@ interface Props {
  *      punishes a slow deliberate push. Both numbers are tokens.
  *
  * The scrim opacity is derived from the same shared value, so the background
- * lightens as you pull the sheet down. That coupling is what makes the gesture
- * feel like it is moving one scene rather than one card.
+ * lightens as you pull the sheet down on dismiss. That coupling is what makes
+ * the gesture feel like it is moving one scene rather than one card.
  *
  * `Modal` is still the host: it owns the hardware back button and the status-bar
  * overlay, both of which a hand-rolled overlay would have to reimplement.
@@ -88,8 +100,20 @@ function SheetView({
   cancelLabel = 'Cancel',
   onDone,
   doneLabel = 'Done',
+  footer,
+  detents = 'auto',
+  dismissOnScrim = true,
 }: Props) {
   const styles = useStyles(makeStyles);
+  const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
+  // Always cap so a tall form cannot become a full-page sheet. `large` is the
+  // 90% Material expanded detent; `auto` wraps content and only uses the cap
+  // when the stack would otherwise overflow.
+  const sheetMaxHeight = windowHeight * (detents === 'large' ? 0.9 : 0.72);
+  // Gesture nav / 3-button bar: keep sticky CTAs above the system inset.
+  // Fixed `3xl` alone clipped the Leave button on ConfirmDialog (S22 Ultra).
+  const sheetBottomPad = Math.max(insets.bottom, TOKENS.space.md) + TOKENS.space.md;
   // Initialised OFF-SCREEN, not at rest. A shared value starting at 0 meant the
   // Modal's first painted frame showed the sheet at its resting position — for one
   // frame, mid-fade, so it read as a faint "ghost" of the sheet sitting in place
@@ -97,6 +121,7 @@ function SheetView({
   // means the first frame is already off-screen and only the spring brings it in.
   const y = useSharedValue(SHEET_ENTRY_OFFSET);
   const [height, setHeight] = useState<number | null>(null);
+  const openedAt = useRef(0);
 
   // Entry is driven here, by Reanimated, not by the Modal's own animation. The
   // Modal used `animationType="slide"`, which slides the WHOLE window up — and the
@@ -110,13 +135,24 @@ function SheetView({
   // is off-screen too — without this, a second open would flash the ghost again
   // because the value had settled at 0 from the previous open.
   useEffect(() => {
+    if (!visible) return;
+    setSheetBackdropBlur(true);
+    return () => setSheetBackdropBlur(false);
+  }, [visible]);
+
+  useEffect(() => {
     if (visible) {
+      openedAt.current = Date.now();
       y.value = SHEET_ENTRY_OFFSET;
       y.value = springTo(0, 'smooth');
     } else {
+      if (openedAt.current > 0) {
+        trackSheetClosed(testID ?? 'sheet', openedAt.current);
+        openedAt.current = 0;
+      }
       y.value = SHEET_ENTRY_OFFSET;
     }
-  }, [visible, y]);
+  }, [visible, y, testID]);
 
   const measure = useCallback((e: LayoutChangeEvent) => {
     setHeight(e.nativeEvent.layout.height);
@@ -192,13 +228,24 @@ function SheetView({
        */}
       <GestureHandlerRootView style={styles.host}>
         <Animated.View pointerEvents="none" style={[styles.scrim, scrimStyle]} />
-        <RNPressable style={styles.scrimFill} onPress={onClose} accessibilityLabel="Dismiss" />
+        <RNPressable
+          style={styles.scrimFill}
+          onPress={dismissOnScrim ? onClose : undefined}
+          accessibilityLabel="Dismiss"
+          accessibilityState={{ disabled: !dismissOnScrim }}
+        />
         <GestureDetector gesture={pan}>
-          <Animated.View testID={testID} onLayout={measure} style={[styles.sheet, sheetStyle]}>
-            {/* The grabber is not decoration once the sheet is draggable, it is
-                the only thing telling anyone the drag exists. 36x5 at radius 2.5,
-                which is UIKit's, sitting about 5pt from the top edge; it was 40x4
-                at radius 2 inset 14, which is Material's. */}
+          <Animated.View
+            testID={testID}
+            onLayout={measure}
+            style={[
+              styles.sheet,
+              sheetStyle,
+              { paddingBottom: sheetBottomPad },
+              { maxHeight: sheetMaxHeight },
+            ]}>
+            {/* M3 drag handle — 32–40×4dp pill, 48dp min touch via grabberRow padding.
+                https://m3.material.io/components/bottom-sheets/overview */}
             <View style={styles.grabberRow}>
               <View style={styles.grabber} />
             </View>
@@ -257,7 +304,10 @@ function SheetView({
                 {body}
               </Text>
             ) : null}
-            <View style={styles.actions}>{children}</View>
+            <View style={[styles.actions, styles.actionsScroll]}>{children}</View>
+            {footer !== undefined ? (
+              <View style={styles.footer}>{footer}</View>
+            ) : null}
           </Animated.View>
         </GestureDetector>
       </GestureHandlerRootView>
@@ -278,7 +328,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#000000',
+    backgroundColor: t.color.bg.inverse,
   },
   scrimFill: {
     position: 'absolute',
@@ -290,14 +340,13 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   sheet: {
     paddingTop: 5,
     paddingHorizontal: TOKENS.space.xl,
-    // Padded well past the home indicator: a sheet that can be dragged needs
-    // slack at the bottom, or the last button sits under the gesture area.
-    paddingBottom: TOKENS.space['3xl'],
-    gap: TOKENS.space.sm,
-    // `radius.sheet` is 10 now, which is UISheetPresentationController's default
-    // corner. It was 28, Material 3's specified bottom-sheet corner, and at that
-    // size the sheet read as a card floating rather than a surface rising, which
-    // is the same complaint that took it down from the 44dp screen radius before.
+    // Bottom pad applied at runtime from safe-area insets (see sheetBottomPad).
+    // 8dp between title block and the first control — Material layout spacing
+    // (dense related content), not a second `sm` padded onto actions.
+    // https://m3.material.io/foundations/layout/understanding-layout/spacing
+    gap: TOKENS.space.xs,
+    // M3 Paper: 28dp top corners per bottom-sheets spec.
+    // https://m3.material.io/components/bottom-sheets/overview
     borderTopLeftRadius: TOKENS.radius.sheet,
     borderTopRightRadius: TOKENS.radius.sheet,
     borderCurve: 'continuous',
@@ -309,11 +358,13 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   },
   grabberRow: {
     alignItems: 'center',
+    // 48dp min touch target for the drag affordance.
+    paddingVertical: (TOKENS.interaction.minTarget - 4) / 2,
   },
   grabber: {
     width: 36,
-    height: 5,
-    borderRadius: 2.5,
+    height: 4,
+    borderRadius: 2,
     backgroundColor: t.color.border.strong,
   },
   barRow: {
@@ -342,7 +393,19 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     color: t.color.text.secondary,
   },
   actions: {
-    paddingTop: TOKENS.space.sm,
+    // No extra top pad: sheet `gap` already separates title/body from children.
+    // The old `sm` here stacked with sheet gap and read as a void under "Payment".
+    paddingTop: 0,
     gap: TOKENS.space.sm,
+  },
+  actionsScroll: {
+    flexShrink: 1,
+    minHeight: 0,
+  },
+  footer: {
+    gap: TOKENS.space.sm,
+    paddingTop: TOKENS.space.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: t.color.border.hairline,
   },
 });

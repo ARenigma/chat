@@ -23,18 +23,23 @@ npm install
 npm run android
 ```
 
+`npm run android` uses React Native's `--active-arch-only` path: it selects the
+connected device/emulator, reports when none or several are available, and
+builds only that device's native ABI instead of four architectures.
+
 Backend, once per project:
 
 ```bash
-supabase db push           # applies migrations 001-004
-supabase config push       # enables anonymous sign-ins; the app dies at boot without it
+supabase db push           # applies migrations 001–037
+supabase config push       # applies auth config; anonymous sign-ins stay DISABLED
 ```
 
-**Google or Facebook is the only way in.** Both need OAuth credentials before
-anyone can sign in, see [ADR-0004](docs/adr/0004-identity-is-social-login.md)
-for why this is the third identity model and what it costs.
+**Google and Firebase phone OTP are the only sign-in options.** See
+[ADR-0004](docs/adr/0004-identity-is-social-login.md) and
+[ADR-0006](docs/adr/0006-phone-otp-costs-and-the-dlt-gate.md). Facebook was
+removed, not deferred.
 
-Redirect URI for both providers:
+Redirect URI for Google:
 `https://uvghvhcrovmuwivgijvl.supabase.co/auth/v1/callback`
 
 **Google client type is `Web application`, not `Android`**, despite this being an
@@ -47,11 +52,7 @@ and the form even demands a SHA-1 fingerprint, which makes it look correct.
 Then set the consent screen's **Audience** to Published, or add each tester
 explicitly, a new screen starts in Testing and refuses everyone else. No Google
 verification review is needed: Supabase requests only `openid`, `email` and
-`profile`, which are non-sensitive scopes. Facebook's App Review is the slow
-dependency, not Google's.
-
-Facebook additionally needs **App Review** before non-test users can sign in.
-Start it early; it is days, not hours.
+`profile`, which are non-sensitive scopes.
 
 **Create the OAuth client in `chat-d8c87`**, the project that already hosts App
 Distribution, not in an unrelated project. Google renders the consent screen's
@@ -84,8 +85,11 @@ blocked on owning a domain, not on a setting.
 - a **domain you own**, which is the shared prerequisite for all of the above
   _and_ for Google brand verification. One purchase unblocks three things.
 
-There are no Edge Functions and no server-side secrets to set. Sending is a
-single Postgres RPC, so there is nothing between the client and the database.
+Chat send is a single Postgres RPC. Nine Edge Functions sit beside it for
+auth exchange, push, SMS, invoices, and Cashfree (`exchange-firebase-token`,
+`send-push`, `send-call`, `send-sms`, `send-engagement`, `verify-phone`,
+`generate-invoice`, `cashfree-webhook`, `create-order`). Several hold
+server-side secrets.
 
 ---
 
@@ -105,12 +109,14 @@ single Postgres RPC, so there is nothing between the client and the database.
 | `npm run e2e:install`     | device journeys on a booted emulator (needs the CLIs below)               |
 | `npm run moderate`        | the moderation queue (needs the service role key)                         |
 | `npm run provider`        | reply as a provider, to test the two-sided path from a laptop             |
+| `npm run android`         | Debug build/install for the connected ABI only                            |
 | `npm run android:release` | Release APK: R8 + resource shrinking (needs JDK 17 + SDK 36 + NDK 27)     |
 | `npm run android:bundle`  | Release AAB for Play upload                                               |
 
-124 Jest tests. `npm run test:db` is the interesting one: it builds a
+The Jest suite covers client behavior and repository contracts. `npm run
+test:db` is the deeper server gate: it builds a
 pgTAP-enabled Postgres image, applies the real migration files against a minimal
-`auth` schema shim, then runs **196 pgTAP assertions** covering two-party RLS
+`auth` schema shim, then runs pgTAP assertions covering two-party RLS
 isolation, least-privilege grants, cascade deletion, message immutability, the
 directory boundary, blocking, reporting, suspension, rate limits, the
 append-only audit trail, PII-free telemetry, and that `deduct_user_token` agrees
@@ -131,16 +137,18 @@ src/
   api/                   auth, react-query hooks, the Realtime channel
   store/useStore.ts      ephemeral UI state only (zustand)
   components/            bubbles, composer, avatar, sheets, typing indicator
-  screens/               PhoneAuthScreen, InboxScreen (home), ProvidersScreen,
-                         ChatScreen, SafetySheet, ReviewSheet, RefillSheet,
-                         SettingsSheet, and the provider tree:
+  screens/               OnboardingScreen, AuthScreen, PhoneVerifySheet,
+                         HomeScreen, ChatsListScreen, ChatScreen,
+                         ProviderDetailScreen, SafetySheet, SettingsSheet,
+                         PolicyGateScreen, PaymentSheet, RechargeScreen,
+                         TransactionHistoryScreen, BlockedUsersScreen,
+                         CallScreen, CallsScreen (stub),
+                         MessageActionsSheet, FavouritesScreen,
                          ProviderApplicationScreen, ProviderStatusScreen,
                          ProviderHomeScreen
 supabase/
-  migrations/            001 schema + wallet, 002 grants + RPCs,
-                         003 roles + two-party conversations, 004 guards,
-                         005 blocking, reporting, suspension, telemetry,
-                         006 phone auth, provider onboarding, reviews
+  migrations/            001–037 (schema, wallet, sessions, admin config,
+                         Cashfree); see docs/ARCHITECTURE.md#database-migrations
   tests/                 pgTAP suite + auth shim, run by npm run test:db
 .maestro/                device journeys
 .gitlab-ci.yml           5 stages; see Pipeline below
@@ -163,29 +171,30 @@ role selects the navigation root.
 
 ## Identity and onboarding
 
-### Members: one tap, Google or Facebook
+### Members: Google or phone OTP
 
-No form at all, which recovers most of what the phone screen took away, the
-first frame is one tap from a session again.
+Google is one tap via Credential Manager. Firebase phone OTP is also live
+(`PHONE_AUTH_ENABLED=true`). Facebook was removed, not deferred
+([ADR-0006](docs/adr/0006-phone-otp-costs-and-the-dlt-gate.md) §4).
 
 This is the app's **third** identity model, and [ADR-0004](docs/adr/0004-identity-is-social-login.md)
-records all three with the trade-offs, because the churn is real:
+records the trade-offs, because the churn is real:
 
-| Model             | Onboarding | Accountability                    | Cost                       |
-| ----------------- | ---------- | --------------------------------- | -------------------------- |
-| Anonymous         | Perfect    | **None**, banned user back in 10s | Free                       |
-| Phone + OTP       | One form   | **Strongest** short of ID         | Per-SMS + DLT registration |
-| Google / Facebook | One tap    | **Middling**, free accounts       | Free                       |
+| Model       | Onboarding | Accountability                    | Cost                       |
+| ----------- | ---------- | --------------------------------- | -------------------------- |
+| Anonymous   | Perfect    | **None**, banned user back in 10s | Free (disabled)            |
+| Phone + OTP | One form   | **Strongest** short of ID         | Per-SMS + DLT registration |
+| Google      | One tap    | **Middling**, free accounts       | Free                       |
 
 Two costs worth knowing rather than discovering:
 
-- **Weaker accountability than phone.** Social accounts are free and unlimited,
+- **Weaker accountability than phone.** Google accounts are free and unlimited,
   so suspension and bans are friction rather than a wall. The controls that still
   bite are the ones not depending on scarce identity: rate limits, the evidence
   snapshot on a report (which survives the account), and per-pair blocking.
-- **A disclosure a phone number did not require.** Signing in tells Google or
-  Facebook that you use _this_ app. For an app about loneliness that is real, and
-  the auth screen says so rather than letting people find out later.
+- **A disclosure a phone number did not require.** Signing in tells Google that
+  you use _this_ app. For an app about loneliness that is real, and the auth
+  screen says so rather than letting people find out later.
 
 Instagram is not on the list because it cannot be: Meta shut the Instagram Basic
 Display API in December 2024 and Instagram sign-in now runs through Facebook
@@ -225,11 +234,11 @@ npm run moderate maintenance               # cron this: refunds + reply latencie
 
 ### Nobody pays for silence
 
-A member message the provider never answers is **refunded** after 24 hours
-(`refund_unanswered_messages()`, idempotent via `messages.refunded_at`). The
-directory also publishes a **median reply time**, so "does she actually reply" is
-answerable before spending anything, and the provider home screen tells providers
-plainly that replying is what earns.
+An unaccepted session request expires after 24 hours (ADR-0020). No charge
+accumulates until both participants have confirmed live leases. The directory
+still publishes a **median reply time**, so "does she actually reply" is
+answerable before spending anything, and the provider home screen tells
+providers plainly that replying is what earns.
 
 This is the one place the research changed the product rather than the UI: the
 most-upvoted negative review of the closest live competitor is about being billed
@@ -261,8 +270,8 @@ it wrote, and either can arrive first. So
 [`src/lib/transcript.ts`](src/lib/transcript.ts) is pure and order-independent:
 a row whose id is already present replaces it, a row from this session settles
 the oldest pending row with the same body, anything else is inserted at its
-sorted position. 24 unit tests cover the orderings, including two identical
-messages sent back to back.
+sorted position. Unit tests in `__tests__/transcript.test.ts` cover the
+orderings, including two identical messages sent back to back.
 
 The transcript is `inverted` and the typing indicator renders in
 `ListHeaderComponent`, so the `FlatList`'s `data` prop does not change when the
@@ -276,19 +285,22 @@ per turn; against a person, sending two messages in a row is normal conversation
 
 ## The token economy
 
-1 message = 1 token, paid by the member. A provider replying costs nothing.
+Billing is per-minute on active, bilateral sessions. 1 token ≈ ₹1 (stored as
+paise). A provider's time is what is sold; sending a message does not debit
+the wallet. See ADR-0019 and ADR-0020.
 
-- `send_message` debits and inserts in **one transaction**. The Edge Function it
-  replaced had to debit, call a model, then insert, three steps that could fail
-  apart, which is why it carried refund logic. There is now no refund path
-  because there is nothing to refund: a failed send never began a transaction.
-- The balance shown in the top bar comes from the RPC's own return value.
-- Below 3 tokens the badge gains a pill affordance. Nothing is thrown in front of
-  a conversation in progress: the sheet opens only when the user taps the badge,
-  or when a send is attempted with an empty wallet.
-- `claim_daily_tokens` grants 25 tokens at most once per 24 hours.
-- A token maps to revenue that must eventually be **split with a provider**. The
-  wallet is still a counter; making it money is Stripe Connect and not yet built.
+- `send_message` no longer debits tokens (migration 037). The session meter
+  runs server-side via `claim_session_lease`. The old Edge Function that
+  called a model is deleted (ADR-0001).
+- Promo balance spends first; purchased tokens never expire (migration 028).
+- The low-balance badge threshold is an admin-configurable knob
+  (`low_balance_threshold`, ADR-0023). Nothing is thrown in front of a
+  conversation in progress: Recharge opens when the user taps the badge, or
+  when a send is attempted with an empty wallet.
+- Daily refill is admin-configurable and **disabled by default** (ADR-0021).
+  When enabled, the amount is a runtime config knob, not a hardcoded 25.
+- Provider share is an admin-configurable integer percent (default 60).
+  Payouts are **Cashfree Payouts**, not Stripe Connect (ADR-0021).
 
 ### Security notes on the schema
 
@@ -364,7 +376,8 @@ of an adb backup.
 **Data deletion, and the one exception.** Settings → _Delete account & all data_
 calls `public.delete_user_account()`, which deletes the `auth.users` row. That
 cascades to `profiles`, then `conversations`, then `messages`, in one
-transaction. No soft delete. The app then starts a fresh anonymous session.
+transaction. No soft delete. The client then calls `signOut()` and returns
+to the auth screen. Anonymous sessions are not created.
 
 Migration 005 introduced a deliberate exception, and it is stated here rather
 than buried because it makes the previous paragraph less absolute than it was.
@@ -397,7 +410,7 @@ breadcrumb `data`, stack-frame locals, any key named like content), and the
 free-text that remains is stripped of emails, IPs, phone numbers and
 bearer/JWT credentials. `event.message` is redacted wholesale, the app never
 calls `captureMessage`, so anything appearing there came from an integration we
-did not write. 30 unit tests cover the scrubber.
+did not write. `__tests__/sentry.test.ts` covers the scrubber.
 
 ---
 
@@ -472,8 +485,9 @@ rota does not.
 document check (Persona, Veriff, Stripe Identity) is a launch requirement, not a
 nice-to-have, a constraint on a number someone typed is a floor, not proof.
 
-**Payouts.** Earnings are counted in tokens because that is true. Stripe Connect
-is unbuilt, so no money moves yet.
+**Payouts.** Cashfree Payouts is the chosen rail (ADR-0021). Provider payouts
+are not yet running pending TDS/legal sign-off, but the settlement model is
+Cashfree, not Stripe.
 
 ---
 
@@ -618,28 +632,29 @@ Three checks that only mean anything against a built artefact:
 
 [Maestro](https://maestro.mobile.dev), not Detox: Detox needs an `androidTest`
 source set, a second APK and a native runner wired into Gradle, and these flows
-only ever need the accessibility tree. The build under test stays byte-identical
-to the one that ships.
+only need the accessibility tree. The signed-in flows install a short-lived local
+Supabase session through a deep-link filter in `src/debug`; release manifests
+and non-debug JavaScript categorically exclude that test entry point.
 
 Maestro cannot cut the network, seed a wallet, admit a provider or read a
 database, and most of the journeys need exactly that, so
-[e2e.mjs](scripts/e2e.mjs) owns everything around the flows, including seeding an
-admitted provider in SQL (admission is service-role only by design, so a client
-cannot create one).
+[e2e.mjs](scripts/e2e.mjs) owns everything around the flows: an admitted provider,
+a real member auth session, current policy acceptance, capability permissions,
+wallet state, connectivity, and SQL assertions.
 
-| Journey               | What it actually proves                                                                       |
-| --------------------- | --------------------------------------------------------------------------------------------- |
-| `01-instant-launch`   | anonymous session and 50 tokens by the first frame; the directory loads; no permission dialog |
-| `02-send-and-persist` | composer to server-confirmed row with a receipt, surviving a relaunch                         |
-| `03-token-economy`    | the badge nudges under 3 tokens without a modal; the sheet only opens on request              |
-| `04-network-faults`   | radios off: failure surfaced, optimistic bubble withdrawn, and **no token moved** (SQL)       |
-| `05-offline-resume`   | sending works again with no restart, no pull-to-refresh, no manual retry                      |
-| `06-account-deletion` | the UI path, then a SQL assertion that no conversation and no message survived                |
+| Journey               | What it actually proves                                                                          |
+| --------------------- | ------------------------------------------------------------------------------------------------ |
+| `01-instant-launch`   | cold welcome reaches supported auth options; unsupported paths and early permissions stay absent |
+| `02-send-and-persist` | first message creates a pending bilateral chat request and survives a relaunch                   |
+| `03-token-economy`    | pending messages create no per-send debit; Recharge opens only on request                        |
+| `04-network-faults`   | radios off: failure surfaced, optimistic bubble withdrawn, and **no wallet movement** (SQL)      |
+| `05-offline-resume`   | sending works again with no restart, no pull-to-refresh, no manual retry                         |
+| `06-account-deletion` | the UI path, then a SQL assertion that no conversation and no message survived                   |
 
-**Known gap.** These prove the sender's half. Delivery, typing, presence and
-receipts need a second authenticated session driving the provider side, which a
-single device cannot do. Tracked as a follow-up rather than faked with a stub, a
-stub would prove nothing about Realtime.
+**Known gap.** These prove the sender's half and pending-session behavior.
+Acceptance, bilateral leases, delivery, typing, presence, receipts, and live
+per-minute metering need two authenticated devices. That gate is explicitly
+deferred; the database suite covers its server invariants in the meantime.
 
 ### release
 

@@ -5,8 +5,10 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.IBinder
+import androidx.core.content.ContextCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.Person
 import androidx.core.app.ServiceCompat
@@ -30,8 +32,44 @@ class CallForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // The channel must exist before anything is posted to it. On API 26+ a
+        // notification aimed at a channel that was never created is dropped, and
+        // for a foreground service that drop is fatal: the system throws
+        // RemoteServiceException$CannotPostForegroundServiceNotificationException
+        // ("Bad notification for startForeground") and kills the process with
+        // signal 9.
+        // https://developer.android.com/develop/ui/views/notifications/channels
+        //
+        // This used to rely on Conversations.notifyCall() having created the
+        // channel first, which only happens for an INCOMING call. Every outgoing
+        // call therefore killed the app the instant it started. Channel creation
+        // is idempotent, so the service that posts the notification is the right
+        // place to guarantee it.
+        Conversations.ensureCallChannel(this)
+        Conversations.ensureCallOngoingChannel(this)
+
         val callerName = intent?.getStringExtra(EXTRA_CALLER_NAME) ?: "Caller"
         val isIncoming = intent?.getBooleanExtra(EXTRA_IS_INCOMING, true) ?: true
+        val includeMicrophone =
+            intent?.getBooleanExtra(EXTRA_INCLUDE_MICROPHONE, false) == true &&
+                ContextCompat.checkSelfPermission(
+                    this,
+                    android.Manifest.permission.RECORD_AUDIO,
+                ) == PackageManager.PERMISSION_GRANTED
+        val includeCamera =
+            intent?.getBooleanExtra(EXTRA_INCLUDE_CAMERA, false) == true &&
+                ContextCompat.checkSelfPermission(
+                    this,
+                    android.Manifest.permission.CAMERA,
+                ) == PackageManager.PERMISSION_GRANTED
+
+        var serviceTypes = ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
+        if (includeMicrophone) {
+            serviceTypes = serviceTypes or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        }
+        if (includeCamera) {
+            serviceTypes = serviceTypes or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+        }
 
         // Must call startForeground within 5 s of startForegroundService().
         // ServiceCompat back-fills to two-arg form on pre-API-29 devices.
@@ -41,13 +79,17 @@ class CallForegroundService : Service() {
             this,
             CALL_NOTIFICATION_ID,
             buildIncomingNotification(this, callerName, isIncoming),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL or
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA,
+            serviceTypes,
         )
 
-        // Request audio focus after FGS is active (required on targetSdk 36 / API 35+)
-        audioFocusManager.requestCallFocus()
+        // Android 14+ verifies microphone/camera while-in-use permissions when
+        // each type is promoted. Add only types whose runtime permission is
+        // already granted; callers restart this service after media opens.
+        // https://developer.android.com/develop/background-work/services/fgs/launch
+        if (includeMicrophone) {
+            // Audio focus must follow FGS promotion on targetSdk 36 / API 35+.
+            audioFocusManager.requestCallFocus()
+        }
 
         return START_NOT_STICKY
     }
@@ -60,6 +102,8 @@ class CallForegroundService : Service() {
     companion object {
         const val EXTRA_CALLER_NAME = "caller_name"
         const val EXTRA_IS_INCOMING = "is_incoming"
+        const val EXTRA_INCLUDE_MICROPHONE = "include_microphone"
+        const val EXTRA_INCLUDE_CAMERA = "include_camera"
         const val CALL_NOTIFICATION_ID = 2001
 
         const val ACTION_ANSWER = "com.companionchat.ACTION_ANSWER_CALL"
@@ -71,12 +115,31 @@ class CallForegroundService : Service() {
         private const val REQUEST_HANGUP = 303
         private const val REQUEST_OPEN = 304
 
-        fun startIncoming(context: Context, callerName: String) {
+        /**
+         * @param isIncoming true only while the phone is ringing. It selects the
+         * CallStyle: forIncomingCall (Decline | Answer) vs forOngoingCall (Hang
+         * up). https://developer.android.com/develop/ui/views/notifications/call-style
+         *
+         * This was previously hardcoded to true, so placing a call showed the
+         * caller an "Incoming call — Decline / Answer" heads-up on top of their
+         * own outgoing call screen.
+         */
+        fun start(
+            context: Context,
+            callerName: String,
+            isIncoming: Boolean,
+            includeMicrophone: Boolean = false,
+            includeCamera: Boolean = false,
+        ) {
             val intent = Intent(context, CallForegroundService::class.java).apply {
                 putExtra(EXTRA_CALLER_NAME, callerName)
-                putExtra(EXTRA_IS_INCOMING, true)
+                putExtra(EXTRA_IS_INCOMING, isIncoming)
+                putExtra(EXTRA_INCLUDE_MICROPHONE, includeMicrophone)
+                putExtra(EXTRA_INCLUDE_CAMERA, includeCamera)
             }
-            context.startForegroundService(intent)
+            // Handles the API 26 startForegroundService boundary for minSdk 24.
+            // https://developer.android.com/develop/background-work/services/fgs/launch
+            ContextCompat.startForegroundService(context, intent)
         }
 
         fun stop(context: Context) {
@@ -132,7 +195,10 @@ class CallForegroundService : Service() {
                     Intent(ACTION_HANG_UP).setPackage(context.packageName),
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
                 )
-                NotificationCompat.Builder(context, Conversations.CALL_CHANNEL_ID)
+                // IMPORTANCE_LOW channel: a call already in progress is a status,
+                // not an interruption, so it must not heads-up over the call
+                // screen the user is already looking at.
+                NotificationCompat.Builder(context, Conversations.CALL_ONGOING_CHANNEL_ID)
                     .setSmallIcon(android.R.drawable.ic_menu_call)
                     .setContentIntent(contentIntent)
                     .setCategory(NotificationCompat.CATEGORY_CALL)

@@ -1,24 +1,40 @@
 import React, { memo } from 'react';
 import { Image, StyleSheet, View } from 'react-native';
+import { useTheme, useThemeMode } from '../theme/ThemeProvider';
 
 /**
- * The chat wallpaper: a faint seamless doodle tile.
+ * Chat wallpaper — denser doodle pattern, dulled like WhatsApp.
  *
- * Amit's call (wave-3 #19): a WhatsApp-style micro-illustration pattern, but
- * original — the asset at assets/wallpaper-tile.png is our own. resizeMode
- * 'repeat' tiles it across the full screen at native resolution (supported in
- * RN 0.86). One Image node replaces the ~800-node View/Text grid, eliminating
- * the jank spike that competed with SlideInRight's first frame.
+ * Density is baked into the JPG (the doodle sheet is tiled at ~48% scale into
+ * a phone-sized canvas with a wash). Runtime is a single `cover` Image — the
+ * same path that worked before — because RN Android `resizeMode="repeat"` was
+ * stretching one tile and looking broken.
  *
- * Non-interactive and behind everything; the bubbles remain the reading surface.
+ * A faint blush wash (`bg.accentTint`, the secondary/blush surface) sits over
+ * the doodles so the whole transcript carries the same pink hue as the rest of
+ * the product rather than reading neutral-grey — user 2026-08-31, "only change
+ * the hue a little". Kept low so the doodles still read; the exact opacity is a
+ * device-tuned value.
+ *
+ * Non-interactive and behind everything.
  */
+const WASH_OPACITY = 0.2;
+
 function ChatWallpaperView() {
+  const { isDark } = useThemeMode();
+  const theme = useTheme();
+  const source = isDark
+    ? require('../../assets/chat-wallpaper-dark.jpg')
+    : require('../../assets/chat-wallpaper-light.jpg');
+
   return (
     <View pointerEvents="none" style={styles.host}>
-      <Image
-        source={require('../../assets/wallpaper-tile.png')}
-        resizeMode="repeat"
-        style={styles.wallpaper}
+      <Image source={source} resizeMode="cover" style={styles.wallpaper} />
+      <View
+        style={[
+          styles.wash,
+          { backgroundColor: theme.color.bg.accentTint, opacity: WASH_OPACITY },
+        ]}
       />
     </View>
   );
@@ -35,7 +51,9 @@ const styles = StyleSheet.create({
     bottom: 0,
   },
   wallpaper: {
-    flex: 1,
-    opacity: 0.05,
+    ...StyleSheet.absoluteFill,
+  },
+  wash: {
+    ...StyleSheet.absoluteFill,
   },
 });

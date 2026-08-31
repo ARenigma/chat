@@ -14,6 +14,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { ENV } from '../lib/env';
 import type {
   Gender,
   MyApplication,
@@ -204,6 +205,72 @@ export function useEarnings() {
       return data.length > 0 ? (data[0] as ProviderEarnings) : null;
     },
     staleTime: 60_000,
+  });
+}
+
+/**
+ * Upload a directory photo. Public `avatars` bucket; path `{uid}/{uuid}.jpg`.
+ * Uses the same FormData uri branch as chat attachments (RN FormData has no
+ * `has()`), then writes the public URL onto `profiles.avatar_url`.
+ */
+export function useUploadAvatar() {
+  const queryClient = useQueryClient();
+  const setNotice = useStore(s => s.setNotice);
+
+  return useMutation<void, Error, { uri: string; mime?: string }>({
+    mutationFn: async ({ uri, mime = 'image/jpeg' }) => {
+      const { data: auth } = await supabase.auth.getUser();
+      const me = auth.user?.id;
+      const session = (await supabase.auth.getSession()).data.session;
+      if (me === undefined || session?.access_token === undefined) {
+        throw new Error('No session');
+      }
+
+      const ext = mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : 'jpg';
+      const path = `${me}/${Date.now()}.${ext}`;
+      const form = new FormData();
+      form.append('cacheControl', '3600');
+      form.append('', {
+        uri: uri.startsWith('file://') || uri.startsWith('content://') ? uri : `file://${uri}`,
+        name: `avatar.${ext}`,
+        type: mime,
+      } as unknown as Blob);
+
+      const response = await fetch(
+        `${ENV.supabaseUrl}/storage/v1/object/avatars/${path}`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            apikey: ENV.supabaseAnonKey,
+            'x-upsert': 'true',
+          },
+          body: form,
+        },
+      );
+      if (!response.ok) {
+        throw new Error('UPLOAD');
+      }
+
+      const publicUrl = `${ENV.supabaseUrl}/storage/v1/object/public/avatars/${path}`;
+      const { error } = await supabase
+        .from('profiles')
+        .update({ avatar_url: publicUrl })
+        .eq('id', me);
+      if (error) {
+        throw new Error(error.message);
+      }
+    },
+    onSuccess: () => {
+      tick();
+      setNotice('Photo updated. Members will see it in the directory.', 'confirm');
+      void queryClient.invalidateQueries({ queryKey: keys.profile });
+      void queryClient.invalidateQueries({ queryKey: keys.providers });
+    },
+    onError: () => {
+      errorTick();
+      setNotice('Could not update your photo. Try again.');
+    },
   });
 }
 

@@ -129,3 +129,7 @@ keys-backup/
 
 # Local Claude Code tooling (skills, local settings) — not app code
 .claude/
+
+# Local Play Console drop folder binaries (keep copy/text; skip AAB)
+play-upload/05-release/*.aab
+play-upload/03-phone-screenshots/screenshot-fresh-chat-debug.png

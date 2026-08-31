@@ -98,7 +98,7 @@ export function highlightedAt(tick: number, count: number): number {
  * side of the line. Putting these three constants in the component and importing
  * them from a test takes the entire suite down.
  */
-export const ROW_HEIGHT = 56;
+export const ROW_HEIGHT = 80;
 export const COLUMN_HEIGHT = ROW_HEIGHT * 3;
 
 /**

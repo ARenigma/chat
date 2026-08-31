@@ -138,7 +138,7 @@ const makeStyles = (t: Theme) =>
     policyLink: {
       fontSize: 13,
       color: t.color.text.accent,
-      fontFamily: 'Geist-Medium',
+      fontFamily: 'Geist-Regular',
     },
     footer: {
       paddingHorizontal: TOKENS.space.lg,

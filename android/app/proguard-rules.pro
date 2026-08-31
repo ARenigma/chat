@@ -1,51 +1,22 @@
 # R8 rules for the release build.
 #
-# React Native, Hermes, Reanimated, Worklets, Sentry and AsyncStorage all ship
-# consumer ProGuard rules inside their AARs, so nothing needs restating here.
-# The two rules below cover the app's own surface.
-
-# Reflection entry points for the New Architecture's module/component registry.
--keep class com.companionchat.** { *; }
+# App and Google SDK classes are intentionally not retained package-wide. Pappal
+# registers its ReactPackage classes directly, while React Native, Firebase, Play
+# Services, Credential Manager, Hermes, Reanimated, Worklets and Sentry ship the
+# consumer rules for their own indirect entry points. Android's guidance is to
+# keep rules at the reflection/JNI boundary, not around entire dependency trees.
+# https://developer.android.com/topic/performance/app-optimization/keep-rules-best-practices
 
 # Keep line numbers so a minified stack trace can still be symbolicated in
 # Sentry, but drop the source file name from the binary.
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
 
-# JNI: any class with native methods must not be renamed, or the native symbol
-# lookup fails at runtime. Broad on purpose — this is the one rule whose absence
-# is a silent crash.
--keepclasseswithmembernames class * {
-    native <methods>;
-}
-
 # react-native-webrtc / libjingle_peerconnection: the Java bindings are called
 # from native and via reflection (observers, SDP callbacks), so R8 cannot see the
 # references and would strip them. WebRTC ships no consumer rules of its own.
 -keep class org.webrtc.** { *; }
 -keep class com.oney.WebRTCModule.** { *; }
--dontwarn org.webrtc.**
-
-# Firebase / Play Services (messaging): reflection-heavy; keep and silence.
--keep class com.google.firebase.** { *; }
--keep class com.google.android.gms.** { *; }
--dontwarn com.google.firebase.**
--dontwarn com.google.android.gms.**
-
-# Google Sign-In via Credential Manager (androidx.credentials + googleid). The
-# result/option types (GetGoogleIdOption, GoogleIdTokenCredential) are read
-# reflectively and have no app-level keep otherwise; belt-and-braces over the
-# libraries' own consumer rules.
--keep class com.google.android.libraries.identity.googleid.** { *; }
--keep class androidx.credentials.** { *; }
--dontwarn com.google.android.libraries.identity.googleid.**
--dontwarn androidx.credentials.**
-
-# play-services-auth emits "Invalid stack map table" R8 warnings from its auth
-# subpackage. com.google.android.gms.** above already covers it, but naming the
-# subpackage explicitly means the warning cannot resurface on a version bump.
--dontwarn com.google.android.gms.auth.**
--keep class com.google.android.gms.auth.api.** { *; }
 
 # react-native-mmkv v4 and react-native-nitro-modules ship no consumer rules;
 # MMKV's HybridObject subclasses are otherwise kept only transitively via

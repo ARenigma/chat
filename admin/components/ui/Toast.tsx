@@ -1,94 +1,42 @@
 'use client';
 
-import { createContext, useCallback, useContext, useRef, useState } from 'react';
-import { AnimatePresence, motion, MotionConfig } from 'motion/react';
+// Sonner-backed toast system.
+// Components use the `useToast` hook to imperatively fire toasts.
+// The Toaster is mounted in app/layout.tsx via providers.tsx.
 
-/* ─── Types ──────────────────────────────────────────────────────────── */
-export type ToastVariant = 'success' | 'error' | 'info';
+export { Toaster } from '@/components/ui/sonner';
+import { toast as sonnerToast } from 'sonner';
 
-interface ToastItem {
-  id: string;
-  message: string;
-  variant: ToastVariant;
+export type ToastType = 'success' | 'error' | 'info';
+
+export interface ToastOptions {
+  type?: ToastType;
+  description?: string;
+  duration?: number;
+  action?: { label: string; onClick: () => void };
 }
 
-interface ToastAPI {
-  success: (message: string) => void;
-  error: (message: string) => void;
-  info: (message: string) => void;
-}
-
-/* ─── Context ────────────────────────────────────────────────────────── */
-const ToastContext = createContext<ToastAPI>({
-  success: () => undefined,
-  error: () => undefined,
-  info: () => undefined,
-});
-
-export function useToast() {
-  return useContext(ToastContext);
-}
-
-/* ─── Icons ──────────────────────────────────────────────────────────── */
-const ICONS: Record<ToastVariant, string> = {
-  success: '✓',
-  error: '✕',
-  info: 'ℹ',
-};
-
-/* ─── Provider ───────────────────────────────────────────────────────── */
-export function ToastProvider({ children }: { children: React.ReactNode }) {
-  const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const counterRef = useRef(0);
-
-  const dismiss = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, []);
-
-  const add = useCallback((message: string, variant: ToastVariant) => {
-    const id = `t${++counterRef.current}`;
-    setToasts((prev) => [...prev.slice(-4), { id, message, variant }]);
-    setTimeout(() => dismiss(id), variant === 'error' ? 6000 : 4000);
-  }, [dismiss]);
-
-  const api: ToastAPI = {
-    success: (m) => add(m, 'success'),
-    error: (m) => add(m, 'error'),
-    info: (m) => add(m, 'info'),
+function useToast() {
+  return {
+    success: (message: string, opts?: Omit<ToastOptions, 'type'>) =>
+      sonnerToast.success(message, {
+        description: opts?.description,
+        duration: opts?.duration,
+        action: opts?.action ? { label: opts.action.label, onClick: opts.action.onClick } : undefined,
+      }),
+    error: (message: string, opts?: Omit<ToastOptions, 'type'>) =>
+      sonnerToast.error(message, {
+        description: opts?.description,
+        duration: opts?.duration,
+        action: opts?.action ? { label: opts.action.label, onClick: opts.action.onClick } : undefined,
+      }),
+    info: (message: string, opts?: Omit<ToastOptions, 'type'>) =>
+      sonnerToast(message, {
+        description: opts?.description,
+        duration: opts?.duration,
+      }),
+    toast: sonnerToast,
   };
-
-  return (
-    <ToastContext.Provider value={api}>
-      {children}
-      <MotionConfig reducedMotion="user">
-        <div className="toast-stack" aria-live="polite" aria-atomic="false">
-          <AnimatePresence mode="popLayout">
-            {toasts.map((t) => (
-              <motion.div
-                key={t.id}
-                className={`toast toast--${t.variant}`}
-                initial={{ opacity: 0, y: 16, scale: 0.96 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.92, transition: { duration: 0.12 } }}
-                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-                layout
-              >
-                <span className="toast-icon" aria-hidden="true">
-                  {ICONS[t.variant]}
-                </span>
-                <span className="toast-message">{t.message}</span>
-                <button
-                  className="toast-close"
-                  aria-label="Dismiss"
-                  onClick={() => dismiss(t.id)}
-                >
-                  ✕
-                </button>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        </div>
-      </MotionConfig>
-    </ToastContext.Provider>
-  );
 }
+
+export { useToast };

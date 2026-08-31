@@ -1,52 +1,48 @@
-# CUJ 3 — the token economy is visible and honest.
-# Drains the wallet to the low-balance threshold, checks the badge flips to a
-# nudge without interrupting the conversation, then opens and dismisses Recharge.
-#
-# A member pays on send, not on reply, so this journey needs nobody on the other
-# end — which is why it survived the pivot unchanged in spirit.
+# CUJ 3 — the paid-session economy is visible and honest.
+# The harness seeds a low wallet. A message sent while the bilateral request is
+# pending must not debit it; Recharge remains available without interrupting chat.
 appId: com.companionchat
-name: Low balance nudges, never blocks
+name: Pending chat does not create a per-message debit
 ---
-- launchApp
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible: 'Ada'
+    timeout: 20000
 - tapOn: 'Ada'
+- tapOn:
+    id: 'action-chat'
 
-# The seed balance is set to 3 by scripts/e2e.mjs before this flow, so two sends
-# cross the threshold without needing 48 round trips. The balance is money now
-# (ADR-0019), so the pill reads ₹3, not "3 left".
+# The seed balance is set to 3 by scripts/e2e.mjs.
 - assertVisible:
     id: 'token-badge'
+- assertVisible:
+    id: 'token-count'
 - assertVisible: '3'
 
-- repeat:
-    times: 2
-    commands:
-      - tapOn:
-          id: 'composer-input'
-      - inputText: 'Still here.'
-      - tapOn:
-          id: 'composer-send'
-      - extendedWaitUntil:
-          visible:
-            id: 'read-receipt'
-          timeout: 20000
+- tapOn:
+    id: 'composer-input'
+- inputText: 'Still here.'
+- tapOn:
+    id: 'composer-send'
+- extendedWaitUntil:
+    visible: 'Still here.'
+    timeout: 20000
 
-# Low balance turns the badge coral. It is a nudge in place, not a modal: the
-# sheet must not have opened by itself.
-- assertVisible: '1'
+# ADR-0020: pending messages do not decrement the authoritative wallet.
+- assertVisible:
+    id: 'token-count'
+- assertVisible: '3'
 - assertNotVisible:
     id: 'refill-sheet'
 
 - tapOn:
     id: 'token-badge'
 - assertVisible:
-    id: 'refill-sheet'
-# Closing Recharge is the back button, not a claim: the daily check-in that used
-# to live here is gone (a paid marketplace hands out no free credit). This also
-# guards the back button itself, which a mis-centred title once covered and left
-# unable to close the screen.
+    id: 'recharge-wallet'
 - tapOn:
-    id: 'recharge-back'
+    id: 'recharge-wallet-back'
 - assertNotVisible:
-    id: 'refill-sheet'
+    id: 'recharge-wallet'
 
 - takeScreenshot: artifacts/03-tokens

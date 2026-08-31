@@ -36,6 +36,8 @@ export const LIGHT = {
       accentTint: '#FBE4DE',
       positive: '#DCE8E3',
       token: '#F2EFC0',
+      tokenHealthy: '#0B5F36',
+      tokenCritical: '#B3261E',
     },
     text: {
       primary: '#1C1C1E',
@@ -46,6 +48,7 @@ export const LIGHT = {
       onInverse: '#FFFFFF',
       positive: '#1F4A3F',
       token: '#4A4708',
+      onTokenStrong: '#FFFFFF',
     },
     border: {
       hairline: '#C6C6C8',
@@ -90,7 +93,7 @@ export const LIGHT = {
     alert: 14,
     bubble: 22,
     thread: 24,
-    sheet: 10,
+    sheet: 28,
   },
   motion: {
     spring: {
@@ -323,20 +326,22 @@ export const LIGHT = {
 export const DARK = {
   color: {
     bg: {
-      base: '#000000',
-      raised: '#1C1C1E',
-      sunken: '#2C2C2E',
-      hover: '#3A3A3C',
-      grouped: '#000000',
-      chrome: 'rgba(0,0,0,0.80)',
-      pressed: '#48484A',
-      selected: '#3A3A3C',
+      base: '#121212',
+      raised: '#1E1E1E',
+      sunken: '#262626',
+      hover: '#333333',
+      grouped: '#121212',
+      chrome: 'rgba(18,18,18,0.82)',
+      pressed: '#383838',
+      selected: '#2E2E2E',
       inverse: '#F2F2F7',
       accent: '#F2543D',
       accentStrong: '#F2836B',
       accentTint: '#3A1A12',
       positive: '#16302A',
       token: '#3A3705',
+      tokenHealthy: '#0E7A45',
+      tokenCritical: '#8C1D18',
     },
     text: {
       primary: '#F5F5F7',
@@ -347,6 +352,7 @@ export const DARK = {
       onInverse: '#1C1C1E',
       positive: '#A8D8C8',
       token: '#E4E26A',
+      onTokenStrong: '#FFFFFF',
     },
     border: {
       hairline: '#38383A',
@@ -391,7 +397,7 @@ export const DARK = {
     alert: 14,
     bubble: 22,
     thread: 24,
-    sheet: 10,
+    sheet: 28,
   },
   motion: {
     spring: {

@@ -45,6 +45,7 @@ update public.profiles p set
   gender = 'female',
   date_of_birth = (current_date - (v.age || ' years')::interval)::date,
   headline = v.headline,
+  about = v.about,
   languages = v.languages,
   is_available = v.available,
   -- Set alongside `is_available` rather than derived from it, because 012 split
@@ -56,14 +57,22 @@ update public.profiles p set
   identity_verified_at = now()
 from (values
   ('11111111-1111-4111-8111-111111111111'::uuid, 'Mira', 31,
-   'No advice unless you ask for it', array['English'], true),
+   'No advice unless you ask for it',
+   'I sit with whatever you bring and I do not rush you toward a conclusion. Most people already know what they think; they need a quiet hour where nobody is scoring them. Ask for advice if you want it. Otherwise I just stay with you.',
+   array['English'], true),
   ('22222222-2222-4222-8222-222222222222'::uuid, 'Sara', 26,
-   'Good at 2am conversations', array['English', 'Hindi'], true),
+   'Good at 2am conversations',
+   'Late nights are when the real sentences come out. I am used to that hour: the half-formed worry, the thing you cannot say at dinner. We can ramble, we can sit in silence, we can start again. I will still be here after nine.',
+   array['English', 'Hindi'], true),
   ('33333333-3333-4333-8333-333333333333'::uuid, 'Nia', 34,
-   'I will just listen if that helps', array['English', 'Marathi'], false),
+   'I will just listen if that helps',
+   'Some days you do not want a plan. You want someone who will not fill the gaps. I listen first and I stay there unless you ask me to step in. If all you need is a witness for twenty minutes, that is enough work for me.',
+   array['English', 'Marathi'], false),
   ('44444444-4444-4444-8444-444444444444'::uuid, 'Ivy', 29,
-   'Tell me about your week', array['English', 'Tamil'], true)
-) as v(id, name, age, headline, languages, available)
+   'Tell me about your week',
+   'Tell me the ordinary parts. The commute, the message you did not send, the week that felt longer than it was. I like the small facts; they are usually where the feeling is hiding. We can go slow. Nothing here has to be impressive.',
+   array['English', 'Tamil'], true)
+) as v(id, name, age, headline, about, languages, available)
 where p.id = v.id;
 
 -- Profile photos, seeded from the public `avatars` storage bucket (013). Distinct

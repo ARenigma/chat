@@ -2,18 +2,17 @@
 # Connectivity is cut by scripts/e2e.mjs (adb svc wifi/data disable) immediately
 # before this flow runs.
 #
-# The invariant changed with the pivot, and in our favour. The Edge Function had
-# to debit, call a model, then insert — three steps that could fail apart, so an
-# offline send needed a *refund*. `send_message` debits and inserts in one
-# transaction, so an unreachable server means the transaction never began and
-# there is nothing to refund. What must hold now is stricter: the failure is
-# surfaced, the optimistic bubble is withdrawn, and not one token moved.
+# The session ledger is server-authoritative. An unreachable server means no
+# message or billing transaction can begin. The failure must be surfaced and the
+# optimistic bubble withdrawn; scripts/e2e.mjs checks the wallet remains equal.
 # scripts/e2e.mjs asserts the balance in SQL afterwards.
 appId: com.companionchat
 name: Offline send fails cleanly and spends nothing
 ---
 - launchApp
 - tapOn: 'Ada'
+- tapOn:
+    id: 'action-chat'
 
 - tapOn:
     id: 'composer-input'

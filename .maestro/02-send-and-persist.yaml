@@ -1,18 +1,24 @@
-# CUJ 2 — a message is sent, confirmed, and survives a relaunch.
+# CUJ 2 — a session request is sent and survives a relaunch.
 #
 # This replaces the streamed-reply journey. There is no model to answer, and a
 # single device cannot play both sides, so what is provable here is the half that
-# belongs to the sender: the optimistic bubble is confirmed by the server rather
-# than left pending, a token is spent, and the row is durable.
+# belongs to the sender: the optimistic bubble is confirmed by the server, the
+# bilateral chat request remains pending, and no per-message charge is implied.
 #
 # The other half — delivery, typing, presence, receipts — needs a second
 # authenticated session driving the provider side. Tracked as a follow-up rather
 # than faked with a stub, because a stub would prove nothing about Realtime.
 appId: com.companionchat
-name: Send is confirmed by the server and persists
+name: Chat request is confirmed and persists
 ---
-- launchApp
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible: 'Ada'
+    timeout: 20000
 - tapOn: 'Ada'
+- tapOn:
+    id: 'action-chat'
 
 - assertVisible:
     id: 'composer-input'
@@ -22,21 +28,22 @@ name: Send is confirmed by the server and persists
 - tapOn:
     id: 'composer-send'
 
-# Our own turn, and the receipt that proves the RPC came back rather than the
-# bubble sitting optimistically forever.
+# Our own turn and the pending bilateral-session state.
 - extendedWaitUntil:
     visible:
       id: 'bubble-mine'
     timeout: 20000
-- extendedWaitUntil:
-    visible:
-      id: 'read-receipt'
-    timeout: 20000
-- assertVisible: 'Sent'
+# Await banner removed: first-send flow no longer shows a status chip above the composer.
 
 # Durability: the transcript is Postgres, not local state.
 - launchApp:
     stopApp: true
+- extendedWaitUntil:
+    visible: 'Ada'
+    timeout: 20000
+- tapOn: 'Ada'
+- tapOn:
+    id: 'action-chat'
 - extendedWaitUntil:
     visible: 'Long day. Mind if I talk at you for a bit?'
     timeout: 20000

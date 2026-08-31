@@ -25,15 +25,19 @@ function DayDividerView({ iso }: { iso: string }) {
   const { label, date } = dividerParts(iso);
   return (
     <View style={styles.host}>
-      {/* A centred date pill (Sweprek): a soft rounded chip rather than bare
-          text, so the day-break reads as a deliberate marker floating over the
-          wallpaper instead of a stray line. */}
+      {/* Sweprek layout: a centred white pill flanked by hairline rules that run
+          to the edges, so the day-break reads as a deliberate marker. The rules
+          are `border.hairline`, NOT coral — the reference tints them pink but our
+          palette reserves hue for meaning (coral = act), so chrome stays neutral
+          (user 2026-08-31, "neutral white"). */}
+      <View style={styles.rule} />
       <View style={styles.pill}>
         <Text allowFontScaling style={styles.day}>
           {label}
           {date ? <Text style={styles.date}>, {date}</Text> : null}
         </Text>
       </View>
+      <View style={styles.rule} />
     </View>
   );
 }
@@ -42,15 +46,24 @@ export const DayDivider = memo(DayDividerView);
 
 const makeStyles = (t: Theme) => StyleSheet.create({
   host: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: TOKENS.space.sm,
     paddingVertical: TOKENS.space.md,
+    paddingHorizontal: TOKENS.space.lg,
+  },
+  rule: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: t.color.border.hairline,
   },
   pill: {
     paddingHorizontal: TOKENS.space.sm,
     paddingVertical: TOKENS.space['2xs'],
     borderRadius: TOKENS.radius.pill,
     borderCurve: 'continuous',
-    backgroundColor: t.color.bg.grouped,
+    // Neutral white marker (bg.raised), not the grouped grey, per the reference.
+    backgroundColor: t.color.bg.raised,
   },
   day: {
     ...TOKENS.typography.labelSmall,

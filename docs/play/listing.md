@@ -52,8 +52,8 @@ HOW IT WORKS
 Open the app and see who is free right now. Start a conversation. Say as much or
 as little as you want. Every message is private to the two of you.
 
-You begin with 50 tokens and receive 25 more free every day. One token sends one
-message. There is nothing to buy.
+Recharge your balance to talk — chat runs at ₹22 per minute, voice and video at
+₹22–35 per minute. You pay for what you use, nothing more.
 
 WHAT THIS IS NOT
 
@@ -165,7 +165,7 @@ required to use the app: every conversation works with text alone.
 
 - Data is encrypted in transit, yes (HTTPS/TLS to Supabase and FCM).
 - Users can request data deletion, **yes**, and it is in the app, not by email:
-  `https://chat-git-main-arenigmas-projects.vercel.app/delete.html` is the required URL.
+  `https://bond-app.vercel.app/delete.html` is the required URL.
 - Committed to the Play Families policy, not applicable (18+, see §5).
 - Independent security review, no.
 
@@ -209,25 +209,28 @@ not become a health claim.
 
 ## 6. Monetisation, deliberately absent from 1.0.0
 
-There is no purchase path in the app. Tokens come from a 50-token starting
-balance and a 25-token daily refill (`src/lib/tokenLedger.ts`), both free.
+There is no in-app purchase path in 1.0.0. The real payment rail (Cashfree,
+pending KYC and GSTIN configuration) is code-complete but gated behind
+`PAYMENTS_ENABLED=false`. Starting balance and daily refill are admin-configurable
+and are **off by default** (ADR-0021); no free tokens are granted unless an admin
+promo is published.
 
 This is not an omission. It means the first submission declares no in-app
 purchases, no financial data, and no payment-policy question, which is the
 narrowest possible surface for a first review of an app in a category reviewers
-scrutinise. Payments (Cashfree, pending KYC) land in a later release, and Play's
-real-world-services exemption question gets answered then, on its own, rather
-than tangled up with the initial approval.
+scrutinise. Payments land in a later release, and Play's real-world-services
+exemption question gets answered then, on its own, rather than tangled up with
+the initial approval.
 
 ---
 
 ## 7. Required URLs
 
-| Field          | Value                                                              |
-| -------------- | ------------------------------------------------------------------ |
-| Privacy policy | `https://chat-git-main-arenigmas-projects.vercel.app/privacy.html` |
-| Data deletion  | `https://chat-git-main-arenigmas-projects.vercel.app/delete.html`  |
-| Support email  | `testrelay97@gmail.com`                                            |
+| Field          | Value                                      |
+| -------------- | ------------------------------------------ |
+| Privacy policy | `https://bond-app.vercel.app/privacy.html` |
+| Data deletion  | `https://bond-app.vercel.app/delete.html`  |
+| Support email  | `testrelay97@gmail.com`                    |
 
 Swap the host for the custom domain when it exists, the paths do not change.
 Play lets you edit these after submission, so a `.vercel.app` host is fine for

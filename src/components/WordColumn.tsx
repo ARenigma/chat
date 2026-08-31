@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useState } from 'react';
+import React, { memo, useEffect, useLayoutEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
@@ -7,8 +7,6 @@ import Animated, {
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
-  withRepeat,
-  withSequence,
   withTiming,
 } from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
@@ -17,7 +15,6 @@ import { Icon, type IconName } from './Icon';
 import {
   CAROUSEL_ENTER_OFFSET,
   CAROUSEL_SLIDE_MS,
-  CAROUSEL_SNAP_MS,
   COLUMN_HEIGHT,
   COLUMN_OFFSET,
   DIM_OPACITY,
@@ -26,21 +23,10 @@ import {
   ROW_HEIGHT,
   windowAt,
 } from '../lib/carouselWindow';
+import { SOURCE_METRICS } from '../lib/onboarding';
 
-/**
- * Deliberately NOT the source's `maxHeight: 38`.
- *
- * The source's marks are full-colour illustrations, which hold their weight at
- * 38pt. This app's icons are hand-drawn line geometry built for the 20-28pt tab
- * bar, and their stroke weight does not scale with the box: at 38 the `phone`
- * arc reads as a stray curve and `bubble` reads as an empty rectangle, which is
- * what the first build on device showed. 28 is the top of the range they were
- * actually drawn for, and against a 40pt word it is the right proportion.
- *
- * Matching the reference's number here would mean matching it in the one place
- * our materials differ from theirs.
- */
-const GLYPH = 20;
+/** Measured source departure lives with the rest of the translated metrics. */
+const GLYPH = SOURCE_METRICS.carouselGlyph;
 
 /**
  * A word and the mark that rides with it.
@@ -99,25 +85,24 @@ interface Props {
  * forever is exactly what somebody who asked the OS for less movement asked to
  * be rid of, so the column holds one word.
  *
- * **Slide is UI-thread-driven.** A `withRepeat` shared value owns the vertical
- * translate so the slide never depends on the JS-thread `setInterval` callback.
- * Under JS pressure (e.g. a Google OAuth hand-off) the slide continues
- * uninterrupted on the UI thread. A lightweight JS timer still fires every
- * `DWELL_MS` to advance the word index and re-key the glyph, which is cheap
- * work and cannot stall the visual slide even if it is delayed.
+ * **Snap and word advance are one paint.** The stack must sit at
+ * `CAROUSEL_ENTER_OFFSET` with the NEW window before the first frame of that
+ * tick is shown, then slide to zero. A free-running `withRepeat` slide plus a
+ * separate `setInterval` for the tick drifts: the new highlight paints in the
+ * settled focus slot (a static ghost) before the slide carries that same word
+ * into focus. `useLayoutEffect` on the tick snaps then slides so the pre-advance
+ * picture is pixel-identical to the prior settle — the whole effect.
  */
 function WordColumnView({ words, testID }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const reduced = useReducedMotion();
   const [tick, setTick] = useState(0);
+  const shift = useSharedValue(0);
 
   /*
-   * Lightweight JS timer: advances the word index once per dwell.
-   * This is the ONLY JS-thread involvement in the cycle. The slide itself
-   * runs on the UI thread independently (see shift below), so a delayed
-   * callback here only affects which words are shown, not whether the slide
-   * looks smooth.
+   * Advance the window once per dwell. The visual snap+slide for that tick is
+   * owned by the layout effect below so content and translate commit together.
    */
   useEffect(() => {
     if (reduced || words.length < 2) {
@@ -127,51 +112,34 @@ function WordColumnView({ words, testID }: Props) {
     return () => clearInterval(id);
   }, [reduced, words.length]);
 
-  /*
-   * UI-thread continuous slide loop.
-   *
-   * A single `withRepeat(withSequence(...))` drives the vertical translate
-   * entirely on the UI thread — no React re-render is involved in the motion.
-   * Each lap:
-   *   1. Snap to CAROUSEL_ENTER_OFFSET (instant, 0 ms) — pre-positions the
-   *      stack one row above where the eye sees it, pixel-identical to the
-   *      settled state before any advance.
-   *   2. Slide to 0 over CAROUSEL_SLIDE_MS — the visible movement.
-   *   3. Dwell at 0 for the remaining time until the next lap.
-   * One lap total = CAROUSEL_SLIDE_MS + (DWELL_MS − CAROUSEL_SLIDE_MS) = DWELL_MS,
-   * keeping the slide in step with the JS word-index timer.
-   *
-   * `ReduceMotion.Never` is intentional and matches the pattern in
-   * `carouselLoop()` in motion.ts: the reduce-motion gate is the `if (reduced)`
-   * guard above this effect, not a flag inside the animation. Passing
-   * `ReduceMotion.System` to a `withRepeat` that drives a
-   * `withTiming(0, {duration: 0})` final step would spin at frame rate forever
-   * doing nothing instead of stopping.
-   */
-  const shift = useSharedValue(0);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (reduced || words.length < 2) {
+      cancelAnimation(shift);
       shift.value = 0;
       return;
     }
-    shift.value = withRepeat(
-      withSequence(
-        // 1. Instant snap to the pre-advance offset. CAROUSEL_SNAP_MS = 0 so
-        //    the stack jumps in the same frame — no visible flash.
-        withTiming(CAROUSEL_ENTER_OFFSET, { duration: CAROUSEL_SNAP_MS }),
-        // 2. Slide the stack into place.
-        withTiming(0, { duration: CAROUSEL_SLIDE_MS, easing: Easing.out(Easing.quad) }),
-        // 3. Dwell: `withTiming(0, …)` that starts and ends at 0 is a no-op
-        //    whose only purpose is to spend time before the next snap.
-        withTiming(0, { duration: DWELL_MS - CAROUSEL_SLIDE_MS }),
-      ),
-      -1,
-      // Reduce-motion is gated by the `if (reduced)` check above; this block
-      // is never reached when the system flag is on, so no ReduceMotion arg
-      // is needed — the default (System) is unreachable here.
-    );
+    // Mount holds the settled picture; only later ticks snap+slide.
+    if (tick === 0) {
+      shift.value = 0;
+      return;
+    }
+    /*
+     * Before paint: NEW window is already in the tree (this effect runs after
+     * commit). Jump to the pre-advance offset so that picture matches the prior
+     * settle, then slide to zero on the UI thread.
+     *
+     * Gate is "do not start" when reduce-motion is on — never a withRepeat(-1)
+     * short-circuited by ReduceMotion.System (that spins at frame rate on
+     * zero-length timings). Asserted in theme.test.ts.
+     */
+    cancelAnimation(shift);
+    shift.value = CAROUSEL_ENTER_OFFSET;
+    shift.value = withTiming(0, {
+      duration: CAROUSEL_SLIDE_MS,
+      easing: Easing.out(Easing.quad),
+    });
     return () => cancelAnimation(shift);
-  }, [reduced, words.length, shift]);
+  }, [tick, reduced, words.length, shift]);
 
   const sliding = useAnimatedStyle(() => ({
     transform: [{ translateY: shift.value }],
@@ -277,10 +245,13 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     alignItems: 'center',
   },
   word: {
-    fontFamily: TOKENS.typography.displayLarge.fontFamily,
-    fontSize: 28,
-    lineHeight: 36,
-    letterSpacing: -1,
+    // TextCarousel.swift: 40pt medium in an 80pt row. Geist has no static
+    // medium face; Regular preserves the source's quieter stroke better than
+    // SemiBold, which made the five-word rhythm look like five headings.
+    fontFamily: 'Geist-Regular',
+    fontSize: 40,
+    lineHeight: 48,
+    letterSpacing: -1.2,
     color: t.color.text.primary,
   },
   wordOn: {

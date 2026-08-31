@@ -46,9 +46,21 @@ export interface AppState {
   sending: boolean;
   peerTyping: boolean;
   refillVisible: boolean;
+  /** Full-page Recharge, opened only from the wallet pill. */
+  walletVisible: boolean;
   notice: string | null;
   noticeTone: NoticeTone;
   playing: PlayingVoice | null;
+  /**
+   * M3 linear-determinate progress for media uploads, keyed by the pending
+   * message id (PENDING_PREFIX + timestamp).  Fraction 0–1 while an XHR upload
+   * is in flight; key is absent before the first progress event and after settle.
+   *
+   * Policy: https://m3.material.io/components/progress-indicators/guidelines —
+   * determinate when the fraction is known (upload bytes), indeterminate when
+   * not (e.g. minting a signed URL after the upload completes).
+   */
+  uploadProgress: Record<string, number>;
   /**
    * Set before triggering Google sign-in from the "Become a partner" link.
    * Cleared in App.tsx once the member tree mounts and the route is set.
@@ -66,12 +78,21 @@ export interface AppState {
   setPlaying: (playing: PlayingVoice | null) => void;
   openRefill: () => void;
   closeRefill: () => void;
+  openWallet: () => void;
+  closeWallet: () => void;
   /**
    * Tone defaults to `error` because most notices are failures and a failure
    * mis-styled as a confirmation is the worse of the two mistakes.
    */
   setNotice: (notice: string | null, tone?: NoticeTone) => void;
   setPendingProviderApply: (pending: boolean) => void;
+  /**
+   * Record a 0–1 upload fraction for a pending message.  Called from XHR
+   * `upload.onprogress` so the bubble can render a determinate ProgressBar.
+   */
+  setUploadProgress: (id: string, fraction: number) => void;
+  /** Remove the entry once the upload settles (success or failure). */
+  clearUploadProgress: (id: string) => void;
   /** Leaving a conversation must not leak its presence into the next one. */
   resetConversation: () => void;
 }
@@ -81,9 +102,11 @@ const INITIAL = {
   sending: false,
   peerTyping: false,
   refillVisible: false,
+  walletVisible: false,
   notice: null,
   noticeTone: 'error' as NoticeTone,
   playing: null,
+  uploadProgress: {} as Record<string, number>,
   pendingProviderApply: false,
 } satisfies Omit<
   AppState,
@@ -93,8 +116,12 @@ const INITIAL = {
   | 'setPlaying'
   | 'openRefill'
   | 'closeRefill'
+  | 'openWallet'
+  | 'closeWallet'
   | 'setNotice'
   | 'setPendingProviderApply'
+  | 'setUploadProgress'
+  | 'clearUploadProgress'
   | 'resetConversation'
 >;
 
@@ -105,14 +132,23 @@ export const useStore = create<AppState>()(set => ({
   setSending: sending => set({ sending }),
   setPeerTyping: peerTyping => set({ peerTyping }),
   setPlaying: playing => set({ playing }),
-  openRefill: () => set({ refillVisible: true }),
+  openRefill: () => set({ refillVisible: true, walletVisible: false }),
   closeRefill: () => set({ refillVisible: false }),
+  openWallet: () => set({ walletVisible: true, refillVisible: false }),
+  closeWallet: () => set({ walletVisible: false }),
   setNotice: (notice, tone = 'error') => set({ notice, noticeTone: tone }),
   setPendingProviderApply: pending => set({ pendingProviderApply: pending }),
+  setUploadProgress: (id, fraction) =>
+    set(s => ({ uploadProgress: { ...s.uploadProgress, [id]: fraction } })),
+  clearUploadProgress: id =>
+    set(s => {
+      const { [id]: _dropped, ...rest } = s.uploadProgress;
+      return { uploadProgress: rest };
+    }),
   // `playing` goes with it: audio from the thread you just left should not keep
   // playing over the next one, and the marker has to clear with the sound.
   resetConversation: () =>
-    set({ sending: false, peerTyping: false, notice: null, playing: null }),
+    set({ sending: false, peerTyping: false, notice: null, playing: null, uploadProgress: {} }),
 }));
 
 /** Test helper; also used to reset state after account deletion. */
@@ -125,3 +161,7 @@ export const selectBalance = (s: AppState): number | null => s.balance;
 export const selectSending = (s: AppState): boolean => s.sending;
 export const selectPeerTyping = (s: AppState): boolean => s.peerTyping;
 export const selectIsLow = (s: AppState): boolean => isLowBalance(s.balance);
+export const selectUploadProgress =
+  (id: string) =>
+  (s: AppState): number | undefined =>
+    s.uploadProgress[id];

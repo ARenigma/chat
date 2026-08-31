@@ -1,5 +1,16 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, BackHandler, Linking, PermissionsAndroid, Platform, StatusBar, StyleSheet, Text, View } from 'react-native';
+import {
+  Alert,
+  BackHandler,
+  Linking,
+  NativeModules,
+  PermissionsAndroid,
+  Platform,
+  StatusBar,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { FadeIn, FadeOut, SlideInRight, SlideOutRight } from 'react-native-reanimated';
@@ -11,26 +22,44 @@ import { AfterPaint } from './src/components/AfterPaint';
 import { UpdateBanner } from './src/components/UpdateBanner';
 import { BLOOM_CONTENT_MS } from './src/lib/bloom';
 import { assertEnv } from './src/lib/env';
-import { migrateLegacyStorage, storage } from './src/lib/storage';
+import { storage } from './src/lib/storage';
 import { initialNotificationPeer, onNotificationOpen, startPush } from './src/lib/push';
 import { clearCall } from './src/lib/conversations';
 import {
   memberParent,
   providerParent,
+  type ChatDoor,
   type MemberRoute,
   type ProviderRoute,
 } from './src/lib/routes';
 import { initSentry } from './src/lib/sentry';
 import { isUuid } from './src/lib/ids';
 import { track } from './src/lib/telemetry';
+import {
+  startFrameWatch,
+  trackQuerySlow,
+  trackScreenOpened,
+} from './src/lib/perfTelemetry';
 import { supabase } from './src/lib/supabase';
 import { currentSession, handleAuthDeepLink } from './src/api/auth';
+import {
+  effectivePermissionLevel,
+  FALLBACK_PERMISSIONS,
+  type PermissionsConfig,
+} from './src/api/appConfig';
+import { needsAgeBracket, needsProfileSetup } from './src/api/profileSetup';
+import type { Profile } from './src/lib/database.types';
 import { CALLS_ENABLED, useIncomingCalls, type IncomingCall } from './src/api/calls';
-import { useSelfId } from './src/api/chat';
+import { useConversations, useSelfId } from './src/api/chat';
 import { useRole } from './src/api/provider';
 import { useStore } from './src/store/useStore';
 import { PolicyGateScreen } from './src/screens/PolicyGateScreen';
-import { RechargeScreen } from './src/screens/RechargeScreen';
+import { ProfileSetupScreen } from './src/screens/ProfileSetupScreen';
+import { WelcomePappalScreen } from './src/screens/WelcomePappalScreen';
+import { RechargeScreen, RechargeWalletPage } from './src/screens/RechargeScreen';
+import { ConfirmDialog } from './src/components/ConfirmDialog';
+import { HomeTour } from './src/components/HomeTour';
+import { useHomeTour } from './src/store/useHomeTour';
 import { Button } from './src/components/Button';
 import { FloatingToolbar } from './src/components/FloatingToolbar';
 import { ChatScreen } from './src/screens/ChatScreen';
@@ -53,6 +82,37 @@ import { TransactionHistoryScreen } from './src/screens/TransactionHistoryScreen
 initSentry();
 
 const LAST_PROVIDER_KEY = 'companion.lastProvider';
+const { StartupTiming } = NativeModules as {
+  StartupTiming?: { reportFullyDrawn(): void };
+};
+
+/**
+ * Report TTFD only after a data-backed screen is committed and the JS thread
+ * is idle. The extra animation frame prevents an early call from collapsing
+ * TTFD into Android's automatic TTID measurement.
+ * https://developer.android.com/topic/performance/vitals/launch-time
+ *
+ * `InteractionManager` is deprecated (RN warns on first access and will remove
+ * it). Idle scheduling is the sanctioned replacement and also keeps LogBox from
+ * covering the welcome Continue control in __DEV__.
+ */
+function useReportFullyDrawn(usable: boolean): void {
+  useEffect(() => {
+    if (!usable || Platform.OS !== 'android') {
+      return;
+    }
+    let frame: number | undefined;
+    const idle = requestIdleCallback(() => {
+      frame = requestAnimationFrame(() => StartupTiming?.reportFullyDrawn());
+    });
+    return () => {
+      cancelIdleCallback(idle);
+      if (frame !== undefined) {
+        cancelAnimationFrame(frame);
+      }
+    };
+  }, [usable]);
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -64,9 +124,37 @@ const queryClient = new QueryClient({
   },
 });
 
+const queryStarted = new Map<string, number>();
+queryClient.getQueryCache().subscribe(event => {
+  const q = 'query' in event ? event.query : undefined;
+  if (q === undefined) return;
+  if (q.state.fetchStatus === 'fetching' && !queryStarted.has(q.queryHash)) {
+    queryStarted.set(q.queryHash, Date.now());
+    return;
+  }
+  const started = queryStarted.get(q.queryHash);
+  if (q.state.fetchStatus === 'idle' && started !== undefined) {
+    queryStarted.delete(q.queryHash);
+    const kind = String(q.queryKey[0] ?? 'q');
+    trackQuerySlow(kind, Date.now() - started, q.state.dataUpdateCount > 1 ? 'hit' : 'miss');
+  }
+});
+
 type Boot =
   | { phase: 'loading' }
   | { phase: 'signedOut'; message?: string }
+  /**
+   * First-run member profile: username + clay avatar. Migration 040.
+   * `needsAge` is true when the member has not yet declared an age band
+   * (migration 043). `needsUsername` is true for the standard first-run case.
+   * Both can be true (new user via browser redirect); only `needsAge` can be
+   * true alone (existing user who predates migration 043).
+   */
+  | { phase: 'profileSetup'; needsAge: boolean; needsUsername: boolean }
+  /**
+   * Brief welcome animation after profile setup completes.
+   */
+  | { phase: 'welcomePappal' }
   /**
    * ADR-0020: pending_policy_acceptances() returned at least one row.
    * The user must accept before entering the app. Cannot be bypassed by deep
@@ -76,6 +164,95 @@ type Boot =
   | { phase: 'policyGate' }
   | { phase: 'ready' }
   | { phase: 'error'; message: string };
+
+async function fetchPermissionsConfig(): Promise<PermissionsConfig> {
+  const { data, error } = await supabase.rpc('get_public_config', {
+    p_domain: 'permissions',
+  });
+  if (error || data == null) {
+    return FALLBACK_PERMISSIONS;
+  }
+  return { ...FALLBACK_PERMISSIONS, ...(data as Partial<PermissionsConfig>) };
+}
+
+async function fetchSignedInProfile(): Promise<Profile | null> {
+  const { data: auth } = await supabase.auth.getUser();
+  const userId = auth.user?.id;
+  if (userId === undefined) {
+    return null;
+  }
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .single();
+  if (error) {
+    return null;
+  }
+  return data as Profile;
+}
+
+/**
+ * Phases entered after a session is confirmed (excludes welcome — set explicitly).
+ *
+ * `profileSetup` carries age/username flags so the screen knows which steps to
+ * render. Only `needsAge` can be true without `needsUsername` (existing member
+ * who predates migration 043); the reverse is always paired.
+ */
+type PostAuthBoot =
+  | { phase: 'profileSetup'; needsAge: boolean; needsUsername: boolean }
+  | { phase: 'policyGate' }
+  | { phase: 'ready' };
+
+async function bootPhaseAfterAuth(profile: Profile | null): Promise<PostAuthBoot> {
+  const p = profile ?? undefined;
+  const needsUsername = needsProfileSetup(p);
+  const needsAge = needsAgeBracket(p);
+
+  if (needsUsername || needsAge) {
+    return { phase: 'profileSetup', needsAge, needsUsername };
+  }
+
+  const { data: pending } = await supabase.rpc('pending_policy_acceptances');
+  if (Array.isArray(pending) && pending.length > 0) {
+    return { phase: 'policyGate' };
+  }
+  return { phase: 'ready' };
+}
+
+async function requestAndroidPermission(
+  permission: (typeof PermissionsAndroid.PERMISSIONS)[keyof typeof PermissionsAndroid.PERMISSIONS],
+  title: string,
+  message: string,
+  level: 'optional' | 'required',
+): Promise<void> {
+  if (Platform.OS !== 'android') {
+    return;
+  }
+  const result = await PermissionsAndroid.request(permission, {
+    title,
+    message,
+    buttonPositive: 'Allow',
+  });
+  if (
+    level === 'required' &&
+    result === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN
+  ) {
+    Alert.alert(
+      title,
+      `${message} Open Settings to enable it.`,
+      [
+        { text: 'Not now', style: 'cancel' },
+        {
+          text: 'Open Settings',
+          onPress: () => {
+            void Linking.openSettings();
+          },
+        },
+      ],
+    );
+  }
+}
 
 /**
  * Member routes. The provider tree is separate and selected by the server-supplied
@@ -98,6 +275,8 @@ function Root() {
   const [attempt, setAttempt] = useState(0);
   const [route, setRoute] = useState<MemberRoute>({ name: 'home' });
   const [providerRoute, setProviderRoute] = useState<ProviderRoute>({ name: 'home' });
+  const [exitDialogVisible, setExitDialogVisible] = useState(false);
+  useReportFullyDrawn(boot.phase !== 'loading' && boot.phase !== 'ready');
   // Refs so the BackHandler closure reads the current route without being in its
   // dep array — adding route/providerRoute caused the listener to tear down and
   // re-add itself on every navigation, producing a measurable re-subscription
@@ -110,6 +289,8 @@ function Root() {
   const resetConversation = useStore(s => s.resetConversation);
   const refillVisible = useStore(s => s.refillVisible);
   const closeRefill = useStore(s => s.closeRefill);
+  const walletVisible = useStore(s => s.walletVisible);
+  const closeWallet = useStore(s => s.closeWallet);
   const pendingProviderApply = useStore(s => s.pendingProviderApply);
   const setPendingProviderApply = useStore(s => s.setPendingProviderApply);
 
@@ -119,10 +300,6 @@ function Root() {
     (async () => {
       try {
         assertEnv();
-        // One-time move of anything the previous AsyncStorage build left behind,
-        // before the session is read, otherwise the first boot after the switch
-        // signs everybody out.
-        await migrateLegacyStorage();
         const session = await currentSession();
         if (cancelled) {
           return;
@@ -143,16 +320,13 @@ function Root() {
         if (tapped !== null) {
           setRoute({ name: 'chat', providerId: tapped, from: 'home' });
         }
-        // ADR-0020: policy gate. Check pending acceptances once per boot before
-        // entering the app. Migration 027: pending_policy_acceptances().
-        const { data: pending } = await supabase.rpc('pending_policy_acceptances');
-        if (Array.isArray(pending) && pending.length > 0) {
-          setBoot({ phase: 'policyGate' });
+        // ADR-0020 / 040: profile setup (+ age, 043), then policy gate, then app.
+        const profile = await fetchSignedInProfile();
+        const nextBoot = await bootPhaseAfterAuth(profile);
+        setBoot(nextBoot);
+        if (nextBoot.phase === 'ready') {
           track('app_open');
-          return;
         }
-        setBoot({ phase: 'ready' });
-        track('app_open');
       } catch (err) {
         if (!cancelled) {
           setBoot({
@@ -246,13 +420,9 @@ function Root() {
             track('signed_in');
             // Everything cached belongs to the previous (absent) session.
             void queryClient.invalidateQueries();
-            // ADR-0020: policy gate on OAuth deep-link sign-in. Migration 027.
-            const { data: pending } = await supabase.rpc('pending_policy_acceptances');
-            if (Array.isArray(pending) && pending.length > 0) {
-              setBoot({ phase: 'policyGate' });
-            } else {
-              setBoot({ phase: 'ready' });
-            }
+            const profile = await fetchSignedInProfile();
+            const nextBoot = await bootPhaseAfterAuth(profile);
+            setBoot(nextBoot);
           } else if (result.status === 'failed') {
             // Back to the auth screen *with the reason*. Advancing here was the
             // bug that produced a permanent spinner.
@@ -295,26 +465,55 @@ function Root() {
     // callSession / recorder / composer remain the fallback for that feature.
     void (async () => {
       try {
-        unsubscribeToken = await startPush();
+        const permissions = await fetchPermissionsConfig();
+        const notificationLevel = effectivePermissionLevel(
+          permissions,
+          'notification',
+        );
+        const micLevel = effectivePermissionLevel(permissions, 'microphone');
+        const cameraLevel = effectivePermissionLevel(permissions, 'camera');
+
+        if (notificationLevel !== 'optional') {
+          unsubscribeToken = await startPush();
+        } else {
+          try {
+            unsubscribeToken = await startPush();
+          } catch {
+            // Optional for internal builds — boot continues without notifications.
+          }
+        }
+
         if (Platform.OS !== 'android') {
           return;
         }
-        await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-          {
-            title: 'Microphone',
-            message: 'Pappal needs your mic for calls and voice notes.',
-            buttonPositive: 'Allow',
-          },
-        );
-        await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.CAMERA,
-          {
-            title: 'Camera',
-            message: 'Pappal needs your camera for video calls.',
-            buttonPositive: 'Allow',
-          },
-        );
+
+        if (micLevel === 'required') {
+          await requestAndroidPermission(
+            PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+            'Microphone',
+            'Pappal needs your mic for calls and voice notes.',
+            micLevel,
+          );
+        }
+        if (cameraLevel === 'required') {
+          await requestAndroidPermission(
+            PermissionsAndroid.PERMISSIONS.CAMERA,
+            'Camera',
+            'Pappal needs your camera for video calls.',
+            cameraLevel,
+          );
+        }
+        if (
+          notificationLevel === 'required' &&
+          Platform.Version >= 33
+        ) {
+          await requestAndroidPermission(
+            PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+            'Notifications',
+            'Pappal sends message alerts when someone replies.',
+            notificationLevel,
+          );
+        }
       } catch {
         // Permission priming is best-effort; failures here do not affect boot.
       }
@@ -329,7 +528,7 @@ function Root() {
     };
   }, [boot.phase]);
 
-  const openChat = useCallback((id: string, from: 'home' | 'detail' = 'home') => {
+  const openChat = useCallback((id: string, from: ChatDoor = 'home') => {
     setRoute({ name: 'chat', providerId: id, from });
     track('conversation_opened');
     storage.set(LAST_PROVIDER_KEY, id);
@@ -367,6 +566,14 @@ function Root() {
       // everything (zIndex 20) and is the thing the user most recently opened, so
       // back means it first. Settings is a normal route now (not an overlay), so
       // it pops through the parent map below like every other screen.
+      if (useHomeTour.getState().active) {
+        useHomeTour.getState().skip();
+        return true;
+      }
+      if (walletVisible) {
+        closeWallet();
+        return true;
+      }
       if (refillVisible) {
         closeRefill();
         return true;
@@ -401,22 +608,14 @@ function Root() {
        * honest native confirm, and returning `true` keeps the gesture handled so
        * Android does not close underneath it.
        */
-      Alert.alert(
-        'Leave Pappal?',
-        'Someone is around to talk whenever you are. You can pick up right where you left off.',
-        [
-          { text: 'Stay', style: 'cancel' },
-          { text: 'Leave', style: 'destructive', onPress: () => BackHandler.exitApp() },
-        ],
-        { cancelable: true },
-      );
+      setExitDialogVisible(true);
       return true;
     };
     const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
     return () => sub.remove();
   // route and providerRoute are intentionally omitted: they are read via refs
   // inside onBack so the listener is stable across navigations.
-  }, [refillVisible, closeRefill, resetConversation]);
+  }, [walletVisible, closeWallet, refillVisible, closeRefill, resetConversation]);
 
   if (boot.phase === 'loading') {
     return (
@@ -494,6 +693,51 @@ function Root() {
     return <AuthScreen initialError={boot.message} />;
   }
 
+  if (boot.phase === 'profileSetup') {
+    return (
+      <ProfileSetupScreen
+        needsAge={boot.needsAge}
+        needsUsername={boot.needsUsername}
+        onDone={async () => {
+          if (boot.needsUsername) {
+            /*
+             * Full first-run: profile is now complete. Show the welcome
+             * animation, which re-runs bootPhaseAfterAuth after it plays.
+             */
+            setBoot({ phase: 'welcomePappal' });
+          } else {
+            /*
+             * Age-only gate (existing member who predates migration 043):
+             * re-run the boot check so policy gate / ready follows correctly.
+             * No welcome animation — they have already seen it.
+             */
+            const profile = await fetchSignedInProfile();
+            const nextBoot = await bootPhaseAfterAuth(profile);
+            setBoot(nextBoot);
+            if (nextBoot.phase === 'ready') {
+              track('app_open');
+            }
+          }
+        }}
+      />
+    );
+  }
+
+  if (boot.phase === 'welcomePappal') {
+    return (
+      <WelcomePappalScreen
+        onDone={async () => {
+          const profile = await fetchSignedInProfile();
+          const nextBoot = await bootPhaseAfterAuth(profile);
+          setBoot(nextBoot);
+          if (nextBoot.phase === 'ready') {
+            track('app_open');
+          }
+        }}
+      />
+    );
+  }
+
   // ADR-0020: gate cannot be bypassed — rendered here in the boot machine
   // rather than inside SignedIn so deep links cannot route around it.
   if (boot.phase === 'policyGate') {
@@ -527,17 +771,30 @@ function Root() {
   }
 
   return (
-    <SignedIn
-      route={route}
-      providerRoute={providerRoute}
-      openChat={openChat}
-      openProvider={openProvider}
-      leaveChat={leaveChat}
-      backToHome={backToHome}
-      setRoute={setRoute}
-      setProviderRoute={setProviderRoute}
-      onSignedOut={() => setBoot({ phase: 'signedOut' })}
-    />
+    <>
+      <SignedIn
+        route={route}
+        providerRoute={providerRoute}
+        openChat={openChat}
+        openProvider={openProvider}
+        leaveChat={leaveChat}
+        backToHome={backToHome}
+        setRoute={setRoute}
+        setProviderRoute={setProviderRoute}
+        onSignedOut={() => setBoot({ phase: 'signedOut' })}
+      />
+      <ConfirmDialog
+        visible={exitDialogVisible}
+        testID="app-exit-dialog"
+        title="Leave Pappal?"
+        body="Someone is around to talk whenever you are. You can pick up right where you left off."
+        cancelLabel="Stay"
+        confirmLabel="Leave"
+        destructive
+        onCancel={() => setExitDialogVisible(false)}
+        onConfirm={() => BackHandler.exitApp()}
+      />
+    </>
   );
 }
 
@@ -545,7 +802,7 @@ interface SignedInProps {
   route: MemberRoute;
   providerRoute: ProviderRoute;
   /** `from` names the door, so back returns where the member actually came from. */
-  openChat: (id: string, from?: 'home' | 'detail') => void;
+  openChat: (id: string, from?: ChatDoor) => void;
   openProvider: (id: string) => void;
   leaveChat: () => void;
   backToHome: () => void;
@@ -572,6 +829,18 @@ function SignedIn({
   const styles = useStyles(makeStyles);
   const { role, isPending } = useRole();
   const { data: selfId } = useSelfId();
+  const { data: conversations } = useConversations();
+  // Total unread across all conversations for the home tab badge.
+  const totalUnread = (conversations ?? []).reduce((sum, c) => {
+    const count = c.i_am_member
+      ? Number(c.unread_count_member)
+      : Number(c.unread_count_provider);
+    return sum + count;
+  }, 0);
+  useReportFullyDrawn(!isPending);
+  useEffect(() => {
+    trackScreenOpened(role === 'provider' ? providerRoute.name : route.name);
+  }, [role, route.name, providerRoute.name]);
 
   // A ring, foreground: route the incoming call to the right tree's call screen.
   // Declared before the early return so the hook order is stable.
@@ -604,12 +873,23 @@ function SignedIn({
             direction={providerRoute.direction}
             callId={providerRoute.callId}
             medium={providerRoute.medium}
-            onEnd={() => setProviderRoute({ name: 'home' })}
+            // Symmetry with the member tree: hanging up returns to that peer's
+            // chat, not the provider home (user 2026-08-31).
+            onEnd={() => setProviderRoute({ name: 'chat', peerId: providerRoute.peerId })}
           />
         ) : providerRoute.name === 'chat' ? (
           <ChatScreen
             providerId={providerRoute.peerId}
             onBack={() => setProviderRoute({ name: 'home' })}
+            onStartCall={channel =>
+              setProviderRoute({
+                name: 'call',
+                peerId: providerRoute.peerId,
+                direction: 'out',
+                callId: null,
+                medium: channel === 'video' ? 'video' : 'voice',
+              })
+            }
           />
         ) : providerRoute.name === 'settings' ? (
           <SettingsSheet
@@ -639,10 +919,10 @@ function SignedIn({
         * never remounts its lists or replays entry animations — the native
         * back-stack behaviour a single swapped-in screen threw away. */}
       <View style={styles.content}>
+      {/* Settings is a docked nav tab, so Home no longer opens it. */}
       <HomeScreen
         onOpenConversation={openChat}
         onOpenProvider={openProvider}
-        onOpenSettings={() => setRoute({ name: 'settings' })}
         onSeeAllChats={() => setRoute({ name: 'chatsList' })}
       />
 
@@ -704,37 +984,60 @@ function SignedIn({
         <View style={styles.coverHome} pointerEvents="none" />
       ) : null}
 
-      {route.name !== 'home' &&
-      route.name !== 'settings' &&
-      route.name !== 'calls' &&
-      route.name !== 'favourites' ? (
-        // A pushed screen: slide in from the right over the persistent Home, and
-        // out the same way on back — the Android forward-navigation gesture, so
-        // opening a chat/profile/call reads as a push rather than an instant swap.
-        // The transition runs on the UI thread (Reanimated), off the JS thread.
+      {route.name === 'chatsList' ||
+      (route.name === 'chat' && route.from === 'chatsList') ? (
+        // Full-screen Chats modal. Stays mounted under a chat opened from here
+        // so back returns to this list, not Home (docs/flows.md).
         <Animated.View
           style={styles.overlay}
           entering={SlideInRight.duration(160)}
           exiting={SlideOutRight.duration(150)}>
-          {route.name === 'chat' ? (
-            <AfterPaint>
-              <ChatScreen
-                providerId={route.providerId}
-                onBack={leaveChat}
-                onOpenProfile={openProvider}
-                onStartCall={channel =>
-                  setRoute({ name: 'call', providerId: route.providerId, direction: 'out', callId: null, medium: channel === 'video' ? 'video' : 'voice' })
-                }
-              />
-            </AfterPaint>
-          ) : route.name === 'call' ? (
+          <ChatsListScreen
+            onBack={backToHome}
+            onOpenConversation={id => openChat(id, 'chatsList')}
+          />
+        </Animated.View>
+      ) : null}
+
+      {route.name === 'chat' ? (
+        <Animated.View
+          style={[styles.overlay, route.from === 'chatsList' && styles.overlayStack]}
+          entering={SlideInRight.duration(160)}
+          exiting={SlideOutRight.duration(150)}>
+          <AfterPaint>
+            <ChatScreen
+              providerId={route.providerId}
+              onBack={leaveChat}
+              onOpenProfile={openProvider}
+              onStartCall={channel =>
+                setRoute({ name: 'call', providerId: route.providerId, direction: 'out', callId: null, medium: channel === 'video' ? 'video' : 'voice' })
+              }
+            />
+          </AfterPaint>
+        </Animated.View>
+      ) : route.name === 'call' ||
+        route.name === 'providerDetail' ||
+        route.name === 'apply' ||
+        route.name === 'applicationStatus' ||
+        route.name === 'blocked' ||
+        route.name === 'transactions' ? (
+        <Animated.View
+          style={styles.overlay}
+          entering={SlideInRight.duration(160)}
+          exiting={SlideOutRight.duration(150)}>
+          {route.name === 'call' ? (
             <AfterPaint>
               <CallScreen
                 providerId={route.providerId}
                 direction={route.direction}
                 callId={route.callId}
                 medium={route.medium}
-                onEnd={backToHome}
+                // Ending a call lands on that peer's chat, not Home: a call is a
+                // moment inside a conversation, so hanging up returns to the
+                // conversation it belongs to (user 2026-08-31). Covers both the
+                // outgoing call (started from the chat) and an answered incoming
+                // ring, which should also drop the member into that SP's thread.
+                onEnd={() => openChat(route.providerId)}
               />
             </AfterPaint>
           ) : route.name === 'providerDetail' ? (
@@ -742,7 +1045,6 @@ function SignedIn({
               <ProviderDetailScreen
                 providerId={route.providerId}
                 onBack={backToHome}
-                // Opened from a profile, so back from the chat returns to the profile.
                 onOpenChat={id => openChat(id, 'detail')}
                 onStartCall={(id, channel) =>
                   setRoute({
@@ -764,11 +1066,9 @@ function SignedIn({
             <ProviderStatusScreen onBack={backToHome} onEdit={() => setRoute({ name: 'apply' })} />
           ) : route.name === 'blocked' ? (
             <BlockedUsersScreen onBack={backToHome} />
-          ) : route.name === 'chatsList' ? (
-            <ChatsListScreen onBack={backToHome} onOpenConversation={openChat} />
-          ) : route.name === 'transactions' ? (
+          ) : (
             <TransactionHistoryScreen onBack={() => setRoute({ name: 'settings' })} />
-          ) : null}
+          )}
         </Animated.View>
       ) : null}
       </View>
@@ -796,6 +1096,7 @@ function SignedIn({
                   : 'home'
           }
           callEnabled={CALLS_ENABLED}
+          homeBadgeCount={totalUnread}
           onSelect={key => {
             if (key === 'home') {
               setRoute({ name: 'home' });
@@ -809,6 +1110,7 @@ function SignedIn({
           }}
         />
       ) : null}
+      <RechargeWalletPage />
       <RechargeScreen />
     </View>
   );
@@ -832,11 +1134,13 @@ function Shell() {
           worse than not prompting is prompting and then losing it when the user
           navigates. */}
       <UpdateBanner />
+      <HomeTour />
     </>
   );
 }
 
 export default function App() {
+  useEffect(() => startFrameWatch(), []);
   return (
     /**
      * GestureHandlerRootView has to be the outermost view, not a wrapper inside
@@ -907,6 +1211,11 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     bottom: 0,
     backgroundColor: t.color.bg.base,
     zIndex: 10,
+  },
+  // Chat opened from the Chats modal sits above that list so the list
+  // remains mounted underneath.
+  overlayStack: {
+    zIndex: 11,
   },
   // A top-level tab (Settings) covering Home. Deliberately NO zIndex: it paints
   // over Home by document order, and the nav — rendered after it, also without a

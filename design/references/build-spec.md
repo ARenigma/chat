@@ -1,5 +1,9 @@
 # Papal build specification
 
+> **HISTORICAL PLAN — 2026-08-23.** Numbers, screen names, and test counts in
+> this file are superseded. Do not use as a current reference. See `README.md`,
+> `docs/ARCHITECTURE.md`, and `docs/FEATURES.md`.
+
 Written 2026-08-23. This is the reference the implementation phase follows.
 
 It exists because the owner gave a new direction on 2026-08-23 (rename to Papal, a

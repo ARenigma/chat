@@ -15,9 +15,11 @@ select has_column(
   'public', 'conversation_summaries', 'i_am_member',
   'the summary says which side you are on'
 );
+-- Migration 037 removed `reviewed` from the view and replaced it with
+-- role-specific unread counts.  Assert the replacement column instead.
 select has_column(
-  'public', 'conversation_summaries', 'reviewed',
-  'and whether it has been rated'
+  'public', 'conversation_summaries', 'unread_count_member',
+  'the inbox tracks role-specific unread counts (replaces reviewed, ADR-0020)'
 );
 
 -- ---------------------------------------------------------------------------
@@ -37,6 +39,12 @@ set role = 'provider',
     is_available = true
 where id = 'aaaaaaaa-0000-4000-8000-000000000001';
 
+-- Fund member so the session balance gate (ADR-0020) passes on first send.
+update public.profiles set promo_balance = 500
+where id = 'bbbbbbbb-0000-4000-8000-000000000002';
+select test.accept_current_policies(id)
+from auth.users;
+
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"bbbbbbbb-0000-4000-8000-000000000002","role":"authenticated"}';
 insert into test.fixture (k, v)
@@ -50,9 +58,11 @@ select is(
   (select i_am_member from public.conversation_summaries), true,
   'and sees themselves as the member of it'
 );
+-- `reviewed` was removed from the view in migration 037 (ADR-0020).
+-- Assert the replacement: provider should have 1 unread after the member's send.
 select is(
-  (select reviewed from public.conversation_summaries), false,
-  'with nothing rated yet'
+  (select unread_count_provider from public.conversation_summaries), 1,
+  'the provider has one unread message after the first send'
 );
 reset role;
 
@@ -85,7 +95,7 @@ select is(
 );
 select is(
   (select i_am_member from public.conversation_summaries
-    where id = (select v from test.fixture where k = 'thread')),
+    where conversation_id = (select v from test.fixture where k = 'thread')),
   true,
   'yet remains the member of the thread they paid for, which profiles.role cannot express'
 );

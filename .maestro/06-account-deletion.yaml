@@ -6,16 +6,18 @@ name: Delete account and all data
 ---
 - launchApp
 - tapOn:
-    id: 'chat-back'
-- tapOn:
-    id: 'open-settings'
-- assertVisible: 'Account & privacy'
+    id: 'nav-settings'
+- assertVisible: 'Account & Privacy'
 
 # The claim on this screen has to be true; the SQL check in e2e.mjs is what proves it.
 - assertVisible: 'advertising ID'
 
 # The one exception to "nothing is retained", stated where it matters rather than
 # buried in a policy: see the retention note in migration 005.
+- scrollUntilVisible:
+    element:
+      id: 'delete-account'
+    direction: DOWN
 - tapOn:
     id: 'delete-account'
 - assertVisible: 'Abuse reports'
@@ -27,12 +29,12 @@ name: Delete account and all data
 - tapOn:
     id: 'delete-confirm'
 
-# Deletion now signs you out — there is no anonymous session to fall back into,
-# so the correct end state is the sign-in screen rather than a fresh wallet. The
-# provider is untouched by a member's deletion; e2e.mjs asserts that in SQL.
+# Deletion signs out. Since this run never completed the real external identity
+# flow, the retained first-run state correctly returns to the welcome surface.
+# The provider is untouched; e2e.mjs asserts that in SQL.
 - extendedWaitUntil:
     visible:
-      id: 'signin-google'
+      id: 'welcome-continue'
     timeout: 30000
 - assertNotVisible: 'Your conversations'
 - assertNotVisible: 'Back online.'

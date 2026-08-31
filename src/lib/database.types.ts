@@ -57,7 +57,14 @@ export type TelemetryEvent =
   | 'session_requested'
   | 'session_ended'
   // Added by migration 033 (UCB / Cashfree billing).
-  | 'recharge_sheet_opened';
+  | 'recharge_sheet_opened'
+  // Cashfree WebCheckout sandbox events (ADR-0022).
+  | 'cashfree_checkout_verify'
+  | 'cashfree_checkout_error'
+  | 'screen_opened'
+  | 'sheet_closed'
+  | 'query_slow'
+  | 'frame_jank';
 
 export type Gender = 'female' | 'male' | 'other';
 
@@ -95,6 +102,7 @@ export type Profile = {
   date_of_birth: string | null;
   gender: Gender | null;
   headline: string | null;
+  about: string | null;
   languages: string[];
   /**
    * The user's own setting, like WhatsApp's Last Seen, and the one column added
@@ -113,6 +121,11 @@ export type Profile = {
    * so there is one control rather than two.
    */
   presence: PresenceChoice;
+  /**
+   * Provider directory photo (public Storage URL). Null until set; UI falls
+   * back to an initial. Members never publish this off the directory (013).
+   */
+  avatar_url: string | null;
   /** Derived from `reviews` by trigger. Not writable by its subject. */
   rating_avg: number | null;
   rating_count: number;
@@ -124,6 +137,15 @@ export type Profile = {
    * hold it.
    */
   phone_verified_at: string | null;
+  /** Set when a member completes first-run profile setup. Migration 040. */
+  profile_completed_at: string | null;
+  /**
+   * Self-declared age band. Null until the member completes first-run or the
+   * app gate collects it. Four bands: '18-24' | '25-34' | '35-44' | '45+'.
+   * Fail-closed: the app gate treats null as undeclared and blocks entry until
+   * the bracket is set. Migration 043.
+   */
+  age_bracket: '18-24' | '25-34' | '35-44' | '45+' | null;
   created_at: string;
   last_refill_at: string | null;
 };
@@ -162,13 +184,18 @@ export type Review = {
   created_at: string;
 };
 
-/** Counted in tokens. Converting to currency is Stripe Connect's job, unbuilt. */
+/**
+ * Provider earnings summary from the `provider_earnings` view (migration 038+).
+ * provider_tokens is the 60% share; gross_tokens is full member spend.
+ * 1 token = ₹1 (ADR-0021); payouts are via Cashfree Payouts, not yet live.
+ */
 export type ProviderEarnings = {
-  billable_messages: number;
-  refunded_messages: number;
+  minutes_billed: number;
+  provider_tokens: number;
+  gross_tokens: number;
+  sessions: number;
   members_served: number;
-  conversations: number;
-  first_message_at: string | null;
+  first_earned_at: string | null;
 };
 
 export type ReportReason =
@@ -199,40 +226,64 @@ export type Block = {
 };
 
 /**
- * One row per thread for the inbox. A view rather than a client-side join
- * because the preview and the unread count would otherwise be two extra round
- * trips per row.
+ * One row per thread for the inbox. Backed by the `conversation_summaries`
+ * view (last rebuilt in migration 031: no message content by design).
+ *
+ * ADR-0020: ephemeral session content must never surface in list views.
+ * `last_body`, `last_kind`, `last_sender_id`, `unread_count`, and `reviewed`
+ * were removed in migration 031. Use `last_preview_kind` for the row icon and
+ * `last_session_at` for ordering and timestamp display.
  */
 export type ConversationSummary = {
-  id: string;
-  last_message_at: string;
+  /** The conversation id (column renamed from `id` in migration 031). */
+  conversation_id: string;
   peer_id: string;
   peer_display_name: string | null;
   /** The peer's photo (providers only; null for members and until set). */
   peer_avatar_url: string | null;
   /**
-   * The peer's declared presence. Replaced `peer_available` in 012: that column
-   * resolved the provider's listing switch through a join that is false for
-   * every member, so a member could never appear present to the provider waiting
-   * on them, however they set it.
+   * The peer's declared presence. Replaced `peer_available` in 012: that
+   * column resolved the provider's listing switch through a join that was false
+   * for every member.
    */
-  peer_presence: PresenceChoice;
-  last_body: string | null;
-  /**
-   * A voice note has no body, so an inbox reading `last_body` alone renders a
-   * blank preview. Null only when the thread has no messages at all.
-   */
-  last_kind: 'text' | 'voice' | null;
-  last_sender_id: string | null;
-  unread_count: number;
-  reviewed: boolean;
-  /** Null unless the peer turned presence on. Resolved through `conversation_peers`. */
+  peer_presence: PresenceChoice | null;
+  /** Null unless the peer turned presence on. */
   peer_last_active_at: string | null;
+  /**
+   * Timestamp of the most recent session event for this thread (populated by
+   * send_message and session lifecycle). Use for ordering and row timestamp.
+   * Null for conversations that pre-date migration 030.
+   */
+  last_session_at: string | null;
+  /**
+   * Channel of the most recent session (chat/audio/video). Null when no
+   * session has been started on this thread.
+   */
+  last_session_channel: 'chat' | 'audio' | 'video' | null;
+  /** Duration in seconds of the most recent session. */
+  last_session_duration_seconds: number | null;
+  /** Content-free label used to choose the inbox row copy/icon. */
+  last_preview_kind: 'text' | 'voice' | 'image' | 'call' | 'session' | null;
+  /** Latest paid-session lifecycle state; metadata only. */
+  last_session_status:
+    | 'pending_leases'
+    | 'active'
+    | 'warning'
+    | 'grace'
+    | 'ended'
+    | 'reported_hold'
+    | null;
+  /**
+   * Unread count for the member side of the thread. The caller must use
+   * `i_am_member` to pick the right counter: if `i_am_member` is true, use
+   * `unread_count_member`; otherwise use `unread_count_provider`.
+   */
+  unread_count_member: number;
+  unread_count_provider: number;
   /**
    * Whether the caller is the paying side of *this* thread. Not the same as
    * `profiles.role === 'member'`: a member admitted as a provider keeps the
-   * threads they paid for, and is still entitled to rate them. See migration
-   * 007.
+   * threads they paid for. See migration 007.
    */
   i_am_member: boolean;
 };
@@ -251,6 +302,8 @@ export type ProviderSummary = {
   /** Integer years. The birth date itself is never exposed. */
   age: number | null;
   headline: string | null;
+  /** Longer About paragraph. Distinct from the one-line headline. */
+  about: string | null;
   languages: string[];
   is_available: boolean;
   rating_avg: number | null;
@@ -413,6 +466,7 @@ export type SendError =
   | 'NOT_FOUND'
   | 'FORBIDDEN'
   | 'INSUFFICIENT_BALANCE'
+  | 'POLICY_REQUIRED'
   // Added by migration 005. None of these debit a token.
   | 'BLOCKED'
   | 'SUSPENDED'
@@ -434,6 +488,7 @@ export type SendResult = {
   kind?: 'text' | 'voice' | 'image';
   /** Null when the sender is the provider: a reply costs nothing. */
   new_balance?: number | null;
+  session_id?: string | null;
   error?: SendError;
 };
 
@@ -448,6 +503,8 @@ export type ReactionResult = {
 export type CallResult = {
   success: boolean;
   call_id?: string;
+  session_id?: string | null;
+  session_request_id?: string;
   medium?: CallMedium;
   status?: CallStatus;
   started_at?: string;
@@ -469,18 +526,19 @@ export type ClaimResult = {
 };
 
 /**
- * Returned by the `spend_chat_minute` RPC (migration 022).
+ * Returned by the `spend_chat_minute` RPC.
  *
- * On success: new_balance is the balance after the debit; last=true means it
- * just hit 0 and the session should end on the NEXT charge (OUT_OF_TOKENS).
- * On failure: error identifies why the charge was refused.
+ * Migration 037: spend_chat_minute is now a no-op compatibility shim.
+ * `success` is always true, `new_balance` is always null, and `compat`
+ * identifies the no-op behaviour. The session meter (meter_active_sessions
+ * cron) is the sole billing path. Remove calls to this RPC once all clients
+ * are on the session-aware path.
  */
 export type SpendChatMinuteResult = {
   success: boolean;
-  new_balance?: number;
-  /** True when new_balance just reached 0: serve this minute, then stop. */
-  last?: boolean;
-  error?: 'NOT_AUTHENTICATED' | 'NO_PROFILE' | 'OUT_OF_TOKENS';
+  /** Always null in migration 037+; billing is handled by the session meter. */
+  new_balance: null;
+  compat: 'no-op';
 };
 
 /** Returned by the `mock_recharge` RPC (migration 020). Only callable when
@@ -866,6 +924,35 @@ export type Database = {
         Args: { p_version_id: string; p_device_info?: string | null };
         Returns: void;
       };
+      check_display_name: {
+        Args: { p_name: string };
+        Returns: { status: 'available' | 'taken' | 'invalid'; message: string };
+      };
+      claim_member_profile: {
+        Args: { p_display_name: string; p_avatar_seed: string };
+        Returns: {
+          status: string;
+          message: string;
+          display_name?: string;
+          avatar_url?: string;
+        };
+      };
+      /**
+       * Member-only RPC to record a self-declared age band. Migration 043.
+       * Valid values: '18-24' | '25-34' | '35-44' | '45+'.
+       */
+      set_member_age_bracket: {
+        Args: { p_bracket: string };
+        Returns: void;
+      };
+      seed_conversation_openers: {
+        Args: { p_provider_id: string };
+        Returns: {
+          conversation_id: string;
+          seeded: boolean;
+          message_count: number;
+        };
+      };
       /**
        * Request a paid session for a conversation/channel. Returns the request id.
        * Migration 030 (pre-launch; stubs present for type-safety).
@@ -916,6 +1003,41 @@ export type Database = {
       get_public_config: {
         Args: { p_domain: string };
         Returns: Record<string, unknown> | null;
+      };
+      /**
+       * Returns the live session (pending_leases or active) for a conversation,
+       * or null if none. Migration 037.
+       */
+      get_active_session: {
+        Args: { p_conversation_id: string };
+        Returns: {
+          id: string;
+          conversation_id: string;
+          status: string;
+          channel: string;
+          member_id: string;
+          provider_id: string;
+          rate_tokens_per_min: number;
+          started_at: string | null;
+          accepted_at: string | null;
+          ended_at: string | null;
+          last_activity_at: string | null;
+        } | null;
+      };
+      /**
+       * Returns the most recent non-expired pending session request for a
+       * conversation visible to the caller, or null if none. Migration 037.
+       */
+      get_pending_session_request: {
+        Args: { p_conversation_id: string };
+        Returns: {
+          id: string;
+          channel: string;
+          initiator_id: string;
+          recipient_id: string;
+          expires_at: string;
+          created_at: string;
+        } | null;
       };
     };
     Enums: {

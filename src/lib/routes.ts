@@ -15,6 +15,9 @@
  * what the `from` field below replaces for the routes where history matters.
  */
 
+/** The door a conversation was opened from — back returns here. */
+export type ChatDoor = 'home' | 'detail' | 'chatsList';
+
 export type MemberRoute =
   /**
    * The v13 merged home: Chats and Explore on one screen. Replaces the first-gen
@@ -26,11 +29,16 @@ export type MemberRoute =
   /**
    * `from` exists because a conversation has more than one door.
    *
-   * You reach a chat from Home directly or from a provider's detail screen, and
-   * back should return you to the one you used. Without it the choice is a wrong
-   * guess, or a full history stack to answer a question one field answers.
+   * You reach a chat from Home, the extended Chats list, or a provider's
+   * detail screen, and back should return you to the one you used. Without it
+   * the choice is a wrong guess, or a full history stack to answer a question
+   * one field answers. See docs/flows.md.
    */
-  | { readonly name: 'chat'; readonly providerId: string; readonly from: 'home' | 'detail' }
+  | {
+      readonly name: 'chat';
+      readonly providerId: string;
+      readonly from: ChatDoor;
+    }
   /**
    * A voice or video call. `direction` is 'out' (we dialled; `callId` is null
    * until `start_call` returns one) or 'in' (someone is ringing us; `callId`
@@ -85,10 +93,13 @@ export function memberParent(route: MemberRoute): MemberRoute | null {
     case 'home':
       return null;
     case 'chat':
-      // Back from a chat opened via a profile returns to that profile, not Home.
-      return route.from === 'detail'
-        ? { name: 'providerDetail', providerId: route.providerId }
-        : { name: 'home' };
+      if (route.from === 'detail') {
+        return { name: 'providerDetail', providerId: route.providerId };
+      }
+      if (route.from === 'chatsList') {
+        return { name: 'chatsList' };
+      }
+      return { name: 'home' };
     case 'call':
       // Home for either direction: an incoming call's `providerId` is the caller,
       // who may be a member (no profile screen), so the profile is the wrong

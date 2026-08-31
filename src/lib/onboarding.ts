@@ -40,22 +40,20 @@ export type Phase = 'welcome' | 'leaving' | 'form' | 'done';
 export type Route = 'undecided' | 'google' | 'phone';
 
 /** The rows the checklist can hold. */
-export type StepKey = 'identify' | 'verify';
+export type StepKey = 'identify' | 'verify' | 'age';
 
 /**
  * What the flow is currently asking for, within the form.
  *
  * `choose` is the fork, and it exists because our first step is a question where
- * the source's is a command. `number`, `confirm`, and `code` are the phone
- * branch; Google never leaves `choose`, it just goes busy in place.
- *
- * `confirm` sits between `number` and `code`: it shows the formatted number and
- * asks the user to verify it before the OTP is sent, mirroring WhatsApp's
- * confirmation step.
+ * the source's is a command. `number` and `code` are the phone branch; Google
+ * never leaves `choose`, it just goes busy in place. There is deliberately no
+ * confirm stage: the locked product decision drops WhatsApp's redundant
+ * “is this number correct?” alert because OTP verification already proves it.
  *
  * This, and not `StepKey`, is what the field's colour follows — see `paletteFor`.
  */
-export type IdentifyStage = 'choose' | 'number' | 'confirm' | 'code';
+export type IdentifyStage = 'choose' | 'number' | 'code';
 
 export interface StepSpec {
   readonly key: StepKey;
@@ -81,7 +79,7 @@ export const STEPS: Readonly<Record<StepKey, StepSpec>> = {
     key: 'verify',
     title: 'Your code',
     description:
-      'Six digits, sent to the number you gave. It expires in two minutes.',
+      'Six digits, sent to the number you gave. It expires in a few minutes.',
     /*
      * `receipt`, a slip with two lines on it, and NOT `phone`.
      *
@@ -94,7 +92,34 @@ export const STEPS: Readonly<Record<StepKey, StepSpec>> = {
      */
     glyph: 'code',
   },
+  age: {
+    key: 'age',
+    title: 'How old are you?',
+    description:
+      'A rough band is enough. Pappal is for adults.',
+    /*
+     * `person`, not `people` or `calendar`.
+     *
+     * The age step is about the individual declaring something about themselves,
+     * not about a group or a date. `person` is a standing figure — direct and
+     * unambiguous — which survives being small and grey beside a collapsed
+     * checklist row, which is where this glyph spends most of its life.
+     */
+    glyph: 'person',
+  },
 };
+
+export interface VisibleStepsOptions {
+  /**
+   * Include the age-declaration step as the final checklist row.
+   *
+   * Set to `true` once auth succeeds so the step appears the moment Google or
+   * phone verification completes, before `finish()` is called. False (default)
+   * during the auth phase so the age row does not appear as a promise that has
+   * not been earned yet.
+   */
+  includeAge?: boolean;
+}
 
 /**
  * Which rows the checklist shows, given the route.
@@ -111,20 +136,33 @@ export const STEPS: Readonly<Record<StepKey, StepSpec>> = {
  * showing it. So the list grows by one when, and only when, the phone route is
  * taken. The growth uses the same offset-plus-opacity transition as everything
  * else, so it reads as part of the flow rather than as a layout jump.
+ *
+ * `options.includeAge` appends the age-declaration step after auth completes.
  */
-export function visibleSteps(route: Route): readonly StepSpec[] {
+export function visibleSteps(
+  route: Route,
+  options: VisibleStepsOptions = {},
+): readonly StepSpec[] {
   const identify = STEPS.identify;
   if (identify === undefined) {
     throw new Error('identify step missing');
   }
-  if (route !== 'phone') {
-    return [identify];
+  const steps: StepSpec[] = [identify];
+  if (route === 'phone') {
+    const verify = STEPS.verify;
+    if (verify === undefined) {
+      throw new Error('verify step missing');
+    }
+    steps.push(verify);
   }
-  const verify = STEPS.verify;
-  if (verify === undefined) {
-    throw new Error('verify step missing');
+  if (options.includeAge) {
+    const age = STEPS.age;
+    if (age === undefined) {
+      throw new Error('age step missing');
+    }
+    steps.push(age);
   }
-  return [identify, verify];
+  return steps;
 }
 
 /**
@@ -152,7 +190,7 @@ export function paletteFor(phase: Phase, stage: IdentifyStage): BloomPalette {
    * interactions, so tapping "use my number" changed nothing and the field
    * shifted once in the entire flow instead of on every tap.
    */
-  if (stage === 'number' || stage === 'confirm') {
+  if (stage === 'number') {
     return BLOOM_PALETTES.number;
   }
   if (stage === 'code') {
@@ -265,6 +303,11 @@ export const SOURCE_METRICS = {
   welcomeGap: 20,
   /** `Image(logo).frame(width: 50)`. */
   logo: 50,
+  /**
+   * DEPARTURE: source carousel artwork is capped at 38pt. Pappal's line icons
+   * share the step icon's 32pt family; above it their strokes lose proportion.
+   */
+  carouselGlyph: 32,
 
   /** `MultiStepForm`'s outer `VStack(spacing: 64)`: checklist to control. */
   formGap: 64,

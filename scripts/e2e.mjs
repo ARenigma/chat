@@ -13,16 +13,20 @@
  *   - seeds the wallet straight into Postgres before the low-balance journey,
  *     instead of sending 48 throwaway messages
  *   - toggles the emulator's radios around the fault-injection journeys
+ *   - sets font_scale=2.0 and wm size 1280x800 for the coverage journeys
  *   - asserts, after the deletion flow, that not one row survived
  *
  * Prerequisites (all present on the CI runner): supabase CLI, adb with a booted
  * device, maestro, docker. Run `npm run e2e` after `npm run android` has
  * installed a debug build, or pass --install to have this script build one.
+ * Target an API 24 AVD the same way: boot that emulator, then run this script.
+ * The flows are API-agnostic; minSdk 24 is the claimed floor.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createClient } from '@supabase/supabase-js';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const APP_ID = 'com.companionchat';
@@ -39,7 +43,11 @@ const ONLY = [...args]
   .find(a => a.startsWith('--only='))
   ?.slice('--only='.length);
 
-const state = { supabaseStarted: false };
+const state = {
+  supabaseStarted: false,
+  memberSession: null,
+  memberSessionInstalled: false,
+};
 
 function run(cmd, argv, options = {}) {
   return execFileSync(cmd, argv, {
@@ -131,23 +139,41 @@ console.log(`e2e: driving ${devices.length} device(s)`);
 // Backend: local stack + deterministic upstream
 // ---------------------------------------------------------------------------
 step('starting the local Supabase stack');
+// Current Supabase CLI validates enabled hook secrets even though these journeys
+// never exercise SMS. Supply a deterministic local-only signing value when the
+// production secret is intentionally absent from the developer shell.
+process.env.SEND_SMS_HOOK_SECRET ??= `v1,whsec_${Buffer.from(
+  'pappal-local-e2e-hook-secret-0001',
+).toString('base64')}`;
 const status = tryRun('supabase', ['status'], { stdio: 'pipe' });
 if (!status.ok) {
-  run('supabase', ['start']);
+  // These journeys need Postgres, Auth, PostgREST, Realtime, and Kong only.
+  // Excluding unrelated services avoids pulling Studio/observability/storage
+  // images and keeps local startup materially smaller and faster.
+  run('supabase', [
+    'start',
+    '--exclude',
+    'storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor',
+  ]);
   state.supabaseStarted = true;
 }
 run('supabase', ['db', 'reset', '--no-seed']); // Applies supabase/migrations in order.
 
-const anonKey = (() => {
+const localKeys = (() => {
   const out = tryRun('supabase', ['status', '-o', 'env'], {
     stdio: 'pipe',
   }).out;
-  const match = /ANON_KEY="?([^"\n]+)"?/.exec(out);
-  if (!match) {
-    fail('could not read the local anon key from `supabase status`');
+  const anon = /ANON_KEY="?([^"\n]+)"?/.exec(out)?.[1];
+  const serviceRole = /SERVICE_ROLE_KEY="?([^"\n]+)"?/.exec(out)?.[1];
+  if (!anon || !serviceRole) {
+    fail('could not read the local API keys from `supabase status`');
   }
-  return match[1];
+  return { anon, serviceRole };
 })();
+const localUrl = `http://127.0.0.1:${SUPABASE_LOCAL_PORT}`;
+const admin = createClient(localUrl, localKeys.serviceRole, {
+  auth: { persistSession: false, autoRefreshToken: false },
+});
 
 // A provider is not something a client can create: `approve_provider_application`
 // is service-role only by design (ADR-0002), so the fixture is applied in SQL.
@@ -171,7 +197,7 @@ sql(
    values ('${PROVIDER_ID}', 'submitted', 'Ada', 'female',
            (current_date - interval '26 years')::date,
            'I listen more than I talk', ARRAY['English','Hindi'],
-           'Years of listening to friends.')
+           'I have spent years sitting with friends through the hour after the news lands. I do not tidy your story. I stay with it until it has room to breathe.')
    on conflict (user_id) do nothing`,
 );
 sql(`select public.approve_provider_application('${PROVIDER_ID}')`);
@@ -182,17 +208,67 @@ console.log('   provider "Ada" admitted and discoverable');
 
 // A member session, injected rather than earned.
 //
-// Sign-in is now Google/Facebook OAuth (ADR-0004), which Maestro cannot drive
-// without automating Google's own consent page, brittle, and a test of Google
-// rather than of us. So the member is created with the admin API and the journeys
-// after 01 run against a session that already exists. Journey 01 still asserts
-// the real sign-in screen.
+// Google Credential Manager and Firebase's system-owned OTP flow cannot be made
+// deterministic by Maestro without testing provider UI rather than our app. The
+// member is therefore created with the local admin API and journeys after 01 use
+// a real injected Supabase session. Journey 01 still asserts that both supported
+// entry points are present.
 step('seeding a member session');
-const MEMBER_ID = '22222222-2222-4222-8222-222222222222';
+const MEMBER_EMAIL = 'maestro-member@pappal.test';
+const { data: createdMember, error: memberError } =
+  await admin.auth.admin.createUser({
+    email: MEMBER_EMAIL,
+    email_confirm: true,
+  });
+if (memberError || !createdMember.user) {
+  fail(
+    `could not create member fixture: ${
+      memberError?.message ?? 'missing user'
+    }`,
+  );
+}
+const MEMBER_ID = createdMember.user.id;
+const { data: memberLink, error: linkError } =
+  await admin.auth.admin.generateLink({
+    type: 'magiclink',
+    email: MEMBER_EMAIL,
+  });
+if (linkError || !memberLink.properties?.hashed_token) {
+  fail(
+    `could not mint member fixture session: ${
+      linkError?.message ?? 'missing token hash'
+    }`,
+  );
+}
+const anonymousClient = createClient(localUrl, localKeys.anon, {
+  auth: { persistSession: false, autoRefreshToken: false },
+});
+const { data: verifiedMember, error: verifyError } =
+  await anonymousClient.auth.verifyOtp({
+    token_hash: memberLink.properties.hashed_token,
+    type: 'email',
+  });
+if (verifyError || !verifiedMember.session) {
+  fail(
+    `could not verify member fixture session: ${
+      verifyError?.message ?? 'missing session'
+    }`,
+  );
+}
+state.memberSession = verifiedMember.session;
+sql(`update public.profiles set promo_balance = 50 where id = '${MEMBER_ID}'`);
 sql(
-  `insert into auth.users (id) values ('${MEMBER_ID}') on conflict do nothing`,
+  `insert into public.policy_acceptances (user_id, policy_kind, version_id)
+   select '${MEMBER_ID}', current_policy.kind, current_policy.id
+   from (
+     select distinct on (kind) id, kind
+     from public.policy_versions
+     where effective_at <= now()
+     order by kind, version desc
+   ) current_policy
+   on conflict do nothing`,
 );
-console.log('   member seeded');
+console.log('   member seeded with current policy acceptance');
 
 // ---------------------------------------------------------------------------
 // App under test
@@ -203,7 +279,7 @@ if (INSTALL) {
     join(ROOT, '.env'),
     [
       `SUPABASE_URL=http://${HOST_FROM_EMULATOR}:${SUPABASE_LOCAL_PORT}`,
-      `SUPABASE_ANON_KEY=${anonKey}`,
+      `SUPABASE_ANON_KEY=${localKeys.anon}`,
       'SENTRY_DSN=',
       'APP_ENV=e2e',
       '',
@@ -219,6 +295,50 @@ if (!existsSync(shots)) {
   mkdirSync(shots, { recursive: true });
 }
 
+function installMemberSession() {
+  if (!state.memberSession) {
+    fail('member fixture session was not prepared');
+  }
+  const deepLink =
+    'companionchat://e2e-auth?' +
+    new URLSearchParams({
+      access_token: state.memberSession.access_token,
+      refresh_token: state.memberSession.refresh_token,
+    }).toString();
+
+  // Android's supported boundary for routing URI data into an activity. The
+  // matching intent filter is debug-only, so release builds expose no injector.
+  // https://developer.android.com/training/app-links/create-deeplinks
+  const launch = adb([
+    'shell',
+    'am',
+    'start',
+    '-W',
+    '-a',
+    'android.intent.action.VIEW',
+    '-d',
+    deepLink,
+    APP_ID,
+  ]);
+  if (/Error:|unable to resolve/i.test(launch)) {
+    fail(`could not inject the member session:\n${launch}`);
+  }
+
+  // Permission prompts are covered separately. Stable signed-in journeys grant
+  // only the dangerous permissions used by messaging and calls.
+  // https://developer.android.com/training/permissions/requesting
+  for (const permission of [
+    'android.permission.POST_NOTIFICATIONS',
+    'android.permission.RECORD_AUDIO',
+    'android.permission.CAMERA',
+  ]) {
+    adb(['shell', 'pm', 'grant', APP_ID, permission]);
+  }
+  spawnSync('sleep', ['2']);
+  state.memberSessionInstalled = true;
+  console.log('   member session installed; test permissions granted');
+}
+
 // ---------------------------------------------------------------------------
 // Journeys. Each entry may prepare state before its flow runs.
 // ---------------------------------------------------------------------------
@@ -228,7 +348,8 @@ const journeys = [
   {
     flow: '03-token-economy.yaml',
     before() {
-      // Seed the wallet at the threshold rather than sending 48 messages.
+      // Low balance is now a display/recharge state. Message sends are charged
+      // only by accepted paid sessions (ADR-0020), never one token per message.
       sql(
         'update public.profiles set token_balance = 3, last_refill_at = null',
       );
@@ -247,8 +368,8 @@ const journeys = [
       );
     },
     after() {
-      // The point of the atomic send: an unreachable server cannot have taken a
-      // token, so this is an equality check rather than a refund check.
+      // An unreachable server cannot mutate the authoritative paid-session
+      // ledger, so this is an equality check rather than a refund check.
       setRadios(true);
       const after = sql(
         "select coalesce(sum(token_balance), -1) from public.profiles where role = 'member'",
@@ -287,11 +408,10 @@ const journeys = [
         conversations: Number(sql('select count(*) from public.conversations')),
         messages: Number(sql('select count(*) from public.messages')),
       };
-      // The flow starts a fresh anonymous session afterwards, and the seeded
-      // provider is not the member being deleted, so the correct end state is
-      // the provider plus exactly one new member, and no transcript at all.
+      // Anonymous sign-in is disabled. The seeded provider is not the member
+      // being deleted, so only that provider profile remains.
       if (
-        counts.profiles !== 2 ||
+        counts.profiles !== 1 ||
         counts.conversations !== 0 ||
         counts.messages !== 0
       ) {
@@ -306,12 +426,40 @@ const journeys = [
       );
     },
   },
+  {
+    flow: '07-font-scale.yaml',
+    before() {
+      // 200% is the published Android accessibility large-text target.
+      adb(['shell', 'settings', 'put', 'system', 'font_scale', '2.0']);
+      console.log('   font_scale=2.0');
+    },
+    after() {
+      adb(['shell', 'settings', 'put', 'system', 'font_scale', '1.0']);
+    },
+  },
+  {
+    flow: '08-large-screen.yaml',
+    before() {
+      // 1280x800 dp at mdpi is an expanded window (≥840dp width).
+      adb(['shell', 'wm', 'size', '1280x800']);
+      console.log('   wm size 1280x800 (expanded width class)');
+    },
+    after() {
+      adb(['shell', 'wm', 'size', 'reset']);
+    },
+  },
 ].filter(j => (ONLY ? j.flow.includes(ONLY) : true));
 
 let failedFlow = null;
 
 for (const journey of journeys) {
   step(`journey ${journey.flow}`);
+  if (
+    journey.flow !== '01-instant-launch.yaml' &&
+    !state.memberSessionInstalled
+  ) {
+    installMemberSession();
+  }
   journey.before?.();
 
   const result = spawnSync(

@@ -1,0 +1,5 @@
+# Synced from Firebase App Distribution group: internal-testers (chat-d8c87)
+# Paste into Play Console → Testing → Internal testing → Testers → Email list
+ak99971997@gmail.com
+akg339@gmail.com
+yash@axionix.tech

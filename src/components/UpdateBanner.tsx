@@ -57,7 +57,8 @@ export function UpdateBanner() {
         }}
         accessibilityLabel="Restart to finish updating"
         accessibilityHint="Closes and reopens the app"
-        morph={{ from: TOKENS.radius.md, to: TOKENS.radius.pressButton }}
+        press="none"
+        highlight="ios"
         testID="update-restart"
         style={styles.action}>
         <Text allowFontScaling style={styles.actionLabel}>

@@ -148,7 +148,24 @@ const PAIRS = [
     target: 4.5,
     what: 'the review prompt',
   },
-  { fg: 'text/token', bg: 'bg/token', target: 4.5, what: 'the balance pill' },
+  {
+    fg: 'text/token',
+    bg: 'bg/token',
+    target: 4.5,
+    what: 'the balance pill (lime mid)',
+  },
+  {
+    fg: 'text/onTokenStrong',
+    bg: 'bg/tokenHealthy',
+    target: 4.5,
+    what: 'the healthy (≥1h) wallet pill',
+  },
+  {
+    fg: 'text/onTokenStrong',
+    bg: 'bg/tokenCritical',
+    target: 4.5,
+    what: 'the critical (<10m) wallet pill',
+  },
   {
     fg: 'state/danger',
     bg: 'bg/base',

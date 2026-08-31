@@ -12,6 +12,7 @@ describe('useStore', () => {
     expect(s.sending).toBe(false);
     expect(s.peerTyping).toBe(false);
     expect(s.refillVisible).toBe(false);
+    expect(s.walletVisible).toBe(false);
   });
 
   /**
@@ -38,6 +39,15 @@ describe('useStore', () => {
     expect(useStore.getState().refillVisible).toBe(true);
     useStore.getState().closeRefill();
     expect(useStore.getState().refillVisible).toBe(false);
+  });
+
+  it('opens the wallet page independently of the refill sheet', () => {
+    useStore.getState().openWallet();
+    expect(useStore.getState().walletVisible).toBe(true);
+    expect(useStore.getState().refillVisible).toBe(false);
+    useStore.getState().openRefill();
+    expect(useStore.getState().walletVisible).toBe(false);
+    expect(useStore.getState().refillVisible).toBe(true);
   });
 
   it('derives the low-balance nudge from the shared threshold', () => {
@@ -114,6 +124,7 @@ describe('useStore', () => {
       sending: false,
       peerTyping: false,
       refillVisible: false,
+      walletVisible: false,
       notice: null,
     });
   });

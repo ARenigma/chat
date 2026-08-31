@@ -75,6 +75,12 @@ select lives_ok(
   'a named applicant is admitted'
 );
 
+-- Fund member so the session balance gate in send_message (ADR-0020) passes.
+update public.profiles set promo_balance = 500
+where id = 'bbbbbbbb-0000-4000-8000-000000000002';
+select test.accept_current_policies(id)
+from auth.users;
+
 -- ---------------------------------------------------------------------------
 -- The directory is the only way a member sees a provider
 -- ---------------------------------------------------------------------------

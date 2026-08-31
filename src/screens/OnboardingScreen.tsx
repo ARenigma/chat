@@ -19,6 +19,7 @@ import Animated, {
   Easing,
   FadeIn,
   FadeInDown,
+  FadeOutUp,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -31,6 +32,7 @@ import {
   COMPLETION_DELAY_MS,
   SOURCE_METRICS,
   STEP_ADVANCE_MS,
+  STEP_EXIT_MS,
   canSubmit,
   coresCollapsed,
   paletteFor,
@@ -46,7 +48,7 @@ import { WordColumn, type Word } from '../components/WordColumn';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { CodeField } from '../components/CodeField';
-import { Spinner } from '../components/Spinner';
+import { LoadingIndicator } from '../components/LoadingIndicator';
 import { CompletionRow } from '../components/CompletionRow';
 import { TextField } from '../components/TextField';
 import { CountryPicker, DEFAULT_DIAL_CODE } from '../components/CountryPicker';
@@ -58,6 +60,11 @@ import {
   signInWithGoogle,
   verifyPhoneOtp,
 } from '../api/auth';
+import {
+  AGE_BRACKETS,
+  setMemberAgeBracket,
+  type AgeBracket,
+} from '../api/profileSetup';
 
 const BLOCK_PAD = SOURCE_METRICS.blockPad;
 const COLUMN_TOP = SOURCE_METRICS.columnTop;
@@ -152,6 +159,22 @@ export function OnboardingScreen({ onDone }: Props) {
   const [cooldown, setCooldown] = useState(0);
 
   /*
+   * Auth-done flag: raised once Google or phone verification succeeds.
+   *
+   * Separates the "auth completed" event from `finish()` so the age step can
+   * live between them. The flag appends the age row to the visible checklist and
+   * switches the active step to 'age'. The field's colour follows the sub-stage,
+   * so it turns over here too — see `paletteFor`.
+   *
+   * The browser-redirect path never reaches this flag: the screen unmounts
+   * before auth settles, and App.tsx's boot machine handles age collection via
+   * ProfileSetupScreen instead. This flag is exclusively for the Credential
+   * Manager path, which resolves synchronously and stays on screen.
+   */
+  const [authDone, setAuthDone] = useState(false);
+  const [selectedBracket, setSelectedBracket] = useState<AgeBracket | null>(null);
+
+  /*
    * The IME is part of the layout, not something to draw behind.
    *
    * Android's layout guidance treats the keyboard as a first-class occupant of
@@ -198,8 +221,11 @@ export function OnboardingScreen({ onDone }: Props) {
   const elapsed = useSharedValue(0);
   const welcomeOut = useSharedValue(0);
 
-  const steps = useMemo(() => visibleSteps(route), [route]);
-  const activeKey = identify === 'code' ? 'verify' : 'identify';
+  const steps = useMemo(
+    () => visibleSteps(route, { includeAge: authDone }),
+    [route, authDone],
+  );
+  const activeKey = authDone ? 'age' : identify === 'code' ? 'verify' : 'identify';
   // Colour follows the SUB-STAGE, so the field turns over on every tap rather
   // than only when the checklist grows a row. See `paletteFor`.
   const stage = useMemo(
@@ -289,8 +315,20 @@ export function OnboardingScreen({ onDone }: Props) {
            */
           return;
         }
+        /*
+         * Auth succeeded: mark it, show the age step, reset state to idle so
+         * the age chips are interactive. Do NOT call finish() here — that
+         * comes after the bracket is saved.
+         *
+         * `setState('success')` first so the identify row collapses with its
+         * check mark before the age row grows in. After the step advance
+         * duration, reset to idle so `canSubmit` allows the age submit.
+         */
         setState('success');
-        finish();
+        after(STEP_ADVANCE_MS, () => {
+          setState('idle');
+          setAuthDone(true);
+        });
       } catch (error) {
         setRoute('undecided');
         if (
@@ -313,7 +351,9 @@ export function OnboardingScreen({ onDone }: Props) {
         );
       }
     })();
-  }, [state, finish, fail]);
+    // `finish` is deliberately absent: since the age step landed, auth success
+    // hands off to the age chips rather than completing onboarding here.
+  }, [state, fail, after]);
 
   const onUsePhone = useCallback(() => {
     setRoute('phone');
@@ -338,20 +378,12 @@ export function OnboardingScreen({ onDone }: Props) {
    */
   const canSend = phone.trim().length >= 6 && state !== 'loading';
 
-  /** From 'number' stage: validate and advance to the confirm sub-step. */
-  const onShowConfirm = useCallback(() => {
-    if (phone.trim().length < 6) {
+  /** Send directly; OTP verification is the confirmation, so no second prompt. */
+  const onSendCode = useCallback(() => {
+    if (!canSend || !canSubmit(state)) {
       return;
     }
     Keyboard.dismiss();
-    setIdentify('confirm');
-  }, [phone]);
-
-  /** From 'confirm' stage: actually send the OTP and advance to code entry. */
-  const onConfirmSend = useCallback(() => {
-    if (!canSubmit(state)) {
-      return;
-    }
     setState('loading');
     setFailure(null);
     const fullPhone = `${dialCode} ${phone.trim()}`;
@@ -365,7 +397,7 @@ export function OnboardingScreen({ onDone }: Props) {
       }
       fail(result.message);
     })();
-  }, [state, dialCode, phone, fail]);
+  }, [canSend, state, dialCode, phone, fail]);
 
   /** Resend the OTP from the code-entry stage, respecting the cooldown. */
   const onResend = useCallback(() => {
@@ -386,6 +418,13 @@ export function OnboardingScreen({ onDone }: Props) {
     })();
   }, [cooldown, state, dialCode, phone, fail]);
 
+  const onChangeNumber = useCallback(() => {
+    setCode('');
+    setFailure(null);
+    setState('idle');
+    setIdentify('number');
+  }, []);
+
   const onVerify = useCallback(
     (entered: string) => {
       if (!canSubmit(state)) {
@@ -397,16 +436,47 @@ export function OnboardingScreen({ onDone }: Props) {
       void (async () => {
         const result = await verifyPhoneOtp(fullPhone, entered);
         if (result.status !== 'failed') {
+          /*
+           * Verification succeeded: step verify into success, then reveal the
+           * age step. Same pattern as onGoogle — do NOT call finish() yet.
+           */
           setState('success');
-          finish();
+          after(STEP_ADVANCE_MS, () => {
+            setState('idle');
+            setAuthDone(true);
+          });
           return;
         }
         fail(result.message);
-        setCode('');
       })();
     },
-    [state, dialCode, phone, finish, fail],
+    // No `finish` here either — the age step completes onboarding now.
+    [state, dialCode, phone, fail, after],
   );
+
+  /**
+   * Age bracket confirmed: save to Supabase then complete onboarding.
+   *
+   * Called either from the "Continue" button in the age control block, or when
+   * the member taps a chip (auto-advance). The RPC is idempotent, so a retry on
+   * a transient error is safe.
+   */
+  const onSubmitAge = useCallback(() => {
+    if (selectedBracket === null || !canSubmit(state)) {
+      return;
+    }
+    setState('loading');
+    setFailure(null);
+    void (async () => {
+      try {
+        await setMemberAgeBracket(selectedBracket);
+        setState('success');
+        finish();
+      } catch (err) {
+        fail(err instanceof Error ? err.message : 'Could not save age. Please try again.');
+      }
+    })();
+  }, [selectedBracket, state, finish, fail]);
 
   /*
    * `.transition(.opacity.combined(with: .offset(y: 20)))` from the source: the
@@ -539,10 +609,6 @@ export function OnboardingScreen({ onDone }: Props) {
               style={[
                 styles.form,
                 phase === 'done' ? styles.formCentred : styles.formBottom,
-                {
-                  paddingBottom: BLOCK_PAD + (keyboardUp ? 0 : insets.bottom),
-                  paddingTop: BLOCK_PAD + insets.top,
-                },
               ]}
             >
               {/*
@@ -583,8 +649,11 @@ export function OnboardingScreen({ onDone }: Props) {
                * finished, per the source's `if !hasFinishedForm`: the completion
                * row should be the only thing left on screen.
                */}
-              {phase !== 'done' && identify === 'choose' ? (
-                <View style={styles.choices}>
+              {phase !== 'done' && !authDone && identify === 'choose' ? (
+                <Animated.View
+                  entering={FadeInDown.duration(STEP_ADVANCE_MS)}
+                  exiting={FadeOutUp.duration(STEP_EXIT_MS)}
+                  style={styles.choices}>
                   {/*
                    * PRIMARY: white-pill Google button.
                    *
@@ -602,7 +671,7 @@ export function OnboardingScreen({ onDone }: Props) {
                     style={styles.primary}
                   >
                     {state === 'loading' ? (
-                      <Spinner size={20} color={theme.color.text.primary} />
+                      <LoadingIndicator size={20} color={theme.color.text.primary} containerColor="transparent" />
                     ) : (
                       <>
                         <Image
@@ -651,11 +720,14 @@ export function OnboardingScreen({ onDone }: Props) {
                       Become a partner
                     </Text>
                   </Pressable>
-                </View>
+                </Animated.View>
               ) : null}
 
-              {phase !== 'done' && identify === 'number' ? (
-                <View style={styles.numberBlock}>
+              {phase !== 'done' && !authDone && identify === 'number' ? (
+                <Animated.View
+                  entering={FadeInDown.duration(STEP_ADVANCE_MS)}
+                  exiting={FadeOutUp.duration(STEP_EXIT_MS)}
+                  style={styles.numberBlock}>
                   <View style={styles.field}>
                     {/* Country-code selector leading the national number field. */}
                     <CountryPicker
@@ -670,11 +742,12 @@ export function OnboardingScreen({ onDone }: Props) {
                       keyboardType="phone-pad"
                       textContentType="telephoneNumber"
                       autoComplete="tel"
+                      autoFocus
                       placeholder="Your number"
                       placeholderTextColor={theme.color.text.tertiary}
                       style={styles.input}
                       testID="onboard-phone"
-                      onSubmitEditing={onShowConfirm}
+                      onSubmitEditing={onSendCode}
                     />
                     {/*
                      * The submit mark is `chevron-right`, not `reply`. The source
@@ -689,63 +762,133 @@ export function OnboardingScreen({ onDone }: Props) {
                       * anything is a control that lies about its own state.
                       */}
                     <Pressable
-                      onPress={onShowConfirm}
+                      onPress={onSendCode}
+                      disabled={state === 'loading'}
                       testID="onboard-send-code"
                       accessibilityLabel="Send code"
                       press="button"
                       style={[styles.go, canSend ? null : styles.goIdle]}
                     >
-                      <Icon
-                        name="chevronRight"
-                        size={20}
-                        color={theme.color.text.onAccent}
-                      />
+                      {state === 'loading' ? (
+                        <LoadingIndicator size={20} color={theme.color.text.onAccent} containerColor="transparent" />
+                      ) : (
+                        <Icon
+                          name="chevronRight"
+                          size={20}
+                          color={theme.color.text.onAccent}
+                        />
+                      )}
                     </Pressable>
                   </View>
                   <Text allowFontScaling style={styles.numberHint}>
                     We'll send an SMS to verify your number.
                   </Text>
-                </View>
+                </Animated.View>
               ) : null}
 
-              {phase !== 'done' && identify === 'confirm' ? (
-                <View style={styles.confirmBlock}>
-                  <Text allowFontScaling style={styles.confirmNumber}>
-                    {dialCode} {phone.trim()}
-                  </Text>
-                  <Text allowFontScaling style={styles.confirmQuestion}>
-                    Is this the correct number?
-                  </Text>
+              {phase !== 'done' && authDone ? (
+                /*
+                 * M3 filter-chip row: four bands, tonal fill on selection,
+                 * then a Continue pill.
+                 *
+                 * No "Under 18" chip: the product is adults only. Showing a
+                 * band we would not serve would be a lie. Soft self-declaration
+                 * means no DOB picker — the chip row is the whole UI.
+                 *
+                 * Tapping a chip both selects it and auto-submits. One action
+                 * is faster than two, and the Continue button on a declaration
+                 * (not a text input) has no incremental value. The button is
+                 * kept as an accessible fallback and for the loading/error state.
+                 */
+                <Animated.View
+                  entering={FadeInDown.duration(STEP_ADVANCE_MS)}
+                  exiting={FadeOutUp.duration(STEP_EXIT_MS)}
+                  style={styles.ageBlock}>
+                  <View style={styles.ageChips}>
+                    {AGE_BRACKETS.map(bracket => {
+                      const selected = selectedBracket === bracket;
+                      return (
+                        <Pressable
+                          key={bracket}
+                          onPress={() => {
+                            setSelectedBracket(bracket);
+                            // Auto-advance: selection IS the confirmation.
+                            // The explicit submit fires from onSubmitAge but we
+                            // trigger it here immediately so one tap does the job.
+                            if (canSubmit(state)) {
+                              setState('loading');
+                              setFailure(null);
+                              void setMemberAgeBracket(bracket)
+                                .then(() => {
+                                  setState('success');
+                                  finish();
+                                })
+                                .catch(err => {
+                                  setSelectedBracket(null);
+                                  fail(
+                                    err instanceof Error
+                                      ? err.message
+                                      : 'Could not save age. Please try again.',
+                                  );
+                                });
+                            }
+                          }}
+                          disabled={state === 'loading'}
+                          testID={`age-chip-${bracket}`}
+                          accessibilityRole="radio"
+                          checked={selected}
+                          accessibilityLabel={bracket}
+                          press="none"
+                          style={[
+                            styles.ageChip,
+                            selected && styles.ageChipSelected,
+                          ]}>
+                          <Text
+                            allowFontScaling
+                            style={[
+                              styles.ageChipLabel,
+                              selected && styles.ageChipLabelSelected,
+                            ]}>
+                            {bracket}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                  {/*
+                   * Continue button: shown as a spinner while the RPC runs, as
+                   * a dead chip if nothing is selected yet. Primary affordance
+                   * is the chip tap itself; this is the reachable target for
+                   * someone who noticed they tapped wrong and wants to swap.
+                   */}
                   <Pressable
-                    onPress={onConfirmSend}
-                    testID="onboard-confirm"
-                    accessibilityLabel="Yes, send code"
+                    onPress={onSubmitAge}
+                    disabled={selectedBracket === null || state === 'loading'}
+                    testID="age-continue"
+                    accessibilityLabel="Continue"
                     press="button"
-                    style={styles.primary}
-                  >
+                    style={[
+                      styles.primary,
+                      (selectedBracket === null || state === 'loading')
+                        ? styles.ageContinueIdle
+                        : null,
+                    ]}>
                     {state === 'loading' ? (
-                      <Spinner size={20} color={theme.color.text.primary} />
+                      <LoadingIndicator size={20} color={theme.color.text.primary} containerColor="transparent" />
                     ) : (
                       <Text allowFontScaling style={styles.primaryLabel}>
-                        Yes, send code
+                        Continue
                       </Text>
                     )}
                   </Pressable>
-                  <Pressable
-                    onPress={() => setIdentify('number')}
-                    accessibilityLabel="Edit number"
-                    press="button"
-                    style={styles.partnerLink}
-                  >
-                    <Text allowFontScaling style={styles.partnerLinkLabel}>
-                      Edit number
-                    </Text>
-                  </Pressable>
-                </View>
+                </Animated.View>
               ) : null}
 
-              {phase !== 'done' && identify === 'code' ? (
-                <View style={styles.codeBlock}>
+              {phase !== 'done' && !authDone && identify === 'code' ? (
+                <Animated.View
+                  entering={FadeInDown.duration(STEP_ADVANCE_MS)}
+                  exiting={FadeOutUp.duration(STEP_EXIT_MS)}
+                  style={styles.codeBlock}>
                   <CodeField
                     value={code}
                     onChange={setCode}
@@ -754,34 +897,51 @@ export function OnboardingScreen({ onDone }: Props) {
                     errorNonce={errorNonce}
                     testID="onboard-code"
                   />
-                  {/* Resend affordance with cooldown, mirroring AuthScreen. */}
-                  <Pressable
-                    onPress={onResend}
-                    testID="onboard-resend"
-                    accessibilityLabel={
-                      cooldown > 0
-                        ? `Resend code in ${cooldown} seconds`
-                        : 'Resend code'
-                    }
-                    press="button"
-                    style={styles.resendLink}
-                  >
-                    <Text allowFontScaling style={[
-                      styles.resendLabel,
-                      (cooldown > 0 || state === 'loading') ? styles.resendLabelDimmed : null,
-                    ]}>
-                      {cooldown > 0
-                        ? `Resend code in ${cooldown}s`
-                        : 'Resend code'}
-                    </Text>
-                  </Pressable>
-                </View>
+                  <View style={styles.codeActions}>
+                    <Pressable
+                      onPress={onChangeNumber}
+                      testID="onboard-change-number"
+                      accessibilityLabel="Change phone number"
+                      press="button"
+                      style={styles.resendLink}>
+                      <Text allowFontScaling style={styles.resendLabel}>
+                        Change number
+                      </Text>
+                    </Pressable>
+                    {/* Resend affordance with cooldown, mirroring AuthScreen. */}
+                    <Pressable
+                      onPress={onResend}
+                      disabled={cooldown > 0 || state === 'loading'}
+                      testID="onboard-resend"
+                      accessibilityLabel={
+                        cooldown > 0
+                          ? `Resend code in ${cooldown} seconds`
+                          : 'Resend code'
+                      }
+                      press="button"
+                      style={styles.resendLink}>
+                      <Text
+                        allowFontScaling
+                        style={[
+                          styles.resendLabel,
+                          cooldown > 0 || state === 'loading'
+                            ? styles.resendLabelDimmed
+                            : null,
+                        ]}>
+                        {cooldown > 0
+                          ? `Resend in ${cooldown}s`
+                          : 'Resend code'}
+                      </Text>
+                    </Pressable>
+                  </View>
+                </Animated.View>
               ) : null}
 
               {failure !== null ? (
                 <Animated.Text
                   entering={FadeIn.duration(STEP_ADVANCE_MS)}
                   allowFontScaling
+                  accessibilityLiveRegion="polite"
                   style={styles.failure}
                 >
                   {failure}
@@ -832,11 +992,14 @@ const makeStyles = (t: Theme) =>
     // White on the field, which is only legal because the block is pinned to the
     // bottom where the field is dark.
     title: {
-      ...TOKENS.typography.displayLarge,
+      fontFamily: 'Geist-Regular',
+      fontSize: 34,
+      lineHeight: 41,
+      letterSpacing: 0.4,
       color: t.color.text.onAccent,
     },
     subtitle: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.text.onAccent,
       opacity: 0.7,
     },
@@ -968,7 +1131,9 @@ const makeStyles = (t: Theme) =>
       height: 56,
       borderRadius: TOKENS.radius.pill,
       borderCurve: 'continuous',
-      backgroundColor: t.color.bg.sunken,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: t.color.border.strong,
+      backgroundColor: t.color.bg.base,
     },
     numberHint: {
       ...TOKENS.typography.captionRegular,
@@ -998,25 +1163,59 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
       backgroundColor: t.color.text.primary,
     },
-    // Confirm sub-step: formatted number + question + action pair.
-    confirmBlock: {
+    // Age bracket picker: chip row + continue button.
+    ageBlock: {
       gap: TOKENS.space.sm,
-      alignItems: 'stretch',
     },
-    confirmNumber: {
-      ...TOKENS.typography.displayLarge,
+    ageChips: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: TOKENS.space.xs,
+    },
+    /*
+     * M3 filter chip: outlined at rest, tonal fill on selection.
+     *
+     * On the dark welcome bloom `t.color.bg.base` is dark, so the resting chip
+     * reads as a translucent outline on a dark surface — correct. Selected gets
+     * a white fill (tonal on a dark bloom = high-contrast white), matching the
+     * Google primary button directly above. The hairline border keeps definition
+     * against the bloom at any brightness level.
+     */
+    ageChip: {
+      paddingVertical: TOKENS.space.xs,
+      paddingHorizontal: TOKENS.space.md,
+      borderRadius: TOKENS.radius.pill,
+      borderCurve: 'continuous',
+      borderWidth: 1,
+      borderColor: t.color.border.strong,
+      backgroundColor: 'transparent',
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: 44,
+    },
+    ageChipSelected: {
+      backgroundColor: '#FFFFFF',
+      borderColor: '#FFFFFF',
+    },
+    ageChipLabel: {
+      ...TOKENS.typography.headline,
+      color: t.color.text.onAccent,
+    },
+    ageChipLabelSelected: {
       color: t.color.text.primary,
-      textAlign: 'center',
     },
-    confirmQuestion: {
-      ...TOKENS.typography.bodyMedium,
-      color: t.color.text.secondary,
-      textAlign: 'center',
-      marginBottom: TOKENS.space.xs,
+    // The continue button dims when no bracket is selected.
+    ageContinueIdle: {
+      opacity: 0.4,
     },
     // Code entry + resend affordance.
     codeBlock: {
       gap: TOKENS.space.sm,
+    },
+    codeActions: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      gap: TOKENS.space.lg,
     },
     resendLink: {
       minHeight: 44,

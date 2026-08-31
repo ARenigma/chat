@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'motion/react';
+import { ChevronRight } from 'lucide-react';
 import {
   type DomainDef,
   formatDisplayValue,
@@ -10,11 +11,22 @@ import {
   validatePayload,
 } from '@/lib/config-registry';
 import { GuidedForm } from '@/components/config/GuidedForm';
-import { Button } from '@/components/ui/Button';
-import { Dialog } from '@/components/ui/Dialog';
-import { Input, Textarea } from '@/components/ui/Input';
+import { Button, AsyncButton } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/Toast';
 import { useMutation } from '@/lib/hooks/useMutation';
+import { cn } from '@/lib/utils';
 
 interface ConfigVersion {
   id: string;
@@ -42,12 +54,7 @@ function buildDiff(
     const oldVal = active[field.key];
     const newVal = draft[field.key];
     if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) {
-      changes.push({
-        key: field.key,
-        label: field.label,
-        old: oldVal,
-        new: newVal,
-      });
+      changes.push({ key: field.key, label: field.label, old: oldVal, new: newVal });
     }
   }
   return changes;
@@ -58,10 +65,7 @@ export function ConfigVersionEditor({ domain, activeVersion, draftVersion }: Pro
   const toast = useToast();
   const domainDef = getDomain(domain);
 
-  const seedPayload = (draftVersion?.payload ?? activeVersion?.payload ?? {}) as Record<
-    string,
-    unknown
-  >;
+  const seedPayload = (draftVersion?.payload ?? activeVersion?.payload ?? {}) as Record<string, unknown>;
   const [payload, setPayload] = useState<Record<string, unknown>>(seedPayload);
   const [isDirty, setIsDirty] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -69,16 +73,13 @@ export function ConfigVersionEditor({ domain, activeVersion, draftVersion }: Pro
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [savedDraftId, setSavedDraftId] = useState<string | null>(draftVersion?.id ?? null);
 
-  // Publish modal state
   const [showPublish, setShowPublish] = useState(false);
   const [confirmPhrase, setConfirmPhrase] = useState('');
   const [reason, setReason] = useState('');
   const [publishError, setPublishError] = useState<string | null>(null);
 
-  // Track active payload (from DB) for diff
   const activePayload = (activeVersion?.payload ?? {}) as Record<string, unknown>;
 
-  // Keep JSON textarea in sync when guided form changes
   function handlePayloadChange(next: Record<string, unknown>) {
     setPayload(next);
     setJsonText(JSON.stringify(next, null, 2));
@@ -86,7 +87,6 @@ export function ConfigVersionEditor({ domain, activeVersion, draftVersion }: Pro
     setSavedDraftId(null);
   }
 
-  // When JSON editor changes, try to sync back to guided form
   function handleJsonChange(v: string) {
     setJsonText(v);
     setIsDirty(true);
@@ -100,18 +100,14 @@ export function ConfigVersionEditor({ domain, activeVersion, draftVersion }: Pro
     }
   }
 
-  // Warn on navigation away when dirty
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
-      if (isDirty && savedDraftId == null) {
-        e.preventDefault();
-      }
+      if (isDirty && savedDraftId == null) e.preventDefault();
     };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
   }, [isDirty, savedDraftId]);
 
-  // Validation errors
   const validationErrors = domainDef ? validatePayload(domainDef, payload) : [];
 
   const saveMutation = useMutation(
@@ -170,54 +166,55 @@ export function ConfigVersionEditor({ domain, activeVersion, draftVersion }: Pro
     }
   );
 
-  // Diff from active
   const diff =
     savedDraftId != null && domainDef
       ? buildDiff(activePayload, payload, domainDef)
       : [];
 
+  function closePublish() {
+    setShowPublish(false);
+    setConfirmPhrase('');
+    setReason('');
+    setPublishError(null);
+    publishMutation.reset();
+  }
+
   return (
-    <div>
+    <div className="flex flex-col gap-6">
       {/* Guided form */}
       {domainDef ? (
-        <section style={{ marginBottom: '1.5rem' }}>
-          <GuidedForm
-            domain={domainDef}
-            payload={payload}
-            onChange={handlePayloadChange}
-          />
-        </section>
+        <GuidedForm domain={domainDef} payload={payload} onChange={handlePayloadChange} />
       ) : (
-        /* Fallback: raw JSON for unknown domains */
-        <section style={{ marginBottom: '1.5rem' }}>
-          <div className="field">
-            <label className="field-label" htmlFor="payload-editor">Edit payload (JSON)</label>
-            <Textarea
-              id="payload-editor"
-              value={jsonText}
-              mono
-              rows={16}
-              error={jsonError != null}
-              onChange={(e) => handleJsonChange(e.target.value)}
-              spellCheck={false}
-            />
-            {jsonError && <p className="field-error">{jsonError}</p>}
-          </div>
-        </section>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="payload-editor">Edit payload (JSON)</Label>
+          <Textarea
+            id="payload-editor"
+            value={jsonText}
+            rows={16}
+            className={cn('font-mono text-sm', jsonError && 'border-destructive')}
+            onChange={(e) => handleJsonChange(e.target.value)}
+            spellCheck={false}
+          />
+          {jsonError && <p className="text-sm text-destructive">{jsonError}</p>}
+        </div>
       )}
 
-      {/* Advanced JSON */}
+      {/* Advanced JSON accordion */}
       {domainDef && (
-        <section style={{ marginBottom: '1.5rem' }}>
-          <button
+        <div>
+          <Button
             type="button"
-            className="btn btn--ghost btn--sm"
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 -ml-1 text-muted-foreground"
             onClick={() => setShowAdvanced((v) => !v)}
-            style={{ gap: '0.375rem' }}
           >
-            <span style={{ transform: showAdvanced ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>▶</span>
+            <ChevronRight
+              size={14}
+              className={cn('transition-transform duration-150', showAdvanced && 'rotate-90')}
+            />
             Advanced: raw JSON
-          </button>
+          </Button>
           <AnimatePresence initial={false}>
             {showAdvanced && (
               <motion.div
@@ -225,39 +222,36 @@ export function ConfigVersionEditor({ domain, activeVersion, draftVersion }: Pro
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
                 transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                style={{ overflow: 'hidden' }}
+                className="overflow-hidden"
               >
-                <div style={{ paddingTop: '0.75rem' }}>
-                  <div className="field">
-                    <label className="field-label" htmlFor="payload-json">
-                      Raw JSON — edits sync to guided controls
-                    </label>
-                    <Textarea
-                      id="payload-json"
-                      value={jsonText}
-                      mono
-                      rows={12}
-                      error={jsonError != null}
-                      onChange={(e) => handleJsonChange(e.target.value)}
-                      spellCheck={false}
-                    />
-                    {jsonError && <p className="field-error">{jsonError}</p>}
-                    {validationErrors.length > 0 && (
-                      <div style={{ marginTop: '0.5rem' }}>
-                        {validationErrors.map((e, i) => (
-                          <p key={i} className="field-error">{e}</p>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                <div className="flex flex-col gap-1.5 pt-3">
+                  <Label htmlFor="payload-json">
+                    Raw JSON — edits sync to guided controls
+                  </Label>
+                  <Textarea
+                    id="payload-json"
+                    value={jsonText}
+                    rows={12}
+                    className={cn('font-mono text-sm', jsonError && 'border-destructive')}
+                    onChange={(e) => handleJsonChange(e.target.value)}
+                    spellCheck={false}
+                  />
+                  {jsonError && <p className="text-sm text-destructive">{jsonError}</p>}
+                  {validationErrors.length > 0 && (
+                    <div className="flex flex-col gap-0.5 mt-1">
+                      {validationErrors.map((e, i) => (
+                        <p key={i} className="text-sm text-destructive">{e}</p>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </motion.div>
             )}
           </AnimatePresence>
-        </section>
+        </div>
       )}
 
-      {/* Inline diff after save */}
+      {/* Diff view after save */}
       <AnimatePresence>
         {savedDraftId != null && diff.length > 0 && (
           <motion.section
@@ -265,19 +259,24 @@ export function ConfigVersionEditor({ domain, activeVersion, draftVersion }: Pro
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.18 }}
-            style={{ marginBottom: '1.5rem' }}
+            className="rounded-lg border bg-card overflow-hidden"
           >
-            <p className="section-label" style={{ marginBottom: '0.5rem' }}>Changes from live</p>
-            <div className="diff-wrap">
+            <div className="px-4 py-3 border-b bg-muted/40">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Changes from live
+              </p>
+            </div>
+            <div className="divide-y">
               {diff.map(({ key, label, old: oldVal, new: newVal }) => {
                 const field = domainDef?.fields.find((f) => f.key === key);
                 return (
-                  <div key={key} className="diff-row">
-                    <p className="diff-row-label">{label}</p>
-                    <p className="diff-old">
+                  <div key={key} className="px-4 py-3 flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-4">
+                    <p className="text-sm font-medium min-w-0 sm:w-40 shrink-0">{label}</p>
+                    <p className="diff-old text-sm">
                       {field ? formatDisplayValue(field, oldVal) : JSON.stringify(oldVal)}
                     </p>
-                    <p className="diff-new">
+                    <span className="hidden sm:inline text-muted-foreground">→</span>
+                    <p className="diff-new text-sm">
                       {field ? formatDisplayValue(field, newVal) : JSON.stringify(newVal)}
                     </p>
                   </div>
@@ -298,17 +297,17 @@ export function ConfigVersionEditor({ domain, activeVersion, draftVersion }: Pro
             exit={{ opacity: 0, y: 8 }}
             transition={{ duration: 0.18 }}
           >
-            <span className="save-bar-info">
+            <span className="text-sm text-muted-foreground">
               {saveMutation.error
                 ? saveMutation.error
                 : savedDraftId == null
                 ? 'Unsaved changes'
                 : 'Draft saved — ready to publish'}
             </span>
-            <div className="save-bar-actions">
+            <div className="flex items-center gap-2 flex-wrap">
               {isDirty && (
                 <Button
-                  variant="secondary"
+                  variant="outline"
                   size="sm"
                   onClick={() => {
                     setPayload(seedPayload);
@@ -320,19 +319,18 @@ export function ConfigVersionEditor({ domain, activeVersion, draftVersion }: Pro
                   Discard
                 </Button>
               )}
-              <Button
-                variant="primary"
+              <AsyncButton
                 size="sm"
-                loading={saveMutation.loading}
+                pending={saveMutation.loading}
                 disabled={validationErrors.length > 0 || !!jsonError}
                 onClick={() => { saveMutation.mutate(undefined).catch(() => undefined); }}
               >
                 Save draft
-              </Button>
+              </AsyncButton>
               {savedDraftId != null && (
                 <Button
-                  variant="accent"
                   size="sm"
+                  className="bg-[var(--bg-accent)] text-white hover:bg-[var(--bg-accent-strong)]"
                   onClick={() => setShowPublish(true)}
                 >
                   Publish to production…
@@ -344,92 +342,87 @@ export function ConfigVersionEditor({ domain, activeVersion, draftVersion }: Pro
       </AnimatePresence>
 
       {/* Publish confirm dialog */}
-      <Dialog
-        open={showPublish}
-        onClose={() => {
-          setShowPublish(false);
-          setConfirmPhrase('');
-          setReason('');
-          setPublishError(null);
-          publishMutation.reset();
-        }}
-        title="Publish to production"
-        description={`This immediately replaces the active config for "${domainDef?.name ?? domain}" for all users.`}
-        footer={
-          <>
-            <Button
-              variant="secondary"
-              onClick={() => setShowPublish(false)}
-              disabled={publishMutation.loading}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="accent"
-              loading={publishMutation.loading}
+      <Dialog open={showPublish} onOpenChange={(v) => !v && closePublish()}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Publish to production</DialogTitle>
+            <DialogDescription>
+              This immediately replaces the active config for &ldquo;{domainDef?.name ?? domain}&rdquo; for all users.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-4 py-2">
+            {/* Diff summary */}
+            {diff.length > 0 && (
+              <div className="rounded-md border divide-y max-h-48 overflow-y-auto text-sm">
+                {diff.map(({ key, label, old: oldVal, new: newVal }) => {
+                  const field = domainDef?.fields.find((f) => f.key === key);
+                  return (
+                    <div key={key} className="px-3 py-2 flex flex-wrap gap-x-3 gap-y-0.5">
+                      <span className="font-medium text-xs w-full text-muted-foreground">{label}</span>
+                      <span className="diff-old text-xs">
+                        {field ? formatDisplayValue(field, oldVal) : JSON.stringify(oldVal)}
+                      </span>
+                      <span className="text-muted-foreground text-xs">→</span>
+                      <span className="diff-new text-xs">
+                        {field ? formatDisplayValue(field, newVal) : JSON.stringify(newVal)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="publish-reason">Reason for this change</Label>
+              <Input
+                id="publish-reason"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="e.g. Increase chat rate per Q3 pricing review"
+                disabled={publishMutation.loading}
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="confirm-phrase">
+                Type <strong>publish to production</strong> to confirm
+              </Label>
+              <Input
+                id="confirm-phrase"
+                value={confirmPhrase}
+                onChange={(e) => {
+                  setConfirmPhrase(e.target.value);
+                  setPublishError(null);
+                }}
+                placeholder="publish to production"
+                aria-invalid={confirmPhrase !== '' && confirmPhrase !== 'publish to production'}
+                disabled={publishMutation.loading}
+                autoComplete="off"
+              />
+            </div>
+
+            {publishError && (
+              <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">
+                {publishError}
+              </p>
+            )}
+          </div>
+
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline" disabled={publishMutation.loading}>Cancel</Button>
+            </DialogClose>
+            <AsyncButton
+              className="bg-[var(--bg-accent)] text-white hover:bg-[var(--bg-accent-strong)]"
+              pending={publishMutation.loading}
               disabled={confirmPhrase !== 'publish to production' || !reason.trim()}
               onClick={() => { publishMutation.mutate(undefined).catch(() => undefined); }}
             >
               Publish
-            </Button>
-          </>
-        }
-      >
-        {/* Diff summary inside dialog */}
-        {diff.length > 0 && (
-          <div style={{ marginBottom: '1.25rem' }}>
-            <p className="section-label" style={{ marginBottom: '0.5rem' }}>What changes</p>
-            <div className="diff-wrap" style={{ maxHeight: '180px' }}>
-              {diff.map(({ key, label, old: oldVal, new: newVal }) => {
-                const field = domainDef?.fields.find((f) => f.key === key);
-                return (
-                  <div key={key} className="diff-row">
-                    <p className="diff-row-label">{label}</p>
-                    <p className="diff-old">
-                      {field ? formatDisplayValue(field, oldVal) : JSON.stringify(oldVal)}
-                    </p>
-                    <p className="diff-new">
-                      {field ? formatDisplayValue(field, newVal) : JSON.stringify(newVal)}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        <div className="field" style={{ marginBottom: '1rem' }}>
-          <label className="field-label" htmlFor="publish-reason">Reason for this change</label>
-          <Input
-            id="publish-reason"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="e.g. Increase chat rate per Q3 pricing review"
-            disabled={publishMutation.loading}
-          />
-        </div>
-
-        <div className="field" style={{ marginBottom: '0.5rem' }}>
-          <label className="field-label" htmlFor="confirm-phrase">
-            Type <strong>publish to production</strong> to confirm
-          </label>
-          <Input
-            id="confirm-phrase"
-            value={confirmPhrase}
-            onChange={(e) => {
-              setConfirmPhrase(e.target.value);
-              setPublishError(null);
-            }}
-            placeholder="publish to production"
-            error={confirmPhrase !== '' && confirmPhrase !== 'publish to production'}
-            disabled={publishMutation.loading}
-            autoComplete="off"
-          />
-        </div>
-
-        {publishError && (
-          <p className="alert alert--error" style={{ marginTop: '0.75rem' }}>{publishError}</p>
-        )}
+            </AsyncButton>
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
     </div>
   );

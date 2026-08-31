@@ -24,6 +24,8 @@
   --bg-accent-tint: #FBE4DE;
   --bg-positive: #DCE8E3;
   --bg-token: #F2EFC0;
+  --bg-token-healthy: #0B5F36;
+  --bg-token-critical: #B3261E;
   --text-primary: #1C1C1E;
   --text-secondary: #55555A;
   --text-tertiary: #78787D;
@@ -32,6 +34,7 @@
   --text-on-inverse: #FFFFFF;
   --text-positive: #1F4A3F;
   --text-token: #4A4708;
+  --text-on-token-strong: #FFFFFF;
   --border-hairline: #C6C6C8;
   --border-strong: #C7C7CC;
   --border-accent: #F2543D;
@@ -67,19 +70,20 @@
   --radius-alert: 14px;
   --radius-bubble: 22px;
   --radius-thread: 24px;
-  --radius-sheet: 10px;
+  --radius-sheet: 28px;
 
-  /* One family plus a weight, unlike the app.
+  /* Same families as the app, different loading rule.
    *
-   * That difference is not sloppiness: on the web Nunito arrives as a real
-   * variable font from Google Fonts, so asking for weight 800 gets the 800 cut.
-   * In the app the faces are separate static files and asking for a weight makes
-   * Android synthesise one it already has, which is why the app names a face
-   * per style and forbids fontWeight outright. */
-  --face-display: 'Nunito', system-ui, sans-serif;
-  --face-title: 'Nunito', system-ui, sans-serif;
-  --face-label: 'Nunito', system-ui, sans-serif;
-  --face-body: 'Nunito', system-ui, sans-serif;
+   * On the web Geist arrives as a variable font from Google Fonts, so a
+   * weight axis is honest. In the app the faces are separate static files
+   * and asking for a weight makes Android synthesise one it already has,
+   * which is why the app names a face per style and forbids fontWeight.
+   * Titan One is the wordmark only — one weight, same as assets/fonts. */
+  --face-wordmark: 'Titan One', system-ui, sans-serif;
+  --face-display: 'Geist', system-ui, sans-serif;
+  --face-title: 'Geist', system-ui, sans-serif;
+  --face-label: 'Geist', system-ui, sans-serif;
+  --face-body: 'Geist', system-ui, sans-serif;
 
   /* The springs, as the closest thing CSS has. A spring is not expressible as a
    * cubic bezier, so these approximate the settle of each one rather than
@@ -102,20 +106,22 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-  --bg-base: #000000;
-  --bg-raised: #1C1C1E;
-  --bg-sunken: #2C2C2E;
-  --bg-hover: #3A3A3C;
-  --bg-grouped: #000000;
-  --bg-chrome: rgba(0,0,0,0.80);
-  --bg-pressed: #48484A;
-  --bg-selected: #3A3A3C;
+  --bg-base: #121212;
+  --bg-raised: #1E1E1E;
+  --bg-sunken: #262626;
+  --bg-hover: #333333;
+  --bg-grouped: #121212;
+  --bg-chrome: rgba(18,18,18,0.82);
+  --bg-pressed: #383838;
+  --bg-selected: #2E2E2E;
   --bg-inverse: #F2F2F7;
   --bg-accent: #F2543D;
   --bg-accent-strong: #F2836B;
   --bg-accent-tint: #3A1A12;
   --bg-positive: #16302A;
   --bg-token: #3A3705;
+  --bg-token-healthy: #0E7A45;
+  --bg-token-critical: #8C1D18;
   --text-primary: #F5F5F7;
   --text-secondary: #AEAEB2;
   --text-tertiary: #98989D;
@@ -124,6 +130,7 @@
   --text-on-inverse: #1C1C1E;
   --text-positive: #A8D8C8;
   --text-token: #E4E26A;
+  --text-on-token-strong: #FFFFFF;
   --border-hairline: #38383A;
   --border-strong: #48484A;
   --border-accent: #F2543D;

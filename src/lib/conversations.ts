@@ -38,6 +38,13 @@ interface Native {
     medium: string,
   ): Promise<boolean>;
   clearCall(callId: string): Promise<void>;
+  startCallForegroundService(
+    peerName: string,
+    isIncoming: boolean,
+    includeMicrophone: boolean,
+    includeCamera: boolean,
+  ): void;
+  stopCallForegroundService(): void;
   clear(conversationId: string): Promise<void>;
   ensureChannel(): Promise<void>;
 }
@@ -187,6 +194,37 @@ export async function clearCall(callId: string): Promise<void> {
     return;
   }
   await native.clearCall(callId);
+}
+
+/**
+ * Start the Android phone-call foreground service from the user-initiated call
+ * flow. Android requires the service to be promoted within five seconds.
+ * https://developer.android.com/develop/background-work/services/fgs/launch
+ *
+ * `isIncoming` picks the CallStyle: `forIncomingCall` (Decline | Answer) only
+ * when the phone is actually ringing, `forOngoingCall` (Hang up) otherwise.
+ * https://developer.android.com/develop/ui/views/notifications/call-style
+ * Passing it wrongly is not cosmetic — an outgoing call rendered as incoming
+ * puts a full "Incoming call / Decline / Answer" heads-up over the caller's own
+ * call screen, offering to answer a call they are placing.
+ */
+export function startCallForegroundService(
+  peerName: string,
+  isIncoming: boolean,
+  includeMicrophone = false,
+  includeCamera = false,
+): void {
+  native?.startCallForegroundService(
+    peerName,
+    isIncoming,
+    includeMicrophone,
+    includeCamera,
+  );
+}
+
+/** Stop the call foreground service when the server call/session ends. */
+export function stopCallForegroundService(): void {
+  native?.stopCallForegroundService();
 }
 
 /** Post an engagement nudge (BigPicture). Resolves `false` when the module is absent. */

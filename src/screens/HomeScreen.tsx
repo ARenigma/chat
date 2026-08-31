@@ -1,13 +1,13 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { FlashList } from '@shopify/flash-list';
 import {
-  ActivityIndicator,
   Image,
+  PixelRatio,
   ScrollView,
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
@@ -16,7 +16,10 @@ import type { ConversationSummary, ProviderSummary } from '../lib/database.types
 import { initialOf } from '../lib/display';
 import { readPresence } from '../lib/presence';
 import { SCROLL_PHYSICS } from '../lib/scroll';
-import { useConversations, prefetchMessages, useProfile, useProviders } from '../api/chat';
+import { contentColumnWidth } from '../lib/windowSize';
+import { sizedStorageImageUri } from '../lib/storageImage';
+import { storage } from '../lib/storage';
+import { useConversations, useProfile, useProviders } from '../api/chat';
 import { useBlockedPeerIds } from '../api/safety';
 import { useStore } from '../store/useStore';
 import { Avatar } from '../components/Avatar';
@@ -24,13 +27,26 @@ import { NAV_BAR_HEIGHT } from '../components/FloatingToolbar';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { ProviderRow } from '../components/ProviderRow';
-import { TextField } from '../components/TextField';
+import { DirectorySkeleton } from '../components/DirectorySkeleton';
+import { MetaChip } from '../components/MetaChip';
+import { SearchBar } from '../components/SearchBar';
+import { Badge } from '../components/Badge';
+import { Card } from '../components/Card';
 import { TokenCounter } from '../components/TokenCounter';
+import { SpotlightCard } from '../components/SpotlightCard';
+import { ChatStartHint } from '../components/ChatStartHint';
+import { ConversationMenu } from '../components/ConversationMenu';
+import type { MenuAnchor } from '../components/PaperMenu';
+import { TourAnchor } from '../components/TourAnchor';
+import { compareConversations, visibleOnRail } from '../lib/railPrefs';
+import { useRailPrefs } from '../store/useRailPrefs';
+import { useHomeTour } from '../store/useHomeTour';
+
+const POTD_DISMISSED_KEY = 'companion.potd.dismissed';
 
 interface Props {
   onOpenConversation: (peerId: string) => void;
   onOpenProvider: (providerId: string) => void;
-  onOpenSettings: () => void;
   /** Open the full chats list from the rail's "See all". */
   onSeeAllChats: () => void;
 }
@@ -54,22 +70,39 @@ interface Props {
 export function HomeScreen({
   onOpenConversation,
   onOpenProvider,
-  onOpenSettings,
   onSeeAllChats,
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
+  const columnWidth = contentColumnWidth(windowWidth);
   const balance = useStore(s => s.balance);
-  const openRefill = useStore(s => s.openRefill);
+  const openWallet = useStore(s => s.openWallet);
   useProfile();
   const { data: conversations, isPending: convosPending } = useConversations();
   const { data: providers, isPending: providersPending } = useProviders();
   const blocked = useBlockedPeerIds();
 
+  const railPrefs = useRailPrefs();
+  const startTour = useHomeTour(s => s.start);
+  const tourSeen = useHomeTour(s => s.seen);
+  const [menuPeer, setMenuPeer] = useState<string | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<MenuAnchor | null>(null);
+
   const chats = useMemo(
-    () => (conversations ?? []).filter(c => !blocked.has(c.peer_id)),
-    [conversations, blocked],
+    () =>
+      (conversations ?? [])
+        .filter(c => !blocked.has(c.peer_id) && visibleOnRail(railPrefs, c.peer_id))
+        .slice()
+        .sort((a, b) =>
+          compareConversations(
+            railPrefs,
+            { peerId: a.peer_id, at: a.last_session_at ?? '' },
+            { peerId: b.peer_id, at: b.last_session_at ?? '' },
+          ),
+        ),
+    [conversations, blocked, railPrefs],
   );
 
   // The directory, blocked people removed. The featured pick is lifted out of the
@@ -108,9 +141,44 @@ export function HomeScreen({
   // An inline `onPress={() => onOpenProvider(p.id)}` creates a new function on
   // every render of HomeScreen; these hoisted versions are referentially stable
   // as long as the underlying props are stable (nav props typically are).
+  // Warm the detail-hero URIs as soon as the directory lands. RN Image already
+  // keeps a disk/memory cache on Android — Image.prefetch fills it. No Redis:
+  // that is a server-side cache and does not help decode/display on-device.
+  // Prefetch the same transform the detail screen requests so a tap hits cache.
+  useEffect(() => {
+    if (directory.length === 0) {
+      return;
+    }
+    const ratio = PixelRatio.get();
+    const heroW = columnWidth - TOKENS.space.md * 2;
+    for (const p of directory.slice(0, 10)) {
+      if (!p.avatar_url) {
+        continue;
+      }
+      void Image.prefetch(
+        sizedStorageImageUri(p.avatar_url, heroW, 420, ratio),
+      ).catch(() => {});
+    }
+  }, [directory, columnWidth]);
+
   const handleOpenProvider = useCallback(
-    (id: string) => onOpenProvider(id),
-    [onOpenProvider],
+    (id: string) => {
+      const p =
+        directory.find(x => x.id === id) ??
+        (featured?.id === id ? featured : undefined);
+      if (p?.avatar_url) {
+        void Image.prefetch(
+          sizedStorageImageUri(
+            p.avatar_url,
+            columnWidth - TOKENS.space.md * 2,
+            420,
+            PixelRatio.get(),
+          ),
+        ).catch(() => {});
+      }
+      onOpenProvider(id);
+    },
+    [onOpenProvider, directory, featured, columnWidth],
   );
   // A4: stable callback for RailItem so memo holds when balance ticks.
   const handleOpenConversation = useCallback(
@@ -123,6 +191,7 @@ export function HomeScreen({
   // round trip, and it works the instant the directory is in hand.
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState('');
+  const [potdVisible, setPotdVisible] = useState(false);
   const trimmed = query.trim().toLowerCase();
   const results = useMemo(() => {
     if (trimmed === '') {
@@ -141,6 +210,49 @@ export function HomeScreen({
   }, []);
 
   const loading = convosPending || providersPending;
+
+  useEffect(() => {
+    if (loading || featured === null || searching) {
+      return;
+    }
+    // Tutorial first, then the spotlight — always, on first sign-in. The tour is
+    // scheduled at 700ms and the spotlight at 2000ms, but a slow first tour would
+    // otherwise be interrupted mid-step by the sheet popping over it. Gating on
+    // `tourSeen` removes the race: the spotlight only schedules once the tour has
+    // finished or been skipped (a returning user has tourSeen=true already, so it
+    // behaves as before). This effect re-runs when `seen` flips true because
+    // tourSeen is a dependency (user 2026-08-31).
+    if (!tourSeen) {
+      return;
+    }
+    if (storage.get(POTD_DISMISSED_KEY) === '1') {
+      return;
+    }
+    const timer = setTimeout(() => setPotdVisible(true), 2000);
+    return () => clearTimeout(timer);
+  }, [loading, featured, searching, tourSeen]);
+
+  useEffect(() => {
+    if (loading || searching || tourSeen) {
+      return;
+    }
+    const timer = setTimeout(() => startTour(), 700);
+    return () => clearTimeout(timer);
+  }, [loading, searching, tourSeen, startTour]);
+
+  const dismissPotd = useCallback(() => {
+    storage.set(POTD_DISMISSED_KEY, '1');
+    setPotdVisible(false);
+  }, []);
+
+  const chatFromPotd = useCallback(() => {
+    if (!featured) {
+      return;
+    }
+    storage.set(POTD_DISMISSED_KEY, '1');
+    setPotdVisible(false);
+    onOpenConversation(featured.id);
+  }, [featured, onOpenConversation]);
 
   // Track which provider ids have already received their entrance animation so
   // FlashList recycling does not re-fire the stagger on every scroll-back.
@@ -199,12 +311,13 @@ export function HomeScreen({
   const ExploreHeader = useCallback(
     () => (
       <>
-        {chats.length > 0 ? (
-          <View style={styles.rail}>
-            <View style={styles.railHeader}>
-              <Text allowFontScaling style={styles.railLabel}>
-                Chats
-              </Text>
+        <TourAnchor id="chats">
+        <View style={styles.rail}>
+          <View style={styles.railHeader}>
+            <Text allowFontScaling style={styles.railLabel}>
+              Chats
+            </Text>
+            {chats.length > 0 ? (
               <Pressable
                 onPress={onSeeAllChats}
                 testID="chats-see-all"
@@ -216,50 +329,69 @@ export function HomeScreen({
                 </Text>
                 <Icon name="chevronRight" size={14} color={theme.color.text.secondary} />
               </Pressable>
-            </View>
+            ) : null}
+          </View>
+          {chats.length > 0 ? (
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               {...SCROLL_PHYSICS}
               contentContainerStyle={styles.railScroll}>
               {chats.map(chat => (
-                <RailItem key={chat.id} chat={chat} onPress={handleOpenConversation} />
+                <RailItem
+                  key={chat.conversation_id}
+                  chat={chat}
+                  onPress={handleOpenConversation}
+                  onLongPress={(peerId, anchor) => {
+                    setMenuAnchor(anchor);
+                    setMenuPeer(peerId);
+                  }}
+                />
               ))}
             </ScrollView>
-          </View>
-        ) : null}
+          ) : (
+            <View style={styles.railEmpty}>
+              <ChatStartHint />
+            </View>
+          )}
+        </View>
+        </TourAnchor>
+        <TourAnchor id="explore">
         <View style={styles.exploreHead}>
           <Text allowFontScaling style={styles.exploreTitle}>
             Explore
           </Text>
         </View>
-        {featured ? <FeaturedCard provider={featured} onPress={onFeatured} /> : null}
+        </TourAnchor>
+        {featured ? (
+          <Card style={styles.featuredCard}>
+            <FeaturedCard
+              provider={featured}
+              imageWidth={columnWidth - TOKENS.space.md * 2}
+              onPress={onFeatured}
+            />
+          </Card>
+        ) : null}
         {/* Spacing that separates the featured card (or explore heading) from
             the first provider row — matches the original styles.rows paddingTop. */}
         <View style={{ height: TOKENS.space.sm }} />
       </>
     ),
-    [chats, styles, featured, onFeatured, handleOpenConversation, onSeeAllChats, theme],
+    [
+      chats,
+      styles,
+      featured,
+      columnWidth,
+      onFeatured,
+      handleOpenConversation,
+      onSeeAllChats,
+      theme,
+    ],
   );
 
   // ListFooterComponent for the main Explore FlashList: the "tap someone above"
   // hint that shows only on a fresh install before any conversation exists.
-  const ExploreFooter = useCallback(
-    () =>
-      chats.length === 0 && directory.length > 0 ? (
-        <Pressable
-          onPress={onOpenSettings}
-          testID="home-settings-hint"
-          accessibilityLabel="Account and privacy"
-          press="none"
-          style={styles.settingsHint}>
-          <Text allowFontScaling style={styles.emptyText}>
-            Tap someone above to start a conversation.
-          </Text>
-        </Pressable>
-      ) : null,
-    [chats.length, directory.length, onOpenSettings, styles],
-  );
+  const ExploreFooter = useCallback(() => null, []);
 
   // SearchFlashList header and empty components defined as variables to avoid
   // embedding double-quote literals inside JSX prop expressions (a TSX parser
@@ -284,29 +416,20 @@ export function HomeScreen({
     ) : null;
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { width: columnWidth }]}>
       {/* Nav Row — wordmark, search, ₹ balance. Not the collapsing LargeTitleBar:
           v13 Home has a fixed nav row, and the large title belongs to the Explore
           section header below it. */}
       <View style={[styles.nav, { paddingTop: insets.top + TOKENS.space['2xs'] }]}>
         {searching ? (
           <>
-            <View style={styles.searchField}>
-              <Icon name="search" size={18} color={theme.color.text.tertiary} />
-              <TextField
-                testID="home-search-input"
-                style={styles.searchInput}
-                value={query}
-                onChangeText={setQuery}
-                placeholder="Search by name or language"
-                placeholderTextColor={theme.color.text.tertiary}
-                autoFocus
-                returnKeyType="search"
-                allowFontScaling
-                accessibilityLabel="Search people"
-                underlineColorAndroid="transparent"
-              />
-            </View>
+            <SearchBar
+              testID="home-search-input"
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search by name or language"
+              onClear={() => { setQuery(''); }}
+            />
             <Pressable
               onPress={closeSearch}
               testID="home-search-close"
@@ -332,7 +455,9 @@ export function HomeScreen({
                 style={styles.navIcon}>
                 <Icon name="search" size={24} color={theme.color.text.secondary} />
               </Pressable>
-              <TokenCounter balance={balance} onPress={openRefill} />
+              <TourAnchor id="wallet">
+                <TokenCounter balance={balance} onPress={openWallet} />
+              </TourAnchor>
             </View>
           </>
         )}
@@ -355,14 +480,13 @@ export function HomeScreen({
           overrideItemLayout={layout => { (layout as { span?: number; size?: number }).size = 97; }}
         />
       ) : loading ? (
-        <View style={styles.state}>
-          <ActivityIndicator color={theme.color.text.secondary} />
-        </View>
+        <DirectorySkeleton />
       ) : (
         // Only the provider rows are virtualised. The chats rail, explore head
         // and featured card live in ListHeaderComponent so they scroll together
         // with the list but are always fully rendered.
         <FlashList
+          testID="home-scroll"
           data={rows}
           keyExtractor={p => p.id}
           renderItem={renderExploreRow}
@@ -390,6 +514,24 @@ export function HomeScreen({
           overrideItemLayout={layout => { (layout as { span?: number; size?: number }).size = 97; }}
         />
       )}
+      <SpotlightCard
+        visible={potdVisible && featured !== null}
+        name={featured?.display_name ?? 'Someone for you'}
+        avatarUri={featured?.avatar_url ?? null}
+        onClose={dismissPotd}
+        onChat={chatFromPotd}
+        testID="potd-sheet"
+      />
+      <ConversationMenu
+        peerId={menuPeer}
+        surface="rail"
+        visible={menuPeer !== null}
+        anchor={menuAnchor}
+        onClose={() => {
+          setMenuPeer(null);
+          setMenuAnchor(null);
+        }}
+      />
     </View>
   );
 }
@@ -407,46 +549,60 @@ export function HomeScreen({
 const RailItem = memo(function ({
   chat,
   onPress,
+  onLongPress,
 }: {
   chat: ConversationSummary;
   onPress: (peerId: string) => void;
+  onLongPress: (peerId: string, anchor: MenuAnchor) => void;
 }) {
   const styles = useStyles(makeStyles);
-  const qc = useQueryClient();
+  const pinned = useRailPrefs(s => s.pinned.includes(chat.peer_id));
+  const hostRef = useRef<View>(null);
   const name = chat.peer_display_name ?? 'Conversation';
-  const unread = Number(chat.unread_count) > 0;
+  const unreadCount = chat.i_am_member
+    ? Number(chat.unread_count_member)
+    : Number(chat.unread_count_provider);
+  const unread = unreadCount > 0;
   const presence = readPresence(chat.peer_presence, chat.peer_last_active_at);
   const handlePress = useCallback(() => onPress(chat.peer_id), [onPress, chat.peer_id]);
-  const handlePressIn = useCallback(() => prefetchMessages(qc, chat.id), [qc, chat.id]);
+  const handleLongPress = useCallback(() => {
+    hostRef.current?.measureInWindow((x, y, width, height) => {
+      onLongPress(chat.peer_id, { x, y, width, height });
+    });
+  }, [onLongPress, chat.peer_id]);
   return (
-    <Pressable
-      onPress={handlePress}
-      onPressIn={handlePressIn}
-      testID={`rail-${chat.peer_id}`}
-      accessibilityLabel={
-        unread ? `${name}, ${chat.unread_count} unread` : name
-      }
-      press="none"
-      style={styles.railItem}>
-      <View style={[styles.railRing, unread && styles.railRingUnread]}>
-        <Avatar
-          initial={initialOf(name)}
-          uri={chat.peer_avatar_url}
-          size={48}
-          online={presence.here}
-        />
-      </View>
-      {unread ? (
-        <View style={styles.railBadge}>
-          <Text allowFontScaling={false} style={styles.railBadgeText}>
-            {Number(chat.unread_count) > 9 ? '9+' : String(chat.unread_count)}
-          </Text>
+    <View ref={hostRef} collapsable={false}>
+      <Pressable
+        onPress={handlePress}
+        onLongPress={handleLongPress}
+        testID={`rail-${chat.peer_id}`}
+        accessibilityLabel={
+          unread
+            ? `${name}, ${unreadCount} unread`
+            : pinned
+              ? `${name}, pinned`
+              : name
+        }
+        press="none"
+        style={styles.railItem}>
+        <View style={[styles.railRing, unread && styles.railRingUnread]}>
+          <Avatar
+            initial={initialOf(name)}
+            uri={chat.peer_avatar_url}
+            size={48}
+            online={presence.here}
+          />
         </View>
-      ) : null}
-      <Text allowFontScaling numberOfLines={1} style={styles.railName}>
-        {name}
-      </Text>
-    </Pressable>
+        {unread ? (
+          <View style={styles.railBadge}>
+            <Badge count={unreadCount} testID={`rail-badge-${chat.peer_id}`} />
+          </View>
+        ) : null}
+        <Text allowFontScaling numberOfLines={1} style={styles.railName}>
+          {name}
+        </Text>
+      </Pressable>
+    </View>
   );
 });
 
@@ -458,9 +614,11 @@ const RailItem = memo(function ({
  */
 function FeaturedCard({
   provider,
+  imageWidth,
   onPress,
 }: {
   provider: ProviderSummary;
+  imageWidth: number;
   onPress: () => void;
 }) {
   const styles = useStyles(makeStyles);
@@ -469,6 +627,7 @@ function FeaturedCard({
   // featured hero stays inside the accent budget and follows a theme change.
   const gradient = `linear-gradient(140deg, ${theme.color.bg.accent} 0%, ${theme.color.bg.accentStrong} 100%)`;
   const age = provider.age !== null ? ` ${provider.age}` : '';
+  const presence = readPresence(provider.presence, provider.last_active_at);
   const tagline =
     provider.headline && provider.headline !== ''
       ? provider.headline
@@ -482,7 +641,17 @@ function FeaturedCard({
       style={styles.featured}>
       {provider.avatar_url ? (
         <>
-          <Image source={{ uri: provider.avatar_url }} style={styles.featuredFill} />
+          <Image
+            source={{
+              uri: sizedStorageImageUri(
+                provider.avatar_url,
+                imageWidth,
+                210,
+                PixelRatio.get(),
+              ),
+            }}
+            style={styles.featuredFill}
+          />
           {/* A dark scrim under the text so white copy stays legible over any
               photo, not only the coral fallback. */}
           <View style={styles.featuredScrim} />
@@ -502,13 +671,8 @@ function FeaturedCard({
             : 'Top rated'}
         </Text>
       </View>
-      {/* Presence is a shape, not a word, and it lives top-right of the card
-          (Amit's call): a green dot balancing the "Top rated" badge top-left. A
-          white ring keeps it legible over any photo. */}
-      <View style={styles.featuredOnline} />
+      {presence.here ? <View style={styles.featuredOnline} /> : null}
       <View style={styles.featuredBody}>
-        {/* The rating lives in the "Top rated" chip now (#4), so the name line is
-            just the name and age. */}
         <View style={styles.featuredNameRow}>
           <Text allowFontScaling numberOfLines={1} style={styles.featuredName}>
             {provider.display_name}
@@ -520,29 +684,15 @@ function FeaturedCard({
             {tagline}
           </Text>
         ) : null}
-        {/* Cute badges — age + languages — the Sweprek "Best Matches" chip idiom,
-            glassy over the photo. Age and languages are what we hold; richer
-            interest/category tags come when the schema carries them. */}
-        <View style={styles.featuredBadges}>
-          {provider.age !== null ? <Badge label={`${provider.age}`} /> : null}
+        {/* Languages only — age already sits beside the name. Same M3
+            AssistChip geometry as the list; onMedia keeps them legible. */}
+        <View style={styles.featuredChips}>
           {provider.languages.slice(0, 2).map(lang => (
-            <Badge key={lang} label={lang} />
+            <MetaChip key={lang} tone="onMedia" label={lang} />
           ))}
         </View>
       </View>
     </Pressable>
-  );
-}
-
-/** A small glassy pill for a fact on a photo card (age, language, category). */
-function Badge({ label }: { label: string }) {
-  const styles = useStyles(makeStyles);
-  return (
-    <View style={styles.badge}>
-      <Text allowFontScaling style={styles.badgeText}>
-        {label}
-      </Text>
-    </View>
   );
 }
 
@@ -553,6 +703,7 @@ const makeStyles = (t: Theme) =>
     root: {
       flex: 1,
       backgroundColor: t.color.bg.base,
+      alignSelf: 'center',
     },
     nav: {
       flexDirection: 'row',
@@ -561,7 +712,7 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: TOKENS.space.md,
       paddingBottom: TOKENS.space.xs,
     },
-    // The one place LilitaOne appears outside a logo file. Lowercase coral, per
+    // The one place TitanOne appears outside a logo file. Lowercase coral, per
     // v13. `numeralMedium` is unrelated — the wordmark carries its own size.
     wordmark: {
       fontFamily: TOKENS.typography.wordmark.fontFamily,
@@ -580,28 +731,7 @@ const makeStyles = (t: Theme) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
-    // The search field that takes the nav row's place while searching: a capsule
-    // on the page colour with a leading glyph, the same anatomy as the composer.
-    searchField: {
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: TOKENS.space.xs,
-      height: 40,
-      paddingHorizontal: TOKENS.space.md,
-      marginRight: TOKENS.space.xs,
-      borderRadius: TOKENS.radius.pill,
-      borderCurve: 'continuous',
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: t.color.border.hairline,
-      backgroundColor: t.color.bg.sunken,
-    },
-    searchInput: {
-      flex: 1,
-      padding: 0,
-      ...TOKENS.typography.bodyMedium,
-      color: t.color.text.primary,
-    },
+    // SearchBar takes the full nav row while searching; no custom field needed.
     scroll: {
       paddingTop: TOKENS.space['2xs'],
     },
@@ -620,6 +750,11 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'space-between',
       paddingHorizontal: TOKENS.space.md,
       paddingBottom: TOKENS.space.xs,
+    },
+    railEmpty: {
+      paddingHorizontal: TOKENS.space.md,
+      paddingTop: TOKENS.space.xs,
+      paddingBottom: TOKENS.space.sm,
     },
     // Chats is a peer section heading to Explore, not a quiet caption (#14,
     // Amit: "bold, looks too shallow in front of Explore"). Same display weight
@@ -661,27 +796,13 @@ const makeStyles = (t: Theme) =>
     railRingUnread: {
       borderColor: t.color.bg.accent,
     },
+    // Anchor only — M3 Badge owns fill, size, and “9+”.
     railBadge: {
       position: 'absolute',
-      top: -2,
-      right: 6,
-      minWidth: 20,
-      height: 20,
-      paddingHorizontal: TOKENS.space['2xs'],
-      borderRadius: TOKENS.radius.pill,
-      // accentStrong, matching the provider tree's unread badge (ThreadBubble /
-      // ProviderHome): the deeper coral step carries white at 5.2:1, and the two
-      // trees should not show the same "unread" concept in two different corals.
-      backgroundColor: t.color.bg.accentStrong,
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderWidth: 2,
-      borderColor: t.color.bg.base,
-    },
-    railBadgeText: {
-      ...TOKENS.typography.captionSmall,
-      color: t.color.text.onAccent,
-      fontFamily: TOKENS.typography.numeralSmall.fontFamily,
+      top: 0,
+      right: 4,
+      width: 0,
+      height: 0,
     },
     railName: {
       ...TOKENS.typography.captionSmall,
@@ -701,12 +822,12 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.displaySmall,
       color: t.color.text.primary,
     },
+    // Card wraps the featured hero; Card owns borderRadius and overflow.
+    featuredCard: {
+      marginHorizontal: TOKENS.space.md,
+    },
     featured: {
       height: 210,
-      marginHorizontal: TOKENS.space.md,
-      borderRadius: TOKENS.radius.lg,
-      borderCurve: 'continuous',
-      overflow: 'hidden',
       justifyContent: 'flex-end',
     },
     featuredFill: {
@@ -725,18 +846,22 @@ const makeStyles = (t: Theme) =>
       lineHeight: 190,
       color: 'rgba(255,255,255,0.16)',
     },
+    // The status pill: solid accent, matching the v13 frame's "Top rated" badge.
+    // A translucent black chip read as chrome; the frame makes this the one
+    // branded mark on the card.
     featuredBadge: {
       position: 'absolute',
       top: TOKENS.space.md,
       left: TOKENS.space.md,
       paddingHorizontal: TOKENS.space.sm,
       paddingVertical: 4,
-      borderRadius: TOKENS.radius.xs,
-      backgroundColor: 'rgba(0,0,0,0.28)',
+      borderRadius: TOKENS.radius.pill,
+      borderCurve: 'continuous',
+      backgroundColor: t.color.bg.accent,
     },
     featuredBadgeText: {
       ...TOKENS.typography.labelSmall,
-      color: '#FFFFFF',
+      color: t.color.text.onAccent,
     },
     featuredBody: {
       padding: TOKENS.space.md,
@@ -755,16 +880,8 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.headline,
       color: 'rgba(255,255,255,0.82)',
     },
-    // The rating on the name line, trailing. marginLeft (not a row `gap`) so the
-    // Explore-list separator guard, which forbids `gap: space.sm` in this file,
-    // still holds — the rating sits on the hero, not in that list.
-    featuredRating: {
-      ...TOKENS.typography.subhead,
-      color: '#FFFFFF',
-      marginLeft: TOKENS.space.sm,
-    },
-    // The presence dot, top-right of the card: sage (the system's one presence
-    // hue) with a white ring so it stays legible over any photo.
+    // Presence dot, top-right of the card: sage with a white ring so it stays
+    // legible over any photo.
     featuredOnline: {
       position: 'absolute',
       top: TOKENS.space.md,
@@ -776,30 +893,15 @@ const makeStyles = (t: Theme) =>
       borderWidth: 2,
       borderColor: '#FFFFFF',
     },
-    featuredMetaText: {
-      ...TOKENS.typography.labelSmall,
-      color: '#FFFFFF',
-    },
     featuredTagline: {
       ...TOKENS.typography.subhead,
       color: 'rgba(255,255,255,0.92)',
     },
-    featuredBadges: {
+    featuredChips: {
       flexDirection: 'row',
       flexWrap: 'wrap',
       gap: TOKENS.space['2xs'],
       paddingTop: TOKENS.space.xs,
-    },
-    badge: {
-      paddingHorizontal: TOKENS.space.sm,
-      paddingVertical: 3,
-      borderRadius: TOKENS.radius.pill,
-      borderCurve: 'continuous',
-      backgroundColor: 'rgba(255,255,255,0.22)',
-    },
-    badgeText: {
-      ...TOKENS.typography.captionSmall,
-      color: '#FFFFFF',
     },
     rows: {
       paddingTop: TOKENS.space.sm,

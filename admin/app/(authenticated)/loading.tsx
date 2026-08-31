@@ -1,31 +1,43 @@
-import { Skeleton } from '@/components/ui/Skeleton';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Card, CardContent } from '@/components/ui/card';
 
 export default function Loading() {
   return (
-    <div>
-      <div className="page-header">
-        <Skeleton width="180px" height="1.875rem" />
-        <Skeleton width="280px" height="1rem" style={{ marginTop: '0.5rem' }} />
+    <div className="flex flex-col gap-6">
+      {/* Page header skeleton */}
+      <div className="mb-2">
+        <Skeleton className="h-7 w-44 mb-2" />
+        <Skeleton className="h-4 w-72" />
       </div>
-      <div className="grid-stat" style={{ marginBottom: '2rem' }}>
+
+      {/* Stat cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="stat-card" style={{ minWidth: 148, flex: 1 }}>
-            <Skeleton width="60%" height="0.75rem" />
-            <Skeleton width="40%" height="2rem" style={{ marginTop: '0.5rem' }} />
-          </div>
+          <Card key={i} className="py-5 gap-2">
+            <CardContent className="px-5">
+              <Skeleton className="h-3 w-24 mb-2" />
+              <Skeleton className="h-8 w-16" />
+            </CardContent>
+          </Card>
         ))}
       </div>
-      <div className="panel">
-        {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="domain-row">
-            <div className="domain-row-meta">
-              <Skeleton width="140px" height="1rem" />
-              <Skeleton width="220px" height="0.75rem" style={{ marginTop: '0.375rem' }} />
-            </div>
-            <Skeleton width="64px" height="28px" />
+
+      {/* List panel */}
+      <Card className="py-0 gap-0">
+        <CardContent className="p-0">
+          <div className="divide-y">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="flex items-center justify-between px-5 py-4">
+                <div className="flex flex-col gap-2">
+                  <Skeleton className="h-4 w-36" />
+                  <Skeleton className="h-3 w-56" />
+                </div>
+                <Skeleton className="h-8 w-16 rounded-md" />
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

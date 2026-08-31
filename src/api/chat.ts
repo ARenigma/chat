@@ -35,6 +35,7 @@ export const keys = {
 
 const NOTICE: Record<SendError, string> = {
   INSUFFICIENT_BALANCE: 'You are out of tokens.',
+  POLICY_REQUIRED: 'Accept the latest Terms and Privacy Policy to continue.',
   BAD_REQUEST: 'That message could not be sent.',
   UNAUTHORIZED: 'Session expired. Reopen the app to continue.',
   FORBIDDEN: 'That conversation is not available.',
@@ -134,7 +135,7 @@ export function useConversations() {
       const { data, error } = await supabase
         .from('conversation_summaries')
         .select('*')
-        .order('last_message_at', { ascending: false });
+        .order('last_session_at', { ascending: false, nullsFirst: false });
       if (error) {
         throw new Error(error.message);
       }
@@ -229,15 +230,15 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
   const openRefill = useStore(s => s.openRefill);
 
   return useCallback(
-    async (raw: string, replyToId: string | null = null): Promise<void> => {
+    async (raw: string, replyToId: string | null = null): Promise<boolean> => {
       const body = raw.trim();
       if (body === '' || conversationId === undefined || selfId === undefined) {
-        return;
+        return false;
       }
       if (!canSend(useStore.getState().balance)) {
         errorTick();
         openRefill();
-        return;
+        return false;
       }
 
       tick();
@@ -300,7 +301,7 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
         }
         // The balance may have moved for reasons unrelated to this send.
         void queryClient.invalidateQueries({ queryKey: keys.profile });
-        return;
+        return false;
       }
 
       const confirmed: Message | null =
@@ -333,6 +334,7 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
       track(replyToId === null ? 'message_sent' : 'reply_sent');
       // The inbox preview and unread counts are now stale.
       void queryClient.invalidateQueries({ queryKey: keys.conversationList });
+      return true;
     },
     [conversationId, selfId, queryClient, setSending, setBalance, setNotice, openRefill],
   );

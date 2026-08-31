@@ -3,49 +3,45 @@ import { StyleSheet, Text } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence } from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { formatTokens, isLowBalance } from '../lib/rates';
+import { formatTokens, walletTone, type WalletTone } from '../lib/rates';
 import { springTo } from '../theme/motion';
 import { Icon } from './Icon';
 import { Pressable } from './Pressable';
 
 interface Props {
-  /** The ₹ balance, in whole rupees. Null while loading. */
+  /** The token balance. Null while loading. */
   balance: number | null;
   onPress: () => void;
 }
 
 /**
- * The balance, visible at all times, now money rather than a message count.
+ * The balance, visible at all times.
  *
- * ADR-0019 changed the unit from tokens-per-message to rupees-per-minute, so this
- * reads `₹460`, not `460 left`. It stays a citrus chip — the one place a third hue
- * is allowed — because this number is the only thing on screen that is *spent*: it
- * has to be findable in a glance and must not be confused with the coral, which
- * means "act" rather than "you have". The v13 pill pairs the number with a wallet
- * glyph, which also disambiguates it from a plain count.
- *
- * Below the threshold it swaps to the coral tint and flinches once. That flinch is
- * the only moment scarcity is *felt* rather than announced, and it fires on the
- * transition rather than on every render — an effect keyed on `low` alone re-runs
- * whenever React re-mounts it, which made the pill twitch on unrelated navigation.
+ * Tone is talk-time, not a raw token count (2026-08-29): deep green when an hour
+ * or more remains at the chat rate, red under ten minutes, lime yellow otherwise.
+ * The flinch still fires only on the transition into critical so navigation
+ * remounts do not twitch the pill.
  */
 function TokenCounterView({ balance, onPress }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
-  const low = isLowBalance(balance);
+  const tone = walletTone(balance);
+  const critical = tone === 'critical';
   const flinch = useSharedValue(0);
-  const wasLow = useRef(low);
+  const wasCritical = useRef(critical);
 
   useEffect(() => {
-    if (low && !wasLow.current) {
+    if (critical && !wasCritical.current) {
       flinch.value = withSequence(springTo(1, 'bounce'), springTo(0, 'snap'));
     }
-    wasLow.current = low;
-  }, [low, flinch]);
+    wasCritical.current = critical;
+  }, [critical, flinch]);
 
   const animated = useAnimatedStyle(() => ({
     transform: [{ scale: 1 + flinch.value * 0.09 }],
   }));
+
+  const ink = inkForTone(tone, theme);
 
   return (
     <Pressable
@@ -57,18 +53,13 @@ function TokenCounterView({ balance, onPress }: Props) {
           ? 'Balance loading'
           : `${formatTokens(balance)} tokens. Talk time is charged by the minute.`
       }
-      accessibilityHint={low ? 'Opens Recharge' : 'Opens Recharge and explains rates'}>
-      <Animated.View style={[styles.pill, low && styles.pillLow, animated]}>
-        {/* The wallet is always the filled instance — it is the app's standing
-            "you have" mark, not a toggled state, so it should never read as the
-            hollow, inactive outline. */}
-        <Icon
-          name="wallet"
-          active
-          size={15}
-          color={low ? theme.color.text.accent : theme.color.text.token}
-        />
-        <Text testID="token-count" allowFontScaling style={[styles.label, low && styles.labelLow]}>
+      accessibilityHint={critical ? 'Opens Recharge' : 'Opens Recharge and explains rates'}>
+      <Animated.View style={[styles.pill, pillStyle(tone, theme), animated]}>
+        <Icon name="wallet" active size={15} color={ink} />
+        <Text
+          testID="token-count"
+          allowFontScaling
+          style={[styles.label, { color: ink }]}>
           {balance === null ? '' : formatTokens(balance)}
         </Text>
       </Animated.View>
@@ -76,30 +67,38 @@ function TokenCounterView({ balance, onPress }: Props) {
   );
 }
 
+function inkForTone(tone: WalletTone, theme: Theme): string {
+  if (tone === 'ok') {
+    return theme.color.text.token;
+  }
+  return theme.color.text.onTokenStrong;
+}
+
+function pillStyle(tone: WalletTone, theme: Theme) {
+  if (tone === 'healthy') {
+    return { backgroundColor: theme.color.bg.tokenHealthy };
+  }
+  if (tone === 'critical') {
+    return { backgroundColor: theme.color.bg.tokenCritical };
+  }
+  return { backgroundColor: theme.color.bg.token };
+}
+
 export const TokenCounter = memo(TokenCounterView);
 
-const makeStyles = (t: Theme) => StyleSheet.create({
-  pill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: TOKENS.space['2xs'],
-    paddingHorizontal: TOKENS.space.sm,
-    paddingVertical: 5,
-    // radius.xs, not a capsule: a filled pill in a header band is a Material chip,
-    // and iOS's equivalent is a badge. Citrus measures 1.3:1 as a fill and cannot
-    // exist as a standalone shape, only as a filled chip with ink on it.
-    borderRadius: TOKENS.radius.xs,
-    borderCurve: 'continuous',
-    backgroundColor: t.color.bg.token,
-  },
-  pillLow: {
-    backgroundColor: t.color.bg.accentTint,
-  },
-  label: {
-    ...TOKENS.typography.numeralMedium,
-    color: t.color.text.token,
-  },
-  labelLow: {
-    color: t.color.text.accent,
-  },
-});
+const makeStyles = (_t: Theme) =>
+  StyleSheet.create({
+    pill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space['2xs'],
+      paddingHorizontal: TOKENS.space.sm,
+      paddingVertical: 5,
+      // radius.xs, not a capsule: a filled pill in a header band is a Material chip.
+      borderRadius: TOKENS.radius.xs,
+      borderCurve: 'continuous',
+    },
+    label: {
+      ...TOKENS.typography.numeralMedium,
+    },
+  });
