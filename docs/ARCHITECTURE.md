@@ -59,8 +59,8 @@ assets/
   fonts/                 Geist (Regular/SemiBold/Bold), TitanOne, Lucide.ttf, PappalGlyphs.ttf
 
   supabase/
-  migrations/            001–025: sequential SQL migrations (applied in order)
-  functions/             Deno edge functions (7 total)
+  migrations/            001–037: sequential SQL migrations (applied in order)
+  functions/             Deno edge functions (9 total)
   tests/                 pgTAP SQL test suites (run via npm run test:db, needs Docker)
   config.toml            Supabase project config (authoritative; db push applies this)
 
@@ -105,7 +105,7 @@ Key files: `src/api/auth.ts`, `src/lib/firebasePhone.ts`, `src/lib/googleCredent
 
 ### Chat
 
-- **Sending**: `send_message(conversation_id, body)` RPC (migration 003). Clients cannot INSERT directly; the RPC enforces the token deduction and guards.
+- **Sending**: `send_message(conversation_id, body)` RPC (migration 003, session-aware in 037). Clients cannot INSERT directly. The RPC enforces membership, policy, rate limits, and session linking; it does **not** debit tokens.
 - **Realtime**: `src/api/realtime.ts` subscribes to `messages` and `conversations` channels (`supabase_realtime` publication, replica identity FULL on messages so UPDATE payloads include `read_at`).
 - **Read receipts**: `mark_read(conversation_id)` RPC → sets `read_at` on messages; Realtime UPDATE delivers the tick to the sender.
 - **Typing**: presence channel broadcast (`typing_start` / `typing_stop`), consumed in `src/components/PeerTyping.tsx`.
@@ -127,15 +127,15 @@ Key files: `src/api/calls.ts`, `src/api/callSession.ts`, `src/api/voice.ts`, `sr
 
 ### Payments / Ledger
 
-- **Token balance**: `profiles.token_balance` (integer). Wallet primitives `deduct_user_token` and `credit_user_token` are service-role-only (migration 002).
+- **Token balance**: `profiles.promo_balance` + `profiles.purchased_balance` (migration 028). `token_balance` is a compatibility column synced by trigger. Promo tokens spend first; purchased tokens never expire. `deduct_user_token` is retired for chat (ADR-0020); the credit path is `complete_recharge` → `purchased_balance`.
 - **Recharge**: `RechargeScreen` → `PaymentSheet` (modal). With `PAYMENTS_ENABLED=false` the Pay button is shown but does not charge. `MOCK_PAYMENTS` (true in non-production) enables the `mock_recharge(pack_id, amount)` RPC.
-- **`complete_recharge`**: service-role function called by a server workflow (not yet deployed); credits balance and writes a `token_transactions` row.
+- **`complete_recharge`**: service-role function called by Cashfree webhook / create-order; credits `purchased_balance` and writes a `token_transactions` row.
 - **Invoices**: `generate-invoice` edge function produces a GST invoice PDF from a `token_transactions` row; callable only by service_role.
 - **`app_flags`**: table with `mock_payments boolean`; read by `mock_recharge` as a server-side gate independent of the client flag.
-- **Per-minute metering**: migration 021 adds `spend_chat_minute()` RPC; migration 022 supersedes it with correct drain-to-zero semantics. `src/lib/tokenLedger.ts` drives the heartbeat on a 60-second tick while a chat session is active.
+- **Per-minute metering**: migrations 021–022 implemented client-side `spend_chat_minute()`. Migration 037 (ADR-0020) retires that path in favour of server-authoritative `claim_session_lease`, ticked by `meter_active_sessions`. `src/api/sessions.ts` owns the client lease heartbeat.
 - **Payment rail (planned)**: Play Billing via the UCB India programme (Play products) plus Cashfree Payments as the alternative billing choice (ADR-0022). Cashfree Payouts handles provider settlements (ADR-0021). `PAYMENTS_ENABLED=false` until UCB enrollment, Cashfree KYC, and GSTIN fields are confirmed.
 
-Key files: `src/api/transactions.ts`, `src/lib/tokenLedger.ts`, `src/screens/RechargeScreen.tsx`, `src/screens/PaymentSheet.tsx`.
+Key files: `src/api/transactions.ts`, `src/api/sessions.ts`, `src/screens/RechargeScreen.tsx`, `src/screens/PaymentSheet.tsx`.
 
 ### Presence / Last Seen
 
@@ -179,7 +179,7 @@ Key files: `src/api/transactions.ts`, `src/lib/tokenLedger.ts`, `src/screens/Rec
 
 ---
 
-## Database Migrations (001–025)
+## Database Migrations (001–037)
 
 | #   | File                                         | Purpose                                                                                                                      |
 | --- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
@@ -208,8 +208,20 @@ Key files: `src/api/transactions.ts`, `src/lib/tokenLedger.ts`, `src/screens/Rec
 | 023 | `023_voice_peaks.sql`                        | `messages.voice_peaks real[]` column; constraint; immutability guard; `send_message` wired to persist sender amplitude peaks |
 | 024 | `024_send_message_return.sql`                | Restores `kind` and `new_balance` to `send_message` return contract (silently dropped by migration 014)                      |
 | 025 | `025_voice_peaks_range.sql`                  | Adds element-value constraint to `voice_peaks` (each element must be in `[0,1]`); closes client-supplied input gate          |
+| 026 | `026_admin_config_and_policy.sql`            | `admin` schema; versioned config with draft/active lifecycle; report taxonomy                                                |
+| 027 | `027_policy_versions_and_acceptance.sql`     | User policy acceptance gate; `policy_versions`, `policy_acceptances`                                                         |
+| 028 | `028_balance_buckets_and_ledger.sql`         | Splits wallet into `promo_balance` + `purchased_balance`; backward-compat trigger on `token_balance`                         |
+| 029 | `029_billing_snapshot_and_accrual.sql`       | Rate snapshot at session activation; provider accrual tables                                                                 |
+| 030 | `030_paid_sessions.sql`                      | `session_requests`, `paid_sessions`, `participant_leases`; bilateral handshake RPCs                                          |
+| 031 | `031_purge_and_evidence.sql`                 | Session end + transcript purge; evidence copy path for reports; metadata-only conversation summaries                         |
+| 032 | `032_telemetry_event_extensions.sql`         | Extended event allowlist for session lifecycle events                                                                        |
+| 033 | `033_credit_purchased_recharge.sql`          | `complete_recharge` credit path to `purchased_balance`                                                                       |
+| 034 | `034_admin_schema_api_access.sql`            | Service-role / PostgREST access grants for the `admin` schema                                                                |
+| 035 | `035_public_config_rpc.sql`                  | `get_public_config` / `get_active_config` RPCs; app reads runtime config from DB, not build flags                            |
+| 036 | `036_fix_provider_share_unit.sql`            | Corrects `provider_share_percent` from basis points (6000) to integer percent (60)                                           |
+| 037 | `037_session_cutover.sql`                    | Removes per-message debit from `send_message`; routes billing to `claim_session_lease` / `meter_active_sessions`             |
 
-**RLS model**: all tables use `auth.uid()` for row ownership. `send_message`, `complete_recharge`, `approve_provider_application`, `deduct_user_token`, `credit_user_token` are SECURITY INVOKER (not DEFINER) — the client role is enforced inside the function, not bypassed. Service-role-only RPCs are revoked from `authenticated` and granted only to `service_role`.
+**RLS model**: all tables use `auth.uid()` for row ownership. `send_message`, `complete_recharge`, `approve_provider_application` enforce the caller inside the function. Service-role-only RPCs are revoked from `authenticated` and granted only to `service_role`.
 
 ---
 
@@ -224,6 +236,8 @@ Key files: `src/api/transactions.ts`, `src/lib/tokenLedger.ts`, `src/screens/Rec
 | `send-push`               | DB trigger on `messages` insert                  | Sends a FCM `MessagingStyle` message notification to the recipient; uses a service-account key stored in function secrets         |
 | `send-sms`                | Supabase Auth hook `[auth.hook.send_sms]`        | Delivers a phone OTP via Fast2SMS; called by Supabase Auth, not directly by the client                                            |
 | `verify-phone`            | HTTP POST from client                            | Verifies the MSG91 JWT from the widget, sets `profiles.phone_verified = true` under the user's existing session                   |
+| `cashfree-webhook`        | HTTP POST from Cashfree                          | Verifies the Cashfree payment webhook signature; calls `complete_recharge` on success                                             |
+| `create-order`            | HTTP POST from client                            | Creates a Cashfree payment order; returns an order token for the SDK; service-role                                                |
 
 **Important config.toml gotcha**: `[auth.hook.send_sms]` must be commented out in config.toml when `PHONE_AUTH_ENABLED = false`, because `supabase db push` applies config.toml verbatim — an enabled hook with no credentials makes Supabase reject every SMS send rather than skip it. `contract.test.ts` asserts this.
 

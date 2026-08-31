@@ -182,12 +182,24 @@ function detach(): void {
 export async function startRecording(
   callbacks: RecordingCallbacks,
 ): Promise<RecordingHandle> {
-  // A previous recording that was never stopped, which happens if the screen
-  // unmounted mid-record. Stopping is idempotent enough to be worth doing blind.
+  // nitro-sound is one native object for record and play. A finished note that
+  // is still attached to the player (or a prior recorder that never detached)
+  // makes the second `startRecorder` fail silently on several OEM builds —
+  // first fire works, every later fire does not. Always clear both first.
+  await stopPlayback().catch(() => undefined);
   if (active !== null) {
     await Sound.stopRecorder().catch(() => undefined);
     detach();
+  } else {
+    // Even with no JS session, the native recorder can still be mid-release
+    // after the previous stop. Blind stop + a short settle is cheaper than
+    // another "mic could not be started" notice.
+    await Sound.stopRecorder().catch(() => undefined);
+    Sound.removeRecordBackListener();
   }
+  // MediaRecorder.prepare after stop needs a beat on API 24–30 OEM builds.
+  // https://developer.android.com/reference/android/media/MediaRecorder
+  await new Promise<void>(resolve => setTimeout(resolve, 60));
 
   const remembered = storage.get(OUT_PATH_KEY);
   const file = await Sound.startRecorder(

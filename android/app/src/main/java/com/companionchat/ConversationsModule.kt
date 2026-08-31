@@ -128,10 +128,21 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
      * (developer.android.com/develop/background-work/services/foreground-services)
      */
     @ReactMethod
-    fun startCallForegroundService(callerName: String) {
+    fun startCallForegroundService(
+        callerName: String,
+        isIncoming: Boolean,
+        includeMicrophone: Boolean,
+        includeCamera: Boolean,
+    ) {
         // Starts the FGS that keeps the call alive in background.
         // Must be called from a foreground context (user action).
-        CallForegroundService.startIncoming(reactApplicationContext, callerName)
+        CallForegroundService.start(
+            reactApplicationContext,
+            callerName,
+            isIncoming,
+            includeMicrophone,
+            includeCamera,
+        )
     }
 
     /** Stops the call foreground service when the call ends or is declined. */

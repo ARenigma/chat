@@ -63,6 +63,14 @@ select lives_ok(
   'the provider is admitted'
 );
 
+-- Fund both members so the session balance gate (ADR-0020) does not block their
+-- sends before the test assertions that care about blocks/reports/rate-limits.
+update public.profiles set promo_balance = 500
+where id in ('bbbbbbbb-0000-4000-8000-000000000002',
+             'cccccccc-0000-4000-8000-000000000003');
+select test.accept_current_policies(id)
+from auth.users;
+
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"bbbbbbbb-0000-4000-8000-000000000002","role":"authenticated"}';
 insert into test.fixture (k, v)
@@ -106,7 +114,7 @@ select is(
 select is(
   (select token_balance from public.profiles
     where id = 'bbbbbbbb-0000-4000-8000-000000000002'),
-  49, 'a blocked send costs nothing, only the one pre-block message was billed'
+  500, 'sends cost nothing: no per-message debit in the session model (ADR-0020)'
 );
 reset role;
 
@@ -238,13 +246,15 @@ reset role;
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"bbbbbbbb-0000-4000-8000-000000000002","role":"authenticated"}';
 
+-- Select the specific 'something vile' message so the fixture is deterministic
+-- even if the provider sent additional messages while the block was active.
 insert into test.fixture (k, v)
 values ('report', public.submit_report(
   (select v from test.fixture where k = 'thread'),
   (select id from public.messages
     where sender_id = 'aaaaaaaa-0000-4000-8000-000000000001'
       and conversation_id = (select v from test.fixture where k = 'thread')
-    limit 1),
+      and body = 'something vile'),
   'harassment', 'said something vile'
 ));
 select isnt(

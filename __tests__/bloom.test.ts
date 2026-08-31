@@ -7,8 +7,10 @@ import {
   BLOOM_HOLD_MS,
   BLOOM_LAYERS,
   BLOOM_LAYER_MS,
+  FUSE_REFERENCE_LONG_EDGE,
   bloomExitGradient,
   bloomLayerBox,
+  bloomRadiusScale,
   bloomRestGradient,
   bloomTravel,
   layerProgress,
@@ -208,6 +210,15 @@ describe('the bloom field', () => {
     expect(gradient).toMatch(/rgba\(\d+,\d+,\d+,0\) 100%/);
     expect(style.height).toBe(layer.endRadius * 2);
     expect(style.bottom).toBe(-layer.endRadius);
+  });
+
+  it('keeps the source radius exact and scales its curve with the window', () => {
+    expect(bloomRadiusScale(402, FUSE_REFERENCE_LONG_EDGE)).toBe(1);
+    const tallScale = bloomRadiusScale(460, 1024);
+    expect(tallScale).toBeGreaterThan(1);
+    const source = bloomLayerBox(BLOOM_LAYERS[0]!, 402);
+    const tall = bloomLayerBox(BLOOM_LAYERS[0]!, 460, tallScale);
+    expect(tall.width / source.width).toBeCloseTo(tallScale);
   });
 
   it('pins the React Native version, because the gradient API is unstable', () => {

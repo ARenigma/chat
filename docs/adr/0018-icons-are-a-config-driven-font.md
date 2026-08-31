@@ -1,20 +1,23 @@
 # ADR-0018, Icons are a config-driven font
 
-Status: **decided and built**
+Status: **Superseded (wave-3)** — icon set switched to Lucide. See
+`design/icons.json` for the current family. The decision that icons are a
+config-driven **font** (not SVG, not hand-drawn geometry) still holds.
 Date: 2026-08-26
 
 ---
 
 ## Decision
 
-Icons are Material Symbols, shipped as a subset **font**, generated from
-`design/icons.json` by `scripts/gen-icons-font.mjs` — the same config → generate
-→ `--check` pipeline as the type tokens. Style, weight and the glyph set are one
-config edit plus `npm run icons:font`.
+Icons are a subset **font**, generated from `design/icons.json` by
+`scripts/gen-icons-font.mjs` — the same config → generate → `--check` pipeline
+as the type tokens. Style, weight and the glyph set are one config edit plus
+`npm run icons:font`.
 
-Live values: **Rounded, weight 400, optical size 24, fill on active.** Rounded
-and fill-on-active are Amit's creative calls (structural-vs-creative split in
-CLAUDE.md); everything else follows Material.
+The original live values were Material Symbols Rounded, weight 400, optical
+size 24, fill on active. Wave-3 switched the family to Lucide for a consistent
+stroke style and a prebuilt `lucide-static` `.ttf`. Fill-on-active remains a
+`fontFamily` swap in `Icon.tsx`.
 
 ## Why a font, not the alternatives
 

@@ -5,7 +5,7 @@ import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import { fadeSwapFast } from '../theme/motion';
 import { Pressable } from './Pressable';
-import { Spinner } from './Spinner';
+import { LoadingIndicator } from './LoadingIndicator';
 
 interface Props {
   label: string;
@@ -72,12 +72,13 @@ interface Props {
  * tap that changed it.
  */
 /**
- * 16, matching the label's cap height rather than its point size.
+ * 20 dp container; the arc inside scales proportionally (≈ 15.8 dp).
  *
- * At 17 the indicator is visibly taller than the text beside it and the pair
- * reads as two things; at 16 it reads as one.
+ * Small enough to sit beside a label without dominating it, large enough to
+ * read clearly on both densities. The container is transparent so only the arc
+ * is visible — the 48 dp pill form is for standalone use (ScreenLoader, etc.).
  */
-const SPINNER_SIZE = 16;
+const SPINNER_SIZE = 20;
 
 function ButtonView({
   label,
@@ -110,7 +111,13 @@ function ButtonView({
       style={[styles.base, styles[kind]]}>
       {/* The reserved slot. Always rendered, occupied only while busy. */}
       <View style={styles.spinnerSlot}>
-        {busy ? <Spinner size={SPINNER_SIZE} color={labelColour} /> : null}
+        {busy ? (
+          <LoadingIndicator
+            size={SPINNER_SIZE}
+            color={labelColour}
+            containerColor="transparent"
+          />
+        ) : null}
       </View>
       {/* Keyed on its own content, which is what makes the entrance run: React
           remounts the node on a swap and Reanimated fades the new one in. Opacity
@@ -135,7 +142,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   // Fixed width so the label's position does not depend on the busy state. The
   // width is the spinner plus one small gap; it is mirrored on the trailing side.
   spinnerSlot: {
-    width: 16 + TOKENS.space['2xs'],
+    width: SPINNER_SIZE + TOKENS.space['2xs'],
     alignItems: 'center',
     justifyContent: 'center',
   },

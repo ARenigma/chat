@@ -1,7 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import { Menu } from 'lucide-react';
 import { SidebarNav } from './SidebarNav';
+import { Button } from '@/components/ui/button';
 
 interface AppShellProps {
   email: string;
@@ -12,26 +14,20 @@ export function AppShell({ email, children }: AppShellProps) {
   const [navOpen, setNavOpen] = useState(false);
 
   return (
-    <div className="app-shell">
-      {/* Mobile header */}
+    <div className="min-h-screen bg-[var(--bg-base)]">
+      {/* Mobile header (visible <769px) */}
       <header className="mobile-header">
-        <button
-          className="mobile-hamburger"
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-white/70 hover:text-white hover:bg-white/10 -ml-1"
           aria-label={navOpen ? 'Close navigation' : 'Open navigation'}
           aria-expanded={navOpen}
           onClick={() => setNavOpen((v) => !v)}
         >
-          {navOpen ? (
-            <svg width="20" height="20" fill="none" viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-            </svg>
-          ) : (
-            <svg width="20" height="20" fill="none" viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-            </svg>
-          )}
-        </button>
-        <span className="mobile-header-title">Pappal Admin</span>
+          <Menu size={20} aria-hidden="true" />
+        </Button>
+        <span className="text-white font-semibold text-sm">Pappal Admin</span>
       </header>
 
       <SidebarNav email={email} open={navOpen} onClose={() => setNavOpen(false)} />

@@ -17,7 +17,35 @@ const read = (p: string): string => readFileSync(join(ROOT, p), 'utf8');
  */
 
 const MANIFEST = 'android/app/src/main/AndroidManifest.xml';
+const DEBUG_MANIFEST = 'android/app/src/debug/AndroidManifest.xml';
 const MAIN_ACTIVITY = 'android/app/src/main/java/com/companionchat/MainActivity.kt';
+
+describe('debug-only Maestro authentication', () => {
+  /** https://developer.android.com/training/app-links/create-deeplinks */
+  it('declares a distinct VIEW filter only in the debug source set', () => {
+    const debugManifest = read(DEBUG_MANIFEST);
+    expect(debugManifest).toContain('android.intent.action.VIEW');
+    expect(debugManifest).toContain('android.intent.category.DEFAULT');
+    expect(debugManifest).toContain('android.intent.category.BROWSABLE');
+    expect(debugManifest).toContain('android:host="e2e-auth"');
+    expect(read(MANIFEST)).not.toContain('android:host="e2e-auth"');
+  });
+
+  it('rejects the session injector in every non-debug JavaScript bundle', () => {
+    const auth = read('src/api/auth.ts');
+    expect(auth).toContain("const e2eUrl = 'companionchat://e2e-auth'");
+    expect(auth).toMatch(/if \(!__DEV__\)[\s\S]*status: 'ignored'[\s\S]*setSession/);
+  });
+});
+
+describe('Gradle configuration cache', () => {
+  /** https://docs.gradle.org/current/userguide/configuration_cache_enabling.html */
+  it('reuses the configured task graph without masking compatibility problems', () => {
+    const properties = read('android/gradle.properties');
+    expect(properties).toContain('org.gradle.configuration-cache=true');
+    expect(properties).not.toContain('org.gradle.configuration-cache.problems=warn');
+  });
+});
 
 describe('system bars and edge-to-edge', () => {
   /** https://developer.android.com/develop/ui/views/layout/edge-to-edge */
@@ -98,7 +126,17 @@ describe('the manifest states its platform intent', () => {
   // harmless but noisy and indicates someone read the wrong guide).
   test('manifest does not manually declare BILLING permission', () => {
     expect(read(MANIFEST)).not.toContain(
-      'android.permission.BILLING'
+      'com.android.vending.BILLING'
+    );
+  });
+
+  test('manifest gate names the capabilities contributed by call, billing, and auth libraries', () => {
+    const verifier = read('scripts/verify-manifest.mjs');
+    expect(verifier).toContain('com.android.vending.BILLING');
+    expect(verifier).toContain('android.permission.BLUETOOTH_CONNECT');
+    expect(verifier).toContain('android.permission.MODIFY_AUDIO_SETTINGS');
+    expect(verifier).toContain(
+      'com.google.android.providers.gsf.permission.READ_GSERVICES'
     );
   });
 });
@@ -124,7 +162,13 @@ describe('the input method is not allowed to take the window', () => {
         const rel = `${dir}/${entry.name}`;
         if (entry.isDirectory()) {
           walk(rel);
-        } else if (rel.endsWith('.tsx') && !rel.endsWith('components/TextField.tsx')) {
+        } else if (
+          rel.endsWith('.tsx') &&
+          !rel.endsWith('components/TextField.tsx') &&
+          // SearchBar is the M3 search-input primitive; it wraps TextInput the same
+          // way TextField does, and callers use SearchBar — not TextInput — directly.
+          !rel.endsWith('components/SearchBar.tsx')
+        ) {
           const body = read(rel);
           // A VALUE import of TextInput. `import { type TextInput }` is fine:
           // CodeField needs it to type an imperative focus ref.
@@ -318,6 +362,10 @@ describe('startup is profiled, not guessed', () => {
   const BP = 'android/baselineprofile/build.gradle';
   const GEN =
     'android/baselineprofile/src/main/java/com/companionchat/baselineprofile/StartupProfile.kt';
+  const BENCHMARK =
+    'android/baselineprofile/src/main/java/com/companionchat/baselineprofile/StartupBenchmark.kt';
+  const JOURNEY_BENCHMARK =
+    'android/baselineprofile/src/main/java/com/companionchat/baselineprofile/CriticalJourneyBenchmark.kt';
 
   it('generates a startup profile, not only a baseline profile', () => {
     /*
@@ -356,11 +404,79 @@ describe('startup is profiled, not guessed', () => {
     expect(gradle).toContain('targetProjectPath = ":app"');
   });
 
+  it('merges generated profiles into main so release consumes them', () => {
+    /*
+     * Application modules default mergeIntoMain to false. Without this, the
+     * internal recording stays under src/internal and the Play release never
+     * packages it.
+     * https://developer.android.com/topic/performance/baselineprofiles/configure-baselineprofiles
+     */
+    expect(read('android/app/build.gradle')).toMatch(
+      /baselineProfile\s*\{\s*mergeIntoMain\s*=\s*true\s*\}/,
+    );
+  });
+
+  it('reports fully drawn only after JavaScript boot becomes usable', () => {
+    /*
+     * TTID is automatic; TTFD exists only when the app calls
+     * Activity.reportFullyDrawn after data-backed UI is usable.
+     * https://developer.android.com/topic/performance/vitals/launch-time
+     */
+    const native = read(
+      'android/app/src/main/java/com/companionchat/StartupTimingModule.kt',
+    );
+    expect(native).toContain('activity.reportFullyDrawn()');
+    expect(native).toContain('AtomicBoolean');
+    expect(read('android/app/src/main/java/com/companionchat/InAppUpdatePackage.kt')).toContain(
+      'StartupTimingModule(reactContext)',
+    );
+    const app = read('App.tsx');
+    expect(app).toContain("boot.phase === 'loading'");
+    expect(app).toContain('StartupTiming?.reportFullyDrawn()');
+  });
+
+  it('measures cold startup with and without the required profile', () => {
+    const benchmark = read(BENCHMARK);
+    expect(benchmark).toContain('StartupTimingMetric()');
+    expect(benchmark).toContain('StartupMode.COLD');
+    expect(benchmark).toContain('CompilationMode.None()');
+    expect(benchmark).toContain('BaselineProfileMode.Require');
+  });
+
+  it('measures authenticated Home and Chat frames outside fixture setup', () => {
+    const benchmark = read(JOURNEY_BENCHMARK);
+    expect(benchmark).toContain('FrameTimingMetric()');
+    expect(benchmark).toContain('fun homeScrollFrames()');
+    expect(benchmark).toContain('fun openChatFrames()');
+    expect(benchmark).toContain('startupMode = null');
+    expect(benchmark).toContain('setupBlock = {');
+    expect(read('src/screens/HomeScreen.tsx')).toContain('testID="home-scroll"');
+  });
+
   it('keeps the recording module out of the shipped app', () => {
     // `com.android.test` output is never part of the app APK; only the generated
     // text file is consumed at build time. A `com.android.library` here would
     // ship the benchmark harness to users.
     expect(read(BP)).toContain('apply plugin: "com.android.test"');
+  });
+});
+
+describe('release shrinking keeps only indirect boundaries', () => {
+  const rules = read('android/app/proguard-rules.pro');
+
+  it('does not disable optimization for the app or Google dependency trees', () => {
+    expect(rules).not.toContain('-keep class com.companionchat.**');
+    expect(rules).not.toContain('-keep class com.google.firebase.**');
+    expect(rules).not.toContain('-keep class com.google.android.gms.**');
+    expect(rules).not.toContain('-keep class androidx.credentials.**');
+  });
+
+  it('retains native WebRTC and Nitro boundaries that lack consumer rules', () => {
+    expect(rules).toContain('-keep class org.webrtc.**');
+    expect(rules).toContain('-keep class com.oney.WebRTCModule.**');
+    expect(rules).toContain(
+      '-keep class * extends com.margelo.nitro.core.HybridObject',
+    );
   });
 });
 
@@ -463,6 +579,76 @@ describe('call lifecycle — foreground service and permissions', () => {
     expect(manifest).toContain('com.companionchat.ACTION_HANG_UP');
   });
 
+  it('creates the calls channel before promoting the service', () => {
+    /*
+     * Regression, found on a device 2026-08-31: every OUTGOING call killed the
+     * app with
+     *   RemoteServiceException$CannotPostForegroundServiceNotificationException
+     *   ("Bad notification for startForeground") → SIGKILL.
+     *
+     * The service posts on Conversations.CALL_CHANNEL_ID, but that channel was
+     * only created inside Conversations.notifyCall() — the INCOMING path. On an
+     * outgoing call the channel had never been created, and API 26+ drops a
+     * notification aimed at a channel that does not exist.
+     * (developer.android.com/develop/ui/views/notifications/channels)
+     *
+     * The guarantee belongs to whoever posts, so the check is "ensureCallChannel
+     * is called, and before startForeground".
+     */
+    const fgs = read(FGS);
+    expect(fgs).toContain('Conversations.ensureCallChannel(this)');
+    expect(fgs).toContain('Conversations.ensureCallOngoingChannel(this)');
+    // lastIndexOf, because the KDoc at the top of the file also names
+    // ServiceCompat.startForeground(); we want the call, not the prose.
+    expect(fgs.indexOf('Conversations.ensureCallChannel(this)')).toBeLessThan(
+      fgs.lastIndexOf('ServiceCompat.startForeground('),
+    );
+  });
+
+  it('posts an in-progress call on a low-importance channel', () => {
+    /*
+     * Importance is a channel property on API 26+, so an ongoing call posted on
+     * the IMPORTANCE_HIGH ring channel heads-up — which threw a "Hang up" banner
+     * over the app's own call screen the moment a call was placed. A ring should
+     * interrupt; a call already in progress should not.
+     * (developer.android.com/develop/ui/views/notifications/channels)
+     */
+    const conversations = read(
+      'android/app/src/main/java/com/companionchat/Conversations.kt',
+    );
+    expect(conversations).toContain('const val CALL_ONGOING_CHANNEL_ID = "call_ongoing"');
+    expect(conversations).toMatch(
+      /Builder\(CALL_ONGOING_CHANNEL_ID, NotificationManagerCompat\.IMPORTANCE_LOW\)/,
+    );
+    // The ring itself stays HIGH.
+    expect(conversations).toMatch(
+      /Builder\(CALL_CHANNEL_ID, NotificationManagerCompat\.IMPORTANCE_HIGH\)/,
+    );
+
+    const fgs = read(FGS);
+    expect(fgs).toContain('Conversations.CALL_ONGOING_CHANNEL_ID');
+  });
+
+  it('picks the CallStyle from the real call direction, never a hardcoded true', () => {
+    /*
+     * Regression, seen on a device 2026-08-31: the caller got an "Incoming call
+     * — Decline / Answer" heads-up over their own outgoing call screen, because
+     * the whole chain hardcoded is_incoming = true.
+     *
+     * forIncomingCall is for a ringing phone; forOngoingCall is for a call in
+     * progress.
+     * (developer.android.com/develop/ui/views/notifications/call-style)
+     */
+    const fgs = read(FGS);
+    expect(fgs).toContain('putExtra(EXTRA_IS_INCOMING, isIncoming)');
+    expect(fgs).not.toContain('putExtra(EXTRA_IS_INCOMING, true)');
+    expect(fgs).toContain('CallStyle\n');
+
+    // JS passes the direction rather than defaulting it.
+    const screen = read('src/screens/CallScreen.tsx');
+    expect(screen).toContain("startCallForegroundService(name, direction === 'in')");
+  });
+
   it('CallForegroundService exists and uses ServiceCompat.startForeground', () => {
     /*
      * ServiceCompat.startForeground() is the back-compat path: on pre-API-29
@@ -472,6 +658,9 @@ describe('call lifecycle — foreground service and permissions', () => {
      */
     const fgs = read(FGS);
     expect(fgs).toContain('ServiceCompat.startForeground(');
+    // minSdk 24 cannot call Context.startForegroundService (API 26) directly.
+    expect(fgs).toContain('ContextCompat.startForegroundService(context, intent)');
+    expect(fgs).not.toContain('context.startForegroundService(intent)');
     // The FGS must never use fullScreenIntent — the platform test for
     // Conversations.kt already asserts its absence from the ring notification.
     expect(fgs).not.toContain('setFullScreenIntent');
@@ -534,6 +723,69 @@ describe('call lifecycle — foreground service and permissions', () => {
  * doc: developer.android.com/google/play/billing/integrate
  * doc: developer.android.com/google/play/billing/user-choice-billing
  */
+describe('device coverage matrix', () => {
+  /** https://developer.android.com/develop/ui/views/layout/use-window-size-classes */
+  it('encodes the published window size class breakpoints', () => {
+    const source = read('src/lib/windowSize.ts');
+    expect(source).toContain('WIDTH_MEDIUM_MIN = 600');
+    expect(source).toContain('WIDTH_EXPANDED_MIN = 840');
+    expect(source).toContain('developer.android.com/develop/ui/views/layout/use-window-size-classes');
+  });
+
+  it('keeps the tab bar icon-only so 200% font scale cannot overflow it', () => {
+    // The audit's 49dp-at-2x finding was a labelled tab row. The bar is now
+    // glyphs only; text scale has nothing to grow.
+    const bar = read('src/components/FloatingToolbar.tsx');
+    expect(bar).not.toMatch(/<Text[\s\S]*tab\.label/);
+    expect(bar).toContain('<Icon');
+    expect(read('src/components/Icon.tsx')).toContain('allowFontScaling={false}');
+  });
+
+  /**
+   * M3 NavigationBar clips the press state layer to the indicator shape, not
+   * the full-width slot — a rectangular slot fill is what read as "square on
+   * touch". https://m3.material.io/foundations/interaction/states/state-layers
+   */
+  it('clips tab press feedback to a pill indicator, not the full slot', () => {
+    const bar = read('src/components/FloatingToolbar.tsx');
+    expect(bar).toContain('borderRadius: 16');
+    expect(bar).toContain('styles.indicator');
+    expect(bar).toMatch(/style=\{styles\.slot\}/);
+    expect(bar).toContain('size={48}');
+  });
+
+  /** https://developer.android.com/guide/components/activities/testing */
+  it('ships a hermetic ActivityScenario launch smoke test', () => {
+    const gradle = read('android/app/build.gradle');
+    expect(gradle).toContain('testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"');
+    expect(gradle).toContain('androidx.test:core');
+    const smoke = read(
+      'android/app/src/androidTest/java/com/companionchat/LaunchSmokeTest.kt',
+    );
+    expect(smoke).toContain('ActivityScenario.launch(MainActivity::class.java)');
+    expect(smoke).toContain('Lifecycle.State.RESUMED');
+    expect(smoke).not.toContain('welcome-continue');
+  });
+
+  it('embeds the JS bundle in debug so device QA does not depend on Metro', () => {
+    // Empty debuggableVariants → debug runs createBundleDebugJsAndAssets.
+    // Skipping that is what produced "Unable to load script" the moment
+    // `adb reverse` dropped under Maestro clearState.
+    const gradle = read('android/app/build.gradle');
+    expect(gradle).toMatch(/debuggableVariants\s*=\s*\[\s*\]/);
+    expect(read('scripts/qa-device.sh')).toContain('installDebug');
+  });
+
+  it('covers font scale and expanded windows in Maestro', () => {
+    expect(read('.maestro/07-font-scale.yaml')).toContain('nav-home');
+    expect(read('.maestro/08-large-screen.yaml')).toContain('1280x800');
+    const e2e = read('scripts/e2e.mjs');
+    expect(e2e).toContain('07-font-scale.yaml');
+    expect(e2e).toContain('08-large-screen.yaml');
+    expect(e2e).toContain('API 24');
+  });
+});
+
 describe('Play Billing / UCB', () => {
   test('billing-ktx 9.1.0 is declared in app/build.gradle', () => {
     expect(read('android/app/build.gradle')).toContain('billing-ktx:9.1.0');
@@ -550,5 +802,53 @@ describe('Play Billing / UCB', () => {
     const version = major * 10000 + minor * 100 + patch;
     // 2.2.10 = 20210
     expect(version).toBeGreaterThanOrEqual(2 * 10000 + 2 * 100 + 10);
+  });
+});
+
+describe('Cashfree WebCheckout — Android package visibility', () => {
+  /**
+   * Android 11 (API 30) introduced package visibility restrictions. Without
+   * <queries> declarations, intents to UPI apps resolve to nothing and the
+   * Cashfree SDK cannot detect installed UPI apps.
+   *
+   * doc: https://www.cashfree.com/docs/payments/online/mobile/android
+   * doc: https://developer.android.com/training/package-visibility
+   */
+  it('declares <queries> for UPI app package names (Android 11+ visibility)', () => {
+    const manifest = read('android/app/src/main/AndroidManifest.xml');
+    expect(manifest).toContain('<queries>');
+    // Google Pay, PhonePe, Paytm, BHIM packages — required by Cashfree Android doc.
+    expect(manifest).toContain('com.google.android.apps.nbu.paisa.user');
+    expect(manifest).toContain('com.phonepe.app');
+    expect(manifest).toContain('net.one97.paytm');
+    // UPI intent scheme so any future UPI app is also resolvable.
+    expect(manifest).toContain('android:scheme="upi"');
+  });
+
+  it('Cashfree SDK is in root package.json (RULE 5 — dep has a reason)', () => {
+    const pkg = JSON.parse(read('package.json')) as {
+      dependencies: Record<string, string>;
+    };
+    expect(Object.keys(pkg.dependencies)).toContain('react-native-cashfree-pg-sdk');
+  });
+});
+
+describe('sheet motion and display refresh', () => {
+  it('asks the display for its highest refresh mode', () => {
+    // https://developer.android.com/develop/ui/views/animations/frame-rate
+    const body = read(MAIN_ACTIVITY);
+    expect(body).toContain('preferredDisplayModeId');
+    expect(body).toContain('supportedModes');
+    expect(body).toContain('preferHighestRefreshRate()');
+  });
+
+  it('blurs the activity behind a sheet via RenderEffect, not a screenshot', () => {
+    const chrome = read('android/app/src/main/java/com/companionchat/WindowChromeModule.kt');
+    expect(chrome).toContain('RenderEffect.createBlurEffect');
+    expect(chrome).toContain('Build.VERSION_CODES.S');
+    expect(read('android/app/src/main/java/com/companionchat/InAppUpdatePackage.kt')).toContain(
+      'WindowChromeModule',
+    );
+    expect(read('src/components/Sheet.tsx')).toContain('setSheetBackdropBlur');
   });
 });

@@ -209,6 +209,12 @@ select throws_ok(
 );
 reset role;
 
+-- Fund member so the session balance gate (ADR-0020) does not fire on first send.
+update public.profiles set promo_balance = 500
+where id = 'bbbbbbbb-0000-4000-8000-000000000002';
+select test.accept_current_policies(id)
+from auth.users;
+
 -- A conversation with traffic on both sides, then a review.
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"bbbbbbbb-0000-4000-8000-000000000002","role":"authenticated"}';
@@ -272,7 +278,9 @@ select is(
 select is(
   (select token_balance from public.profiles
     where id = 'bbbbbbbb-0000-4000-8000-000000000002'),
-  50, 'and the member is made whole'
+  -- In the session model messages carry no per-message cost, so the refund
+  -- function credits one token onto the pre-send balance (500 + 1 = 501).
+  501, 'refund credits one token; balance reflects no prior per-message debit'
 );
 select is(
   public.refund_unanswered_messages(), 0,

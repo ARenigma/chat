@@ -1,6 +1,7 @@
 'use client';
 
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 export default function Error({
   error,
@@ -10,15 +11,16 @@ export default function Error({
   reset: () => void;
 }) {
   return (
-    <div className="panel" style={{ marginTop: '2rem' }}>
-      <div className="empty-state">
-        <div className="empty-state-icon">⚡</div>
-        <p className="empty-state-title">Something went wrong</p>
-        <p className="empty-state-body">{error.message ?? 'An unexpected error occurred.'}</p>
-        <Button variant="secondary" size="sm" onClick={reset} style={{ marginTop: '0.5rem' }}>
-          Try again
-        </Button>
-      </div>
+    <div className="mt-8">
+      <EmptyState
+        cause="error"
+        body={error.message || 'An unexpected error occurred.'}
+        action={
+          <Button variant="outline" size="sm" onClick={reset}>
+            Try again
+          </Button>
+        }
+      />
     </div>
   );
 }

@@ -1,19 +1,17 @@
 import Link from 'next/link';
 import { createServiceClient } from '@/lib/supabase/service';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { Panel } from '@/components/ui/Card';
-import { StatusBadge, RuntimeBadge } from '@/components/ui/Badge';
+import { Card, CardContent } from '@/components/ui/card';
+import { StatusBadge, RuntimeBadge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Button } from '@/components/ui/button';
 import { CONFIG_REGISTRY, formatDisplayValue } from '@/lib/config-registry';
 
 interface ActiveConfig {
   domain: string;
   version_id: string;
   updated_at: string;
-  config_versions: {
-    version_number: number;
-    published_at: string | null;
-  } | null;
+  config_versions: { version_number: number; published_at: string | null } | null;
   payload: Record<string, unknown> | null;
 }
 
@@ -33,15 +31,12 @@ export default async function ConfigPage() {
     .eq('environment', 'prod');
 
   const activeByDomain = (active ?? []).reduce<Record<string, ActiveConfig>>(
-    (acc, row) => {
-      acc[row.domain] = row as unknown as ActiveConfig;
-      return acc;
-    },
+    (acc, row) => { acc[row.domain] = row as unknown as ActiveConfig; return acc; },
     {}
   );
 
   return (
-    <div>
+    <div className="flex flex-col gap-6">
       <PageHeader
         title="App config"
         subtitle="All runtime configuration domains. Changes take effect immediately on publish."
@@ -50,90 +45,71 @@ export default async function ConfigPage() {
       {(domains ?? []).length === 0 ? (
         <EmptyState cause="cold-start" title="No config domains" body="Run migrations to seed domains." />
       ) : (
-        <Panel>
-          {(domains ?? []).map((domain: { key: string; description: string }, i: number) => {
-            const act = activeByDomain[domain.key];
-            const versionNum = act?.config_versions?.version_number;
-            const publishedAt = act?.config_versions?.published_at;
-            const registryDef = CONFIG_REGISTRY.find((d) => d.key === domain.key);
-            const payload = act?.payload as Record<string, unknown> | null;
+        <Card className="py-0 gap-0">
+          <CardContent className="p-0">
+            <div className="divide-y">
+              {(domains ?? []).map((domain: { key: string; description: string }) => {
+                const act = activeByDomain[domain.key];
+                const versionNum = act?.config_versions?.version_number;
+                const publishedAt = act?.config_versions?.published_at;
+                const registryDef = CONFIG_REGISTRY.find((d) => d.key === domain.key);
+                const payload = act?.payload as Record<string, unknown> | null;
 
-            // Summary: first 2 fields from active payload
-            const summaryFields = registryDef?.fields.slice(0, 2) ?? [];
-            const summary = summaryFields
-              .map((f) => {
-                const v = payload?.[f.key];
-                if (v === undefined || v === null) return null;
-                return `${f.label}: ${formatDisplayValue(f, v)}`;
-              })
-              .filter(Boolean)
-              .join(' · ');
+                const summaryFields = registryDef?.fields.slice(0, 2) ?? [];
+                const summary = summaryFields
+                  .map((f) => {
+                    const v = payload?.[f.key];
+                    if (v === undefined || v === null) return null;
+                    return `${f.label}: ${formatDisplayValue(f, v)}`;
+                  })
+                  .filter(Boolean)
+                  .join(' · ');
 
-            // Runtime status: worst status among fields
-            const runtimeStatuses = registryDef?.fields.map((f) => f.runtime) ?? [];
-            const overallRuntime =
-              runtimeStatuses.includes('seeded')
-                ? 'seeded'
-                : runtimeStatuses.includes('partial')
-                ? 'partial'
-                : 'live';
+                const runtimeStatuses = registryDef?.fields.map((f) => f.runtime) ?? [];
+                const overallRuntime =
+                  runtimeStatuses.includes('seeded') ? 'seeded'
+                  : runtimeStatuses.includes('partial') ? 'partial'
+                  : 'live';
 
-            return (
-              <div key={domain.key} className="domain-row" style={{ borderTop: i === 0 ? 'none' : undefined }}>
-                <div className="domain-row-meta">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    {registryDef && (
-                      <span aria-hidden="true" style={{ fontSize: '1rem' }}>
-                        {registryDef.icon}
-                      </span>
-                    )}
-                    <p className="domain-row-name">
-                      {registryDef?.name ?? domain.key}
-                    </p>
-                    <RuntimeBadge status={overallRuntime} />
-                  </div>
-                  <p className="domain-row-desc">
-                    {summary || domain.description}
-                  </p>
-                </div>
-
-                <div className="domain-row-right">
-                  {versionNum != null ? (
-                    <div style={{ textAlign: 'right' }}>
-                      <StatusBadge status="active" />
-                      <p className="domain-row-version" style={{ marginTop: '0.25rem' }}>
-                        v{versionNum}
-                        {publishedAt != null && (
-                          <>
-                            {' · '}
-                            {new Date(publishedAt).toLocaleDateString('en-IN', {
-                              day: 'numeric',
-                              month: 'short',
-                              year: '2-digit',
-                            })}
-                          </>
+                return (
+                  <div key={domain.key} className="flex items-start justify-between gap-4 px-5 py-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {registryDef && (
+                          <span aria-hidden="true" className="text-base">{registryDef.icon}</span>
                         )}
+                        <span className="font-semibold text-sm">{registryDef?.name ?? domain.key}</span>
+                        <RuntimeBadge status={overallRuntime} />
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-md">
+                        {summary || domain.description}
                       </p>
                     </div>
-                  ) : (
-                    <span
-                      style={{
-                        fontSize: '0.8125rem',
-                        color: 'var(--bg-accent-strong)',
-                        fontWeight: 500,
-                      }}
-                    >
-                      No active config
-                    </span>
-                  )}
-                  <Link href={`/config/${domain.key}`} className="btn btn--primary btn--sm">
-                    Edit
-                  </Link>
-                </div>
-              </div>
-            );
-          })}
-        </Panel>
+
+                    <div className="flex items-center gap-3 shrink-0">
+                      {versionNum != null ? (
+                        <div className="text-right">
+                          <StatusBadge status="active" />
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            v{versionNum}
+                            {publishedAt != null && (
+                              <> · {new Date(publishedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' })}</>
+                            )}
+                          </p>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-[var(--text-accent)] font-medium">No active config</span>
+                      )}
+                      <Button asChild size="sm">
+                        <Link href={`/config/${domain.key}`}>Edit</Link>
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

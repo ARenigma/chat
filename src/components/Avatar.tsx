@@ -1,5 +1,5 @@
 import React, { memo, useEffect } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, PixelRatio, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -10,6 +10,8 @@ import Animated, {
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { DURATION } from '../theme/motion';
+import { sizedStorageImageUri } from '../lib/storageImage';
+import { isClayUri, resolveAvatarSource } from '../lib/clayAvatars';
 
 /**
  * 40 replaces 42, and that is a platform number rather than a rounder one: iOS
@@ -55,24 +57,6 @@ interface Props {
 }
 
 const FONT: Record<Size, number> = { 26: 11, 30: 12, 34: 13, 40: 15, 48: 18, 56: 20 };
-
-/**
- * Append Supabase Storage image transform params to produce a sized fetch.
- *
- * Only applied when the URI looks like a Supabase Storage URL; all other URIs
- * (null, non-Supabase CDNs, local file://…) are returned unchanged. The width
- * is 3× the CSS size to cover 3x pixel density; quality=75 is the sweet spot
- * for avatar-sized images (JPEG artefacts are not visible at ≤56pt). A `?`/`&`
- * separator is chosen based on whether the URI already has a query string.
- *
- * B5: no fade (`fadeDuration={0}`) + this helper are the two parts of the fix.
- */
-function sizedAvatarUri(uri: string | null | undefined, size: Size): string | null | undefined {
-  if (!uri) return uri;
-  if (!uri.includes('.supabase.co/storage')) return uri;
-  const sep = uri.includes('?') ? '&' : '?';
-  return `${uri}${sep}width=${Math.round(size * 3)}&quality=75`;
-}
 
 /**
  * The presence dot's outer diameter, ring included. The green circle is this
@@ -171,7 +155,11 @@ function AvatarView({
       </Text>
       {uri ? (
         <Image
-          source={{ uri: sizedAvatarUri(uri, size) ?? uri }}
+          source={
+            isClayUri(uri)
+              ? (resolveAvatarSource(uri) as number)
+              : { uri: sizedStorageImageUri(uri, size, size, PixelRatio.get(), 75) }
+          }
           style={[styles.photo, { width: size, height: size, borderRadius: size / 2 }]}
           resizeMode="cover"
           fadeDuration={0}

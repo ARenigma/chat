@@ -249,15 +249,16 @@ reset role;
 
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"aaaaaaaa-0000-4000-8000-000000000001","role":"authenticated"}';
+-- Migration 037 renamed conversation_summaries.id → conversation_summaries.conversation_id (ADR-0020).
 select is(
   (select peer_presence from public.conversation_summaries
-    where id = (select v from test.fixture where k = 'thread'))::text,
+    where conversation_id = (select v from test.fixture where k = 'thread'))::text,
   'here',
   'a MEMBER can be present to the provider waiting on them, which is new'
 );
 select is(
   (select peer_display_name from public.conversation_summaries
-    where id = (select v from test.fixture where k = 'thread')),
+    where conversation_id = (select v from test.fixture where k = 'thread')),
   'Member bbbb',
   'and is still addressed by a handle rather than a name they typed elsewhere'
 );
@@ -267,7 +268,7 @@ set local role authenticated;
 set local request.jwt.claims = '{"sub":"bbbbbbbb-0000-4000-8000-000000000002","role":"authenticated"}';
 select is(
   (select peer_presence from public.conversation_summaries
-    where id = (select v from test.fixture where k = 'thread'))::text,
+    where conversation_id = (select v from test.fixture where k = 'thread'))::text,
   'here',
   'and the provider''s own declaration reaches the member, symmetrically'
 );
@@ -298,7 +299,7 @@ set local role authenticated;
 set local request.jwt.claims = '{"sub":"bbbbbbbb-0000-4000-8000-000000000002","role":"authenticated"}';
 select is(
   (select peer_presence from public.conversation_summaries
-    where id = (select v from test.fixture where k = 'thread'))::text,
+    where conversation_id = (select v from test.fixture where k = 'thread'))::text,
   'hidden', 'turning it off is retroactive, and says so rather than going null'
 );
 select is(

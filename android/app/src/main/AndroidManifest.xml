@@ -61,18 +61,30 @@
     -->
     <uses-permission android:name="com.google.android.gms.permission.AD_ID" tools:node="remove" />
     <!--
-      Contributed by @sentry/react-native, which uses it only to tag events with
-      the connection type, ambient device metadata this app does not want and
-      does not need. Sentry's AndroidConnectionStatusProvider permission-checks
-      before reading it and degrades to UNKNOWN, so removing it is safe. Caught
-      by scripts/verify-manifest.mjs against the *merged* manifest.
+      Required by the Cashfree PG SDK (recharge / User Choice Billing, ADR-0022).
+      Its analytics path calls ConnectivityManager.getActiveNetworkInfo() WITHOUT
+      a permission check (com.cashfree.pg.cf_analytics ...ContextUtils.getNetworkType),
+      so stripping this throws SecurityException and crashes the checkout the
+      instant Pay is tapped. Unlike Sentry — which contributed this permission too
+      but permission-checks first and degrades to UNKNOWN — Cashfree hard-requires
+      it, so the app now owns and declares it.
+      docs: https://www.cashfree.com/docs/payments/online/mobile/android (SDK prerequisites)
+      It is a normal (non-dangerous) permission: no runtime prompt, no personal
+      data, nothing to surface on the Play Data Safety form.
     -->
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" tools:node="remove" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" tools:node="remove" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" tools:node="remove" />
     <uses-permission android:name="android.permission.READ_CONTACTS" tools:node="remove" />
+    <!--
+      Also from the Cashfree PG SDK, for tap-to-pay card reads. This app takes
+      UPI and web checkout only and never reads a card at the device, so the
+      capability is dead weight — and a payments-adjacent permission on the Play
+      listing that we would have to justify without using.
+    -->
+    <uses-permission android:name="android.permission.NFC" tools:node="remove" />
 
     <!-- Core-Telecom self-managed calling (developer.android.com/develop/connectivity/telecom/self-managed) -->
     <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
@@ -82,6 +94,28 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
 
+    <!--
+      Android 11 (API 30) restricts package visibility. Without explicit <queries>
+      declarations, intents to UPI apps resolve to nothing and the Cashfree SDK
+      cannot detect installed UPI apps (Google Pay, PhonePe, Paytm, BHIM).
+
+      doc: https://www.cashfree.com/docs/payments/online/mobile/android
+      doc: https://developer.android.com/training/package-visibility
+
+      These are intent-based queries, not permissions; they do not appear in the
+      Play Data Safety section and do not require user consent.
+    -->
+    <queries>
+        <package android:name="com.google.android.apps.nbu.paisa.user" />
+        <package android:name="com.phonepe.app" />
+        <package android:name="net.one97.paytm" />
+        <package android:name="in.org.npci.upiapp" />
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="upi" />
+        </intent>
+    </queries>
+
     <application
       android:name=".MainApplication"
       android:label="@string/app_name"
@@ -89,8 +123,8 @@
       android:roundIcon="@mipmap/ic_launcher_round"
       android:allowBackup="false"
       android:dataExtractionRules="@xml/data_extraction_rules"
+      android:networkSecurityConfig="@xml/network_security_config"
       android:theme="@style/AppTheme"
-      android:usesCleartextTraffic="${usesCleartextTraffic}"
       android:supportsRtl="true">
       <!--
         NO `screenOrientation`, deliberately, and this is the second position on

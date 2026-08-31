@@ -20,10 +20,17 @@ react {
     // cliFile = file("../../node_modules/react-native/cli.js")
 
     /* Variants */
-    //   The list of variants to that are debuggable. For those we're going to
+    //   The list of variants that are debuggable. For those we're going to
     //   skip the bundling of the JS bundle and the assets. Default is "debug", "debugOptimized".
-    //   If you add flavors like lite, prod, etc. you'll have to list your debuggableVariants.
-    // debuggableVariants = ["liteDebug", "liteDebugOptimized", "prodDebug", "prodDebugOptimized"]
+    //
+    // Empty on purpose for go-live QA: an empty list means EVERY variant
+    // (including debug) embeds `index.android.bundle`. Debug-without-bundle
+    // requires Metro + `adb reverse tcp:8081`, and that pipe drops after
+    // Maestro clearState / shell churn — which is the "Unable to load script"
+    // redbox that blocked Cashfree and Macrobenchmark for hours.
+    // Hot reload: temporarily set debuggableVariants = ["debug"] and run Metro.
+    // https://reactnative.dev/docs/signed-apk-android#enable-proguard-to-reduce-the-size-of-the-apk-optional
+    debuggableVariants = []
 
     /* Bundling */
     //   A list containing the node command and its flags. Default is just 'node'.
@@ -203,6 +210,9 @@ android {
         ndk {
             debugSymbolLevel "SYMBOL_TABLE"
         }
+
+        // https://developer.android.com/training/testing/instrumented-tests
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
         debug {
@@ -279,20 +289,6 @@ android {
             signingConfig hasReleaseKeystore ? signingConfigs.release : null
 
             /*
-             * The manifest interpolates `${usesCleartextTraffic}`, and the React
-             * Native Gradle Plugin only fills it in for `debug` and `release` --
-             * it does it after this block is evaluated, so `initWith` cannot
-             * inherit it either. Without this line the build dies at
-             * `processInternalMainManifest` with "requires a placeholder
-             * substitution", which reads like a broken manifest rather than a
-             * missing build type.
-             *
-             * `false`, matching release. A test build that quietly allows
-             * cleartext is a test build that cannot reproduce a TLS problem.
-             */
-            manifestPlaceholders["usesCleartextTraffic"] = false
-
-            /*
              * The one place internal deliberately differs from release in
              * behaviour rather than only in dependencies. Everything else about
              * this variant is release, so a crash a tester hits is a crash that
@@ -302,6 +298,17 @@ android {
             buildConfigField "boolean", "BLOCK_SCREENSHOTS", "false"
         }
     }
+}
+
+/*
+ * Application modules otherwise keep generated profiles per variant. The
+ * recorder targets internal, but release is the Play artifact, so merge both
+ * baseline-prof.txt and startup-prof.txt into the main source set consumed by
+ * every optimized build.
+ * https://developer.android.com/topic/performance/baselineprofiles/configure-baselineprofiles
+ */
+baselineProfile {
+    mergeIntoMain = true
 }
 
 dependencies {
@@ -414,4 +421,10 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+
+    // Instrumented ActivityScenario lifecycle tier.
+    // https://developer.android.com/guide/components/activities/testing
+    androidTestImplementation("androidx.test:core:1.6.1")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
 }

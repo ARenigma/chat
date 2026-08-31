@@ -46,6 +46,7 @@ const SIGNED_URL_TTL_SECONDS = 60;
 
 const NOTICE: Record<SendError | 'UPLOAD', string> = {
   INSUFFICIENT_BALANCE: 'You are out of tokens.',
+  POLICY_REQUIRED: 'Accept the latest Terms and Privacy Policy to continue.',
   BAD_REQUEST: 'That voice note could not be sent.',
   UNAUTHORIZED: 'Session expired. Reopen the app to continue.',
   FORBIDDEN: 'That conversation is not available.',
@@ -73,11 +74,17 @@ const NOTICE: Record<SendError | 'UPLOAD', string> = {
  * to the same endpoint. The alternative, reading the file into an ArrayBuffer,
  * would base64 the whole recording across the bridge *and* need a filesystem
  * dependency to read it.
+ *
+ * Uses XMLHttpRequest instead of fetch so `xhr.upload.onprogress` can report
+ * byte-level progress to the caller — fetch provides no upload progress API.
+ * M3 spec: determinate progress when the fraction is known.
+ * Ref: https://m3.material.io/components/progress-indicators/guidelines
  */
 async function uploadRecording(
   path: string,
   file: string,
   accessToken: string,
+  onProgress?: (fraction: number) => void,
 ): Promise<boolean> {
   const form = new FormData();
   form.append('cacheControl', '3600');
@@ -89,21 +96,26 @@ async function uploadRecording(
     type: 'audio/mp4',
   } as unknown as Blob);
 
-  const response = await fetch(
-    `${ENV.supabaseUrl}/storage/v1/object/${BUCKET}/${path}`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        apikey: ENV.supabaseAnonKey,
-        // No `x-upsert`. The bucket has no UPDATE policy on purpose: a recording
-        // the sender can replace after it has been read or reported is worthless
-        // as evidence. A retry mints a new key instead.
-      },
-      body: form,
-    },
-  );
-  return response.ok;
+  return new Promise<boolean>(resolve => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${ENV.supabaseUrl}/storage/v1/object/${BUCKET}/${path}`);
+    xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
+    xhr.setRequestHeader('apikey', ENV.supabaseAnonKey);
+    // No `x-upsert`. The bucket has no UPDATE policy on purpose: a recording
+    // the sender can replace after it has been read or reported is worthless
+    // as evidence. A retry mints a new key instead.
+    if (onProgress !== undefined) {
+      xhr.upload.onprogress = (e: ProgressEvent) => {
+        if (e.lengthComputable && e.total > 0) {
+          onProgress(e.loaded / e.total);
+        }
+      };
+    }
+    xhr.onload = () => resolve(xhr.status >= 200 && xhr.status < 300);
+    xhr.onerror = () => resolve(false);
+    xhr.onabort = () => resolve(false);
+    xhr.send(form);
+  });
 }
 
 /**
@@ -131,6 +143,8 @@ export function useSendVoiceNote(
   const setBalance = useStore(s => s.setBalance);
   const setNotice = useStore(s => s.setNotice);
   const openRefill = useStore(s => s.openRefill);
+  const setUploadProgress = useStore(s => s.setUploadProgress);
+  const clearUploadProgress = useStore(s => s.clearUploadProgress);
 
   return useCallback(
     async (draft: VoiceDraft, replyToId: string | null = null): Promise<void> => {
@@ -199,9 +213,12 @@ export function useSendVoiceNote(
         return;
       }
 
-      const uploaded = await uploadRecording(path, draft.file, accessToken).catch(
+      const uploaded = await uploadRecording(path, draft.file, accessToken, fraction => {
+        setUploadProgress(pendingId, fraction);
+      }).catch(
         () => false,
       );
+      clearUploadProgress(pendingId);
       if (!uploaded) {
         setSending(false);
         // Counted as a rejection with its own reason, because an upload that
@@ -253,7 +270,7 @@ export function useSendVoiceNote(
       track('voice_note_sent', { secs: Math.round(draft.durationMs / 1000) });
       void queryClient.invalidateQueries({ queryKey: keys.conversationList });
     },
-    [conversationId, selfId, queryClient, setSending, setBalance, setNotice, openRefill],
+    [conversationId, selfId, queryClient, setSending, setBalance, setNotice, openRefill, setUploadProgress, clearUploadProgress],
   );
 }
 

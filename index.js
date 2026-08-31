@@ -16,7 +16,7 @@ import './src/lib/webcrypto';
 import { registerGlobals } from 'react-native-webrtc';
 registerGlobals();
 
-import { AppRegistry } from 'react-native';
+import { AppRegistry, LogBox } from 'react-native';
 import {
   getMessaging,
   setBackgroundMessageHandler,
@@ -31,6 +31,18 @@ import {
   readConversationPush,
   readEngagementPush,
 } from './src/lib/conversations';
+
+/*
+ * LogBox's yellow chip docks over the welcome CTA and swallows Maestro / adb
+ * taps on Continue (hierarchy still shows welcome-continue after a "successful"
+ * tap). First-party InteractionManager usage is gone; residual RN/deps warnings
+ * still paint the chip. Silence LogBox in __DEV__ so device QA and e2e can
+ * drive the owned surface — Metro/terminal still show the warnings.
+ * https://docs.maestro.dev/get-started/supported-platform/react-native
+ */
+if (__DEV__) {
+  LogBox.ignoreAllLogs(true);
+}
 
 /*
  * The FCM background handler, registered at module scope.

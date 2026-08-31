@@ -49,6 +49,37 @@ const ALLOWED = new Set([
   // Safety form gains a Photos/Camera row and the privacy page must say a photo
   // is only captured when the user taps Camera and is sent as a message.
   'android.permission.CAMERA',
+  // ── Call / foreground-service permissions (ADR-0020) ────────────────────
+  // These five permissions are owned by the app's call feature and are
+  // required by AndroidX Core-Telecom and the call foreground service.
+  //
+  // MANAGE_OWN_CALLS: Required by the ConnectionService binding that
+  //   registers our calls with the system telecom stack.
+  //   Ref: developer.android.com/guide/topics/connectivity/telecom/selfManaged
+  //
+  // FOREGROUND_SERVICE: Declared so the call FGS can be started with
+  //   startForegroundService(); without this the service crashes on API 28+.
+  //   Ref: developer.android.com/guide/components/foreground-services
+  //
+  // FOREGROUND_SERVICE_PHONE_CALL / FOREGROUND_SERVICE_MICROPHONE /
+  // FOREGROUND_SERVICE_CAMERA: API 34+ requires the specific FGS *type*
+  //   to be declared in the manifest. The call service uses all three
+  //   channels (voice, audio, video). Omitting any type that the service
+  //   uses causes an immediate crash on Android 14+ devices.
+  //   Ref: developer.android.com/about/versions/14/changes/fgs-types-required
+  'android.permission.MANAGE_OWN_CALLS',
+  'android.permission.FOREGROUND_SERVICE',
+  'android.permission.FOREGROUND_SERVICE_PHONE_CALL',
+  'android.permission.FOREGROUND_SERVICE_MICROPHONE',
+  'android.permission.FOREGROUND_SERVICE_CAMERA',
+  // Added with Cashfree recharge (ADR-0022). The Cashfree PG SDK's analytics
+  // reads ConnectivityManager.getActiveNetworkInfo() WITHOUT a permission check,
+  // so its absence is not "degrade to UNKNOWN" (that is Sentry's behaviour) but a
+  // SecurityException that crashes checkout the instant Pay is tapped. It used to
+  // be stripped via tools:node="remove"; payments make it app-owned now. Normal
+  // (non-dangerous) permission: no runtime prompt, no Play Data Safety row.
+  // developer.android.com/training/basics/network-ops/managing
+  'android.permission.ACCESS_NETWORK_STATE',
 ]);
 
 /**
@@ -71,6 +102,21 @@ const ALLOWED = new Set([
 const ALLOWED_FROM_LIBRARIES = new Set([
   'android.permission.WAKE_LOCK',
   'com.google.android.c2dm.permission.RECEIVE',
+  // Play Billing embeds this permission in its own manifest; the integration
+  // guide explicitly says applications should not duplicate it.
+  // developer.android.com/google/play/billing/integrate
+  'com.android.vending.BILLING',
+  // AndroidX Core-Telecom owns call audio routing. Android 12+ requires
+  // BLUETOOTH_CONNECT for paired communication devices, while the library also
+  // declares MODIFY_AUDIO_SETTINGS for its managed call integration.
+  // developer.android.com/develop/connectivity/bluetooth/bt-permissions
+  // developer.android.com/develop/connectivity/telecom/voip-app/api-updates
+  'android.permission.BLUETOOTH_CONNECT',
+  'android.permission.MODIFY_AUDIO_SETTINGS',
+  // Firebase Auth's reCAPTCHA dependency contributes this Google signature
+  // permission. It is internal to Play services and is not requested at runtime.
+  // developers.google.com/android/guides/permissions
+  'com.google.android.providers.gsf.permission.READ_GSERVICES',
 ]);
 
 /**

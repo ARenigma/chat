@@ -6,6 +6,7 @@ import { VOICE_BARS, clock, progressOf, type PlaybackSpeed } from '../lib/voice'
 import { useStore } from '../store/useStore';
 import { Icon } from './Icon';
 import { Pressable } from './Pressable';
+import { ProgressBar } from './ProgressBar';
 import { Waveform } from './Waveform';
 
 /**
@@ -72,6 +73,13 @@ function VoiceNoteView({
     s.playing !== null && s.playing.messageId === messageId ? s.playing : null,
   );
 
+  // Upload fraction while a pending voice note's bytes are in flight; undefined
+  // before the first progress event and after settle.  Only ever set for my own
+  // pending rows (peer rows arrive already confirmed).
+  const uploadFraction = useStore(s =>
+    pending ? s.uploadProgress[messageId] : undefined,
+  );
+
   const toggle = useCallback(
     () => onToggle(messageId, path, durationMs),
     [durationMs, messageId, onToggle, path],
@@ -89,62 +97,88 @@ function VoiceNoteView({
   const tint = onAccent ? theme.color.text.onAccent : theme.color.text.secondary;
 
   return (
-    <View style={styles.row}>
-      <Pressable
-        onPress={toggle}
-        disabled={pending}
-        testID={`voice-play-${messageId}`}
-        accessibilityLabel={playing ? 'Pause voice note' : 'Play voice note'}
-        accessibilityHint={`${clock(durationMs)} long`}
-        press="chip"
-        size={PLAY_SIZE}
-        onColor={tint}
-        style={[styles.play, onAccent ? styles.playOnAccent : styles.playNeutral]}
-      >
-        {active !== null && active.pending ? (
-          // Not a spinner. Signing a URL and opening a stream can take a second
-          // on a bad connection, and a play button that does nothing visible in
-          // that second gets tapped again, which stops what the first tap
-          // started. Three dots is the smallest honest "working on it".
-          <Icon name="more" size={16} color={tint} />
-        ) : (
-          <Icon name={playing ? 'pause' : 'play'} size={14} color={tint} />
-        )}
-      </Pressable>
+    <View>
+      <View style={styles.row}>
+        <Pressable
+          onPress={toggle}
+          disabled={pending}
+          testID={`voice-play-${messageId}`}
+          accessibilityLabel={playing ? 'Pause voice note' : 'Play voice note'}
+          accessibilityHint={`${clock(durationMs)} long`}
+          press="chip"
+          size={PLAY_SIZE}
+          onColor={tint}
+          style={[styles.play, onAccent ? styles.playOnAccent : styles.playNeutral]}
+        >
+          {active !== null && active.pending ? (
+            // Not a spinner. Signing a URL and opening a stream can take a second
+            // on a bad connection, and a play button that does nothing visible in
+            // that second gets tapped again, which stops what the first tap
+            // started. Three dots is the smallest honest "working on it".
+            <Icon name="more" size={16} color={tint} />
+          ) : (
+            <Icon name={playing ? 'pause' : 'play'} size={14} color={tint} />
+          )}
+        </Pressable>
 
-      <Waveform
-        peaks={peaks != null && peaks.length > 0 ? peaks : FLAT}
-        progress={progress}
-        tint={tint}
-        dim={0.45}
-        testID={`voice-wave-${messageId}`}
-      />
+        <Waveform
+          peaks={peaks != null && peaks.length > 0 ? peaks : FLAT}
+          progress={progress}
+          tint={tint}
+          dim={0.45}
+          testID={`voice-wave-${messageId}`}
+        />
 
-      <Text allowFontScaling style={[styles.time, ink]}>
-        {label}
-      </Text>
+        <Text allowFontScaling style={[styles.time, ink]}>
+          {label}
+        </Text>
 
-      {/* The pill appears only on the row that is playing, and its slot is
-          reserved on every row regardless. A control on every note is a setting
-          pretending to be a per-message choice; a slot that appears with the
-          control would shorten the track by a third the instant you press play,
-          which is the one moment the track matters. */}
-      <View style={styles.speedSlot}>
-        {playing ? (
-          <Pressable
-            onPress={onCycleSpeed}
-            testID="voice-speed"
-            accessibilityLabel={`Playback speed ${speed} times. Tap to change`}
-            press="chip"
-            onColor={tint}
-            style={[styles.speed, onAccent ? styles.speedOnAccent : styles.speedNeutral]}
-          >
-            <Text allowFontScaling={false} style={[styles.speedText, ink]}>
-              {speed}x
-            </Text>
-          </Pressable>
-        ) : null}
+        {/* The pill appears only on the row that is playing, and its slot is
+            reserved on every row regardless. A control on every note is a setting
+            pretending to be a per-message choice; a slot that appears with the
+            control would shorten the track by a third the instant you press play,
+            which is the one moment the track matters. */}
+        <View style={styles.speedSlot}>
+          {playing ? (
+            <Pressable
+              onPress={onCycleSpeed}
+              testID="voice-speed"
+              accessibilityLabel={`Playback speed ${speed} times. Tap to change`}
+              press="chip"
+              onColor={tint}
+              style={[styles.speed, onAccent ? styles.speedOnAccent : styles.speedNeutral]}
+            >
+              <Text allowFontScaling={false} style={[styles.speedText, ink]}>
+                {speed}x
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
       </View>
+      {/* M3 linear progress under the waveform row while the recording is
+          uploading.  Determinate when the XHR has reported at least one byte;
+          indeterminate before the first event (RN may batch early progress).
+          Policy: https://m3.material.io/components/progress-indicators/guidelines
+          Colour matches the row's own ink token so the bar reads as part of the
+          bubble rather than importing an unrelated accent. */}
+      {pending ? (
+        <View
+          accessible
+          accessibilityLabel={
+            uploadFraction !== undefined
+              ? `Sending voice note, ${Math.round(uploadFraction * 100)} percent`
+              : 'Sending voice note'
+          }
+          style={styles.uploadProgress}
+        >
+          <ProgressBar
+            progress={uploadFraction}
+            color={tint}
+            trackColor={onAccent ? 'rgba(255,255,255,0.3)' : undefined}
+            testID={`voice-upload-progress-${messageId}`}
+          />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -156,6 +190,9 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: TOKENS.space.xs,
+  },
+  uploadProgress: {
+    marginTop: TOKENS.space['2xs'],
   },
   play: {
     width: PLAY_SIZE,

@@ -1,8 +1,9 @@
 import Link from 'next/link';
 import { createServiceClient } from '@/lib/supabase/service';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { StatCard } from '@/components/ui/Card';
+import { StatCard } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Button } from '@/components/ui/button';
 
 async function fetchDashboardStats() {
   const svc = createServiceClient();
@@ -28,7 +29,6 @@ async function fetchDashboardStats() {
     appsError = true;
   }
 
-  // Config health: any domain missing active config
   let configHealth: { active: number; total: number } = { active: 0, total: 0 };
   try {
     const { data: domains } = await svc.schema('admin').from('config_domains').select('key');
@@ -37,13 +37,9 @@ async function fetchDashboardStats() {
       .from('config_active')
       .select('domain')
       .eq('environment', 'prod');
-    configHealth = {
-      total: (domains ?? []).length,
-      active: (active ?? []).length,
-    };
+    configHealth = { total: (domains ?? []).length, active: (active ?? []).length };
   } catch { /* non-fatal */ }
 
-  // Last published change
   let lastChange: { domain: string | null; actor: string; created_at: string } | null = null;
   try {
     const { data } = await svc
@@ -70,104 +66,86 @@ export default async function DashboardPage() {
     return acc;
   }, {});
 
+  const missingConfigs = configHealth.total - configHealth.active;
+
   return (
-    <div>
+    <div className="flex flex-col gap-6">
       <PageHeader
         title="Dashboard"
         subtitle="Pappal operational overview"
         actions={
-          <Link href="/config" className="btn btn--secondary btn--sm">
-            App config →
-          </Link>
+          <Button asChild size="sm" variant="outline">
+            <Link href="/config">App config →</Link>
+          </Button>
         }
       />
 
       {/* Config health callout */}
-      {configHealth.total > 0 && configHealth.active < configHealth.total && (
-        <div
-          className="alert alert--warning"
-          style={{ marginBottom: '1.5rem', borderRadius: 'var(--r-lg)' }}
-        >
-          <span>⚠</span>
-          <span>
-            {configHealth.total - configHealth.active} config domain
-            {configHealth.total - configHealth.active > 1 ? 's have' : ' has'} no active version.{' '}
-            <Link href="/config">Publish defaults →</Link>
+      {missingConfigs > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-3 text-sm">
+          <span className="text-amber-600 mt-0.5">⚠</span>
+          <span className="text-amber-800">
+            {missingConfigs} config domain{missingConfigs > 1 ? 's have' : ' has'} no active version.{' '}
+            <Link href="/config" className="font-semibold underline">Publish defaults →</Link>
           </span>
         </div>
       )}
 
       {/* Last change */}
       {lastChange && (
-        <div style={{ marginBottom: '1.5rem', fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+        <p className="text-xs text-muted-foreground">
           Last config change:{' '}
-          <strong style={{ color: 'var(--text-primary)' }}>{lastChange.domain ?? '—'}</strong>
+          <span className="font-semibold text-foreground">{lastChange.domain ?? '—'}</span>
           {' by '}
           {lastChange.actor}
           {' · '}
           {new Date(lastChange.created_at).toLocaleString('en-IN', {
-            day: 'numeric',
-            month: 'short',
-            hour: '2-digit',
-            minute: '2-digit',
+            day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
           })}
           {' · '}
-          <Link href="/audit">View audit log →</Link>
-        </div>
+          <Link href="/audit" className="underline">View audit log →</Link>
+        </p>
       )}
 
       {/* Safety */}
-      <section style={{ marginBottom: '2rem' }}>
-        <p className="section-label" style={{ marginBottom: '0.75rem' }}>Safety queue</p>
+      <section className="flex flex-col gap-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Safety queue</p>
         {safetyError ? (
-          <EmptyState
-            cause="load-failure"
-            body="Safety metrics view is not available in this environment."
-          />
+          <EmptyState cause="load-failure" body="Safety metrics view is not available in this environment." />
         ) : safety != null ? (
-          <div className="grid-stat">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <StatCard label="Total reports" value={(safety['total_reports'] as number) ?? 0} />
             <StatCard
               label="Pending review"
               value={(safety['pending'] as number) ?? 0}
-              sub={
-                ((safety['pending'] as number) ?? 0) > 0 ? 'Action needed' : 'All clear'
-              }
+              sub={((safety['pending'] as number) ?? 0) > 0 ? 'Action needed' : 'All clear'}
             />
             <StatCard label="Open cases" value={(safety['open_cases'] as number) ?? 0} />
           </div>
         ) : (
-          <div className="panel">
-            <EmptyState
-              cause="cold-start"
-              icon="🛡"
-              title="No reports yet"
-              body="Reports from members will appear here."
-            />
-          </div>
+          <EmptyState cause="cold-start" icon="🛡" title="No reports yet" body="Reports from members will appear here." />
         )}
       </section>
 
       {/* Provider applications */}
-      <section style={{ marginBottom: '2rem' }}>
-        <p className="section-label" style={{ marginBottom: '0.75rem' }}>Provider applications</p>
+      <section className="flex flex-col gap-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Provider applications</p>
         {appsError ? (
           <EmptyState cause="load-failure" body="Could not load provider applications." />
         ) : Object.keys(appsByStatus).length > 0 ? (
-          <div className="grid-stat">
-            {Object.entries(appsByStatus).map(([status, count]) => (
-              <StatCard key={status} label={status} value={count} />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {Object.entries(appsByStatus).map(([status, count]) => (
+                <StatCard key={status} label={status} value={count} />
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              <Link href="/applications" className="underline">Review queue →</Link>
+            </p>
+          </>
+
         ) : (
-          <div className="panel">
-            <EmptyState
-              cause="cold-start"
-              icon="👤"
-              title="No applications yet"
-              body="Provider applications will appear here once submitted."
-            />
-          </div>
+          <EmptyState cause="cold-start" icon="👤" title="No applications yet" body="Provider applications will appear here once submitted." />
         )}
       </section>
     </div>

@@ -1,16 +1,31 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import {
+  Image,
+  PixelRatio,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { RTCView } from 'react-native-webrtc';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { TOKENS, type Theme } from '../theme/tokens';
+import { LIGHT, TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { CallResult, ProviderSummary } from '../lib/database.types';
 import type { CallMedium } from '../lib/database.types';
 import { initialOf } from '../lib/display';
+import { sizedStorageImageUri } from '../lib/storageImage';
 import { useConversationId, useProviders } from '../api/chat';
 import { answerCall, endCall, heartbeatCall, startCall } from '../api/calls';
 import { useCallSession } from '../api/callSession';
+import { useSessionLease } from '../api/sessions';
+import {
+  startCallForegroundService,
+  stopCallForegroundService,
+} from '../lib/conversations';
 import { useStore } from '../store/useStore';
+import { CallRing } from '../components/CallRing';
+import { CallingDots } from '../components/CallingDots';
 import { Icon, type IconName } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 
@@ -41,6 +56,8 @@ const START_NOTICE: Record<string, string> = {
   RATE_LIMITED: 'Too many calls just now. Try again shortly.',
   FORBIDDEN: 'That conversation is not available.',
   NOT_FOUND: 'That conversation no longer exists.',
+  VOICE_CALLS_DISABLED: 'Voice calls are temporarily unavailable.',
+  VIDEO_CALLS_DISABLED: 'Video calls are temporarily unavailable.',
 };
 
 type Phase = 'starting' | 'ringing' | 'connecting' | 'active' | 'incoming';
@@ -66,6 +83,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const setNotice = useStore(s => s.setNotice);
   const openRefill = useStore(s => s.openRefill);
   const { data: providers } = useProviders();
@@ -77,9 +95,12 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   const initial = initialOf(provider?.display_name);
 
   const [callId, setCallId] = useState<string | null>(incomingCallId);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [accepted, setAccepted] = useState(direction === 'out');
   const [phase, setPhase] = useState<Phase>(direction === 'in' ? 'incoming' : 'starting');
   const [elapsed, setElapsed] = useState(0);
+  /** Visual speaker pill; audio-route wiring is a follow-up (no InCallManager yet). */
+  const [speakerOn, setSpeakerOn] = useState(false);
 
   // Outgoing needs the conversation the call belongs to; a member calling a
   // provider resolves it exactly as opening a chat does.
@@ -95,6 +116,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
       if (callIdRef.current !== null) {
         void endCall(callIdRef.current);
       }
+      stopCallForegroundService();
     },
     [],
   );
@@ -111,6 +133,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
       }
       if (r && r.success && r.call_id) {
         setCallId(r.call_id);
+        setSessionId(r.session_id ?? null);
         setPhase('ringing');
       } else {
         const code = r?.error;
@@ -126,6 +149,12 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     };
   }, [direction, openedId, callId, medium, onEnd, setNotice, openRefill]);
 
+  useEffect(() => {
+    if (callId === null) return;
+    startCallForegroundService(name, direction === 'in');
+    return stopCallForegroundService;
+  }, [callId, name, direction]);
+
   const enabled = callId !== null && accepted;
   const {
     connState,
@@ -140,6 +169,21 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     switchCamera,
   } = useCallSession(callId, direction === 'out', enabled);
 
+  useEffect(() => {
+    if (callId !== null && localStream !== null) {
+      // Media is open, so the call is connected: always the ongoing style, even
+      // if it arrived as an incoming ring.
+      startCallForegroundService(name, false, true, videoEnabled);
+    }
+  }, [callId, localStream, name, videoEnabled]);
+
+  useSessionLease(
+    sessionId
+      ? { id: sessionId, channel: medium === 'voice' ? 'audio' : 'video' }
+      : null,
+    'connected',
+  );
+
   // Keep the latest enableVideo in a ref so the connection effect can call it
   // without becoming a dependency that changes on every render.
   const enableVideoRef = useRef(enableVideo);
@@ -150,6 +194,11 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   useEffect(() => {
     if (connState === 'connected') {
       setPhase('active');
+      if (callId !== null) {
+        void heartbeatCall(callId).then(result => {
+          if (result?.session_id) setSessionId(result.session_id);
+        });
+      }
       if (medium === 'video') {
         void enableVideoRef.current();
       }
@@ -157,7 +206,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
       setNotice('The call could not connect.');
       onEnd();
     }
-  }, [connState, medium, onEnd, setNotice]);
+  }, [callId, connState, medium, onEnd, setNotice]);
 
   // The in-call timer, once live.
   useEffect(() => {
@@ -175,8 +224,9 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     }
     const id = setInterval(() => {
       void heartbeatCall(callId).then(r => {
-        if (r && r.success && r.status && r.status !== 'active') {
-          setNotice(r.status === 'ended' ? 'Call ended.' : 'The call ran out of tokens.');
+        if (r?.session_id) setSessionId(r.session_id);
+        if (r?.success && r.status === 'ended') {
+          setNotice('Call ended.');
           onEnd();
         }
       });
@@ -190,30 +240,43 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     }
     setAccepted(true);
     setPhase('connecting');
-    void answerCall(callId);
-  }, [callId]);
+    void answerCall(callId).then(result => {
+      if (!result?.success) {
+        setNotice('This call is no longer available.');
+        onEnd();
+        return;
+      }
+      setSessionId(result.session_id ?? null);
+    });
+  }, [callId, onEnd, setNotice]);
 
   const timer = `${Math.floor(elapsed / 60)}:${(elapsed % 60).toString().padStart(2, '0')}`;
   const gradient = `linear-gradient(160deg, ${theme.color.bg.accent} 0%, ${theme.color.bg.accentStrong} 100%)`;
-  const incomingLabel = medium === 'video' ? 'Incoming video call…' : 'Incoming voice call…';
+  // Status words carry NO trailing "…": the animated CallingDots supply the
+  // ellipsis for every waiting phase (user 2026-08-31, copied from the reference
+  // where the dots fill in sequence). The timer phase has no dots.
+  const incomingLabel = medium === 'video' ? 'Incoming video call' : 'Incoming voice call';
   const status =
     phase === 'active'
       ? timer
       : phase === 'incoming'
         ? incomingLabel
         : phase === 'ringing'
-          ? 'Ringing…'
+          ? 'Ringing'
           : phase === 'connecting'
-            ? 'Connecting…'
-            : 'Calling…';
+            ? 'Connecting'
+            : 'Calling';
 
   const showRemoteVideo = remoteVideoEnabled && remoteStream !== null;
+  const pulsing = phase === 'ringing' || phase === 'connecting' || phase === 'incoming' || phase === 'starting';
+  /** A photo is bleeding edge-to-edge behind everything, so no centred avatar. */
+  const hasBleedPhoto = !showRemoteVideo && typeof provider?.avatar_url === 'string';
 
   return (
     <View style={styles.root}>
       <View style={[styles.fill, { experimental_backgroundImage: gradient }]} />
 
-      {/* Remote video fills the screen when the peer's camera is on. */}
+      {/* Full-bleed photo (or remote video). Name + status sit on top, above the face. */}
       {showRemoteVideo ? (
         <RTCView
           streamURL={remoteStream.toURL()}
@@ -222,65 +285,62 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
           style={StyleSheet.absoluteFill}
         />
       ) : provider?.avatar_url ? (
-        /* Big poster: provider photo full-bleed with a dark bottom scrim so the
-           name and status sit legibly over the lower portion. Falls back to the
-           coral gradient + monogram when there is no photo. */
         <>
           <Image
-            source={{ uri: provider.avatar_url }}
+            source={{
+              uri: sizedStorageImageUri(
+                provider.avatar_url,
+                windowWidth,
+                windowHeight,
+                PixelRatio.get(),
+              ),
+            }}
             resizeMode="cover"
             style={StyleSheet.absoluteFill}
             accessibilityIgnoresInvertColors
           />
-          <View style={styles.posterScrim} />
-          <View style={styles.posterMeta}>
-            <View testID="call-medium-cue" style={styles.mediumCue}>
-              <Icon name={medium === 'video' ? 'video' : 'mic'} size={14} color="rgba(255,255,255,0.8)" />
-              <Text allowFontScaling style={styles.mediumLabel}>
-                {medium === 'video' ? 'Video call' : 'Voice call'}
-              </Text>
-            </View>
-            <Text allowFontScaling numberOfLines={1} style={styles.name}>
-              {name}
-            </Text>
-            <Text allowFontScaling style={phase === 'active' ? styles.timer : styles.status}>
-              {status}
-            </Text>
-          </View>
+          <View style={styles.bleedScrim} />
         </>
-      ) : (
-        /* Fallback: coral gradient (already rendered by styles.fill) + centred monogram
-           with name/status anchored above the controls via an absolute centerMeta block. */
-        <>
-          <View style={[styles.center, { paddingTop: insets.top }]}>
-            <View style={styles.avatarRings}>
-              {phase === 'incoming' ? <View style={styles.ring} /> : null}
-              <View style={styles.avatar}>
-                <Text allowFontScaling={false} style={styles.avatarInitial}>
-                  {initial}
-                </Text>
-              </View>
-            </View>
-          </View>
-          <View style={styles.centerMeta}>
-            <View testID="call-medium-cue" style={styles.mediumCue}>
-              <Icon name={medium === 'video' ? 'video' : 'mic'} size={14} color="rgba(255,255,255,0.8)" />
-              <Text allowFontScaling style={styles.mediumLabel}>
-                {medium === 'video' ? 'Video call' : 'Voice call'}
-              </Text>
-            </View>
-            <Text allowFontScaling numberOfLines={1} style={styles.name}>
-              {name}
-            </Text>
-            <Text allowFontScaling style={phase === 'active' ? styles.timer : styles.status}>
-              {status}
-            </Text>
-          </View>
-        </>
-      )}
+      ) : null}
 
-      {/* Local camera preview (picture-in-picture), bottom-right. Only shown
-          when our own camera is on; zOrder=1 places it above the remote feed. */}
+      <View style={[styles.topMeta, { paddingTop: insets.top + TOKENS.space.md }]}>
+        <Text allowFontScaling numberOfLines={1} style={styles.name}>
+          {name}
+        </Text>
+        {phase === 'active' ? (
+          <Text allowFontScaling testID="call-status" style={styles.timer}>
+            {status}
+          </Text>
+        ) : (
+          <View style={styles.statusRow}>
+            <Text allowFontScaling testID="call-status" style={styles.status}>
+              {status}
+            </Text>
+            <CallingDots />
+          </View>
+        )}
+      </View>
+
+      {/*
+        * The ringing halo is the fallback, not a second layer on top of the
+        * bleed. When a full-bleed photo is up, the face IS the subject — putting
+        * a circular crop of the same photo over it repeats the image and lands
+        * squarely on her eyes. WhatsApp does the same: photo OR ringed avatar,
+        * never both. The ring therefore only appears when there is no photo to
+        * bleed, where it gives the initial mark something to breathe.
+        */}
+      {!showRemoteVideo && !hasBleedPhoto ? (
+        <View style={styles.center} pointerEvents="none">
+          <CallRing size={AVATAR} active={pulsing}>
+            <View style={[styles.avatarFill, { backgroundColor: theme.color.state.available }]}>
+              <Text allowFontScaling={false} style={styles.avatarInitial}>
+                {initial}
+              </Text>
+            </View>
+          </CallRing>
+        </View>
+      ) : null}
+
       {videoEnabled && localStream !== null ? (
         <RTCView
           streamURL={localStream.toURL()}
@@ -291,6 +351,12 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
         />
       ) : null}
 
+      {/*
+        * Control row — size, spacing, and labels match the WhatsApp outgoing
+        * call capture (2026-08-30): four equal circles, End Call solid red,
+        * secondary pills translucent white glass, Start Video filled white when
+        * off / outlined when on. Incoming keeps Decline | Accept at the edges.
+        */}
       <View style={[styles.controls, { paddingBottom: insets.bottom + TOKENS.space.lg }]}>
         {phase === 'incoming' ? (
           <View style={styles.incomingRow}>
@@ -300,16 +366,17 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
         ) : (
           <View style={styles.bar}>
             <BarButton
-              testID="call-mute"
-              glyph={muted ? 'micOff' : 'mic'}
-              active={muted}
-              onPress={toggleMute}
-              label={muted ? 'Unmute' : 'Mute'}
+              testID="call-speaker"
+              glyph="speaker"
+              active={speakerOn}
+              onPress={() => setSpeakerOn(v => !v)}
+              label="Speaker"
             />
             <BarButton
               testID="call-video-toggle"
               glyph={videoEnabled ? 'video' : 'videoOff'}
-              active={videoEnabled}
+              active={!videoEnabled}
+              fill={videoEnabled ? 'ghost' : 'solid'}
               onPress={() => {
                 if (videoEnabled) {
                   disableVideo();
@@ -317,17 +384,17 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
                   void enableVideo();
                 }
               }}
-              label={videoEnabled ? 'Camera off' : 'Camera on'}
+              onLongPress={videoEnabled ? switchCamera : undefined}
+              label={videoEnabled ? 'Camera off' : 'Start Video'}
             />
-            {videoEnabled ? (
-              <BarButton
-                testID="call-camera-flip"
-                glyph="camera"
-                onPress={switchCamera}
-                label="Flip camera"
-              />
-            ) : null}
-            <BarButton testID="call-end" glyph="callEnd" tone="danger" onPress={onEnd} label="End call" large />
+            <BarButton
+              testID="call-mute"
+              glyph={muted ? 'micOff' : 'mic'}
+              active={muted}
+              onPress={toggleMute}
+              label="Mute"
+            />
+            <BarButton testID="call-end" glyph="callEnd" tone="danger" onPress={onEnd} label="End Call" />
           </View>
         )}
       </View>
@@ -335,7 +402,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   );
 }
 
-/** A big labelled round button for the incoming screen. */
+/** Incoming Decline / Accept — large edge-anchored circles with captions. */
 function CallAction({
   glyph,
   label,
@@ -356,10 +423,11 @@ function CallAction({
         onPress={onPress}
         testID={testID}
         accessibilityLabel={label}
-        press="chip"
-        size={64}
+        press="none"
+        highlight="ios"
+        size={72}
         style={[styles.action, tone === 'danger' ? styles.danger : styles.accept]}>
-        <Icon name={glyph} size={28} color="#FFFFFF" />
+        <Icon name={glyph} size={30} color={LIGHT.color.text.onAccent} />
       </Pressable>
       <Text allowFontScaling style={styles.actionLabel}>
         {label}
@@ -369,60 +437,66 @@ function CallAction({
 }
 
 /**
- * A round control in the in-call bar.
- *
- * `active` fills white (on), `tone="danger"` fills the danger red.
- * `large` makes the button 64×64 instead of 56×56 — used exclusively for the
- * end-call button so it reads as THE primary action vs the neutral/translucent
- * peers around it (WhatsApp / Instagram call UI convention).
+ * WhatsApp outgoing control: equal ~56dp circles with captions under.
+ * Secondary = translucent white glass; video "off" = solid white; End = red.
  */
 function BarButton({
   glyph,
   active = false,
   tone,
+  fill = 'ghost',
   onPress,
+  onLongPress,
   label,
   testID,
-  large = false,
 }: {
   glyph: IconName;
   active?: boolean;
   tone?: 'danger';
+  fill?: 'ghost' | 'solid';
   onPress: () => void;
+  onLongPress?: () => void;
   label: string;
   testID: string;
-  large?: boolean;
 }) {
   const styles = useStyles(makeStyles);
-  // The call screen is a FIXED coral surface, not a themed one, so these colours
-  // are fixed literals rather than tokens: white on the coral for idle/danger,
-  // and a dark ink on the white "on" pill (`barButtonOn`). This used
-  // `theme.color.text.primary` for the active icon, which flips to light in dark
-  // mode and rendered light-on-white — invisible.
-  const fg = tone === 'danger' ? '#FFFFFF' : active ? '#1C1C1E' : '#FFFFFF';
+  const fg =
+    tone === 'danger'
+      ? LIGHT.color.text.onAccent
+      : fill === 'solid'
+        ? LIGHT.color.text.primary
+        : LIGHT.color.text.onAccent;
   return (
     <View style={styles.barSlot}>
       <Pressable
         onPress={onPress}
+        onLongPress={onLongPress}
         testID={testID}
         accessibilityLabel={label}
-        press="chip"
-        size={large ? 64 : 56}
+        press="none"
+        highlight="ios"
+        size={BTN}
         style={[
           styles.barButton,
-          large && styles.barButtonLarge,
           tone === 'danger' && styles.danger,
-          active && tone !== 'danger' && styles.barButtonOn,
+          tone !== 'danger' && fill === 'solid' && styles.barButtonSolid,
+          tone !== 'danger' && fill === 'ghost' && styles.barButtonGhost,
+          active && tone !== 'danger' && fill === 'ghost' && styles.barButtonActive,
         ]}>
-        <Icon name={glyph} size={large ? 28 : 24} color={fg} />
+        <Icon name={glyph} size={24} color={fg} />
       </Pressable>
+      <Text allowFontScaling style={styles.barLabel}>
+        {label}
+      </Text>
     </View>
   );
 }
 
-const AVATAR = 120;
-/** Approximate height of the in-call bar + padding, to keep the PiP clear. */
-const CONTROLS_CLEARANCE = 108;
+/** Face diameter — WhatsApp capture ~140–160 logical on a tall phone. */
+const AVATAR = 148;
+const BTN = 56;
+/** Clearance for the labelled control row + home indicator. */
+const CONTROLS_CLEARANCE = 120;
 
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
@@ -437,63 +511,64 @@ const makeStyles = (t: Theme) =>
       right: 0,
       bottom: 0,
     },
-    center: {
-      flex: 1,
+    bleedScrim: {
+      ...StyleSheet.absoluteFill,
+      backgroundColor: 'rgba(0,0,0,0.28)',
+    },
+    topMeta: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      zIndex: 2,
       alignItems: 'center',
-      justifyContent: 'center',
-      gap: TOKENS.space.xs,
+      gap: TOKENS.space['2xs'],
       paddingHorizontal: TOKENS.space['2xl'],
     },
-    avatarRings: {
+    center: {
+      ...StyleSheet.absoluteFill,
       alignItems: 'center',
       justifyContent: 'center',
-      marginBottom: TOKENS.space.lg,
+      paddingBottom: CONTROLS_CLEARANCE,
     },
-    ring: {
-      position: 'absolute',
-      width: AVATAR + 56,
-      height: AVATAR + 56,
-      borderRadius: (AVATAR + 56) / 2,
-      backgroundColor: 'rgba(255,255,255,0.14)',
-    },
-    avatar: {
-      width: AVATAR,
-      height: AVATAR,
-      borderRadius: AVATAR / 2,
-      alignItems: 'center',
-      justifyContent: 'center',
-      overflow: 'hidden',
-      backgroundColor: 'rgba(255,255,255,0.24)',
-    },
-    avatarImage: {
+    avatarFill: {
       width: '100%',
       height: '100%',
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     avatarInitial: {
       fontFamily: TOKENS.typography.displayLarge.fontFamily,
-      fontSize: 48,
-      lineHeight: 56,
-      color: '#FFFFFF',
+      fontSize: 56,
+      lineHeight: 64,
+      color: LIGHT.color.text.onAccent,
     },
     name: {
       ...TOKENS.typography.displaySmall,
-      color: '#FFFFFF',
+      color: LIGHT.color.text.onAccent,
+      textAlign: 'center',
     },
     timer: {
       ...TOKENS.typography.titleMedium,
-      color: '#FFFFFF',
+      color: LIGHT.color.text.onAccent,
+    },
+    statusRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     status: {
       ...TOKENS.typography.subhead,
-      color: 'rgba(255,255,255,0.8)',
-      letterSpacing: 0.5,
+      color: 'rgba(255,255,255,0.85)',
+      letterSpacing: 0.3,
     },
     controls: {
       position: 'absolute',
       left: 0,
       right: 0,
       bottom: 0,
-      paddingHorizontal: TOKENS.space.lg,
+      paddingHorizontal: TOKENS.space.md,
+      zIndex: 2,
     },
     incomingRow: {
       flexDirection: 'row',
@@ -505,93 +580,58 @@ const makeStyles = (t: Theme) =>
       gap: TOKENS.space.xs,
     },
     action: {
-      width: 64,
-      height: 64,
-      borderRadius: 32,
+      width: 72,
+      height: 72,
+      borderRadius: 36,
       alignItems: 'center',
       justifyContent: 'center',
     },
     actionLabel: {
-      ...TOKENS.typography.subhead,
-      color: '#FFFFFF',
+      ...TOKENS.typography.captionRegular,
+      color: LIGHT.color.text.onAccent,
     },
     bar: {
       flexDirection: 'row',
-      alignItems: 'center',
+      alignItems: 'flex-start',
       justifyContent: 'space-around',
-      backgroundColor: 'rgba(0,0,0,0.35)',
-      borderRadius: TOKENS.radius.pill,
-      borderCurve: 'continuous',
-      paddingVertical: TOKENS.space.sm,
-      paddingHorizontal: TOKENS.space.md,
     },
     barSlot: {
       alignItems: 'center',
+      gap: TOKENS.space.xs,
+      width: 76,
     },
     barButton: {
-      width: 56,
-      height: 56,
-      borderRadius: 28,
+      width: BTN,
+      height: BTN,
+      borderRadius: BTN / 2,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: 'rgba(255,255,255,0.16)',
     },
-    barButtonLarge: {
-      width: 64,
-      height: 64,
-      borderRadius: 32,
+    // Translucent white glass over the photo/gradient, NOT lavender: WhatsApp's
+    // secondary call controls are a frosted white, and a purple tint here read as
+    // a second brand colour the palette does not have (user 2026-08-31).
+    barButtonGhost: {
+      backgroundColor: 'rgba(255,255,255,0.22)',
     },
-    barButtonOn: {
-      backgroundColor: '#FFFFFF',
+    // The "on" state (mute active, speaker on, camera off) lifts the same glass
+    // brighter rather than switching hue.
+    barButtonActive: {
+      backgroundColor: 'rgba(255,255,255,0.42)',
+    },
+    barButtonSolid: {
+      backgroundColor: LIGHT.color.bg.base,
+    },
+    barLabel: {
+      ...TOKENS.typography.captionSmall,
+      color: LIGHT.color.text.onAccent,
+      textAlign: 'center',
     },
     danger: {
-      backgroundColor: t.color.state.danger,
+      backgroundColor: '#E53935',
     },
     accept: {
       backgroundColor: t.color.state.available,
     },
-    /** Full-bleed bottom gradient scrim over the poster photo. */
-    posterScrim: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      experimental_backgroundImage: 'linear-gradient(0deg, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0) 55%)',
-    },
-    /** Name + status anchored above the controls bar when a photo poster is shown. */
-    posterMeta: {
-      position: 'absolute',
-      left: 0,
-      right: 0,
-      bottom: CONTROLS_CLEARANCE + TOKENS.space.sm,
-      paddingHorizontal: TOKENS.space['2xl'],
-      alignItems: 'center',
-      gap: TOKENS.space.xs,
-    },
-    /** Name + status anchored above the controls bar for the no-avatar layout.
-     *  Sits a little higher than posterMeta to clear the monogram avatar. */
-    centerMeta: {
-      position: 'absolute',
-      left: 0,
-      right: 0,
-      bottom: CONTROLS_CLEARANCE + TOKENS.space.lg,
-      paddingHorizontal: TOKENS.space['2xl'],
-      alignItems: 'center',
-      gap: TOKENS.space.xs,
-    },
-    /** Pill row indicating call medium — icon + label — above the peer name. */
-    mediumCue: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: TOKENS.space.xs,
-    },
-    mediumLabel: {
-      ...TOKENS.typography.captionSmall,
-      color: 'rgba(255,255,255,0.8)',
-      letterSpacing: 1,
-    },
-    /** Local camera PiP: bottom-right, above the controls bar. */
     localPip: {
       position: 'absolute',
       right: TOKENS.space.md,

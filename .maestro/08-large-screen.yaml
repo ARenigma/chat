@@ -1,0 +1,19 @@
+# CUJ 8 — a medium/expanded window still presents Home.
+#
+# Window size classes start at 600dp / 840dp. This journey is launched after
+# `wm size 1280x800` so the width class is expanded. Home keeps a 600dp column
+# rather than stretching the phone layout.
+# https://developer.android.com/develop/ui/views/layout/use-window-size-classes
+appId: com.companionchat
+name: Home remains reachable on an expanded window
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible: 'Ada'
+    timeout: 20000
+- assertVisible:
+    id: 'nav-home'
+- assertVisible:
+    id: 'token-count'
+- takeScreenshot: artifacts/08-large-screen

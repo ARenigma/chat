@@ -119,6 +119,9 @@ describe('the AI path is gone, not dormant', () => {
       'send-engagement',
       'send-push',
       'send-sms',
+      // verify-order: client-initiated server-to-server payment confirmation after
+      // SDK onVerify callback — never trusts client callback alone. ADR-0022.
+      'verify-order',
       'verify-phone',
     ];
     const present = readdirSync(dir, { withFileTypes: true })
@@ -153,6 +156,70 @@ describe('the AI path is gone, not dormant', () => {
     expect(Object.keys(pkg.dependencies)).not.toContain('react-native-sse');
     expect(Object.keys(pkg.scripts)).not.toContain('check:edge');
     expect(Object.keys(pkg.scripts)).not.toContain('stub:openai');
+  });
+});
+
+/**
+ * Cashfree billing invariants (ADR-0022).
+ *
+ * These assert three things that are easy to regress silently:
+ *   1. create-order packs match RECHARGE_PACKS in rates.ts exactly.
+ *   2. billing.ts does not contain the Cashfree client secret or any cfsk_ prefix —
+ *      the secret key must never leave the Edge Functions.
+ *   3. PaymentSheet imports CASHFREE_SANDBOX_CHECKOUT (and therefore routes through
+ *      the sandbox path when the flag is true).
+ */
+describe('Cashfree billing invariants', () => {
+  it('create-order packs align with RECHARGE_PACKS (100 300 500 1000 2500 5000)', () => {
+    const fn = read('supabase/functions/create-order/index.ts');
+    // Every pack from rates.ts must appear as a key in the server function.
+    for (const amount of [100, 300, 500, 1000, 2500, 5000]) {
+      expect(fn).toContain(`pappal_pack_${amount}`);
+    }
+    // Old mismatched packs must be gone.
+    expect(fn).not.toMatch(/['"]pappal_pack_50['"]/);
+    expect(fn).not.toMatch(/['"]pappal_pack_200['"]/);
+    // Price must be 1 token = ₹1.
+    expect(fn).toContain('amountInr: 100');
+    expect(fn).toContain('amountInr: 5000');
+  });
+
+  it('billing.ts carries no client secret or cfsk_ key material', () => {
+    const billing = withoutComments(read('src/api/billing.ts'));
+    expect(billing).not.toMatch(/cfsk_/);
+    expect(billing).not.toMatch(/client_secret/i);
+    expect(billing).not.toMatch(/CASHFREE_CLIENT_SECRET/);
+  });
+
+  it('PaymentSheet imports CASHFREE_SANDBOX_CHECKOUT', () => {
+    const sheet = read('src/screens/PaymentSheet.tsx');
+    expect(sheet).toContain('CASHFREE_SANDBOX_CHECKOUT');
+  });
+
+  it('ConfirmDialog is hosted on Sheet', () => {
+    const dialog = read('src/components/ConfirmDialog.tsx');
+    expect(dialog).toContain("from './Sheet'");
+    expect(dialog).toContain('<Sheet');
+  });
+
+  it('destructive confirms highlight Stay, not Leave', () => {
+    const dialog = read('src/components/ConfirmDialog.tsx');
+    expect(dialog).toContain('testID="confirm-dialog-cancel"');
+    expect(dialog).toMatch(/destructive \? \([\s\S]*label=\{cancelLabel\}/);
+  });
+
+  it('wallet pill opens the full page, not the refill sheet', () => {
+    expect(read('src/screens/HomeScreen.tsx')).toContain('onPress={openWallet}');
+    expect(read('src/screens/ChatScreen.tsx')).toContain('onPress={openWallet}');
+    expect(read('src/screens/ProviderDetailScreen.tsx')).toContain('onPress={openWallet}');
+  });
+
+  it('verify-order function exists and asserts server-to-server verification', () => {
+    const fn = read('supabase/functions/verify-order/index.ts');
+    expect(fn).toContain('fetchCashfreeOrder');
+    expect(fn).toContain('credit_purchased_recharge');
+    // Must assert it never trusts the client alone.
+    expect(fn).toMatch(/never trust the client/i);
   });
 });
 
@@ -244,7 +311,15 @@ describe('Android manifest', () => {
     //   FOREGROUND_SERVICE — required to start any foreground service
     //   FOREGROUND_SERVICE_PHONE_CALL/MICROPHONE/CAMERA — type permissions for API 34+
     //   (developer.android.com/about/versions/14/changes/fgs-types-required)
+    //
+    // ACCESS_NETWORK_STATE — added with Cashfree recharge (ADR-0022). The PG SDK's
+    // analytics reads ConnectivityManager.getActiveNetworkInfo() WITHOUT a
+    // permission check, so its absence is a SecurityException that crashes checkout
+    // the instant Pay is tapped (not a graceful degrade). Normal, non-dangerous:
+    // no runtime prompt, no Play Data Safety row. See AndroidManifest.xml comment
+    // and verify-manifest.mjs allowlist.
     expect(declared.sort()).toEqual([
+      'android.permission.ACCESS_NETWORK_STATE',
       'android.permission.CAMERA',
       'android.permission.FOREGROUND_SERVICE',
       'android.permission.FOREGROUND_SERVICE_CAMERA',
@@ -431,6 +506,21 @@ describe('pipeline wiring', () => {
     for (const id of selectors) {
       // Flows select on a prefix for generated ids (`provider-<uuid>`).
       const needle = id.replace(/\.\*$/, '');
+      if (haystack.includes(needle)) {
+        continue;
+      }
+      if (id.startsWith('action-')) {
+        const channel = id.slice('action-'.length);
+        expect(haystack).toContain('testID={`action-${channel}`}');
+        expect(haystack).toContain(`channel="${channel}"`);
+        continue;
+      }
+      if (id.startsWith('nav-')) {
+        const tab = id.slice('nav-'.length);
+        expect(haystack).toContain('testID={`nav-${tab.key}`}');
+        expect(haystack).toContain(`key: '${tab}'`);
+        continue;
+      }
       expect(haystack).toContain(needle);
     }
   });
@@ -472,38 +562,12 @@ describe('every screen is reachable', () => {
   });
 });
 
-/**
- * The rating prompt's guards, as source-level claims.
- *
- * All four matter and three of them are invisible from the outside: this screen
- * serves the provider tree as well, `submit_review` refuses anyone who is not
- * the member, and the server refuses a thread with fewer than two messages. A
- * prompt that ignored any of them would offer an action that can only fail.
- */
-describe('the review prompt is offered only when it can succeed', () => {
+describe('review collection remains deferred', () => {
   const chat = read('src/screens/ChatScreen.tsx');
 
-  it('asks the conversation who the member is, not the profile', () => {
-    // `profiles.role` flips when a member is admitted as a provider and takes
-    // their old member-side threads with it, so it is the wrong question.
-    //
-    // Asserted against the code with comments stripped, because the comment
-    // explaining why the old form was wrong *contains* the old form, which is
-    // a negative assertion failing on the prose that documents it.
-    expect(chat).toContain('thread.i_am_member');
-    expect(withoutComments(chat)).not.toContain("role === 'member'");
-  });
-
-  it('requires both sides to have said something', () => {
-    expect(chat).toContain('m.sender_id === selfId');
-    expect(chat).toContain('m.sender_id !== selfId');
-  });
-
-  it('says nothing until the conversation row has actually loaded', () => {
-    // `thread !== undefined` first: the alternative is a prompt that appears
-    // and disappears on its own as the query settles.
-    expect(chat).toContain('thread !== undefined');
-    expect(chat).toContain('!thread.reviewed');
+  it('does not couple the ephemeral inbox to review state', () => {
+    expect(withoutComments(chat)).not.toContain('reviewed');
+    expect(chat).not.toContain('<ReviewSheet');
   });
 
   it('keeps the provider work list to actual work', () => {
@@ -554,9 +618,9 @@ describe('gesture handling reaches every root', () => {
     }
   });
 
-  it('keeps the sheet the only gesture surface for now', () => {
-    // Not a rule, a tripwire: the next component to declare a pan needs the
-    // wrapper decision made deliberately rather than copied.
+  it('limits gesture declarations to the sheet and the chat bubble', () => {
+    // Tripwire: a new Gesture.Pan/LongPress needs a wrapper decision, not a copy.
+    // Turn.tsx is the WhatsApp swipe-to-reply / long-press strip.
     const users = ['src/components', 'src/screens']
       .flatMap(dir =>
         readdirSync(join(ROOT, dir))
@@ -564,8 +628,9 @@ describe('gesture handling reaches every root', () => {
           .map(f => ({ file: f, body: read(`${dir}/${f}`) })),
       )
       .filter(s => /Gesture\.\w+\(/.test(s.body))
-      .map(s => s.file);
-    expect(users).toEqual(['Sheet.tsx']);
+      .map(s => s.file)
+      .sort();
+    expect(users).toEqual(['Sheet.tsx', 'Turn.tsx']);
   });
 });
 
@@ -950,14 +1015,15 @@ describe('config.toml cannot silently disable a live provider', () => {
   });
 
   it('agrees with the app about the code expiry', () => {
-    // The screen tells the user how long they have. If the two disagree, one of
-    // them is lying to somebody.
+    // Exact wall-clock expiry is server-config; the screen must not invent a
+    // conflicting number. "a few minutes" is the honest client phrasing when
+    // provider/SMS latency can outrun a printed countdown.
     const seconds = Number(/^otp_expiry = (\d+)$/m.exec(live)?.[1]);
     expect(Number.isFinite(seconds)).toBe(true);
-    const minutes = seconds / 60;
-    expect(read('src/screens/AuthScreen.tsx')).toContain(
-      `expires in ${minutes} minute`,
-    );
+    expect(seconds).toBeGreaterThan(0);
+    const auth = read('src/screens/AuthScreen.tsx');
+    expect(auth).toContain('expires in a few minutes');
+    expect(auth).not.toMatch(/expires in \d+ minutes?/);
   });
 
   it('does not let the resend button outpace the server', () => {
@@ -1059,14 +1125,27 @@ describe('in-app updates are wired end to end', () => {
     expect(gradle).not.toMatch(/versionName\s+"\d+\.\d+\.\d+"/);
   });
 
-  it('fills the manifest placeholder the RN plugin does not know about', () => {
-    // RNGP injects usesCleartextTraffic for debug and release only, and does it
-    // after buildTypes is evaluated, so initWith cannot inherit it. Without this
-    // the internal build dies in the manifest merger.
-    const gradle = read('android/app/build.gradle');
-    const internal = gradle.slice(gradle.indexOf('internal {'));
-    expect(internal).toContain('manifestPlaceholders["usesCleartextTraffic"] = false');
-    expect(internal).toContain('matchingFallbacks = ["release"]');
+  it('limits cleartext to the debug emulator-host exception', () => {
+    const manifest = read('android/app/src/main/AndroidManifest.xml');
+    const main = read('android/app/src/main/res/xml/network_security_config.xml');
+    const debug = read('android/app/src/debug/res/xml/network_security_config.xml');
+
+    expect(manifest).toContain(
+      'android:networkSecurityConfig="@xml/network_security_config"',
+    );
+    expect(manifest).not.toContain('usesCleartextTraffic');
+    expect(main).toContain('<base-config cleartextTrafficPermitted="false"');
+    expect(debug).toContain('<domain includeSubdomains="false">10.0.2.2</domain>');
+    expect(debug).not.toContain('<base-config cleartextTrafficPermitted="true"');
+  });
+
+  it('builds only the connected Android device ABI during local iteration', () => {
+    const pkg = JSON.parse(read('package.json')) as {
+      scripts: Record<string, string>;
+    };
+    expect(pkg.scripts.android).toBe(
+      'react-native run-android --active-arch-only',
+    );
   });
 
   it('sends testers the internal APK, never the release one', () => {
@@ -1103,7 +1182,7 @@ describe('a block is visible where it matters and reversible everywhere', () => 
     expect(home).toContain('(providers ?? []).filter(p => !blocked.has(p.id))');
     // CHATS rail surface (was InboxScreen.tsx; the typed-search strangers filter
     // has no v13 equivalent since HomeScreen has no search — retired with InboxScreen):
-    expect(home).toContain('(conversations ?? []).filter(c => !blocked.has(c.peer_id))');
+    expect(home).toContain('!blocked.has(c.peer_id) && visibleOnRail(railPrefs, c.peer_id)');
   });
 
   // Retired with InboxScreen.tsx: v13 HomeScreen hides blocked conversations from the
@@ -1163,7 +1242,18 @@ describe('the redesign holds its own invariants', () => {
     // sheet that closed here too; it is a mounted route now and pops through the
     // parent map like every other screen.
     const handler = app.slice(app.indexOf('const onBack ='), app.indexOf('BackHandler.addEventListener'));
+    expect(handler.indexOf('closeWallet()')).toBeLessThan(handler.indexOf('closeRefill()'));
     expect(handler.indexOf('closeRefill()')).toBeLessThan(handler.indexOf('memberParent'));
+    expect(app).toContain("openChat(id, 'chatsList')");
+    expect(app).toContain('from === \'chatsList\'');
+  });
+
+  it('opens a Paper menu from a long-press on a conversation', () => {
+    expect(read('src/screens/HomeScreen.tsx')).toContain('measureInWindow');
+    expect(read('src/components/PaperMenu.tsx')).toContain('anchor');
+    expect(read('src/screens/ChatsListScreen.tsx')).toContain('surface="list"');
+    expect(read('src/components/ConversationMenu.tsx')).toContain('Remove from Home');
+    expect(read('src/components/PaperMenu.tsx')).toContain('m3.material.io/components/menus');
   });
 
   // Retired with InboxScreen.tsx: v13 HomeScreen has no typed search field and
@@ -1173,12 +1263,12 @@ describe('the redesign holds its own invariants', () => {
   // with a header-mounted search field), so the empty-state/search-header interaction
   // has no v13 equivalent.
 
-  it('stops recording when the app leaves the foreground', () => {
-    // The manifest comment and the Play Data Safety declaration both claim
-    // nothing records outside the foreground. This is what makes that true.
+  it('stops recording when the app reaches the background', () => {
+    // Android may transiently report inactive while a system permission surface
+    // owns focus. Only background means the app actually left the foreground.
     const composer = read('src/components/Composer.tsx');
     expect(composer).toContain("AppState.addEventListener('change'");
-    expect(composer).toContain("next !== 'active'");
+    expect(composer).toContain("next === 'background'");
   });
 
   // Retired with InboxScreen.tsx: v13 HomeScreen has no typed search; the provider
@@ -1280,52 +1370,85 @@ describe('the busy button does not move', () => {
     expect(button).toContain('styles.spinnerSlot');
     // Two uses, leading and trailing, so the label stays optically centred.
     expect(button.match(/styles\.spinnerSlot/g)).toHaveLength(2);
-    expect(button).toContain("width: 16 + TOKENS.space['2xs']");
+    // Slot width is SPINNER_SIZE + a small gap, mirrored on the trailing side.
+    expect(button).toContain("width: SPINNER_SIZE + TOKENS.space['2xs']");
   });
 
-  it('uses the hand-drawn indicator, not Android\'s Material sweep', () => {
+  it('uses the M3 LoadingIndicator, not Android\'s Material sweep', () => {
     const button = read('src/components/Button.tsx');
-    expect(button).toContain("import { Spinner } from './Spinner'");
-    // Matched as an import or a tag, because the docblock above names
+    expect(button).toContain("import { LoadingIndicator } from './LoadingIndicator'");
     // ActivityIndicator in order to say why it is not used.
     expect(button).not.toMatch(/<ActivityIndicator|ActivityIndicator[,}]|ActivityIndicator\s*from/);
   });
 
-  it('is a continuously rotating ring driven by a single shared value', () => {
-    // The ring replaces the eight-spoke opacity cascade. One `rotate` transform
-    // on the UI thread never stalls during JS pressure (OAuth hand-offs, heavy
-    // renders) and produces the smooth Fuse / SwiftUI ProgressView look.
-    const spinner = read('src/components/Spinner.tsx');
+  it('is a continuously rotating arc driven by a single shared value', () => {
+    // The M3 contained indicator: one `rot` shared value drives one rotation on
+    // the UI thread so it never stalls during JS pressure (OAuth, heavy renders).
+    const indicator = read('src/components/LoadingIndicator.tsx');
     // One shared value drives one rotation — not eight opacity writes.
-    expect(spinner).toContain('useSharedValue(0)');
+    expect(indicator).toContain('useSharedValue(0)');
     // The arc rotates a full revolution per cycle (withRepeat wraps withTiming(360)).
-    expect(spinner).toContain('withRepeat(');
-    expect(spinner).toContain('withTiming(360,');
-    // Linear easing: no ease-in or ease-out within a revolution (same as before).
-    expect(spinner).toContain('Easing.linear');
+    expect(indicator).toContain('withRepeat(');
+    expect(indicator).toContain('withTiming(360,');
+    // Linear easing: no ease-in or ease-out within a revolution.
+    expect(indicator).toContain('Easing.linear');
     // Honour the OS reduce-motion setting.
-    expect(spinner).toContain('ReduceMotion.System');
-    // The arc is a border trick: only the top border carries colour.
-    expect(spinner).toContain('borderTopColor');
+    expect(indicator).toContain('ReduceMotion.System');
+    // The arc is a border trick: the top AND right borders carry colour, the
+    // bottom and left are cleared, giving a ~180° arc on a full-circle radius.
+    expect(indicator).toContain('borderTopColor');
+    expect(indicator).toContain('borderRightColor');
     // The component must NOT import SVG (banned in this project).
-    expect(spinner).not.toContain('react-native-svg');
-    // Layout pass: `transform` never causes a reflow, so the button cannot resize.
-    expect(spinner).not.toContain('opacity: spinning ? spokeOpacity');
+    expect(indicator).not.toContain('react-native-svg');
+    // No shape morph. The M3 Expressive morph needs SVG path data (banned), and
+    // the borderRadius circle<->square fake we shipped instead read as a wobble
+    // — the thing the user flagged as broken (2026-08-31). The arc now rotates
+    // at a fixed radius: a clean, in-spec circular indeterminate indicator.
+    expect(indicator).not.toContain('radius.value');
   });
 
   it('derives its border width from a shared formula rather than hardcoding it', () => {
-    // `ringBorderWidth` is exported from spinner.ts so it can be tested and
-    // changed in one place, matching the policy for `spokeMetrics` before it.
-    const spinner = read('src/components/Spinner.tsx');
-    expect(spinner).toContain('ringBorderWidth');
-    const lib = read('src/lib/spinner.ts');
-    expect(lib).toContain('export function ringBorderWidth');
+    // `indicatorBorderWidth` is exported from loadingIndicator.ts so it is
+    // testable and changeable in one place (same policy as the old ringBorderWidth).
+    const indicator = read('src/components/LoadingIndicator.tsx');
+    expect(indicator).toContain('indicatorBorderWidth');
+    const lib = read('src/lib/loadingIndicator.ts');
+    expect(lib).toContain('export function indicatorBorderWidth');
+    // ringBorderWidth remains in spinner.ts for backward compat.
+    expect(read('src/lib/spinner.ts')).toContain('export function ringBorderWidth');
   });
 
   it('keeps the spinner period in the tokens', () => {
     // The house rule: every timing lives in design/tokens.json.
-    expect(read('src/components/Spinner.tsx')).toContain('DURATION.spinnerCycle');
+    expect(read('src/components/LoadingIndicator.tsx')).toContain('DURATION.spinnerCycle');
     expect(read('design/tokens.json')).toContain('"spinnerCycle"');
+  });
+
+  it('moves the calling dots as a clipped conveyor, not a pulse in place', () => {
+    // Measured off the reference capture at 60fps (2026-08-31), not eyeballed.
+    // The first version of this component read the reference as "dots fill in
+    // sequence" and implemented three fixed dots on a staggered opacity wave.
+    // Frame-stepping the file disproved that: each run MOVES right ~1.4px per
+    // frame — f105 (23,24)(38,48) → f115 (30,39)(56,61) → f120 resets — so the
+    // dots translate and are clipped, and a stationary opacity pulse is the
+    // wrong animation however similar it looks in a still.
+    const dots = read('src/components/CallingDots.tsx');
+    // Position, not opacity: the whole row rides one translateX.
+    expect(dots).toContain('translateX: x.value');
+    expect(dots).not.toMatch(/opacity:\s*o\.value/);
+    // Clipped window is what turns travel into "enters and exits".
+    expect(dots).toContain("overflow: 'hidden'");
+    // Constant velocity: an ease would pump once per cycle.
+    expect(dots).toContain('Easing.linear');
+    // One pitch of travel on a periodic row is what makes the wrap invisible.
+    expect(dots).toContain('withTiming(PITCH');
+    expect(dots).toMatch(/marginLeft:\s*-PITCH/);
+    // Cadence stays a token (250ms measured, base is 240ms).
+    expect(dots).toContain('DURATION.base');
+    expect(dots).not.toMatch(/duration:\s*\d/);
+    // Looping movement must be stoppable by the OS setting.
+    expect(dots).toContain('useReducedMotion()');
+    expect(dots).toMatch(/if \(reduce\) \{/);
   });
 });
 
@@ -1392,6 +1515,16 @@ describe('phone verification', () => {
     const field = sheet.slice(start, sheet.indexOf('/>', start));
     expect(field.length).toBeGreaterThan(0);
     expect(field).not.toContain('editable');
+  });
+
+  it('keeps a rejected OTP visible for one-digit correction', () => {
+    const sheet = read('src/screens/PhoneVerifySheet.tsx');
+    const errorEffect = sheet.slice(
+      sheet.indexOf("if (error !== null && step === 'code')"),
+      sheet.indexOf('}, [error, step])'),
+    );
+    expect(errorEffect).toContain('setErrorNonce');
+    expect(errorEffect).not.toContain("setCode('')");
   });
 
   it('offers verification only in a build that can deliver it', () => {
@@ -1495,27 +1628,22 @@ describe('the chat restyle is wired, not just drawn', () => {
     expect(chatCode).toContain('peer_last_active_at');
   });
 
-  it('mounts the actions sheet and long-presses both sides into it', () => {
-    expect(chat).toMatch(/<MessageActionsSheet[\s/>]/);
-    // Both sides receive the stable openActions reference so either bubble can
-    // long-press into the sheet. The per-render closure that used to live in
-    // renderItem is now built inside each bubble via useCallback (A5), so the
-    // parent passes onRequestActions={openActions} rather than onLongPress.
-    expect(chatCode).toContain('onRequestActions={openActions}');
-    // mine is still destructured from the row — used for author label and receipt.
+  it('wires swipe-to-reply and on-bubble reactions on both sides', () => {
+    expect(chatCode).toContain('onSwipeReply={swipeReply}');
+    expect(chatCode).toContain('onReact={reactOnMessage}');
+    expect(chatCode).toContain('onReportMessage={reportMessage}');
+    expect(chatCode).toContain('timeOfDay(message.created_at)');
+    expect(chatCode).not.toContain('last ? timeOfDay');
     expect(chatCode).toContain('mine,');
   });
 
-  it('never has the actions sheet and the safety sheet open at once', () => {
-    // Two Modals open together on Android is the exact class of bug the second
-    // GestureHandlerRootView inside Sheet exists for, so the close has to happen
-    // in the same setState tick as the open.
+  it('opens the safety sheet from the strip without stacking a second Modal', () => {
     const report = chatCode.slice(
-      chatCode.indexOf('const reportFromActions'),
-      chatCode.indexOf('const replyFromActions'),
+      chatCode.indexOf('const reportMessage'),
+      chatCode.indexOf('const renderItem'),
     );
-    expect(report).toContain('setActions(null)');
-    expect(report).toContain('setSafety({ open: true');
+    expect(report).toContain('setSafety({ open: true, messageId })');
+    expect(chatCode).not.toContain('<MessageActionsSheet');
   });
 
   it('shows the typing indicator in the empty thread too', () => {
@@ -1570,17 +1698,17 @@ describe('reactions and replies reach a real server call', () => {
     // The reference has a trailing `+` and there is no picker behind it. A `+`
     // that opens nothing is worse than no `+`, and a `+` that opened a keyboard
     // would be the thing the closed emoji set exists to prevent.
-    const sheet = withoutComments(read('src/screens/MessageActionsSheet.tsx'));
-    expect(sheet).toContain('REACTION_CHOICES.map');
-    expect(sheet).not.toMatch(/glyph="plus"/);
+    const strip = withoutComments(read('src/components/ReactionStrip.tsx'));
+    expect(strip).toContain('REACTION_CHOICES.map');
+    expect(strip).not.toMatch(/glyph="plus"/);
   });
 
-  it('keeps Copy, Forward and Delete out of the long-press sheet', () => {
+  it('keeps Copy, Forward and Delete out of the long-press strip', () => {
     // Copy and Forward defeat the FLAG_SECURE screenshot blocking; Delete
     // destroys abuse evidence, which `submit_report`'s snapshot exists to keep.
-    const sheet = withoutComments(read('src/screens/MessageActionsSheet.tsx'));
+    const strip = withoutComments(read('src/components/ReactionStrip.tsx'));
     for (const banned of ['Copy', 'Forward', 'Delete']) {
-      expect(sheet).not.toContain(`>${banned}`);
+      expect(strip).not.toContain(`>${banned}`);
     }
   });
 });
@@ -1706,7 +1834,7 @@ describe('voice notes are recorded, uploaded and sent through the one send path'
     const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
     expect(chat).toContain('const needsOpen = knownThread === undefined');
     expect(chat).toContain('useConversationId(needsOpen ? providerId : null)');
-    expect(chat).toContain('knownThread?.id ?? openedId');
+    expect(chat).toContain('knownThread?.conversation_id ?? openedId');
   });
 
   it('gives both roles the recorder', () => {
@@ -1720,12 +1848,11 @@ describe('voice notes are recorded, uploaded and sent through the one send path'
   });
 
   it('previews a voice note in the inbox without inventing a body column', () => {
-    // `body` is null on a voice row, so a preview reading last_body alone renders
-    // an empty line. `conversation_summaries.last_kind` exists for this.
+    // Ephemeral inbox rows expose a kind label without any message body.
     // InboxScreen.tsx dropped: v13 HomeScreen shows a horizontal avatar rail with no
     // thread-preview body, so last_kind is not read there.
     for (const screen of ['src/screens/ProviderHomeScreen.tsx']) {
-      expect(read(screen)).toContain("last_kind === 'voice'");
+      expect(read(screen)).toContain("last_preview_kind === 'voice'");
     }
   });
 
@@ -1736,7 +1863,8 @@ describe('voice notes are recorded, uploaded and sent through the one send path'
     expect(read('supabase/migrations/011_reactions_replies_voice_calls.sql')).toContain(
       'evidence_voice_path',
     );
-    expect(read('src/components/Turn.tsx')).toContain('onLongPress={onLongPress}');
+    expect(read('src/components/Turn.tsx')).toContain('Gesture.LongPress()');
+    expect(read('src/components/Turn.tsx')).toContain('onReportMessage');
     expect(read('scripts/moderate.mjs')).toContain('evidence_voice_path');
   });
 
@@ -1788,10 +1916,17 @@ describe('calling ships visible and on, wired to a real media layer', () => {
     expect(chat).toContain('CALLS_ENABLED');
     expect(chat).toContain('testID="call-video"');
     expect(chat).toContain('testID="call-voice"');
-    // callsEnabled combines the compile-time CALLS_ENABLED flag with the live
-    // kill switch. sessionEnded is an additional runtime gate when tokens run out.
-    expect(chat).toContain('callsEnabled');
-    expect(chat).toContain('!callsEnabled || sessionEnded');
+    // Voice and video combine the compile-time master flag with independent
+    // live controls. A live or pending paid session must end before changing
+    // channels, because one conversation has one paid session at a time.
+    expect(chat).toContain('voiceCallsEnabled');
+    expect(chat).toContain('videoCallsEnabled');
+    expect(chat).toMatch(
+      /!videoCallsEnabled\s*\|\|\s*activeSession !== null\s*\|\|\s*pendingRequest !== null/,
+    );
+    expect(chat).toMatch(
+      /!voiceCallsEnabled\s*\|\|\s*activeSession !== null\s*\|\|\s*pendingRequest !== null/,
+    );
     // Real, and ready for the flag flip: the tap starts a call.
     expect(chat).toContain("onStartCall?.('video')");
     expect(chat).toContain("onStartCall?.('audio')");
@@ -1800,10 +1935,36 @@ describe('calling ships visible and on, wired to a real media layer', () => {
   it('keeps the token counter in the chat header', () => {
     // Not negotiable independently of the header layout:
     // .maestro/03-token-economy.yaml taps into this screen and asserts the
-    // literal '3 left' on it. The contract test elsewhere only greps the testID
+    // seeded balance remains 3 across a pending send. The contract test elsewhere only greps the testID
     // across all of src, so removing it from HERE would keep jest green and break
     // the only gate that would notice.
     expect(read('src/screens/ChatScreen.tsx')).toContain('<TokenCounter');
+  });
+});
+
+describe('paid chat sessions expose their live lifecycle', () => {
+  const chat = read('src/screens/ChatScreen.tsx');
+
+  it('renders a clock from the authoritative server start time', () => {
+    expect(chat).toContain("activeSession?.status === 'active'");
+    expect(chat).toContain('activeSession.started_at');
+    expect(chat).toContain('Date.parse(sessionStartedAt)');
+    expect(chat).toContain('testID="chat-session-timer"');
+  });
+
+  it('confirms before back ends a live paid session', () => {
+    expect(chat).toContain('title="End session and leave?"');
+    expect(chat).toContain('testID="chat-leave-dialog"');
+    expect(chat).toContain("reason: 'manual'");
+    expect(chat).toContain(
+      "BackHandler.addEventListener('hardwareBackPress'",
+    );
+    expect(chat).toContain('onPress={requestLeave}');
+  });
+
+  it('surfaces inactivity warning and grace states from the server', () => {
+    expect(chat).toContain("activeSession?.status === 'warning'");
+    expect(chat).toContain("activeSession?.status === 'grace'");
   });
 });
 
@@ -2043,6 +2204,9 @@ describe('no screen reads a listing switch as a presence dot', () => {
   // provider's inbox hardcoded the dot off because no value could ever be true.
   const sites = [
     'src/components/ProviderRow.tsx',
+    // ProviderCard renders the same dot for the Favourites tab; must stay on the
+    // same readPresence reading as the directory row and the chat header.
+    'src/components/ProviderCard.tsx',
     'src/screens/HomeScreen.tsx',
     'src/screens/ChatScreen.tsx',
     'src/screens/ProviderHomeScreen.tsx',
@@ -2150,6 +2314,17 @@ describe('one presence control, writing both columns', () => {
     expect(home).not.toContain('Available Now');
     expect(home).toContain('Open to New Conversations');
   });
+
+  it('SettingsSheet legal URLs come from legalUrl, not hard-coded strings', () => {
+    // LEGAL_BASE_URL in src/lib/legal.ts is the single source of truth for the
+    // public-site host. SettingsSheet must import it so the Play Console required
+    // URLs (privacy policy, data deletion) cannot diverge from the canonical host.
+    const settings = read('src/screens/SettingsSheet.tsx');
+    expect(settings).toContain("from '../lib/legal'");
+    expect(settings).toContain('legalUrl(');
+    // Hard-coded host must not appear — the helper is the indirection point.
+    expect(withoutComments(settings)).not.toContain("'https://bond-app.vercel.app/");
+  });
 });
 
 /**
@@ -2180,9 +2355,11 @@ describe('the motion adoption is wired, not just drawn', () => {
     expect(withoutComments(pressable)).not.toMatch(/disabled \|\| busy/);
     expect(withoutComments(pressable)).not.toMatch(/busy \|\| disabled/);
     // Told to the accessibility tree as its own state, not as "disabled". The
-    // trailing spread carries an optional `selected` for tab/segmented controls
-    // (added for the nav-bar a11y fix); busy and disabled stay separate fields.
-    expect(pressable).toContain('accessibilityState={{ disabled, busy,');
+    // trailing spreads carry optional `selected` (nav-bar a11y fix), `checked`
+    // (radio/checkbox roles); busy and disabled stay separate fields.
+    expect(pressable).toContain('disabled,');
+    expect(pressable).toContain('busy,');
+    expect(withoutComments(pressable)).toContain('accessibilityState');
   });
 
   it('holds a working button compressed rather than springing back', () => {
@@ -2221,6 +2398,7 @@ describe('the motion adoption is wired, not just drawn', () => {
     // the fade is imperceptible, so the effect and legibility cannot coexist at
     // body size. One of the three claims was "Not therapy, just company".
     const auth = read('src/screens/AuthScreen.tsx');
+    expect(existsSync(join(ROOT, 'src/components/WordCarousel.tsx'))).toBe(false);
     expect(auth).not.toContain('<WordCarousel');
     expect(auth).toContain('Not therapy, just company');
     // And all three claims render together rather than one at a time.
@@ -2230,29 +2408,6 @@ describe('the motion adoption is wired, not just drawn', () => {
     expect(claims).toContain('Not therapy, just company');
   });
 
-  it('hides the carousel’s dim rows from a screen reader', () => {
-    // The one thing in this change that no automated contrast check can see and
-    // a screen reader can. At 10% opacity a neighbour is decoration; left in the
-    // tree, TalkBack reads three overlapping slogans. Both props are needed:
-    // `accessible={false}` alone leaves the descendants focusable on Android.
-    const carousel = read('src/components/WordCarousel.tsx');
-    expect(carousel).toContain('accessible={false}');
-    expect(carousel).toContain('importantForAccessibility="no-hide-descendants"');
-    // And the claims are still said once, on the host.
-    expect(carousel).toContain("accessibilityLabel={words.join('. ')}");
-  });
-
-  it('promotes a step by opacity and never by type size', () => {
-    // Rule 4 says the active step carries larger type and rule 7 says nothing
-    // scales text. Rule 7 wins, because swapping a type style reflows the row on
-    // the frame the state changes while the opacity is still travelling. One
-    // style for every label; the active state changes colour and marker only.
-    const stepper = withoutComments(read('src/components/Stepper.tsx'));
-    const typographyReads = stepper.match(/TOKENS\.typography\.\w+/g) ?? [];
-    expect(new Set(typographyReads).size).toBe(1);
-    expect(stepper).toContain('promoteTo(phase === 1)');
-  });
-
   it('shows a step indicator through the bloom layout', () => {
     // The horizontal Stepper is replaced by the OnboardingStep checklist, which
     // shows all three rows throughout the form and always has the active step
@@ -2260,6 +2415,7 @@ describe('the motion adoption is wired, not just drawn', () => {
     const screen = read('src/screens/ProviderApplicationScreen.tsx');
     expect(screen).toContain('<BloomField');
     expect(screen).toContain('<OnboardingStep');
+    expect(existsSync(join(ROOT, 'src/components/Stepper.tsx'))).toBe(false);
     expect(screen).not.toContain('<Stepper');
   });
 
@@ -2299,15 +2455,12 @@ describe('the motion adoption is wired, not just drawn', () => {
     // colour on a device and nothing anywhere else: the animation helpers are
     // typed as returning the value they animate, so tsc is happy, and no test
     // renders. The correct shape is an animation driving a shared value and the
-    // interpolation reading `.value`, which is what Stepper does now.
+    // interpolation reading `.value`.
     for (const source of components.concat(screens)) {
       expect(source.body).not.toMatch(
         /interpolateColor\(\s*(accentTo|promoteTo|fadeTo|springTo)\(/,
       );
     }
-    // And the shape that replaced it, pinned so it is not "simplified" back.
-    expect(read('src/components/Stepper.tsx')).toContain('walked.value = accentTo(phase)');
-    expect(read('src/components/Stepper.tsx')).toContain('interpolateColor(\n      walked.value');
   });
 
   it('reserves the height a cross-faded title needs', () => {
@@ -2317,6 +2470,36 @@ describe('the motion adoption is wired, not just drawn', () => {
     expect(read('src/screens/AuthScreen.tsx')).toContain(
       'minHeight: TOKENS.typography.displayLarge.lineHeight * 2',
     );
+  });
+
+  it('names the send halo separately from the atmospheric field', () => {
+    const sources = [
+      read('src/screens/ChatScreen.tsx'),
+      read('src/components/Composer.tsx'),
+      read('src/components/SendButton.tsx'),
+    ].join('\n');
+    expect(sources).toContain('sendHaloKey');
+    expect(sources).toContain('haloOpacity');
+    expect(sources).not.toContain('bloomKey');
+  });
+
+  it('centralizes the measured carousel glyph departure', () => {
+    expect(read('src/lib/onboarding.ts')).toContain('carouselGlyph: 32');
+    expect(read('src/components/WordColumn.tsx')).toContain(
+      'SOURCE_METRICS.carouselGlyph',
+    );
+  });
+
+  it('contains BloomField to bounded identity and setup journeys', () => {
+    const consumers = screens
+      .filter(source => source.body.includes('<BloomField'))
+      .map(source => source.file)
+      .sort();
+    expect(consumers).toEqual([
+      'OnboardingScreen.tsx',
+      'PaymentSheet.tsx',
+      'ProviderApplicationScreen.tsx',
+    ]);
   });
 });
 
@@ -2393,5 +2576,158 @@ describe('admin control plane key hygiene', () => {
     const config = read('commitlint.config.js');
     // The scope allows commits to be tagged with the admin layer.
     expect(config).toMatch(/'admin'/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3 determinate progress for media uploads
+// ---------------------------------------------------------------------------
+// Policy (docs/android-audit.md): Linear ProgressBar with progress 0–1 =
+// determinate work where a fraction is known (upload/download). ActivityIndicator
+// is banned — use LoadingIndicator (indeterminate) or ProgressBar (determinate).
+// M3 spec: https://m3.material.io/components/progress-indicators/guidelines
+
+describe('media upload uses M3 determinate progress, not ActivityIndicator', () => {
+  const SRC_DIRS = ['src/lib', 'src/api', 'src/components', 'src/screens', 'src/store'];
+
+  /** All .ts / .tsx files under the given directory (non-recursive, one level). */
+  function srcFiles(dir: string): string[] {
+    const abs = join(ROOT, dir);
+    if (!existsSync(abs)) return [];
+    return readdirSync(abs, { withFileTypes: false })
+      .filter(f => typeof f === 'string' && (f.endsWith('.ts') || f.endsWith('.tsx')))
+      .map(f => join(dir, f as string));
+  }
+
+  it('uses no ActivityIndicator in src/ (stripped of comments)', () => {
+    // Policy: RN's ActivityIndicator draws Android's Material sweep, not M3.
+    // Use LoadingIndicator for indeterminate, ProgressBar for determinate.
+    const activityIndicatorPattern = /<ActivityIndicator|ActivityIndicator[,}]|ActivityIndicator\s*from/;
+    for (const dir of SRC_DIRS) {
+      for (const file of srcFiles(dir)) {
+        const stripped = withoutComments(read(file));
+        expect({ file, match: activityIndicatorPattern.test(stripped) }).toEqual({
+          file,
+          match: false,
+        });
+      }
+    }
+  });
+
+  it('uploads photos with XMLHttpRequest, not fetch, to get progress events', () => {
+    // fetch has no upload progress API; XHR.upload.onprogress does.
+    const attachments = withoutComments(read('src/api/attachments.ts'));
+    expect(attachments).toContain('new XMLHttpRequest()');
+    expect(attachments).toContain('xhr.upload.onprogress');
+    expect(attachments).toContain('e.lengthComputable');
+    // The original fetch must be gone (outside comments).
+    expect(attachments).not.toMatch(/await fetch\(/);
+  });
+
+  it('uploads voice notes with XMLHttpRequest, not fetch, to get progress events', () => {
+    const voice = withoutComments(read('src/api/voice.ts'));
+    expect(voice).toContain('new XMLHttpRequest()');
+    expect(voice).toContain('xhr.upload.onprogress');
+    expect(voice).toContain('e.lengthComputable');
+    expect(voice).not.toMatch(/await fetch\(/);
+  });
+
+  it('stores upload progress in the store under the pending id', () => {
+    const store = read('src/store/useStore.ts');
+    expect(store).toContain('uploadProgress: Record<string, number>');
+    expect(store).toContain('setUploadProgress');
+    expect(store).toContain('clearUploadProgress');
+    // Progress must be cleared when a conversation is left, so a next chat
+    // does not inherit in-flight state from a previous one.
+    expect(store).toContain('uploadProgress: {}');
+  });
+
+  it('Turn.tsx renders ProgressBar for the upload, not LoadingIndicator', () => {
+    const turn = read('src/components/Turn.tsx');
+    // Must import ProgressBar, not LoadingIndicator (no new import).
+    expect(turn).toContain("import { ProgressBar } from './ProgressBar'");
+    expect(turn).not.toContain("LoadingIndicator");
+    // The bar receives a numeric progress value from the store.
+    expect(turn).toContain('uploadProgress');
+    expect(turn).toContain('progress={pending ? uploadFraction : undefined}');
+  });
+
+  it('VoiceNote.tsx renders ProgressBar while a voice note is uploading', () => {
+    const vn = read('src/components/VoiceNote.tsx');
+    expect(vn).toContain("import { ProgressBar } from './ProgressBar'");
+    expect(vn).toContain('uploadFraction');
+    expect(vn).toContain('progress={uploadFraction}');
+  });
+
+  it('anchors the determinate fill at the left instead of inheriting a stale transform', () => {
+    // Found on device (2026-08-31): an upload starts indeterminate (no XHR event
+    // yet) and then reports bytes, so one ProgressBar switches modes mid-flight.
+    // The old animated style returned `transform` ONLY in the indeterminate
+    // branch and `width` ONLY in the determinate one, and Reanimated does not
+    // reset a property a later return value omits — so the determinate fill kept
+    // the last indeterminate `translateX` and rendered as a short bar floating in
+    // the middle of the track. Both branches must set BOTH properties.
+    const bar = read('src/components/ProgressBar.tsx');
+    const style = bar.slice(bar.indexOf('const fillStyle'), bar.indexOf('return (\n    <View'));
+    // Determinate: explicit translateX 0 alongside the width.
+    expect(style).toContain('transform: [{ translateX: 0 }]');
+    // Indeterminate: a travelling segment, so it also sets width.
+    expect(style).toMatch(/width: segment/);
+    // Every `return` inside the worklet carries width and transform together.
+    const returns = style.match(/return \{[\s\S]*?\};/g) ?? [];
+    expect(returns.length).toBeGreaterThanOrEqual(2);
+    for (const r of returns) {
+      expect(r).toContain('width');
+      expect(r).toContain('transform');
+    }
+    // Travel is measured from real layout, not a hardcoded ±100px.
+    expect(bar).toContain('onLayout');
+    expect(bar).toContain('trackWidth');
+    expect(style).not.toMatch(/\*\s*100\b/);
+  });
+
+  it('accessibilityLabel announces upload progress to screen readers', () => {
+    // The image accessibilityLabel must update to read "Sending photo, N percent"
+    // while the upload fraction is known, so TalkBack users get progress too.
+    const turn = read('src/components/Turn.tsx');
+    expect(turn).toContain('Sending photo');
+    expect(turn).toContain('percent');
+    // Voice note equivalent.
+    const vn = read('src/components/VoiceNote.tsx');
+    expect(vn).toContain('Sending voice note');
+    expect(vn).toContain('percent');
+  });
+});
+
+describe('independent call controls', () => {
+  it('exposes separate ON-by-default voice and video knobs in admin and mobile', () => {
+    const registry = read('admin/lib/config-registry.ts');
+    const config = read('src/api/appConfig.ts');
+    for (const key of ['voice_calls_enabled', 'video_calls_enabled']) {
+      expect(registry).toContain(`key: '${key}'`);
+      expect(config).toContain(`${key}: boolean`);
+      expect(config).toContain(`${key}: true`);
+    }
+    expect(registry).not.toContain("key: 'calls_enabled'");
+  });
+
+  it('gates each app action with its matching control', () => {
+    const chat = read('src/screens/ChatScreen.tsx');
+    const detail = read('src/screens/ProviderDetailScreen.tsx');
+    expect(chat).toContain('!voiceCallsEnabled');
+    expect(chat).toContain('!videoCallsEnabled');
+    expect(detail).toContain('enabled={voiceCallsEnabled}');
+    expect(detail).toContain('enabled={videoCallsEnabled}');
+  });
+
+  it('enforces both controls inside start_call, not only in the UI', () => {
+    const migration = read(
+      'supabase/migrations/044_independent_call_controls.sql',
+    );
+    expect(migration).toContain("environment = 'prod'");
+    expect(migration).toContain("'VOICE_CALLS_DISABLED'");
+    expect(migration).toContain("'VIDEO_CALLS_DISABLED'");
+    expect(migration).toContain("'voice_calls_enabled', true");
+    expect(migration).toContain("'video_calls_enabled', true");
   });
 });

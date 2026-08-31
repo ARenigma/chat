@@ -27,7 +27,7 @@ import { fadeSwap } from '../theme/motion';
 import { Button } from '../components/Button';
 import { CodeField } from '../components/CodeField';
 import { Pressable } from '../components/Pressable';
-import { Spinner } from '../components/Spinner';
+import { LoadingIndicator } from '../components/LoadingIndicator';
 import { CountryPicker, DEFAULT_DIAL_CODE } from '../components/CountryPicker';
 
 /** How long "Resend code" stays unavailable. ADR-0009 §3. */
@@ -373,7 +373,11 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
           of the screen is where the dev warning toast and the system nav bar both
           live. */}
       {error !== null ? (
-        <Text testID="auth-error" allowFontScaling style={styles.error}>
+        <Text
+          testID="auth-error"
+          allowFontScaling
+          accessibilityLiveRegion="polite"
+          style={styles.error}>
           {error}
         </Text>
       ) : null}
@@ -426,7 +430,7 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
               style={styles.confirmPrimary}
             >
               {busy === 'phone' ? (
-                <Spinner size={20} color={theme.color.text.primary} />
+                <LoadingIndicator size={20} color={theme.color.text.primary} containerColor="transparent" />
               ) : (
                 <Text allowFontScaling style={styles.confirmPrimaryLabel}>
                   Yes, send code
@@ -487,7 +491,7 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
             style={styles.googlePill}
           >
             {busy === 'google' ? (
-              <Spinner size={20} color={theme.color.text.primary} />
+              <LoadingIndicator size={20} color={theme.color.text.primary} containerColor="transparent" />
             ) : (
               <>
                 <Image
@@ -513,7 +517,7 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
           ? phoneVisible
             ? 'Your number is never shown to anyone you talk to. You pick a separate display name. Signing in with Google instead tells Google that you use this app.'
             : 'We only read your name and email, and neither is shown to anyone you talk to. You pick a separate display name. Signing in does tell Google that you use this app.'
-          : 'Standard message rates may apply. The code expires in 2 minutes.'}
+          : 'Standard message rates may apply. The code expires in a few minutes.'}
       </Animated.Text>
     </KeyboardAvoidingView>
   );
@@ -577,7 +581,9 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     gap: TOKENS.space.sm,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: t.color.bg.sunken,
+    backgroundColor: t.color.bg.base,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: t.color.border.strong,
     borderRadius: TOKENS.radius.field,
     borderCurve: 'continuous',
     paddingHorizontal: TOKENS.space.md,

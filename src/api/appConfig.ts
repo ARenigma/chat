@@ -17,6 +17,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { ENV } from '../lib/env';
 
 // ─── Domain payload types ────────────────────────────────────────────────────
 
@@ -24,7 +25,9 @@ export interface EconomicsConfig {
   chat_rate_tokens_per_min: number;
   audio_rate_tokens_per_min: number;
   video_rate_tokens_per_min: number;
-  provider_share_percent: number; // bps
+  /** Integer percent 0–100 (e.g. 60 = 60%). Consumers divide by 100. */
+  provider_share_percent: number;
+  /** Basis points (e.g. 1800 = 18%). Consumers divide by 10000 or use /100 for display. */
   gst_rate_bps: number;
 }
 
@@ -56,7 +59,8 @@ export interface PayoutsConfig {
 
 export interface KillSwitchesConfig {
   payments_enabled: boolean;
-  calls_enabled: boolean;
+  voice_calls_enabled: boolean;
+  video_calls_enabled: boolean;
   new_registrations_enabled: boolean;
   mock_payments_allowed: boolean;
 }
@@ -70,6 +74,18 @@ export interface AuthUiConfig {
   google_auth_tab_visible: boolean;
 }
 
+export type PermissionLevel = 'optional' | 'required';
+
+export interface PermissionsConfig {
+  environment_mode: 'internal' | 'production';
+  notification_internal: PermissionLevel;
+  notification_production: PermissionLevel;
+  microphone_internal: PermissionLevel;
+  microphone_production: PermissionLevel;
+  camera_internal: PermissionLevel;
+  camera_production: PermissionLevel;
+}
+
 // ─── Compile-time fallbacks ──────────────────────────────────────────────────
 // These values are used when the config RPC is unavailable (offline, error,
 // or no version published yet). They must match the seeds in migration 026.
@@ -78,14 +94,15 @@ export const FALLBACK_ECONOMICS: EconomicsConfig = {
   chat_rate_tokens_per_min: 22,
   audio_rate_tokens_per_min: 22,
   video_rate_tokens_per_min: 35,
-  provider_share_percent: 6000, // 60% in bps
-  gst_rate_bps: 1800,
+  provider_share_percent: 60, // integer percent; consumers do /100 to get 0.6
+  gst_rate_bps: 1800,         // 18% in basis points
 };
 
 export const FALLBACK_RECHARGE: RechargeConfig = {
   packs_inr: [100, 300, 500, 1000, 2500, 5000],
   play_product_ids: [],
-  cashfree_enabled: false,
+  // Aligned with PAYMENTS_ENABLED + migration 041 Cashfree rail.
+  cashfree_enabled: true,
   play_ucb_enabled: false,
 };
 
@@ -102,9 +119,14 @@ export const FALLBACK_THRESHOLDS: ThresholdsConfig = {
 };
 
 export const FALLBACK_KILL_SWITCHES: KillSwitchesConfig = {
-  // Safe-fail: no real payments until explicitly enabled via admin.
-  payments_enabled: false,
-  calls_enabled: true,
+  // Matches PAYMENTS_ENABLED and migration 041 — first-send opens Cashfree.
+  // Flip off in admin kill_switches to hard-stop collections without a redeploy.
+  payments_enabled: true,
+  // Independent controls: an operator may stop camera calls while voice remains
+  // available. The server enforces the same pair in start_call (migration 044);
+  // these client flags are immediate UI feedback, not the security boundary.
+  voice_calls_enabled: true,
+  video_calls_enabled: true,
   new_registrations_enabled: true,
   mock_payments_allowed: true,
 };
@@ -129,6 +151,36 @@ export const FALLBACK_AUTH_UI: AuthUiConfig = {
   phone_auth_tab_visible: true,
   google_auth_tab_visible: true,
 };
+
+export const FALLBACK_PERMISSIONS: PermissionsConfig = {
+  environment_mode: 'internal',
+  notification_internal: 'optional',
+  notification_production: 'required',
+  microphone_internal: 'required',
+  microphone_production: 'required',
+  camera_internal: 'required',
+  camera_production: 'required',
+};
+
+/** Resolve which permission policy applies for this build + config. */
+export function effectivePermissionLevel(
+  config: PermissionsConfig,
+  kind: 'notification' | 'microphone' | 'camera',
+): PermissionLevel {
+  const treatAsProduction =
+    ENV.appEnv === 'production' || config.environment_mode === 'production';
+  if (kind === 'notification') {
+    return treatAsProduction
+      ? config.notification_production
+      : config.notification_internal;
+  }
+  if (kind === 'microphone') {
+    return treatAsProduction
+      ? config.microphone_production
+      : config.microphone_internal;
+  }
+  return treatAsProduction ? config.camera_production : config.camera_internal;
+}
 
 // ─── Fetcher helpers ─────────────────────────────────────────────────────────
 
@@ -231,6 +283,18 @@ export function useAuthUiConfig() {
     staleTime: STALE_TIME,
     gcTime: GC_TIME,
     placeholderData: FALLBACK_AUTH_UI,
+  });
+}
+
+/** Device permission policy — safe to read pre-auth. */
+export function usePermissionsConfig() {
+  return useQuery({
+    queryKey: ['config', 'permissions'],
+    queryFn: () =>
+      fetchPublicConfig<PermissionsConfig>('permissions', FALLBACK_PERMISSIONS),
+    staleTime: STALE_TIME,
+    gcTime: GC_TIME,
+    placeholderData: FALLBACK_PERMISSIONS,
   });
 }
 

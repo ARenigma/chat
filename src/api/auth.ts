@@ -413,6 +413,30 @@ function describeCallbackError(code: string | null, description: string | null):
  * to steal the session.
  */
 export async function handleAuthDeepLink(url: string): Promise<AuthCallbackResult> {
+  const e2eUrl = 'companionchat://e2e-auth';
+  if (url === e2eUrl || url.startsWith(`${e2eUrl}?`) || url.startsWith(`${e2eUrl}#`)) {
+    // Maestro cannot automate Google/Facebook system-owned OAuth UI. A local
+    // harness may inject a short-lived Supabase session through this private
+    // deep link; production builds categorically ignore it.
+    if (!__DEV__) {
+      return { status: 'ignored' };
+    }
+    const raw = url.slice(e2eUrl.length).replace(/^[?#]/, '');
+    const params = new URLSearchParams(raw);
+    const accessToken = params.get('access_token');
+    const refreshToken = params.get('refresh_token');
+    if (accessToken == null || refreshToken == null) {
+      return { status: 'failed', message: 'The local test session is incomplete.' };
+    }
+    const { error } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+    return error == null
+      ? { status: 'signedIn' }
+      : { status: 'failed', message: 'Could not install the local test session.' };
+  }
+
   if (!url.startsWith(AUTH_REDIRECT_URL)) {
     return { status: 'ignored' };
   }

@@ -10,8 +10,8 @@ import { Pressable } from './Pressable';
 interface Props {
   onPress: () => void;
   disabled: boolean;
-  /** Increments on each successful send, triggering one bloom. */
-  bloomKey: number;
+  /** Increments on each successful send, triggering one confirmation halo. */
+  sendHaloKey: number;
 }
 
 // 38: a prominent circular send, the Sweprek proportion Amit asked to match
@@ -42,33 +42,33 @@ const SIZE = 38;
  * celebration. The ring is driven 1 → 0 so an idle button carries no halo, which
  * an earlier version did, a permanent 18% wash that looked like a rendering bug.
  */
-function SendButtonView({ onPress, disabled, bloomKey }: Props) {
+function SendButtonView({ onPress, disabled, sendHaloKey }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
-  const bloom = useSharedValue(0);
+  const haloOpacity = useSharedValue(0);
   const ring = useSharedValue(0);
 
   useEffect(() => {
-    if (bloomKey === 0) {
+    if (sendHaloKey === 0) {
       return;
     }
-    bloom.value = 1;
-    bloom.value = fadeTo(0, DURATION.slow);
+    haloOpacity.value = 1;
+    haloOpacity.value = fadeTo(0, DURATION.slow);
     // The ring's *size* is a spring while its opacity is a fade. That split is
     // deliberate: a ring that expands on a curve looks like a loading state,
     // and one that fades on a spring flickers at the tail.
     ring.value = 0;
     ring.value = springTo(1, 'gentle');
-  }, [bloomKey, bloom, ring]);
+  }, [sendHaloKey, haloOpacity, ring]);
 
-  const bloomStyle = useAnimatedStyle(() => ({
-    opacity: bloom.value * 0.2,
+  const haloStyle = useAnimatedStyle(() => ({
+    opacity: haloOpacity.value * 0.2,
     transform: [{ scale: 1 + ring.value * 0.85 }],
   }));
 
   return (
     <View style={styles.host}>
-      <Animated.View pointerEvents="none" style={[styles.bloom, bloomStyle]} />
+      <Animated.View pointerEvents="none" style={[styles.halo, haloStyle]} />
       <Pressable
         onPress={onPress}
         disabled={disabled}
@@ -96,7 +96,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  bloom: {
+  halo: {
     position: 'absolute',
     width: SIZE,
     height: SIZE,

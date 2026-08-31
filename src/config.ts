@@ -29,7 +29,7 @@ export const CALLS_TAB_ENABLED = false;
  * Off until the UPI intent / Play Billing rail is wired. The Recharge screen
  * shows packs and the Pay button, but does not pretend to charge.
  */
-export const PAYMENTS_ENABLED = false;
+export const PAYMENTS_ENABLED = true;
 
 /**
  * Whether the mock-payment flow is available.
@@ -39,6 +39,15 @@ export const PAYMENTS_ENABLED = false;
  * (app_flags.mock_payments) is a second, independent guard.
  */
 export const MOCK_PAYMENTS = APP_ENV !== 'production';
+
+/**
+ * Non-prod Cashfree WebCheckout.
+ *
+ * True in every non-production build so the Cashfree sandbox can be exercised
+ * end-to-end without real money. Production stays behind PAYMENTS_ENABLED and
+ * the UCB/KYC enrolment (ADR-0022).
+ */
+export const CASHFREE_SANDBOX_CHECKOUT = APP_ENV !== 'production';
 
 /**
  * Phone sign-in: implemented, and on (Firebase path). Flip to false when

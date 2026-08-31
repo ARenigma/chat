@@ -4,13 +4,10 @@ import {
   FadeInDown,
   ReduceMotion,
   type WithSpringConfig,
-  withDelay,
-  withRepeat,
   withSequence,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import type { CarouselSlot } from '../lib/carousel';
 import { TOKENS } from './tokens';
 
 /**
@@ -74,8 +71,11 @@ export function springTo(
   velocity?: number,
 ): number {
   'worklet';
-  const config: WithSpringConfig =
-    velocity === undefined ? SPRING[name] : { ...SPRING[name], velocity };
+  const config: WithSpringConfig = {
+    ...SPRING[name],
+    reduceMotion: ReduceMotion.System,
+    ...(velocity === undefined ? {} : { velocity }),
+  };
   return withSpring(to, config);
 }
 
@@ -91,87 +91,6 @@ export function springTo(
 export function fadeTo(to: number, ms: number = DURATION.fast): number {
   'worklet';
   return withTiming(to, { duration: ms, easing: Easing.bezier(0.05, 0.7, 0.1, 1.0) });
-}
-
-/**
- * Rule 4: a step label being promoted or demoted.
- *
- * 150ms, which is measured: the Fuse clip promotes within one 111ms sample. The
- * number is only half the rule though: it is deliberately FASTER than the 220ms
- * accent cross-fade happening behind it, so the content lands before its colour
- * does, and that ordering is what stops a step change reading as the screen
- * sliding sideways.
- *
- * Opacity only. The reference's active step also carries larger type, and that is
- * the one thing here not copied: swapping a type style reflows the row on the
- * frame the state changes while the opacity takes 150ms to catch up, so the label
- * jumps and then fades. Rule 7 says nothing scales text, and between the two
- * rules rule 7 wins.
- */
-export function promoteTo(active: boolean): number {
-  'worklet';
-  return fadeTo(active ? 1 : OPACITY.inactive, DURATION.stepPromote);
-}
-
-/**
- * Rule 2: the accent moving from one step's colour to the next.
- *
- * Returns progress along a ramp, not a colour. The component feeds it to
- * `interpolateColor`, because the endpoints are theme values and this module
- * knows about physics rather than about light and dark.
- *
- * The reference cross-fades between three hues and passes through a visibly
- * desaturated midpoint. Ours is coral-only by settled decision, so cross-fading
- * coral to coral would be nothing at all. What transfers is the ramp: interpolate
- * from the neutral border grey up through the bright coral to the deep one, in
- * RGB, and the midpoints genuinely are desaturated mid-corals. That is rule 2
- * doing real work as a progress signal rather than as decoration.
- */
-export function accentTo(phase: number): number {
-  'worklet';
-  return fadeTo(phase, DURATION.accentShift);
-}
-
-/**
- * Rule 1: one row of the word carousel, looping forever.
- *
- * Built on the JS thread and handed to a shared value, which is the point: the
- * loop then lives on the UI thread and keeps running while JavaScript is busy and
- * across the hand-off to the system browser and back. That is this codebase's
- * honest translation of the clip's "keeps running behind a presented modal": we
- * present nothing over the auth screen, but we do lose the JS thread to OAuth.
- *
- * `ReduceMotion.Never`, and it needs saying why, because it looks like the one
- * thing every other animation in this file gets right. A `withRepeat(-1)` whose
- * inner timings have been short-circuited to their final value does not stop, it
- * spins at frame rate doing nothing, an infinite loop of zero-length
- * animations. So the reduce-motion decision cannot live here; it has to be "do
- * not start", which only the component can do. `WordCarousel` gates on
- * `useReducedMotion()` and renders one word statically, and this function is
- * never called in that case.
- *
- * Linear easing on purpose: the shape of the cross-fade is carried by the plateau
- * in `carouselSlot`, so easing on top of it would ease an already-shaped curve.
- */
-export function carouselLoop(slot: CarouselSlot): number {
-  const legs = slot.steps.map(step =>
-    withTiming(step.to, {
-      duration: step.ms,
-      easing: Easing.linear,
-      reduceMotion: ReduceMotion.Never,
-    }),
-  );
-  // withSequence needs at least one leg; an empty slot means there is nothing to
-  // advance to and the caller should not have called this.
-  const sequence =
-    legs.length === 0 ? withTiming(1, { duration: DURATION.instant }) : withSequence(...legs);
-  // The offset sits OUTSIDE the repeat. Inside, it is re-applied every lap and
-  // the rows drift a word apart. See CarouselSlot.
-  return withDelay(
-    slot.delayMs,
-    withRepeat(sequence, -1, false, undefined, ReduceMotion.Never),
-    ReduceMotion.Never,
-  );
 }
 
 /**
@@ -330,18 +249,3 @@ export function shakeX(): number {
     withSpring(to, { ...SPRING.snap, reduceMotion: ReduceMotion.System });
   return withSequence(hop(-9), hop(7), hop(-4), hop(0));
 }
-
-/**
- * A gamified pop for the favourite heart.
- *
- * A quick overshoot to 1.35× and spring back to 1 on the `bounce` config —
- * the same spring that drives the send-bubble launch and the onboarding
- * completion mark. Use it on a `scale` shared value inside an Animated.View
- * that wraps the heart Icon, keeping the bounce separate from the Pressable's
- * own press scale.
- */
-export function heartBounce(): number {
-  'worklet';
-  return withSequence(withSpring(1.35, SPRING.bounce), withSpring(1, SPRING.bounce));
-}
-

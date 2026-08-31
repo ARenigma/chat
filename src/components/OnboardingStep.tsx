@@ -144,7 +144,8 @@ function OnboardingStepView({ step, expanded, testID }: Props) {
          */}
         {expanded ? (
           <Animated.View
-            entering={FadeInUp.duration(STEP_ADVANCE_MS).delay(80)}
+            // Source: `.smooth(duration: 0.2)` on both insertion and removal.
+            entering={FadeInUp.duration(STEP_EXIT_MS).delay(80)}
             exiting={FadeOutUp.duration(STEP_EXIT_MS)}
           >
             <Animated.Text allowFontScaling style={styles.description}>
@@ -215,10 +216,10 @@ const makeStyles = (t: Theme) =>
       gap: SOURCE_METRICS.stepOpenGap,
     },
     // Size and leading are animated, so only the face and tracking are set here.
-    // The face carries its own weight — Urbanist-ExtraBold IS the bold — which is
-    // why no weight is declared, and why the whole app declares none anywhere.
+    // Step.swift applies `.bold()` at both 42pt and 24pt; use the bundled static
+    // face directly so Android does not synthesise weight.
     title: {
-      fontFamily: TOKENS.typography.displayLarge.fontFamily,
+      fontFamily: 'Geist-Bold',
       letterSpacing: -0.5,
     },
     description: {

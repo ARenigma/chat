@@ -10,7 +10,7 @@ import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { DURATION, springTo } from '../theme/motion';
 import { Icon } from './Icon';
-import { Spinner } from './Spinner';
+import { LoadingIndicator } from './LoadingIndicator';
 import {
   COMPLETION_HOLD_MS,
   COMPLETION_WORK_MS,
@@ -104,7 +104,11 @@ function CompletionRowView({ onDone, testID }: Props) {
             />
           </Animated.View>
         ) : (
-          <Spinner size={SOURCE_METRICS.doneIcon} color={theme.color.text.tertiary} />
+          <LoadingIndicator
+              size={SOURCE_METRICS.doneIcon}
+              color={theme.color.text.tertiary}
+              containerColor="transparent"
+            />
         )}
       </View>
 

@@ -1,131 +1,40 @@
--- pgTAP for spend_chat_minute: drain-to-zero semantics (migrations 021 + 022).
---
--- Assertions proven here:
---   1. spend_chat_minute function exists.
---   2. authenticated has EXECUTE (and only authenticated).
---   3. Returns OUT_OF_TOKENS (not INSUFFICIENT_BALANCE) when balance is 0.
---   4. Returns success=true at balance 10 (< 22): sub-minute remainder is granted.
---   5. Returns new_balance=0 at balance 10: remainder is drained, not stranded.
---   6. Returns last=true at balance 10: caller serves minute, ends on next charge.
---   7. Returns success=true at balance 44.
---   8. Returns new_balance=22 at balance 44: full debit, one minute left.
---   9. Returns last=false at balance 44: more balance remains.
+-- pgTAP for the temporary spend_chat_minute compatibility response.
+-- Migration 037 retires client-side chat billing; the server session meter is
+-- now the only charge path.
 
 \set ON_ERROR_STOP on
 begin;
-select plan(9);
+select plan(5);
 
--- ---------------------------------------------------------------------------
--- Shape
--- ---------------------------------------------------------------------------
 select ok(
-  (select exists (
-    select 1 from information_schema.routines
-    where routine_schema = 'public'
-      and routine_name   = 'spend_chat_minute'
-  )),
-  'spend_chat_minute function exists'
+  to_regprocedure('public.spend_chat_minute()') is not null,
+  'spend_chat_minute compatibility function exists'
 );
-
--- ---------------------------------------------------------------------------
--- Grants
--- ---------------------------------------------------------------------------
-select function_privs_are(
-  'public', 'spend_chat_minute', ARRAY[]::text[],
-  'authenticated', ARRAY['EXECUTE'],
-  'authenticated has EXECUTE on spend_chat_minute'
-);
-
--- ---------------------------------------------------------------------------
--- Behaviour: seed auth.uid() via JWT claims (same pattern as 130 suite)
--- ---------------------------------------------------------------------------
-select set_config(
-  'request.jwt.claims',
-  '{"sub":"00000000-0000-0000-0000-000000000088","role":"authenticated"}',
-  true
-);
-
-insert into auth.users (id) values ('00000000-0000-0000-0000-000000000088')
-on conflict do nothing;
-
-insert into public.profiles (id, display_name, token_balance)
-values ('00000000-0000-0000-0000-000000000088', 'Test', 0)
-on conflict (id) do update set token_balance = 0;
-
--- balance = 0 → OUT_OF_TOKENS (migration 022 no longer returns INSUFFICIENT_BALANCE)
-select is(
-  (public.spend_chat_minute()::json ->> 'error'),
-  'OUT_OF_TOKENS',
-  'spend_chat_minute returns OUT_OF_TOKENS when balance is 0'
-);
-
--- ---------------------------------------------------------------------------
--- Sub-minute remainder (balance 10 < 22): drain to 0, grant last minute.
--- Balance is reset before each field check so each assertion is independent.
--- ---------------------------------------------------------------------------
-
-update public.profiles
-set token_balance = 10
-where id = '00000000-0000-0000-0000-000000000088';
 
 select is(
-  (public.spend_chat_minute()::json ->> 'success')::boolean,
-  true,
-  'balance 10 < 22: success=true (sub-minute remainder is granted)'
+  pg_get_function_result('public.spend_chat_minute()'::regprocedure),
+  'json',
+  'spend_chat_minute returns json'
 );
 
-update public.profiles
-set token_balance = 10
-where id = '00000000-0000-0000-0000-000000000088';
-
-select is(
-  (public.spend_chat_minute()::json ->> 'new_balance')::integer,
-  0,
-  'balance 10 < 22: drains to exactly 0, does not strand remainder'
+select ok(
+  has_function_privilege('authenticated', 'public.spend_chat_minute()', 'EXECUTE'),
+  'authenticated may call the rollout compatibility function'
 );
 
-update public.profiles
-set token_balance = 10
-where id = '00000000-0000-0000-0000-000000000088';
-
-select is(
-  (public.spend_chat_minute()::json ->> 'last')::boolean,
-  true,
-  'balance 10 < 22: last=true (session ends on the next OUT_OF_TOKENS)'
+select ok(
+  not has_function_privilege('anon', 'public.spend_chat_minute()', 'EXECUTE'),
+  'anon may not call spend_chat_minute'
 );
 
--- ---------------------------------------------------------------------------
--- Full-minute charge (balance 44 = 2 minutes): debit 22, balance 22.
--- ---------------------------------------------------------------------------
-
-update public.profiles
-set token_balance = 44
-where id = '00000000-0000-0000-0000-000000000088';
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub":"00000000-0000-4000-8000-000000000140","role":"authenticated"}';
 
 select is(
-  (public.spend_chat_minute()::json ->> 'success')::boolean,
-  true,
-  'balance 44: success=true'
-);
-
-update public.profiles
-set token_balance = 44
-where id = '00000000-0000-0000-0000-000000000088';
-
-select is(
-  (public.spend_chat_minute()::json ->> 'new_balance')::integer,
-  22,
-  'balance 44: debits 22 tokens, new_balance=22'
-);
-
-update public.profiles
-set token_balance = 44
-where id = '00000000-0000-0000-0000-000000000088';
-
-select is(
-  (public.spend_chat_minute()::json ->> 'last')::boolean,
-  false,
-  'balance 44: last=false (one full minute still remains)'
+  public.spend_chat_minute()::text,
+  '{"success" : true, "new_balance" : null, "compat" : "no-op"}',
+  'compatibility call succeeds without debiting a wallet'
 );
 
 select * from finish();

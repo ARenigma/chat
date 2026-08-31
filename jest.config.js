@@ -12,6 +12,9 @@ module.exports = {
     '<rootDir>/__tests__/**/*.test.ts',
     '<rootDir>/__tests__/**/*.test.tsx',
   ],
+  /** Exclude generated directories from haste-map and module resolution. */
+  modulePathIgnorePatterns: ['<rootDir>/admin/.next/'],
+  testPathIgnorePatterns: ['<rootDir>/admin/'],
   collectCoverageFrom: ['src/lib/**/*.ts', 'src/store/**/*.ts'],
   transformIgnorePatterns: [
     'node_modules/(?!(@react-native|react-native|react-native-reanimated|react-native-worklets|@sentry|react-native-safe-area-context)/)',

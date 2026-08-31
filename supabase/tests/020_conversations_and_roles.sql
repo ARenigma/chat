@@ -133,6 +133,14 @@ select throws_ok(
   'P0002', null, 'approving without an application fails loudly'
 );
 
+-- Fund member so the session balance gate in send_message (ADR-0020) passes.
+-- Migration 037 checks token_balance >= rate_tokens_per_min before creating the
+-- first session request; without this the member gets INSUFFICIENT_BALANCE.
+update public.profiles set promo_balance = 500
+where id = 'bbbbbbbb-0000-4000-8000-000000000002';
+select test.accept_current_policies(id)
+from auth.users;
+
 -- ---------------------------------------------------------------------------
 -- Opening a conversation
 -- ---------------------------------------------------------------------------
@@ -154,13 +162,13 @@ select throws_ok(
 );
 
 -- ---------------------------------------------------------------------------
--- The send path: the member pays, the provider does not
+-- The send path: session model means no per-message billing (ADR-0020)
 -- ---------------------------------------------------------------------------
-select is(
+select ok(
   (public.send_message(
     public.open_conversation('aaaaaaaa-0000-4000-8000-000000000001'),
-    'you up?') ->> 'new_balance')::int,
-  49, 'a member send costs exactly one token'
+    'you up?') ->> 'new_balance') is null,
+  'send_message carries no per-message balance in the session model (ADR-0020)'
 );
 select is(
   public.send_message(
@@ -186,11 +194,11 @@ reset role;
 
 select is(
   (select token_balance from public.profiles where id = 'bbbbbbbb-0000-4000-8000-000000000002'),
-  49, 'the member paid once in total'
+  500, 'member balance is unchanged: no per-message debit in the session model (ADR-0020)'
 );
 select is(
   (select token_balance from public.profiles where id = 'aaaaaaaa-0000-4000-8000-000000000001'),
-  50, 'the provider paid nothing'
+  0, 'the provider paid nothing'
 );
 
 -- ---------------------------------------------------------------------------

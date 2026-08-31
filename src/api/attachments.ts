@@ -36,6 +36,7 @@ const SIGNED_URL_TTL_SECONDS = 600;
 
 const NOTICE: Record<SendError | 'UPLOAD', string> = {
   INSUFFICIENT_BALANCE: 'You are out of tokens.',
+  POLICY_REQUIRED: 'Accept the latest Terms and Privacy Policy to continue.',
   BAD_REQUEST: 'That photo could not be sent.',
   UNAUTHORIZED: 'Session expired. Reopen the app to continue.',
   FORBIDDEN: 'That conversation is not available.',
@@ -52,11 +53,17 @@ const NOTICE: Record<SendError | 'UPLOAD', string> = {
  * Native's FormData polyfill does not implement, so a file part streamed
  * natively through `{ uri, name, type }` is the only path that gets bytes off the
  * device without a filesystem dependency or a base64 hop across the bridge.
+ *
+ * Uses XMLHttpRequest instead of fetch so `xhr.upload.onprogress` can report
+ * byte-level progress to the caller — fetch provides no upload progress API.
+ * M3 spec: determinate progress when the fraction is known.
+ * Ref: https://m3.material.io/components/progress-indicators/guidelines
  */
 async function uploadImage(
   path: string,
   uri: string,
   accessToken: string,
+  onProgress?: (fraction: number) => void,
 ): Promise<boolean> {
   const type = attachmentMime(path);
   const form = new FormData();
@@ -67,21 +74,26 @@ async function uploadImage(
     type,
   } as unknown as Blob);
 
-  const response = await fetch(
-    `${ENV.supabaseUrl}/storage/v1/object/${BUCKET}/${path}`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        apikey: ENV.supabaseAnonKey,
-        // No `x-upsert`, same evidence argument as voice notes: a photo the
-        // sender can replace after it is seen or reported is worthless as
-        // evidence. A retry mints a new key.
-      },
-      body: form,
-    },
-  );
-  return response.ok;
+  return new Promise<boolean>(resolve => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${ENV.supabaseUrl}/storage/v1/object/${BUCKET}/${path}`);
+    xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
+    xhr.setRequestHeader('apikey', ENV.supabaseAnonKey);
+    // No `x-upsert`, same evidence argument as voice notes: a photo the
+    // sender can replace after it is seen or reported is worthless as
+    // evidence. A retry mints a new key.
+    if (onProgress !== undefined) {
+      xhr.upload.onprogress = (e: ProgressEvent) => {
+        if (e.lengthComputable && e.total > 0) {
+          onProgress(e.loaded / e.total);
+        }
+      };
+    }
+    xhr.onload = () => resolve(xhr.status >= 200 && xhr.status < 300);
+    xhr.onerror = () => resolve(false);
+    xhr.onabort = () => resolve(false);
+    xhr.send(form);
+  });
 }
 
 /**
@@ -127,6 +139,8 @@ export function useSendImage(
   const setBalance = useStore(s => s.setBalance);
   const setNotice = useStore(s => s.setNotice);
   const openRefill = useStore(s => s.openRefill);
+  const setUploadProgress = useStore(s => s.setUploadProgress);
+  const clearUploadProgress = useStore(s => s.clearUploadProgress);
 
   return useCallback(
     async (draft: ImageDraft, replyToId: string | null = null): Promise<void> => {
@@ -193,7 +207,10 @@ export function useSendImage(
         return;
       }
 
-      const uploaded = await uploadImage(path, draft.uri, accessToken).catch(() => false);
+      const uploaded = await uploadImage(path, draft.uri, accessToken, fraction => {
+        setUploadProgress(pendingId, fraction);
+      }).catch(() => false);
+      clearUploadProgress(pendingId);
       if (!uploaded) {
         setSending(false);
         track('send_rejected', { reason: 'upload' });
@@ -241,6 +258,6 @@ export function useSendImage(
       // the telemetry surface here. Failures already report through `send_rejected`.
       void queryClient.invalidateQueries({ queryKey: keys.conversationList });
     },
-    [conversationId, selfId, queryClient, setSending, setBalance, setNotice, openRefill],
+    [conversationId, selfId, queryClient, setSending, setBalance, setNotice, openRefill, setUploadProgress, clearUploadProgress],
   );
 }

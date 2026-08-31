@@ -24,6 +24,9 @@
  *                                        orphaned voice audio (cron this)
  *   metrics [--days=n]                  the safety counters
  *   applications [--status=s]            the provider application queue
+ *                                        (default: submitted; try --status=under_review)
+ *   claim <user-id>                      move submitted → under_review so your
+ *                                        review is recorded before acting
  *   admit <user-id> [--note=...]         approve an application
  *   needinfo <user-id> --fields=a,b      ask for specific fields, resolvable
  *                                        by the applicant without support
@@ -390,9 +393,18 @@ async function applications() {
     );
   }
   console.log(
-    `\n${rows.length} waiting. \`admit <user-id>\`, ` +
-      '`needinfo <user-id> --fields=about,headline`, or `decline <user-id>`.',
+    `\n${rows.length} waiting. \`claim <user-id>\` to move to under_review, ` +
+      'then `admit`, `needinfo --fields=about,headline`, or `decline`.',
   );
+}
+
+async function claim() {
+  const id = positional[0];
+  if (id === undefined) {
+    fail('usage: claim <user-id>');
+  }
+  await rpc('claim_provider_application_review', { p_user_id: id });
+  console.log(`claimed ${short(id)}, status is now under_review`);
 }
 
 async function admit() {
@@ -464,6 +476,7 @@ const COMMANDS = {
   purge,
   metrics,
   applications,
+  claim,
   admit,
   needinfo,
   decline,

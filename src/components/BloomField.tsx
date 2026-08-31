@@ -13,6 +13,7 @@ import {
   BLOOM_SWAP_MS,
   bloomExitGradient,
   bloomLayerBox,
+  bloomRadiusScale,
   bloomRestGradient,
   bloomTravel,
   layerProgress,
@@ -82,6 +83,12 @@ interface Props {
  * natively through `experimental_backgroundImage`, so this needs neither
  * `react-native-svg`, which is banned here for killing touch inside Reanimated
  * subtrees, nor a linear-gradient package that could not draw a radial anyway.
+ *
+ * **Boundary:** this field belongs to bounded journeys with a terminal state.
+ * It does not belong on Home, Provider Detail, Chat, Call, Recharge selection,
+ * Settings, or errors: live surfaces must expose current state immediately.
+ * Payment success is the narrow transactional exception: work is already over,
+ * so the field celebrates a confirmed result without delaying or hiding state.
  */
 function BloomFieldView({ elapsed, stage, hidden = false }: Props) {
   const theme = useTheme();
@@ -166,6 +173,7 @@ function BloomLayer({ name, elapsed, mix, pair, width, height }: LayerProps) {
   }
   const { delayMs } = layer;
   const travel = bloomTravel(layer, height);
+  const radiusScale = bloomRadiusScale(width, height);
 
   // The box moves. Its centre is the gradient's centre, so translating the box
   // IS animating `center:` in the source.
@@ -193,7 +201,8 @@ function BloomLayer({ name, elapsed, mix, pair, width, height }: LayerProps) {
       : bloomRestGradient(layer, s.palette);
 
   return (
-    <Animated.View style={[styles.layer, bloomLayerBox(layer, width), box]}>
+    <Animated.View
+      style={[styles.layer, bloomLayerBox(layer, width, radiusScale), box]}>
       <View
         style={[styles.fill, { experimental_backgroundImage: gradientFor(pair.from) }]}
       />

@@ -112,6 +112,25 @@ class MainActivity : ReactActivity() {
    * confusing: firing a deep link at a running app behaved perfectly, and only
    * the real flow, where the browser had pushed us out of memory, failed.
    */
+  /**
+   * Ask the display for its fastest mode so sheet springs and list flings vsync
+   * at 90/120 Hz on panels that support it, instead of staying locked at 60.
+   * https://developer.android.com/develop/ui/views/animations/frame-rate
+   */
+  private fun preferHighestRefreshRate() {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+    @Suppress("DEPRECATION")
+    val display =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) display
+        else windowManager.defaultDisplay
+    if (display == null) return
+    val fastest = display.supportedModes.maxByOrNull { it.refreshRate } ?: return
+    val params = window.attributes
+    if (params.preferredDisplayModeId == fastest.modeId) return
+    params.preferredDisplayModeId = fastest.modeId
+    window.attributes = params
+  }
+
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     setIntent(intent)
@@ -136,6 +155,7 @@ class MainActivity : ReactActivity() {
    */
   override fun onResume() {
     super.onResume()
+    preferHighestRefreshRate()
     FirebaseAppDistribution.getInstance()
         .updateIfNewReleaseAvailable()
         .addOnFailureListener { error ->

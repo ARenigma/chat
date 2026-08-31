@@ -1,15 +1,16 @@
 import React from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
-import { useStyles, useTheme } from '../theme/ThemeProvider';
+import { useStyles } from '../theme/ThemeProvider';
 import { fadeSwap } from '../theme/motion';
 import type { ApplicationStatus } from '../lib/database.types';
 import { useMyApplication } from '../api/provider';
 import { longDate } from '../lib/datetime';
 import { Button } from '../components/Button';
 import { Icon } from '../components/Icon';
+import { LoadingIndicator } from '../components/LoadingIndicator';
 import { Pressable } from '../components/Pressable';
 
 interface Props {
@@ -64,7 +65,6 @@ const COPY: Record<ApplicationStatus, { title: string; body: string }> = {
 
 export function ProviderStatusScreen({ onBack, onEdit }: Props) {
   const styles = useStyles(makeStyles);
-  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { data, isPending } = useMyApplication();
 
@@ -99,7 +99,7 @@ export function ProviderStatusScreen({ onBack, onEdit }: Props) {
 
       {isPending ? (
         <View style={styles.state}>
-          <ActivityIndicator color={theme.color.text.secondary} />
+          <LoadingIndicator size={48} />
         </View>
       ) : (
         <View style={styles.body}>

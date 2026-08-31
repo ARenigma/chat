@@ -133,6 +133,22 @@ export const BLOOM_FIELD_MS =
 export const BLOOM_CONTENT_MS = 700;
 export const BLOOM_HOLD_MS = 1200;
 
+/** The long edge of the iPhone frame the source's point radii were authored on. */
+export const FUSE_REFERENCE_LONG_EDGE = 874;
+
+/**
+ * Preserve the source field's spatial proportions on other window sizes.
+ *
+ * Copying 500/450/350 points literally is exact only on the 402×874 reference
+ * frame. On a taller Android window it compresses the fade into a smaller share
+ * of the viewport and makes the outer edge visibly sharper; on a short window
+ * it does the opposite. Scaling every radius together keeps all three original
+ * ratios and gives the reference frame a scale of exactly 1.
+ */
+export function bloomRadiusScale(screenWidth: number, screenHeight: number): number {
+  return Math.max(screenWidth, screenHeight) / FUSE_REFERENCE_LONG_EDGE;
+}
+
 /**
  * Where the field stops and the page begins, as a fraction of screen height.
  *
@@ -161,13 +177,15 @@ export function whiteZoneFraction(screenHeight: number): number {
 export function bloomLayerBox(
   layer: BloomLayer,
   screenWidth: number,
+  radiusScale = 1,
 ): { width: number; height: number; left: number; bottom: number } {
-  const diameter = layer.endRadius * 2;
+  const radius = layer.endRadius * radiusScale;
+  const diameter = radius * 2;
   return {
     width: diameter,
     height: diameter,
     left: (screenWidth - diameter) / 2,
-    bottom: -layer.endRadius,
+    bottom: -radius,
   };
 }
 

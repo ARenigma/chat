@@ -1,0 +1,17 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity android:name=".MainActivity" android:exported="true">
+            <!--
+              Debug-only session injection for Maestro. Distinct URI combinations
+              use distinct filters per Android's deep-link implementation guide:
+              https://developer.android.com/training/app-links/create-deeplinks
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="companionchat" android:host="e2e-auth" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

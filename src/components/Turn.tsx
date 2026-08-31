@@ -1,23 +1,31 @@
-import React, { memo, useMemo } from 'react';
+import React, { memo, useCallback, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Image,
-  Pressable,
   StyleSheet,
   Text,
   View,
   type StyleProp,
   type TextStyle,
+  type ViewStyle,
 } from 'react-native';
-import Animated from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+} from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { bubbleArrive, bubbleLaunch } from '../theme/motion';
+import { bubbleArrive, bubbleLaunch, springTo } from '../theme/motion';
 import type { ReactionEmoji } from '../lib/database.types';
 import type { VoicePlayer } from '../lib/voice';
 import { useAttachmentUrl } from '../api/attachments';
+import { useStore } from '../store/useStore';
 import { Avatar } from './Avatar';
+import { BubbleTime } from './BubbleTime';
 import { Icon } from './Icon';
+import { ProgressBar } from './ProgressBar';
+import { ReactionStrip } from './ReactionStrip';
 import { VoiceNote } from './VoiceNote';
 
 const AVATAR_SLOT = 26;
@@ -150,8 +158,19 @@ interface Shared {
   author?: string;
   /** The raw database body, which may be null for voice/image messages. */
   rawBody?: string | null;
-  /** Stable reference to the screen-level action opener. */
+  /**
+   * @deprecated Prefer onSwipeReply + onReact + onReportMessage. Kept so older
+   * call sites still typecheck during the WhatsApp-gesture migration.
+   */
   onRequestActions?: (target: ActionTarget) => void;
+  /** Swipe across the bubble (WhatsApp) to quote-reply. */
+  onSwipeReply?: (target: ActionTarget) => void;
+  /** React from the thin long-press strip. */
+  onReact?: (messageId: string, emoji: ReactionEmoji) => void;
+  /** Report from the strip (peer messages only). */
+  onReportMessage?: (messageId: string) => void;
+  /** Which emoji the caller already has on this message. */
+  chosenReaction?: ReactionEmoji | null;
 }
 
 /**
@@ -169,6 +188,7 @@ function Body({
   onAccent,
   textStyle,
   testID,
+  timestamp,
 }: {
   message: string;
   voice: VoiceBody | undefined;
@@ -177,7 +197,11 @@ function Body({
   onAccent: boolean;
   textStyle: StyleProp<TextStyle>;
   testID: string;
+  timestamp?: string;
 }) {
+  // Must precede the voice-branch early return: a hook cannot be called
+  // conditionally (react-hooks/rules-of-hooks).
+  const stamp = useStyles(makeStyles);
   if (voice !== undefined && voicePlayer !== undefined) {
     return (
       <VoiceNote
@@ -193,10 +217,31 @@ function Body({
       />
     );
   }
+  // ONE clock per bubble, right-aligned on its own line — a single source of
+  // truth that lands in the bubble's bottom-right corner, which is what was
+  // asked for.
+  //
+  // History of what did NOT work, so it is not re-tried: (1) a transparent
+  // width-reserve on the last line plus an absolutely-pinned clock rendered BOTH
+  // on Android (`color:'transparent'` did not suppress the reserve), showing the
+  // time twice. (2) A clock nested inside the message <Text> is under-measured
+  // when it is a smaller font, so a short bubble clipped it ("Hi!  8:1"). (3) A
+  // flex row wrapped the clock mid-word in a narrow bubble ("8:10 p" / "m"). A
+  // block child, right-aligned, measures cleanly and never clips or duplicates.
   return (
-    <Text testID={testID} allowFontScaling style={textStyle}>
-      {message}
-    </Text>
+    <View>
+      <Text testID={testID} allowFontScaling style={textStyle}>
+        {message}
+      </Text>
+      {timestamp ? (
+        <Text
+          allowFontScaling={false}
+          numberOfLines={1}
+          style={onAccent ? stamp.inlineTimeOnAccent : stamp.inlineTimePeer}>
+          {timestamp}
+        </Text>
+      ) : null}
+    </View>
   );
 }
 
@@ -224,6 +269,7 @@ function MediaBubble({
   pending: boolean;
 }) {
   const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const { data: signedUrl } = useAttachmentUrl(image.localUri ? null : image.path);
   const uri = image.localUri ?? signedUrl;
   const ratio = image.width / image.height;
@@ -231,6 +277,11 @@ function MediaBubble({
     MEDIA_MIN_HEIGHT,
     Math.min(MEDIA_MAX_HEIGHT, Math.round(MEDIA_WIDTH / ratio)),
   );
+
+  // Upload fraction (0–1) while bytes are in flight; undefined before the first
+  // XHR progress event and after the upload settles.
+  const uploadFraction = useStore(s => s.uploadProgress[image.messageId]);
+
   return (
     <View
       style={[
@@ -248,15 +299,32 @@ function MediaBubble({
             source={{ uri }}
             style={styles.mediaImage}
             resizeMode="cover"
-            accessibilityLabel="Photo"
+            accessibilityLabel={
+              pending && uploadFraction !== undefined
+                ? `Sending photo, ${Math.round(uploadFraction * 100)} percent`
+                : pending
+                ? 'Sending photo'
+                : 'Photo'
+            }
           />
         ) : null}
-        {/* Sending, or still minting the URL: a scrim + spinner over the pick,
-            WhatsApp-style, so the bubble never sits as an empty coral frame while
-            bytes are in flight. */}
+        {/* M3 linear determinate progress pinned at the bottom of the image while
+            the upload is in flight.  Determinate (progress={fraction}) when the
+            XHR has reported at least one byte; indeterminate (progress=undefined)
+            before the first event or while minting the signed URL after upload.
+            Policy: https://m3.material.io/components/progress-indicators/guidelines
+            Colour: theme.color.text.onAccent (#FFF) over the dark scrim is the
+            only token that guarantees contrast against any photo content. */}
         {pending || uri === undefined ? (
           <View style={styles.mediaLoading}>
-            <ActivityIndicator color="#FFFFFF" />
+            <View style={styles.mediaProgressBar}>
+              <ProgressBar
+                progress={pending ? uploadFraction : undefined}
+                color={theme.color.text.onAccent}
+                trackColor="rgba(255,255,255,0.35)"
+                testID="upload-progress"
+              />
+            </View>
           </View>
         ) : null}
       </View>
@@ -289,7 +357,7 @@ interface PeerProps extends Shared {
  * both sides or on neither.
  *
  * The incoming fill changed for a measured reason rather than a stylistic one.
- * `bg/raised` is `#FFFFFF` in light mode, identical to `bg/base`, so an incoming
+ * The white platform surface colour is `#FFFFFF` in light mode, identical to `bg/base`, so an incoming
  * bubble had no fill at all, only a 1px outline, which is the Material
  * outlined-card idiom and was the only thing holding it together. `bg/sunken` is
  * `#E5E5EA`, a real fill, so the border is deleted rather than kept: it was
@@ -317,19 +385,18 @@ function PeerTurnView({
   messageId,
   author,
   rawBody,
-  onRequestActions,
+  onSwipeReply,
+  onReact,
+  onReportMessage,
+  chosenReaction,
 }: PeerProps) {
   const styles = useStyles(makeStyles);
-  // Construct the long-press handler inside the component so the parent can
-  // pass a stable `onRequestActions` reference rather than a per-render closure.
-  // useMemo (not useCallback) because the result can be undefined when the
-  // component has no messageId yet; useCallback's type signature requires Function.
-  const onLongPress = useMemo(
+  const target = useMemo<ActionTarget | null>(
     () =>
-      messageId !== undefined && onRequestActions !== undefined
-        ? () => onRequestActions({ id: messageId, mine: false, author: author ?? '', body: rawBody ?? null })
-        : undefined,
-    [messageId, onRequestActions, author, rawBody],
+      messageId !== undefined
+        ? { id: messageId, mine: false, author: author ?? '', body: rawBody ?? null }
+        : null,
+    [messageId, author, rawBody],
   );
   return (
     <Animated.View
@@ -340,48 +407,51 @@ function PeerTurnView({
         {first ? <Avatar initial={initial} size={26} /> : null}
       </View>
       <View style={styles.peerColumn}>
-        {/* Time above the message (#7, Amit): the stamp leads the group's last
-            bubble rather than trailing under it. */}
-        {timestamp ? <Text style={styles.stamp}>{timestamp}</Text> : null}
-        {/* A plain RN Pressable, not the animated one: a scale spring on a
-            long-press over body text reads as an accident, and this must not
-            look like a tap target during normal reading. */}
-        <Pressable
-          onLongPress={onLongPress}
-          delayLongPress={450}
-          /*
-           * `accessibilityHint`, not `accessibilityLabel`. An explicit label
-           * REPLACES the concatenated child text for TalkBack, so setting it
-           * here made every bubble announce "Long press for message actions"
-           * while the message body — the whole product — went unread by a
-           * screen reader. A hint appends on Android: TalkBack reads the message,
-           * then offers the action. Undefined without a long-press so a pending
-           * bubble carries no dangling hint.
-           */
-          accessibilityHint={
-            onLongPress ? 'Long press for message actions' : undefined
-          }
-        >
-          {image !== undefined ? (
-            <MediaBubble image={image} onAccent={false} pending={false} />
-          ) : (
-            <View style={styles.peerBubble}>
-              {quote ? <QuoteBlock quote={quote} onAccent={false} /> : null}
-              <Body
-                message={message}
-                voice={voice}
-                voicePlayer={voicePlayer}
-                pending={false}
-                onAccent={false}
-                textStyle={styles.peerText}
-                testID="bubble-peer"
-              />
+        <View
+          style={[
+            styles.bubbleStack,
+            reactions && reactions.length > 0 ? styles.bubbleStackWithReaction : null,
+          ]}>
+          <InteractiveBubble
+            mine={false}
+            target={target}
+            bubbleStyle={styles.peerBubble}
+            media={image !== undefined}
+            onSwipeReply={onSwipeReply}
+            onReact={onReact}
+            onReportMessage={onReportMessage}
+            chosenReaction={chosenReaction}>
+            {image !== undefined ? (
+              <View>
+                <MediaBubble image={image} onAccent={false} pending={false} />
+                {timestamp ? (
+                  <View style={styles.mediaTime} pointerEvents="none">
+                    <BubbleTime stamp={timestamp} onAccent={false} />
+                  </View>
+                ) : null}
+              </View>
+            ) : (
+              <>
+                {quote ? <QuoteBlock quote={quote} onAccent={false} /> : null}
+                <Body
+                  message={message}
+                  voice={voice}
+                  voicePlayer={voicePlayer}
+                  pending={false}
+                  onAccent={false}
+                  textStyle={styles.peerText}
+                  testID="bubble-peer"
+                  timestamp={timestamp}
+                />
+              </>
+            )}
+          </InteractiveBubble>
+          {reactions && reactions.length > 0 ? (
+            <View style={[styles.reactionAttach, styles.reactionAttachPeer]}>
+              <ReactionRow reactions={reactions} testID="reactions-peer" />
             </View>
-          )}
-        </Pressable>
-        {reactions && reactions.length > 0 ? (
-          <ReactionRow reactions={reactions} testID="reactions-peer" />
-        ) : null}
+          ) : null}
+        </View>
       </View>
     </Animated.View>
   );
@@ -438,47 +508,55 @@ function MyTurnView({
   messageId,
   author,
   rawBody,
-  onRequestActions,
+  onSwipeReply,
+  onReact,
+  onReportMessage,
+  chosenReaction,
 }: MineProps) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
-  // Construct the long-press handler inside the component so the parent passes
-  // only stable references. Pending rows intentionally get no handler.
-  const onLongPress = useMemo(
+  const target = useMemo<ActionTarget | null>(
     () =>
-      !pending && messageId !== undefined && onRequestActions !== undefined
-        ? () => onRequestActions({ id: messageId, mine: true, author: author ?? 'You', body: rawBody ?? null })
-        : undefined,
-    [pending, messageId, onRequestActions, author, rawBody],
+      !pending && messageId !== undefined
+        ? {
+            id: messageId,
+            mine: true,
+            author: author ?? 'You',
+            body: rawBody ?? null,
+          }
+        : null,
+    [pending, messageId, author, rawBody],
   );
   return (
     <Animated.View entering={isNew === true ? bubbleLaunch : undefined} style={styles.myColumn}>
-      {/* Time above the message (#7, Amit). The receipt ("Sent"/"Read") still
-          trails below, where iOS keeps it. */}
-      {timestamp !== undefined ? (
-        <Text style={styles.stamp}>{timestamp}</Text>
-      ) : null}
-      <Pressable
-        onLongPress={onLongPress}
-        delayLongPress={450}
-        /*
-         * `accessibilityHint`, not `accessibilityLabel`. An explicit label
-         * REPLACES the concatenated child text for TalkBack, so setting it
-         * here made every bubble announce "Long press for message actions"
-         * while the message body — the whole product — went unread by a
-         * screen reader. A hint appends on Android: TalkBack reads the message,
-         * then offers the action. Undefined without a long-press so a pending
-         * bubble carries no dangling hint.
-         */
-        accessibilityHint={
-          onLongPress ? 'Long press for message actions' : undefined
-        }
-      >
-        {image !== undefined ? (
-          <MediaBubble image={image} onAccent pending={pending === true} />
-        ) : (
-          <View style={[styles.bubble, pending === true && styles.pending]}>
-            {quote ? <QuoteBlock quote={quote} onAccent /> : null}
+      <View
+        style={[
+          styles.bubbleStack,
+          styles.bubbleStackEnd,
+          reactions && reactions.length > 0 ? styles.bubbleStackWithReaction : null,
+        ]}>
+        <InteractiveBubble
+          mine
+          target={target}
+          bubbleStyle={[styles.bubble, pending === true && styles.pending]}
+          media={image !== undefined}
+          onSwipeReply={onSwipeReply}
+          onReact={onReact}
+          onReportMessage={onReportMessage}
+          chosenReaction={chosenReaction}
+          alignEnd>
+          {image !== undefined ? (
+            <View>
+              <MediaBubble image={image} onAccent pending={pending === true} />
+              {timestamp ? (
+                <View style={styles.mediaTime} pointerEvents="none">
+                  <BubbleTime stamp={timestamp} onAccent />
+                </View>
+              ) : null}
+            </View>
+          ) : (
+            <>
+              {quote ? <QuoteBlock quote={quote} onAccent /> : null}
             <Body
               message={message}
               voice={voice}
@@ -487,13 +565,17 @@ function MyTurnView({
               onAccent
               textStyle={styles.myText}
               testID="bubble-mine"
+              timestamp={timestamp}
             />
+            </>
+          )}
+        </InteractiveBubble>
+        {reactions && reactions.length > 0 ? (
+          <View style={[styles.reactionAttach, styles.reactionAttachMine]}>
+            <ReactionRow reactions={reactions} testID="reactions-mine" />
           </View>
-        )}
-      </Pressable>
-      {reactions && reactions.length > 0 ? (
-        <ReactionRow reactions={reactions} testID="reactions-mine" />
-      ) : null}
+        ) : null}
+      </View>
       {receipt !== undefined ? (
         <View testID="read-receipt" style={styles.receiptRow}>
           {receipt === 'read' ? (
@@ -516,6 +598,122 @@ function MyTurnView({
 }
 
 export const MyTurn = memo(MyTurnView);
+
+/**
+ * Swipe-to-reply + long-press reaction strip around a bubble.
+ *
+ * WhatsApp gestures: a horizontal drag past ~48dp quotes the message; a long
+ * press opens a thin emoji strip anchored on the bubble (not a bottom sheet).
+ */
+function InteractiveBubble({
+  mine,
+  target,
+  bubbleStyle,
+  onSwipeReply,
+  onReact,
+  onReportMessage,
+  chosenReaction,
+  alignEnd,
+  media,
+  children,
+}: {
+  mine: boolean;
+  target: ActionTarget | null;
+  bubbleStyle?: StyleProp<ViewStyle>;
+  onSwipeReply?: (target: ActionTarget) => void;
+  onReact?: (messageId: string, emoji: ReactionEmoji) => void;
+  onReportMessage?: (messageId: string) => void;
+  chosenReaction?: ReactionEmoji | null;
+  alignEnd?: boolean;
+  /** When true, MediaBubble owns the frame — do not wrap in bubbleStyle. */
+  media?: boolean;
+  children: React.ReactNode;
+}) {
+  const styles = useStyles(makeStyles);
+  const [stripOpen, setStripOpen] = useState(false);
+  const tx = useSharedValue(0);
+
+  const openStrip = useCallback(() => {
+    if (target !== null) {
+      setStripOpen(true);
+    }
+  }, [target]);
+
+  const triggerReply = useCallback(() => {
+    if (target !== null && onSwipeReply !== undefined) {
+      setStripOpen(false);
+      onSwipeReply(target);
+    }
+  }, [target, onSwipeReply]);
+
+  const pan = Gesture.Pan()
+    .activeOffsetX([-16, 16])
+    .failOffsetY([-12, 12])
+    .onUpdate(e => {
+      // Peer: drag right; mine: drag left — both toward the screen edge, like WA.
+      const next = mine
+        ? Math.max(-72, Math.min(0, e.translationX))
+        : Math.max(0, Math.min(72, e.translationX));
+      tx.value = next;
+    })
+    .onEnd(() => {
+      if (Math.abs(tx.value) > 48) {
+        runOnJS(triggerReply)();
+      }
+      tx.value = springTo(0, 'smooth');
+    });
+
+  const longPress = Gesture.LongPress()
+    .minDuration(400)
+    .onStart(() => {
+      runOnJS(openStrip)();
+    });
+
+  const composed =
+    target === null ? pan : Gesture.Simultaneous(pan, longPress);
+  // Truthy iff the long-press strip is available — used for the accessibility hint
+  // so TalkBack appends the action description rather than replacing the message.
+  const onLongPress = target !== null ? openStrip : undefined;
+  const slideStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: tx.value }],
+  }));
+
+  return (
+    <View style={alignEnd ? styles.interactiveEnd : styles.interactiveStart}>
+      {stripOpen && target !== null ? (
+        <ReactionStrip
+          chosen={chosenReaction ?? null}
+          mine={mine}
+          onReact={emoji => {
+            setStripOpen(false);
+            onReact?.(target.id, emoji);
+          }}
+          onReply={() => {
+            setStripOpen(false);
+            onSwipeReply?.(target);
+          }}
+          onReport={
+            !mine && onReportMessage
+              ? () => {
+                  setStripOpen(false);
+                  onReportMessage(target.id);
+                }
+              : undefined
+          }
+        />
+      ) : null}
+      <GestureDetector gesture={composed}>
+        <Animated.View
+          accessibilityHint={
+            onLongPress ? 'Long press for message actions' : undefined
+          }
+          style={[!media ? bubbleStyle : null, !media ? styles.bubbleInner : null, slideStyle]}>
+          {children}
+        </Animated.View>
+      </GestureDetector>
+    </View>
+  );
+}
 
 /**
  * The quoted parent of a reply, inside the bubble and never as a bubble of its own.
@@ -560,11 +758,11 @@ function QuoteBlock({ quote, onAccent }: { quote: Quote; onAccent: boolean }) {
 }
 
 /**
- * Applied reactions, under the bubble rather than overlapping its corner.
+ * Applied reactions, stuck to the bubble's trailing corner (WhatsApp).
  *
- * Overlapping is what iOS does and it needs negative margin plus a z-order on a
- * row inside an inverted windowed list, which is where clipping bugs live. Under
- * the bubble costs one line of height and nothing else.
+ * Half-overlapping the edge so the emoji reads as part of the message, not a
+ * caption under it. The stack reserves bottom padding so the next turn clears
+ * the overhang inside an inverted FlashList cell.
  *
  * A count only appears at two, because two is the maximum in a 1:1 thread and a
  * "1" next to a single emoji is a number that can never be anything else.
@@ -611,10 +809,38 @@ const makeStyles = (t: Theme) =>
       alignItems: 'flex-start',
       gap: TOKENS.space['2xs'],
     },
+    bubbleStack: {
+      position: 'relative',
+      alignSelf: 'flex-start',
+      maxWidth: '100%',
+      // overflow visible so the stuck reaction is not clipped by the stack.
+      overflow: 'visible',
+    },
+    bubbleStackEnd: {
+      alignSelf: 'flex-end',
+    },
+    // Reserve space below the bubble so the stuck chip has a place to sit
+    // without colliding with the next inverted-list cell.
+    bubbleStackWithReaction: {
+      marginBottom: 4,
+      paddingBottom: 14,
+    },
+    reactionAttach: {
+      position: 'absolute',
+      bottom: 2,
+      zIndex: 2,
+    },
+    reactionAttachPeer: {
+      left: 10,
+    },
+    reactionAttachMine: {
+      right: 10,
+    },
     peerBubble: {
       maxWidth: '80%',
       paddingHorizontal: TOKENS.space.md,
-      paddingVertical: 10,
+      paddingTop: 8,
+      paddingBottom: 8,
       backgroundColor: t.color.bg.sunken,
       borderRadius: BUBBLE_RADIUS,
       borderCurve: 'continuous',
@@ -623,6 +849,26 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.bodyLarge,
       color: t.color.text.primary,
     },
+    bubbleInner: {
+      overflow: 'visible',
+    },
+    interactiveStart: {
+      alignItems: 'flex-start',
+      maxWidth: '100%',
+    },
+    interactiveEnd: {
+      alignItems: 'flex-end',
+      maxWidth: '100%',
+    },
+    mediaTime: {
+      position: 'absolute',
+      right: 10,
+      bottom: 8,
+      backgroundColor: 'rgba(0,0,0,0.35)',
+      borderRadius: TOKENS.radius.xs,
+      paddingHorizontal: 5,
+      paddingVertical: 1,
+    },
     myColumn: {
       alignItems: 'flex-end',
       gap: TOKENS.space['2xs'],
@@ -630,7 +876,8 @@ const makeStyles = (t: Theme) =>
     bubble: {
       maxWidth: '80%',
       paddingHorizontal: TOKENS.space.md,
-      paddingVertical: 10,
+      paddingTop: 8,
+      paddingBottom: 8,
       backgroundColor: t.color.bg.accentStrong,
       borderRadius: BUBBLE_RADIUS,
       borderCurve: 'continuous',
@@ -667,27 +914,48 @@ const makeStyles = (t: Theme) =>
       width: '100%',
       height: '100%',
     },
-    // The sending scrim: a dim wash under a spinner, so the picked photo shows
-    // through while it uploads rather than the bubble reading as empty or broken.
+    // The sending scrim: a dim wash so the picked photo shows through while it
+    // uploads rather than the bubble reading as empty or broken.
     mediaLoading: {
       position: 'absolute',
       top: 0,
       left: 0,
       right: 0,
       bottom: 0,
-      alignItems: 'center',
-      justifyContent: 'center',
       backgroundColor: 'rgba(0,0,0,0.28)',
+    },
+    // M3 linear determinate bar anchored to the bottom of the scrim.
+    // Height 4dp (ProgressBar default). Sits above the scrim so it is always
+    // readable; the scrim provides the dark background that white needs.
+    mediaProgressBar: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: 0,
     },
     myText: {
       ...TOKENS.typography.bodyLarge,
       color: t.color.text.onAccent,
     },
-    // Tertiary rather than secondary: a per-bubble timestamp is glanceable
-    // metadata, and iOS sets it in tertiaryLabel.
-    stamp: {
+    // The per-bubble clock, seated in the bottom-right corner (see Body). Same
+    // metrics as BubbleTime so the two stay visually identical; peer sits in
+    // tertiary, mine in muted white. A slight negative top pulls it up under the
+    // last text line so it does not add a full line of height.
+    inlineTimePeer: {
       ...TOKENS.typography.captionSmall,
+      fontSize: 11,
+      lineHeight: 16,
       color: t.color.text.tertiary,
+      alignSelf: 'flex-end',
+      marginTop: -2,
+    },
+    inlineTimeOnAccent: {
+      ...TOKENS.typography.captionSmall,
+      fontSize: 11,
+      lineHeight: 16,
+      color: 'rgba(255,255,255,0.72)',
+      alignSelf: 'flex-end',
+      marginTop: -2,
     },
     receiptRow: {
       flexDirection: 'row',
@@ -718,26 +986,35 @@ const makeStyles = (t: Theme) =>
     },
     reactionRow: {
       flexDirection: 'row',
-      gap: TOKENS.space['2xs'],
+      gap: 2,
     },
     reactionPill: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 2,
-      paddingHorizontal: 6,
+      paddingHorizontal: 5,
       paddingVertical: 2,
       borderRadius: TOKENS.radius.pill,
       borderCurve: 'continuous',
+      // bg.sunken (#E5E5EA light / #2C2C2E dark) is visible on the wallpaper.
+      // The white surface token matches bg.base and is invisible in light mode;
+      // contract.test.ts guards against that specific anti-pattern.
       backgroundColor: t.color.bg.sunken,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: t.color.border.hairline,
+      shadowColor: '#000',
+      shadowOpacity: 0.1,
+      shadowRadius: 3,
+      shadowOffset: { width: 0, height: 1 },
+      elevation: 2,
     },
     // Your own reaction is marked by weight of border, not by colour: the accent
     // budget spends this file's allowance on the message bubble.
     reactionMine: {
-      borderWidth: StyleSheet.hairlineWidth,
       borderColor: t.color.border.strong,
     },
     reactionEmoji: {
-      fontSize: 12,
+      fontSize: 13,
       lineHeight: 16,
     },
     reactionCount: {

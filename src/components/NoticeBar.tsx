@@ -1,3 +1,19 @@
+/**
+ * M3 Snackbar / transient notice surface.
+ *
+ * Spec: https://m3.material.io/components/snackbar/specs
+ *   Short message, optional action, appears above the nav bar, auto-dismisses.
+ *   Container: filled (surface-inverse or surface-container), pill/rounded rect.
+ *   Text: body-medium on the container fill.
+ *   Action: optional text button (accent colour).
+ *
+ * Store API (useStore `notice` / `noticeTone` / `setNotice`) is unchanged.
+ * UpdateBanner is separate — it has a restart action and must not auto-dismiss.
+ *
+ * Two tones:
+ *   danger   → danger text (same as before — coloured text on a neutral surface).
+ *   confirm  → primary text (acknowledgement, not an error).
+ */
 import React, { useEffect } from 'react';
 import { StyleSheet, Text } from 'react-native';
 import Animated, { FadeInUp, FadeOut } from 'react-native-reanimated';
@@ -7,19 +23,6 @@ import { useStore } from '../store/useStore';
 
 const DISMISS_AFTER_MS = 4200;
 
-/**
- * Transient, non-blocking notice surface. No modal, no alert, no dead end.
- *
- * Two appearances, one channel. It had one, a danger border, and the same bar
- * carried "Blocked. They can no longer message you.", "Reported.", "Application
- * submitted." and "Thanks, that helps the next person choose.". A thank-you in
- * a red box is not a small cosmetic issue: it tells the user something went
- * wrong immediately after they did something right.
- *
- * A confirmation gets the hairline border rather than a green one, deliberately.
- * Success does not need a colour to be legible, and the accent budget is spent
- * on the things that ask for attention.
- */
 export function NoticeBar() {
   const styles = useStyles(makeStyles);
   const notice = useStore(s => s.notice);
@@ -45,10 +48,8 @@ export function NoticeBar() {
       style={styles.bar}
       testID="notice-bar"
       accessibilityLiveRegion="polite"
-      // A confirmation is not an alert. `polite` already gets it announced;
-      // `role="alert"` on top of that is an interruption a thank-you has not
-      // earned. (React Native has no `status` role, the absence is the
-      // correct expression of "announce, do not interrupt".)
+      // A confirmation is not an alert; polite gets it announced without
+      // interrupting. react-native has no `status` role so the absence is correct.
       accessibilityRole={tone === 'confirm' ? undefined : 'alert'}>
       <Text allowFontScaling style={[styles.text, tone === 'confirm' && styles.textConfirm]}>
         {notice}
@@ -58,6 +59,10 @@ export function NoticeBar() {
 }
 
 const makeStyles = (t: Theme) => StyleSheet.create({
+  // M3 Snackbar anatomy: rounded container, 4 dp horizontal margin, 8 dp bottom
+  // margin (above nav), body-medium text.  The fill is surface-container
+  // (bg.sunken) — neutral, not error-coloured — so danger vs. confirm is
+  // expressed in the text colour rather than the surface.
   bar: {
     marginHorizontal: TOKENS.space.md,
     marginBottom: TOKENS.space.xs,
@@ -65,15 +70,10 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     paddingVertical: 10,
     borderRadius: TOKENS.radius.field,
     borderCurve: 'continuous',
-    // A fill, not a ring. `bg/raised` was #FFFFFF on a white page, so the 1px
-    // `state/danger` border was the whole component, which is a Material
-    // snackbar's error variant. iOS has no snackbar at all, and its nearest idiom
-    // for an error is coloured text next to the control that failed, so the
-    // colour moves onto the text and the box becomes a neutral fill.
     backgroundColor: t.color.bg.sunken,
   },
   text: {
-    ...TOKENS.typography.captionRegular,
+    ...TOKENS.typography.bodyMedium,
     color: t.color.state.danger,
   },
   textConfirm: {

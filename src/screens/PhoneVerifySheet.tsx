@@ -46,13 +46,12 @@ export function PhoneVerifySheet({ visible, onClose }: Props) {
      re-fires on every re-render while the request is in flight. */
   const submitted = useRef<string | null>(null);
 
-  // Shake the field rather than only printing the reason, and clear the code so
-  // the next attempt starts from an empty field instead of a wrong one.
+  // Shake without clearing. Keeping the rejected digits visible lets someone
+  // correct one character instead of retyping six, and the submitted-value guard
+  // prevents the unchanged code from firing again on this render.
   useEffect(() => {
     if (error !== null && step === 'code') {
       setErrorNonce(n => n + 1);
-      setCode('');
-      submitted.current = null;
     }
   }, [error, step]);
 
@@ -155,7 +154,11 @@ export function PhoneVerifySheet({ visible, onClose }: Props) {
       )}
 
       {error !== null ? (
-        <Text testID="phone-verify-error" allowFontScaling style={styles.error}>
+        <Text
+          testID="phone-verify-error"
+          allowFontScaling
+          accessibilityLiveRegion="polite"
+          style={styles.error}>
           {error}
         </Text>
       ) : null}
@@ -208,12 +211,9 @@ const makeStyles = (t: Theme) =>
     input: {
       ...TOKENS.typography.bodyLarge,
       color: t.color.text.primary,
-      // A filled field, not a Material outlined one. `bg/sunken` with no stroke
-      // and a 10pt corner is iOS's text field; `bg/raised` plus a 1px
-      // `border/strong` at radius 16 was the outlined-text-field idiom, and in
-      // light mode the fill was the same white as the sheet behind it, so the
-      // border was the only thing there.
-      backgroundColor: t.color.bg.sunken,
+      backgroundColor: t.color.bg.base,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: t.color.border.strong,
       borderRadius: TOKENS.radius.field,
       borderCurve: 'continuous',
       paddingHorizontal: TOKENS.space.md,

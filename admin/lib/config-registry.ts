@@ -16,7 +16,8 @@
 export type FieldType =
   | 'rupees'       // displayed as ₹, stored as integer tokens (1 token = ₹1)
   | 'paise'        // displayed as ₹, stored as integer paise
-  | 'percent'      // displayed as %, stored as basis points (bps)
+  | 'percent'      // displayed as %, stored as basis points (bps, /100 to display)
+  | 'percent-int'  // displayed as %, stored as integer percent (0–100, /100 to consume)
   | 'integer'      // plain integer
   | 'days'         // integer + "days" label
   | 'hours'        // integer + "hours" label
@@ -102,11 +103,11 @@ export const CONFIG_REGISTRY: DomainDef[] = [
       {
         key: 'provider_share_percent',
         label: 'Provider revenue share',
-        description: 'Percentage of session revenue (pre-GST, after refunds) paid to the provider.',
-        type: 'percent',
+        description: 'Integer percentage of session revenue (pre-GST, after refunds) paid to the provider. Stored as 0–100; consumers divide by 100.',
+        type: 'percent-int',
         min: 0,
-        max: 10000,
-        default: 6000,
+        max: 100,
+        default: 60,
         risk: 'high',
         impact: 'Applies to sessions ended after this version becomes active.',
         runtime: 'live',
@@ -321,14 +322,24 @@ export const CONFIG_REGISTRY: DomainDef[] = [
         runtime: 'seeded',
       },
       {
-        key: 'calls_enabled',
-        label: 'Voice & video calls',
-        description: 'Allow members to start voice or video sessions with providers.',
+        key: 'voice_calls_enabled',
+        label: 'Voice calls',
+        description: 'Allow members and providers to start audio-only calls.',
         type: 'boolean',
         default: true,
         risk: 'high',
-        impact: 'Emergency stop for calling. Takes effect on next app poll.',
-        runtime: 'seeded',
+        impact: 'Emergency stop for new voice calls. Active calls are not disconnected.',
+        runtime: 'live',
+      },
+      {
+        key: 'video_calls_enabled',
+        label: 'Video calls',
+        description: 'Allow members and providers to start calls with video.',
+        type: 'boolean',
+        default: true,
+        risk: 'high',
+        impact: 'Emergency stop for new video calls. Voice calls remain available.',
+        runtime: 'live',
       },
       {
         key: 'new_registrations_enabled',
@@ -411,6 +422,107 @@ export const CONFIG_REGISTRY: DomainDef[] = [
       },
     ],
   },
+  {
+    key: 'permissions',
+    name: 'Device permissions',
+    description:
+      'Runtime permission policy by build environment. Internal builds may treat notifications as optional.',
+    icon: '📱',
+    fields: [
+      {
+        key: 'environment_mode',
+        label: 'Environment mode',
+        description:
+          'When set to internal, non-production app builds use *_internal fields. Production builds always use *_production.',
+        type: 'enum',
+        options: [
+          { value: 'internal', label: 'Internal testing' },
+          { value: 'production', label: 'Production' },
+        ],
+        default: 'internal',
+        risk: 'medium',
+        runtime: 'live',
+      },
+      {
+        key: 'notification_internal',
+        label: 'Notifications (internal)',
+        description: 'Notification permission policy for internal/testing builds.',
+        type: 'enum',
+        options: [
+          { value: 'optional', label: 'Optional' },
+          { value: 'required', label: 'Required' },
+        ],
+        default: 'optional',
+        risk: 'low',
+        runtime: 'live',
+      },
+      {
+        key: 'notification_production',
+        label: 'Notifications (production)',
+        description: 'Notification permission policy for production builds.',
+        type: 'enum',
+        options: [
+          { value: 'optional', label: 'Optional' },
+          { value: 'required', label: 'Required' },
+        ],
+        default: 'required',
+        risk: 'medium',
+        runtime: 'live',
+      },
+      {
+        key: 'microphone_internal',
+        label: 'Microphone (internal)',
+        description: 'Microphone permission policy for internal/testing builds.',
+        type: 'enum',
+        options: [
+          { value: 'optional', label: 'Optional' },
+          { value: 'required', label: 'Required' },
+        ],
+        default: 'required',
+        risk: 'medium',
+        runtime: 'live',
+      },
+      {
+        key: 'microphone_production',
+        label: 'Microphone (production)',
+        description: 'Microphone permission policy for production builds.',
+        type: 'enum',
+        options: [
+          { value: 'optional', label: 'Optional' },
+          { value: 'required', label: 'Required' },
+        ],
+        default: 'required',
+        risk: 'high',
+        runtime: 'live',
+      },
+      {
+        key: 'camera_internal',
+        label: 'Camera (internal)',
+        description: 'Camera permission policy for internal/testing builds.',
+        type: 'enum',
+        options: [
+          { value: 'optional', label: 'Optional' },
+          { value: 'required', label: 'Required' },
+        ],
+        default: 'required',
+        risk: 'medium',
+        runtime: 'live',
+      },
+      {
+        key: 'camera_production',
+        label: 'Camera (production)',
+        description: 'Camera permission policy for production builds.',
+        type: 'enum',
+        options: [
+          { value: 'optional', label: 'Optional' },
+          { value: 'required', label: 'Required' },
+        ],
+        default: 'required',
+        risk: 'high',
+        runtime: 'live',
+      },
+    ],
+  },
 ];
 
 /** Look up a domain definition by key. */
@@ -449,7 +561,7 @@ export function validatePayload(domain: DomainDef, payload: Record<string, unkno
       }
 
       case 'percent': {
-        // Stored as basis points
+        // Stored as basis points (e.g. 1800 = 18%)
         if (typeof value !== 'number' || !Number.isInteger(value)) {
           errors.push(`"${field.label}" must be an integer (basis points).`);
         } else {
@@ -457,6 +569,19 @@ export function validatePayload(domain: DomainDef, payload: Record<string, unkno
             errors.push(`"${field.label}" must be at least ${field.min / 100}%.`);
           if (field.max !== undefined && value > field.max)
             errors.push(`"${field.label}" must be at most ${field.max / 100}%.`);
+        }
+        break;
+      }
+
+      case 'percent-int': {
+        // Stored as integer percent (e.g. 60 = 60%); consumers divide by 100
+        if (typeof value !== 'number' || !Number.isInteger(value)) {
+          errors.push(`"${field.label}" must be an integer percentage (0–100).`);
+        } else {
+          if (field.min !== undefined && value < field.min)
+            errors.push(`"${field.label}" must be at least ${field.min}%.`);
+          if (field.max !== undefined && value > field.max)
+            errors.push(`"${field.label}" must be at most ${field.max}%.`);
         }
         break;
       }
@@ -524,14 +649,16 @@ export function validatePayload(domain: DomainDef, payload: Record<string, unkno
 
 /** Convert display value → stored value for a field type. */
 export function toStoredValue(type: FieldType, displayValue: number): number {
-  if (type === 'percent') return Math.round(displayValue * 100);
+  if (type === 'percent') return Math.round(displayValue * 100); // bps
+  // 'percent-int' stores as integer directly; no conversion needed
   return displayValue;
 }
 
 /** Convert stored value → display value for a field type. */
 export function toDisplayValue(type: FieldType, storedValue: number): number {
-  if (type === 'percent') return storedValue / 100;
-  if (type === 'paise') return storedValue / 100;
+  if (type === 'percent') return storedValue / 100;  // bps → %
+  if (type === 'paise') return storedValue / 100;    // paise → ₹
+  // 'percent-int' is stored as display value (0–100)
   return storedValue;
 }
 
@@ -549,6 +676,8 @@ export function formatDisplayValue(field: FieldDef, storedValue: unknown): strin
       return `₹${(storedValue / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
     case 'percent':
       return `${(storedValue / 100).toFixed(2).replace(/\.?0+$/, '')}%`;
+    case 'percent-int':
+      return `${storedValue}%`;
     case 'days':
       return `${storedValue} day${storedValue === 1 ? '' : 's'}`;
     case 'hours':

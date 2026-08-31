@@ -8,6 +8,25 @@ default_platform(:android)
 AAB = "../android/app/build/outputs/bundle/release/app-release.aab"
 
 platform :android do
+  # Store listing text (and, opt-in, images) with no build attached. Reads the
+  # scaffold in fastlane/metadata/android/<locale>/ — copy generated images into
+  # metadata/.../images/ first (see that folder's README) and pass images:true.
+  # Needs a Play service account JSON at $PLAY_SERVICE_ACCOUNT_JSON_PATH (Appfile),
+  # invited to the Play Console with "Edit store listing" permission.
+  desc "Push store listing metadata (and optionally images); no AAB"
+  lane :metadata do |options|
+    with_images = options[:images] == true || options[:images] == "true"
+    upload_to_play_store(
+      skip_upload_aab: true,
+      skip_upload_apk: true,
+      skip_upload_metadata: false,
+      skip_upload_changelogs: false,
+      skip_upload_images: !with_images,
+      skip_upload_screenshots: !with_images,
+      validate_only: options[:validate_only] == true || options[:validate_only] == "true",
+    )
+  end
+
   desc "Upload the gated AAB to internal testing"
   lane :internal do
     upload_to_play_store(

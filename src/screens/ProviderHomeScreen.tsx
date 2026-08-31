@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo } from 'react';
-import { ActivityIndicator, SectionList, StyleSheet, Text, View } from 'react-native';
+import { SectionList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -12,6 +12,7 @@ import { track } from '../lib/telemetry';
 import { useConversations, useProfile } from '../api/chat';
 import { useEarnings, useSetAvailability } from '../api/provider';
 import { Avatar } from '../components/Avatar';
+import { LoadingIndicator } from '../components/LoadingIndicator';
 import { ROW_AVATAR, ROW_SEPARATOR_INSET } from '../components/ProviderRow';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
@@ -22,6 +23,17 @@ interface Props {
   onOpenSettings: () => void;
 }
 
+function threadLabel(thread: ConversationSummary): string {
+  if (thread.last_session_status === 'active') return 'Active session';
+  if (thread.last_session_status === 'pending_leases') return 'Connecting session';
+  if (thread.last_preview_kind === 'voice') return 'Voice note';
+  if (thread.last_preview_kind === 'image') return 'Photo';
+  if (thread.last_session_channel === 'audio') return 'Voice call';
+  if (thread.last_session_channel === 'video') return 'Video call';
+  if (thread.last_session_at) return 'Chat session';
+  return 'No sessions yet';
+}
+
 /**
  * The provider's working surface.
  *
@@ -30,10 +42,10 @@ interface Props {
  * provider with no visibility into what they have earned has no reason to stay,
  * and supply is the harder side of this marketplace to build.
  *
- * Earnings are counted in tokens, not currency. One token spent by a member is
- * one unit earned; turning that into a payout is Stripe Connect's job and is not
- * built. Showing a rupee figure we cannot yet pay would be a lie, so it shows
- * what is true.
+ * Earnings are in provider_tokens (60% share, ADR-0021). 1 token = ₹1, so ₹N
+ * earned is accurate as accrual. We show it with a payout-pending note because
+ * Cashfree Payouts is not yet wired; the figure is correct, the transfer is not
+ * yet made.
  */
 export function ProviderHomeScreen({ onOpenConversation, onOpenSettings }: Props) {
   const styles = useStyles(makeStyles);
@@ -92,11 +104,14 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings }: Props
   );
 
   // Only work counts as waiting. Their own thread is not a person waiting on them.
-  const waiting = work.filter(t => Number(t.unread_count) > 0).length;
+  const waiting = work.filter(t => Number(t.unread_count_provider) > 0).length;
 
   const renderItem = useCallback(
     ({ item }: { item: ConversationSummary }) => {
-      const unread = Number(item.unread_count) > 0;
+      const unreadCount = item.i_am_member
+        ? Number(item.unread_count_member)
+        : Number(item.unread_count_provider);
+      const unread = unreadCount > 0;
       // A provider sees members, who are not in the directory and therefore have
       // no published name. Numbered rather than labelled "Member" repeatedly.
       const label = item.peer_display_name ?? `Member ${item.peer_id.slice(0, 4)}`;
@@ -124,7 +139,7 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings }: Props
                 {label}
               </Text>
               <Text allowFontScaling style={styles.rowTime}>
-                {listStamp(item.last_message_at)}
+                {item.last_session_at ? listStamp(item.last_session_at) : ''}
               </Text>
             </View>
             <View style={styles.rowTop}>
@@ -132,14 +147,12 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings }: Props
                 allowFontScaling
                 numberOfLines={1}
                 style={[styles.rowPreview, unread && styles.rowPreviewUnread]}>
-                {item.last_kind === 'voice'
-                  ? 'Voice note'
-                  : (item.last_body ?? 'No messages yet')}
+                {threadLabel(item)}
               </Text>
               {unread ? (
                 <View testID="waiting-dot" style={styles.unread}>
                   <Text allowFontScaling style={styles.unreadCount}>
-                    {item.unread_count}
+                    {unreadCount}
                   </Text>
                 </View>
               ) : null}
@@ -220,9 +233,9 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings }: Props
       <View style={styles.stats}>
         <Stat label="Waiting" value={String(waiting)} testID="stat-waiting" />
         <Stat
-          label="Messages"
-          value={String(earnings?.billable_messages ?? 0)}
-          testID="stat-messages"
+          label="Minutes"
+          value={String(earnings?.minutes_billed ?? 0)}
+          testID="stat-minutes"
         />
         <Stat label="People" value={String(earnings?.members_served ?? 0)} testID="stat-people" />
         <Stat
@@ -232,17 +245,16 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings }: Props
         />
       </View>
 
-      {(earnings?.refunded_messages ?? 0) > 0 ? (
-        <Text testID="refund-notice" allowFontScaling style={styles.refundNote}>
-          {earnings?.refunded_messages} message
-          {earnings?.refunded_messages === 1 ? '' : 's'} went unanswered and were
-          refunded. Replying, even briefly, is what earns.
+      {/* 1 token = ₹1 (ADR-0021). Accrual is real; payout transfer is not yet wired. */}
+      {(earnings?.provider_tokens ?? 0) > 0 ? (
+        <Text testID="earned-notice" allowFontScaling style={styles.refundNote}>
+          ₹{earnings?.provider_tokens} earned · Held for payout · not yet paid
         </Text>
       ) : null}
 
       {isPending ? (
         <View style={styles.state}>
-          <ActivityIndicator color={theme.color.text.secondary} />
+          <LoadingIndicator size={48} />
         </View>
       ) : sections.length === 0 ? (
         <View style={styles.state}>
@@ -256,7 +268,7 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings }: Props
         <SectionList
           {...SCROLL_PHYSICS}
           sections={sections}
-          keyExtractor={t => t.id}
+          keyExtractor={t => t.conversation_id}
           renderItem={renderItem}
           renderSectionHeader={({ section }) =>
             section.title === null ? null : (

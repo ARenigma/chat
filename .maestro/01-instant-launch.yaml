@@ -1,43 +1,49 @@
-# CUJ 1 — first launch is one tap from a session, and shows the trade honestly.
+# CUJ 1 — a cold boot presents the welcome, then the owned authentication UI.
 #
-# The identity model has changed twice; see ADR-0004. This journey asserts what
-# is true of the current one: no form, two providers, and an explicit statement
-# that signing in tells Google or Facebook you use this app.
-#
-# It deliberately stops at the consent screen. Driving Google's OAuth page from
-# Maestro would be testing Google, would break whenever they change it, and is
-# exactly the kind of brittle end-to-end nobody maintains. The half we own is
-# "the buttons exist, are labelled correctly, and open the system browser".
+# Maestro deliberately stops before Google or phone system UI. Those surfaces
+# belong to their providers; this journey verifies the boundary Pappal owns.
 appId: com.companionchat
-name: First launch offers social sign-in and nothing else
+name: First launch reaches supported sign-in
 ---
-- clearState
 - launchApp:
+    clearState: true
     clearKeychain: true
     stopApp: true
 
+- extendedWaitUntil:
+    visible:
+      id: 'welcome-continue'
+    timeout: 15000
+- assertVisible: 'Someone to talk to, tonight.'
+- assertNotVisible:
+    id: 'onboard-google'
+# LogBox chip used to cover this CTA and swallow taps; index.js ignores that
+# banner in __DEV__. Tap the pressable by testID (stable) after bloom settle.
+- waitForAnimationToEnd:
+    timeout: 3000
+- tapOn:
+    id: 'welcome-continue'
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible:
+      id: 'onboard-google'
+    timeout: 15000
 - assertVisible:
-    id: 'signin-google'
+    id: 'onboard-google'
+- assertVisible:
+    id: 'onboard-use-phone'
 # Asserted absent, not merely unmentioned: the Facebook button existed with no
 # credentials behind it, so every tap failed. A flow that stops naming it would
 # pass again the moment someone re-added it.
 - assertNotVisible:
     id: 'signin-facebook'
-- assertVisible: 'to listen.'
-- assertVisible: 'Not therapy'
-
-# The disclosure is on the screen, not buried in a policy.
-- assertVisible: 'does tell Google'
-
-# No form of any kind, and no third path in.
+- assertNotVisible:
+    id: 'signin-google'
 - assertNotVisible: 'Password'
-- assertNotVisible: 'Phone number'
 - assertNotVisible: 'Email address'
 - assertNotVisible: 'Continue as guest'
 
-# No permission dialog, ever. These are the only strings Android can show.
-- assertNotVisible: 'Allow'
+# Permissions are requested only when a signed-in user invokes their feature.
 - assertNotVisible: 'While using the app'
-- assertNotVisible: 'Deny'
 
-- takeScreenshot: artifacts/01-signin
+- takeScreenshot: artifacts/01-onboarding-auth

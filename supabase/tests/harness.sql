@@ -111,3 +111,26 @@ begin
   grant usage on schema public to anon, authenticated, service_role;
 end;
 $$;
+
+-- Accept the currently effective Terms and Privacy for a fixture user. Defined
+-- before migrations but compiled on first call, after migration 027 has created
+-- the policy tables. Tests that exercise UGC must opt in explicitly so the
+-- server-required policy gate remains covered rather than globally bypassed.
+create or replace function test.accept_current_policies(p_user_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, test
+as $$
+begin
+  insert into public.policy_acceptances (user_id, policy_kind, version_id)
+  select p_user_id, current_policy.kind, current_policy.id
+  from (
+    select distinct on (kind) id, kind
+    from public.policy_versions
+    where effective_at <= now()
+    order by kind, version desc
+  ) as current_policy
+  on conflict (user_id, policy_kind, version_id) do nothing;
+end;
+$$;

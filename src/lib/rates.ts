@@ -74,17 +74,55 @@ export function rateLabel(ratePerMin: number): string {
 }
 
 /**
- * Below this many tokens the balance pill flinches and Recharge is nudged.
+ * Talk-time thresholds for the wallet pill (minutes at the given rate).
  *
- * A minute of the cheapest channel is the floor: under one more minute of talk
- * is the honest definition of "low", and it tracks the rate rather than a magic
- * number.
+ * Product (2026-08-29): deep green at ≥1 hour left, red under 10 minutes,
+ * lime yellow otherwise. Derived from balance ÷ rate so a rate change moves
+ * the colours with it.
  */
-export const LOW_BALANCE_TOKENS = DEFAULT_RATES.chat;
+export const HEALTHY_TALK_MINUTES = 60;
+export const CRITICAL_TALK_MINUTES = 10;
 
-export function isLowBalance(tokens: number | null): boolean {
-  return tokens !== null && tokens <= LOW_BALANCE_TOKENS;
+/** Minutes of talk a balance buys at `ratePerMin`. Fractional; not for display. */
+export function talkMinutesLeft(
+  tokens: number | null,
+  ratePerMin: number = DEFAULT_RATES.chat,
+): number {
+  if (tokens === null || ratePerMin <= 0) {
+    return 0;
+  }
+  return tokens / ratePerMin;
 }
+
+export type WalletTone = 'healthy' | 'ok' | 'critical';
+
+export function walletTone(
+  tokens: number | null,
+  ratePerMin: number = DEFAULT_RATES.chat,
+): WalletTone {
+  if (tokens === null) {
+    return 'ok';
+  }
+  const minutes = talkMinutesLeft(tokens, ratePerMin);
+  if (minutes >= HEALTHY_TALK_MINUTES) {
+    return 'healthy';
+  }
+  if (minutes < CRITICAL_TALK_MINUTES) {
+    return 'critical';
+  }
+  return 'ok';
+}
+
+/**
+ * Below 10 minutes of talk at the chat rate the balance pill flinches and
+ * Recharge is nudged. Kept as a predicate so existing call sites stay short.
+ */
+export function isLowBalance(tokens: number | null): boolean {
+  return walletTone(tokens) === 'critical';
+}
+
+/** Token floor matching CRITICAL_TALK_MINUTES at the chat rate (tests / docs). */
+export const LOW_BALANCE_TOKENS = CRITICAL_TALK_MINUTES * DEFAULT_RATES.chat;
 
 /**
  * The top-up packs offered on the Recharge screen, in ₹ (1 token = ₹1). A ladder

@@ -1,0 +1,21 @@
+# CUJ 7 — 200% font scale does not hide Home chrome.
+#
+# Android accessibility guidance: text must remain usable at the largest
+# published scale. The tab bar is icon-only so labels cannot overflow it;
+# this flow asserts the destinations and the seeded rail stay reachable.
+# https://developer.android.com/develop/ui/views/layout/use-window-size-classes
+appId: com.companionchat
+name: Home remains usable at 200 percent font scale
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible: 'Ada'
+    timeout: 20000
+- assertVisible:
+    id: 'nav-home'
+- assertVisible:
+    id: 'nav-settings'
+- assertVisible:
+    id: 'token-count'
+- takeScreenshot: artifacts/07-font-scale

@@ -1,5 +1,9 @@
 # Wave 2 — the v13 Figma frames, built with the Fuse system, doc-conformant
 
+> Status 2026-08-29: type = Geist, icons = Lucide (wave-3 decision). References
+> to "Nunito" and "Material Symbols Rounded" in this file are from the original
+> plan and do not reflect the deployed system. See `DESIGN.md`.
+
 **SOURCE OF TRUTH: the v13 frames in Figma `bond Copy` (file 2PjJLeNzXXq3Hs2ItwRWsr).**
 These screens are NOT designed here — they already exist in v13. The job is to
 BUILD them to match, with the Fuse system integrated (Nunito, Material Symbols

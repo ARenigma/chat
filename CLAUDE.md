@@ -13,8 +13,9 @@ can't access Figma. Use `get_screenshot` / `get_design_context` / `get_metadata`
 / `get_variable_defs` with the fileKey + nodeId from the URL
 (`.../design/<fileKey>/...?node-id=<a>-<b>` → nodeId `<a>:<b>`).
 
-- **v10 design set** ("bond Copy"): fileKey `2PjJLeNzXXq3Hs2ItwRWsr`
-  (recharge frame node `2024:3253`). v10 is the chosen visual direction.
+- **v13 frames** in file `2PjJLeNzXXq3Hs2ItwRWsr` are authoritative (v13
+  synthesises v10/v11/v12). See `DESIGN.md` for locked frame node IDs. The v10
+  recharge frame (`2024:3253`) remains the recharge reference.
 
 ---
 
