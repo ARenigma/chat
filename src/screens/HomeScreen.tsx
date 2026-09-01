@@ -210,19 +210,20 @@ export function HomeScreen({
   }, []);
 
   const loading = convosPending || providersPending;
+  const firstUser = balance === 0;
+  const tourComplete = tourSeen || !firstUser;
 
   useEffect(() => {
-    if (loading || featured === null || searching) {
+    if (loading || balance === null || featured === null || searching) {
       return;
     }
     // Tutorial first, then the spotlight — always, on first sign-in. The tour is
     // scheduled at 700ms and the spotlight at 2000ms, but a slow first tour would
     // otherwise be interrupted mid-step by the sheet popping over it. Gating on
-    // `tourSeen` removes the race: the spotlight only schedules once the tour has
-    // finished or been skipped (a returning user has tourSeen=true already, so it
-    // behaves as before). This effect re-runs when `seen` flips true because
-    // tourSeen is a dependency (user 2026-08-31).
-    if (!tourSeen) {
+    // `tourComplete` removes the race: a zero-balance member must finish or skip
+    // the tour, while a funded member bypasses first-user UI regardless of stale
+    // local storage. The effect re-runs when either condition changes.
+    if (!tourComplete) {
       return;
     }
     if (storage.get(POTD_DISMISSED_KEY) === '1') {
@@ -230,15 +231,17 @@ export function HomeScreen({
     }
     const timer = setTimeout(() => setPotdVisible(true), 2000);
     return () => clearTimeout(timer);
-  }, [loading, featured, searching, tourSeen]);
+  }, [loading, balance, featured, searching, tourComplete]);
 
   useEffect(() => {
-    if (loading || searching || tourSeen) {
+    // Product identity rule: first-user UI is balance-only. A stale local
+    // `seen=false` value must never replay onboarding for a funded account.
+    if (loading || balance === null || searching || tourSeen || !firstUser) {
       return;
     }
     const timer = setTimeout(() => startTour(), 700);
     return () => clearTimeout(timer);
-  }, [loading, searching, tourSeen, startTour]);
+  }, [loading, balance, searching, tourSeen, firstUser, startTour]);
 
   const dismissPotd = useCallback(() => {
     storage.set(POTD_DISMISSED_KEY, '1');

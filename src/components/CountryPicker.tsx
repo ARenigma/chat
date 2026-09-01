@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import {
-  Pressable as RNPressable,
   StyleSheet,
   Text,
 } from 'react-native';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import { Sheet } from './Sheet';
+import { Pressable } from './Pressable';
 
 interface Country {
   readonly flag: string;
@@ -52,16 +52,15 @@ export function CountryPicker({ value, onChange, testID }: Props) {
 
   return (
     <>
-      <RNPressable
+      <Pressable
         testID={testID}
         onPress={() => setOpen(true)}
         accessibilityLabel={`Country code ${selected.dialCode}, tap to change`}
-        accessibilityRole="button"
-        style={styles.trigger}
-      >
+        press="chip"
+        style={styles.trigger}>
         <Text style={styles.flag}>{selected.flag}</Text>
         <Text allowFontScaling style={styles.code}>{selected.dialCode}</Text>
-      </RNPressable>
+      </Pressable>
 
       <Sheet
         visible={open}
@@ -70,20 +69,20 @@ export function CountryPicker({ value, onChange, testID }: Props) {
         onCancel={() => setOpen(false)}
       >
         {COUNTRIES.map(country => (
-          <RNPressable
+          <Pressable
             key={country.dialCode}
             onPress={() => {
               onChange(country.dialCode);
               setOpen(false);
             }}
             accessibilityLabel={`${country.name} ${country.dialCode}`}
-            accessibilityRole="button"
-            style={[styles.row, country.dialCode === value ? styles.rowActive : null]}
-          >
+            press="row"
+            highlight="ios"
+            style={[styles.row, country.dialCode === value ? styles.rowActive : null]}>
             <Text style={styles.rowFlag}>{country.flag}</Text>
             <Text allowFontScaling style={styles.rowName}>{country.name}</Text>
             <Text allowFontScaling style={styles.rowCode}>{country.dialCode}</Text>
-          </RNPressable>
+          </Pressable>
         ))}
       </Sheet>
     </>

@@ -47,7 +47,12 @@ import {
   FALLBACK_PERMISSIONS,
   type PermissionsConfig,
 } from './src/api/appConfig';
-import { needsAgeBracket, needsProfileSetup } from './src/api/profileSetup';
+import {
+  getSignedInProfile,
+  isFirstUser,
+  needsAgeBracket,
+  needsProfileSetup,
+} from './src/api/profileSetup';
 import type { Profile } from './src/lib/database.types';
 import { CALLS_ENABLED, useIncomingCalls, type IncomingCall } from './src/api/calls';
 import { useConversations, useSelfId } from './src/api/chat';
@@ -145,6 +150,7 @@ type Boot =
   | { phase: 'signedOut'; message?: string }
   /**
    * First-run member profile: username + clay avatar. Migration 040.
+   * A member is first-run only while their wallet balance is exactly zero.
    * `needsAge` is true when the member has not yet declared an age band
    * (migration 043). `needsUsername` is true for the standard first-run case.
    * Both can be true (new user via browser redirect); only `needsAge` can be
@@ -175,23 +181,6 @@ async function fetchPermissionsConfig(): Promise<PermissionsConfig> {
   return { ...FALLBACK_PERMISSIONS, ...(data as Partial<PermissionsConfig>) };
 }
 
-async function fetchSignedInProfile(): Promise<Profile | null> {
-  const { data: auth } = await supabase.auth.getUser();
-  const userId = auth.user?.id;
-  if (userId === undefined) {
-    return null;
-  }
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .single();
-  if (error) {
-    return null;
-  }
-  return data as Profile;
-}
-
 /**
  * Phases entered after a session is confirmed (excludes welcome — set explicitly).
  *
@@ -206,8 +195,15 @@ type PostAuthBoot =
 
 async function bootPhaseAfterAuth(profile: Profile | null): Promise<PostAuthBoot> {
   const p = profile ?? undefined;
-  const needsUsername = needsProfileSetup(p);
-  const needsAge = needsAgeBracket(p);
+  /*
+   * Product identity rule: a new member is defined by an empty wallet, not by
+   * nullable profile-migration fields. Existing funded accounts can predate
+   * profile_completed_at / age_bracket; sending them through first-run setup
+   * after an upgrade is a regression.
+   */
+  const firstUser = isFirstUser(p);
+  const needsUsername = firstUser && needsProfileSetup(p);
+  const needsAge = firstUser && needsAgeBracket(p);
 
   if (needsUsername || needsAge) {
     return { phase: 'profileSetup', needsAge, needsUsername };
@@ -321,7 +317,7 @@ function Root() {
           setRoute({ name: 'chat', providerId: tapped, from: 'home' });
         }
         // ADR-0020 / 040: profile setup (+ age, 043), then policy gate, then app.
-        const profile = await fetchSignedInProfile();
+        const profile = await getSignedInProfile();
         const nextBoot = await bootPhaseAfterAuth(profile);
         setBoot(nextBoot);
         if (nextBoot.phase === 'ready') {
@@ -420,7 +416,7 @@ function Root() {
             track('signed_in');
             // Everything cached belongs to the previous (absent) session.
             void queryClient.invalidateQueries();
-            const profile = await fetchSignedInProfile();
+            const profile = await getSignedInProfile();
             const nextBoot = await bootPhaseAfterAuth(profile);
             setBoot(nextBoot);
           } else if (result.status === 'failed') {
@@ -711,7 +707,7 @@ function Root() {
              * re-run the boot check so policy gate / ready follows correctly.
              * No welcome animation — they have already seen it.
              */
-            const profile = await fetchSignedInProfile();
+            const profile = await getSignedInProfile();
             const nextBoot = await bootPhaseAfterAuth(profile);
             setBoot(nextBoot);
             if (nextBoot.phase === 'ready') {
@@ -727,7 +723,7 @@ function Root() {
     return (
       <WelcomePappalScreen
         onDone={async () => {
-          const profile = await fetchSignedInProfile();
+          const profile = await getSignedInProfile();
           const nextBoot = await bootPhaseAfterAuth(profile);
           setBoot(nextBoot);
           if (nextBoot.phase === 'ready') {

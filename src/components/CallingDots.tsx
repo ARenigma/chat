@@ -104,7 +104,105 @@ function CallingDotsView({ color = 'rgba(255,255,255,0.85)' }: { color?: string 
 
 export const CallingDots = memo(CallingDotsView);
 
+/**
+ * Shared clipped-conveyor primitive used by both CallingDots and TypingIndicator.
+ *
+ * Both animations use the same physical mechanic — a periodic row of dots
+ * translating one pitch inside an `overflow: hidden` window — but with different
+ * geometry and cadence to distinguish context:
+ *
+ *   CallingDots: dot=4, pitch=8, DURATION.base (240ms) — measured from the call
+ *     reference at 60fps; urgency of a live connection.
+ *   TypingIndicator: dot=3, pitch=6, DURATION.slow (420ms) — smaller and slower,
+ *     matching the patient, conversational rhythm of someone composing.
+ *
+ * Pulling this into one parameterised primitive means "the conveyor" is one
+ * animation, not two that drift apart. The pitch, dot size and duration that
+ * DIFFER across uses are props; the mechanic (translateX on a periodic row,
+ * clipped window, Easing.linear, useReducedMotion) is always the same code.
+ *
+ * @param dot     Dot diameter in dp.
+ * @param pitch   Spacing between dot centres and travel distance per cycle in dp.
+ * @param duration  Cycle period in ms — MUST be a DURATION token, not a literal.
+ * @param color   Dot fill colour.
+ * @param startOffset  Optional marginLeft on the window (CallingDots uses 6).
+ */
+export function ConveyorDots({
+  dot,
+  pitch,
+  duration,
+  color,
+  startOffset = 0,
+}: {
+  dot: number;
+  pitch: number;
+  duration: number;
+  color: string;
+  startOffset?: number;
+}) {
+  const reduce = useReducedMotion();
+  const x = useSharedValue(0);
+
+  useEffect(() => {
+    if (reduce) {
+      x.value = 0;
+      return;
+    }
+    x.value = withRepeat(
+      withTiming(pitch, { duration, easing: Easing.linear }),
+      -1,
+    );
+  }, [reduce, x, pitch, duration]);
+
+  const animStyle = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }));
+
+  const dots = Array.from({ length: DOT_COUNT }, (_, i) => (
+    <View
+      key={i}
+      style={{
+        width: dot,
+        height: dot,
+        borderRadius: dot / 2,
+        marginRight: pitch - dot,
+        backgroundColor: color,
+      }}
+    />
+  ));
+
+  // Reduced motion: static ellipsis, no clip, no animation.
+  if (reduce) {
+    return (
+      <View
+        style={[styles.conveyorRow, { marginLeft: startOffset }]}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants">
+        {dots.slice(0, 3)}
+      </View>
+    );
+  }
+
+  return (
+    <View
+      style={[styles.conveyorWindow, { width: pitch * 2, marginLeft: startOffset }]}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants">
+      <Animated.View
+        style={[styles.conveyorRow, { marginLeft: -pitch }, animStyle]}>
+        {dots}
+      </Animated.View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  conveyorWindow: {
+    overflow: 'hidden',
+    justifyContent: 'center',
+  },
+  conveyorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   window: {
     width: WINDOW,
     marginLeft: 6,

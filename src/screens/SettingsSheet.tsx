@@ -1,13 +1,16 @@
 import React, { useCallback, useState } from 'react';
-import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated from 'react-native-reanimated';
 import { NAV_BAR_HEIGHT } from '../components/FloatingToolbar';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { Button } from '../components/Button';
-import { Icon } from '../components/Icon';
+import { Icon, type IconName } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { Sheet } from '../components/Sheet';
-import { Toggle } from '../components/Toggle';
+import { TopAppBar } from '../components/TopAppBar';
+import { ChatWallpaper } from '../components/ChatWallpaper';
+import { Divider } from '../components/Divider';
 import { useQueryClient } from '@tanstack/react-query';
 import { deleteAccount, signOut } from '../api/auth';
 import { stopPush } from '../lib/push';
@@ -47,6 +50,67 @@ interface Props {
 }
 
 /**
+ * Where a row's title starts: the 32 dp icon slot plus the content slot's
+ * leading pad. Dividers align to this so a rule never cuts under the icon.
+ */
+const ROW_TEXT_INSET = 32 + TOKENS.space.sm;
+
+interface SettingsRowContentProps {
+  icon: IconName;
+  title: string;
+  detail?: string;
+  selected?: boolean;
+  danger?: boolean;
+  chevron?: boolean;
+}
+
+/**
+ * One accessible list-item content grid: leading icon, dominant content slot,
+ * and a narrow trailing slot. The Pressable owner remains the single 48dp+
+ * action target, as required by the M3 list slot guidance.
+ * https://m3.material.io/components/lists/specs
+ */
+function SettingsRowContent({
+  icon,
+  title,
+  detail,
+  selected = false,
+  danger = false,
+  chevron = true,
+}: SettingsRowContentProps) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
+  return (
+    <>
+      <View style={styles.iconBox}>
+        <Icon
+          name={icon}
+          size={19}
+          color={danger ? theme.color.state.danger : theme.color.text.secondary}
+        />
+      </View>
+      <View style={styles.rowCopy}>
+        <Text
+          allowFontScaling
+          style={[styles.rowTitle, danger && styles.rowTitleDanger]}>
+          {title}
+        </Text>
+        {detail ? (
+          <Text allowFontScaling numberOfLines={2} style={styles.rowDetail}>
+            {detail}
+          </Text>
+        ) : null}
+      </View>
+      {selected ? (
+        <Icon name="check" size={18} color={theme.color.text.primary} />
+      ) : chevron ? (
+        <Icon name="chevronRight" size={18} color={theme.color.text.tertiary} />
+      ) : null}
+    </>
+  );
+}
+
+/**
  * Account and privacy — hand-rolled Material 3 on the Fuse tokens, the same
  * primitives every other screen uses (ADR-0010).
  *
@@ -75,11 +139,12 @@ export function SettingsSheet({
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { isDark, setMode } = useThemeMode();
+  const { mode, setMode } = useThemeMode();
   const setNotice = useStore(s => s.setNotice);
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const [choiceSheet, setChoiceSheet] = useState<'presence' | 'theme' | null>(null);
   const [busy, setBusy] = useState(false);
   const { data: application } = useMyApplication();
   const { data: profile } = useProfile();
@@ -166,31 +231,15 @@ export function SettingsSheet({
 
   const showAccountSection =
     canVerifyPhone || hasApplication || onApply !== undefined;
+  const presenceLabel =
+    PRESENCE_OPTIONS.find(option => option.value === presence)?.label ?? 'Hidden';
+  const themeLabel = mode === 'light' ? 'Light' : mode === 'dark' ? 'Dark' : 'System';
+  const accountLabel = isProvider ? 'Provider account' : 'Private member account';
+  const profileName = profile?.display_name?.trim() || 'Your account';
 
   return (
     <View style={styles.root} testID="settings-sheet">
-      {/* A bare-chevron header on the page colour, the same anatomy as
-          ProviderStatus/ProviderApplication — no tonal app bar, one surface. The
-          back affordance is shown only where there is no bottom nav to carry it. */}
-      <View style={[styles.header, { paddingTop: insets.top + TOKENS.space['2xs'] }]}>
-        {showBack ? (
-          <Pressable
-            onPress={onBack}
-            testID="settings-back"
-            accessibilityLabel="Back"
-            press="none"
-            highlight="ios"
-            size={28}
-            style={styles.backButton}>
-            <Icon name="chevronLeft" size={22} />
-          </Pressable>
-        ) : null}
-        <Text allowFontScaling style={styles.title}>
-          Account &amp; Privacy
-        </Text>
-      </View>
-
-      <ScrollView
+      <Animated.ScrollView
         showsVerticalScrollIndicator={false}
         {...SCROLL_PHYSICS}
         contentContainerStyle={[
@@ -204,17 +253,35 @@ export function SettingsSheet({
               (showBack ? TOKENS.space['3xl'] : NAV_BAR_HEIGHT + TOKENS.space.md),
           },
         ]}>
-        <Text allowFontScaling style={styles.intro}>
-          {'Signed in with Google. Your name and email are never shown to anyone ' +
-            'you talk to. No contacts, no location, no advertising ID.'}
-        </Text>
-
-        {isProvider ? (
-          <>
-            <Text allowFontScaling style={styles.subheader}>
-              Directory photo
-            </Text>
-            <View style={styles.group}>
+        {/* WhatsApp's profile-shortcut variant puts a compact app bar over the
+            cover. This back action is intentional even on the member tree: the
+            user selected that variant after the first profile-first pass.
+            https://developer.android.com/develop/ui/compose/components/app-bars */}
+        <View style={styles.profileHero}>
+          <View style={styles.profileCover}>
+            <ChatWallpaper />
+            <View style={{ paddingTop: insets.top }}>
+              <TopAppBar
+                title=""
+                transparent
+                testID="settings-app-bar"
+                leading={
+                  <Pressable
+                    onPress={onBack}
+                    testID="settings-back"
+                    accessibilityLabel="Back"
+                    press="none"
+                    highlight="ios"
+                    size={48}
+                    style={styles.backButton}>
+                    <Icon name="back" size={20} />
+                  </Pressable>
+                }
+              />
+            </View>
+          </View>
+          <View style={styles.profileIdentity}>
+            {isProvider ? (
               <Pressable
                 onPress={() => {
                   void onPickAvatar();
@@ -226,95 +293,87 @@ export function SettingsSheet({
                 press="none"
                 highlight="ios"
                 disabled={uploadAvatar.isPending}
-                style={styles.row}>
+                style={styles.profileAvatarHit}>
                 <Avatar
                   initial={initialOf(profile?.display_name ?? 'P')}
-                  size={40}
+                  size={88}
                   uri={profile?.avatar_url ?? null}
                 />
-                <Text allowFontScaling style={[styles.rowTitle, styles.rowTitleGrow]}>
-                  {uploadAvatar.isPending
-                    ? 'Uploading…'
-                    : profile?.avatar_url
-                      ? 'Change photo'
-                      : 'Add a photo'}
-                </Text>
-                <Icon name="chevronRight" size={18} color={theme.color.text.tertiary} />
+                <View style={styles.profileCamera}>
+                  <Icon name="camera" size={14} color={theme.color.text.onInverse} />
+                </View>
               </Pressable>
-            </View>
-            <Text allowFontScaling style={styles.footer}>
-              Shown on your listing and to people who message you.
+            ) : (
+              <Avatar
+                initial={initialOf(profileName)}
+                size={88}
+                uri={profile?.avatar_url ?? null}
+              />
+            )}
+            <Text allowFontScaling numberOfLines={1} style={styles.profileName}>
+              {profileName}
             </Text>
-          </>
-        ) : null}
-
-        {/* Presence, first because it is the only setting that changes what
-            someone else sees. Three rows with a checkmark: a switch cannot express
-            three states, and 'hidden' must be a state, not an absence. */}
-        <Text allowFontScaling style={styles.subheader}>
-          Presence
-        </Text>
-        <View style={styles.group}>
-          {PRESENCE_OPTIONS.map((option, index) => {
-            const on = presence === option.value;
-            return (
-              <React.Fragment key={option.value}>
-                {index === 0 ? null : <View style={styles.separator} />}
-                <Pressable
-                  onPress={() => {
-                    if (!on) {
-                      setPresence.mutate(option.value);
-                    }
-                  }}
-                  testID={`presence-${option.value}`}
-                  accessibilityLabel={on ? `${option.label}, selected` : option.label}
-                  press="none"
-                  highlight="ios"
-                  style={styles.row}>
-                  <Text allowFontScaling style={styles.rowTitle}>
-                    {option.label}
-                  </Text>
-                  {on ? (
-                    <Icon name="check" size={18} color={theme.color.text.primary} />
-                  ) : null}
-                </Pressable>
-              </React.Fragment>
-            );
-          })}
-        </View>
-        <Text allowFontScaling style={styles.footer}>
-          {presenceDetail(presence)}
-          {providerAppearance}
-        </Text>
-
-        <Text allowFontScaling style={styles.subheader}>
-          Appearance
-        </Text>
-        <View style={styles.group}>
-          {/* Not a Pressable: the Toggle is the control, and a row press that
-              fought the switch would be two targets for one setting. */}
-          <View style={styles.row}>
-            <Text allowFontScaling style={styles.rowTitle}>
-              Dark Mode
+            <Text allowFontScaling style={styles.profileMeta}>
+              {accountLabel}
+              {profile ? ` · ${profile.token_balance} tokens` : ''}
             </Text>
-            <Toggle
-              testID="theme-toggle"
-              value={isDark}
-              onValueChange={next => setMode(next ? 'dark' : 'light')}
-              accessibilityLabel="Dark Mode"
-            />
           </View>
         </View>
-        <Text allowFontScaling style={styles.footer}>
-          Follows your phone until you choose here.
+        {/* Root rows stay scannable like WhatsApp Settings. Multi-choice controls
+            move into sheets, but retain radio semantics and one selection per row. */}
+        <Text allowFontScaling style={styles.subheader}>
+          Settings
         </Text>
+        <View style={styles.group}>
+          <Pressable
+            onPress={() => setChoiceSheet('presence')}
+            testID="settings-presence"
+            accessibilityLabel={`Presence, ${presenceLabel}`}
+            press="none"
+            highlight="ios"
+            style={styles.row}>
+            <SettingsRowContent
+              icon="person"
+              title="Presence"
+              detail={presenceLabel}
+            />
+          </Pressable>
+          <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
+          {onBlocked !== undefined ? (
+            <>
+              <Pressable
+                onPress={onBlocked}
+                testID="settings-blocked"
+                accessibilityLabel="Blocked People"
+                press="none"
+                highlight="ios"
+                style={styles.row}>
+                <SettingsRowContent
+                  icon="block"
+                  title="Blocked people"
+                  detail="Review people you have blocked"
+                />
+              </Pressable>
+              <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
+            </>
+          ) : null}
+        </View>
+
+        <View style={styles.group}>
+          <Pressable
+            onPress={() => setChoiceSheet('theme')}
+            testID="settings-theme"
+            accessibilityLabel={`Theme, ${themeLabel}`}
+            press="none"
+            highlight="ios"
+            style={styles.row}>
+            <SettingsRowContent icon="settings" title="Theme" detail={themeLabel} />
+          </Pressable>
+          <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
+        </View>
 
         {showAccountSection ? (
-          <>
-            <Text allowFontScaling style={styles.subheader}>
-              Account
-            </Text>
-            <View style={styles.group}>
+          <View style={styles.group}>
               {canVerifyPhone ? (
                 <Pressable
                   onPress={() => requestAnimationFrame(() => setVerifying(true))}
@@ -322,15 +381,17 @@ export function SettingsSheet({
                   accessibilityLabel="Verify Phone Number"
                   press="none"
                   highlight="ios"
-                  style={[styles.row, styles.rowChevron]}>
-                  <Text allowFontScaling style={styles.rowTitle}>
-                    Verify Phone Number
-                  </Text>
-                  <Icon name="chevronRight" size={18} color={theme.color.text.tertiary} />
+                  style={styles.row}>
+                  <SettingsRowContent
+                    icon="call"
+                    title="Phone verification"
+                    detail="Optional account recovery"
+                  />
                 </Pressable>
               ) : null}
-              {canVerifyPhone && (hasApplication || onApply !== undefined) ? (
-                <View style={styles.separator} />
+              {canVerifyPhone &&
+              (hasApplication || onApply !== undefined) ? (
+                <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
               ) : null}
               {hasApplication && onApplicationStatus !== undefined ? (
                 <Pressable
@@ -339,11 +400,12 @@ export function SettingsSheet({
                   accessibilityLabel="Provider Application"
                   press="none"
                   highlight="ios"
-                  style={[styles.row, styles.rowChevron]}>
-                  <Text allowFontScaling style={styles.rowTitle}>
-                    Provider Application
-                  </Text>
-                  <Icon name="chevronRight" size={18} color={theme.color.text.tertiary} />
+                  style={styles.row}>
+                  <SettingsRowContent
+                    icon="person"
+                    title="Provider application"
+                    detail="Review status and next steps"
+                  />
                 </Pressable>
               ) : onApply !== undefined ? (
                 <Pressable
@@ -352,39 +414,37 @@ export function SettingsSheet({
                   accessibilityLabel="Become a Provider"
                   press="none"
                   highlight="ios"
-                  style={[styles.row, styles.rowChevron]}>
-                  <Text allowFontScaling style={styles.rowTitle}>
-                    Become a Provider
-                  </Text>
-                  <Icon name="chevronRight" size={18} color={theme.color.text.tertiary} />
+                  style={styles.row}>
+                  <SettingsRowContent
+                    icon="person"
+                    title="Become a provider"
+                    detail="Application and status"
+                  />
                 </Pressable>
               ) : null}
-            </View>
-          </>
+              <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
+          </View>
         ) : null}
 
         {/* Recharge history: top-ups and GST invoice downloads. Shown only on
             the member tree (provider tree has no onTransactions). */}
         {onTransactions !== undefined ? (
-          <>
-            <Text allowFontScaling style={styles.subheader}>
-              Billing
-            </Text>
-            <View style={styles.group}>
+          <View style={styles.group}>
               <Pressable
                 onPress={onTransactions}
                 testID="settings-transactions"
                 accessibilityLabel="Recharge history"
                 press="none"
                 highlight="ios"
-                style={[styles.row, styles.rowChevron]}>
-                <Text allowFontScaling style={styles.rowTitle}>
-                  Recharge history
-                </Text>
-                <Icon name="chevronRight" size={18} color={theme.color.text.tertiary} />
+                style={styles.row}>
+                <SettingsRowContent
+                  icon="wallet"
+                  title="Recharge history"
+                  detail="Receipts and GST invoices"
+                />
               </Pressable>
-            </View>
-          </>
+              <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
+          </View>
         ) : null}
 
         {/*
@@ -393,9 +453,6 @@ export function SettingsSheet({
           * the Google sign-in: Linking opens the system browser.
           * URLs are the same as the seeded policy_versions rows (migration 027).
           */}
-        <Text allowFontScaling style={styles.subheader}>
-          Legal
-        </Text>
         <View style={styles.group}>
           <Pressable
             onPress={() => {
@@ -405,13 +462,10 @@ export function SettingsSheet({
             accessibilityLabel="Terms of Service"
             press="none"
             highlight="ios"
-            style={[styles.row, styles.rowChevron]}>
-            <Text allowFontScaling style={styles.rowTitle}>
-              Terms of Service
-            </Text>
-            <Icon name="chevronRight" size={18} color={theme.color.text.tertiary} />
+            style={styles.row}>
+            <SettingsRowContent icon="report" title="Terms of service" />
           </Pressable>
-          <View style={styles.separator} />
+          <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
           <Pressable
             onPress={() => {
               void Linking.openURL(legalUrl('privacy'));
@@ -420,39 +474,33 @@ export function SettingsSheet({
             accessibilityLabel="Privacy Policy"
             press="none"
             highlight="ios"
-            style={[styles.row, styles.rowChevron]}>
-            <Text allowFontScaling style={styles.rowTitle}>
-              Privacy Policy
-            </Text>
-            <Icon name="chevronRight" size={18} color={theme.color.text.tertiary} />
+            style={styles.row}>
+            <SettingsRowContent icon="block" title="Privacy policy" />
+          </Pressable>
+          <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
+          <Pressable
+            onPress={() => {
+              void Linking.openURL('market://details?id=com.companionchat').catch(() =>
+                Linking.openURL(
+                  'https://play.google.com/store/apps/details?id=com.companionchat',
+                ),
+              );
+            }}
+            testID="settings-rate"
+            accessibilityLabel="Rate us on the Play Store"
+            press="none"
+            highlight="ios"
+            style={styles.row}>
+            <SettingsRowContent
+              icon="star"
+              title="Rate Pappal"
+              detail="Open the Play Store"
+            />
           </Pressable>
         </View>
 
-        {/* Managing a block is a UGC-policy requirement: Home hides blocked
-            people, so this is the only route back to unblocking one. */}
-        {onBlocked !== undefined ? (
-          <>
-            <Text allowFontScaling style={styles.subheader}>
-              Privacy &amp; Safety
-            </Text>
-            <View style={styles.group}>
-              <Pressable
-                onPress={onBlocked}
-                testID="settings-blocked"
-                accessibilityLabel="Blocked Users"
-                press="none"
-                highlight="ios"
-                style={[styles.row, styles.rowChevron]}>
-                <Text allowFontScaling style={styles.rowTitle}>
-                  Blocked Users
-                </Text>
-                <Icon name="chevronRight" size={18} color={theme.color.text.tertiary} />
-              </Pressable>
-            </View>
-          </>
-        ) : null}
-
-        <View style={[styles.group, styles.groupSpaced]}>
+        <View style={styles.groupSpaced}>
+          <Divider />
           <Pressable
             onPress={() => {
               void onSignOutPress();
@@ -463,11 +511,9 @@ export function SettingsSheet({
             press="none"
             highlight="ios"
             style={styles.row}>
-            <Text allowFontScaling style={styles.rowTitle}>
-              Sign Out
-            </Text>
+            <SettingsRowContent icon="logout" title="Sign out" chevron={false} />
           </Pressable>
-          <View style={styles.separator} />
+          <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
           {/* The destructive action in the error colour, its own separated row,
               which is how a destructive action is kept from sitting flush against
               a benign one. */}
@@ -478,35 +524,94 @@ export function SettingsSheet({
             press="none"
             highlight="ios"
             style={styles.row}>
-            <Text allowFontScaling style={[styles.rowTitle, styles.rowTitleDanger]}>
-              Delete Account
-            </Text>
+            <SettingsRowContent
+              icon="report"
+              title="Delete account"
+              danger
+              chevron={false}
+            />
           </Pressable>
         </View>
-
-        {/* Rate us (#9): opens the Play listing (market:// first, then the https
-            fallback for devices without the Play app). The 🙏 carries the thanks. */}
-        <Pressable
-          onPress={() => {
-            void Linking.openURL('market://details?id=com.companionchat').catch(() =>
-              Linking.openURL(
-                'https://play.google.com/store/apps/details?id=com.companionchat',
-              ),
-            );
-          }}
-          testID="settings-rate"
-          accessibilityLabel="Rate us on the Play Store"
-          press="none"
-          highlight="ios"
-          style={styles.rateRow}>
-          <Text allowFontScaling style={styles.rateText}>
-            Rate us on the Play Store 🙏
-          </Text>
-        </Pressable>
         <Text allowFontScaling={false} style={styles.brandFooter}>
           Pappal
         </Text>
-      </ScrollView>
+      </Animated.ScrollView>
+
+      <Sheet
+        visible={choiceSheet === 'presence'}
+        testID="presence-choice-sheet"
+        title="Presence"
+        body={`${presenceDetail(presence)}${providerAppearance}`}
+        onClose={() => setChoiceSheet(null)}>
+        <View style={styles.choiceList}>
+          {PRESENCE_OPTIONS.map((option, index) => {
+            const on = presence === option.value;
+            return (
+              <React.Fragment key={option.value}>
+                {index === 0 ? null : <Divider variant="inset" insetStart={ROW_TEXT_INSET} />}
+                <Pressable
+                  onPress={() => {
+                    if (!on) setPresence.mutate(option.value);
+                    setChoiceSheet(null);
+                  }}
+                  testID={`presence-${option.value}`}
+                  accessibilityRole="radio"
+                  checked={on}
+                  accessibilityLabel={option.label}
+                  press="none"
+                  highlight="ios"
+                  style={styles.row}>
+                  <SettingsRowContent
+                    icon="person"
+                    title={option.label}
+                    selected={on}
+                    chevron={false}
+                  />
+                </Pressable>
+              </React.Fragment>
+            );
+          })}
+        </View>
+      </Sheet>
+
+      <Sheet
+        visible={choiceSheet === 'theme'}
+        testID="theme-choice-sheet"
+        title="Theme"
+        body="Light is the default. System follows your device setting."
+        onClose={() => setChoiceSheet(null)}>
+        <View style={styles.choiceList}>
+          {(['light', 'dark', 'system'] as const).map((option, index) => {
+            const on = mode === option;
+            const label =
+              option === 'light' ? 'Light' : option === 'dark' ? 'Dark' : 'System';
+            return (
+              <React.Fragment key={option}>
+                {index === 0 ? null : <Divider variant="inset" insetStart={ROW_TEXT_INSET} />}
+                <Pressable
+                  onPress={() => {
+                    setMode(option);
+                    setChoiceSheet(null);
+                  }}
+                  testID={`theme-${option}`}
+                  accessibilityRole="radio"
+                  checked={on}
+                  accessibilityLabel={label}
+                  press="none"
+                  highlight="ios"
+                  style={styles.row}>
+                  <SettingsRowContent
+                    icon="settings"
+                    title={label}
+                    selected={on}
+                    chevron={false}
+                  />
+                </Pressable>
+              </React.Fragment>
+            );
+          })}
+        </View>
+      </Sheet>
 
       {/* Phone verification stays the OTP sheet, layered over the screen. */}
       <PhoneVerifySheet visible={verifying} onClose={() => setVerifying(false)} />
@@ -551,48 +656,72 @@ const makeStyles = (t: Theme) =>
       flex: 1,
       backgroundColor: t.color.bg.base,
     },
-    header: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: TOKENS.space.xs,
-      paddingHorizontal: TOKENS.space.md,
-      paddingBottom: TOKENS.space.xs,
-    },
     backButton: {
-      width: 28,
-      height: 40,
+      width: 48,
+      height: 48,
       alignItems: 'center',
       justifyContent: 'center',
-      marginLeft: -TOKENS.space['2xs'],
-    },
-    title: {
-      ...TOKENS.typography.headline,
-      color: t.color.text.primary,
     },
     scroll: {
+      paddingHorizontal: TOKENS.space.xl,
+    },
+    profileHero: {
+      marginHorizontal: -TOKENS.space.xl,
+      overflow: 'hidden',
+      alignItems: 'center',
+      backgroundColor: t.color.bg.base,
+    },
+    profileCover: {
+      position: 'relative',
+      width: '100%',
+      height: 240,
+      overflow: 'hidden',
+    },
+    profileIdentity: {
+      alignItems: 'center',
+      marginTop: -44,
+      paddingBottom: TOKENS.space.xl,
       paddingHorizontal: TOKENS.space.md,
     },
-    intro: {
-      ...TOKENS.typography.bodyMedium,
+    profileAvatarHit: {
+      position: 'relative',
+      width: 88,
+      height: 88,
+      borderRadius: 44,
+    },
+    profileCamera: {
+      position: 'absolute',
+      right: -2,
+      bottom: -2,
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: t.color.bg.inverse,
+      borderWidth: 2,
+      borderColor: t.color.bg.base,
+    },
+    profileName: {
+      ...TOKENS.typography.headline,
+      color: t.color.text.primary,
+      marginTop: TOKENS.space.xs,
+    },
+    profileMeta: {
+      ...TOKENS.typography.captionRegular,
       color: t.color.text.secondary,
-      paddingTop: TOKENS.space['2xs'],
-      paddingBottom: TOKENS.space.md,
+      marginTop: TOKENS.space['2xs'],
     },
     subheader: {
       ...TOKENS.typography.labelSmall,
       color: t.color.text.secondary,
-      paddingTop: TOKENS.space.lg,
-      paddingBottom: TOKENS.space.xs,
+      paddingTop: TOKENS.space.sm,
+      paddingBottom: TOKENS.space.sm,
     },
-    // Plain white sections, not the grey inset-grouped card. A single hairline at
-    // the TOP opens each section; there is no bottom hairline, because a bottom
-    // rule plus the next section's top rule framed the gap between two sections as
-    // an empty "ghost" row (Amit, 2026-08-27). iOS grouped-PLAIN does the same:
-    // one rule per section boundary, not two.
+    // WhatsApp's Settings root is one continuous list on the page surface.
+    // Sections are semantic in code but add no card, tile, or divider chrome.
     group: {
       backgroundColor: t.color.bg.base,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderColor: t.color.border.hairline,
     },
     groupSpaced: {
       marginTop: TOKENS.space.xl,
@@ -600,45 +729,35 @@ const makeStyles = (t: Theme) =>
     row: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'space-between',
-      minHeight: 52,
-      paddingHorizontal: TOKENS.space.md,
+      minHeight: 64,
       paddingVertical: TOKENS.space.sm,
       backgroundColor: t.color.bg.base,
     },
-    rowChevron: {
-      // A row that navigates; the chevron already sits at the trailing edge via
-      // space-between, this is just where any future per-variant tweak lands.
+    iconBox: {
+      width: 32,
+      height: 32,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    rowCopy: {
+      flex: 1,
+      minWidth: 0,
+      paddingHorizontal: TOKENS.space.sm,
     },
     rowTitle: {
-      ...TOKENS.typography.bodyLarge,
+      ...TOKENS.typography.bodyMedium,
       color: t.color.text.primary,
     },
-    rowTitleGrow: {
-      flex: 1,
-      marginHorizontal: TOKENS.space.sm,
+    rowDetail: {
+      ...TOKENS.typography.captionRegular,
+      color: t.color.text.secondary,
+      marginTop: 2,
     },
     rowTitleDanger: {
       color: t.color.state.danger,
     },
-    separator: {
-      height: StyleSheet.hairlineWidth,
-      marginLeft: TOKENS.space.md,
-      backgroundColor: t.color.border.hairline,
-    },
-    footer: {
-      ...TOKENS.typography.captionRegular,
-      color: t.color.text.secondary,
-      paddingHorizontal: TOKENS.space.xs,
-      paddingTop: TOKENS.space.xs,
-    },
-    rateRow: {
-      alignItems: 'center',
-      paddingTop: TOKENS.space['2xl'],
-    },
-    rateText: {
-      ...TOKENS.typography.bodyMedium,
-      color: t.color.text.secondary,
+    choiceList: {
+      marginTop: TOKENS.space.sm,
     },
     brandFooter: {
       fontFamily: TOKENS.typography.wordmark.fontFamily,

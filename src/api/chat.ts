@@ -266,6 +266,12 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
         attachment_type: null,
         attachment_width: null,
         attachment_height: null,
+        // Unknown until the RPC returns; a member's own optimistic row never
+        // gates the timer (that gate reads live PROVIDER messages), so null here
+        // is safe. Filled from the confirmed row below.
+        session_id: null,
+        // A human send is always live; only the server writes automated openers.
+        origin: 'live',
         created_at: new Date().toISOString(),
         read_at: null,
       };
@@ -319,6 +325,8 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
               attachment_type: null,
               attachment_width: null,
               attachment_height: null,
+              session_id: result.session_id ?? null,
+              origin: 'live',
               created_at: result.created_at,
               read_at: null,
             }

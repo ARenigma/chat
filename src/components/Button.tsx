@@ -53,9 +53,9 @@ interface Props {
  * happening, the spinner says it is still happening. A narrated label alone is
  * indistinguishable from a button that has silently died.
  *
- * The spinner is `Spinner`, eight Views on one shared clock, not RN's
- * `ActivityIndicator`, which draws Android's Material sweep. See
- * `src/lib/spinner.ts` for why it is hand-drawn.
+ * The wait glyph is the real MDC Android LoadingIndicator. It starts with the
+ * expressive shape sequence and changes to native circular progress at the M3
+ * five-second boundary; no React Native geometry approximates either widget.
  *
  * **Its slot is always there.** The spinner sits in a fixed-width box that is
  * present whether busy or not, holding `Spinner`'s size plus one gap, and merely

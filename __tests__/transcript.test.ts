@@ -34,6 +34,8 @@ function message(overrides: Partial<Message> = {}): Message {
     attachment_type: null,
     attachment_width: null,
     attachment_height: null,
+    session_id: null,
+    origin: 'live',
     // Fixed base so ordering is deterministic and unrelated to test runtime.
     created_at: new Date(1_700_000_000_000 + seq * 1000).toISOString(),
     read_at: null,
@@ -264,6 +266,8 @@ describe('optimistic rows keep their identity through settlement', () => {
     attachment_type: null,
     attachment_width: null,
     attachment_height: null,
+    session_id: null,
+    origin: 'live',
     created_at: '2026-01-01T00:00:00.000Z',
     read_at: null,
   };

@@ -163,11 +163,11 @@ const makeStyles = (t: Theme) =>
     },
     scrimFull: {
       ...StyleSheet.absoluteFill,
-      backgroundColor: t.color.bg.inverse,
+      backgroundColor: t.color.bg.scrim,
       opacity: 0.45,
     },
     dim: {
-      backgroundColor: t.color.bg.inverse,
+      backgroundColor: t.color.bg.scrim,
       opacity: 0.45,
     },
     // Static half of the cut-out bands; the measured half stays inline.

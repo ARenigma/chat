@@ -43,11 +43,12 @@ describe('generated theme', () => {
     // sit on this directly, divided by border/hairline. A grouped grey with
     // nothing to group is just dirty white.
     expect(LIGHT.color.bg.base).toBe('#FFFFFF');
-    // Dark base is the Material 3 recommended #121212, NOT pure black: Android's
-    // dark-theme guidance calls for a dark-grey surface so elevation reads as
-    // tonal lightening, eye strain and OLED black-smear drop, and content does
-    // not float on a hole. https://m3.material.io/styles/color/dark-theme
-    expect(DARK.color.bg.base).toBe('#121212');
+    // Dark base is WhatsApp charcoal #0B141A — a deep blue-black that places
+    // tonal elevation above it as lightening steps. Explicit departure from M3's
+    // neutral-grey #121212 recommendation: a blue-tinted base makes the tonal
+    // steps more perceptible and matches the product's chat-centric character.
+    // Docs: docs/android-audit.md dark-theme section. https://m3.material.io/styles/color/dark-theme
+    expect(DARK.color.bg.base).toBe('#0B141A');
   });
 
   it('keeps the row separator visible on the page it now sits on', () => {
@@ -145,6 +146,16 @@ describe('generated theme', () => {
     expect(DARK.space).toEqual(LIGHT.space);
     expect(DARK.radius).toEqual(LIGHT.radius);
     expect(DARK.motion).toEqual(LIGHT.motion);
+  });
+
+  it('keeps modal scrims dark instead of reusing inverse surfaces', () => {
+    // M3 scrim is its own stable role. inverseSurface deliberately flips light
+    // in dark mode and previously washed sheets, menus and tours in white.
+    expect(LIGHT.color.bg.scrim).toBe('#000000');
+    expect(DARK.color.bg.scrim).toBe('#000000');
+    for (const file of ['Sheet.tsx', 'SpotlightCard.tsx', 'PaperMenu.tsx', 'HomeTour.tsx']) {
+      expect(read(`src/components/${file}`)).toContain('t.color.bg.scrim');
+    }
   });
 
   it('keeps elevation shadows translucent', () => {
@@ -1245,11 +1256,34 @@ describe('light and dark', () => {
     expect(provider).toContain('useMemo(() => makeStyles(theme), [makeStyles, theme])');
   });
 
-  it('persists the choice and defaults to following the OS', () => {
+  it('persists the choice and supports light, dark and system modes', () => {
     const provider = read('src/theme/ThemeProvider.tsx');
     expect(provider).toContain('companion.themeMode');
     expect(provider).toContain("Appearance.getColorScheme()");
-    expect(provider).toMatch(/:\s*'system'/);
+    // `system` remains a first-class persisted choice even though the empty
+    // context and fresh-install fallback now honestly default to Light.
+    expect(provider).toContain("export type ThemeMode = 'light' | 'dark' | 'system'");
+    expect(provider).toContain("stored === 'system'");
+  });
+
+  /**
+   * Documented deviation from Android dark-theme recommendation.
+   *
+   * Android recommends defaulting to System so the app follows the device
+   * setting immediately. Pappal departs: fresh-install users get Light mode.
+   * Dark and System remain fully supported once stored in MMKV.
+   *
+   * Audit: docs/android-audit.md dark-theme section.
+   * Platform doc: developer.android.com/develop/ui/views/theming/darktheme
+   */
+  it('defaults to light on first install (documented deviation from Android System recommendation)', () => {
+    const provider = read('src/theme/ThemeProvider.tsx');
+    // The fallback when no stored mode exists must be 'light', not 'system'.
+    // 'system' still appears as a valid stored/context value above this line.
+    expect(provider).toMatch(/:\s*'light'.*fresh.install/s);
+    // System mode handler (Appearance listener) must still be present so a
+    // stored 'system' choice continues to work on upgrade.
+    expect(provider).toContain("Appearance.addChangeListener");
   });
 
   it('flips the status bar with the mode', () => {
@@ -1261,5 +1295,280 @@ describe('light and dark', () => {
   it('covers the change with a dissolve rather than cutting', () => {
     expect(read('src/theme/ThemeProvider.tsx')).toContain('Dissolve');
     expect(read('src/theme/ThemeProvider.tsx')).toContain('pointerEvents="none"');
+  });
+});
+
+/**
+ * chat-visuals: static / mechanical assertions for the six chat-visual changes
+ * shipped in the 2026-09 pass. Each one catches a wiring failure that typechecks.
+ */
+describe('chat-visuals: SpotlightCard is a bottom-anchored M3 sheet', () => {
+  const card = read('src/components/SpotlightCard.tsx');
+
+  it('anchors to the bottom, not the centre', () => {
+    // justifyContent: flex-end is the one style that places a child at the
+    // bottom of a flex container. Any other value means the sheet floats.
+    expect(card).toContain("justifyContent: 'flex-end'");
+  });
+
+  it('uses full width, not a guttered width', () => {
+    // The old card subtracted TOKENS.space['2xl'] * 2 gutters. A bottom sheet
+    // is always full-width; a percentage width is wrong.
+    expect(card).not.toMatch(/windowWidth\s*-\s*TOKENS/);
+    expect(card).toContain("width: '100%'");
+  });
+
+  it('uses M3 sheet corners via TOKENS.radius.sheet', () => {
+    expect(card).toContain('TOKENS.radius.sheet');
+  });
+
+  it('slides on a shared-value spring, not Modal animationType slide', () => {
+    // animationType="slide" slides the whole window, dragging the scrim up as a
+    // grey rectangle. The sheet alone slides; the window only fades.
+    expect(card).toContain("animationType=\"fade\"");
+    expect(card).toContain('springTo(0');
+    expect(card).not.toContain("animationType=\"slide\"");
+  });
+
+  it('has a drag-to-dismiss gesture with the token thresholds', () => {
+    expect(card).toContain('GESTURE.dismissDistance');
+    expect(card).toContain('GESTURE.dismissVelocity');
+  });
+
+  it('uses GestureHandlerRootView inside the Modal (Android separate window)', () => {
+    expect(card).toContain('GestureHandlerRootView');
+    expect(card).toContain('GestureDetector');
+  });
+
+  it('uses the dark M3 scrim token, not a hand-rolled dim', () => {
+    expect(card).toContain('t.color.bg.scrim');
+  });
+
+  it('respects safe-area insets for the copy section bottom padding', () => {
+    expect(card).toContain('useSafeAreaInsets');
+    expect(card).toContain('sheetBottomPad');
+  });
+
+  it('lays the two actions out on one row at equal width', () => {
+    // User 2026-09-01: side by side, not stacked. Equal width comes from the
+    // flex slot on the pressable ROOT — a flex on TactileCTA's inner animated
+    // view resolves against the pressable, not the row, and does nothing.
+    expect(card).toContain('actions: {');
+    expect(card).toMatch(/actions:\s*{[^}]*flexDirection:\s*'row'/);
+    expect(card).toContain('containerStyle={styles.slot}');
+    expect(card).toMatch(/slot:\s*{\s*flex:\s*1/);
+    expect(card).toMatch(/notNowHit:\s*{\s*flex:\s*1/);
+    // Neither action may re-introduce the stacked left-aligned shrink-wrap.
+    expect(card).not.toContain("alignSelf: 'flex-start'");
+  });
+});
+
+describe('chat-visuals: the chat wallpaper carries no hue in dark mode', () => {
+  const wallpaper = read('src/components/ChatWallpaper.tsx');
+
+  it('washes with the charcoal base in dark and the blush tint only in light', () => {
+    // User 2026-09-01: no pink wash in dark mode. The dark JPG is an AMOLED
+    // black, so the wash still runs — it lifts the sheet to bg.base charcoal
+    // rather than leaving the transcript darker than the app around it.
+    expect(wallpaper).toContain('isDark');
+    expect(wallpaper).toMatch(/isDark\s*\n?\s*\?\s*{\s*backgroundColor:\s*theme\.color\.bg\.base/);
+    expect(wallpaper).toMatch(/:\s*{\s*backgroundColor:\s*theme\.color\.bg\.accentTint/);
+  });
+});
+
+describe('chat-visuals: typing indicator uses conveyor dots, not breathing', () => {
+  const typing = read('src/components/TypingIndicator.tsx');
+  const calling = read('src/components/CallingDots.tsx');
+
+  it('imports ConveyorDots from CallingDots', () => {
+    // One mechanic, not two. Typing and calling share the same periodic-row
+    // conveyor; only the size and cadence differ.
+    expect(typing).toContain("from './CallingDots'");
+    expect(typing).toContain('ConveyorDots');
+  });
+
+  it('uses a slower cadence than calling (DURATION.slow vs DURATION.base)', () => {
+    // Typing is patient; calling is urgent. The cadence difference is the signal.
+    expect(typing).toContain('DURATION.slow');
+    expect(typing).not.toContain('DURATION.base');
+  });
+
+  it('uses smaller geometry than calling (dot=3 vs 4, pitch=6 vs 8)', () => {
+    expect(typing).toContain('dot={3}');
+    expect(typing).toContain('pitch={6}');
+  });
+
+  it('still uses a token for the cadence, not a raw millisecond literal', () => {
+    // The house rule: every timing lives in the token file.
+    expect(typing).not.toMatch(/duration:\s*\d/);
+    expect(typing).not.toMatch(/duration=\{\d/);
+  });
+
+  it('shows a static ellipsis on reduced motion', () => {
+    expect(typing).toContain('useReducedMotion');
+  });
+
+  it('exports ConveyorDots from CallingDots.tsx as the shared primitive', () => {
+    expect(calling).toContain('export function ConveyorDots');
+    // The primitive uses the same mechanic: clipped window, linear translation.
+    expect(calling).toContain("overflow: 'hidden'");
+    expect(calling).toContain('Easing.linear');
+    expect(calling).toContain('withTiming(pitch');
+  });
+
+  it('CallingDots original behavior is unchanged: 4dp dot, 8dp pitch, DURATION.base', () => {
+    // The shared primitive is additive; CallingDotsView retains its own
+    // constants so the calling reference is untouched.
+    expect(calling).toContain('const PITCH = 8');
+    expect(calling).toContain('const DOT = 4');
+    expect(calling).toContain('DURATION.base');
+    expect(calling).toContain("withTiming(PITCH");
+  });
+});
+
+describe('chat-visuals: FirstMovePills host has no own pink strip', () => {
+  const pills = read('src/components/FirstMovePills.tsx');
+
+  it('does not set a backgroundColor on the host strip', () => {
+    // The chat wallpaper carries the blush wash (ChatWallpaper.tsx,
+    // bg.accentTint at 0.2 opacity). A second accentTint on the strip created a
+    // bright pink band at the bottom of the transcript.
+    // Comments stripped: the removed line is explained in a comment that would
+    // satisfy a naive includes() check.
+    const stripped = pills.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(stripped).not.toMatch(/strip[\s\S]{0,60}backgroundColor/);
+  });
+
+  it('still defines the strip style (pills need the padding)', () => {
+    expect(pills).toContain('strip:');
+    expect(pills).toContain('paddingHorizontal');
+  });
+
+  it('still references the accent (pill ripple color)', () => {
+    // Accent is in the permitted list for first-move pills; removing the
+    // background must not also drop the ripple.
+    expect(pills).toMatch(/accent/);
+  });
+});
+
+/**
+ * recharge-theme: mechanical assertions for the recharge/payment changes
+ * shipped in the 2026-09 pass.
+ */
+describe('recharge-theme: RechargeScreen is a compact non-scrolling M3 sheet', () => {
+  const recharge = read('src/screens/RechargeScreen.tsx');
+
+  it('hosts the interrupting flow on Sheet, not a full-page View', () => {
+    expect(recharge).toContain("from '../components/Sheet'");
+    expect(recharge).toContain('<Sheet');
+  });
+
+  it('has no inner ScrollView inside the sheet form', () => {
+    // The sheet must fit its resting detent without scrolling.
+    const formBlock = recharge.slice(recharge.indexOf('function RechargeSheetForm'));
+    const endOfForm = formBlock.indexOf('\nfunction ');
+    const formOnly = endOfForm > 0 ? formBlock.slice(0, endOfForm) : formBlock;
+    expect(formOnly).not.toContain('<ScrollView');
+  });
+
+  it('uses radio semantics on pack cards', () => {
+    // accessibilityRole="radio" + checked={selected} is the correct
+    // pattern for a single-select group. TalkBack announces "₹300, radio
+    // button, checked" instead of reading a stacked accessibilityLabel.
+    expect(recharge).toContain('accessibilityRole="radio"');
+    expect(recharge).toContain('checked={selected}');
+  });
+
+  it('preserves RechargeWalletPage as a full-page route', () => {
+    expect(recharge).toContain('export function RechargeWalletPage');
+    expect(recharge).toContain('<ScrollView');
+  });
+});
+
+describe('recharge-theme: PaymentSheet uses M3 Paper sheet language throughout', () => {
+  const payment = read('src/screens/PaymentSheet.tsx');
+
+  it('has no BloomField in the success state', () => {
+    // The previous success state placed an animated field inside a Sheet.
+    // The M3 success card (bg/positive surface) replaces it.
+    // Strip comments before checking: the migration rationale in comments
+    // necessarily names what it replaced, but the import/usage must be gone.
+    const stripped = payment.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(stripped).not.toMatch(/BloomField/);
+    expect(stripped).not.toMatch(/BLOOM_PALETTES/);
+  });
+
+  it('success state uses the positive surface token', () => {
+    expect(payment).toContain('t.color.bg.positive');
+    expect(payment).toContain('t.color.text.positive');
+  });
+
+  it('uses radio semantics on the UPI method list', () => {
+    // M3 list/selection: accessibilityRole="radio" + checked={on} prop.
+    // The iOS grouped label "Google Pay, selected" is replaced by role + state,
+    // which is the semantically correct representation for screen readers.
+    expect(payment).toContain('accessibilityRole="radio"');
+    expect(payment).toContain('checked={on}');
+  });
+
+  it('still imports CASHFREE_SANDBOX_CHECKOUT (Cashfree flow intact)', () => {
+    expect(payment).toContain('CASHFREE_SANDBOX_CHECKOUT');
+  });
+});
+
+describe('recharge-theme: SettingsSheet Appearance uses three-choice radio picker', () => {
+  const settings = read('src/screens/SettingsSheet.tsx');
+
+  it('has no binary Toggle for dark mode', () => {
+    // The binary Toggle expressed only isDark (resolved value), hiding which of
+    // light / dark / system the user actually chose. Three radio rows name each
+    // choice explicitly.
+    expect(settings).not.toContain("import { Toggle }");
+    expect(settings).not.toContain('<Toggle');
+  });
+
+  it('offers Light, Dark and System as named options', () => {
+    // The options are rendered from ['light', 'dark', 'system'] with
+    // template testIDs. The three option values appear in the loop declaration;
+    // the testID template string appears as a single expression rather than
+    // three literals.
+    expect(settings).toContain("'light', 'dark', 'system'");
+    expect(settings).toMatch(/testID=\{`theme-\$\{option\}`\}/);
+  });
+
+  it('uses radio semantics on the appearance rows', () => {
+    expect(settings).toContain('accessibilityRole="radio"');
+    expect(settings).toContain('checked={on}');
+  });
+});
+
+describe('recharge-theme: WhatsApp charcoal dark palette passes contrast', () => {
+  it('dark base is the WhatsApp charcoal family root, not M3 neutral grey', () => {
+    // Documented departure from M3 #121212 recommendation.
+    // The blue-tinted base makes tonal elevation steps more perceptible and
+    // matches the product's chat-centric character.
+    // Audit: docs/android-audit.md dark-theme section.
+    expect(DARK.color.bg.base).toBe('#0B141A');
+    expect(DARK.color.bg.raised).toBe('#111B21');
+  });
+
+  it('dark primary text is WhatsApp primary #E9EDEF, passes AAA on dark base', () => {
+    expect(DARK.color.text.primary).toBe('#E9EDEF');
+    expect(contrast(DARK.color.text.primary, DARK.color.bg.base)).toBeGreaterThanOrEqual(7);
+  });
+
+  it('dark secondary text is WhatsApp secondary #8696A0, passes AA on dark base', () => {
+    expect(DARK.color.text.secondary).toBe('#8696A0');
+    expect(contrast(DARK.color.text.secondary, DARK.color.bg.base)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('dark hairline separator is WhatsApp charcoal divider, passes minimum on dark base', () => {
+    expect(DARK.color.border.hairline).toBe('#2A3942');
+    expect(contrast(DARK.color.border.hairline, DARK.color.bg.base)).toBeGreaterThan(1.5);
+  });
+
+  it('dark inverse surface is WhatsApp primary text #E9EDEF, primary button passes AAA', () => {
+    expect(DARK.color.bg.inverse).toBe('#E9EDEF');
+    expect(contrast(DARK.color.text.onInverse, DARK.color.bg.inverse)).toBeGreaterThanOrEqual(7);
   });
 });

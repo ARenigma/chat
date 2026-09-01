@@ -147,20 +147,20 @@ export function useSendVoiceNote(
   const clearUploadProgress = useStore(s => s.clearUploadProgress);
 
   return useCallback(
-    async (draft: VoiceDraft, replyToId: string | null = null): Promise<void> => {
+    async (draft: VoiceDraft, replyToId: string | null = null): Promise<boolean> => {
       if (conversationId === undefined || selfId === undefined) {
-        return;
+        return false;
       }
       // The recorder already refuses to run past the ceiling, so this is the
       // floor: a tap too short to be a recording is discarded without a telling
       // off, because being scolded for brushing a button is worse than nothing.
       if (!isSendable(draft.durationMs)) {
-        return;
+        return false;
       }
       if (!canSend(useStore.getState().balance)) {
         errorTick();
         openRefill();
-        return;
+        return false;
       }
 
       const path = voiceObjectPath(conversationId, newUuid());
@@ -169,7 +169,7 @@ export function useSendVoiceNote(
         // the RPC would refuse the path too. Checked here so the recording is not
         // uploaded first to find that out.
         setNotice(NOTICE.BAD_REQUEST);
-        return;
+        return false;
       }
 
       tick();
@@ -188,6 +188,8 @@ export function useSendVoiceNote(
         attachment_type: null,
         attachment_width: null,
         attachment_height: null,
+        session_id: null,
+        origin: 'live',
         created_at: new Date().toISOString(),
         read_at: null,
       };
@@ -210,7 +212,7 @@ export function useSendVoiceNote(
       if (accessToken === undefined) {
         setSending(false);
         withdraw(NOTICE.UNAUTHORIZED);
-        return;
+        return false;
       }
 
       const uploaded = await uploadRecording(path, draft.file, accessToken, fraction => {
@@ -225,7 +227,7 @@ export function useSendVoiceNote(
         // fails at scale is a different problem from a send the server refused.
         track('send_rejected', { reason: 'upload' });
         withdraw(NOTICE.UPLOAD);
-        return;
+        return false;
       }
 
       const { data, error } = await supabase.rpc('send_message', {
@@ -250,7 +252,7 @@ export function useSendVoiceNote(
           openRefill();
         }
         void queryClient.invalidateQueries({ queryKey: keys.profile });
-        return;
+        return false;
       }
 
       const confirmed: Message | null =
@@ -269,6 +271,7 @@ export function useSendVoiceNote(
       // matching `message`, and the length is the only interesting thing anyway.
       track('voice_note_sent', { secs: Math.round(draft.durationMs / 1000) });
       void queryClient.invalidateQueries({ queryKey: keys.conversationList });
+      return true;
     },
     [conversationId, selfId, queryClient, setSending, setBalance, setNotice, openRefill, setUploadProgress, clearUploadProgress],
   );

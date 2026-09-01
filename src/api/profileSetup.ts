@@ -16,6 +16,29 @@ import { keys } from './chat';
 export const AGE_BRACKETS = ['18-24', '25-34', '35-44', '45+'] as const;
 export type AgeBracket = (typeof AGE_BRACKETS)[number];
 
+/** Product rule: first-run UI belongs only to members with an empty wallet. */
+export function isFirstUser(profile: Profile | undefined): boolean {
+  return profile?.role === 'member' && profile.token_balance === 0;
+}
+
+/** One authoritative profile read for post-auth routing and inline onboarding. */
+export async function getSignedInProfile(): Promise<Profile | null> {
+  const { data: auth } = await supabase.auth.getUser();
+  const userId = auth.user?.id;
+  if (userId === undefined) {
+    return null;
+  }
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .single();
+  if (error) {
+    return null;
+  }
+  return data as Profile;
+}
+
 /**
  * True when a member has not yet declared their age band.
  *

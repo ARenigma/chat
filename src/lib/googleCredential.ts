@@ -45,11 +45,10 @@ export function credentialSheetAvailable(): boolean {
  *
  * `cancelled` is not an error and must never be shown. Somebody tapped outside
  * the sheet; telling them "sign-in failed" for that is the kind of small lie
- * that makes an app feel broken. The other two are worth distinguishing because
- * their fixes differ: `no-account` means add a Google account, `unavailable`
- * means this device cannot show the sheet and the browser has to do it.
+ * that makes an app feel broken. `unavailable` means this device cannot show
+ * the button flow and the browser has to do it.
  */
-export type GoogleCredentialFailure = 'cancelled' | 'no-account' | 'unavailable';
+export type GoogleCredentialFailure = 'cancelled' | 'unavailable';
 
 export class GoogleCredentialError extends Error {
   constructor(readonly reason: GoogleCredentialFailure, message: string) {
@@ -69,9 +68,6 @@ export async function requestGoogleCredential(): Promise<GoogleCredentialResult>
     const code = (error as { code?: string }).code;
     if (code === 'cancelled') {
       throw new GoogleCredentialError('cancelled', 'Sign-in was dismissed.');
-    }
-    if (code === 'no_account') {
-      throw new GoogleCredentialError('no-account', 'No Google account on this device.');
     }
     /*
      * Everything else is `unavailable` rather than a hard failure, and that is

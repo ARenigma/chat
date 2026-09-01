@@ -278,46 +278,25 @@ describe('sign in with Google happens in an app-owned sheet', () => {
     expect(pkg).toContain('GoogleCredentialModule(reactContext)');
   });
 
-  it('implements the BUTTON flow, not only the bottom sheet', () => {
+  it('uses the BUTTON flow directly for the visible Google button', () => {
     /*
      * https://developer.android.com/identity/sign-in/credential-manager-siwg
      *
-     * Google specifies two UIs and says to implement both: the bottom sheet
-     * (`GetGoogleIdOption`) for automatic and returning sign-in, and
-     * `GetSignInWithGoogleOption` for an explicit "Sign in with Google" button —
-     * which is exactly what this app shows.
-     *
-     * The button tier is the only one that works with NO Google account on the
-     * device, that can add one, and that can offer an account needing
-     * re-authentication. `GetGoogleIdOption` can do none of those, so an
-     * implementation with only the sheet fails for a genuinely new user.
-     *
-     * This shipped with only the sheet, and the gap was invisible: driving the
-     * real flow on API 34 showed both sheet passes returning `CANCELED` from the
-     * provider while the browser fallback quietly completed the sign-in. A
-     * working fallback looks exactly like a working primary path.
+     * Google assigns `GetSignInWithGoogleOption` to a distinct, explicit Google
+     * button. `GetGoogleIdOption` is for an automatic/returning bottom sheet and
+     * must not intercept that button first: provider status 16 was being mapped
+     * to cancellation and the app silently returned after account selection.
      */
     const kt = read('android/app/src/main/java/com/companionchat/GoogleCredentialModule.kt');
     expect(kt).toContain('GetSignInWithGoogleOption.Builder(webClientId)');
-    expect(kt).toContain('GetGoogleIdOption.Builder()');
-    // The button tier must come AFTER the sheet tiers, or a returning user gets
-    // a full picker when they could have had one tap.
-    expect(kt.indexOf('GetSignInWithGoogleOption.Builder')).toBeGreaterThan(
-      kt.lastIndexOf('GetGoogleIdOption.Builder'),
-    );
+    expect(kt).not.toContain('GetGoogleIdOption.Builder()');
   });
 
-  it('escalates past a provider failure but never past a dismissal', () => {
-    /*
-     * A `GetCredentialException` from the provider means that tier could not
-     * run, so the next tier is worth trying. A `GetCredentialCancellationException`
-     * means the person closed the sheet, and escalating past that would reopen a
-     * different sheet under someone who just dismissed one.
-     */
+  it('distinguishes a button dismissal from a provider failure', () => {
     const kt = read('android/app/src/main/java/com/companionchat/GoogleCredentialModule.kt');
     const cancels = kt.match(/GetCredentialCancellationException[\s\S]{0,160}?E_CANCELLED/g) ?? [];
-    // Every tier must terminate on a dismissal, not fall through.
-    expect(cancels.length).toBeGreaterThanOrEqual(3);
+    expect(cancels).toHaveLength(1);
+    expect(kt).toContain('E_FAILED');
   });
 
   it('ships the Play services provider, not just the AndroidX API', () => {
@@ -378,6 +357,40 @@ describe('sign in with Google happens in an app-owned sheet', () => {
     const auth = read('src/api/auth.ts');
     expect(auth).toContain('credentialSheetAvailable()');
     expect(auth).toMatch(/await signInWith\('google'\);\s*\n\s*return 'redirected';/);
+  });
+});
+
+describe('post-auth age choices remain readable in both themes', () => {
+  it('uses themed ink at rest and fixed dark ink on the white selected pill', () => {
+    const screen = read('src/screens/OnboardingScreen.tsx');
+    expect(screen).toContain('color: t.color.text.primary');
+    expect(screen).toContain('color: LIGHT.color.text.primary');
+    expect(screen).not.toMatch(/ageChipLabel:\s*{[^}]*color:\s*t\.color\.text\.onAccent/s);
+    expect(screen).not.toMatch(/ageChipLabelSelected:\s*{[^}]*color:\s*t\.color\.text\.primary/s);
+  });
+});
+
+describe('phone verification hands off without visual input artifacts', () => {
+  it('keeps the native OTP input focused while verification is pending', () => {
+    const screen = read('src/screens/OnboardingScreen.tsx');
+    const start = screen.indexOf('<CodeField');
+    const field = screen.slice(start, screen.indexOf('/>', start));
+    expect(field).not.toContain('editable=');
+    expect(field).toContain('verifying={state ===');
+  });
+
+  it('dismisses the IME before revealing the post-auth age step', () => {
+    const screen = read('src/screens/OnboardingScreen.tsx');
+    const verify = screen.slice(screen.indexOf('const onVerify'), screen.indexOf('const onSubmitAge'));
+    expect(verify.indexOf('Keyboard.dismiss()')).toBeGreaterThan(-1);
+    expect(verify.indexOf('Keyboard.dismiss()')).toBeLessThan(
+      verify.indexOf('completeAuthentication()'),
+    );
+  });
+
+  it('makes the real input transparent as a whole, not only its unreliable glyph color', () => {
+    const field = read('src/components/CodeField.tsx');
+    expect(field).toMatch(/input:\s*{[\s\S]*opacity:\s*0\.01/);
   });
 });
 

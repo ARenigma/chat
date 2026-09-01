@@ -30,10 +30,11 @@ backend was never built. Meanwhile:
 
 ### Sessions are ephemeral
 
-All paid sessions are ephemeral. Ordinary messages and media are purged from
-every participant's view when the session ends. **Recent Chats shows only
-metadata:** peer, date, channel (chat/audio/video), duration, spend, and
-member rating. No message body, no voice note, no attachment.
+All paid sessions are ephemeral. Ordinary messages and media **disappear from
+every participant's app the moment the session ends** — see the retention
+amendment below for exactly how. **Recent Chats shows only metadata:** peer,
+date, channel (chat/audio/video), duration, spend, and member rating. No message
+body, no voice note, no attachment.
 
 This preserves the Play Billing service exemption while satisfying the
 product intent (peer support, not a transcript service).
@@ -128,3 +129,49 @@ retained message bodies — this is deliberate and required for the exemption.
 - The 30-second disconnect grace window prevents billing a reconnect as a new
   session; the server must hold the rate snapshot and elapsed minutes during
   the grace period.
+
+---
+
+## Amendment (2026-09-01): hidden 30-day retention, and sequential openers
+
+Two refinements land in migration 045, both compatible with the exemption above.
+
+### "Ephemeral" means hidden-then-purged, not deleted-on-end
+
+The original decision said content is _purged_ at session end. The exemption
+requires that sessions are **not replayable by the participants** — it does not
+require the platform to destroy its own records the same second. Deleting
+immediately also made two real obligations impossible to meet: payment-dispute
+investigation (a member charged for a minute they contest) and safety review of
+content that was never explicitly reported.
+
+The settled behaviour, decided by the owner:
+
+- On session end, all relevant content — the session's messages, plus the
+  **sessionless automated openers and any pre-request content** that never
+  carried a `session_id` — is marked `hidden_at = now()` and
+  `purge_after = hidden_at + 30 days`.
+- Hidden rows leave both participants' apps **immediately**: RLS filters
+  `hidden_at is not null`, so neither client can SELECT or mutate them, and
+  reactions/replies to hidden rows are unreachable too. This keeps the
+  no-replay property intact.
+- A daily `pg_cron` job (`purge_expired_hidden_content`) **permanently deletes**
+  rows past `purge_after`; storage objects orphaned by that delete are collected
+  by the existing orphan-purge crons.
+- Retention is **30 days, then gone. Not indefinite.**
+- A later session in the same conversation is untouched by an earlier session's
+  end (it carries a different, non-null `session_id`).
+
+**Reported evidence is separate and unaffected.** `report_evidence` keeps its own
+copy with its own retention (one year from case closure, migration 031); the
+30-day content purge never touches it.
+
+### Automated openers are live-vs-automated tagged and sequenced
+
+`messages.origin` distinguishes a `live` human send from an `automated_opener`
+server greeting. Openers are inserted one at a time by an idempotent, ordered RPC
+(`insert_next_opener`) that only writes approved templates, only as the
+provider, only in the caller's own conversation, and **never creates, accepts,
+activates, or bills a session**. The visible session timer is gated on at least
+one `live` provider message for the active session (plus the authoritative
+`started_at`), so a seeded greeting can never start the clock.

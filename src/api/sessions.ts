@@ -72,6 +72,14 @@ export function useSessionRealtime(conversationId: string | undefined): void {
         queryKey: sessionKeys.pendingRequest(conversationId),
       });
       void queryClient.invalidateQueries({ queryKey: ['conversation-list'] });
+      // Settlement hides all session content server-side (migration 045). The
+      // party that did not call end_session only learns via this session-state
+      // channel, so refetch the transcript here too: RLS now returns nothing for
+      // the hidden rows, clearing the chat for BOTH participants. A refetch
+      // mid-session is cheap and returns the same visible rows.
+      void queryClient.invalidateQueries({
+        queryKey: ['messages', conversationId],
+      });
     };
 
     const channel = supabase

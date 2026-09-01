@@ -10,15 +10,23 @@ import { useTheme, useThemeMode } from '../theme/ThemeProvider';
  * same path that worked before — because RN Android `resizeMode="repeat"` was
  * stretching one tile and looking broken.
  *
- * A faint blush wash (`bg.accentTint`, the secondary/blush surface) sits over
- * the doodles so the whole transcript carries the same pink hue as the rest of
- * the product rather than reading neutral-grey — user 2026-08-31, "only change
- * the hue a little". Kept low so the doodles still read; the exact opacity is a
- * device-tuned value.
+ * In light mode a faint blush wash (`bg.accentTint`, the secondary/blush
+ * surface) sits over the doodles so the whole transcript carries the same pink
+ * hue as the rest of the product rather than reading neutral-grey — user
+ * 2026-08-31, "only change the hue a little". Kept low so the doodles still
+ * read; the exact opacity is a device-tuned value.
+ *
+ * In dark mode there is no hue at all (user 2026-09-01). The wash instead lifts
+ * the near-black doodle sheet onto the palette's charcoal base, because the JPG
+ * is an AMOLED black and the rest of dark mode is WhatsApp charcoal #0B141A —
+ * an unwashed transcript would be the one screen darker than the app around it.
+ * https://developer.android.com/develop/ui/views/theming/darktheme
  *
  * Non-interactive and behind everything.
  */
 const WASH_OPACITY = 0.2;
+/** Opaque enough to set the charcoal base, low enough to leave the doodles legible. */
+const DARK_WASH_OPACITY = 0.85;
 
 function ChatWallpaperView() {
   const { isDark } = useThemeMode();
@@ -33,7 +41,9 @@ function ChatWallpaperView() {
       <View
         style={[
           styles.wash,
-          { backgroundColor: theme.color.bg.accentTint, opacity: WASH_OPACITY },
+          isDark
+            ? { backgroundColor: theme.color.bg.base, opacity: DARK_WASH_OPACITY }
+            : { backgroundColor: theme.color.bg.accentTint, opacity: WASH_OPACITY },
         ]}
       />
     </View>

@@ -33,8 +33,10 @@ const TABS: readonly Tab[] = [
   { key: 'home', glyph: 'home', label: 'Home', hint: 'People and conversations' },
   { key: 'favourites', glyph: 'heart', label: 'Favourites', hint: 'People you saved' },
   { key: 'call', glyph: 'call', label: 'Calls', hint: 'Your recent calls' },
-  // A person, not a gear (Amit's call): Settings here is "you and your account".
-  { key: 'settings', glyph: 'person', label: 'Settings', hint: 'Account and privacy' },
+  // WhatsApp's current profile-first destination names the person, not the
+  // utility. The route key stays `settings`; only the visible navigation label
+  // becomes "You". https://wabetainfo.com/whatsapp-beta-for-android-2-26-6-4-whats-new/
+  { key: 'settings', glyph: 'person', label: 'You', hint: 'Your account and settings' },
 ];
 
 interface Props {
@@ -99,9 +101,11 @@ function FloatingToolbarView({ active, onSelect, callEnabled = false, homeBadgeC
               style={[styles.indicator, on && styles.indicatorOn]}>
               <Icon
                 name={tab.glyph}
-                active={on}
+                // Keep the Lucide heart outlined in both states. The tonal pill
+                // and accent colour already identify the selected destination;
+                // a filled heart reads as a save action instead of navigation.
+                active={on && tab.key !== 'favourites'}
                 // 20 * the 1.2 icon scale = ~24px, the Material 3 nav icon size.
-                // Heart tab: fill + colour only — no scale (docs/flows.md).
                 size={20}
                 color={
                   on

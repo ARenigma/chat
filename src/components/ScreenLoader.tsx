@@ -7,12 +7,10 @@ import { LoadingIndicator } from './LoadingIndicator';
 /**
  * The one full-surface loading state, so every screen mounts the same way.
  *
- * Screens used to reach for RN's `ActivityIndicator` (Android's Material sweep)
- * for their loading branch while the rest of the app — buttons, auth, onboarding
- * — used the hand-drawn `Spinner` ring. Two different glyphs meant a cold start
- * cut between a platform sweep on the splash and a ring elsewhere. This centralises
- * the ring on `bg.base` so the boot splash, the role check, and each screen's
- * first paint are visually identical.
+ * Screens used to mix RN's platform spinner with hand-drawn rings. This
+ * centralises the actual MDC Android widget on `bg.base`, so boot, role checks,
+ * and screen first paint share one indicator. LoadingIndicator itself switches
+ * from the expressive shape loader to circular progress after five seconds.
  */
 export function ScreenLoader({ testID }: { testID?: string }) {
   const styles = useStyles(makeStyles);
