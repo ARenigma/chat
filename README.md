@@ -1,7 +1,9 @@
-# CompanionChat
+# Pappal
 
 A paid chat marketplace between real people. React Native (bare, New
 Architecture) + Supabase Postgres, with Supabase Realtime carrying the messages.
+The product name is **Pappal**; the Android/React Native package id remains
+`com.companionchat` / `CompanionChat` (ADR-0015).
 
 Members find someone to talk to and talk to them. Providers are real, admitted
 people, **there is no model in the message path**. Positioning is peer support
@@ -30,7 +32,7 @@ builds only that device's native ABI instead of four architectures.
 Backend, once per project:
 
 ```bash
-supabase db push           # applies migrations 001–037
+supabase db push           # applies migrations 001–045
 supabase config push       # applies auth config; anonymous sign-ins stay DISABLED
 ```
 
@@ -95,23 +97,24 @@ server-side secrets.
 
 ## Verify it
 
-| Command                   | What it proves                                                            |
-| ------------------------- | ------------------------------------------------------------------------- |
-| `npm run typecheck`       | `tsc --noEmit`, strict, `noUncheckedIndexedAccess`                        |
-| `npm run lint`            | ESLint, `--max-warnings=0`, no `any`, no unused                           |
-| `npm test`                | Jest: transcript reconciliation, token ledger, Sentry scrubber, contracts |
-| `npm run test:db`         | Migrations + RLS + grants + ledger parity against real Postgres (Docker)  |
-| `npm run verify:manifest` | Play Store permission gate, source and merged manifests                   |
-| `npm run bundle:android`  | Metro production bundle, resolves every import for real                   |
-| `npm run verify`          | tokens + typecheck + lint + tests + manifest + bundle                     |
-| `npm run verify:full`     | adds pgTAP                                                                |
-| `npm run verify:hermes`   | the shipped APK really contains Hermes bytecode                           |
-| `npm run e2e:install`     | device journeys on a booted emulator (needs the CLIs below)               |
-| `npm run moderate`        | the moderation queue (needs the service role key)                         |
-| `npm run provider`        | reply as a provider, to test the two-sided path from a laptop             |
-| `npm run android`         | Debug build/install for the connected ABI only                            |
-| `npm run android:release` | Release APK: R8 + resource shrinking (needs JDK 17 + SDK 36 + NDK 27)     |
-| `npm run android:bundle`  | Release AAB for Play upload                                               |
+| Command                         | What it proves                                                            |
+| ------------------------------- | ------------------------------------------------------------------------- |
+| `npm run typecheck`             | `tsc --noEmit`, strict, `noUncheckedIndexedAccess`                        |
+| `npm run lint`                  | ESLint, `--max-warnings=0`, no `any`, no unused                           |
+| `npm test`                      | Jest: transcript reconciliation, token ledger, Sentry scrubber, contracts |
+| `npm run test:db`               | Migrations + RLS + grants + ledger parity against real Postgres (Docker)  |
+| `npm run verify:manifest`       | Play Store permission gate, source and merged manifests                   |
+| `npm run bundle:android`        | Metro production bundle, resolves every import for real                   |
+| `npm run verify`                | tokens + typecheck + lint + tests + manifest + bundle                     |
+| `npm run verify:full`           | adds pgTAP                                                                |
+| `npm run verify:hermes`         | the shipped APK really contains Hermes bytecode                           |
+| `npm run e2e:install`           | device journeys on a booted emulator (needs the CLIs below)               |
+| `npm run moderate`              | the moderation queue (needs the service role key)                         |
+| `npm run provider`              | reply as a provider, to test the two-sided path from a laptop             |
+| `npm run android`               | Debug build/install for the connected ABI only                            |
+| `npm run android:release`       | Release APK: R8 + resource shrinking (needs JDK 17 + SDK 36 + NDK 27)     |
+| `npm run android:bundle`        | Release AAB for Play upload (`FLAG_SECURE` on)                            |
+| `npm run android:bundle:closed` | Closed-test AAB (capture enabled for named testers; never promote)        |
 
 The Jest suite covers client behavior and repository contracts. `npm run
 test:db` is the deeper server gate: it builds a
@@ -147,8 +150,9 @@ src/
                          ProviderApplicationScreen, ProviderStatusScreen,
                          ProviderHomeScreen
 supabase/
-  migrations/            001–037 (schema, wallet, sessions, admin config,
-                         Cashfree); see docs/ARCHITECTURE.md#database-migrations
+  migrations/            001–045 (schema, wallet, sessions, admin config,
+                         Cashfree, openers, hidden 30-day retention);
+                         see docs/ARCHITECTURE.md#database-migrations
   tests/                 pgTAP suite + auth shim, run by npm run test:db
 .maestro/                device journeys
 .gitlab-ci.yml           5 stages; see Pipeline below

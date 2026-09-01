@@ -1,4 +1,7 @@
-First release.
+Chat polish, You settings, and safer sessions.
 
-Pappal connects you with real people who are there to listen — start a
-conversation, pay per minute, and keep every message private to the two of you.
+• Profile-first You tab with Material dividers
+• Native Material loading indicators
+• Dark mode charcoal palette and chat fixes
+• Messages hide when a session ends; kept 30 days for disputes, then removed
+• Independent voice and video call controls
