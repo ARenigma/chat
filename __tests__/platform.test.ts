@@ -20,6 +20,38 @@ const MANIFEST = 'android/app/src/main/AndroidManifest.xml';
 const DEBUG_MANIFEST = 'android/app/src/debug/AndroidManifest.xml';
 const MAIN_ACTIVITY = 'android/app/src/main/java/com/companionchat/MainActivity.kt';
 
+describe('native Material wait indicators', () => {
+  /**
+   * M3's expressive LoadingIndicator is for processes under five seconds.
+   * Longer unknown waits use CircularProgressIndicator in indeterminate mode.
+   * https://m3.material.io/components/loading-indicator/overview
+   * https://developer.android.com/develop/ui/compose/components/progress
+   */
+  it('ships the current MDC Views widgets and registers both with React Native', () => {
+    const gradle = read('android/app/build.gradle');
+    const packageSource = read(
+      'android/app/src/main/java/com/companionchat/MaterialIndicatorPackage.kt',
+    );
+    const application = read(
+      'android/app/src/main/java/com/companionchat/MainApplication.kt',
+    );
+    const component = read('src/components/LoadingIndicator.tsx');
+
+    expect(gradle).toContain(
+      'implementation("com.google.android.material:material:1.14.0")',
+    );
+    expect(packageSource).toContain(
+      'com.google.android.material.loadingindicator.LoadingIndicator',
+    );
+    expect(packageSource).toContain(
+      'com.google.android.material.progressindicator.CircularProgressIndicator',
+    );
+    expect(packageSource).toContain('isIndeterminate = true');
+    expect(application).toContain('add(MaterialIndicatorPackage())');
+    expect(component).toContain('export const LONG_WAIT_MS = 5000');
+  });
+});
+
 describe('debug-only Maestro authentication', () => {
   /** https://developer.android.com/training/app-links/create-deeplinks */
   it('declares a distinct VIEW filter only in the debug source set', () => {
@@ -739,6 +771,47 @@ describe('device coverage matrix', () => {
     expect(bar).not.toMatch(/<Text[\s\S]*tab\.label/);
     expect(bar).toContain('<Icon');
     expect(read('src/components/Icon.tsx')).toContain('allowFontScaling={false}');
+  });
+
+  it('implements the approved profile-first You settings destination', () => {
+    const settings = read('src/screens/SettingsSheet.tsx');
+    const bar = read('src/components/FloatingToolbar.tsx');
+
+    // WhatsApp reference approved 2026-09-01: identity precedes utility rows,
+    // and the bottom destination names the person rather than the mechanism.
+    expect(bar).toContain("key: 'settings', glyph: 'person', label: 'You'");
+    expect(settings).toContain('style={styles.profileHero}');
+    expect(settings).toContain('style={styles.profileIdentity}');
+    expect(settings).toContain('Private member account');
+
+    // The approved follow-up uses WhatsApp's profile-shortcut variant: a compact
+    // transparent M3 bar over the cover, with a real 48dp Back action even though
+    // the member route also keeps the bottom navigation.
+    expect(settings).toContain('<TopAppBar');
+    expect(settings).toContain('title=""');
+    expect(settings).toContain('transparent');
+    expect(settings).toContain('testID="settings-back"');
+    expect(settings).toContain('size={48}');
+    expect(settings).toContain('<ChatWallpaper />');
+  });
+
+  it('keeps each settings item a single 48dp+ icon/content/trailing target', () => {
+    const settings = read('src/screens/SettingsSheet.tsx');
+    // M3 list slots: leading stays narrower than dominant content; the outer
+    // Pressable is the only action target. https://m3.material.io/components/lists/specs
+    expect(settings).toContain('function SettingsRowContent');
+    expect(settings).toMatch(/row:\s*{[\s\S]*?minHeight:\s*64/);
+    expect(settings).toMatch(/rowCopy:\s*{[\s\S]*?flex:\s*1/);
+    expect(settings).toContain('style={styles.iconBox}');
+    expect(settings).toContain("import { Divider } from '../components/Divider'");
+    // Dividers separate rows, and align to where the title starts rather than
+    // borrowing the avatar list's 72dp. https://m3.material.io/components/divider/specs
+    expect(settings).toContain('<Divider variant="inset" insetStart={ROW_TEXT_INSET} />');
+    expect(settings).toMatch(/const ROW_TEXT_INSET = 32 \+ TOKENS\.space\.sm/);
+    expect(settings).not.toContain('<Divider variant="inset" />');
+    expect(settings).toContain('icon="logout"');
+    expect(settings).toContain('choiceSheet === \'presence\'');
+    expect(settings).toContain('choiceSheet === \'theme\'');
   });
 
   /**

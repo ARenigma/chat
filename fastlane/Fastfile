@@ -5,7 +5,8 @@
 
 default_platform(:android)
 
-AAB = "../android/app/build/outputs/bundle/release/app-release.aab"
+PRODUCTION_AAB = "../android/app/build/outputs/bundle/release/app-release.aab"
+CLOSED_TEST_AAB = "../android/app/build/outputs/bundle/closedTest/app-closedTest.aab"
 
 platform :android do
   # Store listing text (and, opt-in, images) with no build attached. Reads the
@@ -31,7 +32,7 @@ platform :android do
   lane :internal do
     upload_to_play_store(
       track: "internal",
-      aab: AAB,
+      aab: CLOSED_TEST_AAB,
       release_status: "completed",
       skip_upload_apk: true,
       skip_upload_metadata: true,
@@ -46,7 +47,7 @@ platform :android do
     fraction = (options[:rollout] || "0.1").to_f
     upload_to_play_store(
       track: "beta",
-      aab: AAB,
+      aab: CLOSED_TEST_AAB,
       release_status: "inProgress",
       rollout: fraction.to_s,
       skip_upload_apk: true,

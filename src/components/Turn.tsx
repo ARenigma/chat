@@ -174,6 +174,51 @@ interface Shared {
 }
 
 /**
+ * Bottom-right metadata row inside a bubble: timestamp + optional delivery tick.
+ *
+ * Shared by both text/voice bubbles (via Body) and media bubbles (via the
+ * mediaTime overlay). The receipt icon is INSIDE the bubble on every settled
+ * outgoing message, not only the newest — the same WhatsApp pattern the rest of
+ * the transcript layout already follows.
+ *
+ * Receipt colours on the accent fill: green would clash and dark tokens drop
+ * below AA. `rgba(255,255,255,0.65)` for sent reads as "muted confirmation";
+ * a brighter white-green tint (#85D4A0) for read mirrors a positive state
+ * without competing with the bubble's coral.
+ */
+function MetaRow({
+  timestamp,
+  receipt,
+  onAccent,
+}: {
+  timestamp: string;
+  receipt?: 'sent' | 'read';
+  onAccent: boolean;
+}) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
+  const readColor = onAccent ? '#85D4A0' : theme.color.text.positive;
+  const sentColor = onAccent ? 'rgba(255,255,255,0.65)' : theme.color.text.tertiary;
+  return (
+    <View style={styles.metaRow}>
+      <Text
+        allowFontScaling={false}
+        numberOfLines={1}
+        style={onAccent ? styles.inlineTimeOnAccent : styles.inlineTimePeer}>
+        {timestamp}
+      </Text>
+      {receipt !== undefined ? (
+        <Icon
+          name={receipt === 'read' ? 'checkCheck' : 'check'}
+          size={11}
+          color={receipt === 'read' ? readColor : sentColor}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+/**
  * The audio body, or the text one.
  *
  * A single helper on purpose, so the two bubbles cannot drift into rendering a
@@ -189,6 +234,7 @@ function Body({
   textStyle,
   testID,
   timestamp,
+  receipt,
 }: {
   message: string;
   voice: VoiceBody | undefined;
@@ -198,28 +244,32 @@ function Body({
   textStyle: StyleProp<TextStyle>;
   testID: string;
   timestamp?: string;
+  receipt?: 'sent' | 'read';
 }) {
   // Must precede the voice-branch early return: a hook cannot be called
   // conditionally (react-hooks/rules-of-hooks).
   const stamp = useStyles(makeStyles);
   if (voice !== undefined && voicePlayer !== undefined) {
     return (
-      <VoiceNote
-        messageId={voice.messageId}
-        path={voice.path}
-        durationMs={voice.durationMs}
-        peaks={voice.peaks}
-        onAccent={onAccent}
-        pending={pending}
-        onToggle={voicePlayer.toggle}
-        onCycleSpeed={voicePlayer.cycleSpeed}
-        speed={voicePlayer.speed}
-      />
+      <View style={stamp.textBody}>
+        <VoiceNote
+          messageId={voice.messageId}
+          path={voice.path}
+          durationMs={voice.durationMs}
+          peaks={voice.peaks}
+          onAccent={onAccent}
+          pending={pending}
+          onToggle={voicePlayer.toggle}
+          onCycleSpeed={voicePlayer.cycleSpeed}
+          speed={voicePlayer.speed}
+        />
+        {timestamp ? (
+          <MetaRow timestamp={timestamp} receipt={receipt} onAccent={onAccent} />
+        ) : null}
+      </View>
     );
   }
-  // ONE clock per bubble, right-aligned on its own line — a single source of
-  // truth that lands in the bubble's bottom-right corner, which is what was
-  // asked for.
+  // ONE clock (+ optional tick) per bubble, right-aligned on its own line.
   //
   // History of what did NOT work, so it is not re-tried: (1) a transparent
   // width-reserve on the last line plus an absolutely-pinned clock rendered BOTH
@@ -229,17 +279,12 @@ function Body({
   // flex row wrapped the clock mid-word in a narrow bubble ("8:10 p" / "m"). A
   // block child, right-aligned, measures cleanly and never clips or duplicates.
   return (
-    <View>
+    <View style={stamp.textBody}>
       <Text testID={testID} allowFontScaling style={textStyle}>
         {message}
       </Text>
       {timestamp ? (
-        <Text
-          allowFontScaling={false}
-          numberOfLines={1}
-          style={onAccent ? stamp.inlineTimeOnAccent : stamp.inlineTimePeer}>
-          {timestamp}
-        </Text>
+        <MetaRow timestamp={timestamp} receipt={receipt} onAccent={onAccent} />
       ) : null}
     </View>
   );
@@ -335,6 +380,8 @@ function MediaBubble({
 interface PeerProps extends Shared {
   message: string;
   initial: string;
+  /** Profile image shown before the first bubble in each peer-message group. */
+  avatarUri?: string | null;
   /** First of a group shows the avatar; continued turns keep the slot, hide the mark. */
   first: boolean;
   animate?: boolean;
@@ -374,6 +421,7 @@ interface PeerProps extends Shared {
 function PeerTurnView({
   message,
   initial,
+  avatarUri,
   first,
   timestamp,
   animate,
@@ -404,7 +452,7 @@ function PeerTurnView({
       style={styles.peerRow}
     >
       <View style={styles.slot}>
-        {first ? <Avatar initial={initial} size={26} /> : null}
+        {first ? <Avatar initial={initial} uri={avatarUri} size={26} /> : null}
       </View>
       <View style={styles.peerColumn}>
         <View
@@ -464,9 +512,9 @@ interface MineProps extends Shared {
   /** Pending until the server confirms it; a dimmed bubble says so honestly. */
   pending?: boolean;
   /**
-   * Receipt state, rendered only on the newest message this session sent,
-   * repeating it on every bubble is noise, and the newest one answers the
-   * question the others would.
+   * Receipt state, rendered inside every settled outgoing bubble (WhatsApp
+   * pattern): single check for sent, double check for read. Undefined only while
+   * the row is still optimistic (pending).
    */
   receipt?: 'sent' | 'read';
   /**
@@ -514,7 +562,6 @@ function MyTurnView({
   chosenReaction,
 }: MineProps) {
   const styles = useStyles(makeStyles);
-  const theme = useTheme();
   const target = useMemo<ActionTarget | null>(
     () =>
       !pending && messageId !== undefined
@@ -550,23 +597,34 @@ function MyTurnView({
               <MediaBubble image={image} onAccent pending={pending === true} />
               {timestamp ? (
                 <View style={styles.mediaTime} pointerEvents="none">
-                  <BubbleTime stamp={timestamp} onAccent />
+                  {/* Timestamp + tick inside the media overlay, same semantics as text. */}
+                  <View style={styles.mediaMetaRow}>
+                    <BubbleTime stamp={timestamp} onAccent />
+                    {receipt !== undefined && !pending ? (
+                      <Icon
+                        name={receipt === 'read' ? 'checkCheck' : 'check'}
+                        size={11}
+                        color={receipt === 'read' ? '#85D4A0' : 'rgba(255,255,255,0.65)'}
+                      />
+                    ) : null}
+                  </View>
                 </View>
               ) : null}
             </View>
           ) : (
             <>
               {quote ? <QuoteBlock quote={quote} onAccent /> : null}
-            <Body
-              message={message}
-              voice={voice}
-              voicePlayer={voicePlayer}
-              pending={pending === true}
-              onAccent
-              textStyle={styles.myText}
-              testID="bubble-mine"
-              timestamp={timestamp}
-            />
+              <Body
+                message={message}
+                voice={voice}
+                voicePlayer={voicePlayer}
+                pending={pending === true}
+                onAccent
+                textStyle={styles.myText}
+                testID="bubble-mine"
+                timestamp={timestamp}
+                receipt={pending ? undefined : receipt}
+              />
             </>
           )}
         </InteractiveBubble>
@@ -576,23 +634,6 @@ function MyTurnView({
           </View>
         ) : null}
       </View>
-      {receipt !== undefined ? (
-        <View testID="read-receipt" style={styles.receiptRow}>
-          {receipt === 'read' ? (
-            <Icon
-              name="checkCheck"
-              size={13}
-              color={theme.color.text.positive}
-            />
-          ) : (
-            <Icon
-              name="check"
-              size={13}
-              color={theme.color.text.tertiary}
-            />
-          )}
-        </View>
-      ) : null}
     </Animated.View>
   );
 }
@@ -812,7 +853,11 @@ const makeStyles = (t: Theme) =>
     bubbleStack: {
       position: 'relative',
       alignSelf: 'flex-start',
-      maxWidth: '100%',
+      // Own the 80% constraint here, where the parent has a definite row width.
+      // Putting a percentage max-width on the shrink-wrapped bubble itself
+      // creates circular Android measurement: the wrapper shrinks to the text
+      // while the text is simultaneously measuring against the wrapper.
+      maxWidth: '80%',
       // overflow visible so the stuck reaction is not clipped by the stack.
       overflow: 'visible',
     },
@@ -837,7 +882,7 @@ const makeStyles = (t: Theme) =>
       right: 10,
     },
     peerBubble: {
-      maxWidth: '80%',
+      maxWidth: '100%',
       paddingHorizontal: TOKENS.space.md,
       paddingTop: 8,
       paddingBottom: 8,
@@ -848,6 +893,7 @@ const makeStyles = (t: Theme) =>
     peerText: {
       ...TOKENS.typography.bodyLarge,
       color: t.color.text.primary,
+      flexShrink: 1,
     },
     bubbleInner: {
       overflow: 'visible',
@@ -870,11 +916,12 @@ const makeStyles = (t: Theme) =>
       paddingVertical: 1,
     },
     myColumn: {
+      width: '100%',
       alignItems: 'flex-end',
       gap: TOKENS.space['2xs'],
     },
     bubble: {
-      maxWidth: '80%',
+      maxWidth: '100%',
       paddingHorizontal: TOKENS.space.md,
       paddingTop: 8,
       paddingBottom: 8,
@@ -936,30 +983,43 @@ const makeStyles = (t: Theme) =>
     myText: {
       ...TOKENS.typography.bodyLarge,
       color: t.color.text.onAccent,
+      flexShrink: 1,
     },
-    // The per-bubble clock, seated in the bottom-right corner (see Body). Same
-    // metrics as BubbleTime so the two stay visually identical; peer sits in
-    // tertiary, mine in muted white. A slight negative top pulls it up under the
-    // last text line so it does not add a full line of height.
+    textBody: {
+      minWidth: 0,
+      flexShrink: 1,
+    },
+    // Inline metadata row at the bottom-right of every text/voice bubble.
+    // Both timestamp and (for outgoing) delivery tick sit here so they read as
+    // one unit rather than two separate labels.
+    metaRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      alignSelf: 'flex-end',
+      gap: 2,
+      marginTop: -2,
+    },
+    // The per-bubble clock inside metaRow. Same metrics as BubbleTime; peer sits
+    // in tertiary, mine in muted white.
     inlineTimePeer: {
       ...TOKENS.typography.captionSmall,
       fontSize: 11,
       lineHeight: 16,
       color: t.color.text.tertiary,
-      alignSelf: 'flex-end',
-      marginTop: -2,
     },
     inlineTimeOnAccent: {
       ...TOKENS.typography.captionSmall,
       fontSize: 11,
       lineHeight: 16,
-      color: 'rgba(255,255,255,0.72)',
-      alignSelf: 'flex-end',
-      marginTop: -2,
+      // Follows the bubble's paired on-colour. Dark mode uses a light coral
+      // bubble with dark ink, so a hardcoded white timestamp disappeared.
+      color: t.color.text.onAccent,
     },
-    receiptRow: {
+    // Row inside the photo overlay: timestamp + tick side by side.
+    mediaMetaRow: {
       flexDirection: 'row',
       alignItems: 'center',
+      gap: 3,
     },
     quote: {
       borderLeftWidth: 2,

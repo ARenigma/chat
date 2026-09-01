@@ -19,6 +19,8 @@ class MainApplication : Application(), ReactApplication {
           add(InAppUpdatePackage())
           // Play Billing / UCB. Not autolinkable for the same reason.
           add(BillingPackage())
+          // Native Material 3 expressive + circular wait indicators.
+          add(MaterialIndicatorPackage())
         },
     )
   }

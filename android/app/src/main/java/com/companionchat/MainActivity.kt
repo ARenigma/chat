@@ -38,12 +38,10 @@ class MainActivity : ReactActivity() {
    * the directory they browsed and who they talked to are all disclosures, and a
    * per-screen rule is one somebody forgets to extend to the next screen.
    *
-   * **Gated per build type, not on DEBUG.** It was `!BuildConfig.DEBUG`, which
-   * covered `internal` too and therefore made the app impossible to look at: a
-   * secure window returns nothing at all to `screencap`, so frame-by-frame visual
-   * verification stopped working the moment this shipped. `BLOCK_SCREENSHOTS` is
-   * declared per build type in build.gradle: true for `release`, false for
-   * `internal` and `debug`. Play only ever receives `release`.
+   * **Gated per build type, not on DEBUG.** A secure window returns nothing to
+   * `screencap`, so debug and the named-tester variants stay capturable for
+   * frame-by-frame defect reports. `BLOCK_SCREENSHOTS` is true only for the
+   * production `release`; Play closed testing uses `closedTest`, not `release`.
    *
    * What it does not do, stated so nobody assumes otherwise: it cannot stop a
    * second phone pointed at the screen. It raises the effort, it does not remove

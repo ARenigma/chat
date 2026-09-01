@@ -20,7 +20,7 @@ import { isClayUri, resolveAvatarSource } from '../lib/clayAvatars';
  * `ROW_SEPARATOR_INSET` derives from it, which is the point of exporting
  * `ROW_AVATAR`.
  */
-type Size = 26 | 30 | 34 | 40 | 48 | 56;
+type Size = 26 | 30 | 34 | 40 | 48 | 56 | 76 | 88;
 
 interface Props {
   initial: string;
@@ -56,7 +56,16 @@ interface Props {
   testID?: string;
 }
 
-const FONT: Record<Size, number> = { 26: 11, 30: 12, 34: 13, 40: 15, 48: 18, 56: 20 };
+const FONT: Record<Size, number> = {
+  26: 11,
+  30: 12,
+  34: 13,
+  40: 15,
+  48: 18,
+  56: 20,
+  76: 27,
+  88: 31,
+};
 
 /**
  * The presence dot's outer diameter, ring included. The green circle is this
@@ -67,7 +76,16 @@ const FONT: Record<Size, number> = { 26: 11, 30: 12, 34: 13, 40: 15, 48: 18, 56:
  * here, and 13 was neither the old answer nor the new one. Every other value is
  * exactly what the ternary produced, so nothing but 48 moves.
  */
-const DOT: Record<Size, number> = { 26: 10, 30: 10, 34: 13, 40: 13, 48: 16, 56: 13 };
+const DOT: Record<Size, number> = {
+  26: 10,
+  30: 10,
+  34: 13,
+  40: 13,
+  48: 16,
+  56: 13,
+  76: 18,
+  88: 20,
+};
 
 /**
  * The breath is a real sine, not two linear ramps.

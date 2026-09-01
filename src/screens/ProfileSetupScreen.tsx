@@ -322,6 +322,7 @@ export function ProfileSetupScreen({
             checked={termsChecked}
             accessibilityLabel="Accept terms and privacy"
             testID="profile-setup-terms"
+            size={22}
             style={styles.checkboxHit}>
             <View style={[styles.checkbox, termsChecked && styles.checkboxOn]}>
               {termsChecked ? (
@@ -491,14 +492,15 @@ const makeStyles = (t: Theme) =>
     },
     termsRow: {
       flexDirection: 'row',
-      alignItems: 'flex-start',
+      alignItems: 'center',
       gap: TOKENS.space.sm,
       marginBottom: TOKENS.space.sm,
     },
     checkboxHit: {
-      // 44pt minimum touch target (Material / Android accessibility).
-      minWidth: 44,
-      minHeight: 44,
+      // Keep the visible box aligned to the text. Pressable's size prop expands
+      // this 22dp visual to the Android 48dp touch target with hitSlop.
+      width: 22,
+      height: 22,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -520,7 +522,7 @@ const makeStyles = (t: Theme) =>
       flex: 1,
       ...TOKENS.typography.captionSmall,
       color: t.color.text.secondary,
-      lineHeight: 20,
+      lineHeight: 22,
     },
     link: {
       color: t.color.text.accent,

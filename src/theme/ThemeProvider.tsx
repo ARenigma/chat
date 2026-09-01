@@ -47,16 +47,27 @@ interface ThemeState {
 
 const ThemeContext = createContext<ThemeState>({
   theme: LIGHT,
-  mode: 'system',
+  mode: 'light',
   isDark: false,
   setMode: () => undefined,
 });
 
+/**
+ * Fresh-install default is 'light', not 'system'.
+ *
+ * Android dark-theme guidance recommends defaulting to System so the app
+ * follows the device immediately. This product departs from that recommendation:
+ * dark mode is a deliberate personalisation in a chat product, not a base
+ * expectation. A first-time user who has never touched the Appearance setting
+ * gets Light mode; only an explicit choice (stored in MMKV) activates Dark or
+ * System. The departure is documented in docs/android-audit.md (dark-theme
+ * section) and asserted mechanically in __tests__/theme.test.ts.
+ */
 function readStoredMode(): ThemeMode {
   const stored = storage.get(MODE_KEY);
   return stored === 'light' || stored === 'dark' || stored === 'system'
     ? stored
-    : 'system';
+    : 'light'; // fresh-install default — documented deviation from Android System recommendation
 }
 
 /**

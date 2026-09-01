@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
-import { useStyles, useTheme } from '../theme/ThemeProvider';
+import { useStyles } from '../theme/ThemeProvider';
 import { INTERACTION, shakeX } from '../theme/motion';
 import { TextField } from './TextField';
 
@@ -15,7 +15,12 @@ interface Props {
   length?: number;
   /** Bumped by the caller to shake the field. A counter, not a boolean. */
   errorNonce?: number;
-  editable?: boolean;
+  /**
+   * Verification is in flight. The native input deliberately remains editable
+   * so Android does not blur it and collapse the IME; changes are ignored until
+   * the request settles.
+   */
+  verifying?: boolean;
   testID?: string;
 }
 
@@ -46,11 +51,10 @@ function CodeFieldView({
   onComplete,
   length = 6,
   errorNonce = 0,
-  editable = true,
+  verifying = false,
   testID,
 }: Props) {
   const styles = useStyles(makeStyles);
-  const theme = useTheme();
   const input = useRef<TextInput>(null);
   const shake = useSharedValue(0);
   const lastFired = useRef<string | null>(null);
@@ -95,11 +99,14 @@ function CodeFieldView({
 
   const onChangeText = useCallback(
     (next: string) => {
+      if (verifying) {
+        return;
+      }
       // Digits only, and truncated here rather than trusting maxLength: an
       // autofilled SMS code can arrive with surrounding whitespace.
       onChange(next.replace(/[^\d]/g, '').slice(0, length));
     },
-    [onChange, length],
+    [onChange, length, verifying],
   );
 
   const filled = value.length;
@@ -130,7 +137,6 @@ function CodeFieldView({
           testID={testID}
           value={value}
           onChangeText={onChangeText}
-          editable={editable}
           keyboardType="number-pad"
           // The two that make autofill work. `oneTimeCode` is what iOS reads;
           // `sms-otp` is the Android autofill hint. Both are named because the
@@ -144,12 +150,13 @@ function CodeFieldView({
           // Transparent, not invisible: see the note above about opacity: 0 and
           // the Android keyboard.
           style={styles.input}
-          selectionColor={theme.color.text.primary}
+          selectionColor="transparent"
           caretHidden
+          accessibilityState={{ busy: verifying }}
         />
 
         {Array.from({ length }, (_, i) => {
-          const active = editable && i === Math.min(filled, length - 1);
+          const active = !verifying && i === Math.min(filled, length - 1);
           const hasDigit = i < filled;
           return (
             <View
@@ -218,5 +225,9 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     // Text nodes in the segments above.
     fontSize: 24,
     color: 'rgba(0, 0, 0, 0)',
+    // Android can briefly ignore transparent glyph colour while applying an SMS
+    // autofill value. Alpha the native input as a whole so raw digits cannot
+    // flash over the segmented facade; it remains laid out and focusable.
+    opacity: 0.01,
   },
 });

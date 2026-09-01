@@ -25,6 +25,7 @@ import { useStyles } from '../theme/ThemeProvider';
 import { GESTURE, springTo } from '../theme/motion';
 import { setSheetBackdropBlur } from '../lib/windowChrome';
 import { trackSheetClosed } from '../lib/perfTelemetry';
+import { Pressable } from './Pressable';
 
 // Where the sheet starts its entry slide: safely below the tallest sheet, so it
 // begins off-screen and springs up into view. Only the last stretch is visible.
@@ -263,32 +264,30 @@ function SheetView({
               * rendered only when there is an action to put in it, so a sheet with
               * neither does not pay for an empty strip.
               */}
-            {onCancel !== undefined || onDone !== undefined ? (
+        {onCancel !== undefined || onDone !== undefined ? (
               <View style={styles.barRow}>
                 {onCancel !== undefined ? (
-                  <RNPressable
+                  <Pressable
                     onPress={onCancel}
                     testID="sheet-cancel"
-                    accessibilityRole="button"
                     accessibilityLabel={cancelLabel}
-                    hitSlop={12}>
+                    press="button">
                     <Text allowFontScaling style={styles.action}>
                       {cancelLabel}
                     </Text>
-                  </RNPressable>
+                  </Pressable>
                 ) : null}
                 <View style={styles.barSpacer} />
                 {onDone !== undefined ? (
-                  <RNPressable
+                  <Pressable
                     onPress={onDone}
                     testID="sheet-done"
-                    accessibilityRole="button"
                     accessibilityLabel={doneLabel}
-                    hitSlop={12}>
+                    press="button">
                     <Text allowFontScaling style={styles.action}>
                       {doneLabel}
                     </Text>
-                  </RNPressable>
+                  </Pressable>
                 ) : null}
               </View>
             ) : null}
@@ -328,7 +327,9 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: t.color.bg.inverse,
+    // M3 scrim is a stable dark role, not inverseSurface (which turns light in
+    // dark mode). https://m3.material.io/styles/elevation/applying-elevation
+    backgroundColor: t.color.bg.scrim,
   },
   scrimFill: {
     position: 'absolute',

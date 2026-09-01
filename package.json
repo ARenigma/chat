@@ -14,6 +14,7 @@
     "verify": "npm run tokens:check && npm run tokens:web:check && npm run icons:check && npm run icons:font:check && npm run contrast:check && npm run web:check && npm run design:check && npm run typecheck && npm run lint && npm test && npm run verify:manifest && npm run bundle:android",
     "android:release": "cd android && ./gradlew assembleRelease",
     "android:bundle": "cd android && ./gradlew bundleRelease",
+    "android:bundle:closed": "cd android && ./gradlew bundleClosedTest",
     "android:lint": "cd android && ./gradlew :app:lintDebug -x :react-native-worklets:lintAnalyzeDebug -x :react-native-reanimated:lintAnalyzeDebug",
     "android:baseline-profile": "cd android && ./gradlew :app:generateBaselineProfile --no-parallel",
     "android:benchmark:startup": "cd android && ./gradlew :baselineprofile:connectedNonMinifiedInternalAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.companionchat.baselineprofile.StartupBenchmark -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=Macrobenchmark -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR -PreactNativeArchitectures=arm64-v8a --no-parallel",

@@ -618,9 +618,10 @@ describe('gesture handling reaches every root', () => {
     }
   });
 
-  it('limits gesture declarations to the sheet and the chat bubble', () => {
+  it('limits gesture declarations to the sheet, the spotlight card, and the chat bubble', () => {
     // Tripwire: a new Gesture.Pan/LongPress needs a wrapper decision, not a copy.
     // Turn.tsx is the WhatsApp swipe-to-reply / long-press strip.
+    // SpotlightCard.tsx is the M3 bottom sheet with drag-to-dismiss (2026-09).
     const users = ['src/components', 'src/screens']
       .flatMap(dir =>
         readdirSync(join(ROOT, dir))
@@ -630,7 +631,7 @@ describe('gesture handling reaches every root', () => {
       .filter(s => /Gesture\.\w+\(/.test(s.body))
       .map(s => s.file)
       .sort();
-    expect(users).toEqual(['Sheet.tsx', 'Turn.tsx']);
+    expect(users).toEqual(['Sheet.tsx', 'SpotlightCard.tsx', 'Turn.tsx']);
   });
 });
 
@@ -1160,7 +1161,7 @@ describe('in-app updates are wired end to end', () => {
     // Play rejects a duplicate versionCode. The old default of 1 meant the first
     // upload worked and every later local build collided.
     const gradle = read('android/app/build.gradle');
-    expect(gradle).toContain('wantsRelease && explicitVersionCode == null');
+    expect(gradle).toContain('(wantsRelease || wantsClosedTest) && explicitVersionCode == null');
     expect(gradle).toMatch(/throw new GradleException/);
   });
 });
@@ -1213,23 +1214,30 @@ describe('a block is visible where it matters and reversible everywhere', () => 
 });
 
 describe('the redesign holds its own invariants', () => {
-  it('blocks screen capture in the build that reaches Play, and only there', () => {
+  it('keeps closed-test builds capturable while production remains secure', () => {
     // FLAG_SECURE covers screenshots, screen recording and the app-switcher
     // thumbnail together. Blocking only screenshots bans nothing.
     const activity = read('android/app/src/main/java/com/companionchat/MainActivity.kt');
     expect(activity).toContain('WindowManager.LayoutParams.FLAG_SECURE');
     expect(activity).toContain('if (BuildConfig.BLOCK_SCREENSHOTS)');
-    // Not gated on DEBUG. That covered `internal` too, and a secure window
-    // returns nothing at all to screencap, so it made the app impossible to
-    // verify visually on a device. Matched as the code form, because the comment
-    // above it names the old condition in order to explain why it changed.
+    // Not gated on DEBUG: the build type expresses the distribution contract.
     expect(activity).not.toContain('if (!BuildConfig.DEBUG)');
 
     const gradle = read('android/app/build.gradle');
-    const release = gradle.slice(gradle.indexOf('release {'), gradle.indexOf('internal {'));
+    const release = gradle.slice(gradle.indexOf('release {'), gradle.indexOf('closedTest {'));
     expect(release).toContain('buildConfigField "boolean", "BLOCK_SCREENSHOTS", "true"');
+    const closed = gradle.slice(gradle.indexOf('closedTest {'), gradle.indexOf('internal {'));
+    expect(closed).toContain('buildConfigField "boolean", "BLOCK_SCREENSHOTS", "false"');
     const internal = gradle.slice(gradle.indexOf('internal {'));
     expect(internal).toContain('buildConfigField "boolean", "BLOCK_SCREENSHOTS", "false"');
+  });
+
+  it('renders the peer profile image before the first bubble in a group', () => {
+    const turn = read('src/components/Turn.tsx');
+    const chat = read('src/screens/ChatScreen.tsx');
+    expect(turn).toContain('avatarUri?: string | null');
+    expect(turn).toContain('<Avatar initial={initial} uri={avatarUri} size={26}');
+    expect(chat).toContain('avatarUri={avatarUrl}');
   });
 
   it('routes the back gesture through the parent map rather than branching inline', () => {
@@ -1374,54 +1382,35 @@ describe('the busy button does not move', () => {
     expect(button).toContain("width: SPINNER_SIZE + TOKENS.space['2xs']");
   });
 
-  it('uses the M3 LoadingIndicator, not Android\'s Material sweep', () => {
+  it('uses the shared native M3 LoadingIndicator', () => {
     const button = read('src/components/Button.tsx');
     expect(button).toContain("import { LoadingIndicator } from './LoadingIndicator'");
-    // ActivityIndicator in order to say why it is not used.
+    // RN's ActivityIndicator is not MDC's Material 3 Views implementation.
     expect(button).not.toMatch(/<ActivityIndicator|ActivityIndicator[,}]|ActivityIndicator\s*from/);
   });
 
-  it('is a continuously rotating arc driven by a single shared value', () => {
-    // The M3 contained indicator: one `rot` shared value drives one rotation on
-    // the UI thread so it never stalls during JS pressure (OAuth, heavy renders).
+  it('renders MDC native Views instead of hand-drawn React Native geometry', () => {
     const indicator = read('src/components/LoadingIndicator.tsx');
-    // One shared value drives one rotation — not eight opacity writes.
-    expect(indicator).toContain('useSharedValue(0)');
-    // The arc rotates a full revolution per cycle (withRepeat wraps withTiming(360)).
-    expect(indicator).toContain('withRepeat(');
-    expect(indicator).toContain('withTiming(360,');
-    // Linear easing: no ease-in or ease-out within a revolution.
-    expect(indicator).toContain('Easing.linear');
-    // Honour the OS reduce-motion setting.
-    expect(indicator).toContain('ReduceMotion.System');
-    // The arc is a border trick: the top AND right borders carry colour, the
-    // bottom and left are cleared, giving a ~180° arc on a full-circle radius.
-    expect(indicator).toContain('borderTopColor');
-    expect(indicator).toContain('borderRightColor');
-    // The component must NOT import SVG (banned in this project).
+    const android = read(
+      'android/app/src/main/java/com/companionchat/MaterialIndicatorPackage.kt',
+    );
+    expect(indicator).toContain("requireNativeComponent<NativeIndicatorProps>('PappalMaterialLoadingIndicator')");
+    expect(indicator).toContain("requireNativeComponent<NativeIndicatorProps>('PappalMaterialCircularProgress')");
+    expect(android).toContain('com.google.android.material.loadingindicator.LoadingIndicator');
+    expect(android).toContain('com.google.android.material.progressindicator.CircularProgressIndicator');
+    expect(android).toContain('isIndeterminate = true');
+    // No border/SVG imitation remains in JavaScript.
+    expect(indicator).not.toContain('borderTopColor');
+    expect(indicator).not.toContain('withRepeat');
     expect(indicator).not.toContain('react-native-svg');
-    // No shape morph. The M3 Expressive morph needs SVG path data (banned), and
-    // the borderRadius circle<->square fake we shipped instead read as a wobble
-    // — the thing the user flagged as broken (2026-08-31). The arc now rotates
-    // at a fixed radius: a clean, in-spec circular indeterminate indicator.
-    expect(indicator).not.toContain('radius.value');
   });
 
-  it('derives its border width from a shared formula rather than hardcoding it', () => {
-    // `indicatorBorderWidth` is exported from loadingIndicator.ts so it is
-    // testable and changeable in one place (same policy as the old ringBorderWidth).
+  it('switches every unknown wait to circular progress at the M3 boundary', () => {
     const indicator = read('src/components/LoadingIndicator.tsx');
-    expect(indicator).toContain('indicatorBorderWidth');
-    const lib = read('src/lib/loadingIndicator.ts');
-    expect(lib).toContain('export function indicatorBorderWidth');
-    // ringBorderWidth remains in spinner.ts for backward compat.
-    expect(read('src/lib/spinner.ts')).toContain('export function ringBorderWidth');
-  });
-
-  it('keeps the spinner period in the tokens', () => {
-    // The house rule: every timing lives in design/tokens.json.
-    expect(read('src/components/LoadingIndicator.tsx')).toContain('DURATION.spinnerCycle');
-    expect(read('design/tokens.json')).toContain('"spinnerCycle"');
+    expect(indicator).toContain('export const LONG_WAIT_MS = 5000');
+    expect(indicator).toContain("variant = 'auto'");
+    expect(indicator).toContain('setTimeout(() => setLongWait(true), LONG_WAIT_MS)');
+    expect(indicator).toContain("variant === 'auto' && longWait");
   });
 
   it('moves the calling dots as a clipped conveyor, not a pulse in place', () => {
@@ -1658,6 +1647,38 @@ describe('the chat restyle is wired, not just drawn', () => {
     // which already reaches the bottom of the screen, so adding insets.bottom on
     // top floated the composer ~34pt above the keyboard on a notched iPhone.
     expect(chatCode).toContain('keyboardUp ? 0 : insets.bottom');
+  });
+
+  it('holds an explicit FlashList ref and scrolls to offset 0 on new messages', () => {
+    // Without a ref, there is no way to scroll programmatically. Without the
+    // useEffect watching rows.length, a new incoming message while the user is
+    // scrolled up reading history goes unnoticed and they miss it.
+    expect(chatCode).toContain('listRef');
+    expect(chatCode).toContain('ref={listRef}');
+    expect(chatCode).toContain('scrollToOffset({ offset: 0');
+    // The effect must watch `rows` so it fires for both local and remote messages.
+    expect(chatCode).toContain('prevRowsLen');
+  });
+
+  it('shows receipt inside every settled outgoing bubble, not only newest', () => {
+    // The old code gated receipt on `showReceipt` (only the last own message).
+    // Now every non-pending outgoing row carries a tick: single for sent, double
+    // for read, matching WhatsApp semantics. Pending rows carry undefined.
+    const turnSrc = read('src/components/Turn.tsx');
+    // Receipt is rendered inside the bubble (MetaRow), not in a detached row.
+    expect(turnSrc).toContain('metaRow');
+    expect(turnSrc).not.toContain('receiptRow');
+    // Pending rows suppress the tick; settled rows show it.
+    expect(turnSrc).toContain("pending ? undefined : receipt");
+    // ChatScreen no longer uses showReceipt to gate the prop.
+    expect(chatCode).not.toContain('showReceipt');
+  });
+
+  it('carries receipt ticks into the photo overlay too', () => {
+    // A photo bubble in an outgoing turn shows its timestamp + tick in the
+    // mediaTime overlay, same semantics as a text bubble.
+    const turnSrc = read('src/components/Turn.tsx');
+    expect(turnSrc).toContain('mediaMetaRow');
   });
 });
 
@@ -1965,6 +1986,120 @@ describe('paid chat sessions expose their live lifecycle', () => {
   it('surfaces inactivity warning and grace states from the server', () => {
     expect(chat).toContain("activeSession?.status === 'warning'");
     expect(chat).toContain("activeSession?.status === 'grace'");
+  });
+
+  it('gates the visible timer on a live provider message, not an automated opener', () => {
+    // Migration 045: an automated opener (origin 'automated_opener', session_id
+    // null) must never start the clock. The timer shows only once the session's
+    // provider has sent a LIVE message for THIS session, on top of the server's
+    // authoritative started_at.
+    const stripped = withoutComments(chat);
+    expect(stripped).toContain('hasLiveProviderMessage');
+    expect(stripped).toContain("m.origin === 'live'");
+    expect(stripped).toContain('m.sender_id === activeSession.provider_id');
+    expect(stripped).toContain('m.session_id === activeSession.id');
+    // The gate is ANDed into the timer's start-time selection.
+    expect(stripped).toMatch(/hasLiveProviderMessage\s*\n?\s*\?\s*activeSession\.started_at/);
+  });
+});
+
+describe('the chat seeds openers one at a time, not all at once', () => {
+  const chat = read('src/screens/ChatScreen.tsx');
+  const stripped = withoutComments(chat);
+
+  it('drives the sequential opener RPC, not the batch seed', () => {
+    // Migration 045 replaced the all-at-once seed with a cancellable sequential
+    // orchestrator: peer typing, a bounded length-aware beat, one opener, fetch,
+    // pause, repeat. The batch RPC must be gone from this screen.
+    expect(stripped).toContain("supabase.rpc('insert_next_opener'");
+    expect(stripped).not.toContain("supabase.rpc('seed_conversation_openers'");
+  });
+
+  it('shows the peer typing and paces the openers', () => {
+    expect(stripped).toContain('setPeerTyping(true)');
+    expect(stripped).toContain('setPeerTyping(false)');
+    // Bounded, length-aware pacing constants.
+    expect(stripped).toContain('OPENER_TYPING_MIN_MS');
+    expect(stripped).toContain('OPENER_TYPING_MAX_MS');
+    expect(stripped).toContain('OPENER_MS_PER_CHAR');
+    expect(stripped).toContain('OPENER_PAUSE_MS');
+  });
+
+  it('is cancellable and refetches after each step', () => {
+    // A cancellation latch guards navigation/remount; each step invalidates the
+    // transcript and the inbox so the inserted opener appears.
+    expect(stripped).toContain('cancelled = true');
+    expect(stripped).toMatch(/queryKey: \['messages'/);
+    expect(stripped).toMatch(/queryKey: \['conversation-list'\]/);
+  });
+});
+
+describe('migration 045 closes the retention gaps found in review', () => {
+  const m045 = read(
+    'supabase/migrations/045_message_origin_and_hidden_retention.sql',
+  );
+
+  describe('legacy openers are reclassified, not left to start the clock', () => {
+    it('backfills the three exact migration 040 opener bodies', () => {
+      // 040's seed wrote these verbatim before origin existed. Matching is by
+      // exact copy because a pre-migration row's origin is otherwise
+      // unrecoverable; the strings are a frozen historical constant.
+      expect(m045).toContain("'Hey — glad you''re here.'");
+      expect(m045).toContain("'How are you doing right now?'");
+      expect(m045).toContain("'I''m here to listen. No rush.'");
+    });
+
+    it('touches only provider-sent, sessionless rows still marked live', () => {
+      expect(m045).toMatch(/set\s+origin = 'automated_opener'/);
+      expect(m045).toContain('m.sender_id = c.provider_id');
+      expect(m045).toContain('m.session_id is null');
+      // Re-run is a no-op: only rows still at the 'live' default are rewritten.
+      expect(m045).toContain("m.origin = 'live'");
+    });
+
+    it('requires the whole known sequence before reclassifying a conversation', () => {
+      // Someone who merely typed one of those sentences must not be
+      // reclassified; only a conversation carrying all three exact bodies (as
+      // the provider, sessionless) qualifies.
+      expect(m045).toMatch(/having count\(distinct mm\.body\) = 3/);
+    });
+  });
+
+  describe('the security-definer reaction path respects the hide', () => {
+    it('re-creates toggle_reaction and reads a hidden message as NOT_FOUND', () => {
+      // toggle_reaction is SECURITY DEFINER, so RLS does not hide the row from
+      // it; the explicit hidden_at check is the only thing that closes the leak.
+      const body = plpgsqlBody(m045, 'toggle_reaction');
+      expect(body).toContain('m.hidden_at');
+      expect(body).toMatch(/v_hidden is not null/);
+      expect(body).toContain("'error', 'NOT_FOUND'");
+    });
+
+    it('preserves the original grant', () => {
+      expect(m045).toContain(
+        'grant execute on function public.toggle_reaction(uuid, text) to authenticated',
+      );
+    });
+  });
+
+  describe('media reads follow message visibility, not just the path', () => {
+    it('rebinds both participant-read policies to a non-hidden message row', () => {
+      // voice-notes (011) and attachments (014): a SELECT now needs an
+      // associated messages row with hidden_at is null, not just the
+      // conversation prefix a participant could have kept.
+      expect(m045).toContain('"Participants read voice notes"');
+      expect(m045).toContain('"Participants read attachments"');
+      expect(m045).toContain('m.voice_path = storage.objects.name');
+      expect(m045).toContain('m.attachment_path = storage.objects.name');
+      expect(m045).toMatch(/m\.hidden_at is null/);
+    });
+
+    it('leaves the upload policies untouched', () => {
+      // An upload precedes its message row; gating it on one would break the
+      // composer. Only the read policies are replaced.
+      expect(m045).not.toContain('"Participants upload voice notes"');
+      expect(m045).not.toContain('"Participants upload attachments"');
+    });
   });
 });
 
@@ -2495,10 +2630,100 @@ describe('the motion adoption is wired, not just drawn', () => {
       .filter(source => source.body.includes('<BloomField'))
       .map(source => source.file)
       .sort();
+    // PaymentSheet removed 2026-09-01: the payment-success state is now a
+    // contained M3 positive card — consistent with the sheet language throughout
+    // the app. The animated atmospheric field was two surface languages on one
+    // sheet screen and was replaced without adding a new dependency.
     expect(consumers).toEqual([
       'OnboardingScreen.tsx',
-      'PaymentSheet.tsx',
       'ProviderApplicationScreen.tsx',
+    ]);
+  });
+
+  /**
+   * Visible buttons must go through the shared Pressable so every spring, state
+   * layer and reduced-motion path stays in one place. Raw RNPressable is allowed
+   * only on surfaces where press feedback is invisible or semantically wrong:
+   * full-screen scrim/dim captures, the Toggle (which animates its own thumb
+   * geometry), TactileCTA (deliberate bounce-spring + ripple signature), and
+   * CodeField (OTP tap-to-focus zone, not a button).
+   *
+   * The test is an exact allowlist so a new file with a raw Pressable import
+   * fails here before it ships.
+   */
+  it('sheet bar actions use the shared Pressable, not a raw RNPressable', () => {
+    const sheet = read('src/components/Sheet.tsx');
+    // Cancel and Done are visible tinted-text bar buttons; they must get spring
+    // feedback and a state layer, which only the shared Pressable provides.
+    expect(sheet).toContain("testID=\"sheet-cancel\"");
+    expect(sheet).toContain("testID=\"sheet-done\"");
+    // Both testIDs are on our Pressable, not on a raw RNPressable tag.
+    expect(sheet).not.toMatch(/<RNPressable[^>]*testID="sheet-cancel"/);
+    expect(sheet).not.toMatch(/<RNPressable[^>]*testID="sheet-done"/);
+  });
+
+  it('SpotlightCard "Not now" uses the shared Pressable', () => {
+    const card = read('src/components/SpotlightCard.tsx');
+    // "Not now" is a visible action; it must get the same spring feedback as any
+    // other button. The scrim RNPressable (full-screen dismiss surface) stays raw.
+    expect(card).not.toMatch(/<RNPressable[^>]*testID="spotlight-dismiss"/);
+    expect(card).toContain('testID="spotlight-dismiss"');
+  });
+
+  it('CountryPicker trigger and rows use the shared Pressable', () => {
+    const picker = read('src/components/CountryPicker.tsx');
+    // The trigger pill and every country row are visible interactive controls.
+    // After migration no raw Pressable import from react-native is needed.
+    expect(picker).not.toMatch(/import \{[^}]*\bPressable\b[^}]*\} from 'react-native'/);
+    expect(picker).toContain("from './Pressable'");
+    expect(picker).toContain('press="chip"');
+    expect(picker).toContain('press="row"');
+  });
+
+  it('confines every raw Pressable import from react-native to an exact allowlist', () => {
+    /**
+     * Allowlisted files and the reason each is exempt:
+     *
+     *   Pressable.tsx   — the primitive itself; must import the raw control.
+     *   Toggle.tsx      — dedicated thumb-geometry animation (size, offset and
+     *                     track colour all driven by one spring) that cannot be
+     *                     expressed through the shared primitive without adding
+     *                     new API surface.
+     *   TactileCTA.tsx  — deliberate signature behaviour: bounce-spring release,
+     *                     centred ripple bloom and emoji wiggle. Reserved for
+     *                     invitational CTAs only; never the workhorse Button.
+     *   CodeField.tsx   — OTP field tap-to-focus zone; not a button and has no
+     *                     visible press surface to animate.
+     *   Sheet.tsx       — retains one RNPressable for the full-screen scrim-fill
+     *                     dismiss target (invisible gesture capture surface).
+     *   SpotlightCard.tsx — same: one RNPressable for the scrim-fill dismiss.
+     *   ChatStartHint.tsx — one RNPressable for the full-screen modal scrim that
+     *                     dismisses the tooltip; animating it would tint the page.
+     *   PaperMenu.tsx   — dim-band strips that implement the cut-out scrim; each
+     *                     strip is an invisible colour layer, not a button.
+     */
+    const RAW_PRESSABLE_IMPORT = /import \{[^}]*\bPressable\b[^}]*\} from 'react-native'/;
+    const allSources = [
+      ...readdirSync(join(ROOT, 'src/components'))
+        .filter(f => f.endsWith('.tsx'))
+        .map(f => ({ file: `src/components/${f}`, body: withoutComments(read(`src/components/${f}`)) })),
+      ...readdirSync(join(ROOT, 'src/screens'))
+        .filter(f => f.endsWith('.tsx'))
+        .map(f => ({ file: `src/screens/${f}`, body: withoutComments(read(`src/screens/${f}`)) })),
+    ];
+    const rawUsers = allSources
+      .filter(s => RAW_PRESSABLE_IMPORT.test(s.body))
+      .map(s => s.file)
+      .sort();
+    expect(rawUsers).toEqual([
+      'src/components/ChatStartHint.tsx',
+      'src/components/CodeField.tsx',
+      'src/components/PaperMenu.tsx',
+      'src/components/Pressable.tsx',
+      'src/components/Sheet.tsx',
+      'src/components/SpotlightCard.tsx',
+      'src/components/TactileCTA.tsx',
+      'src/components/Toggle.tsx',
     ]);
   });
 });
@@ -2729,5 +2954,135 @@ describe('independent call controls', () => {
     expect(migration).toContain("'VIDEO_CALLS_DISABLED'");
     expect(migration).toContain("'voice_calls_enabled', true");
     expect(migration).toContain("'video_calls_enabled', true");
+  });
+});
+
+describe('post-release UI regressions', () => {
+  it('defines first-run membership by an exactly empty wallet', () => {
+    const app = read('App.tsx');
+    const profile = read('src/api/profileSetup.ts');
+    const onboarding = read('src/screens/OnboardingScreen.tsx');
+    expect(profile).toContain("profile?.role === 'member' && profile.token_balance === 0");
+    expect(app).toContain('firstUser && needsProfileSetup(p)');
+    expect(app).toContain('firstUser && needsAgeBracket(p)');
+    expect(onboarding).toContain('isFirstUser(profile ?? undefined)');
+    expect(onboarding).toContain('needsAgeBracket(profile ?? undefined)');
+    const home = read('src/screens/HomeScreen.tsx');
+    expect(home).toContain('const firstUser = balance === 0');
+    expect(home).toContain('tourSeen || !firstUser');
+    expect(home).toContain('tourSeen || !firstUser)');
+  });
+
+  it('constrains the message stack before measuring bubble text', () => {
+    const turn = read('src/components/Turn.tsx');
+    expect(turn).toContain("maxWidth: '80%'");
+    expect(turn).toMatch(/bubble:\s*\{[\s\S]*?maxWidth:\s*'100%'/);
+    expect(turn).toMatch(/myColumn:\s*\{[\s\S]*?width:\s*'100%'/);
+  });
+
+  it('keeps the interrupting recharge sheet compact and non-scrolling', () => {
+    const recharge = read('src/screens/RechargeScreen.tsx');
+    const sheetStart = recharge.indexOf('export function RechargeScreen');
+    const walletStart = recharge.indexOf('export function RechargeWalletPage');
+    const sheet = recharge.slice(sheetStart, walletStart);
+    expect(sheet).toContain('<RechargeSheetForm');
+    expect(sheet).not.toContain('<ScrollView');
+    expect(recharge).toContain('Choose a pack');
+    expect(recharge).toContain('1 token = ₹1');
+    expect(recharge).toMatch(/cardSlot:\s*\{[\s\S]*?width:\s*'48%'/);
+    expect(recharge).toMatch(/card:\s*\{[\s\S]*?width:\s*'100%'/);
+  });
+
+  it('keeps the navigation heart outlined when selected', () => {
+    const toolbar = read('src/components/FloatingToolbar.tsx');
+    expect(toolbar).toContain("active={on && tab.key !== 'favourites'}");
+  });
+
+  it('aligns the visible profile consent box without shrinking its target', () => {
+    const setup = read('src/screens/ProfileSetupScreen.tsx');
+    expect(setup).toContain('size={22}');
+    expect(setup).toMatch(/termsRow:\s*\{[\s\S]*?alignItems:\s*'center'/);
+    expect(setup).toMatch(/checkboxHit:\s*\{[\s\S]*?width:\s*22[\s\S]*?height:\s*22/);
+  });
+});
+
+describe('first-send refill: all three send paths open recharge on first success', () => {
+  const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+  const voice = withoutComments(read('src/api/voice.ts'));
+  const image = withoutComments(read('src/api/attachments.ts'));
+
+  it('useSendVoiceNote returns Promise<boolean>', () => {
+    // The callback must signal success/failure so ChatScreen can trigger the
+    // first-send refill for voice notes, exactly as it already does for text.
+    // Failed, invalid, upload-failed, or server-rejected sends return false.
+    expect(voice).toContain('Promise<boolean>');
+    expect(voice).toContain('return true');
+    expect(voice).toMatch(/return false/);
+  });
+
+  it('useSendImage returns Promise<boolean>', () => {
+    // Same contract as voice: success → true, any failure path → false.
+    expect(image).toContain('Promise<boolean>');
+    expect(image).toContain('return true');
+    expect(image).toMatch(/return false/);
+  });
+
+  it('ChatScreen awaits voice result and guards with wasFirstMemberSend', () => {
+    // onSendVoice must await the hook, check wasFirstMemberSend, and call
+    // openRefill() through the shared firstSendRefillShown guard — same logic
+    // as onSend. A provider's sends (isMemberSide=false) never set wasFirstMemberSend.
+    expect(chat).toMatch(/const ok = await sendVoice/);
+    expect(chat).toMatch(/if \(ok && wasFirstMemberSend && !firstSendRefillShown\.current\)/);
+  });
+
+  it('ChatScreen awaits image result and guards with wasFirstMemberSend', () => {
+    // onSendImage follows the same pattern.
+    expect(chat).toMatch(/const ok = await sendImage/);
+    // Both onSendVoice and onSendImage share the same guard, so one regex covers
+    // both via the surrounding lines.
+    expect(chat).toMatch(/firstSendRefillShown\.current = true[\s\S]{0,120}openRefill\(\)/);
+  });
+
+  it('firstSendRefillShown is idempotent across all three paths', () => {
+    // Only one modal per conversation: the ref is checked before setting.
+    // All three send paths must read the same ref.
+    const guards = (chat.match(/firstSendRefillShown\.current/g) ?? []).length;
+    // onSend + onSendVoice + onSendImage = at least 6 references
+    // (3 reads + 3 writes, though the write is shared at the end of the check block)
+    expect(guards).toBeGreaterThanOrEqual(6);
+  });
+
+  it('INSUFFICIENT_BALANCE still opens refill directly from the send hooks', () => {
+    // Server-side balance failures open the refill sheet immediately without
+    // going through the first-send path (which only fires on success).
+    expect(voice).toContain("code === 'INSUFFICIENT_BALANCE'");
+    expect(voice).toMatch(/code === 'INSUFFICIENT_BALANCE'[\s\S]{0,40}openRefill\(\)/);
+    expect(image).toContain("code === 'INSUFFICIENT_BALANCE'");
+    expect(image).toMatch(/code === 'INSUFFICIENT_BALANCE'[\s\S]{0,40}openRefill\(\)/);
+  });
+});
+
+describe('opener orchestrator cleanup tracks and clears its timer', () => {
+  const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+
+  it('tracks the pending timer in a named variable', () => {
+    // A bare `new Promise(resolve => setTimeout(resolve, ms))` gives up the
+    // handle, so clearTimeout is impossible on unmount. The variable must be
+    // declared in the effect closure so the cleanup function can reach it.
+    expect(chat).toContain('pendingTimer');
+    expect(chat).toMatch(/pendingTimer\s*=\s*setTimeout/);
+  });
+
+  it('clears the timer on unmount', () => {
+    // Without clearTimeout the handle fires after unmount and calls setState on
+    // a gone component. The cleanup must call clearTimeout before setting
+    // cancelled = true so the wait Promise cannot resolve after teardown.
+    expect(chat).toContain('clearTimeout(pendingTimer)');
+  });
+
+  it('preserves the cancellation latch', () => {
+    // Clearing the timer does not remove the cancelled guard; both must coexist
+    // so the loop exits cleanly even if the RPC is in flight when unmount runs.
+    expect(chat).toContain('cancelled = true');
   });
 });

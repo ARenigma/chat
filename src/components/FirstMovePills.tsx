@@ -60,7 +60,10 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: TOKENS.space.md,
       paddingTop: TOKENS.space.md,
       paddingBottom: TOKENS.space.sm,
-      backgroundColor: t.color.bg.accentTint,
+      // No background here: the chat wallpaper's blush wash (bg.accentTint at
+      // 0.2 opacity, ChatWallpaper.tsx) already tints the whole transcript area
+      // including this strip. A second solid accentTint layer created a bright
+      // pink band at the bottom of the transcript that read as a separate page.
     },
     // The flex child. Equal-width pills come from the pressable stretching, so
     // flex lives here, on the outer pressable, not on the visual capsule.

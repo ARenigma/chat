@@ -25,7 +25,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { TOKENS, type Theme } from '../theme/tokens';
+import { LIGHT, TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { BLOOM_CONTENT_MS, BLOOM_FIELD_MS, BLOOM_HOLD_MS } from '../lib/bloom';
 import {
@@ -62,6 +62,9 @@ import {
 } from '../api/auth';
 import {
   AGE_BRACKETS,
+  getSignedInProfile,
+  isFirstUser,
+  needsAgeBracket,
   setMemberAgeBracket,
   type AgeBracket,
 } from '../api/profileSetup';
@@ -286,6 +289,23 @@ export function OnboardingScreen({ onDone }: Props) {
     setErrorNonce(n => n + 1);
   }, []);
 
+  const completeAuthentication = useCallback(async () => {
+    const profile = await getSignedInProfile();
+    const collectAge =
+      isFirstUser(profile ?? undefined) &&
+      needsAgeBracket(profile ?? undefined);
+
+    setState('success');
+    after(STEP_ADVANCE_MS, () => {
+      if (collectAge) {
+        setState('idle');
+        setAuthDone(true);
+      } else {
+        finish();
+      }
+    });
+  }, [after, finish]);
+
   const onGoogle = useCallback(() => {
     if (!canSubmit(state)) {
       return;
@@ -315,20 +335,9 @@ export function OnboardingScreen({ onDone }: Props) {
            */
           return;
         }
-        /*
-         * Auth succeeded: mark it, show the age step, reset state to idle so
-         * the age chips are interactive. Do NOT call finish() here — that
-         * comes after the bracket is saved.
-         *
-         * `setState('success')` first so the identify row collapses with its
-         * check mark before the age row grows in. After the step advance
-         * duration, reset to idle so `canSubmit` allows the age submit.
-         */
-        setState('success');
-        after(STEP_ADVANCE_MS, () => {
-          setState('idle');
-          setAuthDone(true);
-        });
+        // Funded members are existing users even when an old profile migration
+        // left nullable fields behind. Only a zero-wallet member sees age.
+        await completeAuthentication();
       } catch (error) {
         setRoute('undecided');
         if (
@@ -351,9 +360,7 @@ export function OnboardingScreen({ onDone }: Props) {
         );
       }
     })();
-    // `finish` is deliberately absent: since the age step landed, auth success
-    // hands off to the age chips rather than completing onboarding here.
-  }, [state, fail, after]);
+  }, [state, fail, completeAuthentication]);
 
   const onUsePhone = useCallback(() => {
     setRoute('phone');
@@ -436,22 +443,16 @@ export function OnboardingScreen({ onDone }: Props) {
       void (async () => {
         const result = await verifyPhoneOtp(fullPhone, entered);
         if (result.status !== 'failed') {
-          /*
-           * Verification succeeded: step verify into success, then reveal the
-           * age step. Same pattern as onGoogle — do NOT call finish() yet.
-           */
-          setState('success');
-          after(STEP_ADVANCE_MS, () => {
-            setState('idle');
-            setAuthDone(true);
-          });
+          // Keep the IME stable while verification is pending, then dismiss it
+          // before the post-auth age step replaces the code field.
+          Keyboard.dismiss();
+          await completeAuthentication();
           return;
         }
         fail(result.message);
       })();
     },
-    // No `finish` here either — the age step completes onboarding now.
-    [state, dialCode, phone, fail, after],
+    [state, dialCode, phone, fail, completeAuthentication],
   );
 
   /**
@@ -893,7 +894,7 @@ export function OnboardingScreen({ onDone }: Props) {
                     value={code}
                     onChange={setCode}
                     onComplete={onVerify}
-                    editable={state !== 'loading'}
+                    verifying={state === 'loading'}
                     errorNonce={errorNonce}
                     testID="onboard-code"
                   />
@@ -1199,10 +1200,13 @@ const makeStyles = (t: Theme) =>
     },
     ageChipLabel: {
       ...TOKENS.typography.headline,
-      color: t.color.text.onAccent,
+      color: t.color.text.primary,
     },
     ageChipLabelSelected: {
-      color: t.color.text.primary,
+      // The selected surface is deliberately white in both theme modes.
+      // Use the paired light-surface ink rather than theme.primary, which turns
+      // white in dark mode and made the selected label disappear.
+      color: LIGHT.color.text.primary,
     },
     // The continue button dims when no bracket is selected.
     ageContinueIdle: {

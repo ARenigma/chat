@@ -118,16 +118,20 @@ def wantsRelease = gradle.startParameter.taskNames.any {
 def wantsInternal = gradle.startParameter.taskNames.any {
     it.toLowerCase().contains("internal")
 }
+def wantsClosedTest = gradle.startParameter.taskNames.any {
+    it.toLowerCase().contains("closedtest")
+}
 def explicitVersionCode = System.getenv("CI_PIPELINE_IID") ?: project.findProperty("versionCode")
 
-if (wantsRelease && explicitVersionCode == null) {
+if ((wantsRelease || wantsClosedTest) && explicitVersionCode == null) {
     throw new GradleException(
-        "A release build needs an explicit versionCode.\n\n" +
+        "A Play build needs an explicit versionCode.\n\n" +
         "  Play rejects a duplicate versionCode, and the old default of 1 meant\n" +
         "  every local release build collided with the first upload.\n\n" +
         "  Pass one:\n" +
         "    CI_PIPELINE_IID=<n> npm run android:bundle\n" +
-        "    ./gradlew bundleRelease -PversionCode=<n>\n\n" +
+        "    ./gradlew bundleRelease -PversionCode=<n>\n" +
+        "    ./gradlew bundleClosedTest -PversionCode=<n>\n\n" +
         "  It must be higher than the highest already uploaded to Play."
     )
 }
@@ -240,11 +244,8 @@ android {
          * verification stops working entirely, which is how three bugs reached a
          * device in this project already.
          *
-         * So `release` blocks it and the two build types nobody ships do not.
-         * `internal` goes to two named testers who are the founders; the trade of
-         * their screenshots against being able to frame-step the UI is obviously
-         * worth taking, and it is a trade rather than a hole because Play only ever
-         * receives `release`. A contract test asserts release stays true.
+         * Production blocks it. Debug, Firebase-founder `internal`, and Play
+         * `closedTest` remain capturable for frame-by-frame defect reports.
          */
         debug {
             signingConfig signingConfigs.debug
@@ -258,6 +259,27 @@ android {
             shrinkResources true
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
             buildConfigField "boolean", "BLOCK_SCREENSHOTS", "true"
+        }
+
+        /**
+         * Play closed-testing artifact.
+         *
+         * It is release-equivalent (R8, shrinking, upload signature and release
+         * dependency graph) but deliberately leaves capture available so named
+         * testers can attach screenshots and recordings to defect reports.
+         * Never promote this artifact to production; production is bundleRelease.
+         *
+         * A separate build type is required because Play tracks do not expose a
+         * trustworthy runtime API for "this account is a closed tester". Basing
+         * capture policy on a remote flag would also reveal content before auth
+         * and fail offline.
+         * https://developer.android.com/security/fraud-prevention/activities
+         */
+        closedTest {
+            initWith release
+            matchingFallbacks = ["release"]
+            signingConfig hasReleaseKeystore ? signingConfigs.release : null
+            buildConfigField "boolean", "BLOCK_SCREENSHOTS", "false"
         }
 
         /**
@@ -289,11 +311,7 @@ android {
             signingConfig hasReleaseKeystore ? signingConfigs.release : null
 
             /*
-             * The one place internal deliberately differs from release in
-             * behaviour rather than only in dependencies. Everything else about
-             * this variant is release, so a crash a tester hits is a crash that
-             * would have shipped; this is the exception, and it exists so the UI
-             * can be looked at.
+             * Firebase founder builds also stay capturable for defect reports.
              */
             buildConfigField "boolean", "BLOCK_SCREENSHOTS", "false"
         }
@@ -314,6 +332,20 @@ baselineProfile {
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
+
+    /**
+     * Native Material 3 loading/progress indicators.
+     *
+     * The app used to approximate both widgets with bordered React Native Views.
+     * That cannot reproduce Material's shape-morph loader or its circular
+     * indeterminate sweep. 1.14 is the first stable MDC release carrying the
+     * expressive LoadingIndicator and keeps the implementation on Android's
+     * rendering/animator path, including the system animator-duration scale.
+     *
+     * https://github.com/material-components/material-components-android/blob/master/docs/components/LoadingIndicator.md
+     * https://developer.android.com/reference/com/google/android/material/progressindicator/CircularProgressIndicator
+     */
+    implementation("com.google.android.material:material:1.14.0")
 
     /**
      * Google Play Billing Library 9.1 — required for User Choice Billing (UCB).

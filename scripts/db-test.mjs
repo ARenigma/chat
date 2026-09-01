@@ -85,6 +85,7 @@ const MIGRATIONS = [
   'supabase/migrations/042_about_directory_and_perf_events.sql',
   'supabase/migrations/043_member_age_bracket.sql',
   'supabase/migrations/044_independent_call_controls.sql',
+  'supabase/migrations/045_message_origin_and_hidden_retention.sql',
 ];
 
 const docker = (args, options = {}) =>
@@ -415,6 +416,10 @@ const suites = [
   {
     file: join(ROOT, 'supabase/tests/180_profile_setup.sql'),
     label: 'profile setup username RPCs and conversation openers',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/190_openers_and_hidden_retention.sql'),
+    label: 'sequential openers, live origin, hidden 30-day retention, purge',
   },
 ];
 

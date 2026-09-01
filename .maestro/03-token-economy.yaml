@@ -1,6 +1,7 @@
 # CUJ 3 — the paid-session economy is visible and honest.
-# The harness seeds a low wallet. A message sent while the bilateral request is
-# pending must not debit it; Recharge remains available without interrupting chat.
+# The harness seeds two minutes of chat credit. A message sent while the bilateral
+# request is pending must not debit it, and the first successful member message
+# opens the explicit recharge nudge.
 appId: com.companionchat
 name: Pending chat does not create a per-message debit
 ---
@@ -13,12 +14,12 @@ name: Pending chat does not create a per-message debit
 - tapOn:
     id: 'action-chat'
 
-# The seed balance is set to 3 by scripts/e2e.mjs.
+# The seed balance is set to 44 by scripts/e2e.mjs.
 - assertVisible:
     id: 'token-badge'
 - assertVisible:
     id: 'token-count'
-- assertVisible: '3'
+- assertVisible: '44'
 
 - tapOn:
     id: 'composer-input'
@@ -32,10 +33,15 @@ name: Pending chat does not create a per-message debit
 # ADR-0020: pending messages do not decrement the authoritative wallet.
 - assertVisible:
     id: 'token-count'
-- assertVisible: '3'
-- assertNotVisible:
+- assertVisible: '44'
+- assertVisible:
     id: 'refill-sheet'
 
+# Close the first-send sheet, then prove the wallet route remains independently
+# reachable from the badge.
+- tapOn: 'Dismiss'
+- assertNotVisible:
+    id: 'refill-sheet'
 - tapOn:
     id: 'token-badge'
 - assertVisible:

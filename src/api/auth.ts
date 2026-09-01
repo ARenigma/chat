@@ -96,9 +96,9 @@ export type PhoneAuthProvider = 'firebase' | 'supabase';
 export const AUTH_PHONE_PROVIDER: PhoneAuthProvider = 'firebase';
 
 /**
- * Whether to try the Credential Manager sheet before the browser.
+ * Whether to try Credential Manager before the browser.
  *
- * On. It was off for one concrete reason — the sheet's `GetGoogleIdOption`
+ * On. It was off for one concrete reason — Credential Manager
  * authenticates against an **Android** OAuth client (`client_type 1`) keyed on
  * the package name and signing SHA-1, and the Google Cloud project had only the
  * **Web** client (`client_type 3`). With no Android client the sheet returned
@@ -107,11 +107,12 @@ export const AUTH_PHONE_PROVIDER: PhoneAuthProvider = 'firebase';
  * cancellation code), and `signInWithGoogle` treated the cancel as a deliberate
  * choice and did nothing: the "doesn't let me continue" report.
  *
- * The two Android clients now exist — one per signing cert, both in
+ * Two Android clients exist locally — one per signing cert, both in
  * `android/app/google-services.json`:
  *   debug  5e8f16062ea3cd2c4a0d547876baa6f38cabf625
  *   upload 4910a1ff7ac9cb1ab11bb46386bf6a7ec4726553
- * so the sheet can succeed and this is on. The browser remains the fallback for
+ * The Play App Signing certificate must also be registered before the
+ * Play-delivered APK can exchange a credential. The browser remains the fallback for
  * any device that cannot show a sheet (no/stale Play services); it authenticates
  * against the Web client, which is still present.
  *
@@ -322,15 +323,11 @@ export type GoogleResult = 'session' | 'redirected';
 export { GoogleCredentialError } from '../lib/googleCredential';
 
 /**
- * Sign in with Google: the Credential Manager sheet, falling back to the browser.
+ * Sign in with Google: Credential Manager's explicit-button flow, falling back
+ * to the browser.
  *
- * The sheet is gated behind `CREDENTIAL_MANAGER_ENABLED`, which is off until an
- * Android OAuth client exists — see that flag. While it is off this goes
- * straight to the browser, which authenticates against the Web client and works
- * today. Everything below the flag is the sheet path, ready for when it flips.
- *
- * The seam exists so the onboarding screen never learns which mechanism ran, and
- * both mechanisms are live. The sheet is tried first because it keeps the user
+ * The seam exists so the onboarding screen never learns which mechanism ran.
+ * Credential Manager is tried first because it keeps the user
  * inside the app — the only step of the onboarding that used to leave it — and
  * because it returns a session synchronously, so the flow can carry straight on
  * to the completion beat instead of waiting on a deep link.

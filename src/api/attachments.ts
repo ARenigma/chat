@@ -143,25 +143,25 @@ export function useSendImage(
   const clearUploadProgress = useStore(s => s.clearUploadProgress);
 
   return useCallback(
-    async (draft: ImageDraft, replyToId: string | null = null): Promise<void> => {
+    async (draft: ImageDraft, replyToId: string | null = null): Promise<boolean> => {
       if (conversationId === undefined || selfId === undefined) {
-        return;
+        return false;
       }
       if (draft.width <= 0 || draft.height <= 0) {
         setNotice(NOTICE.BAD_REQUEST);
-        return;
+        return false;
       }
       if (!canSend(useStore.getState().balance)) {
         errorTick();
         openRefill();
-        return;
+        return false;
       }
 
       const ext = attachmentExt(draft.mime);
       const path = attachmentObjectPath(conversationId, newUuid(), ext);
       if (!isAttachmentPath(path)) {
         setNotice(NOTICE.BAD_REQUEST);
-        return;
+        return false;
       }
 
       tick();
@@ -180,6 +180,8 @@ export function useSendImage(
         attachment_type: 'image',
         attachment_width: draft.width,
         attachment_height: draft.height,
+        session_id: null,
+        origin: 'live',
         created_at: new Date().toISOString(),
         read_at: null,
       };
@@ -204,7 +206,7 @@ export function useSendImage(
       if (accessToken === undefined) {
         setSending(false);
         withdraw(NOTICE.UNAUTHORIZED);
-        return;
+        return false;
       }
 
       const uploaded = await uploadImage(path, draft.uri, accessToken, fraction => {
@@ -215,7 +217,7 @@ export function useSendImage(
         setSending(false);
         track('send_rejected', { reason: 'upload' });
         withdraw(NOTICE.UPLOAD);
-        return;
+        return false;
       }
 
       const { data, error } = await supabase.rpc('send_message', {
@@ -238,7 +240,7 @@ export function useSendImage(
           openRefill();
         }
         void queryClient.invalidateQueries({ queryKey: keys.profile });
-        return;
+        return false;
       }
 
       const confirmed: Message | null =
@@ -257,6 +259,7 @@ export function useSendImage(
       // adding one is deferred to the moderation follow-up rather than expanding
       // the telemetry surface here. Failures already report through `send_rejected`.
       void queryClient.invalidateQueries({ queryKey: keys.conversationList });
+      return true;
     },
     [conversationId, selfId, queryClient, setSending, setBalance, setNotice, openRefill, setUploadProgress, clearUploadProgress],
   );

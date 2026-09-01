@@ -37,6 +37,9 @@ export function SplashScreen({ onRetry }: Props) {
 
   return (
     <View style={styles.root}>
+      {/* LoadingIndicator owns the M3 five-second boundary globally: expressive
+          shape first, native circular indeterminate progress for a long wait.
+          https://m3.material.io/components/loading-indicator/overview */}
       <LoadingIndicator size={48} />
       {slow ? (
         <View style={styles.slow}>

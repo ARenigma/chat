@@ -356,6 +356,14 @@ export type Conversation = {
  * Which side of the transcript a row renders on is a comparison against the
  * session's own id, not a property of the row.
  */
+/**
+ * How a message came to exist. `live` is a real human send (`send_message`) and
+ * every legacy row; `automated_opener` is a server-seeded provider greeting
+ * (`insert_next_opener`). The visible session timer counts only `live` provider
+ * messages, so an automated opener can never start the clock. Migration 045.
+ */
+export type MessageOrigin = 'live' | 'automated_opener';
+
 export type Message = {
   id: string;
   conversation_id: string;
@@ -391,8 +399,23 @@ export type Message = {
   attachment_type: 'image' | null;
   attachment_width: number | null;
   attachment_height: number | null;
+  /**
+   * The paid session this row belongs to, or null for a sessionless row (an
+   * automated opener, or pre-request content before a session existed). Added
+   * by migration 030; surfaced here in 045 because the timer gate needs it.
+   */
+  session_id: string | null;
+  /**
+   * Live human send vs automated provider opener. The visible session timer is
+   * gated on a `live` provider message, so an opener never counts. Migration 045.
+   */
+  origin: MessageOrigin;
   created_at: string;
   read_at: string | null;
+  // hidden_at / purge_after are deliberately absent: they are the server-only
+  // 30-day retention columns (migration 045). A client can never SELECT a
+  // hidden row (RLS filters hidden_at is not null), so these never reach the
+  // app, and typing them would invite code that tried to read them.
 };
 
 /**
@@ -951,6 +974,26 @@ export type Database = {
           conversation_id: string;
           seeded: boolean;
           message_count: number;
+        };
+      };
+      /**
+       * Idempotent ordered opener step: inserts exactly one approved provider
+       * opener into the caller's own conversation, as the provider, without ever
+       * creating or billing a session. Returns the step plus the next body so
+       * the client can pace a length-aware typing delay. Migration 045.
+       */
+      insert_next_opener: {
+        Args: { p_provider_id: string };
+        Returns: {
+          conversation_id: string;
+          inserted: boolean;
+          done: boolean;
+          step: number;
+          total: number;
+          message_id?: string;
+          created_at?: string;
+          body: string | null;
+          next_body: string | null;
         };
       };
       /**

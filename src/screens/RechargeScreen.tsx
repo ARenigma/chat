@@ -3,7 +3,7 @@ import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { SlideInRight, SlideOutRight } from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
-import { useStyles } from '../theme/ThemeProvider';
+import { useStyles, useTheme } from '../theme/ThemeProvider';
 import {
   DEFAULT_RATES,
   formatRupees,
@@ -43,7 +43,7 @@ function useRechargePacks() {
 export function RechargeScreen() {
   const visible = useStore(s => s.refillVisible);
   const close = useStore(s => s.closeRefill);
-  const { livePacks, paymentsEnabled } = useRechargePacks();
+  const { livePacks } = useRechargePacks();
   const [amount, setAmount] = useState<number>(livePacks[1] ?? 300);
   const [payOpen, setPayOpen] = useState(false);
 
@@ -56,26 +56,134 @@ export function RechargeScreen() {
         body="Add tokens to keep talking."
         onClose={close}
         footer={
-          <Button
-            label={`Pay ${formatRupees(amount)}`}
-            onPress={() => requestAnimationFrame(() => setPayOpen(true))}
-            testID="recharge-pay"
+          <RechargeSheetFooter
+            amount={amount}
+            onPay={() => requestAnimationFrame(() => setPayOpen(true))}
           />
         }>
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          {...SCROLL_PHYSICS}
-          nestedScrollEnabled
-          contentContainerStyle={{ paddingBottom: TOKENS.space.sm }}>
-          <RechargeForm
-            amount={amount}
-            setAmount={setAmount}
-            livePacks={livePacks}
-            paymentsEnabled={paymentsEnabled}
-          />
-        </ScrollView>
+        <RechargeSheetForm
+          amount={amount}
+          setAmount={setAmount}
+          livePacks={livePacks}
+        />
       </Sheet>
       <PaymentSheet visible={payOpen} amount={amount} onClose={() => setPayOpen(false)} />
+    </>
+  );
+}
+
+/**
+ * Compact paywall sheet from the approved M3 Paper reference.
+ *
+ * The wallet page keeps the richer minutes/payment explanation below; the
+ * interrupting sheet has one job and must fit at its resting detent without an
+ * inner scroll view: current balance, four choices, exchange rate, pay.
+ */
+function RechargeSheetForm({
+  amount,
+  setAmount,
+  livePacks,
+}: {
+  amount: number;
+  setAmount: (n: number) => void;
+  livePacks: readonly number[];
+}) {
+  const styles = useStyles(makeCompactStyles);
+  const balance = useStore(s => s.balance);
+  const popularAmount = livePacks[1] ?? null;
+
+  return (
+    <View style={styles.form}>
+      <View style={styles.balance}>
+        <View style={styles.balanceMark}>
+          <Text allowFontScaling={false} style={styles.balanceMarkText}>
+            ₹
+          </Text>
+        </View>
+        <Text allowFontScaling style={styles.balanceLabel}>
+          Your balance
+        </Text>
+        <Text allowFontScaling style={styles.balanceValue}>
+          {`${formatTokens(balance)} tokens`}
+        </Text>
+      </View>
+
+      <Text allowFontScaling style={styles.section}>
+        Choose a pack
+      </Text>
+      <View style={styles.grid}>
+        {livePacks.slice(0, 4).map(pack => {
+          const selected = pack === amount;
+          const popular = pack === popularAmount;
+          return (
+            <View key={pack} style={styles.cardSlot}>
+              <Pressable
+                onPress={() => {
+                  tick();
+                  setAmount(pack);
+                }}
+                testID={`pack-${pack}`}
+                accessibilityRole="radio"
+                checked={selected}
+                accessibilityLabel={`${formatRupees(pack)}, ${formatTokens(pack)} tokens${popular ? ', popular' : ''}`}
+                press="card"
+                style={[styles.card, selected && styles.cardSelected]}>
+                {popular ? (
+                  <View style={styles.popular}>
+                    <Text allowFontScaling={false} style={styles.popularText}>
+                      Popular
+                    </Text>
+                  </View>
+                ) : null}
+                <Text allowFontScaling style={styles.amount}>
+                  {formatRupees(pack)}
+                </Text>
+                <Text allowFontScaling style={styles.tokens}>
+                  {`${formatTokens(pack)} tokens`}
+                </Text>
+              </Pressable>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+function RechargeSheetFooter({
+  amount,
+  onPay,
+}: {
+  amount: number;
+  onPay: () => void;
+}) {
+  const styles = useStyles(makeCompactStyles);
+  const theme = useTheme();
+  return (
+    <>
+      <View style={styles.rate}>
+        <Text
+          allowFontScaling={false}
+          accessibilityElementsHidden
+          importantForAccessibility="no"
+          style={[styles.rateIcon, { color: theme.color.text.tertiary }]}>
+          ⓘ
+        </Text>
+        <Text allowFontScaling style={styles.rateText}>
+          1 token = ₹1
+        </Text>
+      </View>
+      <Pressable
+        onPress={onPay}
+        testID="recharge-pay"
+        accessibilityLabel={`Pay ${formatRupees(amount)}`}
+        press="button"
+        onColor={theme.color.text.onAccent}
+        style={styles.payButton}>
+        <Text allowFontScaling style={styles.payButtonLabel}>
+          {`Pay ${formatRupees(amount)}`}
+        </Text>
+      </Pressable>
     </>
   );
 }
@@ -443,5 +551,121 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.captionSmall,
       color: t.color.text.tertiary,
       paddingTop: TOKENS.space.xs,
+    },
+  });
+
+const makeCompactStyles = (t: Theme) =>
+  StyleSheet.create({
+    form: {
+      gap: TOKENS.space.sm,
+    },
+    balance: {
+      minHeight: 70,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.sm,
+      paddingHorizontal: TOKENS.space.md,
+      borderRadius: TOKENS.radius.sm,
+      borderCurve: 'continuous',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: t.color.border.hairline,
+      backgroundColor: t.color.bg.raised,
+    },
+    balanceMark: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: t.color.bg.accent,
+    },
+    balanceMarkText: {
+      ...TOKENS.typography.labelSmall,
+      color: t.color.text.onAccent,
+    },
+    balanceLabel: {
+      flex: 1,
+      ...TOKENS.typography.bodyMedium,
+      color: t.color.text.secondary,
+    },
+    balanceValue: {
+      ...TOKENS.typography.titleMedium,
+      color: t.color.text.primary,
+    },
+    section: {
+      ...TOKENS.typography.bodyMedium,
+      color: t.color.text.primary,
+      paddingTop: TOKENS.space.xs,
+    },
+    grid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: TOKENS.space.sm,
+    },
+    cardSlot: {
+      width: '48%',
+    },
+    card: {
+      width: '100%',
+      minHeight: 104,
+      justifyContent: 'center',
+      paddingHorizontal: TOKENS.space.md,
+      borderRadius: TOKENS.radius.sm,
+      borderCurve: 'continuous',
+      borderWidth: 1,
+      borderColor: t.color.border.hairline,
+      backgroundColor: t.color.bg.raised,
+    },
+    cardSelected: {
+      borderWidth: 2,
+      borderColor: t.color.border.accent,
+    },
+    popular: {
+      position: 'absolute',
+      top: TOKENS.space.sm,
+      right: TOKENS.space.sm,
+      paddingHorizontal: TOKENS.space.xs,
+      paddingVertical: 3,
+      borderRadius: TOKENS.radius.pill,
+      backgroundColor: t.color.bg.accentTint,
+    },
+    popularText: {
+      ...TOKENS.typography.captionSmall,
+      color: t.color.text.accent,
+    },
+    amount: {
+      ...TOKENS.typography.titleMedium,
+      color: t.color.text.primary,
+    },
+    tokens: {
+      ...TOKENS.typography.bodyMedium,
+      color: t.color.text.secondary,
+      paddingTop: TOKENS.space.xs,
+    },
+    rate: {
+      minHeight: 28,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.xs,
+    },
+    rateText: {
+      ...TOKENS.typography.captionSmall,
+      color: t.color.text.secondary,
+    },
+    rateIcon: {
+      fontSize: 16,
+      lineHeight: 18,
+    },
+    payButton: {
+      minHeight: 52,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: TOKENS.radius.field,
+      borderCurve: 'continuous',
+      backgroundColor: t.color.bg.accentStrong,
+    },
+    payButtonLabel: {
+      ...TOKENS.typography.headline,
+      color: t.color.text.onAccent,
     },
   });

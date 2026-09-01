@@ -115,7 +115,7 @@ const makeStyles = (t: Theme) =>
       flex: 1,
     },
     dim: {
-      backgroundColor: t.color.bg.inverse,
+      backgroundColor: t.color.bg.scrim,
       opacity: 0.54,
     },
     // The scrim is built from bands; these two carry the static half of each

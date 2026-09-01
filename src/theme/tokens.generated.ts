@@ -13,7 +13,7 @@
  * single rule is the difference between friendly and flirty, and a test in
  * __tests__/theme.test.ts enforces it rather than trusting this comment.
  *
- * Contrast: Every pair is measured, not copied: `npm run contrast:check` recomputes WCAG 2.1 relative luminance for all 19 foreground/background pairs in both modes and fails the build below target. That gate was written for the neutral-ramp swap, because a palette change is the one edit that can break legibility everywhere at once while every ratio in this file's notes still describes the old background. It immediately found two pre-existing failures: light text/tertiary measured 2.99:1 against white, and the dark hairline 1.08:1 against a dark card, a divider that was not there. Both fixed.
+ * Contrast: Every pair is measured, not copied: `npm run contrast:check` recomputes WCAG 2.1 relative luminance for all 19 foreground/background pairs in both modes and fails the build below target. That gate was written for the neutral-ramp swap, because a palette change is the one edit that can break legibility everywhere at once while every ratio in this file's notes still describes the old background. It immediately found two pre-existing failures: light text/tertiary measured 2.99:1 against white, and the dark hairline 1.08:1 against a dark card, a divider that was not there. Both fixed. 2026-09-01: dark mode base ramp replaced with WhatsApp charcoal family (#0B141A / #111B21 / #202C33); all 19 pairs re-verified, all pass. New lowest margin: dark hairline #2A3942 on #0B141A = 1.56:1 (requirement: >1.5:1).
  */
 
 /** Widened deliberately, see the fontVariant note in scripts/gen-tokens.mjs. */
@@ -31,6 +31,7 @@ export const LIGHT = {
       pressed: '#D1D1D6',
       selected: '#D1D1D6',
       inverse: '#1C1C1E',
+      scrim: '#000000',
       accent: '#F2543D',
       accentStrong: '#C2401F',
       accentTint: '#FBE4DE',
@@ -326,15 +327,16 @@ export const LIGHT = {
 export const DARK = {
   color: {
     bg: {
-      base: '#121212',
-      raised: '#1E1E1E',
-      sunken: '#262626',
-      hover: '#333333',
-      grouped: '#121212',
-      chrome: 'rgba(18,18,18,0.82)',
-      pressed: '#383838',
-      selected: '#2E2E2E',
-      inverse: '#F2F2F7',
+      base: '#0B141A',
+      raised: '#111B21',
+      sunken: '#202C33',
+      hover: '#1A2D38',
+      grouped: '#0B141A',
+      chrome: 'rgba(11,20,26,0.85)',
+      pressed: '#2A3942',
+      selected: '#182734',
+      inverse: '#E9EDEF',
+      scrim: '#000000',
       accent: '#F2543D',
       accentStrong: '#F2836B',
       accentTint: '#3A1A12',
@@ -344,9 +346,9 @@ export const DARK = {
       tokenCritical: '#8C1D18',
     },
     text: {
-      primary: '#F5F5F7',
-      secondary: '#AEAEB2',
-      tertiary: '#98989D',
+      primary: '#E9EDEF',
+      secondary: '#8696A0',
+      tertiary: '#667D8A',
       accent: '#FFB4A0',
       onAccent: '#1C1C1E',
       onInverse: '#1C1C1E',
@@ -355,8 +357,8 @@ export const DARK = {
       onTokenStrong: '#FFFFFF',
     },
     border: {
-      hairline: '#38383A',
-      strong: '#48484A',
+      hairline: '#2A3942',
+      strong: '#374D5A',
       accent: '#F2543D',
     },
     state: {

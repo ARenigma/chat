@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlashList, type ListRenderItemInfo } from '@shopify/flash-list';
+import { FlashList, type FlashListRef, type ListRenderItemInfo } from '@shopify/flash-list';
 import {
   BackHandler,
   Keyboard,
@@ -16,7 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { initialOf } from '../lib/display';
-import { isPending, lastOwnMessageId, PENDING_PREFIX } from '../lib/transcript';
+import { isPending, PENDING_PREFIX } from '../lib/transcript';
 import {
   useConversationId,
   useConversations,
@@ -89,6 +89,16 @@ interface Props {
 // ActionTarget is defined and exported from Turn.tsx; imported above.
 
 /**
+ * Bounded, length-aware pacing for the sequential opener orchestrator. The beat
+ * before each opener is proportional to its length (so a longer greeting reads
+ * as typed) but clamped, so a template can neither stall the thread nor flash.
+ */
+const OPENER_TYPING_MIN_MS = 700;
+const OPENER_TYPING_MAX_MS = 2200;
+const OPENER_MS_PER_CHAR = 45;
+const OPENER_PAUSE_MS = 450;
+
+/**
  * `inverted` is load-bearing: it anchors the transcript to the bottom, so a
  * keyboard opening or a bubble arriving changes nobody's scroll offset. Combined
  * with a stable `data` reference (the typing indicator lives in
@@ -104,10 +114,14 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  // Explicit ref so we can force scrollToOffset(0) on every new message.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const listRef = useRef<FlashListRef<any>>(null);
   const balance = useStore(s => s.balance);
   const openRefill = useStore(s => s.openRefill);
   const openWallet = useStore(s => s.openWallet);
   const setNotice = useStore(s => s.setNotice);
+  const setPeerTyping = useStore(s => s.setPeerTyping);
   const queryClient = useQueryClient();
   const firstSendRefillShown = useRef(false);
   const [sendHaloKey, setSendHaloKey] = useState(0);
@@ -286,28 +300,88 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
     peerThread?.peer_last_active_at ?? provider?.last_active_at,
   );
 
+  /**
+   * Sequential automated openers.
+   *
+   * Replaces the old all-at-once seed with a cancellable orchestrator that walks
+   * the approved opener templates one at a time: show the peer typing, wait a
+   * bounded length-aware beat, insert exactly one opener, refresh, pause, and
+   * repeat. `insert_next_opener` is idempotent on the server (a per-conversation
+   * row lock plus a count cursor), so a remount, a retry, or a process
+   * interruption cannot duplicate a message; the loop also stops the moment the
+   * thread has any live content. Member-side only — a provider does not greet
+   * themselves.
+   */
   useEffect(() => {
     if (!isMemberSide) {
       return;
     }
     let cancelled = false;
-    void (async () => {
-      const { data, error } = await supabase.rpc('seed_conversation_openers', {
-        p_provider_id: providerId,
+    // The pending timer is tracked so the cleanup can clear it immediately on
+    // unmount rather than waiting for it to fire. Without this, an unmount
+    // during a wait leaves a live handle that will call state setters on the
+    // gone component, and the Promise never unblocks so the loop leaks until GC.
+    let pendingTimer: ReturnType<typeof setTimeout> | undefined;
+    const wait = (ms: number) =>
+      new Promise<void>(resolve => {
+        pendingTimer = setTimeout(() => {
+          pendingTimer = undefined;
+          resolve();
+        }, ms);
       });
-      if (cancelled || error) {
-        return;
-      }
-      const convId = (data as { conversation_id?: string } | null)?.conversation_id;
-      if (convId !== undefined) {
-        void queryClient.invalidateQueries({ queryKey: ['messages', convId] });
+    const typingBeat = (body: string | null) =>
+      Math.min(
+        OPENER_TYPING_MAX_MS,
+        Math.max(OPENER_TYPING_MIN_MS, (body?.length ?? 24) * OPENER_MS_PER_CHAR),
+      );
+
+    void (async () => {
+      // Body of the opener the NEXT step will insert, so the typing beat before
+      // it is sized to it. Null on the first step (base beat).
+      let upcoming: string | null = null;
+      for (;;) {
+        if (cancelled) {
+          break;
+        }
+        setPeerTyping(true);
+        await wait(upcoming === null ? OPENER_TYPING_MIN_MS : typingBeat(upcoming));
+        if (cancelled) {
+          break;
+        }
+        const { data, error } = await supabase.rpc('insert_next_opener', {
+          p_provider_id: providerId,
+        });
+        setPeerTyping(false);
+        if (cancelled || error || data === null) {
+          break;
+        }
+        const step = data as {
+          conversation_id: string;
+          inserted: boolean;
+          done: boolean;
+          next_body: string | null;
+        };
+        void queryClient.invalidateQueries({
+          queryKey: ['messages', step.conversation_id],
+        });
         void queryClient.invalidateQueries({ queryKey: ['conversation-list'] });
+        if (!step.inserted || step.done) {
+          break;
+        }
+        upcoming = step.next_body;
+        await wait(OPENER_PAUSE_MS);
       }
     })();
+
     return () => {
       cancelled = true;
+      if (pendingTimer !== undefined) {
+        clearTimeout(pendingTimer);
+        pendingTimer = undefined;
+      }
+      setPeerTyping(false);
     };
-  }, [isMemberSide, providerId, queryClient]);
+  }, [isMemberSide, providerId, queryClient, setPeerTyping]);
 
   const memberHasSent = useMemo(
     () =>
@@ -337,26 +411,46 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   /**
    * A recording, sent, and it clears the reply bar for the same reason text does:
    * a reply you composed and then answered with your voice is still a reply.
+   *
+   * The first-send refill is centralised here (not in useSendVoiceNote) so all
+   * three send paths share one guard: provider-side sends and failed/invalid
+   * sends return false and never open the modal.
    */
   const onSendVoice = useCallback(
-    (draft: VoiceDraft) => {
+    async (draft: VoiceDraft) => {
       setSendHaloKey(n => n + 1);
       const parent = replyTo;
       setReplyTo(null);
-      void sendVoice(draft, parent?.id ?? null);
+      const wasFirstMemberSend =
+        isMemberSide && !memberHasSent && activeSession == null;
+      const ok = await sendVoice(draft, parent?.id ?? null);
+      if (ok && wasFirstMemberSend && !firstSendRefillShown.current) {
+        firstSendRefillShown.current = true;
+        openRefill();
+      }
     },
-    [sendVoice, replyTo],
+    [sendVoice, replyTo, isMemberSide, memberHasSent, activeSession, openRefill],
   );
 
-  /** A picked photo, sent. Clears the reply bar for the same reason text does. */
+  /**
+   * A picked photo, sent. Clears the reply bar for the same reason text does.
+   *
+   * Same first-send refill guard as onSendVoice and onSend.
+   */
   const onSendImage = useCallback(
-    (draft: ImageDraft) => {
+    async (draft: ImageDraft) => {
       setSendHaloKey(n => n + 1);
       const parent = replyTo;
       setReplyTo(null);
-      void sendImage(draft, parent?.id ?? null);
+      const wasFirstMemberSend =
+        isMemberSide && !memberHasSent && activeSession == null;
+      const ok = await sendImage(draft, parent?.id ?? null);
+      if (ok && wasFirstMemberSend && !firstSendRefillShown.current) {
+        firstSendRefillShown.current = true;
+        openRefill();
+      }
     },
-    [sendImage, replyTo],
+    [sendImage, replyTo, isMemberSide, memberHasSent, activeSession, openRefill],
   );
 
   /**
@@ -372,7 +466,6 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
    */
   const rows = useMemo(() => {
     const list = messages ?? [];
-    const receiptFor = lastOwnMessageId(list, selfId);
 
     type MessageRow = {
       kind: 'message';
@@ -382,7 +475,6 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
       mine: boolean;
       first: boolean;
       last: boolean;
-      showReceipt: boolean;
       opensDay: boolean;
       voice?: VoiceBody;
       image?: ImageBody;
@@ -408,7 +500,6 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
         mine: m.sender_id === selfId,
         first: !older || older.sender_id !== m.sender_id,
         last: !newer || newer.sender_id !== m.sender_id,
-        showReceipt: m.id === receiptFor,
         // opensDay is false here and recomputed in the single pass below.
         opensDay: false,
         // Built here rather than in `renderItem` so its identity is stable across
@@ -465,6 +556,31 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   }, [messages, selfId, callRecords]);
 
   /**
+   * Force offset 0 whenever a new row appears — local optimistic or remote
+   * incoming — including while the user is scrolled up reading history.
+   *
+   * Items 5/12 in the product spec are the same behaviour: "scroll to bottom
+   * on send" and "scroll to bottom on receive" share one effect here rather than
+   * two separate handlers. The inverted FlashList's resting offset IS 0 (the
+   * newest message), so scrollToOffset(0) is the correct call on FlashList v2.
+   */
+  const prevRowsLen = useRef(0);
+  useEffect(() => {
+    const len = rows.length;
+    if (len > prevRowsLen.current) {
+      // FlashList v2 commits its native cells after React publishes `data`.
+      // Waiting one frame prevents an offset-0 request from landing against the
+      // old layout and becoming a no-op when a batch arrives after invalidation.
+      const frame = requestAnimationFrame(() => {
+        listRef.current?.scrollToOffset({ offset: 0, animated: true });
+      });
+      prevRowsLen.current = len;
+      return () => cancelAnimationFrame(frame);
+    }
+    prevRowsLen.current = len;
+  }, [rows]);
+
+  /**
    * Reactions for the loaded page, and the parents of any replies in it.
    *
    * Pending rows are excluded from the id list: their ids are `pending-…`, which
@@ -510,8 +626,24 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   // background grace window. Surface both in the talkBar so the member knows.
   const sessionIsWarning = activeSession?.status === 'warning';
   const sessionIsGrace = activeSession?.status === 'grace';
+  // The visible timer must reflect a real, live conversation — not an automated
+  // greeting. Gate it on at least one LIVE message from THIS session's provider,
+  // on top of the server's authoritative started_at. Automated openers (origin
+  // 'automated_opener', session_id null) never count, so the clock cannot start
+  // on a seeded "Hey — glad you reached out." before the provider actually replies.
+  const hasLiveProviderMessage = useMemo(() => {
+    if (activeSession == null) {
+      return false;
+    }
+    return (messages ?? []).some(
+      m =>
+        m.sender_id === activeSession.provider_id &&
+        m.origin === 'live' &&
+        m.session_id === activeSession.id,
+    );
+  }, [messages, activeSession]);
   const sessionStartedAt =
-    sessionIsActive || sessionIsWarning || sessionIsGrace
+    (sessionIsActive || sessionIsWarning || sessionIsGrace) && hasLiveProviderMessage
       ? activeSession.started_at
       : null;
   const [sessionNow, setSessionNow] = useState(() => Date.now());
@@ -657,7 +789,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
         );
       }
 
-      const { message, mine, first, showReceipt, voice, image } = item;
+      const { message, mine, first, voice, image } = item;
       const stamp = timeOfDay(message.created_at);
       const chosen = ownReaction(
         tallies.get(message.id),
@@ -700,7 +832,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
               onReportMessage={reportMessage}
               chosenReaction={chosen}
               receipt={
-                showReceipt && !isPending(message)
+                !isPending(message)
                   ? message.read_at !== null
                     ? 'read'
                     : 'sent'
@@ -711,6 +843,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
             <PeerTurn
               message={text}
               initial={initial}
+              avatarUri={avatarUrl}
               first={first}
               timestamp={stamp}
               quote={quote}
@@ -731,6 +864,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
       );
     },
     [
+      avatarUrl,
       initial,
       name,
       parents,
@@ -1048,6 +1182,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
           </View>
         ) : (
           <FlashList
+            ref={listRef}
             data={rows}
             inverted
             // localKey carries the stable key for both message rows and call rows.

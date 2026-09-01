@@ -7,16 +7,13 @@ import {
   type ImageSourcePropType,
 } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
-import { useSharedValue } from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { BLOOM_PALETTES } from '../lib/bloom';
 import { formatRupees, formatTokens, MOCK_PAYMENTS, PAYMENTS_ENABLED } from '../lib/rates';
 import { supabase } from '../lib/supabase';
 import { Button } from '../components/Button';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
-import { BloomField, type BloomStage } from '../components/BloomField';
 import { Sheet } from '../components/Sheet';
 import { LoadingIndicator } from '../components/LoadingIndicator';
 import { useStore } from '../store/useStore';
@@ -33,9 +30,9 @@ interface Props {
  * UPI chooser + success, aligned to v10 recharge frames (file 2PjJLeNz… node
  * 2024:3253) without copying stale chrome from later frames.
  *
- * Idle: brand lockups for each UPI app. Success leaves the chooser entirely and
- * becomes a full-screen terminal bloom, using the Fuse field grammar rather
- * than nesting a generic mint card inside the payment sheet.
+ * Idle: brand lockups for each UPI app. Success is a contained M3 positive
+ * card — consistent with the M3 Paper sheet language every overlay in this
+ * app uses.
  *
  * Payment routing:
  *   - CASHFREE_SANDBOX_CHECKOUT true (non-prod): Cashfree WebCheckout via SDK.
@@ -54,10 +51,6 @@ const LOGOS: Record<(typeof METHODS)[number], { src: ImageSourcePropType; ratio:
 const LOGO_HEIGHT = 22;
 
 const MOCK_SPINNER_MS = 1200;
-const PAYMENT_SUCCESS_STAGE: BloomStage = {
-  palette: BLOOM_PALETTES.welcome,
-  collapsed: false,
-};
 
 type MockPhase = 'idle' | 'processing' | 'success' | 'error';
 
@@ -67,7 +60,6 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
   const queryClient = useQueryClient();
   const closeRefill = useStore(s => s.closeRefill);
   const closeWallet = useStore(s => s.closeWallet);
-  const successField = useSharedValue(0);
 
   const [method, setMethod] = useState<string>(METHODS[0]);
   const [mockPhase, setMockPhase] = useState<MockPhase>('idle');
@@ -168,25 +160,28 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
         footer={
           <Button label="Back home" onPress={finishHome} testID="payment-back-home" />
         }>
-        <View style={styles.successBody}>
-          <BloomField
-            elapsed={successField}
-            stage={PAYMENT_SUCCESS_STAGE}
-            hidden={false}
-          />
-          <View style={styles.successCopy}>
-            <View style={styles.successCircle}>
-              <Icon name="check" size={28} color={theme.color.text.primary} />
-            </View>
-            <Text allowFontScaling style={styles.successDetail}>
-              {formatTokens(amount)} tokens added
-            </Text>
-            {successBalance !== null ? (
-              <Text allowFontScaling style={styles.successBalance}>
-                Balance {formatTokens(successBalance)} tokens
-              </Text>
-            ) : null}
+        {/*
+          * Contained M3 success card on bg/positive.
+          *
+          * The previous success state placed an animated field inside a Sheet
+          * with overflow:hidden — it produced a half-height ornament that was
+          * neither a terminal completion nor a sheet component. The M3 Paper
+          * language keeps the same surface hierarchy throughout: bg/raised
+          * sheet, contained positive card, explicit typography. A still card
+          * resolves faster and works equally on API 24+.
+          */}
+        <View style={styles.successCard}>
+          <View style={styles.successIcon}>
+            <Icon name="check" size={24} color={theme.color.text.positive} />
           </View>
+          <Text allowFontScaling style={styles.successDetail}>
+            {formatTokens(amount)} tokens added
+          </Text>
+          {successBalance !== null ? (
+            <Text allowFontScaling style={styles.successBalance}>
+              Balance {formatTokens(successBalance)} tokens
+            </Text>
+          ) : null}
         </View>
       </Sheet>
     );
@@ -220,7 +215,12 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
             </View>
           ) : null}
 
-          {/* Only show UPI app picker in the mock path; Cashfree handles app selection. */}
+          {/* UPI app picker in the mock path; M3 list/selection semantics.
+              accessibilityRole="radio" + accessibilityState.checked gives
+              TalkBack the correct "Google Pay, radio button, checked" announcement.
+              No iOS-grouped card wrapper: M3 list rows are flat surfaces on
+              bg/raised, distinguished by the selection state rather than by a
+              rounded container with overflow:hidden. */}
           {!isCashfree ? (
             <View style={styles.group}>
               {METHODS.map((name, index) => {
@@ -235,7 +235,9 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
                         }
                       }}
                       testID={`upi-${name}`}
-                      accessibilityLabel={on ? `${name}, selected` : name}
+                      accessibilityRole="radio"
+                      checked={on}
+                      accessibilityLabel={name}
                       press="none"
                       highlight="ios"
                       style={[
@@ -360,37 +362,41 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.subhead,
       color: t.color.text.secondary,
     },
-    successBody: {
+    /*
+     * Contained M3 success card — bg/positive surface with positive-tinted icon.
+     *
+     * Replaces the previous full-bleed animated field + absolute-positioned copy.
+     * The old approach used an ornamental surface inside a Sheet (two surface
+     * languages on one screen). The positive card uses only surface + typography
+     * tokens, consistent with every other Sheet state in the app.
+     */
+    successCard: {
       alignSelf: 'stretch',
-      minHeight: 220,
-      overflow: 'hidden',
+      paddingVertical: TOKENS.space.xl,
+      paddingHorizontal: TOKENS.space.lg,
       borderRadius: TOKENS.radius.md,
       borderCurve: 'continuous',
-    },
-    successCopy: {
-      ...StyleSheet.absoluteFill,
-      alignItems: 'center',
-      justifyContent: 'center',
+      backgroundColor: t.color.bg.positive,
       gap: TOKENS.space.xs,
-      paddingHorizontal: TOKENS.space.md,
+      alignItems: 'center',
     },
-    successCircle: {
-      width: 56,
-      height: 56,
-      borderRadius: 28,
+    successIcon: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
       borderCurve: 'continuous',
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: 'rgba(255,255,255,0.78)',
+      backgroundColor: t.color.bg.base,
       marginBottom: TOKENS.space.xs,
     },
     successDetail: {
       ...TOKENS.typography.headline,
-      color: t.color.text.primary,
+      color: t.color.text.positive,
     },
     successBalance: {
       ...TOKENS.typography.subhead,
-      color: t.color.text.secondary,
+      color: t.color.text.positive,
     },
     errorRow: {
       alignSelf: 'stretch',

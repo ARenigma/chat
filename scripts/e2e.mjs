@@ -348,12 +348,13 @@ const journeys = [
   {
     flow: '03-token-economy.yaml',
     before() {
-      // Low balance is now a display/recharge state. Message sends are charged
-      // only by accepted paid sessions (ADR-0020), never one token per message.
+      // Enough for the first pending-session request to clear the server's
+      // one-minute preflight (22 tokens), while still exercising the explicit
+      // first-send recharge nudge. Pending sends never debit this balance.
       sql(
-        'update public.profiles set token_balance = 3, last_refill_at = null',
+        'update public.profiles set token_balance = 44, last_refill_at = null',
       );
-      console.log('   seeded every wallet to 3 tokens');
+      console.log('   seeded every wallet to 44 tokens');
     },
   },
   {

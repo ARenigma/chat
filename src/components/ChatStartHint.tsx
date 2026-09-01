@@ -24,7 +24,7 @@ export function ChatStartHint() {
         testID="chats-empty-plus"
         accessibilityLabel="Start a chat"
         accessibilityHint={HINT}
-        press="none"
+        press="button"
         size={56}
         style={styles.plus}>
         <Icon name="plus" size={22} color={styles.plusInk.color} />

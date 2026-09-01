@@ -58,6 +58,8 @@ interface Props {
   subtitle?: string;
   /** List scroll offset (Reanimated). Drives the medium collapse; omit to pin expanded. */
   scrollY?: SharedValue<number>;
+  /** Let a cover image carry the app-bar surface, as on profile headers. */
+  transparent?: boolean;
   testID?: string;
 }
 
@@ -68,6 +70,7 @@ function TopAppBarView({
   variant = 'small',
   subtitle,
   scrollY,
+  transparent = false,
   testID,
 }: Props) {
   const styles = useStyles(makeStyles);
@@ -80,13 +83,17 @@ function TopAppBarView({
         trailing={trailing}
         subtitle={subtitle}
         scrollY={scrollY}
+        transparent={transparent}
         testID={testID}
       />
     );
   }
 
   return (
-    <View testID={testID} style={styles.bar} accessibilityRole="header">
+    <View
+      testID={testID}
+      style={[styles.bar, transparent && styles.transparent]}
+      accessibilityRole="header">
       {/* Leading slot — always reserves space so the title stays centred */}
       <View style={styles.slot}>{leading ?? null}</View>
 
@@ -111,6 +118,7 @@ function MediumBar({
   trailing,
   subtitle,
   scrollY,
+  transparent,
   testID,
 }: Omit<Props, 'variant'>) {
   const styles = useStyles(makeStyles);
@@ -165,7 +173,7 @@ function MediumBar({
   return (
     <Animated.View
       testID={testID}
-      style={[styles.mediumHost, containerStyle]}
+      style={[styles.mediumHost, transparent && styles.transparent, containerStyle]}
       accessibilityRole="header">
       {/* Action row: leading + collapsed title + trailing. */}
       <View style={styles.actionRow}>
@@ -228,6 +236,9 @@ const makeStyles = (t: Theme) =>
       backgroundColor: t.color.bg.base,
       overflow: 'hidden',
       justifyContent: 'flex-start',
+    },
+    transparent: {
+      backgroundColor: 'transparent',
     },
     actionRow: {
       height: TOP_APP_BAR_HEIGHT,
