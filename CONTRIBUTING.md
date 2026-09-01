@@ -57,6 +57,17 @@ Figma is the source of truth for design decisions. `design/tokens.json` is their
 exported form and `src/theme/tokens.generated.ts` is generated from it. Neither is
 hand-edited; `tokens:check` fails the build if they disagree.
 
+## Where product and architecture live
+
+- Product inventory and feature status: `docs/FEATURES.md`
+- System shape, flags, migrations: `docs/ARCHITECTURE.md`
+- Design source of truth: `DESIGN.md` + `design/tokens.json`
+- Agent/project rules: `CLAUDE.md`
+- Navigation and list flows: `docs/flows.md`
+- Platform conformance log: `docs/android-audit.md`
+
+Do not add a parallel product brief at the repo root; keep status in those docs.
+
 ## Architecture decisions
 
 Anything structural gets an ADR in `docs/adr/`, numbered, with status

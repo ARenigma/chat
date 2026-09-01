@@ -43,23 +43,26 @@ Applied globally; verified via the token drift gate.
 ## Navigation shape (v13)
 
 Home merges the first-gen Inbox + Explore into **one screen** with a docked
-3-item nav — **Home / Favourites / Settings** (Calls tab gated behind
-`CALLS_TAB_ENABLED`) — replacing the first-gen Chats/Explore tab bar. Home
-holds: wordmark (Titan One), ₹ balance pill, a horizontal CHATS story row
-(avatars, unread badges, online dots), an Explore hero card, and a ranked
-provider list. On medium/expanded windows the column stays ≤600dp. Tapping a
-provider opens the **Provider detail** screen (hero photo, favourite,
+3-item nav — **Home / Favourites / You** (Calls tab gated behind
+`CALLS_TAB_ENABLED`) — replacing the first-gen Chats/Explore tab bar. **You**
+is the profile-first Settings surface (WhatsApp Android reference), not a gear
+utility page. Home holds: wordmark (Titan One), ₹ balance pill, a horizontal
+CHATS story row (avatars, unread badges, online dots), an Explore hero card,
+and a ranked provider list. On medium/expanded windows the column stays ≤600dp.
+Tapping a provider opens the **Provider detail** screen (hero photo, favourite,
 name/age/online/languages/rating/tags, three priced action buttons, ABOUT) —
 not straight into chat as first-gen did.
 
-### Figma check vs app (2026-08-29)
+### Figma check vs app (2026-09-01)
 
 Live read of bond Copy via Figma MCP. Structure matches: Home (wordmark + CHATS
 rail + Explore hero + ranked list), Chat (talk-time bar + bubbles + composer),
 Provider detail (hero + three priced actions + ABOUT), welcome bloom + Continue.
-**Deliberate gaps vs Figma:** app nav is docked Home / Favourites / Settings
-(Calls gated); Figma still shows a floating coral Home / Call / Settings
-capsule. Pixel geometry on a booted device still needs a side-by-side pass.
+**Deliberate gaps vs Figma:** app nav is docked Home / Favourites / You (Calls
+gated); Figma still shows a floating coral Home / Call / Settings capsule.
+Settings uses the WhatsApp profile-first “You” pattern (compact transparent app
+bar, chat wallpaper cover, overlapping avatar, continuous M3 inset dividers)
+rather than a medium app-bar form.
 
 ## Platform floor (four pillars, per-function docs)
 

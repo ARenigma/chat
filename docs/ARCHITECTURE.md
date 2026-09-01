@@ -59,7 +59,7 @@ assets/
   fonts/                 Geist (Regular/SemiBold/Bold), TitanOne, Lucide.ttf, PappalGlyphs.ttf
 
   supabase/
-  migrations/            001–037: sequential SQL migrations (applied in order)
+  migrations/            001–045: sequential SQL migrations (applied in order)
   functions/             Deno edge functions (9 total)
   tests/                 pgTAP SQL test suites (run via npm run test:db, needs Docker)
   config.toml            Supabase project config (authoritative; db push applies this)
@@ -148,13 +148,15 @@ Key files: `src/api/transactions.ts`, `src/api/sessions.ts`, `src/screens/Rechar
 
 ## Feature Flags (`src/config.ts`)
 
-| Flag                 | Current value              | Effect when changed                                                                                                                                  |
-| -------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CALLS_ENABLED`      | `true`                     | Enables in-chat call buttons (video/voice). Flip to `false` to hide call affordances globally.                                                       |
-| `CALLS_TAB_ENABLED`  | `false`                    | When `true`, adds a Calls tab to the bottom nav (`FloatingToolbar`) and mounts `CallsScreen`. The tab is hidden while `CallsScreen` is still a stub. |
-| `PAYMENTS_ENABLED`   | `false`                    | When `true`, wires the Pay button to a real UPI/Play Billing rail (not yet built).                                                                   |
-| `MOCK_PAYMENTS`      | `APP_ENV !== 'production'` | Enables the mock recharge flow; also gated server-side by `app_flags.mock_payments`.                                                                 |
-| `PHONE_AUTH_ENABLED` | `true`                     | Gates every phone sign-in entry point (button + send/verify functions). Flip to `false` to revert to Google-only in one diff.                        |
+| Flag                 | Current value              | Effect when changed                                                                                                                                               |
+| -------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CALLS_ENABLED`      | `true`                     | Compile-time master for in-chat call affordances. Live voice/video knobs are admin `kill_switches` (`voice_calls_enabled`, `video_calls_enabled`, migration 044). |
+| `CALLS_TAB_ENABLED`  | `false`                    | When `true`, adds a Calls tab to the bottom nav (`FloatingToolbar`) and mounts `CallsScreen`. The tab is hidden while `CallsScreen` is still a stub.              |
+| `PAYMENTS_ENABLED`   | `false`                    | When `true`, wires the Pay button to a real UPI/Play Billing rail (not yet built).                                                                                |
+| `MOCK_PAYMENTS`      | `APP_ENV !== 'production'` | Enables the mock recharge flow; also gated server-side by `app_flags.mock_payments`.                                                                              |
+| `PHONE_AUTH_ENABLED` | `true`                     | Gates every phone sign-in entry point (button + send/verify functions). Flip to `false` to revert to Google-only in one diff.                                     |
+
+Runtime config also covers rates, packs, and kill switches via `get_public_config` (migration 035). Theme preference is client-only MMKV (`light` default on install).
 
 ---
 
@@ -179,49 +181,57 @@ Key files: `src/api/transactions.ts`, `src/api/sessions.ts`, `src/screens/Rechar
 
 ---
 
-## Database Migrations (001–037)
+## Database Migrations (001–045)
 
-| #   | File                                         | Purpose                                                                                                                      |
-| --- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| 001 | `001_initial_schema.sql`                     | Core schema: `profiles`, `token_balance`, wallet RPCs (`deduct_user_token`, `credit_user_token`), RLS base                   |
-| 002 | `002_bootstrap_and_grants.sql`               | Daily refill cron, grant/revoke model, wallet primitives locked to service_role                                              |
-| 003 | `003_human_conversations.sql`                | Human-to-human chat: `conversations`, `messages`, `send_message` RPC, `approve_provider_application`, Realtime publication   |
-| 004 | `004_message_guard_and_directory.sql`        | `guard_message_columns` trigger, `provider_directory` view (discovery surface), narrows INSERT policy                        |
-| 005 | `005_trust_and_safety.sql`                   | `blocks` table, `report_user` RPC, RLS rules for blocking/reporting                                                          |
-| 006 | `006_phone_auth_and_provider_onboarding.sql` | Phone number on profile, provider application flow, `provider_directory` view refresh                                        |
-| 007 | `007_conversation_side.sql`                  | `i_am_member` and `i_am_provider` columns on `conversation_summaries`; prevents role confusion in UI                         |
-| 008 | `008_push_tokens.sql`                        | `push_tokens` table (FCM device token per user), RLS                                                                         |
-| 009 | `009_push_sender.sql`                        | `push_sender` helper view; what the `send-push` edge function reads                                                          |
-| 010 | `010_phone_verification.sql`                 | `profiles.phone_verified` flag; `verify_phone` RPC (MSG91 JWT path)                                                          |
-| 011 | `011_reactions_replies_voice_calls.sql`      | `reactions`, voice note fields on `messages`, `calls` table, presence fields, pseudonymous `display_name`                    |
-| 012 | `012_declared_presence_and_pii_guard.sql`    | `presence_choice` enum (`here`/`away`/`hidden`), `declare_presence` RPC, `guard_privileged_profile_columns` trigger          |
-| 013 | `013_provider_avatars.sql`                   | `profiles.avatar_url` (provider photo), Storage bucket `avatars`                                                             |
-| 014 | `014_message_attachments.sql`                | `messages.attachment_path`, `attachments` Storage bucket, `send_attachment` RPC                                              |
-| 015 | `015_push_avatar.sql`                        | Adds provider avatar URL to push payload so the notification shows the sender's face                                         |
-| 016 | `016_engagement_nudges.sql`                  | `engagement_nudges` table, `engagement_candidates` view; drives the daily inactive-member push                               |
-| 017 | `017_call_push.sql`                          | `call_push_on_insert` trigger → fires `send-call` edge function in real-time when a call is created                          |
-| 018 | `018_firebase_phone_exchange.sql`            | `exchange_firebase_token` helper; RLS changes to support Firebase-issued Supabase sessions                                   |
-| 019 | `019_token_ledger_and_invoices.sql`          | `token_transactions` table, `complete_recharge` RPC (service_role), `generate_invoice` counter, invoice number sequence      |
-| 020 | `020_mock_recharge.sql`                      | `app_flags` table, `mock_recharge(pack_id, amount)` RPC (authenticated, gated by `app_flags.mock_payments`)                  |
-| 021 | `021_chat_minute.sql`                        | `spend_chat_minute()` RPC; per-minute metering heartbeat (drain-to-zero semantics corrected in 022)                          |
-| 022 | `022_chat_minute_drain.sql`                  | Supersedes 021: correct drain-to-zero on final minute; adds `last` flag to signal session end cleanly                        |
-| 023 | `023_voice_peaks.sql`                        | `messages.voice_peaks real[]` column; constraint; immutability guard; `send_message` wired to persist sender amplitude peaks |
-| 024 | `024_send_message_return.sql`                | Restores `kind` and `new_balance` to `send_message` return contract (silently dropped by migration 014)                      |
-| 025 | `025_voice_peaks_range.sql`                  | Adds element-value constraint to `voice_peaks` (each element must be in `[0,1]`); closes client-supplied input gate          |
-| 026 | `026_admin_config_and_policy.sql`            | `admin` schema; versioned config with draft/active lifecycle; report taxonomy                                                |
-| 027 | `027_policy_versions_and_acceptance.sql`     | User policy acceptance gate; `policy_versions`, `policy_acceptances`                                                         |
-| 028 | `028_balance_buckets_and_ledger.sql`         | Splits wallet into `promo_balance` + `purchased_balance`; backward-compat trigger on `token_balance`                         |
-| 029 | `029_billing_snapshot_and_accrual.sql`       | Rate snapshot at session activation; provider accrual tables                                                                 |
-| 030 | `030_paid_sessions.sql`                      | `session_requests`, `paid_sessions`, `participant_leases`; bilateral handshake RPCs                                          |
-| 031 | `031_purge_and_evidence.sql`                 | Session end + transcript purge; evidence copy path for reports; metadata-only conversation summaries                         |
-| 032 | `032_telemetry_event_extensions.sql`         | Extended event allowlist for session lifecycle events                                                                        |
-| 033 | `033_credit_purchased_recharge.sql`          | `complete_recharge` credit path to `purchased_balance`                                                                       |
-| 034 | `034_admin_schema_api_access.sql`            | Service-role / PostgREST access grants for the `admin` schema                                                                |
-| 035 | `035_public_config_rpc.sql`                  | `get_public_config` / `get_active_config` RPCs; app reads runtime config from DB, not build flags                            |
-| 036 | `036_fix_provider_share_unit.sql`            | Corrects `provider_share_percent` from basis points (6000) to integer percent (60)                                           |
-| 037 | `037_session_cutover.sql`                    | Removes per-message debit from `send_message`; routes billing to `claim_session_lease` / `meter_active_sessions`             |
+| #   | File                                          | Purpose                                                                                                                      |
+| --- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| 001 | `001_initial_schema.sql`                      | Core schema: `profiles`, `token_balance`, wallet RPCs (`deduct_user_token`, `credit_user_token`), RLS base                   |
+| 002 | `002_bootstrap_and_grants.sql`                | Daily refill cron, grant/revoke model, wallet primitives locked to service_role                                              |
+| 003 | `003_human_conversations.sql`                 | Human-to-human chat: `conversations`, `messages`, `send_message` RPC, `approve_provider_application`, Realtime publication   |
+| 004 | `004_message_guard_and_directory.sql`         | `guard_message_columns` trigger, `provider_directory` view (discovery surface), narrows INSERT policy                        |
+| 005 | `005_trust_and_safety.sql`                    | `blocks` table, `report_user` RPC, RLS rules for blocking/reporting                                                          |
+| 006 | `006_phone_auth_and_provider_onboarding.sql`  | Phone number on profile, provider application flow, `provider_directory` view refresh                                        |
+| 007 | `007_conversation_side.sql`                   | `i_am_member` and `i_am_provider` columns on `conversation_summaries`; prevents role confusion in UI                         |
+| 008 | `008_push_tokens.sql`                         | `push_tokens` table (FCM device token per user), RLS                                                                         |
+| 009 | `009_push_sender.sql`                         | `push_sender` helper view; what the `send-push` edge function reads                                                          |
+| 010 | `010_phone_verification.sql`                  | `profiles.phone_verified` flag; `verify_phone` RPC (MSG91 JWT path)                                                          |
+| 011 | `011_reactions_replies_voice_calls.sql`       | `reactions`, voice note fields on `messages`, `calls` table, presence fields, pseudonymous `display_name`                    |
+| 012 | `012_declared_presence_and_pii_guard.sql`     | `presence_choice` enum (`here`/`away`/`hidden`), `declare_presence` RPC, `guard_privileged_profile_columns` trigger          |
+| 013 | `013_provider_avatars.sql`                    | `profiles.avatar_url` (provider photo), Storage bucket `avatars`                                                             |
+| 014 | `014_message_attachments.sql`                 | `messages.attachment_path`, `attachments` Storage bucket, `send_attachment` RPC                                              |
+| 015 | `015_push_avatar.sql`                         | Adds provider avatar URL to push payload so the notification shows the sender's face                                         |
+| 016 | `016_engagement_nudges.sql`                   | `engagement_nudges` table, `engagement_candidates` view; drives the daily inactive-member push                               |
+| 017 | `017_call_push.sql`                           | `call_push_on_insert` trigger → fires `send-call` edge function in real-time when a call is created                          |
+| 018 | `018_firebase_phone_exchange.sql`             | `exchange_firebase_token` helper; RLS changes to support Firebase-issued Supabase sessions                                   |
+| 019 | `019_token_ledger_and_invoices.sql`           | `token_transactions` table, `complete_recharge` RPC (service_role), `generate_invoice` counter, invoice number sequence      |
+| 020 | `020_mock_recharge.sql`                       | `app_flags` table, `mock_recharge(pack_id, amount)` RPC (authenticated, gated by `app_flags.mock_payments`)                  |
+| 021 | `021_chat_minute.sql`                         | `spend_chat_minute()` RPC; per-minute metering heartbeat (drain-to-zero semantics corrected in 022)                          |
+| 022 | `022_chat_minute_drain.sql`                   | Supersedes 021: correct drain-to-zero on final minute; adds `last` flag to signal session end cleanly                        |
+| 023 | `023_voice_peaks.sql`                         | `messages.voice_peaks real[]` column; constraint; immutability guard; `send_message` wired to persist sender amplitude peaks |
+| 024 | `024_send_message_return.sql`                 | Restores `kind` and `new_balance` to `send_message` return contract (silently dropped by migration 014)                      |
+| 025 | `025_voice_peaks_range.sql`                   | Adds element-value constraint to `voice_peaks` (each element must be in `[0,1]`); closes client-supplied input gate          |
+| 026 | `026_admin_config_and_policy.sql`             | `admin` schema; versioned config with draft/active lifecycle; report taxonomy                                                |
+| 027 | `027_policy_versions_and_acceptance.sql`      | User policy acceptance gate; `policy_versions`, `policy_acceptances`                                                         |
+| 028 | `028_balance_buckets_and_ledger.sql`          | Splits wallet into `promo_balance` + `purchased_balance`; backward-compat trigger on `token_balance`                         |
+| 029 | `029_billing_snapshot_and_accrual.sql`        | Rate snapshot at session activation; provider accrual tables                                                                 |
+| 030 | `030_paid_sessions.sql`                       | `session_requests`, `paid_sessions`, `participant_leases`; bilateral handshake RPCs                                          |
+| 031 | `031_purge_and_evidence.sql`                  | Session end + transcript purge; evidence copy path for reports; metadata-only conversation summaries                         |
+| 032 | `032_telemetry_event_extensions.sql`          | Extended event allowlist for session lifecycle events                                                                        |
+| 033 | `033_credit_purchased_recharge.sql`           | `complete_recharge` credit path to `purchased_balance`                                                                       |
+| 034 | `034_admin_schema_api_access.sql`             | Service-role / PostgREST access grants for the `admin` schema                                                                |
+| 035 | `035_public_config_rpc.sql`                   | `get_public_config` / `get_active_config` RPCs; app reads runtime config from DB, not build flags                            |
+| 036 | `036_fix_provider_share_unit.sql`             | Corrects `provider_share_percent` from basis points (6000) to integer percent (60)                                           |
+| 037 | `037_session_cutover.sql`                     | Removes per-message debit from `send_message`; routes billing to `claim_session_lease` / `meter_active_sessions`             |
+| 038 | `038_provider_review_and_earnings.sql`        | Provider review / earnings surface adjustments                                                                               |
+| 039 | `039_cashfree_telemetry_events.sql`           | Cashfree-related telemetry event allowlist                                                                                   |
+| 040 | `040_profile_setup_and_first_interaction.sql` | Username / profile setup; first-interaction openers seed                                                                     |
+| 041 | `041_enable_payments_first_interaction.sql`   | Payment gate for first interaction path                                                                                      |
+| 042 | `042_about_directory_and_perf_events.sql`     | Directory about copy + performance telemetry events                                                                          |
+| 043 | `043_member_age_bracket.sql`                  | Adult age-bracket field for members (under-18 not offered)                                                                   |
+| 044 | `044_independent_call_controls.sql`           | Independent `voice_calls_enabled` / `video_calls_enabled` kill switches                                                      |
+| 045 | `045_message_origin_and_hidden_retention.sql` | Message origin + hide-on-end / 30-day retain / daily purge; sequential opener templates                                      |
 
-**RLS model**: all tables use `auth.uid()` for row ownership. `send_message`, `complete_recharge`, `approve_provider_application` enforce the caller inside the function. Service-role-only RPCs are revoked from `authenticated` and granted only to `service_role`.
+**RLS model**: all tables use `auth.uid()` for row ownership. `send_message`, `complete_recharge`, `approve_provider_application` enforce the caller inside the function. Service-role-only RPCs are revoked from `authenticated` and granted only to `service_role`. Session content after end is filtered by `hidden_at` (045) so participants cannot replay it while dispute retention remains server-side.
 
 ---
 
