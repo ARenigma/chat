@@ -1,13 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The emulator reaches the host's local Supabase stack through 10.0.2.2.
-  Keep that development exception on one host and in the debuggable source set;
-  all other traffic, including every non-debug build, remains TLS-only.
+  The emulator reaches the host's local Supabase stack through 10.0.2.2, and a
+  physical device over `adb reverse tcp:8081` reaches Metro through localhost.
+  Keep both development exceptions on exactly those two hosts and in the
+  debuggable source set; all other traffic, including every non-debug build,
+  remains TLS-only. Without the localhost entry a debug build on a real phone
+  fails Metro's status check with "CLEARTEXT communication to localhost not
+  permitted" and silently falls back to the bundle baked into the APK — which
+  is how a day of hot-reload "verification" ran against stale code (2026-09-02).
   https://developer.android.com/privacy-and-security/security-config
 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false" />
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">10.0.2.2</domain>
+        <domain includeSubdomains="false">localhost</domain>
     </domain-config>
 </network-security-config>

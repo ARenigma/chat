@@ -851,7 +851,11 @@ describe('device coverage matrix', () => {
     // Skipping that is what produced "Unable to load script" the moment
     // `adb reverse` dropped under Maestro clearState.
     const gradle = read('android/app/build.gradle');
-    expect(gradle).toMatch(/debuggableVariants\s*=\s*\[\s*\]/);
+    // The default (no property) is the empty list; `-PmetroHotReload` is the
+    // only way to get a Metro-served debug build, and it must be asked for.
+    expect(gradle).toMatch(
+      /debuggableVariants\s*=\s*project\.hasProperty\("metroHotReload"\)\s*\?\s*\["debug"\]\s*:\s*\[\s*\]/,
+    );
     expect(read('scripts/qa-device.sh')).toContain('installDebug');
   });
 

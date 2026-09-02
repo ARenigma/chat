@@ -39,10 +39,30 @@ interface NativeIndicatorProps extends ViewProps {
   trackColor?: ColorValue;
 }
 
-const NativeLoadingIndicator =
-  requireNativeComponent<NativeIndicatorProps>('PappalMaterialLoadingIndicator');
-const NativeCircularProgress =
-  requireNativeComponent<NativeIndicatorProps>('PappalMaterialCircularProgress');
+/*
+ * Registered once per JS runtime, not once per module evaluation.
+ *
+ * `requireNativeComponent` registers a view config by name and throws in dev on
+ * a second registration ("Tried to register two views with the same name").
+ * Fast Refresh re-evaluates this module whenever it, or anything it imports,
+ * changes — so a plain module-level call redboxes the running app on the first
+ * hot reload that touches an indicator. The cache lives on `globalThis`, which
+ * survives module re-evaluation but not a full reload, which is exactly the
+ * lifetime a view registration has.
+ */
+type NativeIndicatorComponent = ReturnType<typeof requireNativeComponent<NativeIndicatorProps>>;
+const nativeCache = globalThis as unknown as {
+  __pappalNativeIndicators?: {
+    loading: NativeIndicatorComponent;
+    circular: NativeIndicatorComponent;
+  };
+};
+nativeCache.__pappalNativeIndicators ??= {
+  loading: requireNativeComponent<NativeIndicatorProps>('PappalMaterialLoadingIndicator'),
+  circular: requireNativeComponent<NativeIndicatorProps>('PappalMaterialCircularProgress'),
+};
+const NativeLoadingIndicator = nativeCache.__pappalNativeIndicators.loading;
+const NativeCircularProgress = nativeCache.__pappalNativeIndicators.circular;
 
 interface Props {
   size?: number;
@@ -106,10 +126,16 @@ function LoadingIndicatorView({
     );
   }
 
+  // The contained variant's disc is TONAL, not grey. M3 draws the contained
+  // loading indicator on primaryContainer; the grey `bg.sunken` disc this used
+  // to default to made every wait read as a grey spinner even with a coral
+  // active indicator on top (Amit, 2026-09-02). Callers over a coloured surface
+  // pass `transparent` or their own container.
+  // https://m3.material.io/components/progress-indicators/specs
   return (
     <NativeLoadingIndicator
       {...common}
-      containerColor={containerColorProp ?? theme.color.bg.sunken}
+      containerColor={containerColorProp ?? theme.color.bg.accentTint}
     />
   );
 }

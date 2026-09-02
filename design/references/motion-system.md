@@ -239,3 +239,107 @@ chosen on purpose, which is a product decision rather than an implementation one
 Worth naming what caught this: nothing did, automatically. `contrast:check`
 measures token pairs, not composites, and the screen passed every gate. It was
 caught by recording the emulator and stepping the frames.
+
+## Screen transitions (M3 hybrid, added 2026-09-02)
+
+The rules above are the Fuse onboarding surface. This section is the app-wide
+screen/surface motion language, decided with Amit on 2026-09-02 (Option C of the
+motion research): Material 3 _standard-scheme_ springs for anything that moves or
+resizes, M3 emphasized easing for opacity and colour, and the M3 transition
+patterns for choreography. It is a hybrid because M3's own transition-patterns
+doc still specifies enter/exit on easing+duration while telling you to move to
+springs for spatial motion — so spatial is springs, effects is timing.
+
+Everything lives in `src/theme/motion.ts`; no screen writes its own physics.
+
+| Pattern              | Where                                           | Builder                      | Physics                                                                                                                                        |
+| -------------------- | ----------------------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Forward / back       | pushed overlays, provider tree, Recharge wallet | `screenIn` / `screenOut`     | fade (emphasized-decel in 300 / emphasized-accel out 200) under a short `±distance.push` slide on `spatialSlow`; direction from `navDirection` |
+| Top-level            | tab layers (Favourites/Calls/You), boot phases  | `topLevelIn` / `topLevelOut` | exiting fades out (100), then entering fades in (200); no slide, no shared element                                                             |
+| Enter / exit (sheet) | `Sheet`, `SpotlightCard`                        | `sheetIn` / `sheetOut`       | Y on `spatialDefault`; the sheet body never fades — the scrim carries the dim                                                                  |
+| Enter / exit (menu)  | `PaperMenu`                                     | `menuIn` / `menuOut`         | `scaleY` from the anchor edge on `spatialFast` + a short fade; `transformOrigin` set by the caller                                             |
+| Row entrance         | `ProviderRow`, `ProviderCard`                   | `rowIn(index)`               | opacity + `translateY 12→0` on `spatialSlow`, staggered                                                                                        |
+| First-boot dissolve  | welcome → AuthScreen                            | `authArrive`                 | a 700ms fade, matching the onboarding content beat                                                                                             |
+
+**Direction is a shared value, not a prop.** `navDirection` (`makeMutable`) is set
+by the navigation helpers immediately before the route changes — `pushRoute`/
+`pushProvider` set `'forward'`, `popRoute`/`popProvider`/`leaveChat` and the
+hardware-back handler set `'back'`. `screenIn`/`screenOut` read it when they run,
+which for the leaving screen is at unmount, after its props are gone; a shared
+value is the only thing that survives that. The Recharge wallet page sets
+`'forward'` on its own not-visible→visible transition in render, before the mount
+commits, so a preceding pop cannot leave it entering from the wrong side.
+
+**The Reanimated spring trap.** M3 publishes standard springs as
+`{dampingRatio, stiffness}`, and `withSpring` _silently ignores stiffness_ the
+moment a `dampingRatio` key is present (it switches to a duration
+parameterisation — `react-native-reanimated/.../spring/spring.js`). So the M3
+springs are authored as ratio+stiffness in `design/tokens.json` and the generator
+emits the physical triplet `damping = 2·ζ·√(k·m), mass:1` that `withSpring` and
+the `.springify()` layout builders both honour. A test round-trips the ratio.
+
+**Reduced motion is a split, not an off switch.** Opacity animations carry
+`ReduceMotion.Never` (a fade is the accessible fallback and must still run);
+translate and scale carry `ReduceMotion.System` (via `springTo`), so they collapse
+to nothing. The net effect under "remove animations" is exactly "fades only".
+
+**Bloom timings stay separate.** `src/lib/bloom.ts` (`BLOOM_FIELD_MS` etc.) is a
+source-measured system from the Fuse clip and sits outside the M3 tokens; the
+onboarding field is not an M3 transition and must not be retuned by them.
+
+**Predictive back.** RN 0.86 registers an always-enabled `OnBackPressedCallback`
+at targetSdk 36, so the system treats the app as handling back and the opt-in is
+on by default — no manifest flag is added (`enableOnBackInvokedCallback="false"`
+would be the opt-out). RN exposes no gesture-progress to JS, so an in-app back
+_preview_ is not possible; the M3 `screenOut` back variant stands in, and root
+back shows the Leave dialog. Verify on an API 36 device that the launcher preview
+is suppressed and `hardwareBackPress` fires once per gesture.
+
+### Addendum, 2026-09-02 evening — what the device taught the screen transition
+
+Everything below was found by frame-stepping `screenrecord` at 60fps on the S22
+Ultra with a Metro-served debug build, after a false start (see the last point).
+
+- **`entering` layout animations do not run on the pushed overlays.** The custom
+  worklet builder and a stock `FadeIn` were both frame-stepped: the layer painted
+  at full opacity in a single frame every time, while `exiting` on the same view
+  ran correctly. The entrance is therefore driven from shared values
+  (`useScreenEnter` in `motion.ts`): the view mounts at opacity 0 / offset 48
+  from the style's initial values and the ramp starts from `onLayout`, once the
+  screen has real geometry — Telegram's `needDelayOpenAnimation` in effect.
+  Starting it from `useEffect` was tried first and the clock ran ahead of a heavy
+  screen's first paint, so ChatScreen's first visible frame was already two-thirds
+  faded.
+- **Home's slide-in is kicked from the pop, not from the new route.** An effect on
+  `route.name === 'home'` ran after the overlay had begun fading, so Home's jump
+  to -48 was visible through it (a 28-unit spike in the frame diff). `revealHome()`
+  is called by `popRoute`/`leaveChat`/the back handler _before_ `setRoute`, while
+  the overlay is still opaque; Home then settles on the same `spatialDefault`
+  spring the overlay leaves on, so the two halves move together.
+- **The screen fade is Telegram's curve, not M3's.** `emphasized-decelerate`
+  (0.05, 0.7, 0.1, 1) is ~70% complete 35ms in; over a 150ms fade it finished in
+  two frames and read as a cut. `M3.easing.decelerate` (0.33, 1, 0.68, 1) is the
+  cubic ease-out Android's `DecelerateInterpolator(1.5f)` draws and what Telegram
+  runs its 150ms push/pop on (`ActionBarLayout.java:614`, `:1873`); the pop is the
+  same curve mirrored (`:1899-1907`). Geometry is Telegram's too: 48dp of travel
+  (`:1893`), 150ms (`:1830`). Recorded as a departure in the token note.
+- **No opaque cover between Home and a pushed screen.** `coverHome` snapped to
+  white in one frame and the overlay then faded in white-on-white — invisible —
+  while the deferred content popped in unanimated: Home → pure white → chat, on
+  every push. Removed; the overlay's own opaque surface fading in over the
+  visible Home is the M3 fade-through.
+- **Tab layers cross-fade without the out-then-in gap.** The 100ms delay showed
+  the always-mounted Home between the two fades.
+- **The false start.** A debug build made with the repo's default
+  `debuggableVariants = []` embeds the JS bundle and never talks to Metro; the
+  debug network-security config also refused cleartext to `localhost`, so even
+  the packager status check failed. Every "hot-reload" capture for two hours was
+  of the JS baked into the APK. `scripts/dev-device.sh` builds the Metro-served
+  variant explicitly (`-PmetroHotReload`); the default is unchanged and pinned by
+  a test. Before trusting a device capture, check the APK has no
+  `index.android.bundle` and that a visible probe edit actually shows up.
+- **Still open:** ChatScreen takes ~500ms from tap to first paint (the entrance
+  cannot start before that); the 150ms exit fade is as abrupt as Telegram's by
+  design but should be judged by hand on device; `bubbleLaunch`/`bubbleArrive`
+  `entering` animations in the chat may be affected by the same suppression and
+  have not been frame-stepped.

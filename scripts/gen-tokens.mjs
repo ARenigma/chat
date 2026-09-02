@@ -25,6 +25,37 @@ const CHECK = process.argv.includes('--check');
 
 const spec = JSON.parse(readFileSync(INPUT, 'utf8'));
 
+/*
+ * Guard against a new top-level block being added to the JSON and not wired into
+ * the render objects below — the same silent-drop trap `motion()` documents, one
+ * level up. A block that lands in tokens.json but not in `LIGHT`/`DARK` fails a
+ * typecheck in some far-off consumer; failing here names the missing block.
+ */
+const KNOWN_TOP_LEVEL = new Set([
+  'source',
+  'color',
+  'space',
+  'radius',
+  'motion',
+  'interaction',
+  'toggle',
+  'typography',
+  'elevation',
+  'layout',
+]);
+for (const key of Object.keys(spec)) {
+  if (key.startsWith('$')) {
+    continue;
+  }
+  if (!KNOWN_TOP_LEVEL.has(key)) {
+    console.error(
+      `tokens FAILED: unknown top-level block '${key}' in design/tokens.json. ` +
+        'Add it to KNOWN_TOP_LEVEL and to the LIGHT/DARK render objects in gen-tokens.mjs.',
+    );
+    process.exit(1);
+  }
+}
+
 /** `bg/accentTint` -> `{ group: 'bg', key: 'accentTint' }` */
 function split(name) {
   const [group, key] = name.split('/');
@@ -161,6 +192,66 @@ function springMeta() {
 }
 
 /**
+ * The Material 3 springs, converted from M3's parameterisation to Reanimated's.
+ *
+ * M3 publishes standard springs as `{dampingRatio, stiffness}`. Reanimated's
+ * `withSpring` cannot take that pair: the moment a `dampingRatio` key is present
+ * it switches to a duration-based parameterisation and ignores `stiffness`
+ * entirely (see `spring/spring.js` `useDuration`). So the authored ratio+stiffness
+ * is converted here to the physical triplet `withSpring` does honour, `damping =
+ * 2 * ratio * sqrt(k * m)` with `mass = 1`, the same shape `springs()` emits for
+ * the four hand-tuned springs. A builder must never spread the authored token.
+ */
+function m3Springs() {
+  const rest = {
+    restDisplacementThreshold: spec.motion.rest.displacement,
+    restSpeedThreshold: spec.motion.rest.speed,
+  };
+  const out = {};
+  for (const [name, s] of Object.entries(spec.motion.m3.spring)) {
+    if (name.startsWith('$')) {
+      continue;
+    }
+    const mass = 1;
+    const damping = Number(
+      (2 * s.dampingRatio * Math.sqrt(s.stiffness * mass)).toFixed(3),
+    );
+    out[name] = { damping, stiffness: s.stiffness, mass, ...rest };
+  }
+  return out;
+}
+
+/**
+ * The derived half of the M3 physics, mirroring `springMeta()`.
+ *
+ * `ratio` is recomputed from the emitted `damping` rather than echoed from the
+ * token, so the round-trip (authored ratio -> damping -> ratio) is asserted by
+ * construction: if the conversion above ever drifts, the number here stops
+ * matching the token and the test that compares them fails.
+ */
+function m3SpringMeta() {
+  const emitted = m3Springs();
+  const out = {};
+  for (const [name, s] of Object.entries(emitted)) {
+    const omega = Math.sqrt(s.stiffness / s.mass);
+    // Report and compare the ROUNDED ratio. `damping` is rounded to 3 decimals
+    // when emitted, so recomputing an exact ratio from it lands a hair off a
+    // clean value (e.g. ζ=1.0 becomes 0.99998 and reads as overshooting). The
+    // rounded ratio is the number a reader sees, so it is the number the
+    // `overshoots` flag must agree with.
+    const ratio = Number(
+      (s.damping / (2 * Math.sqrt(s.stiffness * s.mass))).toFixed(3),
+    );
+    out[name] = {
+      ratio,
+      settleMs: Math.round((4 / (ratio * omega)) * 1000),
+      overshoots: ratio < 1,
+    };
+  }
+  return out;
+}
+
+/**
  * Every sub-block of `spec.motion`, rather than a hand-written list of them.
  *
  * The list this replaced was a trap with a long fuse. Adding a block to
@@ -178,6 +269,22 @@ function motion() {
   const out = { spring: springs(), springMeta: springMeta() };
   for (const [name, block] of Object.entries(spec.motion)) {
     if (name.startsWith('$') || name === 'spring' || name === 'rest') {
+      continue;
+    }
+    if (name === 'm3') {
+      // The m3 block is rebuilt from its own emitters: `spring` is converted
+      // from ratio+stiffness to the physical triplet (see m3Springs), and its
+      // derived meta is attached beside it. Everything else in the block
+      // (easing, duration, distance) is plain data.
+      out.m3 = {
+        spring: m3Springs(),
+        springMeta: m3SpringMeta(),
+        ...values(
+          Object.fromEntries(
+            Object.entries(block).filter(([k]) => k !== 'spring'),
+          ),
+        ),
+      };
       continue;
     }
     out[name] = values(block);
@@ -228,6 +335,7 @@ export const LIGHT = ${render(
     color: colorObject('Light'),
     space: values(spec.space),
     radius: values(spec.radius),
+    layout: values(spec.layout),
     motion: motion(),
     interaction: values(spec.interaction),
     toggle: values(spec.toggle),
@@ -242,6 +350,7 @@ export const DARK = ${render(
     color: colorObject('Dark'),
     space: values(spec.space),
     radius: values(spec.radius),
+    layout: values(spec.layout),
     motion: motion(),
     interaction: values(spec.interaction),
     toggle: values(spec.toggle),
@@ -294,8 +403,8 @@ const colorCount = Object.keys(spec.color.tokens).length;
 console.log(
   `tokens OK, ${colorCount} colours x 2 modes, ` +
     `${Object.keys(values(spec.space)).length} space, ${
-      Object.keys(values(spec.radius)).length
-    } radius, ` +
+      Object.keys(values(spec.layout)).length
+    } layout, ${Object.keys(values(spec.radius)).length} radius, ` +
     `${Object.keys(typography()).length} type styles, ${
       Object.keys(spec.motion.spring).length
     } springs -> src/theme/tokens.generated.ts`,

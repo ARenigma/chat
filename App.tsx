@@ -10,17 +10,27 @@ import {
   StyleSheet,
   Text,
   View,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated, { FadeIn, FadeOut, SlideInRight, SlideOutRight } from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from './src/theme/tokens';
 import { ThemeProvider, useStyles, useThemeMode } from './src/theme/ThemeProvider';
-import { DURATION, fadeSwapFast } from './src/theme/motion';
+import {
+  authArrive,
+  revealHome,
+  screenOut,
+  setNavDirection,
+  topLevelIn,
+  topLevelOut,
+  useHomeRevealStyle,
+  useScreenEnter,
+} from './src/theme/motion';
 import { AfterPaint } from './src/components/AfterPaint';
 import { UpdateBanner } from './src/components/UpdateBanner';
-import { BLOOM_CONTENT_MS } from './src/lib/bloom';
 import { assertEnv } from './src/lib/env';
 import { storage } from './src/lib/storage';
 import { initialNotificationPeer, onNotificationOpen, setNotificationPolicy, startPush } from './src/lib/push';
@@ -87,6 +97,33 @@ import { TransactionHistoryScreen } from './src/screens/TransactionHistoryScreen
 initSentry();
 
 const LAST_PROVIDER_KEY = 'companion.lastProvider';
+
+/**
+ * A pushed screen's layer: enters on the M3 forward/back transition, leaves on
+ * its mirror. The entrance is effect-driven (`useScreenEnter`) because the
+ * `entering` layout animation does not run on this mount path — see motion.ts.
+ * One component so every push in both trees moves identically.
+ */
+function PushedLayer({
+  style,
+  children,
+  testID,
+}: {
+  style: StyleProp<ViewStyle>;
+  children: React.ReactNode;
+  testID?: string;
+}) {
+  const enter = useScreenEnter();
+  return (
+    <Animated.View
+      testID={testID}
+      style={[style, enter.style]}
+      onLayout={enter.onLayout}
+      exiting={screenOut}>
+      {children}
+    </Animated.View>
+  );
+}
 const { StartupTiming } = NativeModules as {
   StartupTiming?: { reportFullyDrawn(): void };
 };
@@ -533,31 +570,61 @@ function Root() {
     };
   }, [boot.phase]);
 
-  const openChat = useCallback((id: string, from: ChatDoor = 'home') => {
-    setRoute({ name: 'chat', providerId: id, from });
-    track('conversation_opened');
-    storage.set(LAST_PROVIDER_KEY, id);
+  /*
+   * Every navigation declares its direction before it changes the route.
+   *
+   * `navDirection` (a shared value in motion.ts) is read by `screenIn`/
+   * `screenOut` at the moment those builders run — which for the leaving screen
+   * is at unmount, after its props are gone — so a push and a pop cannot be told
+   * apart from the route alone. `pushRoute` goes deeper (slide from the right),
+   * `popRoute` returns (slide from the left). Tab switches use the top-level
+   * fade, which ignores direction, so they can go through either.
+   */
+  const pushRoute = useCallback((next: MemberRoute) => {
+    setNavDirection('forward');
+    setRoute(next);
   }, []);
+  const popRoute = useCallback((next: MemberRoute) => {
+    setNavDirection('back');
+    if (next.name === 'home') {
+      revealHome();
+    }
+    setRoute(next);
+  }, []);
+
+  const openChat = useCallback(
+    (id: string, from: ChatDoor = 'home') => {
+      pushRoute({ name: 'chat', providerId: id, from });
+      track('conversation_opened');
+      storage.set(LAST_PROVIDER_KEY, id);
+    },
+    [pushRoute],
+  );
 
   const openProvider = useCallback(
     (id: string, from: 'home' | 'favourites' | 'chat' = 'home') => {
-      setRoute({ name: 'providerDetail', providerId: id, from });
+      pushRoute({ name: 'providerDetail', providerId: id, from });
       track('directory_viewed');
     },
-    [],
+    [pushRoute],
   );
 
   // Back from a chat honours the door it was opened from (Home or a profile),
   // matching the hardware-back handler rather than always dumping to Home.
   const leaveChat = useCallback(() => {
-    setRoute(prev =>
-      prev.name === 'chat' ? (memberParent(prev) ?? { name: 'home' }) : { name: 'home' },
-    );
+    setNavDirection('back');
+    const current = routeRef.current;
+    const next: MemberRoute =
+      current.name === 'chat' ? (memberParent(current) ?? { name: 'home' }) : { name: 'home' };
+    if (next.name === 'home') {
+      revealHome();
+    }
+    setRoute(next);
     resetConversation();
     storage.remove(LAST_PROVIDER_KEY);
   }, [resetConversation]);
 
-  const backToHome = useCallback(() => setRoute({ name: 'home' }), []);
+  const backToHome = useCallback(() => popRoute({ name: 'home' }), [popRoute]);
 
   /**
    * The hardware and gesture back button.
@@ -579,6 +646,7 @@ function Root() {
         return true;
       }
       if (walletVisible) {
+        setNavDirection('back');
         closeWallet();
         return true;
       }
@@ -600,11 +668,19 @@ function Root() {
           resetConversation();
           storage.remove(LAST_PROVIDER_KEY);
         }
+        // A hardware/gesture back is always a pop, so the leaving screen slides
+        // off to the right and its parent enters from the left. Home's slide is
+        // kicked here, before the route changes, while the overlay still covers it.
+        setNavDirection('back');
+        if (parent.name === 'home') {
+          revealHome();
+        }
         setRoute(parent);
         return true;
       }
       const providerBack = providerParent(providerRoute);
       if (providerBack !== null) {
+        setNavDirection('back');
         setProviderRoute(providerBack);
         return true;
       }
@@ -695,9 +771,7 @@ function Root() {
      */
     if (welcomeSeen && boot.message === undefined) {
       return (
-        <Animated.View
-          style={styles.fill}
-          entering={FadeIn.duration(BLOOM_CONTENT_MS)}>
+        <Animated.View style={styles.fill} entering={authArrive}>
           <AuthScreen onAuthenticated={() => {
             // Show the splash, not the sign-in screens, while the boot effect
             // re-reads the just-minted session. Without this the render between
@@ -875,17 +949,59 @@ function SignedIn({
     trackScreenOpened(role === 'provider' ? providerRoute.name : route.name);
   }, [role, route.name, providerRoute.name]);
 
+  /*
+   * The in-render navigations declare direction the same way Root's do (see the
+   * `pushRoute`/`popRoute` note there): `setNavDirection` before the setter, so
+   * `screenIn`/`screenOut` know whether this is a push or a pop. Root's own
+   * `openChat`/`leaveChat`/`backToHome` (passed in) already carry direction;
+   * these cover the pushes and pops wired directly into child screens here.
+   */
+  const pushRoute = useCallback(
+    (next: MemberRoute) => {
+      setNavDirection('forward');
+      setRoute(next);
+    },
+    [setRoute],
+  );
+  const popRoute = useCallback(
+    (next: MemberRoute) => {
+      setNavDirection('back');
+      if (next.name === 'home') {
+        revealHome();
+      }
+      setRoute(next);
+    },
+    [setRoute],
+  );
+  const pushProvider = useCallback(
+    (next: ProviderRoute) => {
+      setNavDirection('forward');
+      setProviderRoute(next);
+    },
+    [setProviderRoute],
+  );
+  const popProvider = useCallback(
+    (next: ProviderRoute) => {
+      setNavDirection('back');
+      setProviderRoute(next);
+    },
+    [setProviderRoute],
+  );
+
+  // Home's slide-in on a pop is driven from the pop itself (motion.ts `revealHome`).
+  const homeLayer = useHomeRevealStyle();
+
   // A ring, foreground: route the incoming call to the right tree's call screen.
   // Declared before the early return so the hook order is stable.
   const onIncoming = useCallback(
     (incoming: IncomingCall) => {
       if (role === 'provider') {
-        setProviderRoute({ name: 'call', peerId: incoming.callerId, direction: 'in', callId: incoming.callId, medium: incoming.medium });
+        pushProvider({ name: 'call', peerId: incoming.callerId, direction: 'in', callId: incoming.callId, medium: incoming.medium });
       } else {
-        setRoute({ name: 'call', providerId: incoming.callerId, direction: 'in', callId: incoming.callId, medium: incoming.medium });
+        pushRoute({ name: 'call', providerId: incoming.callerId, direction: 'in', callId: incoming.callId, medium: incoming.medium });
       }
     },
-    [role, setRoute, setProviderRoute],
+    [role, pushRoute, pushProvider],
   );
   useIncomingCalls(selfId, onIncoming);
 
@@ -900,45 +1016,51 @@ function SignedIn({
   if (role === 'provider') {
     return (
       <View style={styles.host}>
-        {providerRoute.name === 'call' ? (
-          <CallScreen
-            providerId={providerRoute.peerId}
-            direction={providerRoute.direction}
-            callId={providerRoute.callId}
-            medium={providerRoute.medium}
-            // Symmetry with the member tree: hanging up returns to that peer's
-            // chat, not the provider home (user 2026-08-31).
-            onEnd={() => setProviderRoute({ name: 'chat', peerId: providerRoute.peerId })}
-          />
-        ) : providerRoute.name === 'chat' ? (
-          <ChatScreen
-            providerId={providerRoute.peerId}
-            onBack={() => setProviderRoute({ name: 'home' })}
-            onStartCall={channel =>
-              setProviderRoute({
-                name: 'call',
-                peerId: providerRoute.peerId,
-                direction: 'out',
-                callId: null,
-                medium: channel === 'video' ? 'video' : 'voice',
-              })
-            }
-          />
-        ) : providerRoute.name === 'settings' ? (
-          <SettingsSheet
-            onBack={() => setProviderRoute({ name: 'home' })}
-            onDeleted={() => {
-              setProviderRoute({ name: 'home' });
-              onSignedOut();
-            }}
-            onSignedOut={onSignedOut}
-          />
-        ) : (
-          <ProviderHomeScreen
-            onOpenConversation={peerId => setProviderRoute({ name: 'chat', peerId })}
-            onOpenSettings={() => setProviderRoute({ name: 'settings' })}
-          />
-        )}
+        {/* One screen at a time, keyed on the route so a change remounts and the
+          * M3 push/pop plays: the leaving screen slides off on `screenOut`, the
+          * arriving one enters on `screenIn`, direction from `navDirection`. The
+          * provider tree used to hard-cut between these. */}
+        <PushedLayer key={providerRoute.name} style={styles.fill}>
+          {providerRoute.name === 'call' ? (
+            <CallScreen
+              providerId={providerRoute.peerId}
+              direction={providerRoute.direction}
+              callId={providerRoute.callId}
+              medium={providerRoute.medium}
+              // Symmetry with the member tree: hanging up returns to that peer's
+              // chat, not the provider home (user 2026-08-31).
+              onEnd={() => popProvider({ name: 'chat', peerId: providerRoute.peerId })}
+            />
+          ) : providerRoute.name === 'chat' ? (
+            <ChatScreen
+              providerId={providerRoute.peerId}
+              onBack={() => popProvider({ name: 'home' })}
+              onStartCall={channel =>
+                pushProvider({
+                  name: 'call',
+                  peerId: providerRoute.peerId,
+                  direction: 'out',
+                  callId: null,
+                  medium: channel === 'video' ? 'video' : 'voice',
+                })
+              }
+            />
+          ) : providerRoute.name === 'settings' ? (
+            <SettingsSheet
+              onBack={() => popProvider({ name: 'home' })}
+              onDeleted={() => {
+                popProvider({ name: 'home' });
+                onSignedOut();
+              }}
+              onSignedOut={onSignedOut}
+            />
+          ) : (
+            <ProviderHomeScreen
+              onOpenConversation={peerId => pushProvider({ name: 'chat', peerId })}
+              onOpenSettings={() => pushProvider({ name: 'settings' })}
+            />
+          )}
+        </PushedLayer>
       </View>
     );
   }
@@ -952,16 +1074,19 @@ function SignedIn({
         * never remounts its lists or replays entry animations — the native
         * back-stack behaviour a single swapped-in screen threw away. */}
       <View style={styles.content}>
-      {/* Settings is a docked nav tab, so Home no longer opens it. */}
-      <HomeScreen
-        onOpenConversation={openChat}
-        onOpenProvider={openProvider}
-        onSeeAllChats={() => setRoute({ name: 'chatsList' })}
-      />
+      {/* Settings is a docked nav tab, so Home no longer opens it. The wrapper
+          carries Home's slide-in on a pop (see `homeShift`). */}
+      <Animated.View style={[styles.fill, homeLayer]}>
+        <HomeScreen
+          onOpenConversation={openChat}
+          onOpenProvider={openProvider}
+          onSeeAllChats={() => pushRoute({ name: 'chatsList' })}
+        />
+      </Animated.View>
 
       {/* Favourites is a top-level tab: the people this member has hearted. */}
       {route.name === 'favourites' ? (
-        <Animated.View style={styles.tabLayer} entering={fadeSwapFast} exiting={FadeOut.duration(DURATION.fast)}>
+        <Animated.View style={styles.tabLayer} entering={topLevelIn} exiting={topLevelOut}>
           <AfterPaint>
             <FavouritesScreen onOpenProvider={id => openProvider(id, 'favourites')} />
           </AfterPaint>
@@ -971,7 +1096,7 @@ function SignedIn({
       {/* Calls is a top-level tab (empty state for now). A real destination so
           the nav's Calls icon does something on tap rather than reading as dead. */}
       {route.name === 'calls' ? (
-        <Animated.View style={styles.tabLayer} entering={fadeSwapFast} exiting={FadeOut.duration(DURATION.fast)}>
+        <Animated.View style={styles.tabLayer} entering={topLevelIn} exiting={topLevelOut}>
           <AfterPaint>
             <CallsScreen />
           </AfterPaint>
@@ -982,9 +1107,11 @@ function SignedIn({
           (which ends at the docked nav's top edge), not inside the pushed overlay
           that the nav does not survive. */}
       {route.name === 'settings' ? (
-        // A tab switch, not a push: a quick cross-fade rather than a slide, so
-        // Home↔Settings does not read as a sideways jump.
-        <Animated.View style={styles.tabLayer} entering={fadeSwapFast} exiting={FadeOut.duration(DURATION.fast)}>
+        // A tab switch, not a push: the M3 top-level pattern (a fade, no slide)
+        // so Home↔Settings does not read as a sideways jump. A straight
+        // cross-fade rather than out-then-in, because the layers sit over an
+        // always-mounted Home and a gap between the two fades showed it.
+        <Animated.View style={styles.tabLayer} entering={topLevelIn} exiting={topLevelOut}>
           <AfterPaint>
             <SettingsSheet
               onBack={backToHome}
@@ -996,68 +1123,71 @@ function SignedIn({
                 onSignedOut();
               }}
               onSignedOut={onSignedOut}
-              onApply={() => setRoute({ name: 'apply', from: 'settings' })}
-              onApplicationStatus={() => setRoute({ name: 'applicationStatus' })}
-              onBlocked={() => setRoute({ name: 'blocked' })}
-              onTransactions={() => setRoute({ name: 'transactions' })}
+              onApply={() => pushRoute({ name: 'apply', from: 'settings' })}
+              onApplicationStatus={() => pushRoute({ name: 'applicationStatus' })}
+              onBlocked={() => pushRoute({ name: 'blocked' })}
+              onTransactions={() => pushRoute({ name: 'transactions' })}
             />
           </AfterPaint>
         </Animated.View>
       ) : null}
 
-      {/* Opaque cover rendered at zIndex 9 — above the always-mounted Home (no
-          zIndex) and below the sliding overlay (zIndex 10) — so the slide
-          reveals this neutral surface instead of the Home feed.  Not animated:
-          it must be instant to black out Home before the overlay arrives.
-          pointerEvents="none" keeps all touches falling through to the overlay. */}
-      {route.name !== 'home' &&
-      route.name !== 'settings' &&
-      route.name !== 'calls' &&
-      route.name !== 'favourites' ? (
-        <View style={styles.coverHome} pointerEvents="none" />
-      ) : null}
+      {/* No opaque cover between Home and the pushed overlays any more.
+          There used to be an instant white `coverHome` at zIndex 9 so a
+          full-width slide would reveal a neutral surface rather than the feed.
+          With the M3 fade-through (a 24dp slide under a fade) the cover was the
+          transition's worst enemy: it snapped Home to white in one frame, the
+          overlay then faded in white-on-white — invisible — and the deferred
+          content popped in un-animated. Frame-stepped on device 2026-09-02:
+          Home → pure white → chat. The overlay's own opaque surface fading in
+          over the visible Home IS the pattern; nothing needs to hide Home. */}
 
       {route.name === 'chatsList' ||
       (route.name === 'chat' && route.from === 'chatsList') ? (
         // Full-screen Chats modal. Stays mounted under a chat opened from here
         // so back returns to this list, not Home (docs/flows.md).
-        <Animated.View
-          style={styles.overlay}
-          entering={SlideInRight.duration(160)}
-          exiting={SlideOutRight.duration(150)}>
+        <PushedLayer style={styles.overlay}>
           <ChatsListScreen
             onBack={backToHome}
             onOpenConversation={id => openChat(id, 'chatsList')}
           />
-        </Animated.View>
+        </PushedLayer>
       ) : null}
 
       {route.name === 'chat' ? (
-        <Animated.View
-          style={[styles.overlay, route.from === 'chatsList' && styles.overlayStack]}
-          entering={SlideInRight.duration(160)}
-          exiting={SlideOutRight.duration(150)}>
-          <AfterPaint>
+        /*
+         * `AfterPaint` OUTSIDE the animated overlay, not inside it.
+         *
+         * Inside, the container began its fade+slide as an empty white box and
+         * the screen's content mounted one frame later, un-animated, into a
+         * container already most of the way through its entrance. Outside, the
+         * heavy commit lands first and the entrance starts on the frame the
+         * content is actually there — one frame of latency the eye cannot see,
+         * in exchange for an animation that animates the screen rather than a
+         * blank. Reanimated runs `exiting` for the topmost animated view of a
+         * removed subtree, so the pop still plays when AfterPaint unmounts.
+         */
+        <AfterPaint>
+          <PushedLayer style={[styles.overlay, route.from === 'chatsList' && styles.overlayStack]}>
             <ChatScreen
               providerId={route.providerId}
               onBack={leaveChat}
               onOpenProfile={id => openProvider(id, 'chat')}
               onStartCall={channel =>
-                setRoute({ name: 'call', providerId: route.providerId, direction: 'out', callId: null, medium: channel === 'video' ? 'video' : 'voice' })
+                pushRoute({ name: 'call', providerId: route.providerId, direction: 'out', callId: null, medium: channel === 'video' ? 'video' : 'voice' })
               }
             />
-          </AfterPaint>
-        </Animated.View>
+          </PushedLayer>
+        </AfterPaint>
       ) : route.name === 'call' ||
         route.name === 'providerDetail' ||
         route.name === 'apply' ||
         route.name === 'applicationStatus' ||
         route.name === 'blocked' ||
         route.name === 'transactions' ? (
-        <Animated.View
-          style={styles.overlay}
-          entering={SlideInRight.duration(160)}
-          exiting={SlideOutRight.duration(150)}>
+        // Same shape as the chat overlay: content first, then the entrance.
+        <AfterPaint>
+        <PushedLayer style={styles.overlay}>
           {route.name === 'call' ? (
             <AfterPaint>
               <CallScreen
@@ -1080,7 +1210,7 @@ function SignedIn({
                 onBack={backToHome}
                 onOpenChat={id => openChat(id, 'detail')}
                 onStartCall={(id, channel) =>
-                  setRoute({
+                  pushRoute({
                     name: 'call',
                     providerId: id,
                     direction: 'out',
@@ -1093,16 +1223,17 @@ function SignedIn({
           ) : route.name === 'apply' ? (
             <ProviderApplicationScreen
               onBack={backToHome}
-              onSubmitted={() => setRoute({ name: 'applicationStatus' })}
+              onSubmitted={() => pushRoute({ name: 'applicationStatus' })}
             />
           ) : route.name === 'applicationStatus' ? (
-            <ProviderStatusScreen onBack={backToHome} onEdit={() => setRoute({ name: 'apply', from: 'applicationStatus' })} />
+            <ProviderStatusScreen onBack={backToHome} onEdit={() => pushRoute({ name: 'apply', from: 'applicationStatus' })} />
           ) : route.name === 'blocked' ? (
             <BlockedUsersScreen onBack={backToHome} />
           ) : (
-            <TransactionHistoryScreen onBack={() => setRoute({ name: 'settings' })} />
+            <TransactionHistoryScreen onBack={() => popRoute({ name: 'settings' })} />
           )}
-        </Animated.View>
+        </PushedLayer>
+        </AfterPaint>
       ) : null}
       </View>
 
@@ -1217,21 +1348,6 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   content: {
     flex: 1,
     position: 'relative',
-  },
-  // Instant, non-animated cover that sits between the always-mounted Home
-  // (no zIndex) and the sliding overlay (zIndex 10).  Its purpose is to
-  // prevent the Home feed from being visible UNDER the arriving slide during
-  // the 240ms entrance — zIndex 9 means it paints over Home but the overlay
-  // paints over it.  pointerEvents="none" is set on the element so all touches
-  // pass straight through to the overlay above.
-  coverHome: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: t.color.bg.base,
-    zIndex: 9,
   },
   // Opaque cover for a pushed screen, above the always-mounted Home and below
   // the Recharge overlay (zIndex 20). Its zIndex 10 is also what hides the fixed

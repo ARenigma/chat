@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { SlideInRight, SlideOutRight } from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import {
@@ -14,7 +14,7 @@ import {
 } from '../lib/rates';
 import { useRechargeConfig, useKillSwitches, FALLBACK_RECHARGE } from '../api/appConfig';
 import { tick } from '../lib/haptics';
-import { SPRING } from '../theme/motion';
+import { screenOut, setNavDirection, useScreenEnter } from '../theme/motion';
 import { useStore } from '../store/useStore';
 import { BackButton } from '../components/BackButton';
 import { Button } from '../components/Button';
@@ -196,22 +196,28 @@ export function RechargeWalletPage() {
   const [amount, setAmount] = useState<number>(livePacks[1] ?? 300);
   const [payOpen, setPayOpen] = useState(false);
 
+  // A pushed page: it always enters from the right (a forward push) and its back
+  // leaves to the right, so it uses the shared screen builders. The direction is
+  // set on the not-visible → visible transition, in render and thus before the
+  // mount commits and `screenIn` reads it, so a preceding pop cannot leave the
+  // page entering from the wrong side. The ref keeps it to that one transition.
+  const wasVisible = useRef(false);
+  if (visible && !wasVisible.current) {
+    setNavDirection('forward');
+  }
+  wasVisible.current = visible;
+
   if (!visible) return null;
 
+  const closeBack = () => {
+    setNavDirection('back');
+    close();
+  };
+
   return (
-    <Animated.View
-      testID="recharge-wallet"
-      entering={SlideInRight.springify()
-        .damping(SPRING.gentle.damping)
-        .stiffness(SPRING.gentle.stiffness)
-        .mass(SPRING.gentle.mass)}
-      exiting={SlideOutRight.springify()
-        .damping(SPRING.smooth.damping)
-        .stiffness(SPRING.smooth.stiffness)
-        .mass(SPRING.smooth.mass)}
-      style={[styles.page, { paddingTop: insets.top }]}>
+    <WalletLayer style={[styles.page, { paddingTop: insets.top }]}>
       <View style={styles.bar}>
-        <BackButton onPress={close} testID="recharge-wallet-back" style={styles.barIcon} />
+        <BackButton onPress={closeBack} testID="recharge-wallet-back" style={styles.barIcon} />
         <Text allowFontScaling style={styles.barTitle}>
           Recharge
         </Text>
@@ -230,6 +236,20 @@ export function RechargeWalletPage() {
         />
       </View>
       <PaymentSheet visible={payOpen} amount={amount} onClose={() => setPayOpen(false)} />
+    </WalletLayer>
+  );
+}
+
+/** The wallet page's pushed layer: effect-driven entrance, layout-animation exit (motion.ts). */
+function WalletLayer({ style, children }: { style: StyleProp<ViewStyle>; children: React.ReactNode }) {
+  const enter = useScreenEnter();
+  return (
+    <Animated.View
+      testID="recharge-wallet"
+      style={[style, enter.style]}
+      onLayout={enter.onLayout}
+      exiting={screenOut}>
+      {children}
     </Animated.View>
   );
 }
@@ -397,7 +417,7 @@ const makeStyles = (t: Theme) =>
       borderRadius: TOKENS.radius.lg,
       borderCurve: 'continuous',
       padding: TOKENS.space.lg,
-      gap: 2,
+      gap: TOKENS.space.hair,
     },
     balanceLabel: {
       ...TOKENS.typography.subhead,

@@ -69,6 +69,7 @@ export const LIGHT = {
     },
   },
   space: {
+    hair: 2,
     '2xs': 4,
     xs: 8,
     sm: 12,
@@ -77,6 +78,9 @@ export const LIGHT = {
     xl: 24,
     '2xl': 32,
     '3xl': 40,
+    '4xl': 48,
+    '5xl': 56,
+    '6xl': 64,
   },
   radius: {
     tail: 5,
@@ -95,6 +99,16 @@ export const LIGHT = {
     bubble: 22,
     thread: 24,
     sheet: 28,
+  },
+  layout: {
+    rowOneLine: 56,
+    rowTwoLine: 72,
+    rowThreeLine: 88,
+    toolbarHeight: 64,
+    appBarSmall: 64,
+    appBarMedium: 112,
+    appBarMediumSubtitle: 128,
+    searchBar: 56,
   },
   motion: {
     spring: {
@@ -185,6 +199,101 @@ export const LIGHT = {
       neighbour: 0.1,
       inactive: 0.25,
     },
+    m3: {
+      spring: {
+        spatialFast: {
+          damping: 67.35,
+          stiffness: 1400,
+          mass: 1,
+          restDisplacementThreshold: 0.01,
+          restSpeedThreshold: 2,
+        },
+        spatialDefault: {
+          damping: 47.624,
+          stiffness: 700,
+          mass: 1,
+          restDisplacementThreshold: 0.01,
+          restSpeedThreshold: 2,
+        },
+        spatialSlow: {
+          damping: 31.177,
+          stiffness: 300,
+          mass: 1,
+          restDisplacementThreshold: 0.01,
+          restSpeedThreshold: 2,
+        },
+        effectsFast: {
+          damping: 123.288,
+          stiffness: 3800,
+          mass: 1,
+          restDisplacementThreshold: 0.01,
+          restSpeedThreshold: 2,
+        },
+        effectsDefault: {
+          damping: 80,
+          stiffness: 1600,
+          mass: 1,
+          restDisplacementThreshold: 0.01,
+          restSpeedThreshold: 2,
+        },
+        effectsSlow: {
+          damping: 56.569,
+          stiffness: 800,
+          mass: 1,
+          restDisplacementThreshold: 0.01,
+          restSpeedThreshold: 2,
+        },
+      },
+      springMeta: {
+        spatialFast: {
+          ratio: 0.9,
+          settleMs: 119,
+          overshoots: true,
+        },
+        spatialDefault: {
+          ratio: 0.9,
+          settleMs: 168,
+          overshoots: true,
+        },
+        spatialSlow: {
+          ratio: 0.9,
+          settleMs: 257,
+          overshoots: true,
+        },
+        effectsFast: {
+          ratio: 1,
+          settleMs: 65,
+          overshoots: false,
+        },
+        effectsDefault: {
+          ratio: 1,
+          settleMs: 100,
+          overshoots: false,
+        },
+        effectsSlow: {
+          ratio: 1,
+          settleMs: 141,
+          overshoots: false,
+        },
+      },
+      easing: {
+        emphasizedDecelerate: [0.05, 0.7, 0.1, 1],
+        emphasizedAccelerate: [0.3, 0, 0.8, 0.15],
+        standard: [0.2, 0, 0, 1],
+        decelerate: [0.33, 1, 0.68, 1],
+      },
+      duration: {
+        short2: 100,
+        short3: 150,
+        short4: 200,
+        medium2: 300,
+        medium4: 400,
+        long2: 500,
+      },
+      distance: {
+        push: 48,
+      },
+    },
   },
   interaction: {
     minTarget: 48,
@@ -194,6 +303,8 @@ export const LIGHT = {
     stateFocus: 0.1,
     statePressed: 0.1,
     stateDragged: 0.16,
+    scrim: 0.4,
+    scrimFocus: 0.54,
   },
   toggle: {
     trackWidth: 52,
@@ -374,6 +485,7 @@ export const DARK = {
     },
   },
   space: {
+    hair: 2,
     '2xs': 4,
     xs: 8,
     sm: 12,
@@ -382,6 +494,9 @@ export const DARK = {
     xl: 24,
     '2xl': 32,
     '3xl': 40,
+    '4xl': 48,
+    '5xl': 56,
+    '6xl': 64,
   },
   radius: {
     tail: 5,
@@ -400,6 +515,16 @@ export const DARK = {
     bubble: 22,
     thread: 24,
     sheet: 28,
+  },
+  layout: {
+    rowOneLine: 56,
+    rowTwoLine: 72,
+    rowThreeLine: 88,
+    toolbarHeight: 64,
+    appBarSmall: 64,
+    appBarMedium: 112,
+    appBarMediumSubtitle: 128,
+    searchBar: 56,
   },
   motion: {
     spring: {
@@ -490,6 +615,101 @@ export const DARK = {
       neighbour: 0.1,
       inactive: 0.25,
     },
+    m3: {
+      spring: {
+        spatialFast: {
+          damping: 67.35,
+          stiffness: 1400,
+          mass: 1,
+          restDisplacementThreshold: 0.01,
+          restSpeedThreshold: 2,
+        },
+        spatialDefault: {
+          damping: 47.624,
+          stiffness: 700,
+          mass: 1,
+          restDisplacementThreshold: 0.01,
+          restSpeedThreshold: 2,
+        },
+        spatialSlow: {
+          damping: 31.177,
+          stiffness: 300,
+          mass: 1,
+          restDisplacementThreshold: 0.01,
+          restSpeedThreshold: 2,
+        },
+        effectsFast: {
+          damping: 123.288,
+          stiffness: 3800,
+          mass: 1,
+          restDisplacementThreshold: 0.01,
+          restSpeedThreshold: 2,
+        },
+        effectsDefault: {
+          damping: 80,
+          stiffness: 1600,
+          mass: 1,
+          restDisplacementThreshold: 0.01,
+          restSpeedThreshold: 2,
+        },
+        effectsSlow: {
+          damping: 56.569,
+          stiffness: 800,
+          mass: 1,
+          restDisplacementThreshold: 0.01,
+          restSpeedThreshold: 2,
+        },
+      },
+      springMeta: {
+        spatialFast: {
+          ratio: 0.9,
+          settleMs: 119,
+          overshoots: true,
+        },
+        spatialDefault: {
+          ratio: 0.9,
+          settleMs: 168,
+          overshoots: true,
+        },
+        spatialSlow: {
+          ratio: 0.9,
+          settleMs: 257,
+          overshoots: true,
+        },
+        effectsFast: {
+          ratio: 1,
+          settleMs: 65,
+          overshoots: false,
+        },
+        effectsDefault: {
+          ratio: 1,
+          settleMs: 100,
+          overshoots: false,
+        },
+        effectsSlow: {
+          ratio: 1,
+          settleMs: 141,
+          overshoots: false,
+        },
+      },
+      easing: {
+        emphasizedDecelerate: [0.05, 0.7, 0.1, 1],
+        emphasizedAccelerate: [0.3, 0, 0.8, 0.15],
+        standard: [0.2, 0, 0, 1],
+        decelerate: [0.33, 1, 0.68, 1],
+      },
+      duration: {
+        short2: 100,
+        short3: 150,
+        short4: 200,
+        medium2: 300,
+        medium4: 400,
+        long2: 500,
+      },
+      distance: {
+        push: 48,
+      },
+    },
   },
   interaction: {
     minTarget: 48,
@@ -499,6 +719,8 @@ export const DARK = {
     stateFocus: 0.1,
     statePressed: 0.1,
     stateDragged: 0.16,
+    scrim: 0.4,
+    scrimFocus: 0.54,
   },
   toggle: {
     trackWidth: 52,

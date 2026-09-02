@@ -7,8 +7,10 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
+import { INTERACTION, menuIn } from '../theme/motion';
 import { Pressable } from './Pressable';
 
 export interface PaperMenuItem {
@@ -70,8 +72,10 @@ export function PaperMenu({ visible, items, onClose, anchor, testID }: Props) {
       height: Math.min(winH, anchor.height + HOLE_PAD * 2),
     };
     let top = hole.y + hole.height + GAP;
+    let above = false;
     if (top + menuH > winH - EDGE) {
       top = Math.max(EDGE, hole.y - menuH - GAP);
+      above = true;
     }
     let left = hole.x;
     if (left + menuW > winW - EDGE) {
@@ -80,8 +84,12 @@ export function PaperMenu({ visible, items, onClose, anchor, testID }: Props) {
     if (left < EDGE) {
       left = EDGE;
     }
-    return { hole, menu: { left, top, width: menuW, height: menuH } };
+    return { hole, menu: { left, top, width: menuW, height: menuH }, above };
   }, [anchor, items.length, winW, winH]);
+
+  // The M3 menu expands along Y away from its anchoring edge: from the top when
+  // it opens below the trigger, from the bottom when it flipped above it.
+  const originEdge = (layout as { above?: boolean }).above === true ? 'bottom' : 'top';
 
   const hole = layout.hole;
 
@@ -118,13 +126,15 @@ export function PaperMenu({ visible, items, onClose, anchor, testID }: Props) {
           </>
         )}
 
-        <View
+        <Animated.View
+          entering={menuIn}
           style={[
             styles.card,
             {
               left: layout.menu.left,
               top: layout.menu.top,
               width: layout.menu.width,
+              transformOrigin: originEdge,
             },
           ]}
           accessibilityRole="menu">
@@ -150,7 +160,7 @@ export function PaperMenu({ visible, items, onClose, anchor, testID }: Props) {
               </Text>
             </Pressable>
           ))}
-        </View>
+        </Animated.View>
       </View>
     </Modal>
   );
@@ -164,11 +174,11 @@ const makeStyles = (t: Theme) =>
     scrimFull: {
       ...StyleSheet.absoluteFill,
       backgroundColor: t.color.bg.scrim,
-      opacity: 0.45,
+      opacity: INTERACTION.scrim,
     },
     dim: {
       backgroundColor: t.color.bg.scrim,
-      opacity: 0.45,
+      opacity: INTERACTION.scrim,
     },
     // Static half of the cut-out bands; the measured half stays inline.
     // `bandRow`, not `row`, because `row` below is a menu item.

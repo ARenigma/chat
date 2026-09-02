@@ -1,9 +1,14 @@
 import {
   Easing,
   FadeIn,
-  FadeInDown,
+  FadeOut,
   ReduceMotion,
+  makeMutable,
+  type SharedValue,
   type WithSpringConfig,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
   withSequence,
   withSpring,
   withTiming,
@@ -36,8 +41,53 @@ export const SPRING = TOKENS.motion.spring;
 export const PRESS = TOKENS.motion.press;
 export const DURATION = TOKENS.motion.duration;
 export const STAGGER = TOKENS.motion.stagger;
-export const DECAY = TOKENS.motion.decay;
 export const GESTURE = TOKENS.motion.gesture;
+
+/**
+ * The Material 3 screen/surface transition physics (standard scheme).
+ *
+ * Separate from `SPRING`, which is the four hand-tuned interaction springs, and
+ * deliberately so: these six carry the app-wide transition language (push/pop,
+ * sheets, menus, rows) while the four carry press feedback and gestures. The
+ * split is the M3 spatial-vs-effects distinction — spatial springs move and
+ * resize, effects springs carry opacity and colour. See `design/tokens.json`
+ * `motion.m3` and `design/references/motion-system.md`.
+ */
+export const M3 = TOKENS.motion.m3;
+
+/**
+ * The three M3 easing curves, precomputed once.
+ *
+ * Decelerate for entering (arrives and slows), accelerate for exiting (speeds up
+ * as it leaves), standard for in-place changes. Built at module scope, not in
+ * each worklet, because `Easing.bezier` allocates and the curve never varies.
+ */
+const EMPH_DECEL = Easing.bezier(
+  M3.easing.emphasizedDecelerate[0],
+  M3.easing.emphasizedDecelerate[1],
+  M3.easing.emphasizedDecelerate[2],
+  M3.easing.emphasizedDecelerate[3],
+);
+/**
+ * Telegram's push/pop curve — Android `DecelerateInterpolator(1.5f)`, a cubic
+ * ease-out — for the 150ms screen fade only. See the token note for why
+ * M3's emphasized-decelerate cannot carry a fade that short.
+ */
+const SCREEN_DECEL = Easing.bezier(
+  M3.easing.decelerate[0],
+  M3.easing.decelerate[1],
+  M3.easing.decelerate[2],
+  M3.easing.decelerate[3],
+);
+const EMPH_ACCEL = Easing.bezier(
+  M3.easing.emphasizedAccelerate[0],
+  M3.easing.emphasizedAccelerate[1],
+  M3.easing.emphasizedAccelerate[2],
+  M3.easing.emphasizedAccelerate[3],
+);
+
+/** Every spring by name, the four interaction springs and the six M3 springs. */
+const ALL_SPRINGS = { ...SPRING, ...M3.spring };
 /**
  * The two opacities a state is allowed to be expressed in.
  *
@@ -49,11 +99,27 @@ export const GESTURE = TOKENS.motion.gesture;
  * and cannot see a composited opacity, so anything one of these hides has to be
  * reachable another way, which in practice means a screen-reader label.
  */
-export const OPACITY = TOKENS.motion.opacity;
-/** Material 3 state-layer opacities and the 48dp minimum target. */
+/** Material 3 state-layer opacities, the 48dp minimum target, and scrim opacity. */
 export const INTERACTION = TOKENS.interaction;
 
 export type SpringName = keyof typeof SPRING;
+export type M3SpringName = keyof typeof M3.spring;
+export type AnySpringName = keyof typeof ALL_SPRINGS;
+
+/**
+ * Forward vs back, read at the moment a screen builder runs.
+ *
+ * A shared value rather than a prop because the disappearing view's `exiting`
+ * animation is built at unmount, after its props are gone; and the entering
+ * view must know whether it is a push (slide from the right) or a back (slide
+ * from the left) without the route state machine re-rendering it to tell it.
+ * The navigation helpers in `App.tsx` set this immediately before changing the
+ * route, and the builders below read it inside their worklet.
+ */
+export const navDirection = makeMutable<'forward' | 'back'>('forward');
+export function setNavDirection(direction: 'forward' | 'back'): void {
+  navDirection.value = direction;
+}
 
 /**
  * `withSpring` with a named token, and optionally the velocity a gesture ended
@@ -67,12 +133,12 @@ export type SpringName = keyof typeof SPRING;
  */
 export function springTo(
   to: number,
-  name: SpringName = 'snap',
+  name: AnySpringName = 'snap',
   velocity?: number,
 ): number {
   'worklet';
   const config: WithSpringConfig = {
-    ...SPRING[name],
+    ...ALL_SPRINGS[name],
     reduceMotion: ReduceMotion.System,
     ...(velocity === undefined ? {} : { velocity }),
   };
@@ -131,38 +197,243 @@ export const fadeSwapFast = FadeIn.duration(DURATION.fast).reduceMotion(
  * the kind of animation someone with vestibular sensitivity has asked the OS to
  * stop, and honouring it is one call.
  */
-const SPRINGIFY = <T extends { springify: () => T }>(b: T): T => b.springify();
-
 function stagger(base: number, index: number, cap: number): number {
   return base * Math.min(index, cap);
 }
 
-/** A list row arriving. Capped at eight so a long list does not crawl in. */
-export function enterRow(index: number) {
-  return FadeInDown.delay(stagger(STAGGER.row, index, 8))
-    .duration(DURATION.base)
-    .damping(SPRING.gentle.damping)
-    .stiffness(SPRING.gentle.stiffness)
-    .mass(SPRING.gentle.mass)
-    .reduceMotion(ReduceMotion.System);
+/**
+ * A screen pushed onto the stack, or the one revealed when it pops.
+ *
+ * The M3 forward/back pattern: a short slide under a fade-through, never a
+ * full-width push. Direction comes from `navDirection` read at build time, so
+ * one builder serves both — a push enters from the right, a back enters from the
+ * left.
+ *
+ * The geometry is Telegram's, measured from `ActionBarLayout.java` (see the
+ * `distance.push` and `duration.short3` token notes): 48dp of travel under a
+ * 150ms alpha ramp on a decelerate curve, push and pop symmetric. The first cut
+ * used M3's medium2 (300ms) and 24dp and read as slow and wobbly on a device;
+ * this is the snap a chat app is judged against. `spatialDefault` (k=700, ζ=0.9)
+ * settles in ~168ms, the closest M3 spring to that 150ms, and M3's
+ * emphasized-decelerate is the same family of curve as Android's
+ * `DecelerateInterpolator`.
+ *
+ * Opacity is `Never` so the fade always runs, and the slide is `System` (via
+ * `springTo`) so it collapses to a pure fade under reduce-motion — which is
+ * exactly "reduced motion → fades only".
+ */
+export function useScreenEnter(): {
+  style: ReturnType<typeof useAnimatedStyle>;
+  onLayout: () => void;
+  progress: SharedValue<number>;
+  shift: SharedValue<number>;
+} {
+  /*
+   * A layout-started entrance, NOT a Reanimated `entering` layout animation and
+   * NOT an effect-started one either. Both were tried and frame-stepped on a
+   * device (2026-09-02):
+   *
+   *   - `entering` (custom worklet and stock `FadeIn` alike) never ran on this
+   *     mount path, while `exiting` on the same view did.
+   *   - Starting the ramp from `useEffect` ran, but the clock started at MOUNT
+   *     and a heavy screen (ChatScreen) takes several frames to lay out and
+   *     paint for the first time — so its first visible frame was already
+   *     two-thirds of the way through a 150ms fade: a jump, then a short tail.
+   *
+   * So the view mounts at opacity 0 / offset 48 (the style's initial values are
+   * read from shared values, which IS applied before the first paint) and the
+   * ramp starts from `onLayout`, which fires once the screen has real geometry
+   * — content first, then the animation, which is exactly Telegram's
+   * `needDelayOpenAnimation` (ActionBarLayout.java:2280). `onLayout` can fire
+   * more than once; the ramp is started once.
+   *
+   * Direction is read once at mount, which is after the navigation helper set
+   * it and before anything paints.
+   */
+  const back = navDirection.value === 'back';
+  const progress = useSharedValue(0);
+  const shift = useSharedValue(back ? -M3.distance.push : M3.distance.push);
+  const started = useSharedValue(false);
+  const onLayout = () => {
+    if (started.value) {
+      return;
+    }
+    started.value = true;
+    // 200ms (short4), not Telegram's 150: at 150 the fade read as abrupt on the
+    // S22 by hand (Amit, 2026-09-02); the slide keeps Telegram's 48dp.
+    progress.value = withTiming(1, {
+      duration: M3.duration.short4,
+      easing: SCREEN_DECEL,
+      reduceMotion: ReduceMotion.Never,
+    });
+    shift.value = springTo(0, 'spatialDefault');
+  };
+  const style = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ translateX: shift.value }],
+  }));
+  return { style, onLayout, progress, shift };
 }
 
-/** An avatar in the "here now" rail. Faster cascade, it is a shorter row. */
-export function enterRail(index: number) {
-  return SPRINGIFY(FadeIn.delay(stagger(STAGGER.rail, index, 6)))
-    .duration(DURATION.base)
-    .reduceMotion(ReduceMotion.System);
+/**
+ * Home's half of the M3 back transition, driven from the pop itself.
+ *
+ * Home is always mounted, so it has no `entering`: when a pushed screen pops,
+ * Home would simply be there once the overlay is gone. M3's back pattern has the
+ * predecessor slide in from the left as the leaving screen slides right, so Home
+ * gets that slide from a module-level shared value.
+ *
+ * Kicked by the navigation helpers BEFORE the route changes (see App.tsx's
+ * `popRoute` and the back handler), not from an effect on the new route: an
+ * effect runs after the overlay has already begun fading, so the jump to -48
+ * was visible through it (a 28-unit spike in the frame diff, 2026-09-02). Set
+ * while the overlay is still opaque, the jump is hidden and only the settle is
+ * seen. Same `spatialDefault` spring as `screenOut`, so the two halves move as
+ * one.
+ */
+export const homeShift = makeMutable(0);
+export function revealHome(): void {
+  homeShift.value = -M3.distance.push;
+  homeShift.value = springTo(0, 'spatialDefault');
+}
+export function useHomeRevealStyle() {
+  return useAnimatedStyle(() => ({
+    transform: [{ translateX: homeShift.value }],
+  }));
 }
 
-/** Screen furniture: headline, hero, actions. */
-export function enterBlock(order: number) {
-  return FadeInDown.delay(STAGGER.row * order * 2)
-    .duration(DURATION.base)
-    .damping(SPRING.gentle.damping)
-    .stiffness(SPRING.gentle.stiffness)
-    .mass(SPRING.gentle.mass)
-    .reduceMotion(ReduceMotion.System);
+/**
+ * The screen leaving, mirror of `useScreenEnter`: same 150ms, opposite direction.
+ * This one IS a layout animation (`exiting`), because that half runs reliably
+ * and there is no mounted component left to hold a shared value for it.
+ */
+export function screenOut() {
+  'worklet';
+  const back = navDirection.value === 'back';
+  return {
+    initialValues: { opacity: 1, transform: [{ translateX: 0 }] },
+    animations: {
+      opacity: withTiming(0, {
+        duration: M3.duration.short4,
+        // The outgoing screen holds, then goes: emphasized-accelerate (M3's exit
+        // curve). Telegram mirrors its decelerate here (alpha drops fast,
+        // ActionBarLayout.java:1899-1907) and that read as a cut by hand on the
+        // S22 (Amit, 2026-09-02); the slow-start curve keeps the leaving screen
+        // legible while Home settles in beneath it.
+        easing: EMPH_ACCEL,
+        reduceMotion: ReduceMotion.Never,
+      }),
+      transform: [
+        { translateX: springTo(back ? M3.distance.push : -M3.distance.push, 'spatialDefault') },
+      ],
+    },
+  };
 }
+
+/**
+ * Top-level destination swap (the tab layers, boot phases).
+ *
+ * The M3 top-level pattern is a fade-through with no slide and no shared
+ * element. It is written here WITHOUT the "out, then in" delay: the tab layers
+ * sit over an always-mounted Home, so a gap between the outgoing fade and the
+ * incoming one shows Home for 100ms — a flash, verified on device 2026-09-02 —
+ * rather than the neutral surface the pattern assumes. A straight cross-fade of
+ * the two layers over Home reads as one dissolve. `Never`, because a fade IS
+ * the reduced-motion answer for a top-level change, not something to remove.
+ */
+export const topLevelIn = FadeIn.duration(M3.duration.short4)
+  .easing(EMPH_DECEL)
+  .reduceMotion(ReduceMotion.Never);
+export const topLevelOut = FadeOut.duration(M3.duration.short2)
+  .easing(EMPH_ACCEL)
+  .reduceMotion(ReduceMotion.Never);
+
+/**
+ * A bottom sheet rising and settling. Position only — the sheet body never fades.
+ *
+ * M3 is explicit that a bottom sheet should not fade as it enters or exits; the
+ * scrim behind it fades instead (see `fadeTo(INTERACTION.scrim, …)` in the
+ * dismiss hook). `spatialDefault` is the M3 "sheets rising and falling" spring,
+ * and the optional velocity is the finger's speed at the end of a drag so a
+ * flicked sheet keeps going at the speed it was thrown.
+ */
+export function sheetIn(velocity?: number): number {
+  'worklet';
+  return springTo(0, 'spatialDefault', velocity);
+}
+export function sheetOut(y: number, velocity?: number): number {
+  'worklet';
+  return springTo(y, 'spatialDefault', velocity);
+}
+
+/**
+ * A menu or popover expanding from the edge nearest its anchor.
+ *
+ * M3's enter/exit pattern for a container that opens from a control: it expands
+ * along one axis away from the anchoring edge. `scaleY` on `spatialFast` (small,
+ * quick component) with the fade on effects timing; the anchor edge is set by
+ * the consumer via `transformOrigin` on the card style, because only the caller
+ * knows whether the menu opened above or below its trigger.
+ */
+export function menuIn() {
+  'worklet';
+  return {
+    initialValues: { opacity: 0, transform: [{ scaleY: 0.85 }] },
+    animations: {
+      opacity: withTiming(1, {
+        duration: M3.duration.short2,
+        easing: EMPH_DECEL,
+        reduceMotion: ReduceMotion.Never,
+      }),
+      transform: [{ scaleY: springTo(1, 'spatialFast') }],
+    },
+  };
+}
+export const menuOut = FadeOut.duration(M3.duration.short2)
+  .easing(EMPH_ACCEL)
+  .reduceMotion(ReduceMotion.Never);
+
+/**
+ * A list row arriving, capped at eight so a long list does not crawl in.
+ *
+ * Replaces `enterRow`, which set `.duration()` AND `.springify()` — the duration
+ * was silently ignored the moment the spring config was present. This is a plain
+ * worklet builder: opacity on effects timing (`Never`, always fades), translateY
+ * on `spatialSlow` (`System`, snaps under reduce-motion), staggered by delay.
+ */
+export function rowIn(index: number) {
+  const delay = stagger(STAGGER.row, index, 8);
+  return () => {
+    'worklet';
+    return {
+      initialValues: { opacity: 0, transform: [{ translateY: 12 }] },
+      animations: {
+        opacity: withDelay(
+          delay,
+          withTiming(1, {
+            duration: M3.duration.short4,
+            easing: EMPH_DECEL,
+            reduceMotion: ReduceMotion.Never,
+          }),
+        ),
+        transform: [{ translateY: withDelay(delay, springTo(0, 'spatialSlow')) }],
+      },
+    };
+  };
+}
+
+/**
+ * The welcome screen dissolving into AuthScreen at first boot.
+ *
+ * 700ms to match the onboarding content beat (`BLOOM_CONTENT_MS`): the two are
+ * the same gesture — the welcome copy leaving — so they share a duration. It is
+ * spelled here rather than imported from `src/lib/bloom.ts` because the bloom
+ * timings are a separate, source-measured motion system that this module does
+ * not depend on; the number is duplicated on purpose with this note as the link.
+ * Named so `App.tsx` holds no raw `.duration()`. `Never`: a first-boot dissolve
+ * is itself the accessible fallback.
+ */
+export const authArrive = FadeIn.duration(700).reduceMotion(ReduceMotion.Never);
 
 /**
  * The signature moment: a sent message launching out of the composer.

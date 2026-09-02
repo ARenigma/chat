@@ -1,8 +1,13 @@
-import React, { memo } from 'react';
+import React, { memo, useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
+import { DURATION, fadeTo, springTo } from '../theme/motion';
 import { tick } from '../lib/haptics';
 import { CALLS_TAB_ENABLED } from '../config';
 import { Frost } from './Frost';
@@ -57,6 +62,31 @@ interface Props {
 }
 
 /**
+ * The tonal indicator pill behind the active tab's glyph.
+ *
+ * M3 NavigationBar animates the active indicator rather than hard-toggling a
+ * background: it grows along its width and fades in as a destination is
+ * selected. `scaleX` on the fast spatial spring (a small, quick component) with
+ * the fill fading on effects timing; both settle where the discrete style used
+ * to snap. Separated into its own component so each slot owns one shared value
+ * and the animation is keyed on that slot's own `active`.
+ */
+function Indicator({ active }: { active: boolean }) {
+  const styles = useStyles(makeStyles);
+  const opacity = useSharedValue(active ? 1 : 0);
+  const scaleX = useSharedValue(active ? 1 : 0.6);
+  useEffect(() => {
+    opacity.value = fadeTo(active ? 1 : 0, DURATION.fast);
+    scaleX.value = springTo(active ? 1 : 0.6, 'spatialFast');
+  }, [active, opacity, scaleX]);
+  const style = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ scaleX: scaleX.value }],
+  }));
+  return <Animated.View pointerEvents="none" style={[styles.indicatorFill, style]} />;
+}
+
+/**
  * The docked bottom bar: one strip, three destinations.
  *
  * Press feedback follows Material 3 NavigationBar: the whole slot is tappable
@@ -98,7 +128,8 @@ function FloatingToolbarView({ active, onSelect, callEnabled = false, homeBadgeC
               selected={on}
               press="none"
               size={48}
-              style={[styles.indicator, on && styles.indicatorOn]}>
+              style={styles.indicator}>
+              <Indicator active={on} />
               <Icon
                 name={tab.glyph}
                 // Keep the Lucide heart outlined in both states. The tonal pill
@@ -161,9 +192,13 @@ const makeStyles = (t: Theme) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
-    // M3 NavigationBar indicator: tonal fill, not a lone coral glyph.
+    // M3 NavigationBar indicator: tonal fill, not a lone coral glyph, animated in
+    // behind the glyph (see the Indicator component). Absolutely filling the
+    // pill so scaleX grows it from its centre without moving the icon.
     // https://m3.material.io/components/navigation-bar/guidelines
-    indicatorOn: {
+    indicatorFill: {
+      ...StyleSheet.absoluteFill,
+      borderRadius: 16,
       backgroundColor: t.color.bg.accentTint,
     },
   });
