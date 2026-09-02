@@ -952,13 +952,6 @@ describe('accent budget is enforced in code, not just documented', () => {
       'SpotlightCard.tsx',
       'ThreadBubble.tsx',
       'Toggle.tsx',
-      /*
-       * The "Download invoice" action link in the recharge history row. A link
-       * that navigates to a file is an action, which is exactly what the budget
-       * reserves the coral for — one accent use, one actionable affordance per
-       * row, never chrome, a header or a divider.
-       */
-      'TransactionHistoryScreen.tsx',
       'Turn.tsx',
       'TypingIndicator.tsx',
       'WordColumn.tsx',

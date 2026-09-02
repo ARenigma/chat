@@ -133,7 +133,7 @@ function TransactionRow({ tx, onDownload }: RowProps) {
         </Text>
       </View>
 
-      {/* Right col: amount + token delta + optional download */}
+      {/* Right col: amount + token delta */}
       <View style={styles.rowRight}>
         <Text allowFontScaling style={styles.rowAmount}>
           {formatPaise(tx.amountPaise)}
@@ -142,6 +142,14 @@ function TransactionRow({ tx, onDownload }: RowProps) {
           {tx.tokensDelta > 0 ? '+' : ''}
           {tx.tokensDelta.toLocaleString('en-IN')} tokens
         </Text>
+      </View>
+
+      {/* Trailing download slot. Reserved on every row so the amounts stay
+          aligned, and filled only when an invoice PDF exists. Icon-only and
+          low-emphasis (secondary ink, no fill) — downloading is a secondary
+          action — at the row's trailing edge, vertically centred, with a 44dp
+          tap target. Placement/emphasis per the list-action UX references. */}
+      <View style={styles.downloadSlot}>
         {hasPdf ? (
           <Pressable
             onPress={() => {
@@ -155,11 +163,7 @@ function TransactionRow({ tx, onDownload }: RowProps) {
             press="none"
             highlight="ios"
             style={styles.downloadBtn}>
-            {/* A down-arrow is the download affordance. The glyph font has no
-                dedicated download icon, so `arrowUp` is rotated 180°. */}
-            <View style={styles.downloadIcon}>
-              <Icon name="arrowUp" size={18} color={theme.color.bg.accent} />
-            </View>
+            <Icon name="download" size={18} color={theme.color.text.secondary} />
           </Pressable>
         ) : null}
       </View>
@@ -229,8 +233,9 @@ const makeStyles = (t: Theme) =>
     },
     row: {
       flexDirection: 'row',
-      alignItems: 'flex-start',
-      justifyContent: 'space-between',
+      // Centre so the trailing download icon aligns to the middle of the
+      // two-line amount block rather than its top.
+      alignItems: 'center',
       paddingHorizontal: TOKENS.space.md,
       paddingVertical: TOKENS.space.sm,
       minHeight: 52,
@@ -243,18 +248,20 @@ const makeStyles = (t: Theme) =>
       alignItems: 'flex-end',
       gap: TOKENS.space['2xs'],
     },
-    // Compact download icon button, replacing the "Download invoice" text link.
-    downloadBtn: {
-      marginTop: 2,
-      width: 34,
-      height: 34,
-      borderRadius: 17,
+    // Reserved trailing slot keeps amounts aligned whether or not a row has an
+    // invoice. Sits to the right of the amount column.
+    downloadSlot: {
+      width: 44,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: t.color.bg.accentTint,
+      marginLeft: TOKENS.space.xs,
     },
-    downloadIcon: {
-      transform: [{ rotate: '180deg' }],
+    // Low-emphasis icon-only button: no fill, 44dp tap target.
+    downloadBtn: {
+      width: 44,
+      height: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     rowKind: {
       ...TOKENS.typography.bodyLarge,
