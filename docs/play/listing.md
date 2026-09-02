@@ -33,63 +33,20 @@ following. ADR-0001 records this as a decision, not a preference.
 
 ## 2. Store listing copy
 
-**Short description** (80 characters max, this one is 74):
+Canonical upload copy lives in:
 
-```
-Real people, ready to talk. Not therapy, just company when you need it.
-```
+- `fastlane/metadata/android/en-IN/`
+- `fastlane/metadata/android/en-US/`
 
-**Full description** (4000 max):
+`play-upload/04-listing-copy/` is the handoff copy for a manual console update.
+Do not duplicate the complete description in this document; that created three
+stale, contradictory listings.
 
-```
-Some days you just need someone to talk to.
-
-Pappal connects you with real people who are there to listen. Not a bot,
-not a therapist, a person who will hear you out about the day you had.
-
-HOW IT WORKS
-
-Open the app and see who is free right now. Start a conversation. Say as much or
-as little as you want. Every message is private to the two of you.
-
-Recharge your balance to talk — chat runs at ₹22 per minute, voice and video at
-₹22–35 per minute. You pay for what you use, nothing more.
-
-WHAT THIS IS NOT
-
-This is not therapy, counselling or medical care, and the people who listen are
-not licensed clinicians. If you are in crisis, please contact a helpline or
-emergency services, the app shows the numbers on its safety screen.
-
-PRIVACY, WHICH WE MEAN LITERALLY
-
-Only the person you are talking to can read what you write. That is enforced by
-the database, not by a promise in a policy document.
-
-We do not ask for your contacts, your location, your photos or your camera. The
-microphone is used only for the seconds you spend recording a voice note, and
-never otherwise. The app requests four Android permissions in total. There is no
-advertising ID and there are no ads. We never analyse the contents of your
-messages.
-
-A notification tells you who replied, never what they said, a lock screen is
-read by whoever is holding the phone.
-
-You can delete your account and everything in it from inside the app, in two
-taps, with no email to anyone and no waiting period.
-
-SAFETY
-
-Every conversation can be reported from the message itself. Reports go to a human.
-Blocking is immediate and mutual. You can also apply to be someone who listens,
-that requires confirming you are over 18.
-```
-
-**Why this copy.** ADR-0001 is explicit about the register: no "therapy",
-"counselling", "treatment" or "clinical" as a claim; no intimacy or
-companionship-as-romance framing. The disclaimer is stated out loud rather than
-merely omitted, because a reviewer reads for what the app presents itself as. The
-words "someone who listens" and "company" are the approved vocabulary.
+The current positioning is **“Positive conversations, made simple.”** It
+describes a social conversation platform with reviewed listener profiles,
+chat/voice/video choices, privacy controls, and explicit child-safety/community
+rules. It does not market paid companionship, loneliness, relationships,
+breakups, or adult subject matter.
 
 ---
 
@@ -192,10 +149,17 @@ Answer the IARC questionnaire as follows.
 | Does the app allow purchase of digital goods?                 | No      | No purchase path exists in 1.0.0                                                                          |
 | Is user-generated content moderated?                          | Yes     | In-message reporting, human review queue, immediate mutual blocking                                       |
 
-**Target audience:** 18 and over only. Not "18+ and also younger", the provider
-side requires an age, the subject matter is adult loneliness, and a mixed-age
-audience would pull the listing into the Families programme and its content
-review. Declare no appeal to children.
+**Content rating goal: Teen.** The first-party product and listing contain no
+violence, sexual material, profanity, drugs, gambling, dating, or adult-themed
+marketing. User interaction is disclosed, with blocking, in-conversation
+reporting, human review, and child-safety rules.
+
+**Audience eligibility remains a separate answer.** Do not claim children can
+create accounts while onboarding still omits under-18 brackets. A Teen IARC
+content rating describes the content users may encounter; it does not override
+the product's current account eligibility. If eligibility changes, update the
+onboarding gate, terms, Play target-audience declaration, moderation policy, and
+Families requirements together.
 
 **Ads:** none. `AD_ID` is explicitly removed from the merged manifest
 (`AndroidManifest.xml`, and `npm run verify:manifest` fails the build if a

@@ -1,41 +1,39 @@
-Some days you just need someone to talk to.
+Positive conversations, made simple.
 
-Pappal connects you with real people who are there to listen. Not a bot,
-not a therapist, a person who will hear you out about the day you had.
+Pappal is a welcoming social conversation platform. Discover reviewed listener
+profiles, choose a language, and connect through text, voice, or video.
 
 HOW IT WORKS
 
-Open the app and see who is free right now. Start a conversation. Say as much or
-as little as you want. Every message is private to the two of you.
+Sign in, choose a display name, and browse profiles by language, interests, and
+availability. Start with text, or choose voice or video when it suits the
+conversation.
 
-Recharge your balance to talk — chat runs at ₹22 per minute, voice and video at
-₹22–35 per minute. You pay for what you use, nothing more.
+SAFETY BY DEFAULT
 
-WHAT THIS IS NOT
+Listener applications are reviewed before profiles appear. Clear community
+standards prohibit age-inappropriate content, grooming, bullying, harassment,
+hate speech, impersonation, and attempts to move conversations off-platform.
 
-This is not therapy, counselling or medical care, and the people who listen are
-not licensed clinicians. If you are in crisis, please contact a helpline or
-emergency services, the app shows the numbers on its safety screen.
+Block and report controls are available throughout the app. Blocking is
+immediate, and reports are reviewed by a person.
 
-PRIVACY, WHICH WE MEAN LITERALLY
+PRIVATE BY DESIGN
 
-Only the person you are talking to can read what you write. That is enforced by
-the database, not by a promise in a policy document.
+Conversations are protected by database access controls. When a session ends,
+its content disappears from both participants' apps immediately. An inaccessible
+copy is retained for 30 days for account disputes and safety review, then
+permanently deleted.
 
-We do not ask for your contacts, your location, your photos or your camera. The
-microphone is used only for the seconds you spend recording a voice note, and
-never otherwise. The app requests four Android permissions in total. There is no
-advertising ID and there are no ads. We never analyse the contents of your
-messages.
+Pappal does not request your contacts or precise location and does not use an
+advertising ID. Photos, camera, and microphone are accessed only when you start
+a feature that needs them.
 
-A notification tells you who replied, never what they said, a lock screen is
-read by whoever is holding the phone.
+You can manage presence, choose Light, Dark, or System appearance, and delete
+your account directly from the You tab.
 
-You can delete your account and everything in it from inside the app, in two
-taps, with no email to anyone and no waiting period.
+PLEASE NOTE
 
-SAFETY
-
-Every conversation can be reported from the message itself. Reports go to a human.
-Blocking is immediate and mutual. You can also apply to be someone who listens,
-that requires confirming you are over 18.
+Pappal is a social conversation platform. It does not provide medical advice,
+counselling, or emergency services. If you need urgent help, contact local
+emergency services or a recognised helpline.
