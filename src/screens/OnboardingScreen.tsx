@@ -562,16 +562,29 @@ export function OnboardingScreen({ onDone }: Props) {
               welcomeStyle,
             ]}
           >
-            {/* The Pappal wordmark — white on the dark welcome bloom so it reads
-                at display size with full contrast against the dark bloom behind it. */}
+            {/*
+             * The app icon, then the wordmark, then the website line — the same
+             * anatomy as Fuse's WelcomeScreen (logo → title → description,
+             * `WelcomeScreen.swift:31-44`), carrying our content instead of theirs.
+             * The icon is the real Pappal app icon in its box (the dark rounded
+             * tile, coral+white mark) at Fuse's exact `frame(width: 50)` — the box
+             * is what lets the coral bar survive against the coral bloom, which a
+             * bare transparent mark cannot. Rounded as a continuous squircle so it
+             * reads as the launcher tile, not a pasted square.
+             */}
+            <View style={styles.markShadow}>
+              <Image
+                source={require('../../assets/brand/app-icon.png')}
+                style={styles.mark}
+                resizeMode="contain"
+                accessibilityLabel="Pappal"
+              />
+            </View>
             <Text allowFontScaling={false} style={styles.brand}>
               Pappal
             </Text>
-            <Text allowFontScaling style={styles.title}>
-              Someone to talk to,{'\n'}tonight.
-            </Text>
             <Text allowFontScaling style={styles.subtitle}>
-              someone who listens
+              Positive conversations, made simple.
             </Text>
             {/*
              * No `busy` prop, deliberately, and the contract test is right to
@@ -930,6 +943,7 @@ export function OnboardingScreen({ onDone }: Props) {
                     onChange={setCode}
                     onComplete={onVerify}
                     verifying={state === 'loading'}
+                    succeeded={state === 'success'}
                     errorNonce={errorNonce}
                     testID="onboard-code"
                   />
@@ -1017,6 +1031,33 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: BLOCK_PAD,
       gap: SOURCE_METRICS.welcomeGap,
     },
+    // The brand mark at Fuse's exact `frame(width: 50)` (WelcomeScreen.swift:37).
+    // Square source (the mark centred in a transparent square), so 50×50 lands the
+    // glyph at 50 wide like the reference.
+    // A soft elevation under the tile so it floats above the bloom — the "3D a
+    // bit" read. `alignSelf: 'flex-start'` keeps the shadow box to the tile's 50,
+    // not the block's full width. The dark background matches the tile so the
+    // Android elevation outline never shows a seam.
+    markShadow: {
+      alignSelf: 'flex-start',
+      borderRadius: 12,
+      borderCurve: 'continuous',
+      backgroundColor: '#141416',
+      elevation: 10,
+      shadowColor: '#000000',
+      shadowOpacity: 0.32,
+      shadowRadius: 10,
+      shadowOffset: { width: 0, height: 5 },
+    },
+    // Fuse's logo is `frame(width: 50)`; the sheen (light top → dark bottom) is
+    // baked into the asset to match the dimensional look of its carousel glyphs.
+    mark: {
+      width: 50,
+      height: 50,
+      borderRadius: 12,
+      borderCurve: 'continuous',
+      overflow: 'hidden',
+    },
     // The brand wordmark: white on the dark bloom field so it reads at display
     // size, with full contrast against the dark welcome bloom.
     brand: {
@@ -1025,15 +1066,9 @@ const makeStyles = (t: Theme) =>
       lineHeight: 38,
       color: t.color.text.onAccent,
     },
-    // White on the field, which is only legal because the block is pinned to the
-    // bottom where the field is dark.
-    title: {
-      fontFamily: 'Geist-Regular',
-      fontSize: 34,
-      lineHeight: 41,
-      letterSpacing: 0.4,
-      color: t.color.text.onAccent,
-    },
+    // The website line ("Positive conversations, made simple."), white on the
+    // field at 0.7 like Fuse's description (WelcomeScreen.swift:44). Legal because
+    // the block is pinned to the bottom where the field is dark.
     subtitle: {
       ...TOKENS.typography.bodyLarge,
       color: t.color.text.onAccent,

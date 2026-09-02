@@ -502,6 +502,22 @@ describe('phone verification hands off without visual input artifacts', () => {
     const field = read('src/components/CodeField.tsx');
     expect(field).toMatch(/input:\s*{[\s\S]*opacity:\s*0\.01/);
   });
+
+  it('gives the code field a working, verifying and success state', () => {
+    // A wrong code shakes AND taps a haptic (Telegram KEYBOARD_TAP), then the
+    // red clears itself; a code in flight shows an accent spinner rather than a
+    // frozen field; a correct code fills the boxes in the sage success colour
+    // and pops once before the screen advances.
+    const field = read('src/components/CodeField.tsx');
+    expect(field).toContain('errorTick()');
+    expect(field).toContain('code-verifying');
+    expect(field).toContain('text.positive');
+    expect(field).toMatch(/succeeded\?:\s*boolean/);
+    // The onboarding code field is wired to all three states.
+    const screen = read('src/screens/OnboardingScreen.tsx');
+    expect(screen).toContain("succeeded={state === 'success'}");
+    expect(screen).toContain("verifying={state === 'loading'}");
+  });
 });
 
 /**

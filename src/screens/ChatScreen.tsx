@@ -235,6 +235,17 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   const { data: openedId } = useConversationId(needsOpen ? providerId : null);
   const conversationId = knownThread?.conversation_id ?? openedId;
   const { data: messages, isPending: messagesPending } = useMessages(conversationId);
+  /**
+   * The cutoff for "this bubble just arrived": the moment the screen opened. A
+   * message whose `created_at` is after it is a live arrival and animates in
+   * (`bubbleArrive`); history — always older — mounts without motion, as does
+   * anything later paged in above. Mount time rather than "newest message at
+   * load" on purpose: a fresh chat has no conversation yet, so `useMessages` is a
+   * disabled query whose `isPending` never resolves, and keying off that left the
+   * cutoff unset and the openers un-animated. `useRef(Date.now())` evaluates once,
+   * at first render, so it is the open time for both fresh and existing chats.
+   */
+  const arrivalCutoff = useRef(Date.now());
   const { data: callRecords } = useCalls(conversationId);
   const { data: activeSession } = useActiveSession(conversationId);
   const { data: pendingRequest } = usePendingSessionRequest(conversationId);
@@ -842,6 +853,9 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
           ) : (
             <PeerTurn
               message={text}
+              // Only live arrivals animate in; history and paged-in rows mount
+              // still. See `arrivalCutoff`.
+              animate={Date.parse(message.created_at) > arrivalCutoff.current}
               initial={initial}
               avatarUri={avatarUrl}
               first={first}
@@ -1225,7 +1239,12 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
         {/* Docked tray: hairline + page chrome, not a floating pill. Reply
             chrome lives in the same surface so the transcript scrolls under
             one bar. */}
-        <View style={[styles.composerDock, { paddingBottom: composerInset }]}>
+        {/* The dock is a frosted glass bar, not a white plate: the transcript
+            blurs behind it exactly as Telegram's fixed bottom bar does. `Frost`
+            owns the real RenderEffect backdrop blur (the same slot the nav bar and
+            header use); the reply chrome and composer render above it in flow, so
+            message text over the blur stays fully legible. */}
+        <Frost edge="top" style={{ paddingBottom: composerInset }}>
           {replyTo !== null ? (
             <View style={styles.replyBar}>
               <View style={styles.replyRule} />
@@ -1265,7 +1284,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
             }
             sendHaloKey={sendHaloKey}
           />
-        </View>
+        </Frost>
       </KeyboardAvoidingView>
 
       <SafetySheet
@@ -1410,11 +1429,6 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   list: {
     paddingHorizontal: TOKENS.space.md,
     paddingTop: TOKENS.space.md,
-  },
-  composerDock: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: t.color.border.hairline,
-    backgroundColor: t.color.bg.raised,
   },
   // paddingTop only, and the gap is the one between this row and the older one
   // above it, which is where a group boundary belongs. A symmetric

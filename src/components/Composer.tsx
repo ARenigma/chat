@@ -8,6 +8,9 @@ import {
   type TextInput,
   View,
 } from 'react-native';
+import Animated from 'react-native-reanimated';
+import { BlurView } from '@sbaiahmed1/react-native-blur';
+import { useCrossfade } from '../theme/motion';
 import { requestAndroidPermission } from '../lib/permissions';
 import {
   launchCamera,
@@ -15,7 +18,7 @@ import {
   type ImagePickerResponse,
 } from 'react-native-image-picker';
 import { TOKENS, type Theme } from '../theme/tokens';
-import { useStyles, useTheme } from '../theme/ThemeProvider';
+import { useStyles, useTheme, useThemeMode } from '../theme/ThemeProvider';
 import { MAX_MESSAGE_CHARS } from '../lib/tokenLedger';
 import { errorTick, tick } from '../lib/haptics';
 import {
@@ -110,6 +113,7 @@ function ComposerView({
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
+  const { isDark } = useThemeMode();
   const setNotice = useStore(s => s.setNotice);
   const [value, setValue] = useState('');
   const [mode, setMode] = useState<Mode>('idle');
@@ -137,6 +141,8 @@ function ComposerView({
    */
   const attempt = useRef(0);
   const ready = value.trim().length > 0 && !disabled;
+  // Cross-fades the trailing slot between mic (empty) and send (has text).
+  const trailing = useCrossfade(ready);
 
   const finish = useCallback((next: VoiceDraft | null) => {
     handle.current = null;
@@ -498,16 +504,28 @@ function ComposerView({
         accessibilityHint="Camera or photos. One photo costs one token"
         press="none"
         highlight="ios"
-        size={32}
+        size={40}
         style={styles.attach}>
-        {/* The plus sits in a filled coral circle (Sweprek, #6): the primary media
-            affordance, sized to match the trailing mic (24 glyph) so it doesn't
-            read as the smaller of the two. */}
+        {/* The plus sits in a filled coral circle (Sweprek, #6), the same 38dp as
+            the trailing send so the two coral discs flank the capsule uniformly. */}
         <View style={styles.attachCircle}>
-          <Icon name="plus" size={16} color={theme.color.text.onAccent} />
+          <Icon name="plus" size={18} color={theme.color.text.onAccent} />
         </View>
       </Pressable>
-      <View style={styles.field}>
+      {/* The frosted-glass capsule. Telegram's input pill blurs the transcript
+          behind it; on New-Architecture Android this is a real backdrop blur
+          (RenderEffect, API 31+) via the native BlurView, a translucent tint
+          below 31, tracking the app's own light/dark theme. The emoji and input
+          are the BlurView's CHILDREN, not siblings drawn over it — the lib skips
+          its own subtree in the software capture, so a child stays crisp while a
+          sibling would bake into the blur as a ghost halo. It sits on the already
+          frosted dock, so the nested frost reads as a slightly more opaque pill
+          that stands apart from the bar. */}
+      <BlurView
+        style={styles.field}
+        blurType={isDark ? 'dark' : 'light'}
+        blurAmount={18}
+        overlayColor={theme.color.bg.glass}>
         {/* Emoji, docked at the leading edge of the field (#4, the WhatsApp
             position). It focuses the input so the keyboard — and its emoji key —
             comes up; a full in-app emoji picker is a follow-up. */}
@@ -520,7 +538,7 @@ function ComposerView({
           highlight="ios"
           size={30}
           style={styles.emoji}>
-          <Icon name="sticker" size={22} color={theme.color.text.secondary} />
+          <Icon name="smile" size={28} color={theme.color.text.secondary} />
         </Pressable>
         <TextField
           ref={inputRef}
@@ -543,31 +561,42 @@ function ComposerView({
           accessibilityHint="One message costs one token"
           underlineColorAndroid="transparent"
         />
-        {/* One trailing control, never two competing. With text there is a send
-            button; with an empty field there is a microphone. A row holding both
-            asks which of them the return key means. */}
-        {ready ? (
-          <SendButton onPress={submit} disabled={!ready} sendHaloKey={sendHaloKey} />
-        ) : (
+      </BlurView>
+      {/* One trailing control, never two competing — but they cross-fade now
+          rather than hard-swapping (send scales up from nothing while the mic
+          scales away the instant the field stops being empty). Both are mounted,
+          stacked in one fixed slot, and `pointerEvents` gives touches to whichever
+          is live so the hidden one cannot be tapped mid-fade. `ready` decides which
+          is which; the return key still means the send.
+
+          OUTSIDE the field capsule now (right of it), the mirror of the "+" on the
+          left: the 38dp send/mic no longer has to fit inside the 40dp capsule, so it
+          cannot touch the capsule border — the sizing/uniformity fix. Telegram's
+          send sits outside its input pill the same way. */}
+      <View style={styles.trailing}>
+        <Animated.View
+          style={[styles.trailingLayer, trailing.hiddenStyle]}
+          pointerEvents={ready ? 'none' : 'auto'}>
           <Pressable
             onPress={() => {
               void record();
             }}
-            disabled={disabled}
+            disabled={disabled || ready}
             testID="voice-record"
             accessibilityLabel="Record a voice note"
             accessibilityHint="Recording starts on tap and stops when you tap stop. One voice note costs one token"
             press="none"
             highlight="ios"
-            size={32}
-            style={styles.mic}
-          >
-            {/* 18, not 24: the mic is an accessory in the field, not a primary
-                action, and at 24 it read as heavy as the emoji sticker glyph
-                beside it (#2). The 32pt Pressable keeps the tap target. */}
-            <Icon name="mic" size={18} color={theme.color.text.secondary} />
+            size={40}
+            style={styles.mic}>
+            <Icon name="mic" size={22} color={theme.color.text.secondary} />
           </Pressable>
-        )}
+        </Animated.View>
+        <Animated.View
+          style={[styles.trailingLayer, trailing.shownStyle]}
+          pointerEvents={ready ? 'auto' : 'none'}>
+          <SendButton onPress={submit} disabled={!ready} sendHaloKey={sendHaloKey} />
+        </Animated.View>
       </View>
       </View>
     </View>
@@ -626,9 +655,12 @@ export const Composer = memo(ComposerView);
 
 const makeStyles = (t: Theme) => StyleSheet.create({
   row: {
-    paddingHorizontal: TOKENS.space.md,
-    paddingTop: TOKENS.space.xs,
-    paddingBottom: TOKENS.space['2xs'],
+    // Mapped to Telegram's bar (measured on device): content inset ~7-8dp from
+    // the edges and a ~44dp bar, tighter than the old md/xs/2xs which read taller
+    // and more indented than the real app.
+    paddingHorizontal: TOKENS.space.xs,
+    paddingTop: TOKENS.space['2xs'],
+    paddingBottom: TOKENS.space.hair,
     backgroundColor: 'transparent',
   },
   // The idle bar: attach button, then the field taking the rest of the width.
@@ -638,15 +670,15 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     gap: TOKENS.space.xs,
   },
   attach: {
-    width: 32,
+    width: 40,
     height: 40,
     alignItems: 'center',
     justifyContent: 'center',
   },
   attachCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
     // Filled with the brand coral (#6): the "+" is the primary media action, so
@@ -656,8 +688,8 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   // The emoji button inside the field's leading edge. Sized to sit on the same
   // baseline as the trailing mic when the field is a single line.
   emoji: {
-    width: 30,
-    height: 34,
+    width: 34,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -666,29 +698,46 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: TOKENS.space.xs,
-    // Small leading inset now that the emoji button sits at the field's edge and
-    // carries the spacing itself (was space.md when text led the field).
-    paddingLeft: TOKENS.space['2xs'],
-    paddingRight: 5,
-    paddingVertical: TOKENS.space['2xs'],
+    // Leading inset and the emoji→text gap mapped to Telegram: the smiley sits a
+    // touch in from the capsule edge and the text starts with a clear gap after it.
+    // The send lives OUTSIDE the capsule now, so the trailing padding is just the
+    // text's own right breathing room.
+    paddingLeft: TOKENS.space.xs,
+    paddingRight: TOKENS.space.md,
+    // Zero: the 40dp input is the tallest child and IS the capsule height, so the
+    // capsule is a true 40 (Telegram's, measured on device). Any field padding here
+    // stacks on top of the 40 input and reads taller than the real app.
+    paddingVertical: 0,
     // Still a capsule: the field is a capsule on iOS too. What changed is what
     // defines its edge.
     borderRadius: TOKENS.radius.pill,
     borderCurve: 'continuous',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: t.color.border.hairline,
-    backgroundColor: t.color.bg.sunken,
+    // No opaque fill: the BlurView behind the content IS the capsule surface now.
+    // overflow hidden clips the absolute-fill blur to the pill's rounded rect.
+    backgroundColor: 'transparent',
+    overflow: 'hidden',
   },
   input: {
     flex: 1,
-    // Shorter (Amit/Sweprek): the field read too tall. 34 min with tighter
-    // vertical padding is a compact single-line pill that still grows to 120 for
-    // a multi-line draft.
-    minHeight: 34,
-    maxHeight: 120,
-    paddingTop: 7,
-    paddingBottom: 7,
+    // Mapped to Telegram measured ON DEVICE (S22, density 2.8125×), not the source
+    // dp: its composer text is 16sp (glyph extent 17.4dp), NOT the 18 the source
+    // constant implied, and its single-line field is ~40dp. The earlier 18/44
+    // refactor rendered visibly larger than the real app. So: 16 text, a compact
+    // field, includeFontPadding off to sit the glyph tight like Telegram's.
+    // Capsule height = minHeight + field paddingVertical·2 ≈ 32 + 8 = 40.
+    // Telegram's single-line field is 40dp with the 16sp text centred in it (not a
+    // 28dp field with padding around it). So the INPUT itself is 40 and the capsule
+    // wraps it with zero field padding — a true 40/40, matching the app on device.
+    minHeight: 40,
+    maxHeight: 132,
+    paddingTop: 4,
+    paddingBottom: 4,
     ...TOKENS.typography.bodyMedium,
+    lineHeight: 20,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
     color: t.color.text.primary,
   },
   // The same capsule as the field, filled, so the row's height and edge do not
@@ -720,10 +769,28 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     ...TOKENS.typography.numeralSmall,
     color: t.color.text.secondary,
   },
+  // The trailing slot holds the send and mic stacked, OUTSIDE the field capsule
+  // and beside it (mirror of the attach "+"). 40 tall so it aligns with the 40dp
+  // capsule; the 38dp send/mic centre in it with room to spare.
+  trailing: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  trailingLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   mic: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     borderCurve: 'continuous',
     alignItems: 'center',
     justifyContent: 'center',

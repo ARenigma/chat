@@ -28,6 +28,7 @@ export const LIGHT = {
       hover: '#DEDEE3',
       grouped: '#F2F2F7',
       chrome: 'rgba(255,255,255,0.80)',
+      glass: 'rgba(255,255,255,0.55)',
       pressed: '#D1D1D6',
       selected: '#D1D1D6',
       inverse: '#1C1C1E',
@@ -281,6 +282,7 @@ export const LIGHT = {
         emphasizedAccelerate: [0.3, 0, 0.8, 0.15],
         standard: [0.2, 0, 0, 1],
         decelerate: [0.33, 1, 0.68, 1],
+        easeOutQuint: [0.23, 1, 0.32, 1],
       },
       duration: {
         short2: 100,
@@ -444,6 +446,7 @@ export const DARK = {
       hover: '#1A2D38',
       grouped: '#0B141A',
       chrome: 'rgba(11,20,26,0.85)',
+      glass: 'rgba(11,20,26,0.55)',
       pressed: '#2A3942',
       selected: '#182734',
       inverse: '#E9EDEF',
@@ -697,6 +700,7 @@ export const DARK = {
         emphasizedAccelerate: [0.3, 0, 0.8, 0.15],
         standard: [0.2, 0, 0, 1],
         decelerate: [0.33, 1, 0.68, 1],
+        easeOutQuint: [0.23, 1, 0.32, 1],
       },
       duration: {
         short2: 100,

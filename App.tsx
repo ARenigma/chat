@@ -776,7 +776,7 @@ function Root() {
             // Show the splash, not the sign-in screens, while the boot effect
             // re-reads the just-minted session. Without this the render between
             // "session set" and "boot resolved" still has boot === 'signedOut',
-            // which flashes OnboardingScreen ("Someone to talk to") or the auth
+            // which flashes OnboardingScreen (the welcome) or the auth
             // screen back at someone who just signed in.
             setBoot({ phase: 'loading' });
             setAttempt(a => a + 1);
@@ -791,7 +791,7 @@ function Root() {
             // Show the splash, not the sign-in screens, while the boot effect
             // re-reads the just-minted session. Without this the render between
             // "session set" and "boot resolved" still has boot === 'signedOut',
-            // which flashes OnboardingScreen ("Someone to talk to") or the auth
+            // which flashes OnboardingScreen (the welcome) or the auth
             // screen back at someone who just signed in.
             setBoot({ phase: 'loading' });
             setAttempt(a => a + 1);

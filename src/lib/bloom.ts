@@ -75,10 +75,21 @@ export interface BloomLayer {
  * faded by the time it reaches the bottom corners and the field visibly drains
  * toward the edges.
  *
- * The hue order is deliberately NOT the recreation's. That code puts its
- * brightest tone innermost, which pools bright at the bottom edge; the shipped
- * Fuse app measures the other way round, deep at the bottom with the bright band
- * above it, and the shipped app is the thing worth matching.
+ * Each palette is MONOCHROMATIC — wash, glow and core are one hue at three
+ * lightnesses, not three hues. This is the load-bearing fact behind the field's
+ * smoothness, and it is why the earlier orange-wash/magenta-core tuning read as a
+ * "sunset gradient" rather than an atmospheric wash: three DIFFERENT hues stacked
+ * composite into a 60° hue sweep, which smears the structure; three shades of ONE
+ * hue composite into a clean feathered edge above a saturated plateau — the two
+ * zones Fuse's blue bloom shows when you sample it (a light feather L~78% ramping
+ * into a flat L~52% core). Measured against `fusewallet_onboarding.mp4`,
+ * 2026-09-02: our welcome now feathers L~85% → a flat L~50% plateau, the same
+ * two-zone break.
+ *
+ * The deep bottom / bright band above is still the arrangement: the widest layer
+ * (wash) is the palest and reaches highest, the narrow core is the deepest and
+ * pools at the bottom edge — deep at the bottom, light above, as the shipped Fuse
+ * app measures.
  */
 export const BLOOM_LAYERS: readonly BloomLayer[] = [
   {
@@ -98,8 +109,16 @@ export const BLOOM_LAYERS: readonly BloomLayer[] = [
     delayMs: 520,
   },
   {
+    // DEVIATION from the source, stated per RULE 1. The source's core `startRadius`
+    // is 80 (a small solid pool). Widened to 190 so the deepest colour holds a
+    // FLAT plateau across the bottom ~22% of the frame instead of feathering
+    // immediately — which, with the monochromatic palette, reproduces the distinct
+    // two-zone break the shipped Fuse bloom shows and a literal 80 does not. The
+    // trade is a slightly larger saturated field; approved on-device against the
+    // reference video (2026-09-02, "B — deep+wide"). Everything else here is the
+    // source's own measure.
     name: 'core',
-    restStart: 80,
+    restStart: 190,
     exitStart: 0,
     endRadius: 350,
     // The source's `.init(x: 0.5, y: -0.2)` — above the top edge, not on it.
@@ -307,17 +326,17 @@ export function colorFor(layer: BloomLayer, palette: BloomPalette): string {
  * under the completion list.
  */
 export const BLOOM_PALETTES = {
-  welcome: { name: 'welcome', wash: '#FF7043', glow: '#FF8C1A', core: '#DB0A5B' },
-  choose: { name: 'choose', wash: '#FF8A5B', glow: '#FFA53D', core: '#E0245E' },
-  number: { name: 'number', wash: '#F4785F', glow: '#FF9A4D', core: '#C42A6B' },
-  code: { name: 'code', wash: '#F0629A', glow: '#FF7BAC', core: '#B0175E' },
+  welcome: { name: 'welcome', wash: '#FFAB92', glow: '#F87659', core: '#ED3312' },
+  choose: { name: 'choose', wash: '#FFA192', glow: '#F86E59', core: '#ED2F12' },
+  number: { name: 'number', wash: '#FF9992', glow: '#F86459', core: '#ED2112' },
+  code: { name: 'code', wash: '#FF9296', glow: '#F8595E', core: '#ED1219' },
   done: { name: 'done', wash: TRANSPARENT, glow: TRANSPARENT, core: TRANSPARENT },
   /** Provider step 0 — "You". Warm coral, distinct from the onboarding welcome. */
-  providerYou: { name: 'providerYou', wash: '#FF6240', glow: '#FF8040', core: '#D41050' },
-  /** Provider step 1 — "How you talk". Mid salmon-coral. */
-  providerHow: { name: 'providerHow', wash: '#F07060', glow: '#FF9060', core: '#C02060' },
-  /** Provider step 2 — "Why you". Deep coral-rose. */
-  providerWhy: { name: 'providerWhy', wash: '#F04070', glow: '#FF6090', core: '#A01550' },
+  providerYou: { name: 'providerYou', wash: '#FFA692', glow: '#F87659', core: '#ED3A12' },
+  /** Provider step 1 — "How you talk". A step toward red-coral. */
+  providerHow: { name: 'providerHow', wash: '#FF9D92', glow: '#F86959', core: '#ED2812' },
+  /** Provider step 2 — "Why you". Deepest, edging to rose. */
+  providerWhy: { name: 'providerWhy', wash: '#FF9297', glow: '#F85961', core: '#ED121D' },
 } as const satisfies Record<string, BloomPalette>;
 
 export type PaletteName = keyof typeof BLOOM_PALETTES;
@@ -347,11 +366,22 @@ export function bloomTravel(layer: BloomLayer, screenHeight: number): number {
  *
  * `.smooth` is a critically damped spring: it arrives without overshooting, so
  * unlike the springs it sits next to in that API it has no bounce to reproduce.
- * An in-out ease is the honest equivalent for a value with no velocity to carry.
+ * A symmetric ease is the honest equivalent for a value with no velocity to carry
+ * — but WHICH ease matters at the very end. The earlier form was a piecewise quad
+ * whose velocity reaches zero at t=1 while its acceleration cuts off abruptly
+ * (−4 → 0). On a field this large that reads as a faint firmness in the last frame
+ * of the exit — the settle "lands" instead of feathering. Measured on a 60fps
+ * capture of the welcome→form handoff, 2026-09-03.
+ *
+ * Smootherstep (Perlin, `6t⁵−15t⁴+10t³`) is C²-continuous at both ends: velocity
+ * AND acceleration go to zero at t=0 and t=1, so the field eases in from rest and
+ * settles to rest without an acceleration step — the soft landing the spring has,
+ * kept symmetric (midpoint still exactly 0.5) so the overall motion character is
+ * unchanged. It cannot overshoot, so there is still no bounce to reproduce.
  */
 export function smooth(t: number): number {
   'worklet';
-  return t < 0.5 ? 2 * t * t : 1 - ((-2 * t + 2) * (-2 * t + 2)) / 2;
+  return t * t * t * (t * (t * 6 - 15) + 10);
 }
 
 /**
