@@ -24,6 +24,18 @@ const TITLE_COLLAPSED = SOURCE_METRICS.titleShut;
 interface Props {
   step: StepSpec;
   expanded: boolean;
+  /**
+   * The active step's icon colour — the step's own wash tone, the way Fuse tints
+   * each step's SF Symbol with its step colour. Only shows while expanded; a
+   * collapsed row is always the muted grey. Defaults to the accent.
+   */
+  accent?: string;
+  /**
+   * Drop the leading icon entirely. Fuse's steps carry refined SF Symbols; our
+   * Lucide glyphs read heavier beside the title, so the sign-in checklist runs
+   * icon-less — title-only — which is cleaner and more coherent.
+   */
+  hideIcon?: boolean;
   testID?: string;
 }
 
@@ -47,7 +59,7 @@ interface Props {
  * off one shared progress value so the switch lands inside a movement rather
  * than standing alone as a jump.
  */
-function OnboardingStepView({ step, expanded, testID }: Props) {
+function OnboardingStepView({ step, expanded, accent, hideIcon, testID }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
 
@@ -105,7 +117,9 @@ function OnboardingStepView({ step, expanded, testID }: Props) {
     color: interpolateColor(
       open.value,
       [0, 1],
-      [theme.color.text.tertiary, theme.color.text.primary],
+      // A completed/upcoming row is Fuse's `.gray` (text.muted), receding rather
+      // than "secondary text you must still read"; the active row is near-black.
+      [theme.color.text.muted, theme.color.text.primary],
     ),
   }));
   const titleOpenFade = useAnimatedStyle(() => ({ opacity: open.value }));
@@ -113,20 +127,22 @@ function OnboardingStepView({ step, expanded, testID }: Props) {
 
   return (
     <View testID={testID} style={expanded ? styles.rowOpen : styles.rowShut}>
-      <Animated.View style={[styles.iconSlot, iconScale]}>
-        <Icon
-          name={step.glyph}
-          size={ICON_EXPANDED}
-          color={theme.color.text.tertiary}
-        />
-        <Animated.View style={[styles.iconOverlay, iconOn]}>
+      {hideIcon === true ? null : (
+        <Animated.View style={[styles.iconSlot, iconScale]}>
           <Icon
             name={step.glyph}
             size={ICON_EXPANDED}
-            color={theme.color.bg.accent}
+            color={theme.color.text.muted}
           />
+          <Animated.View style={[styles.iconOverlay, iconOn]}>
+            <Icon
+              name={step.glyph}
+              size={ICON_EXPANDED}
+              color={accent ?? theme.color.bg.accent}
+            />
+          </Animated.View>
         </Animated.View>
-      </Animated.View>
+      )}
 
       <View style={expanded ? styles.bodyOpen : styles.bodyShut}>
         <View style={styles.titleStack}>
@@ -249,6 +265,9 @@ const makeStyles = (t: Theme) =>
     title: {
       fontFamily: 'Geist-Bold',
       letterSpacing: -0.5,
+      // Trim the Android font-metric padding so the large bold title sits tight
+      // and renders as cleanly as the source's SF display face.
+      includeFontPadding: false,
     },
     // The two fixed sizes the row cross-fades between (the source's ternary
     // `isExpanded ? 42 : 24`). Leading is set per size, not animated.
@@ -274,6 +293,9 @@ const makeStyles = (t: Theme) =>
     },
     description: {
       ...TOKENS.typography.bodyMedium,
-      color: t.color.text.secondary,
+      // Faint and airy, like the source's black.opacity(0.3): supporting copy
+      // under the active step, not a second title. muted (#8E8E93) is lighter
+      // than tertiary, closer to the source, and clear of pure body copy.
+      color: t.color.text.muted,
     },
   });

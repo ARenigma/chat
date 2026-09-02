@@ -327,9 +327,9 @@ export function colorFor(layer: BloomLayer, palette: BloomPalette): string {
  */
 export const BLOOM_PALETTES = {
   welcome: { name: 'welcome', wash: '#FFAB92', glow: '#F87659', core: '#ED3312' },
-  choose: { name: 'choose', wash: '#FFA192', glow: '#F86E59', core: '#ED2F12' },
-  number: { name: 'number', wash: '#FF9992', glow: '#F86459', core: '#ED2112' },
-  code: { name: 'code', wash: '#FF9296', glow: '#F8595E', core: '#ED1219' },
+  choose: { name: 'choose', wash: '#FFB392', glow: '#F88959', core: '#ED5412' },
+  number: { name: 'number', wash: '#FF9B92', glow: '#F86659', core: '#ED2412' },
+  code: { name: 'code', wash: '#FF92A4', glow: '#F85974', core: '#ED1237' },
   done: { name: 'done', wash: TRANSPARENT, glow: TRANSPARENT, core: TRANSPARENT },
   /** Provider step 0 — "You". Warm coral, distinct from the onboarding welcome. */
   providerYou: { name: 'providerYou', wash: '#FFA692', glow: '#F87659', core: '#ED3A12' },
@@ -340,6 +340,21 @@ export const BLOOM_PALETTES = {
 } as const satisfies Record<string, BloomPalette>;
 
 export type PaletteName = keyof typeof BLOOM_PALETTES;
+
+/**
+ * The icon tint for an onboarding step — its own wash tone, the way Fuse tints
+ * each step's symbol with its `gradient.0`. Keyed by the step key (choose /
+ * number / code); anything without a palette (age) falls back to the welcome
+ * coral. Uses `glow`, the vivid mid-tone, so the active icon reads on white.
+ */
+export function stepTint(key: string): string {
+  const palette = (BLOOM_PALETTES as Record<string, BloomPalette | undefined>)[
+    key
+  ];
+  return palette !== undefined && palette.glow !== TRANSPARENT
+    ? palette.glow
+    : BLOOM_PALETTES.welcome.glow;
+}
 
 /**
  * How long a colour swap takes.

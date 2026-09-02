@@ -6,6 +6,7 @@ import React, {
   useState,
 } from 'react';
 import {
+  BackHandler,
   Image,
   Keyboard,
   KeyboardAvoidingView,
@@ -27,7 +28,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LIGHT, TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { BLOOM_CONTENT_MS, BLOOM_FIELD_MS, BLOOM_HOLD_MS } from '../lib/bloom';
+import { BLOOM_CONTENT_MS, BLOOM_FIELD_MS, BLOOM_HOLD_MS, stepTint } from '../lib/bloom';
 import {
   COMPLETION_DELAY_MS,
   SOURCE_METRICS,
@@ -160,6 +161,13 @@ export function OnboardingScreen({ onDone }: Props) {
   const [code, setCode] = useState('');
   const [errorNonce, setErrorNonce] = useState(0);
   const [cooldown, setCooldown] = useState(0);
+  // True once an OTP has been sent for the current number, so the code row stays
+  // navigable — you can tap back to "Your number" and tap the code row to return.
+  const [otpSent, setOtpSent] = useState(false);
+  // True after a resend, so we can tell the user the previous code stopped
+  // working — a commonly-missed line that otherwise reads as a silent failure
+  // when someone keeps trying the first code (OTP-UX research, 2026-09-03).
+  const [resent, setResent] = useState(false);
 
   /*
    * Auth-done flag: raised once Google or phone verification succeeds.
@@ -235,7 +243,9 @@ export function OnboardingScreen({ onDone }: Props) {
     () => visibleSteps(route, { includeAge: authDone }),
     [route, authDone],
   );
-  const activeKey = authDone ? 'age' : identify === 'code' ? 'verify' : 'identify';
+  // The identify sub-stage IS the active step key now (choose / number / code),
+  // so the checklist rows are real steps rather than one "Say hello" catch-all.
+  const activeKey = authDone ? 'age' : identify;
   // Colour follows the SUB-STAGE, so the field turns over on every tap rather
   // than only when the checklist grows a row. See `paletteFor`.
   const stage = useMemo(
@@ -413,6 +423,8 @@ export function OnboardingScreen({ onDone }: Props) {
       if (result.status !== 'failed') {
         setState('idle');
         setIdentify('code');
+        setOtpSent(true);
+        setResent(false);
         setCooldown(RESEND_SECONDS);
         return;
       }
@@ -432,6 +444,7 @@ export function OnboardingScreen({ onDone }: Props) {
       const result = await sendPhoneOtp(fullPhone);
       if (result.status !== 'failed') {
         setState('idle');
+        setResent(true);
         setCooldown(RESEND_SECONDS);
         return;
       }
@@ -442,9 +455,52 @@ export function OnboardingScreen({ onDone }: Props) {
   const onChangeNumber = useCallback(() => {
     setCode('');
     setFailure(null);
+    setResent(false);
     setState('idle');
     setIdentify('number');
   }, []);
+
+  /**
+   * Jump to an earlier, already-answered step — tapping its collapsed row, or the
+   * system back gesture. Preserves what was entered so a round-trip between number
+   * and code keeps the digits; re-choosing the method drops the phone route so the
+   * Google/number options reappear.
+   */
+  const goToStep = useCallback((key: IdentifyStage) => {
+    setFailure(null);
+    setState('idle');
+    if (key === 'choose') {
+      setRoute('undecided');
+      setOtpSent(false);
+    }
+    setIdentify(key);
+  }, []);
+
+  /**
+   * Back steps THROUGH the flow (code → number → choose) instead of leaving it,
+   * so the turn-by-turn morph is reversible. From the choose row or the welcome
+   * the system default runs, so the app can still be dismissed. RULE 1: RN 0.86
+   * opts into the predictive-back callback at targetSdk 36, so returning true is
+   * what consumes the press.
+   */
+  useEffect(() => {
+    const onBack = (): boolean => {
+      if (phase === 'done' || authDone) {
+        return false;
+      }
+      if (identify === 'code') {
+        goToStep('number');
+        return true;
+      }
+      if (identify === 'number') {
+        goToStep('choose');
+        return true;
+      }
+      return false;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
+    return () => sub.remove();
+  }, [phase, authDone, identify, goToStep]);
 
   const onVerify = useCallback(
     (entered: string) => {
@@ -674,14 +730,42 @@ export function OnboardingScreen({ onDone }: Props) {
                * greyed-out row instead of beneath everything.
                */}
               <View style={styles.checklist}>
-                {steps.map(spec => (
-                  <OnboardingStep
-                    key={spec.key}
-                    step={spec}
-                    expanded={phase !== 'done' && spec.key === activeKey}
-                    testID={`step-${spec.key}`}
-                  />
-                ))}
+                {steps.map(spec => {
+                  // A row is tappable to jump to it once it is reachable: the
+                  // choose row always, "Your number" once the phone route is taken,
+                  // "Your code" once an OTP has been sent (so a collapsed code row
+                  // re-expands on a tap). The active row and the post-auth age row
+                  // are never back targets.
+                  const reachable =
+                    phase !== 'done' &&
+                    !authDone &&
+                    spec.key !== activeKey &&
+                    (spec.key === 'choose' ||
+                      (spec.key === 'number' && route === 'phone') ||
+                      (spec.key === 'code' && otpSent));
+                  const row = (
+                    <OnboardingStep
+                      step={spec}
+                      expanded={phase !== 'done' && spec.key === activeKey}
+                      accent={stepTint(spec.key)}
+                      hideIcon
+                      testID={`step-${spec.key}`}
+                    />
+                  );
+                  return reachable ? (
+                    <Pressable
+                      key={spec.key}
+                      onPress={() => goToStep(spec.key as IdentifyStage)}
+                      press="none"
+                      highlight="ios"
+                      accessibilityLabel={`Go to ${spec.title}`}
+                      testID={`step-nav-${spec.key}`}>
+                      {row}
+                    </Pressable>
+                  ) : (
+                    <View key={spec.key}>{row}</View>
+                  );
+                })}
 
                 {phase === 'done' ? (
                   <Animated.View
@@ -791,6 +875,10 @@ export function OnboardingScreen({ onDone }: Props) {
                       keyboardType="phone-pad"
                       textContentType="telephoneNumber"
                       autoComplete="tel"
+                      // Android autofill hint, matching the code field. Without
+                      // it the framework skips the field on API 26+, so a saved
+                      // number is never offered (Twilio/RN autofill guidance).
+                      importantForAutofill="yes"
                       autoFocus
                       placeholder="Your number"
                       placeholderTextColor={theme.color.text.tertiary}
@@ -947,6 +1035,14 @@ export function OnboardingScreen({ onDone }: Props) {
                     errorNonce={errorNonce}
                     testID="onboard-code"
                   />
+                  {resent ? (
+                    <Text
+                      allowFontScaling
+                      accessibilityLiveRegion="polite"
+                      style={styles.resentNote}>
+                      New code sent — the previous one no longer works.
+                    </Text>
+                  ) : null}
                   <View style={styles.codeActions}>
                     <Pressable
                       onPress={onChangeNumber}
@@ -1192,17 +1288,33 @@ const makeStyles = (t: Theme) =>
     numberBlock: {
       gap: TOKENS.space.xs,
     },
+    /*
+     * M3 text field, a stated departure from Fuse's pill (Amit, 2026-09-03:
+     * "input field should be m3", "wider to not cut off numbers").
+     *
+     * Fuse's `InputField` is a capsule (`cornerRadius: .infinity`) holding a
+     * bare email field — the WHOLE width is the number, so a pill works there.
+     * Ours prefixes a CountryPicker and suffixes an inline send, which on a
+     * 42pt-inset form (`blockPad`, Fuse-faithful) left too little for a ten-digit
+     * Indian number. Two changes reclaim it and modernise the look:
+     *   - `radius.field` (10) instead of `radius.pill` — this is the app's own
+     *     M3 field/filled-button radius (see tokens `radius.$note`), so the field
+     *     reads as a Material field rather than an iOS capsule.
+     *   - leading 16 (M3 text-field padding) and a tighter trailing/gap, since
+     *     the send is a self-padded disc — freeing ~24dp for the number.
+     * developer.android.com/develop/ui/views/components/text-fields and M3
+     * text-field specs: container height 56, 16dp content padding.
+     */
     field: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: TOKENS.space.sm,
-      // `.padding(.leading, 24)` / `.padding(.trailing, 16)` from InputField.
-      paddingLeft: SOURCE_METRICS.inputLeading,
-      paddingRight: SOURCE_METRICS.inputTrailing,
+      gap: TOKENS.space.xs,
+      paddingLeft: TOKENS.space.md,
+      paddingRight: TOKENS.space.xs,
       height: 56,
-      borderRadius: TOKENS.radius.pill,
+      borderRadius: TOKENS.radius.field,
       borderCurve: 'continuous',
-      borderWidth: StyleSheet.hairlineWidth,
+      borderWidth: 1,
       borderColor: t.color.border.strong,
       backgroundColor: t.color.bg.base,
     },
@@ -1230,8 +1342,11 @@ const makeStyles = (t: Theme) =>
       width: SOURCE_METRICS.submitTarget,
       height: SOURCE_METRICS.submitTarget,
       borderRadius: TOKENS.radius.pill,
+      borderCurve: 'continuous',
       alignItems: 'center',
       justifyContent: 'center',
+      // Near-black, matching Fuse's primary action (its "Create … Key" pill is
+      // black). Coral is reserved for the active step's icon, not the submit.
       backgroundColor: t.color.text.primary,
     },
     // Age bracket picker: chip row + continue button.
@@ -1290,6 +1405,14 @@ const makeStyles = (t: Theme) =>
       flexDirection: 'row',
       justifyContent: 'center',
       gap: TOKENS.space.lg,
+    },
+    // The "previous code no longer works" note, centred under the boxes. Muted
+    // secondary ink — informational, not an error.
+    resentNote: {
+      ...TOKENS.typography.captionRegular,
+      color: t.color.text.secondary,
+      textAlign: 'center',
+      paddingHorizontal: TOKENS.space.xs,
     },
     resendLink: {
       minHeight: TOKENS.interaction.minTarget,

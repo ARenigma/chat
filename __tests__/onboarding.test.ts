@@ -58,7 +58,9 @@ describe('the step list', () => {
      */
     expect(visibleSteps('undecided')).toHaveLength(1);
     expect(visibleSteps('google')).toHaveLength(1);
-    expect(visibleSteps('phone')).toHaveLength(2);
+    // Phone now shows real steps — Choose a way in, Your number, Your code —
+    // rather than one "Say hello" catch-all plus the code row.
+    expect(visibleSteps('phone')).toHaveLength(3);
   });
 
   it('appends the age row when includeAge is true', () => {
@@ -69,7 +71,7 @@ describe('the step list', () => {
      */
     expect(visibleSteps('undecided', { includeAge: true })).toHaveLength(2);
     expect(visibleSteps('google', { includeAge: true })).toHaveLength(2);
-    expect(visibleSteps('phone', { includeAge: true })).toHaveLength(3);
+    expect(visibleSteps('phone', { includeAge: true })).toHaveLength(4);
   });
 
   it('age row is always last', () => {
@@ -79,10 +81,10 @@ describe('the step list', () => {
     expect(phone[phone.length - 1]?.key).toBe('age');
   });
 
-  it('always leads with identify, whichever route is taken', () => {
+  it('always leads with the choose step, whichever route is taken', () => {
     for (const route of ['undecided', 'google', 'phone'] as const) {
-      expect(visibleSteps(route)[0]?.key).toBe('identify');
-      expect(visibleSteps(route, { includeAge: true })[0]?.key).toBe('identify');
+      expect(visibleSteps(route)[0]?.key).toBe('choose');
+      expect(visibleSteps(route, { includeAge: true })[0]?.key).toBe('choose');
     }
   });
 
