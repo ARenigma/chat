@@ -58,11 +58,16 @@ function fiscalYear(now: Date): string {
 }
 
 // ---------------------------------------------------------------------------
-// Currency formatter: paise → "₹NNN.NN"
+// Currency formatter: paise → "Rs. NNN.NN"
+//
+// "Rs." rather than the ₹ glyph on purpose: the PDF uses pdf-lib's StandardFonts
+// (Helvetica), which are WinAnsi-encoded and cannot encode U+20B9 (₹) — drawing
+// it throws "WinAnsi cannot encode". "Rs." is the standard ASCII rendering on an
+// Indian invoice and needs no embedded Unicode font. (The app UI still shows ₹.)
 // ---------------------------------------------------------------------------
 function paiseToRupeeStr(paise: number): string {
   const rupees = paise / 100;
-  return `₹${rupees.toFixed(2)}`;
+  return `Rs. ${rupees.toFixed(2)}`;
 }
 
 // ---------------------------------------------------------------------------
