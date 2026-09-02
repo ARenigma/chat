@@ -290,15 +290,19 @@ function RechargeForm({
                 accessibilityLabel={`Add ${formatTokens(pack)} tokens, about ${minutes} minutes of talk${badge ? `, ${badge}` : ''}${on ? ', selected' : ''}`}
                 press="card"
                 style={[styles.card, on && styles.cardOn]}>
-                {badge ? (
-                  <View style={[styles.ribbon, on && styles.ribbonOn]}>
-                    <Text
-                      allowFontScaling={false}
-                      style={[styles.ribbonText, on && styles.ribbonTextOn]}>
-                      {badge}
-                    </Text>
-                  </View>
-                ) : null}
+                {/* Reserved badge row so Popular / Best value never overlaps the
+                    amount; the slot keeps every card the same height. */}
+                <View style={styles.badgeRow}>
+                  {badge ? (
+                    <View style={[styles.badgePill, on && styles.badgePillOn]}>
+                      <Text
+                        allowFontScaling={false}
+                        style={[styles.badgeText, on && styles.badgeTextOn]}>
+                        {badge}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
                 <View style={styles.cardRow}>
                   {/* Coin chip — the gamified token mark, same ₹ disc as the
                       balance header. Flips to a light disc on the selected coral
@@ -451,26 +455,30 @@ const makeStyles = (t: Theme) =>
       backgroundColor: t.color.bg.accent,
       borderColor: t.color.bg.accent,
     },
-    // Corner ribbon — Popular / Best value.
-    ribbon: {
-      position: 'absolute',
-      top: 0,
-      right: 0,
+    // Reserved top row for the Popular / Best value pill — right-aligned, in the
+    // flow (not absolute), so it can never sit on top of the amount.
+    badgeRow: {
+      height: 20,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'flex-end',
+    },
+    badgePill: {
       paddingHorizontal: TOKENS.space.sm,
-      paddingVertical: 3,
-      borderBottomLeftRadius: TOKENS.radius.sm,
+      paddingVertical: 2,
+      borderRadius: TOKENS.radius.pill,
       borderCurve: 'continuous',
       backgroundColor: t.color.bg.accent,
     },
-    ribbonOn: {
+    badgePillOn: {
       backgroundColor: t.color.bg.base,
     },
-    ribbonText: {
+    badgeText: {
       ...TOKENS.typography.captionSmall,
       fontFamily: 'Geist-SemiBold',
       color: t.color.text.onAccent,
     },
-    ribbonTextOn: {
+    badgeTextOn: {
       color: t.color.text.accent,
     },
     cardRow: {

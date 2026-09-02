@@ -86,6 +86,7 @@ const MIGRATIONS = [
   'supabase/migrations/043_member_age_bracket.sql',
   'supabase/migrations/044_independent_call_controls.sql',
   'supabase/migrations/045_message_origin_and_hidden_retention.sql',
+  'supabase/migrations/046_invoice_on_recharge.sql',
 ];
 
 const docker = (args, options = {}) =>

@@ -806,7 +806,9 @@ describe('device coverage matrix', () => {
     expect(settings).toContain('function SettingsRowContent');
     expect(settings).toMatch(/row:\s*{[\s\S]*?minHeight:\s*64/);
     expect(settings).toMatch(/rowCopy:\s*{[\s\S]*?flex:\s*1/);
-    expect(settings).toContain('style={styles.iconBox}');
+    // The leading icon uses styles.iconBox (danger rows add a tinted disc via
+    // an array style, so match the token rather than the exact expression).
+    expect(settings).toContain('styles.iconBox');
     expect(settings).toContain("import { Divider } from '../components/Divider'");
     // Dividers separate rows, and align to where the title starts rather than
     // borrowing the avatar list's 72dp. https://m3.material.io/components/divider/specs
