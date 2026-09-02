@@ -34,8 +34,12 @@ Applied globally; verified via the token drift gate.
   gradient "bloom" where the design calls for it. Generated to
   `tokens.generated.ts` + `web/tokens.css` from `design/tokens.json`; `--check`
   gates drift. Never hand-edit generated files (RULE 4).
-- **Space / radius:** token scale; measured source values (e.g. 64, 42) kept as
-  named constants rather than rounded to the nearest token.
+- **Space / radius:** the Material 3 spacing scale (2 to 64, `space25` to
+  `space800`) in tokens; a raw padding/margin/gap literal fails
+  `theme.test.ts` (allowlist for documented measured nudges only). Component
+  container heights — list rows 56/72/88, the 64dp floating toolbar, app bars —
+  live in a `layout` block, not as module constants. Measured source values keep
+  a named constant (`SOURCE_METRICS`, `RIPPLE`) rather than rounding to a token.
 - **Motion:** every duration/spring is a token in `motion.ts`; a test fails on a
   raw millisecond. `bounce` is used in exactly two places.
 - **Controls:** M3, hand-rolled (ADR-0010) so tokens stay the single source.

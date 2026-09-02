@@ -526,7 +526,7 @@ const makeStyles = (t: Theme) =>
       borderCurve: 'continuous',
       alignItems: 'center',
       justifyContent: 'center',
-      gap: 4,
+      gap: TOKENS.space['2xs'],
     },
     actionPrimary: {
       backgroundColor: t.color.bg.accent,

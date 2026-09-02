@@ -241,7 +241,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     borderRadius: TOKENS.radius.field,
     borderCurve: 'continuous',
     backgroundColor: t.color.bg.sunken,
-    gap: 2,
+    gap: TOKENS.space.hair,
   },
   // `bg/sunken`, matching missingBox. It was `bg/raised`, which is #FFFFFF in
   // light mode and so is the page, so the reviewer's note had no box at all, on
@@ -251,7 +251,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     borderRadius: TOKENS.radius.field,
     borderCurve: 'continuous',
     backgroundColor: t.color.bg.sunken,
-    gap: 2,
+    gap: TOKENS.space.hair,
   },
   bulletRow: {
     flexDirection: 'row',

@@ -47,6 +47,7 @@
   --mark-share: #7A3DE0;
   --mark-unwind: #0F7F62;
 
+  --space-hair: 2px;
   --space-2xs: 4px;
   --space-xs: 8px;
   --space-sm: 12px;
@@ -55,6 +56,18 @@
   --space-xl: 24px;
   --space-2xl: 32px;
   --space-3xl: 40px;
+  --space-4xl: 48px;
+  --space-5xl: 56px;
+  --space-6xl: 64px;
+
+  --layout-rowoneline: 56px;
+  --layout-rowtwoline: 72px;
+  --layout-rowthreeline: 88px;
+  --layout-toolbarheight: 64px;
+  --layout-appbarsmall: 64px;
+  --layout-appbarmedium: 112px;
+  --layout-appbarmediumsubtitle: 128px;
+  --layout-searchbar: 56px;
 
   --radius-tail: 5px;
   --radius-xs: 8px;

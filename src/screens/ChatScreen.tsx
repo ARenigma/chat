@@ -1393,7 +1393,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: TOKENS.space.xs,
-    paddingVertical: 2,
+    paddingVertical: TOKENS.space.hair,
     borderRadius: TOKENS.radius.xs,
     borderCurve: 'continuous',
   },

@@ -149,6 +149,12 @@ function TactileCTAView({
 
 export const TactileCTA = memo(TactileCTAView);
 
+// The ripple disc, centred on its origin by pulling back half its own size.
+// Not a spacing token: it is geometry derived from RIPPLE, and negating half of
+// it is what centres it, so it travels with the size rather than a coincidence
+// that 20 happens to equal space.lg.
+const RIPPLE = 40;
+
 const styles = StyleSheet.create({
   clip: {
     overflow: 'hidden',
@@ -158,10 +164,10 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: '50%',
     left: '50%',
-    width: 40,
-    height: 40,
-    marginTop: -20,
-    marginLeft: -20,
+    width: RIPPLE,
+    height: RIPPLE,
+    marginTop: -RIPPLE / 2,
+    marginLeft: -RIPPLE / 2,
     borderRadius: 999,
   },
 });

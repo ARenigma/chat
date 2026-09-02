@@ -227,7 +227,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     alignItems: 'flex-end',
   },
   speed: {
-    paddingHorizontal: 4,
+    paddingHorizontal: TOKENS.space['2xs'],
     paddingVertical: 1,
     borderRadius: TOKENS.radius.xs,
     borderCurve: 'continuous',

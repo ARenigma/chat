@@ -220,7 +220,7 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: TOKENS.space.md,
       paddingVertical: TOKENS.space.sm,
     },
-    rowBody: { flex: 1, gap: 2 },
+    rowBody: { flex: 1, gap: TOKENS.space.hair },
     rowName: {
       ...TOKENS.typography.bodyLarge,
       color: t.color.text.primary,

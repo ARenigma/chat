@@ -58,7 +58,7 @@ const styles = StyleSheet.create({
     minWidth: 16,
     height: 16,
     borderRadius: TOKENS.radius.pill,
-    paddingHorizontal: 4,
+    paddingHorizontal: TOKENS.space['2xs'],
     alignItems: 'center',
     justifyContent: 'center',
   },

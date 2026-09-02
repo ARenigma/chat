@@ -55,7 +55,7 @@ const makeStyles = (_t: Theme) => StyleSheet.create({
   },
   bubble: {
     paddingHorizontal: TOKENS.space.md,
-    paddingVertical: 2,
+    paddingVertical: TOKENS.space.hair,
     borderRadius: 18,
     borderCurve: 'continuous',
     backgroundColor: _t.color.bg.sunken,

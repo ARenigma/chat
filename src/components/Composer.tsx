@@ -670,7 +670,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     // carries the spacing itself (was space.md when text led the field).
     paddingLeft: TOKENS.space['2xs'],
     paddingRight: 5,
-    paddingVertical: 4,
+    paddingVertical: TOKENS.space['2xs'],
     // Still a capsule: the field is a capsule on iOS too. What changed is what
     // defines its edge.
     borderRadius: TOKENS.radius.pill,

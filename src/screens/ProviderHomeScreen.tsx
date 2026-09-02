@@ -354,7 +354,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   },
   availabilityText: {
     flex: 1,
-    gap: 2,
+    gap: TOKENS.space.hair,
   },
   availabilityTitle: {
     ...TOKENS.typography.headline,
@@ -371,7 +371,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     gap: TOKENS.space.lg,
   },
   stat: {
-    gap: 2,
+    gap: TOKENS.space.hair,
   },
   statValue: {
     ...TOKENS.typography.titleMedium,

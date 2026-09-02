@@ -75,7 +75,7 @@ const makeStyles = (t: Theme) =>
       alignItems: 'center',
       justifyContent: 'center',
       gap: TOKENS.space.xs,
-      minHeight: 44,
+      minHeight: TOKENS.interaction.minTarget,
       paddingHorizontal: TOKENS.space.md,
       paddingVertical: TOKENS.space.sm,
       backgroundColor: t.color.bg.raised,

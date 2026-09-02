@@ -6,7 +6,7 @@ import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ProviderSummary } from '../lib/database.types';
 import { initialOf } from '../lib/display';
 import { presenceForSpeech, readPresence } from '../lib/presence';
-import { enterRow } from '../theme/motion';
+import { rowIn } from '../theme/motion';
 import { Avatar } from './Avatar';
 import { Icon } from './Icon';
 import { MetaChip } from './MetaChip';
@@ -155,7 +155,7 @@ function ProviderRowView({ provider, index, isLast, onPress, onPressAvatar, anim
     .join(', ');
 
   return (
-    <Animated.View entering={animateEntrance !== false ? enterRow(index) : undefined}>
+    <Animated.View entering={animateEntrance !== false ? rowIn(index) : undefined}>
       <Pressable
         onPress={() => onPress(provider.id)}
         testID={`provider-${provider.id}`}
@@ -258,7 +258,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   },
   label: {
     flex: 1,
-    gap: 2,
+    gap: TOKENS.space.hair,
   },
   // 17/15, which is what an iOS Messages cell is. It was 15/14, one step down the
   // ladder on both lines.
@@ -280,7 +280,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: TOKENS.space['2xs'],
-    marginTop: 4,
+    marginTop: TOKENS.space['2xs'],
     overflow: 'hidden',
   },
   secondary: {

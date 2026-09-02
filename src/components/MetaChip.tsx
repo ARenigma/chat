@@ -60,7 +60,7 @@ const makeStyles = (t: Theme) =>
     chip: {
       height: 32,
       minHeight: 32,
-      paddingHorizontal: 12,
+      paddingHorizontal: TOKENS.space.sm,
       justifyContent: 'center',
       borderRadius: TOKENS.radius.xs,
       borderCurve: 'continuous',
