@@ -79,6 +79,11 @@ export function useTransactions() {
         .select(
           'id, kind, status, amount_paise, tokens_delta, gateway, created_at, invoices(id, invoice_number, document_type, pdf_path)',
         )
+        // This is the recharge/receipts history: show top-ups and their
+        // corrections only. `usage_debit` (spending) and `provider_accrual`
+        // (earnings) are a different ledger and have no invoice — including them
+        // produced rows with no label (their kind is outside kindLabel's set).
+        .in('kind', ['recharge', 'refund', 'adjustment'])
         .order('created_at', { ascending: false });
       if (error) {
         throw new Error(error.message);

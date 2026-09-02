@@ -269,9 +269,6 @@ function RechargeForm({
       <Text allowFontScaling style={styles.section}>
         Add tokens
       </Text>
-      <Text allowFontScaling style={styles.sectionHint}>
-        Pick an amount
-      </Text>
 
       <View style={styles.grid}>
         {livePacks.map(pack => {
@@ -290,19 +287,18 @@ function RechargeForm({
                 accessibilityLabel={`Add ${formatTokens(pack)} tokens, about ${minutes} minutes of talk${badge ? `, ${badge}` : ''}${on ? ', selected' : ''}`}
                 press="card"
                 style={[styles.card, on && styles.cardOn]}>
-                {/* Reserved badge row so Popular / Best value never overlaps the
-                    amount; the slot keeps every card the same height. */}
-                <View style={styles.badgeRow}>
-                  {badge ? (
-                    <View style={[styles.badgePill, on && styles.badgePillOn]}>
-                      <Text
-                        allowFontScaling={false}
-                        style={[styles.badgeText, on && styles.badgeTextOn]}>
-                        {badge}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
+                {/* Corner ribbon — flush to the top-right corner (folded-tab
+                    look), not a floating chip. The card's paddingTop reserves the
+                    strip it sits in, so it never overlaps the amount below. */}
+                {badge ? (
+                  <View style={[styles.ribbon, on && styles.ribbonOn]}>
+                    <Text
+                      allowFontScaling={false}
+                      style={[styles.ribbonText, on && styles.ribbonTextOn]}>
+                      {badge}
+                    </Text>
+                  </View>
+                ) : null}
                 <View style={styles.cardRow}>
                   {/* Coin chip — the gamified token mark, same ₹ disc as the
                       balance header. Flips to a light disc on the selected coral
@@ -412,7 +408,8 @@ const makeStyles = (t: Theme) =>
       fontFamily: 'Geist-Bold',
       fontSize: 34,
       lineHeight: 40,
-      letterSpacing: 0.2,
+      letterSpacing: -0.4,
+      fontVariant: ['tabular-nums'],
       color: t.color.text.onInverse,
     },
     balanceHint: {
@@ -424,11 +421,6 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.headline,
       color: t.color.text.primary,
       paddingTop: TOKENS.space.md,
-    },
-    sectionHint: {
-      ...TOKENS.typography.subhead,
-      color: t.color.text.secondary,
-      paddingBottom: TOKENS.space.xs,
     },
     grid: {
       flexDirection: 'row',
@@ -446,7 +438,11 @@ const makeStyles = (t: Theme) =>
       borderWidth: 1,
       borderColor: t.color.border.hairline,
       backgroundColor: t.color.bg.raised,
-      padding: TOKENS.space.md,
+      // Extra top padding reserves the strip the corner ribbon sits in, so the
+      // amount below never collides with it.
+      paddingTop: TOKENS.space.lg,
+      paddingHorizontal: TOKENS.space.md,
+      paddingBottom: TOKENS.space.md,
       justifyContent: 'space-between',
       gap: TOKENS.space.sm,
       overflow: 'hidden',
@@ -455,30 +451,28 @@ const makeStyles = (t: Theme) =>
       backgroundColor: t.color.bg.accent,
       borderColor: t.color.bg.accent,
     },
-    // Reserved top row for the Popular / Best value pill — right-aligned, in the
-    // flow (not absolute), so it can never sit on top of the amount.
-    badgeRow: {
-      height: 20,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'flex-end',
-    },
-    badgePill: {
+    // Corner ribbon flush to the top-right corner (folded-tab look): the outer
+    // corner matches the card radius, the inner corner is rounded. Not a chip.
+    ribbon: {
+      position: 'absolute',
+      top: 0,
+      right: 0,
       paddingHorizontal: TOKENS.space.sm,
-      paddingVertical: 2,
-      borderRadius: TOKENS.radius.pill,
+      paddingVertical: 3,
+      borderTopRightRadius: TOKENS.radius.md,
+      borderBottomLeftRadius: TOKENS.radius.md,
       borderCurve: 'continuous',
       backgroundColor: t.color.bg.accent,
     },
-    badgePillOn: {
+    ribbonOn: {
       backgroundColor: t.color.bg.base,
     },
-    badgeText: {
+    ribbonText: {
       ...TOKENS.typography.captionSmall,
       fontFamily: 'Geist-SemiBold',
       color: t.color.text.onAccent,
     },
-    badgeTextOn: {
+    ribbonTextOn: {
       color: t.color.text.accent,
     },
     cardRow: {
@@ -512,6 +506,11 @@ const makeStyles = (t: Theme) =>
       fontFamily: 'Geist-Bold',
       fontSize: 24,
       lineHeight: 28,
+      // Tabular figures + tight tracking, the app's numeral treatment: without
+      // tabular-nums the pack amounts (1,000 / 2,500) render with uneven widths
+      // and read as ragged. Matches TOKENS.typography.numeral*.
+      letterSpacing: -0.4,
+      fontVariant: ['tabular-nums'],
       color: t.color.text.primary,
     },
     cardUnit: {
