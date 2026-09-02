@@ -292,7 +292,9 @@ export function SettingsSheet({
                 uri={profile?.avatar_url ?? null}
               />
               <View style={styles.profileCamera}>
-                <Icon name="camera" size={14} color={theme.color.text.onInverse} />
+                {/* A "+" edit affordance, not a camera: tapping the avatar opens
+                    the DiceBear picker, not a photo/camera upload. */}
+                <Icon name="plus" size={15} color={theme.color.text.onAccent} />
               </View>
             </Pressable>
             <Text allowFontScaling numberOfLines={1} style={styles.profileName}>
@@ -728,7 +730,9 @@ const makeStyles = (t: Theme) =>
       borderRadius: 14,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: t.color.bg.inverse,
+      // Coral edit badge, not a black disc: it now signals "change your avatar"
+      // and reads as a branded affordance rather than a stray black image.
+      backgroundColor: t.color.bg.accent,
       borderWidth: 2,
       borderColor: t.color.bg.base,
     },
