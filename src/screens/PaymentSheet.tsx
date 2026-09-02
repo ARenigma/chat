@@ -345,7 +345,7 @@ const makeStyles = (t: Theme) =>
       alignSelf: 'stretch',
       alignItems: 'center',
       justifyContent: 'center',
-      minHeight: 44,
+      minHeight: TOKENS.interaction.minTarget,
       marginTop: TOKENS.space.xs,
     },
     webRowText: {

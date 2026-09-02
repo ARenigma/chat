@@ -72,6 +72,8 @@ ${colours('Light')}
 
 ${scale('space', 'space')}
 
+${scale('layout', 'layout')}
+
 ${scale('radius', 'radius')}
 
   /* Same families as the app, different loading rule.

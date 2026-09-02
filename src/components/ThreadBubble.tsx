@@ -168,7 +168,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   },
   body: {
     flex: 1,
-    gap: 2,
+    gap: TOKENS.space.hair,
   },
   topLine: {
     flexDirection: 'row',

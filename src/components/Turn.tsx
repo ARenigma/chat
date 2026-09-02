@@ -867,7 +867,7 @@ const makeStyles = (t: Theme) =>
     // Reserve space below the bubble so the stuck chip has a place to sit
     // without colliding with the next inverted-list cell.
     bubbleStackWithReaction: {
-      marginBottom: 4,
+      marginBottom: TOKENS.space['2xs'],
       paddingBottom: 14,
     },
     reactionAttach: {
@@ -884,8 +884,8 @@ const makeStyles = (t: Theme) =>
     peerBubble: {
       maxWidth: '100%',
       paddingHorizontal: TOKENS.space.md,
-      paddingTop: 8,
-      paddingBottom: 8,
+      paddingTop: TOKENS.space.xs,
+      paddingBottom: TOKENS.space.xs,
       backgroundColor: t.color.bg.sunken,
       borderRadius: BUBBLE_RADIUS,
       borderCurve: 'continuous',
@@ -923,8 +923,8 @@ const makeStyles = (t: Theme) =>
     bubble: {
       maxWidth: '100%',
       paddingHorizontal: TOKENS.space.md,
-      paddingTop: 8,
-      paddingBottom: 8,
+      paddingTop: TOKENS.space.xs,
+      paddingBottom: TOKENS.space.xs,
       backgroundColor: t.color.bg.accentStrong,
       borderRadius: BUBBLE_RADIUS,
       borderCurve: 'continuous',
@@ -996,8 +996,8 @@ const makeStyles = (t: Theme) =>
       flexDirection: 'row',
       alignItems: 'center',
       alignSelf: 'flex-end',
-      gap: 2,
-      marginTop: -2,
+      gap: TOKENS.space.hair,
+      marginTop: -TOKENS.space.hair,
     },
     // The per-bubble clock inside metaRow. Same metrics as BubbleTime; peer sits
     // in tertiary, mine in muted white.
@@ -1046,14 +1046,14 @@ const makeStyles = (t: Theme) =>
     },
     reactionRow: {
       flexDirection: 'row',
-      gap: 2,
+      gap: TOKENS.space.hair,
     },
     reactionPill: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 2,
+      gap: TOKENS.space.hair,
       paddingHorizontal: 5,
-      paddingVertical: 2,
+      paddingVertical: TOKENS.space.hair,
       borderRadius: TOKENS.radius.pill,
       borderCurve: 'continuous',
       // bg.sunken (#E5E5EA light / #2C2C2E dark) is visible on the wallpaper.

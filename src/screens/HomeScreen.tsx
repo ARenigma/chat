@@ -596,7 +596,7 @@ const RailItem = memo(function ({
           <Avatar
             initial={initialOf(name)}
             uri={chat.peer_avatar_url}
-            size={48}
+            size={56}
             online={presence.here}
           />
         </View>
@@ -703,7 +703,7 @@ function FeaturedCard({
   );
 }
 
-const RAIL_AVATAR = 48;
+const RAIL_AVATAR = 56;
 
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
@@ -788,7 +788,10 @@ const makeStyles = (t: Theme) =>
       gap: TOKENS.space.xs,
     },
     railItem: {
-      width: 64,
+      // Wide enough for the 56dp avatar plus the unread ring (3 pad + 2 border
+      // each side = 66) with a little air; Telegram's stories item is 70 (ITEM_
+      // WIDTH, DialogStoriesCell.java:111).
+      width: 70,
       alignItems: 'center',
       gap: TOKENS.space['2xs'],
     },
@@ -864,7 +867,7 @@ const makeStyles = (t: Theme) =>
       top: TOKENS.space.md,
       left: TOKENS.space.md,
       paddingHorizontal: TOKENS.space.sm,
-      paddingVertical: 4,
+      paddingVertical: TOKENS.space['2xs'],
       borderRadius: TOKENS.radius.pill,
       borderCurve: 'continuous',
       backgroundColor: t.color.bg.accent,
@@ -875,7 +878,7 @@ const makeStyles = (t: Theme) =>
     },
     featuredBody: {
       padding: TOKENS.space.md,
-      gap: 4,
+      gap: TOKENS.space['2xs'],
     },
     featuredNameRow: {
       flexDirection: 'row',

@@ -251,15 +251,15 @@ const makeStyles = (t: Theme) =>
     // Reserved trailing slot keeps amounts aligned whether or not a row has an
     // invoice. Sits to the right of the amount column.
     downloadSlot: {
-      width: 44,
+      width: TOKENS.interaction.minTarget,
       alignItems: 'center',
       justifyContent: 'center',
       marginLeft: TOKENS.space.xs,
     },
     // Low-emphasis icon-only button: no fill, 44dp tap target.
     downloadBtn: {
-      width: 44,
-      height: 44,
+      width: TOKENS.interaction.minTarget,
+      height: TOKENS.interaction.minTarget,
       alignItems: 'center',
       justifyContent: 'center',
     },

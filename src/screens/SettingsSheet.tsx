@@ -819,7 +819,7 @@ const makeStyles = (t: Theme) =>
     rowDetail: {
       ...TOKENS.typography.captionRegular,
       color: t.color.text.secondary,
-      marginTop: 2,
+      marginTop: TOKENS.space.hair,
     },
     rowTitleDanger: {
       color: t.color.state.danger,

@@ -6,7 +6,7 @@ import { useStyles } from '../theme/ThemeProvider';
 import type { ProviderSummary } from '../lib/database.types';
 import { initialOf } from '../lib/display';
 import { presenceForSpeech, readPresence } from '../lib/presence';
-import { enterRow } from '../theme/motion';
+import { rowIn } from '../theme/motion';
 import { sizedStorageImageUri } from '../lib/storageImage';
 import { isClayUri, resolveAvatarSource } from '../lib/clayAvatars';
 import { Avatar } from './Avatar';
@@ -111,7 +111,7 @@ function ProviderCardView({
     .join(', ');
 
   return (
-    <Animated.View entering={animateEntrance !== false ? enterRow(index) : undefined}>
+    <Animated.View entering={animateEntrance !== false ? rowIn(index) : undefined}>
       <Card variant="outlined" style={styles.card}>
         {/* Whole card is the press target.
             The Card's overflow:hidden clips the Pressable state layer to the
@@ -206,7 +206,7 @@ const makeStyles = (t: Theme) =>
       flex: 1,
       // 2dp top nudge aligns the name's cap-height with the avatar's optical
       // centre, avoiding the gap you get when baseline-aligning to a circle.
-      paddingTop: 2,
+      paddingTop: TOKENS.space.hair,
       gap: 3,
     },
     name: {
@@ -282,7 +282,7 @@ function SquareProviderCardView({
   return (
     <Animated.View
       style={isLeft ? styles.itemLeft : styles.itemRight}
-      entering={animateEntrance !== false ? enterRow(index) : undefined}>
+      entering={animateEntrance !== false ? rowIn(index) : undefined}>
       <Card variant="outlined" style={styles.card}>
         {/* Card overflow:hidden clips the Pressable state-layer to the rounded
             card shape — same pattern as the portrait ProviderCard above. */}
@@ -403,7 +403,7 @@ const makeSquareStyles = (t: Theme) =>
       paddingHorizontal: TOKENS.space.sm,
       paddingTop: TOKENS.space.xs,
       paddingBottom: TOKENS.space.xs,
-      gap: 2,
+      gap: TOKENS.space.hair,
     },
     cardName: {
       ...TOKENS.typography.labelMedium,

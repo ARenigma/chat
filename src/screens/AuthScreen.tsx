@@ -682,7 +682,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   },
   // "Edit number" ghost link.
   confirmSecondary: {
-    minHeight: 44,
+    minHeight: TOKENS.interaction.minTarget,
     alignItems: 'center',
     justifyContent: 'center',
   },
