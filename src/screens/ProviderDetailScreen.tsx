@@ -20,10 +20,10 @@ import { tick } from '../lib/haptics';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { sizedStorageImageUri } from '../lib/storageImage';
 import { contentColumnWidth } from '../lib/windowSize';
-import { DEFAULT_RATES, rateLabel, type Channel } from '../lib/rates';
+import { rateLabel, type Channel } from '../lib/rates';
 import { useConversations, useProfile, useProviders } from '../api/chat';
 import { CALLS_ENABLED } from '../api/calls';
-import { useKillSwitches } from '../api/appConfig';
+import { useEconomicsConfig, useKillSwitches, FALLBACK_ECONOMICS } from '../api/appConfig';
 import { useStore } from '../store/useStore';
 import { useFavorites } from '../store/useFavorites';
 import { springTo } from '../theme/motion';
@@ -48,9 +48,9 @@ interface Props {
  * (tapping a provider went straight into a chat). It sits between the directory
  * and a conversation: a hero, three priced actions, and an ABOUT.
  *
- * Pricing is per-minute (ADR-0019). Rates come from `DEFAULT_RATES` until the
- * schema carries per-provider rates; the three buttons show ₹/min the way v13
- * does. Audio and video have independent live admin controls; Chat is live.
+ * Pricing is per-minute (ADR-0019). Rates are read from the admin economics
+ * config (`useEconomicsConfig`) and fall back to `FALLBACK_ECONOMICS` when
+ * offline. Audio and video have independent live admin controls; Chat is live.
  *
  * The photo hero degrades to a warm gradient with the person's mark, since the
  * data model has no `avatar_url` yet — same honest fallback as the featured card
@@ -64,10 +64,14 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
   const openWallet = useStore(s => s.openWallet);
   useProfile();
   const { data: killSwitches } = useKillSwitches();
+  const { data: economics } = useEconomicsConfig();
   const voiceCallsEnabled =
     (killSwitches?.voice_calls_enabled ?? true) && CALLS_ENABLED;
   const videoCallsEnabled =
     (killSwitches?.video_calls_enabled ?? true) && CALLS_ENABLED;
+  const chatRate = economics?.chat_rate_tokens_per_min ?? FALLBACK_ECONOMICS.chat_rate_tokens_per_min;
+  const audioRate = economics?.audio_rate_tokens_per_min ?? FALLBACK_ECONOMICS.audio_rate_tokens_per_min;
+  const videoRate = economics?.video_rate_tokens_per_min ?? FALLBACK_ECONOMICS.video_rate_tokens_per_min;
   const { data: providers, isPending } = useProviders();
   const { data: conversations } = useConversations();
   // Favourites are persisted now (#10), not throwaway local state — the heart
@@ -128,6 +132,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
               channel="audio"
               kind="primary"
               glyph="call"
+              rate={audioRate}
               enabled={voiceCallsEnabled}
               onPress={onAudio}
               label={`Call ${provider.display_name}`}
@@ -136,6 +141,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
               channel="chat"
               kind="tint"
               glyph="chat"
+              rate={chatRate}
               enabled
               onPress={onChat}
               label={`Message ${provider.display_name}`}
@@ -144,6 +150,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
               channel="video"
               kind="dark"
               glyph="video"
+              rate={videoRate}
               enabled={videoCallsEnabled}
               onPress={onVideo}
               label={`Video call ${provider.display_name}`}
@@ -343,6 +350,7 @@ function ActionButton({
   channel,
   kind,
   glyph,
+  rate,
   enabled,
   onPress,
   label,
@@ -350,6 +358,8 @@ function ActionButton({
   channel: Channel;
   kind: 'primary' | 'tint' | 'dark';
   glyph: 'call' | 'chat' | 'video';
+  /** Live admin rate (tokens/min). Falls back to DEFAULT_RATES[channel] at the call site. */
+  rate: number;
   enabled: boolean;
   onPress: () => void;
   label: string;
@@ -369,7 +379,7 @@ function ActionButton({
         onPress={onPress}
         disabled={!enabled}
         testID={`action-${channel}`}
-        accessibilityLabel={`${label}, ${rateLabel(DEFAULT_RATES[channel])}${enabled ? '' : ', coming soon'}`}
+        accessibilityLabel={`${label}, ${rateLabel(rate)}${enabled ? '' : ', coming soon'}`}
         press="none"
         highlight="ios"
         style={[
@@ -381,7 +391,7 @@ function ActionButton({
         ]}>
         <Icon name={glyph} size={22} color={fg} />
         <Text allowFontScaling numberOfLines={1} style={[styles.actionRate, { color: fg }]}>
-          {rateLabel(DEFAULT_RATES[channel])}
+          {rateLabel(rate)}
         </Text>
       </Pressable>
     </View>

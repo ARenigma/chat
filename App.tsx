@@ -23,7 +23,7 @@ import { UpdateBanner } from './src/components/UpdateBanner';
 import { BLOOM_CONTENT_MS } from './src/lib/bloom';
 import { assertEnv } from './src/lib/env';
 import { storage } from './src/lib/storage';
-import { initialNotificationPeer, onNotificationOpen, startPush } from './src/lib/push';
+import { initialNotificationPeer, onNotificationOpen, setNotificationPolicy, startPush } from './src/lib/push';
 import { clearCall } from './src/lib/conversations';
 import {
   memberParent,
@@ -349,7 +349,7 @@ function Root() {
    */
   useEffect(() => {
     if (boot.phase === 'ready' && pendingProviderApply) {
-      setRoute({ name: 'apply' });
+      setRoute({ name: 'apply', from: 'home' });
       setPendingProviderApply(false);
     }
   }, [boot.phase, pendingProviderApply, setPendingProviderApply]);
@@ -469,6 +469,10 @@ function Root() {
         const micLevel = effectivePermissionLevel(permissions, 'microphone');
         const cameraLevel = effectivePermissionLevel(permissions, 'camera');
 
+        // Propagate the effective policy so ensurePermission() in push.ts
+        // knows whether to show the blocked-settings alert on Android 13+.
+        setNotificationPolicy(notificationLevel);
+
         if (notificationLevel !== 'optional') {
           unsubscribeToken = await startPush();
         } else {
@@ -530,10 +534,13 @@ function Root() {
     storage.set(LAST_PROVIDER_KEY, id);
   }, []);
 
-  const openProvider = useCallback((id: string) => {
-    setRoute({ name: 'providerDetail', providerId: id });
-    track('directory_viewed');
-  }, []);
+  const openProvider = useCallback(
+    (id: string, from: 'home' | 'favourites' | 'chat' = 'home') => {
+      setRoute({ name: 'providerDetail', providerId: id, from });
+      track('directory_viewed');
+    },
+    [],
+  );
 
   // Back from a chat honours the door it was opened from (Home or a profile),
   // matching the hardware-back handler rather than always dumping to Home.
@@ -682,11 +689,16 @@ function Root() {
         <Animated.View
           style={styles.fill}
           entering={FadeIn.duration(BLOOM_CONTENT_MS)}>
-          <AuthScreen />
+          <AuthScreen onAuthenticated={() => setAttempt(a => a + 1)} />
         </Animated.View>
       );
     }
-    return <AuthScreen initialError={boot.message} />;
+    return (
+      <AuthScreen
+        initialError={boot.message}
+        onAuthenticated={() => setAttempt(a => a + 1)}
+      />
+    );
   }
 
   if (boot.phase === 'profileSetup') {
@@ -799,7 +811,7 @@ interface SignedInProps {
   providerRoute: ProviderRoute;
   /** `from` names the door, so back returns where the member actually came from. */
   openChat: (id: string, from?: ChatDoor) => void;
-  openProvider: (id: string) => void;
+  openProvider: (id: string, from?: 'home' | 'favourites' | 'chat') => void;
   leaveChat: () => void;
   backToHome: () => void;
   setRoute: (r: MemberRoute) => void;
@@ -926,7 +938,7 @@ function SignedIn({
       {route.name === 'favourites' ? (
         <Animated.View style={styles.tabLayer} entering={fadeSwapFast} exiting={FadeOut.duration(DURATION.fast)}>
           <AfterPaint>
-            <FavouritesScreen onOpenProvider={openProvider} />
+            <FavouritesScreen onOpenProvider={id => openProvider(id, 'favourites')} />
           </AfterPaint>
         </Animated.View>
       ) : null}
@@ -959,7 +971,7 @@ function SignedIn({
                 onSignedOut();
               }}
               onSignedOut={onSignedOut}
-              onApply={() => setRoute({ name: 'apply' })}
+              onApply={() => setRoute({ name: 'apply', from: 'settings' })}
               onApplicationStatus={() => setRoute({ name: 'applicationStatus' })}
               onBlocked={() => setRoute({ name: 'blocked' })}
               onTransactions={() => setRoute({ name: 'transactions' })}
@@ -1004,7 +1016,7 @@ function SignedIn({
             <ChatScreen
               providerId={route.providerId}
               onBack={leaveChat}
-              onOpenProfile={openProvider}
+              onOpenProfile={id => openProvider(id, 'chat')}
               onStartCall={channel =>
                 setRoute({ name: 'call', providerId: route.providerId, direction: 'out', callId: null, medium: channel === 'video' ? 'video' : 'voice' })
               }
@@ -1059,7 +1071,7 @@ function SignedIn({
               onSubmitted={() => setRoute({ name: 'applicationStatus' })}
             />
           ) : route.name === 'applicationStatus' ? (
-            <ProviderStatusScreen onBack={backToHome} onEdit={() => setRoute({ name: 'apply' })} />
+            <ProviderStatusScreen onBack={backToHome} onEdit={() => setRoute({ name: 'apply', from: 'applicationStatus' })} />
           ) : route.name === 'blocked' ? (
             <BlockedUsersScreen onBack={backToHome} />
           ) : (

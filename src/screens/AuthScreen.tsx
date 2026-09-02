@@ -14,14 +14,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import {
+  GoogleCredentialError,
   PHONE_AUTH_ENABLED,
   PROVIDER_LABEL,
   sendPhoneOtp,
-  signInWith,
+  signInWithGoogle,
   verifyPhoneOtp,
   type SocialProvider,
 } from '../api/auth';
-import { useAuthUiConfig, FALLBACK_AUTH_UI } from '../api/appConfig';
+import { useAuthUiConfig, useKillSwitches, FALLBACK_AUTH_UI, FALLBACK_KILL_SWITCHES } from '../api/appConfig';
 import { normalisePhone } from '../lib/phone';
 import { fadeSwap } from '../theme/motion';
 import { Button } from '../components/Button';
@@ -52,7 +53,25 @@ type Step = 'choose' | 'number' | 'confirm' | 'code';
  * in src/components and src/screens, comments included, which is the right kind
  * of blunt.)
  */
-export function AuthScreen({ initialError }: { initialError?: string }) {
+export function AuthScreen({
+  initialError,
+  onAuthenticated,
+}: {
+  initialError?: string;
+  /**
+   * Called when a session is minted *synchronously* on this screen — the
+   * Credential Manager sheet or a phone-code verification — where no OAuth deep
+   * link will arrive to wake App up.
+   *
+   * App has no auth-state subscription; its boot effect re-reads the session
+   * only when `attempt` changes (see OnboardingScreen's `onDone`). Both
+   * synchronous paths below therefore must announce success, or the session is
+   * set while this screen stays mounted on top of it — the "signed in but stuck
+   * on the sign-in screen" bug. The browser path does not use this: its session
+   * arrives through `handleAuthDeepLink` in App.tsx.
+   */
+  onAuthenticated?: () => void;
+}) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -62,6 +81,12 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
   // PHONE_AUTH_ENABLED is also the per-provider compile-time gate (DLT registration).
   // Both must be true for phone sign-in to show.
   const phoneVisible = authUi.phone_auth_tab_visible && PHONE_AUTH_ENABLED;
+  // Kill-switch: when new_registrations_enabled is false, show a non-blocking
+  // notice. Buttons remain active — returning users can still sign in. Real
+  // enforcement (blocking new account creation) requires a server-side gate (deferred).
+  const { data: killSwitches } = useKillSwitches();
+  const newRegistrationsEnabled =
+    killSwitches?.new_registrations_enabled ?? FALLBACK_KILL_SWITCHES.new_registrations_enabled;
 
   /**
    * One flag for two operations was a bug, not a shortcut.
@@ -124,19 +149,41 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
     return () => clearTimeout(timer);
   }, [cooldown]);
 
-  const startSocial = useCallback(async (provider: SocialProvider) => {
-    setError(null);
-    setBusy(provider);
-    try {
-      await signInWith(provider);
-      // The browser owns the flow now. The session returns through the deep link
-      // handler in App.tsx, so there is nothing to await, and `busy` stays set
-      // deliberately: a second tap would start a second OAuth flow.
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not start sign-in.');
-      setBusy(null);
-    }
-  }, []);
+  const startSocial = useCallback(
+    async (provider: SocialProvider) => {
+      setError(null);
+      setBusy(provider);
+      try {
+        // Credential Manager first, browser as the fallback — the same call
+        // OnboardingScreen makes. The previous code here called `signInWith`
+        // directly, which is the browser-only path, so the app-owned Google
+        // sheet was never shown from this screen even though the native module,
+        // the OAuth clients, and `signInWithGoogle` were all in place. RULE 1:
+        // https://developer.android.com/identity/sign-in/credential-manager-siwg-implementation
+        const result = await signInWithGoogle();
+        if (result === 'redirected') {
+          // The browser owns the flow now. The session returns through the deep
+          // link handler in App.tsx, so there is nothing to await, and `busy`
+          // stays set deliberately: a second tap would start a second OAuth flow.
+          return;
+        }
+        // 'session': the sheet produced a token and Supabase minted a session
+        // in-process. No deep link will fire, so App has to be told to re-read.
+        onAuthenticated?.();
+      } catch (err) {
+        if (err instanceof GoogleCredentialError && err.reason === 'cancelled') {
+          // Dismissing the sheet is a decision, not a fault. Reset the button and
+          // say nothing — "Sign-in failed" under a sheet someone tapped away from
+          // is the small lie that makes an app feel broken.
+          setBusy(null);
+          return;
+        }
+        setError(err instanceof Error ? err.message : 'Could not start sign-in.');
+        setBusy(null);
+      }
+    },
+    [onAuthenticated],
+  );
 
   /**
    * Actually send the OTP to the composed E.164 number and advance to `code`.
@@ -186,9 +233,13 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
         setErrorNonce(n => n + 1);
         return;
       }
-      // Success unmounts this screen: App.tsx is subscribed to the session.
+      // Signed in. There is no auth subscription — App's boot effect re-reads the
+      // session only when `attempt` is bumped — so this success has to announce
+      // itself, exactly like the Credential Manager path above. Without it the
+      // Supabase session is set but this screen never unmounts.
+      onAuthenticated?.();
     },
-    [],
+    [onAuthenticated],
   );
 
   const fullPhone = `${dialCode} ${phone.trim()}`;
@@ -379,6 +430,14 @@ export function AuthScreen({ initialError }: { initialError?: string }) {
           accessibilityLiveRegion="polite"
           style={styles.error}>
           {error}
+        </Text>
+      ) : null}
+
+      {/* Non-blocking registration pause notice — display only. Buttons remain
+          enabled so existing users can sign in. Server enforcement is deferred. */}
+      {step === 'choose' && !newRegistrationsEnabled ? (
+        <Text allowFontScaling style={styles.registrationPause}>
+          New sign-ups are paused right now.
         </Text>
       ) : null}
 
@@ -657,6 +716,12 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     ...TOKENS.typography.captionRegular,
     color: t.color.text.primary,
     paddingBottom: TOKENS.space.sm,
+  },
+  registrationPause: {
+    ...TOKENS.typography.captionRegular,
+    color: t.color.text.secondary,
+    textAlign: 'center',
+    paddingBottom: TOKENS.space.xs,
   },
   legal: {
     ...TOKENS.typography.captionSmall,

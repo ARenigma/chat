@@ -140,7 +140,7 @@ export const CONFIG_REGISTRY: DomainDef[] = [
         default: [100, 300, 500, 1000, 2500, 5000],
         risk: 'medium',
         impact: 'Changes the packs displayed on the Recharge screen in the app.',
-        runtime: 'seeded',
+        runtime: 'live',
       },
       {
         key: 'play_product_ids',
@@ -229,6 +229,10 @@ export const CONFIG_REGISTRY: DomainDef[] = [
         max: 10000,
         default: 22,
         risk: 'low',
+        // Not wired: the app's low-balance warning is minutes-based
+        // (CRITICAL_TALK_MINUTES × rate ≈ 220 tokens). This flat 22-token seed
+        // means ≈1 min, so consuming it as-is would fire the warning 10× later.
+        // Reconciling needs a product decision on the value + updating the seed.
         runtime: 'seeded',
       },
       {
@@ -240,7 +244,7 @@ export const CONFIG_REGISTRY: DomainDef[] = [
         max: 120,
         default: 20,
         risk: 'medium',
-        runtime: 'seeded',
+        runtime: 'live',
       },
       {
         key: 'unanswered_refund_window_hours',
@@ -319,7 +323,7 @@ export const CONFIG_REGISTRY: DomainDef[] = [
         default: false,
         risk: 'high',
         impact: 'Master payments gate. Turning off blocks all new paid recharges.',
-        runtime: 'seeded',
+        runtime: 'live',
       },
       {
         key: 'voice_calls_enabled',
@@ -349,7 +353,7 @@ export const CONFIG_REGISTRY: DomainDef[] = [
         default: true,
         risk: 'medium',
         impact: 'Turning off closes sign-up without a deploy.',
-        runtime: 'seeded',
+        runtime: 'partial',
       },
       {
         key: 'mock_payments_allowed',
@@ -390,7 +394,7 @@ export const CONFIG_REGISTRY: DomainDef[] = [
         ],
         risk: 'medium',
         impact: 'Changes the report options available in-app after the next config poll.',
-        runtime: 'seeded',
+        runtime: 'live',
       },
     ],
   },
@@ -408,7 +412,7 @@ export const CONFIG_REGISTRY: DomainDef[] = [
         default: true,
         risk: 'low',
         impact: 'Display-only. Server-side auth is unaffected.',
-        runtime: 'seeded',
+        runtime: 'live',
       },
       {
         key: 'google_auth_tab_visible',
@@ -418,7 +422,7 @@ export const CONFIG_REGISTRY: DomainDef[] = [
         default: true,
         risk: 'low',
         impact: 'Display-only. Server-side auth is unaffected.',
-        runtime: 'seeded',
+        runtime: 'live',
       },
     ],
   },

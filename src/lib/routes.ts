@@ -24,8 +24,16 @@ export type MemberRoute =
    * `inbox` + `directory` tab pair.
    */
   | { readonly name: 'home' }
-  /** The provider profile, reached from a Home row, the rail, or the featured card. */
-  | { readonly name: 'providerDetail'; readonly providerId: string }
+  /**
+   * The provider profile. Like `chat`, it has more than one door — a Home row /
+   * rail / featured card, the Favourites grid, or the identity block in a chat
+   * header — and back returns to the one used. `from` is that door.
+   */
+  | {
+      readonly name: 'providerDetail';
+      readonly providerId: string;
+      readonly from: 'home' | 'favourites' | 'chat';
+    }
   /**
    * `from` exists because a conversation has more than one door.
    *
@@ -53,7 +61,12 @@ export type MemberRoute =
       readonly callId: string | null;
       readonly medium: 'voice' | 'video';
     }
-  | { readonly name: 'apply' }
+  /**
+   * The provider application form. Three doors, three parents: the post-onboarding
+   * redirect (root `home`), the Settings "become a provider" row, and the "edit"
+   * action on the application-status screen. `from` keeps back honest for each.
+   */
+  | { readonly name: 'apply'; readonly from: 'home' | 'settings' | 'applicationStatus' }
   | { readonly name: 'applicationStatus' }
   | { readonly name: 'blocked' }
   /** The full chats list, reached from the Home rail's "See all". */
@@ -94,7 +107,7 @@ export function memberParent(route: MemberRoute): MemberRoute | null {
       return null;
     case 'chat':
       if (route.from === 'detail') {
-        return { name: 'providerDetail', providerId: route.providerId };
+        return { name: 'providerDetail', providerId: route.providerId, from: 'home' };
       }
       if (route.from === 'chatsList') {
         return { name: 'chatsList' };
@@ -106,9 +119,32 @@ export function memberParent(route: MemberRoute): MemberRoute | null {
       // parent. Ending a call lands you home.
       return { name: 'home' };
     case 'providerDetail':
+      if (route.from === 'favourites') {
+        return { name: 'favourites' };
+      }
+      if (route.from === 'chat') {
+        // Back to the conversation the profile was opened from. The chat's own
+        // door is not carried here, so it re-opens as a home-door chat; its next
+        // back then lands home, which is the right floor.
+        return { name: 'chat', providerId: route.providerId, from: 'home' };
+      }
+      return { name: 'home' };
     case 'apply':
+      if (route.from === 'settings') {
+        return { name: 'settings' };
+      }
+      if (route.from === 'applicationStatus') {
+        return { name: 'applicationStatus' };
+      }
+      return { name: 'home' };
+    // Reached from Settings (check status) or from a just-submitted application;
+    // Settings is the right floor for both — you do not go back into a form you
+    // have already submitted.
     case 'applicationStatus':
+      return { name: 'settings' };
+    // Only reached from Settings.
     case 'blocked':
+      return { name: 'settings' };
     case 'chatsList':
     case 'calls':
     case 'favourites':

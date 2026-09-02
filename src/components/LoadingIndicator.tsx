@@ -67,7 +67,12 @@ function LoadingIndicatorView({
   testID,
 }: Props) {
   const theme = useTheme();
-  const color = colorProp ?? theme.color.text.secondary;
+  // M3 draws the active indicator in the theme's PRIMARY colour, which for Fuse
+  // is the brand accent (bg.accent, #F2543D) — the same token the wordmark and
+  // every primary action use. A wait is a brand moment, not a grey one (Amit,
+  // 2026-09-02). Callers over a coloured surface still pass an explicit `color`
+  // (e.g. Button uses its label colour). https://m3.material.io/components/progress-indicators/specs
+  const color = colorProp ?? theme.color.bg.accent;
   const [longWait, setLongWait] = useState(false);
 
   useEffect(() => {

@@ -105,8 +105,15 @@ case "$cmd" in
     avd_dir="$HOME/.android/avd/${n}.avd"
     accelerate_ini "$avd_dir/config.ini"
     wipe_bad_snapshots "$avd_dir"
+    # Explicit DNS: on macOS the guest's default resolver (10.0.2.3, forwarded
+    # from the host) intermittently fails to resolve — raw IP works but name
+    # lookups hang, which silently breaks Google account reauth (GMS status 7 →
+    # 16 "reauth failed"), Supabase, and FCM. Pinning a public resolver makes
+    # network the same on every boot rather than a coin toss.
+    # doc: developer.android.com/studio/run/emulator-networking#dns
     # shellcheck disable=SC2046
-    exec emulator -avd "$n" $(gpu_boot_flags) -netdelay none -netspeed full -no-snapshot-load
+    exec emulator -avd "$n" $(gpu_boot_flags) \
+      -netdelay none -netspeed full -dns-server 8.8.8.8,8.8.4.4 -no-snapshot-load
     ;;
   floor|play|profile|tablet|fold)
     n="$(avd_name "$cmd")"
