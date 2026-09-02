@@ -98,6 +98,53 @@ if (
   problems.push('a placeholder contact address is still published');
 }
 
+/**
+ * The public position is a neutral, safety-first social conversation platform.
+ * These phrases previously marketed paid companionship, loneliness, or adult
+ * subject matter. A Play metadata upload can overwrite the website wording, so
+ * scan every publishable copy source rather than only web/index.html.
+ */
+const publicCopyRoots = [
+  WEB,
+  join(ROOT, 'play-upload', '04-listing-copy'),
+  join(ROOT, 'fastlane', 'metadata', 'android'),
+];
+const forbiddenPositioning = [
+  /someone to talk to/i,
+  /not therapy,\s*just company/i,
+  /pay(?:ing)? per minute/i,
+  /pay only for the time/i,
+  /recharge your balance to talk/i,
+  /free tokens/i,
+  /adults only/i,
+  /adult loneliness/i,
+  /earn per minute/i,
+];
+
+function copyFiles(directory) {
+  const entries = readdirSync(directory, { withFileTypes: true });
+  return entries.flatMap(entry => {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) return copyFiles(path);
+    return /\.(html|txt)$/.test(entry.name) ? [path] : [];
+  });
+}
+
+for (const root of publicCopyRoots) {
+  for (const file of copyFiles(root)) {
+    const body = readFileSync(file, 'utf8');
+    for (const phrase of forbiddenPositioning) {
+      if (phrase.test(body)) {
+        problems.push(
+          `${file.slice(
+            ROOT.length + 1,
+          )} contains retired positioning ${phrase}`,
+        );
+      }
+    }
+  }
+}
+
 if (problems.length > 0) {
   console.error('web:check FAILED\n  ' + problems.join('\n  '));
   process.exit(1);

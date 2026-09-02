@@ -1,11 +1,19 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pappal — privacy policy</title>
-    <meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+    <meta
+      name="theme-color"
+      content="#F2F2F7"
+      media="(prefers-color-scheme: light)"
+    />
+    <meta
+      name="theme-color"
+      content="#000000"
+      media="(prefers-color-scheme: dark)"
+    />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -16,14 +24,13 @@
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-
     <header class="site-header">
       <div class="site-container header-inner">
         <a href="/" class="mark" aria-label="Pappal home">Pappal</a>
         <nav class="site-nav" aria-label="Main navigation">
           <a href="/#how-it-works">How it works</a>
-          <a href="/pricing.html">Pricing</a>
-          <a href="/#become-a-partner">Become a partner</a>
+          <a href="/#safety">Safety</a>
+          <a href="/#become-a-partner">Join the community</a>
           <a href="/about.html">About</a>
         </nav>
         <div class="header-spacer"></div>
@@ -31,13 +38,13 @@
           class="cta cta--accent cta--sm"
           href="https://gitlab.com/ARenigma/chat/-/releases"
           rel="noopener noreferrer"
-        >Download</a>
+          >Download</a
+        >
       </div>
     </header>
 
     <main>
       <div class="page-content">
-
         <h1>Privacy policy</h1>
         <p class="lede">
           Written to be checked against the app rather than to cover us. Every
@@ -54,7 +61,7 @@
             <strong>Your messages</strong>, so a conversation can continue while
             it is live. When a session ends, the messages disappear from the app
             for both people immediately. We keep an inaccessible copy on our
-            servers for 30 days — for payment disputes and safety review only —
+            servers for 30 days — for account disputes and safety review only —
             and then delete it permanently. Nobody can read it from the app in
             the meantime. Anything you report is handled separately (see below).
           </li>
@@ -67,7 +74,8 @@
             deleted within a day.
           </li>
           <li>
-            <strong>Your token balance</strong> and when you last recharged.
+            <strong>Your account balance and transaction history</strong>, if
+            your version of the app includes optional paid features.
           </li>
           <li>
             <strong>A date of birth</strong>, only if you apply to be someone
@@ -91,20 +99,20 @@
         <p>
           The app may request notifications (message alerts), microphone (voice
           notes and calls), and camera (video calls). Our admin configuration
-          sets which permissions are required in production versus optional during
-          internal testing — the prompt you see follows that live policy, not a
-          fixed list in this document. We do not use these sensors in the
+          sets which permissions are required in production versus optional
+          during internal testing — the prompt you see follows that live policy,
+          not a fixed list in this document. We do not use these sensors in the
           background except while you are actively recording or in a call.
         </p>
 
         <h2>What we do not hold</h2>
         <ul>
           <li>
-            No contacts, location, photos, or camera. The microphone is used
-            only for the seconds you spend recording a voice note, and never
-            otherwise.
+            No contacts or precise location. Photos are accessed only when you
+            choose one to send; camera and microphone access is limited to
+            features you actively start.
           </li>
-          <li>No advertising ID. The app requests four Android permissions in total.</li>
+          <li>No advertising ID and no contact-book permission.</li>
           <li>
             No analytics on what you say. We count events like "a message was
             sent", never their contents — a database trigger rejects any event
@@ -117,8 +125,8 @@
           The person you are talking to, and nobody else, enforced by row-level
           security in the database, so it holds even if the app is wrong. Our
           team can read a specific message only when you report it: reporting
-          attaches a copy of that message to the report, and that copy is what
-          a human reviews.
+          attaches a copy of that message to the report, and that copy is what a
+          human reviews.
         </p>
         <p>
           A notification never contains what was said. It tells you who replied,
@@ -126,17 +134,17 @@
           the phone.
         </p>
 
-        <h2>Payment data</h2>
+        <h2>Optional purchase data</h2>
         <p>
-          Token recharges are processed by our payment gateway partner. We do
-          not store your card details. The gateway is subject to its own PCI-DSS
-          obligations. We store your token balance and transaction history (pack
-          name, amount, timestamp) so you can see what you purchased.
+          If optional paid features are available, purchases are processed by
+          the payment provider shown before confirmation. We do not store card
+          details. We retain the transaction reference, amount, timestamp, and
+          resulting balance so you can review the purchase and request support.
         </p>
 
         <h2>What survives deleting your account</h2>
         <p>
-          Your profile, conversations, messages, and tokens are deleted
+          Your profile, conversations, messages, and account balance are deleted
           immediately and permanently. <strong>Abuse reports do not.</strong> A
           report is kept, with the reporter's identity removed, for 90 days,
           because a report that vanished when the reported account was deleted
@@ -162,7 +170,7 @@
           <strong>Conversations are ephemeral.</strong> When a session ends, its
           messages, voice notes, and photos vanish from the app for both people
           at once. We retain an inaccessible copy for <strong>30 days</strong>
-          — only so a payment dispute or a safety concern can be looked into —
+          — only so an account dispute or safety concern can be looked into —
           and then permanently delete it. Neither you nor the person you spoke
           with can open it during those 30 days; it exists only for those two
           purposes. Content you explicitly report is retained separately, for
@@ -170,26 +178,27 @@
           account”.
         </p>
         <p>
-          Active account data (your profile, tokens, and so on) is retained for
-          as long as your account exists. On deletion: see above. Aggregated,
-          non-personal usage counts (e.g. total messages sent in a day) may be
-          retained for operational reporting indefinitely; they contain no
-          personal information.
+          Active account data (your profile, settings, and so on) is retained
+          for as long as your account exists. On deletion: see above.
+          Aggregated, non-personal usage counts (e.g. total messages sent in a
+          day) may be retained for operational reporting indefinitely; they
+          contain no personal information.
         </p>
 
         <h2>Your rights</h2>
         <p>
           You have the right to access, correct, or request deletion of your
           personal data at any time. Write to us at
-          <a href="mailto:hello@axionix.tech"><span>hello@axionix.tech</span></a>. We respond within 30 days, and usually much sooner.
+          <a href="mailto:hello@axionix.tech"><span>hello@axionix.tech</span></a
+          >. We respond within 30 days, and usually much sooner.
         </p>
 
         <h2>Contact</h2>
         <p>
           Questions, or a request to see what we hold about you:
-          <a href="mailto:hello@axionix.tech"><span>hello@axionix.tech</span></a>.
+          <a href="mailto:hello@axionix.tech"><span>hello@axionix.tech</span></a
+          >.
         </p>
-
       </div>
     </main>
 
@@ -199,7 +208,7 @@
           <div class="footer-brand">
             <a href="/" class="mark" aria-label="Pappal home">Pappal</a>
             <p>
-              Someone to talk to, tonight.<br />
+              Positive conversations, thoughtfully designed.<br />
               &copy; 2026 <span>Axionix Technologies</span>
             </p>
           </div>
@@ -207,12 +216,12 @@
             <div class="footer-col">
               <strong>Product</strong>
               <a href="/#how-it-works">How it works</a>
-              <a href="/pricing.html">Pricing</a>
+              <a href="/pricing.html">Access</a>
               <a href="/about.html">About</a>
             </div>
             <div class="footer-col">
-              <strong>Partners</strong>
-              <a href="/#become-a-partner">Become a partner</a>
+              <strong>Community</strong>
+              <a href="/#become-a-partner">Become a listener</a>
             </div>
             <div class="footer-col">
               <strong>Legal</strong>
@@ -230,12 +239,11 @@
           </div>
         </div>
         <div class="footer-meta">
-          <span>Last updated 27 August 2026</span>
+          <span>Last updated 2 September 2026</span>
           <span><span>Axionix Technologies</span></span>
           <span><span>Noida, Uttar Pradesh, India</span></span>
         </div>
       </div>
     </footer>
-
   </body>
 </html>
