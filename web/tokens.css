@@ -16,6 +16,7 @@
   --bg-hover: #DEDEE3;
   --bg-grouped: #F2F2F7;
   --bg-chrome: rgba(255,255,255,0.80);
+  --bg-glass: rgba(255,255,255,0.55);
   --bg-pressed: #D1D1D6;
   --bg-selected: #D1D1D6;
   --bg-inverse: #1C1C1E;
@@ -126,6 +127,7 @@
   --bg-hover: #1A2D38;
   --bg-grouped: #0B141A;
   --bg-chrome: rgba(11,20,26,0.85);
+  --bg-glass: rgba(11,20,26,0.55);
   --bg-pressed: #2A3942;
   --bg-selected: #182734;
   --bg-inverse: #E9EDEF;

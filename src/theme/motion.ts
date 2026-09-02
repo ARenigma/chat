@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import {
   Easing,
   FadeIn,
@@ -78,6 +79,17 @@ const SCREEN_DECEL = Easing.bezier(
   M3.easing.decelerate[1],
   M3.easing.decelerate[2],
   M3.easing.decelerate[3],
+);
+/**
+ * Telegram's EASE_OUT_QUINT (0.23,1,0.32,1) — the curve it reveals the send
+ * button on (`ChatActivityEnterView.java:8217`). A hard, early ease-out that
+ * makes a scale-from-nothing feel like it snaps into being rather than grows.
+ */
+const EASE_OUT_QUINT = Easing.bezier(
+  M3.easing.easeOutQuint[0],
+  M3.easing.easeOutQuint[1],
+  M3.easing.easeOutQuint[2],
+  M3.easing.easeOutQuint[3],
 );
 const EMPH_ACCEL = Easing.bezier(
   M3.easing.emphasizedAccelerate[0],
@@ -222,6 +234,42 @@ function stagger(base: number, index: number, cap: number): number {
  * `springTo`) so it collapses to a pure fade under reduce-motion — which is
  * exactly "reduced motion → fades only".
  */
+/**
+ * A two-thing cross-fade toggle, for a slot that swaps one control for another
+ * (the composer's send ⇆ mic).
+ *
+ * Telegram reveals its send button by scaling it from 0.1 and fading it in over
+ * ~220ms on EASE_OUT_QUINT while the mic scales away (`ChatActivityEnterView.java:
+ * 8217, 10302-10319`); the reverse is quicker (~150ms). The two returned styles
+ * are opposite phases of one shared value, so exactly one control is ever
+ * substantial and they never both sit at full size mid-swap. `Never` on the
+ * timing: this is discrete UI feedback, not a decorative flourish, and a user on
+ * reduce-motion still needs to see which control is live — the cross-fade is the
+ * signal, not an embellishment.
+ */
+export function useCrossfade(shown: boolean): {
+  shownStyle: ReturnType<typeof useAnimatedStyle>;
+  hiddenStyle: ReturnType<typeof useAnimatedStyle>;
+} {
+  const p = useSharedValue(shown ? 1 : 0);
+  useEffect(() => {
+    p.value = withTiming(shown ? 1 : 0, {
+      duration: shown ? M3.duration.short4 : M3.duration.short3,
+      easing: EASE_OUT_QUINT,
+      reduceMotion: ReduceMotion.Never,
+    });
+  }, [shown, p]);
+  const shownStyle = useAnimatedStyle(() => ({
+    opacity: p.value,
+    transform: [{ scale: 0.1 + 0.9 * p.value }],
+  }));
+  const hiddenStyle = useAnimatedStyle(() => ({
+    opacity: 1 - p.value,
+    transform: [{ scale: 0.1 + 0.9 * (1 - p.value) }],
+  }));
+  return { shownStyle, hiddenStyle };
+}
+
 export function useScreenEnter(): {
   style: ReturnType<typeof useAnimatedStyle>;
   onLayout: () => void;

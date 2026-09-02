@@ -14,7 +14,7 @@ name: First launch reaches supported sign-in
     visible:
       id: 'welcome-continue'
     timeout: 15000
-- assertVisible: 'Someone to talk to, tonight.'
+- assertVisible: 'Positive conversations, made simple.'
 - assertNotVisible:
     id: 'onboard-google'
 # LogBox chip used to cover this CTA and swallow taps; index.js ignores that

@@ -598,6 +598,7 @@ describe('material 3 motion tokens', () => {
       m3.easing.emphasizedAccelerate,
       m3.easing.standard,
       m3.easing.decelerate,
+      m3.easing.easeOutQuint,
     ]) {
       expect(curve).toHaveLength(4);
       expect(curve[0]).toBeGreaterThanOrEqual(0);
@@ -760,12 +761,12 @@ describe('spacing lives in tokens', () => {
     .concat({ file: 'App.tsx', body: stripComments(read('App.tsx')) });
 
   const ALLOW: Record<string, string[]> = {
-    // Composer field vertical pad is measured against Telegram (44dp bar); it is
-    // revisited in the composer-proportions pass, so it carries a reason here.
+    // Composer field vertical pad is mapped to Telegram measured on device (S22,
+    // density 2.8125×): its composer field is ~40dp with 16sp text, so the input
+    // is minHeight 32 + pad 6/6 (capsule ≈ 40 with the field's 4dp paddingVertical).
     'src/components/Composer.tsx': [
-      'paddingRight: 5',
-      'paddingTop: 7',
-      'paddingBottom: 7',
+      'paddingTop: 4',
+      'paddingBottom: 4',
       'paddingRight: 6',
     ],
     // Optical nudges the 4dp grid cannot name: a 5dp pill pad, a 6dp dot offset,
@@ -950,8 +951,15 @@ describe('motion lives in one module', () => {
      * these are the product's few celebratory beats, and the pop is what makes
      * them feel worth tapping. It is reserved for TactileCTA, never the
      * workhorse ink Button, so the overshoot keeps meaning something.
+     *
+     * CodeField joined on 2026-09-02: a correct verification code is a
+     * celebratory beat by exactly the completion-mark argument — the boxes fill
+     * in turn and the row pops once — and Telegram resolves its own success with
+     * a low-bouncy scale spring (CodeNumberField.java:142-144). It fires once,
+     * on a right code, at the end of the sign-in flow.
      */
     expect(users).toEqual([
+      'src/components/CodeField.tsx',
       'src/components/CompletionRow.tsx',
       'src/components/TactileCTA.tsx',
       'src/components/TokenCounter.tsx',

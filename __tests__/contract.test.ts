@@ -1563,6 +1563,21 @@ describe('phone verification', () => {
  * repo's own record is that three UI bugs passed every gate and were only found on
  * a device, so the ones that CAN be asserted structurally are asserted here.
  */
+describe('the composer cross-fades its trailing control', () => {
+  const composer = read('src/components/Composer.tsx');
+  it('swaps send and mic through useCrossfade, not a hard conditional mount', () => {
+    // Both controls are mounted and stacked; the cross-fade decides which is
+    // substantial, and pointerEvents give touches to the live one. A hard
+    // `ready ? <SendButton/> : <mic/>` popped one in and out with no motion.
+    expect(composer).toContain('const trailing = useCrossfade(ready);');
+    expect(composer).toContain('trailing.shownStyle');
+    expect(composer).toContain('trailing.hiddenStyle');
+    expect(composer).toMatch(/pointerEvents=\{ready \? 'auto' : 'none'\}/);
+    expect(composer).toMatch(/pointerEvents=\{ready \? 'none' : 'auto'\}/);
+    expect(composer).not.toMatch(/\{ready \? \(\s*<SendButton/);
+  });
+});
+
 describe('the chat restyle is wired, not just drawn', () => {
   const chat = read('src/screens/ChatScreen.tsx');
   const chatCode = withoutComments(chat);
