@@ -7,6 +7,7 @@ import {
   BLOOM_HOLD_MS,
   BLOOM_LAYERS,
   BLOOM_LAYER_MS,
+  BLOOM_SWAP_MS,
   FUSE_REFERENCE_LONG_EDGE,
   bloomExitGradient,
   bloomLayerBox,
@@ -170,6 +171,14 @@ describe('the bloom field', () => {
     // The source's 0.7s content transition against a 1.2s handoff is what
     // leaves colour alone on screen. Equal values remove the pause entirely.
     expect(BLOOM_CONTENT_MS).toBeLessThan(BLOOM_HOLD_MS);
+  });
+
+  it('hands off only once every layer is at rest', () => {
+    // The form must not land while a layer is still moving or fading: the
+    // handoff commit is the heaviest of the flow and it used to arrive 50ms
+    // after the last layer stopped, on top of a fresh cross-fade.
+    expect(BLOOM_HOLD_MS).toBeGreaterThanOrEqual(BLOOM_FIELD_MS);
+    expect(BLOOM_HOLD_MS).toBeGreaterThanOrEqual(BLOOM_SWAP_MS);
   });
 
   it('staggers the layers so the exit is not a wipe', () => {

@@ -1,7 +1,8 @@
-import React, { memo, useEffect, useRef, useState } from 'react';
-import { StyleSheet, View, useWindowDimensions } from 'react-native';
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { StyleSheet, useWindowDimensions } from 'react-native';
 import Animated, {
   Easing,
+  cancelAnimation,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -59,6 +60,19 @@ interface Props {
   hidden?: boolean;
 }
 
+type Slot = 'a' | 'b';
+
+interface Slots {
+  readonly a: BloomStage;
+  readonly b: BloomStage;
+  /** The slot that is fading IN. The other one is the base underneath it. */
+  readonly arriving: Slot;
+}
+
+function sameStage(x: BloomStage, y: BloomStage): boolean {
+  return x.palette.name === y.palette.name && x.collapsed === y.collapsed;
+}
+
 /**
  * The atmospheric field, three radial layers deep, and the only thing on screen
  * that survives the entire onboarding.
@@ -95,47 +109,100 @@ function BloomFieldView({ elapsed, stage, hidden = false }: Props) {
   const { width, height } = useWindowDimensions();
 
   /*
-   * The cross-fade is between two whole stages, not between two colours.
+   * Two fixed slots per layer, and a swap that can never show a stale frame.
    *
-   * `from` is what the field was showing, `to` is where it is going, and `mix`
-   * walks 0 to 1 between them. Keeping the pair in state rather than deriving it
-   * means a change arriving mid-fade starts its own fade from whatever is
-   * currently on screen instead of snapping back to an older stage.
+   * The first version kept a `{ from, to }` pair in React state and reset one
+   * shared `mix` to 0 in the same effect. Those two writes take different roads:
+   * the shared value reaches the UI thread on the next frame, the state goes
+   * through a React commit and a Fabric mount. When that commit was late — and
+   * at the onboarding handoff it shared its tick with mounting the whole form —
+   * the arriving layer dropped to opacity 0 while the base was still painting
+   * the OLD `from` gradient: the saturated welcome pool with its full cores,
+   * for one frame, on top of a field that had just finished collapsing them.
+   * That frame was the jerk.
+   *
+   * Now each layer has slots `a` and `b`, each with its own opacity. A new stage
+   * is written only into the slot that is ALREADY at opacity 0, and its fade-in
+   * starts from an effect that runs after that commit has landed. The order of
+   * the two roads stops mattering; and because every layer's stagger delay is at
+   * least 400ms (`layerProgress`), the arriving slot stays at exactly 0 for the
+   * first 400ms of any swap even if the mount is slow. The base slot sits at 1
+   * until it is fully covered, then drops to 0 from the timing's completion
+   * callback, on the UI thread, where nothing can be seen changing.
    */
-  const [pair, setPair] = useState<{ from: BloomStage; to: BloomStage }>({
-    from: stage,
-    to: stage,
-  });
-  const mix = useSharedValue(1);
+  const [slots, setSlots] = useState<Slots>({ a: stage, b: stage, arriving: 'a' });
+  const opA = useSharedValue(1);
+  const opB = useSharedValue(0);
   const current = useRef(stage);
+  const inFlight = useRef(false);
 
   useEffect(() => {
-    if (
-      current.current.palette.name === stage.palette.name &&
-      current.current.collapsed === stage.collapsed
-    ) {
+    if (sameStage(current.current, stage)) {
       return;
     }
-    const previous = current.current;
     current.current = stage;
-    setPair({ from: previous, to: stage });
-    mix.value = 0;
-    // Linear, because the easing belongs to each layer. See `layerProgress`.
-    mix.value = withTiming(1, { duration: BLOOM_SWAP_MS, easing: Easing.linear });
-  }, [stage, mix]);
+    const arrivingNow = slots.arriving;
+    const other: Slot = arrivingNow === 'a' ? 'b' : 'a';
+    const arrivingSV = arrivingNow === 'a' ? opA : opB;
+    const otherSV = other === 'a' ? opA : opB;
+    if (inFlight.current) {
+      /*
+       * A retarget mid-swap: the slot still fading in becomes the new base. It
+       * snaps to 1 here, which is the one discontinuity this design allows, and
+       * it is confined to a tap landing inside a 1150ms fade — rare, and better
+       * than the alternative of restarting from an older stage.
+       */
+      cancelAnimation(arrivingSV);
+      arrivingSV.value = 1;
+    }
+    // Invisible already (or covered by the snap above), so rewriting its
+    // gradient string in the commit below cannot be seen.
+    otherSV.value = 0;
+    setSlots(s => ({ ...s, [other]: stage, arriving: other }));
+  }, [stage, slots.arriving, opA, opB]);
 
-  // The whole field leaves as one piece, which is why this is on the host rather
-  // than folded into each layer's stagger: the stagger is for the field moving
-  // through itself, and getting out of the keyboard's way is not that.
-  const host = useAnimatedStyle(() => ({
-    transform: [
-      {
-        translateY: withTiming(hidden ? -height : 0, {
-          duration: BLOOM_SWAP_MS / 2,
-          easing: Easing.inOut(Easing.quad),
-        }),
+  useEffect(() => {
+    const arrivingSV = slots.arriving === 'a' ? opA : opB;
+    const baseSV = slots.arriving === 'a' ? opB : opA;
+    if (arrivingSV.value === 1) {
+      // Initial mount: slot `a` is the base and there is nothing to fade.
+      return;
+    }
+    inFlight.current = true;
+    // Linear, because the easing belongs to each layer. See `layerProgress`.
+    arrivingSV.value = withTiming(
+      1,
+      { duration: BLOOM_SWAP_MS, easing: Easing.linear },
+      finished => {
+        if (finished) {
+          baseSV.value = 0;
+        }
       },
-    ],
+    );
+    const done = setTimeout(() => {
+      inFlight.current = false;
+    }, BLOOM_SWAP_MS);
+    return () => clearTimeout(done);
+  }, [slots.arriving, opA, opB]);
+
+  /*
+   * The whole field leaves as one piece, which is why this is on the host rather
+   * than folded into each layer's stagger: the stagger is for the field moving
+   * through itself, and getting out of the keyboard's way is not that.
+   *
+   * Driven from an effect, not from inside `useAnimatedStyle`: a `withTiming`
+   * inside the style worklet restarts on every re-render of this component,
+   * which is every stage change.
+   */
+  const hide = useSharedValue(0);
+  useEffect(() => {
+    hide.value = withTiming(hidden ? -height : 0, {
+      duration: BLOOM_SWAP_MS / 2,
+      easing: Easing.inOut(Easing.quad),
+    });
+  }, [hidden, height, hide]);
+  const host = useAnimatedStyle(() => ({
+    transform: [{ translateY: hide.value }],
   }));
 
   return (
@@ -147,8 +214,9 @@ function BloomFieldView({ elapsed, stage, hidden = false }: Props) {
           key={layer.name}
           name={layer.name}
           elapsed={elapsed}
-          mix={mix}
-          pair={pair}
+          opA={opA}
+          opB={opB}
+          slots={slots}
           width={width}
           height={height}
         />
@@ -160,13 +228,14 @@ function BloomFieldView({ elapsed, stage, hidden = false }: Props) {
 interface LayerProps {
   name: (typeof BLOOM_LAYERS)[number]['name'];
   elapsed: SharedValue<number>;
-  mix: SharedValue<number>;
-  pair: { from: BloomStage; to: BloomStage };
+  opA: SharedValue<number>;
+  opB: SharedValue<number>;
+  slots: Slots;
   width: number;
   height: number;
 }
 
-function BloomLayer({ name, elapsed, mix, pair, width, height }: LayerProps) {
+function BloomLayerView({ name, elapsed, opA, opB, slots, width, height }: LayerProps) {
   const layer = BLOOM_LAYERS.find(l => l.name === name);
   if (layer === undefined) {
     throw new Error(`unknown bloom layer ${name}`);
@@ -184,38 +253,61 @@ function BloomLayer({ name, elapsed, mix, pair, width, height }: LayerProps) {
   /*
    * The stagger applies to colour exactly as it applies to movement.
    *
-   * `mix` is a linear 0..1 across the swap; feeding it back through
-   * `layerProgress` gives this layer its own delayed, eased slice of it. Fade
-   * all three together and a step change reads as the screen repainting.
-   * Staggered, it reads as the field turning over — which is what the source
-   * gets for free by putting `.animation(.smooth.delay(x))` on each gradient
-   * rather than on their container.
+   * Each slot's opacity is a linear 0..1 across the swap; feeding it back
+   * through `layerProgress` gives this layer its own delayed, eased slice of
+   * it. Fade all three together and a step change reads as the screen
+   * repainting. Staggered, it reads as the field turning over — which is what
+   * the source gets for free by putting `.animation(.smooth.delay(x))` on each
+   * gradient rather than on their container. A slot at rest maps to exactly 0
+   * or exactly 1, so the same expression serves base and arriving alike.
    */
-  const arriving = useAnimatedStyle(() => ({
-    opacity: layerProgress(mix.value * BLOOM_SWAP_MS, delayMs),
+  const fadeA = useAnimatedStyle(() => ({
+    opacity: layerProgress(opA.value * BLOOM_SWAP_MS, delayMs),
+  }));
+  const fadeB = useAnimatedStyle(() => ({
+    opacity: layerProgress(opB.value * BLOOM_SWAP_MS, delayMs),
   }));
 
-  const gradientFor = (s: BloomStage): string =>
-    s.collapsed
-      ? bloomExitGradient(layer, s.palette)
-      : bloomRestGradient(layer, s.palette);
+  // Slot objects are replaced only when a slot's stage changes, so identity is
+  // the right memo key.
+  const gradientA = useMemo(() => gradientFor(layer, slots.a), [layer, slots.a]);
+  const gradientB = useMemo(() => gradientFor(layer, slots.b), [layer, slots.b]);
+
+  // The arriving slot paints above the base. The order flips in the same commit
+  // that rewrites the arriving slot's gradient, while it is at opacity 0.
+  const aOnTop = slots.arriving === 'a';
 
   return (
-    <Animated.View
-      style={[styles.layer, bloomLayerBox(layer, width, radiusScale), box]}>
-      <View
-        style={[styles.fill, { experimental_backgroundImage: gradientFor(pair.from) }]}
+    <Animated.View style={[styles.layer, bloomLayerBox(layer, width, radiusScale), box]}>
+      <Animated.View
+        style={[
+          styles.fill,
+          aOnTop ? styles.above : styles.below,
+          { experimental_backgroundImage: gradientA },
+          fadeA,
+        ]}
       />
       <Animated.View
         style={[
           styles.fill,
-          { experimental_backgroundImage: gradientFor(pair.to) },
-          arriving,
+          aOnTop ? styles.below : styles.above,
+          { experimental_backgroundImage: gradientB },
+          fadeB,
         ]}
       />
     </Animated.View>
   );
 }
+
+function gradientFor(layer: (typeof BLOOM_LAYERS)[number], s: BloomStage): string {
+  return s.collapsed
+    ? bloomExitGradient(layer, s.palette)
+    : bloomRestGradient(layer, s.palette);
+}
+
+// Memoised so a re-render of the host for one slot change does not rebuild
+// three layers' style arrays when nothing about a layer has moved.
+const BloomLayer = memo(BloomLayerView);
 
 export const BloomField = memo(BloomFieldView);
 
@@ -248,4 +340,6 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
   },
+  above: { zIndex: 1 },
+  below: { zIndex: 0 },
 });

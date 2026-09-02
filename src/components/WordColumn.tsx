@@ -57,6 +57,13 @@ export interface Word {
 
 interface Props {
   words: readonly Word[];
+  /**
+   * Hold the current word. Set while the welcome content is leaving: the
+   * column's dwell timer is free-running, and a tick landing inside the 1.2s
+   * bloom handoff adds a snap, a slide and a glyph entrance to the one window
+   * that is supposed to be nothing but the field moving.
+   */
+  paused?: boolean;
   testID?: string;
 }
 
@@ -93,7 +100,7 @@ interface Props {
  * into focus. `useLayoutEffect` on the tick snaps then slides so the pre-advance
  * picture is pixel-identical to the prior settle — the whole effect.
  */
-function WordColumnView({ words, testID }: Props) {
+function WordColumnView({ words, paused = false, testID }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const reduced = useReducedMotion();
@@ -105,14 +112,21 @@ function WordColumnView({ words, testID }: Props) {
    * owned by the layout effect below so content and translate commit together.
    */
   useEffect(() => {
+    if (paused) {
+      return;
+    }
     if (reduced || words.length < 2) {
       return;
     }
     const id = setInterval(() => setTick(t => t + 1), DWELL_MS);
     return () => clearInterval(id);
-  }, [reduced, words.length]);
+  }, [paused, reduced, words.length]);
 
   useLayoutEffect(() => {
+    if (paused) {
+      // Keep the settled picture exactly as it is; do not reset the slide.
+      return;
+    }
     if (reduced || words.length < 2) {
       cancelAnimation(shift);
       shift.value = 0;
@@ -139,7 +153,7 @@ function WordColumnView({ words, testID }: Props) {
       easing: Easing.out(Easing.quad),
     });
     return () => cancelAnimation(shift);
-  }, [tick, reduced, words.length, shift]);
+  }, [tick, paused, reduced, words.length, shift]);
 
   const sliding = useAnimatedStyle(() => ({
     transform: [{ translateY: shift.value }],
@@ -238,7 +252,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     alignItems: 'center',
     // The source's `HStack(spacing: 16)`, not a token lookup that happens to be
     // close, because the glyph-to-word relationship is the reference's.
-    gap: 16,
+    gap: TOKENS.space.md,
   },
   glyph: {
     width: GLYPH,

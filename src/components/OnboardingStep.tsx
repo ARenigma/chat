@@ -85,23 +85,31 @@ function OnboardingStepView({ step, expanded, testID }: Props) {
   // is no single animatable colour to drive.
   const iconOn = useAnimatedStyle(() => ({ opacity: open.value }));
 
-  const title = useAnimatedStyle(() => ({
-    fontSize: interpolate(
-      open.value,
-      [0, 1],
-      [TITLE_COLLAPSED, TITLE_EXPANDED],
-    ),
-    lineHeight: interpolate(
-      open.value,
-      [0, 1],
-      [TITLE_COLLAPSED * 1.25, TITLE_EXPANDED * 1.1],
-    ),
+  /*
+   * Two titles at two fixed sizes, cross-faded — never one title with an
+   * animated `fontSize`.
+   *
+   * The first version interpolated `fontSize` and `lineHeight` on a single
+   * `Animated.Text`. Both are layout properties, so every frame of the 500ms
+   * promotion forced a text re-measure and a layout pass on the JS-adjacent
+   * path, and on the onboarding handoff that ran on top of the field's three
+   * layers cross-fading. Opacity is composited on the UI thread and costs
+   * nothing to lay out. This is also what `design/references/motion-system.md`
+   * rule 7 asks for: text swaps are opacity only, nothing scales a glyph.
+   *
+   * The in-flow title is the one for the CURRENT `expanded` state, so the row's
+   * height switches at the same instant `flexDirection` already does; the other
+   * is absolutely positioned over it and fades out.
+   */
+  const titleColor = useAnimatedStyle(() => ({
     color: interpolateColor(
       open.value,
       [0, 1],
       [theme.color.text.tertiary, theme.color.text.primary],
     ),
   }));
+  const titleOpenFade = useAnimatedStyle(() => ({ opacity: open.value }));
+  const titleShutFade = useAnimatedStyle(() => ({ opacity: 1 - open.value }));
 
   return (
     <View testID={testID} style={expanded ? styles.rowOpen : styles.rowShut}>
@@ -121,13 +129,34 @@ function OnboardingStepView({ step, expanded, testID }: Props) {
       </Animated.View>
 
       <View style={expanded ? styles.bodyOpen : styles.bodyShut}>
-        <Animated.Text
-          allowFontScaling
-          numberOfLines={2}
-          style={[styles.title, title]}
-        >
-          {step.title}
-        </Animated.Text>
+        <View style={styles.titleStack}>
+          <Animated.Text
+            allowFontScaling
+            numberOfLines={2}
+            style={[
+              styles.title,
+              styles.titleOpen,
+              expanded ? styles.titleInFlow : styles.titleOverlay,
+              titleColor,
+              titleOpenFade,
+            ]}
+          >
+            {step.title}
+          </Animated.Text>
+          <Animated.Text
+            allowFontScaling
+            numberOfLines={2}
+            style={[
+              styles.title,
+              styles.titleShut,
+              expanded ? styles.titleOverlay : styles.titleInFlow,
+              titleColor,
+              titleShutFade,
+            ]}
+          >
+            {step.title}
+          </Animated.Text>
+        </View>
 
         {/*
          * The description exists only while expanded, rather than being faded to
@@ -215,12 +244,33 @@ const makeStyles = (t: Theme) =>
       flex: 1,
       gap: SOURCE_METRICS.stepOpenGap,
     },
-    // Size and leading are animated, so only the face and tracking are set here.
     // Step.swift applies `.bold()` at both 42pt and 24pt; use the bundled static
-    // face directly so Android does not synthesise weight.
+    // face directly so Android does not synthesise a heavier face.
     title: {
       fontFamily: 'Geist-Bold',
       letterSpacing: -0.5,
+    },
+    // The two fixed sizes the row cross-fades between (the source's ternary
+    // `isExpanded ? 42 : 24`). Leading is set per size, not animated.
+    titleOpen: {
+      fontSize: TITLE_EXPANDED,
+      lineHeight: TITLE_EXPANDED * 1.1,
+    },
+    titleShut: {
+      fontSize: TITLE_COLLAPSED,
+      lineHeight: TITLE_COLLAPSED * 1.25,
+    },
+    titleStack: {
+      alignSelf: 'stretch',
+    },
+    titleInFlow: {
+      position: 'relative',
+    },
+    titleOverlay: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
     },
     description: {
       ...TOKENS.typography.bodyMedium,

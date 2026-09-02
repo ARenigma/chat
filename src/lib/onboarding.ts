@@ -178,9 +178,25 @@ export function visibleSteps(
  * completion list on a clean page while the layers are still there.
  */
 export function paletteFor(phase: Phase, stage: IdentifyStage): BloomPalette {
-  if (phase === 'welcome' || phase === 'leaving') {
+  if (phase === 'welcome') {
     return BLOOM_PALETTES.welcome;
   }
+  /*
+   * `leaving` wears the FORM's palette, not the welcome one. That is the source:
+   * in `OnboardingFlow.swift:69-74` the Continue handler assigns
+   * `gradient = form.first.gradient` INSIDE the same
+   * `withAnimation(.smooth(duration: 0.7))` that sets `phase = 1`, so the colour
+   * turns over together with the exit from t=0. Each RadialGradient's
+   * `.animation(.smooth.delay(x), value: phase > 0)` is keyed on `phase > 0`
+   * only — it delays the centre and radius, not the colour.
+   *
+   * This shipped the other way round (welcome palette held through `leaving`,
+   * colour swapped at the 1.2s handoff) and that was the visible jerk: the field
+   * finished its exit at 1150ms and then started a SECOND full cross-fade fifty
+   * milliseconds later, in the same tick that mounted the whole form. With the
+   * palette changing here, `stage` is identical for `leaving` and `form`, so
+   * the handoff does no field work at all.
+   */
   if (phase === 'done') {
     return BLOOM_PALETTES.done;
   }
@@ -344,9 +360,10 @@ export const SOURCE_METRICS = {
    * A DEPARTURE, and the only one in this table. The source's input submit is
    * `padding(.vertical, 8).padding(.horizontal, 16)` around a 24pt glyph, which
    * lands near 40pt. Android's own guidance puts the minimum touch target at
-   * 48dp and this codebase already standardises on 44 everywhere else, so the
-   * larger of the two wins. A control that matches the reference and is harder
-   * to hit is not a win.
+   * 48dp (`TOKENS.interaction.minTarget`), and the app now standardises on that
+   * everywhere, so the larger of the two wins. A control that matches the
+   * reference and is harder to hit is not a win. A test asserts this equals
+   * `minTarget` so it cannot drift back below the floor.
    */
-  submitTarget: 44,
+  submitTarget: 48,
 } as const;

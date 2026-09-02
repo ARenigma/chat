@@ -3,6 +3,7 @@ import { join } from 'path';
 import { BLOOM_PALETTES } from '../src/lib/bloom';
 import {
   COMPLETION_DELAY_MS,
+  SOURCE_METRICS,
   STEP_ADVANCE_MS,
   STEPS,
   canSubmit,
@@ -12,6 +13,8 @@ import {
   visibleSteps,
   type Phase,
 } from '../src/lib/onboarding';
+import { TOKENS } from '../src/theme/tokens';
+import { providerPaletteFor } from '../src/lib/providerOnboarding';
 
 const ROOT = join(__dirname, '..');
 const read = (p: string): string => readFileSync(join(ROOT, p), 'utf8');
@@ -167,11 +170,69 @@ describe('the field follows the flow', () => {
     expect(done).toBe(BLOOM_PALETTES.done);
   });
 
-  it('wears the welcome palette for the whole exit, not just the start', () => {
-    // The colour swap and the positional exit are separate events. Changing
-    // palette during `leaving` would collide two staggered animations on the
-    // same layers and neither would land.
-    expect(paletteFor('leaving', 'choose')).toBe(BLOOM_PALETTES.welcome);
+  it('turns to the form palette the moment Continue is pressed, with the exit', () => {
+    /*
+     * `OnboardingFlow.swift:69-74`: `gradient = form.first.gradient` is assigned
+     * inside the same `withAnimation(.smooth(duration: 0.7))` as `phase = 1`, so
+     * colour and position leave together from t=0. The per-gradient
+     * `.animation(.smooth.delay(x), value: phase > 0)` (lines 40, 48, 56) delays
+     * only the centre/radius. The previous assertion here pinned the opposite —
+     * welcome palette through `leaving` — which produced a second cross-fade at
+     * the 1.2s handoff and the jerk it was meant to prevent.
+     */
+    expect(paletteFor('leaving', 'choose')).toBe(paletteFor('form', 'choose'));
+    expect(paletteFor('leaving', 'choose')).not.toBe(BLOOM_PALETTES.welcome);
+  });
+
+  it('mounts the form at the press and shows it at the handoff', () => {
+    /*
+     * A scheduling decision, not a change to the 1.2s hold: the form subtree is
+     * the heaviest commit of the flow and used to land 50ms after the last
+     * layer stopped. Mounting it hidden at the press puts that commit in the
+     * first 400ms, where no layer moves; `formReady` still flips at
+     * BLOOM_HOLD_MS and until then the subtree is untouchable and unread.
+     */
+    for (const file of [
+      'src/screens/OnboardingScreen.tsx',
+      'src/screens/ProviderApplicationScreen.tsx',
+    ]) {
+      const screen = read(file);
+      expect(screen).toContain("const showForm = phase !== 'welcome';");
+      expect(screen).toContain("pointerEvents={formReady ? 'auto' : 'none'}");
+      expect(screen).toContain('formIn.value = withTiming(1, {');
+      // Arrival is the source's `.smooth` (0.5s), not the 0.7s content exit.
+      expect(screen).toMatch(/formIn\.value = withTiming\(1, \{\s*duration: STEP_ADVANCE_MS/);
+      expect(screen).not.toContain('entering={FadeInDown.duration(BLOOM_CONTENT_MS)}');
+    }
+  });
+
+  it('never animates a layout property on the step title', () => {
+    // Animated fontSize/lineHeight force a text re-measure and a layout pass on
+    // every frame, on top of the field's gradient cross-fade. The title is two
+    // fixed sizes cross-faded on opacity (motion-system.md rule 7).
+    const step = read('src/components/OnboardingStep.tsx');
+    expect(step).not.toMatch(/fontSize:\s*interpolate/);
+    expect(step).not.toMatch(/lineHeight:\s*interpolate/);
+    expect(step).toContain('titleOpenFade');
+    expect(step).toContain('titleShutFade');
+  });
+
+  it('holds the word column still while the welcome content leaves', () => {
+    const screen = read('src/screens/OnboardingScreen.tsx');
+    expect(screen).toContain("paused={phase !== 'welcome'}");
+    const column = read('src/components/WordColumn.tsx');
+    expect(column).toMatch(/if \(paused\) \{\s*return;/);
+  });
+
+  it('changes the field exactly once per Continue', () => {
+    // If `leaving` and `form` ever disagree on palette or cores, the handoff at
+    // BLOOM_HOLD_MS starts a second swap on layers that just came to rest.
+    for (const stage of ['choose', 'number', 'code'] as const) {
+      expect(paletteFor('leaving', stage)).toBe(paletteFor('form', stage));
+    }
+    expect(coresCollapsed('leaving')).toBe(coresCollapsed('form'));
+    expect(providerPaletteFor('leaving', 0)).toBe(providerPaletteFor('form', 0));
+    expect(providerPaletteFor('leaving', 0)).not.toBe(BLOOM_PALETTES.welcome);
   });
 });
 
@@ -221,6 +282,12 @@ describe('timing comes from the source', () => {
     // Zero here and the result appears while the last step is still collapsing.
     expect(COMPLETION_DELAY_MS).toBeGreaterThan(0);
     expect(COMPLETION_DELAY_MS).toBeLessThan(STEP_ADVANCE_MS);
+  });
+
+  it('meets the Android minimum touch target on the submit disc', () => {
+    // The source lands near 40dp; Android's floor is 48. The app standardises on
+    // that floor, so submitTarget must equal it rather than the old iOS 44.
+    expect(SOURCE_METRICS.submitTarget).toBe(TOKENS.interaction.minTarget);
   });
 });
 

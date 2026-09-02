@@ -81,7 +81,9 @@ export const PROVIDER_STEPS: readonly ProviderStepSpec[] = [
  * pages. `done` drains the field to white for the completion row.
  */
 export function providerPaletteFor(phase: Phase, stepIndex: number): BloomPalette {
-  if (phase === 'welcome' || phase === 'leaving') {
+  // `leaving` already wears the first step's palette: colour and position exit
+  // together, as in the source (see `paletteFor` in ./onboarding.ts).
+  if (phase === 'welcome') {
     return BLOOM_PALETTES.welcome;
   }
   if (phase === 'done') {

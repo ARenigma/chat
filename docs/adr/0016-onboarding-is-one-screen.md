@@ -151,6 +151,20 @@ Re-measure with `dumpsys gfxinfo` on physical hardware before changing anything
 here. There is no Material 3 motion library for React Native and none is wanted;
 Reanimated 4 runs on the UI thread, which is what the reference is doing too.
 
+**The 2026-09-02 jerk, and how it was found.** A visible jerk right as the field
+came to rest was diagnosed by frame-diffing a `screenrecord` at 30fps rather than
+by watching. The tell was an ISOLATED spike in mean-abs-diff at ~1287ms after the
+Continue tap — one frame of large change AFTER the field had settled to zero
+diff at 1188–1254ms. It was the welcome palette being re-exposed: the colour used
+to swap at the 1.2s handoff (a second staggered cross-fade), landing in the same
+tick as the form mount, and for one frame the base layer still painted the old
+welcome gradient under an arriving layer at opacity 0. See §2 (colour now leaves
+at t=0 with the exit, not at the handoff) and `BloomField.tsx` (two-slot swap).
+After the fix the field settles clean (0.0 at 1155–1221ms) and the only later
+activity is the form fading up over a static field. Emulator janky-frame % moved
+5.2 → 8.2 across the two captures, which on SwiftShader is noise (8 vs 10 frames);
+the frame-diff is the signal that means something until this is re-run on hardware.
+
 ## 9. The nine gaps, and where they landed (2026-08-26)
 
 A line-by-line diff against the Swift found nine places where the first build had
@@ -179,6 +193,17 @@ top row flying in from outside the frame. Our carousel translates the whole stac
 rather than animating rows individually, and `COLUMN_OFFSET` already parks row 0
 above the visible frame, so there is nothing on screen for the exemption to
 protect. Implementing it would change no pixels.
+
+**A tenth gap, closed 2026-09-02: colour and position exited as two events.** The
+port held the welcome palette through `leaving` and swapped colour only at the
+1.2s handoff, so the field turned over twice — once in position at t=0, once in
+colour at t=1.2s. The source does it once: `gradient = form.first.gradient` is
+assigned inside the same `withAnimation(.smooth(duration: 0.7))` as `phase = 1`
+(`OnboardingFlow.swift:69-74`), and the per-gradient `.animation(.smooth.delay(x),
+value: phase > 0)` delays only centre/radius. `paletteFor('leaving')` now returns
+the form palette, so the handoff does no field work; and the form subtree is
+mounted (hidden) at the press so its commit lands in the 0–400ms window where no
+layer moves, not on the field's last frames.
 
 **Three departures where this app had already decided the question**, all argued
 in the code rather than silently taken: the busy indicator is this app's

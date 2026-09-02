@@ -152,6 +152,8 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
    */
   const elapsed = useSharedValue(0);
   const welcomeOut = useSharedValue(0);
+  // The form's arrival, driven at the handoff (see OnboardingScreen's `formIn`).
+  const formIn = useSharedValue(0);
 
   const activeKey: ProviderStepKey = PROVIDER_STEPS[step]?.key ?? 'you';
 
@@ -190,8 +192,14 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
       duration: BLOOM_CONTENT_MS,
       easing: Easing.inOut(Easing.quad),
     });
-    after(BLOOM_HOLD_MS, () => setPhase('form'));
-  }, [phase, elapsed, welcomeOut, after]);
+    after(BLOOM_HOLD_MS, () => {
+      setPhase('form');
+      formIn.value = withTiming(1, {
+        duration: STEP_ADVANCE_MS,
+        easing: Easing.inOut(Easing.quad),
+      });
+    });
+  }, [phase, elapsed, welcomeOut, formIn, after]);
 
   const toggleLanguage = useCallback((language: string) => {
     setLanguages(prev =>
@@ -240,8 +248,16 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
     transform: [{ translateY: welcomeOut.value * 20 }],
   }));
 
+  const formStyle = useAnimatedStyle(() => ({
+    opacity: formIn.value,
+    transform: [{ translateY: (1 - formIn.value) * 20 }],
+  }));
+
   const showWelcome = phase === 'welcome' || phase === 'leaving';
-  const showForm = phase === 'form' || phase === 'done';
+  // Mounted at the press, shown at the handoff — see OnboardingScreen's
+  // `showForm` for why the heavy commit must not land on the field's last frames.
+  const showForm = phase !== 'welcome';
+  const formReady = phase === 'form' || phase === 'done';
 
   return (
     <View style={styles.root}>
@@ -308,7 +324,9 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
       {showForm ? (
         <KeyboardAvoidingView
           style={styles.formHost}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          pointerEvents={formReady ? 'auto' : 'none'}
+          importantForAccessibility={formReady ? 'auto' : 'no-hide-descendants'}>
           <ScrollView
             style={styles.scroll}
             contentContainerStyle={[
@@ -323,10 +341,10 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
             showsVerticalScrollIndicator={false}
             bounces={false}>
             <Animated.View
-              entering={FadeInDown.duration(BLOOM_CONTENT_MS)}
               style={[
                 styles.form,
                 phase === 'done' ? styles.formCentred : styles.formBottom,
+                formStyle,
                 {
                   paddingBottom: BLOCK_PAD + (keyboardUp ? 0 : insets.bottom),
                   paddingTop: BLOCK_PAD + insets.top,
@@ -644,7 +662,7 @@ const makeStyles = (t: Theme) =>
       borderRadius: TOKENS.radius.field,
       borderCurve: 'continuous',
       backgroundColor: t.color.bg.sunken,
-      gap: 2,
+      gap: TOKENS.space.hair,
     },
     missingTitle: {
       ...TOKENS.typography.labelMedium,
