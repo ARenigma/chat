@@ -151,11 +151,15 @@ function TransactionRow({ tx, onDownload }: RowProps) {
             }}
             testID={`download-invoice-${tx.id}`}
             accessibilityLabel={`Download invoice for ${formatPaise(tx.amountPaise)} recharge on ${shortDate(tx.createdAt)}`}
+            accessibilityRole="button"
             press="none"
-            highlight="ios">
-            <Text allowFontScaling style={[styles.rowDate, { color: theme.color.bg.accent }]}>
-              Download invoice
-            </Text>
+            highlight="ios"
+            style={styles.downloadBtn}>
+            {/* A down-arrow is the download affordance. The glyph font has no
+                dedicated download icon, so `arrowUp` is rotated 180°. */}
+            <View style={styles.downloadIcon}>
+              <Icon name="arrowUp" size={18} color={theme.color.bg.accent} />
+            </View>
           </Pressable>
         ) : null}
       </View>
@@ -238,6 +242,19 @@ const makeStyles = (t: Theme) =>
     rowRight: {
       alignItems: 'flex-end',
       gap: TOKENS.space['2xs'],
+    },
+    // Compact download icon button, replacing the "Download invoice" text link.
+    downloadBtn: {
+      marginTop: 2,
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: t.color.bg.accentTint,
+    },
+    downloadIcon: {
+      transform: [{ rotate: '180deg' }],
     },
     rowKind: {
       ...TOKENS.typography.bodyLarge,

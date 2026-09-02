@@ -82,7 +82,7 @@ function SettingsRowContent({
   const theme = useTheme();
   return (
     <>
-      <View style={styles.iconBox}>
+      <View style={[styles.iconBox, danger && styles.iconBoxDanger]}>
         <Icon
           name={icon}
           size={19}
@@ -463,26 +463,6 @@ export function SettingsSheet({
             style={styles.row}>
             <SettingsRowContent icon="block" title="Privacy policy" />
           </Pressable>
-          <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
-          <Pressable
-            onPress={() => {
-              void Linking.openURL('market://details?id=com.companionchat').catch(() =>
-                Linking.openURL(
-                  'https://play.google.com/store/apps/details?id=com.companionchat',
-                ),
-              );
-            }}
-            testID="settings-rate"
-            accessibilityLabel="Rate us on the Play Store"
-            press="none"
-            highlight="ios"
-            style={styles.row}>
-            <SettingsRowContent
-              icon="star"
-              title="Rate Pappal"
-              detail="Open the Play Store"
-            />
-          </Pressable>
         </View>
 
         <View style={styles.groupSpaced}>
@@ -518,9 +498,29 @@ export function SettingsSheet({
             />
           </Pressable>
         </View>
-        <Text allowFontScaling={false} style={styles.brandFooter}>
-          Pappal
-        </Text>
+        <View style={styles.footer}>
+          <Text allowFontScaling={false} style={styles.brandFooter}>
+            Pappal
+          </Text>
+          <Pressable
+            onPress={() => {
+              void Linking.openURL('market://details?id=com.companionchat').catch(() =>
+                Linking.openURL(
+                  'https://play.google.com/store/apps/details?id=com.companionchat',
+                ),
+              );
+            }}
+            testID="settings-rate"
+            accessibilityLabel="Rate us on the Play Store"
+            press="none"
+            highlight="ios"
+            style={styles.rateFooter}>
+            <Icon name="star" size={13} color={theme.color.text.secondary} />
+            <Text allowFontScaling style={styles.rateFooterText}>
+              Rate Pappal on the Play Store
+            </Text>
+          </Pressable>
+        </View>
       </Animated.ScrollView>
 
       <Sheet
@@ -797,6 +797,12 @@ const makeStyles = (t: Theme) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
+    // Destructive rows get a danger-tinted disc behind the icon so the action
+    // reads as dangerous at a glance — the muted maroon ink alone did not.
+    iconBoxDanger: {
+      borderRadius: 16,
+      backgroundColor: `${t.color.state.danger}1F`,
+    },
     rowCopy: {
       flex: 1,
       minWidth: 0,
@@ -817,13 +823,29 @@ const makeStyles = (t: Theme) =>
     choiceList: {
       marginTop: TOKENS.space.sm,
     },
+    // Bottom-of-settings footer: the wordmark, then the Play Store rate link
+    // directly beneath it.
+    footer: {
+      alignItems: 'center',
+      paddingTop: TOKENS.space.lg,
+      paddingBottom: TOKENS.space.xl,
+      gap: TOKENS.space['2xs'],
+    },
     brandFooter: {
       fontFamily: TOKENS.typography.wordmark.fontFamily,
-      fontSize: 15,
+      fontSize: 18,
       // The brand colour, not a grey whisper (#9): the wordmark is the brand.
       color: t.color.bg.accent,
       textAlign: 'center',
-      paddingTop: TOKENS.space.sm,
-      paddingBottom: TOKENS.space.md,
+    },
+    rateFooter: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space['2xs'],
+      paddingVertical: TOKENS.space['2xs'],
+    },
+    rateFooterText: {
+      ...TOKENS.typography.labelMedium,
+      color: t.color.text.secondary,
     },
   });
