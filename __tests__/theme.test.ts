@@ -884,6 +884,15 @@ describe('accent budget is enforced in code, not just documented', () => {
        */
       'HomeTour.tsx',
       /*
+       * The circular M3 wait indicator. A wait is a live STATE — the same class
+       * as TypingIndicator's dots, which the budget already permits — so drawing
+       * the active indicator in the brand accent is one meaning in one place,
+       * not decoration (Amit, 2026-09-02: loaders follow the brand token). The
+       * default colour lives here; callers over a coloured surface still pass an
+       * explicit colour (Button uses its label colour).
+       */
+      'LoadingIndicator.tsx',
+      /*
        * Added with the Fuse translation, and it earns its place rather than
        * widening the budget by accident: the coral here is the ACTIVE step's
        * icon, and it is the only thing on the checklist that distinguishes the
@@ -908,6 +917,12 @@ describe('accent budget is enforced in code, not just documented', () => {
        * only — navigational affordances, same role as PolicyGateScreen.
        */
       'ProfileSetupScreen.tsx',
+      /*
+       * The linear M3 wait bar, paired with LoadingIndicator — same brand-state
+       * argument. Media-upload bars pass an explicit onAccent colour; the coral
+       * here is only the default.
+       */
+      'ProgressBar.tsx',
       /*
        * The v13 provider profile. The coral is the primary Call action and the
        * favourite-when-set, plus the hero's warm field — actions and a live

@@ -274,6 +274,44 @@ export function useUploadAvatar() {
   });
 }
 
+/**
+ * Clear the profile photo. Both roles, like useUploadAvatar. The storage object
+ * is left for the orphan-purge cron; only the `avatar_url` pointer is nulled,
+ * which is what every reader keys off. `avatar_url` is not a privileged column
+ * (guard_privileged_profile_columns), so the owner's own RLS update applies.
+ */
+export function useRemoveAvatar() {
+  const queryClient = useQueryClient();
+  const setNotice = useStore(s => s.setNotice);
+
+  return useMutation<void, Error, void>({
+    mutationFn: async () => {
+      const { data: auth } = await supabase.auth.getUser();
+      const me = auth.user?.id;
+      if (me === undefined) {
+        throw new Error('No session');
+      }
+      const { error } = await supabase
+        .from('profiles')
+        .update({ avatar_url: null })
+        .eq('id', me);
+      if (error) {
+        throw new Error(error.message);
+      }
+    },
+    onSuccess: () => {
+      tick();
+      setNotice('Photo removed.', 'confirm');
+      void queryClient.invalidateQueries({ queryKey: keys.profile });
+      void queryClient.invalidateQueries({ queryKey: keys.providers });
+    },
+    onError: () => {
+      errorTick();
+      setNotice('Could not remove your photo. Try again.');
+    },
+  });
+}
+
 /** A member rating a finished conversation. One per thread, member only. */
 export function useSubmitReview() {
   const queryClient = useQueryClient();

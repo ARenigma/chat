@@ -53,8 +53,10 @@ function ProgressBarView({
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
-  // Default neutral — callers choose semantic colour (accent for action, etc.).
-  const color = colorProp ?? theme.color.text.secondary;
+  // Brand accent by default, matching M3 (progress = primary colour) and the
+  // circular LoadingIndicator; callers over a coloured surface still override
+  // (media-upload bars pass onAccent). https://m3.material.io/components/progress-indicators/specs
+  const color = colorProp ?? theme.color.bg.accent;
   const trackColor = trackColorProp ?? theme.color.bg.sunken;
 
   const indeterminate = progress === undefined;

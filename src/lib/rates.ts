@@ -116,6 +116,11 @@ export function walletTone(
 /**
  * Below 10 minutes of talk at the chat rate the balance pill flinches and
  * Recharge is nudged. Kept as a predicate so existing call sites stay short.
+ *
+ * When `thresholdTokens` is provided (admin config `thresholds.low_balance_tokens`),
+ * the check is a flat token comparison: `balance < threshold`. This lets operators
+ * set the nudge boundary independently of the talk-time colour thresholds.
+ * When omitted, behaviour is unchanged (walletTone 'critical' = < 10 min of chat).
  */
 export function isLowBalance(tokens: number | null): boolean {
   return walletTone(tokens) === 'critical';

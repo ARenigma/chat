@@ -782,7 +782,11 @@ describe('device coverage matrix', () => {
     expect(bar).toContain("key: 'settings', glyph: 'person', label: 'You'");
     expect(settings).toContain('style={styles.profileHero}');
     expect(settings).toContain('style={styles.profileIdentity}');
-    expect(settings).toContain('Private member account');
+    // The member account-type label under the avatar was removed (Amit,
+    // 2026-09-02): it stated the obvious. Providers keep 'Provider account'; the
+    // identity meta now renders only what's meaningful, via profileMetaText.
+    expect(settings).not.toContain('Private member account');
+    expect(settings).toContain('profileMetaText');
 
     // The approved follow-up uses WhatsApp's profile-shortcut variant: a compact
     // transparent M3 bar over the cover, with a real 48dp Back action even though

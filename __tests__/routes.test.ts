@@ -24,6 +24,7 @@ describe('memberParent', () => {
     expect(memberParent({ name: 'chat', providerId: 'p1', from: 'detail' })).toEqual({
       name: 'providerDetail',
       providerId: 'p1',
+      from: 'home',
     });
     // Opened from the extended list, back returns to that list — a second
     // back (chatsList → home) is what leaves for Home. Instagram / Signal.
@@ -32,10 +33,39 @@ describe('memberParent', () => {
     });
   });
 
-  it('sends every other member screen back to Home', () => {
-    expect(memberParent({ name: 'providerDetail', providerId: 'p1' })).toEqual({ name: 'home' });
-    expect(memberParent({ name: 'apply' })).toEqual({ name: 'home' });
-    expect(memberParent({ name: 'applicationStatus' })).toEqual({ name: 'home' });
+  it('routes the provider profile back to the door it was opened from', () => {
+    expect(memberParent({ name: 'providerDetail', providerId: 'p1', from: 'home' })).toEqual({
+      name: 'home',
+    });
+    expect(
+      memberParent({ name: 'providerDetail', providerId: 'p1', from: 'favourites' }),
+    ).toEqual({ name: 'favourites' });
+    expect(memberParent({ name: 'providerDetail', providerId: 'p1', from: 'chat' })).toEqual({
+      name: 'chat',
+      providerId: 'p1',
+      from: 'home',
+    });
+  });
+
+  it('routes the application form back to its opener', () => {
+    expect(memberParent({ name: 'apply', from: 'home' })).toEqual({ name: 'home' });
+    expect(memberParent({ name: 'apply', from: 'settings' })).toEqual({ name: 'settings' });
+    expect(memberParent({ name: 'apply', from: 'applicationStatus' })).toEqual({
+      name: 'applicationStatus',
+    });
+  });
+
+  it('sends the settings sub-screens back to Settings, not Home', () => {
+    expect(memberParent({ name: 'applicationStatus' })).toEqual({ name: 'settings' });
+    expect(memberParent({ name: 'blocked' })).toEqual({ name: 'settings' });
+    expect(memberParent({ name: 'transactions' })).toEqual({ name: 'settings' });
+  });
+
+  it('sends top-level tabs back to Home', () => {
+    expect(memberParent({ name: 'chatsList' })).toEqual({ name: 'home' });
+    expect(memberParent({ name: 'calls' })).toEqual({ name: 'home' });
+    expect(memberParent({ name: 'favourites' })).toEqual({ name: 'home' });
+    expect(memberParent({ name: 'settings' })).toEqual({ name: 'home' });
   });
 });
 

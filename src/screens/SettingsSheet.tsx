@@ -16,7 +16,7 @@ import { deleteAccount, signOut } from '../api/auth';
 import { stopPush } from '../lib/push';
 import { track } from '../lib/telemetry';
 import { widgetConfigured } from '../lib/msg91Widget';
-import { useMyApplication, useSetPresence, useUploadAvatar } from '../api/provider';
+import { useMyApplication, useRemoveAvatar, useSetPresence, useUploadAvatar } from '../api/provider';
 import { useProfile } from '../api/chat';
 import { PRESENCE_OPTIONS, presenceDetail } from '../lib/presence';
 import { PHONE_VERIFY_ENABLED } from '../api/phone';
@@ -145,11 +145,13 @@ export function SettingsSheet({
   const [confirming, setConfirming] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [choiceSheet, setChoiceSheet] = useState<'presence' | 'theme' | null>(null);
+  const [avatarSheet, setAvatarSheet] = useState(false);
   const [busy, setBusy] = useState(false);
   const { data: application } = useMyApplication();
   const { data: profile } = useProfile();
   const setPresence = useSetPresence();
   const uploadAvatar = useUploadAvatar();
+  const removeAvatar = useRemoveAvatar();
   // Hidden until the profile loads, and hidden if it never does. Defaulting the
   // other way would show a checkmark against a state the person has not chosen.
   const presence = profile?.presence ?? 'hidden';
@@ -234,8 +236,14 @@ export function SettingsSheet({
   const presenceLabel =
     PRESENCE_OPTIONS.find(option => option.value === presence)?.label ?? 'Hidden';
   const themeLabel = mode === 'light' ? 'Light' : mode === 'dark' ? 'Dark' : 'System';
-  const accountLabel = isProvider ? 'Provider account' : 'Private member account';
+  // Members no longer see an account-type label under the avatar (Amit,
+  // 2026-09-02): it stated the obvious. Providers keep theirs — the directory
+  // side is the meaningful distinction. The token balance carries the rest.
+  const accountLabel = isProvider ? 'Provider account' : '';
   const profileName = profile?.display_name?.trim() || 'Your account';
+  const profileMetaText = [accountLabel, profile ? `${profile.token_balance} tokens` : '']
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <View style={styles.root} testID="settings-sheet">
@@ -281,42 +289,34 @@ export function SettingsSheet({
             </View>
           </View>
           <View style={styles.profileIdentity}>
-            {isProvider ? (
-              <Pressable
-                onPress={() => {
-                  void onPickAvatar();
-                }}
-                testID="settings-avatar"
-                accessibilityLabel={
-                  profile?.avatar_url ? 'Change directory photo' : 'Add directory photo'
-                }
-                press="none"
-                highlight="ios"
-                disabled={uploadAvatar.isPending}
-                style={styles.profileAvatarHit}>
-                <Avatar
-                  initial={initialOf(profile?.display_name ?? 'P')}
-                  size={88}
-                  uri={profile?.avatar_url ?? null}
-                />
-                <View style={styles.profileCamera}>
-                  <Icon name="camera" size={14} color={theme.color.text.onInverse} />
-                </View>
-              </Pressable>
-            ) : (
+            {/* Both roles can now change their photo (Amit, 2026-09-02): tap the
+                avatar to open the photo sheet rather than launching the picker
+                straight away, so "remove" and "choose" are one deliberate step. */}
+            <Pressable
+              onPress={() => setAvatarSheet(true)}
+              testID="settings-avatar"
+              accessibilityLabel={profile?.avatar_url ? 'Change photo' : 'Add photo'}
+              press="none"
+              highlight="ios"
+              disabled={uploadAvatar.isPending || removeAvatar.isPending}
+              style={styles.profileAvatarHit}>
               <Avatar
                 initial={initialOf(profileName)}
                 size={88}
                 uri={profile?.avatar_url ?? null}
               />
-            )}
+              <View style={styles.profileCamera}>
+                <Icon name="camera" size={14} color={theme.color.text.onInverse} />
+              </View>
+            </Pressable>
             <Text allowFontScaling numberOfLines={1} style={styles.profileName}>
               {profileName}
             </Text>
-            <Text allowFontScaling style={styles.profileMeta}>
-              {accountLabel}
-              {profile ? ` · ${profile.token_balance} tokens` : ''}
-            </Text>
+            {profileMetaText ? (
+              <Text allowFontScaling style={styles.profileMeta}>
+                {profileMetaText}
+              </Text>
+            ) : null}
           </View>
         </View>
         {/* Root rows stay scannable like WhatsApp Settings. Multi-choice controls
@@ -613,6 +613,47 @@ export function SettingsSheet({
         </View>
       </Sheet>
 
+      {/* Profile photo: a bottom sheet slides up with the choose/remove options
+          instead of launching the picker on the first tap. */}
+      <Sheet
+        visible={avatarSheet}
+        testID="avatar-choice-sheet"
+        title="Profile photo"
+        body={isProvider ? 'Shown in the directory and in your chats.' : 'Shown to people you chat with.'}
+        onClose={() => setAvatarSheet(false)}>
+        <View style={styles.choiceList}>
+          <Pressable
+            onPress={() => {
+              setAvatarSheet(false);
+              void onPickAvatar();
+            }}
+            testID="avatar-choose"
+            accessibilityLabel="Choose from gallery"
+            press="none"
+            highlight="ios"
+            style={styles.row}>
+            <SettingsRowContent icon="image" title="Choose from gallery" chevron={false} />
+          </Pressable>
+          {profile?.avatar_url ? (
+            <>
+              <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
+              <Pressable
+                onPress={() => {
+                  setAvatarSheet(false);
+                  removeAvatar.mutate();
+                }}
+                testID="avatar-remove"
+                accessibilityLabel="Remove photo"
+                press="none"
+                highlight="ios"
+                style={styles.row}>
+                <SettingsRowContent icon="close" title="Remove photo" danger chevron={false} />
+              </Pressable>
+            </>
+          ) : null}
+        </View>
+      </Sheet>
+
       {/* Phone verification stays the OTP sheet, layered over the screen. */}
       <PhoneVerifySheet visible={verifying} onClose={() => setVerifying(false)} />
 
@@ -674,7 +715,10 @@ const makeStyles = (t: Theme) =>
     profileCover: {
       position: 'relative',
       width: '100%',
-      height: 240,
+      // 168, down from 240 (Amit, 2026-09-02: too much dead space up top). The
+      // app bar sits inside this cover, so its height IS the top space before
+      // the identity block; the avatar still overlaps its lower edge by 44.
+      height: 168,
       overflow: 'hidden',
     },
     profileIdentity: {

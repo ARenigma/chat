@@ -358,6 +358,33 @@ describe('sign in with Google happens in an app-owned sheet', () => {
     expect(auth).toContain('credentialSheetAvailable()');
     expect(auth).toMatch(/await signInWith\('google'\);\s*\n\s*return 'redirected';/);
   });
+
+  it('routes the returning-user screen through the sheet too, not the browser', () => {
+    // OnboardingScreen owns first-run sign-in and calls `signInWithGoogle`
+    // (Credential Manager, browser fallback). AuthScreen is the returning-user /
+    // OAuth-error surface, and it shipped calling `signInWith('google')` — the
+    // browser-only path — so the app-owned sheet never appeared from here even
+    // though every precondition was in place. A dismissed sheet must stay silent
+    // on this screen as well.
+    const screen = read('src/screens/AuthScreen.tsx');
+    expect(screen).toContain('signInWithGoogle()');
+    expect(screen).not.toMatch(/signInWith\(\s*['"]google['"]\s*\)/);
+    expect(screen).not.toMatch(/signInWith\(provider\)/);
+    expect(screen).toMatch(/reason === 'cancelled'/);
+  });
+
+  it('announces a synchronous session so the screen unmounts', () => {
+    // App has no auth-state subscription — its boot effect re-reads the session
+    // only when `attempt` changes. A Credential Manager token and a verified
+    // phone code both mint a session in-process with no deep link, so AuthScreen
+    // must call back on success or the session is set beneath a screen that never
+    // leaves. App wires the callback to an attempt bump at both render sites.
+    const screen = read('src/screens/AuthScreen.tsx');
+    expect(screen).toContain('onAuthenticated');
+    const app = read('App.tsx');
+    const wirings = app.match(/<AuthScreen[\s\S]*?onAuthenticated=\{\(\) => setAttempt/g) ?? [];
+    expect(wirings.length).toBe(2);
+  });
 });
 
 describe('post-auth age choices remain readable in both themes', () => {

@@ -45,6 +45,30 @@ import { isUuid } from './ids';
  */
 
 /**
+ * Notification permission policy — controls whether the blocked-settings alert
+ * fires when the user has permanently denied POST_NOTIFICATIONS on Android 13+.
+ *
+ * Default is 'required' so the blocking alert is shown unless a caller
+ * explicitly sets it to 'optional' (internal/testing builds). Set this via
+ * `setNotificationPolicy()` before calling `startPush()`.
+ */
+let _notificationPolicy: 'optional' | 'required' = 'required';
+
+/**
+ * Configure the notification blocking-alert behaviour before startPush().
+ *
+ * When 'optional', a permanent denial is accepted silently — the app works
+ * without push and the user is not shown a settings alert. When 'required'
+ * (the default), the alert fires so the user can re-enable in Settings.
+ *
+ * Called from App.tsx after resolving effectivePermissionLevel('notification')
+ * from the admin permissions config.
+ */
+export function setNotificationPolicy(level: 'optional' | 'required'): void {
+  _notificationPolicy = level;
+}
+
+/**
  * Android 13 made notifications a runtime permission, so on API 33+ a token
  * without a granted permission is a token that will never ring. Below 33 the
  * permission is implicit and the request resolves immediately.
@@ -55,7 +79,7 @@ async function ensurePermission(): Promise<boolean> {
       const outcome = await requestAndroidPermission(
         PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
       );
-      if (outcome === 'never_ask_again') {
+      if (outcome === 'never_ask_again' && _notificationPolicy === 'required') {
         alertPermissionBlocked('Notifications');
       }
       return outcome === 'granted';
