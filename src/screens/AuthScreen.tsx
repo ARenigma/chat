@@ -489,7 +489,7 @@ export function AuthScreen({
               style={styles.confirmPrimary}
             >
               {busy === 'phone' ? (
-                <LoadingIndicator size={20} color={theme.color.text.primary} containerColor="transparent" />
+                <LoadingIndicator size={20} containerColor="transparent" />
               ) : (
                 <Text allowFontScaling style={styles.confirmPrimaryLabel}>
                   Yes, send code
@@ -550,7 +550,7 @@ export function AuthScreen({
             style={styles.googlePill}
           >
             {busy === 'google' ? (
-              <LoadingIndicator size={20} color={theme.color.text.primary} containerColor="transparent" />
+              <LoadingIndicator size={20} containerColor="transparent" />
             ) : (
               <>
                 <Image

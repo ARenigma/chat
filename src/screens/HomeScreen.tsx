@@ -521,6 +521,10 @@ export function HomeScreen({
         visible={potdVisible && featured !== null}
         name={featured?.display_name ?? 'Someone for you'}
         avatarUri={featured?.avatar_url ?? null}
+        online={
+          featured !== null &&
+          readPresence(featured.presence, featured.last_active_at).here
+        }
         onClose={dismissPotd}
         onChat={chatFromPotd}
         testID="potd-sheet"
@@ -795,6 +799,9 @@ const makeStyles = (t: Theme) =>
       borderRadius: (RAIL_AVATAR + 12) / 2,
       borderWidth: 2,
       borderColor: 'transparent',
+      // Let the Avatar's presence dot spill past this rounded ring instead of
+      // being clipped in half at the corner on Android.
+      overflow: 'visible',
     },
     railRingUnread: {
       borderColor: t.color.bg.accent,

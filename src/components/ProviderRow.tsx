@@ -245,6 +245,9 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   },
   avatarTap: {
     borderRadius: ROW_AVATAR / 2,
+    // The Avatar's presence dot sits just past the circle at the bottom-right;
+    // without this the rounded tap target clips it in half on Android.
+    overflow: 'visible',
   },
   // Inset to the text edge, iMessage style. A separator that runs under the
   // avatar cuts the person in half instead of dividing two of them.

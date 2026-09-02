@@ -36,6 +36,8 @@ interface Props {
   name: string;
   /** Their photo. When absent, a coral field with the initial stands in. */
   avatarUri?: string | null;
+  /** Whether the spotlighted person is available now — shows the "Online" badge. */
+  online?: boolean;
   /** Scrim tap / "Not now": dismiss without opening a chat. */
   onClose: () => void;
   /** The primary invitation: open this provider's chat. */
@@ -68,7 +70,7 @@ const SHEET_ENTRY_OFFSET = 1000;
  * so the pan gesture is constructed and then recognised by nobody without it.
  * https://m3.material.io/components/bottom-sheets/overview
  */
-function SpotlightCardView({ visible, name, avatarUri, onClose, onChat, testID }: Props) {
+function SpotlightCardView({ visible, name, avatarUri, online = false, onClose, onChat, testID }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -203,6 +205,16 @@ function SpotlightCardView({ visible, name, avatarUri, onClose, onChat, testID }
 
             {/* Greeting, name and primary CTA, plus the "Not now" escape link. */}
             <View style={[styles.copy, { paddingBottom: sheetBottomPad }]}>
+              {online ? (
+                <View style={styles.onlineRow}>
+                  <View style={styles.onlineBadge} testID="spotlight-online">
+                    <View style={styles.onlineDot} />
+                    <Text allowFontScaling style={styles.onlineLabel}>
+                      Online now
+                    </Text>
+                  </View>
+                </View>
+              ) : null}
               <Text allowFontScaling style={styles.greeting}>
                 hey i am here, lets talk!
               </Text>
@@ -305,6 +317,34 @@ const makeStyles = (t: Theme) =>
       bottom: 0,
       padding: TOKENS.space.xl,
       gap: TOKENS.space.xs,
+    },
+    // Row wrapper so the badge sizes to its content (a row child does not
+    // stretch horizontally) instead of needing alignSelf on the badge itself.
+    onlineRow: {
+      flexDirection: 'row',
+    },
+    // Green-dot "Online now" badge, sitting on the dark copy scrim above the
+    // greeting. Same presence colour as the avatar dots elsewhere.
+    onlineBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space['2xs'],
+      paddingHorizontal: TOKENS.space.sm,
+      paddingVertical: 5,
+      borderRadius: TOKENS.radius.pill,
+      borderCurve: 'continuous',
+      backgroundColor: 'rgba(0,0,0,0.38)',
+      marginBottom: TOKENS.space['2xs'],
+    },
+    onlineDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: t.color.state.available,
+    },
+    onlineLabel: {
+      ...TOKENS.typography.labelSmall,
+      color: '#FFFFFF',
     },
     greeting: {
       ...TOKENS.typography.displaySmall,
