@@ -24,7 +24,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LIGHT, TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { GESTURE, springTo } from '../theme/motion';
+import { GESTURE, INTERACTION, sheetIn, sheetOut } from '../theme/motion';
 import { sizedStorageImageUri } from '../lib/storageImage';
 import { initialOf } from '../lib/display';
 import { TactileCTA } from './TactileCTA';
@@ -92,7 +92,7 @@ function SpotlightCardView({ visible, name, avatarUri, online = false, onClose, 
     if (visible) {
       openedAt.current = Date.now();
       y.value = SHEET_ENTRY_OFFSET;
-      y.value = springTo(0, 'smooth');
+      y.value = sheetIn();
     } else {
       y.value = SHEET_ENTRY_OFFSET;
     }
@@ -112,11 +112,11 @@ function SpotlightCardView({ visible, name, avatarUri, online = false, onClose, 
       const far = measuredHeight > 0 && y.value > measuredHeight * GESTURE.dismissDistance;
       const fast = e.velocityY > GESTURE.dismissVelocity;
       if (far || fast) {
-        y.value = springTo(measuredHeight > 0 ? measuredHeight : 600, 'smooth', e.velocityY);
+        y.value = sheetOut(measuredHeight > 0 ? measuredHeight : 600, e.velocityY);
         runOnJS(onClose)();
         return;
       }
-      y.value = springTo(0, 'smooth', e.velocityY);
+      y.value = sheetIn(e.velocityY);
     });
 
   const sheetStyle = useAnimatedStyle(() => ({
@@ -128,17 +128,20 @@ function SpotlightCardView({ visible, name, avatarUri, online = false, onClose, 
    * fading with a dismissal that returns snaps the scrim open again, which reads
    * as the world flickering rather than as a gesture recovering.
    */
-  const scrimStyle = useAnimatedStyle(() => ({
-    opacity:
-      sheetHeight.value <= 0
-        ? 0
-        : interpolate(
-            y.value,
-            [0, sheetHeight.value * 0.9, sheetHeight.value],
-            [0.4, 0.4, 0],
-            'clamp',
-          ),
-  }));
+  const scrimStyle = useAnimatedStyle(() => {
+    const base = INTERACTION.scrim;
+    return {
+      opacity:
+        sheetHeight.value <= 0
+          ? 0
+          : interpolate(
+              y.value,
+              [0, sheetHeight.value * 0.9, sheetHeight.value],
+              [base, base, 0],
+              'clamp',
+            ),
+    };
+  });
 
   // A warm coral field is the fallback when there is no photo.
   const gradient = `linear-gradient(150deg, ${theme.color.bg.accent} 0%, ${theme.color.bg.accentStrong} 100%)`;

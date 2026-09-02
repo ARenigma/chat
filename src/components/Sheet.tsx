@@ -22,7 +22,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
-import { GESTURE, springTo } from '../theme/motion';
+import { GESTURE, INTERACTION, sheetIn, sheetOut } from '../theme/motion';
 import { setSheetBackdropBlur } from '../lib/windowChrome';
 import { trackSheetClosed } from '../lib/perfTelemetry';
 import { Pressable } from './Pressable';
@@ -121,7 +121,19 @@ function SheetView({
   // before it slid up (Amit, 2026-08-27, recharge pay tap). Starting off-screen
   // means the first frame is already off-screen and only the spring brings it in.
   const y = useSharedValue(SHEET_ENTRY_OFFSET);
-  const [height, setHeight] = useState<number | null>(null);
+  /*
+   * The measured height lives on the UI thread, not in React state.
+   *
+   * The pan's `onEnd` needs the sheet height to decide a distance dismissal, and
+   * reading it from a `useState` value captured when the gesture worklet was
+   * built is a latent Android bug: the first drag after a resize (rotation, IME,
+   * a sheet whose content grew) tests against a stale height. A shared value is
+   * always the current one on the thread the gesture runs on. `measured` (state)
+   * only gates the scrim's first paint, which is a render concern, not a
+   * gesture one.
+   */
+  const sheetHeight = useSharedValue(0);
+  const [measured, setMeasured] = useState(false);
   const openedAt = useRef(0);
 
   // Entry is driven here, by Reanimated, not by the Modal's own animation. The
@@ -145,7 +157,9 @@ function SheetView({
     if (visible) {
       openedAt.current = Date.now();
       y.value = SHEET_ENTRY_OFFSET;
-      y.value = springTo(0, 'smooth');
+      // M3 sheet spring (spatialDefault). Position only — the sheet body never
+      // fades; the scrim carries the dim.
+      y.value = sheetIn();
     } else {
       if (openedAt.current > 0) {
         trackSheetClosed(testID ?? 'sheet', openedAt.current);
@@ -155,9 +169,13 @@ function SheetView({
     }
   }, [visible, y, testID]);
 
-  const measure = useCallback((e: LayoutChangeEvent) => {
-    setHeight(e.nativeEvent.layout.height);
-  }, []);
+  const measure = useCallback(
+    (e: LayoutChangeEvent) => {
+      sheetHeight.value = e.nativeEvent.layout.height;
+      setMeasured(true);
+    },
+    [sheetHeight],
+  );
 
   const pan = Gesture.Pan()
     .onChange(e => {
@@ -166,16 +184,16 @@ function SheetView({
       y.value = e.translationY > 0 ? e.translationY : e.translationY / 3;
     })
     .onEnd(e => {
-      const measuredHeight = height ?? 0;
+      const measuredHeight = sheetHeight.value;
       const far = measuredHeight > 0 && y.value > measuredHeight * GESTURE.dismissDistance;
       const fast = e.velocityY > GESTURE.dismissVelocity;
       if (far || fast) {
         // Carry the throw through to the bottom, then close once it is gone.
-        y.value = springTo(measuredHeight > 0 ? measuredHeight : 600, 'smooth', e.velocityY);
+        y.value = sheetOut(measuredHeight > 0 ? measuredHeight : 600, e.velocityY);
         runOnJS(onClose)();
         return;
       }
-      y.value = springTo(0, 'smooth', e.velocityY);
+      y.value = sheetIn(e.velocityY);
     });
 
   const sheetStyle = useAnimatedStyle(() => ({
@@ -195,14 +213,16 @@ function SheetView({
    *
    * 0.4 rather than 0.55 is a judgement call and not a measured iOS constant.
    */
-  const scrimStyle = useAnimatedStyle(() => ({
-    opacity:
-      height === null
-        ? 0
-        : height > 0
-        ? interpolate(y.value, [0, height * 0.9, height], [0.4, 0.4, 0], 'clamp')
-        : 0.4,
-  }));
+  const scrimStyle = useAnimatedStyle(() => {
+    const h = sheetHeight.value;
+    const base = INTERACTION.scrim;
+    // Unmeasured: 0, so the Modal's own fade brings the dim in rather than a pop.
+    // Measured: hold at the token opacity, falling to 0 only as a dismiss drag
+    // carries the sheet off the bottom.
+    return {
+      opacity: !measured ? 0 : h > 0 ? interpolate(y.value, [0, h * 0.9, h], [base, base, 0], 'clamp') : base,
+    };
+  });
 
   return (
     <Modal

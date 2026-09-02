@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { DARK, LIGHT, TOKENS } from '../src/theme/tokens';
+import { SOURCE_METRICS } from '../src/lib/onboarding';
 
 const ROOT = join(__dirname, '..');
 
@@ -142,10 +143,12 @@ describe('generated theme', () => {
     expect(LIGHT.typography.bodyLarge.letterSpacing).toBeCloseTo(-0.42, 2);
   });
 
-  it('shares space, radius and motion across both modes', () => {
+  it('shares space, radius, layout, motion and interaction across both modes', () => {
     expect(DARK.space).toEqual(LIGHT.space);
     expect(DARK.radius).toEqual(LIGHT.radius);
+    expect(DARK.layout).toEqual(LIGHT.layout);
     expect(DARK.motion).toEqual(LIGHT.motion);
+    expect(DARK.interaction).toEqual(LIGHT.interaction);
   });
 
   it('keeps modal scrims dark instead of reusing inverse surfaces', () => {
@@ -537,6 +540,345 @@ describe('motion tokens', () => {
 });
 
 /**
+ * The Material 3 transition springs, kept honest against their published values.
+ *
+ * These are authored in `design/tokens.json` as {dampingRatio, stiffness} — how
+ * M3 states them — and converted to the physical triplet by the generator,
+ * because Reanimated ignores stiffness the moment a dampingRatio key is present.
+ * The tests below check the conversion round-trips and that the two schemes keep
+ * their character: spatial just under critically damped, effects at exactly
+ * critical so opacity and colour never overshoot.
+ */
+describe('material 3 motion tokens', () => {
+  const { m3 } = LIGHT.motion;
+
+  it('declares exactly the six M3 springs', () => {
+    expect(Object.keys(m3.spring).sort()).toEqual([
+      'effectsDefault',
+      'effectsFast',
+      'effectsSlow',
+      'spatialDefault',
+      'spatialFast',
+      'spatialSlow',
+    ]);
+  });
+
+  it('round-trips the authored damping ratio through the physical triplet', () => {
+    const authored = JSON.parse(
+      readFileSync(join(ROOT, 'design/tokens.json'), 'utf8'),
+    ).motion.m3.spring;
+    for (const [name, s] of Object.entries(m3.spring)) {
+      const ratio = s.damping / (2 * Math.sqrt(s.stiffness * s.mass));
+      expect(m3.springMeta[name as keyof typeof m3.springMeta].ratio).toBeCloseTo(ratio, 3);
+      expect(ratio).toBeCloseTo(authored[name].dampingRatio, 3);
+      expect(s.stiffness).toBe(authored[name].stiffness);
+    }
+  });
+
+  it('keeps spatial springs just shy of critical and effects exactly critical', () => {
+    for (const name of ['spatialFast', 'spatialDefault', 'spatialSlow'] as const) {
+      expect(m3.springMeta[name].ratio).toBeCloseTo(0.9, 3);
+    }
+    for (const name of ['effectsFast', 'effectsDefault', 'effectsSlow'] as const) {
+      expect(m3.springMeta[name].ratio).toBeGreaterThanOrEqual(1);
+      expect(m3.springMeta[name].overshoots).toBe(false);
+    }
+  });
+
+  it('orders each family fast, default, slow by stiffness', () => {
+    expect(m3.spring.spatialFast.stiffness).toBeGreaterThan(m3.spring.spatialDefault.stiffness);
+    expect(m3.spring.spatialDefault.stiffness).toBeGreaterThan(m3.spring.spatialSlow.stiffness);
+    expect(m3.spring.effectsFast.stiffness).toBeGreaterThan(m3.spring.effectsDefault.stiffness);
+    expect(m3.spring.effectsDefault.stiffness).toBeGreaterThan(m3.spring.effectsSlow.stiffness);
+  });
+
+  it('holds the three easing curves as valid unit-x beziers', () => {
+    for (const curve of [
+      m3.easing.emphasizedDecelerate,
+      m3.easing.emphasizedAccelerate,
+      m3.easing.standard,
+      m3.easing.decelerate,
+    ]) {
+      expect(curve).toHaveLength(4);
+      expect(curve[0]).toBeGreaterThanOrEqual(0);
+      expect(curve[0]).toBeLessThanOrEqual(1);
+      expect(curve[2]).toBeGreaterThanOrEqual(0);
+      expect(curve[2]).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('keeps the M3 durations ascending', () => {
+    const { short2, short3, short4, medium2, medium4, long2 } = m3.duration;
+    expect(short2).toBeLessThan(short3);
+    expect(short3).toBeLessThan(short4);
+    expect(short4).toBeLessThan(medium2);
+    expect(medium2).toBeLessThan(medium4);
+    expect(medium4).toBeLessThan(long2);
+  });
+
+  it('sets the scrim between the two extremes it must sit between', () => {
+    // Darker than a state layer, lighter than a blackout. M3 says 32%; this app
+    // is tuned to 0.4 and the token lives in `interaction`.
+    expect(LIGHT.interaction.scrim).toBeGreaterThan(0.3);
+    expect(LIGHT.interaction.scrim).toBeLessThan(0.6);
+    expect(DARK.interaction.scrim).toBe(LIGHT.interaction.scrim);
+  });
+});
+
+/**
+ * The M3 transition builders are actually wired in, not just defined.
+ *
+ * Phase 2 built `screenIn`/`topLevelIn`/`menuIn`/the M3 springs; these check the
+ * surfaces consume them, so a future edit that reverts a screen to a raw
+ * `SlideInRight` or a hardcoded scrim fails here rather than on a device.
+ */
+describe('the app is wired to the M3 transitions', () => {
+  const app = read('App.tsx');
+
+  it('pushes every overlay through the one PushedLayer', () => {
+    // Every pushed screen in both trees goes through the same layer: an
+    // effect-driven entrance (`useScreenEnter`, because `entering` does not run
+    // on this mount path) and the `screenOut` layout animation on the way out.
+    expect(app).toContain('function PushedLayer(');
+    expect(app).toContain('const enter = useScreenEnter();');
+    expect(app).toContain('onLayout={enter.onLayout}');
+    // Home's slide-in is kicked from the pop, not from an effect on the new route.
+    expect(app).toContain('revealHome();');
+    expect(app).toContain('useHomeRevealStyle()');
+    expect(app).toContain('exiting={screenOut}');
+    expect((app.match(/<PushedLayer/g) ?? []).length).toBeGreaterThanOrEqual(4);
+    // And never the old raw slide presets, nor an `entering` on a pushed overlay.
+    expect(app).not.toMatch(/SlideInRight|SlideOutRight/);
+    expect(app).not.toContain('entering={screenIn}');
+  });
+
+  it('fades the top-level tab layers rather than sliding them', () => {
+    expect(app).toContain('entering={topLevelIn}');
+    expect(app).toContain('exiting={topLevelOut}');
+  });
+
+  it('declares a back direction before every pop', () => {
+    // The hardware-back handler and the in-screen back paths must set the
+    // direction, or a pop would animate as a push.
+    expect(app).toContain("setNavDirection('back')");
+    expect(app).toContain("setNavDirection('forward')");
+  });
+
+  it('holds no raw transition builder in App.tsx', () => {
+    // The welcome→Auth dissolve is the named `authArrive`, not an inline
+    // FadeIn.duration; nothing here spells a duration in milliseconds.
+    expect(app).toContain('entering={authArrive}');
+    expect(stripComments(app)).not.toMatch(/\.duration\(\s*\d/);
+  });
+
+  it('drives the sheet surfaces off the shared scrim token', () => {
+    for (const file of [
+      'src/components/Sheet.tsx',
+      'src/components/SpotlightCard.tsx',
+      'src/components/PaperMenu.tsx',
+    ]) {
+      const body = read(file);
+      expect(body).toContain('INTERACTION.scrim');
+      // No raw scrim opacity literal left behind (0.4 / 0.45).
+      expect(stripComments(body)).not.toMatch(/opacity:\s*0\.4/);
+    }
+  });
+
+  it('animates the toolbar indicator instead of hard-toggling it', () => {
+    const bar = read('src/components/FloatingToolbar.tsx');
+    expect(bar).toContain('<Indicator active={on} />');
+    expect(bar).not.toContain('indicatorOn');
+    expect(bar).toContain("springTo(active ? 1 : 0.6, 'spatialFast')");
+  });
+});
+
+/**
+ * The spacing scale and the component-height scale, kept on grid and on token.
+ */
+describe('spacing and layout tokens', () => {
+  const { space, layout, interaction } = LIGHT;
+
+  it('is a strictly increasing scale of even, mostly-4dp values', () => {
+    const values = Object.values(space);
+    for (const v of values) {
+      expect(v % 2).toBe(0);
+      if (v >= 8) {
+        expect(v % 4).toBe(0);
+      }
+    }
+    for (let i = 1; i < values.length; i++) {
+      expect(values[i]).toBeGreaterThan(values[i - 1]!);
+    }
+  });
+
+  it('anchors the M3 endpoints and names the source gap', () => {
+    expect(space.hair).toBe(2);
+    expect(space['6xl']).toBe(64);
+    // The onboarding form gap was measured before the scale reached it; now it
+    // is a token, and this pins the two together so neither drifts alone.
+    expect(space['6xl']).toBe(SOURCE_METRICS.formGap);
+  });
+
+  it('holds the M3 list-item heights', () => {
+    expect(layout.rowOneLine).toBe(56);
+    expect(layout.rowTwoLine).toBe(72);
+    expect(layout.rowThreeLine).toBe(88);
+  });
+
+  it('derives the floating-toolbar height from its own padding and target', () => {
+    // 64 = xs + minTarget + xs, so the bar's padding cannot drift from its
+    // declared height. And it is the M3 toolbar 64, never the retired nav-bar 80.
+    expect(layout.toolbarHeight).toBe(2 * space.xs + interaction.minTarget);
+    expect(layout.toolbarHeight).not.toBe(80);
+  });
+});
+
+/**
+ * Spacing lives in tokens.
+ *
+ * `gap: 16` is a token that escaped; `gap: TOKENS.space.md` is the same number
+ * spelled so it changes in one place. Zero is exempt by construction (a reset of
+ * a React Native default is not a spacing decision), and a token expression or a
+ * named constant never matches because nothing after the colon is a bare digit —
+ * which is the point: a measured value gets a NAME, not a pass. Comments are
+ * stripped first, as the motion gate explains, so a quoted SwiftUI/M3 source does
+ * not fail a file whose code is correct.
+ *
+ * The allowlist is the burn-down list: measured optical nudges (1/3/5/6/7/10/14dp)
+ * the 4dp grid cannot express, plus two documented departures. Each entry is the
+ * exact `prop: value` text; removing a site removes its entry, and the stale
+ * check fails an entry that no longer matches anything.
+ */
+describe('spacing lives in tokens', () => {
+  const SPACING = /\b(padding|margin|gap|rowGap|columnGap)(Top|Bottom|Left|Right|Horizontal|Vertical|Start|End)?\s*:\s*(-?[1-9]\d*)\b/g;
+  const sources = ['src/components', 'src/screens']
+    .flatMap(dir =>
+      readdirSync(join(ROOT, dir))
+        .filter(f => f.endsWith('.tsx'))
+        .map(f => ({ file: `${dir}/${f}`, body: stripComments(read(`${dir}/${f}`)) })),
+    )
+    .concat({ file: 'App.tsx', body: stripComments(read('App.tsx')) });
+
+  const ALLOW: Record<string, string[]> = {
+    // Composer field vertical pad is measured against Telegram (44dp bar); it is
+    // revisited in the composer-proportions pass, so it carries a reason here.
+    'src/components/Composer.tsx': [
+      'paddingRight: 5',
+      'paddingTop: 7',
+      'paddingBottom: 7',
+      'paddingRight: 6',
+    ],
+    // Optical nudges the 4dp grid cannot name: a 5dp pill pad, a 6dp dot offset,
+    // a 1dp tag inset, a 3dp glyph gap. Grandfathered with their reasons.
+    'src/components/CallingDots.tsx': ['marginLeft: 6'],
+    'src/components/DirectorySkeleton.tsx': ['gap: 6'],
+    'src/components/NoticeBar.tsx': ['paddingVertical: 10'],
+    'src/components/ProviderCard.tsx': ['gap: 3'],
+    'src/components/ReactionStrip.tsx': ['paddingHorizontal: 6'],
+    'src/components/Sheet.tsx': ['paddingTop: 5'],
+    'src/components/SpotlightCard.tsx': ['paddingVertical: 5'],
+    'src/components/ThreadBubble.tsx': ['paddingVertical: 1', 'paddingHorizontal: 5'],
+    'src/components/TokenCounter.tsx': ['paddingVertical: 5'],
+    'src/components/Turn.tsx': [
+      'paddingBottom: 14',
+      'paddingHorizontal: 5',
+      'paddingVertical: 1',
+      'gap: 3',
+      'gap: 1',
+    ],
+    'src/components/VoiceNote.tsx': ['paddingVertical: 1'],
+    'src/screens/HomeScreen.tsx': ['padding: 3'],
+    'src/screens/PolicyGateScreen.tsx': ['gap: 6'],
+    'src/screens/ProviderHomeScreen.tsx': ['gap: 3', 'paddingHorizontal: 5'],
+    'src/screens/RechargeScreen.tsx': ['paddingVertical: 3'],
+    // The profile avatar is pulled up over the header by half its 88dp size. A
+    // documented departure; becomes a named constant when SettingsSheet is next
+    // touched.
+    'src/screens/SettingsSheet.tsx': ['marginTop: -44'],
+  };
+
+  it('never writes a raw padding, margin or gap outside the theme', () => {
+    const offenders: string[] = [];
+    for (const s of sources) {
+      const allowed = new Set(ALLOW[s.file] ?? []);
+      for (const m of s.body.matchAll(SPACING)) {
+        const hit = `${m[1]}${m[2] ?? ''}: ${m[3]}`;
+        if (!allowed.has(hit)) {
+          offenders.push(`${s.file}  ${hit}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('keeps the allowlist honest', () => {
+    for (const [file, entries] of Object.entries(ALLOW)) {
+      const body = sources.find(s => s.file === file)?.body ?? '';
+      for (const entry of entries) {
+        expect(body.includes(entry) ? `${file} ${entry}` : `${file} ${entry} STALE`).toBe(
+          `${file} ${entry}`,
+        );
+      }
+    }
+  });
+});
+
+/**
+ * Component heights come from tokens.
+ *
+ * Scoped by STYLE NAME, not by property: a `height: 14` on a presence dot is a
+ * size, not a container height, and a rule that flagged it would be an allowlist
+ * with a test attached. A style named `row`/`bar`/`slot`/`cell`/`item` is the
+ * thing M3 gives a container height to, so that is what is inspected. The
+ * allowlist grandfathers the rows/bars migrated to `layout.*` in the
+ * component-heights pass; a raw 44 target is forbidden outright (they are all
+ * `interaction.minTarget` now).
+ */
+describe('component heights come from tokens', () => {
+  const sources = ['src/components', 'src/screens']
+    .flatMap(dir =>
+      readdirSync(join(ROOT, dir))
+        .filter(f => f.endsWith('.tsx'))
+        .map(f => ({ file: `${dir}/${f}`, body: stripComments(read(`${dir}/${f}`)) })),
+    )
+    .concat({ file: 'App.tsx', body: stripComments(read('App.tsx')) });
+  const ROW_LIKE = /(\w*(?:row|Row|bar|Bar|cell|Cell|slot|Slot|item|Item))\s*:\s*\{([^}]*)\}/g;
+  const RAW_HEIGHT = /\b(height|minHeight)\s*:\s*[1-9]/;
+  // Rows/bars still holding a raw container height, migrated to layout tokens in
+  // the component-heights pass. Grandfathered by style-block name per file.
+  const ALLOW: Record<string, string[]> = {
+    'src/components/Composer.tsx': ['mediaRow'],
+    'src/components/FloatingToolbar.tsx': ['slot'],
+    'src/components/TopAppBar.tsx': ['slot'],
+    'src/screens/PaymentSheet.tsx': ['row', 'webRow'],
+    'src/screens/ProfileSetupScreen.tsx': ['avatarCell'],
+    'src/screens/RechargeScreen.tsx': ['bar'],
+    'src/screens/SettingsSheet.tsx': ['row'],
+    'src/screens/TransactionHistoryScreen.tsx': ['row'],
+  };
+
+  it('never sizes a row, bar, slot or cell with a raw number outside the allowlist', () => {
+    const offenders: string[] = [];
+    for (const s of sources) {
+      const allowed = new Set(ALLOW[s.file] ?? []);
+      for (const m of s.body.matchAll(ROW_LIKE)) {
+        if (RAW_HEIGHT.test(m[2]!) && !allowed.has(m[1]!)) {
+          offenders.push(`${s.file}  ${m[1]}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('never uses 44 as a touch target', () => {
+    // iOS's 44 satisfied nothing here: minTarget is 48 and one number serves both.
+    for (const s of sources) {
+      expect(s.body).not.toMatch(/\b(minHeight|minWidth|width|height)\s*:\s*44\b/);
+    }
+  });
+});
+
+/**
  * No component is allowed its own physics.
  *
  * Motion is the part of a design system that gets tuned by feel, and a spring
@@ -652,19 +994,37 @@ describe('motion lives in one module', () => {
     expect(read('src/components/Button.tsx')).toContain('fadeSwapFast');
   });
 
-  it('honours the OS reduce-motion setting on every entrance', () => {
-    // Checked per factory rather than by counting occurrences: the first version
-    // compared a builder count against a `reduceMotion` count and failed because
-    // the doc comment above them mentions the call, which is a test measuring
-    // prose. Each exported entrance is now inspected on its own.
-    const motion = read('src/theme/motion.ts');
-    const factories = motion
-      .split(/export function /)
-      .slice(1)
-      .filter(block => /FadeIn\w*\.delay/.test(block));
-    expect(factories.length).toBeGreaterThan(0);
-    for (const block of factories) {
-      expect(block).toMatch(/reduceMotion\(ReduceMotion\.System\)/);
+  it('honours the OS reduce-motion setting on every transition builder', () => {
+    /*
+     * "Reduced motion → fades only" is a split policy, not a blanket off switch:
+     * an opacity animation is the ACCESSIBLE fallback and must still run
+     * (`ReduceMotion.Never`), while a translate or scale must collapse to nothing
+     * (`ReduceMotion.System`). So a builder that moves something is checked for
+     * both, and a builder that only fades is checked for `Never`.
+     *
+     * Every exported transition builder — the `screen*`/`menu*`/`row*` worklets
+     * and the `topLevel*`/`fadeSwap*`/`authArrive` consts — is inspected on its
+     * own, rather than counting occurrences against a comment that mentions the
+     * call (which is a test grading prose).
+     */
+    const motion = stripComments(read('src/theme/motion.ts'));
+    const spatialBuilders = ['useScreenEnter', 'screenOut', 'menuIn', 'rowIn'];
+    for (const name of spatialBuilders) {
+      const start = motion.indexOf(`export function ${name}(`);
+      expect(start).toBeGreaterThan(-1);
+      const block = motion.slice(start, start + 700);
+      // The fade is the fallback (Never); the movement collapses (System, via springTo).
+      expect(block).toContain('ReduceMotion.Never');
+    }
+    // springTo threads ReduceMotion.System into every spring it builds, which is
+    // the transform channel of the spatial builders above.
+    const springTo = motion.slice(motion.indexOf('export function springTo'));
+    expect(springTo.slice(0, 400)).toContain('ReduceMotion.System');
+
+    // The pure-fade builders must always run their fade.
+    for (const name of ['topLevelIn', 'topLevelOut', 'menuOut', 'authArrive']) {
+      const decl = motion.slice(motion.indexOf(`export const ${name} =`));
+      expect(decl.slice(0, 220)).toContain('ReduceMotion.Never');
     }
   });
 });
@@ -1226,7 +1586,7 @@ describe('light and dark', () => {
   it('still reads the mode-independent scales statically', () => {
     // If this ever finds nothing, the migration went too far and every spacing
     // value is now paying for a context read.
-    const staticReads = sources.filter(s => /TOKENS\.(space|radius|typography)/.test(s.body));
+    const staticReads = sources.filter(s => /TOKENS\.(space|radius|layout|typography)/.test(s.body));
     expect(staticReads.length).toBeGreaterThan(10);
   });
 
@@ -1330,11 +1690,13 @@ describe('chat-visuals: SpotlightCard is a bottom-anchored M3 sheet', () => {
     expect(card).toContain('TOKENS.radius.sheet');
   });
 
-  it('slides on a shared-value spring, not Modal animationType slide', () => {
+  it('slides on the M3 sheet spring, not Modal animationType slide', () => {
     // animationType="slide" slides the whole window, dragging the scrim up as a
-    // grey rectangle. The sheet alone slides; the window only fades.
+    // grey rectangle. The sheet alone slides — on `sheetIn`/`sheetOut`, the M3
+    // spatialDefault spring, position only — while the window only fades.
     expect(card).toContain("animationType=\"fade\"");
-    expect(card).toContain('springTo(0');
+    expect(card).toContain('sheetIn(');
+    expect(card).toContain('sheetOut(');
     expect(card).not.toContain("animationType=\"slide\"");
   });
 

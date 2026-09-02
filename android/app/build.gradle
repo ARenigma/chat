@@ -28,9 +28,15 @@ react {
     // requires Metro + `adb reverse tcp:8081`, and that pipe drops after
     // Maestro clearState / shell churn — which is the "Unable to load script"
     // redbox that blocked Cashfree and Macrobenchmark for hours.
-    // Hot reload: temporarily set debuggableVariants = ["debug"] and run Metro.
+    // Hot reload: pass `-PmetroHotReload` to gradle (scripts/dev-device.sh does)
+    // to build a debug variant WITHOUT an embedded bundle, served by Metro over
+    // `adb reverse tcp:8081`. The default stays [] so every unflagged build,
+    // including QA and Maestro, keeps working with no dev server. Verified
+    // 2026-09-02: a debug APK built with the default silently ran its embedded
+    // (stale) bundle for a whole session while Metro served the current code;
+    // the flag makes the choice explicit and the test below pins the default.
     // https://reactnative.dev/docs/signed-apk-android#enable-proguard-to-reduce-the-size-of-the-apk-optional
-    debuggableVariants = []
+    debuggableVariants = project.hasProperty("metroHotReload") ? ["debug"] : []
 
     /* Bundling */
     //   A list containing the node command and its flags. Default is just 'node'.

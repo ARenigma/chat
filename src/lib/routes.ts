@@ -158,3 +158,41 @@ export function memberParent(route: MemberRoute): MemberRoute | null {
 export function providerParent(route: ProviderRoute): ProviderRoute | null {
   return route.name === 'home' ? null : { name: 'home' };
 }
+
+/**
+ * Which transition a member route arrives with, as data rather than branches.
+ *
+ * Three kinds, matching the three M3 patterns the app uses (see
+ * `design/references/motion-system.md`):
+ *
+ *   root  — Home, the always-mounted floor. It never slides; the pushed screens
+ *           are overlays above it and it is only ever revealed by a pop.
+ *   tab   — the top-level destinations reached from the floating toolbar. They
+ *           swap with a fade-through (no slide, no shared element), because they
+ *           are peers, not a hierarchy.
+ *   push  — everything deeper: a forward/back slide under a fade.
+ *
+ * A `switch` with no `default`, so adding a route to `MemberRoute` without
+ * classifying it here fails typecheck rather than silently defaulting.
+ */
+export type TransitionKind = 'root' | 'tab' | 'push';
+
+export function transitionFor(route: MemberRoute): TransitionKind {
+  switch (route.name) {
+    case 'home':
+      return 'root';
+    case 'favourites':
+    case 'calls':
+    case 'settings':
+      return 'tab';
+    case 'chat':
+    case 'providerDetail':
+    case 'call':
+    case 'apply':
+    case 'applicationStatus':
+    case 'blocked':
+    case 'chatsList':
+    case 'transactions':
+      return 'push';
+  }
+}

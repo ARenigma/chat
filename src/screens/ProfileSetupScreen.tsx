@@ -238,7 +238,7 @@ export function ProfileSetupScreen({
 
         {bracketSaving ? (
           <View style={styles.ageSavingRow}>
-            <LoadingIndicator size={20} color={theme.color.text.secondary} containerColor="transparent" />
+            <LoadingIndicator size={20} containerColor="transparent" />
           </View>
         ) : null}
       </View>
@@ -399,7 +399,7 @@ const makeStyles = (t: Theme) =>
       backgroundColor: t.color.bg.sunken,
       alignItems: 'center',
       justifyContent: 'center',
-      minHeight: 44,
+      minHeight: TOKENS.interaction.minTarget,
     },
     ageChipSelected: {
       backgroundColor: t.color.bg.accent,

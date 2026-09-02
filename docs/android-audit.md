@@ -313,3 +313,54 @@ one-to-one bubbles use a tighter radius and directional tail; Pappal's symmetric
 uses a reaction pill plus action app bar without a dimmed backdrop; Pappal's
 anchored vertical menu and protected-card cutout are an explicit product
 departure requested on 2026-08-30.
+
+## Screen transition motion, 2026-09-02
+
+Scope: consistent app-wide transitions, the second half of the motion/spacing/
+typography cycle. Decision: M3 hybrid (standard-scheme springs for spatial,
+emphasized timing for effects). Full detail in
+`design/references/motion-system.md` "Screen transitions".
+
+| Requirement                                                                              | Page                                                                       | State                                                                                        | Where                                                                            |
+| ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Spatial motion uses springs, not duration curves                                         | m3.material.io/styles/motion/overview/how-it-works                         | Adopted: `motion.m3.spring` (standard scheme), `screenIn`/`sheetIn`/`menuIn`/`rowIn`         | `src/theme/motion.ts`                                                            |
+| Forward/back = fade-through + short slide; top-level = fade, no slide; sheets don't fade | m3.material.io/styles/motion/transitions/transition-patterns               | Adopted: `screenIn/Out`, `topLevelIn/Out`, `sheetIn/Out`                                     | `App.tsx`, `Sheet.tsx`, `SpotlightCard.tsx`                                      |
+| Menu expands along Y from its anchor edge                                                | m3.material.io/components/menus/guidelines                                 | Adopted: `menuIn` + `transformOrigin`                                                        | `PaperMenu.tsx` — verify `transformOrigin` on the API 24 floor                   |
+| Nav indicator animates in, not a hard toggle                                             | m3.material.io/components/navigation-bar/guidelines                        | Adopted: animated `Indicator` (scaleX on spatialFast + fade)                                 | `FloatingToolbar.tsx`                                                            |
+| Reduced motion → subtle fades, not removal                                               | transition-patterns (reduced motion)                                       | Adopted by construction: opacity `Never`, spatial `System`                                   | `src/theme/motion.ts` — verify on device with "Remove animations" on             |
+| Predictive back is on by default at targetSdk 36; do not opt out                         | developer.android.com/guide/navigation/custom-back/predictive-back-gesture | No manifest change; RN's always-enabled callback stands; in-app preview not possible from JS | `AndroidManifest.xml` (unchanged) — verify launcher preview suppressed on API 36 |
+
+Device verification of the signed-in transitions (push from right, pop from left,
+no Home peek on tab↔tab, provider-tree exit playing, `transformOrigin` on API 24,
+predictive back) is still pending: establishing a signed-in session on the
+emulator needs a minted backend session, which was not available this pass. The
+onboarding bloom fix (Phase 1) was verified by frame-diff; see ADR-0016 §8.
+
+## Spacing scale + component-height tokens, 2026-09-02
+
+Third slice of the motion/spacing/typography cycle. The 4/8/16/… scale gained the
+M3 endpoints and a raw-value gate; component heights moved off module constants.
+
+| Requirement                                                  | Page                                                              | State                                                                                                                                                                                       | Where                                                                                                         |
+| ------------------------------------------------------------ | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Spacing on a 2/4/8-multiple scale; not scaled with font size | m3.material.io/foundations/layout/understanding-layout/spacing    | Adopted: `space` extended to hair/4xl/5xl/6xl (space25/600/700/800); 16/20/24 rule documented in the `$note`                                                                                | `design/tokens.json`, `theme.test.ts` "spacing lives in tokens" gate (allowlist grandfathers measured nudges) |
+| List item heights one/two/three-line 56/72/88                | m3.material.io/components/lists/specs                             | Tokens added (`layout.rowOneLine/TwoLine/ThreeLine`); rows migrated in the component-heights pass (Phase 5)                                                                                 | `design/tokens.json`                                                                                          |
+| Floating toolbar 64dp / min outside padding 16               | m3.material.io/components/toolbars/specs                          | `layout.toolbarHeight = 64 = xs + minTarget + xs`, asserted; the 80dp nav bar is not used                                                                                                   | `design/tokens.json`, `theme.test.ts`                                                                         |
+| Minimum touch target 48dp                                    | developer.android.com/guide/topics/ui/accessibility → target size | Fixed: the ten `44`dp targets (age chips, ghost links, download slot, submit disc) now use `interaction.minTarget`; `SOURCE_METRICS.submitTarget` 44→48; a gate forbids a raw `: 44` target | `theme.test.ts`, `onboarding.test.ts`, `src/lib/onboarding.ts`                                                |
+
+The exact-token drift (39 sites of `gap: 16`, `paddingHorizontal: 12`, `gap: 2`,
+etc.) was migrated to `TOKENS.space.*` with zero visual change (same pixels). The
+remaining allowlist is measured optical nudges (1/3/5/6/7/10/14dp the 4dp grid
+cannot express) plus two documented departures, to burn down as those files are
+next touched. Device screenshot-diff of the +4dp touch targets is pending the
+device sign-in.
+
+### Screen transitions — device findings, 2026-09-02 evening
+
+| Finding                                                                    | Evidence                                                                                                           | Resolution                                                                                                                  |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| Reanimated `entering` does not run on the pushed overlays (`exiting` does) | 60fps frame-step, custom worklet and stock `FadeIn` alike                                                          | Effect-free, layout-started entrance from shared values (`useScreenEnter`); documented in motion-system.md                  |
+| `coverHome` produced Home → white → screen on every push                   | frames 62–73 of the tap capture                                                                                    | Cover removed; overlay fades in over Home (M3 fade-through)                                                                 |
+| M3 emphasized-decelerate reads as a cut at 150ms                           | fade complete in 2 frames                                                                                          | `easing.decelerate` (cubic-out = `DecelerateInterpolator(1.5)`), cited to Telegram `ActionBarLayout.java`                   |
+| Debug APK ran stale embedded JS while Metro served current code            | probe edit invisible after cold start; APK contained `index.android.bundle`; logcat CLEARTEXT to localhost blocked | `-PmetroHotReload` opt-in + debug-only `localhost` cleartext; `scripts/dev-device.sh`; default pinned by `platform.test.ts` |
+| Fast Refresh redboxes on `requireNativeComponent` at module scope          | "Tried to register two views with the same name PappalMaterialLoadingIndicator"                                    | Registration cached on `globalThis` in `LoadingIndicator.tsx`                                                               |
