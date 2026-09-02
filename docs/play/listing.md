@@ -122,7 +122,7 @@ required to use the app: every conversation works with text alone.
 
 - Data is encrypted in transit, yes (HTTPS/TLS to Supabase and FCM).
 - Users can request data deletion, **yes**, and it is in the app, not by email:
-  `https://bond-app.vercel.app/delete.html` is the required URL.
+  `https://chat-arenigmas-projects.vercel.app/delete.html` is the required URL.
 - Committed to the Play Families policy, not applicable (18+, see §5).
 - Independent security review, no.
 
@@ -190,11 +190,11 @@ the initial approval.
 
 ## 7. Required URLs
 
-| Field          | Value                                      |
-| -------------- | ------------------------------------------ |
-| Privacy policy | `https://bond-app.vercel.app/privacy.html` |
-| Data deletion  | `https://bond-app.vercel.app/delete.html`  |
-| Support email  | `testrelay97@gmail.com`                    |
+| Field          | Value                                                     |
+| -------------- | --------------------------------------------------------- |
+| Privacy policy | `https://chat-arenigmas-projects.vercel.app/privacy.html` |
+| Data deletion  | `https://chat-arenigmas-projects.vercel.app/delete.html`  |
+| Support email  | `testrelay97@gmail.com`                                   |
 
 Swap the host for the custom domain when it exists, the paths do not change.
 Play lets you edit these after submission, so a `.vercel.app` host is fine for

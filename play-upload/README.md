@@ -42,7 +42,7 @@ Production stays empty until you explicitly publish there.
 
 Also fill in Console (not files):
 
-- Privacy policy: `https://bond-app.vercel.app/privacy.html`
+- Privacy policy: `https://chat-arenigmas-projects.vercel.app/privacy.html`
 - Support email: `testrelay97@gmail.com` (see `docs/play/listing.md`)
 - **Data safety** + **Content rating** questionnaires (`docs/play/listing.md` §§4–5)
 
