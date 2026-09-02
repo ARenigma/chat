@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { SlideInRight, SlideOutRight } from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
@@ -12,10 +12,8 @@ import {
   RECHARGE_PACKS,
   talkMinutesLeft,
 } from '../lib/rates';
-import { CASHFREE_SANDBOX_CHECKOUT } from '../config';
 import { useRechargeConfig, useKillSwitches, FALLBACK_RECHARGE } from '../api/appConfig';
 import { tick } from '../lib/haptics';
-import { SCROLL_PHYSICS } from '../lib/scroll';
 import { SPRING } from '../theme/motion';
 import { useStore } from '../store/useStore';
 import { BackButton } from '../components/BackButton';
@@ -194,7 +192,7 @@ export function RechargeWalletPage() {
   const insets = useSafeAreaInsets();
   const visible = useStore(s => s.walletVisible);
   const close = useStore(s => s.closeWallet);
-  const { livePacks, paymentsEnabled } = useRechargePacks();
+  const { livePacks } = useRechargePacks();
   const [amount, setAmount] = useState<number>(livePacks[1] ?? 300);
   const [payOpen, setPayOpen] = useState(false);
 
@@ -218,20 +216,12 @@ export function RechargeWalletPage() {
           Recharge
         </Text>
       </View>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        {...SCROLL_PHYSICS}
-        contentContainerStyle={[
-          styles.scroll,
-          { paddingBottom: insets.bottom + 72 },
-        ]}>
-        <RechargeForm
-          amount={amount}
-          setAmount={setAmount}
-          livePacks={livePacks}
-          paymentsEnabled={paymentsEnabled}
-        />
-      </ScrollView>
+      {/* Non-scrollable: with the payment-method block gone, the balance card,
+          the pack grid and the note fit a single screen, so this is a plain
+          View. The Pay bar stays pinned below. */}
+      <View style={styles.scroll}>
+        <RechargeForm amount={amount} setAmount={setAmount} livePacks={livePacks} />
+      </View>
       <View style={[styles.payBar, { paddingBottom: Math.max(insets.bottom, TOKENS.space.md) }]}>
         <Button
           label={`Pay ${formatRupees(amount)}`}
@@ -248,12 +238,10 @@ function RechargeForm({
   amount,
   setAmount,
   livePacks,
-  paymentsEnabled,
 }: {
   amount: number;
   setAmount: (n: number) => void;
   livePacks: readonly number[];
-  paymentsEnabled: boolean;
 }) {
   const styles = useStyles(makeStyles);
   const balance = useStore(s => s.balance);
@@ -302,59 +290,58 @@ function RechargeForm({
                 accessibilityLabel={`Add ${formatTokens(pack)} tokens, about ${minutes} minutes of talk${badge ? `, ${badge}` : ''}${on ? ', selected' : ''}`}
                 press="card"
                 style={[styles.card, on && styles.cardOn]}>
-                <View style={styles.badgeSlot}>
-                  {badge ? (
-                    <View style={[styles.badge, on && styles.badgeOn]}>
-                      <Text
-                        allowFontScaling
-                        style={[styles.badgeText, on && styles.badgeTextOn]}>
-                        {badge}
-                      </Text>
-                    </View>
-                  ) : null}
+                {badge ? (
+                  <View style={[styles.ribbon, on && styles.ribbonOn]}>
+                    <Text
+                      allowFontScaling={false}
+                      style={[styles.ribbonText, on && styles.ribbonTextOn]}>
+                      {badge}
+                    </Text>
+                  </View>
+                ) : null}
+                <View style={styles.cardRow}>
+                  {/* Coin chip — the gamified token mark, same ₹ disc as the
+                      balance header. Flips to a light disc on the selected coral
+                      card so it stays legible. */}
+                  <View style={[styles.coin, on && styles.coinOn]}>
+                    <Text
+                      allowFontScaling={false}
+                      style={[styles.coinMark, on && styles.coinMarkOn]}>
+                      ₹
+                    </Text>
+                  </View>
+                  <View style={styles.cardText}>
+                    <Text
+                      allowFontScaling
+                      numberOfLines={1}
+                      style={[styles.cardAmount, on && styles.cardTextOn]}>
+                      {formatTokens(pack)}
+                    </Text>
+                    <Text
+                      allowFontScaling
+                      numberOfLines={1}
+                      style={[styles.cardUnit, on && styles.cardUnitOn]}>
+                      tokens
+                    </Text>
+                  </View>
                 </View>
-                <Text
-                  allowFontScaling
-                  style={[styles.cardAmount, on && styles.cardAmountOn, on && styles.cardTextOn]}>
-                  {formatTokens(pack)}
-                </Text>
-                <Text allowFontScaling style={[styles.cardMinutes, on && styles.cardTextOn]}>
-                  {`≈ ${minutes} min talk`}
-                </Text>
+                <View style={[styles.minutesTag, on && styles.minutesTagOn]}>
+                  <Text
+                    allowFontScaling
+                    numberOfLines={1}
+                    style={[styles.minutesText, on && styles.minutesTextOn]}>
+                    {`≈ ${minutes} min talk`}
+                  </Text>
+                </View>
               </Pressable>
             </View>
           );
         })}
       </View>
 
-      <Text allowFontScaling style={styles.sectionTight}>
-        Pay with
-      </Text>
-      <View style={styles.payment}>
-        <Image
-          source={require('../../assets/brands/upi.png')}
-          style={styles.payIconImage}
-          resizeMode="contain"
-          accessibilityIgnoresInvertColors
-        />
-        <View style={styles.payText}>
-          <Text allowFontScaling style={styles.payName}>
-            UPI
-          </Text>
-          <Text allowFontScaling style={styles.paySub}>
-            {CASHFREE_SANDBOX_CHECKOUT
-              ? 'GPay · PhonePe · Paytm · Sandbox'
-              : paymentsEnabled
-                ? 'GPay · PhonePe · Paytm & more'
-                : 'Opening soon'}
-          </Text>
-        </View>
-        <View style={styles.oneTap}>
-          <Text allowFontScaling style={styles.oneTapText}>
-            One tap
-          </Text>
-        </View>
-      </View>
+      {/* No payment-method options here: the Cashfree checkout sheet that opens
+          on Pay is where UPI / cards / net-banking are chosen. Listing them here
+          too was a duplicate the page had to scroll to fit. */}
       <Text allowFontScaling style={styles.rupeeNote}>
         1 token = ₹1. You are charged in rupees at checkout.
       </Text>
@@ -434,12 +421,6 @@ const makeStyles = (t: Theme) =>
       color: t.color.text.primary,
       paddingTop: TOKENS.space.md,
     },
-    sectionTight: {
-      ...TOKENS.typography.headline,
-      color: t.color.text.primary,
-      paddingTop: TOKENS.space.lg,
-      paddingBottom: TOKENS.space.xs,
-    },
     sectionHint: {
       ...TOKENS.typography.subhead,
       color: t.color.text.secondary,
@@ -455,97 +436,104 @@ const makeStyles = (t: Theme) =>
     },
     card: {
       width: '100%',
+      minHeight: 104,
       borderRadius: TOKENS.radius.md,
       borderCurve: 'continuous',
       borderWidth: 1,
       borderColor: t.color.border.hairline,
-      paddingVertical: TOKENS.space.md,
-      paddingHorizontal: TOKENS.space.md,
-      gap: 2,
+      backgroundColor: t.color.bg.raised,
+      padding: TOKENS.space.md,
+      justifyContent: 'space-between',
+      gap: TOKENS.space.sm,
+      overflow: 'hidden',
     },
     cardOn: {
       backgroundColor: t.color.bg.accent,
       borderColor: t.color.bg.accent,
     },
-    badgeSlot: {
-      height: 18,
-      justifyContent: 'center',
-      alignItems: 'flex-end',
-      marginBottom: 2,
-    },
-    badge: {
-      alignSelf: 'flex-end',
-      backgroundColor: t.color.bg.accent,
-      borderRadius: TOKENS.radius.pill,
+    // Corner ribbon — Popular / Best value.
+    ribbon: {
+      position: 'absolute',
+      top: 0,
+      right: 0,
+      paddingHorizontal: TOKENS.space.sm,
+      paddingVertical: 3,
+      borderBottomLeftRadius: TOKENS.radius.sm,
       borderCurve: 'continuous',
-      paddingHorizontal: 8,
-      paddingVertical: 2,
+      backgroundColor: t.color.bg.accent,
     },
-    badgeOn: {
+    ribbonOn: {
       backgroundColor: t.color.bg.base,
     },
-    badgeText: {
+    ribbonText: {
       ...TOKENS.typography.captionSmall,
       fontFamily: 'Geist-SemiBold',
       color: t.color.text.onAccent,
     },
-    badgeTextOn: {
+    ribbonTextOn: {
       color: t.color.text.accent,
+    },
+    cardRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.sm,
+    },
+    // The gamified coin chip carrying the ₹ mark.
+    coin: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: t.color.bg.accentTint,
+    },
+    coinOn: {
+      backgroundColor: 'rgba(255,255,255,0.22)',
+    },
+    coinMark: {
+      ...TOKENS.typography.titleMedium,
+      color: t.color.text.accent,
+    },
+    coinMarkOn: {
+      color: t.color.text.onAccent,
+    },
+    cardText: {
+      flex: 1,
     },
     cardAmount: {
-      ...TOKENS.typography.titleMedium,
+      fontFamily: 'Geist-Bold',
+      fontSize: 24,
+      lineHeight: 28,
       color: t.color.text.primary,
     },
-    cardAmountOn: {
-      fontFamily: 'Geist-Bold',
-      fontSize: 26,
-      lineHeight: 32,
+    cardUnit: {
+      ...TOKENS.typography.captionSmall,
+      color: t.color.text.secondary,
     },
-    cardMinutes: {
-      ...TOKENS.typography.labelSmall,
-      color: t.color.text.accent,
+    cardUnitOn: {
+      color: t.color.text.onAccent,
     },
     cardTextOn: {
       color: t.color.text.onAccent,
     },
-    payment: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: TOKENS.space.sm,
-      backgroundColor: t.color.bg.raised,
-      borderRadius: TOKENS.radius.md,
-      borderCurve: 'continuous',
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: t.color.border.hairline,
-      padding: TOKENS.space.md,
-    },
-    payIconImage: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-    },
-    payText: {
-      flex: 1,
-    },
-    payName: {
-      ...TOKENS.typography.headline,
-      color: t.color.text.primary,
-    },
-    paySub: {
-      ...TOKENS.typography.captionSmall,
-      color: t.color.text.secondary,
-    },
-    oneTap: {
-      backgroundColor: t.color.bg.accentTint,
+    // Talk-time value tag along the bottom of the card.
+    minutesTag: {
+      alignSelf: 'flex-start',
+      paddingHorizontal: TOKENS.space.sm,
+      paddingVertical: 3,
       borderRadius: TOKENS.radius.pill,
       borderCurve: 'continuous',
-      paddingHorizontal: 10,
-      paddingVertical: 4,
+      backgroundColor: t.color.bg.sunken,
     },
-    oneTapText: {
-      ...TOKENS.typography.captionSmall,
-      fontFamily: 'Geist-SemiBold',
+    minutesTagOn: {
+      backgroundColor: 'rgba(255,255,255,0.18)',
+    },
+    minutesText: {
+      ...TOKENS.typography.labelSmall,
       color: t.color.text.accent,
+    },
+    minutesTextOn: {
+      color: t.color.text.onAccent,
     },
     rupeeNote: {
       ...TOKENS.typography.captionSmall,

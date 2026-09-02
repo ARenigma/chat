@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { Linking, StyleSheet, Text, View } from 'react-native';
+import { Image, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated from 'react-native-reanimated';
 import { NAV_BAR_HEIGHT } from '../components/FloatingToolbar';
@@ -16,7 +16,8 @@ import { deleteAccount, signOut } from '../api/auth';
 import { stopPush } from '../lib/push';
 import { track } from '../lib/telemetry';
 import { widgetConfigured } from '../lib/msg91Widget';
-import { useMyApplication, useRemoveAvatar, useSetPresence, useUploadAvatar } from '../api/provider';
+import { useMyApplication, useSetClayAvatar, useSetPresence } from '../api/provider';
+import { CLAY_SEEDS, CLAY_IMAGES } from '../lib/clayAvatars';
 import { useProfile } from '../api/chat';
 import { PRESENCE_OPTIONS, presenceDetail } from '../lib/presence';
 import { PHONE_VERIFY_ENABLED } from '../api/phone';
@@ -27,7 +28,6 @@ import { PhoneVerifySheet } from './PhoneVerifySheet';
 import { resetStore, useStore } from '../store/useStore';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme, useThemeMode } from '../theme/ThemeProvider';
-import { launchImageLibrary } from 'react-native-image-picker';
 
 interface Props {
   /** Back to the tree's home. Settings is a mounted screen, not a sheet. */
@@ -150,30 +150,16 @@ export function SettingsSheet({
   const { data: application } = useMyApplication();
   const { data: profile } = useProfile();
   const setPresence = useSetPresence();
-  const uploadAvatar = useUploadAvatar();
-  const removeAvatar = useRemoveAvatar();
+  const setClayAvatar = useSetClayAvatar();
   // Hidden until the profile loads, and hidden if it never does. Defaulting the
   // other way would show a checkmark against a state the person has not chosen.
   const presence = profile?.presence ?? 'hidden';
   const isProvider = profile?.role === 'provider';
-
-  const onPickAvatar = useCallback(async () => {
-    const result = await launchImageLibrary({
-      mediaType: 'photo',
-      selectionLimit: 1,
-      quality: 0.8,
-      maxWidth: 1024,
-      maxHeight: 1024,
-    });
-    const asset = result.assets?.[0];
-    if (result.didCancel || asset?.uri === undefined) {
-      return;
-    }
-    uploadAvatar.mutate({
-      uri: asset.uri,
-      mime: asset.type ?? 'image/jpeg',
-    });
-  }, [uploadAvatar]);
+  // The clay seed currently in use, so the picker can mark it selected.
+  const currentSeed =
+    profile?.avatar_url?.startsWith('clay:') === true
+      ? profile.avatar_url.slice('clay:'.length)
+      : null;
 
   const onDelete = useCallback(async () => {
     setBusy(true);
@@ -295,10 +281,10 @@ export function SettingsSheet({
             <Pressable
               onPress={() => setAvatarSheet(true)}
               testID="settings-avatar"
-              accessibilityLabel={profile?.avatar_url ? 'Change photo' : 'Add photo'}
+              accessibilityLabel="Change avatar"
               press="none"
               highlight="ios"
-              disabled={uploadAvatar.isPending || removeAvatar.isPending}
+              disabled={setClayAvatar.isPending}
               style={styles.profileAvatarHit}>
               <Avatar
                 initial={initialOf(profileName)}
@@ -613,45 +599,45 @@ export function SettingsSheet({
         </View>
       </Sheet>
 
-      {/* Profile photo: a bottom sheet slides up with the choose/remove options
-          instead of launching the picker on the first tap. */}
+      {/* Avatar picker: a horizontal slider of the bundled DiceBear "clay"
+          avatars. No gallery, no remove — one deliberate pick from a set that
+          ships in the app (Amit, 2026-09-02). */}
       <Sheet
         visible={avatarSheet}
         testID="avatar-choice-sheet"
-        title="Profile photo"
+        title="Choose your avatar"
         body={isProvider ? 'Shown in the directory and in your chats.' : 'Shown to people you chat with.'}
         onClose={() => setAvatarSheet(false)}>
-        <View style={styles.choiceList}>
-          <Pressable
-            onPress={() => {
-              setAvatarSheet(false);
-              void onPickAvatar();
-            }}
-            testID="avatar-choose"
-            accessibilityLabel="Choose from gallery"
-            press="none"
-            highlight="ios"
-            style={styles.row}>
-            <SettingsRowContent icon="image" title="Choose from gallery" chevron={false} />
-          </Pressable>
-          {profile?.avatar_url ? (
-            <>
-              <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          {...SCROLL_PHYSICS}
+          contentContainerStyle={styles.avatarPicker}>
+          {CLAY_SEEDS.map(seed => {
+            const selected = seed === currentSeed;
+            return (
               <Pressable
+                key={seed}
                 onPress={() => {
+                  setClayAvatar.mutate(seed);
                   setAvatarSheet(false);
-                  removeAvatar.mutate();
                 }}
-                testID="avatar-remove"
-                accessibilityLabel="Remove photo"
+                testID={`avatar-clay-${seed}`}
+                accessibilityLabel={`Avatar ${seed}`}
+                accessibilityRole="radio"
+                checked={selected}
                 press="none"
-                highlight="ios"
-                style={styles.row}>
-                <SettingsRowContent icon="close" title="Remove photo" danger chevron={false} />
+                style={[styles.avatarChoice, selected && styles.avatarChoiceSelected]}>
+                <Image
+                  source={CLAY_IMAGES[seed]}
+                  style={styles.avatarChoiceImage}
+                  resizeMode="cover"
+                  accessibilityIgnoresInvertColors
+                />
               </Pressable>
-            </>
-          ) : null}
-        </View>
+            );
+          })}
+        </ScrollView>
       </Sheet>
 
       {/* Phone verification stays the OTP sheet, layered over the screen. */}
@@ -745,6 +731,34 @@ const makeStyles = (t: Theme) =>
       backgroundColor: t.color.bg.inverse,
       borderWidth: 2,
       borderColor: t.color.bg.base,
+    },
+    // DiceBear clay avatar picker — a horizontal slider of round choices.
+    avatarPicker: {
+      flexDirection: 'row',
+      gap: TOKENS.space.sm,
+      paddingHorizontal: TOKENS.space.md,
+      paddingTop: TOKENS.space.xs,
+      paddingBottom: TOKENS.space.sm,
+    },
+    avatarChoice: {
+      width: 72,
+      height: 72,
+      borderRadius: 36,
+      borderCurve: 'continuous',
+      overflow: 'hidden',
+      borderWidth: 2,
+      borderColor: 'transparent',
+      backgroundColor: t.color.bg.sunken,
+    },
+    avatarChoiceSelected: {
+      borderColor: t.color.bg.accent,
+    },
+    avatarChoiceImage: {
+      width: '100%',
+      height: '100%',
+      // Match the settings avatar framing: the clay figure sits low-left in the
+      // source art, so nudge it up and right and zoom slightly to fill.
+      transform: [{ scale: 1.12 }, { translateX: 2 }, { translateY: -3 }],
     },
     profileName: {
       ...TOKENS.typography.headline,

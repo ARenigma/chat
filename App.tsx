@@ -304,6 +304,11 @@ function Root() {
           setBoot({ phase: 'signedOut' });
           return;
         }
+        // Every fresh boot / re-auth lands on Home. A stored conversation or a
+        // notification tap below may override this, but a stale route must not
+        // survive: signing out from Settings and back in was dropping the user
+        // on Settings instead of Home.
+        setRoute({ name: 'home' });
         // Synchronous, so the first frame can already be the right screen.
         const stored = storage.get(LAST_PROVIDER_KEY);
         if (isUuid(stored)) {
@@ -665,6 +670,10 @@ function Root() {
       return (
         <OnboardingScreen
           onDone={() => {
+            // Splash over the re-read, same reason as AuthScreen's
+            // onAuthenticated: keep the welcome from replaying under a live
+            // session between "session set" and "boot resolved".
+            setBoot({ phase: 'loading' });
             setWelcomeSeen(true);
             setAttempt(a => a + 1);
           }}
@@ -689,14 +698,30 @@ function Root() {
         <Animated.View
           style={styles.fill}
           entering={FadeIn.duration(BLOOM_CONTENT_MS)}>
-          <AuthScreen onAuthenticated={() => setAttempt(a => a + 1)} />
+          <AuthScreen onAuthenticated={() => {
+            // Show the splash, not the sign-in screens, while the boot effect
+            // re-reads the just-minted session. Without this the render between
+            // "session set" and "boot resolved" still has boot === 'signedOut',
+            // which flashes OnboardingScreen ("Someone to talk to") or the auth
+            // screen back at someone who just signed in.
+            setBoot({ phase: 'loading' });
+            setAttempt(a => a + 1);
+          }} />
         </Animated.View>
       );
     }
     return (
       <AuthScreen
         initialError={boot.message}
-        onAuthenticated={() => setAttempt(a => a + 1)}
+        onAuthenticated={() => {
+            // Show the splash, not the sign-in screens, while the boot effect
+            // re-reads the just-minted session. Without this the render between
+            // "session set" and "boot resolved" still has boot === 'signedOut',
+            // which flashes OnboardingScreen ("Someone to talk to") or the auth
+            // screen back at someone who just signed in.
+            setBoot({ phase: 'loading' });
+            setAttempt(a => a + 1);
+          }}
       />
     );
   }

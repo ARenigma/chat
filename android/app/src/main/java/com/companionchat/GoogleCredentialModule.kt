@@ -1,15 +1,19 @@
 package com.companionchat
 
 import androidx.credentials.CredentialManager
+import androidx.credentials.CredentialOption
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
+import androidx.credentials.GetCredentialResponse
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
+import androidx.credentials.exceptions.NoCredentialException
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import kotlinx.coroutines.CoroutineScope
@@ -96,25 +100,63 @@ class GoogleCredentialModule(private val reactContext: ReactApplicationContext) 
         scope.launch {
             val manager = CredentialManager.create(reactContext)
 
+            suspend fun attempt(option: CredentialOption): GetCredentialResponse =
+                manager.getCredential(
+                    activity,
+                    GetCredentialRequest.Builder().addCredentialOption(option).build(),
+                )
+
             /*
-             * This method is called by a visible, explicit Google button, so it
-             * must use Google's button option directly. `GetGoogleIdOption`
-             * belongs to an automatic/returning-account bottom sheet; putting
-             * two of those requests in front of this one caused provider status
-             * 16 to be reported as a cancellation and the UI silently returned
-             * after the user had already selected an account.
-             *
+             * The implementation guide says to ship BOTH surfaces, in this order,
+             * and that is what produces the bottom sheet the button alone did not:
+             *   1. GetGoogleIdOption(filterByAuthorizedAccounts = true) — the
+             *      slide-up sheet for accounts already authorised for this app,
+             *      with auto-select for a lone returning account.
+             *   2. GetGoogleIdOption(filterByAuthorizedAccounts = false) — the
+             *      sheet again, now over every Google account on the device.
+             *   3. GetSignInWithGoogleOption — the explicit "Sign in with Google"
+             *      button/dialog, the last resort that can also ADD an account
+             *      when the device has none (the sheet cannot).
              * https://developer.android.com/identity/sign-in/credential-manager-siwg-implementation
+             *
+             * The nonce is generated once and every option carries the same hash,
+             * so the single rawNonce returned to JS matches whichever surface wins.
+             *
+             * History: an earlier build put GetGoogleIdOption first and it failed
+             * with GMS status 16 surfaced as cancellation — because the Google
+             * Cloud project had no ANDROID OAuth client (client_type 1) for the
+             * signing certificate, only the Web client. Both signing certs are now
+             * registered (see CREDENTIAL_MANAGER_ENABLED in src/api/auth.ts), so
+             * the sheet resolves instead of dead-ending. `NoCredentialException`
+             * (no matching account for this step) falls through to the next; a
+             * real cancellation — the user dismissing a surface — stops here.
              */
+            val sheetAuthorized = GetGoogleIdOption.Builder()
+                .setFilterByAuthorizedAccounts(true)
+                .setServerClientId(webClientId)
+                .setAutoSelectEnabled(true)
+                .setNonce(hashedNonce)
+                .build()
+            val sheetAll = GetGoogleIdOption.Builder()
+                .setFilterByAuthorizedAccounts(false)
+                .setServerClientId(webClientId)
+                .setNonce(hashedNonce)
+                .build()
             val button = GetSignInWithGoogleOption.Builder(webClientId)
                 .setNonce(hashedNonce)
                 .build()
 
             try {
-                val result = manager.getCredential(
-                    activity,
-                    GetCredentialRequest.Builder().addCredentialOption(button).build(),
-                )
+                val result =
+                    try {
+                        attempt(sheetAuthorized)
+                    } catch (noAuthorized: NoCredentialException) {
+                        try {
+                            attempt(sheetAll)
+                        } catch (noAny: NoCredentialException) {
+                            attempt(button)
+                        }
+                    }
                 promise.resolve(result.toPayload(rawNonce))
             } catch (error: GetCredentialCancellationException) {
                 promise.reject(E_CANCELLED, "Sign-in was dismissed.", error)

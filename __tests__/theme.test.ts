@@ -1496,7 +1496,12 @@ describe('recharge-theme: RechargeScreen is a compact non-scrolling M3 sheet', (
 
   it('preserves RechargeWalletPage as a full-page route', () => {
     expect(recharge).toContain('export function RechargeWalletPage');
-    expect(recharge).toContain('<ScrollView');
+    expect(recharge).toContain('testID="recharge-wallet"');
+    // #6 (user 2026-09-02): the page is non-scrolling now — pick an amount, one
+    // Pay button, then the Cashfree sheet owns payment-method choice. The
+    // "Pay with" method block and the ScrollView it needed are both gone.
+    expect(recharge).not.toContain('<ScrollView');
+    expect(recharge).not.toContain('Pay with');
   });
 });
 

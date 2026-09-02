@@ -672,7 +672,7 @@ export function OnboardingScreen({ onDone }: Props) {
                     style={styles.primary}
                   >
                     {state === 'loading' ? (
-                      <LoadingIndicator size={20} color={theme.color.text.primary} containerColor="transparent" />
+                      <LoadingIndicator size={20} containerColor="transparent" />
                     ) : (
                       <>
                         <Image
@@ -875,7 +875,7 @@ export function OnboardingScreen({ onDone }: Props) {
                         : null,
                     ]}>
                     {state === 'loading' ? (
-                      <LoadingIndicator size={20} color={theme.color.text.primary} containerColor="transparent" />
+                      <LoadingIndicator size={20} containerColor="transparent" />
                     ) : (
                       <Text allowFontScaling style={styles.primaryLabel}>
                         Continue

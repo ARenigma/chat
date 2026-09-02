@@ -278,18 +278,29 @@ describe('sign in with Google happens in an app-owned sheet', () => {
     expect(pkg).toContain('GoogleCredentialModule(reactContext)');
   });
 
-  it('uses the BUTTON flow directly for the visible Google button', () => {
+  it('shows the account bottom sheet first, then the button as a fallback', () => {
     /*
-     * https://developer.android.com/identity/sign-in/credential-manager-siwg
+     * https://developer.android.com/identity/sign-in/credential-manager-siwg-implementation
      *
-     * Google assigns `GetSignInWithGoogleOption` to a distinct, explicit Google
-     * button. `GetGoogleIdOption` is for an automatic/returning bottom sheet and
-     * must not intercept that button first: provider status 16 was being mapped
-     * to cancellation and the app silently returned after account selection.
+     * The guide says to ship BOTH surfaces. `GetGoogleIdOption` renders the
+     * slide-up account sheet — authorised accounts first, then all accounts —
+     * and `GetSignInWithGoogleOption` is the explicit button/dialog, the last
+     * resort that can also ADD an account when the device has none. The button
+     * on its own only ever shows the centred dialog, never the sheet.
+     *
+     * An earlier build was button-only because the Google Cloud project had no
+     * Android OAuth client, so the sheet dead-ended on GMS status 16 (surfaced
+     * as cancellation). Both signing certs are registered now, so the sheet is
+     * back, ordered ahead of the button.
      */
     const kt = read('android/app/src/main/java/com/companionchat/GoogleCredentialModule.kt');
+    expect(kt).toContain('GetGoogleIdOption.Builder()');
+    expect(kt).toContain('setFilterByAuthorizedAccounts(true)');
+    expect(kt).toContain('setFilterByAuthorizedAccounts(false)');
     expect(kt).toContain('GetSignInWithGoogleOption.Builder(webClientId)');
-    expect(kt).not.toContain('GetGoogleIdOption.Builder()');
+    // No account for a step throws NoCredentialException and falls through to the
+    // next surface; a genuine dismissal is a cancellation and stops the chain.
+    expect(kt).toContain('NoCredentialException');
   });
 
   it('distinguishes a button dismissal from a provider failure', () => {
@@ -382,7 +393,12 @@ describe('sign in with Google happens in an app-owned sheet', () => {
     const screen = read('src/screens/AuthScreen.tsx');
     expect(screen).toContain('onAuthenticated');
     const app = read('App.tsx');
-    const wirings = app.match(/<AuthScreen[\s\S]*?onAuthenticated=\{\(\) => setAttempt/g) ?? [];
+    // Both <AuthScreen> sites wire onAuthenticated to a handler that shows the
+    // splash and bumps attempt (setBoot loading + setAttempt), so the boot effect
+    // re-reads the session without flashing the sign-in screens (#1).
+    const wirings =
+      app.match(/<AuthScreen[\s\S]*?onAuthenticated=\{\(\) => \{[\s\S]*?setAttempt\(a => a \+ 1\)/g) ??
+      [];
     expect(wirings.length).toBe(2);
   });
 });

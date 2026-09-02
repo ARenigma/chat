@@ -153,37 +153,57 @@ function AvatarView({
           : theme.color.bg.sunken;
 
   return (
+    // Overflow-visible wrapper. The presence dot sits at the disc's bottom-right
+    // corner, which is OUTSIDE the circle — and on Android a View with
+    // `borderRadius` clips its overflowing children to the rounded shape, so a
+    // dot rendered inside the rounded disc came out sliced in half. Keeping the
+    // rounding on an inner `disc` (which still clips the photo, as intended) and
+    // rendering the dot as its sibling here lets the dot paint in full.
     <Animated.View
       testID={testID}
-      style={[
-        styles.host,
-        { width: size, height: size, borderRadius: size / 2, backgroundColor: fill },
-        animated,
-      ]}>
-      {/* lineHeight is overridden alongside fontSize, not left to the token: the
-          label style ships a 17pt line box, which clips a 20pt initial at the
-          56pt size and does it silently. */}
-      <Text
-        allowFontScaling={false}
+      style={[styles.host, { width: size, height: size }, animated]}>
+      <View
         style={[
-          styles.initial,
-          { fontSize: FONT[size], lineHeight: Math.round(FONT[size] * 1.25) },
+          styles.disc,
+          { width: size, height: size, borderRadius: size / 2, backgroundColor: fill },
         ]}>
-        {initial}
-      </Text>
-      {uri ? (
-        <Image
-          source={
-            isClayUri(uri)
-              ? (resolveAvatarSource(uri) as number)
-              : { uri: sizedStorageImageUri(uri, size, size, PixelRatio.get(), 75) }
-          }
-          style={[styles.photo, { width: size, height: size, borderRadius: size / 2 }]}
-          resizeMode="cover"
-          fadeDuration={0}
-          accessibilityIgnoresInvertColors
-        />
-      ) : null}
+        {/* lineHeight is overridden alongside fontSize, not left to the token: the
+            label style ships a 17pt line box, which clips a 20pt initial at the
+            56pt size and does it silently. */}
+        <Text
+          allowFontScaling={false}
+          style={[
+            styles.initial,
+            { fontSize: FONT[size], lineHeight: Math.round(FONT[size] * 1.25) },
+          ]}>
+          {initial}
+        </Text>
+        {uri ? (
+          <Image
+            source={
+              isClayUri(uri)
+                ? (resolveAvatarSource(uri) as number)
+                : { uri: sizedStorageImageUri(uri, size, size, PixelRatio.get(), 75) }
+            }
+            style={[
+              styles.photo,
+              { width: size, height: size, borderRadius: size / 2 },
+              // The DiceBear clay figure sits low-left in its source art; nudge it
+              // up and right and zoom slightly so the face centres in the circle.
+              isClayUri(uri) && {
+                transform: [
+                  { scale: 1.12 },
+                  { translateX: size * 0.03 },
+                  { translateY: -size * 0.04 },
+                ],
+              },
+            ]}
+            resizeMode="cover"
+            fadeDuration={0}
+            accessibilityIgnoresInvertColors
+          />
+        ) : null}
+      </View>
       {online ? <PresenceDot size={dot} surface={surface} /> : null}
     </Animated.View>
   );
@@ -241,6 +261,16 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   host: {
     alignItems: 'center',
     justifyContent: 'center',
+    // Explicit: the presence dot overflows the disc at the corner and must not
+    // be clipped by this wrapper.
+    overflow: 'visible',
+  },
+  // The rounded disc. overflow:hidden clips the photo to the circle; the dot is
+  // a sibling of this, so it is not clipped.
+  disc: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
   },
   initial: {
     ...TOKENS.typography.labelSmall,

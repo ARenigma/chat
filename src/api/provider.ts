@@ -312,6 +312,43 @@ export function useRemoveAvatar() {
   });
 }
 
+/**
+ * Set the profile photo to a bundled DiceBear "clay" avatar. Writes the
+ * `clay:<seed>` sentinel onto `avatar_url`; every reader resolves it through
+ * `resolveAvatarSource`. No upload, no storage object — the art ships in the app.
+ * Same RLS path as useRemoveAvatar (avatar_url is not a privileged column).
+ */
+export function useSetClayAvatar() {
+  const queryClient = useQueryClient();
+  const setNotice = useStore(s => s.setNotice);
+
+  return useMutation<void, Error, string>({
+    mutationFn: async (seed: string) => {
+      const { data: auth } = await supabase.auth.getUser();
+      const me = auth.user?.id;
+      if (me === undefined) {
+        throw new Error('No session');
+      }
+      const { error } = await supabase
+        .from('profiles')
+        .update({ avatar_url: `clay:${seed}` })
+        .eq('id', me);
+      if (error) {
+        throw new Error(error.message);
+      }
+    },
+    onSuccess: () => {
+      tick();
+      void queryClient.invalidateQueries({ queryKey: keys.profile });
+      void queryClient.invalidateQueries({ queryKey: keys.providers });
+    },
+    onError: () => {
+      errorTick();
+      setNotice('Could not update your avatar. Try again.');
+    },
+  });
+}
+
 /** A member rating a finished conversation. One per thread, member only. */
 export function useSubmitReview() {
   const queryClient = useQueryClient();
