@@ -223,6 +223,13 @@ export function OnboardingScreen({ onDone }: Props) {
    */
   const elapsed = useSharedValue(0);
   const welcomeOut = useSharedValue(0);
+  /*
+   * The form's arrival, 0..1. Driven from `begin()` at the handoff rather than
+   * with an `entering` preset, because the form is MOUNTED at the press (see
+   * `showForm`) and only shown at `BLOOM_HOLD_MS`; an `entering` animation runs
+   * at mount, which is the wrong moment.
+   */
+  const formIn = useSharedValue(0);
 
   const steps = useMemo(
     () => visibleSteps(route, { includeAge: authDone }),
@@ -267,9 +274,16 @@ export function OnboardingScreen({ onDone }: Props) {
       easing: Easing.inOut(Easing.quad),
     });
     // The source hands off at `now + 1.2`, measured from the press rather than
-    // from the end of the content transition.
-    after(BLOOM_HOLD_MS, () => setPhase('form'));
-  }, [phase, elapsed, welcomeOut, after]);
+    // from the end of the content transition. The form then arrives with
+    // `withAnimation(.smooth)` — 0.5s — as `.opacity.combined(with: .offset(y: 20))`.
+    after(BLOOM_HOLD_MS, () => {
+      setPhase('form');
+      formIn.value = withTiming(1, {
+        duration: STEP_ADVANCE_MS,
+        easing: Easing.inOut(Easing.quad),
+      });
+    });
+  }, [phase, elapsed, welcomeOut, formIn, after]);
 
   /*
    * Hand off to the completion row and stop owning the timing.
@@ -488,8 +502,27 @@ export function OnboardingScreen({ onDone }: Props) {
     transform: [{ translateY: welcomeOut.value * 20 }],
   }));
 
+  const formStyle = useAnimatedStyle(() => ({
+    opacity: formIn.value,
+    transform: [{ translateY: (1 - formIn.value) * 20 }],
+  }));
+
   const showWelcome = phase === 'welcome' || phase === 'leaving';
-  const showForm = phase === 'form' || phase === 'done';
+  /*
+   * The form is MOUNTED at the Continue press and SHOWN at the 1.2s handoff.
+   *
+   * Mounting it is the heaviest commit in the flow — the keyboard host, the
+   * scroll view, the checklist, the Google mark — and it used to land at
+   * `BLOOM_HOLD_MS`, fifty milliseconds after the last layer came to rest,
+   * exactly where a dropped frame is most visible. Between the press and 400ms
+   * no layer moves (every stagger delay is ≥400ms), so the commit lands there
+   * instead, invisible under a field that is only fading its content. Nothing
+   * about the 1.2s hold changes: `formReady` still flips at `BLOOM_HOLD_MS`,
+   * and until then the subtree is transparent, untouchable and hidden from
+   * TalkBack.
+   */
+  const showForm = phase !== 'welcome';
+  const formReady = phase === 'form' || phase === 'done';
 
   return (
     <View style={styles.root}>
@@ -519,7 +552,7 @@ export function OnboardingScreen({ onDone }: Props) {
               welcomeStyle,
             ]}
           >
-            <WordColumn words={words} testID="welcome-words" />
+            <WordColumn words={words} paused={phase !== 'welcome'} testID="welcome-words" />
           </Animated.View>
 
           <Animated.View
@@ -571,6 +604,8 @@ export function OnboardingScreen({ onDone }: Props) {
           // `adjustResize`; `height` resizes the container, which is what a
           // bottom-anchored block needs.
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          pointerEvents={formReady ? 'auto' : 'none'}
+          importantForAccessibility={formReady ? 'auto' : 'no-hide-descendants'}
         >
           {/*
            * Scrollable, because a window can be shorter than the content.
@@ -606,10 +641,10 @@ export function OnboardingScreen({ onDone }: Props) {
             bounces={false}
           >
             <Animated.View
-              entering={FadeInDown.duration(BLOOM_CONTENT_MS)}
               style={[
                 styles.form,
                 phase === 'done' ? styles.formCentred : styles.formBottom,
+                formStyle,
               ]}
             >
               {/*
@@ -1110,7 +1145,7 @@ const makeStyles = (t: Theme) =>
     // Ghost / tertiary text link — small, centered, 44pt hit target. Uses the
     // muted secondary ink so it reads on the light sign-in field.
     partnerLink: {
-      minHeight: 44,
+      minHeight: TOKENS.interaction.minTarget,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -1192,7 +1227,7 @@ const makeStyles = (t: Theme) =>
       backgroundColor: 'transparent',
       alignItems: 'center',
       justifyContent: 'center',
-      minHeight: 44,
+      minHeight: TOKENS.interaction.minTarget,
     },
     ageChipSelected: {
       backgroundColor: '#FFFFFF',
@@ -1222,7 +1257,7 @@ const makeStyles = (t: Theme) =>
       gap: TOKENS.space.lg,
     },
     resendLink: {
-      minHeight: 44,
+      minHeight: TOKENS.interaction.minTarget,
       alignItems: 'center',
       justifyContent: 'center',
     },
