@@ -59,7 +59,7 @@ assets/
   fonts/                 Geist (Regular/SemiBold/Bold), TitanOne, Lucide.ttf, PappalGlyphs.ttf
 
   supabase/
-  migrations/            001–045: sequential SQL migrations (applied in order)
+  migrations/            001–047: sequential SQL migrations (applied in order)
   functions/             Deno edge functions (9 total)
   tests/                 pgTAP SQL test suites (run via npm run test:db, needs Docker)
   config.toml            Supabase project config (authoritative; db push applies this)
@@ -181,7 +181,7 @@ Runtime config also covers rates, packs, and kill switches via `get_public_confi
 
 ---
 
-## Database Migrations (001–045)
+## Database Migrations (001–047)
 
 | #   | File                                          | Purpose                                                                                                                      |
 | --- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
@@ -230,6 +230,8 @@ Runtime config also covers rates, packs, and kill switches via `get_public_confi
 | 043 | `043_member_age_bracket.sql`                  | Adult age-bracket field for members (under-18 not offered)                                                                   |
 | 044 | `044_independent_call_controls.sql`           | Independent `voice_calls_enabled` / `video_calls_enabled` kill switches                                                      |
 | 045 | `045_message_origin_and_hidden_retention.sql` | Message origin + hide-on-end / 30-day retain / daily purge; sequential opener templates                                      |
+| 046 | `046_invoice_on_recharge.sql`                 | Generate GST invoices after successful production or mock recharges                                                          |
+| 047 | `047_fix_public_policy_urls.sql`              | Correct Terms and Privacy records to Pappal's stable public site without forcing re-acceptance                               |
 
 **RLS model**: all tables use `auth.uid()` for row ownership. `send_message`, `complete_recharge`, `approve_provider_application` enforce the caller inside the function. Service-role-only RPCs are revoked from `authenticated` and granted only to `service_role`. Session content after end is filtered by `hidden_at` (045) so participants cannot replay it while dispute retention remains server-side.
 

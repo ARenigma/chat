@@ -145,6 +145,20 @@ for (const root of publicCopyRoots) {
   }
 }
 
+const canonicalUrlFiles = [
+  join(ROOT, '.gitlab-ci.yml'),
+  join(ROOT, 'docs', 'play', 'listing.md'),
+  join(ROOT, 'play-upload', 'README.md'),
+  join(ROOT, 'src', 'lib', 'legal.ts'),
+];
+for (const file of canonicalUrlFiles) {
+  if (readFileSync(file, 'utf8').includes('bond-app.vercel.app')) {
+    problems.push(
+      `${file.slice(ROOT.length + 1)} points at the unrelated bond-app site`,
+    );
+  }
+}
+
 if (problems.length > 0) {
   console.error('web:check FAILED\n  ' + problems.join('\n  '));
   process.exit(1);

@@ -32,7 +32,7 @@ builds only that device's native ABI instead of four architectures.
 Backend, once per project:
 
 ```bash
-supabase db push           # applies migrations 001–045
+supabase db push           # applies migrations 001–047
 supabase config push       # applies auth config; anonymous sign-ins stay DISABLED
 ```
 
@@ -150,8 +150,8 @@ src/
                          ProviderApplicationScreen, ProviderStatusScreen,
                          ProviderHomeScreen
 supabase/
-  migrations/            001–045 (schema, wallet, sessions, admin config,
-                         Cashfree, openers, hidden 30-day retention);
+  migrations/            001–047 (schema, wallet, sessions, admin config,
+                         Cashfree, retention, invoices, public policy URLs);
                          see docs/ARCHITECTURE.md#database-migrations
   tests/                 pgTAP suite + auth shim, run by npm run test:db
 .maestro/                device journeys

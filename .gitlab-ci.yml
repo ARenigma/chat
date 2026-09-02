@@ -424,7 +424,7 @@ deploy-web:
     VERCEL_ORG_ID: 'team_3gHsyR3zCdpVWtnv3r0SJ5Vq'
   environment:
     name: web
-    url: https://bond-app.vercel.app
+    url: https://chat-arenigmas-projects.vercel.app
   script:
     # Regenerated rather than trusted: web/tokens.css is a build artefact of
     # design/tokens.json, and `verify` already fails on drift — this makes the
