@@ -40,7 +40,7 @@ export type Phase = 'welcome' | 'leaving' | 'form' | 'done';
 export type Route = 'undecided' | 'google' | 'phone';
 
 /** The rows the checklist can hold. */
-export type StepKey = 'identify' | 'verify' | 'age';
+export type StepKey = 'choose' | 'number' | 'code' | 'age';
 
 /**
  * What the flow is currently asking for, within the form.
@@ -68,18 +68,33 @@ export interface StepSpec {
 }
 
 export const STEPS: Readonly<Record<StepKey, StepSpec>> = {
-  identify: {
-    key: 'identify',
-    title: 'Say hello',
+  choose: {
+    key: 'choose',
+    title: 'Choose a way in',
     description:
       'One tap with Google, or your number if you would rather not use it.',
     glyph: 'chat',
   },
-  verify: {
-    key: 'verify',
+  number: {
+    key: 'number',
+    title: 'Your number',
+    description: "We'll text a 6-digit code to confirm it's you.",
+    /*
+     * `call`, the handset. It can read as a smile at the collapsed 20pt size the
+     * `code` note below warns about, but "your number" has no better abstract
+     * mark and this row spends little time collapsed — you either send within
+     * seconds or tap it to change the number — so the risk is small.
+     */
+    glyph: 'call',
+  },
+  code: {
+    key: 'code',
     title: 'Your code',
-    description:
-      'Six digits, sent to the number you gave. It expires in a few minutes.',
+    // The active step's supporting line sits directly above the boxes, so it is
+    // the instruction, not trivia (Amit, 2026-09-03): "enter your OTP below".
+    // The "sent to your number / expires shortly" detail is carried by the
+    // preceding "Your number" step, so it need not repeat here.
+    description: 'Enter your OTP below.',
     /*
      * `receipt`, a slip with two lines on it, and NOT `phone`.
      *
@@ -143,17 +158,18 @@ export function visibleSteps(
   route: Route,
   options: VisibleStepsOptions = {},
 ): readonly StepSpec[] {
-  const identify = STEPS.identify;
-  if (identify === undefined) {
-    throw new Error('identify step missing');
+  const choose = STEPS.choose;
+  if (choose === undefined) {
+    throw new Error('choose step missing');
   }
-  const steps: StepSpec[] = [identify];
+  const steps: StepSpec[] = [choose];
   if (route === 'phone') {
-    const verify = STEPS.verify;
-    if (verify === undefined) {
-      throw new Error('verify step missing');
+    const number = STEPS.number;
+    const code = STEPS.code;
+    if (number === undefined || code === undefined) {
+      throw new Error('phone steps missing');
     }
-    steps.push(verify);
+    steps.push(number, code);
   }
   if (options.includeAge) {
     const age = STEPS.age;

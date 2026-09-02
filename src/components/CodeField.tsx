@@ -152,35 +152,45 @@ function CodeFieldView({
   const rowScale = useSharedValue(1);
   const [showError, setShowError] = useState(false);
   const lastFired = useRef<string | null>(null);
+  const prevLen = useRef(0);
 
   /**
-   * Auto-submit on the last character, once per distinct value.
+   * Auto-submit once the code is complete — instantly when it arrives in bulk
+   * (autofill or paste), after a short beat when the last digit was typed by
+   * hand.
    *
-   * Without the `lastFired` guard a rejected code resubmits on every re-render,
-   * which burns the provider's rate limit and looks to the user like the app is
-   * retrying on its own. Cleared whenever the value shortens, so correcting one
-   * digit and returning to six fires again.
+   * The `lastFired` guard stops a rejected code resubmitting on every re-render,
+   * which would burn the provider's rate limit and read as the app retrying on
+   * its own. It is cleared whenever the value shortens, so fixing a digit and
+   * returning to six fires again.
+   *
+   * The 250ms delay on manual entry is the OTP-UX best practice (Twilio,
+   * Baymard): a mistyped sixth digit gets a window to be corrected before the
+   * network call, and backspacing inside that window cancels the pending submit
+   * via the cleanup. A code that lands whole — grew by more than one character,
+   * i.e. autofill or paste — was never read digit-by-digit, so it submits with
+   * no delay.
    */
   useEffect(() => {
-    if (__DEV__) {
-      // TEMPORARY (2026-09-02): trace the auto-submit path. Amit reports the
-      // keyboard retracting on the 6th digit with no verify until a manual
-      // re-focus + IME submit. `adb logcat -s ReactNativeJS:I` and grep otp.
-      // eslint-disable-next-line no-console
-      console.log(`[otp] len=${value.length} full=${value.length >= length}`);
-    }
     if (value.length < length) {
       lastFired.current = null;
+      prevLen.current = value.length;
       return;
     }
-    if (value !== lastFired.current) {
-      lastFired.current = value;
-      if (__DEV__) {
-        // eslint-disable-next-line no-console
-        console.log('[otp] firing onComplete');
-      }
-      onComplete(value);
+    if (value === lastFired.current) {
+      return;
     }
+    const grewByOne = prevLen.current === length - 1;
+    prevLen.current = value.length;
+    // Claim the value now so an unrelated re-render inside the window cannot
+    // schedule a second submit.
+    lastFired.current = value;
+    if (!grewByOne) {
+      onComplete(value);
+      return;
+    }
+    const timer = setTimeout(() => onComplete(value), 250);
+    return () => clearTimeout(timer);
   }, [value, length, onComplete]);
 
   /**
@@ -244,7 +254,25 @@ function CodeFieldView({
   }));
 
   const focus = useCallback(() => {
-    input.current?.focus();
+    const node = input.current;
+    if (node === null) {
+      return;
+    }
+    /*
+     * Re-open the IME even when the field already holds focus.
+     *
+     * `TextInput.focus()` is a no-op on Android when the input is already
+     * focused, and it does NOT re-show a keyboard the user hid with the IME's
+     * own down-chevron — which leaves the field focused. So tapping the boxes
+     * after hiding the keyboard that way did nothing (Amit, 2026-09-03). The
+     * blur→focus round-trip forces `showSoftInput` to run again; it is
+     * invisible here because the field has no caret or selection to flicker
+     * (`caretHidden`, `selectionColor: 'transparent'`).
+     */
+    if (node.isFocused()) {
+      node.blur();
+    }
+    node.focus();
   }, []);
 
   const onChangeText = useCallback(
