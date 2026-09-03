@@ -84,6 +84,8 @@ export type ProviderRoute =
   | { readonly name: 'home' }
   | { readonly name: 'chat'; readonly peerId: string }
   | { readonly name: 'settings' }
+  /** Bank/UPI + PAN payout setup. */
+  | { readonly name: 'payout' }
   /** A voice or video call on the provider tree. */
   | {
       readonly name: 'call';

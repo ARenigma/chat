@@ -89,6 +89,7 @@ const MIGRATIONS = [
   'supabase/migrations/046_invoice_on_recharge.sql',
   'supabase/migrations/047_fix_public_policy_urls.sql',
   'supabase/migrations/048_provider_payout_accounts.sql',
+  'supabase/migrations/049_pan_mandatory_for_payout.sql',
 ];
 
 const docker = (args, options = {}) =>
