@@ -1459,6 +1459,32 @@ describe('iOS conformance', () => {
     expect(typography.labelSmall.letterSpacing).toBeGreaterThan(0);
   });
 
+  it('caps only the large roles for accessibility font scaling', () => {
+    // M3 large-font support: display/headline cap at 1.3, titles at 1.5, a brand
+    // wordmark never scales (1.0), and reading text — body, label — plus the
+    // balance numerals are uncapped so a 200% setting still enlarges them.
+    const cap = LIGHT.fontScaleCap as Record<string, number>;
+    expect(cap.displayLarge).toBe(1.3);
+    expect(cap.headlineSmallEmphasized).toBe(1.3);
+    expect(cap.titleMediumEmphasized).toBe(1.5);
+    expect(cap.wordmarkLarge).toBe(1.0);
+    for (const role of ['bodyLarge', 'bodyMedium', 'labelLarge', 'numeralDisplay']) {
+      expect(cap[role]).toBeUndefined();
+    }
+  });
+
+  it('binds the decorative face block to real bundled families', () => {
+    // The 6 glyphs that borrow a weight name it through `face` rather than a text
+    // role. Every family here must also be one a typography style names, so the
+    // face-bundling test already covers the files.
+    const families = new Set(
+      Object.values(LIGHT.typography).map(s => s.fontFamily),
+    );
+    for (const fam of Object.values(LIGHT.face)) {
+      expect(families).toContain(fam);
+    }
+  });
+
   it('has both page colours iOS ships, not just one', () => {
     // A plain list sits on systemBackground and an inset-grouped form sits on
     // systemGroupedBackground. With only the first, six form fields on

@@ -308,7 +308,7 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
     },
     initial: {
-      fontFamily: TOKENS.typography.labelLarge.fontFamily,
+      fontFamily: TOKENS.face.semibold,
       fontSize: 88,
       lineHeight: 96,
       color: LIGHT.color.text.onAccent,
