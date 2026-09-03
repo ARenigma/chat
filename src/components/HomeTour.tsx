@@ -138,11 +138,11 @@ const makeStyles = (t: Theme) =>
       gap: TOKENS.space.xs,
     },
     title: {
-      ...TOKENS.typography.headline,
+      ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.primary,
     },
     body: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.text.secondary,
     },
     actions: {
@@ -157,11 +157,11 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
     },
     skipLabel: {
-      ...TOKENS.typography.labelMedium,
+      ...TOKENS.typography.labelLargeEmphasized,
       color: t.color.text.secondary,
     },
     nextLabel: {
-      ...TOKENS.typography.labelMedium,
+      ...TOKENS.typography.labelLargeEmphasized,
       color: t.color.text.accent,
     },
   });

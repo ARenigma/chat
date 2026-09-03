@@ -89,7 +89,7 @@ const makeStyles = (t: Theme) =>
       lineHeight: 20,
     },
     label: {
-      ...TOKENS.typography.labelMedium,
+      ...TOKENS.typography.labelLargeEmphasized,
       color: t.color.text.primary,
       fontFamily: 'Geist-Regular',
     },

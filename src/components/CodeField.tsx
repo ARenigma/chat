@@ -401,7 +401,7 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
     },
     digit: {
-      ...TOKENS.typography.displaySmall,
+      ...TOKENS.typography.headlineSmallEmphasized,
       color: t.color.text.primary,
     },
     input: {

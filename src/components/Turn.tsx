@@ -1072,13 +1072,13 @@ const makeStyles = (t: Theme) =>
     // The per-bubble clock inside metaRow. Same metrics as BubbleTime; peer sits
     // in tertiary, mine in muted white.
     inlineTimePeer: {
-      ...TOKENS.typography.captionSmall,
+      ...TOKENS.typography.bodySmall,
       fontSize: 11,
       lineHeight: 16,
       color: t.color.text.tertiary,
     },
     inlineTimeOnAccent: {
-      ...TOKENS.typography.captionSmall,
+      ...TOKENS.typography.bodySmall,
       fontSize: 11,
       lineHeight: 16,
       // Follows the bubble's paired on-colour. Dark mode uses a light coral
@@ -1104,11 +1104,11 @@ const makeStyles = (t: Theme) =>
       borderLeftColor: t.color.text.onAccent,
     },
     quoteAuthor: {
-      ...TOKENS.typography.labelSmall,
+      ...TOKENS.typography.labelMediumEmphasized,
       color: t.color.text.secondary,
     },
     quoteBody: {
-      ...TOKENS.typography.captionSmall,
+      ...TOKENS.typography.bodySmall,
       color: t.color.text.secondary,
     },
     quoteTextOnAccent: {

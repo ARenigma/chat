@@ -2618,7 +2618,7 @@ describe('the motion adoption is wired, not just drawn', () => {
     // a hard cut. Derived from the type token rather than typed, so it survives
     // the next change to the display size.
     expect(read('src/screens/AuthScreen.tsx')).toContain(
-      'minHeight: TOKENS.typography.displayLarge.lineHeight * 2',
+      'minHeight: TOKENS.typography.headlineMediumEmphasized.lineHeight * 2',
     );
   });
 

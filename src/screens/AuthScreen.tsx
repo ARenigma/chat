@@ -597,14 +597,14 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     gap: TOKENS.space.sm,
   },
   title: {
-    ...TOKENS.typography.displayLarge,
+    ...TOKENS.typography.headlineMediumEmphasized,
     color: t.color.text.primary,
     // Two lines reserved, derived rather than typed. 'Someone's here to listen'
     // wraps at 34pt and 'Enter the code' does not, so without this the whole head
     // block jumps a line high the moment the step changes, and under a cross-fade
     // that is worse than a hard cut, because the movement happens while the text
     // is half transparent.
-    minHeight: TOKENS.typography.displayLarge.lineHeight * 2,
+    minHeight: TOKENS.typography.headlineMediumEmphasized.lineHeight * 2,
   },
   claims: {
     gap: TOKENS.space.xs,
@@ -623,17 +623,17 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     backgroundColor: t.color.text.tertiary,
   },
   claimText: {
-    ...TOKENS.typography.bodyMedium,
+    ...TOKENS.typography.bodyLarge,
     color: t.color.text.secondary,
   },
   subtitle: {
-    ...TOKENS.typography.bodyMedium,
+    ...TOKENS.typography.bodyLarge,
     color: t.color.text.secondary,
   },
   // Secondary, not accent: "Change number" is a small correction, and the
   // primary action on this step is the code field itself.
   link: {
-    ...TOKENS.typography.labelMedium,
+    ...TOKENS.typography.labelLargeEmphasized,
     color: t.color.text.secondary,
   },
   field: {
@@ -659,7 +659,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     gap: TOKENS.space.xs,
   },
   confirmNumber: {
-    ...TOKENS.typography.displayLarge,
+    ...TOKENS.typography.headlineMediumEmphasized,
     color: t.color.text.primary,
     textAlign: 'center',
   },
@@ -677,7 +677,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     borderColor: 'rgba(0,0,0,0.08)',
   },
   confirmPrimaryLabel: {
-    ...TOKENS.typography.headline,
+    ...TOKENS.typography.titleMediumEmphasized,
     color: t.color.text.primary,
   },
   // "Edit number" ghost link.
@@ -705,7 +705,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     height: 20,
   },
   googlePillLabel: {
-    ...TOKENS.typography.headline,
+    ...TOKENS.typography.titleMediumEmphasized,
     color: t.color.text.primary,
   },
   // The fix for "buttons have no gap".
@@ -713,18 +713,18 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     gap: TOKENS.space.sm,
   },
   error: {
-    ...TOKENS.typography.captionRegular,
+    ...TOKENS.typography.bodySmall,
     color: t.color.text.primary,
     paddingBottom: TOKENS.space.sm,
   },
   registrationPause: {
-    ...TOKENS.typography.captionRegular,
+    ...TOKENS.typography.bodySmall,
     color: t.color.text.secondary,
     textAlign: 'center',
     paddingBottom: TOKENS.space.xs,
   },
   legal: {
-    ...TOKENS.typography.captionSmall,
+    ...TOKENS.typography.bodySmall,
     color: t.color.text.secondary,
     paddingTop: TOKENS.space.xl,
     paddingBottom: TOKENS.space.xl,

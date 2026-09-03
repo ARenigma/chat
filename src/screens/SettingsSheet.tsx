@@ -765,17 +765,17 @@ const makeStyles = (t: Theme) =>
       transform: [{ scale: 1.12 }, { translateX: 2 }, { translateY: -3 }],
     },
     profileName: {
-      ...TOKENS.typography.headline,
+      ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.primary,
       marginTop: TOKENS.space.xs,
     },
     profileMeta: {
-      ...TOKENS.typography.captionRegular,
+      ...TOKENS.typography.bodySmall,
       color: t.color.text.secondary,
       marginTop: TOKENS.space['2xs'],
     },
     subheader: {
-      ...TOKENS.typography.labelSmall,
+      ...TOKENS.typography.labelMediumEmphasized,
       color: t.color.text.secondary,
       paddingTop: TOKENS.space.sm,
       paddingBottom: TOKENS.space.sm,
@@ -813,11 +813,11 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: TOKENS.space.sm,
     },
     rowTitle: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.text.primary,
     },
     rowDetail: {
-      ...TOKENS.typography.captionRegular,
+      ...TOKENS.typography.bodySmall,
       color: t.color.text.secondary,
       marginTop: TOKENS.space.hair,
     },
@@ -836,7 +836,7 @@ const makeStyles = (t: Theme) =>
       gap: TOKENS.space['2xs'],
     },
     brandFooter: {
-      fontFamily: TOKENS.typography.wordmark.fontFamily,
+      fontFamily: TOKENS.typography.wordmarkLarge.fontFamily,
       fontSize: 18,
       // The brand colour, not a grey whisper (#9): the wordmark is the brand.
       color: t.color.bg.accent,
@@ -849,7 +849,7 @@ const makeStyles = (t: Theme) =>
       paddingVertical: TOKENS.space['2xs'],
     },
     rateFooterText: {
-      ...TOKENS.typography.labelMedium,
+      ...TOKENS.typography.labelLargeEmphasized,
       color: t.color.text.secondary,
     },
   });

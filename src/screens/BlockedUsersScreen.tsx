@@ -110,7 +110,7 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
     },
     barTitle: {
-      ...TOKENS.typography.headline,
+      ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.primary,
     },
     list: {
@@ -118,7 +118,7 @@ const makeStyles = (t: Theme) =>
       paddingTop: TOKENS.space.xs,
     },
     hint: {
-      ...TOKENS.typography.subhead,
+      ...TOKENS.typography.bodyMedium,
       color: t.color.text.secondary,
       paddingBottom: TOKENS.space.md,
     },
@@ -129,7 +129,7 @@ const makeStyles = (t: Theme) =>
       paddingVertical: TOKENS.space.sm,
     },
     name: {
-      ...TOKENS.typography.headline,
+      ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.primary,
       flex: 1,
     },
@@ -143,7 +143,7 @@ const makeStyles = (t: Theme) =>
       backgroundColor: t.color.bg.sunken,
     },
     unblockLabel: {
-      ...TOKENS.typography.labelMedium,
+      ...TOKENS.typography.labelLargeEmphasized,
       color: t.color.text.primary,
     },
     empty: {
@@ -153,7 +153,7 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: TOKENS.space['2xl'],
     },
     emptyText: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.text.secondary,
       textAlign: 'center',
     },

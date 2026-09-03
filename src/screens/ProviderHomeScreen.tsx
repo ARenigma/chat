@@ -327,7 +327,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     paddingBottom: TOKENS.space.md,
   },
   role: {
-    ...TOKENS.typography.captionRegular,
+    ...TOKENS.typography.bodySmall,
     color: t.color.text.secondary,
   },
   spacer: {
@@ -357,11 +357,11 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     gap: TOKENS.space.hair,
   },
   availabilityTitle: {
-    ...TOKENS.typography.headline,
+    ...TOKENS.typography.titleMediumEmphasized,
     color: t.color.text.primary,
   },
   availabilitySub: {
-    ...TOKENS.typography.captionRegular,
+    ...TOKENS.typography.bodySmall,
     color: t.color.text.secondary,
   },
   stats: {
@@ -374,15 +374,15 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     gap: TOKENS.space.hair,
   },
   statValue: {
-    ...TOKENS.typography.titleMedium,
+    ...TOKENS.typography.titleLargeEmphasized,
     color: t.color.text.primary,
   },
   statLabel: {
-    ...TOKENS.typography.captionSmall,
+    ...TOKENS.typography.bodySmall,
     color: t.color.text.secondary,
   },
   refundNote: {
-    ...TOKENS.typography.captionRegular,
+    ...TOKENS.typography.bodySmall,
     color: t.color.text.secondary,
     paddingHorizontal: TOKENS.space.md,
     paddingBottom: TOKENS.space.md,
@@ -391,7 +391,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   // 13 SemiBold, which is iOS's plain-list header. It was captionSmall, 12
   // Regular, which is a caption and not a header.
   sectionTitle: {
-    ...TOKENS.typography.labelSmall,
+    ...TOKENS.typography.labelMediumEmphasized,
     color: t.color.text.secondary,
     paddingHorizontal: TOKENS.space.md,
     paddingTop: TOKENS.space.lg,
@@ -421,21 +421,21 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     gap: TOKENS.space.xs,
   },
   rowName: {
-    ...TOKENS.typography.headline,
+    ...TOKENS.typography.titleMediumEmphasized,
     color: t.color.text.primary,
     flex: 1,
   },
   rowTime: {
-    ...TOKENS.typography.subhead,
+    ...TOKENS.typography.bodyMedium,
     color: t.color.text.tertiary,
   },
   rowPreview: {
-    ...TOKENS.typography.subhead,
+    ...TOKENS.typography.bodyMedium,
     color: t.color.text.secondary,
     flex: 1,
   },
   rowPreviewUnread: {
-    ...TOKENS.typography.labelMedium,
+    ...TOKENS.typography.labelLargeEmphasized,
     color: t.color.text.primary,
   },
   // A count, not a dot, the same badge the member's inbox uses. "Someone is
@@ -461,7 +461,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     paddingHorizontal: TOKENS.space['2xl'],
   },
   stateText: {
-    ...TOKENS.typography.bodyMedium,
+    ...TOKENS.typography.bodyLarge,
     color: t.color.text.secondary,
     textAlign: 'center',
   },

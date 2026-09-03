@@ -349,7 +349,7 @@ const makeStyles = (t: Theme) =>
       marginTop: TOKENS.space.xs,
     },
     webRowText: {
-      ...TOKENS.typography.subhead,
+      ...TOKENS.typography.bodyMedium,
       color: t.color.text.secondary,
     },
     centreState: {
@@ -359,7 +359,7 @@ const makeStyles = (t: Theme) =>
       gap: TOKENS.space.sm,
     },
     centreLabel: {
-      ...TOKENS.typography.subhead,
+      ...TOKENS.typography.bodyMedium,
       color: t.color.text.secondary,
     },
     /*
@@ -391,11 +391,11 @@ const makeStyles = (t: Theme) =>
       marginBottom: TOKENS.space.xs,
     },
     successDetail: {
-      ...TOKENS.typography.headline,
+      ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.positive,
     },
     successBalance: {
-      ...TOKENS.typography.subhead,
+      ...TOKENS.typography.bodyMedium,
       color: t.color.text.positive,
     },
     errorRow: {
@@ -406,7 +406,7 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: TOKENS.space.xs,
     },
     errorText: {
-      ...TOKENS.typography.captionSmall,
+      ...TOKENS.typography.bodySmall,
       flex: 1,
     },
   });

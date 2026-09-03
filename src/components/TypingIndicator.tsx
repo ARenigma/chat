@@ -62,7 +62,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     paddingVertical: TOKENS.space.xs,
   },
   label: {
-    ...TOKENS.typography.captionSmall,
+    ...TOKENS.typography.bodySmall,
     color: t.color.text.secondary,
   },
 });

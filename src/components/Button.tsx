@@ -174,7 +174,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     borderColor: t.color.state.danger,
   },
   label: {
-    ...TOKENS.typography.headline,
+    ...TOKENS.typography.titleMediumEmphasized,
   },
   primaryLabel: {
     color: t.color.text.onInverse,

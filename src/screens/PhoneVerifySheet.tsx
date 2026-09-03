@@ -224,7 +224,7 @@ const makeStyles = (t: Theme) =>
     // is the expected case, and colouring it as an alarm makes a typo feel like a
     // security event.
     error: {
-      ...TOKENS.typography.captionRegular,
+      ...TOKENS.typography.bodySmall,
       color: t.color.text.primary,
       paddingBottom: TOKENS.space['2xs'],
     },

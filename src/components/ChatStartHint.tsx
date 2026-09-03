@@ -82,7 +82,7 @@ const makeStyles = (t: Theme) =>
       paddingVertical: TOKENS.space.md,
     },
     bubbleText: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.text.primary,
       textAlign: 'center',
     },

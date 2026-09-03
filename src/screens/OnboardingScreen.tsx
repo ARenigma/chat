@@ -1157,7 +1157,7 @@ const makeStyles = (t: Theme) =>
     // The brand wordmark: white on the dark bloom field so it reads at display
     // size, with full contrast against the dark welcome bloom.
     brand: {
-      ...TOKENS.typography.wordmark,
+      ...TOKENS.typography.wordmarkLarge,
       fontSize: 34,
       lineHeight: 38,
       color: t.color.text.onAccent,
@@ -1179,7 +1179,7 @@ const makeStyles = (t: Theme) =>
       backgroundColor: t.color.bg.base,
     },
     ctaLabel: {
-      ...TOKENS.typography.headline,
+      ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.primary,
     },
     /*
@@ -1248,7 +1248,7 @@ const makeStyles = (t: Theme) =>
       borderColor: 'rgba(0,0,0,0.08)',
     },
     primaryLabel: {
-      ...TOKENS.typography.headline,
+      ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.primary,
     },
     googleMark: {
@@ -1270,7 +1270,7 @@ const makeStyles = (t: Theme) =>
       borderColor: t.color.border.strong,
     },
     secondaryLabel: {
-      ...TOKENS.typography.headline,
+      ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.primary,
     },
     // Ghost / tertiary text link — small, centered, 44pt hit target. Uses the
@@ -1281,7 +1281,7 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
     },
     partnerLinkLabel: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.text.secondary,
     },
     // Number entry: picker + field + send button in a row.
@@ -1319,7 +1319,7 @@ const makeStyles = (t: Theme) =>
       backgroundColor: t.color.bg.base,
     },
     numberHint: {
-      ...TOKENS.typography.captionRegular,
+      ...TOKENS.typography.bodySmall,
       color: t.color.text.secondary,
       paddingHorizontal: TOKENS.space.xs,
     },
@@ -1327,7 +1327,7 @@ const makeStyles = (t: Theme) =>
     // is 17 and reads small next to a 42pt step title.
     input: {
       flex: 1,
-      ...TOKENS.typography.headline,
+      ...TOKENS.typography.titleMediumEmphasized,
       fontSize: SOURCE_METRICS.inputText,
       lineHeight: SOURCE_METRICS.inputText * 1.3,
       color: t.color.text.primary,
@@ -1384,7 +1384,7 @@ const makeStyles = (t: Theme) =>
       borderColor: '#FFFFFF',
     },
     ageChipLabel: {
-      ...TOKENS.typography.headline,
+      ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.primary,
     },
     ageChipLabelSelected: {
@@ -1409,7 +1409,7 @@ const makeStyles = (t: Theme) =>
     // The "previous code no longer works" note, centred under the boxes. Muted
     // secondary ink — informational, not an error.
     resentNote: {
-      ...TOKENS.typography.captionRegular,
+      ...TOKENS.typography.bodySmall,
       color: t.color.text.secondary,
       textAlign: 'center',
       paddingHorizontal: TOKENS.space.xs,
@@ -1420,7 +1420,7 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
     },
     resendLabel: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.text.secondary,
     },
     resendLabelDimmed: {
@@ -1440,17 +1440,17 @@ const makeStyles = (t: Theme) =>
     // deliberately SMALLER than a step title: the flow is over, and shouting the
     // result would make it the loudest thing on a screen that is now calm.
     doneTitle: {
-      ...TOKENS.typography.displayLarge,
+      ...TOKENS.typography.headlineMediumEmphasized,
       fontSize: SOURCE_METRICS.doneTitle,
       lineHeight: Math.round(SOURCE_METRICS.doneTitle * 1.2),
       color: t.color.text.primary,
     },
     doneText: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.text.secondary,
     },
     failure: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.state.danger,
     },
   });

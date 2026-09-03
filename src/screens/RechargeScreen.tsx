@@ -391,7 +391,7 @@ const makePageStyles = (t: Theme) =>
       marginLeft: -TOKENS.space.xs,
     },
     barTitle: {
-      ...TOKENS.typography.headline,
+      ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.primary,
     },
     scroll: {
@@ -420,7 +420,7 @@ const makeStyles = (t: Theme) =>
       gap: TOKENS.space.hair,
     },
     balanceLabel: {
-      ...TOKENS.typography.subhead,
+      ...TOKENS.typography.bodyMedium,
       color: t.color.text.onInverse,
       opacity: 0.7,
     },
@@ -433,12 +433,12 @@ const makeStyles = (t: Theme) =>
       color: t.color.text.onInverse,
     },
     balanceHint: {
-      ...TOKENS.typography.captionSmall,
+      ...TOKENS.typography.bodySmall,
       color: t.color.text.onInverse,
       opacity: 0.55,
     },
     section: {
-      ...TOKENS.typography.headline,
+      ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.primary,
       paddingTop: TOKENS.space.md,
     },
@@ -488,7 +488,7 @@ const makeStyles = (t: Theme) =>
       backgroundColor: t.color.bg.base,
     },
     ribbonText: {
-      ...TOKENS.typography.captionSmall,
+      ...TOKENS.typography.bodySmall,
       fontFamily: 'Geist-SemiBold',
       color: t.color.text.onAccent,
     },
@@ -513,7 +513,7 @@ const makeStyles = (t: Theme) =>
       backgroundColor: 'rgba(255,255,255,0.22)',
     },
     coinMark: {
-      ...TOKENS.typography.titleMedium,
+      ...TOKENS.typography.titleLargeEmphasized,
       color: t.color.text.accent,
     },
     coinMarkOn: {
@@ -534,7 +534,7 @@ const makeStyles = (t: Theme) =>
       color: t.color.text.primary,
     },
     cardUnit: {
-      ...TOKENS.typography.captionSmall,
+      ...TOKENS.typography.bodySmall,
       color: t.color.text.secondary,
     },
     cardUnitOn: {
@@ -556,14 +556,14 @@ const makeStyles = (t: Theme) =>
       backgroundColor: 'rgba(255,255,255,0.18)',
     },
     minutesText: {
-      ...TOKENS.typography.labelSmall,
+      ...TOKENS.typography.labelMediumEmphasized,
       color: t.color.text.accent,
     },
     minutesTextOn: {
       color: t.color.text.onAccent,
     },
     rupeeNote: {
-      ...TOKENS.typography.captionSmall,
+      ...TOKENS.typography.bodySmall,
       color: t.color.text.tertiary,
       paddingTop: TOKENS.space.xs,
     },
@@ -595,20 +595,20 @@ const makeCompactStyles = (t: Theme) =>
       backgroundColor: t.color.bg.accent,
     },
     balanceMarkText: {
-      ...TOKENS.typography.labelSmall,
+      ...TOKENS.typography.labelMediumEmphasized,
       color: t.color.text.onAccent,
     },
     balanceLabel: {
       flex: 1,
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.text.secondary,
     },
     balanceValue: {
-      ...TOKENS.typography.titleMedium,
+      ...TOKENS.typography.titleLargeEmphasized,
       color: t.color.text.primary,
     },
     section: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.text.primary,
       paddingTop: TOKENS.space.xs,
     },
@@ -645,15 +645,15 @@ const makeCompactStyles = (t: Theme) =>
       backgroundColor: t.color.bg.accentTint,
     },
     popularText: {
-      ...TOKENS.typography.captionSmall,
+      ...TOKENS.typography.bodySmall,
       color: t.color.text.accent,
     },
     amount: {
-      ...TOKENS.typography.titleMedium,
+      ...TOKENS.typography.titleLargeEmphasized,
       color: t.color.text.primary,
     },
     tokens: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.text.secondary,
       paddingTop: TOKENS.space.xs,
     },
@@ -664,7 +664,7 @@ const makeCompactStyles = (t: Theme) =>
       gap: TOKENS.space.xs,
     },
     rateText: {
-      ...TOKENS.typography.captionSmall,
+      ...TOKENS.typography.bodySmall,
       color: t.color.text.secondary,
     },
     rateIcon: {
@@ -680,7 +680,7 @@ const makeCompactStyles = (t: Theme) =>
       backgroundColor: t.color.bg.accentStrong,
     },
     payButtonLabel: {
-      ...TOKENS.typography.headline,
+      ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.onAccent,
     },
   });

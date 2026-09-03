@@ -273,7 +273,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     overflow: 'hidden',
   },
   initial: {
-    ...TOKENS.typography.labelSmall,
+    ...TOKENS.typography.labelMediumEmphasized,
     color: t.color.text.primary,
   },
   // No `backgroundColor` here on purpose: it is the one property that has to

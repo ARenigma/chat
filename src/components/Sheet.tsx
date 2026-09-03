@@ -399,7 +399,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     flex: 1,
   },
   title: {
-    ...TOKENS.typography.titleMedium,
+    ...TOKENS.typography.titleLargeEmphasized,
     color: t.color.text.primary,
     paddingTop: TOKENS.space['2xs'],
   },
@@ -410,7 +410,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     color: t.color.text.accent,
   },
   body: {
-    ...TOKENS.typography.bodyMedium,
+    ...TOKENS.typography.bodyLarge,
     color: t.color.text.secondary,
   },
   actions: {

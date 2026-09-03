@@ -225,7 +225,7 @@ const makeStyles = (t: Theme) =>
     },
     title: {
       flex: 1,
-      ...TOKENS.typography.headline,
+      ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.primary,
       // M3 Small: title is start-aligned (not centred).
       textAlign: 'left',
@@ -248,7 +248,7 @@ const makeStyles = (t: Theme) =>
     },
     inlineTitle: {
       flex: 1,
-      ...TOKENS.typography.headline,
+      ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.primary,
       textAlign: 'left',
       paddingHorizontal: TOKENS.space['2xs'],
@@ -262,11 +262,11 @@ const makeStyles = (t: Theme) =>
       paddingBottom: TOKENS.space.sm,
     },
     headline: {
-      ...TOKENS.typography.displaySmall,
+      ...TOKENS.typography.headlineSmallEmphasized,
       color: t.color.text.primary,
     },
     subtitle: {
-      ...TOKENS.typography.subhead,
+      ...TOKENS.typography.bodyMedium,
       color: t.color.text.secondary,
     },
   });

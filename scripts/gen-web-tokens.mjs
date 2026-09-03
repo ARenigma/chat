@@ -93,7 +93,7 @@ ${scale('radius', 'radius')}
     spec.typography.titleMedium.fontFamily,
   )}', system-ui, sans-serif;
   --face-label: '${cssFamily(
-    spec.typography.headline.fontFamily,
+    spec.typography.labelLarge.fontFamily,
   )}', system-ui, sans-serif;
   --face-body: '${cssFamily(
     spec.typography.bodyLarge.fontFamily,

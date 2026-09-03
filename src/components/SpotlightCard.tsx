@@ -308,7 +308,7 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
     },
     initial: {
-      fontFamily: TOKENS.typography.displayLarge.fontFamily,
+      fontFamily: TOKENS.typography.labelLarge.fontFamily,
       fontSize: 88,
       lineHeight: 96,
       color: LIGHT.color.text.onAccent,
@@ -346,15 +346,15 @@ const makeStyles = (t: Theme) =>
       backgroundColor: t.color.state.available,
     },
     onlineLabel: {
-      ...TOKENS.typography.labelSmall,
+      ...TOKENS.typography.labelMediumEmphasized,
       color: '#FFFFFF',
     },
     greeting: {
-      ...TOKENS.typography.displaySmall,
+      ...TOKENS.typography.headlineSmallEmphasized,
       color: LIGHT.color.text.onAccent,
     },
     name: {
-      ...TOKENS.typography.subhead,
+      ...TOKENS.typography.bodyMedium,
       color: 'rgba(255,255,255,0.88)',
     },
     actions: {
@@ -382,7 +382,7 @@ const makeStyles = (t: Theme) =>
       fontSize: 18,
     },
     ctaLabel: {
-      ...TOKENS.typography.labelMedium,
+      ...TOKENS.typography.labelLargeEmphasized,
       color: LIGHT.color.text.onAccent,
     },
     notNowHit: {
@@ -401,7 +401,7 @@ const makeStyles = (t: Theme) =>
       backgroundColor: 'rgba(255,255,255,0.14)',
     },
     notNow: {
-      ...TOKENS.typography.labelMedium,
+      ...TOKENS.typography.labelLargeEmphasized,
       color: 'rgba(255,255,255,0.9)',
     },
   });

@@ -538,18 +538,18 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
     },
     avatarInitial: {
-      fontFamily: TOKENS.typography.displayLarge.fontFamily,
+      fontFamily: TOKENS.typography.labelLarge.fontFamily,
       fontSize: 56,
       lineHeight: 64,
       color: LIGHT.color.text.onAccent,
     },
     name: {
-      ...TOKENS.typography.displaySmall,
+      ...TOKENS.typography.headlineSmallEmphasized,
       color: LIGHT.color.text.onAccent,
       textAlign: 'center',
     },
     timer: {
-      ...TOKENS.typography.titleMedium,
+      ...TOKENS.typography.titleLargeEmphasized,
       color: LIGHT.color.text.onAccent,
     },
     statusRow: {
@@ -558,7 +558,7 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
     },
     status: {
-      ...TOKENS.typography.subhead,
+      ...TOKENS.typography.bodyMedium,
       color: 'rgba(255,255,255,0.85)',
       letterSpacing: 0.3,
     },
@@ -587,7 +587,7 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
     },
     actionLabel: {
-      ...TOKENS.typography.captionRegular,
+      ...TOKENS.typography.bodySmall,
       color: LIGHT.color.text.onAccent,
     },
     bar: {
@@ -622,7 +622,7 @@ const makeStyles = (t: Theme) =>
       backgroundColor: LIGHT.color.bg.base,
     },
     barLabel: {
-      ...TOKENS.typography.captionSmall,
+      ...TOKENS.typography.bodySmall,
       color: LIGHT.color.text.onAccent,
       textAlign: 'center',
     },

@@ -1375,7 +1375,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     minWidth: 42,
   },
   talkText: {
-    ...TOKENS.typography.subhead,
+    ...TOKENS.typography.bodyMedium,
     color: t.color.text.secondary,
     flex: 1,
   },
@@ -1387,7 +1387,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     backgroundColor: t.color.bg.accent,
   },
   talkRechargeLabel: {
-    ...TOKENS.typography.labelSmall,
+    ...TOKENS.typography.labelMediumEmphasized,
     color: t.color.text.onAccent,
   },
   // Transparent, not a filled grey circle. The 48dp target is met by hitSlop
@@ -1420,7 +1420,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     flex: 1,
   },
   title: {
-    ...TOKENS.typography.headline,
+    ...TOKENS.typography.titleMediumEmphasized,
     color: t.color.text.primary,
   },
   body: {
@@ -1458,11 +1458,11 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     flex: 1,
   },
   replyAuthor: {
-    ...TOKENS.typography.labelSmall,
+    ...TOKENS.typography.labelMediumEmphasized,
     color: t.color.text.secondary,
   },
   replyBody: {
-    ...TOKENS.typography.captionRegular,
+    ...TOKENS.typography.bodySmall,
     color: t.color.text.tertiary,
   },
   replyClose: {
@@ -1484,11 +1484,11 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     paddingHorizontal: TOKENS.space['2xl'],
   },
   emptyName: {
-    ...TOKENS.typography.displaySmall,
+    ...TOKENS.typography.headlineSmallEmphasized,
     color: t.color.text.primary,
   },
   emptyLine: {
-    ...TOKENS.typography.bodyMedium,
+    ...TOKENS.typography.bodyLarge,
     color: t.color.text.secondary,
   },
   starters: {
@@ -1520,11 +1520,11 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     gap: TOKENS.space['2xs'],
   },
   extendCardTitle: {
-    ...TOKENS.typography.labelSmall,
+    ...TOKENS.typography.labelMediumEmphasized,
     color: t.color.text.primary,
   },
   extendCardSubtitle: {
-    ...TOKENS.typography.captionRegular,
+    ...TOKENS.typography.bodySmall,
     color: t.color.text.secondary,
   },
   extendCardButton: {
@@ -1535,7 +1535,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     backgroundColor: t.color.bg.inverse,
   },
   extendCardButtonLabel: {
-    ...TOKENS.typography.labelSmall,
+    ...TOKENS.typography.labelMediumEmphasized,
     color: t.color.text.onInverse,
   },
   extendCardClose: {

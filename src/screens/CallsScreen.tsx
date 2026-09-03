@@ -51,7 +51,7 @@ const makeStyles = (t: Theme) =>
     title: {
       // A screen title, not the brand wordmark — dark, like Home's "Explore",
       // not coral (the accent budget reserves coral for states/actions).
-      ...TOKENS.typography.displaySmall,
+      ...TOKENS.typography.headlineSmallEmphasized,
       color: t.color.text.primary,
     },
     empty: {
@@ -62,12 +62,12 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: TOKENS.space['2xl'],
     },
     emptyTitle: {
-      ...TOKENS.typography.headline,
+      ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.primary,
       marginTop: TOKENS.space.xs,
     },
     emptyBody: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.text.secondary,
       textAlign: 'center',
     },

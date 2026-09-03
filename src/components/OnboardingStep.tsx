@@ -292,7 +292,7 @@ const makeStyles = (t: Theme) =>
       right: 0,
     },
     description: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       // Faint and airy, like the source's black.opacity(0.3): supporting copy
       // under the active step, not a second title. muted (#8E8E93) is lighter
       // than tertiary, closer to the source, and clear of pure body copy.

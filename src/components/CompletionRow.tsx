@@ -179,13 +179,13 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   // step title: the flow is over, and shouting the result would make it the
   // loudest thing on a screen that is now calm.
   title: {
-    ...TOKENS.typography.displayLarge,
+    ...TOKENS.typography.headlineMediumEmphasized,
     fontSize: SOURCE_METRICS.doneTitle,
     lineHeight: Math.round(SOURCE_METRICS.doneTitle * 1.2),
     color: t.color.text.primary,
   },
   text: {
-    ...TOKENS.typography.bodyMedium,
+    ...TOKENS.typography.bodyLarge,
     color: t.color.text.secondary,
   },
 });

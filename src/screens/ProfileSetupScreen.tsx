@@ -406,7 +406,7 @@ const makeStyles = (t: Theme) =>
       borderColor: t.color.bg.accent,
     },
     ageChipLabel: {
-      ...TOKENS.typography.headline,
+      ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.primary,
     },
     ageChipLabelSelected: {
@@ -422,17 +422,17 @@ const makeStyles = (t: Theme) =>
       gap: TOKENS.space.md,
     },
     title: {
-      ...TOKENS.typography.displaySmall,
+      ...TOKENS.typography.headlineSmallEmphasized,
       color: t.color.text.primary,
       fontFamily: 'Geist-SemiBold',
     },
     subtitle: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.text.secondary,
       marginBottom: TOKENS.space.sm,
     },
     fieldLabel: {
-      ...TOKENS.typography.headline,
+      ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.primary,
       fontFamily: 'Geist-SemiBold',
       marginTop: TOKENS.space.md,
@@ -451,7 +451,7 @@ const makeStyles = (t: Theme) =>
       color: t.color.text.primary,
     },
     status: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       marginTop: TOKENS.space.xs,
       fontFamily: 'Geist-Regular',
     },
@@ -465,7 +465,7 @@ const makeStyles = (t: Theme) =>
       color: t.color.text.tertiary,
     },
     section: {
-      ...TOKENS.typography.headline,
+      ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.primary,
       marginTop: TOKENS.space.md,
       fontFamily: 'Geist-Regular',
@@ -520,7 +520,7 @@ const makeStyles = (t: Theme) =>
     },
     termsText: {
       flex: 1,
-      ...TOKENS.typography.captionSmall,
+      ...TOKENS.typography.bodySmall,
       color: t.color.text.secondary,
       lineHeight: 22,
     },

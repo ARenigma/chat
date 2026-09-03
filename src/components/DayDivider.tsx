@@ -66,11 +66,11 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     backgroundColor: t.color.bg.raised,
   },
   day: {
-    ...TOKENS.typography.labelSmall,
+    ...TOKENS.typography.labelMediumEmphasized,
     color: t.color.text.secondary,
   },
   date: {
-    ...TOKENS.typography.captionRegular,
+    ...TOKENS.typography.bodySmall,
     color: t.color.text.secondary,
   },
 });

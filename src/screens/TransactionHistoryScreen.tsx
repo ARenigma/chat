@@ -191,7 +191,7 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
     },
     barTitle: {
-      ...TOKENS.typography.headline,
+      ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.primary,
     },
     center: {
@@ -202,18 +202,18 @@ const makeStyles = (t: Theme) =>
       gap: TOKENS.space.sm,
     },
     emptyTitle: {
-      ...TOKENS.typography.headline,
+      ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.primary,
       textAlign: 'center',
       marginTop: TOKENS.space.sm,
     },
     emptyBody: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.text.secondary,
       textAlign: 'center',
     },
     hintText: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.text.secondary,
     },
     list: {
@@ -268,7 +268,7 @@ const makeStyles = (t: Theme) =>
       color: t.color.text.primary,
     },
     rowDate: {
-      ...TOKENS.typography.captionRegular,
+      ...TOKENS.typography.bodySmall,
       color: t.color.text.secondary,
     },
     rowAmount: {
@@ -276,7 +276,7 @@ const makeStyles = (t: Theme) =>
       color: t.color.text.primary,
     },
     rowTokens: {
-      ...TOKENS.typography.captionRegular,
+      ...TOKENS.typography.bodySmall,
       color: t.color.text.secondary,
     },
   });
