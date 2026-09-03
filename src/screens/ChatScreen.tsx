@@ -128,6 +128,9 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   // Drives the dock's frost: composing drops the bar entirely (see the Frost
   // below), leaving a floating capsule over the transcript.
   const [composerFocused, setComposerFocused] = useState(false);
+  // The docked emoji panel is sized to the keyboard, so while it is up the dock
+  // must not also add the safe-area inset the keyboard-down case needs.
+  const [emojiPanelOpen, setEmojiPanelOpen] = useState(false);
   const [leaveDialogVisible, setLeaveDialogVisible] = useState(false);
   // Independent live controls. CALLS_ENABLED remains the compile-time master
   // guard; the admin pair can stop one medium without taking down the other.
@@ -939,7 +942,9 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
    * double up, hence the platform check rather than dropping the inset outright.
    */
   const composerInset =
-    Platform.OS === 'ios' && keyboardUp ? 0 : insets.bottom + TOKENS.space['2xs'];
+    (Platform.OS === 'ios' && keyboardUp) || emojiPanelOpen
+      ? 0
+      : insets.bottom + TOKENS.space['2xs'];
 
   return (
     <View style={styles.root}>
@@ -1255,7 +1260,9 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
             children must remain its children or the blur bakes them in as a
             ghost halo (see Frost's own note). */}
         <Frost
-          edge={composerFocused ? undefined : 'top'}
+          // No hairline at all. The dock carries no fill, so a top border was
+          // drawing a line across the transcript with nothing on the other side
+          // of it (Amit, 2026-09-04); the blur alone separates the two.
           tint="none"
           blurAmount={composerFocused ? 0 : 18}
           style={{ paddingBottom: composerInset }}>
@@ -1298,6 +1305,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
             }
             sendHaloKey={sendHaloKey}
             onFocusChange={setComposerFocused}
+            onPanelChange={setEmojiPanelOpen}
           />
         </Frost>
       </KeyboardAvoidingView>

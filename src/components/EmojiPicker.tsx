@@ -16,7 +16,6 @@ import {
 import { pushRecent, readRecents, readTone, writeTone } from '../lib/emojiRecents';
 import { Icon } from './Icon';
 import { Pressable } from './Pressable';
-import { Sheet } from './Sheet';
 import { TextField } from './TextField';
 
 /**
@@ -27,7 +26,10 @@ const COLUMNS = 8;
 
 interface Props {
   visible: boolean;
-  onClose: () => void;
+  /** Exactly the keyboard's height, so the swap moves nothing. */
+  height: number;
+  /** Backspace, because the panel replaces a keyboard that had one. */
+  onBackspace: () => void;
   /** The already-toned string, ready to append to the draft. */
   onPick: (emoji: string) => void;
 }
@@ -79,7 +81,7 @@ const Cell = memo(function CellView({
  * matches the library's open reports of silently failing under Reanimated 4.
  * Exactly the failure class RULE 5 exists for, so it went back out again.
  */
-function EmojiPickerView({ visible, onClose, onPick }: Props) {
+function EmojiPickerView({ visible, height, onBackspace, onPick }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const [category, setCategory] = useState<EmojiCategoryId>('recent');
@@ -169,13 +171,12 @@ function EmojiPickerView({ visible, onClose, onPick }: Props) {
     [],
   );
 
+  if (!visible) {
+    return null;
+  }
+
   return (
-    <Sheet
-      visible={visible}
-      title="Emoji"
-      testID="emoji-sheet"
-      detents="large"
-      onClose={onClose}>
+    <View style={[styles.panel, { height }]} testID="emoji-panel">
       <View style={styles.searchRow}>
         <Icon name="search" size={16} color={theme.color.text.tertiary} />
         <TextField
@@ -189,10 +190,13 @@ function EmojiPickerView({ visible, onClose, onPick }: Props) {
           allowFontScaling
           underlineColorAndroid="transparent"
         />
+        {/* Backspace, where the keyboard's was. The panel takes the keyboard's
+            place, so it has to answer for the key the keyboard took away —
+            Telegram's panel keeps one in the same corner for the same reason. */}
         <Pressable
-          onPress={onClose}
-          testID="emoji-close"
-          accessibilityLabel="Close emoji picker"
+          onPress={onBackspace}
+          testID="emoji-backspace"
+          accessibilityLabel="Delete"
           press="none"
           highlight="ios"
           size={32}
@@ -260,7 +264,7 @@ function EmojiPickerView({ visible, onClose, onPick }: Props) {
           </Text>
         }
       />
-    </Sheet>
+    </View>
   );
 }
 
@@ -268,6 +272,18 @@ export const EmojiPicker = memo(EmojiPickerView);
 
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
+    /*
+     * The docked panel. Sized to the keyboard it replaces (see keyboardPanel.ts)
+     * and painted on the app's own surface, because it is standing in for the
+     * IME: anything translucent here would show the transcript sliding behind
+     * what is meant to read as a keyboard.
+     */
+    panel: {
+      backgroundColor: t.color.bg.raised,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: t.color.border.hairline,
+      paddingTop: TOKENS.space.xs,
+    },
     searchRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -313,11 +329,11 @@ const makeStyles = (t: Theme) =>
       fontSize: 20,
       lineHeight: 24,
     },
-    // A bounded height so the grid scrolls inside the sheet rather than growing
-    // it: `detents="large"` caps the sheet at ~90%, and an unbounded FlatList
-    // inside that would push the search row and tabs off the top.
+    // Fills whatever the panel has left after the search row and tabs. The
+    // panel's own height is fixed (the keyboard's), so the grid is the part
+    // that flexes and scrolls.
     gridBox: {
-      height: 360,
+      flex: 1,
     },
     grid: {
       paddingHorizontal: TOKENS.space.xs,

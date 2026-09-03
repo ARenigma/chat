@@ -178,17 +178,40 @@ export function SettingsSheet({
     }
   }, [onDeleted, queryClient, setNotice]);
 
-  const onSignOutPress = useCallback(async () => {
-    setBusy(true);
-    try {
-      await stopPush();
-      await signOut();
-      queryClient.clear();
-      resetStore();
-      onSignedOut();
-    } finally {
-      setBusy(false);
-    }
+  /**
+   * Leave first, tidy up after.
+   *
+   * This used to await five sequential network round-trips before the screen
+   * moved — FCM `getToken`, the `push_tokens` delete, FCM `deleteToken`, the
+   * Firebase sign-out and the Supabase one — with the button held `busy` for all
+   * of it. On a slow connection that is several seconds of a dead-looking tap
+   * for something the user experiences as purely local (Amit, 2026-09-04: "sign
+   * out is very slow -- why?").
+   *
+   * None of that work needs to block the exit. Dropping the local session, the
+   * cache and the store is synchronous and is what "signed out" actually means
+   * on this device, so it happens now and the screen leaves immediately. The
+   * remote teardown runs after, unawaited, and in an order that still has a
+   * valid session when it needs one: the push token is revoked BEFORE the
+   * session it authenticates with goes away.
+   *
+   * The failure mode if the process dies mid-teardown is a stale `push_tokens`
+   * row, which `startPush` overwrites on the next sign-in on this device — the
+   * same self-healing path a crash during sign-out always relied on.
+   */
+  const onSignOutPress = useCallback(() => {
+    queryClient.clear();
+    resetStore();
+    onSignedOut();
+    void (async () => {
+      try {
+        await stopPush();
+        await signOut();
+      } catch {
+        // Best-effort: the user is already gone from this device's point of
+        // view, and there is no screen left to report a failure to.
+      }
+    })();
   }, [onSignedOut, queryClient]);
 
 

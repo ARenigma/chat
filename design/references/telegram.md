@@ -169,3 +169,27 @@ Voice-note recorder (lock / slide-to-cancel / waveform cadence) · stickers and 
 ## Negative results (looked for, not there)
 
 `Theme.key_dialogProgressCircle` does not exist · no `preloadFragment` API (the pre-layout trick is `needDelayOpenAnimation`) · no `setLineSpacing` on the composer · no spring on reaction-bubble appear · no rubber-band on swipe-to-reply · no `SwipeRefreshLayout` anywhere.
+
+## Docked emoji panel (measured 2026-09-04)
+
+Behaviour observed and reimplemented clean-room; no source, assets or strings
+were copied.
+
+- The emoji panel is **not** a bottom sheet. It is docked in the composer,
+  directly under the input row, and it occupies exactly the height the IME last
+  reported. Because the two are the same height, swapping them moves nothing —
+  the transcript, the composer and the send button all stay put, which is why it
+  reads as the keyboard _changing_ rather than one surface replacing another.
+- The measured height is remembered **per orientation**, because the first open
+  happens while the keyboard is on its way down and so has nothing to measure at
+  that moment; a landscape keyboard is a different height and reusing the
+  portrait value is a visible jump.
+- The panel mounts **before** the IME is dismissed. Dismiss-first drops the
+  composer to the bottom of the screen for a frame and springs it back.
+- Going the other way, the panel is taken down only once the IME has actually
+  finished appearing, not when the button was tapped — otherwise there is a
+  frame with neither surface up.
+- The emoji button's glyph is a smiley while the keyboard is up and a keyboard
+  while the panel is up: the control always names what the next tap produces.
+- The panel carries its own backspace, in the corner, because it has replaced a
+  keyboard that had one.

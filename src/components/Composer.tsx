@@ -1,8 +1,10 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
   AppState,
+  BackHandler,
   Keyboard,
   Linking,
+  useWindowDimensions,
   PermissionsAndroid,
   StyleSheet,
   Text,
@@ -38,6 +40,7 @@ import { Pressable } from './Pressable';
 import { SendButton } from './SendButton';
 import { Sheet } from './Sheet';
 import { EmojiPicker } from './EmojiPicker';
+import { readKeyboardHeight, writeKeyboardHeight } from '../lib/keyboardPanel';
 import { Waveform } from './Waveform';
 import { TextField } from './TextField';
 
@@ -66,6 +69,12 @@ interface Props {
    * over the transcript rather than a bar (Amit, 2026-09-04).
    */
   onFocusChange?: (focused: boolean) => void;
+  /**
+   * Fired when the docked emoji panel opens or closes. The panel stands in for
+   * the keyboard and is sized to it, so the dock must drop its safe-area inset
+   * while it is up or the composer sits an inset higher than the keyboard put it.
+   */
+  onPanelChange?: (open: boolean) => void;
 }
 
 /**
@@ -125,6 +134,7 @@ function ComposerView({
   sendHaloKey,
   onTyping,
   onFocusChange,
+  onPanelChange,
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -134,8 +144,11 @@ function ComposerView({
   // Whether the media chooser (Camera / Photos) is open, now opened by the
   // camera button rather than the retired "+".
   const [mediaOpen, setMediaOpen] = useState(false);
-  // Whether the in-app emoji picker is open.
+  // Whether the docked emoji panel is open (it replaces the keyboard).
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const { width: winW, height: winH } = useWindowDimensions();
+  const landscape = winW > winH;
+  const [panelHeight, setPanelHeight] = useState(() => readKeyboardHeight(landscape));
   const [elapsed, setElapsed] = useState(0);
   const [levels, setLevels] = useState<readonly number[]>([]);
   const [draft, setDraft] = useState<VoiceDraft | null>(null);
@@ -157,6 +170,48 @@ function ComposerView({
    * it off short of killing the app.
    */
   const attempt = useRef(0);
+  /**
+   * Measure the keyboard, and hand the space back to it when it returns.
+   *
+   * `keyboardDidShow` is both the measurement (remembered for the next panel
+   * open, per orientation) and the signal that the IME has finished coming up —
+   * which is when the panel may safely go, not when the button was tapped. Take
+   * it down any earlier and there is a frame with neither the panel nor the
+   * keyboard, which is the drop-and-spring the swap exists to avoid.
+   */
+  useEffect(() => {
+    const shown = Keyboard.addListener('keyboardDidShow', e => {
+      const h = e.endCoordinates.height;
+      writeKeyboardHeight(h, landscape);
+      setPanelHeight(readKeyboardHeight(landscape));
+      setEmojiOpen(false);
+    });
+    return () => shown.remove();
+  }, [landscape]);
+
+  useEffect(() => {
+    onPanelChange?.(emojiOpen);
+  }, [emojiOpen, onPanelChange]);
+
+  /**
+   * Back closes the panel before it closes the screen.
+   *
+   * The panel is standing in for the keyboard, and back dismisses a keyboard
+   * rather than leaving the chat — so it has to do the same here, or the swap
+   * quietly changes what the system back button means (Amit, 2026-09-04: back
+   * left the conversation instead of putting the emoji away).
+   */
+  useEffect(() => {
+    if (!emojiOpen) {
+      return;
+    }
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setEmojiOpen(false);
+      return true;
+    });
+    return () => sub.remove();
+  }, [emojiOpen]);
+
   const ready = value.trim().length > 0 && !disabled;
   // Cross-fades the trailing slot between mic (empty) and send (has text).
   const trailing = useCrossfade(ready);
@@ -231,16 +286,26 @@ function ComposerView({
   }, [onSend, ready, value]);
 
   /**
-   * Open the picker with the keyboard down.
+   * Swap the keyboard for the panel, or the panel back for the keyboard.
    *
-   * Both want the same space at the bottom of the screen, and leaving the IME up
-   * would put the sheet over it (or fight it for the inset). Dismissing first is
-   * also what makes the swap read as one surface replacing another.
+   * Telegram's `ChatActivityEnterView` does not "close the keyboard and open a
+   * sheet" — it shows a popup view whose height IS the remembered keyboard
+   * height and hides the IME in the same beat, so the composer never moves and
+   * the grid appears to be what the keyboard turned into. Mounting the panel
+   * BEFORE dismissing is what preserves that: dismiss-then-mount drops the
+   * composer to the bottom of the screen for a frame and springs it back.
    */
-  const openEmoji = useCallback(() => {
+  const toggleEmoji = useCallback(() => {
+    if (emojiOpen) {
+      // Back to the keyboard. Focusing raises the IME, and the keyboard-shown
+      // listener takes the panel down once it is actually up — again so the two
+      // never leave a gap between them.
+      inputRef.current?.focus();
+      return;
+    }
+    setEmojiOpen(true);
     Keyboard.dismiss();
-    requestAnimationFrame(() => setEmojiOpen(true));
-  }, []);
+  }, [emojiOpen]);
 
   /** Insert at the end of the draft, the way a keyboard would. */
   const addEmoji = useCallback(
@@ -250,6 +315,11 @@ function ComposerView({
     },
     [onTyping],
   );
+
+  /** The key the keyboard took away when the panel replaced it. */
+  const backspace = useCallback(() => {
+    setValue(current => Array.from(current).slice(0, -1).join(''));
+  }, []);
 
   const onFieldFocus = useCallback(() => onFocusChange?.(true), [onFocusChange]);
   const onFieldBlur = useCallback(() => onFocusChange?.(false), [onFocusChange]);
@@ -591,16 +661,22 @@ function ComposerView({
             frame puts it in, and the reason the leading edge is now free for the
             text itself. Opens the in-app picker rather than just raising the
             system keyboard. */}
+        {/* Smile ↔ keyboard, the way Telegram's does: while the panel is up the
+            control's job is to bring the keyboard back, so it says so. */}
         <Pressable
-          onPress={openEmoji}
+          onPress={toggleEmoji}
           disabled={disabled}
           testID="composer-emoji"
-          accessibilityLabel="Emoji"
+          accessibilityLabel={emojiOpen ? 'Keyboard' : 'Emoji'}
           press="none"
-          highlight="ios"
+          highlight="material"
           size={30}
           style={styles.emoji}>
-          <Icon name="smile" size={26} color={theme.color.text.secondary} />
+          <Icon
+            name={emojiOpen ? 'keyboard' : 'smile'}
+            size={22}
+            color={theme.color.text.secondary}
+          />
         </Pressable>
       </View>
 
@@ -621,7 +697,7 @@ function ComposerView({
           accessibilityLabel="Add media"
           accessibilityHint="Camera or photos. One photo costs one token"
           press="none"
-          highlight="ios"
+          highlight="material"
           size={40}
           style={styles.camera}>
           <Icon name="camera" size={22} color={theme.color.text.secondary} />
@@ -647,7 +723,7 @@ function ComposerView({
             accessibilityLabel="Record a voice note"
             accessibilityHint="Recording starts on tap and stops when you tap stop. One voice note costs one token"
             press="none"
-            highlight="ios"
+            highlight="material"
             size={40}
             style={styles.mic}>
             <Icon name="mic" size={22} color={theme.color.text.secondary} />
@@ -660,6 +736,18 @@ function ComposerView({
         </Animated.View>
       </View>
       </View>
+
+      {/* The panel sits IN the dock, under the input row, at exactly the
+          keyboard's height — so the composer stays where it was and the grid
+          takes the space the IME just vacated. Telegram's `emojiPadding`, which
+          is the whole reason its emoji panel reads as the keyboard changing
+          rather than two surfaces trading places. */}
+      <EmojiPicker
+        visible={emojiOpen}
+        height={panelHeight}
+        onBackspace={backspace}
+        onPick={addEmoji}
+      />
     </View>
 
     {/* The media chooser (#8). A bottom sheet with Camera and Photos, the same
@@ -672,24 +760,11 @@ function ComposerView({
       onClose={() => setMediaOpen(false)}
       onCancel={() => setMediaOpen(false)}
       cancelLabel="Cancel">
-      <View style={styles.mediaGroup}>
-        <Pressable
-          onPress={() => {
-            void takePhoto();
-          }}
-          testID="media-camera"
-          accessibilityLabel="Take a photo"
-          press="none"
-          highlight="ios"
-          style={[styles.mediaRow, styles.mediaRowFirst]}>
-          <View style={styles.mediaIcon}>
-            <Icon name="camera" size={22} color={theme.color.text.primary} />
-          </View>
-          <Text allowFontScaling style={styles.mediaLabel}>
-            Camera
-          </Text>
-        </Pressable>
-        <View style={styles.mediaSep} />
+      {/* A grid of round tiles with labels under them, not an inset-grouped
+          list: that is the attach surface's anatomy in the reference frame, and
+          the list idiom read as a settings menu rather than a picker (Amit,
+          2026-09-04). Two tiles, because two is what this app can send. */}
+      <View style={styles.mediaGrid}>
         <Pressable
           onPress={() => {
             void pickImage();
@@ -698,26 +773,33 @@ function ComposerView({
           accessibilityLabel="Choose a photo"
           press="none"
           highlight="ios"
-          style={[styles.mediaRow, styles.mediaRowLast]}>
-          <View style={styles.mediaIcon}>
-            <Icon name="image" size={22} color={theme.color.text.primary} />
+          style={styles.mediaTile}>
+          <View style={styles.mediaDisc}>
+            <Icon name="image" size={24} color={theme.color.text.onAccent} />
           </View>
-          <Text allowFontScaling style={styles.mediaLabel}>
-            Photos
+          <Text allowFontScaling style={styles.mediaTileLabel}>
+            Photo
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => {
+            void takePhoto();
+          }}
+          testID="media-camera"
+          accessibilityLabel="Take a photo"
+          press="none"
+          highlight="ios"
+          style={styles.mediaTile}>
+          <View style={[styles.mediaDisc, styles.mediaDiscInk]}>
+            <Icon name="camera" size={24} color={theme.color.text.onInverse} />
+          </View>
+          <Text allowFontScaling style={styles.mediaTileLabel}>
+            Camera
           </Text>
         </Pressable>
       </View>
     </Sheet>
 
-    {/* The in-app emoji picker. Appending rather than replacing the draft, so
-        it composes with whatever is already typed the way a keyboard would. It
-        stays open across picks — sending several in a row is the common case,
-        and closing after each would make that four taps instead of two. */}
-    <EmojiPicker
-      visible={emojiOpen}
-      onClose={() => setEmojiOpen(false)}
-      onPick={addEmoji}
-    />
     </>
   );
 }
@@ -759,8 +841,11 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   // The emoji button on the field's TRAILING edge, where the reference frame
   // puts it. Same 40 height as the input so it centres on a single-line field.
   emoji: {
-    width: 34,
-    height: 40,
+    width: 32,
+    height: 32,
+    // Circular, so the press state layer is a disc and not the rectangle the
+    // un-rounded style used to clip it to (Amit, 2026-09-04).
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -768,7 +853,8 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   // animated (see `cameraStyle`), so nothing here may set one.
   camera: {
     width: CAMERA_SLOT,
-    height: 40,
+    height: CAMERA_SLOT,
+    borderRadius: CAMERA_SLOT / 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -808,7 +894,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     // Telegram's single-line field is 40dp with the 16sp text centred in it (not a
     // 28dp field with padding around it). So the INPUT itself is 40 and the capsule
     // wraps it with zero field padding — a true 40/40, matching the app on device.
-    minHeight: 40,
+    minHeight: 36,
     maxHeight: 132,
     paddingTop: 4,
     paddingBottom: 4,
@@ -883,29 +969,39 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     backgroundColor: t.color.bg.base,
   },
   // The media chooser rows, same inset-grouped table as PaymentSheet/Settings.
-  mediaGroup: {
+  mediaGrid: {
     alignSelf: 'stretch',
-    borderRadius: TOKENS.radius.field,
-    borderCurve: 'continuous',
-    overflow: 'hidden',
-    backgroundColor: t.color.bg.sunken,
-  },
-  mediaRow: {
     flexDirection: 'row',
+    gap: TOKENS.space.lg,
+    paddingHorizontal: TOKENS.space.xs,
+    paddingTop: TOKENS.space.xs,
+  },
+  // One tile: a round disc with its label beneath, the reference frame's
+  // attach-grid cell.
+  mediaTile: {
+    width: 76,
     alignItems: 'center',
-    gap: TOKENS.space.sm,
-    paddingVertical: TOKENS.space.sm,
-    paddingHorizontal: TOKENS.space.md,
-    minHeight: 52,
-    backgroundColor: t.color.bg.sunken,
+    gap: TOKENS.space.xs,
+    paddingVertical: TOKENS.space.xs,
+    borderRadius: TOKENS.radius.field,
   },
-  mediaRowFirst: {
-    borderTopLeftRadius: TOKENS.radius.field,
-    borderTopRightRadius: TOKENS.radius.field,
+  mediaDisc: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: t.color.bg.accent,
   },
-  mediaRowLast: {
-    borderBottomLeftRadius: TOKENS.radius.field,
-    borderBottomRightRadius: TOKENS.radius.field,
+  // The second tile takes ink rather than a second coral disc: two accent discs
+  // side by side would spend the accent budget on a chooser where neither option
+  // is primary.
+  mediaDiscInk: {
+    backgroundColor: t.color.bg.inverse,
+  },
+  mediaTileLabel: {
+    ...TOKENS.typography.labelMedium,
+    color: t.color.text.secondary,
   },
   mediaIcon: {
     width: 32,
