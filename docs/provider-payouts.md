@@ -106,6 +106,83 @@ is lost.
 
 ---
 
+## 1-Click Onboarding (native SDK) — verified PAN via consent
+
+Chosen 2026-09-03 (Amit): use Cashfree's **native** Verification Suite SDK for
+1-Click Onboarding rather than a hand-rolled WebView (RULE 1 — prefer the
+platform's own solution). The provider consents once (mobile OTP in a Cashfree
+sheet) and we receive verified PAN + identity, so the provider never types a PAN.
+
+**Scope, discovered from the docs — read this first.** 1-Click / Mobile 360
+returns **PAN + identity only, NOT a bank account** (its data coverage is PAN,
+Aadhaar-masked, contact, employment — no account number). So 1-Click replaces
+_only_ manual PAN entry + `verify-pan`. The bank/UPI destination and its Payouts
+beneficiary **stay** on `verify-payout-account`. This is not a full replacement of
+the hand-rolled form.
+
+### Pieces built
+
+| Layer      | File                                                                     | What it does                                                                                                                                                                                                                                                            |
+| ---------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Native     | `android/app/.../CashfreeOnboardingModule.kt`                            | Bridges `com.cashfree.vrs:kyc-verification:1.0.1`. `open1ClickOnboarding(sessionId, env, promise)` → resolves `{ verificationId, authCode, status }`. API taken from the compiled AAR (the README's coordinate + API are stale). Registered in `InAppUpdatePackage.kt`. |
+| Native dep | `android/build.gradle`, `android/app/build.gradle`                       | Adds `maven.cashfree.com/release` (the VRS SDK 404s on Central) + the VRS dep. `CFException` arrives transitively via the existing PG SDK.                                                                                                                              |
+| Client     | `src/lib/cashfreeOnboarding.ts`                                          | Thin typed wrapper, mirrors `googleCredential.ts`. `startCashfreeOnboarding(sessionId, env)`; `cashfreeOnboardingAvailable()` for the fallback path.                                                                                                                    |
+| Client     | `src/api/provider.ts` (`useCashfreeVerification`) + `ProviderBankScreen` | "Verify with Cashfree" is the top CTA (start → native sheet → authCode → complete, best-effort at the edges); the manual bank/PAN form is the fallback below "or enter manually".                                                                                       |
+| Server     | `supabase/functions/cashfree-onboarding-start`                           | Provider-JWT-gated. Data Availability (best-effort) → Initiate OAuth → returns `{ sessionId, verificationId, environment }`. **Verified live** (below).                                                                                                                 |
+
+### Sandbox verification (2026-09-03)
+
+Tested the creds directly against `sandbox.cashfree.com/verification`:
+
+- **Working creds live in `CASHFREE_VERIFICATION_*`** (the `one-click-API
+Credentials.txt` pair = the **pappal-one-click** template, which requests Name /
+  DOB / Email / **PAN / Bank Account**). `POST /oauth2/session` → **HTTP 200 with a
+  real `session_id`**. The newer template's keys returned "Verification Suite is
+  not enabled"; they were removed (`CASHFREE_ONECLICK_*` unset) so `start` falls
+  back to the working pair.
+- **`verification_id` must be ALPHANUMERIC** — a hyphenated UUID is rejected. The
+  function uses `oc<32 hex>`.
+- **Data Availability 401s with the 1-Click app keys** (it wants the account-level
+  Verification keys, a separate pair), so it is **best-effort/non-blocking** — the
+  SDK only needs the `session_id`.
+
+### The three-step client flow (target)
+
+1. Provider taps **Verify with Cashfree** → `cashfree-onboarding-start` → `sessionId`.
+2. `startCashfreeOnboarding(sessionId, env)` opens the native sheet → `authCode`.
+3. `cashfree-onboarding-complete` (TODO) exchanges `authCode` → access token →
+   fetches verified PAN → writes `provider_tax_profile` (service-role). Bank stays
+   on the existing flow.
+
+### BLOCKED on the product owner (Cashfree Secure ID dashboard)
+
+The server flow cannot be tested end-to-end until these exist — none are code:
+
+1. **Create a 1-Click Onboarding template** in the Secure ID dashboard (logo,
+   brand, colour, and the data scopes = PAN).
+   https://www.cashfree.com/docs/secure-id/1-click-onboarding/creating-template
+2. **Register a redirect URL** on the 1-Click app (this is the "redirect URL"
+   Cashfree asked for — a dashboard field, not something our code sends; the
+   native SDK still returns the auth_code via its callback). A placeholder such as
+   `https://pappal.app/payout-callback` is fine.
+3. **The 1-Click app's own `x-client-id` / `x-client-secret`.** Cashfree issues
+   these per app in the 1-Click section; they may differ from the general
+   `CASHFREE_VERIFICATION_*` creds. Set as `CASHFREE_ONECLICK_CLIENT_ID` /
+   `CASHFREE_ONECLICK_CLIENT_SECRET` (the start function falls back to the
+   verification creds if unset).
+4. **The "Fetch User Details" endpoint** — the step after `generate-token` that
+   returns the verified PAN. It is referenced by the OAuth token doc but is not in
+   the public API reference; it is visible in the authenticated dashboard docs.
+   `cashfree-onboarding-complete` needs its exact path + response shape.
+
+New env (Supabase function secrets), all optional with fallbacks:
+
+```
+CASHFREE_ONECLICK_CLIENT_ID        (fallback: CASHFREE_VERIFICATION_CLIENT_ID → …)
+CASHFREE_ONECLICK_CLIENT_SECRET    (fallback: … secret chain)
+CASHFREE_VERIFICATION_API_VERSION  default 2024-12-01 (1-Click APIs require it)
+```
+
 ## Client
 
 - Hooks (`src/api/provider.ts`): `usePayoutAccount`, `useTaxProfile`,

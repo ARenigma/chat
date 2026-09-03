@@ -449,6 +449,23 @@ dependencies {
     implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
 
+    /**
+     * Cashfree 1-Click Onboarding (Verification Suite) SDK.
+     *
+     * Provider payout setup: a provider consents once (mobile OTP) and Cashfree
+     * returns a verified PAN + bank account, so we never collect or store raw KYC
+     * — the auth_code is exchanged server-side. This is the vendor's own SDK
+     * (RULE 1: prefer the platform's solution over a hand-rolled webview); under
+     * the hood it renders a Cashfree-owned WebView bottom sheet we do not maintain.
+     *
+     * CFException (thrown by CFVerificationService.build) comes from
+     * com.cashfree.pg:base, already on the classpath transitively via
+     * react-native-cashfree-pg-sdk → com.cashfree.pg:api:2.4.0, so it is not
+     * re-declared here. Repo is added in android/build.gradle (Central 404s it).
+     * https://www.cashfree.com/docs/api-reference/vrs/v2/1-click-onboarding/1-click-onboarding-sdk#android-native
+     */
+    implementation("com.cashfree.vrs:kyc-verification:1.0.1")
+
     // Core-Telecom self-managed calling API (developer.android.com/develop/connectivity/telecom/self-managed)
     implementation("androidx.core:core-telecom:1.0.0")
     // ServiceCompat.startForeground() with type mask — requires 1.12+ (developer.android.com/develop/background-work/services/foreground-services)

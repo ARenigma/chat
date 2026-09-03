@@ -942,6 +942,16 @@ export type Database = {
         /** The fields still missing. Empty means it entered the queue. */
         Returns: string[];
       };
+      /** Auto-approve: go live as a provider in one call. Migration 051. */
+      complete_provider_onboarding: {
+        Args: {
+          p_display_name: string;
+          p_headline: string;
+          p_languages: string[];
+          p_about: string;
+        };
+        Returns: undefined;
+      };
       register_push_token: {
         Args: { p_token: string; p_platform?: string };
         Returns: void;

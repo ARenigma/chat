@@ -89,7 +89,7 @@ export { PHONE_AUTH_ENABLED };
  *                the `send-sms` hook (MSG91/Fast2SMS). Kept intact behind this
  *                flag to switch back to once DLT is approved.
  *
- * AuthScreen/OnboardingScreen call sendPhoneOtp/verifyPhoneOtp and never learn
+ * OnboardingScreen calls sendPhoneOtp/verifyPhoneOtp and never learns
  * which path ran — the flag lives entirely here.
  */
 export type PhoneAuthProvider = 'firebase' | 'supabase';
