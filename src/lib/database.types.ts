@@ -778,6 +778,40 @@ export type Database = {
           },
         ];
       };
+      /**
+       * Where a provider is paid. Details are saved via upsert_my_payout_account
+       * and verified by the verify-payout-account Edge function (048); the client
+       * only ever SELECTs its own row.
+       */
+      provider_payout_accounts: {
+        Row: {
+          id: string;
+          method: 'upi' | 'bank';
+          upi_vpa: string | null;
+          account_number: string | null;
+          ifsc: string | null;
+          account_holder_name: string | null;
+          verification_status: 'unverified' | 'pending' | 'verified' | 'failed';
+          name_at_bank: string | null;
+          verification_error: string | null;
+          is_default: boolean;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      /** PAN for tax only (not KYC). Saved via set_my_pan, verified by verify-pan. */
+      provider_tax_profile: {
+        Row: {
+          pan: string | null;
+          pan_name: string | null;
+          status: 'not_provided' | 'pending' | 'verified' | 'failed';
+          failure_reason: string | null;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
     };
     Views: {
       provider_directory: {
@@ -804,8 +838,26 @@ export type Database = {
         Row: ProviderEarnings;
         Relationships: [];
       };
+      my_payout_readiness: {
+        Row: { payout_account_verified: boolean; can_go_live: boolean };
+        Relationships: [];
+      };
     };
     Functions: {
+      upsert_my_payout_account: {
+        Args: {
+          p_method: string;
+          p_upi_vpa?: string | null;
+          p_account_number?: string | null;
+          p_ifsc?: string | null;
+          p_account_holder_name?: string | null;
+        };
+        Returns: string;
+      };
+      set_my_pan: {
+        Args: { p_pan: string };
+        Returns: undefined;
+      };
       open_conversation: {
         Args: { p_provider_id: string };
         Returns: string;
