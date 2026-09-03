@@ -1,7 +1,12 @@
-import React, { memo } from 'react';
+import React, { memo, useEffect } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+} from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
+import { springTo } from '../theme/motion';
 import type { ReactionEmoji } from '../lib/database.types';
 import { REACTION_CHOICES } from '../lib/reactions';
 import { Icon } from './Icon';
@@ -31,8 +36,32 @@ function ReactionStripView({
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
+  /*
+   * Overshoot appear, from nothing near the bubble corner.
+   *
+   * Telegram's reaction bar scales in over 250ms on an OvershootInterpolator(0.5)
+   * with the pivot at the anchored corner (ReactionsContainerLayout.java:1499,
+   * :847-848). `bounce` (ratio 0.59) overshoots the same way; the origin is set
+   * per side below so it grows out of the bubble it belongs to rather than the
+   * screen centre. `springTo` carries ReduceMotion.System, so it snaps in under
+   * reduce-motion instead of springing.
+   */
+  const appear = useSharedValue(0);
+  useEffect(() => {
+    appear.value = springTo(1, 'bounce');
+  }, [appear]);
+  const animated = useAnimatedStyle(() => ({
+    opacity: Math.min(appear.value, 1),
+    transform: [{ scale: 0.85 + 0.15 * appear.value }],
+  }));
   return (
-    <View testID="reaction-strip" style={styles.strip}>
+    <Animated.View
+      testID="reaction-strip"
+      style={[
+        styles.strip,
+        mine ? styles.stripOriginMine : styles.stripOriginPeer,
+        animated,
+      ]}>
       {REACTION_CHOICES.map(emoji => (
         <Pressable
           key={emoji}
@@ -70,7 +99,7 @@ function ReactionStripView({
           <Icon name="report" size={15} color={theme.color.state.danger} />
         </Pressable>
       ) : null}
-    </View>
+    </Animated.View>
   );
 }
 
@@ -97,6 +126,14 @@ const makeStyles = (t: Theme) =>
       shadowOffset: { width: 0, height: 2 },
       elevation: 3,
       marginBottom: TOKENS.space['2xs'],
+    },
+    // The strip sits above the bubble; growing out of the bubble's own corner
+    // (bottom, on the speaker's side) reads as belonging to that message.
+    stripOriginPeer: {
+      transformOrigin: 'bottom left',
+    },
+    stripOriginMine: {
+      transformOrigin: 'bottom right',
     },
     emoji: {
       width: 34,

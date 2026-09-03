@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  interpolate,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
@@ -17,6 +18,7 @@ import Animated, {
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { bubbleArrive, bubbleLaunch, springTo } from '../theme/motion';
+import { longPress as longPressHaptic, tick } from '../lib/haptics';
 import type { ReactionEmoji } from '../lib/database.types';
 import type { VoicePlayer } from '../lib/voice';
 import { useAttachmentUrl } from '../api/attachments';
@@ -640,11 +642,18 @@ function MyTurnView({
 
 export const MyTurn = memo(MyTurnView);
 
+/** Drag distance that commits a swipe-reply (Telegram ChatActivity.java:5033). */
+const REPLY_TRIGGER = 50;
+/** Hard clamp on the drag; Telegram does not rubber-band past this. */
+const REPLY_MAX_DRAG = 72;
+
 /**
  * Swipe-to-reply + long-press reaction strip around a bubble.
  *
- * WhatsApp gestures: a horizontal drag past ~48dp quotes the message; a long
- * press opens a thin emoji strip anchored on the bubble (not a bottom sheet).
+ * Telegram/WhatsApp gestures: a horizontal drag past 50dp quotes the message,
+ * with one KEYBOARD_TAP as it crosses and a reply arrow that fills in behind the
+ * bubble; a system-length (500ms) long press fires LONG_PRESS and opens a thin
+ * emoji strip anchored on the bubble (not a bottom sheet).
  */
 function InteractiveBubble({
   mine,
@@ -671,8 +680,14 @@ function InteractiveBubble({
   children: React.ReactNode;
 }) {
   const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const [stripOpen, setStripOpen] = useState(false);
   const tx = useSharedValue(0);
+  // Latches true once a drag has passed the commit threshold, so the KEYBOARD_TAP
+  // haptic fires exactly once per crossing (Telegram fires it once at 50dp, not
+  // per frame — ChatActivity.java:5033-5041). Reset when the drag falls back
+  // under the threshold or the gesture ends.
+  const crossed = useSharedValue(false);
 
   const openStrip = useCallback(() => {
     if (target !== null) {
@@ -692,21 +707,36 @@ function InteractiveBubble({
     .failOffsetY([-12, 12])
     .onUpdate(e => {
       // Peer: drag right; mine: drag left — both toward the screen edge, like WA.
+      // Hard clamp at MAX_DRAG with no rubber-band: Telegram's swipe-to-reply
+      // does not spring past its limit (design/references/telegram.md).
       const next = mine
-        ? Math.max(-72, Math.min(0, e.translationX))
-        : Math.max(0, Math.min(72, e.translationX));
+        ? Math.max(-REPLY_MAX_DRAG, Math.min(0, e.translationX))
+        : Math.max(0, Math.min(REPLY_MAX_DRAG, e.translationX));
       tx.value = next;
+      // One KEYBOARD_TAP as the drag crosses the commit threshold.
+      if (Math.abs(next) >= REPLY_TRIGGER) {
+        if (!crossed.value) {
+          crossed.value = true;
+          runOnJS(tick)();
+        }
+      } else if (crossed.value) {
+        crossed.value = false;
+      }
     })
     .onEnd(() => {
-      if (Math.abs(tx.value) > 48) {
+      if (Math.abs(tx.value) >= REPLY_TRIGGER) {
         runOnJS(triggerReply)();
       }
       tx.value = springTo(0, 'smooth');
+      crossed.value = false;
     });
 
   const longPress = Gesture.LongPress()
-    .minDuration(400)
+    // The Android system long-press timeout, which is what Telegram opens the
+    // reaction menu on (ReactionsContainerLayout.java:2262). Was 400ms.
+    .minDuration(500)
     .onStart(() => {
+      runOnJS(longPressHaptic)();
       runOnJS(openStrip)();
     });
 
@@ -718,9 +748,33 @@ function InteractiveBubble({
   const slideStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: tx.value }],
   }));
+  // The reply arrow the bubble uncovers as it slides: it fills in from 20dp and
+  // is full at the commit threshold, the way Telegram's reply icon grows in
+  // behind the message (ChatActivity.java:4651-4670). Interpolated rather than
+  // Telegram's three-spring chain — the same read at a fraction of the cost.
+  const replyRevealStyle = useAnimatedStyle(() => {
+    const d = Math.abs(tx.value);
+    return {
+      opacity: interpolate(d, [20, REPLY_TRIGGER], [0, 1], 'clamp'),
+      transform: [
+        { scale: interpolate(d, [20, REPLY_TRIGGER], [0.6, 1], 'clamp') },
+      ],
+    };
+  });
 
   return (
     <View style={alignEnd ? styles.interactiveEnd : styles.interactiveStart}>
+      {target !== null ? (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.replyReveal,
+            mine ? styles.replyRevealMine : styles.replyRevealPeer,
+            replyRevealStyle,
+          ]}>
+          <Icon name="reply" size={18} color={theme.color.text.secondary} />
+        </Animated.View>
+      ) : null}
       {stripOpen && target !== null ? (
         <ReactionStrip
           chosen={chosenReaction ?? null}
@@ -905,6 +959,22 @@ const makeStyles = (t: Theme) =>
     interactiveEnd: {
       alignItems: 'flex-end',
       maxWidth: '100%',
+    },
+    // The reply arrow revealed under the sliding bubble. Pinned to the edge the
+    // bubble moves away from and vertically centred; it starts under the bubble
+    // and is uncovered as the drag opens a gap on that side.
+    replyReveal: {
+      position: 'absolute',
+      top: 0,
+      bottom: 0,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    replyRevealPeer: {
+      left: TOKENS.space.xs,
+    },
+    replyRevealMine: {
+      right: TOKENS.space.xs,
     },
     mediaTime: {
       position: 'absolute',
