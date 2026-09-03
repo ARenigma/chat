@@ -53,6 +53,8 @@ export interface PayoutAccount {
 
 export interface PayoutReadiness {
   payout_account_verified: boolean;
+  /** PAN is mandatory (migration 049): both must be true to go live. */
+  pan_verified: boolean;
   can_go_live: boolean;
 }
 
@@ -322,20 +324,28 @@ export function useSavePayoutAccount() {
       if (rpcErr) {
         throw new Error(rpcErr.message);
       }
-      // Ask the Edge function to create + verify the Cashfree beneficiary.
-      const { data, error } = await supabase.functions.invoke('verify-payout-account', {
-        body: {},
-      });
-      if (error) {
-        throw new Error(error.message);
+      // The details are now SAVED. Ask the Edge function to create + verify the
+      // Cashfree beneficiary — but best-effort: while Cashfree Payouts is not yet
+      // enabled the function is absent / returns an error, and the account simply
+      // stays unverified ('pending') rather than losing the save. See
+      // docs/provider-payouts.md ("Enabling verification").
+      try {
+        const { data, error } = await supabase.functions.invoke('verify-payout-account', {
+          body: {},
+        });
+        if (error) {
+          return 'pending';
+        }
+        const status = (data as { status?: VerificationStatus })?.status ?? 'pending';
+        if (status === 'verified') {
+          tick();
+        } else {
+          errorTick();
+        }
+        return status;
+      } catch {
+        return 'pending';
       }
-      const status = (data as { status?: VerificationStatus })?.status ?? 'pending';
-      if (status === 'verified') {
-        tick();
-      } else {
-        errorTick();
-      }
-      return status;
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: providerKeys.payoutAccount });
@@ -347,23 +357,29 @@ export function useSavePayoutAccount() {
 /** Save a PAN (format-checked in SQL) then trigger Cashfree verification. */
 export function useSavePan() {
   const queryClient = useQueryClient();
-  return useMutation<'verified' | 'failed', Error, string>({
+  return useMutation<'verified' | 'failed' | 'pending', Error, string>({
     mutationFn: async pan => {
       const { error: rpcErr } = await supabase.rpc('set_my_pan', { p_pan: pan });
       if (rpcErr) {
         throw new Error(rpcErr.message);
       }
-      const { data, error } = await supabase.functions.invoke('verify-pan', { body: {} });
-      if (error) {
-        throw new Error(error.message);
+      // Best-effort verification (see useSavePayoutAccount): while Cashfree
+      // verification is not enabled the PAN stays 'pending' rather than failing.
+      try {
+        const { data, error } = await supabase.functions.invoke('verify-pan', { body: {} });
+        if (error) {
+          return 'pending';
+        }
+        const status = (data as { status?: 'verified' | 'failed' })?.status ?? 'pending';
+        if (status === 'verified') {
+          tick();
+        } else {
+          errorTick();
+        }
+        return status;
+      } catch {
+        return 'pending';
       }
-      const status = (data as { status?: 'verified' | 'failed' })?.status ?? 'failed';
-      if (status === 'verified') {
-        tick();
-      } else {
-        errorTick();
-      }
-      return status;
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: providerKeys.tax });

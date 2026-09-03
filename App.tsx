@@ -86,6 +86,7 @@ import { CallScreen } from './src/screens/CallScreen';
 import { ProviderApplicationScreen } from './src/screens/ProviderApplicationScreen';
 import { ProviderHomeScreen } from './src/screens/ProviderHomeScreen';
 import { ProviderStatusScreen } from './src/screens/ProviderStatusScreen';
+import { ProviderBankScreen } from './src/screens/ProviderBankScreen';
 import { BlockedUsersScreen } from './src/screens/BlockedUsersScreen';
 import { CallsScreen } from './src/screens/CallsScreen';
 import { FavouritesScreen } from './src/screens/FavouritesScreen';
@@ -1054,10 +1055,13 @@ function SignedIn({
               }}
               onSignedOut={onSignedOut}
             />
+          ) : providerRoute.name === 'payout' ? (
+            <ProviderBankScreen onBack={() => popProvider({ name: 'home' })} />
           ) : (
             <ProviderHomeScreen
               onOpenConversation={peerId => pushProvider({ name: 'chat', peerId })}
               onOpenSettings={() => pushProvider({ name: 'settings' })}
+              onOpenPayout={() => pushProvider({ name: 'payout' })}
             />
           )}
         </PushedLayer>

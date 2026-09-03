@@ -21,6 +21,7 @@ import { Toggle } from '../components/Toggle';
 interface Props {
   onOpenConversation: (peerId: string) => void;
   onOpenSettings: () => void;
+  onOpenPayout: () => void;
 }
 
 function threadLabel(thread: ConversationSummary): string {
@@ -47,7 +48,7 @@ function threadLabel(thread: ConversationSummary): string {
  * Cashfree Payouts is not yet wired; the figure is correct, the transfer is not
  * yet made.
  */
-export function ProviderHomeScreen({ onOpenConversation, onOpenSettings }: Props) {
+export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenPayout }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -252,6 +253,22 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings }: Props
         </Text>
       ) : null}
 
+      {/* Payout setup — always reachable, not gated on earnings: a provider adds
+          a bank/UPI + PAN before their first payout (ADR-0022). */}
+      <Pressable
+        onPress={onOpenPayout}
+        testID="open-payout"
+        accessibilityLabel="Set up how you get paid"
+        press="none"
+        highlight="ios"
+        style={styles.payoutRow}>
+        <Icon name="wallet" size={20} color={theme.color.text.primary} />
+        <Text allowFontScaling style={styles.payoutLabel}>
+          Get paid
+        </Text>
+        <Icon name="chevronRight" size={18} color={theme.color.text.tertiary} />
+      </Pressable>
+
       {isPending ? (
         <View style={styles.state}>
           <LoadingIndicator size={48} />
@@ -386,6 +403,23 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     color: t.color.text.secondary,
     paddingHorizontal: TOKENS.space.md,
     paddingBottom: TOKENS.space.md,
+  },
+  payoutRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: TOKENS.space.sm,
+    marginHorizontal: TOKENS.space.md,
+    marginBottom: TOKENS.space.sm,
+    paddingHorizontal: TOKENS.space.md,
+    height: TOKENS.layout.rowOneLine,
+    borderRadius: TOKENS.radius.field,
+    borderCurve: 'continuous',
+    backgroundColor: t.color.bg.sunken,
+  },
+  payoutLabel: {
+    ...TOKENS.typography.titleMediumEmphasized,
+    color: t.color.text.primary,
+    flex: 1,
   },
   list: {},
   // 13 SemiBold, which is iOS's plain-list header. It was captionSmall, 12

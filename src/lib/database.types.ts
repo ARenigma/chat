@@ -839,7 +839,7 @@ export type Database = {
         Relationships: [];
       };
       my_payout_readiness: {
-        Row: { payout_account_verified: boolean; can_go_live: boolean };
+        Row: { payout_account_verified: boolean; pan_verified: boolean; can_go_live: boolean };
         Relationships: [];
       };
     };
