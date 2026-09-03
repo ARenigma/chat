@@ -655,8 +655,25 @@ describe('the app is wired to the M3 transitions', () => {
   });
 
   it('fades the top-level tab layers rather than sliding them', () => {
-    expect(app).toContain('entering={topLevelIn}');
-    expect(app).toContain('exiting={topLevelOut}');
+    /*
+     * The tabs cross-fade on a shared value now, not on `entering`/`exiting`
+     * layout animations (Amit, 2026-09-04: tab switching was "slow and janky").
+     * A layout animation runs on mount/unmount of the whole subtree, so it
+     * competed with the remount it was meant to cover; `TabLayer` keeps every
+     * visited tab mounted and animates `opacity` only.
+     *
+     * What still has to hold is that the movement is a FADE and nothing slides:
+     * no translate on the tab layer, and the opacity drives `display` so a
+     * hidden tab leaves layout instead of being measured behind the active one.
+     */
+    const layer = app.slice(app.indexOf('function TabLayer'), app.indexOf('const { StartupTiming }'));
+    expect(layer).toContain('opacity: opacity.value');
+    expect(layer).toContain("display: opacity.value === 0 ? ('none' as const)");
+    expect(layer).not.toMatch(/translate[XY]/);
+    // And the tabs are mounted through it rather than conditionally rendered.
+    for (const tab of ['favourites', 'calls', 'settings']) {
+      expect(app).toContain(`<TabLayer active={route.name === '${tab}'}`);
+    }
   });
 
   it('declares a back direction before every pop', () => {
@@ -1259,6 +1276,14 @@ describe('accent budget is enforced in code, not just documented', () => {
       // The send button already carries the coral here; the "+" joins it as the
       // one other affordance on the bar.
       'Composer.tsx',
+      /*
+       * The emoji picker's selected category tab. The same M3 navigation
+       * indicator FloatingToolbar already argues for, one level down: a tonal
+       * accent-tint pill marking which of nine destinations you are currently
+       * in. A "you are here" state, not decoration — and the only accent in the
+       * surface, since the grid itself is the user's own glyphs.
+       */
+      'EmojiPicker.tsx',
       'EmptyMark.tsx',
       // First-message pills: the one warm starter, same Chip accent rule.
       'FirstMovePills.tsx',

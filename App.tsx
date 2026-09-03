@@ -15,7 +15,11 @@ import {
 } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated from 'react-native-reanimated';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from './src/theme/tokens';
 import { ThemeProvider, useStyles, useThemeMode } from './src/theme/ThemeProvider';
@@ -23,8 +27,6 @@ import {
   revealHome,
   screenOut,
   setNavDirection,
-  topLevelIn,
-  topLevelOut,
   useHomeRevealStyle,
   useScreenEnter,
 } from './src/theme/motion';
@@ -124,6 +126,79 @@ function PushedLayer({
     </Animated.View>
   );
 }
+/**
+ * The tab cross-fade. M3 fade-through timing, spelled once here rather than as a
+ * raw `.duration()` at the call site (see the App.tsx transition-builder gate).
+ */
+const FADE = { duration: TOKENS.motion.duration.fast } as const;
+
+/**
+ * A top-level tab's layer, mounted once and then kept alive.
+ *
+ * The tabs used to mount on entry and unmount on exit, each wrapped in
+ * `AfterPaint` and carrying `entering`/`exiting` layout animations. That cost a
+ * tab switch twice over (Amit, 2026-09-04: "slow and janky", both a delay before
+ * anything happened AND a stutter during the fade):
+ *
+ *   1. The delay was the remount — the whole screen tree, its queries and its
+ *      list rebuilt on every visit, plus `AfterPaint`'s deliberate one-frame
+ *      hold before any of it was even asked to render.
+ *   2. The stutter was the layout animation. Reanimated's `entering`/`exiting`
+ *      run on mount/unmount of the whole subtree, so the fade competed with the
+ *      very work it was trying to cover.
+ *
+ * So: mount lazily (nothing is built until first visited), then never unmount,
+ * and cross-fade `opacity` on a shared value instead — a GPU-only property that
+ * costs nothing to animate and needs no layout pass. `display: 'none'` when
+ * fully hidden keeps an inactive tab out of layout entirely; `pointerEvents`
+ * stops an invisible layer eating touches mid-fade.
+ */
+function TabLayer({
+  active,
+  style,
+  children,
+}: {
+  active: boolean;
+  style: StyleProp<ViewStyle>;
+  children: React.ReactNode;
+}) {
+  // Mount on first activation and stay mounted. An unvisited tab costs nothing.
+  const [mounted, setMounted] = useState(active);
+  useEffect(() => {
+    if (active) {
+      setMounted(true);
+    }
+  }, [active]);
+
+  const opacity = useSharedValue(active ? 1 : 0);
+  useEffect(() => {
+    opacity.value = withTiming(active ? 1 : 0, FADE);
+  }, [active, opacity]);
+
+  const animated = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    // A fully faded tab leaves layout entirely, so its list is not measured
+    // behind the active one — but the subtree stays MOUNTED, which is the whole
+    // point: state, scroll position and cached queries all survive the switch.
+    display: opacity.value === 0 ? ('none' as const) : ('flex' as const),
+  }));
+
+  if (!mounted) {
+    return null;
+  }
+  return (
+    <Animated.View
+      style={[style, animated]}
+      // Touches are refused the moment the tab stops being active, not when the
+      // fade ends, so a half-faded layer cannot swallow a tap.
+      pointerEvents={active ? 'auto' : 'none'}
+      accessibilityElementsHidden={!active}
+      importantForAccessibility={active ? 'auto' : 'no-hide-descendants'}>
+      {children}
+    </Animated.View>
+  );
+}
+
 const { StartupTiming } = NativeModules as {
   StartupTiming?: { reportFullyDrawn(): void };
 };
@@ -1054,50 +1129,36 @@ function SignedIn({
       </Animated.View>
 
       {/* Favourites is a top-level tab: the people this member has hearted. */}
-      {route.name === 'favourites' ? (
-        <Animated.View style={styles.tabLayer} entering={topLevelIn} exiting={topLevelOut}>
-          <AfterPaint>
-            <FavouritesScreen onOpenProvider={id => openProvider(id, 'favourites')} />
-          </AfterPaint>
-        </Animated.View>
-      ) : null}
+      <TabLayer active={route.name === 'favourites'} style={styles.tabLayer}>
+        <FavouritesScreen onOpenProvider={id => openProvider(id, 'favourites')} />
+      </TabLayer>
 
       {/* Calls is a top-level tab (empty state for now). A real destination so
           the nav's Calls icon does something on tap rather than reading as dead. */}
-      {route.name === 'calls' ? (
-        <Animated.View style={styles.tabLayer} entering={topLevelIn} exiting={topLevelOut}>
-          <AfterPaint>
-            <CallsScreen />
-          </AfterPaint>
-        </Animated.View>
-      ) : null}
+      <TabLayer active={route.name === 'calls'} style={styles.tabLayer}>
+        <CallsScreen />
+      </TabLayer>
 
       {/* Settings is a top-level tab: its own layer filling the content area
           (which ends at the docked nav's top edge), not inside the pushed overlay
-          that the nav does not survive. */}
-      {route.name === 'settings' ? (
-        // A tab switch, not a push: the M3 top-level pattern (a fade, no slide)
-        // so Home↔Settings does not read as a sideways jump. A straight
-        // cross-fade rather than out-then-in, because the layers sit over an
-        // always-mounted Home and a gap between the two fades showed it.
-        <Animated.View style={styles.tabLayer} entering={topLevelIn} exiting={topLevelOut}>
-          <AfterPaint>
-            <SettingsSheet
-              onBack={backToHome}
-              // A fixed bottom-nav tab on the member tree: the Home tab is the way
-              // back, so no app-bar back action (WhatsApp's model).
-              showBack={false}
-              onDeleted={() => {
-                backToHome();
-                onSignedOut();
-              }}
-              onSignedOut={onSignedOut}
-              onBlocked={() => pushRoute({ name: 'blocked' })}
-              onTransactions={() => pushRoute({ name: 'transactions' })}
-            />
-          </AfterPaint>
-        </Animated.View>
-      ) : null}
+          that the nav does not survive. A tab switch, not a push: the M3
+          top-level pattern (a fade, no slide) so Home↔Settings does not read as
+          a sideways jump. */}
+      <TabLayer active={route.name === 'settings'} style={styles.tabLayer}>
+        <SettingsSheet
+          onBack={backToHome}
+          // A fixed bottom-nav tab on the member tree: the Home tab is the way
+          // back, so no app-bar back action (WhatsApp's model).
+          showBack={false}
+          onDeleted={() => {
+            backToHome();
+            onSignedOut();
+          }}
+          onSignedOut={onSignedOut}
+          onBlocked={() => pushRoute({ name: 'blocked' })}
+          onTransactions={() => pushRoute({ name: 'transactions' })}
+        />
+      </TabLayer>
 
       {/* No opaque cover between Home and the pushed overlays any more.
           There used to be an instant white `coverHome` at zIndex 9 so a

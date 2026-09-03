@@ -1,6 +1,7 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
   AppState,
+  Keyboard,
   Linking,
   PermissionsAndroid,
   StyleSheet,
@@ -8,8 +9,11 @@ import {
   type TextInput,
   View,
 } from 'react-native';
-import Animated from 'react-native-reanimated';
-import { BlurView } from '@sbaiahmed1/react-native-blur';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useCrossfade } from '../theme/motion';
 import { requestAndroidPermission } from '../lib/permissions';
 import {
@@ -18,7 +22,7 @@ import {
   type ImagePickerResponse,
 } from 'react-native-image-picker';
 import { TOKENS, type Theme } from '../theme/tokens';
-import { useStyles, useTheme, useThemeMode } from '../theme/ThemeProvider';
+import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { MAX_MESSAGE_CHARS } from '../lib/tokenLedger';
 import { errorTick, tick } from '../lib/haptics';
 import {
@@ -33,8 +37,12 @@ import { Icon } from './Icon';
 import { Pressable } from './Pressable';
 import { SendButton } from './SendButton';
 import { Sheet } from './Sheet';
+import { EmojiPicker } from './EmojiPicker';
 import { Waveform } from './Waveform';
 import { TextField } from './TextField';
+
+/** The camera button's slot width, animated to zero when the send takes over. */
+const CAMERA_SLOT = 40;
 
 interface Props {
   onSend: (text: string) => void;
@@ -52,6 +60,12 @@ interface Props {
    * have to know how often a broadcast is affordable.
    */
   onTyping?: () => void;
+  /**
+   * Fired when the field takes or loses focus, so the dock behind it can drop
+   * its frost entirely while composing — the composer becomes a floating capsule
+   * over the transcript rather than a bar (Amit, 2026-09-04).
+   */
+  onFocusChange?: (focused: boolean) => void;
 }
 
 /**
@@ -110,15 +124,18 @@ function ComposerView({
   placeholder,
   sendHaloKey,
   onTyping,
+  onFocusChange,
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
-  const { isDark } = useThemeMode();
   const setNotice = useStore(s => s.setNotice);
   const [value, setValue] = useState('');
   const [mode, setMode] = useState<Mode>('idle');
-  // Whether the "+" media chooser (Camera / Photos) is open. iMessage's plus.
+  // Whether the media chooser (Camera / Photos) is open, now opened by the
+  // camera button rather than the retired "+".
   const [mediaOpen, setMediaOpen] = useState(false);
+  // Whether the in-app emoji picker is open.
+  const [emojiOpen, setEmojiOpen] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [levels, setLevels] = useState<readonly number[]>([]);
   const [draft, setDraft] = useState<VoiceDraft | null>(null);
@@ -143,6 +160,27 @@ function ComposerView({
   const ready = value.trim().length > 0 && !disabled;
   // Cross-fades the trailing slot between mic (empty) and send (has text).
   const trailing = useCrossfade(ready);
+
+  /**
+   * The camera's collapse, driven by the same `ready` the trailing slot uses.
+   *
+   * Animating width (not just opacity) is the point: the reference frame's
+   * Writing state has the capsule grow into the space the camera and mic leave,
+   * and a zero-opacity button that still occupies 40dp would leave the capsule
+   * short with an invisible gap beside it.
+   */
+  const cameraOpen = useSharedValue(ready ? 0 : 1);
+  useEffect(() => {
+    cameraOpen.value = withTiming(ready ? 0 : 1, {
+      duration: TOKENS.motion.duration.fast,
+    });
+  }, [ready, cameraOpen]);
+  const cameraStyle = useAnimatedStyle(() => ({
+    opacity: cameraOpen.value,
+    width: CAMERA_SLOT * cameraOpen.value,
+    // The gap collapses with it, or the capsule stops short of the send button.
+    marginLeft: TOKENS.space.xs * cameraOpen.value,
+  }));
 
   const finish = useCallback((next: VoiceDraft | null) => {
     handle.current = null;
@@ -191,6 +229,30 @@ function ComposerView({
     onSend(value);
     setValue('');
   }, [onSend, ready, value]);
+
+  /**
+   * Open the picker with the keyboard down.
+   *
+   * Both want the same space at the bottom of the screen, and leaving the IME up
+   * would put the sheet over it (or fight it for the inset). Dismissing first is
+   * also what makes the swap read as one surface replacing another.
+   */
+  const openEmoji = useCallback(() => {
+    Keyboard.dismiss();
+    requestAnimationFrame(() => setEmojiOpen(true));
+  }, []);
+
+  /** Insert at the end of the draft, the way a keyboard would. */
+  const addEmoji = useCallback(
+    (emoji: string) => {
+      setValue(current => (current + emoji).slice(0, MAX_MESSAGE_CHARS));
+      onTyping?.();
+    },
+    [onTyping],
+  );
+
+  const onFieldFocus = useCallback(() => onFocusChange?.(true), [onFocusChange]);
+  const onFieldBlur = useCallback(() => onFocusChange?.(false), [onFocusChange]);
 
   const record = useCallback(async () => {
     if (disabled || handle.current !== null) {
@@ -491,55 +553,17 @@ function ComposerView({
     <>
     <View style={styles.row}>
       <View style={styles.inputBar}>
-      {/* The "+" media button (#8, iMessage/Sweprek): one target that opens a
-          Camera / Photos chooser, rather than a bare gallery shortcut. Left of the
-          field, its own target, so it is reachable whether or not there is text —
-          the trailing control is the send/mic either-or, and a third thing crammed
-          in there is the "which does return mean" problem the mic note warns of. */}
-      <Pressable
-        onPress={() => requestAnimationFrame(() => setMediaOpen(true))}
-        disabled={disabled}
-        testID="composer-attach"
-        accessibilityLabel="Add media"
-        accessibilityHint="Camera or photos. One photo costs one token"
-        press="none"
-        highlight="ios"
-        size={40}
-        style={styles.attach}>
-        {/* The plus sits in a filled coral circle (Sweprek, #6), the same 38dp as
-            the trailing send so the two coral discs flank the capsule uniformly. */}
-        <View style={styles.attachCircle}>
-          <Icon name="plus" size={18} color={theme.color.text.onAccent} />
-        </View>
-      </Pressable>
-      {/* The frosted-glass capsule. Telegram's input pill blurs the transcript
-          behind it; on New-Architecture Android this is a real backdrop blur
-          (RenderEffect, API 31+) via the native BlurView, a translucent tint
-          below 31, tracking the app's own light/dark theme. The emoji and input
-          are the BlurView's CHILDREN, not siblings drawn over it — the lib skips
-          its own subtree in the software capture, so a child stays crisp while a
-          sibling would bake into the blur as a ghost halo. It sits on the already
-          frosted dock, so the nested frost reads as a slightly more opaque pill
-          that stands apart from the bar. */}
-      <BlurView
-        style={styles.field}
-        blurType={isDark ? 'dark' : 'light'}
-        blurAmount={18}
-        overlayColor={theme.color.bg.glass}>
-        {/* Emoji, docked at the leading edge of the field (#4, the WhatsApp
-            position). It focuses the input so the keyboard — and its emoji key —
-            comes up; a full in-app emoji picker is a follow-up. */}
-        <Pressable
-          onPress={() => inputRef.current?.focus()}
-          disabled={disabled}
-          testID="composer-emoji"
-          accessibilityLabel="Emoji"
-          press="none"
-          highlight="ios"
-          size={30}
-          style={styles.emoji}>
-          <Icon name="smile" size={28} color={theme.color.text.secondary} />
-        </Pressable>
+      {/* The capsule. A SOLID themed surface, not a nested blur.
+
+          It used to be a second BlurView sitting on the frosted dock, which made
+          the pill a slightly-more-opaque pane of the same glass. The dock now
+          carries no fill of its own (and none at all once the keyboard is up), so
+          the pill has to be the thing that reads as a surface instead of the bar
+          — a floating capsule over the transcript (Amit, 2026-09-04: "bar blurred
+          without solid fill but pill stays solid white ... when click to type only
+          floating pill and icons"). White in light, the elevated surface in dark,
+          both from tokens rather than a literal white that would glare in dark. */}
+      <View style={styles.field}>
         <TextField
           ref={inputRef}
           testID="composer-input"
@@ -560,19 +584,56 @@ function ComposerView({
           accessibilityLabel="Message"
           accessibilityHint="One message costs one token"
           underlineColorAndroid="transparent"
+          onFocus={onFieldFocus}
+          onBlur={onFieldBlur}
         />
-      </BlurView>
+        {/* Emoji, on the capsule's TRAILING edge — the position the reference
+            frame puts it in, and the reason the leading edge is now free for the
+            text itself. Opens the in-app picker rather than just raising the
+            system keyboard. */}
+        <Pressable
+          onPress={openEmoji}
+          disabled={disabled}
+          testID="composer-emoji"
+          accessibilityLabel="Emoji"
+          press="none"
+          highlight="ios"
+          size={30}
+          style={styles.emoji}>
+          <Icon name="smile" size={26} color={theme.color.text.secondary} />
+        </Pressable>
+      </View>
+
+      {/* Camera. It replaces the old "+" as the single media entry point and
+          opens the SAME Camera / Photos chooser, so nothing is reachable only
+          from a removed control — the gallery is one obvious tap deeper rather
+          than gone (Amit, 2026-09-04).
+
+          It collapses to nothing the moment there is text to send, together with
+          the mic, leaving the send button alone beside the capsule (the reference
+          frame's Writing state). Width as well as opacity, so the capsule takes
+          the freed room instead of leaving a hole. */}
+      <Animated.View style={cameraStyle} pointerEvents={ready ? 'none' : 'auto'}>
+        <Pressable
+          onPress={() => requestAnimationFrame(() => setMediaOpen(true))}
+          disabled={disabled || ready}
+          testID="composer-attach"
+          accessibilityLabel="Add media"
+          accessibilityHint="Camera or photos. One photo costs one token"
+          press="none"
+          highlight="ios"
+          size={40}
+          style={styles.camera}>
+          <Icon name="camera" size={22} color={theme.color.text.secondary} />
+        </Pressable>
+      </Animated.View>
+
       {/* One trailing control, never two competing — but they cross-fade now
           rather than hard-swapping (send scales up from nothing while the mic
           scales away the instant the field stops being empty). Both are mounted,
           stacked in one fixed slot, and `pointerEvents` gives touches to whichever
           is live so the hidden one cannot be tapped mid-fade. `ready` decides which
-          is which; the return key still means the send.
-
-          OUTSIDE the field capsule now (right of it), the mirror of the "+" on the
-          left: the 38dp send/mic no longer has to fit inside the 40dp capsule, so it
-          cannot touch the capsule border — the sizing/uniformity fix. Telegram's
-          send sits outside its input pill the same way. */}
+          is which; the return key still means the send. */}
       <View style={styles.trailing}>
         <Animated.View
           style={[styles.trailingLayer, trailing.hiddenStyle]}
@@ -647,6 +708,16 @@ function ComposerView({
         </Pressable>
       </View>
     </Sheet>
+
+    {/* The in-app emoji picker. Appending rather than replacing the draft, so
+        it composes with whatever is already typed the way a keyboard would. It
+        stays open across picks — sending several in a row is the common case,
+        and closing after each would make that four taps instead of two. */}
+    <EmojiPicker
+      visible={emojiOpen}
+      onClose={() => setEmojiOpen(false)}
+      onPick={addEmoji}
+    />
     </>
   );
 }
@@ -685,10 +756,18 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     // the circle carries the accent rather than a neutral sunken grey.
     backgroundColor: t.color.bg.accent,
   },
-  // The emoji button inside the field's leading edge. Sized to sit on the same
-  // baseline as the trailing mic when the field is a single line.
+  // The emoji button on the field's TRAILING edge, where the reference frame
+  // puts it. Same 40 height as the input so it centres on a single-line field.
   emoji: {
     width: 34,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // The camera, outside the capsule, between it and the send/mic slot. Width is
+  // animated (see `cameraStyle`), so nothing here may set one.
+  camera: {
+    width: CAMERA_SLOT,
     height: 40,
     alignItems: 'center',
     justifyContent: 'center',
@@ -698,25 +777,24 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: TOKENS.space.xs,
-    // Leading inset and the emoji→text gap mapped to Telegram: the smiley sits a
-    // touch in from the capsule edge and the text starts with a clear gap after it.
-    // The send lives OUTSIDE the capsule now, so the trailing padding is just the
-    // text's own right breathing room.
-    paddingLeft: TOKENS.space.xs,
-    paddingRight: TOKENS.space.md,
+    // The text now starts at the leading edge (the emoji moved to the trailing
+    // one), so the leading inset is the text's own breathing room and the
+    // trailing inset only has to clear the emoji button.
+    paddingLeft: TOKENS.space.md,
+    paddingRight: TOKENS.space['2xs'],
     // Zero: the 40dp input is the tallest child and IS the capsule height, so the
     // capsule is a true 40 (Telegram's, measured on device). Any field padding here
     // stacks on top of the 40 input and reads taller than the real app.
     paddingVertical: 0,
-    // Still a capsule: the field is a capsule on iOS too. What changed is what
-    // defines its edge.
     borderRadius: TOKENS.radius.pill,
     borderCurve: 'continuous',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: t.color.border.hairline,
-    // No opaque fill: the BlurView behind the content IS the capsule surface now.
-    // overflow hidden clips the absolute-fill blur to the pill's rounded rect.
-    backgroundColor: 'transparent',
+    // A SOLID surface, not a nested blur: the dock behind it carries no fill of
+    // its own, so the capsule is the only thing that reads as a surface. `raised`
+    // is white in light and the elevated grey in dark — a literal white would
+    // glare against a dark transcript.
+    backgroundColor: t.color.bg.raised,
     overflow: 'hidden',
   },
   input: {

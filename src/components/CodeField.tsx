@@ -211,6 +211,9 @@ function CodeFieldView({
     errorTick();
     setShowError(true);
     errorLevel.value = withTiming(1, { duration: TOKENS.motion.duration.instant });
+    // The IME was collapsed to show the verifying state; a rejected code hands
+    // the field straight back rather than making the user tap to re-open it.
+    input.current?.focus();
     const timer = setTimeout(() => setShowError(false), ERROR_HOLD_MS);
     return () => clearTimeout(timer);
   }, [errorNonce, shake, errorLevel]);
@@ -249,8 +252,50 @@ function CodeFieldView({
     return () => clearTimeout(settle);
   }, [succeeded, length, successWave, rowScale]);
 
+  /**
+   * The code recedes while it is being checked.
+   *
+   * Six boxes at full strength with a spinner on top reads as "still your turn"
+   * — the field is the loudest thing on screen at the exact moment the user has
+   * nothing left to do (Amit, 2026-09-04: "we need to have loading state without
+   * the otp in full focus.. like how other apps do it"). The researched pattern
+   * is to separate "waiting for the code" from "verifying it": the entered code
+   * drops back to a quiet record of what was typed, and the progress indicator
+   * becomes the focal element.
+   *
+   * Scale as well as opacity, because opacity alone at this size just looks like
+   * a disabled field; the small push back reads as the field handing over.
+   */
+  const recede = useSharedValue(0);
+  useEffect(() => {
+    // Not on `succeeded`: the success cascade plays on the boxes themselves, so
+    // they have to come back to full strength to be seen.
+    recede.value = withTiming(verifying && !succeeded ? 1 : 0, {
+      duration: TOKENS.motion.duration.fast,
+    });
+  }, [verifying, succeeded, recede]);
+
+  /**
+   * Collapse the IME the moment the code is complete.
+   *
+   * This deliberately reverses the older "keep the input focused so Android does
+   * not collapse the IME" note below: that kept a keyboard over the screen while
+   * the network call ran, which is precisely what hides the verifying state. On
+   * a rejected code the field takes focus back (see the errorNonce effect) so
+   * the correction is still one tap away.
+   */
+  useEffect(() => {
+    if (verifying) {
+      input.current?.blur();
+    }
+  }, [verifying]);
+
   const rowAnimated = useAnimatedStyle(() => ({
-    transform: [{ translateX: shake.value }, { scale: rowScale.value }],
+    opacity: 1 - recede.value * 0.62,
+    transform: [
+      { translateX: shake.value },
+      { scale: rowScale.value * (1 - recede.value * 0.06) },
+    ],
   }));
 
   const focus = useCallback(() => {
@@ -350,13 +395,32 @@ function CodeFieldView({
       {/* While the code is in the air the field otherwise looks frozen — the
           segments dim but nothing says the app is working, so a 1–3s verify
           reads as dead (Amit, 2026-09-02). Telegram shows an accent spinner
-          during verification (LoginActivity.java:776-781). Centred over the row,
-          not replacing it, so the entered digits stay visible behind it. */}
-      {verifying ? (
-        <View style={styles.verifyOverlay} pointerEvents="none">
-          <LoadingIndicator size={28} containerColor="transparent" testID="code-verifying" />
-        </View>
-      ) : null}
+          during verification (LoginActivity.java:776-781).
+
+          It is NAMED as well as spun. A bare spinner over a field says
+          "something is happening"; the word says which of the two waits this is
+          — checking the code you typed, not waiting for an SMS to arrive — and
+          that ambiguity is what sends people to "Resend" mid-verify.
+
+          BELOW the row, not over it. Absolutely centred on the row (the first
+          attempt) put the label across the middle two digits, which read as a
+          collision even with the row receded — verified on device, 2026-09-04.
+          The slot keeps a fixed height whether or not it is filled, so the
+          resend actions under it do not jump when verification starts. */}
+      <View style={styles.verifySlot} pointerEvents="none">
+        {verifying && !succeeded ? (
+          <>
+            <LoadingIndicator size={18} containerColor="transparent" testID="code-verifying" />
+            <Text
+              allowFontScaling
+              maxFontSizeMultiplier={TOKENS.fontScaleCap.titleSmall}
+              accessibilityLiveRegion="polite"
+              style={styles.verifyLabel}>
+              Verifying…
+            </Text>
+          </>
+        ) : null}
+      </View>
     </Animated.View>
   );
 }
@@ -390,15 +454,27 @@ const makeStyles = (t: Theme) =>
     segmentActive: {
       borderWidth: 2,
     },
-    // Dimmed while the code verifies, so the centred spinner reads as the active
-    // element and the digits sit quietly behind it.
+    // The whole row already recedes while verifying (see `recede`), so the
+    // per-box dim only has to take the borders down far enough that the boxes
+    // stop competing with the label sitting over them.
     segmentVerifying: {
       opacity: 0.45,
     },
-    verifyOverlay: {
-      ...StyleSheet.absoluteFill,
+    // A reserved strip under the row. Fixed height so starting verification
+    // does not shift the resend actions beneath it. Not one of the `layout.*`
+    // container heights — the smallest of those is a 56dp list row and this is a
+    // status line, not a row — so it takes the 32 from the spacing scale rather
+    // than inventing a number.
+    verifySlot: {
+      height: TOKENS.space['2xl'],
+      flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
+      gap: TOKENS.space.xs,
+    },
+    verifyLabel: {
+      ...TOKENS.typography.labelLargeEmphasized,
+      color: t.color.text.secondary,
     },
     digit: {
       ...TOKENS.typography.headlineSmallEmphasized,

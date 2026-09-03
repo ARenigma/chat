@@ -27,8 +27,23 @@ interface Props extends ViewProps {
    * Which edge carries the separating hairline. A frosted bar has no shadow —
    * a drop shadow under a translucent bar reads as a smudge — so the hairline is
    * the whole edge. `top` for a bottom-anchored bar, `bottom` for a top one.
+   * Omit it for a bar that should read as nothing at all.
    */
   edge?: 'top' | 'bottom';
+  /**
+   * The surface wash over the blur. `glass` (default) is the ~55% bar plate.
+   * `none` leaves the blur untinted, for a bar that is meant to be a lens rather
+   * than a surface — the chat composer, whose dock carries no fill of its own.
+   */
+  tint?: 'glass' | 'none';
+  /**
+   * Blur radius. Defaults to the standard bar frost. Pass 0 to make the bar
+   * vanish entirely while keeping this component mounted — which matters,
+   * because the children must stay CHILDREN of the BlurView (see `FrostBlur`);
+   * swapping the wrapper out for a plain View to hide the bar would re-parent
+   * them into a sibling and bake the ghost halo back in.
+   */
+  blurAmount?: number;
 }
 
 /**
@@ -54,7 +69,14 @@ interface Props extends ViewProps {
  * the children render above the blur (and are excluded from its capture — see
  * `FrostBlur`), so any text or icons over the bar stay crisp with no ghost halo.
  */
-export function Frost({ children, style, edge, ...rest }: Props) {
+export function Frost({
+  children,
+  style,
+  edge,
+  tint = 'glass',
+  blurAmount = 18,
+  ...rest
+}: Props) {
   const theme = useTheme();
   const { isDark } = useThemeMode();
   return (
@@ -62,8 +84,8 @@ export function Frost({ children, style, edge, ...rest }: Props) {
       {...rest}
       style={[style, styles.clip]}
       blurType={isDark ? 'dark' : 'light'}
-      blurAmount={18}
-      overlayColor={theme.color.bg.glass}>
+      blurAmount={blurAmount}
+      overlayColor={tint === 'none' ? 'transparent' : theme.color.bg.glass}>
       {edge !== undefined ? (
         <View
           style={[
