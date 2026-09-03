@@ -20,7 +20,6 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from './src/theme/tokens';
 import { ThemeProvider, useStyles, useThemeMode } from './src/theme/ThemeProvider';
 import {
-  authArrive,
   revealHome,
   screenOut,
   setNavDirection,
@@ -33,6 +32,7 @@ import { AfterPaint } from './src/components/AfterPaint';
 import { UpdateBanner } from './src/components/UpdateBanner';
 import { assertEnv } from './src/lib/env';
 import { storage } from './src/lib/storage';
+import { PROVIDER_INTENT_KEY } from './src/lib/providerIntent';
 import { initialNotificationPeer, onNotificationOpen, setNotificationPolicy, startPush } from './src/lib/push';
 import { clearCall } from './src/lib/conversations';
 import {
@@ -79,7 +79,6 @@ import { Button } from './src/components/Button';
 import { FloatingToolbar } from './src/components/FloatingToolbar';
 import { ChatScreen } from './src/screens/ChatScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
-import { AuthScreen } from './src/screens/AuthScreen';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
 import { ProviderDetailScreen } from './src/screens/ProviderDetailScreen';
 import { CallScreen } from './src/screens/CallScreen';
@@ -319,14 +318,28 @@ function Root() {
   routeRef.current = route;
   const providerRouteRef = useRef(providerRoute);
   providerRouteRef.current = providerRoute;
-  const [welcomeSeen, setWelcomeSeen] = useState(false);
   const resetConversation = useStore(s => s.resetConversation);
+  const setNotice = useStore(s => s.setNotice);
   const refillVisible = useStore(s => s.refillVisible);
   const closeRefill = useStore(s => s.closeRefill);
   const walletVisible = useStore(s => s.walletVisible);
   const closeWallet = useStore(s => s.closeWallet);
   const pendingProviderApply = useStore(s => s.pendingProviderApply);
-  const setPendingProviderApply = useStore(s => s.setPendingProviderApply);
+
+  // While the provider-signup intent is set, KEEP the route on the onboarding
+  // screen. The boot machine bumps `attempt` several times (auth listener,
+  // onDone, permission grants), and each re-run resets the route to Home before
+  // the flag can steer it; enforcing it here, on every render, wins over those
+  // one-off resets. The flag is cleared when the onboarding is left or completed,
+  // which lets the route move again.
+  useEffect(() => {
+    if (boot.phase === 'ready' && pendingProviderApply && route.name !== 'apply') {
+      if (useHomeTour.getState().active) {
+        useHomeTour.getState().skip();
+      }
+      setRoute({ name: 'apply', from: 'home' });
+    }
+  }, [boot.phase, pendingProviderApply, route.name]);
 
   useEffect(() => {
     let cancelled = false;
@@ -359,6 +372,28 @@ function Root() {
         if (tapped !== null) {
           setRoute({ name: 'chat', providerId: tapped, from: 'home' });
         }
+        // "Become a partner" before auth → provider onboarding, and it SKIPS the
+        // member first-run (username/age/policy) entirely. Member and provider are
+        // separate worlds (Amit, 2026-09-03): a provider sets up their OWN profile
+        // in the provider onboarding, so a provider signup must never be routed
+        // through the member first-run gates. The flag is read fresh (set in
+        // OnboardingScreen) and NOT cleared here — the boot effect can run more
+        // than once, and clearing on the first run let a later run fall through to
+        // the member path and Home. It is cleared when the onboarding is left or
+        // completed (see the apply route below).
+        if (storage.get(PROVIDER_INTENT_KEY) === '1') {
+          // Restore the reactive flag from the persisted intent (the in-memory one
+          // can be reset in the auth → boot transition) so the tour gate and the
+          // route-enforcing effect below see it too.
+          useStore.getState().setPendingProviderApply(true);
+          if (useHomeTour.getState().active) {
+            useHomeTour.getState().skip();
+          }
+          setBoot({ phase: 'ready' });
+          setRoute({ name: 'apply', from: 'home' });
+          track('app_open');
+          return;
+        }
         // ADR-0020 / 040: profile setup (+ age, 043), then policy gate, then app.
         const profile = await getSignedInProfile();
         const nextBoot = await bootPhaseAfterAuth(profile);
@@ -381,21 +416,6 @@ function Root() {
     };
   }, [attempt]);
 
-  /**
-   * After sign-in completes, check whether the member tapped "Become a partner"
-   * before authenticating and, if so, route directly to the application screen.
-   *
-   * The flag is set in OnboardingScreen before triggering Google sign-in; this
-   * effect fires once the boot transitions to `ready` (session confirmed) and the
-   * member tree is about to mount. Clearing the flag here prevents a stale
-   * redirect on subsequent cold starts.
-   */
-  useEffect(() => {
-    if (boot.phase === 'ready' && pendingProviderApply) {
-      setRoute({ name: 'apply', from: 'home' });
-      setPendingProviderApply(false);
-    }
-  }, [boot.phase, pendingProviderApply, setPendingProviderApply]);
 
   /**
    * The only deep link the app handles, and now it is load-bearing rather than
@@ -715,88 +735,33 @@ function Root() {
 
   if (boot.phase === 'signedOut') {
     /*
-     * The welcome screen sits in front of sign-in rather than replacing it.
+     * Welcome IS sign-in — there is no separate AuthScreen to hand off to.
      *
-     * It exists to be FELT: the field draining upward and the 1.2s hold are the
-     * whole point of it, and neither can be judged from a still. It is skipped
-     * once somebody has seen it, and skipped entirely when an error brought them
-     * back here, because an atmospheric entry in front of "that code was wrong"
-     * is the wrong tone and an extra two seconds between a user and their retry.
+     * There used to be a second page here ("Someone's here to listen" / Google
+     * / phone) that a returning user landed on after signing out, which read as
+     * a redundant, disconnected screen bolted onto the welcome flow (Amit,
+     * 2026-09-03: "sign out still takes me to this redundant page ... remove
+     * this from app and wire welcome screen"). OnboardingScreen already owns
+     * the whole sign-in — welcome, choose-a-way-in, phone/OTP, Google, and
+     * Become a partner — so every path back to `signedOut` renders it, with no
+     * `welcomeSeen` branch deciding between it and AuthScreen.
+     *
+     * A `boot.message` (the rare browser-redirect auth failure) has nowhere
+     * dedicated to show anymore, so it surfaces as the ordinary toast notice
+     * instead of a bespoke error screen.
      */
-    if (!welcomeSeen && boot.message === undefined) {
-      /*
-       * The whole onboarding, not just a welcome screen.
-       *
-       * It owns sign-in now, so reaching `onDone` means a session already
-       * exists and this branch will not be taken again. The old split — a
-       * welcome screen that handed off to a separate AuthScreen — is what the
-       * Fuse translation replaced, because a hand-off between two screens is
-       * exactly the seam the reference does not have.
-       *
-       * `onDone` does two things, and the second is load-bearing. The browser
-       * path never reaches here — its deep-link handler sets `boot: 'ready'`
-       * and this screen unmounts first. But the Credential Manager path returns
-       * a session synchronously without any deep link, so nothing else re-reads
-       * it: `setWelcomeSeen(true)` alone would leave `boot` on `signedOut` and
-       * drop the user onto `AuthScreen` with a live session behind it — the
-       * exact "signed in but stuck on the sign-in screen" bug. Bumping `attempt`
-       * re-runs the boot effect, which reads the now-present session and lands
-       * on `ready`. `welcomeSeen` guards the rare case where the re-read finds
-       * no session: AuthScreen, not a replayed welcome animation.
-       */
-      return (
-        <OnboardingScreen
-          onDone={() => {
-            // Splash over the re-read, same reason as AuthScreen's
-            // onAuthenticated: keep the welcome from replaying under a live
-            // session between "session set" and "boot resolved".
-            setBoot({ phase: 'loading' });
-            setWelcomeSeen(true);
-            setAttempt(a => a + 1);
-          }}
-        />
-      );
-    }
-    /*
-     * Arriving from the welcome screen, sign-in fades up rather than cutting in.
-     *
-     * The source gives both halves of the swap the same transition —
-     * `.opacity.combined(with: .offset(y: 20))` — so the field is never
-     * interrupted by something appearing at full strength on top of it. Without
-     * this the 1.2s of moving colour ends in a hard cut, which throws away the
-     * part the pause was buying.
-     *
-     * Only on that path: reaching sign-in with a `boot.message` means an error
-     * sent somebody back, and an entrance animation in front of "that code was
-     * wrong" is the wrong tone.
-     */
-    if (welcomeSeen && boot.message === undefined) {
-      return (
-        <Animated.View style={styles.fill} entering={authArrive}>
-          <AuthScreen onAuthenticated={() => {
-            // Show the splash, not the sign-in screens, while the boot effect
-            // re-reads the just-minted session. Without this the render between
-            // "session set" and "boot resolved" still has boot === 'signedOut',
-            // which flashes OnboardingScreen (the welcome) or the auth
-            // screen back at someone who just signed in.
-            setBoot({ phase: 'loading' });
-            setAttempt(a => a + 1);
-          }} />
-        </Animated.View>
-      );
+    if (boot.message !== undefined) {
+      setNotice(boot.message);
     }
     return (
-      <AuthScreen
-        initialError={boot.message}
-        onAuthenticated={() => {
-            // Show the splash, not the sign-in screens, while the boot effect
-            // re-reads the just-minted session. Without this the render between
-            // "session set" and "boot resolved" still has boot === 'signedOut',
-            // which flashes OnboardingScreen (the welcome) or the auth
-            // screen back at someone who just signed in.
-            setBoot({ phase: 'loading' });
-            setAttempt(a => a + 1);
-          }}
+      <OnboardingScreen
+        onDone={() => {
+          // Splash over the re-read, same reason AuthScreen used to give:
+          // keep the welcome from replaying under a live session between
+          // "session set" and "boot resolved".
+          setBoot({ phase: 'loading' });
+          setAttempt(a => a + 1);
+        }}
       />
     );
   }
@@ -1127,8 +1092,6 @@ function SignedIn({
                 onSignedOut();
               }}
               onSignedOut={onSignedOut}
-              onApply={() => pushRoute({ name: 'apply', from: 'settings' })}
-              onApplicationStatus={() => pushRoute({ name: 'applicationStatus' })}
               onBlocked={() => pushRoute({ name: 'blocked' })}
               onTransactions={() => pushRoute({ name: 'transactions' })}
             />
@@ -1226,8 +1189,22 @@ function SignedIn({
             </AfterPaint>
           ) : route.name === 'apply' ? (
             <ProviderApplicationScreen
-              onBack={backToHome}
-              onSubmitted={() => pushRoute({ name: 'applicationStatus' })}
+              // Leaving onboarding clears the provider-signup intent so a later
+              // boot does not re-route back into it.
+              onBack={() => {
+                storage.remove(PROVIDER_INTENT_KEY);
+                useStore.getState().setPendingProviderApply(false);
+                backToHome();
+              }}
+              // Auto-approve: completing onboarding flips role → 'provider', which
+              // re-renders into the provider tree (= provider home). The refetch is
+              // the belt-and-suspenders that guarantees the flip if the screen's own
+              // invalidate has not landed yet. No more applicationStatus.
+              onSubmitted={() => {
+                storage.remove(PROVIDER_INTENT_KEY);
+                useStore.getState().setPendingProviderApply(false);
+                void queryClient.invalidateQueries();
+              }}
             />
           ) : route.name === 'applicationStatus' ? (
             <ProviderStatusScreen onBack={backToHome} onEdit={() => pushRoute({ name: 'apply', from: 'applicationStatus' })} />

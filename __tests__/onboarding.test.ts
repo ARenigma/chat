@@ -194,18 +194,16 @@ describe('the field follows the flow', () => {
      * first 400ms, where no layer moves; `formReady` still flips at
      * BLOOM_HOLD_MS and until then the subtree is untouchable and unread.
      */
-    for (const file of [
-      'src/screens/OnboardingScreen.tsx',
-      'src/screens/ProviderApplicationScreen.tsx',
-    ]) {
-      const screen = read(file);
-      expect(screen).toContain("const showForm = phase !== 'welcome';");
-      expect(screen).toContain("pointerEvents={formReady ? 'auto' : 'none'}");
-      expect(screen).toContain('formIn.value = withTiming(1, {');
-      // Arrival is the source's `.smooth` (0.5s), not the 0.7s content exit.
-      expect(screen).toMatch(/formIn\.value = withTiming\(1, \{\s*duration: STEP_ADVANCE_MS/);
-      expect(screen).not.toContain('entering={FadeInDown.duration(BLOOM_CONTENT_MS)}');
-    }
+    // ProviderApplicationScreen was removed here 2026-09-03: its provider
+    // onboarding is now a plain verify → profile → done flow with no bloom
+    // welcome, so it has no form-at-the-press handoff. The member welcome keeps it.
+    const screen = read('src/screens/OnboardingScreen.tsx');
+    expect(screen).toContain("const showForm = phase !== 'welcome';");
+    expect(screen).toContain("pointerEvents={formReady ? 'auto' : 'none'}");
+    expect(screen).toContain('formIn.value = withTiming(1, {');
+    // Arrival is the source's `.smooth` (0.5s), not the 0.7s content exit.
+    expect(screen).toMatch(/formIn\.value = withTiming\(1, \{\s*duration: STEP_ADVANCE_MS/);
+    expect(screen).not.toContain('entering={FadeInDown.duration(BLOOM_CONTENT_MS)}');
   });
 
   it('never animates a layout property on the step title', () => {
@@ -439,14 +437,15 @@ describe('sign in with Google happens in an app-owned sheet', () => {
     expect(auth).toMatch(/await signInWith\('google'\);\s*\n\s*return 'redirected';/);
   });
 
-  it('routes the returning-user screen through the sheet too, not the browser', () => {
-    // OnboardingScreen owns first-run sign-in and calls `signInWithGoogle`
-    // (Credential Manager, browser fallback). AuthScreen is the returning-user /
-    // OAuth-error surface, and it shipped calling `signInWith('google')` — the
-    // browser-only path — so the app-owned sheet never appeared from here even
-    // though every precondition was in place. A dismissed sheet must stay silent
-    // on this screen as well.
-    const screen = read('src/screens/AuthScreen.tsx');
+  it('goes through the sheet too, not the browser', () => {
+    // OnboardingScreen owns sign-in end to end and calls `signInWithGoogle`
+    // (Credential Manager, browser fallback). There used to be a second,
+    // returning-user screen (AuthScreen) that shipped calling
+    // `signInWith('google')` — the browser-only path — so the app-owned sheet
+    // never appeared from there even though every precondition was in place.
+    // That screen is gone (Amit, 2026-09-03: "remove this from app and wire
+    // welcome screen"), so this now pins the one sign-in surface that remains.
+    const screen = read('src/screens/OnboardingScreen.tsx');
     expect(screen).toContain('signInWithGoogle()');
     expect(screen).not.toMatch(/signInWith\(\s*['"]google['"]\s*\)/);
     expect(screen).not.toMatch(/signInWith\(provider\)/);
@@ -456,19 +455,20 @@ describe('sign in with Google happens in an app-owned sheet', () => {
   it('announces a synchronous session so the screen unmounts', () => {
     // App has no auth-state subscription — its boot effect re-reads the session
     // only when `attempt` changes. A Credential Manager token and a verified
-    // phone code both mint a session in-process with no deep link, so AuthScreen
-    // must call back on success or the session is set beneath a screen that never
-    // leaves. App wires the callback to an attempt bump at both render sites.
-    const screen = read('src/screens/AuthScreen.tsx');
-    expect(screen).toContain('onAuthenticated');
+    // phone code both mint a session in-process with no deep link, so
+    // OnboardingScreen must call back on success or the session is set beneath
+    // a screen that never leaves.
+    const screen = read('src/screens/OnboardingScreen.tsx');
+    expect(screen).toContain('onDone');
     const app = read('App.tsx');
-    // Both <AuthScreen> sites wire onAuthenticated to a handler that shows the
-    // splash and bumps attempt (setBoot loading + setAttempt), so the boot effect
-    // re-reads the session without flashing the sign-in screens (#1).
+    // The signedOut phase's only render site wires onDone to a handler that
+    // shows the splash and bumps attempt (setBoot loading + setAttempt), so
+    // the boot effect re-reads the session without flashing the sign-in
+    // screen. There is exactly one such site now — the old two-screen
+    // (welcome vs. returning-user AuthScreen) split is gone.
     const wirings =
-      app.match(/<AuthScreen[\s\S]*?onAuthenticated=\{\(\) => \{[\s\S]*?setAttempt\(a => a \+ 1\)/g) ??
-      [];
-    expect(wirings.length).toBe(2);
+      app.match(/<OnboardingScreen[\s\S]*?onDone=\{\(\) => \{[\s\S]*?setAttempt\(a => a \+ 1\)/g) ?? [];
+    expect(wirings.length).toBe(1);
   });
 });
 

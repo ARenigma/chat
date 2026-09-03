@@ -916,6 +916,45 @@ describe('Cashfree WebCheckout — Android package visibility', () => {
   });
 });
 
+describe('Cashfree 1-Click Onboarding — native verification bridge', () => {
+  /**
+   * Provider payout setup uses Cashfree's Verification Suite native SDK, not a
+   * hand-rolled webview (RULE 1: prefer the platform's own solution). The exact
+   * coordinate and API were read from the compiled 1.0.1 AAR, because the SDK's
+   * README advertises a stale coordinate (com.cashfree.kyc:sdk) and a stale API.
+   * https://www.cashfree.com/docs/api-reference/vrs/v2/1-click-onboarding/1-click-onboarding-sdk#android-native
+   */
+  it('adds the Cashfree Maven repo (the VRS SDK 404s on Maven Central)', () => {
+    expect(read('android/build.gradle')).toContain('https://maven.cashfree.com/release');
+  });
+
+  it('depends on the VRS SDK by its real coordinate', () => {
+    expect(read('android/app/build.gradle')).toContain(
+      'com.cashfree.vrs:kyc-verification:1.0.1',
+    );
+  });
+
+  it('registers the native module so the JS bridge resolves', () => {
+    expect(
+      read('android/app/src/main/java/com/companionchat/InAppUpdatePackage.kt'),
+    ).toContain('CashfreeOnboardingModule(reactContext)');
+  });
+
+  it('calls the AAR-verified API, not the stale README API', () => {
+    const module = read(
+      'android/app/src/main/java/com/companionchat/CashfreeOnboardingModule.kt',
+    );
+    // The real 1.0.1 surface — Builder → set callback → open.
+    expect(module).toContain('CFVerificationService.Builder()');
+    expect(module).toContain('set1ClickOnboardingCallback');
+    expect(module).toContain('open1ClickOnboarding(sessionId, env)');
+    // The stale README API is not IMPORTED or CALLED (it may be named in a
+    // comment that warns against it, which is why this checks imports, not text).
+    expect(module).not.toContain('import com.cashfree.kyc_verification_core.services.CFKycVerificationService');
+    expect(module).not.toContain('CFVerificationService.Builder().setContext(activity).build().doVerification');
+  });
+});
+
 describe('sheet motion and display refresh', () => {
   it('asks the display for its highest refresh mode', () => {
     // https://developer.android.com/develop/ui/views/animations/frame-rate

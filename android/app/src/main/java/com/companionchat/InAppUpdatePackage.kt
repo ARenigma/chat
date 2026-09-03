@@ -22,6 +22,7 @@ class InAppUpdatePackage : ReactPackage {
     ): List<NativeModule> = listOf(
         InAppUpdateModule(reactContext),
         GoogleCredentialModule(reactContext),
+        CashfreeOnboardingModule(reactContext),
         ConversationsModule(reactContext),
         StartupTimingModule(reactContext),
         WindowChromeModule(reactContext),

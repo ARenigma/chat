@@ -91,6 +91,7 @@ const MIGRATIONS = [
   'supabase/migrations/048_provider_payout_accounts.sql',
   'supabase/migrations/049_pan_mandatory_for_payout.sql',
   'supabase/migrations/050_provider_payout_disbursement.sql',
+  'supabase/migrations/051_provider_auto_onboarding.sql',
 ];
 
 const docker = (args, options = {}) =>

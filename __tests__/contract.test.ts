@@ -9,7 +9,6 @@ import {
   STARTING_BALANCE,
 } from '../src/lib/tokenLedger';
 import { MAX_VOICE_MS, MIN_VOICE_MS, isVoicePath } from '../src/lib/voice';
-import { stepOfField } from '../src/lib/applicationSteps';
 import { TOKENS } from '../src/theme/tokens';
 
 const ROOT = join(__dirname, '..');
@@ -106,6 +105,13 @@ describe('the AI path is gone, not dormant', () => {
     // mints a Supabase session — an auth bridge, not a model path. Added with
     // AUTH_PHONE_PROVIDER='firebase'.
     const allowed = [
+      // cashfree-onboarding-complete: exchanges the 1-Click auth_code for the
+      // verified PAN/DOB/bank and persists it (service-role writer); no model path.
+      'cashfree-onboarding-complete',
+      // cashfree-onboarding-start: mints a Cashfree 1-Click Onboarding session
+      // (Data Availability + Initiate OAuth) so the native SDK sheet can open;
+      // provider-JWT-gated, no model path. Verified PAN/identity flow.
+      'cashfree-onboarding-start',
       // cashfree-payout: manual, founder-gated provider disbursement via Cashfree
       // Payouts Standard Transfer V2. Money-critical claim/settle is atomic SQL
       // (migration 050). Triggered from the admin payouts page.
@@ -938,34 +944,28 @@ describe('phone sign-in stays off until it can deliver', () => {
    * PHONE_AUTH_ENABLED condition.
    */
   it('gates every phone entry point on the flag', () => {
-    const screen = withoutComments(read('src/screens/AuthScreen.tsx'));
+    // OnboardingScreen is the sole sign-in surface now (Amit, 2026-09-03:
+    // "remove this from app and wire welcome screen" retired the separate
+    // returning-user AuthScreen), so the gate lives here.
+    const screen = withoutComments(read('src/screens/OnboardingScreen.tsx'));
 
     // The button that begins the flow, and the copy that promises it.
-    //
-    // 'Continue with Phone Number' rather than 'Continue with phone': the iOS
-    // pass moved every button label to title-style capitalization, and the label
-    // was also widened because 'phone' alone reads as a call. It stays a literal
-    // rather than a loose regex, the point is that *this* control is gated, and a
-    // pattern broad enough to survive any rewording would stop naming a control.
-    for (const marker of ['signin-phone"', 'Continue with Phone Number']) {
+    for (const marker of ['onboard-use-phone"', 'Use my number instead']) {
       const at = screen.indexOf(marker);
       expect(at).toBeGreaterThan(-1);
       // Walk back to the enclosing JSX conditional and require the flag in it.
-      // phoneVisible combines PHONE_AUTH_ENABLED (compile-time DLT gate) with
-      // the live admin kill switch (auth_ui.phone_auth_tab_visible).
       const preceding = screen.slice(Math.max(0, at - 600), at);
       expect(preceding).toMatch(/PHONE_AUTH_ENABLED|phoneVisible/);
     }
   });
 
   it('still offers Google as a primary button when phone is off', () => {
-    // The Google button is a bespoke white-pill Pressable: always full-width and
-    // visually prominent regardless of whether phone auth is enabled.
-    // `testID="signin-google"` is the stable identifier the Maestro flows select.
-    const screen = withoutComments(read('src/screens/AuthScreen.tsx'));
-    expect(screen).toContain('testID="signin-google"');
+    // The Google button is always rendered, regardless of whether phone auth
+    // is enabled. `testID="onboard-google"` is the stable identifier.
+    const screen = withoutComments(read('src/screens/OnboardingScreen.tsx'));
+    expect(screen).toContain('testID="onboard-google"');
     // Rendered only in the 'choose' step, where it is the sole or co-primary action.
-    expect(screen).toContain("step === 'choose'");
+    expect(screen).toContain("identify === 'choose'");
   });
 
   it('refuses to call Supabase while the flag is false', () => {
@@ -1063,25 +1063,16 @@ describe('config.toml cannot silently disable a live provider', () => {
     expect(block).toMatch(/secret = "env\(/);
   });
 
-  it('agrees with the app about the code expiry', () => {
-    // Exact wall-clock expiry is server-config; the screen must not invent a
-    // conflicting number. "a few minutes" is the honest client phrasing when
-    // provider/SMS latency can outrun a printed countdown.
-    const seconds = Number(/^otp_expiry = (\d+)$/m.exec(live)?.[1]);
-    expect(Number.isFinite(seconds)).toBe(true);
-    expect(seconds).toBeGreaterThan(0);
-    const auth = read('src/screens/AuthScreen.tsx');
-    expect(auth).toContain('expires in a few minutes');
-    expect(auth).not.toMatch(/expires in \d+ minutes?/);
-  });
-
   it('does not let the resend button outpace the server', () => {
-    // The screen enables "Resend code" after RESEND_SECONDS. If Supabase's
-    // max_frequency is longer, the button is live while the server still refuses
-    //, the user gets a security error for pressing what the app offered.
+    // OnboardingScreen enables "Resend code" after RESEND_SECONDS. If
+    // Supabase's max_frequency is longer, the button is live while the server
+    // still refuses, and the user gets a security error for pressing what the
+    // app offered. Ported from the retired AuthScreen (Amit, 2026-09-03) —
+    // OnboardingScreen is the sole sign-in surface now, so this is the one
+    // place the check still needs to hold.
     const maxFrequency = /^max_frequency = "(\d+)s"$/m.exec(live)?.[1];
     const uiCooldown = /const RESEND_SECONDS = (\d+);/.exec(
-      read('src/screens/AuthScreen.tsx'),
+      read('src/screens/OnboardingScreen.tsx'),
     )?.[1];
     expect(maxFrequency).toBeDefined();
     expect(uiCooldown).toBeDefined();
@@ -2266,30 +2257,29 @@ describe('no user-facing em dash and no leftover persona pronoun', () => {
   });
 });
 
-describe('the birth date field asks in the order a person writes it', () => {
+describe('provider identity comes from Cashfree, not a typed birth date', () => {
   const screen = withoutComments(read('src/screens/ProviderApplicationScreen.tsx'));
 
-  it('no longer asks anybody to type ISO', () => {
-    // A database format being taught to somebody applying for a job. Nobody says
-    // their birthday leading with the year.
-    expect(screen).not.toContain('YYYY-MM-DD');
-    expect(screen).toContain('placeholder="DD/MM/YYYY"');
-    expect(screen).toContain('keyboardType="number-pad"');
+  it('no longer asks a provider to type a date of birth', () => {
+    // DOB is fetched, verified, from the Cashfree 1-Click step (which writes it
+    // via cashfree-onboarding-complete), so the applicant never types it. The old
+    // DD/MM/YYYY field is gone.
+    expect(screen).not.toContain('DD/MM/YYYY');
+    expect(screen).not.toContain('formatDobInput');
   });
 
-  it('converts once, on the way to the server', () => {
-    // The reason a UIDatePicker can replace the field later without touching the
-    // submit path: dobToIso is the only thing the mutation sees.
-    expect(screen).toContain('formatDobInput(next)');
-    expect(screen).toContain('dateOfBirth: dobIso');
+  it('verifies identity before collecting the profile', () => {
+    expect(screen).toContain('useCashfreeVerification');
+    expect(screen).toContain("phase === 'verify'");
   });
 
-  it('keeps the age arithmetic out of the screen', () => {
-    // It was `(Date.now() - then) / (365.25 * 24 * 3600 * 1000)`, which is wrong
-    // by up to a day around a birthday, on an 18-year gate, the difference
-    // between admitting and refusing somebody on the one day it matters.
+  it('keeps the 18+ age gate in SQL, off the verified DOB', () => {
+    // The gate moved from a client arithmetic check to the auto-approve RPC, which
+    // reads the Cashfree-written DOB. Wrong-by-a-day float math is gone entirely.
+    const rpc = read('supabase/migrations/051_provider_auto_onboarding.sql');
+    expect(rpc).toContain("interval '18 years'");
+    expect(rpc).toContain('date_of_birth');
     expect(screen).not.toContain('365.25');
-    expect(screen).toContain('ageFromIso(dobIso)');
   });
 });
 
@@ -2590,59 +2580,55 @@ describe('the motion adoption is wired, not just drawn', () => {
     }
   });
 
-  it('keeps the carousel out of the sign-in claims', () => {
+  it('never reintroduces the carousel', () => {
     // Reverted after being watched on a device. text/secondary composites to
-    // 1.16:1 at the carousel's 10% alpha and does not reach AA until 0.85, where
-    // the fade is imperceptible, so the effect and legibility cannot coexist at
-    // body size. One of the three claims was "Not therapy, just company".
-    const auth = read('src/screens/AuthScreen.tsx');
+    // 1.16:1 at the carousel's 10% alpha and does not reach AA until 0.85,
+    // where the fade is imperceptible, so the effect and legibility cannot
+    // coexist at body size. The sign-in claims this used to sit behind
+    // (AuthScreen) are gone with that screen (Amit, 2026-09-03), but the
+    // component itself must still not come back anywhere.
     expect(existsSync(join(ROOT, 'src/components/WordCarousel.tsx'))).toBe(false);
-    expect(auth).not.toContain('<WordCarousel');
-    expect(auth).toContain('Not therapy, just company');
-    // And all three claims render together rather than one at a time.
-    const claims = auth.slice(auth.indexOf('styles.claims'), auth.indexOf('styles.claimText'));
-    expect(claims).toContain('Real people, not a chatbot');
-    expect(claims).toContain('Talk about anything, or nothing');
-    expect(claims).toContain('Not therapy, just company');
   });
 
-  it('shows a step indicator through the bloom layout', () => {
-    // The horizontal Stepper is replaced by the OnboardingStep checklist, which
-    // shows all three rows throughout the form and always has the active step
-    // expanded. BloomField is the atmospheric surface the checklist floats on.
+  it('is one continuous provider flow, not a second bloom welcome', () => {
+    // The screen used to open on its OWN bloom welcome + "Continue" — a second
+    // welcome beat after the auth one, which read as a disconnected restart. It
+    // now runs straight into verify → profile → done, so BloomField, the
+    // OnboardingStep checklist and the Stepper are all gone from it (Amit,
+    // 2026-09-03).
     const screen = read('src/screens/ProviderApplicationScreen.tsx');
-    expect(screen).toContain('<BloomField');
-    expect(screen).toContain('<OnboardingStep');
+    expect(screen).not.toContain('<BloomField');
+    expect(screen).not.toContain('<OnboardingStep');
     expect(existsSync(join(ROOT, 'src/components/Stepper.tsx'))).toBe(false);
-    expect(screen).not.toContain('<Stepper');
+    expect(screen).toContain("useState<Phase>('verify')");
+    expect(screen).toContain("setPhase('profile')");
+    expect(screen).toContain("setPhase('done')");
   });
 
-  it('locates every field the application form actually renders', () => {
-    // The completeness gate, and the one most likely to earn its keep: a field
-    // added to the form and not to a step is a field the server can flag and the
-    // screen can never show, which turns "we will name what is missing" into a
-    // dead end. Read off the screen's own label table rather than a list here,
-    // so adding a field is what trips it.
+  it('collects the mandatory profile fields, photo optional', () => {
+    // The card fields a member chooses a provider by. Photo is the only optional
+    // one; the auto-approve RPC enforces the rest server-side.
     const screen = read('src/screens/ProviderApplicationScreen.tsx');
-    const table = screen.slice(
-      screen.indexOf('const FIELD_LABEL'),
-      screen.indexOf('};', screen.indexOf('const FIELD_LABEL')),
-    );
-    const rendered = [...table.matchAll(/^\s{2}(\w+):/gm)]
-      .map(m => m[1])
-      .filter((name): name is string => name !== undefined);
-    expect(rendered.length).toBeGreaterThan(5);
-    for (const field of rendered) {
-      expect(stepOfField(field)).toBeGreaterThanOrEqual(0);
-    }
+    expect(screen).toContain('testID="provider-name"');
+    expect(screen).toContain('testID="provider-headline"');
+    expect(screen).toContain('testID="provider-about"');
+    expect(screen).toContain('Photo (optional)');
+    const rpc = read('supabase/migrations/051_provider_auto_onboarding.sql');
+    expect(rpc).toContain('a display name is required');
+    expect(rpc).toContain('a headline is required');
   });
 
-  it('opens a resubmit on the gap rather than at the top', () => {
-    // Without this the steps would make the existing promise WORSE than the
-    // single scroll they replaced: named, and then two taps away.
+  it('auto-approves on completion, with no review queue', () => {
+    // No more submit → admin review → applicationStatus. Completing onboarding
+    // calls complete_provider_onboarding, which flips role='provider' directly
+    // (Cashfree KYC is the vetting; the admin console keeps an after-the-fact
+    // Providers list). The resubmit-on-gap machinery is therefore gone.
     const screen = read('src/screens/ProviderApplicationScreen.tsx');
-    expect(screen).toContain('setStep(firstFlaggedStep(fields))');
-    expect(screen).toContain('missingOnStep(missing, step)');
+    expect(screen).toContain('useCompleteProviderOnboarding');
+    expect(screen).not.toContain('firstFlaggedStep');
+    const rpc = read('supabase/migrations/051_provider_auto_onboarding.sql');
+    expect(rpc).toContain("role = 'provider'");
+    expect(rpc).toContain('identity_verified_at');
   });
 
   it('never feeds an animation object to a colour interpolation', () => {
@@ -2659,15 +2645,6 @@ describe('the motion adoption is wired, not just drawn', () => {
         /interpolateColor\(\s*(accentTo|promoteTo|fadeTo|springTo)\(/,
       );
     }
-  });
-
-  it('reserves the height a cross-faded title needs', () => {
-    // A block that grows a line while its text is half transparent is worse than
-    // a hard cut. Derived from the type token rather than typed, so it survives
-    // the next change to the display size.
-    expect(read('src/screens/AuthScreen.tsx')).toContain(
-      'minHeight: TOKENS.typography.headlineMediumEmphasized.lineHeight * 2',
-    );
   });
 
   it('names the send halo separately from the atmospheric field', () => {
@@ -2694,13 +2671,11 @@ describe('the motion adoption is wired, not just drawn', () => {
       .map(source => source.file)
       .sort();
     // PaymentSheet removed 2026-09-01: the payment-success state is now a
-    // contained M3 positive card — consistent with the sheet language throughout
-    // the app. The animated atmospheric field was two surface languages on one
-    // sheet screen and was replaced without adding a new dependency.
-    expect(consumers).toEqual([
-      'OnboardingScreen.tsx',
-      'ProviderApplicationScreen.tsx',
-    ]);
+    // contained M3 positive card. ProviderApplicationScreen removed 2026-09-03:
+    // the provider onboarding is now one continuous verify → profile flow with no
+    // second bloom welcome, so the atmospheric field lives only on the member
+    // welcome/auth surface.
+    expect(consumers).toEqual(['OnboardingScreen.tsx']);
   });
 
   /**

@@ -471,19 +471,6 @@ export function rowIn(index: number) {
 }
 
 /**
- * The welcome screen dissolving into AuthScreen at first boot.
- *
- * 700ms to match the onboarding content beat (`BLOOM_CONTENT_MS`): the two are
- * the same gesture — the welcome copy leaving — so they share a duration. It is
- * spelled here rather than imported from `src/lib/bloom.ts` because the bloom
- * timings are a separate, source-measured motion system that this module does
- * not depend on; the number is duplicated on purpose with this note as the link.
- * Named so `App.tsx` holds no raw `.duration()`. `Never`: a first-boot dissolve
- * is itself the accessible fallback.
- */
-export const authArrive = FadeIn.duration(700).reduceMotion(ReduceMotion.Never);
-
-/**
  * The signature moment: a sent message launching out of the composer.
  *
  * Squash-and-stretch, which is the oldest trick in animation and still the one
