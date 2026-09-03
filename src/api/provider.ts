@@ -30,7 +30,46 @@ import { keys, useProfile } from './chat';
 export const providerKeys = {
   application: ['my-application'] as const,
   earnings: ['provider-earnings'] as const,
+  payoutAccount: ['provider-payout-account'] as const,
+  payoutReadiness: ['provider-payout-readiness'] as const,
+  tax: ['provider-tax-profile'] as const,
 };
+
+export type PayoutMethod = 'upi' | 'bank';
+export type VerificationStatus = 'unverified' | 'pending' | 'verified' | 'failed';
+
+/** A provider's saved payout destination (client-safe columns only). */
+export interface PayoutAccount {
+  id: string;
+  method: PayoutMethod;
+  upi_vpa: string | null;
+  account_number: string | null;
+  ifsc: string | null;
+  account_holder_name: string | null;
+  verification_status: VerificationStatus;
+  name_at_bank: string | null;
+  verification_error: string | null;
+}
+
+export interface PayoutReadiness {
+  payout_account_verified: boolean;
+  can_go_live: boolean;
+}
+
+export interface TaxProfile {
+  pan: string | null;
+  pan_name: string | null;
+  status: 'not_provided' | 'pending' | 'verified' | 'failed';
+  failure_reason: string | null;
+}
+
+export interface PayoutAccountDraft {
+  method: PayoutMethod;
+  upiVpa?: string;
+  accountNumber?: string;
+  ifsc?: string;
+  accountHolderName?: string;
+}
 
 export interface ApplicationDraft {
   displayName: string;
@@ -205,6 +244,130 @@ export function useEarnings() {
       return data.length > 0 ? (data[0] as ProviderEarnings) : null;
     },
     staleTime: 60_000,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Payout account + PAN. The client only ever SAVES raw details (RPCs) and asks
+// for verification (Edge functions); the verified state is written server-side
+// (migration 048), so a hook can never fake a "verified" account.
+// ---------------------------------------------------------------------------
+
+/** The provider's default payout destination, or null if none saved yet. */
+export function usePayoutAccount() {
+  return useQuery<PayoutAccount | null>({
+    queryKey: providerKeys.payoutAccount,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('provider_payout_accounts')
+        .select(
+          'id, method, upi_vpa, account_number, ifsc, account_holder_name, verification_status, name_at_bank, verification_error',
+        )
+        .eq('is_default', true)
+        .limit(1);
+      if (error) {
+        throw new Error(error.message);
+      }
+      return data.length > 0 ? (data[0] as PayoutAccount) : null;
+    },
+    staleTime: 30_000,
+  });
+}
+
+/** Whether the provider is payout-ready (the ADR-0022 listing gate). */
+export function usePayoutReadiness() {
+  return useQuery<PayoutReadiness | null>({
+    queryKey: providerKeys.payoutReadiness,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('my_payout_readiness').select('*').limit(1);
+      if (error) {
+        throw new Error(error.message);
+      }
+      return data.length > 0 ? (data[0] as PayoutReadiness) : null;
+    },
+    staleTime: 30_000,
+  });
+}
+
+/** The provider's PAN/tax status (tax only, not KYC). */
+export function useTaxProfile() {
+  return useQuery<TaxProfile | null>({
+    queryKey: providerKeys.tax,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('provider_tax_profile')
+        .select('pan, pan_name, status, failure_reason')
+        .limit(1);
+      if (error) {
+        throw new Error(error.message);
+      }
+      return data.length > 0 ? (data[0] as TaxProfile) : null;
+    },
+    staleTime: 30_000,
+  });
+}
+
+/** Save a bank/UPI destination (always unverified) then trigger verification. */
+export function useSavePayoutAccount() {
+  const queryClient = useQueryClient();
+  return useMutation<VerificationStatus, Error, PayoutAccountDraft>({
+    mutationFn: async draft => {
+      const { error: rpcErr } = await supabase.rpc('upsert_my_payout_account', {
+        p_method: draft.method,
+        p_upi_vpa: draft.method === 'upi' ? (draft.upiVpa ?? null) : null,
+        p_account_number: draft.method === 'bank' ? (draft.accountNumber ?? null) : null,
+        p_ifsc: draft.method === 'bank' ? (draft.ifsc ?? null) : null,
+        p_account_holder_name: draft.accountHolderName ?? null,
+      });
+      if (rpcErr) {
+        throw new Error(rpcErr.message);
+      }
+      // Ask the Edge function to create + verify the Cashfree beneficiary.
+      const { data, error } = await supabase.functions.invoke('verify-payout-account', {
+        body: {},
+      });
+      if (error) {
+        throw new Error(error.message);
+      }
+      const status = (data as { status?: VerificationStatus })?.status ?? 'pending';
+      if (status === 'verified') {
+        tick();
+      } else {
+        errorTick();
+      }
+      return status;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: providerKeys.payoutAccount });
+      void queryClient.invalidateQueries({ queryKey: providerKeys.payoutReadiness });
+    },
+  });
+}
+
+/** Save a PAN (format-checked in SQL) then trigger Cashfree verification. */
+export function useSavePan() {
+  const queryClient = useQueryClient();
+  return useMutation<'verified' | 'failed', Error, string>({
+    mutationFn: async pan => {
+      const { error: rpcErr } = await supabase.rpc('set_my_pan', { p_pan: pan });
+      if (rpcErr) {
+        throw new Error(rpcErr.message);
+      }
+      const { data, error } = await supabase.functions.invoke('verify-pan', { body: {} });
+      if (error) {
+        throw new Error(error.message);
+      }
+      const status = (data as { status?: 'verified' | 'failed' })?.status ?? 'failed';
+      if (status === 'verified') {
+        tick();
+      } else {
+        errorTick();
+      }
+      return status;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: providerKeys.tax });
+    },
   });
 }
 
