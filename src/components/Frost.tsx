@@ -85,6 +85,17 @@ export function Frost({
       style={[style, styles.clip]}
       blurType={isDark ? 'dark' : 'light'}
       blurAmount={blurAmount}
+      /*
+       * Two passes, not the library's default five.
+       *
+       * `blurRounds` is how many times the blur kernel is run, and these bars
+       * are permanently on screen over content that moves — every scrolled
+       * frame and every tab cross-fade re-runs all of them. Five was costing
+       * roughly twice the GPU work of two for a difference that cannot be seen
+       * at this radius on a 1080p panel, and it was showing up as dropped
+       * frames on tab switches (Amit, 2026-09-04).
+       */
+      blurRounds={2}
       overlayColor={tint === 'none' ? 'transparent' : theme.color.bg.glass}>
       {edge !== undefined ? (
         <View

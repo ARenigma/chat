@@ -1700,7 +1700,13 @@ describe('the chat restyle is wired, not just drawn', () => {
     // RN's iOS KeyboardAvoidingView derives its padding from the keyboard frame,
     // which already reaches the bottom of the screen, so adding insets.bottom on
     // top floated the composer ~34pt above the keyboard on a notched iPhone.
-    expect(chatCode).toContain('keyboardUp ? 0 : insets.bottom');
+    //
+    // The docked emoji panel is the second case with the same shape: it is sized
+    // to the keyboard and stands in for it, so adding the inset under it would
+    // sit the composer an inset higher than the keyboard just had it
+    // (Amit, 2026-09-04).
+    expect(chatCode).toContain('keyboardUp) || emojiPanelOpen');
+    expect(chatCode).toContain("insets.bottom + TOKENS.space['2xs']");
   });
 
   it('holds an explicit FlashList ref and scrolls to offset 0 on new messages', () => {
