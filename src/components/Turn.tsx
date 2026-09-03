@@ -1,14 +1,22 @@
-import React, { memo, useCallback, useMemo, useState } from 'react';
+import React, { memo, useCallback, useMemo, useRef, useState } from 'react';
 import {
   Image,
+  Modal,
+  Pressable as RNPressable,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
   type StyleProp,
   type TextStyle,
+  type View as RNView,
   type ViewStyle,
 } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import {
+  Gesture,
+  GestureDetector,
+  GestureHandlerRootView,
+} from 'react-native-gesture-handler';
 import Animated, {
   interpolate,
   runOnJS,
@@ -646,6 +654,12 @@ export const MyTurn = memo(MyTurnView);
 const REPLY_TRIGGER = 50;
 /** Hard clamp on the drag; Telegram does not rubber-band past this. */
 const REPLY_MAX_DRAG = 72;
+/** Gap between the reaction strip and the bubble it anchors to. */
+const STRIP_GAP = 8;
+/** Keep the strip this far from the window edges. */
+const STRIP_EDGE = 12;
+/** Strip-height estimate, used only to decide above-vs-below placement. */
+const STRIP_H_EST = 56;
 
 /**
  * Swipe-to-reply + long-press reaction strip around a bubble.
@@ -681,7 +695,17 @@ function InteractiveBubble({
 }) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
+  const { width: winW, height: winH } = useWindowDimensions();
   const [stripOpen, setStripOpen] = useState(false);
+  // Window-space rect of the bubble, measured when the strip opens, so the
+  // Modal-hosted strip can anchor to it.
+  const [anchor, setAnchor] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const bubbleRef = useRef<RNView>(null);
   const tx = useSharedValue(0);
   // Latches true once a drag has passed the commit threshold, so the KEYBOARD_TAP
   // haptic fires exactly once per crossing (Telegram fires it once at 50dp, not
@@ -689,8 +713,22 @@ function InteractiveBubble({
   // under the threshold or the gesture ends.
   const crossed = useSharedValue(false);
 
+  const closeStrip = useCallback(() => setStripOpen(false), []);
+
   const openStrip = useCallback(() => {
-    if (target !== null) {
+    if (target === null) {
+      return;
+    }
+    // Measure the bubble in window space, then open — the strip is hosted in a
+    // Modal (so a full-screen backdrop can dismiss it on an outside tap) and
+    // needs the rect to anchor itself above the bubble.
+    const node = bubbleRef.current;
+    if (node !== null) {
+      node.measureInWindow((x, y, width, height) => {
+        setAnchor({ x, y, width, height });
+        setStripOpen(true);
+      });
+    } else {
       setStripOpen(true);
     }
   }, [target]);
@@ -762,6 +800,24 @@ function InteractiveBubble({
     };
   });
 
+  // Where the Modal-hosted strip sits: above the bubble when there is room,
+  // below it otherwise; aligned to the speaker's side and clamped to the edges.
+  const placement = useMemo(() => {
+    if (anchor === null) {
+      return null;
+    }
+    const above = anchor.y - STRIP_GAP - STRIP_H_EST >= STRIP_EDGE;
+    const p: { left?: number; right?: number; top?: number; bottom?: number } = above
+      ? { bottom: winH - anchor.y + STRIP_GAP }
+      : { top: anchor.y + anchor.height + STRIP_GAP };
+    if (mine) {
+      p.right = Math.max(STRIP_EDGE, winW - (anchor.x + anchor.width));
+    } else {
+      p.left = Math.max(STRIP_EDGE, anchor.x);
+    }
+    return p;
+  }, [anchor, mine, winW, winH]);
+
   return (
     <View style={alignEnd ? styles.interactiveEnd : styles.interactiveStart}>
       {target !== null ? (
@@ -775,30 +831,59 @@ function InteractiveBubble({
           <Icon name="reply" size={18} color={theme.color.text.secondary} />
         </Animated.View>
       ) : null}
-      {stripOpen && target !== null ? (
-        <ReactionStrip
-          chosen={chosenReaction ?? null}
-          mine={mine}
-          onReact={emoji => {
-            setStripOpen(false);
-            onReact?.(target.id, emoji);
-          }}
-          onReply={() => {
-            setStripOpen(false);
-            onSwipeReply?.(target);
-          }}
-          onReport={
-            !mine && onReportMessage
-              ? () => {
-                  setStripOpen(false);
-                  onReportMessage(target.id);
-                }
-              : undefined
-          }
-        />
+      {/*
+       * The strip is hosted in a Modal, not inline, so a full-screen backdrop
+       * can dismiss it on an outside tap (Amit, 2026-09-03) — an inline strip
+       * has nothing behind it to catch a "tap in free space". The backdrop is
+       * transparent (no dim), matching the previous inline look; only the
+       * dismiss behaviour is new. It anchors to the measured bubble rect.
+       */}
+      {target !== null ? (
+        <Modal
+          visible={stripOpen}
+          transparent
+          animationType="none"
+          hardwareAccelerated
+          statusBarTranslucent
+          onRequestClose={closeStrip}>
+          {/* RNGH gestures inside a Modal need their own root; the strip's
+              Pressables are gesture-driven. */}
+          <GestureHandlerRootView style={styles.fill}>
+            <RNPressable
+              style={StyleSheet.absoluteFill}
+              onPress={closeStrip}
+              accessibilityLabel="Dismiss reactions"
+            />
+            {placement !== null ? (
+              <View style={[styles.stripAnchor, placement]} pointerEvents="box-none">
+                <ReactionStrip
+                  chosen={chosenReaction ?? null}
+                  mine={mine}
+                  onReact={emoji => {
+                    setStripOpen(false);
+                    onReact?.(target.id, emoji);
+                  }}
+                  onReply={() => {
+                    setStripOpen(false);
+                    onSwipeReply?.(target);
+                  }}
+                  onReport={
+                    !mine && onReportMessage
+                      ? () => {
+                          setStripOpen(false);
+                          onReportMessage(target.id);
+                        }
+                      : undefined
+                  }
+                />
+              </View>
+            ) : null}
+          </GestureHandlerRootView>
+        </Modal>
       ) : null}
       <GestureDetector gesture={composed}>
         <Animated.View
+          ref={bubbleRef}
           accessibilityHint={
             onLongPress ? 'Long press for message actions' : undefined
           }
@@ -975,6 +1060,14 @@ const makeStyles = (t: Theme) =>
     },
     replyRevealMine: {
       right: TOKENS.space.xs,
+    },
+    // Absolute wrapper that positions the Modal-hosted strip against the
+    // measured bubble rect (see `placement`).
+    stripAnchor: {
+      position: 'absolute',
+    },
+    fill: {
+      flex: 1,
     },
     mediaTime: {
       position: 'absolute',

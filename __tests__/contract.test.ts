@@ -2716,6 +2716,9 @@ describe('the motion adoption is wired, not just drawn', () => {
      *                     dismisses the tooltip; animating it would tint the page.
      *   PaperMenu.tsx   — dim-band strips that implement the cut-out scrim; each
      *                     strip is an invisible colour layer, not a button.
+     *   Turn.tsx        — one RNPressable for the transparent full-screen backdrop
+     *                     that dismisses the Modal-hosted reaction strip on an
+     *                     outside tap; an invisible capture surface, not a button.
      */
     const RAW_PRESSABLE_IMPORT = /import \{[^}]*\bPressable\b[^}]*\} from 'react-native'/;
     const allSources = [
@@ -2739,6 +2742,7 @@ describe('the motion adoption is wired, not just drawn', () => {
       'src/components/SpotlightCard.tsx',
       'src/components/TactileCTA.tsx',
       'src/components/Toggle.tsx',
+      'src/components/Turn.tsx',
     ]);
   });
 });
