@@ -125,6 +125,9 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   const queryClient = useQueryClient();
   const firstSendRefillShown = useRef(false);
   const [sendHaloKey, setSendHaloKey] = useState(0);
+  // Drives the dock's frost: composing drops the bar entirely (see the Frost
+  // below), leaving a floating capsule over the transcript.
+  const [composerFocused, setComposerFocused] = useState(false);
   const [leaveDialogVisible, setLeaveDialogVisible] = useState(false);
   // Independent live controls. CALLS_ENABLED remains the compile-time master
   // guard; the admin pair can stop one medium without taking down the other.
@@ -1244,7 +1247,18 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
             owns the real RenderEffect backdrop blur (the same slot the nav bar and
             header use); the reply chrome and composer render above it in flow, so
             message text over the blur stays fully legible. */}
-        <Frost edge="top" style={{ paddingBottom: composerInset }}>
+        {/* The dock carries NO fill of its own, and none at all once the field
+            has focus: composing turns the composer into a floating capsule over
+            the transcript rather than a bar (Amit, 2026-09-04, "when click to
+            type only floating pill and icons.. no bar bg"). `Frost` stays
+            mounted at blur 0 rather than being swapped for a plain View — its
+            children must remain its children or the blur bakes them in as a
+            ghost halo (see Frost's own note). */}
+        <Frost
+          edge={composerFocused ? undefined : 'top'}
+          tint="none"
+          blurAmount={composerFocused ? 0 : 18}
+          style={{ paddingBottom: composerInset }}>
           {replyTo !== null ? (
             <View style={styles.replyBar}>
               <View style={styles.replyRule} />
@@ -1283,6 +1297,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
                 : 'Make your first move'
             }
             sendHaloKey={sendHaloKey}
+            onFocusChange={setComposerFocused}
           />
         </Frost>
       </KeyboardAvoidingView>
