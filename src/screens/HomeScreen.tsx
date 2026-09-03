@@ -722,7 +722,7 @@ const makeStyles = (t: Theme) =>
     // The one place TitanOne appears outside a logo file. Lowercase coral, per
     // v13. `numeralMedium` is unrelated — the wordmark carries its own size.
     wordmark: {
-      fontFamily: TOKENS.typography.wordmarkLarge.fontFamily,
+      fontFamily: TOKENS.face.wordmark,
       fontSize: 28,
       lineHeight: 34,
       color: t.color.bg.accent,
@@ -854,7 +854,7 @@ const makeStyles = (t: Theme) =>
       position: 'absolute',
       right: 16,
       top: -12,
-      fontFamily: TOKENS.typography.labelLarge.fontFamily,
+      fontFamily: TOKENS.face.semibold,
       fontSize: 160,
       lineHeight: 190,
       color: 'rgba(255,255,255,0.16)',

@@ -449,7 +449,7 @@ const makeStyles = (t: Theme) =>
       position: 'absolute',
       right: 8,
       top: 40,
-      fontFamily: TOKENS.typography.labelLarge.fontFamily,
+      fontFamily: TOKENS.face.semibold,
       fontSize: 300,
       lineHeight: 340,
       color: 'rgba(255,255,255,0.14)',

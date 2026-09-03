@@ -836,7 +836,7 @@ const makeStyles = (t: Theme) =>
       gap: TOKENS.space['2xs'],
     },
     brandFooter: {
-      fontFamily: TOKENS.typography.wordmarkLarge.fontFamily,
+      fontFamily: TOKENS.face.wordmark,
       fontSize: 18,
       // The brand colour, not a grey whisper (#9): the wordmark is the brand.
       color: t.color.bg.accent,

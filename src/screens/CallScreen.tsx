@@ -538,7 +538,7 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
     },
     avatarInitial: {
-      fontFamily: TOKENS.typography.labelLarge.fontFamily,
+      fontFamily: TOKENS.face.semibold,
       fontSize: 56,
       lineHeight: 64,
       color: LIGHT.color.text.onAccent,

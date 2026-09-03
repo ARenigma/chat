@@ -1,6 +1,9 @@
 # ADR-0012, iOS owns the surface language, Material 3 keeps the interaction model
 
-Status: **accepted**
+Status: **accepted** — except the type ladder, superseded by
+[ADR-0024](0024-material-3-type-scale.md) (the app is Android-only and now uses
+the M3 type scale). The surface-language decisions below — the 28dp sheet, the
+10dp field, the 14dp alert, the interaction model — still stand.
 Date: 2026-08-22
 
 The audit that preceded this change was blocked on one product question, and it is
