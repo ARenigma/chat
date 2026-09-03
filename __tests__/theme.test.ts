@@ -957,10 +957,18 @@ describe('motion lives in one module', () => {
      * in turn and the row pops once — and Telegram resolves its own success with
      * a low-bouncy scale spring (CodeNumberField.java:142-144). It fires once,
      * on a right code, at the end of the sign-in flow.
+     *
+     * ReactionStrip joined on 2026-09-03: the reaction bar scales in on an
+     * overshoot, which is not a celebration but a clean-room match of Telegram's
+     * own reaction bar (OvershootInterpolator(0.5),
+     * ReactionsContainerLayout.java:1499). It fires once per open, on a menu that
+     * asks to be noticed, and the overshoot is the specific thing being copied —
+     * a non-overshoot spring here would be the departure, not the fidelity.
      */
     expect(users).toEqual([
       'src/components/CodeField.tsx',
       'src/components/CompletionRow.tsx',
+      'src/components/ReactionStrip.tsx',
       'src/components/TactileCTA.tsx',
       'src/components/TokenCounter.tsx',
       'src/screens/ProviderDetailScreen.tsx',
