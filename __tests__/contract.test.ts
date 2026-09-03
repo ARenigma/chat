@@ -122,6 +122,13 @@ describe('the AI path is gone, not dormant', () => {
       // verify-order: client-initiated server-to-server payment confirmation after
       // SDK onVerify callback — never trusts client callback alone. ADR-0022.
       'verify-order',
+      // verify-pan: Cashfree Verification Suite PAN check (tax only, not KYC) so
+      // TDS-194O is 0.1% not 5%. Writes provider_tax_profile. Migration 048.
+      'verify-pan',
+      // verify-payout-account: creates a Cashfree Payouts beneficiary from a
+      // provider's saved bank/UPI and writes the verification result. Service-role
+      // writer of the payout-account verification columns (migration 048).
+      'verify-payout-account',
       'verify-phone',
     ];
     const present = readdirSync(dir, { withFileTypes: true })
