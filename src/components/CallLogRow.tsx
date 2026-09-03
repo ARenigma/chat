@@ -83,7 +83,7 @@ const makeStyles = (t: Theme) =>
       backgroundColor: t.color.bg.sunken,
     },
     text: {
-      ...TOKENS.typography.captionSmall,
+      ...TOKENS.typography.bodySmall,
       color: t.color.text.tertiary,
     },
   });

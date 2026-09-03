@@ -32,7 +32,7 @@ export const BubbleTime = memo(BubbleTimeView);
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
     time: {
-      ...TOKENS.typography.captionSmall,
+      ...TOKENS.typography.bodySmall,
       fontSize: 11,
       lineHeight: 16,
     },

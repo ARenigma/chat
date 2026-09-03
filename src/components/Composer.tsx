@@ -734,7 +734,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     maxHeight: 132,
     paddingTop: 4,
     paddingBottom: 4,
-    ...TOKENS.typography.bodyMedium,
+    ...TOKENS.typography.bodyLarge,
     lineHeight: 20,
     includeFontPadding: false,
     textAlignVertical: 'center',

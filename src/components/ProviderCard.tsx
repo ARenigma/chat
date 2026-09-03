@@ -210,16 +210,16 @@ const makeStyles = (t: Theme) =>
       gap: 3,
     },
     name: {
-      ...TOKENS.typography.headline,
+      ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.primary,
       flexShrink: 1,
     },
     nameAge: {
-      ...TOKENS.typography.captionRegular,
+      ...TOKENS.typography.bodySmall,
       color: t.color.text.tertiary,
     },
     body: {
-      ...TOKENS.typography.subhead,
+      ...TOKENS.typography.bodyMedium,
       color: t.color.text.secondary,
     },
     chips: {
@@ -406,11 +406,11 @@ const makeSquareStyles = (t: Theme) =>
       gap: TOKENS.space.hair,
     },
     cardName: {
-      ...TOKENS.typography.labelMedium,
+      ...TOKENS.typography.labelLargeEmphasized,
       color: t.color.text.primary,
     },
     cardSub: {
-      ...TOKENS.typography.captionRegular,
+      ...TOKENS.typography.bodySmall,
       color: t.color.text.secondary,
     },
   });

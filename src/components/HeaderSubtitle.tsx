@@ -51,7 +51,7 @@ export const HeaderSubtitle = memo(HeaderSubtitleView);
 
 const makeStyles = (t: Theme) => StyleSheet.create({
   base: {
-    ...TOKENS.typography.captionSmall,
+    ...TOKENS.typography.bodySmall,
     color: t.color.text.positive,
   },
   quiet: {

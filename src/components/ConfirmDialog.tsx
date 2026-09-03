@@ -113,7 +113,7 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
     },
     cancel: {
-      ...TOKENS.typography.labelMedium,
+      ...TOKENS.typography.labelLargeEmphasized,
       color: t.color.text.secondary,
     },
     busy: {

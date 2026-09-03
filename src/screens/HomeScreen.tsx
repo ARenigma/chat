@@ -722,7 +722,7 @@ const makeStyles = (t: Theme) =>
     // The one place TitanOne appears outside a logo file. Lowercase coral, per
     // v13. `numeralMedium` is unrelated — the wordmark carries its own size.
     wordmark: {
-      fontFamily: TOKENS.typography.wordmark.fontFamily,
+      fontFamily: TOKENS.typography.wordmarkLarge.fontFamily,
       fontSize: 28,
       lineHeight: 34,
       color: t.color.bg.accent,
@@ -767,7 +767,7 @@ const makeStyles = (t: Theme) =>
     // Amit: "bold, looks too shallow in front of Explore"). Same display weight
     // and primary ink so the two read as equals.
     railLabel: {
-      ...TOKENS.typography.displaySmall,
+      ...TOKENS.typography.headlineSmallEmphasized,
       color: t.color.text.primary,
     },
     seeAll: {
@@ -775,7 +775,7 @@ const makeStyles = (t: Theme) =>
       alignItems: 'center',
     },
     seeAllText: {
-      ...TOKENS.typography.labelSmall,
+      ...TOKENS.typography.labelMediumEmphasized,
       color: t.color.text.secondary,
     },
     railScroll: {
@@ -818,7 +818,7 @@ const makeStyles = (t: Theme) =>
       height: 0,
     },
     railName: {
-      ...TOKENS.typography.captionSmall,
+      ...TOKENS.typography.bodySmall,
       color: t.color.text.primary,
       textAlign: 'center',
       width: 64,
@@ -832,7 +832,7 @@ const makeStyles = (t: Theme) =>
       paddingBottom: TOKENS.space.sm,
     },
     exploreTitle: {
-      ...TOKENS.typography.displaySmall,
+      ...TOKENS.typography.headlineSmallEmphasized,
       color: t.color.text.primary,
     },
     // Card wraps the featured hero; Card owns borderRadius and overflow.
@@ -854,7 +854,7 @@ const makeStyles = (t: Theme) =>
       position: 'absolute',
       right: 16,
       top: -12,
-      fontFamily: TOKENS.typography.displayLarge.fontFamily,
+      fontFamily: TOKENS.typography.labelLarge.fontFamily,
       fontSize: 160,
       lineHeight: 190,
       color: 'rgba(255,255,255,0.16)',
@@ -873,7 +873,7 @@ const makeStyles = (t: Theme) =>
       backgroundColor: t.color.bg.accent,
     },
     featuredBadgeText: {
-      ...TOKENS.typography.labelSmall,
+      ...TOKENS.typography.labelMediumEmphasized,
       color: t.color.text.onAccent,
     },
     featuredBody: {
@@ -885,12 +885,12 @@ const makeStyles = (t: Theme) =>
       alignItems: 'baseline',
     },
     featuredName: {
-      ...TOKENS.typography.displaySmall,
+      ...TOKENS.typography.headlineSmallEmphasized,
       color: '#FFFFFF',
       flex: 1,
     },
     featuredAge: {
-      ...TOKENS.typography.headline,
+      ...TOKENS.typography.titleMediumEmphasized,
       color: 'rgba(255,255,255,0.82)',
     },
     // Presence dot, top-right of the card: sage with a white ring so it stays
@@ -907,7 +907,7 @@ const makeStyles = (t: Theme) =>
       borderColor: '#FFFFFF',
     },
     featuredTagline: {
-      ...TOKENS.typography.subhead,
+      ...TOKENS.typography.bodyMedium,
       color: 'rgba(255,255,255,0.92)',
     },
     featuredChips: {
@@ -925,7 +925,7 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: TOKENS.space['2xl'],
     },
     emptyText: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.text.secondary,
       textAlign: 'center',
     },

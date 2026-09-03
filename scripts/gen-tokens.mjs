@@ -111,13 +111,19 @@ function typography() {
     if (name.startsWith('$')) {
       continue;
     }
+    // Absolute dp is the M3 form (ADR-0024); the old iOS ladder gave line and
+    // tracking as percentages of the size, so both are still supported and a
+    // style may use either — never both.
+    const lineHeight =
+      t.lineHeight ?? Math.round((t.fontSize * t.lineHeightPct) / 100);
+    const letterSpacing =
+      t.letterSpacing ??
+      Number(((t.fontSize * t.letterSpacingPct) / 100).toFixed(2));
     out[name] = {
       fontFamily: t.fontFamily,
       fontSize: t.fontSize,
-      lineHeight: Math.round((t.fontSize * t.lineHeightPct) / 100),
-      letterSpacing: Number(
-        ((t.fontSize * t.letterSpacingPct) / 100).toFixed(2),
-      ),
+      lineHeight,
+      letterSpacing,
       ...(t.tabular === true ? { fontVariant: ['tabular-nums'] } : {}),
     };
   }

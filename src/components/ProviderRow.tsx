@@ -263,7 +263,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   // 17/15, which is what an iOS Messages cell is. It was 15/14, one step down the
   // ladder on both lines.
   name: {
-    ...TOKENS.typography.headline,
+    ...TOKENS.typography.titleMediumEmphasized,
     color: t.color.text.primary,
     flexShrink: 1,
   },
@@ -271,7 +271,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   // and colour so it reads as a modifier of the name, not a second word. A step
   // smaller than the name's neighbours (#11, Amit: "age a little smaller").
   nameAge: {
-    ...TOKENS.typography.captionRegular,
+    ...TOKENS.typography.bodySmall,
     color: t.color.text.tertiary,
   },
   // M3 AssistChip strip under the headline. Clipped to one line so a chip can
@@ -284,7 +284,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     overflow: 'hidden',
   },
   secondary: {
-    ...TOKENS.typography.subhead,
+    ...TOKENS.typography.bodyMedium,
     color: t.color.text.secondary,
   },
 });

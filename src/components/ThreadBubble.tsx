@@ -181,16 +181,16 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     gap: TOKENS.space.xs,
   },
   name: {
-    ...TOKENS.typography.headline,
+    ...TOKENS.typography.titleMediumEmphasized,
     color: t.color.text.primary,
     flex: 1,
   },
   stamp: {
-    ...TOKENS.typography.subhead,
+    ...TOKENS.typography.bodyMedium,
     color: t.color.text.tertiary,
   },
   preview: {
-    ...TOKENS.typography.subhead,
+    ...TOKENS.typography.bodyMedium,
     color: t.color.text.secondary,
     flex: 1,
   },
@@ -209,7 +209,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     backgroundColor: t.color.bg.base,
   },
   blockedLabel: {
-    ...TOKENS.typography.captionSmall,
+    ...TOKENS.typography.bodySmall,
     color: t.color.text.tertiary,
   },
   unread: {

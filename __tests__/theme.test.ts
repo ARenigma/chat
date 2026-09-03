@@ -135,12 +135,13 @@ describe('generated theme', () => {
     expect(tint).not.toBe(LIGHT.color.bg.sunken);
   });
 
-  it('converts percentage line-height and tracking into absolute units', () => {
-    // Body/Large is iOS body: 17pt at 129% (22pt, iOS's own leading) with -2.5%
-    // tracking. It was 142% and -0.5% when the ladder was Material's.
-    expect(LIGHT.typography.bodyLarge.fontSize).toBe(17);
-    expect(LIGHT.typography.bodyLarge.lineHeight).toBe(22);
-    expect(LIGHT.typography.bodyLarge.letterSpacing).toBeCloseTo(-0.42, 2);
+  it('carries the M3 bodyLarge metrics through the generator', () => {
+    // bodyLarge is now M3 bodyLarge, given as absolute dp (ADR-0024): 16/24 with
+    // +0.5 tracking. The generator passes absolute line/tracking straight
+    // through rather than deriving them from a percentage of the size.
+    expect(LIGHT.typography.bodyLarge.fontSize).toBe(16);
+    expect(LIGHT.typography.bodyLarge.lineHeight).toBe(24);
+    expect(LIGHT.typography.bodyLarge.letterSpacing).toBeCloseTo(0.5, 2);
   });
 
   it('shares space, radius, layout, motion and interaction across both modes', () => {
@@ -1424,7 +1425,7 @@ describe('iOS conformance', () => {
     // choice for every overlay (user 2026-08-30).
     expect(radius.sheet).toBe(28);
     expect(read('src/components/Sheet.tsx')).toContain('TOKENS.radius.sheet');
-    expect(read('src/components/Sheet.tsx')).toContain('TOKENS.typography.titleMedium');
+    expect(read('src/components/Sheet.tsx')).toContain('TOKENS.typography.titleLargeEmphasized');
   });
 
   it('has a field radius for the iOS filled control', () => {
@@ -1435,23 +1436,27 @@ describe('iOS conformance', () => {
     expect(radius.alert).toBe(14);
   });
 
-  it('has the 17-semibold headline the nav bar needs', () => {
-    // Every navigation title in the app used to be labelMedium, which is 15, so
-    // every one of them was two points small. iOS's headline is 17 semibold and
-    // it is also a list row's name and a filled button's label.
-    expect(typography.headline.fontSize).toBe(17);
-    expect(typography.headline.fontFamily).toBe('Geist-SemiBold');
-    expect(typography.subhead.fontSize).toBe(15);
-    expect(typography.bodyLarge.fontSize).toBe(17);
-    // displayLarge reduced from 34 to 30 to ease onboarding density (user feedback).
-    expect(typography.displayLarge.fontSize).toBe(30);
+  it('carries the M3 title/body/label roles the app consumes', () => {
+    // The M3 scale (ADR-0024) supersedes the iOS ladder. The nav inline title,
+    // row name and filled-button label are titleMedium emphasized — 16 Bold, the
+    // emphasized twin of M3 titleMedium — reached by the old `headline` name.
+    expect(typography.titleMediumEmphasized.fontSize).toBe(16);
+    expect(typography.titleMediumEmphasized.fontFamily).toBe('Geist-Bold');
+    // Plain M3 titleMedium stays Medium weight (Geist-SemiBold).
+    expect(typography.titleMedium.fontFamily).toBe('Geist-SemiBold');
+    // Message text is M3 bodyLarge, 16/24.
+    expect(typography.bodyLarge.fontSize).toBe(16);
+    // List previews and timestamps are M3 bodyMedium, 14.
+    expect(typography.bodyMedium.fontSize).toBe(14);
   });
 
-  it('opens the display sizes and tightens body, the iOS direction', () => {
-    // The old ladder put -2.5% on the display sizes and -0.5% on body, which is
-    // backwards: iOS sets a large title open and tightens 17pt body hard.
-    expect(typography.displayLarge.letterSpacing).toBeGreaterThan(0);
-    expect(typography.bodyLarge.letterSpacing).toBeLessThan(0);
+  it('tracks the M3 way: display tight, body and label open', () => {
+    // M3 inverts the iOS ladder's direction — a large display is set solid with
+    // slightly negative tracking, while 16pt body and the small labels open up
+    // with positive tracking for legibility.
+    expect(typography.displayLarge.letterSpacing).toBeLessThan(0);
+    expect(typography.bodyLarge.letterSpacing).toBeGreaterThan(0);
+    expect(typography.labelSmall.letterSpacing).toBeGreaterThan(0);
   });
 
   it('has both page colours iOS ships, not just one', () => {

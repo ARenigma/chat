@@ -72,7 +72,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     alignSelf: 'stretch',
   },
   text: {
-    ...TOKENS.typography.bodyMedium,
+    ...TOKENS.typography.bodyLarge,
     color: t.color.text.secondary,
     textAlign: 'center',
   },

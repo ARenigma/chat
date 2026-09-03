@@ -605,17 +605,17 @@ const makeStyles = (t: Theme) =>
       gap: SOURCE_METRICS.welcomeGap,
     },
     welcomeTitle: {
-      ...TOKENS.typography.wordmark,
+      ...TOKENS.typography.wordmarkLarge,
       fontSize: 34,
       lineHeight: 38,
       color: t.color.text.onAccent,
     },
     welcomeBody: {
-      ...TOKENS.typography.displayLarge,
+      ...TOKENS.typography.headlineMediumEmphasized,
       color: t.color.text.onAccent,
     },
     welcomeSub: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.text.onAccent,
       opacity: 0.7,
     },
@@ -628,7 +628,7 @@ const makeStyles = (t: Theme) =>
       backgroundColor: t.color.bg.base,
     },
     ctaLabel: {
-      ...TOKENS.typography.headline,
+      ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.primary,
     },
     formHost: {
@@ -665,23 +665,23 @@ const makeStyles = (t: Theme) =>
       gap: TOKENS.space.hair,
     },
     missingTitle: {
-      ...TOKENS.typography.labelMedium,
+      ...TOKENS.typography.labelLargeEmphasized,
       color: t.color.text.primary,
       paddingBottom: TOKENS.space['2xs'],
     },
     missingItem: {
-      ...TOKENS.typography.captionRegular,
+      ...TOKENS.typography.bodySmall,
       color: t.color.text.secondary,
     },
     field: {
       gap: TOKENS.space['2xs'],
     },
     label: {
-      ...TOKENS.typography.captionRegular,
+      ...TOKENS.typography.bodySmall,
       color: t.color.text.secondary,
     },
     labelFlagged: {
-      ...TOKENS.typography.labelSmall,
+      ...TOKENS.typography.labelMediumEmphasized,
       color: t.color.text.primary,
     },
     input: {
@@ -692,7 +692,7 @@ const makeStyles = (t: Theme) =>
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: t.color.border.strong,
       backgroundColor: t.color.bg.base,
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.text.primary,
     },
     multiline: {
@@ -706,15 +706,15 @@ const makeStyles = (t: Theme) =>
       gap: TOKENS.space['2xs'],
     },
     hint: {
-      ...TOKENS.typography.captionSmall,
+      ...TOKENS.typography.bodySmall,
       color: t.color.text.secondary,
     },
     underageText: {
-      ...TOKENS.typography.labelSmall,
+      ...TOKENS.typography.labelMediumEmphasized,
       color: t.color.text.primary,
     },
     legal: {
-      ...TOKENS.typography.captionSmall,
+      ...TOKENS.typography.bodySmall,
       color: t.color.text.secondary,
     },
   });

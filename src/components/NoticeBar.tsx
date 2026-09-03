@@ -73,7 +73,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     backgroundColor: t.color.bg.sunken,
   },
   text: {
-    ...TOKENS.typography.bodyMedium,
+    ...TOKENS.typography.bodyLarge,
     color: t.color.state.danger,
   },
   textConfirm: {

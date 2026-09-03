@@ -427,7 +427,7 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: TOKENS.space['2xl'],
     },
     stateText: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.text.secondary,
       textAlign: 'center',
     },
@@ -449,7 +449,7 @@ const makeStyles = (t: Theme) =>
       position: 'absolute',
       right: 8,
       top: 40,
-      fontFamily: TOKENS.typography.displayLarge.fontFamily,
+      fontFamily: TOKENS.typography.labelLarge.fontFamily,
       fontSize: 300,
       lineHeight: 340,
       color: 'rgba(255,255,255,0.14)',
@@ -483,12 +483,12 @@ const makeStyles = (t: Theme) =>
       gap: TOKENS.space.xs,
     },
     heroName: {
-      ...TOKENS.typography.displayLarge,
+      ...TOKENS.typography.headlineMediumEmphasized,
       color: '#FFFFFF',
       flexShrink: 1,
     },
     heroAge: {
-      ...TOKENS.typography.captionRegular,
+      ...TOKENS.typography.bodySmall,
       color: 'rgba(255,255,255,0.82)',
     },
     heroDot: {
@@ -498,11 +498,11 @@ const makeStyles = (t: Theme) =>
       backgroundColor: t.color.state.available,
     },
     heroTagline: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: 'rgba(255,255,255,0.95)',
     },
     heroMeta: {
-      ...TOKENS.typography.subhead,
+      ...TOKENS.typography.bodyMedium,
       color: 'rgba(255,255,255,0.82)',
     },
     chips: {
@@ -541,7 +541,7 @@ const makeStyles = (t: Theme) =>
       opacity: 0.5,
     },
     actionRate: {
-      ...TOKENS.typography.labelSmall,
+      ...TOKENS.typography.labelMediumEmphasized,
     },
     hairline: {
       height: StyleSheet.hairlineWidth,
@@ -549,13 +549,13 @@ const makeStyles = (t: Theme) =>
       marginTop: TOKENS.space.xl,
     },
     aboutLabel: {
-      ...TOKENS.typography.labelSmall,
+      ...TOKENS.typography.labelMediumEmphasized,
       color: t.color.text.secondary,
       paddingTop: TOKENS.space.lg,
       paddingBottom: TOKENS.space.xs,
     },
     aboutBody: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.text.primary,
     },
     safetyRow: {
@@ -566,7 +566,7 @@ const makeStyles = (t: Theme) =>
       paddingVertical: TOKENS.space.sm,
     },
     safetyLabel: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.text.secondary,
     },
   });

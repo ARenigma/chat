@@ -79,11 +79,11 @@ const makeStyles = (t: Theme) =>
       backgroundColor: 'rgba(255,255,255,0.18)',
     },
     label: {
-      ...TOKENS.typography.labelSmall,
+      ...TOKENS.typography.labelMediumEmphasized,
       color: t.color.text.secondary,
     },
     labelEmphasis: {
-      ...TOKENS.typography.labelSmall,
+      ...TOKENS.typography.labelMediumEmphasized,
       fontFamily: 'Geist-SemiBold',
       color: t.color.text.primary,
     },

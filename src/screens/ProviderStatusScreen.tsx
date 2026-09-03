@@ -206,7 +206,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     justifyContent: 'center',
   },
   headerTitle: {
-    ...TOKENS.typography.headline,
+    ...TOKENS.typography.titleMediumEmphasized,
     color: t.color.text.primary,
     flex: 1,
     textAlign: 'center',
@@ -224,15 +224,15 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     justifyContent: 'center',
   },
   title: {
-    ...TOKENS.typography.titleMedium,
+    ...TOKENS.typography.titleLargeEmphasized,
     color: t.color.text.primary,
   },
   copy: {
-    ...TOKENS.typography.bodyMedium,
+    ...TOKENS.typography.bodyLarge,
     color: t.color.text.secondary,
   },
   meta: {
-    ...TOKENS.typography.captionSmall,
+    ...TOKENS.typography.bodySmall,
     color: t.color.text.secondary,
   },
   missingBox: {
@@ -258,16 +258,16 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     gap: TOKENS.space['2xs'],
   },
   bullet: {
-    ...TOKENS.typography.captionRegular,
+    ...TOKENS.typography.bodySmall,
     color: t.color.text.secondary,
   },
   missingTitle: {
-    ...TOKENS.typography.labelMedium,
+    ...TOKENS.typography.labelLargeEmphasized,
     color: t.color.text.primary,
     paddingBottom: TOKENS.space['2xs'],
   },
   missingItem: {
-    ...TOKENS.typography.captionRegular,
+    ...TOKENS.typography.bodySmall,
     color: t.color.text.secondary,
     flex: 1,
   },

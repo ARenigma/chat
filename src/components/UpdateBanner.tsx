@@ -86,7 +86,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     backgroundColor: t.color.bg.inverse,
   },
   text: {
-    ...TOKENS.typography.captionRegular,
+    ...TOKENS.typography.bodySmall,
     color: t.color.text.onInverse,
     flex: 1,
   },
@@ -96,7 +96,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     borderRadius: TOKENS.radius.md,
   },
   actionLabel: {
-    ...TOKENS.typography.labelMedium,
+    ...TOKENS.typography.labelLargeEmphasized,
     color: t.color.text.onInverse,
   },
 });

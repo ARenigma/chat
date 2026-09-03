@@ -226,7 +226,7 @@ const makeStyles = (t: Theme) =>
       color: t.color.text.primary,
     },
     rowPreview: {
-      ...TOKENS.typography.subhead,
+      ...TOKENS.typography.bodyMedium,
       color: t.color.text.secondary,
     },
     rowPreviewUnread: {
@@ -237,7 +237,7 @@ const makeStyles = (t: Theme) =>
       gap: TOKENS.space['2xs'],
     },
     rowTime: {
-      ...TOKENS.typography.captionSmall,
+      ...TOKENS.typography.bodySmall,
       color: t.color.text.tertiary,
     },
     // Anchor for the absolute-positioned Badge component.
@@ -255,7 +255,7 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: TOKENS.space['2xl'],
     },
     emptyText: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.text.secondary,
       textAlign: 'center',
     },

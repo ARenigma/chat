@@ -108,7 +108,7 @@ const makeStyles = (t: Theme) =>
     },
     input: {
       flex: 1,
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.text.primary,
       // Remove default RN TextInput padding so it sits flush in the pill.
       paddingVertical: 0,

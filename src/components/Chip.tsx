@@ -86,7 +86,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     backgroundColor: t.color.bg.inverse,
   },
   label: {
-    ...TOKENS.typography.labelMedium,
+    ...TOKENS.typography.labelLargeEmphasized,
     color: t.color.text.primary,
   },
   labelWarm: {

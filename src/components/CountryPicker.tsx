@@ -105,7 +105,7 @@ const makeStyles = (t: Theme) =>
       lineHeight: 24,
     },
     code: {
-      ...TOKENS.typography.headline,
+      ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.primary,
     },
     row: {
@@ -129,7 +129,7 @@ const makeStyles = (t: Theme) =>
       flex: 1,
     },
     rowCode: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.text.secondary,
     },
   });

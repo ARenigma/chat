@@ -235,7 +235,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     backgroundColor: t.color.border.hairline,
   },
   reasonLabel: {
-    ...TOKENS.typography.bodyMedium,
+    ...TOKENS.typography.bodyLarge,
     color: t.color.text.primary,
   },
   input: {
@@ -249,7 +249,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: t.color.border.strong,
     backgroundColor: t.color.bg.base,
-    ...TOKENS.typography.bodyMedium,
+    ...TOKENS.typography.bodyLarge,
     color: t.color.text.primary,
     textAlignVertical: 'top',
   },
