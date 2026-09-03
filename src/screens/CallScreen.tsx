@@ -304,11 +304,11 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
       ) : null}
 
       <View style={[styles.topMeta, { paddingTop: insets.top + TOKENS.space.md }]}>
-        <Text allowFontScaling numberOfLines={1} style={styles.name}>
+        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized} allowFontScaling numberOfLines={1} style={styles.name}>
           {name}
         </Text>
         {phase === 'active' ? (
-          <Text allowFontScaling testID="call-status" style={styles.timer}>
+          <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized} allowFontScaling testID="call-status" style={styles.timer}>
             {status}
           </Text>
         ) : (

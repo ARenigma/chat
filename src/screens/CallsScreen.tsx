@@ -21,13 +21,13 @@ export function CallsScreen() {
   return (
     <View style={[styles.root, { paddingTop: insets.top + TOKENS.space['2xs'] }]}>
       <View style={styles.nav}>
-        <Text allowFontScaling style={styles.title}>
+        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized} allowFontScaling style={styles.title}>
           Calls
         </Text>
       </View>
       <View style={styles.empty}>
         <Icon name="call" size={36} color={theme.color.text.tertiary} />
-        <Text allowFontScaling style={styles.emptyTitle}>
+        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.emptyTitle}>
           No calls yet
         </Text>
         <Text allowFontScaling style={styles.emptyBody}>

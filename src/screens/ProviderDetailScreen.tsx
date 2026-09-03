@@ -315,7 +315,7 @@ function Hero({
       </View>
       <View style={styles.heroBody}>
         <View style={styles.heroNameRow}>
-          <Text allowFontScaling numberOfLines={1} style={styles.heroName}>
+          <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineMediumEmphasized} allowFontScaling numberOfLines={1} style={styles.heroName}>
             {provider.display_name}
             <Text style={styles.heroAge}>{age}</Text>
           </Text>

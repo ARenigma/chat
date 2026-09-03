@@ -98,7 +98,7 @@ function TopAppBarView({
       <View style={styles.slot}>{leading ?? null}</View>
 
       {/* Title — start-aligned per M3 Small top app bar spec */}
-      <Text
+      <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
         allowFontScaling
         numberOfLines={1}
         style={styles.title}
@@ -178,7 +178,7 @@ function MediumBar({
       {/* Action row: leading + collapsed title + trailing. */}
       <View style={styles.actionRow}>
         <View style={styles.slot}>{leading ?? null}</View>
-        <Animated.Text
+        <Animated.Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
           allowFontScaling
           numberOfLines={1}
           style={[styles.inlineTitle, inlineTitleStyle]}>
@@ -189,7 +189,7 @@ function MediumBar({
 
       {/* Headline row: the large, start-aligned title (+ optional subtitle). */}
       <Animated.View style={[styles.headlineRow, headlineStyle]} pointerEvents="none">
-        <Text allowFontScaling numberOfLines={1} style={styles.headline}>
+        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized} allowFontScaling numberOfLines={1} style={styles.headline}>
           {title}
         </Text>
         {subtitle ? (

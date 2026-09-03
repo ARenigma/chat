@@ -59,7 +59,7 @@ export function CountryPicker({ value, onChange, testID }: Props) {
         press="chip"
         style={styles.trigger}>
         <Text style={styles.flag}>{selected.flag}</Text>
-        <Text allowFontScaling style={styles.code}>{selected.dialCode}</Text>
+        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.code}>{selected.dialCode}</Text>
       </Pressable>
 
       <Sheet

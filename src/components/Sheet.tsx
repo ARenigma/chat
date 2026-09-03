@@ -311,7 +311,7 @@ function SheetView({
                 ) : null}
               </View>
             ) : null}
-            <Text
+            <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized}
               testID="sheet-title"
               allowFontScaling
               numberOfLines={2}

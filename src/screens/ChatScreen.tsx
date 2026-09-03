@@ -1014,7 +1014,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
           style={styles.identity}>
           <Avatar initial={initial} uri={avatarUrl} size={30} online={presence.here} />
           <View style={styles.identityText}>
-            <Text testID="chat-title" allowFontScaling numberOfLines={1} style={styles.title}>
+            <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} testID="chat-title" allowFontScaling numberOfLines={1} style={styles.title}>
               {name}
             </Text>
             {/* Rendered even when it has nothing to say, so the header does not
@@ -1183,7 +1183,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
             <View style={styles.emptyMark}>
               <Avatar initial={initial} uri={avatarUrl} size={56} tone="warm" breathing />
             </View>
-            <Text allowFontScaling style={styles.emptyName}>
+            <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized} allowFontScaling style={styles.emptyName}>
               {name}
             </Text>
             {/* Also here, not only inside the list. The empty branch *replaces*

@@ -66,7 +66,7 @@ export function TransactionHistoryScreen({ onBack }: Props) {
       {/* Header: bare-chevron back + title, same anatomy as BlockedUsersScreen */}
       <View style={styles.bar}>
         <BackButton onPress={onBack} testID="transactions-back" style={styles.barIcon} />
-        <Text allowFontScaling style={styles.barTitle}>
+        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.barTitle}>
           Recharge history
         </Text>
       </View>
@@ -81,7 +81,7 @@ export function TransactionHistoryScreen({ onBack }: Props) {
         /* Empty state — expected today with PAYMENTS_ENABLED=false */
         <View style={styles.center}>
           <Icon name="wallet" size={40} color={theme.color.text.tertiary} />
-          <Text allowFontScaling style={styles.emptyTitle}>
+          <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.emptyTitle}>
             No recharges yet
           </Text>
           <Text allowFontScaling style={styles.emptyBody}>

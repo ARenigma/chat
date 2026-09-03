@@ -174,7 +174,7 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
           <View style={styles.successIcon}>
             <Icon name="check" size={24} color={theme.color.text.positive} />
           </View>
-          <Text allowFontScaling style={styles.successDetail}>
+          <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.successDetail}>
             {formatTokens(amount)} tokens added
           </Text>
           {successBalance !== null ? (

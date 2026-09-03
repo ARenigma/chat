@@ -45,7 +45,7 @@ export function BlockedUsersScreen({ onBack }: Props) {
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <View style={styles.bar}>
         <BackButton onPress={onBack} testID="blocked-back" style={styles.barIcon} />
-        <Text allowFontScaling style={styles.barTitle}>
+        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.barTitle}>
           Blocked
         </Text>
       </View>
@@ -68,7 +68,7 @@ export function BlockedUsersScreen({ onBack }: Props) {
           {list.map(p => (
             <View key={p.id} style={styles.row}>
               <Avatar initial={initialOf(p.display_name)} size={40} />
-              <Text allowFontScaling numberOfLines={1} style={styles.name}>
+              <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling numberOfLines={1} style={styles.name}>
                 {p.display_name}
               </Text>
               <Pressable

@@ -317,7 +317,7 @@ export function HomeScreen({
         <TourAnchor id="chats">
         <View style={styles.rail}>
           <View style={styles.railHeader}>
-            <Text allowFontScaling style={styles.railLabel}>
+            <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized} allowFontScaling style={styles.railLabel}>
               Chats
             </Text>
             {chats.length > 0 ? (
@@ -361,7 +361,7 @@ export function HomeScreen({
         </TourAnchor>
         <TourAnchor id="explore">
         <View style={styles.exploreHead}>
-          <Text allowFontScaling style={styles.exploreTitle}>
+          <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized} allowFontScaling style={styles.exploreTitle}>
             Explore
           </Text>
         </View>
@@ -681,9 +681,9 @@ function FeaturedCard({
       {presence.here ? <View style={styles.featuredOnline} /> : null}
       <View style={styles.featuredBody}>
         <View style={styles.featuredNameRow}>
-          <Text allowFontScaling numberOfLines={1} style={styles.featuredName}>
+          <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized} allowFontScaling numberOfLines={1} style={styles.featuredName}>
             {provider.display_name}
-            <Text style={styles.featuredAge}>{age}</Text>
+            <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} style={styles.featuredAge}>{age}</Text>
           </Text>
         </View>
         {tagline !== '' ? (
