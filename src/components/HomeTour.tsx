@@ -3,6 +3,7 @@ import { Modal, StyleSheet, Text, useWindowDimensions, View } from 'react-native
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import { TOUR_STEPS, useHomeTour } from '../store/useHomeTour';
+import { useStore } from '../store/useStore';
 import { Pressable } from './Pressable';
 
 const PAD = 8;
@@ -23,6 +24,11 @@ export function HomeTour() {
   const targets = useHomeTour(s => s.targets);
   const next = useHomeTour(s => s.next);
   const skip = useHomeTour(s => s.skip);
+  // The tour targets member-Home controls (wallet/chats/explore). During a
+  // provider signup the boot briefly mounts Home before routing to the provider
+  // onboarding, which can arm the tour and leave it overlaying that screen. It is
+  // a member-only coach mark, so never show it while a provider signup is running.
+  const pendingProviderApply = useStore(s => s.pendingProviderApply);
 
   const copy = TOUR_STEPS[step];
   const hole = copy ? targets[copy.id] : undefined;
@@ -49,7 +55,7 @@ export function HomeTour() {
     return Math.max(TOKENS.space.xl, hole.y - 160);
   }, [hole, winH]);
 
-  if (!active || copy === undefined) {
+  if (!active || copy === undefined || pendingProviderApply) {
     return null;
   }
 

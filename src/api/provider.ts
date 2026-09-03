@@ -24,6 +24,11 @@ import type {
 } from '../lib/database.types';
 import { track } from '../lib/telemetry';
 import { errorTick, tick } from '../lib/haptics';
+import {
+  cashfreeOnboardingAvailable,
+  CashfreeOnboardingError,
+  startCashfreeOnboarding,
+} from '../lib/cashfreeOnboarding';
 import { useStore } from '../store/useStore';
 import { keys, useProfile } from './chat';
 
@@ -135,6 +140,57 @@ export function useSubmitApplication() {
         /18 or older/.test(err.message)
           ? 'You must be 18 or older to be a provider.'
           : 'Could not submit right now.',
+      );
+    },
+  });
+}
+
+export interface ProviderProfileDraft {
+  displayName: string;
+  headline: string;
+  languages: string[];
+  about: string;
+}
+
+/**
+ * Auto-onboard: go live as a provider in one call (migration 051).
+ *
+ * Replaces the apply → admin-review path. The provider has already verified
+ * identity + PAN + bank through the Cashfree 1-Click step (which set their DOB),
+ * so this sets `role = 'provider'` + `identity_verified_at` and copies the profile
+ * fields. The role flip re-renders the app into the provider tree — there is no
+ * separate "go to provider home" navigation, the tree selection is by role.
+ */
+export function useCompleteProviderOnboarding() {
+  const queryClient = useQueryClient();
+  const setNotice = useStore(s => s.setNotice);
+
+  return useMutation<void, Error, ProviderProfileDraft>({
+    mutationFn: async draft => {
+      const { error } = await supabase.rpc('complete_provider_onboarding', {
+        p_display_name: draft.displayName,
+        p_headline: draft.headline,
+        p_languages: draft.languages,
+        p_about: draft.about,
+      });
+      if (error) {
+        throw new Error(error.message);
+      }
+    },
+    onSuccess: () => {
+      tick();
+      // Role is now 'provider'; useRole re-reads and App renders the provider tree.
+      void queryClient.invalidateQueries({ queryKey: keys.profile });
+      void queryClient.invalidateQueries({ queryKey: keys.providers });
+    },
+    onError: err => {
+      errorTick();
+      setNotice(
+        /18 or older/.test(err.message)
+          ? 'You must be 18 or older to be a provider.'
+          : /verify your identity/.test(err.message)
+            ? 'Please verify your identity first.'
+            : 'Could not finish setup. Please try again.',
       );
     },
   });
@@ -383,6 +439,117 @@ export function useSavePan() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: providerKeys.tax });
+    },
+  });
+}
+
+/** Whether the native Cashfree sheet exists in this build (false in Jest). */
+export function cashfreeVerificationAvailable(): boolean {
+  return cashfreeOnboardingAvailable();
+}
+
+/**
+ * How a 1-Click attempt ended, for the screen to react to.
+ *
+ * `cancelled` is not an error and stays silent — someone closed the sheet.
+ * `pending` means the consent + auth_code succeeded but the server could not
+ * finalize (e.g. `cashfree-onboarding-complete` not deployed yet), so the details
+ * are in flight rather than lost. `unavailable` falls back to the manual form.
+ */
+export type CashfreeVerifyOutcome =
+  | 'verified'
+  | 'pending'
+  | 'cancelled'
+  | 'unavailable';
+
+/**
+ * The 1-Click Onboarding flow, end to end from the button:
+ *   1. `cashfree-onboarding-start` mints a session (server, provider JWT).
+ *   2. The native SDK opens the Cashfree sheet on that session; the user
+ *      consents once (mobile OTP) and we get a one-time `authCode`.
+ *   3. `cashfree-onboarding-complete` exchanges it server-side for the verified
+ *      PAN + bank and writes them (the client never sees the KYC data).
+ *
+ * Best-effort at the edges for the same reason as `useSavePan`: a missing native
+ * module or an undeployed `complete` must not lose a consent the user already
+ * gave, so those land as `unavailable` / `pending` rather than a hard failure.
+ * See docs/provider-payouts.md.
+ */
+export function useCashfreeVerification() {
+  const queryClient = useQueryClient();
+  const setNotice = useStore(s => s.setNotice);
+
+  return useMutation<CashfreeVerifyOutcome, Error, void>({
+    mutationFn: async () => {
+      if (!cashfreeOnboardingAvailable()) {
+        return 'unavailable';
+      }
+
+      // 1. Mint a session server-side.
+      const { data: startData, error: startErr } = await supabase.functions.invoke(
+        'cashfree-onboarding-start',
+        { body: {} },
+      );
+      const start = startData as
+        | { sessionId?: string; environment?: 'sandbox' | 'production' }
+        | null;
+      if (startErr || !start?.sessionId) {
+        throw new Error('start');
+      }
+
+      // 2. Open the native sheet; the auth_code comes back on consent.
+      let authCode: string;
+      try {
+        const result = await startCashfreeOnboarding(
+          start.sessionId,
+          start.environment ?? 'sandbox',
+        );
+        authCode = result.authCode;
+      } catch (err) {
+        if (err instanceof CashfreeOnboardingError) {
+          if (err.reason === 'cancelled') {
+            return 'cancelled';
+          }
+          if (err.reason === 'unavailable') {
+            return 'unavailable';
+          }
+        }
+        throw err instanceof Error ? err : new Error('sheet');
+      }
+
+      // 3. Exchange + persist server-side. Best-effort: while `complete` is not
+      // deployed this returns an error and the consent lands as 'pending'.
+      try {
+        const { data, error } = await supabase.functions.invoke(
+          'cashfree-onboarding-complete',
+          { body: { authCode } },
+        );
+        if (error) {
+          return 'pending';
+        }
+        return (data as { status?: string })?.status === 'verified' ? 'verified' : 'pending';
+      } catch {
+        return 'pending';
+      }
+    },
+    onSuccess: outcome => {
+      if (outcome === 'verified') {
+        tick();
+        setNotice('Verified with Cashfree.', 'confirm');
+      } else if (outcome === 'pending') {
+        tick();
+        setNotice('Details received. Verification is being finalised.', 'confirm');
+      } else if (outcome === 'unavailable') {
+        setNotice('Cashfree verification is not available here. Enter details below.');
+      }
+      // 'cancelled' stays silent — the user chose to close the sheet.
+      void queryClient.invalidateQueries({ queryKey: providerKeys.payoutAccount });
+      void queryClient.invalidateQueries({ queryKey: providerKeys.tax });
+      void queryClient.invalidateQueries({ queryKey: providerKeys.payoutReadiness });
+    },
+    onError: () => {
+      errorTick();
+      setNotice('Verification could not start. Try again, or enter details below.');
     },
   });
 }

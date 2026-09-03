@@ -28,7 +28,7 @@ const ERROR_HOLD_MS = 3000;
 interface Props {
   value: string;
   onChange: (next: string) => void;
-  /** Fired once per distinct complete value. See the guard in AuthScreen. */
+  /** Fired once per distinct complete value. See the guard in OnboardingScreen. */
   onComplete: (code: string) => void;
   length?: number;
   /** Bumped by the caller to shake the field. A counter, not a boolean. */
@@ -41,8 +41,8 @@ interface Props {
   verifying?: boolean;
   /**
    * The code was accepted. Plays the success cascade before the screen advances.
-   * Optional so the standalone AuthScreen path, which has no success state, need
-   * not pass it.
+   * Optional so a consumer with no success state (PhoneVerifySheet) need not
+   * pass it.
    */
   succeeded?: boolean;
   testID?: string;

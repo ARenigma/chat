@@ -667,9 +667,9 @@ describe('the app is wired to the M3 transitions', () => {
   });
 
   it('holds no raw transition builder in App.tsx', () => {
-    // The welcome→Auth dissolve is the named `authArrive`, not an inline
-    // FadeIn.duration; nothing here spells a duration in milliseconds.
-    expect(app).toContain('entering={authArrive}');
+    // Every transition App.tsx plays is a named builder from motion.ts, never
+    // an inline `FadeIn.duration(...)`; nothing here spells a duration in
+    // milliseconds directly.
     expect(stripComments(app)).not.toMatch(/\.duration\(\s*\d/);
   });
 
@@ -876,6 +876,7 @@ describe('component heights come from tokens', () => {
     'src/components/TopAppBar.tsx': ['slot'],
     'src/screens/PaymentSheet.tsx': ['row', 'webRow'],
     'src/screens/ProfileSetupScreen.tsx': ['avatarCell'],
+    'src/screens/ProviderApplicationScreen.tsx': ['avatarCell'],
     'src/screens/RechargeScreen.tsx': ['bar'],
     'src/screens/SettingsSheet.tsx': ['row'],
     'src/screens/TransactionHistoryScreen.tsx': ['row'],
@@ -1042,9 +1043,9 @@ describe('motion lives in one module', () => {
      * both, and a builder that only fades is checked for `Never`.
      *
      * Every exported transition builder — the `screen*`/`menu*`/`row*` worklets
-     * and the `topLevel*`/`fadeSwap*`/`authArrive` consts — is inspected on its
-     * own, rather than counting occurrences against a comment that mentions the
-     * call (which is a test grading prose).
+     * and the `topLevel*`/`fadeSwap*` consts — is inspected on its own, rather
+     * than counting occurrences against a comment that mentions the call
+     * (which is a test grading prose).
      */
     const motion = stripComments(read('src/theme/motion.ts'));
     const spatialBuilders = ['useScreenEnter', 'screenOut', 'menuIn', 'rowIn'];
@@ -1061,7 +1062,7 @@ describe('motion lives in one module', () => {
     expect(springTo.slice(0, 400)).toContain('ReduceMotion.System');
 
     // The pure-fade builders must always run their fade.
-    for (const name of ['topLevelIn', 'topLevelOut', 'menuOut', 'authArrive']) {
+    for (const name of ['topLevelIn', 'topLevelOut', 'menuOut']) {
       const decl = motion.slice(motion.indexOf(`export const ${name} =`));
       expect(decl.slice(0, 220)).toContain('ReduceMotion.Never');
     }
@@ -1322,6 +1323,14 @@ describe('accent budget is enforced in code, not just documented', () => {
        * here is only the default.
        */
       'ProgressBar.tsx',
+      /*
+       * Provider onboarding (verify → profile → done). Same accent argument as
+       * ProfileSetupScreen, its member twin: the verify emphasis, the selected
+       * avatar ring (a state), and the completion check (the app's onboarding
+       * completion language, like CompletionRow). Actions and states, not
+       * ornament.
+       */
+      'ProviderApplicationScreen.tsx',
       /*
        * The v13 provider profile. The coral is the primary Call action and the
        * favourite-when-set, plus the hero's warm field — actions and a live

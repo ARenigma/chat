@@ -8,6 +8,8 @@ import {
   useTaxProfile,
   useSavePayoutAccount,
   useSavePan,
+  useCashfreeVerification,
+  cashfreeVerificationAvailable,
   type PayoutMethod,
 } from '../api/provider';
 import { Button } from '../components/Button';
@@ -44,6 +46,11 @@ export function ProviderBankScreen({ onBack }: Props) {
   const { data: tax } = useTaxProfile();
   const saveAccount = useSavePayoutAccount();
   const savePan = useSavePan();
+  const verify = useCashfreeVerification();
+  // The native sheet is the preferred path — one consent fills a verified PAN and
+  // bank, so nothing below is typed. It is only present in a device build with the
+  // Cashfree SDK; in Jest and any build without it, the manual form is all there is.
+  const canVerifyWithCashfree = cashfreeVerificationAvailable();
 
   const [method, setMethod] = useState<PayoutMethod>(account?.method ?? 'upi');
   const [vpa, setVpa] = useState(account?.upi_vpa ?? '');
@@ -112,6 +119,30 @@ export function ProviderBankScreen({ onBack }: Props) {
             Until payouts go live, your details are saved and shown as pending.
           </Text>
         </View>
+
+        {/* Preferred path: Cashfree 1-Click. One consent verifies PAN + bank, so
+            the manual form below is the fallback rather than the main event. */}
+        {canVerifyWithCashfree ? (
+          <View style={styles.verifyBlock}>
+            <Button
+              label="Verify with Cashfree"
+              onPress={() => verify.mutate()}
+              busy={verify.isPending}
+              busyLabel="Verifying"
+              testID="bank-verify-cashfree"
+            />
+            <Text allowFontScaling style={styles.verifyHint}>
+              Confirm your PAN and bank in one tap. Nothing to type.
+            </Text>
+            <View style={styles.orRow}>
+              <View style={styles.orLine} />
+              <Text allowFontScaling style={styles.orText}>
+                or enter manually
+              </Text>
+              <View style={styles.orLine} />
+            </View>
+          </View>
+        ) : null}
 
         {/* Method toggle */}
         <View style={styles.tabs}>
@@ -306,6 +337,20 @@ const makeStyles = (t: Theme) =>
       marginBottom: TOKENS.space.xs,
     },
     noteText: { ...TOKENS.typography.bodySmall, color: t.color.text.secondary },
+    verifyBlock: { gap: TOKENS.space.xs, marginBottom: TOKENS.space.xs },
+    verifyHint: {
+      ...TOKENS.typography.bodySmall,
+      color: t.color.text.secondary,
+      textAlign: 'center',
+    },
+    orRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.sm,
+      paddingVertical: TOKENS.space.xs,
+    },
+    orLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: t.color.border.hairline },
+    orText: { ...TOKENS.typography.labelMedium, color: t.color.text.tertiary },
     tabs: {
       flexDirection: 'row',
       gap: TOKENS.space.xs,

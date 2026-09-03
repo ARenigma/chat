@@ -16,7 +16,7 @@ import { deleteAccount, signOut } from '../api/auth';
 import { stopPush } from '../lib/push';
 import { track } from '../lib/telemetry';
 import { widgetConfigured } from '../lib/msg91Widget';
-import { useMyApplication, useSetClayAvatar, useSetPresence } from '../api/provider';
+import { useSetClayAvatar, useSetPresence } from '../api/provider';
 import { CLAY_SEEDS, CLAY_IMAGES } from '../lib/clayAvatars';
 import { useProfile } from '../api/chat';
 import { PRESENCE_OPTIONS, presenceDetail } from '../lib/presence';
@@ -42,8 +42,6 @@ interface Props {
   onDeleted: () => void;
   onSignedOut: () => void;
   /** Absent on the provider tree, a provider does not apply again. */
-  onApply?: () => void;
-  onApplicationStatus?: () => void;
   onBlocked?: () => void;
   /** Opens the recharge history + invoice download screen. Member tree only. */
   onTransactions?: () => void;
@@ -131,8 +129,6 @@ export function SettingsSheet({
   showBack = true,
   onDeleted,
   onSignedOut,
-  onApply,
-  onApplicationStatus,
   onBlocked,
   onTransactions,
 }: Props) {
@@ -147,7 +143,6 @@ export function SettingsSheet({
   const [choiceSheet, setChoiceSheet] = useState<'presence' | 'theme' | null>(null);
   const [avatarSheet, setAvatarSheet] = useState(false);
   const [busy, setBusy] = useState(false);
-  const { data: application } = useMyApplication();
   const { data: profile } = useProfile();
   const setPresence = useSetPresence();
   const setClayAvatar = useSetClayAvatar();
@@ -196,7 +191,6 @@ export function SettingsSheet({
     }
   }, [onSignedOut, queryClient]);
 
-  const hasApplication = application !== null && application !== undefined;
 
   /*
    * Offered only when it can succeed and only when it is not already done.
@@ -217,8 +211,7 @@ export function SettingsSheet({
       ? ' Anyone browsing the directory sees it too.'
       : ' Only people you have a conversation with can see it.';
 
-  const showAccountSection =
-    canVerifyPhone || hasApplication || onApply !== undefined;
+  const showAccountSection = canVerifyPhone;
   const presenceLabel =
     PRESENCE_OPTIONS.find(option => option.value === presence)?.label ?? 'Hidden';
   const themeLabel = mode === 'light' ? 'Light' : mode === 'dark' ? 'Dark' : 'System';
@@ -377,39 +370,9 @@ export function SettingsSheet({
                   />
                 </Pressable>
               ) : null}
-              {canVerifyPhone &&
-              (hasApplication || onApply !== undefined) ? (
-                <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
-              ) : null}
-              {hasApplication && onApplicationStatus !== undefined ? (
-                <Pressable
-                  onPress={onApplicationStatus}
-                  testID="settings-application"
-                  accessibilityLabel="Provider Application"
-                  press="none"
-                  highlight="ios"
-                  style={styles.row}>
-                  <SettingsRowContent
-                    icon="person"
-                    title="Provider application"
-                    detail="Review status and next steps"
-                  />
-                </Pressable>
-              ) : onApply !== undefined ? (
-                <Pressable
-                  onPress={onApply}
-                  testID="settings-apply"
-                  accessibilityLabel="Become a Provider"
-                  press="none"
-                  highlight="ios"
-                  style={styles.row}>
-                  <SettingsRowContent
-                    icon="person"
-                    title="Become a provider"
-                    detail="Application and status"
-                  />
-                </Pressable>
-              ) : null}
+              {/* No provider entry in member settings: member and provider are
+                  mutually exclusive worlds (Amit, 2026-09-03). Becoming a provider
+                  happens through "Become a partner" at sign-up, not from here. */}
               <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
           </View>
         ) : null}

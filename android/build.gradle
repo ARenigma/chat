@@ -35,4 +35,20 @@ buildscript {
     }
 }
 
+/*
+ * Cashfree's Verification Suite SDK (com.cashfree.vrs:kyc-verification) is
+ * published ONLY to Cashfree's own Maven repo — it 404s on Maven Central, unlike
+ * the PG SDK (com.cashfree.pg:api, pulled by react-native-cashfree-pg-sdk from
+ * Central). The 1-Click Onboarding native SDK needs this repo.
+ * https://www.cashfree.com/docs/api-reference/vrs/v2/1-click-onboarding/1-click-onboarding-sdk#android-native
+ *
+ * A project-level repositories block is safe here: react-native-cashfree-pg-sdk
+ * already declares its own, so RepositoriesMode.FAIL_ON_PROJECT_REPOS is off.
+ */
+allprojects {
+    repositories {
+        maven { url "https://maven.cashfree.com/release" }
+    }
+}
+
 apply plugin: "com.facebook.react.rootproject"
