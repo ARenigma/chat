@@ -231,6 +231,43 @@ function walk(dir: string): string[] {
 }
 
 /**
+ * Reference harvesting stays clean-room (ADR-0025).
+ *
+ * We MEASURE reference apps and re-express their behaviour in our own code:
+ * Telegram (GPL-2.0) and Fuse (a demo) are read for timings, thresholds and
+ * interaction anatomy, recorded in design/references/*.md, and reimplemented.
+ * We never copy their source, assets, strings, icons or Lottie files — doing so
+ * with Telegram would force Pappal under the GPL. A copied Telegram file carries
+ * one of these identifiers, so their absence anywhere in the shipping tree is
+ * the mechanical proof the boundary held. (design/references is exempt: it is
+ * where the measurements legitimately live.)
+ */
+describe('reference harvesting stays clean-room', () => {
+  const FORBIDDEN = /org\.telegram|TMessagesProj|DrKLO/;
+  const TEXT = /\.(ts|tsx|js|jsx|kt|java|xml|gradle|pro|json|md|txt|h|m|swift)$/;
+  const ROOTS = ['src', 'assets', join('android', 'app', 'src')];
+
+  it('carries no Telegram source, package or asset identifier', () => {
+    const offenders: string[] = [];
+    for (const r of ROOTS) {
+      const base = join(ROOT, r);
+      if (!existsSync(base)) {
+        continue;
+      }
+      for (const abs of walk(base)) {
+        const rel = abs.slice(ROOT.length + 1);
+        if (FORBIDDEN.test(rel)) {
+          offenders.push(`${rel} (filename)`);
+        } else if (TEXT.test(abs) && FORBIDDEN.test(read(rel))) {
+          offenders.push(rel);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
+/**
  * The send path is now a single SQL function, so the invariants that used to be
  * spread across an Edge Function and a client are all assertable in one place.
  */
