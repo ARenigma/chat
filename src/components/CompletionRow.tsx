@@ -119,7 +119,7 @@ function CompletionRowView({ onDone, testID }: Props) {
         * survives and simply shows different characters.
         */}
       <View style={styles.body}>
-        <Animated.Text
+        <Animated.Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineMediumEmphasized}
           key={`title-${String(done)}`}
           entering={reduced ? undefined : FadeIn.duration(STEP_ADVANCE_MS)}
           allowFontScaling

@@ -636,7 +636,7 @@ export function OnboardingScreen({ onDone }: Props) {
                 accessibilityLabel="Pappal"
               />
             </View>
-            <Text allowFontScaling={false} style={styles.brand}>
+            <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.wordmarkLarge} allowFontScaling={false} style={styles.brand}>
               Pappal
             </Text>
             <Text allowFontScaling style={styles.subtitle}>
@@ -657,7 +657,7 @@ export function OnboardingScreen({ onDone }: Props) {
               press="button"
               style={styles.cta}
             >
-              <Text allowFontScaling style={styles.ctaLabel}>
+              <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.ctaLabel}>
                 Continue
               </Text>
             </Pressable>
@@ -813,7 +813,7 @@ export function OnboardingScreen({ onDone }: Props) {
                           resizeMode="contain"
                           accessibilityIgnoresInvertColors
                         />
-                        <Text allowFontScaling style={styles.primaryLabel}>
+                        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.primaryLabel}>
                           Continue with Google
                         </Text>
                       </>
@@ -835,7 +835,7 @@ export function OnboardingScreen({ onDone }: Props) {
                       press="button"
                       style={styles.secondary}
                     >
-                      <Text allowFontScaling style={styles.secondaryLabel}>
+                      <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.secondaryLabel}>
                         Use my number instead
                       </Text>
                     </Pressable>
@@ -980,7 +980,7 @@ export function OnboardingScreen({ onDone }: Props) {
                             styles.ageChip,
                             selected && styles.ageChipSelected,
                           ]}>
-                          <Text
+                          <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
                             allowFontScaling
                             style={[
                               styles.ageChipLabel,
@@ -1013,7 +1013,7 @@ export function OnboardingScreen({ onDone }: Props) {
                     {state === 'loading' ? (
                       <LoadingIndicator size={20} containerColor="transparent" />
                     ) : (
-                      <Text allowFontScaling style={styles.primaryLabel}>
+                      <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.primaryLabel}>
                         Continue
                       </Text>
                     )}

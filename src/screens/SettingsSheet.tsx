@@ -297,7 +297,7 @@ export function SettingsSheet({
                 <Icon name="plus" size={15} color={theme.color.text.onAccent} />
               </View>
             </Pressable>
-            <Text allowFontScaling numberOfLines={1} style={styles.profileName}>
+            <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling numberOfLines={1} style={styles.profileName}>
               {profileName}
             </Text>
             {profileMetaText ? (

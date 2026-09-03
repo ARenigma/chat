@@ -195,7 +195,7 @@ export function ProfileSetupScreen({
      */
     return (
       <View style={[styles.root, styles.agePage, { paddingTop: insets.top, paddingBottom: insets.bottom + 24 }]}>
-        <Text allowFontScaling style={styles.title}>
+        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized} allowFontScaling style={styles.title}>
           How old are you?
         </Text>
         <Text allowFontScaling style={styles.subtitle}>
@@ -223,7 +223,7 @@ export function ProfileSetupScreen({
                   styles.ageChip,
                   selected && styles.ageChipSelected,
                 ]}>
-                <Text
+                <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
                   allowFontScaling
                   style={[
                     styles.ageChipLabel,
@@ -253,14 +253,14 @@ export function ProfileSetupScreen({
         contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 24 }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}>
-        <Text allowFontScaling style={styles.title}>
+        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized} allowFontScaling style={styles.title}>
           Claim your username
         </Text>
         <Text allowFontScaling style={styles.subtitle}>
           This is how you&apos;ll show up in Pappal.
         </Text>
 
-        <Text allowFontScaling style={styles.fieldLabel}>
+        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.fieldLabel}>
           Username
         </Text>
         <TextField
@@ -288,7 +288,7 @@ export function ProfileSetupScreen({
           </Text>
         ) : null}
 
-        <Text allowFontScaling style={styles.section}>
+        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.section}>
           Pick a look
         </Text>
         <View style={styles.avatarGrid}>

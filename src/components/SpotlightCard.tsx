@@ -218,7 +218,7 @@ function SpotlightCardView({ visible, name, avatarUri, online = false, onClose, 
                   </View>
                 </View>
               ) : null}
-              <Text allowFontScaling style={styles.greeting}>
+              <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized} allowFontScaling style={styles.greeting}>
                 hey i am here, lets talk!
               </Text>
               <Text allowFontScaling numberOfLines={1} style={styles.name}>

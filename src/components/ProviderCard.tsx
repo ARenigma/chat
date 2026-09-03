@@ -143,7 +143,7 @@ function ProviderCardView({
               />
             </Pressable>
             <View style={styles.nameBlock}>
-              <Text allowFontScaling numberOfLines={1} style={styles.name}>
+              <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling numberOfLines={1} style={styles.name}>
                 {provider.display_name}
                 {provider.age !== null ? (
                   <Text style={styles.nameAge}> {provider.age}</Text>

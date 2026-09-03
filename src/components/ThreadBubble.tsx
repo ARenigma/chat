@@ -110,7 +110,7 @@ function ThreadBubbleView({
       />
       <View style={styles.body}>
         <View style={styles.topLine}>
-          <Text allowFontScaling numberOfLines={1} style={styles.name}>
+          <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling numberOfLines={1} style={styles.name}>
             {name}
           </Text>
           <Text allowFontScaling style={styles.stamp}>

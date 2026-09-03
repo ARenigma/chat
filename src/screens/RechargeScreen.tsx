@@ -101,12 +101,12 @@ function RechargeSheetForm({
         <Text allowFontScaling style={styles.balanceLabel}>
           Your balance
         </Text>
-        <Text allowFontScaling style={styles.balanceValue}>
+        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized} allowFontScaling style={styles.balanceValue}>
           {`${formatTokens(balance)} tokens`}
         </Text>
       </View>
 
-      <Text allowFontScaling style={styles.section}>
+      <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.section}>
         Choose a pack
       </Text>
       <View style={styles.grid}>
@@ -133,7 +133,7 @@ function RechargeSheetForm({
                     </Text>
                   </View>
                 ) : null}
-                <Text allowFontScaling style={styles.amount}>
+                <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized} allowFontScaling style={styles.amount}>
                   {formatRupees(pack)}
                 </Text>
                 <Text allowFontScaling style={styles.tokens}>
@@ -178,7 +178,7 @@ function RechargeSheetFooter({
         press="button"
         onColor={theme.color.text.onAccent}
         style={styles.payButton}>
-        <Text allowFontScaling style={styles.payButtonLabel}>
+        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.payButtonLabel}>
           {`Pay ${formatRupees(amount)}`}
         </Text>
       </Pressable>
@@ -218,7 +218,7 @@ export function RechargeWalletPage() {
     <WalletLayer style={[styles.page, { paddingTop: insets.top }]}>
       <View style={styles.bar}>
         <BackButton onPress={closeBack} testID="recharge-wallet-back" style={styles.barIcon} />
-        <Text allowFontScaling style={styles.barTitle}>
+        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.barTitle}>
           Recharge
         </Text>
       </View>
@@ -276,7 +276,7 @@ function RechargeForm({
         <Text allowFontScaling style={styles.balanceLabel}>
           Balance
         </Text>
-        <Text allowFontScaling style={styles.balanceValue}>
+        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized} allowFontScaling style={styles.balanceValue}>
           {`${formatTokens(balance)} tokens`}
         </Text>
         <Text allowFontScaling style={styles.balanceHint}>
@@ -286,7 +286,7 @@ function RechargeForm({
         </Text>
       </View>
 
-      <Text allowFontScaling style={styles.section}>
+      <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.section}>
         Add tokens
       </Text>
 
@@ -324,7 +324,7 @@ function RechargeForm({
                       balance header. Flips to a light disc on the selected coral
                       card so it stays legible. */}
                   <View style={[styles.coin, on && styles.coinOn]}>
-                    <Text
+                    <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized}
                       allowFontScaling={false}
                       style={[styles.coinMark, on && styles.coinMarkOn]}>
                       ₹

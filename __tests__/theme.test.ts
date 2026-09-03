@@ -751,6 +751,28 @@ describe('spacing and layout tokens', () => {
  * exact `prop: value` text; removing a site removes its entry, and the stale
  * check fails an entry that no longer matches anything.
  */
+describe('large text roles carry a font-scale cap', () => {
+  // A capped role (display/headline/title/wordmark) spread into a text style
+  // must be wired with maxFontSizeMultiplier so a 200% accessibility font scale
+  // cannot overflow a title the way an uncapped one would. Body/label/numeral
+  // roles are uncapped by construction and never match. See ADR-0024.
+  const CAPPED_SPREAD =
+    /\.\.\.\s*TOKENS\.typography\.(wordmark|display|headline|title)[A-Za-z]*/;
+  const sources = ['src/components', 'src/screens'].flatMap(dir =>
+    readdirSync(join(ROOT, dir))
+      .filter(f => f.endsWith('.tsx'))
+      .map(f => ({ file: `${dir}/${f}`, body: stripComments(read(`${dir}/${f}`)) })),
+  );
+
+  it('wires maxFontSizeMultiplier wherever a capped role is used', () => {
+    const offenders = sources
+      .filter(s => CAPPED_SPREAD.test(s.body))
+      .filter(s => !s.body.includes('maxFontSizeMultiplier'))
+      .map(s => s.file);
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe('spacing lives in tokens', () => {
   const SPACING = /\b(padding|margin|gap|rowGap|columnGap)(Top|Bottom|Left|Right|Horizontal|Vertical|Start|End)?\s*:\s*(-?[1-9]\d*)\b/g;
   const sources = ['src/components', 'src/screens']

@@ -120,7 +120,7 @@ export function FavouritesScreen({ onOpenProvider }: Props) {
       ) : (
         <View style={styles.empty}>
           <Icon name="heart" size={36} color={theme.color.text.tertiary} />
-          <Text allowFontScaling style={styles.emptyTitle}>
+          <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.emptyTitle}>
             No favourites yet
           </Text>
           <Text allowFontScaling style={styles.emptyBody}>

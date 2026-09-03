@@ -280,7 +280,7 @@ export function AuthScreen({
               swap cannot reflow what is under it. Keyed on its own content, which
               is what makes the entrance run. Opacity only: no scale, no
               translate. */}
-          <Animated.Text
+          <Animated.Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineMediumEmphasized}
             key={title}
             entering={fadeSwap}
             allowFontScaling
@@ -386,7 +386,7 @@ export function AuthScreen({
           <Animated.View
             entering={FadeInDown.duration(TOKENS.motion.duration.fast)}
             style={styles.confirmBlock}>
-            <Text allowFontScaling style={styles.confirmNumber}>
+            <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineMediumEmphasized} allowFontScaling style={styles.confirmNumber}>
               {dialCode} {phone.trim()}
             </Text>
           </Animated.View>
@@ -491,7 +491,7 @@ export function AuthScreen({
               {busy === 'phone' ? (
                 <LoadingIndicator size={20} containerColor="transparent" />
               ) : (
-                <Text allowFontScaling style={styles.confirmPrimaryLabel}>
+                <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.confirmPrimaryLabel}>
                   Yes, send code
                 </Text>
               )}
@@ -559,7 +559,7 @@ export function AuthScreen({
                   resizeMode="contain"
                   accessibilityIgnoresInvertColors
                 />
-                <Text allowFontScaling style={styles.googlePillLabel}>
+                <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.googlePillLabel}>
                   {PROVIDER_LABEL.google}
                 </Text>
               </>

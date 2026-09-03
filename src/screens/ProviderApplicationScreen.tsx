@@ -293,10 +293,10 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
               { paddingBottom: BLOCK_PAD + insets.bottom },
               welcomeStyle,
             ]}>
-            <Text allowFontScaling style={styles.welcomeTitle}>
+            <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.wordmarkLarge} allowFontScaling style={styles.welcomeTitle}>
               Become a Provider
             </Text>
-            <Text allowFontScaling style={styles.welcomeBody}>
+            <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineMediumEmphasized} allowFontScaling style={styles.welcomeBody}>
               Share your time.{'\n'}Change someone's night.
             </Text>
             <Text allowFontScaling style={styles.welcomeSub}>
@@ -313,7 +313,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
               accessibilityLabel="Continue"
               press="button"
               style={styles.cta}>
-              <Text allowFontScaling style={styles.ctaLabel}>
+              <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.ctaLabel}>
                 Continue
               </Text>
             </Pressable>

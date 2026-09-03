@@ -122,7 +122,7 @@ function ButtonView({
       {/* Keyed on its own content, which is what makes the entrance run: React
           remounts the node on a swap and Reanimated fades the new one in. Opacity
           only. Nothing scales and nothing translates. */}
-      <Animated.Text
+      <Animated.Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
         key={shown}
         entering={fadeSwapFast}
         allowFontScaling

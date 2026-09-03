@@ -106,7 +106,7 @@ const Segment = memo(function SegmentView({
   return (
     <Animated.View
       style={[styles.segment, active && styles.segmentActive, verifying && styles.segmentVerifying, animated]}>
-      <Text allowFontScaling={false} style={styles.digit}>
+      <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized} allowFontScaling={false} style={styles.digit}>
         {char}
       </Text>
     </Animated.View>

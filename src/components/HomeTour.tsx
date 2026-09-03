@@ -73,7 +73,7 @@ export function HomeTour() {
         <View style={[styles.dim, styles.fill]} />
 
         <View style={[styles.tooltip, { top: tooltipTop }]} accessibilityRole="text">
-          <Text allowFontScaling style={styles.title}>
+          <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.title}>
             {copy.title}
           </Text>
           <Text allowFontScaling style={styles.body}>

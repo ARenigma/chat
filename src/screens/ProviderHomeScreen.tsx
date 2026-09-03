@@ -135,7 +135,7 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings }: Props
           />
           <View style={styles.rowBody}>
             <View style={styles.rowTop}>
-              <Text allowFontScaling numberOfLines={1} style={styles.rowName}>
+              <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling numberOfLines={1} style={styles.rowName}>
                 {label}
               </Text>
               <Text allowFontScaling style={styles.rowTime}>
@@ -205,7 +205,7 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings }: Props
           unreachable while believing they are only invisible. */}
       <View style={styles.availability}>
         <View style={styles.availabilityText}>
-          <Text allowFontScaling style={styles.availabilityTitle}>
+          <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.availabilityTitle}>
             {available ? 'Open to New Conversations' : 'Not Taking New Conversations'}
           </Text>
           <Text allowFontScaling style={styles.availabilitySub}>
@@ -304,7 +304,7 @@ function Stat({
   const styles = useStyles(makeStyles);
   return (
     <View style={styles.stat}>
-      <Text testID={testID} allowFontScaling style={styles.statValue}>
+      <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized} testID={testID} allowFontScaling style={styles.statValue}>
         {value}
       </Text>
       <Text allowFontScaling style={styles.statLabel}>

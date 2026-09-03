@@ -89,7 +89,7 @@ export function ProviderStatusScreen({ onBack, onEdit }: Props) {
           style={styles.back}>
           <Icon name="chevronLeft" size={22} />
         </Pressable>
-        <Text allowFontScaling numberOfLines={1} style={styles.headerTitle}>
+        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling numberOfLines={1} style={styles.headerTitle}>
           Your Application
         </Text>
         {/* Balances the chevron so the title is centred on the bar rather than on
@@ -111,7 +111,7 @@ export function ProviderStatusScreen({ onBack, onEdit }: Props) {
               fades the new string in. Nothing scales and nothing moves, which is
               what makes it safe on a paragraph whose height varies with its
               status. */}
-          <Animated.Text
+          <Animated.Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized}
             key={copy.title}
             entering={fadeSwap}
             testID="application-status"
