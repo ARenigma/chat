@@ -34,6 +34,10 @@ const problems = [];
 const present = new Set(readdirSync(WEB));
 const DOWNLOAD_URL =
   'https://github.com/ARenigma/pappal-downloads/releases/latest/download/Pappal.apk';
+const CONTACT_EMAIL = 'hello@pappal.live';
+const CONTACT_PHONE = 'tel:+910000000001';
+const BUSINESS_ADDRESS =
+  'Building 145, Sector 44 Road, Gurugram, Haryana 122003, India';
 
 for (const [page, why] of Object.entries(REQUIRED)) {
   if (!present.has(page)) {
@@ -45,6 +49,7 @@ const pages = [...present].filter(name => name.endsWith('.html'));
 
 for (const page of pages) {
   const body = readFileSync(join(WEB, page), 'utf8');
+  const plainText = body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
 
   // Internal links only: an external 404 is not ours to police, and checking
   // them would make this gate depend on the network.
@@ -69,6 +74,25 @@ for (const page of pages) {
   }
   if (body.includes('gitlab.com/ARenigma/chat/-/releases')) {
     problems.push(`web/${page} still links the private source repository`);
+  }
+
+  // Cashfree compares these public details with the merchant's KYC record.
+  // Require the canonical values on every page because every legal page can be
+  // reviewed as an independent entry URL.
+  if (!body.includes(`mailto:${CONTACT_EMAIL}`)) {
+    problems.push(`web/${page} does not publish ${CONTACT_EMAIL}`);
+  }
+  if (!body.includes(CONTACT_PHONE)) {
+    problems.push(`web/${page} does not publish the support phone`);
+  }
+  if (!plainText.includes(BUSINESS_ADDRESS)) {
+    problems.push(`web/${page} does not publish the verified business address`);
+  }
+  if (
+    body.includes('hello@axionix.tech') ||
+    plainText.includes('Noida, Uttar Pradesh')
+  ) {
+    problems.push(`web/${page} still publishes stale business contact details`);
   }
 
   // The site and the app are one product. Geist + Titan One are the shipped
@@ -107,6 +131,25 @@ if (
   [...addresses].some(address => /example\.(com|invalid|org)/.test(address))
 ) {
   problems.push('a placeholder contact address is still published');
+}
+if (addresses.size !== 1 || !addresses.has(CONTACT_EMAIL)) {
+  problems.push(`the canonical contact address must be ${CONTACT_EMAIL}`);
+}
+
+// Cashfree website whitelisting requires services and prices in INR. Keep the
+// public rate card aligned with the application's fallback economics.
+const pricing = readFileSync(join(WEB, 'pricing.html'), 'utf8');
+for (const required of [
+  '₹22 per minute for text chat',
+  '₹22 per minute for voice',
+  '₹35 per minute for video',
+  '₹100, ₹300, ₹500, ₹1,000, ₹2,500',
+]) {
+  if (!pricing.includes(required)) {
+    problems.push(
+      `web/pricing.html is missing canonical INR pricing: ${required}`,
+    );
+  }
 }
 
 /**
