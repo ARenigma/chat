@@ -155,6 +155,72 @@ where p.id = auth.uid();
 comment on view public.my_payout_readiness is
   'Own-row payout readiness for the signed-in provider: payout_account_verified '
   'and can_go_live. The listing gate for ADR-0022 once payouts are enforced. No '
-  'KYC gate — name/phone/email + bank account is the only PII collected.';
+  'full KYC — name/phone/email + bank account (+ optional PAN) is the only PII.';
 
 grant select on public.my_payout_readiness to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 4. PAN (tax only — NOT a listing gate)
+-- ---------------------------------------------------------------------------
+-- Not KYC: no Aadhaar, no liveness. Just the PAN number, validated via Cashfree's
+-- Verification Suite (returns the name on the PAN), so TDS-194O withholding is
+-- 0.1% instead of 5%. A provider can still be paid without a PAN (at 5%), so PAN
+-- is deliberately absent from `my_payout_readiness`. Written ONLY by the
+-- service-role verify-pan Edge function; the client submits the number through
+-- the RPC below and never sets the verified state.
+create table if not exists public.provider_tax_profile (
+  provider_id     uuid        primary key references public.profiles(id) on delete cascade,
+  pan             text,
+  pan_name        text,       -- name on the PAN, from Cashfree
+  status          text        not null default 'not_provided'
+                              check (status in ('not_provided', 'pending', 'verified', 'failed')),
+  verification_ref text,
+  failure_reason  text,
+  verified_at     timestamptz,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+
+comment on table public.provider_tax_profile is
+  'Provider PAN for TDS purposes only (not KYC). Validated via Cashfree; PAN drops '
+  'TDS-194O from 5% to 0.1%. Written only by the service-role verify-pan function.';
+
+alter table public.provider_tax_profile enable row level security;
+
+create policy provider_tax_profile_select_own
+  on public.provider_tax_profile
+  for select to authenticated
+  using (provider_id = auth.uid());
+
+-- Client submits the PAN number; the verified state is set by the Edge function.
+create or replace function public.set_my_pan(p_pan text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_provider uuid := auth.uid();
+begin
+  if v_provider is null then
+    raise exception 'not authenticated';
+  end if;
+  if p_pan is null or p_pan !~ '^[A-Z]{5}[0-9]{4}[A-Z]$' then
+    raise exception 'invalid PAN format';
+  end if;
+
+  insert into public.provider_tax_profile (provider_id, pan, status)
+  values (v_provider, upper(p_pan), 'pending')
+  on conflict (provider_id) do update
+    set pan = excluded.pan,
+        status = 'pending',
+        pan_name = null,
+        verification_ref = null,
+        failure_reason = null,
+        verified_at = null,
+        updated_at = now();
+end;
+$$;
+
+revoke all on function public.set_my_pan(text) from public;
+grant execute on function public.set_my_pan(text) to authenticated;
