@@ -32,6 +32,8 @@ const REQUIRED = {
 
 const problems = [];
 const present = new Set(readdirSync(WEB));
+const DOWNLOAD_URL =
+  'https://github.com/ARenigma/pappal-downloads/releases/latest/download/Pappal.apk';
 
 for (const [page, why] of Object.entries(REQUIRED)) {
   if (!present.has(page)) {
@@ -58,6 +60,15 @@ for (const page of pages) {
   // that one page, which is the kind of thing nobody spots.
   if (!body.includes('/tokens.css')) {
     problems.push(`web/${page} does not link tokens.css`);
+  }
+
+  // Release assets inherit repository visibility. The app source repositories
+  // are private, so every CTA must use the downloads-only public repository.
+  if (!body.includes(DOWNLOAD_URL)) {
+    problems.push(`web/${page} does not link the public latest APK`);
+  }
+  if (body.includes('gitlab.com/ARenigma/chat/-/releases')) {
+    problems.push(`web/${page} still links the private source repository`);
   }
 
   // The site and the app are one product. Geist + Titan One are the shipped
