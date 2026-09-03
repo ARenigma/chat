@@ -106,6 +106,10 @@ describe('the AI path is gone, not dormant', () => {
     // mints a Supabase session — an auth bridge, not a model path. Added with
     // AUTH_PHONE_PROVIDER='firebase'.
     const allowed = [
+      // cashfree-payout: manual, founder-gated provider disbursement via Cashfree
+      // Payouts Standard Transfer V2. Money-critical claim/settle is atomic SQL
+      // (migration 050). Triggered from the admin payouts page.
+      'cashfree-payout',
       // cashfree-webhook: Cashfree payment gateway signature-verified callback;
       // credits purchased tokens after server-side HMAC-SHA256 verification.
       // ADR-0022.

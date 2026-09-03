@@ -120,14 +120,31 @@ is lost.
 
 ---
 
+## Disbursement (manual, admin-triggered — migration 050)
+
+No cron (by request). A founder disburses from the admin **Payouts** page
+(`admin/app/(authenticated)/payouts`):
+
+- `admin.payable_providers` view lists providers with cleared, past-hold, unpaid
+  earnings + their account/PAN status. `payable` = both verified.
+- The "Pay" button → `POST /api/payouts` → invokes the `cashfree-payout` Edge
+  function with the founder's session (re-checked against `founder_allowlist`).
+- Money-critical steps are atomic SQL: `create_provider_payout_batch` locks the
+  eligible earnings, creates a `processing` batch, and stamps the rows `paid` (so a
+  second click cannot double-pay). `cashfree-payout` then calls Cashfree
+  [Standard Transfer V2](https://www.cashfree.com/docs/api-reference/payouts/v2/transfers-v2/standard-transfer-v2)
+  `POST /payout/transfers`, and `settle_provider_payout_batch` records the terminal
+  state (or reverts the earnings on failure).
+- Minimum is ₹500 (ADR-0021); a founder can override with `ignoreMinimum`.
+
 ## Still TODO
 
-- **`cashfree-payout` Edge function** — Standard Transfer V2 for a
-  `provider_payout_batches` row, writing `cashfree_batch_id`; terminal state via
-  `cashfree-webhook` extended for `TRANSFER_*` events.
-- **Weekly cron** — build the batch from `provider_earnings_ledger` rows past their
-  `hold_until` and above the ₹500 minimum, then call the payout function. TDS-194O
-  0.1% deducted when the provider has a verified PAN (else 5%).
+- **Transfer webhook** — extend `cashfree-webhook` for `TRANSFER_*` events so an
+  accepted (RECEIVED) transfer that later fails at the bank auto-reverts, instead
+  of the current settle-on-synchronous-response.
+- **Weekly cron** — deferred by request; when wanted, schedule the same
+  `create_provider_payout_batch` → transfer → settle for every eligible provider.
+  TDS-194O 0.1% with a verified PAN (else 5%).
 - **Dashboard** — replace the "Held for payout" note with an earnings card
   (Available vs Held + per-session hold countdown) and a `ProviderPayoutHistoryScreen`.
 - **Listing gate** — once payouts are enforced, route an `approved` provider

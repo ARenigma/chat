@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Flag, Settings, ScrollText, LogOut, Users } from 'lucide-react';
+import { LayoutDashboard, Flag, Settings, ScrollText, LogOut, Users, Wallet } from 'lucide-react';
 import {
   Sheet,
   SheetContent,
@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils';
 const NAV = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/applications', label: 'Applications', icon: Users },
+  { href: '/payouts', label: 'Payouts', icon: Wallet },
   { href: '/moderation', label: 'Moderation', icon: Flag },
   { href: '/config', label: 'Config', icon: Settings },
   { href: '/audit', label: 'Audit log', icon: ScrollText },
