@@ -338,8 +338,18 @@ Ultra with a Metro-served debug build, after a false start (see the last point).
   variant explicitly (`-PmetroHotReload`); the default is unchanged and pinned by
   a test. Before trusting a device capture, check the APK has no
   `index.android.bundle` and that a visible probe edit actually shows up.
-- **Still open:** ChatScreen takes ~500ms from tap to first paint (the entrance
-  cannot start before that); the 150ms exit fade is as abrupt as Telegram's by
-  design but should be judged by hand on device; `bubbleLaunch`/`bubbleArrive`
-  `entering` animations in the chat may be affected by the same suppression and
-  have not been frame-stepped.
+- **ChatScreen ~500ms tap→first-paint — investigated 2026-09-03, it is a DEBUG
+  number.** It was measured on a Metro-served debug build (dev-mode React, no R8,
+  JS over the network), so it does not reflect release. The FlashList config is
+  already optimal for v2 (v2 dropped `estimatedItemSize`; `getItemType` and
+  `keyExtractor` are set), so there is no speculative config win. The
+  release-equivalent build compiles clean (R8 + Baseline Profile), but the
+  Macrobenchmark cannot install over the debug build on the daily-driver phone
+  (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`, and uninstalling would wipe the signed-in
+  session needed for the Sign-In verification). **Measure it in CI on a clean
+  device before optimising** — a chat-open `FrameTimingMetric` benchmark beside
+  the existing `StartupBenchmark`. Do not chase the debug number on device.
+- **Still open:** the 150ms exit fade is as abrupt as Telegram's by design but
+  should be judged by hand on device; `bubbleLaunch`/`bubbleArrive` `entering`
+  animations in the chat may be affected by the same suppression and have not
+  been frame-stepped.
