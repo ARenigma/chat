@@ -126,6 +126,13 @@ function typography() {
       fontSize: t.fontSize,
       lineHeight,
       letterSpacing,
+      // Trim Android's extra font padding so a line box is the M3 lineHeight and
+      // nothing else. Without it Android pads above the ascent and below the
+      // descent, so vertically-centred text sits low and stacked lines gap wider
+      // than the token says. Emitted on every role so the whole app is
+      // consistent rather than only the handful that set it inline.
+      // developer.android.com/reference/android/widget/TextView#attr_android:includeFontPadding
+      includeFontPadding: false,
       ...(t.tabular === true ? { fontVariant: ['tabular-nums'] } : {}),
     };
   }
