@@ -2,8 +2,8 @@
 
 Status: **decided and shipped (foundation)**
 Date: 2026-09-03
-Supersedes: the type-ladder bullet of [ADR-0012](0012-ios-surface-language.md)
-only. Everything else ADR-0012 decided — the 28dp sheet, the 10dp field, the
+Supersedes: the type-ladder bullet of
+[ADR-0012](0012-ios-surfaces-material-interaction.md) only. Everything else ADR-0012 decided — the 28dp sheet, the 10dp field, the
 14dp alert, the iOS interaction model — still stands.
 Reference: [m3.material.io/styles/typography](https://m3.material.io/styles/typography/type-scale-tokens),
 androidx `TypeScaleTokens.kt` / `TypefaceTokens.kt`
@@ -83,7 +83,7 @@ Called out so the follow-ups are not rediscovered:
 
 ## 5. Verification
 
-`npm run verify` (786 tests) green: the generated theme matches the source, every
+`npm run verify` (788 tests) green: the generated theme matches the source, every
 referenced face is bundled, numerals stay tabular, and the M3 metrics are pinned
 in `theme.test.ts`. Verified on a physical S22 (RULE 2): Home and the chat
 transcript render correctly under the new scale — 16/24 body with +0.5 tracking
