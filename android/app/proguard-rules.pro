@@ -25,3 +25,11 @@
 -keep class com.margelo.nitro.core.** { *; }
 -keep class * extends com.margelo.nitro.core.HybridObject { *; }
 -dontwarn com.margelo.nitro.**
+
+# Cashfree Verification Suite (1-Click Onboarding) SDK + its PG base dependency.
+# The AAR ships no consumer ProGuard rules, so R8 would strip the SDK surface and
+# the WebView JS-bridge classes the native module bridges to (CFVerificationService,
+# CF1ClickOnboardingCallback, the models). Keep the whole com.cashfree tree.
+-keep class com.cashfree.** { *; }
+-keepclassmembers class com.cashfree.** { *; }
+-dontwarn com.cashfree.**

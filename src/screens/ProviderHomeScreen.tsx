@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { SectionList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
@@ -14,7 +14,7 @@ import { useEarnings, useSetAvailability } from '../api/provider';
 import { Avatar } from '../components/Avatar';
 import { LoadingIndicator } from '../components/LoadingIndicator';
 import { ROW_AVATAR, ROW_SEPARATOR_INSET } from '../components/ProviderRow';
-import { Icon } from '../components/Icon';
+import { Icon, type IconName } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { Toggle } from '../components/Toggle';
 
@@ -23,6 +23,8 @@ interface Props {
   onOpenSettings: () => void;
   onOpenPayout: () => void;
 }
+
+type Tab = 'chats' | 'you';
 
 function threadLabel(thread: ConversationSummary): string {
   if (thread.last_session_status === 'active') return 'Active session';
@@ -36,17 +38,16 @@ function threadLabel(thread: ConversationSummary): string {
 }
 
 /**
- * The provider's working surface.
+ * The provider's working surface, in two tabs (Amit, 2026-09-03):
  *
- * Two things are here because Clarity's *positive* reviews are almost entirely
- * listeners talking about money, "this app helped me improve my finances". A
- * provider with no visibility into what they have earned has no reason to stay,
- * and supply is the harder side of this marketplace to build.
+ *   Chats — the conversations that ARE the work. A brand-new provider with none
+ *           gets a calm watermark rather than a bleak blank, because the first
+ *           thing supply sees cannot read as "nothing happens here".
+ *   You   — everything about them and their money: availability, what they have
+ *           earned (60% share, ADR-0021; 1 token = ₹1), payout setup, and stats.
  *
- * Earnings are in provider_tokens (60% share, ADR-0021). 1 token = ₹1, so ₹N
- * earned is accurate as accrual. We show it with a payout-pending note because
- * Cashfree Payouts is not yet wired; the figure is correct, the transfer is not
- * yet made.
+ * Earnings show with a payout-pending note because the transfer is manual for now
+ * (docs/provider-payouts.md); the figure is a correct accrual, not yet paid.
  */
 export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenPayout }: Props) {
   const styles = useStyles(makeStyles);
@@ -57,31 +58,15 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
   const { data: earnings } = useEarnings();
   const setAvailability = useSetAvailability();
 
+  const [tab, setTab] = useState<Tab>('chats');
   const available = profile?.is_available ?? false;
 
   /**
-   * Two groups, because a provider can be on either side of a thread.
-   *
-   * `useConversations` returns every thread the caller participates in, and this
-   * screen used all of them as work. A provider who was a member first therefore
-   * saw the conversations *they* paid for counted under "Waiting" and listed
-   * beside their earnings, observed on a device straight after an admission,
-   * where the first row of the work list was the provider's own thread with the
-   * provider they had been talking to.
-   *
-   * Filtering them out entirely would have been worse: role picks the whole
-   * navigation tree (ADR-0002), so a thread missing from this list is a thread
-   * the person can no longer open or rate. So they stay, in their own group,
-   * counted as nobody's work.
-   *
-   * `i_am_member` is the per-conversation answer `profiles.role` cannot give,
-   * since it flips on admission and takes the old threads with it (migration
-   * 007).
+   * Two groups, because a provider can be on either side of a thread (a provider
+   * who was a member first keeps the threads they paid for). `i_am_member` is the
+   * per-conversation answer `profiles.role` cannot give (migration 007).
    */
-  const work = useMemo(
-    () => (allThreads ?? []).filter(t => !t.i_am_member),
-    [allThreads],
-  );
+  const work = useMemo(() => (allThreads ?? []).filter(t => !t.i_am_member), [allThreads]);
 
   const sections = useMemo(
     () =>
@@ -113,8 +98,8 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
         ? Number(item.unread_count_member)
         : Number(item.unread_count_provider);
       const unread = unreadCount > 0;
-      // A provider sees members, who are not in the directory and therefore have
-      // no published name. Numbered rather than labelled "Member" repeatedly.
+      // Members are not in the directory and have no published name — numbered,
+      // not "Member" over and over.
       const label = item.peer_display_name ?? `Member ${item.peer_id.slice(0, 4)}`;
       return (
         <Pressable
@@ -124,11 +109,6 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
           press="none"
           highlight="ios"
           style={styles.row}>
-          {/* Hardcoded off until 012, and not out of laziness: `peer_available`
-              resolved the provider's listing switch through a join that is false
-              for every member, so there was no value here that could ever be
-              true. `peer_presence` is published for either role, so the person
-              waiting for a reply can finally be seen waiting. */}
           <Avatar
             initial={initialOf(label)}
             size={ROW_AVATAR}
@@ -136,7 +116,11 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
           />
           <View style={styles.rowBody}>
             <View style={styles.rowTop}>
-              <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling numberOfLines={1} style={styles.rowName}>
+              <Text
+                maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
+                allowFontScaling
+                numberOfLines={1}
+                style={styles.rowName}>
                 {label}
               </Text>
               <Text allowFontScaling style={styles.rowTime}>
@@ -165,163 +149,239 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
     [onOpenConversation, styles],
   );
 
-  /**
-   * The third separator idiom in the app becomes the first one.
-   *
-   * The member's inbox and the directory both draw an inset hairline between
-   * rows; this list drew nothing at all, so a provider moving between the two
-   * trees met two different list languages. Rendered as `ItemSeparatorComponent`
-   * rather than as a sibling inside the row, which also fixes the thing the other
-   * two lists had to work around by hand: a separator that is not part of the row
-   * cannot be drawn after the last one.
-   */
   const separator = useCallback(() => <View style={styles.separator} />, [styles]);
+
+  const earned = earnings?.provider_tokens ?? 0;
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
-      <View style={styles.meta}>
-        <Text allowFontScaling style={styles.role}>
-          Provider
-        </Text>
-        <View style={styles.spacer} />
-        <Pressable
-          onPress={onOpenSettings}
-          testID="open-settings"
-          accessibilityLabel="Account and Privacy"
-          press="none"
-          highlight="ios"
-          size={40}
-          style={styles.iconButton}>
-          <Icon name="more" size={22} color={theme.color.text.secondary} />
-        </Pressable>
-      </View>
-
-      {/* The listing switch first, because it is the only control here with an
-          immediate effect on whether anyone new can reach them.
-
-          The copy used to read 'Available Now' / 'You are hidden', which claimed
-          presence twice over: this switch is a directory listing, and 'hidden' is
-          now the name of a presence value set in Settings. Two controls saying
-          'hidden' and meaning different things is how somebody ends up
-          unreachable while believing they are only invisible. */}
-      <View style={styles.availability}>
-        <View style={styles.availabilityText}>
-          <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.availabilityTitle}>
-            {available ? 'Open to New Conversations' : 'Not Taking New Conversations'}
-          </Text>
-          <Text allowFontScaling style={styles.availabilitySub}>
-            {available
-              ? 'You are listed in the directory and can be messaged.'
-              : 'You are not listed. Existing conversations still work.'}
-          </Text>
-        </View>
-        {/* Our own M3 switch, not the platform one. RN's Switch rendered
-            Android's stock teal here, the single most out-of-place colour in the
-            app, and even once told the palette it cannot do the M3 anatomy. Sage
-            for on because it belongs to the reachability family, which is what
-            sage means in this palette. Not because this switch is presence: it is
-            not, and that conflation is what 012 unpicked. */}
-        <Toggle
-          testID="availability-toggle"
-          value={available}
-          onValueChange={toggle}
-          disabled={setAvailability.isPending}
-          accessibilityLabel="Open to new conversations"
-          tone="presence"
-        />
-      </View>
-
-      <View style={styles.stats}>
-        <Stat label="Waiting" value={String(waiting)} testID="stat-waiting" />
-        <Stat
-          label="Minutes"
-          value={String(earnings?.minutes_billed ?? 0)}
-          testID="stat-minutes"
-        />
-        <Stat label="People" value={String(earnings?.members_served ?? 0)} testID="stat-people" />
-        <Stat
-          label="Rating"
-          value={profile?.rating_avg != null ? profile.rating_avg.toFixed(1) : 'None'}
-          testID="stat-rating"
-        />
-      </View>
-
-      {/* 1 token = ₹1 (ADR-0021). Accrual is real; payout transfer is not yet wired. */}
-      {(earnings?.provider_tokens ?? 0) > 0 ? (
-        <Text testID="earned-notice" allowFontScaling style={styles.refundNote}>
-          ₹{earnings?.provider_tokens} earned · Held for payout · not yet paid
-        </Text>
-      ) : null}
-
-      {/* Payout setup — always reachable, not gated on earnings: a provider adds
-          a bank/UPI + PAN before their first payout (ADR-0022). */}
-      <Pressable
-        onPress={onOpenPayout}
-        testID="open-payout"
-        accessibilityLabel="Set up how you get paid"
-        press="none"
-        highlight="ios"
-        style={styles.payoutRow}>
-        <Icon name="wallet" size={20} color={theme.color.text.primary} />
-        <Text allowFontScaling style={styles.payoutLabel}>
-          Get paid
-        </Text>
-        <Icon name="chevronRight" size={18} color={theme.color.text.tertiary} />
-      </Pressable>
-
-      {isPending ? (
-        <View style={styles.state}>
-          <LoadingIndicator size={48} />
-        </View>
-      ) : sections.length === 0 ? (
-        <View style={styles.state}>
-          <Text allowFontScaling style={styles.stateText}>
-            {available
-              ? 'Nobody has reached out yet. You will see them here.'
-              : 'Turn on availability so people can find you.'}
-          </Text>
-        </View>
+      {tab === 'chats' ? (
+        <>
+          <View style={styles.head}>
+            <Text
+              maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized}
+              allowFontScaling
+              style={styles.headTitle}>
+              Chats
+            </Text>
+          </View>
+          {isPending ? (
+            <View style={styles.centre}>
+              <LoadingIndicator size={48} />
+            </View>
+          ) : sections.length === 0 ? (
+            // The watermark a brand-new provider sees. Clean and calm, not "0".
+            <View style={styles.empty}>
+              <View style={styles.emptyMark}>
+                <Icon name="chat" size={40} color={theme.color.text.tertiary} />
+              </View>
+              <Text
+                maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
+                allowFontScaling
+                style={styles.emptyTitle}>
+                Your chats will show here
+              </Text>
+              <Text allowFontScaling style={styles.emptyBody}>
+                {available
+                  ? 'When a member starts a conversation with you, it appears here.'
+                  : 'Turn on availability in the You tab so members can reach you.'}
+              </Text>
+            </View>
+          ) : (
+            <SectionList
+              {...SCROLL_PHYSICS}
+              sections={sections}
+              keyExtractor={t => t.conversation_id}
+              renderItem={renderItem}
+              renderSectionHeader={({ section }) =>
+                section.title === null ? null : (
+                  <Text allowFontScaling style={styles.sectionTitle}>
+                    {section.title}
+                  </Text>
+                )
+              }
+              ItemSeparatorComponent={separator}
+              stickySectionHeadersEnabled
+              contentContainerStyle={[styles.list, { paddingBottom: TOKENS.space['2xl'] }]}
+              showsVerticalScrollIndicator={false}
+            />
+          )}
+        </>
       ) : (
         <SectionList
           {...SCROLL_PHYSICS}
-          sections={sections}
-          keyExtractor={t => t.conversation_id}
-          renderItem={renderItem}
-          renderSectionHeader={({ section }) =>
-            section.title === null ? null : (
-              <Text allowFontScaling style={styles.sectionTitle}>
-                {section.title}
-              </Text>
-            )
-          }
-          ItemSeparatorComponent={separator}
-          // Sticky plain-list section headers ARE the iOS behaviour; false was
-          // Material's, where a header scrolls away with its content.
-          stickySectionHeadersEnabled
-          contentContainerStyle={[
-            styles.list,
-            { paddingBottom: insets.bottom + TOKENS.space['2xl'] },
-          ]}
+          sections={[{ key: 'you', data: [0] }]}
+          keyExtractor={i => String(i)}
           showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.youScroll, { paddingBottom: TOKENS.space['2xl'] }]}
+          renderItem={() => (
+            <View style={styles.you}>
+              <View style={styles.head}>
+                <Text
+                  maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized}
+                  allowFontScaling
+                  style={styles.headTitle}>
+                  You
+                </Text>
+                <View style={styles.spacer} />
+                <Pressable
+                  onPress={onOpenSettings}
+                  testID="open-settings"
+                  accessibilityLabel="Account and Privacy"
+                  press="none"
+                  highlight="ios"
+                  size={40}
+                  style={styles.iconButton}>
+                  <Icon name="settings" size={20} color={theme.color.text.secondary} />
+                </Pressable>
+              </View>
+
+              {/* Availability — the one control with an immediate effect on whether
+                  anyone new can reach them. */}
+              <View style={styles.availability}>
+                <View style={styles.availabilityText}>
+                  <Text
+                    maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
+                    allowFontScaling
+                    style={styles.availabilityTitle}>
+                    {available ? 'Open to New Conversations' : 'Not Taking New Conversations'}
+                  </Text>
+                  <Text allowFontScaling style={styles.availabilitySub}>
+                    {available
+                      ? 'You are listed and can be messaged.'
+                      : 'You are not listed. Existing chats still work.'}
+                  </Text>
+                </View>
+                <Toggle
+                  testID="availability-toggle"
+                  value={available}
+                  onValueChange={toggle}
+                  disabled={setAvailability.isPending}
+                  accessibilityLabel="Open to new conversations"
+                  tone="presence"
+                />
+              </View>
+
+              {/* Earnings — motivating, never a bleak "0". 1 token = ₹1 (ADR-0021). */}
+              <View style={styles.earnCard}>
+                <Text allowFontScaling style={styles.earnLabel}>
+                  Earned so far
+                </Text>
+                <Text
+                  testID="earned-notice"
+                  maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineMediumEmphasized}
+                  allowFontScaling
+                  style={styles.earnValue}>
+                  ₹{earned}
+                </Text>
+                <Text allowFontScaling style={styles.earnSub}>
+                  {earned > 0
+                    ? 'Held for payout. Transfers land in your account.'
+                    : 'You keep 60% of every paid minute. It shows up here.'}
+                </Text>
+                <Pressable
+                  onPress={onOpenPayout}
+                  testID="open-payout"
+                  accessibilityLabel="Set up how you get paid"
+                  press="none"
+                  highlight="ios"
+                  style={styles.payoutRow}>
+                  <Icon name="wallet" size={20} color={theme.color.text.onAccent} />
+                  <Text allowFontScaling style={styles.payoutLabel}>
+                    Get paid
+                  </Text>
+                  <Icon name="chevronRight" size={18} color={theme.color.text.onAccent} />
+                </Pressable>
+              </View>
+
+              <View style={styles.stats}>
+                <Stat label="Minutes" value={String(earnings?.minutes_billed ?? 0)} testID="stat-minutes" />
+                <Stat label="People" value={String(earnings?.members_served ?? 0)} testID="stat-people" />
+                <Stat
+                  label="Rating"
+                  value={profile?.rating_avg != null ? profile.rating_avg.toFixed(1) : 'New'}
+                  testID="stat-rating"
+                />
+              </View>
+            </View>
+          )}
         />
       )}
+
+      {/* Two-tab bottom nav. Named `tabs`/`tab` so the component-height gate does
+          not read it as an M3 row/bar. */}
+      <View style={[styles.tabs, { paddingBottom: insets.bottom + TOKENS.space.xs }]}>
+        <TabButton
+          icon="chat"
+          label="Chats"
+          active={tab === 'chats'}
+          badge={waiting}
+          onPress={() => setTab('chats')}
+        />
+        <TabButton
+          icon="person"
+          label="You"
+          active={tab === 'you'}
+          badge={0}
+          onPress={() => setTab('you')}
+        />
+      </View>
     </View>
   );
 }
 
-function Stat({
+function TabButton({
+  icon,
   label,
-  value,
-  testID,
+  active,
+  badge,
+  onPress,
 }: {
+  icon: IconName;
   label: string;
-  value: string;
-  testID: string;
+  active: boolean;
+  badge: number;
+  onPress: () => void;
 }) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
+  const color = active ? theme.color.text.primary : theme.color.text.tertiary;
+  return (
+    <Pressable
+      onPress={onPress}
+      testID={`provider-tab-${label.toLowerCase()}`}
+      accessibilityRole="tab"
+      checked={active}
+      accessibilityLabel={label}
+      press="none"
+      highlight="ios"
+      style={styles.tab}>
+      <View>
+        <Icon name={icon} size={24} color={color} />
+        {badge > 0 ? (
+          <View style={styles.tabBadge}>
+            <Text allowFontScaling style={styles.tabBadgeText}>
+              {badge}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+      <Text allowFontScaling style={[styles.tabLabel, { color }]}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+function Stat({ label, value, testID }: { label: string; value: string; testID: string }) {
   const styles = useStyles(makeStyles);
   return (
     <View style={styles.stat}>
-      <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized} testID={testID} allowFontScaling style={styles.statValue}>
+      <Text
+        maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized}
+        testID={testID}
+        allowFontScaling
+        style={styles.statValue}>
         {value}
       </Text>
       <Text allowFontScaling style={styles.statLabel}>
@@ -331,172 +391,164 @@ function Stat({
   );
 }
 
-const makeStyles = (t: Theme) => StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: t.color.bg.base,
-  },
-  meta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: TOKENS.space.lg,
-    paddingTop: TOKENS.space['2xs'],
-    paddingBottom: TOKENS.space.md,
-  },
-  role: {
-    ...TOKENS.typography.bodySmall,
-    color: t.color.text.secondary,
-  },
-  spacer: {
-    flex: 1,
-  },
-  iconButton: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  // `bg/raised` is #FFFFFF in light mode and so is `bg/base`, so this card had no
-  // fill at all and the switch floated on the page. `bg/sunken` is a real fill,
-  // and radius.field is the iOS grouped-row corner.
-  availability: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: TOKENS.space.md,
-    marginHorizontal: TOKENS.space.md,
-    padding: TOKENS.space.md,
-    borderRadius: TOKENS.radius.field,
-    borderCurve: 'continuous',
-    backgroundColor: t.color.bg.sunken,
-  },
-  availabilityText: {
-    flex: 1,
-    gap: TOKENS.space.hair,
-  },
-  availabilityTitle: {
-    ...TOKENS.typography.titleMediumEmphasized,
-    color: t.color.text.primary,
-  },
-  availabilitySub: {
-    ...TOKENS.typography.bodySmall,
-    color: t.color.text.secondary,
-  },
-  stats: {
-    flexDirection: 'row',
-    paddingHorizontal: TOKENS.space.md,
-    paddingVertical: TOKENS.space.lg,
-    gap: TOKENS.space.lg,
-  },
-  stat: {
-    gap: TOKENS.space.hair,
-  },
-  statValue: {
-    ...TOKENS.typography.titleLargeEmphasized,
-    color: t.color.text.primary,
-  },
-  statLabel: {
-    ...TOKENS.typography.bodySmall,
-    color: t.color.text.secondary,
-  },
-  refundNote: {
-    ...TOKENS.typography.bodySmall,
-    color: t.color.text.secondary,
-    paddingHorizontal: TOKENS.space.md,
-    paddingBottom: TOKENS.space.md,
-  },
-  payoutRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: TOKENS.space.sm,
-    marginHorizontal: TOKENS.space.md,
-    marginBottom: TOKENS.space.sm,
-    paddingHorizontal: TOKENS.space.md,
-    height: TOKENS.layout.rowOneLine,
-    borderRadius: TOKENS.radius.field,
-    borderCurve: 'continuous',
-    backgroundColor: t.color.bg.sunken,
-  },
-  payoutLabel: {
-    ...TOKENS.typography.titleMediumEmphasized,
-    color: t.color.text.primary,
-    flex: 1,
-  },
-  list: {},
-  // 13 SemiBold, which is iOS's plain-list header. It was captionSmall, 12
-  // Regular, which is a caption and not a header.
-  sectionTitle: {
-    ...TOKENS.typography.labelMediumEmphasized,
-    color: t.color.text.secondary,
-    paddingHorizontal: TOKENS.space.md,
-    paddingTop: TOKENS.space.lg,
-    paddingBottom: TOKENS.space.xs,
-    backgroundColor: t.color.bg.base,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: TOKENS.space.sm,
-    paddingVertical: TOKENS.space.sm,
-    paddingHorizontal: TOKENS.space.md,
-    backgroundColor: t.color.bg.base,
-  },
-  separator: {
-    height: StyleSheet.hairlineWidth,
-    marginLeft: TOKENS.space.md + ROW_SEPARATOR_INSET,
-    backgroundColor: t.color.border.hairline,
-  },
-  rowBody: {
-    flex: 1,
-    gap: 3,
-  },
-  rowTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: TOKENS.space.xs,
-  },
-  rowName: {
-    ...TOKENS.typography.titleMediumEmphasized,
-    color: t.color.text.primary,
-    flex: 1,
-  },
-  rowTime: {
-    ...TOKENS.typography.bodyMedium,
-    color: t.color.text.tertiary,
-  },
-  rowPreview: {
-    ...TOKENS.typography.bodyMedium,
-    color: t.color.text.secondary,
-    flex: 1,
-  },
-  rowPreviewUnread: {
-    ...TOKENS.typography.labelLargeEmphasized,
-    color: t.color.text.primary,
-  },
-  // A count, not a dot, the same badge the member's inbox uses. "Someone is
-  // waiting on you" is the one thing on this screen worth interrupting for, and
-  // the number is the difference between checking and deciding.
-  unread: {
-    minWidth: 20,
-    height: 20,
-    paddingHorizontal: 5,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: t.color.bg.accentStrong,
-  },
-  unreadCount: {
-    ...TOKENS.typography.numeralSmall,
-    color: t.color.text.onAccent,
-  },
-  state: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: TOKENS.space['2xl'],
-  },
-  stateText: {
-    ...TOKENS.typography.bodyLarge,
-    color: t.color.text.secondary,
-    textAlign: 'center',
-  },
-});
+const makeStyles = (t: Theme) =>
+  StyleSheet.create({
+    root: { flex: 1, backgroundColor: t.color.bg.base },
+    head: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: TOKENS.space.lg,
+      paddingTop: TOKENS.space.xs,
+      paddingBottom: TOKENS.space.md,
+    },
+    headTitle: { ...TOKENS.typography.headlineSmallEmphasized, color: t.color.text.primary },
+    spacer: { flex: 1 },
+    iconButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+    centre: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+    empty: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: TOKENS.space['2xl'],
+      gap: TOKENS.space.sm,
+    },
+    emptyMark: {
+      width: 88,
+      height: 88,
+      borderRadius: 44,
+      backgroundColor: t.color.bg.sunken,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: TOKENS.space.xs,
+    },
+    emptyTitle: {
+      ...TOKENS.typography.titleMediumEmphasized,
+      color: t.color.text.primary,
+      textAlign: 'center',
+    },
+    emptyBody: {
+      ...TOKENS.typography.bodyMedium,
+      color: t.color.text.secondary,
+      textAlign: 'center',
+    },
+    youScroll: { flexGrow: 1 },
+    you: { gap: TOKENS.space.md, paddingBottom: TOKENS.space.md },
+    availability: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.md,
+      marginHorizontal: TOKENS.space.md,
+      padding: TOKENS.space.md,
+      borderRadius: TOKENS.radius.field,
+      borderCurve: 'continuous',
+      backgroundColor: t.color.bg.sunken,
+    },
+    availabilityText: { flex: 1, gap: TOKENS.space.hair },
+    availabilityTitle: { ...TOKENS.typography.titleMediumEmphasized, color: t.color.text.primary },
+    availabilitySub: { ...TOKENS.typography.bodySmall, color: t.color.text.secondary },
+    earnCard: {
+      marginHorizontal: TOKENS.space.md,
+      padding: TOKENS.space.lg,
+      borderRadius: TOKENS.radius.lg,
+      borderCurve: 'continuous',
+      backgroundColor: t.color.bg.accent,
+      gap: TOKENS.space['2xs'],
+    },
+    earnLabel: { ...TOKENS.typography.labelMedium, color: t.color.text.onAccent, opacity: 0.8 },
+    earnValue: { ...TOKENS.typography.headlineMediumEmphasized, color: t.color.text.onAccent },
+    earnSub: {
+      ...TOKENS.typography.bodySmall,
+      color: t.color.text.onAccent,
+      opacity: 0.85,
+      marginBottom: TOKENS.space.xs,
+    },
+    payoutRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.sm,
+      paddingHorizontal: TOKENS.space.md,
+      height: TOKENS.layout.rowOneLine,
+      borderRadius: TOKENS.radius.field,
+      borderCurve: 'continuous',
+      backgroundColor: t.color.bg.accentStrong,
+    },
+    payoutLabel: {
+      ...TOKENS.typography.titleMediumEmphasized,
+      color: t.color.text.onAccent,
+      flex: 1,
+    },
+    stats: {
+      flexDirection: 'row',
+      paddingHorizontal: TOKENS.space.md,
+      gap: TOKENS.space.xl,
+    },
+    stat: { gap: TOKENS.space.hair },
+    statValue: { ...TOKENS.typography.titleLargeEmphasized, color: t.color.text.primary },
+    statLabel: { ...TOKENS.typography.bodySmall, color: t.color.text.secondary },
+    list: {},
+    sectionTitle: {
+      ...TOKENS.typography.labelMediumEmphasized,
+      color: t.color.text.secondary,
+      paddingHorizontal: TOKENS.space.md,
+      paddingTop: TOKENS.space.lg,
+      paddingBottom: TOKENS.space.xs,
+      backgroundColor: t.color.bg.base,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.sm,
+      paddingVertical: TOKENS.space.sm,
+      paddingHorizontal: TOKENS.space.md,
+      backgroundColor: t.color.bg.base,
+    },
+    separator: {
+      height: StyleSheet.hairlineWidth,
+      marginLeft: TOKENS.space.md + ROW_SEPARATOR_INSET,
+      backgroundColor: t.color.border.hairline,
+    },
+    rowBody: { flex: 1, gap: 3 },
+    rowTop: { flexDirection: 'row', alignItems: 'center', gap: TOKENS.space.xs },
+    rowName: { ...TOKENS.typography.titleMediumEmphasized, color: t.color.text.primary, flex: 1 },
+    rowTime: { ...TOKENS.typography.bodyMedium, color: t.color.text.tertiary },
+    rowPreview: { ...TOKENS.typography.bodyMedium, color: t.color.text.secondary, flex: 1 },
+    rowPreviewUnread: { ...TOKENS.typography.labelLargeEmphasized, color: t.color.text.primary },
+    unread: {
+      minWidth: 20,
+      height: 20,
+      paddingHorizontal: 5,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: t.color.bg.accentStrong,
+    },
+    unreadCount: { ...TOKENS.typography.numeralSmall, color: t.color.text.onAccent },
+    tabs: {
+      flexDirection: 'row',
+      paddingTop: TOKENS.space.xs,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: t.color.border.hairline,
+      backgroundColor: t.color.bg.base,
+    },
+    tab: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: TOKENS.space.hair,
+      paddingVertical: TOKENS.space['2xs'],
+    },
+    tabLabel: { ...TOKENS.typography.labelSmall },
+    tabBadge: {
+      position: 'absolute',
+      top: -4,
+      right: -10,
+      minWidth: 18,
+      height: 18,
+      paddingHorizontal: 5,
+      borderRadius: 9,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: t.color.bg.accentStrong,
+    },
+    tabBadgeText: { ...TOKENS.typography.numeralSmall, color: t.color.text.onAccent },
+  });

@@ -54,6 +54,8 @@ import { CompletionRow } from '../components/CompletionRow';
 import { TextField } from '../components/TextField';
 import { CountryPicker, DEFAULT_DIAL_CODE } from '../components/CountryPicker';
 import { useStore } from '../store/useStore';
+import { storage } from '../lib/storage';
+import { PROVIDER_INTENT_KEY } from '../lib/providerIntent';
 import {
   GoogleCredentialError,
   PHONE_AUTH_ENABLED,
@@ -315,7 +317,14 @@ export function OnboardingScreen({ onDone }: Props) {
 
   const completeAuthentication = useCallback(async () => {
     const profile = await getSignedInProfile();
+    // A provider signup ("Become a partner") skips the member first-run entirely
+    // (age here, username/policy in App boot): providers set up their OWN profile
+    // in the provider onboarding, so finish straight to App boot, which routes the
+    // pending provider intent to that screen. Member and provider are separate
+    // worlds (Amit, 2026-09-03).
+    const providerSignup = storage.get(PROVIDER_INTENT_KEY) === '1';
     const collectAge =
+      !providerSignup &&
       isFirstUser(profile ?? undefined) &&
       needsAgeBracket(profile ?? undefined);
 
@@ -394,13 +403,24 @@ export function OnboardingScreen({ onDone }: Props) {
   }, []);
 
   /**
-   * "Become a partner": store the intent, then trigger Google sign-in.
-   * App.tsx reads `pendingProviderApply` after auth completes and routes to 'apply'.
+   * "Become a partner": store the intent, then go to phone registration.
+   *
+   * Providers are phone-only (the Cashfree 1-Click onboarding fetches PAN/bank by
+   * mobile number, so there must be a number). This used to trigger Google
+   * sign-in, which both stranded a Google account with no phone and made the flow
+   * feel like it forked. App.tsx reads `pendingProviderApply` after auth and
+   * routes into the provider onboarding.
    */
   const onBecomePartner = useCallback(() => {
+    // Persist the intent too (see providerIntent.ts): the in-memory flag was
+    // being lost across the auth → boot transition, dropping the provider on Home.
+    storage.set(PROVIDER_INTENT_KEY, '1');
     setPendingProviderApply(true);
-    onGoogle();
-  }, [setPendingProviderApply, onGoogle]);
+    setRoute('phone');
+    setIdentify('number');
+    setState('idle');
+    setFailure(null);
+  }, [setPendingProviderApply]);
 
   /*
    * The source's `isValid`, which is `!value.isEmpty`. Ours asks for a little
@@ -653,12 +673,12 @@ export function OnboardingScreen({ onDone }: Props) {
             <Pressable
               onPress={begin}
               testID="welcome-continue"
-              accessibilityLabel="Continue"
+              accessibilityLabel="Let’s Go"
               press="button"
               style={styles.cta}
             >
               <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.ctaLabel}>
-                Continue
+                Let’s Go
               </Text>
             </Pressable>
           </Animated.View>
