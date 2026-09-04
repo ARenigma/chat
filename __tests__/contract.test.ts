@@ -143,6 +143,15 @@ describe('the AI path is gone, not dormant', () => {
     ];
     const present = readdirSync(dir, { withFileTypes: true })
       .filter(entry => entry.isDirectory())
+      /*
+       * `_shared` is Supabase's own convention for code imported BY functions
+       * rather than deployed as one — the CLI does not treat a leading
+       * underscore as a function. Excluded here rather than added to the
+       * allow-list, so the list stays a list of deployable surfaces and a second
+       * shared module does not need a second entry.
+       * https://supabase.com/docs/guides/functions/quickstart#organizing-your-edge-functions
+       */
+      .filter(entry => !entry.name.startsWith('_'))
       .map(entry => entry.name);
     // An allow-list rather than a pattern: a new Edge Function is a decision
     // worth making explicitly, because this is the one place in the stack that

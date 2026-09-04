@@ -92,6 +92,9 @@ const MIGRATIONS = [
   'supabase/migrations/049_pan_mandatory_for_payout.sql',
   'supabase/migrations/050_provider_payout_disbursement.sql',
   'supabase/migrations/051_provider_auto_onboarding.sql',
+  'supabase/migrations/054_identity_state.sql',
+  'supabase/migrations/055_mirror_phone_to_profile.sql',
+  'supabase/migrations/056_identity_dob_before_promotion.sql',
 ];
 
 const docker = (args, options = {}) =>

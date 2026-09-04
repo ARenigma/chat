@@ -63,6 +63,21 @@ function toTenDigits(phoneE164: string): string | null {
   return /^\d{10}$/.test(local) ? local : null;
 }
 
+/**
+ * Cashfree's published 1-Click sandbox number, and the ONLY one it answers.
+ *
+ * "Validations using any data other than what is listed in this topic will
+ * fail" — https://www.cashfree.com/docs/api-reference/vrs/data-to-test-integration
+ * The 1-Click row is mobile 9999991234 with OTP 1234. Sandbox does not verify
+ * real numbers at all: it is a simulator, not a soft-launch environment.
+ *
+ * This was the reason the sandbox flow could never complete. The session was
+ * being minted for whatever real number the account had, which sandbox has no
+ * data for, so the consent sheet had nothing to consent to. Found 2026-09-04
+ * after re-reading the test-data page.
+ */
+const SANDBOX_MOBILE = '9999991234';
+
 Deno.serve(async (request: Request) => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
@@ -102,9 +117,42 @@ Deno.serve(async (request: Request) => {
       (profileRow as { phone_e164?: string } | null)?.phone_e164 ||
       userData.user.phone ||
       '';
-    const mobile = toTenDigits(phone);
-    if (!mobile) {
+    const realMobile = toTenDigits(phone);
+    /*
+     * In sandbox the user's own number is deliberately NOT used — see
+     * SANDBOX_MOBILE. The real number is still REQUIRED first, so the sandbox
+     * path exercises the same preconditions as production and a missing phone
+     * still fails here rather than passing in test and failing on launch day.
+     *
+     * Guarded on the environment, so production can never send the test number:
+     * `clientEnvironment()` is the same value handed to the SDK, so the two
+     * cannot disagree about which world this session belongs to.
+     */
+    const sandbox = clientEnvironment() !== 'production';
+
+    /*
+     * PRODUCTION requires a real number; sandbox does not.
+     *
+     * The first version of this required one in both, on the argument that
+     * sandbox should exercise production's preconditions. That was wrong in a
+     * way that only showed up on device: sandbox never uses the real number
+     * anyway (see SANDBOX_MOBILE), so the check could not protect anything
+     * there — it could only make the flow untestable with the email fixtures
+     * every test account uses. Which is exactly what it did: `no verified phone
+     * on file`, on a path where the number is discarded two lines later.
+     *
+     * Production keeps the check, because there the number IS the input and a
+     * missing one means Cashfree has nothing to look up.
+     */
+    if (!sandbox && !realMobile) {
       return Response.json({ error: 'no verified phone on file' }, { status: 400 });
+    }
+    const mobile = sandbox ? SANDBOX_MOBILE : (realMobile as string);
+    if (sandbox) {
+      console.warn(
+        'sandbox: using the Cashfree test mobile',
+        realMobile ? '(account has a real number, ignored here)' : '(account has no number)',
+      );
     }
 
     // A merchant-generated id that ties this attempt together across the two
@@ -161,6 +209,26 @@ Deno.serve(async (request: Request) => {
         { error: session.message ?? 'could not start verification' },
         { status: 400 },
       );
+    }
+
+    /*
+     * A session exists and the sheet is about to open, so the identity step is
+     * in flight. `pending` is what lets the app tell "never started" from
+     * "started and not finished" — the difference between offering the step and
+     * offering to resume it. It is deliberately NOT a claim that anything was
+     * verified; only `cashfree-onboarding-complete` may write 'verified', and
+     * migration 054's CHECK stops it doing so without a DOB.
+     *
+     * Best-effort: a failure here must not stop the sheet opening, because the
+     * user can still complete the flow and the completion write is what matters.
+     */
+    const { error: pendingErr } = await admin
+      .from('profiles')
+      .update({ identity_state: 'pending' })
+      .eq('id', providerId)
+      .neq('identity_state', 'verified');
+    if (pendingErr) {
+      console.warn('could not mark identity pending:', pendingErr.message);
     }
 
     return Response.json({

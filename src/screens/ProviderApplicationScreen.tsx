@@ -81,11 +81,22 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
   const onVerify = useCallback(() => {
     verify.mutate(undefined, {
       onSuccess: outcome => {
-        // 'cancelled' means they closed the sheet — stay put. Anything else
-        // (verified / pending / unavailable) moves on; the manual PAN/bank form
-        // is the fallback for a device without the native sheet, and pending
-        // still captured a consent worth continuing from.
-        if (outcome !== 'cancelled') {
+        /*
+         * ONLY a real verification advances the flow.
+         *
+         * This used to advance on anything except 'cancelled', which is what
+         * produced the dead end: a person whose verification came back 'pending'
+         * or 'unavailable' filled in the whole profile, pressed Go live, and was
+         * refused by `complete_provider_onboarding` with "verify your identity
+         * first" — at the end, with no way back to the step that failed. Seen in
+         * production data on 2026-09-04.
+         *
+         * 'pending' is a real state now (migration 054): a session was opened
+         * and never exchanged. It is not progress towards being listed, so it
+         * does not move the user forward; the notice from the mutation explains
+         * it and the button stays where it is, ready to retry.
+         */
+        if (outcome === 'verified') {
           setPhase('profile');
         }
       },
