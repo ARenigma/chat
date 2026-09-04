@@ -1710,8 +1710,25 @@ describe('the chat restyle is wired, not just drawn', () => {
     expect(chatCode).toContain('const imeSpace = keyboardHeight + insets.bottom');
     expect(chatCode).toContain('bodyInset');
     expect(withoutComments(read('src/components/Composer.tsx'))).toContain(
-      'height={panelHeight + insets.bottom}',
+      'panelHeight + insets.bottom',
     );
+  });
+
+  it('keeps the emoji panel open while its own search field has the keyboard', () => {
+    // Every other `keyboardDidShow` means "put the panel away". The panel's own
+    // search field raises the same IME, and closing on it made search
+    // unreachable: the panel vanished and the keystrokes landed nowhere (found
+    // on device, 2026-09-04). The guard is a REF, not state — the listener is
+    // registered once and a state read would be stale inside it.
+    const composer = withoutComments(read('src/components/Composer.tsx'));
+    expect(composer).toContain('if (!searchingRef.current)');
+    expect(composer).toContain('searchingRef.current = focused');
+    // Closing the panel must clear the flag, or the next composer focus can
+    // never put the panel away again.
+    expect(composer).toMatch(/!emojiOpen && searchingRef\.current/);
+    // And the dock is lifted above the keyboard in that state, or the expanded
+    // panel would render underneath it.
+    expect(chatCode).toContain('!emojiPanelOpen || emojiSearching');
   });
 
   it('does not stack KeyboardAvoidingView on top of adjustResize', () => {

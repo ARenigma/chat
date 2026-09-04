@@ -193,3 +193,36 @@ were copied.
   while the panel is up: the control always names what the next tap produces.
 - The panel carries its own backspace, in the corner, because it has replaced a
   keyboard that had one.
+
+## Emoji search: the one state where panel and keyboard are up together (2026-09-04)
+
+Read from `ChatActivityEnterView.java` and `EmojiView.java` for the anatomy;
+reimplemented clean-room, no source, assets or strings copied.
+
+- The panel's search field raises the ordinary IME, so for that one state the
+  panel and the keyboard are up **at the same time**. Telegram models it as a
+  distinct `searchingType` rather than as "keyboard up", which is what stops the
+  usual keyboard-appeared-so-put-the-panel-away rule from firing.
+  (`ChatActivityEnterView.java:12358` `onSearchOpenClose` → `setSearchingTypeInternal`.)
+- Opening search **expands** the panel: `setStickersExpanded(true, …)` on the
+  same callback. The expanded height is the container minus the status bar, the
+  navigation bar, 6dp, the action bar and the composer's own height
+  (`checkStickresExpandHeight`, `:13549-13560`) — i.e. everything between the
+  header and the composer. The composer and the panel are then translated up
+  together by `expanded − keyboardHeight` (`:13588-13594`), which puts the
+  composer just under the header and the panel below it, with the keyboard
+  covering the panel's lower edge.
+- Without the expansion the results would render into a keyboard-sized window
+  sitting on top of a keyboard-sized hole, which is what our first pass did.
+
+**What we do differently, and why.** Our panel expands into the same space but
+is not translated: the dock is lifted by the IME height and the panel is given
+the remainder, which reaches the same geometry with one number instead of a
+height plus a matching translation. The composer's row height is measured rather
+than assumed, because ours grows with the draft.
+
+**Android detail neither codebase can skip.** Dismissing the IME does not blur
+the focused `TextInput` — not by system back, not by the IME's hide key, not by
+`Keyboard.dismiss()`. The field has to be blurred explicitly on
+`keyboardDidHide`, or "search is over" never fires and the panel stays at its
+expanded size.
