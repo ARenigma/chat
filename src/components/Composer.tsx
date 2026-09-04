@@ -17,7 +17,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { useCrossfade } from '../theme/motion';
+import { DOCK_DELAY_MS, dockTo, useCrossfade } from '../theme/motion';
 import { requestAndroidPermission } from '../lib/permissions';
 import {
   launchCamera,
@@ -199,6 +199,15 @@ function ComposerView({
    * opens it never pays for the mount.
    */
   const [panelMounted, setPanelMounted] = useState(false);
+  /**
+   * Whether the IME is up, as a ref.
+   *
+   * Read by the toggles to decide whether the slot's travel animates, so it has
+   * to be current at the moment of the tap rather than at the last render — a
+   * state read here is one render behind and produces exactly the double
+   * movement the guard exists to prevent.
+   */
+  const keyboardUpRef = useRef(false);
   /** The input row's measured height, so the expanded panel can subtract it. */
   const [rowHeight, setRowHeight] = useState(0);
   const { width: winW, height: winH } = useWindowDimensions();
@@ -243,15 +252,29 @@ function ComposerView({
    */
   useEffect(() => {
     const shown = Keyboard.addListener('keyboardDidShow', e => {
+      keyboardUpRef.current = true;
       const h = e.endCoordinates.height;
       writeKeyboardHeight(h, landscape);
       setPanelHeight(readKeyboardHeight(landscape));
       if (!searchingRef.current) {
+        /*
+         * The keyboard is arriving, so it is the movement — the surface must go
+         * without a travel of its own or the two cross each other. Telegram's
+         * hide path has the same `!keyboardVisible` guard as its show path
+         * (`ChatActivityEnterView.java:12730`).
+         */
+        animateNext.current = false;
         setEmojiOpen(false);
         setAttachOpen(false);
       }
     });
-    return () => shown.remove();
+    const hidden = Keyboard.addListener('keyboardDidHide', () => {
+      keyboardUpRef.current = false;
+    });
+    return () => {
+      shown.remove();
+      hidden.remove();
+    };
   }, [landscape]);
 
   // One signal for "a docked surface is up", because the dock's arithmetic is
@@ -290,6 +313,8 @@ function ComposerView({
         Keyboard.dismiss();
         return true;
       }
+      // Back with no keyboard coming: the surface's own travel is all there is.
+      animateNext.current = true;
       setEmojiOpen(false);
       setAttachOpen(false);
       return true;
@@ -308,6 +333,103 @@ function ComposerView({
       setEmojiSearching(false);
     }
   }, [emojiOpen]);
+
+  /**
+   * The docked slot's travel.
+   *
+   * `slotY` is how far the surface is pushed DOWN out of its place: its own
+   * height while closed, zero while open. Driving translation rather than
+   * height means the panel's content is laid out once and then moved, which is
+   * what Telegram does (`currentView.setTranslationY(...)` then animate to 0)
+   * and is why the swap costs no measure pass.
+   *
+   * `animateNext` is the `!keyboardVisible` guard: set false when the keyboard
+   * is on screen at the moment of the swap, because the keyboard going down is
+   * already the movement.
+   */
+  const surfaceOpen = emojiOpen || attachOpen;
+  const slotHeight = panelHeight + insets.bottom;
+  const dockY = useSharedValue(0);
+  const animateNext = useRef(true);
+  const dockStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: dockY.value }],
+  }));
+  /**
+   * Which surface is DRAWN, as opposed to which one is open.
+   *
+   * They differ for exactly one interval: the close. A surface hidden the
+   * instant its state flips has nothing left on screen to travel, so the slide
+   * out would never be seen. Telegram sets `GONE` in the animator's
+   * `onAnimationEnd` for the same reason (`ChatActivityEnterView.java:12736`);
+   * this is that callback, as a timer over the same total the travel takes.
+   */
+  const [shown, setShown] = useState<'emoji' | 'attach' | null>(null);
+  useEffect(() => {
+    if (emojiOpen) {
+      setShown('emoji');
+      return;
+    }
+    if (attachOpen) {
+      setShown('attach');
+      return;
+    }
+    const settle = setTimeout(
+      () => setShown(null),
+      DOCK_DELAY_MS + TOKENS.motion.m3.duration.medium1,
+    );
+    return () => clearTimeout(settle);
+  }, [emojiOpen, attachOpen]);
+
+  /**
+   * The travel, keyed on WHETHER a surface is drawn — not on which one.
+   *
+   * `shown` flipping 'emoji' to 'attach' must not animate: the dock's height
+   * does not change, so there is nothing to travel. Telegram has the same guard
+   * from the other direction — `currentHeight - previousHeight` is zero when a
+   * panel was already visible, so its animator moves nothing
+   * (`ChatActivityEnterView.java:12700`).
+   *
+   * The offset is PRIMED in the toggle, not here. Setting it in an effect put it
+   * one commit behind the layout, and the panel rendered at full height with no
+   * offset for a single frame before the travel began — visible as a flash when
+   * stepped frame by frame at 60fps.
+   */
+  const drawn = shown !== null;
+  useEffect(() => {
+    if (drawn) {
+      dockY.value = dockTo(0, animateNext.current);
+      return;
+    }
+    // The dock has just lost the panel's height, so it is already where the
+    // travel was heading. Release the offset in the same commit.
+    dockY.value = 0;
+  }, [drawn, dockY]);
+
+  /** Push the pair down as the surface leaves, while it is still drawn. */
+  useEffect(() => {
+    if (!surfaceOpen && drawn) {
+      dockY.value = dockTo(slotHeight, animateNext.current);
+    }
+  }, [surfaceOpen, drawn, slotHeight, dockY]);
+
+  /**
+   * Offset the dock by a panel's height BEFORE the panel is laid out.
+   *
+   * The dock is bottom-anchored, so showing the panel makes it taller and the
+   * row jumps up by that much in the same commit. Pre-offsetting cancels the
+   * jump, and the effect above then animates the offset away — so what is seen
+   * is the pair rising smoothly out of the bottom edge. This has to happen on
+   * the tap, synchronously with the state change; from an effect it lands a
+   * commit late and the un-offset frame shows.
+   *
+   * No-op when a surface is already drawn: swapping emoji for attach changes no
+   * height and must not move anything.
+   */
+  const primeDock = useCallback(() => {
+    if (shown === null) {
+      dockY.value = slotHeight;
+    }
+  }, [shown, slotHeight, dockY]);
 
   const ready = value.trim().length > 0 && !disabled;
   // Cross-fades the trailing slot between mic (empty) and send (has text).
@@ -431,6 +553,9 @@ function ComposerView({
       return;
     }
     leaveSearch();
+    // Opened from the keyboard: no travel, the keyboard's own exit is it.
+    animateNext.current = !keyboardUpRef.current;
+    primeDock();
     setEmojiOpen(false);
     setAttachMounted(true);
     setAttachOpen(true);
@@ -443,7 +568,7 @@ function ComposerView({
     void PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA)
       .then(setCameraGranted)
       .catch(() => setCameraGranted(false));
-  }, [attachOpen, leaveSearch]);
+  }, [attachOpen, leaveSearch, primeDock]);
 
   const toggleEmoji = useCallback(() => {
     if (emojiOpen) {
@@ -456,11 +581,13 @@ function ComposerView({
       inputRef.current?.focus();
       return;
     }
+    animateNext.current = !keyboardUpRef.current;
+    primeDock();
     setAttachOpen(false);
     setPanelMounted(true);
     setEmojiOpen(true);
     Keyboard.dismiss();
-  }, [emojiOpen, leaveSearch]);
+  }, [emojiOpen, leaveSearch, primeDock]);
 
   /** Insert at the end of the draft, the way a keyboard would. */
   const addEmoji = useCallback(
@@ -797,6 +924,28 @@ function ComposerView({
 
   return (
     <>
+    {/*
+      * The whole dock travels, not just the panel.
+      *
+      * Telegram offsets the panel by its own height and animates it back to zero
+      * (`currentView.setTranslationY(currentHeight - previousHeight)` then
+      * `ObjectAnimator ... TRANSLATION_Y ... 0`,
+      * `ChatActivityEnterView.java:12700-12706`). Applying that to the panel
+      * ALONE does not work in this layout: the dock is anchored to the bottom,
+      * so the row's position comes from the dock's height, and the height
+      * changes the moment the panel is shown or hidden. The panel would slide
+      * while the row jumped.
+      *
+      * Same trick, one level up: the row and the panel are offset together by
+      * however much of the panel is still hidden. Showing the panel makes the
+      * dock taller (the row jumps up by a panel) and the offset cancels it
+      * exactly, then animates away — so the pair rises smoothly out of the
+      * bottom edge. Hiding is the reverse, and the offset is released on the
+      * same frame the panel stops being laid out, so the two cancel and there is
+      * no snap. Zero layout work during the travel: it is one transform on one
+      * node.
+      */}
+    <Animated.View style={dockStyle}>
     {/* Measured, not assumed: the panel's expanded height while searching is
         everything the header and the keyboard leave over, minus this row, and
         the row grows with the field (up to six lines) and with font scale. */}
@@ -916,6 +1065,7 @@ function ComposerView({
         </Animated.View>
       </View>
       </View>
+    </View>
 
       {/* The panel sits IN the dock, under the input row, occupying exactly what
           the IME occupied — so the composer stays where it was and the grid takes
@@ -931,9 +1081,21 @@ function ComposerView({
           [0,1382][1080,2316] — 332dp, exactly 15dp more, which is the gesture
           nav inset. Sizing the panel from the raw number left it 15dp short, so
           the composer fell by that much on every swap. */}
+      {/*
+        * One animated slot for both docked surfaces.
+        *
+        * Telegram translates the panel by its own height and animates it to 0
+        * over `keyboardDuration` (250ms) on the keyboard's cubic, starting the
+        * animator 50ms late — and ONLY when the keyboard is not already visible
+        * (`showPopup`, `ChatActivityEnterView.java:12687,:12710`). A swap made
+        * with the keyboard up is deliberately not animated there, because the
+        * keyboard sliding away IS the animation; animating on top of it reads as
+        * a stutter. `dockTo` carries all three of those facts.
+        */}
+      <View pointerEvents={surfaceOpen ? 'auto' : 'none'}>
       {panelMounted ? (
       <EmojiPicker
-        visible={emojiOpen}
+        visible={shown === 'emoji'}
         /*
          * Two sizes, one rule: the panel occupies whatever the keyboard is not.
          *
@@ -962,7 +1124,7 @@ function ComposerView({
           open and hidden thereafter, for the same reason the emoji panel is. */}
       {attachMounted ? (
         <AttachPanel
-          visible={attachOpen}
+          visible={shown === 'attach'}
           height={panelHeight + insets.bottom}
           cameraGranted={cameraGranted}
           onCamera={() => {
@@ -973,7 +1135,8 @@ function ComposerView({
           }}
         />
       ) : null}
-    </View>
+      </View>
+    </Animated.View>
 
 
     </>

@@ -3324,3 +3324,52 @@ describe('attach panel', () => {
     expect(panel).toContain("AppState.addEventListener('change'");
   });
 });
+
+/**
+ * The docked surfaces travel on the keyboard's own curve.
+ *
+ * Everything here is a silent failure. A missing `!keyboardVisible` guard
+ * animates on top of the keyboard's own movement and reads as a stutter; a
+ * missing prime shows one un-offset frame; and a duration or curve typed as a
+ * literal drifts from the token the next time either is touched.
+ */
+describe('docked panel travel', () => {
+  const composer = withoutComments(read('src/components/Composer.tsx'));
+  const motion = withoutComments(read('src/theme/motion.ts'));
+
+  it('runs on the reference curve and duration, from tokens', () => {
+    // `AdjustPanLayoutHelper.keyboardDuration` = 250ms on
+    // `ChatListItemAnimator.DEFAULT_INTERPOLATOR`. See telegram.md.
+    expect(motion).toContain('M3.easing.keyboard[0]');
+    expect(motion).toContain('duration: M3.duration.medium1');
+    expect(TOKENS.motion.m3.duration.medium1).toBe(250);
+    expect(TOKENS.motion.m3.easing.keyboard).toEqual([
+      0.19919472913616398, 0.010644531250000006, 0.27920937042459737,
+      0.91025390625,
+    ]);
+  });
+
+  it('defers the animator start by 50ms, as the reference does', () => {
+    expect(motion).toContain('export const DOCK_DELAY_MS = 50');
+    expect(motion).toContain('withDelay(\n    DOCK_DELAY_MS');
+  });
+
+  it('does not animate when the keyboard is already moving', () => {
+    // The keyboard's own exit is the movement. Both toggles read the IME state
+    // from a REF, because a state read is one render stale at tap time.
+    expect(composer).toContain('animateNext.current = !keyboardUpRef.current');
+    expect(composer).toContain('animateNext.current = false');
+  });
+
+  it('primes the offset on the tap, not in an effect', () => {
+    // From an effect the offset lands a commit after the layout and one
+    // un-offset frame shows. `primeDock` is called from the toggles.
+    expect(composer).toMatch(/primeDock\(\);[\s\S]{0,60}set(Emoji|Attach)Open/);
+    expect(composer).toContain('dockY.value = slotHeight');
+  });
+
+  it('never animates a panel-to-panel swap', () => {
+    // Swapping emoji for attach changes no height, so there is nothing to move.
+    expect(composer).toMatch(/if \(shown === null\) \{\s*dockY\.value = slotHeight/);
+  });
+});

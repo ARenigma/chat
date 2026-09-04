@@ -284,6 +284,7 @@ export const LIGHT = {
         standard: [0.2, 0, 0, 1],
         decelerate: [0.33, 1, 0.68, 1],
         easeOutQuint: [0.23, 1, 0.32, 1],
+        keyboard: [0.19919472913616398, 0.010644531250000006, 0.27920937042459737, 0.91025390625],
       },
       duration: {
         short2: 100,
@@ -292,6 +293,7 @@ export const LIGHT = {
         medium2: 300,
         medium4: 400,
         long2: 500,
+        medium1: 250,
       },
       distance: {
         push: 48,
@@ -842,6 +844,7 @@ export const DARK = {
         standard: [0.2, 0, 0, 1],
         decelerate: [0.33, 1, 0.68, 1],
         easeOutQuint: [0.23, 1, 0.32, 1],
+        keyboard: [0.19919472913616398, 0.010644531250000006, 0.27920937042459737, 0.91025390625],
       },
       duration: {
         short2: 100,
@@ -850,6 +853,7 @@ export const DARK = {
         medium2: 300,
         medium4: 400,
         long2: 500,
+        medium1: 250,
       },
       distance: {
         push: 48,
