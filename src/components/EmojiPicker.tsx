@@ -1,5 +1,12 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { FlatList, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import {
+  FlatList,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { tick } from '../lib/haptics';
@@ -208,7 +215,7 @@ function EmojiPickerView({ visible, height, onBackspace, onPick }: Props) {
           chosen: the two are the same row of small glyph targets, and stacking
           them would push the grid down mid-interaction. */}
       {toning !== null ? (
-        <View style={styles.tabs} accessibilityRole="tablist">
+        <View style={styles.toneStrip} accessibilityRole="tablist">
           {TONES.map((t, i) => (
             <Pressable
               key={t === '' ? 'default' : t}
@@ -225,7 +232,20 @@ function EmojiPickerView({ visible, height, onBackspace, onPick }: Props) {
           ))}
         </View>
       ) : searching ? null : (
-        <View style={styles.tabs} accessibilityRole="tablist">
+        /*
+         * Scrollable, because ten 36dp targets plus their gaps are 380dp before
+         * padding and the narrowest phone this app installs on is 320dp. RN
+         * defaults `flexShrink` to 0, so an overflowing row does not compress —
+         * it clips, and the tab it clips is the last one (Flags). A keyboard's
+         * own category strip scrolls for the same reason.
+         */
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          style={styles.tabsBox}
+          contentContainerStyle={styles.tabs}
+          accessibilityRole="tablist">
           {EMOJI_CATEGORIES.map(c => (
             <Pressable
               key={c.id}
@@ -242,7 +262,7 @@ function EmojiPickerView({ visible, height, onBackspace, onPick }: Props) {
               </Text>
             </Pressable>
           ))}
-        </View>
+        </ScrollView>
       )}
 
       <FlatList
@@ -303,7 +323,23 @@ const makeStyles = (t: Theme) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
+    // The strip itself: the hairline and the height live here so they survive
+    // the swap between the scrolling tab row and the fixed tone row.
+    tabsBox: {
+      flexGrow: 0,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: t.color.border.hairline,
+    },
     tabs: {
+      flexDirection: 'row',
+      justifyContent: 'space-around',
+      alignItems: 'center',
+      paddingHorizontal: TOKENS.space.xs,
+      paddingBottom: TOKENS.space['2xs'],
+      // A row that fits has its tabs spread; one that overflows scrolls.
+      minWidth: '100%',
+    },
+    toneStrip: {
       flexDirection: 'row',
       justifyContent: 'space-around',
       alignItems: 'center',
