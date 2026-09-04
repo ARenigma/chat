@@ -91,6 +91,61 @@ const EASE_OUT_QUINT = Easing.bezier(
   M3.easing.easeOutQuint[2],
   M3.easing.easeOutQuint[3],
 );
+/**
+ * The keyboard's own curve, for a panel that stands in for the keyboard.
+ *
+ * `CubicBezierInterpolator(0.19919472913616398, 0.010644531250000006,
+ * 0.27920937042459737, 0.91025390625)` — Telegram's
+ * `ChatListItemAnimator.DEFAULT_INTERPOLATOR` (`:47`), which is what it runs
+ * every IME-adjacent translation on for `AdjustPanLayoutHelper.keyboardDuration`
+ * = 250ms (`AdjustPanLayoutHelper.java:41-42`). A docked emoji or attach panel
+ * is replacing the keyboard, so it has to travel on the same curve or the swap
+ * reads as two different mechanisms.
+ */
+export const KEYBOARD_CUBIC = Easing.bezier(
+  M3.easing.keyboard[0],
+  M3.easing.keyboard[1],
+  M3.easing.keyboard[2],
+  M3.easing.keyboard[3],
+);
+
+/** Telegram's deferred animator start, in ms (`ChatActivityEnterView.java:12710`). */
+export const DOCK_DELAY_MS = 50;
+
+/**
+ * Slide a docked surface to `to` on the keyboard's curve.
+ *
+ * Telegram animates only when the keyboard is NOT already visible
+ * (`showPopup`: `smoothKeyboard && !keyboardVisible && ...`,
+ * `ChatActivityEnterView.java:12687`) — a swap made with the keyboard up is not
+ * animated at all, because the keyboard sliding away IS the animation and a
+ * second one on top of it reads as a stutter. `animate: false` is that case.
+ *
+ * The 50ms delay is Telegram's too
+ * (`AndroidUtilities.runOnUIThread(runEmojiPanelAnimation, 50)`, `:12710`): the
+ * panel's first layout and its first animated frame in the same frame is what
+ * produces the artefact frame, so the travel starts one beat after the content
+ * exists.
+ */
+export function dockTo(to: number, animate: boolean) {
+  'worklet';
+  if (!animate) {
+    return to;
+  }
+  return withDelay(
+    DOCK_DELAY_MS,
+    withTiming(to, {
+      duration: M3.duration.medium1,
+      easing: KEYBOARD_CUBIC,
+      // The OS setting decides, not this module. `ReduceMotion.System` makes
+      // Reanimated jump straight to the target when the user has asked for less
+      // motion, which is the correct behaviour for a travel like this — the
+      // panel still appears, it just does not slide.
+      reduceMotion: ReduceMotion.System,
+    }),
+  );
+}
+
 const EMPH_ACCEL = Easing.bezier(
   M3.easing.emphasizedAccelerate[0],
   M3.easing.emphasizedAccelerate[1],

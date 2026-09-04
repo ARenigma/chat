@@ -320,3 +320,39 @@ emulator the emulated camera opens (`CameraDevice.onOpened()`) and PreviewView
 supplies a surface, but `createCaptureSession` times out at 5000ms — while the
 emulator's own camera app works. So the live tile is verified only up to session
 configuration there and needs a physical device to confirm.
+
+## Docked-panel travel (2026-09-04)
+
+| Fact            | Value                                                                                                    | Source                             |
+| --------------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| Duration        | **250ms** (`AdjustPanLayoutHelper.keyboardDuration`)                                                     | `AdjustPanLayoutHelper.java:42`    |
+| Curve           | `CubicBezierInterpolator(0.19919472913616398, 0.010644531250000006, 0.27920937042459737, 0.91025390625)` | `ChatListItemAnimator.java:47`     |
+| Animator start  | deferred **50ms**                                                                                        | `ChatActivityEnterView.java:12710` |
+| Open            | `setTranslationY(currentHeight - previousHeight)` then animate to 0                                      | `:12700-12706`                     |
+| Close           | animate `TRANSLATION_Y` to the panel's own height, then `GONE` in `onAnimationEnd`                       | `:12730-12746`                     |
+| Animate at all? | ONLY when the keyboard is not already visible, and only when the height actually changed                 | `:12687`                           |
+
+The last row is the one that is easy to miss and matters most. A swap made with
+the keyboard up is not animated: the keyboard sliding away IS the movement, and a
+second animation over it reads as a stutter. `previousHeight` also makes a
+panel-to-panel swap a no-op, because the height does not change.
+
+Both are now in `motion.ts` as `KEYBOARD_CUBIC`, `dockTo()` and `DOCK_DELAY_MS`,
+and the curve and the 250ms are tokens (`m3.easing.keyboard`,
+`m3.duration.medium1`) so they cannot drift.
+
+**Deviation: we translate the DOCK, they translate the PANEL.** Telegram's chat
+content is padded by `emojiPadding` and the padding is released in the animator's
+end callback, so translating the panel alone is enough there. Our dock is
+absolutely positioned and bottom-anchored, so the row's position comes from the
+dock's HEIGHT — which changes the moment the panel is laid out or removed.
+Translating only the panel made it slide while the row jumped. Offsetting the row
+and the panel together by however much of the panel is still hidden reproduces
+the same visual with one transform on one node and no layout work during the
+travel; the offset is released in the same commit the panel stops being laid out,
+so the two cancel and there is no snap.
+
+**Android detail.** The offset has to be primed in the tap handler, not in an
+effect. From an effect it lands one commit after the layout, and the panel
+renders at full height with no offset for a single frame — visible as a flash
+when stepped at 60fps, which is how it was found.
