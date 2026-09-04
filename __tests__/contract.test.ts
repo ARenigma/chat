@@ -1766,11 +1766,30 @@ describe('the chat restyle is wired, not just drawn', () => {
     expect(chatCode).not.toContain('showReceipt');
   });
 
-  it('carries receipt ticks into the photo overlay too', () => {
-    // A photo bubble in an outgoing turn shows its timestamp + tick in the
-    // mediaTime overlay, same semantics as a text bubble.
-    const turnSrc = read('src/components/Turn.tsx');
-    expect(turnSrc).toContain('mediaMetaRow');
+  it('renders the photo timestamp INSIDE the image, not over the bubble', () => {
+    /*
+     * A photo bubble shows its timestamp and tick with the same semantics as a
+     * text bubble — but the overlay has to belong to the IMAGE.
+     *
+     * It used to be a sibling of `MediaBubble`, absolutely positioned against
+     * the wrapper around it. `mediaBubble` is `maxWidth: '80%'`, so that wrapper
+     * is wider than the photo whenever the photo hits the cap, and the chip
+     * rendered outside the frame with the delivery tick past the coral edge
+     * (measured on device, 2026-09-04). Now `MediaBubble` owns it and draws it
+     * inside `mediaInner`, which clips.
+     */
+    const turnSrc = withoutComments(read('src/components/Turn.tsx'));
+    // Both callers hand the stamp to MediaBubble rather than drawing their own.
+    expect(turnSrc).toMatch(/<MediaBubble[^>]*timestamp=\{timestamp\}/);
+    expect(turnSrc).not.toMatch(/<\/MediaBubble>|mediaMetaRow/);
+    // And the overlay is a child of the clipped image box, so the only
+    // `styles.mediaTime` use sits after the progress bar inside MediaBubble.
+    const media = turnSrc.slice(
+      turnSrc.indexOf('function MediaBubble'),
+      turnSrc.indexOf('interface PeerProps'),
+    );
+    expect(media).toContain('styles.mediaTime');
+    expect((turnSrc.match(/styles\.mediaTime/g) ?? []).length).toBe(1);
   });
 });
 

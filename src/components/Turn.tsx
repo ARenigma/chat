@@ -318,19 +318,38 @@ function MediaBubble({
   image,
   onAccent,
   pending,
+  timestamp,
+  receipt,
 }: {
   image: ImageBody;
   onAccent: boolean;
   pending: boolean;
+  /** Rendered INSIDE the image box. See `mediaTime`. */
+  timestamp?: string;
+  receipt?: 'sent' | 'read';
 }) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const { data: signedUrl } = useAttachmentUrl(image.localUri ? null : image.path);
   const uri = image.localUri ?? signedUrl;
   const ratio = image.width / image.height;
+  /*
+   * The height comes from the box's MEASURED width, not from `MEDIA_WIDTH`.
+   *
+   * `mediaInner` used to be a hard `width: MEDIA_WIDTH` (240dp) inside a frame
+   * capped at `maxWidth: '80%'`. When the cap bit, the inner box was wider than
+   * its parent and `overflow: hidden` cut it — so the picture was silently
+   * cropped on the right, and anything right-anchored inside it (the timestamp)
+   * was anchored to an edge that was off-screen. Measured on device: the frame
+   * ended at x=1042 while the inner box ran to 1166.
+   *
+   * Now the frame carries the width and the inner box fills it, so the inner
+   * box's right edge IS the visible right edge at every screen size.
+   */
+  const [boxWidth, setBoxWidth] = useState(MEDIA_WIDTH);
   const height = Math.max(
     MEDIA_MIN_HEIGHT,
-    Math.min(MEDIA_MAX_HEIGHT, Math.round(MEDIA_WIDTH / ratio)),
+    Math.min(MEDIA_MAX_HEIGHT, Math.round(boxWidth / ratio)),
   );
 
   // Upload fraction (0–1) while bytes are in flight; undefined before the first
@@ -347,7 +366,9 @@ function MediaBubble({
       {/* The inner box carries the neutral placeholder fill so a photo still
           resolving its signed URL reads as loading grey, not as the coral frame
           showing through an empty image. The Image paints over it once ready. */}
-      <View style={[styles.mediaInner, { width: MEDIA_WIDTH, height }]}>
+      <View
+        style={[styles.mediaInner, { height }]}
+        onLayout={e => setBoxWidth(e.nativeEvent.layout.width)}>
         {uri !== undefined ? (
           <Image
             testID="bubble-image"
@@ -380,6 +401,34 @@ function MediaBubble({
                 testID="upload-progress"
               />
             </View>
+          </View>
+        ) : null}
+        {/*
+         * The timestamp belongs to the PHOTO, so it lives inside the image's own
+         * clipped box (Amit, 2026-09-04: "timestamp should be part of photo
+         * component like chat right").
+         *
+         * It used to be a sibling of this whole component, absolutely positioned
+         * at `right: 10` of the wrapper around it. `mediaBubble` is
+         * `maxWidth: '80%'`, so that wrapper is WIDER than the photo whenever the
+         * photo hits the cap — and the chip landed outside the frame with the
+         * delivery tick beyond the coral edge entirely. Measured on device:
+         * the photo ended at x=936 and the chip ran past it.
+         *
+         * Inside `mediaInner` it is positioned against the image and clipped by
+         * the same `overflow: hidden` and concentric radius, so it cannot escape
+         * the picture however the picture is sized.
+         */}
+        {timestamp !== undefined ? (
+          <View style={styles.mediaTime} pointerEvents="none">
+            <BubbleTime stamp={timestamp} onAccent />
+            {receipt !== undefined && !pending ? (
+              <Icon
+                name={receipt === 'read' ? 'checkCheck' : 'check'}
+                size={11}
+                color={receipt === 'read' ? '#85D4A0' : 'rgba(255,255,255,0.65)'}
+              />
+            ) : null}
           </View>
         ) : null}
       </View>
@@ -480,14 +529,15 @@ function PeerTurnView({
             onReportMessage={onReportMessage}
             chosenReaction={chosenReaction}>
             {image !== undefined ? (
-              <View>
-                <MediaBubble image={image} onAccent={false} pending={false} />
-                {timestamp ? (
-                  <View style={styles.mediaTime} pointerEvents="none">
-                    <BubbleTime stamp={timestamp} onAccent={false} />
-                  </View>
-                ) : null}
-              </View>
+              /* Same fix as the outgoing side: the timestamp is the photo's, so
+                 MediaBubble renders it inside the image's clipped box. A peer
+                 photo carries no delivery receipt, so none is passed. */
+              <MediaBubble
+                image={image}
+                onAccent={false}
+                pending={false}
+                timestamp={timestamp}
+              />
             ) : (
               <>
                 {quote ? <QuoteBlock quote={quote} onAccent={false} /> : null}
@@ -603,24 +653,13 @@ function MyTurnView({
           chosenReaction={chosenReaction}
           alignEnd>
           {image !== undefined ? (
-            <View>
-              <MediaBubble image={image} onAccent pending={pending === true} />
-              {timestamp ? (
-                <View style={styles.mediaTime} pointerEvents="none">
-                  {/* Timestamp + tick inside the media overlay, same semantics as text. */}
-                  <View style={styles.mediaMetaRow}>
-                    <BubbleTime stamp={timestamp} onAccent />
-                    {receipt !== undefined && !pending ? (
-                      <Icon
-                        name={receipt === 'read' ? 'checkCheck' : 'check'}
-                        size={11}
-                        color={receipt === 'read' ? '#85D4A0' : 'rgba(255,255,255,0.65)'}
-                      />
-                    ) : null}
-                  </View>
-                </View>
-              ) : null}
-            </View>
+            <MediaBubble
+              image={image}
+              onAccent
+              pending={pending === true}
+              timestamp={timestamp}
+              receipt={pending ? undefined : receipt}
+            />
           ) : (
             <>
               {quote ? <QuoteBlock quote={quote} onAccent /> : null}
@@ -1069,10 +1108,18 @@ const makeStyles = (t: Theme) =>
     fill: {
       flex: 1,
     },
+    /*
+     * Inset from the IMAGE's edges, not the bubble's. 6dp keeps the chip clear of
+     * the concentric corner radius at the size this box is clipped to; the frame
+     * inset is already accounted for because this sits inside `mediaInner`.
+     */
     mediaTime: {
       position: 'absolute',
-      right: 10,
-      bottom: 8,
+      right: 6,
+      bottom: 6,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
       backgroundColor: 'rgba(0,0,0,0.35)',
       borderRadius: TOKENS.radius.xs,
       paddingHorizontal: 5,
@@ -1100,7 +1147,13 @@ const makeStyles = (t: Theme) =>
     // The photo bubble: a MEDIA_INSET frame in the speaker's colour, corner
     // concentric with the image inside it.
     mediaBubble: {
-      maxWidth: '80%',
+      /*
+       * The frame owns the width; `mediaInner` fills it. `maxWidth: '100%'` so a
+       * narrow screen shrinks the whole thing together instead of clipping the
+       * picture out of a frame that stayed wide.
+       */
+      width: MEDIA_WIDTH + MEDIA_INSET * 2,
+      maxWidth: '100%',
       padding: MEDIA_INSET,
       borderRadius: BUBBLE_RADIUS,
       borderCurve: 'continuous',
@@ -1115,6 +1168,7 @@ const makeStyles = (t: Theme) =>
     // The image area: a neutral loading fill under a concentric-radius clip, the
     // Image fills it once its source resolves.
     mediaInner: {
+      width: '100%',
       borderRadius: mediaInnerRadius(),
       borderCurve: 'continuous',
       overflow: 'hidden',
@@ -1179,11 +1233,6 @@ const makeStyles = (t: Theme) =>
       color: t.color.text.onAccent,
     },
     // Row inside the photo overlay: timestamp + tick side by side.
-    mediaMetaRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 3,
-    },
     quote: {
       borderLeftWidth: 2,
       paddingLeft: TOKENS.space.xs,
