@@ -10,6 +10,9 @@ module.exports = {
     'admin/',
     // Generated from design/tokens.json; lint the generator, not its output.
     'src/theme/tokens.generated.ts',
+    // Generated from @emoji-mart/data by scripts/gen-emoji.mjs; 1,870 rows of
+    // data, lint the generator, not its output.
+    'src/lib/emoji.generated.ts',
   ],
   rules: {
     'no-unused-vars': 'off',

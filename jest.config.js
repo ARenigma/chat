@@ -15,7 +15,12 @@ module.exports = {
   /** Exclude generated directories from haste-map and module resolution. */
   modulePathIgnorePatterns: ['<rootDir>/admin/.next/'],
   testPathIgnorePatterns: ['<rootDir>/admin/'],
-  collectCoverageFrom: ['src/lib/**/*.ts', 'src/store/**/*.ts'],
+  collectCoverageFrom: [
+    'src/lib/**/*.ts',
+    'src/store/**/*.ts',
+    // Generated data, not logic. Its correctness is the generator's `--check`.
+    '!src/lib/emoji.generated.ts',
+  ],
   transformIgnorePatterns: [
     'node_modules/(?!(@react-native|react-native|react-native-reanimated|react-native-worklets|@sentry|react-native-safe-area-context)/)',
   ],

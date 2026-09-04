@@ -110,6 +110,7 @@ static:
   script:
     - cp .env.example .env # Placeholders; Babel needs the module to resolve.
     - npm run tokens:check # Design tokens changed in Figma without regenerating.
+    - npm run emoji:check # emoji.generated.ts hand-edited, or the source bumped.
     - npx tsc --noEmit
     - npm run lint
     - npx jest --ci --coverage --coverageReporters=text-summary --coverageReporters=cobertura
