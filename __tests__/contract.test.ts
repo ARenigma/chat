@@ -1696,17 +1696,32 @@ describe('the chat restyle is wired, not just drawn', () => {
     expect(empty).toContain('<PeerTyping');
   });
 
-  it('does not double the safe-area inset under a raised keyboard', () => {
-    // RN's iOS KeyboardAvoidingView derives its padding from the keyboard frame,
-    // which already reaches the bottom of the screen, so adding insets.bottom on
-    // top floated the composer ~34pt above the keyboard on a notched iPhone.
+  it('lifts the dock by ONE number the panel is also sized from', () => {
+    // The composer dropped exactly 34dp on every keyboard-to-panel swap (S22
+    // Ultra, measured 96px at density 2.8125). Two errors summed to it: 19dp of
+    // safe-area padding that existed in the keyboard state and was zeroed in the
+    // panel state, and 15dp because the panel was sized from RN's reported
+    // keyboard height, which under edge-to-edge omits the navigation-bar inset
+    // the IME window actually covers.
     //
-    // The docked emoji panel is the second case with the same shape: it is sized
-    // to the keyboard and stands in for it, so adding the inset under it would
-    // sit the composer an inset higher than the keyboard just had it
-    // (Amit, 2026-09-04).
-    expect(chatCode).toContain('keyboardUp) || emojiPanelOpen');
-    expect(chatCode).toContain("insets.bottom + TOKENS.space['2xs']");
+    // The fix is that both states resolve to `keyboardHeight + insets.bottom`,
+    // so they are equal by construction. These assertions are what stops the two
+    // expressions drifting apart again.
+    expect(chatCode).toContain('const imeSpace = keyboardHeight + insets.bottom');
+    expect(chatCode).toContain('bodyInset');
+    expect(withoutComments(read('src/components/Composer.tsx'))).toContain(
+      'height={panelHeight + insets.bottom}',
+    );
+  });
+
+  it('does not stack KeyboardAvoidingView on top of adjustResize', () => {
+    // `behavior="height"` shrank the body by RN's short number while the panel
+    // was sized from a different one, so the two could never agree. The manifest
+    // keeps adjustResize; the lift is ours.
+    expect(chatCode).not.toContain('KeyboardAvoidingView');
+    expect(read('android/app/src/main/AndroidManifest.xml')).toContain(
+      'android:windowSoftInputMode="adjustResize"',
+    );
   });
 
   it('holds an explicit FlashList ref and scrolls to offset 0 on new messages', () => {

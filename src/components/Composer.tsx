@@ -11,6 +11,7 @@ import {
   type TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -149,6 +150,7 @@ function ComposerView({
   const [emojiOpen, setEmojiOpen] = useState(false);
   const { width: winW, height: winH } = useWindowDimensions();
   const landscape = winW > winH;
+  const insets = useSafeAreaInsets();
   const [panelHeight, setPanelHeight] = useState(() => readKeyboardHeight(landscape));
   const [elapsed, setElapsed] = useState(0);
   const [levels, setLevels] = useState<readonly number[]>([]);
@@ -746,14 +748,23 @@ function ComposerView({
       </View>
       </View>
 
-      {/* The panel sits IN the dock, under the input row, at exactly the
-          keyboard's height — so the composer stays where it was and the grid
-          takes the space the IME just vacated. Telegram's `emojiPadding`, which
-          is the whole reason its emoji panel reads as the keyboard changing
-          rather than two surfaces trading places. */}
+      {/* The panel sits IN the dock, under the input row, occupying exactly what
+          the IME occupied — so the composer stays where it was and the grid takes
+          the space the keyboard just vacated. Telegram's `emojiPadding`, which is
+          the whole reason its emoji panel reads as the keyboard changing rather
+          than two surfaces trading places.
+
+          `+ insets.bottom` is not decoration and it is the half of the sum that
+          was missing. `keyboardDidShow.endCoordinates.height` under edge-to-edge
+          reports the IME's height WITHOUT the navigation-bar inset, while the IME
+          window itself runs to the bottom of the screen: measured on an S22
+          Ultra, RN said 317dp and `dumpsys window` put the IME frame at
+          [0,1382][1080,2316] — 332dp, exactly 15dp more, which is the gesture
+          nav inset. Sizing the panel from the raw number left it 15dp short, so
+          the composer fell by that much on every swap. */}
       <EmojiPicker
         visible={emojiOpen}
-        height={panelHeight}
+        height={panelHeight + insets.bottom}
         onBackspace={backspace}
         onPick={addEmoji}
       />
