@@ -11,7 +11,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -135,6 +135,9 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   const [emojiPanelOpen, setEmojiPanelOpen] = useState(false);
   // The panel's own search field has the keyboard: panel AND IME up together.
   const [emojiSearching, setEmojiSearching] = useState(false);
+  // The dock's measured height while collapsed, so the transcript can be padded
+  // clear of it. Not updated while searching — see `listPad`.
+  const [dockHeight, setDockHeight] = useState(0);
   const [leaveDialogVisible, setLeaveDialogVisible] = useState(false);
   // Independent live controls. CALLS_ENABLED remains the compile-time master
   // guard; the admin pair can stop one medium without taking down the other.
@@ -985,6 +988,13 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
    */
   const panelCeiling = Math.max(0, winH - barHeight - imeSpace);
   /**
+   * How far the transcript is padded clear of the dock. The COLLAPSED dock only:
+   * the search expansion overlays the chat behind a scrim rather than pushing it,
+   * so growing this with it would scroll the conversation away — the exact thing
+   * the overlay exists to prevent.
+   */
+  const listPad = TOKENS.space.md + bodyInset + dockHeight;
+  /**
    * The dock's own bottom padding. Zero whenever something is filling the space
    * below it — the IME covers the navigation bar, and so does the panel — and the
    * safe-area inset only when the screen bottom is bare.
@@ -1220,7 +1230,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
       ) : null}
       </Frost>
 
-      <View style={[styles.body, { paddingBottom: bodyInset }]}>
+      <View style={styles.body}>
         {/* The chat wallpaper deferred until after the open animation (A1):
             ~800 View+Text nodes mount after InteractionManager fires so they
             don't compete with SlideInRight for frame budget. The transcript
@@ -1257,7 +1267,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
             renderItem={renderItem}
             ListHeaderComponent={header}
             ListFooterComponent={footer}
-            contentContainerStyle={styles.list}
+            contentContainerStyle={[styles.list, { paddingTop: listPad }]}
             keyboardDismissMode="interactive"
             keyboardShouldPersistTaps="handled"
             onScroll={onTranscriptScroll}
@@ -1272,6 +1282,52 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
           />
         )}
 
+        {/* The scrim over the conversation while the emoji panel is expanded for
+            search. Telegram's `ScrimDrawable` — black, `alpha = 102` of 255, so
+            40% — ramped with the expansion and covering everything above the
+            panel (`ChatActivityEnterView.java:13891-13906`). It is what makes the
+            expansion read as a panel over the chat instead of the chat leaving.
+            `pointerEvents` none: it is a wash, not a dismiss target, and Telegram
+            does not make it one either. */}
+        {emojiSearching ? (
+          <Animated.View
+            pointerEvents="none"
+            entering={FadeIn.duration(TOKENS.motion.m3.duration.medium2)}
+            exiting={FadeOut.duration(TOKENS.motion.m3.duration.short4)}
+            style={styles.expandScrim}
+          />
+        ) : null}
+
+        {/*
+         * The bottom stack: notices, first-move pills and the composer dock,
+         * lifted OUT of the layout flow.
+         *
+         * It used to be in flow, which meant the emoji panel's height came out of
+         * the transcript's — and when search expanded the panel to fill the chat
+         * area, the transcript was squeezed to nothing and the conversation
+         * visibly disappeared (Amit, 2026-09-04: "Emoji Searching is taking whole
+         * screen space").
+         *
+         * Telegram's panel does occupy the same area, but it OVERLAYS: the
+         * composer and the panel are translated up together and a 40% scrim is
+         * drawn over the chat behind them (`ChatActivityEnterView.java:13706-13716`
+         * for the translation, `ScrimDrawable:13905` for `alpha = 102`). The chat
+         * stays where it is and stays visible through the scrim. Absolute
+         * positioning is what lets us do the same: the panel grows over the
+         * transcript instead of out of it, so the viewport is stable by
+         * construction.
+         *
+         * `listPad` keeps the newest message clear of the collapsed dock, and is
+         * deliberately NOT grown by the search expansion — that is what the scrim
+         * is for.
+         */}
+        <View
+          style={[styles.dockStack, { transform: [{ translateY: -bodyInset }] }]}
+          onLayout={e => {
+            if (!emojiSearching) {
+              setDockHeight(e.nativeEvent.layout.height);
+            }
+          }}>
         <NoticeBar />
 
         {/* Blush strip sits above the white composer dock so the pills match
@@ -1354,6 +1410,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
             panelCeiling={panelCeiling}
           />
         </Frost>
+        </View>
       </View>
 
       <SafetySheet
@@ -1495,9 +1552,29 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   body: {
     flex: 1,
   },
+  /*
+   * Anchored to the bottom of the body and drawn over the transcript. `bottom: 0`
+   * with no height, so it is exactly as tall as its content; the keyboard lift is
+   * a translation rather than a layout change, which is how Telegram moves the
+   * same stack (`setTranslationY` on the enter view and the emoji view together).
+   */
+  dockStack: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  // 40% black — Telegram's `alpha = 102` of 255, not a rounded-off "0.4-ish".
+  expandScrim: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+  },
   list: {
     paddingHorizontal: TOKENS.space.md,
-    paddingTop: TOKENS.space.md,
   },
   // paddingTop only, and the gap is the one between this row and the older one
   // above it, which is where a group boundary belongs. A symmetric

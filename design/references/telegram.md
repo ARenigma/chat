@@ -226,3 +226,49 @@ the focused `TextInput` — not by system back, not by the IME's hide key, not b
 `Keyboard.dismiss()`. The field has to be blurred explicitly on
 `keyboardDidHide`, or "search is over" never fires and the panel stays at its
 expanded size.
+
+## Composer measured ON DEVICE, not read off the source (2026-09-04)
+
+Telegram Android on the same Galaxy S22 Ultra this app is verified on
+(1080x2316, density 2.8125), read with `uiautomator dump`. Source dp and what
+the bar actually renders at have disagreed before, so these are the numbers to
+match.
+
+Keyboard up, IME frame `[0,1382][1080,2316]`:
+
+| Element      | Bounds (px)             | dp                                 |
+| ------------ | ----------------------- | ---------------------------------- |
+| Emoji button | `[29,1232][153,1356]`   | 44 x 44, 10.3 from the left edge   |
+| Text field   | `[161,1237][795,1351]`  | 40.5 tall, starts 57 from the left |
+| Attach       | `[812,2124][936,2248]`  | 44 x 44                            |
+| Mic          | `[936,2124][1060,2248]` | 44 x 44                            |
+
+**The gap that was wrong here.** The composer's controls end at 1356 and the IME
+begins at 1382: **26px, 9.2dp**. Idle, the same 26px sits between the controls
+and the top of the navigation bar. Ours was 7px — the pill was very nearly
+touching the keyboard. `row.paddingBottom` is now `xs` (8dp), which with the
+button's own optical inset measures 24px against Telegram's 26px.
+
+**Where we differ, by the owner's instruction.** Telegram's emoji button is
+OUTSIDE the field, to its left, and the field starts at 57dp. Ours is the
+capsule's first child, inside the pill on its leading edge ("EMOJI should be on
+left corner of pill"). The side, the bottom gravity and the circular press disc
+are Telegram's; the containment is not.
+
+## Panel lifecycle (2026-09-04)
+
+`createEmojiView()` builds the panel ONCE; every subsequent open is
+`setVisibility(VISIBLE)` and every close is `setVisibility(GONE)`
+(`ChatActivityEnterView.java:12622`, `:12746`). Nothing is rebuilt on a swap.
+Ours unmounted the picker on close, so every keyboard-to-emoji tap reconstructed
+a search field, ten tabs and a FlatList inside one frame — the artefact frame
+visible on each swap. It is now mounted on first open and hidden with
+`display: none` thereafter.
+
+Animation, for when it is added: the panel translates by its own height over
+`AdjustPanLayoutHelper.keyboardDuration` = **250ms** on `keyboardInterpolator`
+(= `ChatListItemAnimator.DEFAULT_INTERPOLATOR`), started after a **50ms** delay,
+and ONLY when the keyboard is not already visible — a swap with the keyboard up
+is not animated at all, because the keyboard going down is the animation.
+Search expansion is a separate **300ms** on `CubicBezierInterpolator.DEFAULT`
+(0.25, 0.1, 0.25, 1).
