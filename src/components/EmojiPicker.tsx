@@ -8,6 +8,7 @@ import {
   EMOJI_CATEGORIES,
   TONES,
   TONE_SWATCHES,
+  emojiForNative,
   searchEmoji,
   withTone,
   type Emoji,
@@ -145,20 +146,18 @@ function EmojiPickerView({ visible, height, onBackspace, onPick }: Props) {
   /**
    * Long-press opens the tone strip, but only for emoji that take one.
    *
-   * The check is on the BASE character, so a already-toned recent still matches
-   * its source entry and can be re-toned from the Recent tab.
+   * The lookup is a reverse map keyed by BOTH the base string and all five
+   * pre-composed toned strings, so an already-toned recent finds its source
+   * entry and can be re-toned from the Recent tab. The old version tried to
+   * derive the base by stripping `U+1F3FB..U+1F3FF` with a regex, which is
+   * wrong for every ZWJ sequence carrying two modifiers (🧑🏽‍🤝‍🧑🏿) and for the
+   * VS16 cases it then had to special-case again on the next line.
    */
   const hold = useCallback((char: string) => {
-    const base = char.replace(
-      /[\u{1F3FB}-\u{1F3FF}]/gu,
-      '',
-    );
-    const takesTone = Object.values(EMOJI_BY_CATEGORY)
-      .flat()
-      .some(e => e.tone === true && e.char.replace(/️$/, '') === base.replace(/️$/, ''));
-    if (takesTone) {
+    const entry = emojiForNative(char);
+    if (entry?.skins !== undefined) {
       tick();
-      setToning(base);
+      setToning(entry.char);
     }
   }, []);
 

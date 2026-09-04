@@ -146,7 +146,10 @@ thing. See `docs/adr/0016-onboarding-is-one-screen.md` for what guessing cost.
 ## RULE 4 — Never hand-edit generated files
 
 `src/theme/tokens.generated.ts` and `web/tokens.css` come from
-`design/tokens.json` via `npm run tokens`. Drift is a build gate.
+`design/tokens.json` via `npm run tokens`. `src/theme/icons.generated.ts` and
+`assets/fonts/Lucide.ttf` come from `design/icons.json` via `npm run icons`.
+`src/lib/emoji.generated.ts` comes from the `@emoji-mart/data` devDependency via
+`npm run emoji`. Drift is a build gate in every case.
 
 ## RULE 5 — No new dependency without a reason that survives a question
 

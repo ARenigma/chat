@@ -1,25 +1,32 @@
+import { Platform } from 'react-native';
+import {
+  EMOJI,
+  RANGES,
+  SOURCE,
+  type GeneratedCategoryId,
+  type GeneratedEmoji,
+} from './emoji.generated';
+
 /**
- * The emoji dataset, and the two rules that make it behave like a keyboard.
+ * The emoji dataset, and the three rules that make it behave like a keyboard:
+ * what exists, what this device can DRAW, and how a search finds it.
  *
- * Bundled rather than pulled from a package (RULE 5): emoji are unicode strings,
- * so a picker needs a list, a keyword index and a skin-tone rule — not a
- * dependency with its own render layer, its own styling and its own failure
- * modes to inherit. The whole payload is a few KB of plain data.
+ * **History, because it reversed.** This file used to carry ~300 hand-typed
+ * entries with a comment defending that choice under RULE 5. The comment was
+ * wrong twice over. It argued a dependency was not worth its failure modes —
+ * true of a picker COMPONENT, not of a dataset: `@emoji-mart/data` is a
+ * devDependency read once by `scripts/gen-emoji.mjs`, ships no runtime code, no
+ * render layer and no native code, and what lands in the bundle is a generated
+ * TypeScript file this repo owns. And a hand-typed list is how a dataset
+ * acquires typos and a search that finds nothing: 1,870 emoji with real keyword
+ * indexes is not a thing to type (Amit, 2026-09-04).
  *
- * Deliberately NOT the full Unicode set. A keyboard-sized list is a scroll nobody
- * finishes; this is the common set per category, which is what search is for.
+ * Regenerate with `npm run emoji`; `npm run emoji:check` fails the build on
+ * drift, exactly like tokens and icons (RULE 4 — `emoji.generated.ts` is never
+ * hand-edited).
  */
 
-export type EmojiCategoryId =
-  | 'recent'
-  | 'smileys'
-  | 'people'
-  | 'nature'
-  | 'food'
-  | 'activity'
-  | 'travel'
-  | 'objects'
-  | 'symbols';
+export type EmojiCategoryId = 'recent' | GeneratedCategoryId;
 
 export interface EmojiCategory {
   id: EmojiCategoryId;
@@ -29,17 +36,21 @@ export interface EmojiCategory {
 }
 
 export interface Emoji {
-  /** The base sequence, with no skin-tone modifier applied. */
+  /** The base sequence, with no skin tone applied. */
   char: string;
-  /** Lowercase words used by search. The name first, then loose synonyms. */
+  /** Lowercase words used by search: id, name, keywords, aliases, emoticons. */
   keywords: string;
   /**
-   * Whether `char` accepts a Fitzpatrick modifier. Only set on emoji that
-   * actually render one — appending a modifier to a non-human emoji produces a
-   * tofu box on Android rather than being ignored.
+   * The five pre-composed toned variants, light to dark, present only on emoji
+   * that actually take a tone. Pre-composed rather than assembled, because the
+   * modifier does NOT simply go on the end: in a ZWJ sequence it belongs inside,
+   * once per person, and after a VS16 it replaces the selector. See `withTone`.
    */
-  tone?: true;
+  skins?: readonly string[];
 }
+
+/** Where the data came from, surfaced so the picker can assert it in a test. */
+export { SOURCE };
 
 export const EMOJI_CATEGORIES: readonly EmojiCategory[] = [
   { id: 'recent', glyph: '🕘', label: 'Recently used' },
@@ -51,14 +62,17 @@ export const EMOJI_CATEGORIES: readonly EmojiCategory[] = [
   { id: 'travel', glyph: '🚗', label: 'Travel and places' },
   { id: 'objects', glyph: '💡', label: 'Objects' },
   { id: 'symbols', glyph: '❤️', label: 'Symbols' },
+  { id: 'flags', glyph: '🏳️', label: 'Flags' },
 ];
 
 /**
- * The five Fitzpatrick modifiers, in the order every keyboard shows them.
+ * The five Fitzpatrick modifiers, in the order every keyboard shows them, with
+ * index 0 the default yellow.
  *
- * Index 0 is "no modifier" — the default yellow — which is why this is not a
- * plain list of five: the absence of a modifier is itself one of the six
- * choices, and storing it as `''` keeps `char + TONES[i]` the whole rule.
+ * Kept as strings ONLY so the tone strip can render a swatch and so a stored
+ * preference is a stable value. They are never concatenated onto an emoji any
+ * more — `withTone` indexes `skins` instead. Appending was the old rule and it
+ * was wrong for every couple, family and handshake in the set.
  */
 export const TONES: readonly string[] = [
   '',
@@ -72,334 +86,127 @@ export const TONES: readonly string[] = [
 /** A swatch per tone, for the tone picker itself. */
 export const TONE_SWATCHES: readonly string[] = TONES.map(t => `\u{270B}${t}`);
 
-const SMILEYS: readonly Emoji[] = [
-  { char: '😀', keywords: 'grinning smile happy' },
-  { char: '😃', keywords: 'smiley happy joy' },
-  { char: '😄', keywords: 'smile happy laugh' },
-  { char: '😁', keywords: 'beaming grin' },
-  { char: '😅', keywords: 'sweat smile relief' },
-  { char: '😂', keywords: 'joy laugh tears lol' },
-  { char: '🤣', keywords: 'rofl rolling laughing' },
-  { char: '🙂', keywords: 'slight smile' },
-  { char: '😊', keywords: 'blush smile warm' },
-  { char: '😇', keywords: 'innocent halo angel' },
-  { char: '🥰', keywords: 'love hearts adore' },
-  { char: '😍', keywords: 'heart eyes love' },
-  { char: '😘', keywords: 'kiss blowing' },
-  { char: '😗', keywords: 'kissing' },
-  { char: '😋', keywords: 'yum tasty savouring' },
-  { char: '😜', keywords: 'wink tongue playful' },
-  { char: '🤪', keywords: 'zany goofy silly' },
-  { char: '🤗', keywords: 'hug hugging' },
-  { char: '🤔', keywords: 'thinking hmm think' },
-  { char: '🤐', keywords: 'zipper mouth quiet' },
-  { char: '😐', keywords: 'neutral blank' },
-  { char: '😑', keywords: 'expressionless' },
-  { char: '😶', keywords: 'no mouth silent' },
-  { char: '🙄', keywords: 'eye roll rolling eyes' },
-  { char: '😏', keywords: 'smirk smug' },
-  { char: '😴', keywords: 'sleeping sleep zzz' },
-  { char: '😪', keywords: 'sleepy tired' },
-  { char: '😌', keywords: 'relieved calm' },
-  { char: '🤤', keywords: 'drooling' },
-  { char: '😔', keywords: 'pensive sad down' },
-  { char: '😢', keywords: 'cry sad tear' },
-  { char: '😭', keywords: 'sob crying loudly' },
-  { char: '😤', keywords: 'triumph huff steam' },
-  { char: '😡', keywords: 'angry rage mad' },
-  { char: '🤯', keywords: 'mind blown exploding head' },
-  { char: '😳', keywords: 'flushed embarrassed' },
-  { char: '🥺', keywords: 'pleading puppy eyes' },
-  { char: '😱', keywords: 'scream fear shock' },
-  { char: '😨', keywords: 'fearful scared' },
-  { char: '😰', keywords: 'anxious sweat worried' },
-  { char: '🤒', keywords: 'sick thermometer ill' },
-  { char: '🤕', keywords: 'bandage hurt injured' },
-  { char: '🥳', keywords: 'party celebrate partying' },
-  { char: '😎', keywords: 'sunglasses cool' },
-  { char: '🤓', keywords: 'nerd geek glasses' },
-  { char: '🙃', keywords: 'upside down' },
-  { char: '😬', keywords: 'grimace awkward' },
-  { char: '🥱', keywords: 'yawn bored tired' },
-];
+/**
+ * The newest Emoji version this device's system font can draw.
+ *
+ * A glyph the font does not have renders as tofu — a box — and a keyboard full
+ * of boxes is worse than a shorter keyboard. Android ships a fixed Noto Color
+ * Emoji per platform release, so the answer is a property of the API level, and
+ * this is the published mapping (each Android release note names the Unicode /
+ * Emoji version its font was built against).
+ * https://developer.android.com/guide/topics/ui/look-and-feel/emoji-compat
+ * https://unicode.org/emoji/techindex.html
+ *
+ * **Deliberately not `androidx.emoji2`.** EmojiCompat fixes tofu by drawing
+ * emoji from a bundled or downloadable font through spans in Android TextViews.
+ * RN's `<Text>` does not run its spans, the bundled font is ~10 MB, and the
+ * downloadable path is a Play-services dependency and a network fetch to render
+ * a keyboard. Hiding what cannot be drawn costs nothing and cannot fail.
+ *
+ * Anything at or below Emoji 4.0 is treated as universal — API 24 is our
+ * `minSdkVersion` and Android 7 draws it — which is why the generator omits `v`
+ * for those entries entirely.
+ */
+export function supportedEmojiVersion(apiLevel: number): number {
+  if (apiLevel >= 35) return 15.1;
+  if (apiLevel >= 34) return 15;
+  if (apiLevel >= 33) return 14;
+  if (apiLevel >= 31) return 13.1;
+  if (apiLevel >= 30) return 13;
+  if (apiLevel >= 29) return 12.1;
+  if (apiLevel >= 28) return 11;
+  if (apiLevel >= 26) return 5;
+  return 4;
+}
 
-const PEOPLE: readonly Emoji[] = [
-  { char: '👋', keywords: 'wave hello hi bye', tone: true },
-  { char: '🤚', keywords: 'raised back hand', tone: true },
-  { char: '✋', keywords: 'raised hand stop high five', tone: true },
-  { char: '👌', keywords: 'ok perfect', tone: true },
-  { char: '🤌', keywords: 'pinched fingers', tone: true },
-  { char: '✌️', keywords: 'victory peace', tone: true },
-  { char: '🤞', keywords: 'crossed fingers luck hope', tone: true },
-  { char: '🤟', keywords: 'love you gesture', tone: true },
-  { char: '🤙', keywords: 'call me shaka', tone: true },
-  { char: '👍', keywords: 'thumbs up yes good like', tone: true },
-  { char: '👎', keywords: 'thumbs down no bad', tone: true },
-  { char: '👏', keywords: 'clap applause bravo', tone: true },
-  { char: '🙌', keywords: 'raising hands celebration praise', tone: true },
-  { char: '🤝', keywords: 'handshake deal agree' },
-  { char: '🙏', keywords: 'pray thanks please namaste', tone: true },
-  { char: '💪', keywords: 'muscle strong flex', tone: true },
-  { char: '🫶', keywords: 'heart hands love', tone: true },
-  { char: '👀', keywords: 'eyes look watching' },
-  { char: '🧠', keywords: 'brain mind' },
-  { char: '👶', keywords: 'baby infant', tone: true },
-  { char: '🧒', keywords: 'child kid', tone: true },
-  { char: '👩', keywords: 'woman', tone: true },
-  { char: '👨', keywords: 'man', tone: true },
-  { char: '🧑', keywords: 'person adult', tone: true },
-  { char: '👵', keywords: 'old woman grandmother', tone: true },
-  { char: '👴', keywords: 'old man grandfather', tone: true },
-  { char: '🤷', keywords: 'shrug dunno whatever', tone: true },
-  { char: '🤦', keywords: 'facepalm', tone: true },
-  { char: '💃', keywords: 'dancing woman dance', tone: true },
-  { char: '🕺', keywords: 'dancing man dance', tone: true },
-  { char: '🚶', keywords: 'walking person walk', tone: true },
-  { char: '🧘', keywords: 'lotus meditation yoga calm', tone: true },
-];
+const SUPPORTED =
+  Platform.OS === 'android' && typeof Platform.Version === 'number'
+    ? supportedEmojiVersion(Platform.Version)
+    : 15.1;
 
-const NATURE: readonly Emoji[] = [
-  { char: '🐶', keywords: 'dog puppy' },
-  { char: '🐱', keywords: 'cat kitten' },
-  { char: '🐭', keywords: 'mouse' },
-  { char: '🐹', keywords: 'hamster' },
-  { char: '🐰', keywords: 'rabbit bunny' },
-  { char: '🦊', keywords: 'fox' },
-  { char: '🐻', keywords: 'bear' },
-  { char: '🐼', keywords: 'panda' },
-  { char: '🐨', keywords: 'koala' },
-  { char: '🐯', keywords: 'tiger' },
-  { char: '🦁', keywords: 'lion' },
-  { char: '🐮', keywords: 'cow' },
-  { char: '🐷', keywords: 'pig' },
-  { char: '🐵', keywords: 'monkey' },
-  { char: '🙈', keywords: 'see no evil monkey' },
-  { char: '🐔', keywords: 'chicken' },
-  { char: '🐧', keywords: 'penguin' },
-  { char: '🐦', keywords: 'bird' },
-  { char: '🦋', keywords: 'butterfly' },
-  { char: '🐝', keywords: 'bee honeybee' },
-  { char: '🐢', keywords: 'turtle' },
-  { char: '🐬', keywords: 'dolphin' },
-  { char: '🐳', keywords: 'whale' },
-  { char: '🌵', keywords: 'cactus' },
-  { char: '🌲', keywords: 'evergreen tree' },
-  { char: '🌸', keywords: 'cherry blossom flower' },
-  { char: '🌺', keywords: 'hibiscus flower' },
-  { char: '🌻', keywords: 'sunflower' },
-  { char: '🌹', keywords: 'rose flower' },
-  { char: '🍀', keywords: 'four leaf clover luck' },
-  { char: '🍁', keywords: 'maple leaf autumn' },
-  { char: '🌙', keywords: 'crescent moon night' },
-  { char: '⭐', keywords: 'star' },
-  { char: '🌟', keywords: 'glowing star sparkle' },
-  { char: '☀️', keywords: 'sun sunny' },
-  { char: '🌈', keywords: 'rainbow' },
-  { char: '☁️', keywords: 'cloud' },
-  { char: '🔥', keywords: 'fire lit hot' },
-  { char: '❄️', keywords: 'snowflake cold' },
-  { char: '💧', keywords: 'droplet water' },
-];
+function toEmoji(e: GeneratedEmoji): Emoji {
+  return e.s === undefined
+    ? { char: e.n, keywords: e.k }
+    : { char: e.n, keywords: e.k, skins: e.s };
+}
 
-const FOOD: readonly Emoji[] = [
-  { char: '🍎', keywords: 'apple' },
-  { char: '🍌', keywords: 'banana' },
-  { char: '🍉', keywords: 'watermelon' },
-  { char: '🍇', keywords: 'grapes' },
-  { char: '🍓', keywords: 'strawberry' },
-  { char: '🥭', keywords: 'mango' },
-  { char: '🍍', keywords: 'pineapple' },
-  { char: '🥥', keywords: 'coconut' },
-  { char: '🍅', keywords: 'tomato' },
-  { char: '🥑', keywords: 'avocado' },
-  { char: '🌶️', keywords: 'chilli pepper spicy' },
-  { char: '🍞', keywords: 'bread' },
-  { char: '🧀', keywords: 'cheese' },
-  { char: '🍗', keywords: 'chicken leg poultry' },
-  { char: '🍔', keywords: 'burger hamburger' },
-  { char: '🍟', keywords: 'fries chips' },
-  { char: '🍕', keywords: 'pizza' },
-  { char: '🌮', keywords: 'taco' },
-  { char: '🍜', keywords: 'noodles ramen' },
-  { char: '🍚', keywords: 'rice' },
-  { char: '🍛', keywords: 'curry rice' },
-  { char: '🍣', keywords: 'sushi' },
-  { char: '🍪', keywords: 'cookie biscuit' },
-  { char: '🎂', keywords: 'birthday cake' },
-  { char: '🍰', keywords: 'cake slice' },
-  { char: '🍫', keywords: 'chocolate' },
-  { char: '🍿', keywords: 'popcorn' },
-  { char: '☕', keywords: 'coffee tea hot drink chai' },
-  { char: '🍵', keywords: 'green tea' },
-  { char: '🧃', keywords: 'juice box' },
-  { char: '🥤', keywords: 'soft drink cup' },
-  { char: '🍺', keywords: 'beer' },
-  { char: '🥂', keywords: 'cheers champagne toast' },
-];
-
-const ACTIVITY: readonly Emoji[] = [
-  { char: '⚽', keywords: 'football soccer' },
-  { char: '🏀', keywords: 'basketball' },
-  { char: '🏈', keywords: 'american football' },
-  { char: '⚾', keywords: 'baseball' },
-  { char: '🎾', keywords: 'tennis' },
-  { char: '🏐', keywords: 'volleyball' },
-  { char: '🏓', keywords: 'table tennis ping pong' },
-  { char: '🏸', keywords: 'badminton' },
-  { char: '🏏', keywords: 'cricket' },
-  { char: '🥅', keywords: 'goal net' },
-  { char: '🎯', keywords: 'target bullseye direct hit' },
-  { char: '🎮', keywords: 'video game controller gaming' },
-  { char: '🎲', keywords: 'dice game' },
-  { char: '🧩', keywords: 'puzzle piece' },
-  { char: '🎨', keywords: 'art palette painting' },
-  { char: '🎤', keywords: 'microphone sing karaoke' },
-  { char: '🎧', keywords: 'headphones music listening' },
-  { char: '🎵', keywords: 'music note' },
-  { char: '🎸', keywords: 'guitar' },
-  { char: '🥁', keywords: 'drum' },
-  { char: '🏆', keywords: 'trophy win champion' },
-  { char: '🥇', keywords: 'gold medal first' },
-  { char: '🎉', keywords: 'party popper celebrate tada' },
-  { char: '🎊', keywords: 'confetti ball celebrate' },
-  { char: '🎁', keywords: 'gift present' },
-];
-
-const TRAVEL: readonly Emoji[] = [
-  { char: '🚗', keywords: 'car automobile' },
-  { char: '🚕', keywords: 'taxi cab' },
-  { char: '🚌', keywords: 'bus' },
-  { char: '🏍️', keywords: 'motorcycle bike' },
-  { char: '🚲', keywords: 'bicycle cycle' },
-  { char: '🛺', keywords: 'auto rickshaw' },
-  { char: '🚂', keywords: 'train locomotive' },
-  { char: '✈️', keywords: 'airplane flight travel' },
-  { char: '🚀', keywords: 'rocket launch space' },
-  { char: '🛳️', keywords: 'ship cruise' },
-  { char: '🏠', keywords: 'house home' },
-  { char: '🏢', keywords: 'office building' },
-  { char: '🏥', keywords: 'hospital' },
-  { char: '🏦', keywords: 'bank' },
-  { char: '🕌', keywords: 'mosque' },
-  { char: '🛕', keywords: 'hindu temple' },
-  { char: '⛪', keywords: 'church' },
-  { char: '🗼', keywords: 'tower' },
-  { char: '🏖️', keywords: 'beach' },
-  { char: '⛰️', keywords: 'mountain' },
-  { char: '🌃', keywords: 'night city stars' },
-  { char: '🌍', keywords: 'earth globe world' },
-  { char: '🗺️', keywords: 'map world' },
-];
-
-const OBJECTS: readonly Emoji[] = [
-  { char: '💡', keywords: 'light bulb idea' },
-  { char: '🔦', keywords: 'torch flashlight' },
-  { char: '📱', keywords: 'phone mobile' },
-  { char: '💻', keywords: 'laptop computer' },
-  { char: '⌚', keywords: 'watch time' },
-  { char: '📷', keywords: 'camera photo' },
-  { char: '🎥', keywords: 'movie camera video' },
-  { char: '📺', keywords: 'television tv' },
-  { char: '☎️', keywords: 'telephone call' },
-  { char: '🔋', keywords: 'battery' },
-  { char: '💰', keywords: 'money bag cash' },
-  { char: '💳', keywords: 'credit card payment' },
-  { char: '💎', keywords: 'gem diamond' },
-  { char: '🔑', keywords: 'key' },
-  { char: '🔒', keywords: 'lock secure private' },
-  { char: '📚', keywords: 'books reading' },
-  { char: '📝', keywords: 'memo note writing' },
-  { char: '✏️', keywords: 'pencil write' },
-  { char: '📌', keywords: 'pushpin pin' },
-  { char: '📎', keywords: 'paperclip attach' },
-  { char: '✂️', keywords: 'scissors cut' },
-  { char: '🧵', keywords: 'thread' },
-  { char: '🕯️', keywords: 'candle' },
-  { char: '🧸', keywords: 'teddy bear toy' },
-  { char: '🎈', keywords: 'balloon' },
-  { char: '💊', keywords: 'pill medicine' },
-  { char: '🩹', keywords: 'bandage plaster' },
-  { char: '🧴', keywords: 'lotion bottle' },
-];
-
-const SYMBOLS: readonly Emoji[] = [
-  { char: '❤️', keywords: 'red heart love' },
-  { char: '🧡', keywords: 'orange heart' },
-  { char: '💛', keywords: 'yellow heart' },
-  { char: '💚', keywords: 'green heart' },
-  { char: '💙', keywords: 'blue heart' },
-  { char: '💜', keywords: 'purple heart' },
-  { char: '🖤', keywords: 'black heart' },
-  { char: '🤍', keywords: 'white heart' },
-  { char: '💔', keywords: 'broken heart' },
-  { char: '💕', keywords: 'two hearts love' },
-  { char: '💖', keywords: 'sparkling heart' },
-  { char: '✨', keywords: 'sparkles shiny' },
-  { char: '💫', keywords: 'dizzy star' },
-  { char: '💯', keywords: 'hundred points perfect' },
-  { char: '✅', keywords: 'check mark done tick yes' },
-  { char: '❌', keywords: 'cross mark no wrong' },
-  { char: '❓', keywords: 'question mark' },
-  { char: '❗', keywords: 'exclamation mark' },
-  { char: '⚠️', keywords: 'warning caution' },
-  { char: '🚫', keywords: 'prohibited no' },
-  { char: '🔔', keywords: 'bell notification' },
-  { char: '🔕', keywords: 'bell mute silent' },
-  { char: '➕', keywords: 'plus add' },
-  { char: '➖', keywords: 'minus subtract' },
-  { char: '🔴', keywords: 'red circle' },
-  { char: '🟢', keywords: 'green circle' },
-  { char: '🔵', keywords: 'blue circle' },
-  { char: '⬛', keywords: 'black square' },
-  { char: '⬜', keywords: 'white square' },
-  { char: '🕉️', keywords: 'om hindu' },
-  { char: '☮️', keywords: 'peace' },
-  { char: '♻️', keywords: 'recycle' },
-];
+function drawable(e: GeneratedEmoji): boolean {
+  return e.v === undefined || e.v <= SUPPORTED;
+}
 
 /** Every category except `recent`, which is built at runtime from storage. */
 export const EMOJI_BY_CATEGORY: Readonly<
-  Record<Exclude<EmojiCategoryId, 'recent'>, readonly Emoji[]>
-> = {
-  smileys: SMILEYS,
-  people: PEOPLE,
-  nature: NATURE,
-  food: FOOD,
-  activity: ACTIVITY,
-  travel: TRAVEL,
-  objects: OBJECTS,
-  symbols: SYMBOLS,
-};
+  Record<GeneratedCategoryId, readonly Emoji[]>
+> = (() => {
+  const out = {} as Record<GeneratedCategoryId, readonly Emoji[]>;
+  for (const r of RANGES) {
+    out[r.id] = EMOJI.slice(r.start, r.end).filter(drawable).map(toEmoji);
+  }
+  return out;
+})();
 
 /** Flat list, for search. Built once at module load, not per keystroke. */
-export const ALL_EMOJI: readonly Emoji[] = Object.values(EMOJI_BY_CATEGORY).flat();
+export const ALL_EMOJI: readonly Emoji[] = RANGES.flatMap(
+  r => EMOJI_BY_CATEGORY[r.id],
+);
+
+/** Reverse lookup, so a stored recent string can be re-toned or re-rendered. */
+const BY_CHAR = new Map<string, Emoji>();
+for (const e of ALL_EMOJI) {
+  BY_CHAR.set(e.char, e);
+  if (e.skins !== undefined) {
+    for (const s of e.skins) {
+      BY_CHAR.set(s, e);
+    }
+  }
+}
+
+/** The base emoji a native string belongs to, toned or not. */
+export function emojiForNative(char: string): Emoji | undefined {
+  return BY_CHAR.get(char);
+}
 
 /**
  * Apply a skin tone, when the emoji takes one and a tone is chosen.
  *
- * The modifier goes after the base codepoint — but NOT after a trailing
- * VS16 (U+FE0F), which is why `✌️` is handled by stripping it first: `✌️🏽`
- * renders as a hand followed by a loose swatch on Android, while `✌🏽` is the
- * single toned glyph the user asked for.
+ * `TONES[0]` is the default yellow, so `skins` is indexed at `i - 1`. An emoji
+ * with no `skins` ignores the tone entirely rather than growing a loose swatch.
  */
 export function withTone(emoji: Emoji, tone: string): string {
-  if (emoji.tone !== true || tone === '') {
+  if (emoji.skins === undefined || tone === '') {
     return emoji.char;
   }
-  return emoji.char.replace(/️$/, '') + tone;
+  const i = TONES.indexOf(tone);
+  return i > 0 ? (emoji.skins[i - 1] ?? emoji.char) : emoji.char;
 }
 
 /**
- * Substring match over name and synonyms.
+ * Prefix match over the keyword index.
  *
- * Deliberately not fuzzy: a fuzzy match over a few hundred short keyword strings
- * puts "handshake" under "s" and reads as noise. A blank query returns nothing so
- * the caller can fall back to the browsing view rather than rendering everything.
+ * The index is one space-separated string per emoji with a LEADING space, so
+ * `indexOf(' ' + q)` is a word-start match — the same anchoring emoji-mart uses,
+ * re-expressed here. It matters at this size: a plain substring match over 1,870
+ * entries puts "grinning" under "inn" and "raised hand" under "and". Linear over
+ * ~1,870 short strings is sub-millisecond, so there is no trie to maintain.
+ *
+ * A blank query returns nothing so the caller falls back to browsing rather than
+ * rendering the whole set as a "result".
  */
+const INDEX: readonly string[] = ALL_EMOJI.map(e => ` ${e.keywords}`);
+
 export function searchEmoji(query: string): readonly Emoji[] {
   const q = query.trim().toLowerCase();
   if (q === '') {
     return [];
   }
-  return ALL_EMOJI.filter(e => e.keywords.includes(q));
+  const needle = ` ${q}`;
+  const out: Emoji[] = [];
+  for (let i = 0; i < INDEX.length; i += 1) {
+    const row = INDEX[i];
+    const hit = ALL_EMOJI[i];
+    if (row !== undefined && hit !== undefined && row.includes(needle)) {
+      out.push(hit);
+    }
+  }
+  return out;
 }
