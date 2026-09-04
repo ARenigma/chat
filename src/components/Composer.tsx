@@ -26,6 +26,7 @@ import {
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { MAX_MESSAGE_CHARS } from '../lib/tokenLedger';
+import { deleteLastGrapheme } from '../lib/graphemes';
 import { errorTick, tick } from '../lib/haptics';
 import {
   ensureMicrophone,
@@ -316,9 +317,17 @@ function ComposerView({
     [onTyping],
   );
 
-  /** The key the keyboard took away when the panel replaced it. */
+  /**
+   * The key the keyboard took away when the panel replaced it.
+   *
+   * `Array.from(...).slice(0, -1)` was wrong for exactly the strings this panel
+   * inserts: it iterates CODE POINTS, so one press of backspace over 👩🏽‍🚀 removed
+   * the zero-width joiner and left two loose glyphs, and over 🇮🇳 left half a flag.
+   * `deleteLastGrapheme` removes one user-perceived character. See
+   * `src/lib/graphemes.ts`.
+   */
   const backspace = useCallback(() => {
-    setValue(current => Array.from(current).slice(0, -1).join(''));
+    setValue(current => deleteLastGrapheme(current));
   }, []);
 
   const onFieldFocus = useCallback(() => onFocusChange?.(true), [onFocusChange]);
