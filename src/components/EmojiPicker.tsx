@@ -34,6 +34,21 @@ import { TextField } from './TextField';
  */
 const COLUMNS = 8;
 
+/**
+ * The grid's horizontal padding. Telegram's emoji grid uses 5dp either side
+ * (`EmojiView.java:1751`); eight columns then divide the rest of the width
+ * exactly, with no dead strip at the edge.
+ */
+const GRID_PAD = 5;
+
+/**
+ * The floating backspace: 48dp square, 2dp from the grid's bottom-right corner.
+ * Telegram's anatomy (`EmojiView.java:2675-2679`) — it floats OVER the grid
+ * rather than sitting in the search row, so the search row's trailing control is
+ * free to mean "close the search", which is what it means in every search field.
+ */
+const BACKSPACE = 48;
+
 interface Props {
   visible: boolean;
   /**
@@ -116,6 +131,28 @@ function EmojiPickerView({
   // Which emoji's tone strip is open, or null. One at a time.
   const [toning, setToning] = useState<string | null>(null);
   const searchRef = useRef<TextInput>(null);
+  /** Whether the search field holds the focus, so the X can mean "close it". */
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  const onFocus = useCallback(() => {
+    setSearchOpen(true);
+    onSearchFocusChange?.(true);
+  }, [onSearchFocusChange]);
+
+  const onBlur = useCallback(() => {
+    setSearchOpen(false);
+    onSearchFocusChange?.(false);
+  }, [onSearchFocusChange]);
+
+  /**
+   * Telegram's `closeSearch`: leave the searching state, clear the query, and
+   * give the focus back — here by blurring, which fires `onBlur` and lets the
+   * dock collapse the panel to keyboard size again.
+   */
+  const closeSearch = useCallback(() => {
+    setQuery('');
+    searchRef.current?.blur();
+  }, []);
 
   /**
    * Give up the focus when the keyboard goes, whoever took it away.
@@ -135,17 +172,23 @@ function EmojiPickerView({
   }, []);
 
   /**
-   * The cell edge, in px, derived from the window rather than left to flex.
+   * The cell edge, derived from the window rather than left to flex.
    *
    * See the `cell` style: relative sizing compounds inside `Pressable`, so the
-   * grid has to be told an absolute number. Both the grid's own horizontal
-   * padding and the sheet's are subtracted so eight columns land inside the
-   * content box instead of overflowing it.
+   * grid has to be told an absolute number.
+   *
+   * Only the grid's OWN padding is subtracted. It used to also subtract
+   * `space.md` twice, left over from when the picker lived inside a `Sheet` that
+   * had its own inset — the Sheet went and the subtraction stayed, so eight
+   * columns were laid out for a box 32dp narrower than the one they were in and
+   * ~90px of the panel's right edge was dead (measured on an S22 Ultra: the grid
+   * spanned [46 … 990] of 1080).
+   *
+   * `GRID_PAD` is 5dp, which is Telegram's own grid padding
+   * (`EmojiView.java:1751`, recorded in design/references/telegram.md).
    */
   const { width } = useWindowDimensions();
-  const cellSize = Math.floor(
-    (width - TOKENS.space.xs * 2 - TOKENS.space.md * 2) / COLUMNS,
-  );
+  const cellSize = Math.floor((width - GRID_PAD * 2) / COLUMNS);
 
   // Recents are read once at mount; re-read on each open so a pick made in
   // another conversation this session is reflected.
@@ -212,12 +255,22 @@ function EmojiPickerView({
     [],
   );
 
-  if (!visible) {
-    return null;
-  }
-
   return (
-    <View style={[styles.panel, { height }]} testID="emoji-panel">
+    /*
+     * Kept MOUNTED and hidden with `display: none`, not unmounted.
+     *
+     * Telegram creates its `emojiView` once (`createEmojiView()`) and thereafter
+     * only flips `setVisibility(VISIBLE/GONE)` (`ChatActivityEnterView.java:12622`
+     * and `:12746`). Unmounting meant every single keyboard-to-emoji tap rebuilt
+     * the search field, ten tabs and a fresh FlatList on the JS thread inside one
+     * frame — which is the artefact frame visible on every swap. The parent still
+     * defers the FIRST mount until the panel is first opened, so a user who never
+     * taps emoji never pays for it.
+     */
+    <View
+      style={[styles.panel, { height }, visible ? null : styles.hidden]}
+      pointerEvents={visible ? 'auto' : 'none'}
+      testID="emoji-panel">
       <View style={styles.searchRow}>
         <Icon name="search" size={16} color={theme.color.text.tertiary} />
         <TextField
@@ -231,22 +284,28 @@ function EmojiPickerView({
           testID="emoji-search"
           allowFontScaling
           underlineColorAndroid="transparent"
-          onFocus={() => onSearchFocusChange?.(true)}
-          onBlur={() => onSearchFocusChange?.(false)}
+          onFocus={onFocus}
+          onBlur={onBlur}
         />
-        {/* Backspace, where the keyboard's was. The panel takes the keyboard's
-            place, so it has to answer for the key the keyboard took away —
-            Telegram's panel keeps one in the same corner for the same reason. */}
-        <Pressable
-          onPress={onBackspace}
-          testID="emoji-backspace"
-          accessibilityLabel="Delete"
-          press="none"
-          highlight="ios"
-          size={32}
-          style={styles.close}>
-          <Icon name="close" size={14} color={theme.color.text.secondary} />
-        </Pressable>
+        {/* Closes the search, which is what a trailing X in a search field means
+            everywhere. It used to be backspace, and that was the bug behind
+            "emoji/keyboard switch doesn't work after clicking cross on search":
+            the X deleted a character, the search field kept the focus, and the
+            panel had no way out. Telegram's own search close is `closeSearch`
+            (`ChatActivityEnterView.java:2701-2707`): drop the searching state,
+            clear the query, hand the focus back to the message field. */}
+        {searchOpen ? (
+          <Pressable
+            onPress={closeSearch}
+            testID="emoji-search-close"
+            accessibilityLabel="Close search"
+            press="none"
+            highlight="ios"
+            size={32}
+            style={styles.close}>
+            <Icon name="close" size={14} color={theme.color.text.secondary} />
+          </Pressable>
+        ) : null}
       </View>
 
       {/* The tone strip, shown in place of the tabs while a tone is being
@@ -321,6 +380,30 @@ function EmojiPickerView({
           </Text>
         }
       />
+
+      {/* Backspace, floating over the grid's bottom-right corner rather than
+          sitting in the search row: Telegram's placement
+          (`EmojiView.java:2675-2679`, 48dp square, 2dp margin). The panel has
+          replaced a keyboard that had this key, so it has to answer for it —
+          but not at the cost of the search field's own close control. */}
+      {/* Positioned by a plain wrapper, NOT by putting `position: absolute` on
+          the Pressable: Pressable hoists box properties onto its root AND leaves
+          them on its inner view, so an absolute Pressable lands its offsets on
+          the wrong node — the button rendered at the grid's bottom-LEFT with
+          `right: 2` set (device, 2026-09-04). Same trap as the percentage cell
+          widths noted on `cell`. */}
+      <View style={styles.backspaceSlot} pointerEvents="box-none">
+        <Pressable
+          onPress={onBackspace}
+          testID="emoji-backspace"
+          accessibilityLabel="Delete"
+          press="none"
+          highlight="material"
+          size={BACKSPACE}
+          style={styles.backspace}>
+          <Icon name="delete" size={20} color={theme.color.text.secondary} />
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -363,6 +446,9 @@ const makeStyles = (t: Theme) =>
     },
     // The strip itself: the hairline and the height live here so they survive
     // the swap between the scrolling tab row and the fixed tone row.
+    // `display: none` takes it out of layout entirely — a zero height alone would
+    // still leave it participating and still cost a measure pass.
+    hidden: { display: 'none' },
     tabsBox: {
       flexGrow: 0,
       borderBottomWidth: StyleSheet.hairlineWidth,
@@ -409,8 +495,22 @@ const makeStyles = (t: Theme) =>
       flex: 1,
     },
     grid: {
-      paddingHorizontal: TOKENS.space.xs,
-      paddingBottom: TOKENS.space.xl,
+      paddingHorizontal: GRID_PAD,
+      // Clears the floating backspace, so the last row is never under it.
+      paddingBottom: BACKSPACE + TOKENS.space.xs,
+    },
+    backspaceSlot: {
+      position: 'absolute',
+      right: TOKENS.space.hair,
+      bottom: TOKENS.space.hair,
+    },
+    backspace: {
+      width: BACKSPACE,
+      height: BACKSPACE,
+      borderRadius: BACKSPACE / 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: t.color.bg.raised,
     },
     /*
      * Sized in absolute px by the caller, never as a percentage or a fractional

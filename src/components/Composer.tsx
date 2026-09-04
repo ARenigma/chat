@@ -49,6 +49,13 @@ import { TextField } from './TextField';
 /** The camera button's slot width, animated to zero when the send takes over. */
 const CAMERA_SLOT = 40;
 
+/**
+ * The emoji button's square. Telegram's is 44 and sits outside the field; ours is
+ * inside the capsule, so it matches the capsule's own height instead — a 44 here
+ * would make the capsule taller than the 40 measured on device.
+ */
+const EMOJI_BUTTON = 36;
+
 interface Props {
   onSend: (text: string) => void;
   /** A finished recording, ready to upload. Both roles get this: the provider
@@ -173,6 +180,13 @@ function ComposerView({
    */
   const [emojiSearching, setEmojiSearching] = useState(false);
   const searchingRef = useRef(false);
+  /**
+   * The panel is mounted on FIRST open and then never unmounted, so the swap
+   * costs a visibility flip rather than a full rebuild — Telegram's
+   * `createEmojiView()` / `setVisibility` split. Latched here so a user who never
+   * opens it never pays for the mount.
+   */
+  const [panelMounted, setPanelMounted] = useState(false);
   /** The input row's measured height, so the expanded panel can subtract it. */
   const [rowHeight, setRowHeight] = useState(0);
   const { width: winW, height: winH } = useWindowDimensions();
@@ -362,17 +376,44 @@ function ComposerView({
    * BEFORE dismissing is what preserves that: dismiss-then-mount drops the
    * composer to the bottom of the screen for a frame and springs it back.
    */
+  /**
+   * Leave the search state and hand the focus back to the message field.
+   *
+   * Telegram does exactly this from two places — the emoji button
+   * (`ChatActivityEnterView.java:2701-2707`) and a touch on the composer while
+   * the panel is showing (`:5387-5391`): `setSearchingTypeInternal(0)`,
+   * `emojiView.closeSearch(false)`, `messageEditText.requestFocus()`. The panel
+   * has to be closed EXPLICITLY here, because the IME is already up and
+   * `keyboardDidShow` — which is what normally takes the panel down — will not
+   * fire a second time. That was the "switch doesn't work after clicking cross
+   * on search" defect.
+   */
+  const leaveSearch = useCallback(() => {
+    if (!searchingRef.current) {
+      return false;
+    }
+    searchingRef.current = false;
+    setEmojiSearching(false);
+    setEmojiOpen(false);
+    inputRef.current?.focus();
+    return true;
+  }, []);
+
   const toggleEmoji = useCallback(() => {
     if (emojiOpen) {
+      if (leaveSearch()) {
+        return;
+      }
       // Back to the keyboard. Focusing raises the IME, and the keyboard-shown
       // listener takes the panel down once it is actually up — again so the two
       // never leave a gap between them.
       inputRef.current?.focus();
       return;
     }
+    setPanelMounted(true);
     setEmojiOpen(true);
     Keyboard.dismiss();
-  }, [emojiOpen]);
+  }, [emojiOpen, leaveSearch]);
 
   /** Insert at the end of the draft, the way a keyboard would. */
   const addEmoji = useCallback(
@@ -396,7 +437,12 @@ function ComposerView({
     setValue(current => deleteLastGrapheme(current));
   }, []);
 
-  const onFieldFocus = useCallback(() => onFocusChange?.(true), [onFocusChange]);
+  const onFieldFocus = useCallback(() => {
+    // Touching the composer while the panel is searching leaves the search, the
+    // same way Telegram's `onTouchEvent` does (`:5386-5391`).
+    leaveSearch();
+    onFocusChange?.(true);
+  }, [leaveSearch, onFocusChange]);
   const onFieldBlur = useCallback(() => onFocusChange?.(false), [onFocusChange]);
 
   const record = useCallback(async () => {
@@ -712,6 +758,28 @@ function ComposerView({
           floating pill and icons"). White in light, the elevated surface in dark,
           both from tokens rather than a literal white that would glare in dark. */}
       <View style={styles.field}>
+        {/* Emoji, on the capsule's LEADING edge (Amit, 2026-09-04: "EMOJI should
+            be on left corner of pill"). It is the first control in the row in
+            Telegram too — `Gravity.BOTTOM | LEFT`, 44x44, leftMargin 2, padding
+            7.5 around a 32dp glyph (`ChatActivityEnterView.java:2684,:2721`).
+
+            Smile <-> keyboard, the way Telegram's does: while the panel is up the
+            control's job is to bring the keyboard back, so it says so. */}
+        <Pressable
+          onPress={toggleEmoji}
+          disabled={disabled}
+          testID="composer-emoji"
+          accessibilityLabel={emojiOpen ? 'Keyboard' : 'Emoji'}
+          press="none"
+          highlight="material"
+          size={EMOJI_BUTTON}
+          style={styles.emoji}>
+          <Icon
+            name={emojiOpen ? 'keyboard' : 'smile'}
+            size={24}
+            color={theme.color.text.secondary}
+          />
+        </Pressable>
         <TextField
           ref={inputRef}
           testID="composer-input"
@@ -735,27 +803,6 @@ function ComposerView({
           onFocus={onFieldFocus}
           onBlur={onFieldBlur}
         />
-        {/* Emoji, on the capsule's TRAILING edge — the position the reference
-            frame puts it in, and the reason the leading edge is now free for the
-            text itself. Opens the in-app picker rather than just raising the
-            system keyboard. */}
-        {/* Smile ↔ keyboard, the way Telegram's does: while the panel is up the
-            control's job is to bring the keyboard back, so it says so. */}
-        <Pressable
-          onPress={toggleEmoji}
-          disabled={disabled}
-          testID="composer-emoji"
-          accessibilityLabel={emojiOpen ? 'Keyboard' : 'Emoji'}
-          press="none"
-          highlight="material"
-          size={30}
-          style={styles.emoji}>
-          <Icon
-            name={emojiOpen ? 'keyboard' : 'smile'}
-            size={22}
-            color={theme.color.text.secondary}
-          />
-        </Pressable>
       </View>
 
       {/* Camera. It replaces the old "+" as the single media entry point and
@@ -829,6 +876,7 @@ function ComposerView({
           [0,1382][1080,2316] — 332dp, exactly 15dp more, which is the gesture
           nav inset. Sizing the panel from the raw number left it 15dp short, so
           the composer fell by that much on every swap. */}
+      {panelMounted ? (
       <EmojiPicker
         visible={emojiOpen}
         /*
@@ -852,6 +900,7 @@ function ComposerView({
         onPick={addEmoji}
         onSearchFocusChange={onSearchFocusChange}
       />
+      ) : null}
     </View>
 
     {/* The media chooser (#8). A bottom sheet with Camera and Photos, the same
@@ -912,12 +961,25 @@ export const Composer = memo(ComposerView);
 
 const makeStyles = (t: Theme) => StyleSheet.create({
   row: {
-    // Mapped to Telegram's bar (measured on device): content inset ~7-8dp from
-    // the edges and a ~44dp bar, tighter than the old md/xs/2xs which read taller
-    // and more indented than the real app.
+    /*
+     * Measured off Telegram on the SAME device rather than read off its source
+     * (S22 Ultra, 1080x2316, density 2.8125), because the source dp and what the
+     * bar actually renders at have disagreed before.
+     *
+     * With the IME up, Telegram's emoji button occupies [29,1232]-[153,1356] and
+     * the IME frame starts at 1382 — so there are 26px, 9.2dp, between the bottom
+     * of the composer's controls and the top of the keyboard. Idle, the same 26px
+     * sits between the controls and the top of the navigation bar. Ours was 7px:
+     * the pill was very nearly touching the keyboard (Amit, 2026-09-04: "distance
+     * between pill and IME edge should be exactly as telegram").
+     *
+     * `xs` (8dp) plus the button's own 1dp of optical inset lands on the measured
+     * 9.2dp; the horizontal inset of 8dp already matched Telegram's 10.3dp
+     * closely enough that changing it would move the pill for no visible gain.
+     */
     paddingHorizontal: TOKENS.space.xs,
     paddingTop: TOKENS.space['2xs'],
-    paddingBottom: TOKENS.space.hair,
+    paddingBottom: TOKENS.space.xs,
     backgroundColor: 'transparent',
   },
   // The idle bar: attach button, then the field taking the rest of the width.
@@ -942,14 +1004,26 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     // the circle carries the accent rather than a neutral sunken grey.
     backgroundColor: t.color.bg.accent,
   },
-  // The emoji button on the field's TRAILING edge, where the reference frame
-  // puts it. Same 40 height as the input so it centres on a single-line field.
+  /*
+   * The emoji button on the capsule's LEADING edge.
+   *
+   * Telegram's is the first control in the composer, `Gravity.BOTTOM | LEFT`,
+   * a 44dp square with 7.5dp padding around a ~32dp glyph
+   * (`ChatActivityEnterView.java:2684,:2721`). Ours is inside the capsule rather
+   * than beside it, so it takes the capsule's height instead of 44 — but the
+   * side, the bottom gravity and the circular press disc are Telegram's.
+   *
+   * `alignSelf: flex-end` so a field grown to several lines keeps the glyph on
+   * the last line, as Telegram's bottom gravity does, instead of floating it to
+   * the vertical middle of a tall capsule.
+   */
   emoji: {
-    width: 32,
-    height: 32,
+    width: EMOJI_BUTTON,
+    height: EMOJI_BUTTON,
     // Circular, so the press state layer is a disc and not the rectangle the
     // un-rounded style used to clip it to (Amit, 2026-09-04).
-    borderRadius: 16,
+    borderRadius: EMOJI_BUTTON / 2,
+    alignSelf: 'flex-end',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -967,11 +1041,12 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: TOKENS.space.xs,
-    // The text now starts at the leading edge (the emoji moved to the trailing
-    // one), so the leading inset is the text's own breathing room and the
-    // trailing inset only has to clear the emoji button.
-    paddingLeft: TOKENS.space.md,
-    paddingRight: TOKENS.space['2xs'],
+    // The emoji button is now the capsule's first child, so the LEADING inset
+    // only has to clear the button's own press disc and the trailing one is the
+    // text's breathing room. (These two were the other way round while the emoji
+    // sat on the trailing edge.)
+    paddingLeft: TOKENS.space.hair,
+    paddingRight: TOKENS.space.md,
     // Zero: the 40dp input is the tallest child and IS the capsule height, so the
     // capsule is a true 40 (Telegram's, measured on device). Any field padding here
     // stacks on top of the 40 input and reads taller than the real app.
