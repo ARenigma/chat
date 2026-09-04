@@ -3134,3 +3134,45 @@ describe('opener orchestrator cleanup tracks and clears its timer', () => {
     expect(chat).toContain('cancelled = true');
   });
 });
+
+/**
+ * The emoji dataset is generated, not typed (RULE 4).
+ *
+ * All three failure modes here are silent: a hand-edit to the generated file
+ * survives until the next regeneration wipes it; the source package sliding
+ * from a devDependency into a dependency drags a render layer into the bundle
+ * with no visible symptom; and a `verify` that forgets `emoji:check` means
+ * drift only ever appears in CI.
+ */
+describe('emoji data pipeline', () => {
+  const pkg = JSON.parse(read('package.json')) as {
+    scripts: Record<string, string>;
+    dependencies: Record<string, string>;
+    devDependencies: Record<string, string>;
+  };
+
+  it('keeps @emoji-mart/data out of the shipped dependencies', () => {
+    expect(pkg.devDependencies).toHaveProperty('@emoji-mart/data');
+    expect(pkg.dependencies).not.toHaveProperty('@emoji-mart/data');
+  });
+
+  it('gates drift in `npm run verify`, not only in CI', () => {
+    expect(pkg.scripts.verify).toContain('emoji:check');
+    expect(pkg.scripts['emoji:check']).toContain('--check');
+  });
+
+  it('marks the output generated and excludes it from lint', () => {
+    expect(read('src/lib/emoji.generated.ts').slice(0, 200)).toContain(
+      'GENERATED FILE, DO NOT EDIT',
+    );
+    expect(read('.eslintrc.js')).toContain('src/lib/emoji.generated.ts');
+  });
+
+  it('deletes one user-perceived character, not one code point', () => {
+    // `Array.from(s).slice(0, -1)` iterates code points, so one backspace over
+    // a family emoji removed a zero-width joiner and left loose glyphs.
+    const composer = withoutComments(read('src/components/Composer.tsx'));
+    expect(composer).toContain('deleteLastGrapheme');
+    expect(composer).not.toMatch(/Array\.from\(current\)\.slice/);
+  });
+});
