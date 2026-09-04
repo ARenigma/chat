@@ -23,6 +23,8 @@ class MainApplication : Application(), ReactApplication {
           add(MaterialIndicatorPackage())
           // CameraX live-preview tile (PappalCameraPreview native view).
           add(CameraTilePackage())
+          // GPU hardware blur: PappalBlurRoot + PappalBlurSurface.
+          add(BlurPackage())
         },
     )
   }

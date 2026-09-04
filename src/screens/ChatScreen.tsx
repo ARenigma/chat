@@ -1364,7 +1364,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
           // drawing a line across the transcript with nothing on the other side
           // of it (Amit, 2026-09-04); the blur alone separates the two.
           tint="none"
-          blurAmount={composerFocused ? 0 : 18}
+          blur={!composerFocused}
           style={{ paddingBottom: composerInset }}>
           {replyTo !== null ? (
             <View style={styles.replyBar}>

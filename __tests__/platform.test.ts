@@ -1109,3 +1109,180 @@ describe('CameraX live-preview tile', () => {
     expect(component).not.toContain(': any');
   });
 });
+
+/**
+ * PappalBlurRoot + PappalBlurSurface — hardware GPU backdrop blur.
+ *
+ * Replaces the @sbaiahmed1/react-native-blur software capture path (CPU
+ * Bitmap.createBitmap + ViewTreeObserver.OnPreDrawListener on the decor view)
+ * with a RenderNode+RenderEffect chain that runs entirely on the GPU render
+ * thread. Architecture mirrors the container+surface pattern where the root
+ * records its own non-surface children into a downscaled node and surfaces
+ * draw it (SizeNotifierFrameLayout.java:965-1042).
+ *
+ * Wiring assertions — the structural facts that a future change must not break
+ * silently (RULE 1: if it can be checked mechanically, it goes here).
+ */
+describe('hardware GPU backdrop blur (PappalBlurRoot + PappalBlurSurface)', () => {
+  const BLUR_PACKAGE =
+    'android/app/src/main/java/com/companionchat/BlurPackage.kt';
+  const BLUR_SURFACE_TSX = 'src/components/BlurSurface.tsx';
+  const APP_KT =
+    'android/app/src/main/java/com/companionchat/MainApplication.kt';
+
+  it('BlurPackage registers both view managers with the correct names', () => {
+    /**
+     * React Native resolves native views by their getName() string. A rename
+     * here without updating the JS wrapper silently renders nothing on Android.
+     * https://reactnative.dev/docs/native-components-android
+     */
+    const kt = read(BLUR_PACKAGE);
+    expect(kt).toContain('PappalBlurRootManager');
+    expect(kt).toContain('PappalBlurSurfaceManager');
+    expect(kt).toContain('"PappalBlurRoot"');
+    expect(kt).toContain('"PappalBlurSurface"');
+  });
+
+  it('registers BlurRoot as a container manager because React mounts children into it', () => {
+    /**
+     * Fabric's mounting layer requires a ViewGroupManager for native components
+     * that accept React children. The Android view extending FrameLayout is not
+     * enough: SimpleViewManager advertises a leaf and crashes on the first child.
+     * https://reactnative.dev/docs/legacy/native-components-android#3-implement-the-view-manager
+     */
+    const kt = read(BLUR_PACKAGE);
+    expect(kt).toContain(
+      'class PappalBlurRootManager : ViewGroupManager<PappalBlurRoot>()',
+    );
+    expect(kt).not.toContain(
+      'class PappalBlurRootManager : SimpleViewManager<PappalBlurRoot>()',
+    );
+  });
+
+  it('BlurPackage is registered in MainApplication', () => {
+    // Not autolinkable — must be added manually next to the other in-app packages.
+    expect(read(APP_KT)).toContain('add(BlurPackage())');
+  });
+
+  it('uses RenderEffect API 31 blur+saturation chain', () => {
+    /**
+     * The blur+saturation chain reproduces SizeNotifierFrameLayout.java:997-1002.
+     * Both effects must be present: blur alone desaturates the image at high
+     * radii; the ColorMatrixColorFilter(saturation=2f) compensates.
+     *
+     * https://developer.android.com/reference/android/graphics/RenderEffect#createChainEffect(android.graphics.RenderEffect,android.graphics.RenderEffect)
+     * https://developer.android.com/reference/android/graphics/RenderEffect#createBlurEffect(float,float,android.graphics.Shader.TileMode)
+     */
+    const kt = read(BLUR_PACKAGE);
+    expect(kt).toContain('RenderEffect.createBlurEffect');
+    expect(kt).toContain('RenderEffect.createChainEffect');
+    expect(kt).toContain('setSaturation(2f)');
+  });
+
+  it('gates the RenderEffect path on API 31 and documents the minSdk fallback', () => {
+    /**
+     * RenderEffect is API 31 (Android 12). minSdk here is 24 (Android 7), so
+     * the solid-colour fallback runs in production for Android 7–11 users.
+     * An unguarded call is a NoSuchMethodError on those devices at runtime.
+     *
+     * https://developer.android.com/reference/android/graphics/RenderEffect
+     */
+    const kt = read(BLUR_PACKAGE);
+    expect(kt).toContain('Build.VERSION.SDK_INT >= 31');
+    // The comment must survive so readers know this path runs in production.
+    expect(kt).toContain('minSdk');
+  });
+
+  it('records the node at a downscaled resolution', () => {
+    /**
+     * The blur node is recorded at 1/DOWNSCALE resolution and drawn back at
+     * DOWNSCALE× size. This is the whole reason for the RenderNode architecture:
+     * blurring at full resolution would cost full-resolution GPU memory and
+     * fill rate for every frame the backdrop changes.
+     * Reference: SizeNotifierFrameLayout.java:939-940, 1006-1009.
+     */
+    const kt = read(BLUR_PACKAGE);
+    expect(kt).toContain('DOWNSCALE');
+    expect(kt).toContain('1f / DOWNSCALE');
+  });
+
+  it('skips PappalBlurSurface during the recording pass', () => {
+    /**
+     * Recording a surface that reads the very node being recorded would
+     * produce undefined output. The skip flag prevents the recursion.
+     * Reference: SizeNotifierFrameLayout.java:1007-1016 (drawingBlur flag).
+     */
+    const kt = read(BLUR_PACKAGE);
+    expect(kt).toContain('skipSurfaces');
+    expect(kt).toContain('is PappalBlurSurface');
+  });
+
+  it('falls back to a solid rect when blur is unavailable or disabled', () => {
+    /**
+     * Telegram draws canvas.drawRect(rectTmp, blurScrimPaint) when blur is
+     * off (SizeNotifierFrameLayout.java:976-979). Our drawSolidFallback is
+     * the same pattern. It must exist and be named consistently so searches
+     * can trace the fallback path.
+     */
+    const kt = read(BLUR_PACKAGE);
+    expect(kt).toContain('drawSolidFallback');
+  });
+
+  it('never sets LAYER_TYPE_HARDWARE permanently', () => {
+    /**
+     * Permanently-set hardware layers force the view onto a texture and add a
+     * compositing pass every frame whether or not the content changes. The blur
+     * is already drawn via RenderNode; no layer type change is needed.
+     * https://developer.android.com/reference/android/view/View#setLayerType(int,%20android.graphics.Paint)
+     */
+    const kt = read(BLUR_PACKAGE);
+    expect(kt).not.toContain('setLayerType(View.LAYER_TYPE_HARDWARE');
+    expect(kt).not.toContain('LAYER_TYPE_HARDWARE,');
+  });
+
+  it('does not contain forbidden source-attribution strings (ADR-0025 clean-room)', () => {
+    /**
+     * ADR-0025: cite the reference implementation by File.java:line in comments,
+     * but the shipping tree must contain no package-path strings that would
+     * imply a code copy. A grep in CI fails the build on these strings.
+     */
+    const kt = read(BLUR_PACKAGE);
+    expect(kt).not.toContain('org.telegram');
+    expect(kt).not.toContain('TMessagesProj');
+    expect(kt).not.toContain('DrKLO');
+  });
+
+  it('JS wrapper exports BLUR_SURFACE_AVAILABLE from UIManager', () => {
+    /**
+     * Callers must check BLUR_SURFACE_AVAILABLE before mounting BlurRoot or
+     * BlurSurface — the module is Android-only and will be absent on iOS and
+     * on Android builds that predate this change. UIManager.hasViewManagerConfig
+     * is the canonical check (catches OTA-update mismatches that Platform.OS
+     * would miss).
+     */
+    const tsx = read(BLUR_SURFACE_TSX);
+    expect(tsx).toContain('BLUR_SURFACE_AVAILABLE');
+    expect(tsx).toContain("UIManager.hasViewManagerConfig('PappalBlurSurface')");
+    expect(tsx).toContain("UIManager.hasViewManagerConfig('PappalBlurRoot')");
+  });
+
+  it('JS wrapper exports typed requireNativeComponent wrappers for both views', () => {
+    const tsx = read(BLUR_SURFACE_TSX);
+    expect(tsx).toContain("requireNativeComponent<BlurSurfaceProps>('PappalBlurSurface')");
+    expect(tsx).toContain("requireNativeComponent<BlurRootProps>('PappalBlurRoot')");
+  });
+
+  it('BlurSurface props are fully typed — no implicit any', () => {
+    /**
+     * Strict types on the JS bridge boundary prevent callers from silently
+     * passing wrong types (e.g., a CSS colour string where the native side
+     * expects an ARGB integer).
+     */
+    const tsx = read(BLUR_SURFACE_TSX);
+    expect(tsx).toContain('tintColor?: number');
+    expect(tsx).toContain('tintAlpha?: number');
+    expect(tsx).toContain('blurRadius?: number');
+    expect(tsx).toContain('enabled?: boolean');
+    expect(tsx).not.toContain(': any');
+  });
+});

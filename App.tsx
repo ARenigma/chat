@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { BLUR_SURFACE_AVAILABLE, BlurRoot } from './src/components/BlurSurface';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -1356,15 +1357,52 @@ export default function App() {
      * and there is no warning.
      */
     <GestureHandlerRootView style={fill.root}>
-      <SafeAreaProvider>
-        <QueryClientProvider client={queryClient}>
-          <ThemeProvider>
-            <Shell />
-          </ThemeProvider>
-        </QueryClientProvider>
-      </SafeAreaProvider>
+      {/*
+       * The blur root, wrapping everything a `Frost` can appear inside.
+       *
+       * A `BlurSurface` paints a region of ITS ROOT's blurred RenderNode, so it
+       * needs an ancestor that owns that node — the same relationship the
+       * reference has between `SizeNotifierFrameLayout` and the bars inside it.
+       * At the app root rather than per screen because Frost is used by the nav
+       * bar, the chat header and the composer dock, which do not share a screen
+       * ancestor.
+       *
+       * It costs nothing on a screen with no frosted bar: the root skips its
+       * recording entirely while no surface is asking for a blur, and records at
+       * most once per frame otherwise (see BlurPackage.kt).
+       */}
+      <BlurRootOrView style={fill.root}>
+        <SafeAreaProvider>
+          <QueryClientProvider client={queryClient}>
+            <ThemeProvider>
+              <Shell />
+            </ThemeProvider>
+          </QueryClientProvider>
+        </SafeAreaProvider>
+      </BlurRootOrView>
     </GestureHandlerRootView>
   );
+}
+
+/**
+ * `BlurRoot` when the native view is in this binary, a plain View otherwise.
+ *
+ * An OTA JS update can land on an APK built before `BlurPackage.kt` existed;
+ * mounting an unregistered native component there is a red screen, not a
+ * degraded blur. `Frost` makes the same check on its own side and paints a solid
+ * plate, so the pair degrade together.
+ */
+function BlurRootOrView({
+  style,
+  children,
+}: {
+  style: ViewStyle;
+  children: React.ReactNode;
+}) {
+  if (!BLUR_SURFACE_AVAILABLE) {
+    return <View style={style}>{children}</View>;
+  }
+  return <BlurRoot style={style}>{children}</BlurRoot>;
 }
 
 /**
