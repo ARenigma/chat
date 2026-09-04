@@ -530,7 +530,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
     return (
       <View style={[styles.root, { paddingTop: insets.top }]}>
         <Header onBack={onEditDetails} />
-        <View style={styles.verifyBody}>
+        <View style={styles.ladderBody}>
           <Text
             maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized}
             allowFontScaling
@@ -947,6 +947,35 @@ const makeStyles = (t: Theme) =>
       color: t.color.text.accent,
     },
     methodRow: { flexDirection: 'row', gap: TOKENS.space.xs },
+    /*
+     * Same box as `verifyBody`, plus an EXPLICIT backgroundColor, and the
+     * background is the thing that matters rather than a style tidy-up.
+     *
+     * With no background this container carries only layout props, so RN's view
+     * flattening removes it and hoists its children into the screen root — and
+     * in that position a plain `Text` lays out at correct bounds and paints
+     * nothing. Verified on the Redmi 2026-09-05: the ladder measured 970x132
+     * per rung with every pixel inside those bounds #FFFFFF, while the same
+     * string inside a background-carrying View painted normally. The colour is
+     * `bg.base`, which is what was showing through anyway, so this is invisible
+     * to the eye and load-bearing to the renderer.
+     *
+     * It also explains why the verify and confirm steps never showed this bug
+     * while this one did: both open with `verifyIcon`, which carries
+     * `bg.accent`, so their subtree always had a background-bearing view in it.
+     * The ladder had none.
+     *
+     * Do not "simplify" this back to `verifyBody`. `collapsable={false}`, a
+     * ScrollView, per-phase remount keys, `Animated.Text`, and disabling the
+     * hardware blur were each tried on a cold launch and none of them fixed it.
+     */
+    ladderBody: {
+      flex: 1,
+      paddingHorizontal: TOKENS.space.lg,
+      justifyContent: 'center',
+      gap: TOKENS.space.md,
+      backgroundColor: t.color.bg.base,
+    },
     ladder: { gap: TOKENS.space.md, marginTop: TOKENS.space.lg },
     ladderRow: { flexDirection: 'row', gap: TOKENS.space.sm, alignItems: 'flex-start' },
     ladderMark: { width: 24, height: 26, alignItems: 'center', justifyContent: 'center' },
