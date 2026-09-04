@@ -974,3 +974,138 @@ describe('sheet motion and display refresh', () => {
     expect(read('src/components/Sheet.tsx')).toContain('setSheetBackdropBlur');
   });
 });
+
+/**
+ * CameraX live-preview native view — wiring and safety assertions.
+ *
+ * The requirements that follow are structural (RULE 1: take them from the
+ * platform docs, do not ask). Each claim names the doc that governs it.
+ *
+ * COMPATIBLE (TextureView) mode is required for the rounded-tile design:
+ * PERFORMANCE (SurfaceView) punches a hole through the view hierarchy and
+ * cannot be clipped, rounded, or animated.
+ * https://developer.android.com/reference/androidx/camera/view/PreviewView.ImplementationMode
+ *
+ * Camera lifecycle is tied to the Activity LifecycleOwner so CameraX stops
+ * the camera when the activity pauses (app backgrounds) and restarts it on
+ * resume — without any manual observer.
+ * https://developer.android.com/training/camerax/lifecycle
+ */
+describe('CameraX live-preview tile', () => {
+  const PACKAGE_KT =
+    'android/app/src/main/java/com/companionchat/CameraTilePackage.kt';
+  const APP_KT =
+    'android/app/src/main/java/com/companionchat/MainApplication.kt';
+
+  it('declares all four CameraX 1.4.0 artifacts in app/build.gradle', () => {
+    /**
+     * All four artifacts must be pinned at the same version so their
+     * inter-artifact ABIs match. Mixing versions silently breaks surface
+     * negotiation between camera-core and camera-camera2.
+     * https://developer.android.com/training/camerax/preview
+     */
+    const gradle = read('android/app/build.gradle');
+    expect(gradle).toContain('androidx.camera:camera-core:1.4.0');
+    expect(gradle).toContain('androidx.camera:camera-camera2:1.4.0');
+    expect(gradle).toContain('androidx.camera:camera-lifecycle:1.4.0');
+    expect(gradle).toContain('androidx.camera:camera-view:1.4.0');
+  });
+
+  it('registers CameraTilePackage in MainApplication', () => {
+    // The package must be registered next to the other non-autolinkable
+    // packages so the JS bridge can resolve PappalCameraPreview at runtime.
+    expect(read(APP_KT)).toContain('add(CameraTilePackage())');
+  });
+
+  it('names the view manager PappalCameraPreview', () => {
+    expect(read(PACKAGE_KT)).toContain('"PappalCameraPreview"');
+  });
+
+  it('uses COMPATIBLE implementation mode (TextureView, not SurfaceView)', () => {
+    /**
+     * COMPATIBLE mode is required for a rounded, animatable tile. SurfaceView
+     * (PERFORMANCE) punches a transparent hole through the view hierarchy and
+     * cannot be clipped, rounded, or composited.
+     * https://developer.android.com/reference/androidx/camera/view/PreviewView.ImplementationMode
+     */
+    expect(read(PACKAGE_KT)).toContain('ImplementationMode.COMPATIBLE');
+    expect(read(PACKAGE_KT)).not.toContain('ImplementationMode.PERFORMANCE');
+  });
+
+  it('binds only the Preview use case — no capture or analysis', () => {
+    /**
+     * This tile is a viewfinder only. Capture goes through the existing
+     * react-native-image-picker launchCamera path. Adding ImageCapture,
+     * ImageAnalysis, or VideoCapture would open a second competing camera
+     * session and fail on most devices. The assertion checks imports rather
+     * than raw string presence so comments that name excluded classes do not
+     * trigger a false positive.
+     */
+    const pkg = read(PACKAGE_KT);
+    expect(pkg).toContain('Preview.Builder()');
+    // None of the non-preview use case symbols are imported.
+    expect(pkg).not.toContain('import androidx.camera.core.ImageCapture');
+    expect(pkg).not.toContain('import androidx.camera.core.ImageAnalysis');
+    expect(pkg).not.toContain('import androidx.camera.video.VideoCapture');
+  });
+
+  it('unbinds the camera on view detach and in onDropViewInstance', () => {
+    /**
+     * A camera left bound after the view is gone shows the OS camera-in-use
+     * indicator (green dot, API 29+) indefinitely and wastes battery.
+     * Both teardown paths must call unbindAll.
+     * https://developer.android.com/training/camerax/lifecycle
+     */
+    const pkg = read(PACKAGE_KT);
+    expect(pkg).toContain('unbindAll()');
+    expect(pkg).toContain('onDropViewInstance');
+    expect(pkg).toContain('onViewDetachedFromWindow');
+  });
+
+  it('resolves the LifecycleOwner defensively and logs rather than crashes', () => {
+    /**
+     * ThemedReactContext.currentActivity is not guaranteed to implement
+     * LifecycleOwner (a non-standard host might not). The cast must be
+     * defensive so a missing LifecycleOwner leaves the preview blank, not
+     * dead — crashing the host Activity over a viewfinder is not acceptable.
+     * https://developer.android.com/training/camerax/lifecycle
+     */
+    const pkg = read(PACKAGE_KT);
+    expect(pkg).toMatch(/as\? LifecycleOwner/);
+    // When the cast fails we log and return, not throw.
+    expect(pkg).toContain('Log.w(TAG');
+  });
+
+  it('does not request CAMERA permission from native code', () => {
+    /**
+     * Permission flow is owned by the JS layer via src/lib/permissions.ts.
+     * Native code requesting permissions would bypass the JS rationale UI and
+     * fight the JS permission state. The native view renders blank when the
+     * permission is absent (SecurityException is caught, not rethrown).
+     */
+    const pkg = read(PACKAGE_KT);
+    expect(pkg).not.toContain('PermissionsAndroid');
+    expect(pkg).not.toContain('requestPermissions');
+    // SecurityException from bindToLifecycle is swallowed, not rethrown.
+    expect(pkg).toContain('SecurityException');
+    expect(pkg).toContain('Log.w(TAG, "CAMERA permission denied');
+  });
+
+  it('JS wrapper exports CAMERA_PREVIEW_AVAILABLE from UIManager', () => {
+    /**
+     * The JS fallback path: if the native view manager is absent (old APK or
+     * iOS), callers render a static tile rather than mounting an unregistered
+     * component. UIManager.hasViewManagerConfig is the canonical check.
+     */
+    const component = read('src/components/CameraPreview.tsx');
+    expect(component).toContain('CAMERA_PREVIEW_AVAILABLE');
+    expect(component).toContain("UIManager.hasViewManagerConfig('PappalCameraPreview')");
+    expect(component).toContain("requireNativeComponent<CameraPreviewProps>('PappalCameraPreview')");
+  });
+
+  it('JS wrapper has no implicit any — facing is typed as back | front', () => {
+    const component = read('src/components/CameraPreview.tsx');
+    expect(component).toContain("facing?: 'back' | 'front'");
+    expect(component).not.toContain(': any');
+  });
+});

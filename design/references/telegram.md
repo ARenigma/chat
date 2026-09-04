@@ -272,3 +272,51 @@ and ONLY when the keyboard is not already visible — a swap with the keyboard u
 is not animated at all, because the keyboard going down is the animation.
 Search expansion is a separate **300ms** on `CubicBezierInterpolator.DEFAULT`
 (0.25, 0.1, 0.25, 1).
+
+## Attach surface (2026-09-04)
+
+Read from `ChatAttachAlert.java` and `ChatAttachAlertPhotoLayout.java`.
+
+**Grid, taken unchanged:**
+
+| Fact              | Value                                                                   | Source                                  |
+| ----------------- | ----------------------------------------------------------------------- | --------------------------------------- |
+| Grid padding      | `PADDING = 2` dp                                                        | `ChatAttachAlertPhotoLayout.java:3976`  |
+| Cell gap          | `GAP = 2` dp                                                            | `:3977`                                 |
+| Columns           | 3 portrait, 4 tablet or landscape                                       | `:3983-3990`                            |
+| Cell size         | `(availableWidth - dp(PADDING*2) - dp(GAP*2)) / itemsPerRow`            | `:4000`                                 |
+| Camera position   | grid cell **0**, a normal 1x1 cell with the live preview overlaid on it | `checkCameraViewPosition`, `:3019-3100` |
+| Camera permission | requested on TAPPING the camera cell, not on opening the sheet          | `:920-926`                              |
+| Attach button row | item width `availableWidth / min(4.5, itemCount)`; row 70dp             | `ChatAttachAlert.java:1520`, `:2906`    |
+
+Note the cell-size expression subtracts exactly TWO gaps whatever the column
+count is. That is what the reference does, so it is what we do; a "corrected"
+version would not match on a landscape device.
+
+**Sheet mechanics, recorded but NOT used** (ours is docked, see below): appear is
+a `SpringAnimation` on `TRANSLATION_Y` with stiffness **350** and damping ratio
+**0.75** (`ChatAttachAlert.java:5338-5346`), the scrim animates over **400ms**
+with a **20ms** start delay (`:5352-5357`), and the sheet opens at
+`availableHeight / 5 * 2` (`ChatAttachAlertPhotoLayout.java:4023`).
+
+**Two deviations, both decided with the owner (2026-09-04):**
+
+1. **Docked, not a sheet.** Telegram's attach surface is a tall bottom sheet that
+   dismisses the IME. Ours sits in the emoji panel's slot at keyboard height,
+   exclusive with it, so the viewport never moves and the keyboard is one tap
+   away — the WhatsApp model.
+2. **No photo grid.** Telegram reads the user's gallery from `MediaStore`, which
+   needs `READ_MEDIA_IMAGES`. Google Play treats that as a restricted permission
+   requiring a declaration, and a paid 1:1 chat app is the textbook rejection for
+   it. So cell 0 is the live camera exactly as Telegram has it, and the rest of
+   the row is one Photos tile opening Android's system photo picker, which needs
+   no permission at all. `contract.test.ts` fails the build if any restricted
+   media permission reaches the merged manifest.
+
+**Achievability note.** The live preview is CameraX `PreviewView` in
+`ImplementationMode.COMPATIBLE` (TextureView), because a SurfaceView cannot be
+clipped to rounded corners or animated with the panel. On the API 36 arm64
+emulator the emulated camera opens (`CameraDevice.onOpened()`) and PreviewView
+supplies a surface, but `createCaptureSession` times out at 5000ms — while the
+emulator's own camera app works. So the live tile is verified only up to session
+configuration there and needs a physical device to confirm.

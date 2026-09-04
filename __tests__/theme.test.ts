@@ -888,7 +888,6 @@ describe('component heights come from tokens', () => {
   // Rows/bars still holding a raw container height, migrated to layout tokens in
   // the component-heights pass. Grandfathered by style-block name per file.
   const ALLOW: Record<string, string[]> = {
-    'src/components/Composer.tsx': ['mediaRow'],
     'src/components/FloatingToolbar.tsx': ['slot'],
     'src/components/TopAppBar.tsx': ['slot'],
     'src/screens/PaymentSheet.tsx': ['row', 'webRow'],
@@ -1271,10 +1270,10 @@ describe('accent budget is enforced in code, not just documented', () => {
        * — and it appears once, for one second, at the end of one flow.
        */
       'CompletionRow.tsx',
-      // The composer's media "+" is a filled coral disc (#6, Amit): the primary
-      // media action, an action in the colour the budget reserves for actions.
-      // The send button already carries the coral here; the "+" joins it as the
-      // one other affordance on the bar.
+      // The composer's send disc. The coral media "+" that used to justify this
+      // entry alongside it is gone with the media Sheet — the attach surface is
+      // now a docked panel of neutral tiles (AttachPanel.tsx), so the send
+      // button is the single accent on the bar again.
       'Composer.tsx',
       /*
        * The emoji picker's selected category tab. The same M3 navigation

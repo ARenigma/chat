@@ -21,6 +21,8 @@ class MainApplication : Application(), ReactApplication {
           add(BillingPackage())
           // Native Material 3 expressive + circular wait indicators.
           add(MaterialIndicatorPackage())
+          // CameraX live-preview tile (PappalCameraPreview native view).
+          add(CameraTilePackage())
         },
     )
   }

@@ -3208,3 +3208,100 @@ describe('emoji data pipeline', () => {
     expect(composer).not.toMatch(/Array\.from\(current\)\.slice/);
   });
 });
+
+/**
+ * The attach surface is a docked panel, not a sheet, and it must never reach for
+ * the gallery permission.
+ *
+ * Both halves are silent failures. A second surface that can be open at the same
+ * time as the emoji panel makes the dock two keyboards tall — which reads as the
+ * composer flying up the screen. And `READ_MEDIA_IMAGES` is a Play-restricted
+ * permission: adding it does not break anything locally, it breaks the next
+ * submission, which is the worst possible place to find out.
+ */
+describe('attach panel', () => {
+  const composer = withoutComments(read('src/components/Composer.tsx'));
+  const panel = withoutComments(read('src/components/AttachPanel.tsx'));
+  const manifest = read('android/app/src/main/AndroidManifest.xml');
+
+  it('is docked in the emoji panel slot, not presented as a Sheet', () => {
+    expect(composer).toContain('<AttachPanel');
+    // The media chooser Sheet and its tiles are gone, not merely unused.
+    expect(composer).not.toContain('media-sheet');
+    expect(composer).not.toContain("from './Sheet'");
+  });
+
+  it('keeps the two docked surfaces exclusive', () => {
+    // Opening either closes the other, so the dock is only ever one keyboard
+    // tall. Asserted on both directions because one of them is easy to forget.
+    expect(composer).toMatch(/setAttachOpen\(false\);[\s\S]{0,80}setEmojiOpen\(true\)/);
+    expect(composer).toMatch(/setEmojiOpen\(false\);[\s\S]{0,120}setAttachOpen\(true\)/);
+  });
+
+  it('sizes both panels from the same expression', () => {
+    // If these ever diverge the composer moves on the swap between them.
+    const heights = composer.match(/height=\{[^}]*panelHeight \+ insets\.bottom[^}]*\}/g);
+    expect(heights?.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('CHECKS the camera permission on open and requests it only on use', () => {
+    // A permission dialog fired by opening a panel is a prompt the user never
+    // asked for. `check` is silent; the request belongs on the capture tap.
+    // https://developer.android.com/training/permissions/requesting
+    expect(composer).toContain('PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA)');
+    expect(composer).toMatch(/requestAndroidPermission\(\s*PermissionsAndroid\.PERMISSIONS\.CAMERA/);
+  });
+
+  it('never declares a restricted media-read permission', () => {
+    /*
+     * Two shapes count as "not declared": absent, or present with
+     * `tools:node="remove"`, which is how a permission a DEPENDENCY tries to
+     * merge in gets stripped. image-picker's manifest asks for
+     * READ_EXTERNAL_STORAGE and READ_MEDIA_IMAGES; ours removes both, and that
+     * removal is load-bearing — without it they arrive in the merged manifest
+     * and Play sees the restricted declaration anyway.
+     * https://developer.android.com/build/manage-manifests#merge_rule_markers
+     */
+    const declared = (name: string): boolean =>
+      new RegExp(
+        `<uses-permission[^>]*android\\.permission\\.${name}"(?![^>]*tools:node="remove")`,
+      ).test(manifest);
+    for (const restricted of [
+      'READ_MEDIA_IMAGES',
+      'READ_MEDIA_VIDEO',
+      'READ_MEDIA_VISUAL_USER_SELECTED',
+      'READ_EXTERNAL_STORAGE',
+      'WRITE_EXTERNAL_STORAGE',
+    ]) {
+      expect(declared(restricted)).toBe(false);
+    }
+    // And the two image-picker brings in are actively removed, not just absent.
+    expect(manifest).toMatch(
+      /READ_MEDIA_IMAGES"[^>]*tools:node="remove"/,
+    );
+    // And no camera-roll library, which is the other way this arrives.
+    const pkg = JSON.parse(read('package.json')) as {
+      dependencies: Record<string, string>;
+    };
+    expect(Object.keys(pkg.dependencies)).not.toContain(
+      '@react-native-camera-roll/camera-roll',
+    );
+  });
+
+  it('uses the grid arithmetic from the reference, with its constants', () => {
+    // PADDING and GAP are 2dp and the row is 3 wide in portrait; the cell size
+    // subtracts exactly two gaps regardless of column count, which is what the
+    // reference does. See design/references/telegram.md.
+    expect(panel).toContain('const PADDING = 2');
+    expect(panel).toContain('const GAP = 2');
+    expect(panel).toContain('const COLS_PORTRAIT = 3');
+    expect(panel).toContain('(width - PADDING * 2 - GAP * 2) / cols');
+  });
+
+  it('unbinds the camera when the panel is hidden or the app backgrounds', () => {
+    // The panel stays MOUNTED so the swap is cheap, so visibility alone cannot
+    // gate the hardware — a bound camera lights the OS in-use indicator.
+    expect(panel).toContain('visible && foreground && cameraGranted');
+    expect(panel).toContain("AppState.addEventListener('change'");
+  });
+});
