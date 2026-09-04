@@ -23,6 +23,7 @@
  * No KYC here (product decision 2026-09-03): name/phone/email + bank is the only PII.
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { cashfreeSignature } from '../_shared/cashfreeSignature.ts';
 
 function payoutBaseUrl(): string {
   const env = Deno.env.get('CASHFREE_ENV') ?? 'sandbox';
@@ -31,17 +32,40 @@ function payoutBaseUrl(): string {
     : 'https://sandbox.cashfree.com/payout';
 }
 
-function payoutHeaders(): HeadersInit {
-  return {
+async function payoutHeaders(): Promise<HeadersInit> {
+  const clientId =
+    Deno.env.get('CASHFREE_PAYOUT_CLIENT_ID') ?? Deno.env.get('CASHFREE_CLIENT_ID') ?? '';
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'x-api-version': Deno.env.get('CASHFREE_PAYOUT_API_VERSION') ?? '2024-01-01',
-    'x-client-id':
-      Deno.env.get('CASHFREE_PAYOUT_CLIENT_ID') ?? Deno.env.get('CASHFREE_CLIENT_ID') ?? '',
+    'x-client-id': clientId,
     'x-client-secret':
       Deno.env.get('CASHFREE_PAYOUT_CLIENT_SECRET') ??
       Deno.env.get('CASHFREE_CLIENT_SECRET') ??
       '',
   };
+  /*
+   * Payouts has its own 2FA, on the same terms as Secure ID: an IP allow-list
+   * OR an `x-cf-signature`. Edge Functions have no static egress IP — proved on
+   * 2026-09-05, when two consecutive calls left from 13.232.152.52 and then
+   * 13.204.71.66 — so the allow-list cannot work here and the signature is the
+   * only route. This is the same helper `verify-pan` uses; that call failed with
+   * "IP not whitelisted" until it was added, and this one would have failed the
+   * same way the moment payouts were switched on.
+   * https://www.cashfree.com/docs/payouts/developers/authentication
+   *
+   * Null when no public key is configured, so an account that IS on an
+   * allow-list keeps working unchanged.
+   */
+  const signature = await cashfreeSignature(
+    clientId,
+    Deno.env.get('CASHFREE_PAYOUT_PUBLIC_KEY') ??
+      Deno.env.get('CASHFREE_VERIFICATION_PUBLIC_KEY'),
+  );
+  if (signature !== null) {
+    headers['x-cf-signature'] = signature;
+  }
+  return headers;
 }
 
 interface PayoutAccountRow {
@@ -131,7 +155,7 @@ Deno.serve(async (request: Request) => {
 
     const res = await fetch(`${payoutBaseUrl()}/beneficiary`, {
       method: 'POST',
-      headers: payoutHeaders(),
+      headers: await payoutHeaders(),
       body: JSON.stringify(cfBody),
     });
     const cf = (await res.json()) as {

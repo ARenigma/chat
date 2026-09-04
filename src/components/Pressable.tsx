@@ -222,27 +222,30 @@ function PressableView({
    * zero and the children vanished without an error. That is what emptied the
    * Favourites square cards.
    *
-   * Only the box properties are hoisted, and they are left on the inner view as
-   * well so it fills the root. Padding, margin and background stay put: applying
-   * those twice would double the inset and paint the fill under the state layer.
+   * Box sizing MOVES to the root rather than being copied to both. Padding,
+   * margin, background, radius and the layout of the caller's own children stay
+   * on the inner view: applying padding twice would double the inset and paint
+   * the fill under the state layer.
+   *
+   * **Leaving a copy on the inner view is what broke the provider tab bar.**
+   * `flex: 1` there is not "fill the root" — RN expands it to
+   * `flexBasis: 0; flexGrow: 1`, and a zero basis that grows resolves to ZERO
+   * whenever the root's own main axis is content-sized. The tab row is exactly
+   * that: `flexDirection: 'row'` with no height, so each tab's root took its
+   * height from the inner view, which had collapsed to nothing. The row rendered
+   * as a ~21dp sliver of clipped glyphs with no labels (verified on the Redmi,
+   * 2026-09-05; `uiautomator` reported both tabs at `bounds="[0,0][0,0]"`).
+   * The square Favourites cards survived the same bug only because their parents
+   * gave the root a definite height, so there was free space for the grow to eat.
+   *
+   * `flexGrow: 1` is the correct "fill": its basis stays `auto`, so the inner
+   * measures its content when the root is content-sized and stretches when the
+   * root is not. Cross-axis fill needs nothing — `alignItems: 'stretch'` is
+   * already the default.
    */
-  const box = StyleSheet.flatten(style) as ViewStyle | undefined;
-  const rootStyle: ViewStyle | undefined =
-    box === undefined
-      ? undefined
-      : {
-          ...(box.flex !== undefined ? { flex: box.flex } : null),
-          ...(box.flexGrow !== undefined ? { flexGrow: box.flexGrow } : null),
-          ...(box.flexShrink !== undefined ? { flexShrink: box.flexShrink } : null),
-          ...(box.flexBasis !== undefined ? { flexBasis: box.flexBasis } : null),
-          ...(box.width !== undefined ? { width: box.width } : null),
-          ...(box.height !== undefined ? { height: box.height } : null),
-          ...(box.minWidth !== undefined ? { minWidth: box.minWidth } : null),
-          ...(box.minHeight !== undefined ? { minHeight: box.minHeight } : null),
-          ...(box.maxWidth !== undefined ? { maxWidth: box.maxWidth } : null),
-          ...(box.maxHeight !== undefined ? { maxHeight: box.maxHeight } : null),
-          ...(box.aspectRatio !== undefined ? { aspectRatio: box.aspectRatio } : null),
-        };
+  const split = splitBox(StyleSheet.flatten(style) as ViewStyle | undefined);
+  const rootStyle = split?.root;
+  const innerStyle = split?.inner;
 
   return (
     <RNPressable
@@ -276,7 +279,7 @@ function PressableView({
         ...(selected !== undefined ? { selected } : null),
         ...(checked !== undefined ? { checked } : null),
       }}>
-      <Animated.View style={[styles.clip, style, animated]}>
+      <Animated.View style={[styles.clip, innerStyle, animated]}>
         {/* Absolutely positioned and FIRST, so it paints between the caller's
             background and the content. It used to come last, which tinted the
             label as well as the surface, tolerable at M3's 10%, and fatal under
@@ -297,6 +300,49 @@ function PressableView({
 }
 
 export const Pressable = memo(PressableView);
+
+/**
+ * The box-sizing properties, which size the view itself. Everything else —
+ * padding, margin, background, radius, and the layout of the caller's own
+ * children — describes the inside and stays on the inner view.
+ */
+const BOX_KEYS = [
+  'flex',
+  'flexGrow',
+  'flexShrink',
+  'flexBasis',
+  'width',
+  'height',
+  'minWidth',
+  'minHeight',
+  'maxWidth',
+  'maxHeight',
+  'aspectRatio',
+] as const satisfies readonly (keyof ViewStyle)[];
+
+/**
+ * Splits a caller's style into the part that sizes the touchable root and the
+ * part that describes its inside. See the comment at the call site for why the
+ * box properties must MOVE rather than be copied.
+ */
+function splitBox(box: ViewStyle | undefined):
+  | { root: ViewStyle; inner: ViewStyle }
+  | undefined {
+  if (box === undefined) {
+    return undefined;
+  }
+  const root: Record<string, unknown> = {};
+  const inner: Record<string, unknown> = { ...box };
+  for (const key of BOX_KEYS) {
+    if (box[key] !== undefined) {
+      root[key] = box[key];
+    }
+    delete inner[key];
+  }
+  // Set AFTER the strip, or the loop deletes it again.
+  inner.flexGrow = 1;
+  return { root: root as ViewStyle, inner: inner as ViewStyle };
+}
 
 const makeStyles = (_t: Theme) => StyleSheet.create({
   clip: {

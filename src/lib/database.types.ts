@@ -811,6 +811,8 @@ export type Database = {
         Row: {
           pan: string | null;
           pan_name: string | null;
+          /** Migration 056. Held here, not on profiles, until promotion. */
+          verified_dob: string | null;
           status: 'not_provided' | 'pending' | 'verified' | 'failed';
           failure_reason: string | null;
         };
