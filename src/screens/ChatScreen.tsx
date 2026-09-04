@@ -3,6 +3,7 @@ import { FlashList, type FlashListRef, type ListRenderItemInfo } from '@shopify/
 import {
   BackHandler,
   Keyboard,
+  useWindowDimensions,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   Platform,
@@ -114,6 +115,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const { height: winH } = useWindowDimensions();
   // Explicit ref so we can force scrollToOffset(0) on every new message.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const listRef = useRef<FlashListRef<any>>(null);
@@ -131,6 +133,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   // The docked emoji panel is sized to the keyboard, so while it is up the dock
   // must not also add the safe-area inset the keyboard-down case needs.
   const [emojiPanelOpen, setEmojiPanelOpen] = useState(false);
+  // The panel's own search field has the keyboard: panel AND IME up together.
+  const [emojiSearching, setEmojiSearching] = useState(false);
   const [leaveDialogVisible, setLeaveDialogVisible] = useState(false);
   // Independent live controls. CALLS_ENABLED remains the compile-time master
   // guard; the admin pair can stop one medium without taking down the other.
@@ -964,7 +968,22 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
    * https://developer.android.com/develop/ui/views/layout/edge-to-edge
    */
   const imeSpace = keyboardHeight + insets.bottom;
-  const bodyInset = keyboardUp && !emojiPanelOpen ? imeSpace : 0;
+  /**
+   * The keyboard and the panel are mutually exclusive EXCEPT while the panel's
+   * own search field has focus, when both are up: the dock is lifted above the
+   * keyboard and the panel expands into what is left. Telegram's arrangement —
+   * search open expands the panel from just under the action bar down to the
+   * composer, rather than leaving it keyboard-sized with a keyboard-sized hole
+   * beneath it. Recorded in `design/references/telegram.md`.
+   */
+  const bodyInset =
+    keyboardUp && (!emojiPanelOpen || emojiSearching) ? imeSpace : 0;
+  /**
+   * Everything the header and the raised keyboard leave over. The Composer
+   * subtracts its own input row, which it measures, because the row grows with
+   * the draft and with font scale and only it knows how tall it currently is.
+   */
+  const panelCeiling = Math.max(0, winH - barHeight - imeSpace);
   /**
    * The dock's own bottom padding. Zero whenever something is filling the space
    * below it — the IME covers the navigation bar, and so does the panel — and the
@@ -1331,6 +1350,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
             sendHaloKey={sendHaloKey}
             onFocusChange={setComposerFocused}
             onPanelChange={setEmojiPanelOpen}
+            onPanelSearchChange={setEmojiSearching}
+            panelCeiling={panelCeiling}
           />
         </Frost>
       </View>

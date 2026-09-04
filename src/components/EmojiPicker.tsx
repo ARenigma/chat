@@ -1,9 +1,11 @@
-import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
+  Keyboard,
   ScrollView,
   StyleSheet,
   Text,
+  type TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -34,8 +36,17 @@ const COLUMNS = 8;
 
 interface Props {
   visible: boolean;
-  /** Exactly the keyboard's height, so the swap moves nothing. */
+  /**
+   * The keyboard's exact height while browsing, so the swap moves nothing; the
+   * space between the header and the raised keyboard while searching. The parent
+   * picks which, this only renders into it.
+   */
   height: number;
+  /**
+   * Fired when the search field takes or loses the keyboard. The panel and the
+   * IME are up together in that state, which the dock has to know about.
+   */
+  onSearchFocusChange?: (focused: boolean) => void;
   /** Backspace, because the panel replaces a keyboard that had one. */
   onBackspace: () => void;
   /** The already-toned string, ready to append to the draft. */
@@ -89,7 +100,13 @@ const Cell = memo(function CellView({
  * matches the library's open reports of silently failing under Reanimated 4.
  * Exactly the failure class RULE 5 exists for, so it went back out again.
  */
-function EmojiPickerView({ visible, height, onBackspace, onPick }: Props) {
+function EmojiPickerView({
+  visible,
+  height,
+  onBackspace,
+  onPick,
+  onSearchFocusChange,
+}: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const [category, setCategory] = useState<EmojiCategoryId>('recent');
@@ -98,6 +115,24 @@ function EmojiPickerView({ visible, height, onBackspace, onPick }: Props) {
   const [tone, setTone] = useState<string>(() => readTone());
   // Which emoji's tone strip is open, or null. One at a time.
   const [toning, setToning] = useState<string | null>(null);
+  const searchRef = useRef<TextInput>(null);
+
+  /**
+   * Give up the focus when the keyboard goes, whoever took it away.
+   *
+   * Android does not blur a TextInput when the IME is dismissed — by the system
+   * back button, by the IME's own hide key, or by `Keyboard.dismiss()`. So the
+   * field stayed focused with no keyboard, `onBlur` never fired, and the panel
+   * stayed in its expanded search size: the composer sat 15dp low and stayed
+   * there until the next toggle (found on device, 2026-09-04). Blurring here is
+   * what makes `onBlur` the single honest signal for "search is over".
+   */
+  useEffect(() => {
+    const hidden = Keyboard.addListener('keyboardDidHide', () =>
+      searchRef.current?.blur(),
+    );
+    return () => hidden.remove();
+  }, []);
 
   /**
    * The cell edge, in px, derived from the window rather than left to flex.
@@ -186,6 +221,7 @@ function EmojiPickerView({ visible, height, onBackspace, onPick }: Props) {
       <View style={styles.searchRow}>
         <Icon name="search" size={16} color={theme.color.text.tertiary} />
         <TextField
+          ref={searchRef}
           value={query}
           onChangeText={setQuery}
           placeholder="Search emoji"
@@ -195,6 +231,8 @@ function EmojiPickerView({ visible, height, onBackspace, onPick }: Props) {
           testID="emoji-search"
           allowFontScaling
           underlineColorAndroid="transparent"
+          onFocus={() => onSearchFocusChange?.(true)}
+          onBlur={() => onSearchFocusChange?.(false)}
         />
         {/* Backspace, where the keyboard's was. The panel takes the keyboard's
             place, so it has to answer for the key the keyboard took away —

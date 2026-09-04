@@ -77,6 +77,20 @@ interface Props {
    * while it is up or the composer sits an inset higher than the keyboard put it.
    */
   onPanelChange?: (open: boolean) => void;
+  /**
+   * Fired when the emoji panel's own search field takes or loses focus. That is
+   * the one case where the keyboard and the panel are up TOGETHER, so the dock
+   * has to be lifted above the keyboard while the panel stays open — see
+   * `panelCeiling`.
+   */
+  onPanelSearchChange?: (searching: boolean) => void;
+  /**
+   * The tallest the panel may be while the keyboard is also up, in px: the space
+   * between the bottom of the frosted header and the top of the keyboard. The
+   * parent owns it because only the screen knows its own header height. Ignored
+   * outside search, where the panel is exactly the keyboard's size.
+   */
+  panelCeiling?: number;
 }
 
 /**
@@ -137,6 +151,8 @@ function ComposerView({
   onTyping,
   onFocusChange,
   onPanelChange,
+  onPanelSearchChange,
+  panelCeiling = 0,
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -148,6 +164,17 @@ function ComposerView({
   const [mediaOpen, setMediaOpen] = useState(false);
   // Whether the docked emoji panel is open (it replaces the keyboard).
   const [emojiOpen, setEmojiOpen] = useState(false);
+  /**
+   * Whether the panel's OWN search field has the keyboard — the one state where
+   * the keyboard and the panel are up together, so the usual "keyboard appeared,
+   * put the panel away" rule has to be suspended. Mirrored into a ref because the
+   * `keyboardDidShow` listener is registered once and would otherwise close the
+   * panel from a stale closure the instant the search field raised the IME.
+   */
+  const [emojiSearching, setEmojiSearching] = useState(false);
+  const searchingRef = useRef(false);
+  /** The input row's measured height, so the expanded panel can subtract it. */
+  const [rowHeight, setRowHeight] = useState(0);
   const { width: winW, height: winH } = useWindowDimensions();
   const landscape = winW > winH;
   const insets = useSafeAreaInsets();
@@ -181,13 +208,21 @@ function ComposerView({
    * which is when the panel may safely go, not when the button was tapped. Take
    * it down any earlier and there is a frame with neither the panel nor the
    * keyboard, which is the drop-and-spring the swap exists to avoid.
+   *
+   * The one exception is the panel's own search field. It raises the same IME,
+   * and closing the panel on it made emoji search unreachable: the panel vanished
+   * and the keystrokes landed in nothing (found on device, 2026-09-04). Telegram
+   * treats searching as its own state rather than as "keyboard up" — see
+   * `design/references/telegram.md`.
    */
   useEffect(() => {
     const shown = Keyboard.addListener('keyboardDidShow', e => {
       const h = e.endCoordinates.height;
       writeKeyboardHeight(h, landscape);
       setPanelHeight(readKeyboardHeight(landscape));
-      setEmojiOpen(false);
+      if (!searchingRef.current) {
+        setEmojiOpen(false);
+      }
     });
     return () => shown.remove();
   }, [landscape]);
@@ -195,6 +230,16 @@ function ComposerView({
   useEffect(() => {
     onPanelChange?.(emojiOpen);
   }, [emojiOpen, onPanelChange]);
+
+  useEffect(() => {
+    onPanelSearchChange?.(emojiSearching);
+  }, [emojiSearching, onPanelSearchChange]);
+
+  /** Keep the ref the keyboard listener reads in step with the state. */
+  const onSearchFocusChange = useCallback((focused: boolean) => {
+    searchingRef.current = focused;
+    setEmojiSearching(focused);
+  }, []);
 
   /**
    * Back closes the panel before it closes the screen.
@@ -209,10 +254,29 @@ function ComposerView({
       return;
     }
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      // Searching is a state INSIDE the panel, so back leaves the panel and only
+      // puts the search away — one back press per thing that is open, which is
+      // what back means everywhere else in the app.
+      if (searchingRef.current) {
+        Keyboard.dismiss();
+        return true;
+      }
       setEmojiOpen(false);
       return true;
     });
     return () => sub.remove();
+  }, [emojiOpen]);
+
+  /**
+   * Closing the panel closes its search with it. Without this the ref stays
+   * true, and the next time the composer field raises the keyboard the listener
+   * above would decline to put the panel away — a state nobody can get out of.
+   */
+  useEffect(() => {
+    if (!emojiOpen && searchingRef.current) {
+      searchingRef.current = false;
+      setEmojiSearching(false);
+    }
   }, [emojiOpen]);
 
   const ready = value.trim().length > 0 && !disabled;
@@ -632,7 +696,10 @@ function ComposerView({
 
   return (
     <>
-    <View style={styles.row}>
+    {/* Measured, not assumed: the panel's expanded height while searching is
+        everything the header and the keyboard leave over, minus this row, and
+        the row grows with the field (up to six lines) and with font scale. */}
+    <View style={styles.row} onLayout={e => setRowHeight(e.nativeEvent.layout.height)}>
       <View style={styles.inputBar}>
       {/* The capsule. A SOLID themed surface, not a nested blur.
 
@@ -764,9 +831,26 @@ function ComposerView({
           the composer fell by that much on every swap. */}
       <EmojiPicker
         visible={emojiOpen}
-        height={panelHeight + insets.bottom}
+        /*
+         * Two sizes, one rule: the panel occupies whatever the keyboard is not.
+         *
+         * Not searching — the keyboard is down and the panel takes its exact
+         * place. Searching — the keyboard is up UNDER the panel, the dock has
+         * been lifted above it by the screen, and the panel expands into every
+         * pixel between the header and the keyboard. That expansion is
+         * Telegram's (`setStickersExpanded` on search open, height =
+         * container − status bar − nav bar − action bar − composer); without it
+         * the results would be a keyboard-sized window with a keyboard-sized
+         * hole under it.
+         */
+        height={
+          emojiSearching
+            ? Math.max(panelCeiling - rowHeight, panelHeight)
+            : panelHeight + insets.bottom
+        }
         onBackspace={backspace}
         onPick={addEmoji}
+        onSearchFocusChange={onSearchFocusChange}
       />
     </View>
 
