@@ -89,6 +89,12 @@ export type Profile = {
   role: UserRole;
   token_balance: number;
   identity_verified_at: string | null;
+  /**
+   * The one signal for "did the identity step run" (migration 054). The app
+   * reads THIS, not `identity_verified_at` and not `date_of_birth is not null` —
+   * those two used to be read as flags by different callers and could disagree.
+   */
+  identity_state: 'none' | 'pending' | 'verified';
   is_available: boolean;
   /** Non-null and future-dated means suspended. A ban is a far-future value. */
   suspended_until: string | null;

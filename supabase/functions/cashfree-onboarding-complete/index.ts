@@ -163,9 +163,61 @@ Deno.serve(async (request: Request) => {
     const nameAtBank = str(flat.name_at_bank) ?? str(flat.name);
     const now = new Date().toISOString();
 
-    // 4a. DOB → the card age (service role bypasses the 012 PII guard).
-    if (dob) {
-      await admin.from('profiles').update({ date_of_birth: dob }).eq('id', providerId);
+    /*
+     * 4a. The identity step, written as ONE atomic set.
+     *
+     * `date_of_birth`, `identity_verified_at` and `identity_state` go together or
+     * not at all — migration 054 adds a CHECK that rejects a row claiming
+     * `identity_state = 'verified'` without both of the others.
+     *
+     * This used to be `if (dob) update date_of_birth`, with the verified
+     * timestamp set elsewhere and nothing tying them together. Cashfree does not
+     * always return a DOB, so a response without one left a profile that other
+     * code read as verified while `complete_provider_onboarding` refused it —
+     * a person permanently stuck, seen in production data on 2026-09-04.
+     *
+     * No DOB means the identity step did NOT succeed for our purposes: the whole
+     * reason we require it is the 18+ gate, and a verification that cannot answer
+     * the age question has not answered the question we asked. So the state stays
+     * 'none' and the caller is told, rather than being left in a state that looks
+     * complete and behaves incomplete.
+     */
+    if (!dob) {
+      console.error('user-details returned no dob for', providerId);
+      await admin
+        .from('profiles')
+        .update({ identity_state: 'none', identity_verified_at: null })
+        .eq('id', providerId);
+      return Response.json(
+        {
+          error:
+            'Your verification did not include a date of birth, which we need to ' +
+            'confirm you are 18 or over. Please try again.',
+        },
+        { status: 400 },
+      );
+    }
+
+    /*
+     * The DOB goes on the tax profile; only the STATE goes on the profile.
+     * `member_is_pseudonymous` (migration 011) forbids a birth date on a member
+     * row, so this write always failed here too — 1-Click had this blocker as
+     * well as the CORS one, and would not have worked even with the sheet fixed.
+     * See migration 056.
+     */
+    await admin
+      .from('provider_tax_profile')
+      .upsert({ provider_id: providerId, verified_dob: dob }, { onConflict: 'provider_id' });
+    const { error: identityErr } = await admin
+      .from('profiles')
+      .update({
+        identity_verified_at: now,
+        identity_state: 'verified',
+      })
+      .eq('id', providerId);
+    if (identityErr) {
+      console.error('identity write failed:', identityErr.message);
+      return Response.json({ error: 'could not save your verification' }, { status: 500 });
     }
 
     // 4b. PAN → verified tax profile (provider_id is the PK, so upsert is clean).
