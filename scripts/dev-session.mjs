@@ -30,9 +30,8 @@
  * device and is dropped.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -85,16 +84,13 @@ if (!URL_BASE || !ANON) {
 if (!EMAIL) {
   fail('PROVIDER_EMAIL is required (set it in .env)');
 }
-/**
- * The storage key Supabase uses, derived rather than guessed.
- *
- * It is `sb-<project-ref>-auth-token`, where the ref is the subdomain. Deriving
- * it from SUPABASE_URL means pointing this at a different project cannot write a
- * session under the wrong key and leave the app looking signed out for no visible
- * reason.
+/*
+ * The project ref, used only to ask the Supabase CLI for the right key. The
+ * gotrue storage key this used to derive is gone with the AsyncStorage write —
+ * the injector link hands the app the tokens and the app's own client decides
+ * where to keep them, which is one less thing here that can drift.
  */
 const ref = new URL(URL_BASE).hostname.split('.')[0];
-const STORAGE_KEY = `sb-${ref}-auth-token`;
 
 function adb(args, { input } = {}) {
   return execFileSync('adb', args, {
@@ -104,12 +100,11 @@ function adb(args, { input } = {}) {
   });
 }
 
-/** Root first. Without it the app's data directory is unreadable and unwritable. */
-try {
-  adb(['root']);
-} catch {
-  // Already root, or a build that refuses. The write below will say which.
-}
+/*
+ * No `adb root` here any more. The injector link goes through the ordinary
+ * activity intent path, so the app's private data directory is never touched —
+ * which is what lets this work on a Play-services image, where root is refused.
+ */
 execFileSync('adb', ['wait-for-device'], { stdio: 'ignore' });
 
 /**
@@ -243,121 +238,88 @@ const session = {
 };
 
 /**
- * Where AsyncStorage actually lives, discovered rather than hardcoded.
+ * How the session reaches the app: the debug-only deep link the app already has.
  *
- * This cost a wasted round: the obvious answer is `RKStorage` with a table called
- * `catalystLocalStorage`, which is what every article says, and it is what the
- * library used before it moved to Room. This app's version writes a database
- * called `AsyncStorage` with a table called `Storage`. Writing to the old name
- * succeeds, reports one row, and the app never opens the file, so the failure
- * looks exactly like the session being rejected.
+ * **What this replaced, and why.** This used to write one row into the app's
+ * AsyncStorage SQLite file and then delete the MMKV store so
+ * `migrateLegacyStorage()` would pick it up. That route is dead twice over on a
+ * current emulator, and both failures look like a rejected session rather than a
+ * broken tool:
  *
- * So both are probed and the table is read out of `sqlite_master` instead of
- * being assumed. A library upgrade that renames either one will fail loudly here
- * rather than quietly writing to a file nothing reads.
+ *  - The API 36 Play system image ships no `sqlite3` binary at all, so the write
+ *    silently found nothing to write with.
+ *  - The app is MMKV-only now. AsyncStorage is READ by the migration and never
+ *    written, so its database is never created — meaning the route only ever
+ *    worked on a device that had once run an older build. On a fresh install
+ *    there is nothing to write into.
+ *
+ * It also needed `adb root`, which a Play-services image refuses.
+ *
+ * `companionchat://e2e-auth` is the app's own injector, behind a debug-only
+ * intent filter (release builds expose no such filter), and it is the same path
+ * `scripts/e2e.mjs` already uses for its Maestro journeys. So this tool now
+ * agrees with the one that was working, needs no root, no sqlite and no legacy
+ * database, and exercises a code path that is actually maintained.
+ * https://developer.android.com/training/app-links/create-deeplinks
  */
-function shell(command) {
-  return execFileSync('adb', ['shell', command], { encoding: 'utf8' }).trim();
-}
-
-function findStore() {
-  const dir = `/data/data/${PACKAGE}/databases`;
-  for (const db of ['AsyncStorage', 'RKStorage']) {
-    const path = `${dir}/${db}`;
-    let tables = '';
-    try {
-      tables = shell(
-        `sqlite3 ${path} "select name from sqlite_master where type='table';"`,
-      );
-    } catch {
-      continue;
-    }
-    for (const table of ['Storage', 'catalystLocalStorage']) {
-      if (tables.split('\n').includes(table)) {
-        return { path, table };
-      }
-    }
-  }
-  fail(
-    'no AsyncStorage table found on the device. Launch the app once so it creates ' +
-      'its database, then run this again.',
-  );
-}
-
-const store = findStore();
-
-const sql = [
-  `DELETE FROM \`${store.table}\` WHERE \`key\` = '${STORAGE_KEY}';`,
-  `INSERT INTO \`${
-    store.table
-  }\` (\`key\`, \`value\`) VALUES ('${STORAGE_KEY}', '${JSON.stringify(
-    session,
-  ).replace(/'/g, "''")}');`,
-  // Fold the write-ahead log back into the database file. Without this the row
-  // sits in -wal, and the app's own Room connection opens the main file first.
-  'PRAGMA wal_checkpoint(TRUNCATE);',
-  `SELECT count(*) FROM \`${store.table}\` WHERE \`key\` = '${STORAGE_KEY}';`,
-].join('\n');
-
-const scratch = join(tmpdir(), 'dev-session.sql');
-writeFileSync(scratch, sql, { mode: 0o600 });
+const deepLink =
+  `companionchat://e2e-auth?` +
+  new URLSearchParams({
+    access_token: session.access_token,
+    refresh_token: session.refresh_token,
+  }).toString();
 
 try {
-  // Stopped first: writing under a live Room connection is how a -wal file and a
-  // main file end up disagreeing.
+  // Stopped first so the injector runs on a cold boot decision rather than
+  // racing a live one.
   adb(['shell', `am force-stop ${PACKAGE}`]);
-  adb(['push', scratch, '/data/local/tmp/dev-session.sql']);
-  // Last line only: `PRAGMA wal_checkpoint` prints its own row above the count.
-  const rows = adb([
-    'shell',
-    `sqlite3 ${store.path} < /data/local/tmp/dev-session.sql`,
-  ])
-    .trim()
-    .split('\n')
-    .pop()
-    .trim();
-  adb(['shell', 'rm', '-f', '/data/local/tmp/dev-session.sql']);
-  // The app's own uid must own every file it is about to read.
-  const uid = adb(['shell', `stat -c %u /data/data/${PACKAGE}`]).trim();
-  adb(['shell', `chown -R ${uid}:${uid} /data/data/${PACKAGE}/databases`]);
-  adb(['shell', `chmod 660 ${store.path}`]);
-
   /*
-   * Delete the MMKV store so the migration runs again.
+   * The URL is SINGLE-QUOTED for the device's shell.
    *
-   * `migrateLegacyStorage()` short-circuits on `mmkv.getBoolean('migrated.v1')`,
-   * which any previous launch has already set. Without this the row above is
-   * written correctly, sits in AsyncStorage forever, and the app never looks at
-   * it: the symptom is a perfectly successful injection followed by a sign-in
-   * screen, which reads as the session being rejected.
-   *
-   * This throws away local-only state with it: the theme choice, the last
-   * conversation, the update-prompt timestamp. All of it is recomputable and this
-   * only ever runs against an emulator, so that is the cheaper side of the trade
-   * than hand-editing MMKV's binary format from outside.
+   * `adb shell` joins its arguments into one command line and hands it to the
+   * device's `sh`, which splits on `&` — so an unquoted query string is cut in
+   * half at `&refresh_token=` and the second half is run as a background
+   * command. The visible symptom is `am start` failing with the intent
+   * half-formed, which reads as "the app rejected the link".
    */
-  adb([
+  const launch = adb([
     'shell',
-    `rm -f /data/data/${PACKAGE}/files/mmkv/companionchat /data/data/${PACKAGE}/files/mmkv/companionchat.crc`,
+    `am start -W -a android.intent.action.VIEW -d '${deepLink}' ${PACKAGE}`,
   ]);
-  if (rows !== '1') {
-    fail(`wrote to ${store.path} but read back ${rows} rows, expected 1`);
+  if (/Error:|unable to resolve/i.test(launch)) {
+    fail(
+      `the app did not accept the injector link. Is this a DEBUG build? The ` +
+        `intent filter does not exist in release.\n${launch}`,
+    );
   }
-  console.log(
-    `dev-session OK: ${STORAGE_KEY} -> ${store.path} (${store.table})`,
-  );
-  console.log(
-    `  as ${EMAIL}. Restart the app twice: migrateLegacyStorage() does not`,
-  );
-  console.log(
-    '  block the first frame, so the boot decision can beat it once.',
-  );
-} catch (error) {
+  /*
+   * The dangerous permissions the signed-in surfaces use, granted up front.
+   * Same set `e2e.mjs` grants, and for the same reason: a permission dialog on
+   * first use is a separate journey, not something to hit by accident while
+   * looking at a screen.
+   * https://developer.android.com/training/permissions/requesting
+   */
+  for (const permission of [
+    'android.permission.POST_NOTIFICATIONS',
+    'android.permission.RECORD_AUDIO',
+    'android.permission.CAMERA',
+  ]) {
+    try {
+      adb(['shell', 'pm', 'grant', PACKAGE, permission]);
+    } catch {
+      // A permission the manifest does not declare on this variant. Not fatal.
+    }
+  }
+  console.log(`dev-session OK: signed in as ${EMAIL} via the injector link.`);
+} catch {
+  /*
+   * The error's own message is NOT included, deliberately. `execFileSync` puts
+   * the whole failed command line in it, and that command line contains the
+   * access token — so reporting it wrote a live JWT into the terminal and into
+   * whatever captured it (seen 2026-09-04). Nothing here prints a token.
+   */
   fail(
-    `could not write to the device (${
-      error.message.split('\n')[0]
-    }). Is an emulator running and rooted?`,
+    'could not reach the device. Is an emulator or device connected, and is ' +
+      'this a debug build?',
   );
-} finally {
-  unlinkSync(scratch);
 }

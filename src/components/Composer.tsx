@@ -40,7 +40,7 @@ import { useStore } from '../store/useStore';
 import { Icon } from './Icon';
 import { Pressable } from './Pressable';
 import { SendButton } from './SendButton';
-import { Sheet } from './Sheet';
+import { AttachPanel } from './AttachPanel';
 import { EmojiPicker } from './EmojiPicker';
 import { readKeyboardHeight, writeKeyboardHeight } from '../lib/keyboardPanel';
 import { Waveform } from './Waveform';
@@ -166,9 +166,21 @@ function ComposerView({
   const setNotice = useStore(s => s.setNotice);
   const [value, setValue] = useState('');
   const [mode, setMode] = useState<Mode>('idle');
-  // Whether the media chooser (Camera / Photos) is open, now opened by the
-  // camera button rather than the retired "+".
-  const [mediaOpen, setMediaOpen] = useState(false);
+  /**
+   * The attach surface, docked in the emoji panel's slot rather than presented
+   * as a bottom sheet. Mounted on first open and hidden thereafter, exactly as
+   * the emoji panel is, so a swap costs a visibility flip and not a rebuild.
+   */
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [attachMounted, setAttachMounted] = useState(false);
+  /**
+   * Whether CAMERA is granted, so the panel's first cell can show a live
+   * viewfinder rather than an icon. Checked when the panel opens, never
+   * requested from there — a permission dialog on panel open would be a prompt
+   * the user did not ask for.
+   * https://developer.android.com/training/permissions/requesting
+   */
+  const [cameraGranted, setCameraGranted] = useState(false);
   // Whether the docked emoji panel is open (it replaces the keyboard).
   const [emojiOpen, setEmojiOpen] = useState(false);
   /**
@@ -236,14 +248,17 @@ function ComposerView({
       setPanelHeight(readKeyboardHeight(landscape));
       if (!searchingRef.current) {
         setEmojiOpen(false);
+        setAttachOpen(false);
       }
     });
     return () => shown.remove();
   }, [landscape]);
 
+  // One signal for "a docked surface is up", because the dock's arithmetic is
+  // the same for either of them.
   useEffect(() => {
-    onPanelChange?.(emojiOpen);
-  }, [emojiOpen, onPanelChange]);
+    onPanelChange?.(emojiOpen || attachOpen);
+  }, [emojiOpen, attachOpen, onPanelChange]);
 
   useEffect(() => {
     onPanelSearchChange?.(emojiSearching);
@@ -264,7 +279,7 @@ function ComposerView({
    * left the conversation instead of putting the emoji away).
    */
   useEffect(() => {
-    if (!emojiOpen) {
+    if (!emojiOpen && !attachOpen) {
       return;
     }
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -276,10 +291,11 @@ function ComposerView({
         return true;
       }
       setEmojiOpen(false);
+      setAttachOpen(false);
       return true;
     });
     return () => sub.remove();
-  }, [emojiOpen]);
+  }, [emojiOpen, attachOpen]);
 
   /**
    * Closing the panel closes its search with it. Without this the ref stays
@@ -399,6 +415,36 @@ function ComposerView({
     return true;
   }, []);
 
+  /**
+   * The attach panel and the emoji panel share one slot and are exclusive.
+   *
+   * Sequenced the way `toggleEmoji` is, and for the same reason: the panel is
+   * mounted BEFORE the keyboard is dismissed, so there is never a frame with
+   * neither surface up. Opening it also closes the other one — the dock is only
+   * ever as tall as one keyboard.
+   */
+  const toggleAttach = useCallback(() => {
+    if (attachOpen) {
+      // Back to the keyboard, the same handover the emoji button does.
+      inputRef.current?.focus();
+      setAttachOpen(false);
+      return;
+    }
+    leaveSearch();
+    setEmojiOpen(false);
+    setAttachMounted(true);
+    setAttachOpen(true);
+    Keyboard.dismiss();
+    /*
+     * Read the permission, do not request it. `check` is silent; a request here
+     * would fire a dialog the user never asked for just because they opened a
+     * panel. The request happens on the capture tap, in `takePhoto`.
+     */
+    void PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA)
+      .then(setCameraGranted)
+      .catch(() => setCameraGranted(false));
+  }, [attachOpen, leaveSearch]);
+
   const toggleEmoji = useCallback(() => {
     if (emojiOpen) {
       if (leaveSearch()) {
@@ -410,6 +456,7 @@ function ComposerView({
       inputRef.current?.focus();
       return;
     }
+    setAttachOpen(false);
     setPanelMounted(true);
     setEmojiOpen(true);
     Keyboard.dismiss();
@@ -584,6 +631,16 @@ function ComposerView({
         errorTick();
         return;
       }
+      /*
+       * The panel goes with the send. Telegram dismisses its whole attach sheet
+       * on a successful send (`ChatAttachAlert.dismiss()` from the send path),
+       * and leaving ours open puts a live viewfinder under the message that was
+       * just sent — which reads as "it did not go".
+       *
+       * Only on the success path: a refused pick (too large, unreadable) leaves
+       * the panel up so the next attempt is one tap, not four.
+       */
+      setAttachOpen(false);
       onSendImage({
         uri: asset.uri,
         width: asset.width,
@@ -599,7 +656,6 @@ function ComposerView({
    * permission at all, so there is nothing to request here.
    */
   const pickImage = useCallback(async () => {
-    setMediaOpen(false);
     if (disabled) {
       return;
     }
@@ -619,7 +675,6 @@ function ComposerView({
    * will not show again.
    */
   const takePhoto = useCallback(async () => {
-    setMediaOpen(false);
     if (disabled) {
       return;
     }
@@ -816,7 +871,7 @@ function ComposerView({
           the freed room instead of leaving a hole. */}
       <Animated.View style={cameraStyle} pointerEvents={ready ? 'none' : 'auto'}>
         <Pressable
-          onPress={() => requestAnimationFrame(() => setMediaOpen(true))}
+          onPress={toggleAttach}
           disabled={disabled || ready}
           testID="composer-attach"
           accessibilityLabel="Add media"
@@ -901,57 +956,25 @@ function ComposerView({
         onSearchFocusChange={onSearchFocusChange}
       />
       ) : null}
-    </View>
 
-    {/* The media chooser (#8). A bottom sheet with Camera and Photos, the same
-        inset-grouped table idiom the payment and settings lists use, so the app's
-        selectable lists read as one system. */}
-    <Sheet
-      visible={mediaOpen}
-      testID="media-sheet"
-      title="Send a photo"
-      onClose={() => setMediaOpen(false)}
-      onCancel={() => setMediaOpen(false)}
-      cancelLabel="Cancel">
-      {/* A grid of round tiles with labels under them, not an inset-grouped
-          list: that is the attach surface's anatomy in the reference frame, and
-          the list idiom read as a settings menu rather than a picker (Amit,
-          2026-09-04). Two tiles, because two is what this app can send. */}
-      <View style={styles.mediaGrid}>
-        <Pressable
-          onPress={() => {
-            void pickImage();
-          }}
-          testID="media-photos"
-          accessibilityLabel="Choose a photo"
-          press="none"
-          highlight="ios"
-          style={styles.mediaTile}>
-          <View style={styles.mediaDisc}>
-            <Icon name="image" size={24} color={theme.color.text.onAccent} />
-          </View>
-          <Text allowFontScaling style={styles.mediaTileLabel}>
-            Photo
-          </Text>
-        </Pressable>
-        <Pressable
-          onPress={() => {
+      {/* The attach surface shares the emoji panel's slot and is exclusive with
+          it, so the dock is only ever as tall as one keyboard. Mounted on first
+          open and hidden thereafter, for the same reason the emoji panel is. */}
+      {attachMounted ? (
+        <AttachPanel
+          visible={attachOpen}
+          height={panelHeight + insets.bottom}
+          cameraGranted={cameraGranted}
+          onCamera={() => {
             void takePhoto();
           }}
-          testID="media-camera"
-          accessibilityLabel="Take a photo"
-          press="none"
-          highlight="ios"
-          style={styles.mediaTile}>
-          <View style={[styles.mediaDisc, styles.mediaDiscInk]}>
-            <Icon name="camera" size={24} color={theme.color.text.onInverse} />
-          </View>
-          <Text allowFontScaling style={styles.mediaTileLabel}>
-            Camera
-          </Text>
-        </Pressable>
-      </View>
-    </Sheet>
+          onGallery={() => {
+            void pickImage();
+          }}
+        />
+      ) : null}
+    </View>
+
 
     </>
   );
@@ -1146,58 +1169,5 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: t.color.bg.base,
-  },
-  // The media chooser rows, same inset-grouped table as PaymentSheet/Settings.
-  mediaGrid: {
-    alignSelf: 'stretch',
-    flexDirection: 'row',
-    gap: TOKENS.space.lg,
-    paddingHorizontal: TOKENS.space.xs,
-    paddingTop: TOKENS.space.xs,
-  },
-  // One tile: a round disc with its label beneath, the reference frame's
-  // attach-grid cell.
-  mediaTile: {
-    width: 76,
-    alignItems: 'center',
-    gap: TOKENS.space.xs,
-    paddingVertical: TOKENS.space.xs,
-    borderRadius: TOKENS.radius.field,
-  },
-  mediaDisc: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: t.color.bg.accent,
-  },
-  // The second tile takes ink rather than a second coral disc: two accent discs
-  // side by side would spend the accent budget on a chooser where neither option
-  // is primary.
-  mediaDiscInk: {
-    backgroundColor: t.color.bg.inverse,
-  },
-  mediaTileLabel: {
-    ...TOKENS.typography.labelMedium,
-    color: t.color.text.secondary,
-  },
-  mediaIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: t.color.bg.raised,
-  },
-  mediaLabel: {
-    ...TOKENS.typography.bodyLarge,
-    color: t.color.text.primary,
-    flex: 1,
-  },
-  mediaSep: {
-    height: StyleSheet.hairlineWidth,
-    marginLeft: TOKENS.space.md + 32 + TOKENS.space.sm,
-    backgroundColor: t.color.border.hairline,
   },
 });
