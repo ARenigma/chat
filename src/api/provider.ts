@@ -66,6 +66,15 @@ export interface PayoutReadiness {
 export interface TaxProfile {
   pan: string | null;
   pan_name: string | null;
+  /**
+   * Date of birth as returned by the PAN check, `YYYY-MM-DD`.
+   *
+   * Held here rather than on `profiles` until promotion, because
+   * `member_is_pseudonymous` (migration 011) forbids a birth date on a member
+   * row. Read by onboarding to SHOW the provider what was fetched before they
+   * confirm it, and by `complete_provider_onboarding` for the 18+ gate.
+   */
+  verified_dob: string | null;
   status: 'not_provided' | 'pending' | 'verified' | 'failed';
   failure_reason: string | null;
 }
@@ -354,7 +363,7 @@ export function useTaxProfile() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('provider_tax_profile')
-        .select('pan, pan_name, status, failure_reason')
+        .select('pan, pan_name, verified_dob, status, failure_reason')
         .limit(1);
       if (error) {
         throw new Error(error.message);

@@ -2338,8 +2338,8 @@ describe('provider identity is verified, not typed', () => {
     /*
      * The PAN check is the identity step now, not Cashfree 1-Click. 1-Click's
      * consent sheet is broken inside Cashfree's own iframe (their page sends
-     * `x-session-id` to their API, which rejects it in the CORS preflight —
-     * reproduced with curl, 2026-09-05), so onboarding cannot depend on it.
+     * `x-session-id` to their API, which rejects it in the CORS preflight,
+     * reproduced with curl on 2026-09-05), so onboarding cannot depend on it.
      * `useCashfreeVerification` still exists for when they fix it.
      */
     expect(screen).toContain('useSavePan');
@@ -2347,10 +2347,62 @@ describe('provider identity is verified, not typed', () => {
     expect(screen).not.toContain('useCashfreeVerification');
   });
 
+  it('collects the payout destination in the same step as the PAN', () => {
+    /*
+     * The payout destination used to live behind "Get paid" on the provider
+     * home, OUTSIDE onboarding, so a provider could go live and earn with
+     * nowhere to be paid. One step, one submit (Amit, 2026-09-05).
+     */
+    expect(screen).toContain('useSavePayoutAccount');
+    expect(screen).toContain('provider-upi');
+    expect(screen).toContain('provider-account-number');
+    expect(screen).toContain('provider-ifsc');
+    // Both halves gate the one button.
+    expect(screen).toMatch(/disabled=\{!PAN_SHAPE\.test\(pan\) \|\| !payoutReady\}/);
+  });
+
+  it('sends the PAN-verified name as the beneficiary, never a typed one', () => {
+    /*
+     * "The account belongs to the person whose PAN this is" only holds if the
+     * name comes from the Income Tax Department's record rather than from the
+     * provider. A typed holder name lets earnings be routed to someone else.
+     */
+    expect(screen).toContain('pan_name');
+    expect(screen).toMatch(/accountHolderName: verifiedName/);
+    expect(screen).not.toMatch(/accountHolderName: (displayName|holderName)/);
+  });
+
+  it('shows what was fetched and waits for the provider to accept it', () => {
+    /*
+     * A third party told us this person's name and birth date. Writing that
+     * onto their account without showing it means a wrong record becomes
+     * theirs silently, and the 18+ gate then runs on a birth date nobody ever
+     * read (Amit, 2026-09-05).
+     */
+    expect(screen).toContain("phase === 'checking'");
+    expect(screen).toContain("phase === 'confirm'");
+    expect(screen).toContain('confirm-name');
+    expect(screen).toContain('confirm-dob');
+    expect(screen).toContain('confirm-destination');
+    // The checks land on `confirm`, never straight on the profile.
+    expect(screen).toMatch(/setFetched\(\{[\s\S]{0,600}setPhase\('confirm'\)/);
+    // And the profile is reachable only from the confirm button.
+    const advances = screen.match(/setPhase\('profile'\)/g) ?? [];
+    expect(advances).toHaveLength(1);
+    expect(screen).toMatch(/provider-confirm-details/);
+    // A rejection returns to the form rather than dead-ending.
+    expect(screen).toContain('onEditDetails');
+  });
+
   it('advances only on a real verification', () => {
     // Advancing on 'pending' or 'failed' let someone fill the whole profile and
     // be refused at the very end with no way back to the step that failed.
-    expect(screen).toMatch(/status === 'verified'[\s\S]{0,60}setPhase\('profile'\)/);
+    expect(screen).toMatch(/panStatus !== 'verified'[\s\S]{0,600}return;/);
+    // The PAN runs FIRST: without a verified name there is nothing trustworthy
+    // to open a beneficiary with.
+    expect(screen.indexOf('savePan.mutateAsync')).toBeLessThan(
+      screen.indexOf('savePayout.mutateAsync'),
+    );
   });
 
   it('keeps the 18+ age gate in SQL, off the verified DOB', () => {
