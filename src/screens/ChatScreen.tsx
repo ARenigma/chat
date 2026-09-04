@@ -3,7 +3,6 @@ import { FlashList, type FlashListRef, type ListRenderItemInfo } from '@shopify/
 import {
   BackHandler,
   Keyboard,
-  KeyboardAvoidingView,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   Platform,
@@ -40,6 +39,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { readPresence } from '../lib/presence';
 import { SCROLL_PHYSICS } from '../lib/scroll';
+import { readKeyboardHeight } from '../lib/keyboardPanel';
 import { DEFAULT_RATES, isLowBalance, talkTimeLeft } from '../lib/rates';
 import { ownReaction, tallyByMessage } from '../lib/reactions';
 import type { ReactionEmoji } from '../lib/database.types';
@@ -162,9 +162,14 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   // The message the next send replies to. Cleared on send and on cancel, and
   // never persisted: a half-composed reply is not worth surviving a screen.
   const [replyTo, setReplyTo] = useState<ActionTarget | null>(null);
-  // Only ever read to decide whether the safe-area inset is already covered by
-  // the keyboard's own frame. See the note on the composer wrapper.
+  // Whether the IME is up, and how tall it says it is. Both feed the single
+  // `imeSpace` number the dock and the emoji panel are sized from — see the note
+  // on `composerInset`. The height is seeded from the remembered measurement so
+  // the very first show has something to lift by on the same frame.
   const [keyboardUp, setKeyboardUp] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(() =>
+    readKeyboardHeight(false),
+  );
   // Dismissing the prompt is per-visit, not persisted. A member who says "not
   // now" and comes back tomorrow is a different question from one who said it a
   // second ago, and persisting it would need a key per conversation for a
@@ -180,7 +185,10 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   useEffect(() => {
     const show = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      () => setKeyboardUp(true),
+      e => {
+        setKeyboardHeight(e.endCoordinates.height);
+        setKeyboardUp(true);
+      },
     );
     const hide = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
@@ -933,18 +941,37 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   const empty = !loading && rows.length === 0;
 
   /**
-   * The safe-area inset, applied only while the keyboard is down.
+   * ONE number for the space under the composer row, so the row cannot move when
+   * the keyboard and the emoji panel trade places.
    *
-   * RN's iOS `KeyboardAvoidingView` with `behavior="padding"` derives its padding
-   * from the keyboard frame, which already reaches the bottom of the screen, so
-   * adding `insets.bottom` on top of it floated the composer about 34pt above the
-   * raised keyboard on any notched iPhone. Android's `behavior="height"` does not
-   * double up, hence the platform check rather than dropping the inset outright.
+   * **The bug this replaces, measured (S22 Ultra, 2026-09-04).** The composer
+   * dropped 96px — exactly 34dp — every time the panel opened, and rose 34dp
+   * every time the keyboard came back. Two independent errors summed to it:
+   *
+   *  - 19dp: `composerInset` was zeroed on `emojiPanelOpen`, so the safe-area
+   *    padding present in the keyboard state vanished in the panel state.
+   *  - 15dp: the panel was sized from `keyboardDidShow.endCoordinates.height`,
+   *    which under edge-to-edge EXCLUDES the navigation-bar inset, while the IME
+   *    window runs to the bottom of the screen. `dumpsys window` put the IME
+   *    frame at [0,1382][1080,2316] (332dp) while RN reported 317dp.
+   *
+   * `KeyboardAvoidingView behavior="height"` is gone with them. It stacked a
+   * second resize mechanism on top of `adjustResize` and shrank the body by RN's
+   * short number, so its lift could never agree with the panel's height. We lift
+   * the body ourselves by the height the IME actually occupies, which is the same
+   * expression the panel is sized from — the two are equal by construction now,
+   * not by coincidence.
+   * https://developer.android.com/develop/ui/views/layout/edge-to-edge
+   */
+  const imeSpace = keyboardHeight + insets.bottom;
+  const bodyInset = keyboardUp && !emojiPanelOpen ? imeSpace : 0;
+  /**
+   * The dock's own bottom padding. Zero whenever something is filling the space
+   * below it — the IME covers the navigation bar, and so does the panel — and the
+   * safe-area inset only when the screen bottom is bare.
    */
   const composerInset =
-    (Platform.OS === 'ios' && keyboardUp) || emojiPanelOpen
-      ? 0
-      : insets.bottom + TOKENS.space['2xs'];
+    keyboardUp || emojiPanelOpen ? 0 : insets.bottom + TOKENS.space['2xs'];
 
   return (
     <View style={styles.root}>
@@ -1174,9 +1201,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
       ) : null}
       </Frost>
 
-      <KeyboardAvoidingView
-        style={styles.body}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <View style={[styles.body, { paddingBottom: bodyInset }]}>
         {/* The chat wallpaper deferred until after the open animation (A1):
             ~800 View+Text nodes mount after InteractionManager fires so they
             don't compete with SlideInRight for frame budget. The transcript
@@ -1308,7 +1333,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
             onPanelChange={setEmojiPanelOpen}
           />
         </Frost>
-      </KeyboardAvoidingView>
+      </View>
 
       <SafetySheet
         visible={safety.open}
