@@ -15,8 +15,7 @@ import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { CLAY_SEEDS, CLAY_IMAGES, type ClaySeed } from '../lib/clayAvatars';
 import {
-  cashfreeVerificationAvailable,
-  useCashfreeVerification,
+  useSavePan,
   useCompleteProviderOnboarding,
   useSetClayAvatar,
 } from '../api/provider';
@@ -36,6 +35,12 @@ interface Props {
 const LANGUAGES = ['English', 'Hindi', 'Tamil', 'Telugu', 'Bengali', 'Marathi'];
 
 type Phase = 'verify' | 'profile' | 'done';
+
+/**
+ * Five letters, four digits, a letter. Checked here only to enable the button —
+ * the real verification is the Income Tax Department's, server-side.
+ */
+const PAN_SHAPE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 
 /**
  * Becoming a provider, as ONE continuous flow (no second welcome/bloom).
@@ -67,10 +72,11 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
   const [about, setAbout] = useState('');
   const [avatarSeed, setAvatarSeed] = useState<ClaySeed | null>(null);
 
-  const verify = useCashfreeVerification();
+  const savePan = useSavePan();
+  const [pan, setPan] = useState('');
+  const [panError, setPanError] = useState<string | null>(null);
   const complete = useCompleteProviderOnboarding();
   const setClay = useSetClayAvatar();
-  const canVerify = cashfreeVerificationAvailable();
 
   const toggleLanguage = useCallback((language: string) => {
     setLanguages(prev =>
@@ -78,30 +84,44 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
     );
   }, []);
 
-  const onVerify = useCallback(() => {
-    verify.mutate(undefined, {
-      onSuccess: outcome => {
-        /*
-         * ONLY a real verification advances the flow.
-         *
-         * This used to advance on anything except 'cancelled', which is what
-         * produced the dead end: a person whose verification came back 'pending'
-         * or 'unavailable' filled in the whole profile, pressed Go live, and was
-         * refused by `complete_provider_onboarding` with "verify your identity
-         * first" — at the end, with no way back to the step that failed. Seen in
-         * production data on 2026-09-04.
-         *
-         * 'pending' is a real state now (migration 054): a session was opened
-         * and never exchanged. It is not progress towards being listed, so it
-         * does not move the user forward; the notice from the mutation explains
-         * it and the button stays where it is, ready to retry.
-         */
-        if (outcome === 'verified') {
+  /**
+   * PAN, and only PAN.
+   *
+   * This step used to open Cashfree's 1-Click consent sheet, which returns the
+   * same PAN, name and DOB behind an OTP. That sheet is broken in Cashfree's
+   * sandbox — their own consent page sends `x-session-id` to their own API,
+   * which does not allow the header in its CORS preflight (reproduced with
+   * curl, 2026-09-05). Nothing on our side can route around it.
+   *
+   * PAN 360 Advanced returns the same three facts over a plain server-to-server
+   * call, so it cannot fail that way, and it is less data about the person than
+   * 1-Click or Mobile 360 collect — a PAN, a name and a birth date, which is
+   * exactly what the age gate and TDS need and nothing more. 1-Click stays in
+   * `useCashfreeVerification` for when Cashfree fixes their sandbox; it is no
+   * longer the road onboarding depends on.
+   */
+  const onVerifyPan = useCallback(() => {
+    Keyboard.dismiss();
+    setPanError(null);
+    savePan.mutate(pan, {
+      onSuccess: status => {
+        if (status === 'verified') {
           setPhase('profile');
+          return;
         }
+        // Only a real verification advances. A 'pending' or 'failed' PAN that
+        // moved the user on would let them fill the whole profile and be
+        // refused by `complete_provider_onboarding` at the very end, with no
+        // way back to the step that failed — the dead end this flow had.
+        setPanError(
+          status === 'failed'
+            ? 'That PAN could not be verified. Check the number and try again.'
+            : 'We could not reach the verification service. Please try again.',
+        );
       },
+      onError: () => setPanError('Something went wrong. Please try again.'),
     });
-  }, [verify]);
+  }, [pan, savePan]);
 
   const profileReady =
     displayName.trim().length > 0 &&
@@ -146,21 +166,35 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
             Verify it&apos;s you
           </Text>
           <Text allowFontScaling style={styles.verifyBodyText}>
-            One consent with Cashfree confirms your PAN and bank account so you can
-            be paid. Nothing to type, and we never see the details.
+            Your PAN confirms who you are and your age, and it is what lets us pay
+            you without deducting 5% TDS. We check it with the Income Tax
+            Department and keep only the result.
           </Text>
-          {!canVerify ? (
+          <TextField
+            value={pan}
+            onChangeText={t => setPan(t.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10))}
+            placeholder="ABCDE1234F"
+            placeholderTextColor={theme.color.text.tertiary}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            maxLength={10}
+            allowFontScaling
+            accessibilityLabel="PAN number"
+            testID="provider-pan"
+            style={styles.panField}
+          />
+          {panError !== null ? (
             <Text allowFontScaling style={styles.verifyHint}>
-              Verification is unavailable on this device — you can add your bank and
-              PAN by hand from Get paid later.
+              {panError}
             </Text>
           ) : null}
         </View>
         <View style={[styles.footer, { paddingBottom: insets.bottom + TOKENS.space.md }]}>
           <Button
-            label={canVerify ? 'Verify with Cashfree' : 'Continue'}
-            onPress={canVerify ? onVerify : () => setPhase('profile')}
-            busy={verify.isPending}
+            label="Verify PAN"
+            onPress={onVerifyPan}
+            disabled={!PAN_SHAPE.test(pan)}
+            busy={savePan.isPending}
             busyLabel="Verifying"
             testID="provider-verify"
           />
@@ -364,6 +398,20 @@ const makeStyles = (t: Theme) =>
     verifyBodyText: {
       ...TOKENS.typography.bodyLarge,
       color: t.color.text.secondary,
+    },
+    panField: {
+      alignSelf: 'stretch',
+      marginTop: TOKENS.space.lg,
+      paddingVertical: TOKENS.space.sm,
+      paddingHorizontal: TOKENS.space.md,
+      borderRadius: TOKENS.radius.field,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: t.color.border.hairline,
+      backgroundColor: t.color.bg.raised,
+      ...TOKENS.typography.bodyLarge,
+      color: t.color.text.primary,
+      textAlign: 'center',
+      letterSpacing: 2,
     },
     verifyHint: {
       ...TOKENS.typography.bodyMedium,

@@ -2323,28 +2323,45 @@ describe('no user-facing em dash and no leftover persona pronoun', () => {
   });
 });
 
-describe('provider identity comes from Cashfree, not a typed birth date', () => {
+describe('provider identity is verified, not typed', () => {
   const screen = withoutComments(read('src/screens/ProviderApplicationScreen.tsx'));
 
   it('no longer asks a provider to type a date of birth', () => {
-    // DOB is fetched, verified, from the Cashfree 1-Click step (which writes it
-    // via cashfree-onboarding-complete), so the applicant never types it. The old
-    // DD/MM/YYYY field is gone.
+    // The DOB is READ from the identity check, never typed: PAN 360 returns it
+    // from Income Tax Department records. A typed birth date is a claim; this is
+    // the fact the 18+ gate needs.
     expect(screen).not.toContain('DD/MM/YYYY');
     expect(screen).not.toContain('formatDobInput');
   });
 
   it('verifies identity before collecting the profile', () => {
-    expect(screen).toContain('useCashfreeVerification');
+    /*
+     * The PAN check is the identity step now, not Cashfree 1-Click. 1-Click's
+     * consent sheet is broken inside Cashfree's own iframe (their page sends
+     * `x-session-id` to their API, which rejects it in the CORS preflight —
+     * reproduced with curl, 2026-09-05), so onboarding cannot depend on it.
+     * `useCashfreeVerification` still exists for when they fix it.
+     */
+    expect(screen).toContain('useSavePan');
     expect(screen).toContain("phase === 'verify'");
+    expect(screen).not.toContain('useCashfreeVerification');
+  });
+
+  it('advances only on a real verification', () => {
+    // Advancing on 'pending' or 'failed' let someone fill the whole profile and
+    // be refused at the very end with no way back to the step that failed.
+    expect(screen).toMatch(/status === 'verified'[\s\S]{0,60}setPhase\('profile'\)/);
   });
 
   it('keeps the 18+ age gate in SQL, off the verified DOB', () => {
     // The gate moved from a client arithmetic check to the auto-approve RPC, which
     // reads the Cashfree-written DOB. Wrong-by-a-day float math is gone entirely.
-    const rpc = read('supabase/migrations/051_provider_auto_onboarding.sql');
+    // 056 supersedes 051's copy of the RPC: the DOB now comes from the identity
+    // record and is copied onto the profile in the same statement that sets
+    // role = provider, because a member row may not hold one (011).
+    const rpc = read('supabase/migrations/056_identity_dob_before_promotion.sql');
     expect(rpc).toContain("interval '18 years'");
-    expect(rpc).toContain('date_of_birth');
+    expect(rpc).toContain('verified_dob');
     expect(screen).not.toContain('365.25');
   });
 });
