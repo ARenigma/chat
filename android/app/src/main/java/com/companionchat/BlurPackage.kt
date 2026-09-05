@@ -269,8 +269,20 @@ class PappalBlurSurface(context: Context) : View(context) {
 
     // ── Props ───────────────────────────────────────────────────────────────
 
-    /** ARGB integer colour of the tint rect drawn over the blur. */
-    var tintColor: Int = Color.BLACK
+    /**
+     * ARGB integer colour of the tint rect drawn over the blur.
+     *
+     * TRANSPARENT, not BLACK. This surface's whole job is to be invisible until
+     * JS tells it what to be, and BLACK made every failure mode a solid black
+     * slab instead of nothing: an unset prop, a JS bundle predating the prop, a
+     * `tint="none"` caller. Seen on the S22 (API 36) 2026-09-05 - the chat
+     * header and composer rendered as black bars with light-theme content on
+     * them, because the tint never arrived and the fallback painted the default.
+     *
+     * The right degradation for a decoration is to disappear, which is also what
+     * the Frost docstring on the JS side already claims happens.
+     */
+    var tintColor: Int = Color.TRANSPARENT
 
     /**
      * Opacity of the tint overlay in [0.0, 1.0]. Default 0.70 matches
@@ -417,7 +429,24 @@ class PappalBlurSurface(context: Context) : View(context) {
      * (SizeNotifierFrameLayout.java:976-979).
      */
     private fun drawSolidFallback(canvas: Canvas) {
+        /*
+         * Nothing to draw beats something wrong.
+         *
+         * A fully transparent tint means either "this bar is a lens, not a
+         * surface" (`tint="none"`) or "the prop never arrived". Both must paint
+         * NOTHING. Forcing alpha to 255 below without this guard is what turned
+         * a transparent tint into an opaque black rect.
+         */
+        if (Color.alpha(tintColor) == 0) {
+            return
+        }
         tintPaint.color = tintColor
+        /*
+         * Opaque on purpose for a real colour: with no blur behind it, the 55%
+         * glass token would let the transcript read straight through the bar.
+         * Telegram draws a solid rect on this path too
+         * (SizeNotifierFrameLayout.java:976-979).
+         */
         tintPaint.alpha = 255
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), tintPaint)
     }
