@@ -469,3 +469,54 @@ because they invalidated earlier runs rather than merely slowing them:
   and UI Automator waits for a quiescent window. The harness now zeroes the three
   animation scales, which is both what the UI Automator setup guidance asks for
   and the signal behind `useReducedMotion`, so those components render statically.
+
+## 2026-09-05 — UI haptics, and the frosted bars verified on API 36
+
+**Pages read.** `develop/ui/views/haptics/haptics-principles`, plus the SDK's own
+`platforms/android-36/data/api-versions.xml` for constant availability rather
+than a reference page (the HTML reference did not render the API-level table to
+a plain fetch, and memory is not evidence).
+
+**What they require.** A predefined action goes through
+`View.performHapticFeedback` with a `HapticFeedbackConstants` value, not
+`Vibrator`/`VibrationEffect`. That runs the OEM's tuned waveform, keeps the app
+consistent with the system — the docs call the consistency an accessibility
+consideration — and respects the user's touch-feedback setting.
+`FLAG_IGNORE_GLOBAL_SETTING` is strongly discouraged.
+
+**Where we were.** `src/lib/haptics.ts` called `Vibration.vibrate(ms)`. So every
+send and every long-press buzzed a user who had switched haptics off in
+Settings, and the durations were our guesses at waveforms the platform ships.
+
+**Fix.** `HapticsModule.kt` (5ceb91d). `FLAG_IGNORE_GLOBAL_SETTING` is NOT set,
+which departs from the workstream's "where Telegram sets it": the principles
+page discourages it, and `api-versions.xml` records it `deprecated=33` while this
+app targets 36. `CONFIRM`/`REJECT` are `since=30` and are guarded, falling back
+to `KEYBOARD_TAP`/`LONG_PRESS` at minSdk 24. `Vibration` survives only for the
+OTA-skew window where a JS bundle is newer than the APK. Asserted in
+`platform.test.ts` with comments stripped first, since the file explains the
+discouraged API and matching prose would fail correct code.
+
+**Blur, closed out and measured.** The frosted bars rendered as solid black
+slabs on the S22 and the Redmi. Cause was ours and had nothing to do with R8 or
+Fabric: `Frost` converted the token colour to a SIGNED 32-bit ARGB int, and RN's
+colour normaliser rejects negative numbers, so the prop was dropped and the view
+kept its default. `normalizeColor(-1929379841)` returns null;
+`normalizeColor('rgba(255,255,255,0.55)')` returns 4294967180. Passing the token
+string and deleting the hand-rolled converter fixed it (39a4c0e). Two
+alternatives were disproved rather than assumed: R8 does not strip the
+`@ReactProp` setters (RN ships the keep rule, and `mapping.txt:183099` shows
+`setTintColor` unrenamed in the shrunk build), and the logcat line "Could not
+find generated setter for PappalBlurSurfaceManager" is a routine RN warning that
+also appears for `RootViewManager` and `SafeAreaProviderManager`.
+
+Verified on the S22 (API 36, internal build, versionCode 10055): the chat header
+and composer render as light plates with readable content, and content passing
+under the FloatingToolbar is visibly blurred — luminance standard deviation 20.92
+just above the bar, 8.24 inside it, 0.0 below. Variance preserved but softened is
+a blur; a flat plate would read 0.0 and a transparent bar would match the content.
+
+`RenderEffect.createBlurEffect` is API 31, and `onDraw` gates on it, so below
+that the native surface could only ever reach `drawSolidFallback`. The JS side
+now checks `Platform.Version` and never mounts it there (13d12e4), which is why
+the Redmi (API 29) correctly shows a plate rather than a blur.
