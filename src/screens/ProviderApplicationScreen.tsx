@@ -7,7 +7,8 @@ import {
   Text,
   View,
 } from 'react-native';
-import Animated, { FadeIn } from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
+import { topLevelIn } from '../theme/motion';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -667,7 +668,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
   if (phase === 'done') {
     return (
       <Animated.View
-        entering={FadeIn.duration(220)}
+        entering={topLevelIn}
         style={[styles.root, styles.doneRoot, { paddingTop: insets.top }]}>
         <View style={styles.doneCheck}>
           <Icon name="check" size={34} color={theme.color.text.onAccent} />

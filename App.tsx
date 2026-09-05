@@ -432,6 +432,7 @@ function Root() {
   const closeWallet = useStore(s => s.closeWallet);
   const pendingProviderApply = useStore(s => s.pendingProviderApply);
 
+
   // While the provider-signup intent is set, KEEP the route on the onboarding
   // screen. The boot machine bumps `attempt` several times (auth listener,
   // onDone, permission grants), and each re-run resets the route to Home before
@@ -1006,6 +1007,29 @@ function SignedIn({
   onSignedOut,
 }: SignedInProps) {
   const styles = useStyles(makeStyles);
+
+  /*
+   * Stable, so `memo(FloatingToolbarView)` can actually hold.
+   *
+   * It was an inline arrow at the call site, which is a new function identity on
+   * every render of Root - so the memo compared unequal every time and the whole
+   * toolbar re-rendered on any state change anywhere above it, including every
+   * keystroke that moves a store value. The memo was there; the prop defeated it.
+   */
+  const onSelectTab = useCallback((key: 'home' | 'settings' | 'call' | 'favourites') => {
+    if (key === 'home') {
+      setRoute({ name: 'home' });
+    } else if (key === 'settings') {
+      setRoute({ name: 'settings' });
+    } else if (key === 'call') {
+      setRoute({ name: 'calls' });
+    } else if (key === 'favourites') {
+      setRoute({ name: 'favourites' });
+    }
+    // `setRoute` is a useState setter, so React guarantees a stable identity and
+    // this list never actually changes - it is declared because a dependency
+    // that is stable BY ARGUMENT is one edit away from not being.
+  }, [setRoute]);
   const { role, isPending } = useRole();
   const { data: selfId } = useSelfId();
   const { data: conversations } = useConversations();
@@ -1334,17 +1358,7 @@ function SignedIn({
           }
           callEnabled={CALLS_ENABLED}
           homeBadgeCount={totalUnread}
-          onSelect={key => {
-            if (key === 'home') {
-              setRoute({ name: 'home' });
-            } else if (key === 'settings') {
-              setRoute({ name: 'settings' });
-            } else if (key === 'call') {
-              setRoute({ name: 'calls' });
-            } else if (key === 'favourites') {
-              setRoute({ name: 'favourites' });
-            }
-          }}
+          onSelect={onSelectTab}
         />
       ) : null}
       <RechargeWalletPage />
