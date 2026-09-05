@@ -2334,6 +2334,31 @@ describe('provider identity is verified, not typed', () => {
     expect(screen).not.toContain('formatDobInput');
   });
 
+  it('never opens the member first-run on the provider path', () => {
+    /*
+     * A provider mid-onboarding is `role = 'member'` with a null
+     * `profile_completed_at` and an empty wallet right up until
+     * `complete_provider_onboarding` succeeds, which is indistinguishable from a
+     * brand-new member. The member profile modal opened over provider
+     * onboarding on a device (2026-09-05).
+     *
+     * The guard must live inside `bootPhaseAfterAuth`, not at its call sites:
+     * it has four callers and only one of them used to check.
+     */
+    const app = read('App.tsx');
+    const fn = app.slice(
+      app.indexOf('async function bootPhaseAfterAuth'),
+      app.indexOf('async function requestAndroidPermission'),
+    );
+    expect(fn).toContain('onProviderPath');
+    expect(fn).toContain('PROVIDER_INTENT_KEY');
+    expect(fn).toContain('identity_state');
+    expect(fn).toMatch(/if \(!onProviderPath && \(needsUsername \|\| needsAge\)\)/);
+    // And every caller goes through it rather than deciding for itself.
+    const callers = app.match(/bootPhaseAfterAuth\(/g) ?? [];
+    expect(callers.length).toBeGreaterThan(2);
+  });
+
   it('verifies identity before collecting the profile', () => {
     /*
      * The PAN check is the identity step now, not Cashfree 1-Click. 1-Click's

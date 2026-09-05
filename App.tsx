@@ -318,7 +318,37 @@ async function bootPhaseAfterAuth(profile: Profile | null): Promise<PostAuthBoot
   const needsUsername = firstUser && needsProfileSetup(p);
   const needsAge = firstUser && needsAgeBracket(p);
 
-  if (needsUsername || needsAge) {
+  /*
+   * The member first-run must never open on the provider path.
+   *
+   * Member and provider are separate worlds (Amit, 2026-09-03): a provider sets
+   * up their OWN profile in provider onboarding and must not be asked for a
+   * member username, age bracket or member policy on the way.
+   *
+   * The trap is that a provider MID-onboarding is indistinguishable from a
+   * brand-new member by the flags above - `role` is still 'member' and
+   * `profile_completed_at` is still null right up until
+   * `complete_provider_onboarding` succeeds, and their wallet is empty - so
+   * `needsUsername` is true for them. Seen on a device 2026-09-05: the member
+   * profile modal opened over provider onboarding.
+   *
+   * This check lives HERE, not at the call sites. It used to be an early return
+   * in the boot effect only, while `bootPhaseAfterAuth` is called from four
+   * places - so three of them routed a provider into the member first-run. One
+   * decision point is the whole point: a caller cannot forget a rule it does
+   * not have to know.
+   *
+   * Two signals, because either alone has a hole. `identity_state` is the
+   * durable server-side one (migration 054: "THE single signal both the app and
+   * complete_provider_onboarding read") and survives a reinstall; the persisted
+   * intent covers someone who tapped "Become a partner" and has not reached the
+   * PAN step yet, whose `identity_state` is still 'none'.
+   */
+  const onProviderPath =
+    storage.get(PROVIDER_INTENT_KEY) === '1' ||
+    (p?.identity_state !== undefined && p.identity_state !== 'none');
+
+  if (!onProviderPath && (needsUsername || needsAge)) {
     return { phase: 'profileSetup', needsAge, needsUsername };
   }
 

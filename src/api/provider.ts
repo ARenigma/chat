@@ -162,6 +162,16 @@ export interface ProviderProfileDraft {
 }
 
 /**
+ * Whether a write failed because the display name is already held.
+ *
+ * Matched on the constraint name rather than the message text, which is
+ * Postgres's and not ours to depend on.
+ */
+export function isDuplicateDisplayName(message: string): boolean {
+  return /profiles_display_name_lower_unique/.test(message);
+}
+
+/**
  * Auto-onboard: go live as a provider in one call (migration 051).
  *
  * Replaces the apply → admin-review path. The provider has already verified
@@ -199,7 +209,15 @@ export function useCompleteProviderOnboarding() {
           ? 'You must be 18 or older to be a provider.'
           : /verify your identity/.test(err.message)
             ? 'Please verify your identity first.'
-            : 'Could not finish setup. Please try again.',
+            : /*
+               * Display names are unique across every profile
+               * (`profiles_display_name_lower_unique`), so a provider can pick a
+               * stage name a member already holds. "Please try again" was a dead
+               * end for exactly this case: the retry it asks for fails forever.
+               */
+              isDuplicateDisplayName(err.message)
+              ? 'That name is already taken. Pick another one.'
+              : 'Could not finish setup. Please try again.',
       );
     },
   });
