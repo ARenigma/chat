@@ -287,6 +287,16 @@ export const STEP_ADVANCE_MS = 500;
  */
 export const STEP_EXIT_MS = 200;
 
+/**
+ * How long the description waits before it appears, once its step expands.
+ *
+ * The step's own promote runs first; the description arriving on the same frame
+ * made the two read as one block sliding rather than a label settling and its
+ * detail following. Named because it was a raw `.delay(80)` at the call site,
+ * which is the shape the motion gate exists to catch.
+ */
+export const STEP_DESCRIPTION_DELAY_MS = 80;
+
 /** How long the completion row waits before it appears. The source's `.delay(0.4)`. */
 export const COMPLETION_DELAY_MS = 400;
 
