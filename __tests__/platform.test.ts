@@ -1123,6 +1123,84 @@ describe('CameraX live-preview tile', () => {
  * Wiring assertions — the structural facts that a future change must not break
  * silently (RULE 1: if it can be checked mechanically, it goes here).
  */
+describe('UI haptics go through the platform feedback constants', () => {
+  const HAPTICS_KT = 'android/app/src/main/java/com/companionchat/HapticsModule.kt';
+  /*
+   * Comments are stripped before the bans below. These files EXPLAIN why the
+   * discouraged API is not used, so matching prose would fail a file whose code
+   * is correct and whose documentation is the point - the same trap theme.test's
+   * duration gate already documents.
+   */
+  const code = (p: string): string =>
+    read(p)
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+
+  it('uses performHapticFeedback, not a raw Vibration duration', () => {
+    /*
+     * Android's haptics guidance: a predefined action goes through
+     * View.performHapticFeedback with a HapticFeedbackConstants value, because
+     * that runs the OEM's tuned waveform AND respects the user's touch-feedback
+     * setting. `Vibration.vibrate(ms)` does neither - this app was buzzing users
+     * who had switched haptics off.
+     * https://developer.android.com/develop/ui/views/haptics/haptics-principles
+     */
+    const kt = code(HAPTICS_KT);
+    expect(kt).toContain('performHapticFeedback');
+    expect(kt).toContain('HapticFeedbackConstants.KEYBOARD_TAP');
+    expect(kt).toContain('HapticFeedbackConstants.LONG_PRESS');
+    expect(kt).not.toContain('Vibrator');
+  });
+
+  it('never overrides the user with FLAG_IGNORE_GLOBAL_SETTING', () => {
+    /*
+     * The plan said to set it "where Telegram sets it". It is not set, for two
+     * independent reasons: the principles page strongly discourages it, and the
+     * SDK's own api-versions.xml records it deprecated=33 while this app targets
+     * 36. Matching the reference is this project's default, not an obligation -
+     * a user who turned touch feedback off has said something.
+     */
+    expect(code(HAPTICS_KT)).not.toContain('FLAG_IGNORE_GLOBAL_SETTING');
+  });
+
+  it('guards the API 30 constants against minSdk 24', () => {
+    /*
+     * From platforms/android-36/data/api-versions.xml: CONFIRM and REJECT are
+     * since=30, while KEYBOARD_TAP (8) and LONG_PRESS (3) are always available
+     * at minSdk 24. The newer two fall back rather than being skipped, so an
+     * older device still feels the beat.
+     */
+    const kt = code(HAPTICS_KT);
+    for (const constant of ['CONFIRM', 'REJECT']) {
+      const at = kt.indexOf(`HapticFeedbackConstants.${constant}`);
+      expect(at).toBeGreaterThan(-1);
+      // A version gate appears above each of them.
+      expect(kt.slice(0, at)).toMatch(/Build\.VERSION\.SDK_INT >= Build\.VERSION_CODES\.R/);
+    }
+  });
+
+  it('registers the module so JS can reach it', () => {
+    const pkg = read('android/app/src/main/java/com/companionchat/InAppUpdatePackage.kt');
+    expect(pkg).toContain('HapticsModule(reactContext)');
+    expect(read(HAPTICS_KT)).toContain('const val NAME = "PappalHaptics"');
+    // And the JS side asks for that exact name.
+    expect(read('src/lib/haptics.ts')).toContain('NativeModules.PappalHaptics');
+  });
+
+  it('keeps Vibration only as the missing-native fallback', () => {
+    /*
+     * Vibration does not respect the user's setting, so it must never be the
+     * default path - only the OTA-skew window where the JS bundle is newer than
+     * the APK. Every call sits behind the HAS_NATIVE_HAPTICS guard.
+     */
+    const ts = code('src/lib/haptics.ts');
+    const calls = ts.match(/Vibration\.vibrate\(/g) ?? [];
+    const guards = ts.match(/if \(HAS_NATIVE_HAPTICS\) \{/g) ?? [];
+    expect(calls.length).toBeGreaterThan(0);
+    expect(guards.length).toBe(calls.length);
+  });
+});
+
 describe('hardware GPU backdrop blur (PappalBlurRoot + PappalBlurSurface)', () => {
   const BLUR_PACKAGE =
     'android/app/src/main/java/com/companionchat/BlurPackage.kt';
