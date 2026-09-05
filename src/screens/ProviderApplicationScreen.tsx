@@ -7,6 +7,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { SCROLL_PHYSICS } from '../lib/scroll';
 import Animated from 'react-native-reanimated';
 import { topLevelIn } from '../theme/motion';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -401,6 +402,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
             taller than the remaining window on a 1080x2340 device, and the
             root's `imeSpace` padding shrinks it further. */}
         <ScrollView
+          {...SCROLL_PHYSICS}
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
@@ -593,6 +595,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
       <View style={[styles.root, { paddingTop: insets.top }]}>
         <Header onBack={onEditDetails} />
         <ScrollView
+          {...SCROLL_PHYSICS}
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}>
           <View style={styles.verifyIcon}>
@@ -703,6 +706,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
         */}
       <NoticeBar />
       <ScrollView
+        {...SCROLL_PHYSICS}
         contentContainerStyle={[styles.scroll, { paddingBottom: (imeSpace > 0 ? 0 : insets.bottom) + TOKENS.space.md }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}>

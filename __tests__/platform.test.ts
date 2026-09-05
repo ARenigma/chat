@@ -1130,6 +1130,23 @@ describe('hardware GPU backdrop blur (PappalBlurRoot + PappalBlurSurface)', () =
   const APP_KT =
     'android/app/src/main/java/com/companionchat/MainApplication.kt';
 
+  it('never mounts the native blur below API 31', () => {
+    /*
+     * RenderEffect.createBlurEffect is API 31, and PappalBlurSurface.onDraw
+     * gates on `SDK_INT >= 31 && canvas.isHardwareAccelerated`, so on Android
+     * 7-11 the native view can only ever reach drawSolidFallback. Mounting it
+     * there costs a native view per bar plus a drawRect per bar per frame to
+     * achieve what a plain View with a background does for free - on the devices
+     * with the least to spare. The JS side must not create it at all.
+     */
+    const tsx = read(BLUR_SURFACE_TSX);
+    expect(tsx).toContain('BLUR_MIN_API = 31');
+    expect(tsx).toMatch(/Platform\.Version >= BLUR_MIN_API/);
+    // And the native gate it mirrors is still there, so the two cannot drift.
+    const kt = read(BLUR_PACKAGE);
+    expect(kt).toMatch(/Build\.VERSION\.SDK_INT >= 31 && canvas\.isHardwareAccelerated/);
+  });
+
   it('degrades to invisible, never to a black slab', () => {
     /*
      * `tintColor` defaulted to Color.BLACK and the fallback forced alpha 255,
