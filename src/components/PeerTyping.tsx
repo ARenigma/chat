@@ -49,13 +49,30 @@ const makeStyles = (_t: Theme) => StyleSheet.create({
     alignItems: 'flex-start',
     gap: TOKENS.space.xs,
     width: '100%',
+    /*
+     * The same vertical rhythm a Turn has, and it was missing entirely.
+     *
+     * This renders as the inverted list's ListHeaderComponent, so it sits at the
+     * visual BOTTOM - flush against the newest bubble, with no margin of its own
+     * while every Turn carries `marginBottom: 2xs` (Turn.tsx:1048). So the dots
+     * butted straight into the message above them and read as overlapping it
+     * (Amit, 2026-09-05: "typing animation overlaps message bubbles").
+     *
+     * On an inverted list the header is BELOW the newest item, so the gap that
+     * separates them belongs on this row's TOP.
+     */
+    marginTop: TOKENS.space['2xs'],
+    marginBottom: TOKENS.space['2xs'],
   },
   slot: {
     width: 26,
   },
   bubble: {
     paddingHorizontal: TOKENS.space.md,
-    paddingVertical: TOKENS.space.hair,
+    // `hair` (2dp) made the bubble shorter than the dots it contains, so they
+    // sat on its edge. `2xs` gives the dots the same breathing room the text in
+    // a real peer bubble gets.
+    paddingVertical: TOKENS.space['2xs'],
     borderRadius: 18,
     borderCurve: 'continuous',
     backgroundColor: _t.color.bg.sunken,

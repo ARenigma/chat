@@ -49,7 +49,7 @@ describe('generated theme', () => {
     // neutral-grey #121212 recommendation: a blue-tinted base makes the tonal
     // steps more perceptible and matches the product's chat-centric character.
     // Docs: docs/android-audit.md dark-theme section. https://m3.material.io/styles/color/dark-theme
-    expect(DARK.color.bg.base).toBe('#0B141A');
+    expect(DARK.color.bg.base).toBe('#151E27');
   });
 
   it('keeps the row separator visible on the page it now sits on', () => {
@@ -2060,33 +2060,55 @@ describe('recharge-theme: SettingsSheet Appearance uses three-choice radio picke
   });
 });
 
-describe('recharge-theme: WhatsApp charcoal dark palette passes contrast', () => {
-  it('dark base is the WhatsApp charcoal family root, not M3 neutral grey', () => {
-    // Documented departure from M3 #121212 recommendation.
-    // The blue-tinted base makes tonal elevation steps more perceptible and
-    // matches the product's chat-centric character.
-    // Audit: docs/android-audit.md dark-theme section.
-    expect(DARK.color.bg.base).toBe('#0B141A');
-    expect(DARK.color.bg.raised).toBe('#111B21');
+describe('dark theme: Telegram midnight-blue palette, and it still passes contrast', () => {
+  /*
+   * The dark palette follows Telegram Android's darkblue.attheme - the "midnight
+   * blue" theme - read as FACTS and re-expressed in design/tokens.json (Amit,
+   * 2026-09-06: "dark theme color palette and token exactly same as telegram").
+   * It replaced a WhatsApp-charcoal palette (#0B141A / #111B21 / #E9EDEF).
+   *
+   * Values are pinned so a stray edit to tokens.json cannot quietly drift the
+   * theme back, and every pinned value is ALSO contrast-checked: the palette is
+   * Telegram's, the accessibility floor is ours. Where Telegram's own grey did
+   * not clear AA on its own bubble colour (#7D8B99 on #232E3B is 3.95:1), the
+   * grey was lifted by the smallest step that passes - +11 - rather than the
+   * gate being lowered.
+   */
+  it('dark base and surface are Telegram windowBackgroundGray / windowBackgroundWhite', () => {
+    expect(DARK.color.bg.base).toBe('#151E27');
+    expect(DARK.color.bg.raised).toBe('#1D2733');
   });
 
-  it('dark primary text is WhatsApp primary #E9EDEF, passes AAA on dark base', () => {
-    expect(DARK.color.text.primary).toBe('#E9EDEF');
+  it('dark bubbles are Telegram chat_inBubble / chat_outBubble', () => {
+    expect(DARK.color.bg.sunken).toBe('#232E3B');
+    expect(DARK.color.bg.accentStrong).toBe('#3E618A');
+  });
+
+  it('dark accent is Telegram blue, not the light theme coral', () => {
+    // A deliberate mode split, and one token to revert: chats_actionBackground.
+    expect(DARK.color.bg.accent).toBe('#5FA3DE');
+    expect(DARK.color.text.accent).toBe('#64B5EF');
+  });
+
+  it('dark primary text is Telegram white, passes AAA on dark base', () => {
+    expect(DARK.color.text.primary).toBe('#FFFFFF');
     expect(contrast(DARK.color.text.primary, DARK.color.bg.base)).toBeGreaterThanOrEqual(7);
   });
 
-  it('dark secondary text is WhatsApp secondary #8696A0, passes AA on dark base', () => {
-    expect(DARK.color.text.secondary).toBe('#8696A0');
-    expect(contrast(DARK.color.text.secondary, DARK.color.bg.base)).toBeGreaterThanOrEqual(4.5);
+  it('dark secondary text passes AA on base, raised AND the peer bubble', () => {
+    expect(DARK.color.text.secondary).toBe('#8896A4');
+    for (const bg of [DARK.color.bg.base, DARK.color.bg.raised, DARK.color.bg.sunken]) {
+      expect(contrast(DARK.color.text.secondary, bg)).toBeGreaterThanOrEqual(4.5);
+    }
   });
 
-  it('dark hairline separator is WhatsApp charcoal divider, passes minimum on dark base', () => {
-    expect(DARK.color.border.hairline).toBe('#2A3942');
+  it('dark hairline separator passes the non-text minimum on dark base', () => {
+    expect(DARK.color.border.hairline).toBe('#303C4A');
     expect(contrast(DARK.color.border.hairline, DARK.color.bg.base)).toBeGreaterThan(1.5);
   });
 
-  it('dark inverse surface is WhatsApp primary text #E9EDEF, primary button passes AAA', () => {
-    expect(DARK.color.bg.inverse).toBe('#E9EDEF');
+  it('dark inverse surface is Telegram chats_nameMessage, primary button passes AAA', () => {
+    expect(DARK.color.bg.inverse).toBe('#E9EEF4');
     expect(contrast(DARK.color.text.onInverse, DARK.color.bg.inverse)).toBeGreaterThanOrEqual(7);
   });
 });
