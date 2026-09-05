@@ -11,7 +11,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 import { barIn, barOut } from '../theme/motion';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
@@ -1283,22 +1283,17 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
           />
         )}
 
-        {/* The scrim over the conversation while the emoji panel is expanded for
-            search. Telegram's `ScrimDrawable` — black, `alpha = 102` of 255, so
-            40% — ramped with the expansion and covering everything above the
-            panel (`ChatActivityEnterView.java:13891-13906`). It is what makes the
-            expansion read as a panel over the chat instead of the chat leaving.
-            `pointerEvents` none: it is a wash, not a dismiss target, and Telegram
-            does not make it one either. */}
-        {emojiSearching ? (
-          <Animated.View
-            pointerEvents="none"
-            entering={FadeIn.duration(TOKENS.motion.m3.duration.medium2)}
-            exiting={FadeOut.duration(TOKENS.motion.m3.duration.short4)}
-            style={styles.expandScrim}
-          />
-        ) : null}
-
+        {/*
+         * The search scrim is GONE, with the expansion it existed for.
+         *
+         * Telegram's `ScrimDrawable` (black at alpha 102 of 255, ramped with
+         * `setStickersExpanded`, ChatActivityEnterView.java:13891-13906) made the
+         * expansion read as a panel OVER the chat rather than the chat leaving.
+         * The panel is now a docked tray capped at the keyboard's height (Amit,
+         * 2026-09-05: "should be like whatsapp docked right"), so it never covers
+         * the conversation and there is nothing to wash out. A scrim over content
+         * the user can still see and scroll would just be a grey veil.
+          */}
         {/*
          * The bottom stack: notices, first-move pills and the composer dock,
          * lifted OUT of the layout flow.
@@ -1566,14 +1561,6 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     bottom: 0,
   },
   // 40% black — Telegram's `alpha = 102` of 255, not a rounded-off "0.4-ish".
-  expandScrim: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-  },
   list: {
     paddingHorizontal: TOKENS.space.md,
   },
@@ -1587,13 +1574,35 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   turnOpensGroup: {
     paddingTop: TOKENS.space.sm,
   },
+  /*
+   * The reply strip needs its own surface, for the same reason the composer
+   * capsule does.
+   *
+   * It was text and a rule on bare background, sitting on a dock that carries no
+   * fill. So "Replying to X" and the quoted line rendered straight over the
+   * transcript and collided with the bubbles behind them - on the S22 the quote
+   * ran through a coral bubble and the dismiss cross landed on top of it, both
+   * illegible (2026-09-05).
+   *
+   * Telegram's reply chrome sits INSIDE the composer's own translucent surface,
+   * above the field. Ours is a sibling of the capsule rather than a child, so it
+   * takes the same capsule treatment: same fill, same hairline, same radius. It
+   * occludes what is behind it, which is the whole job.
+   */
   replyBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: TOKENS.space.xs,
-    marginHorizontal: TOKENS.space.md,
+    marginHorizontal: TOKENS.space.xs,
     marginBottom: TOKENS.space['2xs'],
-    paddingVertical: TOKENS.space['2xs'],
+    paddingVertical: TOKENS.space.xs,
+    paddingHorizontal: TOKENS.space.sm,
+    borderRadius: TOKENS.radius.field,
+    borderCurve: 'continuous',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: t.color.border.hairline,
+    backgroundColor: t.color.bg.raised,
+    overflow: 'hidden',
   },
   replyRule: {
     width: 2,

@@ -2377,6 +2377,45 @@ describe('no user-facing em dash and no leftover persona pronoun', () => {
   });
 });
 
+describe('chat chrome occludes what is behind it', () => {
+  /*
+   * The dock carries no fill by design ("no bar bg", Amit 2026-09-04), so
+   * anything sitting on it MUST bring its own surface or the transcript runs
+   * straight through it. Two things did not, and both collided with bubbles on
+   * the S22 (2026-09-05): the camera and mic sat outside the composer capsule,
+   * and the reply strip was bare text on the dock.
+   *
+   * Telegram's answer, captured from the reference on that device: emoji, field,
+   * attach and mic all live INSIDE one translucent pill, and the reply chrome
+   * shares that surface. No icon is ever outside it, which is why nothing can
+   * collide.
+   */
+  it('the composer capsule contains the icons, not just the field', () => {
+    const composer = read('src/components/Composer.tsx');
+    const bar = composer.slice(
+      composer.indexOf('  inputBar: {'),
+      composer.indexOf('  attach: {'),
+    );
+    expect(bar).toContain('borderRadius: TOKENS.radius.pill');
+    expect(bar).toContain('backgroundColor: t.color.bg.raised');
+    expect(bar).toContain("overflow: 'hidden'");
+    // And `field` must NOT also carry a fill, or it is a pill inside a pill.
+    const field = composer.slice(
+      composer.indexOf('  field: {'),
+      composer.indexOf('  input: {'),
+    );
+    expect(field).not.toContain('backgroundColor: t.color.bg.raised');
+    expect(field).not.toContain('borderRadius: TOKENS.radius.pill');
+  });
+
+  it('the reply strip has a surface of its own', () => {
+    const chat = read('src/screens/ChatScreen.tsx');
+    const bar = chat.slice(chat.indexOf('  replyBar: {'), chat.indexOf('  replyRule: {'));
+    expect(bar).toContain('backgroundColor: t.color.bg.raised');
+    expect(bar).toContain('borderRadius: TOKENS.radius.field');
+  });
+});
+
 describe('every Cashfree Payouts caller sends the 2FA signature', () => {
   /*
    * Cashfree requires an IP allow-list OR an x-cf-signature on every Payouts

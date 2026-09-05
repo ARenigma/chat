@@ -1097,20 +1097,41 @@ function ComposerView({
       <EmojiPicker
         visible={shown === 'emoji'}
         /*
-         * Two sizes, one rule: the panel occupies whatever the keyboard is not.
+         * ONE height, searching or not: the keyboard's.
          *
-         * Not searching — the keyboard is down and the panel takes its exact
-         * place. Searching — the keyboard is up UNDER the panel, the dock has
-         * been lifted above it by the screen, and the panel expands into every
-         * pixel between the header and the keyboard. That expansion is
-         * Telegram's (`setStickersExpanded` on search open, height =
-         * container − status bar − nav bar − action bar − composer); without it
-         * the results would be a keyboard-sized window with a keyboard-sized
-         * hole under it.
+         * Search used to expand the panel to fill from under the header down to
+         * the composer - Telegram's `setStickersExpanded` - with a scrim over the
+         * conversation behind it. That is what Amit rejected (2026-09-05: "emoji
+         * search taking full screen but should be like whatsapp docked right").
+         *
+         * WhatsApp keeps the panel exactly keyboard-sized and lets the results
+         * scroll inside it, so the conversation never leaves the screen and the
+         * viewport does not move when the query changes. It is also strictly less
+         * machinery: no expansion, no scrim, no second height to keep in step
+         * with the dock. Matching the reference is this project's default, not an
+         * obligation - and here the product asked for the other app.
+         */
+        /*
+         * DOCKED, never expanded. Capped by the space above the keyboard.
+         *
+         * Search used to EXPAND the panel to fill from under the header down to
+         * the composer - Telegram's `setStickersExpanded` - with a scrim over the
+         * conversation behind it. Amit rejected that (2026-09-05: "emoji search
+         * taking full screen but should be like whatsapp docked right").
+         *
+         * WhatsApp keeps the results in a docked tray. But while search has focus
+         * the keyboard is up TOO, so the panel cannot simply stay a keyboard tall
+         * - that would stack two keyboards plus the header and overflow the
+         * screen. It takes whichever is SMALLER: its normal keyboard height, or
+         * everything the header and the raised keyboard leave over. So it never
+         * grows beyond a keyboard and never overflows.
+         *
+         * `Math.min`, where this was `Math.max`. That one word was the whole
+         * difference between a docked tray and a full-screen takeover.
          */
         height={
           emojiSearching
-            ? Math.max(panelCeiling - rowHeight, panelHeight)
+            ? Math.max(0, Math.min(panelHeight, panelCeiling - rowHeight))
             : panelHeight + insets.bottom
         }
         onBackspace={backspace}
@@ -1168,11 +1189,40 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     paddingBottom: TOKENS.space.xs,
     backgroundColor: 'transparent',
   },
-  // The idle bar: attach button, then the field taking the rest of the width.
+  /*
+   * THE CAPSULE. One floating pill that contains everything.
+   *
+   * The surface used to live on `field`, one level in, with the camera and the
+   * mic/send sitting OUTSIDE it on bare background. The dock behind them carries
+   * no fill (`tint="none"`, and `blur` off entirely while composing), so those
+   * two icons had nothing behind them at all and the transcript ran straight
+   * through: message bubbles collided with the camera and mic glyphs, and with
+   * the reply strip above them. Seen on the S22 2026-09-05, and it is the same
+   * defect in both places.
+   *
+   * Telegram puts the emoji, the field, the attach clip and the mic INSIDE a
+   * single translucent pill - captured from the reference on this device: there
+   * is no icon outside it, which is exactly why nothing can ever collide. The
+   * pill occludes. Moving our surface up one level reproduces that, and it also
+   * honours "no bar bg" (Amit, 2026-09-04) rather than contradicting it: there
+   * is still no full-width bar, only a floating capsule.
+   */
   inputBar: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: TOKENS.space.xs,
+    // Trailing inset is smaller than the field's own, because the mic disc now
+    // sits inside the capsule and brings its own optical padding.
+    paddingLeft: TOKENS.space.hair,
+    paddingRight: TOKENS.space.hair,
+    borderRadius: TOKENS.radius.pill,
+    borderCurve: 'continuous',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: t.color.border.hairline,
+    // `raised` is white in light and the elevated grey in dark; a literal white
+    // would glare against a dark transcript.
+    backgroundColor: t.color.bg.raised,
+    overflow: 'hidden',
   },
   attach: {
     width: 40,
@@ -1237,16 +1287,11 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     // capsule is a true 40 (Telegram's, measured on device). Any field padding here
     // stacks on top of the 40 input and reads taller than the real app.
     paddingVertical: 0,
-    borderRadius: TOKENS.radius.pill,
-    borderCurve: 'continuous',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: t.color.border.hairline,
-    // A SOLID surface, not a nested blur: the dock behind it carries no fill of
-    // its own, so the capsule is the only thing that reads as a surface. `raised`
-    // is white in light and the elevated grey in dark — a literal white would
-    // glare against a dark transcript.
-    backgroundColor: t.color.bg.raised,
-    overflow: 'hidden',
+    /*
+     * No surface of its own any more - the capsule moved up to `inputBar` so the
+     * camera and mic are inside it. A second rounded fill here would draw a pill
+     * inside a pill.
+     */
   },
   input: {
     flex: 1,

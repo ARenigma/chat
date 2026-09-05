@@ -291,7 +291,7 @@ class PappalBlurSurface(context: Context) : View(context) {
      * the surface reads as a tinted plate, not a lens. Getting this wrong in
      * the wrong direction makes the blur look like a rendering fault.
      */
-    var tintAlpha: Float = 0.70f
+    var tintAlpha: Float = 1.0f
 
     /**
      * Whether to use the hardware blur path. false → [drawSolidFallback].
@@ -496,9 +496,29 @@ class PappalBlurSurface(context: Context) : View(context) {
         canvas.restore()
 
         // Tint overlay. Alpha encodes the "plate" opacity over the blur.
-        // Telegram key_chat_BlurAlpha 0xB2000000 = 178 alpha = 70% (ThemeColors.java:660).
+        /*
+         * The TOKEN's alpha governs, with `tintAlpha` as a multiplier on top.
+         *
+         * This used to be `tintPaint.alpha = tintAlpha * 255`, which OVERWROTE
+         * the alpha carried by `tintColor`. So `bg.glass` - deliberately
+         * rgba(255,255,255,0.55) - was rendered at 0.70 instead, and the token
+         * table was documenting a value the renderer ignored.
+         *
+         * Worse, 0.70 came from Telegram's key_chat_BlurAlpha = 0xB2000000
+         * (ThemeColors.java:660) and the number was ported without its context.
+         * That 70% is BLACK, on a DARK theme, over colourful bubbles and photos -
+         * 30% of that backdrop still reads clearly as glass. Ours is 70% WHITE
+         * over a light cream wallpaper and pale bubbles, which washes out to flat
+         * cream: the blur ran every frame and was invisible, which is exactly
+         * what Amit reported ("i see no blur like telegram", 2026-09-05).
+         *
+         * Multiplying instead of replacing keeps the prop useful for a caller
+         * that wants to dim further, while leaving the palette in charge of how
+         * transparent glass is - which is where that decision belongs.
+         */
         tintPaint.color = tintColor
-        tintPaint.alpha = (tintAlpha * 255f).toInt().coerceIn(0, 255)
+        tintPaint.alpha =
+            (Color.alpha(tintColor) * tintAlpha).toInt().coerceIn(0, 255)
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), tintPaint)
     }
 
@@ -561,7 +581,7 @@ class PappalBlurSurfaceManager : SimpleViewManager<PappalBlurSurface>() {
         view.invalidate()
     }
 
-    @ReactProp(name = "tintAlpha", defaultFloat = 0.70f)
+    @ReactProp(name = "tintAlpha", defaultFloat = 1.0f)
     fun setTintAlpha(view: PappalBlurSurface, alpha: Float) {
         view.tintAlpha = alpha
         view.invalidate()
