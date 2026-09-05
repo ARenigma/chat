@@ -4,6 +4,18 @@ import { join } from 'path';
 const ROOT = join(__dirname, '..');
 const read = (p: string): string => readFileSync(join(ROOT, p), 'utf8');
 
+/*
+ * A file with its comments stripped, for assertions that BAN a token.
+ *
+ * Several files here explain why a discouraged API is not used, so matching
+ * prose would fail a file whose code is correct and whose documentation is the
+ * whole point - the same trap theme.test's duration gate documents.
+ */
+const code = (p: string): string =>
+  read(p)
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+
 /**
  * The Android platform requirements, asserted.
  *
@@ -1158,16 +1170,6 @@ describe('CameraX live-preview tile', () => {
  */
 describe('UI haptics go through the platform feedback constants', () => {
   const HAPTICS_KT = 'android/app/src/main/java/com/companionchat/HapticsModule.kt';
-  /*
-   * Comments are stripped before the bans below. These files EXPLAIN why the
-   * discouraged API is not used, so matching prose would fail a file whose code
-   * is correct and whose documentation is the point - the same trap theme.test's
-   * duration gate already documents.
-   */
-  const code = (p: string): string =>
-    read(p)
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/^\s*\/\/.*$/gm, '');
 
   it('uses performHapticFeedback, not a raw Vibration duration', () => {
     /*
@@ -1256,6 +1258,25 @@ describe('hardware GPU backdrop blur (PappalBlurRoot + PappalBlurSurface)', () =
     // And the native gate it mirrors is still there, so the two cannot drift.
     const kt = read(BLUR_PACKAGE);
     expect(kt).toMatch(/Build\.VERSION\.SDK_INT >= 31 && canvas\.isHardwareAccelerated/);
+  });
+
+  it('lets the palette decide how transparent glass is', () => {
+    /*
+     * `tintPaint.alpha = tintAlpha * 255` OVERWROTE the alpha carried by the
+     * tint colour, so bg.glass - deliberately rgba(255,255,255,0.55) - rendered
+     * at 0.70 and the token table documented a number the renderer ignored.
+     *
+     * The 0.70 came from Telegram's key_chat_BlurAlpha 0xB2000000 and was ported
+     * without its context: that is 70% BLACK on a DARK theme over colourful
+     * content. 70% WHITE over a light cream wallpaper washes out to flat cream -
+     * the blur ran every frame and could not be seen.
+     */
+    const kt = code(BLUR_PACKAGE);
+    expect(kt).toMatch(/Color\.alpha\(tintColor\) \* tintAlpha/);
+    expect(kt).not.toMatch(/tintPaint\.alpha = \(tintAlpha \* 255f\)/);
+    // The multiplier defaults to a no-op so the token governs unless a caller
+    // deliberately dims further.
+    expect(kt).toContain('var tintAlpha: Float = 1.0f');
   });
 
   it('degrades to invisible, never to a black slab', () => {

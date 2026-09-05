@@ -63,7 +63,30 @@ export interface BlurRootProps {
  */
 const BLUR_MIN_API = 31;
 
+/**
+ * OFF (Amit, 2026-09-05: "if blur is not working then disable it").
+ *
+ * The GPU path itself works - it was measured blurring live content on the S22
+ * (API 36) and the audit records the numbers. What never worked was the LOOK:
+ * a translucent white plate over a light cream wallpaper and pale bubbles has
+ * almost nothing to reveal, so the blur ran every frame and could not be seen.
+ * Telegram's glass reads because its theme is dark and the content behind it is
+ * colourful; ours is light on light. That is a palette fact, not a bug we can
+ * tune our way out of in an afternoon, and it cost three build cycles to learn.
+ *
+ * So the plate is now the shipping look on every device. `Frost` already renders
+ * exactly that when this is false, which is why turning it off is one constant
+ * rather than a refactor. Nothing is deleted: BlurPackage.kt, the view managers
+ * and their tests all stay, so flipping this back is a one-line change the day
+ * the palette gains a dark theme or a photographic wallpaper worth revealing.
+ *
+ * Cost of leaving it on, for the record: a native view per Frost, and a
+ * RenderNode re-record plus a downscaled composite per bar per frame.
+ */
+const BLUR_ENABLED = false;
+
 export const BLUR_SURFACE_AVAILABLE: boolean =
+  BLUR_ENABLED &&
   Platform.OS === 'android' &&
   typeof Platform.Version === 'number' &&
   Platform.Version >= BLUR_MIN_API &&
