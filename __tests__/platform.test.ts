@@ -1130,6 +1130,32 @@ describe('hardware GPU backdrop blur (PappalBlurRoot + PappalBlurSurface)', () =
   const APP_KT =
     'android/app/src/main/java/com/companionchat/MainApplication.kt';
 
+  it('degrades to invisible, never to a black slab', () => {
+    /*
+     * `tintColor` defaulted to Color.BLACK and the fallback forced alpha 255,
+     * so every path where the tint did not arrive painted an opaque black rect:
+     * an unset prop, a JS bundle predating the prop, a `tint="none"` caller.
+     * On the S22 (API 36, 2026-09-05) the chat header and composer rendered as
+     * black bars with light-theme content sitting on them.
+     *
+     * A decoration that cannot draw itself must disappear, which is what the
+     * Frost docstring on the JS side already promises.
+     */
+    const kt = read(BLUR_PACKAGE);
+    expect(kt).toMatch(/var tintColor: Int = Color\.TRANSPARENT/);
+    expect(kt).not.toMatch(/var tintColor: Int = Color\.BLACK/);
+    // The fallback returns early on a fully transparent tint, BEFORE it forces
+    // the paint opaque.
+    const fallback = kt.slice(
+      kt.indexOf('private fun drawSolidFallback'),
+      kt.indexOf('private fun drawBlurred'),
+    );
+    expect(fallback).toContain('Color.alpha(tintColor) == 0');
+    expect(fallback.indexOf('Color.alpha(tintColor) == 0')).toBeLessThan(
+      fallback.indexOf('tintPaint.alpha = 255'),
+    );
+  });
+
   it('BlurPackage registers both view managers with the correct names', () => {
     /**
      * React Native resolves native views by their getName() string. A rename
