@@ -2225,14 +2225,73 @@ describe('paid chat sessions expose their live lifecycle', () => {
     expect(chat).toContain('testID="chat-session-timer"');
   });
 
+  it('counts DOWN what the balance buys, per second only inside the last five minutes', () => {
+    const code = withoutComments(chat);
+    // The remainder is the server's one-snapshot figure, aged from the instant
+    // it was taken — never recomputed from `balance`, which cannot tell whether
+    // the current minute has been deducted yet (migration 062).
+    expect(code).toContain('secondsRemainingNow(activeSession?.seconds_remaining, sessionSyncedAt, sessionNow)');
+    expect(code).toContain('dataUpdatedAt: sessionSyncedAt');
+    expect(code).not.toContain('talkTimeLeft(');
+    // The repaint cadence follows the remainder: no unconditional 1 Hz clock.
+    expect(code).toContain('clockTickMs(sessionRemaining)');
+    expect(code).not.toMatch(/setInterval\([^;]*,\s*1000\)/);
+    // Numerals only while counting down; whole minutes otherwise.
+    expect(code).toContain('formatClock(sessionRemaining)');
+    expect(code).toContain('formatMinutes(');
+    // The extend card and the numerals share one threshold and one figure.
+    expect(code).toMatch(/showExtendCard\s*=\s*sessionIsActive\s*&&\s*countingDown/);
+
+    // Server side: one snapshot, member only, registered and tested.
+    const migration = read('supabase/migrations/062_session_seconds_remaining.sql');
+    expect(migration).toContain("'seconds_remaining'");
+    expect(migration).toContain('v_uid = v_session.member_id');
+    expect(migration).toContain('extract(epoch from (v_session.next_bill_at - now()))');
+    const dbTest = read('scripts/db-test.mjs');
+    expect(dbTest).toContain('062_session_seconds_remaining.sql');
+    expect(dbTest).toContain('240_session_seconds_remaining.sql');
+    expect(read('src/api/sessions.ts')).toContain('seconds_remaining: number | null');
+    expect(read('src/lib/database.types.ts')).toContain('seconds_remaining: number | null');
+  });
+
   it('confirms before back ends a live paid session', () => {
-    expect(chat).toContain('title="End session and leave?"');
+    expect(chat).toContain("'End session and leave?'");
     expect(chat).toContain('testID="chat-leave-dialog"');
     expect(chat).toContain("reason: 'manual'");
-    expect(chat).toContain(
-      "BackHandler.addEventListener('hardwareBackPress'",
-    );
     expect(chat).toContain('onPress={requestLeave}');
+    // The screen does NOT subscribe to BackHandler itself: RN fires
+    // subscriptions last-registered-first, and App re-subscribes whenever the
+    // Recharge overlay toggles, so the chat's listener could be outranked and
+    // the chat popped mid-session. It holds a guard instead, only while a
+    // session exists, and App consults the guard stack before any pop.
+    const code = withoutComments(chat);
+    expect(code).not.toContain('BackHandler');
+    expect(code).toContain('useBackGuard(activeSession ? backGuard : null)');
+    const app = withoutComments(read('App.tsx'));
+    const consumeAt = app.indexOf('if (consumeBack())');
+    const popAt = app.indexOf('const parent = memberParent(route)');
+    expect(consumeAt).toBeGreaterThan(-1);
+    expect(popAt).toBeGreaterThan(consumeAt);
+    // Guards are the only place screens decide back: one App subscription.
+    expect(app.match(/BackHandler\.addEventListener\(/g)?.length).toBe(1);
+  });
+
+  it('confirms the End chip too, and a call never ends on a bare back press', () => {
+    // The chip sits a thumb-width from Recharge in the same bar and ended a
+    // paid session on one tap. Same dialog, `end` intent, the member stays.
+    const code = withoutComments(chat);
+    expect(code).toContain('onPress={requestEnd}');
+    expect(code).toContain("setLeaveIntent('end')");
+    expect(code).toContain("onConfirm={leaveIntent === 'end' ? confirmEnd : confirmLeave}");
+    expect(code).not.toContain('endCurrentSession');
+
+    // CallScreen unmount hangs up, so a bare back was a silent hang-up. The red
+    // button stays immediate (that IS the intent); back asks.
+    const call = withoutComments(read('src/screens/CallScreen.tsx'));
+    expect(call).toContain('useBackGuard(backGuard)');
+    expect(call).toContain('testID="call-leave-dialog"');
+    expect(call).toContain('testID="call-end" glyph="callEnd" tone="danger" onPress={onEnd}');
+    expect(call).not.toContain('BackHandler');
   });
 
   it('surfaces inactivity warning and grace states from the server', () => {

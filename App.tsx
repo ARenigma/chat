@@ -36,6 +36,7 @@ import { UpdateBanner } from './src/components/UpdateBanner';
 import { assertEnv } from './src/lib/env';
 import { storage } from './src/lib/storage';
 import { PROVIDER_INTENT_KEY } from './src/lib/providerIntent';
+import { consumeBack } from './src/lib/backGuard';
 import { initialNotificationPeer, onNotificationOpen, setNotificationPolicy, startPush } from './src/lib/push';
 import { clearCall } from './src/lib/conversations';
 import {
@@ -802,6 +803,17 @@ function Root() {
       }
       if (refillVisible) {
         closeRefill();
+        return true;
+      }
+      // Below the overlays, above any route pop: a screen with something to
+      // protect (a live paid session, a call) holds a guard and takes the press
+      // to its own dialog. This is the ONLY hardware-back subscription that
+      // decides navigation; screens no longer subscribe themselves, because RN
+      // fires subscriptions last-registered-first and this effect re-subscribes
+      // whenever the Recharge overlay toggles — so a chat's own listener could
+      // be outranked by this one and the chat popped out from under a paid
+      // session (src/lib/backGuard.ts).
+      if (consumeBack()) {
         return true;
       }
       // Read from refs so that route changes do NOT cause the listener to tear

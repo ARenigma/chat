@@ -1486,3 +1486,15 @@ describe('hardware GPU backdrop blur (PappalBlurRoot + PappalBlurSurface)', () =
     expect(tsx).not.toContain(': any');
   });
 });
+
+describe('hardware back reaches the app', () => {
+  it('does not opt the manifest into OnBackInvokedCallback while BackHandler carries every back decision', () => {
+    // App.tsx's single BackHandler subscription (and the guard stack behind it,
+    // src/lib/backGuard.ts) is how a live paid session or call gets its confirm
+    // dialog. That path is fed by the Activity's legacy onBackPressed; opting
+    // into the predictive-back callback is the W6 item and must be done with
+    // its own reading of the docs, not slipped in with a manifest edit.
+    // https://developer.android.com/guide/navigation/custom-back/predictive-back-gesture
+    expect(read(MANIFEST)).not.toMatch(/enableOnBackInvokedCallback\s*=\s*"true"/);
+  });
+});
