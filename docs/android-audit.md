@@ -520,3 +520,25 @@ a blur; a flat plate would read 0.0 and a transparent bar would match the conten
 that the native surface could only ever reach `drawSolidFallback`. The JS side
 now checks `Platform.Version` and never mounts it there (13d12e4), which is why
 the Redmi (API 29) correctly shows a plate rather than a blur.
+
+## 2026-09-06 — Runtime permissions: one explained screen before Home (ADR-0026)
+
+Pages read: `training/permissions/requesting` (workflow, denial handling,
+"don't block the user interface", "always provide the option to cancel") and
+`develop/ui/views/notifications/notification-permission` (Android 13 runtime
+permission; ask in context; two denials are permanent; apps targeting 13+
+control the timing).
+
+Before: the `ready` effect in `App.tsx` requested `POST_NOTIFICATIONS`,
+`RECORD_AUDIO` and `CAMERA` in sequence over Home with a one-line
+`rationale` each — three bare dialogs on a new member's first screen, and a
+second "Deny" on any of them permanent.
+
+Now: `PermissionsScreen` in the boot machine after the policy gate. Complies
+with the workflow on sequencing, on being the educational UI (no second
+rationale Alert), on surfacing permanent denial with Settings one tap away, and
+on re-checking on foreground. **Deviates, by product decision, on mandatory**:
+Home is gated until all that apply are granted; "cancel" is Sign out. Reasoning
+and the not-yet-built kill switch are in ADR-0026. Guard: contract test named in
+the ADR; `__tests__/permissionsGate.test.ts` for the applies/satisfied
+arithmetic (notifications only from API 33; pass-through off Android).

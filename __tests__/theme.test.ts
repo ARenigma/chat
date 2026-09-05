@@ -1376,6 +1376,14 @@ describe('accent budget is enforced in code, not just documented', () => {
        * accent as a navigational action affordance — the same role the coral
        * plays on call-to-action links throughout the design system.
        */
+      /*
+       * The permissions gate (ADR-0026): only the "Open Settings" link on a
+       * permanently denied row — an action, the same class as PolicyGate's
+       * document link. The permission glyph discs are deliberately neutral
+       * (bg/sunken, text/secondary): they name the permission, they are not a
+       * state, and three coral discs would have read as decoration.
+       */
+      'PermissionsScreen.tsx',
       'PolicyGateScreen.tsx',
       /*
        * Profile setup gate. text.accent on the Terms and Privacy inline links

@@ -2639,7 +2639,7 @@ describe('provider identity is verified, not typed', () => {
     const app = read('App.tsx');
     const fn = app.slice(
       app.indexOf('async function bootPhaseAfterAuth'),
-      app.indexOf('async function requestAndroidPermission'),
+      app.indexOf('function Root()'),
     );
     expect(fn).toContain('onProviderPath');
     expect(fn).toContain('PROVIDER_INTENT_KEY');
@@ -2648,6 +2648,45 @@ describe('provider identity is verified, not typed', () => {
     // And every caller goes through it rather than deciding for itself.
     const callers = app.match(/bootPhaseAfterAuth\(/g) ?? [];
     expect(callers.length).toBeGreaterThan(2);
+  });
+
+  it('asks for permissions on one explained screen before Home, never as bare dialogs over it', () => {
+    /*
+     * ADR-0026 (goal item 15, 2026-09-05). Policies first, then the device;
+     * a CHECK in the boot machine, the asking on the screen with the reasons.
+     * Until 2026-09-06 the `ready` effect fired three system dialogs over Home
+     * with no explanation, and two denials there are permanent.
+     */
+    const app = withoutComments(read('App.tsx'));
+    const fn = app.slice(app.indexOf('async function bootPhaseAfterAuth'), app.indexOf('function Root()'));
+    const policiesAt = fn.indexOf("rpc('pending_policy_acceptances')");
+    const gateAt = fn.indexOf('if (!gateSatisfied(await checkGate()))');
+    expect(policiesAt).toBeGreaterThan(-1);
+    expect(gateAt).toBeGreaterThan(policiesAt);
+    expect(fn).toContain("return { phase: 'permissions' }");
+    expect(app).toContain("| { phase: 'permissions' }");
+    expect(app).toContain('<PermissionsScreen');
+    // The policy gate no longer jumps straight to ready around it.
+    expect(app).not.toContain("onAccepted={() => setBoot({ phase: 'ready' })}");
+    // No permission is requested from App any more; only push registration remains.
+    expect(app).not.toContain('PermissionsAndroid.PERMISSIONS.RECORD_AUDIO');
+    expect(app).not.toContain('PermissionsAndroid.PERMISSIONS.CAMERA');
+    expect(app).not.toContain('async function requestAndroidPermission');
+
+    const gateScreen = withoutComments(read('src/screens/PermissionsScreen.tsx'));
+    const gate = withoutComments(read('src/lib/permissionsGate.ts'));
+    // One dialog at a time, and no second rationale on top of the screen.
+    expect(gate).toMatch(/for \(const p of outstanding\(current\)\) \{\s*const outcome = await requestAndroidPermission\(p\.permission\);/);
+    expect(gate).not.toContain('buttonPositive');
+    expect(gateScreen).not.toContain('buttonPositive');
+    // A block is not a dead end, and the cancel is Sign out.
+    expect(gateScreen).toContain('Linking.openSettings()');
+    expect(gateScreen).toContain("AppState.addEventListener('change'");
+    for (const id of ['permissions-allow', 'permissions-sign-out', 'permissions-gate']) {
+      expect(gateScreen).toContain(`testID="${id}"`);
+    }
+    expect(gateScreen).toContain('testID={`permissions-open-settings-${p.kind}`}');
+    expect(existsSync(join(ROOT, 'docs/adr/0026-permissions-gate-before-home.md'))).toBe(true);
   });
 
   it('verifies identity before collecting the profile', () => {
