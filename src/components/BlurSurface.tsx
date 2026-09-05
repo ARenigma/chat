@@ -24,7 +24,7 @@
  * When false, callers should render a plain View with a background colour
  * instead of mounting BlurRoot/BlurSurface.
  */
-import { UIManager, requireNativeComponent } from 'react-native';
+import { Platform, UIManager, requireNativeComponent } from 'react-native';
 import type { ColorValue, StyleProp, ViewStyle } from 'react-native';
 
 // ─── BlurRoot ────────────────────────────────────────────────────────────────
@@ -42,16 +42,31 @@ export interface BlurRootProps {
 }
 
 /**
- * Whether the PappalBlurRoot native view manager is registered in the current
- * build. Use this before mounting BlurRoot or BlurSurface.
+ * Whether a real GPU backdrop blur can be drawn on this device, in this build.
  *
- * False in two situations:
+ * False in three situations:
  *   1. iOS — this module is Android-only.
  *   2. The JS bundle is newer than the native binary (OTA update before APK
  *      update). UIManager.hasViewManagerConfig is the canonical check and
  *      catches this case; Platform.OS === 'android' alone does not.
+ *   3. **API < 31.** RenderEffect.createBlurEffect is API 31, and
+ *      PappalBlurSurface.onDraw gates on exactly that
+ *      (`SDK_INT >= 31 && canvas.isHardwareAccelerated`), so on Android 7–11 the
+ *      native view can ONLY ever reach drawSolidFallback. Mounting it there buys
+ *      a native view per bar and a canvas.drawRect per bar per frame to achieve
+ *      what a plain RN View with a background does for free — on precisely the
+ *      devices with the least to spare. Checking here means those devices never
+ *      create the view at all.
+ *      https://developer.android.com/reference/android/graphics/RenderEffect#createBlurEffect(float,%20float,%20android.graphics.RenderEffect,%20android.graphics.Shader.TileMode)
+ *
+ * `Platform.Version` is the API level as a number on Android.
  */
+const BLUR_MIN_API = 31;
+
 export const BLUR_SURFACE_AVAILABLE: boolean =
+  Platform.OS === 'android' &&
+  typeof Platform.Version === 'number' &&
+  Platform.Version >= BLUR_MIN_API &&
   UIManager.hasViewManagerConfig('PappalBlurSurface') &&
   UIManager.hasViewManagerConfig('PappalBlurRoot');
 
