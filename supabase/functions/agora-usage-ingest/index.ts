@@ -1,24 +1,26 @@
 /**
- * agora-usage-ingest — pull Agora Console project-day usage into
- * media_vendor_usage_daily, then refresh per-call product_estimate COGS.
+ * agora-usage-ingest — finance control for media COGS (never pays providers).
  *
- * Console REST is reference (not always identical to the invoice). Prefer
- * invoice_csv upserts when finance exports land. Channel name = call_id.
+ * Modes (POST JSON):
+ *   {} | { from_date, to_date }
+ *     1. Console /dev/v3/usage → media_vendor_usage_daily (agora_console_api)
+ *     2. refresh_media_channel_usage_estimates from paid_sessions
+ *     3. Analytics call/lists per call_id (cname) → agora_analytics rows
+ *     4. check_media_cogs_variance → media_cogs_recon_alerts
  *
- * Auth: service role Bearer only (cron / founder tooling).
+ *   { mode: "invoice", rows: [ { project_id, usage_date, …, cost_paise? } ] }
+ *     → import_media_invoice_days (invoice_csv money truth)
  *
- * Secrets:
- *   AGORA_CUSTOMER_ID / AGORA_CUSTOMER_SECRET — Console REST basic auth
- *   AGORA_PROJECT_ID — Console project id (not App ID)
- *   Optional body: { from_date, to_date } ISO dates; default yesterday UTC.
+ * Auth: service_role Bearer (cron / founder tooling).
  *
  * Docs:
- *   https://docs.agora.io/en/video-calling/channel-management-api/agora-console-rest-api
+ *   Console usage — https://docs.agora.io/en/video-calling/channel-management-api/agora-console-rest-api
+ *   Analytics lists — https://docs.agora.io/en/agora-analytics/reference/agora-analytics-rest-api
+ *   Console usage may differ from invoices — prefer invoice_csv for cash COGS.
  */
-import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 
 interface UsageDay {
-  /** Console returns ISO string; older docs showed unix seconds. */
   date: number | string;
   usage: {
     durationAudioAll?: number;
@@ -28,6 +30,16 @@ interface UsageDay {
     durationVideo2K?: number;
     durationVideo4K?: number;
   };
+}
+
+interface AnalyticsCall {
+  call_id?: string;
+  cname?: string;
+  created_ts?: number;
+  destroyed_ts?: number;
+  finished?: boolean;
+  call_acu?: number;
+  call_pcu?: number;
 }
 
 function basicAuth(id: string, secret: string): string {
@@ -46,12 +58,25 @@ function yesterdayUtc(): string {
 
 function usageDateOf(day: UsageDay): string {
   if (typeof day.date === 'string') {
-    // "2026-09-04T00:00:00.000Z" or "2026-09-04"
     return day.date.slice(0, 10);
   }
-  // Seconds (< 1e12) or milliseconds.
   const ms = day.date < 1e12 ? day.date * 1000 : day.date;
   return utcDateString(new Date(ms));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function serviceRoleOk(request: Request): boolean {
+  const authHeader = request.headers.get('Authorization') ?? '';
+  const jwt = authHeader.replace(/^Bearer\s+/i, '');
+  try {
+    const role = JSON.parse(atob(jwt.split('.')[1] ?? '')).role ?? '';
+    return role === 'service_role';
+  } catch {
+    return false;
+  }
 }
 
 Deno.serve(async (request: Request) => {
@@ -70,28 +95,69 @@ async function handle(request: Request): Promise<Response> {
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  const customerId = Deno.env.get('AGORA_CUSTOMER_ID');
-  const customerSecret = Deno.env.get('AGORA_CUSTOMER_SECRET');
-  const projectId = Deno.env.get('AGORA_PROJECT_ID');
-
   if (!supabaseUrl || !serviceKey) {
     return Response.json({ error: 'not configured' }, { status: 500 });
   }
-
-  const authHeader = request.headers.get('Authorization') ?? '';
-  const jwt = authHeader.replace(/^Bearer\s+/i, '');
-  let role = '';
-  try {
-    role = JSON.parse(atob(jwt.split('.')[1] ?? '')).role ?? '';
-  } catch {
-    role = '';
-  }
-  // Same gate as send-push: platform verify_jwt proves the signature; we only
-  // require the service_role claim so cron/founder tooling can use the legacy
-  // JWT or a rotated secret without exact string equality on the env value.
-  if (role !== 'service_role') {
+  if (!serviceRoleOk(request)) {
     return Response.json({ error: 'unauthorized' }, { status: 401 });
   }
+
+  const admin = createClient(supabaseUrl, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  let body: Record<string, unknown> = {};
+  try {
+    body = (await request.json()) as Record<string, unknown>;
+  } catch {
+    body = {};
+  }
+
+  if (body.mode === 'invoice') {
+    return handleInvoice(admin, body);
+  }
+
+  return handleConsoleAndAnalytics(admin, body);
+}
+
+async function handleInvoice(
+  admin: SupabaseClient,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  const rows = body.rows;
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return Response.json({ error: 'rows array required' }, { status: 400 });
+  }
+
+  const { data, error } = await admin.rpc('import_media_invoice_days', {
+    p_rows: rows,
+  });
+  if (error) {
+    console.error(`invoice import failed: ${error.message}`);
+    return Response.json({ error: 'invoice import failed', detail: error.message }, { status: 500 });
+  }
+
+  const { data: alerts, error: alertErr } = await admin.rpc('check_media_cogs_variance', {});
+  if (alertErr) {
+    console.error(`variance check after invoice failed: ${alertErr.message}`);
+  }
+
+  return Response.json({
+    ok: true,
+    mode: 'invoice',
+    days_upserted: data ?? 0,
+    alerts_touched: alerts ?? null,
+  });
+}
+
+async function handleConsoleAndAnalytics(
+  admin: SupabaseClient,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  const customerId = Deno.env.get('AGORA_CUSTOMER_ID');
+  const customerSecret = Deno.env.get('AGORA_CUSTOMER_SECRET');
+  const projectId = Deno.env.get('AGORA_PROJECT_ID');
+  const appId = Deno.env.get('AGORA_APP_ID');
 
   if (!customerId || !customerSecret || !projectId) {
     return Response.json(
@@ -105,19 +171,11 @@ async function handle(request: Request): Promise<Response> {
 
   let fromDate = yesterdayUtc();
   let toDate = fromDate;
-  try {
-    const body = (await request.json()) as {
-      from_date?: string;
-      to_date?: string;
-    };
-    if (typeof body.from_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.from_date)) {
-      fromDate = body.from_date;
-    }
-    if (typeof body.to_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.to_date)) {
-      toDate = body.to_date;
-    }
-  } catch {
-    // empty body → yesterday
+  if (typeof body.from_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.from_date)) {
+    fromDate = body.from_date;
+  }
+  if (typeof body.to_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.to_date)) {
+    toDate = body.to_date;
   }
 
   const url =
@@ -143,10 +201,6 @@ async function handle(request: Request): Promise<Response> {
   const payload = (await agoraRes.json()) as { usages?: UsageDay[] };
   const usages = Array.isArray(payload.usages) ? payload.usages : [];
 
-  const admin = createClient(supabaseUrl, serviceKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-
   const upserted: string[] = [];
   for (const day of usages) {
     const usageDate = usageDateOf(day);
@@ -171,12 +225,40 @@ async function handle(request: Request): Promise<Response> {
     upserted.push(String(data));
   }
 
+  const sinceIso = new Date(`${fromDate}T00:00:00.000Z`).toISOString();
   const { data: refreshed, error: refreshErr } = await admin.rpc(
     'refresh_media_channel_usage_estimates',
-    { p_since: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString() },
+    { p_since: sinceIso },
   );
   if (refreshErr) {
     console.error(`channel estimate refresh failed: ${refreshErr.message}`);
+  }
+
+  let analyticsUpserted = 0;
+  let analyticsSkipped = 0;
+  let analyticsError: string | null = null;
+
+  if (appId) {
+    const analytics = await ingestAnalyticsForWindow(admin, {
+      customerId,
+      customerSecret,
+      appId,
+      fromDate,
+      toDate,
+    });
+    analyticsUpserted = analytics.upserted;
+    analyticsSkipped = analytics.skipped;
+    analyticsError = analytics.error;
+  } else {
+    analyticsError = 'AGORA_APP_ID missing; skipped Analytics per-call ingest';
+    console.warn(analyticsError);
+  }
+
+  const { data: alerts, error: alertErr } = await admin.rpc('check_media_cogs_variance', {
+    p_since: fromDate,
+  });
+  if (alertErr) {
+    console.error(`variance check failed: ${alertErr.message}`);
   }
 
   return Response.json({
@@ -185,5 +267,130 @@ async function handle(request: Request): Promise<Response> {
     to_date: toDate,
     days_upserted: upserted.length,
     channel_estimates_refreshed: refreshed ?? null,
+    analytics_channels_upserted: analyticsUpserted,
+    analytics_skipped: analyticsSkipped,
+    analytics_error: analyticsError,
+    alerts_touched: alerts ?? null,
   });
+}
+
+/**
+ * Per-call Analytics pull (cname = call_id). Rate-limited to ~1 req/s for
+ * Standard Analytics plans. Gaps vs product_estimate become recon alerts.
+ */
+async function ingestAnalyticsForWindow(
+  admin: SupabaseClient,
+  opts: {
+    customerId: string;
+    customerSecret: string;
+    appId: string;
+    fromDate: string;
+    toDate: string;
+  },
+): Promise<{ upserted: number; skipped: number; error: string | null }> {
+  const { data: calls, error } = await admin.rpc('list_agora_calls_for_analytics_ingest', {
+    p_from: opts.fromDate,
+    p_to: opts.toDate,
+  });
+
+  if (error) {
+    return { upserted: 0, skipped: 0, error: error.message };
+  }
+
+  const rows = (calls ?? []) as Array<{
+    call_id: string;
+    started_at: string;
+    ended_at: string;
+  }>;
+
+  let upserted = 0;
+  let skipped = 0;
+
+  for (const call of rows) {
+    const started = Math.floor(new Date(call.started_at).getTime() / 1000) - 120;
+    const ended = Math.floor(new Date(call.ended_at).getTime() / 1000) + 120;
+    const result = await fetchAndUpsertAnalyticsCall(admin, {
+      ...opts,
+      callId: call.call_id,
+      startTs: started,
+      endTs: ended,
+    });
+    if (result === 'ok') upserted += 1;
+    else if (result === 'skip') skipped += 1;
+    else return { upserted, skipped, error: result };
+    await sleep(1100);
+  }
+
+  return { upserted, skipped, error: null };
+}
+
+async function fetchAndUpsertAnalyticsCall(
+  admin: SupabaseClient,
+  opts: {
+    customerId: string;
+    customerSecret: string;
+    appId: string;
+    callId: string;
+    startTs: number;
+    endTs: number;
+  },
+): Promise<'ok' | 'skip' | string> {
+  if (opts.endTs <= opts.startTs) {
+    return 'skip';
+  }
+
+  const url =
+    `https://api.agora.io/beta/analytics/call/lists` +
+    `?appid=${encodeURIComponent(opts.appId)}` +
+    `&start_ts=${opts.startTs}&end_ts=${opts.endTs}` +
+    `&cname=${encodeURIComponent(opts.callId)}` +
+    `&page_no=1&page_size=20`;
+
+  const res = await fetch(url, {
+    headers: {
+      Authorization: basicAuth(opts.customerId, opts.customerSecret),
+      Accept: 'application/json',
+    },
+  });
+
+  if (res.status === 401 || res.status === 403) {
+    return `analytics unauthorized (${res.status}) — check Analytics plan / keys`;
+  }
+  if (res.status === 429) {
+    await sleep(2000);
+    return 'skip';
+  }
+  if (!res.ok) {
+    const text = await res.text();
+    console.warn(`analytics ${opts.callId}: ${res.status} ${text}`);
+    return 'skip';
+  }
+
+  const json = (await res.json()) as {
+    code?: number;
+    call_lists?: AnalyticsCall[];
+  };
+  if (typeof json.code === 'number' && json.code !== 0) {
+    console.warn(`analytics ${opts.callId}: code ${json.code}`);
+    return 'skip';
+  }
+
+  const lists = Array.isArray(json.call_lists) ? json.call_lists : [];
+  const match =
+    lists.find(c => c.cname === opts.callId && c.finished !== false) ?? lists[0];
+  if (!match?.created_ts || !match?.destroyed_ts) {
+    return 'skip';
+  }
+
+  const duration = Math.max(0, match.destroyed_ts - match.created_ts);
+  const { error } = await admin.rpc('upsert_media_channel_usage_analytics', {
+    p_call_id: opts.callId,
+    p_duration_seconds: duration,
+    p_participant_acu: match.call_acu ?? 2,
+    p_raw: match,
+  });
+  if (error) {
+    return error.message;
+  }
+  return 'ok';
 }

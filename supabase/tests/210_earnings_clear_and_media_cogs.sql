@@ -116,7 +116,7 @@ select is(
   '7. upsert computes 2 + 4 = 6 std-minutes'
 );
 
--- Minimal conversation + ended agora call with minutes for estimate refresh.
+-- Minimal conversation + ended agora call + paid_session (product meter).
 select lives_ok(
   $$
   insert into public.conversations (id, member_id, provider_id)
@@ -135,10 +135,27 @@ select lives_ok(
     'cc058000-0000-4058-8000-000000000002',
     'voice', 'ended',
     now() - interval '10 minutes', now() - interval '5 minutes',
-    5, 110, 'agora'
+    0, 0, 'agora'
+  );
+  insert into public.paid_sessions (
+    id, conversation_id, channel, status, member_id, provider_id,
+    call_id, minutes_billed, tokens_debited, rate_tokens_per_min,
+    provider_share_percent, payout_hold_days,
+    accepted_at, started_at, ended_at
+  ) values (
+    'cc058000-0000-4058-8000-000000000051',
+    'cc058000-0000-4058-8000-0000000000c1',
+    'audio', 'ended',
+    'cc058000-0000-4058-8000-000000000001',
+    'cc058000-0000-4058-8000-000000000002',
+    'cc058000-0000-4058-8000-0000000000d1',
+    5, 110, 22, 60, 7,
+    now() - interval '10 minutes',
+    now() - interval '10 minutes',
+    now() - interval '5 minutes'
   );
   $$,
-  '7b. fixture conversation + ended agora call'
+  '7b. fixture conversation + ended agora call + paid_session'
 );
 
 select is(

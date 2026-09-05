@@ -101,6 +101,7 @@ const MIGRATIONS = [
   'supabase/migrations/058_clear_pending_earnings.sql',
   'supabase/migrations/059_media_cogs_ledger.sql',
   'supabase/migrations/060_payout_transfer_settle.sql',
+  'supabase/migrations/061_media_cogs_reconcile_tighten.sql',
 ];
 
 const docker = (args, options = {}) =>
@@ -447,6 +448,10 @@ const suites = [
   {
     file: join(ROOT, 'supabase/tests/220_payout_settle_and_inr_sync.sql'),
     label: 'payout transfer settle and INR call sync assert',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/230_media_cogs_reconcile_tighten.sql'),
+    label: 'media COGS dual-source reconcile, invoice, alerts',
   },
 ];
 

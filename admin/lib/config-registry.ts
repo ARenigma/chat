@@ -386,6 +386,31 @@ export const CONFIG_REGISTRY: DomainDef[] = [
         risk: 'medium',
         runtime: 'live',
       },
+      {
+        key: 'std_min_day_variance_alert_pct',
+        label: 'Day std-min variance alert %',
+        description:
+          'Alert when |product estimated std-min − vendor day std-min| / vendor ≥ this %. ' +
+          'Does not change member or provider money.',
+        type: 'integer',
+        min: 1,
+        max: 200,
+        default: 15,
+        risk: 'low',
+        runtime: 'live',
+      },
+      {
+        key: 'product_vs_analytics_alert_pct',
+        label: 'Call product vs Analytics alert %',
+        description:
+          'Alert when |paid_sessions minutes − Agora Analytics channel minutes| / Analytics ≥ this %.',
+        type: 'integer',
+        min: 1,
+        max: 200,
+        default: 50,
+        risk: 'low',
+        runtime: 'live',
+      },
     ],
   },
   {
