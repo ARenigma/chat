@@ -25,6 +25,13 @@ import {
   type PayoutMethod,
 } from '../api/provider';
 import { useImeSpace } from '../lib/useImeSpace';
+import { useCheckDisplayName } from '../api/profileSetup';
+import {
+  STAGE_NAME_HINT,
+  stageNamePii,
+  stageNamePiiMessage,
+  suggestStageName,
+} from '../lib/stageName';
 import { useStore } from '../store/useStore';
 import { Button } from '../components/Button';
 import { Chip } from '../components/Chip';
@@ -162,6 +169,8 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
   const [about, setAbout] = useState('');
   const [avatarSeed, setAvatarSeed] = useState<ClaySeed | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
+  /** The suggestion currently in the field, so "untouched" can be told from "typed". */
+  const [suggested, setSuggested] = useState<string | null>(null);
 
   const savePan = useSavePan();
   const savePayout = useSavePayoutAccount();
@@ -352,8 +361,43 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
     setPhase('verify');
   }, []);
 
+  // The stage name, checked while they type rather than only when Go live
+  // fails: the same `check_display_name` the member flow uses (3–24 chars,
+  // [A-Za-z0-9_], unique), plus a local look at whether the name is THEM.
+  // `fetched.name` is the PAN-verified name from the confirm step.
+  const { data: nameCheck, isFetching: checkingName } = useCheckDisplayName(
+    displayName,
+    phase === 'profile',
+  );
+  const namePii = stageNamePii(displayName, fetched?.name ?? null);
+  const nameTaken = nameCheck?.status === 'taken' || nameCheck?.status === 'invalid';
+
+  // The field opens filled (stageName.ts). Only on the way in, and only if they
+  // have not typed one already — coming back via "Something is wrong" must not
+  // overwrite their work.
+  const enterProfile = useCallback(() => {
+    if (displayName.trim() === '') {
+      const first = suggestStageName();
+      setSuggested(first);
+      setDisplayName(first);
+    }
+    setPhase('profile');
+  }, [displayName]);
+
+  const rerollName = useCallback(() => {
+    const next = suggestStageName();
+    setSuggested(next);
+    setDisplayName(next);
+    setNameError(null);
+  }, []);
+
   const profileReady =
     displayName.trim().length > 0 &&
+    // A phone number in the name is blocked outright; a real-name match is a
+    // heuristic and only warns (stageName.ts). Taken/invalid is the server's
+    // word and would fail at Go live anyway — better to hold the button.
+    namePii !== 'phone' &&
+    !nameTaken &&
     headline.trim().length > 0 &&
     languages.length > 0 &&
     about.trim().length > 0;
@@ -650,7 +694,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
         <View style={[styles.footer, { paddingBottom: insets.bottom + TOKENS.space.md }]}>
           <Button
             label="Yes, this is me"
-            onPress={() => setPhase('profile')}
+            onPress={enterProfile}
             testID="provider-confirm-details"
           />
           <Pressable
@@ -737,11 +781,52 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
             allowFontScaling
             underlineColorAndroid="transparent"
           />
-          {nameError !== null ? (
-            <Text allowFontScaling style={styles.verifyError} testID="provider-name-error">
-              {nameError}
-            </Text>
-          ) : null}
+          <View style={styles.nameRow}>
+            <Pressable
+              onPress={rerollName}
+              testID="provider-name-reroll"
+              accessibilityLabel="Suggest another stage name"
+              press="chip"
+              style={styles.nameReroll}>
+              <Text allowFontScaling style={styles.nameRerollLabel}>
+                Try another
+              </Text>
+            </Pressable>
+            {/* One line, one voice, in priority order: the hard error from Go
+                live, a PII hit, the live availability check, then the standing
+                hint while the suggestion is untouched. */}
+            {nameError !== null ? (
+              <Text allowFontScaling style={[styles.nameStatus, styles.verifyError]} testID="provider-name-error">
+                {nameError}
+              </Text>
+            ) : namePii !== null ? (
+              <Text
+                allowFontScaling
+                style={[styles.nameStatus, styles.verifyError]}
+                testID="provider-name-pii-warning">
+                {stageNamePiiMessage(namePii)}
+              </Text>
+            ) : nameTaken ? (
+              <Text allowFontScaling style={[styles.nameStatus, styles.verifyError]} testID="provider-name-taken">
+                {nameCheck?.status === 'taken' ? 'Already taken. Try another.' : nameCheck?.message}
+              </Text>
+            ) : checkingName ? (
+              <Text allowFontScaling style={[styles.nameStatus, styles.verifyHint]}>
+                Checking…
+              </Text>
+            ) : displayName.trim() !== '' && displayName === suggested ? (
+              <Text allowFontScaling style={[styles.nameStatus, styles.verifyHint]}>
+                {STAGE_NAME_HINT}
+              </Text>
+            ) : nameCheck?.status === 'available' ? (
+              <Text
+                allowFontScaling
+                style={[styles.nameStatus, styles.namePositive]}
+                testID="provider-name-available">
+                Available
+              </Text>
+            ) : null}
+          </View>
         </Field>
 
         <Field label="Headline">
@@ -1063,6 +1148,18 @@ const makeStyles = (t: Theme) =>
     },
     field: { gap: TOKENS.space['2xs'] },
     fieldLabel: { ...TOKENS.typography.labelMedium, color: t.color.text.secondary },
+    // Reroll chip on the left, the one status line filling the rest.
+    nameRow: { flexDirection: 'row', alignItems: 'flex-start', gap: TOKENS.space.sm },
+    nameReroll: {
+      paddingHorizontal: TOKENS.space.md,
+      paddingVertical: TOKENS.space['2xs'],
+      borderRadius: TOKENS.radius.pill,
+      borderCurve: 'continuous',
+      backgroundColor: t.color.bg.accentTint,
+    },
+    nameRerollLabel: { ...TOKENS.typography.labelMedium, color: t.color.text.accent },
+    nameStatus: { flex: 1, paddingTop: TOKENS.space['2xs'] },
+    namePositive: { ...TOKENS.typography.bodyMedium, color: t.color.text.positive },
     input: {
       minHeight: 52,
       paddingHorizontal: TOKENS.space.md,
