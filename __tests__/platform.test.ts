@@ -552,7 +552,17 @@ describe('conversation notifications actually open the conversation', () => {
     // same path OAuth uses. Remote input, so it is uuid-checked before routing.
     const app = read('App.tsx');
     expect(app).toMatch(/companionchat:\/\/peer/);
-    expect(app).toMatch(/isUuid\(peer\)/);
+    /*
+     * The value that gets ROUTED must be the one that is uuid-checked, and that
+     * is no longer the raw capture: bdda9ce strips a query string first so a
+     * harness-augmented peer URI still opens the chat. The old assertion named
+     * `isUuid(peer)` and went stale the moment the variable did - it was failing
+     * on main before this merge. Asserting the STRIPPED id is checked keeps the
+     * guarantee (remote input is validated before it reaches a query) without
+     * pinning a variable name.
+     */
+    expect(app).toMatch(/peer\.split\('\?'\)/);
+    expect(app).toMatch(/isUuid\(peerId\)/);
   });
 });
 
@@ -1146,12 +1156,151 @@ describe('CameraX live-preview tile', () => {
  * Wiring assertions — the structural facts that a future change must not break
  * silently (RULE 1: if it can be checked mechanically, it goes here).
  */
+describe('UI haptics go through the platform feedback constants', () => {
+  const HAPTICS_KT = 'android/app/src/main/java/com/companionchat/HapticsModule.kt';
+  /*
+   * Comments are stripped before the bans below. These files EXPLAIN why the
+   * discouraged API is not used, so matching prose would fail a file whose code
+   * is correct and whose documentation is the point - the same trap theme.test's
+   * duration gate already documents.
+   */
+  const code = (p: string): string =>
+    read(p)
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+
+  it('uses performHapticFeedback, not a raw Vibration duration', () => {
+    /*
+     * Android's haptics guidance: a predefined action goes through
+     * View.performHapticFeedback with a HapticFeedbackConstants value, because
+     * that runs the OEM's tuned waveform AND respects the user's touch-feedback
+     * setting. `Vibration.vibrate(ms)` does neither - this app was buzzing users
+     * who had switched haptics off.
+     * https://developer.android.com/develop/ui/views/haptics/haptics-principles
+     */
+    const kt = code(HAPTICS_KT);
+    expect(kt).toContain('performHapticFeedback');
+    expect(kt).toContain('HapticFeedbackConstants.KEYBOARD_TAP');
+    expect(kt).toContain('HapticFeedbackConstants.LONG_PRESS');
+    expect(kt).not.toContain('Vibrator');
+  });
+
+  it('never overrides the user with FLAG_IGNORE_GLOBAL_SETTING', () => {
+    /*
+     * The plan said to set it "where Telegram sets it". It is not set, for two
+     * independent reasons: the principles page strongly discourages it, and the
+     * SDK's own api-versions.xml records it deprecated=33 while this app targets
+     * 36. Matching the reference is this project's default, not an obligation -
+     * a user who turned touch feedback off has said something.
+     */
+    expect(code(HAPTICS_KT)).not.toContain('FLAG_IGNORE_GLOBAL_SETTING');
+  });
+
+  it('guards the API 30 constants against minSdk 24', () => {
+    /*
+     * From platforms/android-36/data/api-versions.xml: CONFIRM and REJECT are
+     * since=30, while KEYBOARD_TAP (8) and LONG_PRESS (3) are always available
+     * at minSdk 24. The newer two fall back rather than being skipped, so an
+     * older device still feels the beat.
+     */
+    const kt = code(HAPTICS_KT);
+    for (const constant of ['CONFIRM', 'REJECT']) {
+      const at = kt.indexOf(`HapticFeedbackConstants.${constant}`);
+      expect(at).toBeGreaterThan(-1);
+      // A version gate appears above each of them.
+      expect(kt.slice(0, at)).toMatch(/Build\.VERSION\.SDK_INT >= Build\.VERSION_CODES\.R/);
+    }
+  });
+
+  it('registers the module so JS can reach it', () => {
+    const pkg = read('android/app/src/main/java/com/companionchat/InAppUpdatePackage.kt');
+    expect(pkg).toContain('HapticsModule(reactContext)');
+    expect(read(HAPTICS_KT)).toContain('const val NAME = "PappalHaptics"');
+    // And the JS side asks for that exact name.
+    expect(read('src/lib/haptics.ts')).toContain('NativeModules.PappalHaptics');
+  });
+
+  it('keeps Vibration only as the missing-native fallback', () => {
+    /*
+     * Vibration does not respect the user's setting, so it must never be the
+     * default path - only the OTA-skew window where the JS bundle is newer than
+     * the APK. Every call sits behind the HAS_NATIVE_HAPTICS guard.
+     */
+    const ts = code('src/lib/haptics.ts');
+    const calls = ts.match(/Vibration\.vibrate\(/g) ?? [];
+    const guards = ts.match(/if \(HAS_NATIVE_HAPTICS\) \{/g) ?? [];
+    expect(calls.length).toBeGreaterThan(0);
+    expect(guards.length).toBe(calls.length);
+  });
+});
+
 describe('hardware GPU backdrop blur (PappalBlurRoot + PappalBlurSurface)', () => {
   const BLUR_PACKAGE =
     'android/app/src/main/java/com/companionchat/BlurPackage.kt';
   const BLUR_SURFACE_TSX = 'src/components/BlurSurface.tsx';
   const APP_KT =
     'android/app/src/main/java/com/companionchat/MainApplication.kt';
+
+  it('never mounts the native blur below API 31', () => {
+    /*
+     * RenderEffect.createBlurEffect is API 31, and PappalBlurSurface.onDraw
+     * gates on `SDK_INT >= 31 && canvas.isHardwareAccelerated`, so on Android
+     * 7-11 the native view can only ever reach drawSolidFallback. Mounting it
+     * there costs a native view per bar plus a drawRect per bar per frame to
+     * achieve what a plain View with a background does for free - on the devices
+     * with the least to spare. The JS side must not create it at all.
+     */
+    const tsx = read(BLUR_SURFACE_TSX);
+    expect(tsx).toContain('BLUR_MIN_API = 31');
+    expect(tsx).toMatch(/Platform\.Version >= BLUR_MIN_API/);
+    // And the native gate it mirrors is still there, so the two cannot drift.
+    const kt = read(BLUR_PACKAGE);
+    expect(kt).toMatch(/Build\.VERSION\.SDK_INT >= 31 && canvas\.isHardwareAccelerated/);
+  });
+
+  it('degrades to invisible, never to a black slab', () => {
+    /*
+     * `tintColor` defaulted to Color.BLACK and the fallback forced alpha 255,
+     * so every path where the tint did not arrive painted an opaque black rect:
+     * an unset prop, a JS bundle predating the prop, a `tint="none"` caller.
+     * On the S22 (API 36, 2026-09-05) the chat header and composer rendered as
+     * black bars with light-theme content sitting on them.
+     *
+     * A decoration that cannot draw itself must disappear, which is what the
+     * Frost docstring on the JS side already promises.
+     */
+    const kt = read(BLUR_PACKAGE);
+    expect(kt).toMatch(/var tintColor: Int = Color\.TRANSPARENT/);
+    expect(kt).not.toMatch(/var tintColor: Int = Color\.BLACK/);
+    // The fallback returns early on a fully transparent tint, BEFORE it forces
+    // the paint opaque.
+    const fallback = kt.slice(
+      kt.indexOf('private fun drawSolidFallback'),
+      kt.indexOf('private fun drawBlurred'),
+    );
+    expect(fallback).toContain('Color.alpha(tintColor) == 0');
+    expect(fallback.indexOf('Color.alpha(tintColor) == 0')).toBeLessThan(
+      fallback.indexOf('tintPaint.alpha = 255'),
+    );
+  });
+
+  it('sends tintColor as a colour, never a hand-rolled signed int', () => {
+    /*
+     * normalizeColor(-1929379841) === null, so a signed ARGB int never reaches
+     * the native setter at all. Frost must hand RN the token string and let the
+     * framework do the conversion it already does for every other colour prop.
+     */
+    const frost = read('src/components/Frost.tsx');
+    expect(frost).toMatch(/tintColor=\{tint === 'none' \? 'transparent' : theme\.color\.bg\.glass\}/);
+    // The hand-rolled converter is gone and must not come back.
+    expect(frost).not.toContain('function argb');
+    expect(frost).not.toMatch(/0x100000000|0x80000000/);
+    // And the native null-fallback agrees with the field default, so a dropped
+    // prop can never paint an opaque colour.
+    const kt = read(BLUR_PACKAGE);
+    expect(kt).toMatch(/view\.tintColor = color \?: Color\.TRANSPARENT/);
+    expect(kt).not.toMatch(/color \?: Color\.BLACK/);
+  });
 
   it('BlurPackage registers both view managers with the correct names', () => {
     /**
@@ -1302,7 +1451,14 @@ describe('hardware GPU backdrop blur (PappalBlurRoot + PappalBlurSurface)', () =
      * expects an ARGB integer).
      */
     const tsx = read(BLUR_SURFACE_TSX);
-    expect(tsx).toContain('tintColor?: number');
+    /*
+     * A COLOUR, not a number. This assertion used to demand `tintColor?: number`
+     * and so locked in the defect: `customType = "Color"` routes the value
+     * through RN's normaliser, which rejects negative numbers, and a signed
+     * 32-bit ARGB int is negative for any alpha above 0x7F. The value was
+     * dropped and every frosted bar painted the native default instead.
+     */
+    expect(tsx).toContain('tintColor?: ColorValue');
     expect(tsx).toContain('tintAlpha?: number');
     expect(tsx).toContain('blurRadius?: number');
     expect(tsx).toContain('enabled?: boolean');

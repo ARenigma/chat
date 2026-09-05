@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SCROLL_PHYSICS } from '../lib/scroll';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -108,6 +109,7 @@ export function ProviderBankScreen({ onBack }: Props) {
       </View>
 
       <ScrollView
+        {...SCROLL_PHYSICS}
         style={styles.scroll}
         contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + TOKENS.space.lg }]}
         keyboardShouldPersistTaps="handled">

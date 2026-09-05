@@ -66,6 +66,15 @@ export interface PayoutReadiness {
 export interface TaxProfile {
   pan: string | null;
   pan_name: string | null;
+  /**
+   * Date of birth as returned by the PAN check, `YYYY-MM-DD`.
+   *
+   * Held here rather than on `profiles` until promotion, because
+   * `member_is_pseudonymous` (migration 011) forbids a birth date on a member
+   * row. Read by onboarding to SHOW the provider what was fetched before they
+   * confirm it, and by `complete_provider_onboarding` for the 18+ gate.
+   */
+  verified_dob: string | null;
   status: 'not_provided' | 'pending' | 'verified' | 'failed';
   failure_reason: string | null;
 }
@@ -153,6 +162,16 @@ export interface ProviderProfileDraft {
 }
 
 /**
+ * Whether a write failed because the display name is already held.
+ *
+ * Matched on the constraint name rather than the message text, which is
+ * Postgres's and not ours to depend on.
+ */
+export function isDuplicateDisplayName(message: string): boolean {
+  return /profiles_display_name_lower_unique/.test(message);
+}
+
+/**
  * Auto-onboard: go live as a provider in one call (migration 051).
  *
  * Replaces the apply → admin-review path. The provider has already verified
@@ -190,7 +209,15 @@ export function useCompleteProviderOnboarding() {
           ? 'You must be 18 or older to be a provider.'
           : /verify your identity/.test(err.message)
             ? 'Please verify your identity first.'
-            : 'Could not finish setup. Please try again.',
+            : /*
+               * Display names are unique across every profile
+               * (`profiles_display_name_lower_unique`), so a provider can pick a
+               * stage name a member already holds. "Please try again" was a dead
+               * end for exactly this case: the retry it asks for fails forever.
+               */
+              isDuplicateDisplayName(err.message)
+              ? 'That name is already taken. Pick another one.'
+              : 'Could not finish setup. Please try again.',
       );
     },
   });
@@ -354,7 +381,7 @@ export function useTaxProfile() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('provider_tax_profile')
-        .select('pan, pan_name, status, failure_reason')
+        .select('pan, pan_name, verified_dob, status, failure_reason')
         .limit(1);
       if (error) {
         throw new Error(error.message);

@@ -959,8 +959,49 @@ describe('motion lives in one module', () => {
        * whose code was correct and whose documentation was the whole point.
        * A test that reads comments is a test that grades documentation.
        */
-      expect(stripComments(s.body)).not.toMatch(/duration:\s*\d/);
+      /*
+       * Three forms, not one. The gate only ever caught the object-literal
+       * `duration: 240`, so four builder-style slips lived in screens for
+       * months - `FadeInDown.duration(220)`, `FadeOutUp.duration(160)`,
+       * `FadeIn.duration(220)` and a `.delay(80)` - each a hand-picked number
+       * close enough to a token to look like one and free to drift from it.
+       * A builder call is exactly where a raw duration hides, so it is checked
+       * too.
+       */
+      expect(stripComments(s.body)).not.toMatch(
+        /duration:\s*\d|\.duration\(\s*\d|\.delay\(\s*\d/,
+      );
     }
+  });
+
+  it('gives every scrollable the same scroll feel', () => {
+    /*
+     * src/lib/scroll.ts says "Spread onto every FlatList/ScrollView", and five
+     * screens did not: Onboarding, PolicyGate, ProfileSetup, ProviderApplication
+     * and ProviderBank. A screen that scrolls with different physics from the
+     * one before it is a seam the user feels and cannot name - and "every" in a
+     * docstring is a wish until something checks it.
+     *
+     * Enforced by scanning rather than by a fixed list, so a NEW screen with a
+     * scroller fails this the day it is written.
+     */
+    const dir = join(ROOT, 'src/screens');
+    const offenders: string[] = [];
+    for (const name of readdirSync(dir)) {
+      if (!name.endsWith('.tsx')) {
+        continue;
+      }
+      const body = read(join('src/screens', name));
+      const scrollers = body.match(/<(ScrollView|FlatList|SectionList|FlashList)\b/g) ?? [];
+      if (scrollers.length === 0) {
+        continue;
+      }
+      const spreads = body.match(/\{\.\.\.SCROLL_PHYSICS\}/g) ?? [];
+      if (spreads.length < scrollers.length) {
+        offenders.push(`${name}: ${scrollers.length} scroller(s), ${spreads.length} spread(s)`);
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 
   it('routes the signature moment through the shared builder', () => {

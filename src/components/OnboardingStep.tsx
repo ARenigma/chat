@@ -9,11 +9,18 @@ import Animated, {
   useAnimatedStyle,
   useDerivedValue,
   withTiming,
+  ReduceMotion,
 } from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { Icon } from './Icon';
-import { SOURCE_METRICS, STEP_ADVANCE_MS, STEP_EXIT_MS, type StepSpec } from '../lib/onboarding';
+import {
+  SOURCE_METRICS,
+  STEP_ADVANCE_MS,
+  STEP_DESCRIPTION_DELAY_MS,
+  STEP_EXIT_MS,
+  type StepSpec,
+} from '../lib/onboarding';
 
 /** Expanded and collapsed sizes, from the source's ternaries in `Step.swift`. */
 const ICON_EXPANDED = SOURCE_METRICS.iconOpen;
@@ -59,6 +66,21 @@ interface Props {
  * off one shared progress value so the switch lands inside a movement rather
  * than standing alone as a jump.
  */
+/*
+ * Hoisted, not built in the render.
+ *
+ * Reanimated builders allocate on construction, so one written inline is a new
+ * object on every render of every step. These live here rather than in motion.ts
+ * because their duration is `STEP_EXIT_MS`, which belongs to the onboarding
+ * source's own timing sheet and not to the app-wide token table.
+ */
+const descriptionIn = FadeInUp.duration(STEP_EXIT_MS)
+  .delay(STEP_DESCRIPTION_DELAY_MS)
+  .reduceMotion(ReduceMotion.System);
+const descriptionOut = FadeOutUp.duration(STEP_EXIT_MS).reduceMotion(
+  ReduceMotion.System,
+);
+
 function OnboardingStepView({ step, expanded, accent, hideIcon, testID }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -190,8 +212,8 @@ function OnboardingStepView({ step, expanded, accent, hideIcon, testID }: Props)
         {expanded ? (
           <Animated.View
             // Source: `.smooth(duration: 0.2)` on both insertion and removal.
-            entering={FadeInUp.duration(STEP_EXIT_MS).delay(80)}
-            exiting={FadeOutUp.duration(STEP_EXIT_MS)}
+            entering={descriptionIn}
+            exiting={descriptionOut}
           >
             <Animated.Text allowFontScaling style={styles.description}>
               {step.description}

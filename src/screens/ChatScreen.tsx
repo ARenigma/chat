@@ -11,7 +11,8 @@ import {
   Text,
   View,
 } from 'react-native';
-import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutUp } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { barIn, barOut } from '../theme/motion';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -1146,8 +1147,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
           card out of sight (or when extend is not eligible). */}
       {showStickyRecharge ? (
         <Animated.View
-          entering={FadeInDown.duration(220)}
-          exiting={FadeOutUp.duration(160)}
+          entering={barIn}
+          exiting={barOut}
           style={[styles.talkBar, isLowBalance(balance) && styles.talkBarLow]}>
           <View style={styles.talkDot} />
           {sessionClock !== null ? (

@@ -95,7 +95,23 @@ export function Frost({
         <BlurSurface
           style={styles.fill}
           enabled={blur}
-          tintColor={argb(tint === 'none' ? 'transparent' : theme.color.bg.glass)}
+          /*
+           * The TOKEN STRING, not a number we converted ourselves.
+           *
+           * `@ReactProp(customType = "Color")` means React Native normalises this
+           * value before it crosses the bridge, and its normaliser REJECTS any
+           * negative number - which is exactly what a signed 32-bit ARGB int is.
+           * Verified: normalizeColor(-1929379841) returns null, while
+           * normalizeColor('rgba(255,255,255,0.55)') returns 4294967180.
+           *
+           * A rejected value is not sent at all, so the native view kept its
+           * default and every frosted bar in the app painted that default
+           * instead of the glass tint. It was Color.BLACK, so the chat header,
+           * composer and nav bar rendered as solid black slabs (Amit, S22 and
+           * Redmi, 2026-09-05). Converting by hand was the whole mistake; RN
+           * already does it, correctly, for every colour prop in the framework.
+           */
+          tintColor={tint === 'none' ? 'transparent' : theme.color.bg.glass}
         />
       ) : (
         /*
@@ -122,52 +138,6 @@ export function Frost({
       {children}
     </View>
   );
-}
-
-/**
- * A token colour to the signed 32-bit ARGB integer the native Color prop wants.
- *
- * Not a general colour parser. It handles exactly the three forms
- * `tokens.generated.ts` emits — `#RRGGBB`, `#RRGGBBAA` and
- * `rgba(r, g, b, a)` — and `transparent`. The alpha matters most here: the
- * glass tokens carry it (0.55), and dropping it would paint the bar opaque and
- * hide the blur entirely.
- */
-function argb(color: string): number {
-  if (color === 'transparent') {
-    return 0;
-  }
-  let r = 0;
-  let g = 0;
-  let b = 0;
-  let a = 0xff;
-  if (color.startsWith('#')) {
-    const raw = color.slice(1);
-    r = parseInt(raw.slice(0, 2), 16);
-    g = parseInt(raw.slice(2, 4), 16);
-    b = parseInt(raw.slice(4, 6), 16);
-    if (raw.length >= 8) {
-      a = parseInt(raw.slice(6, 8), 16);
-    }
-  } else {
-    const parts = color
-      .replace(/^rgba?\(/, '')
-      .replace(/\)$/, '')
-      .split(',')
-      .map(v => Number(v.trim()));
-    r = parts[0] ?? 0;
-    g = parts[1] ?? 0;
-    b = parts[2] ?? 0;
-    a = Math.round((parts[3] ?? 1) * 255);
-  }
-  /*
-   * Arithmetic rather than shifts, so the file stays inside the project's
-   * no-bitwise rule. `>> 0` is what a shift version would need anyway to land in
-   * signed 32-bit range; `| 0`'s job here is done by the explicit subtraction of
-   * 2^32 when the top bit is set, which is what the bridge marshals.
-   */
-  const unsigned = a * 0x1000000 + r * 0x10000 + g * 0x100 + b;
-  return unsigned >= 0x80000000 ? unsigned - 0x100000000 : unsigned;
 }
 
 const styles = StyleSheet.create({
