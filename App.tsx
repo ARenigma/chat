@@ -1,10 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Alert,
   BackHandler,
   Linking,
   NativeModules,
-  PermissionsAndroid,
   Platform,
   StatusBar,
   StyleSheet,
@@ -55,7 +53,7 @@ import {
   trackScreenOpened,
 } from './src/lib/perfTelemetry';
 import { supabase } from './src/lib/supabase';
-import { currentSession, handleAuthDeepLink } from './src/api/auth';
+import { currentSession, handleAuthDeepLink, signOut } from './src/api/auth';
 import {
   effectivePermissionLevel,
   FALLBACK_PERMISSIONS,
@@ -77,6 +75,8 @@ import { useConversations, useSelfId } from './src/api/chat';
 import { useRole } from './src/api/provider';
 import { useStore } from './src/store/useStore';
 import { PolicyGateScreen } from './src/screens/PolicyGateScreen';
+import { PermissionsScreen } from './src/screens/PermissionsScreen';
+import { checkGate, gateSatisfied } from './src/lib/permissionsGate';
 import { ProfileSetupScreen } from './src/screens/ProfileSetupScreen';
 import { WelcomePappalScreen } from './src/screens/WelcomePappalScreen';
 import { RechargeScreen, RechargeWalletPage } from './src/screens/RechargeScreen';
@@ -286,6 +286,13 @@ type Boot =
    * Migration 027.
    */
   | { phase: 'policyGate' }
+  /**
+   * ADR-0026: microphone, camera and (Android 13+) notifications, asked for
+   * on one explained screen before Home rather than as three bare dialogs over
+   * it. Sits after policyGate and before ready in the same boot machine, so no
+   * route can reach Home around it.
+   */
+  | { phase: 'permissions' }
   | { phase: 'ready' }
   | { phase: 'error'; message: string };
 
@@ -309,6 +316,7 @@ async function fetchPermissionsConfig(): Promise<PermissionsConfig> {
 type PostAuthBoot =
   | { phase: 'profileSetup'; needsAge: boolean; needsUsername: boolean }
   | { phase: 'policyGate' }
+  | { phase: 'permissions' }
   | { phase: 'ready' };
 
 async function bootPhaseAfterAuth(profile: Profile | null): Promise<PostAuthBoot> {
@@ -361,41 +369,12 @@ async function bootPhaseAfterAuth(profile: Profile | null): Promise<PostAuthBoot
   if (Array.isArray(pending) && pending.length > 0) {
     return { phase: 'policyGate' };
   }
+  // ADR-0026: policies first (they are a legal gate), then the device. A
+  // check, never a request — the screen does the asking, with the reasons.
+  if (!gateSatisfied(await checkGate())) {
+    return { phase: 'permissions' };
+  }
   return { phase: 'ready' };
-}
-
-async function requestAndroidPermission(
-  permission: (typeof PermissionsAndroid.PERMISSIONS)[keyof typeof PermissionsAndroid.PERMISSIONS],
-  title: string,
-  message: string,
-  level: 'optional' | 'required',
-): Promise<void> {
-  if (Platform.OS !== 'android') {
-    return;
-  }
-  const result = await PermissionsAndroid.request(permission, {
-    title,
-    message,
-    buttonPositive: 'Allow',
-  });
-  if (
-    level === 'required' &&
-    result === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN
-  ) {
-    Alert.alert(
-      title,
-      `${message} Open Settings to enable it.`,
-      [
-        { text: 'Not now', style: 'cancel' },
-        {
-          text: 'Open Settings',
-          onPress: () => {
-            void Linking.openSettings();
-          },
-        },
-      ],
-    );
-  }
 }
 
 /**
@@ -644,14 +623,12 @@ function Root() {
     }
     let unsubscribeToken: (() => void) | undefined;
 
-    // Prime runtime permissions once per sign-in so the first call, voice note,
-    // or video does not hit a missing-grant crash. These MUST run strictly one at
-    // a time: Android silently drops a permission request while another dialog is
-    // already pending, so `startPush()` (POST_NOTIFICATIONS) is awaited before the
-    // mic request, and mic before camera. Requesting them concurrently made the
-    // OS return the later two as denied without ever showing a dialog.
-    // Fire-and-forget for boot: a denial just means the event-time guards in
-    // recorder / composer remain the fallback for that feature.
+    // Push registration. The permissions themselves were granted on the
+    // PermissionsScreen before this phase (ADR-0026) — until 2026-09-06 this
+    // effect fired three bare system dialogs over Home, one after another —
+    // so `startPush()` finds POST_NOTIFICATIONS already granted and only
+    // fetches and uploads the token. The policy still decides whether a
+    // permanent denial found later (revoked in Settings) shows the alert.
     void (async () => {
       try {
         const permissions = await fetchPermissionsConfig();
@@ -659,8 +636,6 @@ function Root() {
           permissions,
           'notification',
         );
-        const micLevel = effectivePermissionLevel(permissions, 'microphone');
-        const cameraLevel = effectivePermissionLevel(permissions, 'camera');
 
         // Propagate the effective policy so ensurePermission() in push.ts
         // knows whether to show the blocked-settings alert on Android 13+.
@@ -676,39 +651,8 @@ function Root() {
           }
         }
 
-        if (Platform.OS !== 'android') {
-          return;
-        }
-
-        if (micLevel === 'required') {
-          await requestAndroidPermission(
-            PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-            'Microphone',
-            'Pappal needs your mic for calls and voice notes.',
-            micLevel,
-          );
-        }
-        if (cameraLevel === 'required') {
-          await requestAndroidPermission(
-            PermissionsAndroid.PERMISSIONS.CAMERA,
-            'Camera',
-            'Pappal needs your camera for video calls.',
-            cameraLevel,
-          );
-        }
-        if (
-          notificationLevel === 'required' &&
-          Platform.Version >= 33
-        ) {
-          await requestAndroidPermission(
-            PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
-            'Notifications',
-            'Pappal sends message alerts when someone replies.',
-            notificationLevel,
-          );
-        }
       } catch {
-        // Permission priming is best-effort; failures here do not affect boot.
+        // Push registration is best-effort; failures here do not affect boot.
       }
     })();
 
@@ -957,7 +901,36 @@ function Root() {
   if (boot.phase === 'policyGate') {
     return (
       <PolicyGateScreen
-        onAccepted={() => setBoot({ phase: 'ready' })}
+        onAccepted={async () => {
+          // Not straight to ready: the boot machine decides what comes after
+          // policies (ADR-0026 puts the permissions gate there).
+          const profile = await getSignedInProfile();
+          const nextBoot = await bootPhaseAfterAuth(profile);
+          setBoot(nextBoot);
+          if (nextBoot.phase === 'ready') {
+            track('app_open');
+          }
+        }}
+      />
+    );
+  }
+
+  // ADR-0026: the same reasoning as policyGate — rendered here in the boot
+  // machine, not inside SignedIn, so nothing can route around it.
+  if (boot.phase === 'permissions') {
+    return (
+      <PermissionsScreen
+        onGranted={async () => {
+          const profile = await getSignedInProfile();
+          const nextBoot = await bootPhaseAfterAuth(profile);
+          setBoot(nextBoot);
+          if (nextBoot.phase === 'ready') {
+            track('app_open');
+          }
+        }}
+        onSignOut={() => {
+          void signOut();
+        }}
       />
     );
   }
