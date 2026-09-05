@@ -3069,6 +3069,29 @@ describe('the motion adoption is wired, not just drawn', () => {
     expect(rpc).toContain('a headline is required');
   });
 
+  it('opens the stage name filled with a suggestion, re-rolls it, and warns when the name is the person', () => {
+    // Goal item 8 (2026-09-05): "suggested name for provider onboarding +
+    // warning on edit, no PII". The field is filled on the way into the profile
+    // step — only if empty, so coming back via "Something is wrong" keeps their
+    // typing — checked live with the member flow's check_display_name, and
+    // compared against the PAN-verified name from the confirm step.
+    const screen = withoutComments(read('src/screens/ProviderApplicationScreen.tsx'));
+    expect(screen).toContain('onPress={enterProfile}');
+    expect(screen).toMatch(/if \(displayName\.trim\(\) === ''\) \{\s*const first = suggestStageName\(\)/);
+    expect(screen).toContain('testID="provider-name-reroll"');
+    expect(screen).toContain("useCheckDisplayName(\n    displayName,\n    phase === 'profile',\n  )");
+    expect(screen).toContain('stageNamePii(displayName, fetched?.name ?? null)');
+    expect(screen).toContain('testID="provider-name-pii-warning"');
+    expect(screen).toContain('testID="provider-name-taken"');
+    // A phone number blocks Go live; a real-name match only warns (heuristic).
+    expect(screen).toMatch(/const profileReady =[\s\S]*namePii !== 'phone' &&[\s\S]*!nameTaken &&/);
+    // Every suggestion must pass the server's rule — the unit test walks the
+    // whole space; this pins that the rule it walks is the server's.
+    const sql = read('supabase/migrations/040_profile_setup_and_first_interaction.sql');
+    expect(sql).toContain("v_trimmed !~ '^[a-zA-Z0-9_]+$'");
+    expect(sql).toContain('length(v_trimmed) < 3 or length(v_trimmed) > 24');
+  });
+
   it('auto-approves on completion, with no review queue', () => {
     // No more submit → admin review → applicationStatus. Completing onboarding
     // calls complete_provider_onboarding, which flips role='provider' directly
