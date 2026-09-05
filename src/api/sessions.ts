@@ -36,6 +36,18 @@ export interface PaidSession {
   started_at: string | null;
   ended_at: string | null;
   last_activity_at: string | null;
+  /** Whole minutes Postgres has deducted so far; 1 at activation (minute 1 is prepaid). */
+  minutes_billed: number;
+  /** When the next minute is due; the cron deducts at its first tick at or after this. */
+  next_bill_at: string | null;
+  /**
+   * Member only: `(next_bill_at − now) + floor(balance ÷ rate) × 60`, read in
+   * one server snapshot so the chat countdown never jumps when the cron
+   * catches up on a minute (migration 062). Null for the provider, before
+   * activation, and on a server older than 062. Age it with
+   * `secondsRemainingNow`; never recompute it from `balance` on the client.
+   */
+  seconds_remaining: number | null;
 }
 
 export interface PendingSessionRequest {
@@ -220,6 +232,12 @@ export function useActiveSession(conversationId: string | undefined) {
     queryKey: sessionKeys.active(conversationId ?? ''),
     enabled: conversationId !== undefined,
     staleTime: 15_000,
+    // Realtime re-syncs this on every paid_sessions change (each cron tick), but
+    // the countdown is aged from `dataUpdatedAt`, so while billing is live it
+    // also re-anchors on its own every 30 s: a socket that drops for a while
+    // must not leave the clock drifting from the server's figure.
+    refetchInterval: query =>
+      query.state.data?.next_bill_at != null && query.state.data.ended_at == null ? 30_000 : false,
     queryFn: async () => {
       if (!conversationId) return null;
       const { data, error } = await supabase.rpc('get_active_session', {

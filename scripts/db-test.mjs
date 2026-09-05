@@ -102,6 +102,7 @@ const MIGRATIONS = [
   'supabase/migrations/059_media_cogs_ledger.sql',
   'supabase/migrations/060_payout_transfer_settle.sql',
   'supabase/migrations/061_media_cogs_reconcile_tighten.sql',
+  'supabase/migrations/062_session_seconds_remaining.sql',
 ];
 
 const docker = (args, options = {}) =>
@@ -452,6 +453,11 @@ const suites = [
   {
     file: join(ROOT, 'supabase/tests/230_media_cogs_reconcile_tighten.sql'),
     label: 'media COGS dual-source reconcile, invoice, alerts',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/240_session_seconds_remaining.sql'),
+    label:
+      'session seconds_remaining: one snapshot, member only, cron-lag invariant',
   },
 ];
 

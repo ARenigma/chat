@@ -1159,6 +1159,10 @@ export type Database = {
           accepted_at: string | null;
           ended_at: string | null;
           last_activity_at: string | null;
+          minutes_billed: number;
+          next_bill_at: string | null;
+          /** Member only; null for the provider and before activation. Migration 062. */
+          seconds_remaining: number | null;
         } | null;
       };
       /**

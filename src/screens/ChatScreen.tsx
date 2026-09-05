@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlashList, type FlashListRef, type ListRenderItemInfo } from '@shopify/flash-list';
 import {
-  BackHandler,
   Keyboard,
   useWindowDimensions,
   type NativeScrollEvent,
@@ -42,7 +41,16 @@ import { supabase } from '../lib/supabase';
 import { readPresence } from '../lib/presence';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { readKeyboardHeight } from '../lib/keyboardPanel';
-import { DEFAULT_RATES, isLowBalance, talkTimeLeft } from '../lib/rates';
+import { DEFAULT_RATES, isLowBalance } from '../lib/rates';
+import {
+  clockTickMs,
+  estimatedTalkSeconds,
+  formatClock,
+  formatMinutes,
+  secondsRemainingNow,
+  showsCountdown,
+} from '../lib/sessionClock';
+import { useBackGuard } from '../lib/backGuard';
 import { ownReaction, tallyByMessage } from '../lib/reactions';
 import type { ReactionEmoji } from '../lib/database.types';
 import { useStore } from '../store/useStore';
@@ -140,6 +148,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   // clear of it. Not updated while searching — see `listPad`.
   const [dockHeight, setDockHeight] = useState(0);
   const [leaveDialogVisible, setLeaveDialogVisible] = useState(false);
+  // The same dialog serves back (end and leave) and the End chip (end, stay).
+  const [leaveIntent, setLeaveIntent] = useState<'leave' | 'end'>('leave');
   // Independent live controls. CALLS_ENABLED remains the compile-time master
   // guard; the admin pair can stop one medium without taking down the other.
   // The same flags are enforced in start_call, so stale client config cannot
@@ -269,7 +279,9 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
    */
   const arrivalCutoff = useRef(Date.now());
   const { data: callRecords } = useCalls(conversationId);
-  const { data: activeSession } = useActiveSession(conversationId);
+  // `dataUpdatedAt` is the instant the server's snapshot was taken — the only
+  // moment `seconds_remaining` was exactly right, and what it is aged from.
+  const { data: activeSession, dataUpdatedAt: sessionSyncedAt } = useActiveSession(conversationId);
   const { data: pendingRequest } = usePendingSessionRequest(conversationId);
   const { mutate: endSessionMutate, isPending: endingSession } = useEndSession();
 
@@ -681,6 +693,20 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
       : null;
   const [sessionNow, setSessionNow] = useState(() => Date.now());
 
+  // What the balance still buys, aged locally from the server's one-snapshot
+  // figure (migration 062) — never recomputed from `balance` here, because the
+  // client cannot tell whether the current minute has been deducted yet and a
+  // guess jumps by ±60 s on every refetch. Null until billing has started.
+  const sessionRemaining =
+    sessionStartedAt === null
+      ? null
+      : secondsRemainingNow(activeSession?.seconds_remaining, sessionSyncedAt, sessionNow);
+  const countingDown = showsCountdown(sessionRemaining);
+  // Per second ONLY inside the last five minutes; above that a coarse tick
+  // keeps the minutes label honest without 60 repaints a minute (goal item 5,
+  // 2026-09-05: "ticking per second only when ≤5 mins left").
+  const tickMs = clockTickMs(sessionRemaining);
+
   // Display time follows the server's authoritative start timestamp. The local
   // interval only repaints the clock; it never drives billing or balance.
   useEffect(() => {
@@ -688,26 +714,26 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
       return;
     }
     setSessionNow(Date.now());
-    const timer = setInterval(() => setSessionNow(Date.now()), 1000);
+    const timer = setInterval(() => setSessionNow(Date.now()), tickMs);
     return () => clearInterval(timer);
-  }, [sessionStartedAt]);
+  }, [sessionStartedAt, tickMs]);
 
+  // Elapsed time is no longer in the bar — a clock counting UP beside a balance
+  // counting down was two numbers about the same money — but the leave dialog
+  // still quotes it ("has been running for 2:13").
   const sessionElapsed =
     sessionStartedAt === null
       ? null
       : Math.max(0, Math.floor((sessionNow - Date.parse(sessionStartedAt)) / 1000));
-  const sessionClock =
-    sessionElapsed === null
-      ? null
-      : `${Math.floor(sessionElapsed / 60)}:${String(sessionElapsed % 60).padStart(2, '0')}`;
+  const sessionClock = sessionElapsed === null ? null : formatClock(sessionElapsed);
 
-  // Show a "Need more time?" card when the member has less than 5 minutes of
-  // talk time left and an authoritative paid session is active.
+  // "Need more time?" when the live session is inside the countdown window —
+  // the same threshold the bar's numerals use, from the same server figure.
   const showExtendCard =
-    balance !== null &&
-    balance > 0 &&
-    balance < 5 * (activeSession?.rate_tokens_per_min ?? DEFAULT_RATES.chat) &&
     sessionIsActive &&
+    countingDown &&
+    sessionRemaining !== null &&
+    sessionRemaining > 0 &&
     !extendCardDismissed;
 
   const showPinnedExtend = showExtendCard && !extendScrolledAway;
@@ -734,10 +760,32 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
     [showPinnedExtend],
   );
 
-  const endCurrentSession = useCallback(() => {
+  // The End chip confirms too: a paid session is money, and the chip sits a
+  // thumb-width from Recharge in the same bar. It ended the session on a single
+  // tap until 2026-09-06 (goal item 6: "session exit button + dialog").
+  const requestEnd = useCallback(() => {
     if (!activeSession) return;
-    endSessionMutate({ sessionId: activeSession.id, reason: 'manual' });
-  }, [activeSession, endSessionMutate]);
+    setSessionNow(Date.now());
+    setLeaveIntent('end');
+    setLeaveDialogVisible(true);
+  }, [activeSession]);
+
+  const confirmEnd = useCallback(() => {
+    if (!activeSession) {
+      setLeaveDialogVisible(false);
+      return;
+    }
+    endSessionMutate(
+      { sessionId: activeSession.id, reason: 'manual' },
+      {
+        onSuccess: () => setLeaveDialogVisible(false),
+        onError: () => {
+          setLeaveDialogVisible(false);
+          setNotice('Could not end session. Check your connection and try again.');
+        },
+      },
+    );
+  }, [activeSession, endSessionMutate, setNotice]);
 
   /**
    * Back is conditionally intercepted only while a paid session exists. Android
@@ -750,6 +798,10 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
       onBack();
       return;
     }
+    // The dialog quotes the elapsed time, and above the five-minute mark the
+    // clock only repaints every 15 s — re-anchor so the figure is exact at open.
+    setSessionNow(Date.now());
+    setLeaveIntent('leave');
     setLeaveDialogVisible(true);
   }, [
     activeSession,
@@ -780,16 +832,17 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
     );
   }, [activeSession, endSessionMutate, onBack, setNotice]);
 
-  useEffect(() => {
-    if (!activeSession) {
-      return;
-    }
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      requestLeave();
-      return true;
-    });
-    return () => sub.remove();
-  }, [activeSession, requestLeave]);
+  // Back must not silently leave a paid session. App owns the one hardware-back
+  // subscription and asks the guard stack first (src/lib/backGuard.ts); this
+  // screen holds a guard only while a session exists — Android's guidance for
+  // custom back is to intercept only in the state that needs a decision — so
+  // ordinary chat navigation stays immediate.
+  // https://developer.android.com/guide/navigation/custom-back/predictive-back-gesture
+  const backGuard = useCallback(() => {
+    requestLeave();
+    return true;
+  }, [requestLeave]);
+  useBackGuard(activeSession ? backGuard : null);
 
   /**
    * WhatsApp gestures: swipe quotes, long-press reacts on the bubble.
@@ -1149,26 +1202,34 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
         <Animated.View
           entering={barIn}
           exiting={barOut}
-          style={[styles.talkBar, isLowBalance(balance) && styles.talkBarLow]}>
+          style={[styles.talkBar, (countingDown || isLowBalance(balance)) && styles.talkBarLow]}>
           <View style={styles.talkDot} />
-          {sessionClock !== null ? (
+          {/* Live and inside the last five minutes: the countdown, in numerals,
+              ticking. Otherwise the whole minutes the balance buys — the
+              server's figure once billing is live, the balance ÷ rate estimate
+              before that — with no seconds to tick. */}
+          {countingDown && sessionRemaining !== null ? (
             <Text
               allowFontScaling={false}
               testID="chat-session-timer"
               style={styles.talkTimer}>
-              {sessionClock}
+              {formatClock(sessionRemaining)}
             </Text>
           ) : null}
           <Text allowFontScaling style={styles.talkText}>
-            {talkTimeLeft(
-              balance,
-              activeSession?.rate_tokens_per_min ?? DEFAULT_RATES.chat,
-            )}{' '}
-            of talk time left
+            {countingDown
+              ? 'left'
+              : `${formatMinutes(
+                  sessionRemaining ??
+                    estimatedTalkSeconds(
+                      balance,
+                      activeSession?.rate_tokens_per_min ?? DEFAULT_RATES.chat,
+                    ),
+                )} of talk time left`}
           </Text>
           {activeSession ? (
             <Pressable
-              onPress={endCurrentSession}
+              onPress={requestEnd}
               disabled={endingSession}
               testID="chat-end-session"
               accessibilityLabel="End paid session"
@@ -1418,22 +1479,28 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
         messageId={safety.messageId}
       />
 
+      {/* One dialog, two intents: back (end and leave) and the End chip (end,
+          stay). Both confirm — see `requestEnd`. */}
       <ConfirmDialog
         visible={leaveDialogVisible}
         testID="chat-leave-dialog"
-        title="End session and leave?"
+        title={leaveIntent === 'end' ? 'End session?' : 'End session and leave?'}
         body={
           sessionIsActive
-            ? `Your paid session has been running for ${sessionClock ?? '0:00'}.`
-            : 'The session is still connecting. Leaving will end it.'
+            ? `Your paid session has been running for ${sessionClock ?? '0:00'}.${
+                leaveIntent === 'end' ? ' Ending it stops the charge.' : ''
+              }`
+            : leaveIntent === 'end'
+              ? 'The session is still connecting. Ending it now cancels it.'
+              : 'The session is still connecting. Leaving will end it.'
         }
-        cancelLabel="Stay"
+        cancelLabel={leaveIntent === 'end' ? 'Keep going' : 'Stay'}
         confirmLabel="End session"
         destructive
         busy={endingSession}
         busyLabel="Ending session…"
         onCancel={() => setLeaveDialogVisible(false)}
-        onConfirm={confirmLeave}
+        onConfirm={leaveIntent === 'end' ? confirmEnd : confirmLeave}
       />
     </View>
   );

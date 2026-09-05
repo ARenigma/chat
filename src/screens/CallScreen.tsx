@@ -26,9 +26,11 @@ import {
 import { useStore } from '../store/useStore';
 import { CallRing } from '../components/CallRing';
 import { CallingDots } from '../components/CallingDots';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Icon, type IconName } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { track } from '../lib/telemetry';
+import { useBackGuard } from '../lib/backGuard';
 
 /** Which way the call goes. Outgoing dials; incoming rings and offers Accept. */
 export type CallDirection = 'out' | 'in';
@@ -100,6 +102,16 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   const [accepted, setAccepted] = useState(direction === 'out');
   const [phase, setPhase] = useState<Phase>(direction === 'in' ? 'incoming' : 'starting');
   const [elapsed, setElapsed] = useState(0);
+  // Back must not silently end a call. Leaving this screen hangs up (unmount →
+  // endCall), so a bare hardware back was a one-tap hang-up with no confirm.
+  // The red button stays immediate — that IS the explicit intent, as on every
+  // phone — but back asks first (goal item 6, 2026-09-05: "no back mid-session").
+  const [leaveDialogVisible, setLeaveDialogVisible] = useState(false);
+  const backGuard = useCallback(() => {
+    setLeaveDialogVisible(true);
+    return true;
+  }, []);
+  useBackGuard(backGuard);
   /** Visual speaker pill; audio-route wiring is a follow-up (no InCallManager yet). */
   const [speakerOn, setSpeakerOn] = useState(false);
 
@@ -430,6 +442,30 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
           </View>
         )}
       </View>
+      {/* Copy follows the phase: a live call ends, a ringing one is cancelled,
+          an incoming one is declined. One dialog, one exit path (`onEnd`). */}
+      <ConfirmDialog
+        visible={leaveDialogVisible}
+        testID="call-leave-dialog"
+        title={
+          phase === 'active' ? 'End call?' : phase === 'incoming' ? 'Decline call?' : 'Cancel call?'
+        }
+        body={
+          phase === 'active'
+            ? 'This ends the call for both of you.'
+            : phase === 'incoming'
+              ? `${name} is calling.`
+              : `Hang up before ${name} answers?`
+        }
+        cancelLabel="Stay"
+        confirmLabel={phase === 'active' ? 'End call' : phase === 'incoming' ? 'Decline' : 'Cancel call'}
+        destructive
+        onCancel={() => setLeaveDialogVisible(false)}
+        onConfirm={() => {
+          setLeaveDialogVisible(false);
+          onEnd();
+        }}
+      />
     </View>
   );
 }
