@@ -548,7 +548,16 @@ class PappalBlurSurfaceManager : SimpleViewManager<PappalBlurSurface>() {
 
     @ReactProp(name = "tintColor", customType = "Color")
     fun setTintColor(view: PappalBlurSurface, color: Int?) {
-        view.tintColor = color ?: Color.BLACK
+        /*
+         * TRANSPARENT on null, to agree with the field's own default.
+         *
+         * `null` here means JS sent no usable colour - the prop was omitted, or
+         * RN's normaliser rejected it. Answering that with opaque BLACK is how a
+         * dropped prop became a black slab across every frosted bar in the app.
+         * The two defaults must not disagree: one of them was TRANSPARENT and
+         * this one was BLACK, so fixing only the field left the black reachable.
+         */
+        view.tintColor = color ?: Color.TRANSPARENT
         view.invalidate()
     }
 
