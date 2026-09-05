@@ -1,0 +1,16 @@
+appId: com.companionchat
+name: Start real voice call
+---
+- tapOn:
+    text: NOT NOW
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: call-voice
+    timeout: 20000
+- tapOn:
+    id: call-voice
+- extendedWaitUntil:
+    visible:
+      id: call-end
+    timeout: 45000

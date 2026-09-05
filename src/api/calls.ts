@@ -8,14 +8,17 @@
  * policy); every transition goes through these definer RPCs so the meter and the
  * row cannot come apart.
  *
- * The media itself is WebRTC P2P (src/api/callSession.ts): SDP + ICE ride a
- * Realtime broadcast channel keyed on the call id and are never stored, exactly
- * as the 011 note intended.
+ * Media transport is vendor-selected by `calls.media_backend` (default agora).
+ * The client adapter is `src/api/callMedia`; CallScreen never imports an SDK.
  */
 import { useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { ENV } from '../lib/env';
-import type { CallMedium, CallResult } from '../lib/database.types';
+import type {
+  CallMediaBackend,
+  CallMedium,
+  CallResult,
+} from '../lib/database.types';
 
 // Defined in src/config.ts — the single home for all feature flags.
 export { CALLS_ENABLED } from '../config';
@@ -75,6 +78,8 @@ export interface IncomingCall {
   conversationId: string;
   callerId: string;
   medium: CallMedium;
+  mediaBackend: CallMediaBackend;
+  mediaExperimentId: string | null;
 }
 
 /**
@@ -112,6 +117,8 @@ export function useIncomingCalls(
             caller_id: string;
             medium: CallMedium;
             status: string;
+            media_backend: CallMediaBackend;
+            media_experiment_id: string | null;
           };
           if (row.status === 'ringing') {
             onIncoming({
@@ -119,6 +126,8 @@ export function useIncomingCalls(
               conversationId: row.conversation_id,
               callerId: row.caller_id,
               medium: row.medium,
+              mediaBackend: row.media_backend,
+              mediaExperimentId: row.media_experiment_id,
             });
           }
         },

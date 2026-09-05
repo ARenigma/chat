@@ -31,6 +31,8 @@ interface Pending {
   caller_avatar_url: string | null;
   token: string;
   platform: string;
+  media_backend: 'current' | 'livekit' | 'agora';
+  media_experiment_id: string | null;
 }
 
 const base64url = (bytes: Uint8Array): string => {
@@ -122,6 +124,10 @@ async function send(bearer: string, projectId: string, row: Pending): Promise<bo
             peerId: row.peer_id,
             senderName: who,
             medium: row.medium,
+            mediaBackend: row.media_backend,
+            ...(row.media_experiment_id
+              ? { mediaExperimentId: row.media_experiment_id }
+              : {}),
             ...(row.caller_avatar_url ? { senderAvatar: row.caller_avatar_url } : {}),
           },
         },

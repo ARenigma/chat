@@ -26,6 +26,7 @@ class InAppUpdatePackage : ReactPackage {
         ConversationsModule(reactContext),
         StartupTimingModule(reactContext),
         WindowChromeModule(reactContext),
+        CallDiagnosticsModule(reactContext),
     )
 
     override fun createViewManagers(

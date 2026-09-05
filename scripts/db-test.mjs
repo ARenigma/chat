@@ -92,9 +92,15 @@ const MIGRATIONS = [
   'supabase/migrations/049_pan_mandatory_for_payout.sql',
   'supabase/migrations/050_provider_payout_disbursement.sql',
   'supabase/migrations/051_provider_auto_onboarding.sql',
+  'supabase/migrations/052_call_media_experiment.sql',
+  'supabase/migrations/053_start_call_media_backend.sql',
   'supabase/migrations/054_identity_state.sql',
   'supabase/migrations/055_mirror_phone_to_profile.sql',
   'supabase/migrations/056_identity_dob_before_promotion.sql',
+  'supabase/migrations/057_agora_default_backend.sql',
+  'supabase/migrations/058_clear_pending_earnings.sql',
+  'supabase/migrations/059_media_cogs_ledger.sql',
+  'supabase/migrations/060_payout_transfer_settle.sql',
 ];
 
 const docker = (args, options = {}) =>
@@ -429,6 +435,18 @@ const suites = [
   {
     file: join(ROOT, 'supabase/tests/190_openers_and_hidden_retention.sql'),
     label: 'sequential openers, live origin, hidden 30-day retention, purge',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/200_call_media_experiment.sql'),
+    label: 'server call-media assignment and restricted QoE evidence',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/210_earnings_clear_and_media_cogs.sql'),
+    label: 'earnings clear job and Agora COGS / margin ledger',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/220_payout_settle_and_inr_sync.sql'),
+    label: 'payout transfer settle and INR call sync assert',
   },
 ];
 

@@ -68,6 +68,10 @@ import {
 } from './src/api/profileSetup';
 import type { Profile } from './src/lib/database.types';
 import { CALLS_ENABLED, useIncomingCalls, type IncomingCall } from './src/api/calls';
+import {
+  parseVideoResolution,
+  setVideoResolution,
+} from './src/api/callMedia/profile';
 import { useConversations, useSelfId } from './src/api/chat';
 import { useRole } from './src/api/provider';
 import { useStore } from './src/store/useStore';
@@ -542,10 +546,28 @@ function Root() {
         return;
       }
 
+      /*
+       * Harness-only capture profile. `companionchat://call-sim?resolution=hd|fhd`
+       * is opened by scripts/call-sim.mjs before each matrix arm so the three
+       * media adapters share one resolution without a rebuild. Production never
+       * emits this URI.
+       */
+      const callSim = url.match(/^companionchat:\/\/call-sim(?:\?(.*))?$/);
+      if (callSim) {
+        const resolution = parseVideoResolution(
+          (callSim[1] ?? '').match(/resolution=([^&]+)/)?.[1],
+        );
+        if (resolution) setVideoResolution(resolution);
+        return;
+      }
+
       const peer = url.match(/^companionchat:\/\/peer\/(.+)$/)?.[1];
       if (peer !== undefined) {
-        if (isUuid(peer)) {
-          setRoute({ name: 'chat', providerId: peer, from: 'home' });
+        // Query strings are ignored for routing; strip so a harness-augmented
+        // peer URI still opens the chat.
+        const peerId = peer.split('?')[0] ?? peer;
+        if (isUuid(peerId)) {
+          setRoute({ name: 'chat', providerId: peerId, from: 'home' });
         }
         return;
       }
@@ -597,7 +619,7 @@ function Root() {
     // mic request, and mic before camera. Requesting them concurrently made the
     // OS return the later two as denied without ever showing a dialog.
     // Fire-and-forget for boot: a denial just means the event-time guards in
-    // callSession / recorder / composer remain the fallback for that feature.
+    // recorder / composer remain the fallback for that feature.
     void (async () => {
       try {
         const permissions = await fetchPermissionsConfig();

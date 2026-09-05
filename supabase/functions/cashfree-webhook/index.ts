@@ -1,32 +1,26 @@
 /**
- * cashfree-webhook — receive and verify Cashfree payment events.
+ * cashfree-webhook — Cashfree PG payment events + Payouts transfer events.
  *
  * CRITICAL: The raw body MUST be read as text before JSON.parse.
  * Signature = HMAC-SHA256(timestamp + rawBody). Parsing JSON first corrupts
  * whitespace/key ordering and breaks the signature check.
  *
- * On PAYMENT_SUCCESS_WEBHOOK:
- *   1. Verify HMAC-SHA256 signature.
- *   2. Call credit_purchased_recharge RPC (migration 033), which:
- *      - Marks the token_transactions row status='succeeded' (idempotent).
- *      - Credits profiles.purchased_balance (sync trigger updates token_balance).
- *   3. Return 200.
+ * Payments (ADR-0022):
+ *   PAYMENT_SUCCESS_WEBHOOK → credit_purchased_recharge (idempotent)
+ *   PAYMENT_FAILED_* → mark token_transactions failed
  *
- * On PAYMENT_FAILED_WEBHOOK or any non-success type:
- *   - Mark the transaction row status='failed'.
- *   - Return 200. (Webhooks must always return 200 after signature verification.)
+ * Payouts V2 (docs.cashfree.com/.../payouts/v2/webhooks/webhooks-v2):
+ *   TRANSFER_ACKNOWLEDGED (SUCCESS+COMPLETED) → settle ok
+ *   TRANSFER_FAILED / REVERSED / REJECTED → settle fail (revert earnings)
+ *   TRANSFER_SUCCESS (SENT_TO_BENEFICIARY) → leave processing (not terminal)
  *
- * A replayed webhook is safe: credit_purchased_recharge's status='created'
- * guard means tokens are credited at most once per order.
+ * transfer_id is our provider_payout_batches.id (set on Standard Transfer V2).
  *
- * doc: developer.cashfree.com/docs/webhooks
- * ADR-0022
+ * Signature secrets tried in order: payout client secret, webhook secret,
+ * PG client secret — Cashfree Payouts signs with the oldest active client secret.
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
-// ---------------------------------------------------------------------------
-// HMAC-SHA256 signature verification
-// ---------------------------------------------------------------------------
 async function verifySignature(opts: {
   timestamp: string;
   rawBody: string;
@@ -34,54 +28,86 @@ async function verifySignature(opts: {
   secret: string;
 }): Promise<boolean> {
   const encoder = new TextEncoder();
-  const keyData = encoder.encode(opts.secret);
-  const messageData = encoder.encode(opts.timestamp + opts.rawBody);
-
   const cryptoKey = await crypto.subtle.importKey(
     'raw',
-    keyData,
+    encoder.encode(opts.secret),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign'],
   );
-  const sigBuffer = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+  const sigBuffer = await crypto.subtle.sign(
+    'HMAC',
+    cryptoKey,
+    encoder.encode(opts.timestamp + opts.rawBody),
+  );
   const computedSig = btoa(String.fromCharCode(...new Uint8Array(sigBuffer)));
-
   return computedSig === opts.receivedSig;
 }
 
-// ---------------------------------------------------------------------------
-// Main handler
-// ---------------------------------------------------------------------------
+async function verifyAgainstSecrets(
+  timestamp: string,
+  rawBody: string,
+  receivedSig: string,
+  secrets: string[],
+): Promise<boolean> {
+  for (const secret of secrets) {
+    if (!secret) continue;
+    if (await verifySignature({ timestamp, rawBody, receivedSig, secret })) {
+      return true;
+    }
+  }
+  return false;
+}
+
+const TRANSFER_OK = new Set(['TRANSFER_ACKNOWLEDGED']);
+const TRANSFER_FAIL = new Set([
+  'TRANSFER_FAILED',
+  'TRANSFER_REVERSED',
+  'TRANSFER_REJECTED',
+]);
+
 Deno.serve(async (request: Request) => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  const webhookSecret = Deno.env.get('CASHFREE_WEBHOOK_SECRET') ?? '';
-
   if (!supabaseUrl || !serviceKey) {
     return new Response('not configured', { status: 500 });
   }
-
   if (request.method !== 'POST') {
     return new Response('method not allowed', { status: 405 });
   }
 
-  // Raw body MUST be read before JSON.parse. HMAC-SHA256(timestamp + rawBody).
-  // Parsing JSON first corrupts whitespace/ordering and breaks the signature.
   const rawBody = await request.text();
   const timestamp = request.headers.get('x-webhook-timestamp') ?? '';
   const receivedSig = request.headers.get('x-webhook-signature') ?? '';
 
+  // Cashfree "Test & Add Webhook" sends a LOW_BALANCE_ALERT reachability probe
+  // and may omit HMAC headers. Docs require HTTP 200 or the URL is rejected.
+  // Never mutate money state without a verified signature.
   if (!timestamp || !receivedSig) {
-    return new Response('missing signature headers', { status: 400 });
+    console.warn('cashfree-webhook: missing signature headers; ack without processing');
+    return new Response('ok', { status: 200 });
   }
 
-  const valid = await verifySignature({ timestamp, rawBody, receivedSig, secret: webhookSecret });
-  if (!valid) {
+  const secrets = [
+    Deno.env.get('CASHFREE_PAYOUT_CLIENT_SECRET') ?? '',
+    Deno.env.get('CASHFREE_WEBHOOK_SECRET') ?? '',
+    Deno.env.get('CASHFREE_CLIENT_SECRET') ?? '',
+  ];
+  if (!(await verifyAgainstSecrets(timestamp, rawBody, receivedSig, secrets))) {
+    // Probe signed with an unexpected secret must still return 200 so
+    // registration succeeds; real TRANSFER_*/PAYMENT_* stay unprocessed.
+    try {
+      const probe = JSON.parse(rawBody) as { type?: string };
+      if (probe.type === 'LOW_BALANCE_ALERT') {
+        console.warn('cashfree-webhook: LOW_BALANCE_ALERT signature mismatch; ack');
+        return new Response('ok', { status: 200 });
+      }
+    } catch {
+      /* fall through */
+    }
     return new Response('Unauthorized', { status: 401 });
   }
 
-  // Signature verified — parse and handle. Must return 200 from here on.
   let payload: Record<string, unknown>;
   try {
     payload = JSON.parse(rawBody) as Record<string, unknown>;
@@ -95,17 +121,56 @@ Deno.serve(async (request: Request) => {
   });
 
   const eventType = payload.type as string | undefined;
-  const data = payload.data as Record<string, unknown> | undefined;
-  const order = data?.order as Record<string, unknown> | undefined;
-  const orderId = order?.order_id as string | undefined;
+  const data = (payload.data ?? {}) as Record<string, unknown>;
 
+  // --- Payouts transfer events (no order_id) ---------------------------------
+  if (eventType && (TRANSFER_OK.has(eventType) || TRANSFER_FAIL.has(eventType))) {
+    const transferId = data.transfer_id as string | undefined;
+    const cfTransferId =
+      (data.cf_transfer_id as string | undefined) ??
+      (data.cf_transferId as string | undefined) ??
+      null;
+    if (!transferId) {
+      console.warn('cashfree-webhook: transfer event missing transfer_id');
+      return new Response('ok', { status: 200 });
+    }
+
+    // Docs: terminal success is SUCCESS + COMPLETED (TRANSFER_ACKNOWLEDGED).
+    // TRANSFER_SUCCESS with SENT_TO_BENEFICIARY is intermediate — ignore.
+    if (eventType === 'TRANSFER_SUCCESS') {
+      return new Response('ok', { status: 200 });
+    }
+
+    const { error } = await admin.rpc('settle_provider_payout_batch', {
+      p_batch_id: transferId,
+      p_cashfree_id: cfTransferId,
+      p_ok: TRANSFER_OK.has(eventType),
+    });
+    if (error) {
+      console.error(`cashfree-webhook: settle ${eventType}:`, error.message);
+    }
+    return new Response('ok', { status: 200 });
+  }
+
+  // LOW_BALANCE_ALERT is Cashfree's "Test & Add Webhook" probe — always 200.
+  if (
+    eventType === 'LOW_BALANCE_ALERT' ||
+    eventType === 'CREDIT_CONFIRMATION' ||
+    eventType === 'BENEFICIARY_INCIDENT' ||
+    eventType === 'BULK_TRANSFER_REJECTED'
+  ) {
+    return new Response('ok', { status: 200 });
+  }
+
+  // --- Payments PG events ---------------------------------------------------
+  const order = data.order as Record<string, unknown> | undefined;
+  const orderId = order?.order_id as string | undefined;
   if (!orderId) {
-    console.warn('cashfree-webhook: no order_id in payload');
+    console.warn('cashfree-webhook: no order_id in payload', eventType);
     return new Response('ok', { status: 200 });
   }
 
   if (eventType === 'PAYMENT_SUCCESS_WEBHOOK') {
-    // Look up the pending transaction to get user_id and tokens.
     const { data: txRow, error: txErr } = await admin
       .from('token_transactions')
       .select('id, user_id, tokens_delta, status')
@@ -113,39 +178,28 @@ Deno.serve(async (request: Request) => {
       .single();
 
     if (txErr || !txRow) {
-      // Order not found — may have been created by a different system, or
-      // the orderId doesn't match. Log and return 200 (no retry needed).
       console.error(`cashfree-webhook: transaction ${orderId} not found:`, txErr?.message);
       return new Response('ok', { status: 200 });
     }
 
     const tx = txRow as { id: string; user_id: string; tokens_delta: number; status: string };
-
-    // credit_purchased_recharge (migration 033) is idempotent: the status='created'
-    // guard means a replayed webhook will find status='succeeded' and return
-    // without crediting again.
     const { error: creditErr } = await admin.rpc('credit_purchased_recharge', {
       p_user_id: tx.user_id,
       p_amount: tx.tokens_delta,
       p_transaction_id: tx.id,
     });
-
     if (creditErr) {
       console.error('cashfree-webhook: credit_purchased_recharge failed:', creditErr.message);
-      // Do not return 4xx — Cashfree will retry, and the RPC is idempotent.
-      // Log and return 200 to prevent exponential retry backoff on our end.
     }
   } else if (
     eventType === 'PAYMENT_FAILED_WEBHOOK' ||
     eventType === 'PAYMENT_USER_DROPPED_WEBHOOK'
   ) {
-    // Mark failed; do not credit. Idempotent: update is a no-op if already failed.
     const { error: failErr } = await admin
       .from('token_transactions')
       .update({ status: 'failed' })
       .eq('id', orderId)
       .eq('status', 'created');
-
     if (failErr) {
       console.error('cashfree-webhook: status update to failed:', failErr.message);
     }

@@ -171,6 +171,17 @@ describe('the manifest states its platform intent', () => {
       'com.google.android.providers.gsf.permission.READ_GSERVICES'
     );
   });
+
+  test('Agora optional processing extensions stay out of every Android artifact', () => {
+    const build = read('android/app/build.gradle');
+    expect(build).toContain("exclude '**/libagora_*_extension.so'");
+    expect(build).toContain(
+      'exclude group: "io.agora.rtc", module: "full-screen-sharing"'
+    );
+    expect(build).toContain(
+      'docs.agora.io/en/realtime-media/video/build/optimize-and-operate/app-size-optimization/react-native'
+    );
+  });
 });
 
 describe('the input method is not allowed to take the window', () => {
@@ -574,6 +585,8 @@ describe('call lifecycle — foreground service and permissions', () => {
   const AUDIO_FOCUS =
     'android/app/src/main/java/com/companionchat/CallAudioFocusManager.kt';
   const SEND_CALL = 'supabase/functions/send-call/index.ts';
+  const CALL_DIAGNOSTICS =
+    'android/app/src/main/java/com/companionchat/CallDiagnosticsModule.kt';
 
   it('declares MANAGE_OWN_CALLS, FOREGROUND_SERVICE, and all three FGS-type permissions', () => {
     /*
@@ -609,6 +622,16 @@ describe('call lifecycle — foreground service and permissions', () => {
     expect(manifest).toContain('com.companionchat.ACTION_ANSWER_CALL');
     expect(manifest).toContain('com.companionchat.ACTION_DECLINE_CALL');
     expect(manifest).toContain('com.companionchat.ACTION_HANG_UP');
+  });
+
+  it('registers and unregisters Android NetworkCallback for call evidence', () => {
+    const diagnostics = read(CALL_DIAGNOSTICS);
+    expect(diagnostics).toContain('registerDefaultNetworkCallback');
+    expect(diagnostics).toContain('onCapabilitiesChanged');
+    expect(diagnostics).toContain('unregisterNetworkCallback');
+    expect(diagnostics).not.toContain('linkProperties');
+    expect(read('android/app/src/main/java/com/companionchat/InAppUpdatePackage.kt'))
+      .toContain('CallDiagnosticsModule(reactContext)');
   });
 
   it('creates the calls channel before promoting the service', () => {

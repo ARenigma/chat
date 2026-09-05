@@ -1,0 +1,13 @@
+appId: com.companionchat
+name: Answer killed-app CallStyle call
+---
+- extendedWaitUntil:
+    visible:
+      id: call-accept
+    timeout: 30000
+- tapOn:
+    id: call-accept
+- extendedWaitUntil:
+    visible:
+      id: call-end
+    timeout: 30000

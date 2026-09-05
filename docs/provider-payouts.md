@@ -27,6 +27,17 @@ Pre-existing (do not rebuild): `provider_earnings_ledger` + `provider_payout_bat
 (migration 029), admin `payouts` config (026: cadence/hold_days/minimum_paise/
 provider_share_percent), session accrual (037).
 
+Settlement clear job (migration 058): `clear_pending_earnings()` runs hourly via
+pg_cron (`clear-pending-earnings`) and flips `pending → cleared` once
+`hold_until <= now()`. Without it, `create_provider_payout_batch` never sees
+real accruals.
+
+Media COGS (migration 059): `media_vendor_usage_daily` + `media_channel_usage`
+
+- `admin.call_margin` / `admin.daily_media_margin` / `admin.session_margin`.
+  Edge function `agora-usage-ingest` pulls Console project-day usage (reference;
+  invoice CSV is money truth). Channel name = `call_id`.
+
 Added for payout linking:
 
 | Object                              | Migration | Purpose                                                               |
@@ -216,17 +227,34 @@ No cron (by request). A founder disburses from the admin **Payouts** page
 
 ## Still TODO
 
-- **Transfer webhook** — extend `cashfree-webhook` for `TRANSFER_*` events so an
-  accepted (RECEIVED) transfer that later fails at the bank auto-reverts, instead
-  of the current settle-on-synchronous-response.
-- **Weekly cron** — deferred by request; when wanted, schedule the same
+- **Weekly payout cron** — deferred by request; when wanted, schedule the same
   `create_provider_payout_batch` → transfer → settle for every eligible provider.
-  TDS-194O 0.1% with a verified PAN (else 5%).
+  TDS-194O 0.1% with a verified PAN (else 5%) — tax-counsel sign-off still required.
+- **Invoice CSV as money truth** — Console ingest (`source=console_api`) is live for
+  reference COGS; prefer invoice CSV upserts (`source=invoice_csv`) when invoices
+  arrive. Until then per-call COGS is a `product_estimate` from `media_cogs` rates.
 - **Dashboard** — replace the "Held for payout" note with an earnings card
   (Available vs Held + per-session hold countdown) and a `ProviderPayoutHistoryScreen`.
 - **Listing gate** — once payouts are enforced, route an `approved` provider
   through the payout setup before `is_available` can be turned on
   (`ProviderStatusScreen` copy at `:58` / `:73`).
+
+### Transfer webhook (done — migration 060)
+
+`cashfree-webhook` handles Payouts V2 `TRANSFER_*` events. Sync
+`cashfree-payout` leaves batches `processing` after RECEIVED/PENDING and stamps
+`cf_transfer_id` via `mark_provider_payout_submitted`. Terminal success is
+`TRANSFER_ACKNOWLEDGED` (SUCCESS+COMPLETED per Cashfree). Failures /
+`TRANSFER_REVERSED` call `settle_provider_payout_batch(..., false)` and revert
+earnings to `cleared`. Payouts V2 webhook URL (registered 2026-09-05):
+`https://uvghvhcrovmuwivgijvl.supabase.co/functions/v1/cashfree-webhook`
+(`verify_jwt = false`; unsigned Test & Add probes ack 200 without mutating money).
+
+### Agora usage ingest (done — migration 059)
+
+Edge secrets `AGORA_CUSTOMER_ID` / `AGORA_CUSTOMER_SECRET` / `AGORA_PROJECT_ID`
+are set. Vault `agora_usage_ingest_url` / `agora_usage_ingest_key` feed the daily
+`agora-usage-ingest` cron (`dispatch_agora_usage_ingest` at 06:20 UTC).
 
 ## External dependencies (product owner)
 

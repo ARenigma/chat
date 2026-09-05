@@ -149,6 +149,8 @@ export interface CallPush {
   readonly peerId: string;
   readonly callerName: string;
   readonly medium: string;
+  readonly mediaBackend: 'current' | 'livekit' | 'agora';
+  readonly mediaExperimentId: string | null;
   readonly avatarUrl: string | null;
 }
 
@@ -163,6 +165,10 @@ export function readCallPush(
     typeof data[key] === 'string' ? (data[key] as string) : '';
   const callId = asString('callId');
   const peerId = asString('peerId');
+  const rawMediaBackend = asString('mediaBackend');
+  const mediaBackend = ['current', 'livekit', 'agora'].includes(rawMediaBackend)
+    ? rawMediaBackend
+    : 'current';
   if (callId === '' || peerId === '') {
     return null;
   }
@@ -171,6 +177,8 @@ export function readCallPush(
     peerId,
     callerName: asString('senderName') || 'Someone',
     medium: asString('medium') || 'voice',
+    mediaBackend: mediaBackend as CallPush['mediaBackend'],
+    mediaExperimentId: asString('mediaExperimentId') || null,
     avatarUrl: asString('senderAvatar') || null,
   };
 }

@@ -7,6 +7,9 @@
 -- view to add `pan_verified` and fold it into `can_go_live`. Append-only: this
 -- supersedes the 048 view definition.
 
+-- CREATE OR REPLACE cannot insert a column before an existing view column.
+drop view if exists public.my_payout_readiness;
+
 create or replace view public.my_payout_readiness
 with (security_invoker = true) as
 select

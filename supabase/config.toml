@@ -177,3 +177,12 @@ secret = "env(SUPABASE_AUTH_GOOGLE_SECRET)"
 redirect_uri = ""
 skip_nonce_check = false
 
+# Cashfree (and other vendor) webhooks authenticate with their own HMAC, not a
+# Supabase user JWT. Leaving verify_jwt on returns 401 before our handler runs.
+[functions.cashfree-webhook]
+verify_jwt = false
+
+# Auth SMS hook — signed with Standard Webhooks, not a user JWT.
+[functions.send-sms]
+verify_jwt = false
+

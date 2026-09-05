@@ -105,6 +105,12 @@ describe('the AI path is gone, not dormant', () => {
     // mints a Supabase session — an auth bridge, not a model path. Added with
     // AUTH_PHONE_PROVIDER='firebase'.
     const allowed = [
+      // agora-usage-ingest: service-role daily pull of Agora Console project
+      // usage into media_vendor_usage_daily (+ channel estimate refresh).
+      'agora-usage-ingest',
+      // Authenticated call participants receive only the short-lived credential
+      // for the backend persisted on their live call. Vendor secrets remain here.
+      'call-media-token',
       // cashfree-onboarding-complete: exchanges the 1-Click auth_code for the
       // verified PAN/DOB/bank and persists it (service-role writer); no model path.
       'cashfree-onboarding-complete',
@@ -116,9 +122,9 @@ describe('the AI path is gone, not dormant', () => {
       // Payouts Standard Transfer V2. Money-critical claim/settle is atomic SQL
       // (migration 050). Triggered from the admin payouts page.
       'cashfree-payout',
-      // cashfree-webhook: Cashfree payment gateway signature-verified callback;
-      // credits purchased tokens after server-side HMAC-SHA256 verification.
-      // ADR-0022.
+      // cashfree-webhook: Cashfree PG payment + Payouts TRANSFER_* callbacks;
+      // HMAC on raw body. Payments credit tokens; transfers settle batches
+      // (migration 060). ADR-0022.
       'cashfree-webhook',
       // create-order: creates a Cashfree order server-side (secret key required);
       // returns paymentSessionId to the client. ADR-0022.
@@ -220,6 +226,29 @@ describe('Cashfree billing invariants', () => {
   it('PaymentSheet imports CASHFREE_SANDBOX_CHECKOUT', () => {
     const sheet = read('src/screens/PaymentSheet.tsx');
     expect(sheet).toContain('CASHFREE_SANDBOX_CHECKOUT');
+  });
+
+  it('cashfree-webhook settles TRANSFER_ACKNOWLEDGED and reverts failures', () => {
+    const fn = read('supabase/functions/cashfree-webhook/index.ts');
+    expect(fn).toContain('TRANSFER_ACKNOWLEDGED');
+    expect(fn).toContain('TRANSFER_FAILED');
+    expect(fn).toContain('TRANSFER_REVERSED');
+    expect(fn).toContain('settle_provider_payout_batch');
+    // Intermediate SENT_TO_BENEFICIARY must not complete the batch.
+    expect(fn).toContain("eventType === 'TRANSFER_SUCCESS'");
+    // Cashfree Test & Add requires 200 even without HMAC headers.
+    expect(fn).toContain('missing signature headers; ack without processing');
+  });
+
+  it('cashfree-webhook has verify_jwt disabled for vendor HMAC auth', () => {
+    const cfg = read('supabase/config.toml');
+    expect(cfg).toMatch(/\[functions\.cashfree-webhook\][\s\S]*?verify_jwt\s*=\s*false/);
+  });
+
+  it('cashfree-payout leaves RECEIVED batches processing for the webhook', () => {
+    const fn = read('supabase/functions/cashfree-payout/index.ts');
+    expect(fn).toContain('mark_provider_payout_submitted');
+    expect(fn).toContain("'processing'");
   });
 
   it('ConfirmDialog is hosted on Sheet', () => {
@@ -383,6 +412,8 @@ describe('Android manifest', () => {
     // and verify-manifest.mjs allowlist.
     expect(declared.sort()).toEqual([
       'android.permission.ACCESS_NETWORK_STATE',
+      'android.permission.BLUETOOTH',
+      'android.permission.BLUETOOTH_ADMIN',
       'android.permission.CAMERA',
       'android.permission.FOREGROUND_SERVICE',
       'android.permission.FOREGROUND_SERVICE_CAMERA',
@@ -390,6 +421,7 @@ describe('Android manifest', () => {
       'android.permission.FOREGROUND_SERVICE_PHONE_CALL',
       'android.permission.INTERNET',
       'android.permission.MANAGE_OWN_CALLS',
+      'android.permission.MODIFY_AUDIO_SETTINGS',
       'android.permission.POST_NOTIFICATIONS',
       'android.permission.RECORD_AUDIO',
       'android.permission.VIBRATE',

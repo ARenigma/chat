@@ -1,4 +1,4 @@
-import { digestSha256, webCryptoIsReady } from '../src/lib/webcrypto';
+import { Utf8TextDecoder, digestSha256, webCryptoIsReady } from '../src/lib/webcrypto';
 
 /**
  * Note on what is under test. The polyfill installs itself only when the runtime
@@ -45,6 +45,29 @@ describe('webcrypto polyfill', () => {
     await expect(
       digestSha256('SHA-512', new TextEncoder().encode('x')),
     ).rejects.toThrow(/not implemented/);
+  });
+
+  /**
+   * Imported directly for the same reason as the digest: Node ships
+   * `TextDecoder`, so the installer defers and asserting through the global
+   * would test Node rather than this file. A missing `TextDecoder` on API 29
+   * threw inside WebRTC signalling, so the callee never produced an answer SDP.
+   */
+  it('decodes multi-byte UTF-8 the same way the spec does', () => {
+    const decode = (bytes: number[]) =>
+      new Utf8TextDecoder().decode(new Uint8Array(bytes));
+    expect(decode([0xc3, 0xa9])).toBe('é');
+    expect(decode([0xe0, 0xa4, 0x85])).toBe('अ');
+    expect(decode([0xf0, 0x9f, 0x98, 0x80])).toBe('😀');
+    expect(new Utf8TextDecoder().decode()).toBe('');
+  });
+
+  it('replaces a truncated sequence rather than reading past the buffer', () => {
+    expect(new Utf8TextDecoder().decode(new Uint8Array([0x61, 0xf0, 0x9f]))).toBe('a\uFFFD');
+  });
+
+  it('refuses an encoding it has not implemented rather than guessing', () => {
+    expect(() => new Utf8TextDecoder('utf-16le')).toThrow(/utf-8 only/);
   });
 
   it('provides a random source that is not Math.random', () => {
