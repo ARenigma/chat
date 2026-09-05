@@ -24,6 +24,7 @@
  *   https://www.cashfree.com/docs/api-reference/payouts/v2/transfers-v2/standard-transfer-v2
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { cashfreeSignature } from '../_shared/cashfreeSignature.ts';
 
 function payoutBaseUrl(): string {
   const env = Deno.env.get('CASHFREE_ENV') ?? 'sandbox';
@@ -32,17 +33,68 @@ function payoutBaseUrl(): string {
     : 'https://sandbox.cashfree.com/payout';
 }
 
-function payoutHeaders(): HeadersInit {
-  return {
+async function payoutHeaders(): Promise<HeadersInit> {
+  const clientId =
+    Deno.env.get('CASHFREE_PAYOUT_CLIENT_ID') ?? Deno.env.get('CASHFREE_CLIENT_ID') ?? '';
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'x-api-version': Deno.env.get('CASHFREE_PAYOUT_API_VERSION') ?? '2024-01-01',
-    'x-client-id':
-      Deno.env.get('CASHFREE_PAYOUT_CLIENT_ID') ?? Deno.env.get('CASHFREE_CLIENT_ID') ?? '',
+    'x-client-id': clientId,
     'x-client-secret':
       Deno.env.get('CASHFREE_PAYOUT_CLIENT_SECRET') ??
       Deno.env.get('CASHFREE_CLIENT_SECRET') ??
       '',
   };
+  /*
+   * Payouts 2FA, and without it NO TRANSFER EVER SUCCEEDS.
+   *
+   * Cashfree requires either an IP allow-list or an `x-cf-signature` on every
+   * Payouts call. Edge Functions have no static egress IP — proved on
+   * 2026-09-05, when two consecutive calls left from 13.232.152.52 and then
+   * 13.204.71.66 — so the allow-list cannot work and the signature is the only
+   * route. `verify-payout-account` returned `IP not whitelisted` on every
+   * attempt until this was added, and it is the same account and the same
+   * product, so this function would have done the same on the first real
+   * transfer. It is only unproven here because no transfer has run yet.
+   * https://www.cashfree.com/docs/payouts/payouts/integrations/payouts-2fa
+   *
+   * Null when no public key is configured, so an account that IS on an
+   * allow-list keeps working unchanged.
+   */
+  const signature = await cashfreeSignature(
+    clientId,
+    Deno.env.get('CASHFREE_PAYOUT_PUBLIC_KEY') ??
+      Deno.env.get('CASHFREE_VERIFICATION_PUBLIC_KEY'),
+  );
+  if (signature !== null) {
+    headers['x-cf-signature'] = signature;
+  }
+  return headers;
+}
+
+/**
+ * Whether a rejection is Cashfree refusing to talk to US rather than refusing
+ * this transfer.
+ *
+ * The batch is still settled failed either way, and that is deliberate: the
+ * settle releases the claimed earnings back to `cleared` (migration 060), so a
+ * provider's money returns and a retry can pick it up. Leaving the batch
+ * `processing` instead would strand the earnings as claimed with nothing moving,
+ * which is worse.
+ *
+ * What changes is what we SAY. "transfer rejected" against a provider's batch
+ * when the truth is our own 2FA is the same misattribution `verify-payout-account`
+ * was making, and it is what sent a day into Cashfree's sandbox instead of into
+ * our own headers.
+ */
+function isOurAuthFailure(status: number, reason: string): boolean {
+  return (
+    status === 401 ||
+    status === 403 ||
+    /ip not whitelisted|signature|two.?factor|2fa|unauthoriz|authentication|invalid client/i.test(
+      reason,
+    )
+  );
 }
 
 interface BatchRow {
@@ -113,7 +165,7 @@ Deno.serve(async (request: Request) => {
   try {
     const res = await fetch(`${payoutBaseUrl()}/transfers`, {
       method: 'POST',
-      headers: payoutHeaders(),
+      headers: await payoutHeaders(),
       body: JSON.stringify({
         transfer_id: batch.batch_id,
         transfer_amount: batch.total_paise / 100,
@@ -155,11 +207,21 @@ Deno.serve(async (request: Request) => {
       p_ok: false,
     });
 
+    const reason = cf.message ?? cf.status ?? 'transfer rejected';
+    const ourFault = isOurAuthFailure(res.status, reason);
+    if (ourFault) {
+      // Loud, because it is a configuration fault that fails EVERY payout and
+      // is invisible from the provider's side.
+      console.error(`cashfree-payout: Cashfree refused our credentials: ${reason}`);
+    }
     return Response.json({
       status: 'failed',
       batchId: batch.batch_id,
       amountPaise: batch.total_paise,
-      error: cf.message ?? cf.status ?? 'transfer rejected',
+      error: reason,
+      // So the admin console and the logs do not read this as the provider's
+      // account being bad when it is our 2FA.
+      fault: ourFault ? 'ours' : 'cashfree',
     });
   } catch (err) {
     console.error('cashfree-payout failed:', (err as Error).message);
