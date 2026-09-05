@@ -26,6 +26,7 @@
  *               failing the whole flow — `needsBank` says so.
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { cashfreeSignature } from '../_shared/cashfreeSignature.ts';
 
 function base(): string {
   const env = Deno.env.get('CASHFREE_ENV') ?? 'sandbox';
@@ -60,17 +61,39 @@ function payoutBase(): string {
     : 'https://sandbox.cashfree.com/payout';
 }
 
-function payoutHeaders(): HeadersInit {
-  return {
+async function payoutHeaders(): Promise<HeadersInit> {
+  const clientId =
+    Deno.env.get('CASHFREE_PAYOUT_CLIENT_ID') ?? Deno.env.get('CASHFREE_CLIENT_ID') ?? '';
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'x-api-version': Deno.env.get('CASHFREE_PAYOUT_API_VERSION') ?? '2024-01-01',
-    'x-client-id':
-      Deno.env.get('CASHFREE_PAYOUT_CLIENT_ID') ?? Deno.env.get('CASHFREE_CLIENT_ID') ?? '',
+    'x-client-id': clientId,
     'x-client-secret':
       Deno.env.get('CASHFREE_PAYOUT_CLIENT_SECRET') ??
       Deno.env.get('CASHFREE_CLIENT_SECRET') ??
       '',
   };
+  /*
+   * Payouts 2FA. This function creates a beneficiary from the 1-Click bank
+   * details, which is a Payouts call, and Payouts requires an IP allow-list or
+   * an `x-cf-signature` on every request. Edge Functions have no static egress
+   * IP, so the signature is the only route.
+   *
+   * Latent rather than observed: the 1-Click consent sheet is still blocked by
+   * Cashfree's own sandbox CORS, so this line has never run against them. It
+   * would have failed exactly as `verify-payout-account` did - same account,
+   * same product - the moment it did.
+   * https://www.cashfree.com/docs/payouts/payouts/integrations/payouts-2fa
+   */
+  const signature = await cashfreeSignature(
+    clientId,
+    Deno.env.get('CASHFREE_PAYOUT_PUBLIC_KEY') ??
+      Deno.env.get('CASHFREE_VERIFICATION_PUBLIC_KEY'),
+  );
+  if (signature !== null) {
+    headers['x-cf-signature'] = signature;
+  }
+  return headers;
 }
 
 interface UserDetails {
@@ -289,7 +312,7 @@ Deno.serve(async (request: Request) => {
 
       const cfRes = await fetch(`${payoutBase()}/beneficiary`, {
         method: 'POST',
-        headers: payoutHeaders(),
+        headers: await payoutHeaders(),
         body: JSON.stringify({
           beneficiary_id: beneficiaryId,
           beneficiary_name: nameAtBank ?? profile?.display_name ?? 'Provider',

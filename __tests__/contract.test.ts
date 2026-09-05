@@ -2355,6 +2355,67 @@ describe('no user-facing em dash and no leftover persona pronoun', () => {
   });
 });
 
+describe('every Cashfree Payouts caller sends the 2FA signature', () => {
+  /*
+   * Cashfree requires an IP allow-list OR an x-cf-signature on every Payouts
+   * call, and Edge Functions have no static egress IP - two consecutive calls
+   * left from 13.232.152.52 and 13.204.71.66 on 2026-09-05. So the signature is
+   * not optional, and a caller without it fails 100% of the time with the
+   * misleading "IP not whitelisted".
+   *
+   * verify-payout-account learned this the hard way. cashfree-payout - the
+   * function that actually MOVES money - shipped without it and would have done
+   * the same on the first real transfer. Enforced by scanning, so the next
+   * Payouts caller cannot repeat it.
+   * https://www.cashfree.com/docs/payouts/payouts/integrations/payouts-2fa
+   */
+  const FN_DIR = 'supabase/functions';
+
+  it('any function calling the payout API imports the shared signer', () => {
+    const dir = join(ROOT, FN_DIR);
+    const offenders: string[] = [];
+    for (const name of readdirSync(dir)) {
+      if (name.startsWith('_') || name.startsWith('.')) {
+        continue;
+      }
+      let body: string;
+      try {
+        body = read(join(FN_DIR, name, 'index.ts'));
+      } catch {
+        continue;
+      }
+      // Does it talk to the Payouts product at all?
+      if (!/cashfree\.com\/payout|payoutBaseUrl/.test(body)) {
+        continue;
+      }
+      if (!body.includes('cashfreeSignature')) {
+        offenders.push(name);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('the signer is reached through the shared helper, not re-implemented', () => {
+    // One RSA-OAEP implementation, in one place. A second copy is a second
+    // chance to get the padding or the timestamp window wrong.
+    const shared = read('supabase/functions/_shared/cashfreeSignature.ts');
+    expect(shared).toContain('RSA-OAEP');
+    const dir = join(ROOT, FN_DIR);
+    for (const name of readdirSync(dir)) {
+      if (name.startsWith('_') || name.startsWith('.')) {
+        continue;
+      }
+      let body: string;
+      try {
+        body = read(join(FN_DIR, name, 'index.ts'));
+      } catch {
+        continue;
+      }
+      expect(body).not.toContain('RSA-OAEP');
+    }
+  });
+});
+
 describe('provider identity is verified, not typed', () => {
   const screen = withoutComments(read('src/screens/ProviderApplicationScreen.tsx'));
 
