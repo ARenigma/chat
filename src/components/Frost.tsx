@@ -123,7 +123,18 @@ export function Frost({
         <View
           style={[
             styles.fill,
-            tint === 'none' ? null : { backgroundColor: theme.color.bg.chrome },
+            /*
+             * OPAQUE. `bg.chrome` is rgba(...,0.80), which is correct ONLY when
+             * there is a blur behind it to supply the other 20%. With the blur
+             * off there is nothing behind it, so 20% of the transcript showed
+             * straight through the bar: call pills and message text ghosted
+             * across the chat header (Redmi, 2026-09-05).
+             *
+             * A translucent plate with nothing behind it is not glass, it is a
+             * ghost. `bg.base` is the opaque page colour, so the bar occludes -
+             * which is the entire job of a bar the content scrolls under.
+             */
+            tint === 'none' ? null : { backgroundColor: theme.color.bg.base },
           ]}
         />
       )}
