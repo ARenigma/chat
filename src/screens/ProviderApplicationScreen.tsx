@@ -19,6 +19,7 @@ import {
   usePayoutAccount,
   useCompleteProviderOnboarding,
   useSetClayAvatar,
+  isDuplicateDisplayName,
   type PayoutMethod,
 } from '../api/provider';
 import { useImeSpace } from '../lib/useImeSpace';
@@ -28,6 +29,7 @@ import { Chip } from '../components/Chip';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { LoadingIndicator } from '../components/LoadingIndicator';
+import { NoticeBar } from '../components/NoticeBar';
 import { TextField } from '../components/TextField';
 
 interface Props {
@@ -157,6 +159,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
   const [languages, setLanguages] = useState<string[]>([]);
   const [about, setAbout] = useState('');
   const [avatarSeed, setAvatarSeed] = useState<ClaySeed | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
 
   const savePan = useSavePan();
   const savePayout = useSavePayoutAccount();
@@ -355,6 +358,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
 
   const onGoLive = useCallback(() => {
     Keyboard.dismiss();
+    setNameError(null);
     void (async () => {
       try {
         // Photo is optional — save it only if one was picked.
@@ -368,8 +372,21 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
           about: about.trim(),
         });
         setPhase('done');
-      } catch {
-        // useCompleteProviderOnboarding surfaces the reason via a notice.
+      } catch (err) {
+        /*
+         * The notice is not enough on its own for this one.
+         *
+         * A taken stage name is a problem with ONE field, and the fix is to
+         * change that field, so it is said next to it rather than only in a bar
+         * that fades after four seconds. Found on the Redmi 2026-09-05: "Go live"
+         * appeared to do nothing at all, because the RPC failed on
+         * `profiles_display_name_lower_unique` and every route to telling the
+         * user was either absent or unactionable.
+         */
+        if (isDuplicateDisplayName((err as Error)?.message ?? '')) {
+          setNameError('That name is already taken. Pick another one.');
+        }
+        // Everything else is surfaced by useCompleteProviderOnboarding's notice.
       }
     })();
   }, [avatarSeed, setClay, complete, displayName, headline, languages, about]);
@@ -676,6 +693,14 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
   return (
     <View style={[styles.root, { paddingTop: insets.top, paddingBottom: imeSpace }]}>
       <Header onBack={() => setPhase('verify')} />
+      {/*
+        * NoticeBar was mounted in ChatScreen and NOWHERE ELSE, so every
+        * `setNotice` from this flow - the 18+ refusal and "verify your identity
+        * first" included - was written to the store and never shown. That is why
+        * "Go live" looked like a dead button: the RPC failed and the app had no
+        * surface on which to say so.
+        */}
+      <NoticeBar />
       <ScrollView
         contentContainerStyle={[styles.scroll, { paddingBottom: (imeSpace > 0 ? 0 : insets.bottom) + TOKENS.space.md }]}
         keyboardShouldPersistTaps="handled"
@@ -695,13 +720,23 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
             testID="provider-name"
             style={styles.input}
             value={displayName}
-            onChangeText={setDisplayName}
+            onChangeText={t => {
+              setDisplayName(t);
+              // Cleared as soon as they act on it; leaving it up while they type
+              // reads as the NEW name being rejected too.
+              setNameError(null);
+            }}
             placeholder="The name members will see"
             placeholderTextColor={theme.color.text.tertiary}
             maxLength={40}
             allowFontScaling
             underlineColorAndroid="transparent"
           />
+          {nameError !== null ? (
+            <Text allowFontScaling style={styles.verifyError} testID="provider-name-error">
+              {nameError}
+            </Text>
+          ) : null}
         </Field>
 
         <Field label="Headline">
