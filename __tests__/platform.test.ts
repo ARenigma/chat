@@ -1156,6 +1156,24 @@ describe('hardware GPU backdrop blur (PappalBlurRoot + PappalBlurSurface)', () =
     );
   });
 
+  it('sends tintColor as a colour, never a hand-rolled signed int', () => {
+    /*
+     * normalizeColor(-1929379841) === null, so a signed ARGB int never reaches
+     * the native setter at all. Frost must hand RN the token string and let the
+     * framework do the conversion it already does for every other colour prop.
+     */
+    const frost = read('src/components/Frost.tsx');
+    expect(frost).toMatch(/tintColor=\{tint === 'none' \? 'transparent' : theme\.color\.bg\.glass\}/);
+    // The hand-rolled converter is gone and must not come back.
+    expect(frost).not.toContain('function argb');
+    expect(frost).not.toMatch(/0x100000000|0x80000000/);
+    // And the native null-fallback agrees with the field default, so a dropped
+    // prop can never paint an opaque colour.
+    const kt = read(BLUR_PACKAGE);
+    expect(kt).toMatch(/view\.tintColor = color \?: Color\.TRANSPARENT/);
+    expect(kt).not.toMatch(/color \?: Color\.BLACK/);
+  });
+
   it('BlurPackage registers both view managers with the correct names', () => {
     /**
      * React Native resolves native views by their getName() string. A rename
@@ -1305,7 +1323,14 @@ describe('hardware GPU backdrop blur (PappalBlurRoot + PappalBlurSurface)', () =
      * expects an ARGB integer).
      */
     const tsx = read(BLUR_SURFACE_TSX);
-    expect(tsx).toContain('tintColor?: number');
+    /*
+     * A COLOUR, not a number. This assertion used to demand `tintColor?: number`
+     * and so locked in the defect: `customType = "Color"` routes the value
+     * through RN's normaliser, which rejects negative numbers, and a signed
+     * 32-bit ARGB int is negative for any alpha above 0x7F. The value was
+     * dropped and every frosted bar painted the native default instead.
+     */
+    expect(tsx).toContain('tintColor?: ColorValue');
     expect(tsx).toContain('tintAlpha?: number');
     expect(tsx).toContain('blurRadius?: number');
     expect(tsx).toContain('enabled?: boolean');

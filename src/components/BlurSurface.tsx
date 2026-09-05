@@ -25,7 +25,7 @@
  * instead of mounting BlurRoot/BlurSurface.
  */
 import { UIManager, requireNativeComponent } from 'react-native';
-import type { StyleProp, ViewStyle } from 'react-native';
+import type { ColorValue, StyleProp, ViewStyle } from 'react-native';
 
 // ─── BlurRoot ────────────────────────────────────────────────────────────────
 
@@ -78,12 +78,27 @@ export interface BlurSurfaceProps {
   /**
    * ARGB tint colour composited OVER the blur.
    *
-   * Pass 0x00000000 for a fully transparent tint (pure blur lens).
-   * Pass 0xFF000000 for opaque black (same as the API < 31 fallback).
-   * The native side encodes this as a Color prop — pass an integer, not a
-   * CSS string.
+   * A COLOUR STRING, e.g. 'rgba(255,255,255,0.55)' or '#0B141A' or
+   * 'transparent'. Not a number.
+   *
+   * The native side declares this `@ReactProp(customType = "Color")`, which
+   * hands the value to React Native's colour normaliser before it crosses the
+   * bridge. That normaliser REJECTS negative numbers, and a signed 32-bit ARGB
+   * int - the obvious thing to reach for on Android - is negative for any
+   * colour with alpha above 0x7F. A rejected value is dropped rather than sent,
+   * so the view silently keeps its default.
+   *
+   * That is not hypothetical: this prop used to take a hand-converted signed
+   * int and every frosted bar in the app painted the native default instead of
+   * the tint. Verified with RN's own normaliser:
+   *   normalizeColor(-1929379841)              -> null
+   *   normalizeColor('rgba(255,255,255,0.55)') -> 4294967180
+   *
+   * A number is still accepted by the type, because RN accepts one - but it
+   * must be the UNSIGNED 0xRRGGBBAA form RN documents, never a signed ARGB int.
+   * Passing the token string is simpler and cannot be got wrong.
    */
-  tintColor?: number;
+  tintColor?: ColorValue;
   /**
    * Opacity of the tint overlay in [0, 1].
    *
