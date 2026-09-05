@@ -1,0 +1,25 @@
+appId: com.companionchat
+name: Answer foreground real call
+---
+- tapOn:
+    text: NOT NOW
+    optional: true
+# The caller flow is started at the same moment as this one, and Maestro's own
+# driver startup runs before either. This wait therefore covers driver startup
+# plus the caller reaching start_call, not just the 30s ring window.
+- extendedWaitUntil:
+    visible:
+      id: call-accept
+    timeout: 120000
+- tapOn:
+    id: call-accept
+- tapOn:
+    text: While using the app
+    optional: true
+- tapOn:
+    text: Allow
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: call-end
+    timeout: 45000

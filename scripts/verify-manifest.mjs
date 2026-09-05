@@ -42,6 +42,17 @@ const ALLOWED = new Set([
   // protection left is that recording is confined to src/lib/recorder.ts, which
   // a contract assertion checks.
   'android.permission.RECORD_AUDIO',
+  // LiveKit's two-way communication audio device module changes routing and
+  // volume. This is a normal permission with no runtime prompt or Data Safety
+  // collection row.
+  // https://docs.livekit.io/transport/media/publish/
+  'android.permission.MODIFY_AUDIO_SETTINGS',
+  // LiveKit and Agora use the legacy Bluetooth stack to route call audio on
+  // Android 11 and below. Both declarations are capped at API 30 in the source
+  // manifest, as Android's permission migration guide requires.
+  // developer.android.com/develop/connectivity/bluetooth/bt-permissions
+  'android.permission.BLUETOOTH',
+  'android.permission.BLUETOOTH_ADMIN',
   // Added with photo capture (#8): the "+" in the composer can take a live photo
   // to send. Like RECORD_AUDIO it is a sensor permission this app owns as a
   // product decision, declared in our own manifest and requested at runtime in
@@ -107,12 +118,14 @@ const ALLOWED_FROM_LIBRARIES = new Set([
   // developer.android.com/google/play/billing/integrate
   'com.android.vending.BILLING',
   // AndroidX Core-Telecom owns call audio routing. Android 12+ requires
-  // BLUETOOTH_CONNECT for paired communication devices, while the library also
-  // declares MODIFY_AUDIO_SETTINGS for its managed call integration.
+  // BLUETOOTH_CONNECT for paired communication devices. The app now owns
+  // MODIFY_AUDIO_SETTINGS above because LiveKit also requires it.
   // developer.android.com/develop/connectivity/bluetooth/bt-permissions
   // developer.android.com/develop/connectivity/telecom/voip-app/api-updates
   'android.permission.BLUETOOTH_CONNECT',
-  'android.permission.MODIFY_AUDIO_SETTINGS',
+  // Agora uses this normal permission to classify the active network and tune
+  // media transport. It exposes no SSID or location to application code.
+  'android.permission.ACCESS_WIFI_STATE',
   // Firebase Auth's reCAPTCHA dependency contributes this Google signature
   // permission. It is internal to Play services and is not requested at runtime.
   // developers.google.com/android/guides/permissions
@@ -162,6 +175,14 @@ function declaredPermissions(xml) {
     .filter(Boolean);
 }
 
+function permissionTag(xml, permission) {
+  return (
+    [...xml.matchAll(/<uses-permission[^>]*>/g)]
+      .map(([tag]) => tag)
+      .find(tag => tag.includes(`android:name="${permission}"`)) ?? ''
+  );
+}
+
 /**
  * Our own launcher activity's opening tag, in either manifest's spelling: the
  * source writes `.MainActivity` and the merger expands it against the namespace.
@@ -197,6 +218,14 @@ function check(label, xml) {
   for (const permission of ALLOWED) {
     if (!declared.includes(permission)) {
       failures.push(`${label}: missing required permission ${permission}`);
+    }
+  }
+  for (const permission of [
+    'android.permission.BLUETOOTH',
+    'android.permission.BLUETOOTH_ADMIN',
+  ]) {
+    if (!/android:maxSdkVersion="30"/.test(permissionTag(xml, permission))) {
+      failures.push(`${label}: ${permission} must stop at API 30`);
     }
   }
   if (!/android:allowBackup="false"/.test(xml)) {

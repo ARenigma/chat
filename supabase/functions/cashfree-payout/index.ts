@@ -14,10 +14,11 @@
  *   4. settle_provider_payout_batch records the terminal state (or reverts the
  *      earnings on failure).
  *
- * Terminal confirmation of an accepted (RECEIVED) transfer ideally comes from a
- * transfer webhook; that is a TODO (see docs/provider-payouts.md). For the manual
- * sandbox flow we settle on the synchronous response and the admin can confirm in
- * the Cashfree dashboard.
+ * Terminal confirmation of an accepted (RECEIVED/PENDING) transfer comes from
+ * the TRANSFER_* webhook on cashfree-webhook (migration 060). Sync path only
+ * stamps cf_transfer_id and leaves the batch processing — Cashfree docs say
+ * success requires status=SUCCESS and status_code=COMPLETED
+ * (TRANSFER_ACKNOWLEDGED). Hard sync rejects still revert immediately.
  *
  * Standard Transfer V2:
  *   https://www.cashfree.com/docs/api-reference/payouts/v2/transfers-v2/standard-transfer-v2
@@ -121,22 +122,44 @@ Deno.serve(async (request: Request) => {
       }),
     });
     const cf = (await res.json()) as { cf_transfer_id?: string; status?: string; message?: string };
-    // RECEIVED/PENDING/SUCCESS are all "accepted"; anything else is a failure.
+    // RECEIVED/PENDING mean Cashfree accepted the request — not bank credit.
+    // Leave the batch processing; TRANSFER_ACKNOWLEDGED webhook settles it.
     const accepted =
-      res.ok && ['RECEIVED', 'PENDING', 'SUCCESS', 'APPROVED', 'COMPLETED'].includes(cf.status ?? '');
+      res.ok && ['RECEIVED', 'PENDING', 'APPROVED', 'SUCCESS', 'COMPLETED'].includes(cf.status ?? '');
 
-    // 4. Settle (ok → completed; fail → revert the earnings).
+    if (accepted) {
+      await admin.rpc('mark_provider_payout_submitted', {
+        p_batch_id: batch.batch_id,
+        p_cashfree_id: cf.cf_transfer_id ?? null,
+      });
+      // Only COMPLETED/SUCCESS on the sync response is treated as terminal
+      // (rare for Standard Transfer V2 — usually RECEIVED then webhook).
+      if (cf.status === 'COMPLETED' || cf.status === 'SUCCESS') {
+        await admin.rpc('settle_provider_payout_batch', {
+          p_batch_id: batch.batch_id,
+          p_cashfree_id: cf.cf_transfer_id ?? null,
+          p_ok: true,
+        });
+      }
+      return Response.json({
+        status: cf.status === 'COMPLETED' || cf.status === 'SUCCESS' ? 'paid' : 'processing',
+        batchId: batch.batch_id,
+        amountPaise: batch.total_paise,
+        cashfreeStatus: cf.status,
+      });
+    }
+
     await admin.rpc('settle_provider_payout_batch', {
       p_batch_id: batch.batch_id,
       p_cashfree_id: cf.cf_transfer_id ?? null,
-      p_ok: accepted,
+      p_ok: false,
     });
 
     return Response.json({
-      status: accepted ? 'paid' : 'failed',
+      status: 'failed',
       batchId: batch.batch_id,
       amountPaise: batch.total_paise,
-      error: accepted ? undefined : cf.message ?? cf.status ?? 'transfer rejected',
+      error: cf.message ?? cf.status ?? 'transfer rejected',
     });
   } catch (err) {
     console.error('cashfree-payout failed:', (err as Error).message);

@@ -11,11 +11,6 @@ import 'react-native-url-polyfill/auto';
 // challenge. See src/lib/webcrypto.ts.
 import './src/lib/webcrypto';
 
-// WebRTC globals (navigator.mediaDevices, RTCPeerConnection, …) for audio
-// calling. Registered at module scope so they exist before any call code runs.
-import { registerGlobals } from 'react-native-webrtc';
-registerGlobals();
-
 import { AppRegistry, LogBox } from 'react-native';
 import {
   getMessaging,

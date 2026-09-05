@@ -4,6 +4,17 @@ apply plugin: "com.facebook.react"
 apply plugin: "com.google.gms.google-services"
 apply plugin: "androidx.baselineprofile"
 
+/*
+ * react-native-agora declares the optional screen-sharing artifact as a runtime
+ * dependency. Calls here publish camera tracks only, so retaining it would add
+ * a MediaProjection activity/service and Android 14 foreground-service
+ * permission for a feature the product does not expose.
+ * https://developer.android.com/about/versions/14/changes/fgs-types-required#media-projection
+ */
+configurations.configureEach {
+    exclude group: "io.agora.rtc", module: "full-screen-sharing"
+}
+
 /**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
@@ -192,6 +203,18 @@ android {
         main {
             assets.srcDirs += ['../../assets']
         }
+    }
+
+    /*
+     * react-native-agora installs Agora's full Android SDK, including every
+     * optional visual/audio processing extension. This call path uses none of
+     * those extensions, so carrying them added roughly 40 MB of uncompressed
+     * arm64 code to the APK. Agora explicitly supports excluding `*_extension`
+     * libraries from React Native APK packaging.
+     * https://docs.agora.io/en/realtime-media/video/build/optimize-and-operate/app-size-optimization/react-native
+     */
+    packagingOptions {
+        exclude '**/libagora_*_extension.so'
     }
 
     ndkVersion rootProject.ext.ndkVersion

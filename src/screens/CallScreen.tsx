@@ -7,7 +7,6 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import { RTCView } from 'react-native-webrtc';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LIGHT, TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -17,7 +16,8 @@ import { initialOf } from '../lib/display';
 import { sizedStorageImageUri } from '../lib/storageImage';
 import { useConversationId, useProviders } from '../api/chat';
 import { answerCall, endCall, heartbeatCall, startCall } from '../api/calls';
-import { useCallSession } from '../api/callSession';
+import { useCallSession } from '../api/callMedia';
+import { CallVideoView } from '../api/callMedia/CallVideoView';
 import { useSessionLease } from '../api/sessions';
 import {
   startCallForegroundService,
@@ -28,6 +28,7 @@ import { CallRing } from '../components/CallRing';
 import { CallingDots } from '../components/CallingDots';
 import { Icon, type IconName } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
+import { track } from '../lib/telemetry';
 
 /** Which way the call goes. Outgoing dials; incoming rings and offers Accept. */
 export type CallDirection = 'out' | 'in';
@@ -132,11 +133,17 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
         return;
       }
       if (r && r.success && r.call_id) {
+        track('call_started', {
+          backend: r.media_backend ?? 'current',
+          direction,
+          medium,
+        });
         setCallId(r.call_id);
         setSessionId(r.session_id ?? null);
         setPhase('ringing');
       } else {
         const code = r?.error;
+        track('call_rejected', { reason: code ?? 'network', medium });
         setNotice(code ? (START_NOTICE[code] ?? 'Could not start the call.') : 'Could not start the call. Check your connection.');
         if (code === 'INSUFFICIENT_BALANCE') {
           openRefill();
@@ -158,24 +165,44 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   const enabled = callId !== null && accepted;
   const {
     connState,
+    backend,
+    mediaReady,
     muted,
     toggleMute,
-    localStream,
-    remoteStream,
+    localVideo,
+    remoteVideo,
     videoEnabled,
     remoteVideoEnabled,
     enableVideo,
     disableVideo,
     switchCamera,
   } = useCallSession(callId, direction === 'out', enabled);
+  const connectedTrackedRef = useRef(false);
+  const backendRef = useRef(backend);
+  const phaseRef = useRef(phase);
+  backendRef.current = backend;
+  phaseRef.current = phase;
+
+  useEffect(
+    () => () => {
+      if (phaseRef.current === 'active') {
+        track('call_ended', {
+          backend: backendRef.current,
+          medium,
+          reason: 'hangup',
+        });
+      }
+    },
+    [medium],
+  );
 
   useEffect(() => {
-    if (callId !== null && localStream !== null) {
+    if (callId !== null && mediaReady) {
       // Media is open, so the call is connected: always the ongoing style, even
       // if it arrived as an incoming ring.
       startCallForegroundService(name, false, true, videoEnabled);
     }
-  }, [callId, localStream, name, videoEnabled]);
+  }, [callId, mediaReady, name, videoEnabled]);
 
   useSessionLease(
     sessionId
@@ -194,6 +221,10 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   useEffect(() => {
     if (connState === 'connected') {
       setPhase('active');
+      if (!connectedTrackedRef.current) {
+        connectedTrackedRef.current = true;
+        track('call_answered', { backend, medium });
+      }
       if (callId !== null) {
         void heartbeatCall(callId).then(result => {
           if (result?.session_id) setSessionId(result.session_id);
@@ -206,7 +237,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
       setNotice('The call could not connect.');
       onEnd();
     }
-  }, [callId, connState, medium, onEnd, setNotice]);
+  }, [backend, callId, connState, medium, onEnd, setNotice]);
 
   // The in-call timer, once live.
   useEffect(() => {
@@ -267,7 +298,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
             ? 'Connecting'
             : 'Calling';
 
-  const showRemoteVideo = remoteVideoEnabled && remoteStream !== null;
+  const showRemoteVideo = remoteVideoEnabled && remoteVideo !== null;
   const pulsing = phase === 'ringing' || phase === 'connecting' || phase === 'incoming' || phase === 'starting';
   /** A photo is bleeding edge-to-edge behind everything, so no centred avatar. */
   const hasBleedPhoto = !showRemoteVideo && typeof provider?.avatar_url === 'string';
@@ -278,8 +309,9 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
 
       {/* Full-bleed photo (or remote video). Name + status sit on top, above the face. */}
       {showRemoteVideo ? (
-        <RTCView
-          streamURL={remoteStream.toURL()}
+        <CallVideoView
+          key={`agora-${remoteVideo.uid}-${remoteVideo.local ? 'local' : 'remote'}`}
+          source={remoteVideo}
           objectFit="cover"
           zOrder={0}
           style={StyleSheet.absoluteFill}
@@ -341,9 +373,9 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
         </View>
       ) : null}
 
-      {videoEnabled && localStream !== null ? (
-        <RTCView
-          streamURL={localStream.toURL()}
+      {videoEnabled && localVideo !== null ? (
+        <CallVideoView
+          source={localVideo}
           objectFit="cover"
           mirror
           zOrder={1}

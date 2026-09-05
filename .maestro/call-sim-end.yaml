@@ -1,0 +1,12 @@
+appId: com.companionchat
+name: End measured real call
+---
+- tapOn:
+    text: NOT NOW
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: call-end
+    timeout: 10000
+- tapOn:
+    id: call-end

@@ -1,0 +1,21 @@
+appId: com.companionchat
+name: Start real video call
+---
+- tapOn:
+    text: NOT NOW
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: call-video
+    timeout: 20000
+- tapOn:
+    id: call-video
+# No optional permission taps here. The harness pre-grants CAMERA, RECORD_AUDIO
+# and POST_NOTIFICATIONS, so these could never match — and each unmatched
+# optional tapOn retries for about eight seconds. Three of them burned 24s of a
+# 30s ring window, so the call had already gone to 'unanswered' before this
+# assertion ran, and every backend looked broken for a reason that was ours.
+- extendedWaitUntil:
+    visible:
+      id: call-end
+    timeout: 45000

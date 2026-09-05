@@ -366,3 +366,106 @@ device sign-in.
 | M3 emphasized-decelerate reads as a cut at 150ms                           | fade complete in 2 frames                                                                                          | `easing.decelerate` (cubic-out = `DecelerateInterpolator(1.5)`), cited to Telegram `ActionBarLayout.java`                   |
 | Debug APK ran stale embedded JS while Metro served current code            | probe edit invisible after cold start; APK contained `index.android.bundle`; logcat CLEARTEXT to localhost blocked | `-PmetroHotReload` opt-in + debug-only `localhost` cleartext; `scripts/dev-device.sh`; default pinned by `platform.test.ts` |
 | Fast Refresh redboxes on `requireNativeComponent` at module scope          | "Tried to register two views with the same name PappalMaterialLoadingIndicator"                                    | Registration cached on `globalThis` in `LoadingIndicator.tsx`                                                               |
+
+## Call media backend simulation, 2026-09-04
+
+Pages read:
+
+- `developer.android.com/develop/connectivity/network-ops/reading-network-state`
+- `developer.android.com/topic/performance/tracing`
+- `developer.android.com/topic/performance/benchmarking/benchmarking-in-ci`
+- `docs.livekit.io/transport/sdk-platforms/react-native/`
+- `docs.livekit.io/frontends/reference/tokens-grants/`
+- `docs.agora.io/en/realtime-media/video/build/authenticate-users/authentication-workflow/react-native`
+- `docs.agora.io/en/realtime-media/video/build/authenticate-users/deploy-token-server`
+- `docs.agora.io/en/realtime-media/video/build/manage-connection-and-quality/in-call-quality-monitoring/android`
+- `docs.agora.io/en/realtime-media/video/build/capture-and-render-video/configure-video-encoding/react-native`
+
+Adopted:
+
+- LiveKit native setup runs before React Native initialization with
+  `CommunicationAudioType`; `MODIFY_AUDIO_SETTINGS` is app-owned and manifest
+  gated.
+- Agora uses server-minted AccessToken2 credentials, renews before expiry, and
+  performs a token-backed rejoin after expiry. Its documented two-second RTC,
+  network, audio and video callbacks feed the neutral quality sample.
+- Android transport changes use `registerDefaultNetworkCallback`,
+  `onCapabilitiesChanged`, and an explicit `unregisterNetworkCallback` at call
+  teardown. Callback payloads retain only transport class, never network or IP.
+- Physical runs use a release-equivalent internal APK, explicit device serials,
+  Perfetto traces, logcat, thermal/battery preconditions, a fixed three-minute
+  duration and sequential Latin-square backend order.
+
+Verification state:
+
+- Static/Jest/pgTAP/build checks are recorded by the implementation task.
+- Physical two-phone verification and logcat/vendor-console reconciliation are
+  blocked until two physical Android devices are connected. No emulator result
+  may satisfy this gate.
+
+### Fabric native-container correction, 2026-09-04
+
+The first release-equivalent launch on the API 36 Samsung failed before React
+rendered with `PappalBlurRootManager cannot be cast to
+IViewManagerWithChildren`. `PappalBlurRoot` accepts the entire React tree as
+children, but its manager extended `SimpleViewManager`, which advertises a leaf
+to Fabric. React Native's Android native-component implementation guidance
+requires a `ViewGroupManager` for a component that mounts children:
+`reactnative.dev/docs/legacy/native-components-android#3-implement-the-view-manager`.
+
+Corrected `PappalBlurRootManager` to extend `ViewGroupManager` and added a
+platform contract assertion. Device relaunch and logcat verification remain
+part of the active two-phone run.
+
+### Missing `TextDecoder` broke call answer on API 29, 2026-09-05
+
+The two-phone matrix could not complete a single connected call. The ledger was
+the tell: `calls` reached `status = 'active'` with a `started_at`, so the answer
+RPC succeeded, yet the caller sat on the outgoing screen until the 30s ring
+timeout. The two devices disagreed, which pointed at the client rather than the
+server.
+
+Callee logcat on the API 29 Redmi ended signalling immediately after
+`addTransceiver` with a repeated
+`ReferenceError: Property 'TextDecoder' doesn't exist`. The API 36 Samsung never
+logged it. `src/lib/webcrypto.ts` polyfilled `TextEncoder` — because
+supabase-js's PKCE capability gate tests for it — but not `TextDecoder`, which
+no gate tests, so its absence throws at first use instead of degrading. The
+callee therefore never produced an answer SDP.
+
+Added a spec-shaped UTF-8 `TextDecoder` next to the existing `TextEncoder`,
+exported as `Utf8TextDecoder` so the assertions exercise this implementation
+rather than Node's. Unknown encodings throw and truncated sequences decode to
+U+FFFD, matching the reasoning already applied to `subtle.digest`.
+
+### Video m-line carried no msid, 2026-09-05
+
+With calls connecting, each phone showed its own camera and neither showed the
+other's, while audio was fine. The asymmetry between the two media types is the
+whole diagnosis: audio is attached with `pc.addTrack(track, stream)`, which
+signals an `msid`, whereas the video transceiver was created with
+`pc.addTransceiver('video', { direction: 'sendrecv' })` and no stream at all.
+
+Without an `msid` on that m-line the peer's `track` event for video fires with an
+empty `streams` array, so `if (e.streams[0])` discarded it and the remote stream
+only ever held audio. `@livekit/react-native-webrtc` maps `init.streams` to
+`streamIds`, so passing the local stream is enough; the track handler was left
+alone deliberately, since making it tolerate a stream-less event would hide the
+next occurrence of this rather than fix it.
+
+Three harness corrections came out of the same investigation, all recorded
+because they invalidated earlier runs rather than merely slowing them:
+
+- The caller and callee flows ran in sequence, and Maestro's on-device driver
+  startup alone exceeds the 30s ring window, so every "answer" arrived after the
+  call had already become `unanswered`. They now start together.
+- MIUI rejects Maestro's driver APK with `INSTALL_FAILED_USER_RESTRICTED`; that
+  install is gated behind "USB debugging (Security settings)", which requires a
+  Mi account. `uiautomator dump` and `input tap` are not gated, so the callee is
+  driven with those directly. Dumping to `/dev/tty` is killed mid-write on that
+  device; a file plus `cat` survives.
+- `uiautomator dump` returns "could not get idle state" for the whole ring
+  window, because every waiting phase of CallScreen runs `CallingDots` forever
+  and UI Automator waits for a quiescent window. The harness now zeroes the three
+  animation scales, which is both what the UI Automator setup guidance asks for
+  and the signal behind `useReducedMotion`, so those components render statically.

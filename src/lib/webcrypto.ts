@@ -103,7 +103,11 @@ if (typeof globalScope.TextEncoder === 'undefined') {
         } else if (code < 0x800) {
           out.push(0xc0 | (code >> 6), 0x80 | (code & 0x3f));
         } else if (code < 0x10000) {
-          out.push(0xe0 | (code >> 12), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));
+          out.push(
+            0xe0 | (code >> 12),
+            0x80 | ((code >> 6) & 0x3f),
+            0x80 | (code & 0x3f),
+          );
         } else {
           out.push(
             0xf0 | (code >> 18),
@@ -117,6 +121,88 @@ if (typeof globalScope.TextEncoder === 'undefined') {
       /* eslint-enable no-bitwise */
     }
   };
+}
+
+/**
+ * The decoding half. `TextDecoder` is not part of the supabase-js capability
+ * gate, so its absence throws at use rather than degrading: on the API 29
+ * device the callee's WebRTC signalling died with
+ * `ReferenceError: Property 'TextDecoder' doesn't exist` immediately after
+ * `addTransceiver`, so no answer SDP was ever produced and the caller rang
+ * until the 30s timeout while the ledger row already read 'active'.
+ *
+ * Only UTF-8 is implemented, and an unknown encoding throws for the same reason
+ * `subtle.digest` does: decoding as something other than what was asked is
+ * worse than not decoding at all.
+ */
+export class Utf8TextDecoder {
+  readonly encoding: string;
+
+  constructor(encoding = 'utf-8') {
+    const normalised = encoding.toLowerCase();
+    if (normalised !== 'utf-8' && normalised !== 'utf8') {
+      throw new RangeError(
+        `TextDecoder polyfill supports utf-8 only, got ${encoding}`,
+      );
+    }
+    this.encoding = 'utf-8';
+  }
+
+  decode(input?: ArrayBuffer | ArrayBufferView): string {
+    if (input === undefined) return '';
+    const bytes =
+      input instanceof Uint8Array
+        ? input
+        : ArrayBuffer.isView(input)
+        ? new Uint8Array(input.buffer, input.byteOffset, input.byteLength)
+        : new Uint8Array(input);
+    /* eslint-disable no-bitwise -- as in TextEncoder above: UTF-8 is defined
+         in terms of shifts and masks. Scoped to this function only. */
+    let out = '';
+    for (let i = 0; i < bytes.length; ) {
+      const byte = bytes[i] as number;
+      let code: number;
+      let width: number;
+      if (byte < 0x80) {
+        code = byte;
+        width = 1;
+      } else if ((byte & 0xe0) === 0xc0) {
+        code = byte & 0x1f;
+        width = 2;
+      } else if ((byte & 0xf0) === 0xe0) {
+        code = byte & 0x0f;
+        width = 3;
+      } else {
+        code = byte & 0x07;
+        width = 4;
+      }
+      // A truncated sequence decodes to U+FFFD, as the spec requires, rather
+      // than reading past the end of the buffer.
+      if (i + width > bytes.length) {
+        out += '\uFFFD';
+        break;
+      }
+      for (let j = 1; j < width; j += 1) {
+        code = (code << 6) | ((bytes[i + j] as number) & 0x3f);
+      }
+      if (code > 0xffff) {
+        const astral = code - 0x10000;
+        out += String.fromCharCode(
+          0xd800 + (astral >> 10),
+          0xdc00 + (astral & 0x3ff),
+        );
+      } else {
+        out += String.fromCharCode(code);
+      }
+      i += width;
+    }
+    return out;
+    /* eslint-enable no-bitwise */
+  }
+}
+
+if (typeof globalScope.TextDecoder === 'undefined') {
+  globalScope.TextDecoder = Utf8TextDecoder;
 }
 
 /** Exported so a test can assert the capability gate supabase-js checks. */

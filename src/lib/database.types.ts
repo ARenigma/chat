@@ -443,6 +443,7 @@ export type MessageReaction = {
 };
 
 export type CallMedium = 'voice' | 'video';
+export type CallMediaBackend = 'current' | 'livekit' | 'agora';
 
 export type CallStatus =
   | 'ringing'
@@ -487,6 +488,11 @@ export type Call = {
   tokens_debited: number;
   end_reason: CallEndReason | null;
   notified_at: string | null;
+  /** Server-owned media assignment; both endpoints read the same value. */
+  media_backend: CallMediaBackend;
+  media_experiment_id: string | null;
+  media_run_id: string | null;
+  media_assignment_kind: 'sticky' | 'harness';
 };
 
 export type SendError =
@@ -542,6 +548,8 @@ export type CallResult = {
   tokens_debited?: number;
   /** The price, read from the authority rather than hardcoded on the device. */
   tokens_per_minute?: number;
+  media_backend?: CallMediaBackend;
+  media_experiment_id?: string | null;
   /** What `start_call` wanted in the member's wallet, on INSUFFICIENT_BALANCE. */
   minimum?: number;
   error?: CallError;
@@ -897,6 +905,15 @@ export type Database = {
         Args: { p_conversation_id: string; p_medium: CallMedium };
         Returns: CallResult;
       };
+      set_next_call_media_backend: {
+        Args: {
+          p_conversation_id: string;
+          p_backend: CallMediaBackend;
+          p_experiment_id: string;
+          p_run_id: string;
+        };
+        Returns: undefined;
+      };
       answer_call: {
         Args: { p_call_id: string };
         Returns: CallResult;
@@ -913,6 +930,13 @@ export type Database = {
       end_call: {
         Args: { p_call_id: string; p_reason?: string };
         Returns: CallResult;
+      };
+      record_call_quality_samples: {
+        Args: {
+          p_call_id: string;
+          p_samples: Array<Record<string, unknown>>;
+        };
+        Returns: number;
       };
       touch_presence: {
         Args: Record<string, never>;

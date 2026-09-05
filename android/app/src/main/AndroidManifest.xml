@@ -33,6 +33,25 @@
       those being true is a policy violation rather than a paperwork nit.
     -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- LiveKit's communication audio device module adjusts call routing and
+         volume. Normal permission; no prompt or user data access.
+         https://docs.livekit.io/transport/media/publish/ -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!--
+      LiveKit/Agora route calls to paired Bluetooth headsets on Android 11 and
+      below through the legacy Bluetooth APIs. Android requires both legacy
+      declarations to stop at API 30; Android 12+ uses BLUETOOTH_CONNECT from
+      AndroidX Core-Telecom instead.
+      https://developer.android.com/develop/connectivity/bluetooth/bt-permissions
+    -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30"
+        tools:replace="android:maxSdkVersion" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30"
+        tools:replace="android:maxSdkVersion" />
 
     <!--
       Camera, for capturing a photo to send in chat (#8). Requested at runtime in
