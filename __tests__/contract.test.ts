@@ -105,8 +105,8 @@ describe('the AI path is gone, not dormant', () => {
     // mints a Supabase session — an auth bridge, not a model path. Added with
     // AUTH_PHONE_PROVIDER='firebase'.
     const allowed = [
-      // agora-usage-ingest: service-role daily pull of Agora Console project
-      // usage into media_vendor_usage_daily (+ channel estimate refresh).
+      // agora-usage-ingest: Console day usage + paid_sessions estimates +
+      // Analytics per-call + invoice mode + variance alerts. Never pays anyone.
       'agora-usage-ingest',
       // Authenticated call participants receive only the short-lived credential
       // for the backend persisted on their live call. Vendor secrets remain here.
@@ -249,6 +249,28 @@ describe('Cashfree billing invariants', () => {
     const fn = read('supabase/functions/cashfree-payout/index.ts');
     expect(fn).toContain('mark_provider_payout_submitted');
     expect(fn).toContain("'processing'");
+  });
+
+  it('agora-usage-ingest reconciles Console, Analytics, invoice without paying', () => {
+    const fn = read('supabase/functions/agora-usage-ingest/index.ts');
+    expect(fn).toContain('refresh_media_channel_usage_estimates');
+    expect(fn).toContain('upsert_media_channel_usage_analytics');
+    expect(fn).toContain('check_media_cogs_variance');
+    expect(fn).toContain('import_media_invoice_days');
+    expect(fn).toContain("mode === 'invoice'");
+    expect(fn).toContain('/beta/analytics/call/lists');
+    // Never settle provider money from Agora.
+    expect(fn).not.toContain('settle_provider_payout_batch');
+    expect(fn).not.toContain('create_provider_payout_batch');
+  });
+
+  it('media COGS tighten migration keys product meter to paid_sessions', () => {
+    const sql = read('supabase/migrations/061_media_cogs_reconcile_tighten.sql');
+    expect(sql).toContain('paid_sessions.minutes_billed');
+    expect(sql).toContain('primary key (call_id, source)');
+    expect(sql).toContain('import_media_invoice_days');
+    expect(sql).toContain('check_media_cogs_variance');
+    expect(sql).toContain('media_cogs_recon_alerts');
   });
 
   it('ConfirmDialog is hosted on Sheet', () => {

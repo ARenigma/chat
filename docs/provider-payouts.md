@@ -230,9 +230,6 @@ No cron (by request). A founder disburses from the admin **Payouts** page
 - **Weekly payout cron** — deferred by request; when wanted, schedule the same
   `create_provider_payout_batch` → transfer → settle for every eligible provider.
   TDS-194O 0.1% with a verified PAN (else 5%) — tax-counsel sign-off still required.
-- **Invoice CSV as money truth** — Console ingest (`source=console_api`) is live for
-  reference COGS; prefer invoice CSV upserts (`source=invoice_csv`) when invoices
-  arrive. Until then per-call COGS is a `product_estimate` from `media_cogs` rates.
 - **Dashboard** — replace the "Held for payout" note with an earnings card
   (Available vs Held + per-session hold countdown) and a `ProviderPayoutHistoryScreen`.
 - **Listing gate** — once payouts are enforced, route an `approved` provider
@@ -250,11 +247,23 @@ earnings to `cleared`. Payouts V2 webhook URL (registered 2026-09-05):
 `https://uvghvhcrovmuwivgijvl.supabase.co/functions/v1/cashfree-webhook`
 (`verify_jwt = false`; unsigned Test & Add probes ack 200 without mutating money).
 
-### Agora usage ingest (done — migration 059)
+### Agora usage / COGS reconcile (done — migrations 059–061)
 
-Edge secrets `AGORA_CUSTOMER_ID` / `AGORA_CUSTOMER_SECRET` / `AGORA_PROJECT_ID`
-are set. Vault `agora_usage_ingest_url` / `agora_usage_ingest_key` feed the daily
-`agora-usage-ingest` cron (`dispatch_agora_usage_ingest` at 06:20 UTC).
+Three ledgers stay separate (industry practice):
+
+| Ledger              | Authority                                                 | Pays anyone?            |
+| ------------------- | --------------------------------------------------------- | ----------------------- |
+| Product             | `paid_sessions.minutes_billed` → `usage_debit` → earnings | Yes (member + provider) |
+| Console / Analytics | `agora-usage-ingest`                                      | No — COGS check only    |
+| Invoice CSV         | `import_media_invoice_days` / `mode: "invoice"`           | No — cash COGS truth    |
+
+Daily cron pulls Console project-day usage, refreshes `product_estimate` from
+**paid_sessions** (not `calls.minutes_billed`), pulls Analytics
+`call/lists?cname=<call_id>` into a coexisting `agora_analytics` row, then
+`check_media_cogs_variance` opens rows in `admin.media_cogs_open_alerts`.
+Month-end: POST `{ "mode": "invoice", "rows": [...] }` to lock `invoice_csv`.
+Thresholds: `media_cogs.std_min_day_variance_alert_pct` (15) and
+`product_vs_analytics_alert_pct` (50).
 
 ## External dependencies (product owner)
 
