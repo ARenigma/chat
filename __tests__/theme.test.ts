@@ -1995,11 +1995,36 @@ describe('recharge-theme: RechargeScreen is a compact non-scrolling M3 sheet', (
   it('preserves RechargeWalletPage as a full-page route', () => {
     expect(recharge).toContain('export function RechargeWalletPage');
     expect(recharge).toContain('testID="recharge-wallet"');
-    // #6 (user 2026-09-02): the page is non-scrolling now — pick an amount, one
-    // Pay button, then the Cashfree sheet owns payment-method choice. The
-    // "Pay with" method block and the ScrollView it needed are both gone.
-    expect(recharge).not.toContain('<ScrollView');
+    // #6 (user 2026-09-02): pick an amount, one Pay button, then the Cashfree
+    // sheet owns payment-method choice. The "Pay with" method block is gone.
     expect(recharge).not.toContain('Pay with');
+
+    // The body scrolls UNDER a pinned Pay bar — not the page as a whole. "The
+    // grid and the note fit a single screen" was true of one screen height; on
+    // a 774dp window the note slid under the bar (2026-09-06). So: exactly one
+    // ScrollView, wrapping the form, with the Pay bar a sibling outside it.
+    const page = recharge.slice(recharge.indexOf('export function RechargeWalletPage'));
+    const scrollAt = page.indexOf('<ScrollView');
+    const formAt = page.indexOf('<RechargeForm');
+    const payBarAt = page.indexOf('testID="recharge-wallet-pay"');
+    const scrollEnd = page.indexOf('</ScrollView>');
+    expect(scrollAt).toBeGreaterThan(-1);
+    expect(page.indexOf('<ScrollView', scrollAt + 1)).toBe(-1);
+    expect(formAt).toBeGreaterThan(scrollAt);
+    expect(scrollEnd).toBeGreaterThan(formAt);
+    expect(payBarAt).toBeGreaterThan(scrollEnd);
+  });
+
+  it('keeps the compact sheet host non-scrolling: it fits its detent or the detent grows', () => {
+    // The paywall sheet has one job and no inner scroll view. When its content
+    // outgrew the 72% cap the fix was the `large` detent, not a ScrollView —
+    // a scrolling body under a sheet's pan gesture is a fight nobody wins.
+    const sheetHost = recharge.slice(
+      recharge.indexOf('export function RechargeScreen'),
+      recharge.indexOf('export function RechargeWalletPage'),
+    );
+    expect(sheetHost).not.toContain('<ScrollView');
+    expect(sheetHost).toContain('detents="large"');
   });
 });
 

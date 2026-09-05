@@ -9,6 +9,13 @@ import {
   STARTING_BALANCE,
 } from '../src/lib/tokenLedger';
 import { MAX_VOICE_MS, MIN_VOICE_MS, isVoicePath } from '../src/lib/voice';
+import {
+  DEFAULT_GST_RATE_BPS,
+  formatRupeesPaise,
+  gstIncludedLabel,
+  gstPercentLabel,
+  gstSplit,
+} from '../src/lib/rates';
 import { TOKENS } from '../src/theme/tokens';
 
 const ROOT = join(__dirname, '..');
@@ -201,6 +208,77 @@ describe('the AI path is gone, not dormant', () => {
  *   3. PaymentSheet imports CASHFREE_SANDBOX_CHECKOUT (and therefore routes through
  *      the sandbox path when the flag is true).
  */
+describe('GST is disclosed where money moves and nowhere else', () => {
+  // Prices are INCLUSIVE: ₹300 buys 300 tokens and already contains the tax.
+  // These are the figures generate-invoice prints for the same packs.
+  it('backs the tax out of the pack price in exact integer paise', () => {
+    expect(gstSplit(300, 1800)).toEqual({ totalPaise: 30000, taxablePaise: 25424, gstPaise: 4576 });
+    expect(gstSplit(100, 1800)).toEqual({ totalPaise: 10000, taxablePaise: 8475, gstPaise: 1525 });
+    expect(gstSplit(5000, 1800)).toEqual({ totalPaise: 500000, taxablePaise: 423729, gstPaise: 76271 });
+    // taxable + gst is the price, always — no paisa appears or vanishes.
+    for (const pack of [100, 300, 500, 1000, 2500, 5000]) {
+      const split = gstSplit(pack, 1800);
+      expect(split.taxablePaise + split.gstPaise).toBe(split.totalPaise);
+    }
+  });
+
+  it('uses the invoice generator\'s own expression, so screen and PDF cannot disagree', () => {
+    const invoice = read('supabase/functions/generate-invoice/index.ts');
+    const rates = read('src/lib/rates.ts');
+    const expression = 'Math.round((totalPaise * 10000) / (10000 + ';
+    expect(invoice).toContain(expression);
+    expect(rates).toContain(expression);
+  });
+
+  it('shows nothing when the seller charges no GST', () => {
+    expect(gstSplit(300, 0).gstPaise).toBe(0);
+    expect(gstIncludedLabel(300, 0)).toBeNull();
+    expect(gstIncludedLabel(0, 1800)).toBeNull();
+  });
+
+  it('formats the disclosure the way the pack card, the pay row and the sheet all show it', () => {
+    expect(formatRupeesPaise(4576)).toBe('₹45.76');
+    expect(formatRupeesPaise(76271)).toBe('₹762.71');
+    expect(formatRupeesPaise(100000)).toBe('₹1,000.00');
+    expect(formatRupeesPaise(5)).toBe('₹0.05');
+    expect(gstPercentLabel(1800)).toBe('18%');
+    expect(gstPercentLabel(1250)).toBe('12.5%');
+    expect(gstIncludedLabel(300, 1800)).toBe('incl. ₹45.76 GST');
+  });
+
+  it('keeps the fallback rate in step with the admin economics fallback', () => {
+    expect(DEFAULT_GST_RATE_BPS).toBe(1800);
+    expect(read('src/api/appConfig.ts')).toMatch(/gst_rate_bps:\s*1800/);
+    // Both hosts and the payment sheet read the admin value, not the constant.
+    expect(read('src/screens/RechargeScreen.tsx')).toContain('useEconomicsConfig');
+    expect(read('src/screens/PaymentSheet.tsx')).toContain('useEconomicsConfig');
+  });
+
+  it('names GST on every recharge surface and on no chat surface', () => {
+    // Positive: the pack cards (both hosts), the pay row and the payment sheet.
+    const recharge = withoutComments(read('src/screens/RechargeScreen.tsx'));
+    expect(recharge.match(/gstIncludedLabel\(/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
+    expect(withoutComments(read('src/screens/PaymentSheet.tsx'))).toContain('gstIncludedLabel(');
+
+    // Negative: tokens are prepaid, tax was settled when the rupees were paid.
+    // A per-minute rate, a balance, a timer or a bubble that mentioned GST would
+    // be taxing the same money twice in the reader's head (Amit, 2026-09-05:
+    // "GST on recharge chips, no GST in chat").
+    // SettingsSheet earns its place only for the recharge-history row, "Receipts
+    // and GST invoices" — the invoice is the document the tax legally lives on.
+    const allowed = new Set(['RechargeScreen.tsx', 'PaymentSheet.tsx', 'SettingsSheet.tsx']);
+    for (const dir of ['src/screens', 'src/components']) {
+      for (const file of readdirSync(join(ROOT, dir))) {
+        if (!file.endsWith('.tsx') || allowed.has(file)) {
+          continue;
+        }
+        expect({ file, mentionsGst: /\bGST\b|gst(Split|IncludedLabel|PercentLabel)/.test(withoutComments(read(`${dir}/${file}`))) })
+          .toEqual({ file, mentionsGst: false });
+      }
+    }
+  });
+});
+
 describe('Cashfree billing invariants', () => {
   it('create-order packs align with RECHARGE_PACKS (100 300 500 1000 2500 5000)', () => {
     const fn = read('supabase/functions/create-order/index.ts');
