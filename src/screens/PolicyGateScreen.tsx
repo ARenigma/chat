@@ -11,6 +11,7 @@
 
 import React, { useCallback } from 'react';
 import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SCROLL_PHYSICS } from '../lib/scroll';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
@@ -37,6 +38,7 @@ export function PolicyGateScreen({ onAccepted }: Props) {
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <ScrollView
+        {...SCROLL_PHYSICS}
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}

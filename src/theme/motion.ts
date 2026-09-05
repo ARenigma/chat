@@ -2,7 +2,9 @@ import { useEffect } from 'react';
 import {
   Easing,
   FadeIn,
+  FadeInDown,
   FadeOut,
+  FadeOutUp,
   ReduceMotion,
   makeMutable,
   type SharedValue,
@@ -249,6 +251,28 @@ export const fadeSwap = FadeIn.duration(DURATION.base).reduceMotion(
 
 /** The same swap at the speed of a tap, for a button label that just narrated itself. */
 export const fadeSwapFast = FadeIn.duration(DURATION.fast).reduceMotion(
+  ReduceMotion.System,
+);
+
+/**
+ * A bar that docks in at the TOP of a screen and leaves the same way.
+ *
+ * Hoisted for the reason every builder here is: they allocate on construction,
+ * so one built inside a render is a new object per render. These two were the
+ * last raw `.duration()` calls left in a screen — `220`/`160` written by hand at
+ * the call site, close enough to `base`/`fast` to look like the tokens and
+ * different enough to drift from them.
+ *
+ * In is slower than out on purpose, and it is the app's existing asymmetry
+ * rather than a new opinion: `fadeSwap`/`fadeSwapFast` are the same `base`/`fast`
+ * pair, and it matches the reference's own send-button reveal (~220ms in,
+ * ~150ms out, `ChatActivityEnterView.java:8217, 10302-10319`). Arriving is an
+ * announcement and wants to be seen; leaving should get out of the way.
+ */
+export const barIn = FadeInDown.duration(DURATION.base).reduceMotion(
+  ReduceMotion.System,
+);
+export const barOut = FadeOutUp.duration(DURATION.fast).reduceMotion(
   ReduceMotion.System,
 );
 

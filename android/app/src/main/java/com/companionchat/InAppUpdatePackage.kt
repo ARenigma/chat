@@ -27,6 +27,7 @@ class InAppUpdatePackage : ReactPackage {
         StartupTimingModule(reactContext),
         WindowChromeModule(reactContext),
         CallDiagnosticsModule(reactContext),
+        HapticsModule(reactContext),
     )
 
     override fun createViewManagers(

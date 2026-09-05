@@ -16,6 +16,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { SCROLL_PHYSICS } from '../lib/scroll';
 import Animated, {
   Easing,
   FadeIn,
@@ -716,6 +717,7 @@ export function OnboardingScreen({ onDone }: Props) {
            * eaten to dismiss the keyboard.
            */}
           <ScrollView
+            {...SCROLL_PHYSICS}
             style={styles.scroll}
             contentContainerStyle={[
               styles.scrollContent,
