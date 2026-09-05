@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
@@ -8,12 +8,21 @@ import {
   DEFAULT_RATES,
   formatRupees,
   formatTokens,
+  gstIncludedLabel,
+  gstPercentLabel,
   PAYMENTS_ENABLED,
   RECHARGE_PACKS,
   talkMinutesLeft,
 } from '../lib/rates';
-import { useRechargeConfig, useKillSwitches, FALLBACK_RECHARGE } from '../api/appConfig';
+import {
+  useRechargeConfig,
+  useKillSwitches,
+  useEconomicsConfig,
+  FALLBACK_RECHARGE,
+  FALLBACK_ECONOMICS,
+} from '../api/appConfig';
 import { tick } from '../lib/haptics';
+import { SCROLL_PHYSICS } from '../lib/scroll';
 import { screenOut, setNavDirection, useScreenEnter } from '../theme/motion';
 import { useStore } from '../store/useStore';
 import { BackButton } from '../components/BackButton';
@@ -31,17 +40,21 @@ import { PaymentSheet } from './PaymentSheet';
 function useRechargePacks() {
   const { data: rechargeConfig = FALLBACK_RECHARGE } = useRechargeConfig();
   const { data: killSwitches } = useKillSwitches();
+  const { data: economics } = useEconomicsConfig();
   const livePacks = rechargeConfig.packs_inr.length > 0 ? rechargeConfig.packs_inr : RECHARGE_PACKS;
   return {
     livePacks,
     paymentsEnabled: killSwitches?.payments_enabled ?? PAYMENTS_ENABLED,
+    // Admin-set (ADR-0021). 0 for a seller without a GSTIN, and every GST line
+    // on this screen goes with it — see `gstIncludedLabel`.
+    gstRateBps: economics?.gst_rate_bps ?? FALLBACK_ECONOMICS.gst_rate_bps,
   };
 }
 
 export function RechargeScreen() {
   const visible = useStore(s => s.refillVisible);
   const close = useStore(s => s.closeRefill);
-  const { livePacks } = useRechargePacks();
+  const { livePacks, gstRateBps } = useRechargePacks();
   const [amount, setAmount] = useState<number>(livePacks[1] ?? 300);
   const [payOpen, setPayOpen] = useState(false);
 
@@ -52,10 +65,18 @@ export function RechargeScreen() {
         testID="refill-sheet"
         title="Recharge"
         body="Add tokens to keep talking."
+        // The 72% `auto` cap was already too low for this content on a 774dp
+        // window (Redmi Note 7 Pro): the body shrank and the rate row painted
+        // INSIDE the bottom pair of cards — unnoticed while the cards' lower
+        // third was empty, obvious once the GST line filled it. `large` lifts
+        // the cap to 90%; the sheet still wraps its content, so on a tall phone
+        // nothing changes and on a short one it has the room it needs.
+        detents="large"
         onClose={close}
         footer={
           <RechargeSheetFooter
             amount={amount}
+            gstRateBps={gstRateBps}
             onPay={() => requestAnimationFrame(() => setPayOpen(true))}
           />
         }>
@@ -63,6 +84,7 @@ export function RechargeScreen() {
           amount={amount}
           setAmount={setAmount}
           livePacks={livePacks}
+          gstRateBps={gstRateBps}
         />
       </Sheet>
       <PaymentSheet visible={payOpen} amount={amount} onClose={() => setPayOpen(false)} />
@@ -81,10 +103,12 @@ function RechargeSheetForm({
   amount,
   setAmount,
   livePacks,
+  gstRateBps,
 }: {
   amount: number;
   setAmount: (n: number) => void;
   livePacks: readonly number[];
+  gstRateBps: number;
 }) {
   const styles = useStyles(makeCompactStyles);
   const balance = useStore(s => s.balance);
@@ -113,6 +137,7 @@ function RechargeSheetForm({
         {livePacks.slice(0, 4).map(pack => {
           const selected = pack === amount;
           const popular = pack === popularAmount;
+          const gst = gstIncludedLabel(pack, gstRateBps);
           return (
             <View key={pack} style={styles.cardSlot}>
               <Pressable
@@ -123,7 +148,7 @@ function RechargeSheetForm({
                 testID={`pack-${pack}`}
                 accessibilityRole="radio"
                 checked={selected}
-                accessibilityLabel={`${formatRupees(pack)}, ${formatTokens(pack)} tokens${popular ? ', popular' : ''}`}
+                accessibilityLabel={`${formatRupees(pack)}, ${formatTokens(pack)} tokens${gst ? `, ${gst}` : ''}${popular ? ', popular' : ''}`}
                 press="card"
                 style={[styles.card, selected && styles.cardSelected]}>
                 {popular ? (
@@ -139,6 +164,11 @@ function RechargeSheetForm({
                 <Text allowFontScaling style={styles.tokens}>
                   {`${formatTokens(pack)} tokens`}
                 </Text>
+                {gst ? (
+                  <Text allowFontScaling numberOfLines={1} style={styles.tokensGst}>
+                    {gst}
+                  </Text>
+                ) : null}
               </Pressable>
             </View>
           );
@@ -150,13 +180,16 @@ function RechargeSheetForm({
 
 function RechargeSheetFooter({
   amount,
+  gstRateBps,
   onPay,
 }: {
   amount: number;
+  gstRateBps: number;
   onPay: () => void;
 }) {
   const styles = useStyles(makeCompactStyles);
   const theme = useTheme();
+  const gst = gstIncludedLabel(amount, gstRateBps);
   return (
     <>
       <View style={styles.rate}>
@@ -168,7 +201,9 @@ function RechargeSheetFooter({
           ⓘ
         </Text>
         <Text allowFontScaling style={styles.rateText}>
-          1 token = ₹1
+          {/* The pay button under this row names the total, so the row names
+              the tax inside it — the same figure the invoice will print. */}
+          {gst ? `1 token = ₹1 · ${gst} (${gstPercentLabel(gstRateBps)})` : '1 token = ₹1'}
         </Text>
       </View>
       <Pressable
@@ -192,7 +227,7 @@ export function RechargeWalletPage() {
   const insets = useSafeAreaInsets();
   const visible = useStore(s => s.walletVisible);
   const close = useStore(s => s.closeWallet);
-  const { livePacks } = useRechargePacks();
+  const { livePacks, gstRateBps } = useRechargePacks();
   const [amount, setAmount] = useState<number>(livePacks[1] ?? 300);
   const [payOpen, setPayOpen] = useState(false);
 
@@ -222,12 +257,23 @@ export function RechargeWalletPage() {
           Recharge
         </Text>
       </View>
-      {/* Non-scrollable: with the payment-method block gone, the balance card,
-          the pack grid and the note fit a single screen, so this is a plain
-          View. The Pay bar stays pinned below. */}
-      <View style={styles.scroll}>
-        <RechargeForm amount={amount} setAmount={setAmount} livePacks={livePacks} />
-      </View>
+      {/* A ScrollView, not the plain View it used to be. "The balance card, the
+          grid and the note fit a single screen" was only true of one screen
+          height: on a 774dp window (Redmi Note 7 Pro) the note already slid
+          under the Pay bar, and the GST line on each card made it obvious. A
+          pinned footer over a body that cannot scroll is an overlap waiting for
+          a shorter phone; here the body scrolls and the Pay bar stays put. */}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        {...SCROLL_PHYSICS}>
+        <RechargeForm
+          amount={amount}
+          setAmount={setAmount}
+          livePacks={livePacks}
+          gstRateBps={gstRateBps}
+        />
+      </ScrollView>
       <View style={[styles.payBar, { paddingBottom: Math.max(insets.bottom, TOKENS.space.md) }]}>
         <Button
           label={`Pay ${formatRupees(amount)}`}
@@ -258,10 +304,12 @@ function RechargeForm({
   amount,
   setAmount,
   livePacks,
+  gstRateBps,
 }: {
   amount: number;
   setAmount: (n: number) => void;
   livePacks: readonly number[];
+  gstRateBps: number;
 }) {
   const styles = useStyles(makeStyles);
   const balance = useStore(s => s.balance);
@@ -269,6 +317,7 @@ function RechargeForm({
   const balanceMinutes = Math.floor(talkMinutesLeft(balance, chatRate));
   const popularAmount = livePacks[1] ?? null;
   const bestValueAmount = livePacks[livePacks.length - 1] ?? null;
+  const selectedGst = gstIncludedLabel(amount, gstRateBps);
 
   return (
     <View style={styles.form}>
@@ -296,6 +345,7 @@ function RechargeForm({
           const badge =
             pack === popularAmount ? 'Popular' : pack === bestValueAmount ? 'Best value' : null;
           const minutes = Math.floor(pack / chatRate);
+          const gst = gstIncludedLabel(pack, gstRateBps);
           return (
             <View key={pack} style={styles.cardSlot}>
               <Pressable
@@ -304,7 +354,7 @@ function RechargeForm({
                   setAmount(pack);
                 }}
                 testID={`pack-${pack}`}
-                accessibilityLabel={`Add ${formatTokens(pack)} tokens, about ${minutes} minutes of talk${badge ? `, ${badge}` : ''}${on ? ', selected' : ''}`}
+                accessibilityLabel={`Add ${formatTokens(pack)} tokens, ${formatRupees(pack)}${gst ? ` ${gst}` : ''}, about ${minutes} minutes of talk${badge ? `, ${badge}` : ''}${on ? ', selected' : ''}`}
                 press="card"
                 style={[styles.card, on && styles.cardOn]}>
                 {/* Corner ribbon — flush to the top-right corner (folded-tab
@@ -353,6 +403,21 @@ function RechargeForm({
                     {`≈ ${minutes} min talk`}
                   </Text>
                 </View>
+                {/* The tax inside this price, on the card itself (Amit,
+                    2026-09-05: "GST on recharge chips"). The rupee total is the
+                    token count — 1 token = ₹1 — so the card names only the part
+                    of it that is not a token. Full card width, last: beside the
+                    coin the text column is ~70dp and "incl. ₹762.71 GST" was
+                    ellipsised on every card; and it is a disclosure, so it
+                    reads after the offer (amount → unit → talk time → tax). */}
+                {gst ? (
+                  <Text
+                    allowFontScaling
+                    numberOfLines={1}
+                    style={[styles.cardGst, on && styles.cardUnitOn]}>
+                    {gst}
+                  </Text>
+                ) : null}
               </Pressable>
             </View>
           );
@@ -363,7 +428,9 @@ function RechargeForm({
           on Pay is where UPI / cards / net-banking are chosen. Listing them here
           too was a duplicate the page had to scroll to fit. */}
       <Text allowFontScaling style={styles.rupeeNote}>
-        1 token = ₹1. You are charged in rupees at checkout.
+        {selectedGst
+          ? `1 token = ₹1. Price ${selectedGst} (${gstPercentLabel(gstRateBps)}). You are charged in rupees at checkout.`
+          : '1 token = ₹1. You are charged in rupees at checkout.'}
       </Text>
     </View>
   );
@@ -395,8 +462,14 @@ const makePageStyles = (t: Theme) =>
       color: t.color.text.primary,
     },
     scroll: {
+      flex: 1,
+    },
+    scrollContent: {
       paddingHorizontal: TOKENS.space.xl,
       paddingTop: TOKENS.space.sm,
+      // Room under the rupee note so its last line never kisses the Pay bar's
+      // hairline when the content is exactly one screen tall.
+      paddingBottom: TOKENS.space.lg,
     },
     payBar: {
       paddingHorizontal: TOKENS.space.xl,
@@ -540,6 +613,16 @@ const makeStyles = (t: Theme) =>
     cardUnitOn: {
       color: t.color.text.onAccent,
     },
+    // One step quieter than the unit line: the tax is a disclosure, not the
+    // offer. Shares `cardUnitOn` when the card is selected so it stays legible
+    // on the accent fill.
+    cardGst: {
+      ...TOKENS.typography.bodySmall,
+      color: t.color.text.tertiary,
+      // The card's own `gap` already separates this from the talk-time tag; a
+      // negative nudge pulls it back to the tag's rhythm rather than a full step.
+      marginTop: -TOKENS.space['2xs'],
+    },
     cardTextOn: {
       color: t.color.text.onAccent,
     },
@@ -656,6 +739,11 @@ const makeCompactStyles = (t: Theme) =>
       ...TOKENS.typography.bodyLarge,
       color: t.color.text.secondary,
       paddingTop: TOKENS.space.xs,
+    },
+    tokensGst: {
+      ...TOKENS.typography.bodySmall,
+      color: t.color.text.tertiary,
+      paddingTop: TOKENS.space['2xs'],
     },
     rate: {
       minHeight: 28,

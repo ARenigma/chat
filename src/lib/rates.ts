@@ -9,6 +9,15 @@ export { PAYMENTS_ENABLED, MOCK_PAYMENTS } from '../config';
  * and `formatRupees` exists only for that. Everywhere else a balance and a rate
  * are token counts, formatted by `formatTokens`. Metering is still per-minute
  * (ADR-0019); the unit shown just changed from ₹ back to tokens.
+ *
+ * GST follows the same rule, one step stricter: it is shown on the Recharge
+ * packs and the pay step ONLY — never on a per-minute rate, a balance, a talk
+ * timer or anything in chat. Tokens are a prepaid balance; tax was settled when
+ * the rupees were paid, so a "22/min" that mentioned GST would be taxing the
+ * same money twice in the reader's head (Amit, 2026-09-05: "GST on recharge
+ * chips, no GST in chat"). `gstSplit` is the arithmetic; it is the inclusive
+ * split `generate-invoice` prints, so the screen and the invoice can never
+ * disagree by a paisa.
  */
 
 /** The three metered channels. Rates are tokens per minute. */
@@ -50,6 +59,68 @@ export function formatRupees(rupees: number | null): string {
     return '₹0';
   }
   return `₹${rupees.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+}
+
+/**
+ * GST rate in basis points when admin config has not loaded yet. The live value
+ * is `economics.gst_rate_bps` (ADR-0021); an operator who is not GST-registered
+ * sets it to 0 and every GST line below disappears.
+ */
+export const DEFAULT_GST_RATE_BPS = 1800;
+
+/** An inclusive rupee amount split into its taxable value and its GST, in paise. */
+export interface GstSplit {
+  totalPaise: number;
+  taxablePaise: number;
+  gstPaise: number;
+}
+
+/**
+ * The GST inside a pack price. Prices are INCLUSIVE — ₹300 buys 300 tokens and
+ * the ₹300 already contains the tax — so this backs the tax out of the total
+ * rather than adding it on top.
+ *
+ * Integer paise, and the exact expression `generate-invoice/index.ts` uses:
+ * `taxable = round(total × 10000 / (10000 + rate_bps))`, `gst = total − taxable`.
+ * Same formula, same rounding, so the figure the member sees on the pack is the
+ * figure on the invoice they download later.
+ */
+export function gstSplit(amountInr: number, rateBps: number = DEFAULT_GST_RATE_BPS): GstSplit {
+  const totalPaise = Math.round(amountInr * 100);
+  if (rateBps <= 0 || totalPaise <= 0) {
+    return { totalPaise, taxablePaise: totalPaise, gstPaise: 0 };
+  }
+  const taxablePaise = Math.round((totalPaise * 10000) / (10000 + rateBps));
+  return { totalPaise, taxablePaise, gstPaise: totalPaise - taxablePaise };
+}
+
+/**
+ * Paise as rupees with two decimals — "₹45.76". Only for the GST line, which is
+ * the one rupee figure on the screen that is not a whole number. `formatRupees`
+ * stays integer so pack prices and the pay button read as round sums.
+ */
+export function formatRupeesPaise(paise: number): string {
+  const whole = Math.floor(paise / 100);
+  const fraction = paise % 100;
+  return `₹${whole.toLocaleString('en-IN')}.${fraction.toString().padStart(2, '0')}`;
+}
+
+/** "18%" from 1800 bps; keeps one decimal only when the rate needs it (1250 → "12.5%"). */
+export function gstPercentLabel(rateBps: number): string {
+  const percent = rateBps / 100;
+  return `${Number.isInteger(percent) ? percent : percent.toFixed(1)}%`;
+}
+
+/**
+ * The one GST sentence every recharge surface shows — "incl. ₹45.76 GST" — or
+ * `null` when no tax is charged, so a card, the pay button and the payment
+ * sheet can never phrase the same fact three ways. Built here rather than in
+ * each screen so `rateBps = 0` (an unregistered seller) removes the line
+ * everywhere at once.
+ */
+export function gstIncludedLabel(amountInr: number, rateBps: number): string | null {
+  const { gstPaise } = gstSplit(amountInr, rateBps);
+  return gstPaise > 0 ? `incl. ${formatRupeesPaise(gstPaise)} GST` : null;
 }
 
 /**

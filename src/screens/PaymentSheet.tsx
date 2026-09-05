@@ -9,7 +9,8 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { formatRupees, formatTokens, MOCK_PAYMENTS, PAYMENTS_ENABLED } from '../lib/rates';
+import { formatRupees, formatTokens, gstIncludedLabel, MOCK_PAYMENTS, PAYMENTS_ENABLED } from '../lib/rates';
+import { FALLBACK_ECONOMICS, useEconomicsConfig } from '../api/appConfig';
 import { supabase } from '../lib/supabase';
 import { Button } from '../components/Button';
 import { Icon } from '../components/Icon';
@@ -55,6 +56,10 @@ const MOCK_SPINNER_MS = 1200;
 type MockPhase = 'idle' | 'processing' | 'success' | 'error';
 
 export function PaymentSheet({ visible, amount, onClose }: Props) {
+  const { data: economics } = useEconomicsConfig();
+  // The last line the member reads before money moves, so the tax inside the
+  // total is named here too — the same `gstIncludedLabel` the pack cards use.
+  const gst = gstIncludedLabel(amount, economics?.gst_rate_bps ?? FALLBACK_ECONOMICS.gst_rate_bps);
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const queryClient = useQueryClient();
@@ -147,8 +152,8 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
       : mockPhase === 'processing'
         ? `Paying ${formatRupees(amount)} via ${isCashfree ? 'Cashfree' : method}`
         : isCashfree
-          ? `Add ${formatTokens(amount)} tokens  ·  ${formatRupees(amount)}  ·  Sandbox checkout`
-          : `Add ${formatTokens(amount)} tokens  ·  ${formatRupees(amount)}`;
+          ? `Add ${formatTokens(amount)} tokens  ·  ${formatRupees(amount)}${gst ? ` ${gst}` : ''}  ·  Sandbox checkout`
+          : `Add ${formatTokens(amount)} tokens  ·  ${formatRupees(amount)}${gst ? ` ${gst}` : ''}`;
 
   if (mockPhase === 'success') {
     return (
