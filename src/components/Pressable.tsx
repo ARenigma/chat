@@ -27,8 +27,18 @@ export type PressKind = 'card' | 'row' | 'button' | 'chip' | 'send' | 'none';
  * the decision recorded in theme.test.ts: a UIKit control does not scale and does
  * not change shape under a finger, it flashes the whole cell systemGray4. Rows,
  * table cells and stars ask for it; buttons and chips keep the state layer.
+ *
+ * `ripple` replaces the animated state layer with Android's native ink ripple:
+ * borderless (extends beyond the view bounds), radius `interaction.rippleRadius`,
+ * and drawn in the foreground so it is visible on top of a filled surface.
+ * `foreground: true` is what makes the ripple visible on a coloured fill;
+ * without it the ripple renders behind the child views and is hidden by any
+ * background colour.  On iOS `android_ripple` is a no-op, so this mode is
+ * Android-only in effect — callers that want a cross-platform response should
+ * combine it with a lightweight iOS fallback or accept the platform split.
+ * https://reactnative.dev/docs/pressable#android_ripple
  */
-export type Highlight = 'material' | 'ios';
+export type Highlight = 'material' | 'ios' | 'ripple';
 
 interface Props {
   onPress: () => void;
@@ -154,23 +164,26 @@ function PressableView({
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const ios = highlight === 'ios';
+  const ripple = highlight === 'ripple';
   // Resolved in the body, not as a default parameter: the default is a theme
   // value and a hook cannot be called in a parameter list.
   //
   // On the iOS model the layer is not a tint of the content's ink at 10%, it IS
   // the cell fill, so it takes bg/selected at full opacity. That is why the two
   // models cannot share one number.
+  // On the ripple model the native Android ink wave IS the feedback, so the
+  // Reanimated state layer is hidden (opacity 0) to avoid doubling up.
   const layerColor = ios ? theme.color.bg.selected : onColor ?? theme.color.text.primary;
   const p = useSharedValue(0);
   // Read out of the token tables once, on the JS thread: indexing them inside a
   // worklet would capture the whole table into the animation closure.
-  const target = press === 'none' || ios ? 1 : PRESS[press];
-  const squashY = press === 'send' && !ios ? PRESS.sendSquashY : 1;
-  // `morph` is ignored under the iOS model rather than being an error: a caller
-  // can pass one shape to both platforms and the platform decides.
-  const from = ios ? undefined : morph?.from;
-  const to = ios ? undefined : morph?.to;
-  const layerOpacity = ios ? 1 : INTERACTION.statePressed;
+  const target = press === 'none' || ios || ripple ? 1 : PRESS[press];
+  const squashY = press === 'send' && !ios && !ripple ? PRESS.sendSquashY : 1;
+  // `morph` is ignored under the iOS and ripple models rather than being an
+  // error: a caller can pass one shape to both platforms and the platform decides.
+  const from = ios || ripple ? undefined : morph?.from;
+  const to = ios || ripple ? undefined : morph?.to;
+  const layerOpacity = ios ? 1 : ripple ? 0 : INTERACTION.statePressed;
 
   /**
    * The held compression, on its own value rather than folded into `p`.
@@ -250,6 +263,17 @@ function PressableView({
   return (
     <RNPressable
       style={rootStyle}
+      // `android_ripple` is a no-op on iOS, so this only activates on Android.
+      // borderless lets the wave extend past the view bounds; foreground draws
+      // it over the child views rather than behind them, which is what makes the
+      // ripple visible on a filled surface. radius comes from the token so every
+      // ripple in the app can be retuned in one place.
+      // https://reactnative.dev/docs/pressable#android_ripple
+      android_ripple={
+        ripple
+          ? { borderless: true, radius: INTERACTION.rippleRadius, foreground: true }
+          : undefined
+      }
       // Swallowed rather than disabled, so a second tap mid-request still gets
       // its press feedback: the surface says "felt that, still working" instead
       // of going dead under the finger.

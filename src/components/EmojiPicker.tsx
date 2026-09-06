@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { tick } from '../lib/haptics';
 import {
   EMOJI_BY_CATEGORY,
   EMOJI_CATEGORIES,
@@ -221,7 +220,6 @@ function EmojiPickerView({
 
   const pick = useCallback(
     (char: string) => {
-      tick();
       setRecents(pushRecent(char));
       onPick(char);
     },
@@ -241,7 +239,6 @@ function EmojiPickerView({
   const hold = useCallback((char: string) => {
     const entry = emojiForNative(char);
     if (entry?.skins !== undefined) {
-      tick();
       setToning(entry.char);
     }
   }, []);

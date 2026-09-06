@@ -2146,6 +2146,31 @@ describe('dark theme: Telegram midnight-blue palette, and it still passes contra
   });
 });
 
+describe("Pressable's android ripple capability", () => {
+  it('exposes a token-backed ripple radius in the interaction block', () => {
+    // 20dp: matches radius.lg and is the half-height of an M3 navigation indicator
+    // pill (32dp tall), so the ink wave reads as belonging to the glyph slot
+    // rather than flooding the full toolbar bar.
+    expect(LIGHT.interaction.rippleRadius).toBe(20);
+    // interaction tokens are mode-invariant — same guarantee the shared-block
+    // test above makes, repeated here so this group is self-contained.
+    expect(DARK.interaction.rippleRadius).toBe(LIGHT.interaction.rippleRadius);
+  });
+
+  it("sources the radius from the token, not a raw literal, and declares the ripple mode", () => {
+    // A bare `radius: 20` inside android_ripple would survive a token rename
+    // silently. INTERACTION.rippleRadius is the one place to change the value.
+    const pressable = read('src/components/Pressable.tsx');
+    expect(pressable).toContain("highlight === 'ripple'");
+    expect(pressable).toContain('radius: INTERACTION.rippleRadius');
+    // foreground: true is what makes the ripple visible on a filled surface;
+    // without it the wave renders behind child views and is hidden by a background.
+    expect(pressable).toContain('foreground: true');
+    // android_ripple is a no-op on iOS, so the mode is Android-only in effect.
+    expect(pressable).toContain('android_ripple');
+  });
+});
+
 describe('the search field is wide enough to read what you typed', () => {
   it('fills its row, because the input inside it is flex-sized', () => {
     /*

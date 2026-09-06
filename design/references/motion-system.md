@@ -250,6 +250,21 @@ patterns for choreography. It is a hybrid because M3's own transition-patterns
 doc still specifies enter/exit on easing+duration while telling you to move to
 springs for spatial motion — so spatial is springs, effects is timing.
 
+**Refinement, 2026-09-06.** The spring/timing split is not the same as the
+spatial/effects split, and conflating them is how a timed open gets replaced
+by a spring that has nothing to attach to. The rule that holds: **a spring
+where a finger's velocity is being continued; a timed curve where it is not.**
+A spring models momentum — it is right when a gesture hands off to the
+animation and the user can feel the speed carrying over. A sheet that opens
+from a tap has no finger velocity; a spring started from rest overshoots for
+no reason and reads as a bounce that the user did not cause. A message bubble
+arriving from the network has no gesture behind it at all. Both get timed
+curves (`sheetIn` is `EASE_OUT_QUINT 400ms`; `bubbleArrive` is `120ms fade +
+250ms keyboard-cubic translate`). The emoji panel swapping for the IME is a
+counter-example that reinforces the rule: it gets no animation at all, because
+both surfaces were already at the same position and moving either one would be
+inventing motion where nothing moved.
+
 Everything lives in `src/theme/motion.ts`; no screen writes its own physics.
 
 | Pattern              | Where                                           | Builder                      | Physics                                                                                                                                        |
