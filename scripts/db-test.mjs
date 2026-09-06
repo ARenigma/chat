@@ -105,6 +105,7 @@ const MIGRATIONS = [
   'supabase/migrations/062_session_seconds_remaining.sql',
   'supabase/migrations/063_profile_guard_covers_every_server_owned_column.sql',
   'supabase/migrations/064_provider_channels.sql',
+  'supabase/migrations/065_provider_category.sql',
 ];
 
 const docker = (args, options = {}) =>
@@ -473,6 +474,10 @@ const suites = [
     file: join(ROOT, 'supabase/tests/260_provider_channels.sql'),
     label:
       'per-provider channels: the floor, and one choke point every path hits',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/270_provider_category.sql'),
+    label: 'provider category: listener default, set once at onboarding',
   },
 ];
 

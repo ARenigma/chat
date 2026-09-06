@@ -2145,3 +2145,20 @@ describe('dark theme: Telegram midnight-blue palette, and it still passes contra
     expect(contrast(DARK.color.text.onInverse, DARK.color.bg.inverse)).toBeGreaterThanOrEqual(7);
   });
 });
+
+describe('the search field is wide enough to read what you typed', () => {
+  it('fills its row, because the input inside it is flex-sized', () => {
+    /*
+     * The TextInput inside SearchBar has `flex: 1`, which resolves against the
+     * container. With no flex on the container it hugged an icon and a
+     * zero-width input, so the field was a small pill and typed text was
+     * invisible — while the list filtered correctly, which is exactly why every
+     * test passed. Found on a device on 2026-09-06.
+     */
+    const bar = read('src/components/SearchBar.tsx');
+    const container = bar.slice(bar.indexOf('container: {'), bar.indexOf('input: {'));
+    expect(container).toMatch(/\bflex: 1\b/);
+    const input = bar.slice(bar.indexOf('input: {'));
+    expect(input).toMatch(/\bflex: 1\b/);
+  });
+});

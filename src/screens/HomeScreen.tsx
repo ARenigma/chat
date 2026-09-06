@@ -20,6 +20,19 @@ import { contentColumnWidth } from '../lib/windowSize';
 import { sizedStorageImageUri } from '../lib/storageImage';
 import { storage } from '../lib/storage';
 import { useConversations, useProfile, useProviders } from '../api/chat';
+import {
+  AGE_BANDS,
+  AGE_BAND_LABEL,
+  CATEGORY_LABEL,
+  DEFAULT_CATEGORY,
+  NO_FILTER,
+  PROVIDER_CATEGORIES,
+  filterProviders,
+  isFiltering,
+  toggleBand,
+  type DirectoryFilter,
+  type ProviderCategory,
+} from '../lib/providerFilters';
 import { useBlockedPeerIds } from '../api/safety';
 import { useStore } from '../store/useStore';
 import { Avatar } from '../components/Avatar';
@@ -28,6 +41,7 @@ import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { ProviderRow } from '../components/ProviderRow';
 import { DirectorySkeleton } from '../components/DirectorySkeleton';
+import { Chip } from '../components/Chip';
 import { MetaChip } from '../components/MetaChip';
 import { SearchBar } from '../components/SearchBar';
 import { Badge } from '../components/Badge';
@@ -105,11 +119,26 @@ export function HomeScreen({
     [conversations, blocked, railPrefs],
   );
 
+  /**
+   * Explore is grouped into Listeners and Astrologers (migration 065, goal item
+   * 9). The tab is the type filter here; in search, where there are no tabs, a
+   * chip row filters by type AND age (goal item 12).
+   */
+  const [exploreCategory, setExploreCategory] = useState<ProviderCategory>(DEFAULT_CATEGORY);
+  const [searchFilter, setSearchFilter] = useState<DirectoryFilter>(NO_FILTER);
+
   // The directory, blocked people removed. The featured pick is lifted out of the
   // list so it is not shown twice.
-  const directory = useMemo(
+  const allProviders = useMemo(
     () => (providers ?? []).filter(p => !blocked.has(p.id)),
     [providers, blocked],
+  );
+
+  // What Explore shows: one category at a time. The featured pick and the rows
+  // both come from here, so the hero always belongs to the tab you are on.
+  const directory = useMemo(
+    () => filterProviders(allProviders, { category: exploreCategory, bands: [] }),
+    [allProviders, exploreCategory],
   );
 
   /**
@@ -197,16 +226,21 @@ export function HomeScreen({
     if (trimmed === '') {
       return [];
     }
-    return directory.filter(
+    // Search spans BOTH categories — the tab is an Explore idea, not a search
+    // one — narrowed by whatever chips are on.
+    return filterProviders(allProviders, searchFilter).filter(
       p =>
         p.display_name.toLowerCase().includes(trimmed) ||
         p.languages.some(l => l.toLowerCase().includes(trimmed)),
     );
-  }, [directory, trimmed]);
+  }, [allProviders, searchFilter, trimmed]);
 
   const closeSearch = useCallback(() => {
     setSearching(false);
     setQuery('');
+    // Filters belong to the search session. Leaving them set would mean the
+    // next search silently returns fewer people for a reason off screen.
+    setSearchFilter(NO_FILTER);
   }, []);
 
   const loading = convosPending || providersPending;
@@ -302,6 +336,7 @@ export function HomeScreen({
           onPress={handleOpenProvider}
           onPressAvatar={handleOpenProvider}
           animateEntrance={animate}
+          showCategory
         />
       );
     },
@@ -366,6 +401,36 @@ export function HomeScreen({
           </Text>
         </View>
         </TourAnchor>
+        {/* Listeners / Astrologers. Text-only M3 primary tabs: the label and
+            the underline carry the state, which is the one thing that
+            distinguishes the two lists. Always both, from day one — an empty
+            Astrologers tab is an honest "nobody yet", and hiding it would make
+            the strip appear under a member the day one signs up. */}
+        <View style={styles.tabs} testID="explore-tabs">
+          {PROVIDER_CATEGORIES.map(c => {
+            const on = c === exploreCategory;
+            return (
+              <Pressable
+                key={c}
+                onPress={() => setExploreCategory(c)}
+                testID={`explore-tab-${c}`}
+                accessibilityRole="tab"
+                checked={on}
+                accessibilityLabel={CATEGORY_LABEL[c]}
+                press="none"
+                highlight="ios"
+                style={styles.tab}>
+                <Text
+                  maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
+                  allowFontScaling
+                  style={[styles.tabLabel, on && styles.tabLabelOn]}>
+                  {CATEGORY_LABEL[c]}
+                </Text>
+                <View style={[styles.tabRule, on && styles.tabRuleOn]} />
+              </Pressable>
+            );
+          })}
+        </View>
         {featured ? (
           <Card style={styles.featuredCard}>
             <FeaturedCard
@@ -389,6 +454,9 @@ export function HomeScreen({
       handleOpenConversation,
       onSeeAllChats,
       theme,
+      // The tab strip lives in this header, so the selected tab has to be a
+      // dependency or the underline never moves. Caught by exhaustive-deps.
+      exploreCategory,
     ],
   );
 
@@ -403,12 +471,19 @@ export function HomeScreen({
     trimmed === '' ? (
       <View style={styles.empty}>
         <Text allowFontScaling style={styles.emptyText}>
-          Search for someone by name or language.
+          {isFiltering(searchFilter)
+            ? 'Now search by name or language, or clear the filters to browse.'
+            : 'Search for someone by name or language.'}
         </Text>
       </View>
     ) : null;
 
-  const noMatchLabel = `No one matches ${JSON.stringify(query.trim())}.`;
+  // Names the filters when they are the reason. Saying "no one matches Mira"
+  // while Mira matched the text and was excluded by an age chip sends the
+  // member back to re-type a name that was right all along.
+  const noMatchLabel = isFiltering(searchFilter)
+    ? `No one matches ${JSON.stringify(query.trim())} with these filters.`
+    : `No one matches ${JSON.stringify(query.trim())}.`;
   const searchListEmpty =
     trimmed !== '' ? (
       <View style={styles.empty}>
@@ -465,6 +540,49 @@ export function HomeScreen({
           </>
         )}
       </View>
+
+      {/* Search filters: type and age (goal item 12). One scrolling row, because
+          on a 360dp window six chips do not fit and wrapping them would push
+          the results off screen. Age comes from `provider_directory.age`, an
+          integer the view has published since 042 — the bands are computed in
+          lib/providerFilters.ts and exist in exactly one place. */}
+      {searching ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          {...SCROLL_PHYSICS}
+          style={styles.filterRow}
+          contentContainerStyle={styles.filterRowContent}
+          testID="search-filters">
+          {PROVIDER_CATEGORIES.map(c => (
+            <Chip
+              key={c}
+              label={CATEGORY_LABEL[c]}
+              tone={searchFilter.category === c ? 'warm' : 'neutral'}
+              selected={searchFilter.category === c}
+              onPress={() =>
+                setSearchFilter(f => ({
+                  ...f,
+                  // Tapping the on chip clears it: a single-choice filter with
+                  // no way back to "either" is a trap.
+                  category: f.category === c ? null : c,
+                }))
+              }
+            />
+          ))}
+          <View style={styles.filterDivider} />
+          {AGE_BANDS.map(band => (
+            <Chip
+              key={band}
+              label={AGE_BAND_LABEL[band]}
+              tone={searchFilter.bands.includes(band) ? 'warm' : 'neutral'}
+              selected={searchFilter.bands.includes(band)}
+              onPress={() => setSearchFilter(f => toggleBand(f, band))}
+            />
+          ))}
+        </ScrollView>
+      ) : null}
 
       {searching ? (
         <FlashList
@@ -830,6 +948,55 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: TOKENS.space.md,
       paddingTop: TOKENS.space.xs,
       paddingBottom: TOKENS.space.sm,
+    },
+    // Listeners / Astrologers. The label and the 2dp rule under it carry the
+    // state; the accent on the rule is what distinguishes two otherwise
+    // identical grey labels, which is the accent budget's "state, not
+    // decoration" case (theme.test lists HomeScreen for this).
+    tabs: {
+      flexDirection: 'row',
+      paddingHorizontal: TOKENS.space.md,
+      gap: TOKENS.space.lg,
+      paddingBottom: TOKENS.space.sm,
+    },
+    tab: {
+      alignItems: 'center',
+      gap: TOKENS.space['2xs'],
+    },
+    tabLabel: {
+      ...TOKENS.typography.titleMediumEmphasized,
+      color: t.color.text.tertiary,
+    },
+    tabLabelOn: {
+      color: t.color.text.primary,
+    },
+    tabRule: {
+      height: 2,
+      alignSelf: 'stretch',
+      borderRadius: 1,
+      backgroundColor: 'transparent',
+    },
+    tabRuleOn: {
+      backgroundColor: t.color.bg.accent,
+    },
+    // Type + age chips, one scrolling row under the search field.
+    filterRow: {
+      flexGrow: 0,
+    },
+    filterRowContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.xs,
+      paddingHorizontal: TOKENS.space.md,
+      paddingBottom: TOKENS.space.xs,
+    },
+    // Separates "what they offer" from "how old they are": two different
+    // questions, and a gap alone read as one long row of equal chips.
+    filterDivider: {
+      width: StyleSheet.hairlineWidth,
+      alignSelf: 'stretch',
+      marginHorizontal: TOKENS.space['2xs'],
+      backgroundColor: t.color.border.hairline,
     },
     exploreTitle: {
       ...TOKENS.typography.headlineSmallEmphasized,

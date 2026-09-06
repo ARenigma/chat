@@ -4020,3 +4020,107 @@ describe('a provider offers the channels they choose, and at least one', () => {
     expect(dbTest).toContain('260_provider_channels.sql');
   });
 });
+
+describe('the directory is grouped and filterable: Listeners, Astrologers, ages', () => {
+  const migration = read('supabase/migrations/065_provider_category.sql');
+
+  it('is a tag on the same provider, not a second product', () => {
+    // Decided 2026-09-06: same onboarding, same rates. A category-level rate
+    // would be an amendment to ADR-0021, not a column here.
+    expect(migration).toContain("add column if not exists provider_category text not null default 'listener'");
+    expect(migration).toContain("check (provider_category in ('listener', 'astrologer'))");
+    // text + CHECK, not an enum: ALTER TYPE ADD VALUE cannot share a
+    // transaction with other DDL and this set will grow (054:30-33).
+    expect(migration).not.toMatch(/create type public\.provider_category/);
+    for (const rate of ['rate_tokens_per_min', 'economics']) {
+      expect(migration).not.toContain(rate);
+    }
+  });
+
+  it('is set once at onboarding and not client-writable after', () => {
+    expect(migration).toContain('new.provider_category is distinct from old.provider_category');
+    expect(migration).toContain('p_provider_category text default');
+    // Dropped, never overloaded: a 5th parameter with a default would leave
+    // both signatures resolvable and every 4-arg call would fail as
+    // "function is not unique".
+    expect(migration).toContain(
+      'drop function if exists public.complete_provider_onboarding(text, text, text[], text);',
+    );
+  });
+
+  it('re-states the 063 guard without losing a column', () => {
+    // 054 dropped four guards this way. Every column 063 named must survive.
+    const body = migration.slice(migration.indexOf('create or replace function public.guard_privileged_profile_columns'));
+    for (const column of [
+      'role', 'identity_verified_at', 'identity_state', 'date_of_birth', 'age_bracket',
+      'suspended_until', 'profile_completed_at', 'promo_balance', 'purchased_balance',
+      'token_balance', 'last_refill_at', 'rating_avg', 'rating_count',
+      'median_reply_seconds', 'engagement_nudged_at',
+    ]) {
+      expect(body).toContain(`new.${column} is distinct from old.${column}`);
+    }
+    // ...and the channel switches must NOT be guarded: they are the provider's.
+    for (const column of ['chat_enabled', 'audio_enabled', 'video_enabled']) {
+      expect(body).not.toContain(`new.${column} is distinct from`);
+    }
+  });
+
+  it('needs no column for age, because the directory already publishes it', () => {
+    // `provider_directory.age` is an integer and has been since 042. A second
+    // definition of the band boundaries is a second place for them to drift.
+    expect(migration).not.toContain('age_bracket text');
+    expect(migration).toContain('extract(year from age(p.date_of_birth))::int as age');
+    const filters = withoutComments(read('src/lib/providerFilters.ts'));
+    expect(filters).toContain('export function ageBand');
+    expect(filters).toContain("'18-24'");
+    expect(filters).toContain("'45+'");
+    // Bands live only here — no screen re-derives them.
+    for (const file of ['src/screens/HomeScreen.tsx', 'src/screens/ProviderDetailScreen.tsx']) {
+      expect(withoutComments(read(file))).not.toMatch(/age\s*<\s*25|age\s*<\s*35|age\s*<\s*45/);
+    }
+  });
+
+  it('shows both tabs from day one and filters Explore by the one you are on', () => {
+    const home = withoutComments(read('src/screens/HomeScreen.tsx'));
+    expect(home).toContain('testID="explore-tabs"');
+    expect(home).toContain('testID={`explore-tab-${c}`}');
+    expect(home).toContain('accessibilityRole="tab"');
+    // The featured pick comes from the FILTERED list, so the hero always
+    // belongs to the tab you are on.
+    expect(home).toMatch(/const directory = useMemo\(\s*\(\) =>\s*filterProviders\(allProviders, \{ category: exploreCategory, bands: \[\] \}\)/);
+    // Both tabs always render: an empty Astrologers tab is an honest "nobody
+    // yet", and hiding it would make the strip appear under a member the day
+    // one signs up (Amit, 2026-09-06).
+    expect(home).not.toMatch(/astrologers?\.length\s*>\s*0\s*\?/i);
+  });
+
+  it('filters search by type and age, and says which is which on the row', () => {
+    const home = withoutComments(read('src/screens/HomeScreen.tsx'));
+    expect(home).toContain('testID="search-filters"');
+    // Search spans BOTH categories: the tab is an Explore idea.
+    expect(home).toMatch(/return filterProviders\(allProviders, searchFilter\)/);
+    // Filters are per search session, or the next search silently returns
+    // fewer people for a reason that is off screen.
+    expect(home).toMatch(/setSearching\(false\);[\s\S]{0,120}setSearchFilter\(NO_FILTER\)/);
+    // A mixed result list has to name the category; Explore's rows do not,
+    // because the tab above them already did.
+    expect(home).toContain('showCategory');
+    const row = withoutComments(read('src/components/ProviderRow.tsx'));
+    expect(row).toContain('showCategory = false');
+    expect(row).toContain('CATEGORY_BADGE[categoryOf(provider)]');
+  });
+
+  it('asks the provider once, at onboarding', () => {
+    const screen = withoutComments(read('src/screens/ProviderApplicationScreen.tsx'));
+    expect(screen).toContain('testID="provider-category"');
+    expect(screen).toContain('useState<ProviderCategory>(DEFAULT_CATEGORY)');
+    expect(screen).toContain('category,');
+    expect(withoutComments(read('src/api/provider.ts'))).toContain('p_provider_category: draft.category');
+  });
+
+  it('is registered in the harness with its suite', () => {
+    const dbTest = read('scripts/db-test.mjs');
+    expect(dbTest).toContain('065_provider_category.sql');
+    expect(dbTest).toContain('270_provider_category.sql');
+  });
+});
