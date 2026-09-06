@@ -12,12 +12,12 @@
     ]
   },
   "retrieved_on": "2026-09-06",
-  "bucket_path": "avatars/seed/<file>",
+  "bucket_path": "avatars/seed/<provider>-<first 8 of sha256>.jpg",
   "processing": "Cropped to 3:4 from the top of the frame and resized to 900x1200. No other edit.",
   "upload": "The files sit next to this manifest so a fresh project can be seeded from a checkout. Push them with: supabase storage cp --linked --experimental assets/seed/providers/<file> ss:///avatars/seed/<file>",
   "photos": [
     {
-      "file": "ada.jpg",
+      "file": "ada-9cab1c5c.jpg",
       "provider": "ada",
       "source": "pexels",
       "source_url": "https://www.pexels.com/photo/20132403/",
@@ -26,10 +26,11 @@
       "sha256": "9cab1c5c7c7eacb6358f4024851426bdf637360769851aaf30f7d8c211e6df00",
       "bytes": 261225,
       "width": 900,
-      "height": 1200
+      "height": 1200,
+      "apparent_age": 28
     },
     {
-      "file": "ivy.jpg",
+      "file": "ivy-186efc03.jpg",
       "provider": "ivy",
       "source": "pexels",
       "source_url": "https://www.pexels.com/photo/8720868/",
@@ -38,10 +39,11 @@
       "sha256": "186efc038cea2ca3a369efb9dc4ef89650fb06bd285c917f72e045db0f7b34c6",
       "bytes": 204766,
       "width": 900,
-      "height": 1200
+      "height": 1200,
+      "apparent_age": 27
     },
     {
-      "file": "mira.jpg",
+      "file": "mira-5e3d8f67.jpg",
       "provider": "mira",
       "source": "pexels",
       "source_url": "https://www.pexels.com/photo/36918310/",
@@ -50,22 +52,24 @@
       "sha256": "5e3d8f67721b68d080b282a5620725ea10a3343d0c8ca4f3613292720f681697",
       "bytes": 213060,
       "width": 900,
-      "height": 1200
+      "height": 1200,
+      "apparent_age": 26
     },
     {
-      "file": "nia.jpg",
+      "file": "nia-f09661b5.jpg",
       "provider": "nia",
       "source": "pexels",
-      "source_url": "https://www.pexels.com/photo/15984371/",
-      "photographer": "roy-photos",
-      "subject": "Adult woman in glasses, seated outdoors, warm half-smile.",
-      "sha256": "227dcece3399f2456ea91913a1993ba707fa54605d4ee1c204726acde3109211",
-      "bytes": 350714,
+      "source_url": "https://www.pexels.com/photo/17184872/",
+      "photographer": "shovan-datta-3275479",
+      "subject": "Woman in glasses and a magenta blouse, indoors, composed and direct to camera. Reads early thirties against Nia's profile age of 34.",
+      "sha256": "f09661b54da7cd7634b431aa74d63030a5c7753e20098d3d5cf8bbf40343ff53",
+      "bytes": 174432,
       "width": 900,
-      "height": 1200
+      "height": 1200,
+      "apparent_age": 32
     },
     {
-      "file": "sara.jpg",
+      "file": "sara-b4cb2e3f.jpg",
       "provider": "sara",
       "source": "pexels",
       "source_url": "https://www.pexels.com/photo/29125196/",
@@ -74,7 +78,10 @@
       "sha256": "b4cb2e3fcd855f6994468e74422a7a729a9bfabfbedbf3bc958fc5fd98e18ca5",
       "bytes": 157717,
       "width": 900,
-      "height": 1200
+      "height": 1200,
+      "apparent_age": 24
     }
-  ]
+  ],
+  "casting": "Every subject must read as an adult and no older than 35 — the seeded providers are 26 to 34, and a photo that reads a decade off its profile makes the directory look fake before anyone reads a word of it. `apparent_age` is the reviewer's honest read of the photograph, recorded so it can be compared to the profile instead of remembered. It is not a claim about the person.",
+  "naming": "The filename carries the content hash because the bucket cannot replace an object at an existing key — `storage rm` deletes nothing and `cp` has no upsert — and public objects are served with max-age=3600, so overwriting would hand out the old face for an hour. A content-addressed name makes both problems unrepresentable: a new photo is a new URL, and the URL can be cached forever. A contract test checks each name against its own sha256."
 }

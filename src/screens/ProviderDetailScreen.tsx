@@ -142,7 +142,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
             />
             <ActionButton
               channel="chat"
-              kind="tint"
+              kind="outline"
               glyph="chat"
               rate={chatRate}
               enabled={provider.chat_enabled}
@@ -164,76 +164,69 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
 
           <View style={styles.hairline} />
 
-          {/* Ratings, in detail (goal item 10). Bars are Views with a width
-              percentage — `react-native-svg` is banned (RULE 5) and a chart of
-              five horizontal bars does not need it. Always five rows, 5..1,
-              zeros included: the server returns them that way so the chart does
-              not reshape itself as ratings arrive, and a zero IS information. */}
           <Text allowFontScaling style={styles.aboutLabel}>
+            ABOUT
+          </Text>
+          <Text allowFontScaling style={styles.aboutBody}>
+            {provider.about && provider.about !== ''
+              ? provider.about
+              : 'Here to listen. Talk about anything, or nothing.'}
+          </Text>
+
+          <View style={styles.hairline} />
+
+          {/* Ratings (goal item 10), restated 2026-09-06 to Amit's spec: the
+              number centred, the stars under it, the reviews under those.
+              The 5-4-3-2-1 distribution ladder is GONE. It was five bars of
+              arithmetic in a place where the only question is "is she any good
+              and what did people say" — and on a seeded profile with three
+              reviews it drew four empty tracks, which reads as absence rather
+              than as data. `get_provider_ratings` still returns `distribution`;
+              nothing renders it, and the RPC contract is left alone so the
+              admin side can keep it.
+
+              The stars are the outline Lucide glyph in both states, separated
+              by colour alone — active in the token gold, the rest in the
+              outline grey. Lucide ships one `star`, stroked, and there is no
+              filled sibling in a static font, so a filled/hollow pair is not
+              available to us (RULE 4: the font is generated from
+              design/icons.json). */}
+          <Text allowFontScaling style={[styles.aboutLabel, styles.ratingsLabel]}>
             RATINGS
           </Text>
           {ratings === null || ratings === undefined || ratings.rating_count === 0 ? (
-            <Text allowFontScaling style={styles.aboutBody} testID="ratings-empty">
+            <Text
+              allowFontScaling
+              style={[styles.aboutBody, styles.ratingsEmpty]}
+              testID="ratings-empty">
               No ratings yet. Yours would be the first.
             </Text>
           ) : (
-            <View testID="ratings-chart">
-              <View style={styles.ratingSummary}>
-                <Text
-                  maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineMediumEmphasized}
-                  allowFontScaling
-                  style={styles.ratingBig}>
-                  {(ratings.rating_avg ?? 0).toFixed(1)}
-                </Text>
-                <View style={styles.ratingSummaryText}>
-                  <View style={styles.ratingStars}>
-                    {[1, 2, 3, 4, 5].map(n => (
-                      <Icon
-                        key={n}
-                        name="star"
-                        size={14}
-                        color={
-                          n <= Math.round(ratings.rating_avg ?? 0)
-                            ? theme.color.text.token
-                            : theme.color.border.strong
-                        }
-                      />
-                    ))}
-                  </View>
-                  <Text allowFontScaling style={styles.ratingCount}>
-                    {`${ratings.rating_count} ${ratings.rating_count === 1 ? 'rating' : 'ratings'}`}
-                  </Text>
-                </View>
+            <View testID="ratings-chart" style={styles.ratingBlock}>
+              <Text
+                maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineMediumEmphasized}
+                allowFontScaling
+                style={styles.ratingBig}>
+                {(ratings.rating_avg ?? 0).toFixed(1)}
+              </Text>
+              <View style={styles.ratingStars}>
+                {[1, 2, 3, 4, 5].map(n => (
+                  <Icon
+                    key={n}
+                    name="star"
+                    size={20}
+                    color={
+                      n <= Math.round(ratings.rating_avg ?? 0)
+                        ? theme.color.text.token
+                        : theme.color.border.strong
+                    }
+                  />
+                ))}
               </View>
-              {ratings.distribution.map(bar => (
-                <View key={bar.stars} style={styles.ratingRow}>
-                  <Text allowFontScaling={false} style={styles.ratingRowLabel}>
-                    {bar.stars}
-                  </Text>
-                  <View style={styles.ratingTrack}>
-                    <View
-                      style={[
-                        styles.ratingFill,
-                        {
-                          // Share of the LARGEST bar, not of the total: with
-                          // 30 fives and 1 one, shares of the total make every
-                          // bar but one invisible.
-                          width: `${
-                            ratings.rating_count === 0
-                              ? 0
-                              : (bar.count /
-                                  Math.max(...ratings.distribution.map(b => b.count), 1)) *
-                                100
-                          }%`,
-                        },
-                      ]}
-                    />
-                  </View>
-                  <Text allowFontScaling={false} style={styles.ratingRowCount}>
-                    {bar.count}
-                  </Text>
-                </View>
-              ))}
+              <Text allowFontScaling style={styles.ratingCount}>
+                {`${ratings.rating_count} ${ratings.rating_count === 1 ? 'rating' : 'ratings'}`}
+              </Text>
+
               {ratings.recent.map((r, i) => (
                 <View key={`${r.created_at}-${i}`} style={styles.reviewRow}>
                   <View style={styles.ratingStars}>
@@ -254,16 +247,6 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
             </View>
           )}
 
-          <View style={styles.hairline} />
-
-          <Text allowFontScaling style={styles.aboutLabel}>
-            ABOUT
-          </Text>
-          <Text allowFontScaling style={styles.aboutBody}>
-            {provider.about && provider.about !== ''
-              ? provider.about
-              : 'Here to listen. Talk about anything, or nothing.'}
-          </Text>
 
           {/* Block / report — only once a conversation exists (#3). Quiet and last,
               the way iOS puts a destructive contact action at the foot of a card. */}
@@ -454,7 +437,20 @@ function ActionButton({
   label,
 }: {
   channel: Channel;
-  kind: 'primary' | 'tint' | 'dark';
+  /**
+   * M3 button emphasis, one rank each. `primary` is the filled button, `dark`
+   * a filled button on the inverse surface, `outline` M3's OUTLINED button —
+   * transparent container, 1dp stroke, label in the on-surface colour, no
+   * elevation.
+   *
+   * https://github.com/material-components/material-components-android/blob/master/docs/components/CommonButton.md
+   * "Outlined buttons pair well with filled buttons to indicate a secondary,
+   * alternate action." Three filled colours in one row read as three unrelated
+   * things rather than a hierarchy, which is Amit's objection (2026-09-06).
+   * WHICH channel takes the lower rank is his call, not the spec's; he chose
+   * chat.
+   */
+  kind: 'primary' | 'outline' | 'dark';
   glyph: 'call' | 'chat' | 'video';
   /** Live admin rate (tokens/min). Falls back to DEFAULT_RATES[channel] at the call site. */
   rate: number;
@@ -472,7 +468,7 @@ function ActionButton({
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const fg =
-    kind === 'tint' ? theme.color.text.accent : theme.color.text.onAccent;
+    kind === 'outline' ? theme.color.text.primary : theme.color.text.onAccent;
   // The `flex: 1` lives on this wrapper View, not on the Pressable: a `flex: 1`
   // set on a Pressable never reaches its outer touchable (it styles an inner
   // view), so three flex Pressables collapse to content width. The View
@@ -492,7 +488,7 @@ function ActionButton({
         style={[
           styles.actionButton,
           kind === 'primary' && styles.actionPrimary,
-          kind === 'tint' && styles.actionTint,
+          kind === 'outline' && styles.actionOutline,
           kind === 'dark' && styles.actionDark,
           !enabled && styles.actionDisabled,
         ]}>
@@ -638,8 +634,16 @@ const makeStyles = (t: Theme) =>
     actionPrimary: {
       backgroundColor: t.color.bg.accent,
     },
-    actionTint: {
-      backgroundColor: t.color.bg.accentTint,
+    /*
+     * M3 outlined button: transparent container, 1dp stroke, 0dp elevation.
+     * `border/strong` is our outline role — its own note says "input and toggle
+     * outlines", which is the same role M3 gives the stroke (colorOnSurface at
+     * 12%). No new token for a colour we already name.
+     */
+    actionOutline: {
+      backgroundColor: 'transparent',
+      borderWidth: 1,
+      borderColor: t.color.border.strong,
     },
     actionDark: {
       backgroundColor: t.color.text.primary,
@@ -655,54 +659,39 @@ const makeStyles = (t: Theme) =>
       backgroundColor: t.color.border.hairline,
       marginTop: TOKENS.space.xl,
     },
-    ratingSummary: {
-      flexDirection: 'row',
+    /*
+     * The whole ratings block is centred on the column, which is what makes the
+     * number read as a verdict rather than as a table cell. `alignItems` on the
+     * container does the work; every child then centres its own text, because a
+     * centred View still left-aligns the text inside it.
+     */
+    ratingsLabel: { textAlign: 'center' },
+    ratingsEmpty: { textAlign: 'center' },
+    ratingBlock: {
       alignItems: 'center',
-      gap: TOKENS.space.sm,
-      paddingBottom: TOKENS.space.sm,
+      gap: TOKENS.space['2xs'],
     },
     ratingBig: {
       ...TOKENS.typography.headlineMediumEmphasized,
       color: t.color.text.primary,
+      textAlign: 'center',
     },
-    ratingSummaryText: { gap: TOKENS.space['2xs'] },
     ratingStars: { flexDirection: 'row', gap: TOKENS.space.hair },
-    ratingCount: { ...TOKENS.typography.bodySmall, color: t.color.text.secondary },
-    ratingRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: TOKENS.space.xs,
-      paddingVertical: TOKENS.space.hair,
-    },
-    ratingRowLabel: {
+    ratingCount: {
       ...TOKENS.typography.bodySmall,
       color: t.color.text.secondary,
-      width: 10,
-      textAlign: 'right',
-    },
-    ratingTrack: {
-      flex: 1,
-      height: 8,
-      borderRadius: 4,
-      backgroundColor: t.color.bg.sunken,
-      overflow: 'hidden',
-    },
-    ratingFill: {
-      height: 8,
-      borderRadius: 4,
-      backgroundColor: t.color.text.token,
-    },
-    ratingRowCount: {
-      ...TOKENS.typography.bodySmall,
-      color: t.color.text.tertiary,
-      minWidth: 18,
-      textAlign: 'right',
+      textAlign: 'center',
     },
     reviewRow: {
+      alignItems: 'center',
       gap: TOKENS.space['2xs'],
-      paddingTop: TOKENS.space.sm,
+      paddingTop: TOKENS.space.md,
     },
-    reviewBody: { ...TOKENS.typography.bodyMedium, color: t.color.text.secondary },
+    reviewBody: {
+      ...TOKENS.typography.bodyMedium,
+      color: t.color.text.secondary,
+      textAlign: 'center',
+    },
     aboutLabel: {
       ...TOKENS.typography.labelMediumEmphasized,
       color: t.color.text.secondary,
