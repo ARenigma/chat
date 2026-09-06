@@ -75,17 +75,27 @@ from (values
 ) as v(id, name, age, headline, about, languages, available)
 where p.id = v.id;
 
--- Profile photos, seeded from the public `avatars` storage bucket (013). Distinct
--- female portraits, one per provider. Ada is created by the e2e/member seed
--- rather than here, and her avatar is set alongside that row. The files are
--- uploaded out of band (supabase storage cp); this only points the rows at them.
+-- Profile photos, from the public `avatars` storage bucket (013) under `seed/`.
+-- Real royalty-free portraits, one per provider, replacing the earlier set —
+-- half of which were not Indian, in a product that is only for India.
+--
+-- Provenance, photographer, licence and sha256 per file live in
+-- assets/seed/providers/manifest.json, and its `scope` note is binding: these
+-- are DEV SEED ONLY. The Pexels licence forbids implying that a person in a
+-- photo endorses a product, and a paid companionship listing is exactly that
+-- implication. A real provider uploads her own photo (useUploadAvatar).
+--
+-- The files are committed under assets/seed/providers/ and pushed to the bucket
+-- out of band (the manifest's `upload` field carries the command); this only
+-- points the rows at them. Ada is not created by this seed — she exists only on
+-- the linked dev project — so her row is repointed by hand.
 update public.profiles set avatar_url =
-  'https://uvghvhcrovmuwivgijvl.supabase.co/storage/v1/object/public/avatars/' || fn
+  'https://uvghvhcrovmuwivgijvl.supabase.co/storage/v1/object/public/avatars/seed/' || fn
 from (values
-  ('11111111-1111-4111-8111-111111111111'::uuid, 'mira.png'),
-  ('22222222-2222-4222-8222-222222222222'::uuid, 'sara2.png'),
-  ('33333333-3333-4333-8333-333333333333'::uuid, 'nia2.png'),
-  ('44444444-4444-4444-8444-444444444444'::uuid, 'ivy.png')
+  ('11111111-1111-4111-8111-111111111111'::uuid, 'mira.jpg'),
+  ('22222222-2222-4222-8222-222222222222'::uuid, 'sara.jpg'),
+  ('33333333-3333-4333-8333-333333333333'::uuid, 'nia.jpg'),
+  ('44444444-4444-4444-8444-444444444444'::uuid, 'ivy.jpg')
 ) as a(id, fn)
 where profiles.id = a.id;
 
