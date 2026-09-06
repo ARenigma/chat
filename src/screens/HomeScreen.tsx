@@ -16,6 +16,7 @@ import type { ConversationSummary, ProviderSummary } from '../lib/database.types
 import { initialOf } from '../lib/display';
 import { readPresence } from '../lib/presence';
 import { SCROLL_PHYSICS } from '../lib/scroll';
+import Animated from 'react-native-reanimated';
 import { contentColumnWidth } from '../lib/windowSize';
 import { sizedStorageImageUri } from '../lib/storageImage';
 import { storage } from '../lib/storage';
@@ -55,8 +56,23 @@ import { TourAnchor } from '../components/TourAnchor';
 import { compareConversations, visibleOnRail } from '../lib/railPrefs';
 import { useRailPrefs } from '../store/useRailPrefs';
 import { useHomeTour } from '../store/useHomeTour';
+import { searchIn, searchOut } from '../theme/motion';
 
 const POTD_DISMISSED_KEY = 'companion.potd.dismissed';
+
+/**
+ * How many profiles the week's carousel holds (Amit, 2026-09-06: "at least
+ * three"). One card is a claim; three is a choice.
+ */
+const TOP_PICKS = 3;
+
+/**
+ * The M3 hero item's peek, in dp: how much of the NEXT profile shows past the
+ * focused one. Android's carousel guidance describes hero as "one large image
+ * to focus on and provides a peek of what's next with a small item"; the peek
+ * is what tells the member the row scrolls at all.
+ */
+const HERO_PEEK = 56;
 
 interface Props {
   onOpenConversation: (peerId: string) => void;
@@ -91,6 +107,14 @@ export function HomeScreen({
   const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
   const columnWidth = contentColumnWidth(windowWidth);
+  /*
+   * Hero item width: the content column, less its margins, less the peek and
+   * the gap that separates it. Derived rather than fixed so it holds on a
+   * 320dp phone and a large-screen column alike — M3's example
+   * `preferredItemWidth` of 186dp is an illustration, not our layout.
+   */
+  const heroItemWidth =
+    columnWidth - TOKENS.space.md * 2 - HERO_PEEK - TOKENS.space.xs;
   const balance = useStore(s => s.balance);
   const openWallet = useStore(s => s.openWallet);
   useProfile();
@@ -142,29 +166,28 @@ export function HomeScreen({
   );
 
   /**
-   * The algo pick: the best-rated person who is here now, else the best-rated at
-   * all, else the first. Deterministic, so the hero does not reshuffle on every
-   * render — a featured card that changes under the eye reads as broken.
+   * The week's top picks: best-rated who are here now, then best-rated at all.
+   * Deterministic, so the carousel does not reshuffle on every render — a hero
+   * that changes under the eye reads as broken.
+   *
+   * Three rather than one (Amit, 2026-09-06). One card is a claim; three is a
+   * choice, and M3's hero carousel is the layout its own guidance names for
+   * "spotlighting content that you want to emphasize" while showing a peek of
+   * what is next.
    */
-  const featured = useMemo<ProviderSummary | null>(() => {
-    if (directory.length === 0) {
-      return null;
-    }
+  const topPicks = useMemo<ProviderSummary[]>(() => {
     const score = (p: ProviderSummary) =>
       (readPresence(p.presence, p.last_active_at).here ? 1000 : 0) + (p.rating_avg ?? 0);
-    return [...directory].sort((a, b) => score(b) - score(a))[0] ?? null;
+    return [...directory].sort((a, b) => score(b) - score(a)).slice(0, TOP_PICKS);
   }, [directory]);
 
-  const rows = useMemo(
-    () => directory.filter(p => p.id !== featured?.id),
-    [directory, featured],
-  );
+  const featured = topPicks[0] ?? null;
 
-  const onFeatured = useCallback(() => {
-    if (featured) {
-      onOpenProvider(featured.id);
-    }
-  }, [featured, onOpenProvider]);
+  // The picks are lifted out of the list below so nobody is shown twice.
+  const rows = useMemo(() => {
+    const shown = new Set(topPicks.map(p => p.id));
+    return directory.filter(p => !shown.has(p.id));
+  }, [directory, topPicks]);
 
   // A3: stable callbacks so ProviderRow.memo holds across balance ticks.
   // An inline `onPress={() => onOpenProvider(p.id)}` creates a new function on
@@ -222,13 +245,21 @@ export function HomeScreen({
   const [query, setQuery] = useState('');
   const [potdVisible, setPotdVisible] = useState(false);
   const trimmed = query.trim().toLowerCase();
+  /**
+   * Search spans BOTH categories — the tab is an Explore idea, not a search one
+   * — narrowed by whatever chips are on and then by the text.
+   *
+   * Chips ALONE are a search (Amit, 2026-09-06). Requiring a query first made
+   * the filters look decorative: you could tap "Astrologers, 25-34" and get an
+   * empty screen telling you to type a name, which is the opposite of what a
+   * filter is for.
+   */
   const results = useMemo(() => {
+    const narrowed = filterProviders(allProviders, searchFilter);
     if (trimmed === '') {
-      return [];
+      return isFiltering(searchFilter) ? narrowed : [];
     }
-    // Search spans BOTH categories — the tab is an Explore idea, not a search
-    // one — narrowed by whatever chips are on.
-    return filterProviders(allProviders, searchFilter).filter(
+    return narrowed.filter(
       p =>
         p.display_name.toLowerCase().includes(trimmed) ||
         p.languages.some(l => l.toLowerCase().includes(trimmed)),
@@ -431,14 +462,53 @@ export function HomeScreen({
             );
           })}
         </View>
-        {featured ? (
-          <Card style={styles.featuredCard}>
-            <FeaturedCard
-              provider={featured}
-              imageWidth={columnWidth - TOKENS.space.md * 2}
-              onPress={onFeatured}
-            />
-          </Card>
+        {topPicks.length > 0 ? (
+          <>
+            <View style={styles.picksHead}>
+              <Text
+                maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
+                allowFontScaling
+                style={styles.picksTitle}>
+                Top profiles this week
+              </Text>
+            </View>
+            {/* M3 HERO carousel: one large item with a peek of the next, which
+                is the variant Android's own carousel guidance names for
+                spotlighting. Snapping to the item pitch is what makes the peek
+                a promise rather than a cropped card.
+
+                Deviation, stated: M3's hero morphs the small item's width as
+                it scrolls. Every item here is one width and the peek comes from
+                trailing content inset instead — the morph needs a per-frame
+                width interpolation on a horizontal list, and RULE 5's banned
+                `react-native-svg` is not the only dependency whose failure
+                modes outweigh it. The visible outcome (large + peek + snap) is
+                the same.
+
+                Not the banned WordCarousel: that was a TEXT fade at 10% alpha
+                that could not reach AA (contract test). This is images and
+                snap, with no fading text and no auto-advance — the reason that
+                one ran backwards through three green builds. */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              snapToInterval={heroItemWidth + TOKENS.space.xs}
+              snapToAlignment="start"
+              disableIntervalMomentum
+              {...SCROLL_PHYSICS}
+              contentContainerStyle={styles.picksScroll}
+              testID="top-picks">
+              {topPicks.map(p => (
+                <Card key={p.id} style={{ width: heroItemWidth }}>
+                  <FeaturedCard
+                    provider={p}
+                    imageWidth={heroItemWidth}
+                    onPress={() => onOpenProvider(p.id)}
+                  />
+                </Card>
+              ))}
+            </ScrollView>
+          </>
         ) : null}
         {/* Spacing that separates the featured card (or explore heading) from
             the first provider row — matches the original styles.rows paddingTop. */}
@@ -448,9 +518,9 @@ export function HomeScreen({
     [
       chats,
       styles,
-      featured,
-      columnWidth,
-      onFeatured,
+      topPicks,
+      onOpenProvider,
+      heroItemWidth,
       handleOpenConversation,
       onSeeAllChats,
       theme,
@@ -467,13 +537,14 @@ export function HomeScreen({
   // SearchFlashList header and empty components defined as variables to avoid
   // embedding double-quote literals inside JSX prop expressions (a TSX parser
   // quirk that causes spurious "Invalid character" errors).
+  /** True once the member has asked for anything at all: text, or a chip. */
+  const asking = trimmed !== '' || isFiltering(searchFilter);
+
   const searchListHeader =
-    trimmed === '' ? (
+    !asking ? (
       <View style={styles.empty}>
         <Text allowFontScaling style={styles.emptyText}>
-          {isFiltering(searchFilter)
-            ? 'Now search by name or language, or clear the filters to browse.'
-            : 'Search for someone by name or language.'}
+          Search by name or language, or pick a filter above.
         </Text>
       </View>
     ) : null;
@@ -481,11 +552,16 @@ export function HomeScreen({
   // Names the filters when they are the reason. Saying "no one matches Mira"
   // while Mira matched the text and was excluded by an age chip sends the
   // member back to re-type a name that was right all along.
-  const noMatchLabel = isFiltering(searchFilter)
-    ? `No one matches ${JSON.stringify(query.trim())} with these filters.`
-    : `No one matches ${JSON.stringify(query.trim())}.`;
+  // Names the filters when they are the reason, and does not quote an empty
+  // query when the chips are doing all the asking.
+  const noMatchLabel =
+    trimmed === ''
+      ? 'Nobody matches these filters.'
+      : isFiltering(searchFilter)
+        ? `No one matches ${JSON.stringify(query.trim())} with these filters.`
+        : `No one matches ${JSON.stringify(query.trim())}.`;
   const searchListEmpty =
-    trimmed !== '' ? (
+    asking ? (
       <View style={styles.empty}>
         <Text allowFontScaling style={styles.emptyText}>
           {noMatchLabel}
@@ -498,9 +574,33 @@ export function HomeScreen({
       {/* Nav Row — wordmark, search, ₹ balance. Not the collapsing LargeTitleBar:
           v13 Home has a fixed nav row, and the large title belongs to the Explore
           section header below it. */}
+      {/* One row, two states, crossfaded in place over 150ms — Telegram's
+          `toggleSearch` animates the search container's alpha against the
+          action bar's menu icons for exactly that long, in both directions
+          (ActionBarMenuItem.java:1013 / :1020). Nothing slides, because the
+          field arrives in the row the icons were in.
+
+          The exit affordance is a BACK ARROW, not a second cross: with a cross
+          here and the field's own clear inside it, a member with text typed saw
+          two ✗ and could not tell which one lost their query (Amit,
+          2026-09-06). Telegram's is the ActionBar's back arrow for the same
+          reason — arrow leaves, cross clears. */}
       <View style={[styles.nav, { paddingTop: insets.top + TOKENS.space['2xs'] }]}>
         {searching ? (
-          <>
+          <Animated.View
+            key="search-row"
+            entering={searchIn}
+            exiting={searchOut}
+            style={styles.navRow}>
+            <Pressable
+              onPress={closeSearch}
+              testID="home-search-close"
+              accessibilityLabel="Leave search"
+              press="none"
+              size={28}
+              style={styles.navIcon}>
+              <Icon name="back" size={22} color={theme.color.text.secondary} />
+            </Pressable>
             <SearchBar
               testID="home-search-input"
               value={query}
@@ -508,18 +608,13 @@ export function HomeScreen({
               placeholder="Search by name or language"
               onClear={() => { setQuery(''); }}
             />
-            <Pressable
-              onPress={closeSearch}
-              testID="home-search-close"
-              accessibilityLabel="Close search"
-              press="none"
-              size={28}
-              style={styles.navIcon}>
-              <Icon name="close" size={20} color={theme.color.text.secondary} />
-            </Pressable>
-          </>
+          </Animated.View>
         ) : (
-          <>
+          <Animated.View
+            key="nav-row"
+            entering={searchIn}
+            exiting={searchOut}
+            style={styles.navRow}>
             <Text allowFontScaling={false} style={styles.wordmark}>
               Pappal
             </Text>
@@ -537,56 +632,63 @@ export function HomeScreen({
                 <TokenCounter balance={balance} onPress={openWallet} />
               </TourAnchor>
             </View>
-          </>
+          </Animated.View>
         )}
       </View>
 
-      {/* Search filters: type and age (goal item 12). One scrolling row, because
-          on a 360dp window six chips do not fit and wrapping them would push
-          the results off screen. Age comes from `provider_directory.age`, an
-          integer the view has published since 042 — the bands are computed in
-          lib/providerFilters.ts and exist in exactly one place. */}
+      {/* Search filters, vertical (Amit, 2026-09-06). They were one scrolling
+          row, which put four of the six chips off screen and made the age bands
+          something you had to discover by dragging. Two labelled groups
+          stacked, each wrapping, so every option is visible at once on a 360dp
+          window. Age comes from `provider_directory.age`, an integer the view
+          has published since 042; the bands live in lib/providerFilters.ts. */}
       {searching ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          {...SCROLL_PHYSICS}
-          style={styles.filterRow}
-          contentContainerStyle={styles.filterRowContent}
-          testID="search-filters">
-          {PROVIDER_CATEGORIES.map(c => (
-            <Chip
-              key={c}
-              label={CATEGORY_LABEL[c]}
-              tone={searchFilter.category === c ? 'warm' : 'neutral'}
-              selected={searchFilter.category === c}
-              onPress={() =>
-                setSearchFilter(f => ({
-                  ...f,
-                  // Tapping the on chip clears it: a single-choice filter with
-                  // no way back to "either" is a trap.
-                  category: f.category === c ? null : c,
-                }))
-              }
-            />
-          ))}
-          <View style={styles.filterDivider} />
-          {AGE_BANDS.map(band => (
-            <Chip
-              key={band}
-              label={AGE_BAND_LABEL[band]}
-              tone={searchFilter.bands.includes(band) ? 'warm' : 'neutral'}
-              selected={searchFilter.bands.includes(band)}
-              onPress={() => setSearchFilter(f => toggleBand(f, band))}
-            />
-          ))}
-        </ScrollView>
+        <View style={styles.filters} testID="search-filters">
+          <View style={styles.filterGroup}>
+            <Text allowFontScaling style={styles.filterLabel}>
+              What they offer
+            </Text>
+            <View style={styles.filterChips}>
+              {PROVIDER_CATEGORIES.map(c => (
+                <Chip
+                  key={c}
+                  label={CATEGORY_LABEL[c]}
+                  tone={searchFilter.category === c ? 'warm' : 'neutral'}
+                  selected={searchFilter.category === c}
+                  onPress={() =>
+                    setSearchFilter(f => ({
+                      ...f,
+                      // Tapping the on chip clears it: a single-choice filter
+                      // with no way back to "either" is a trap.
+                      category: f.category === c ? null : c,
+                    }))
+                  }
+                />
+              ))}
+            </View>
+          </View>
+          <View style={styles.filterGroup}>
+            <Text allowFontScaling style={styles.filterLabel}>
+              Age
+            </Text>
+            <View style={styles.filterChips}>
+              {AGE_BANDS.map(band => (
+                <Chip
+                  key={band}
+                  label={AGE_BAND_LABEL[band]}
+                  tone={searchFilter.bands.includes(band) ? 'warm' : 'neutral'}
+                  selected={searchFilter.bands.includes(band)}
+                  onPress={() => setSearchFilter(f => toggleBand(f, band))}
+                />
+              ))}
+            </View>
+          </View>
+        </View>
       ) : null}
 
       {searching ? (
         <FlashList
-          data={trimmed === '' ? [] : results}
+          data={results}
           keyExtractor={p => p.id}
           renderItem={renderSearchRow}
           ListHeaderComponent={searchListHeader}
@@ -979,24 +1081,48 @@ const makeStyles = (t: Theme) =>
     tabRuleOn: {
       backgroundColor: t.color.bg.accent,
     },
-    // Type + age chips, one scrolling row under the search field.
-    filterRow: {
-      flexGrow: 0,
-    },
-    filterRowContent: {
+    // Both nav states occupy the same row so the crossfade has nothing to
+    // reflow: the search field lands where the icons were.
+    navRow: {
+      flex: 1,
       flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'space-between',
       gap: TOKENS.space.xs,
+    },
+    // "Top profiles this week" over the hero carousel. A heading, because a row
+    // of three cards with no label is three unexplained adverts.
+    picksHead: {
       paddingHorizontal: TOKENS.space.md,
       paddingBottom: TOKENS.space.xs,
     },
-    // Separates "what they offer" from "how old they are": two different
-    // questions, and a gap alone read as one long row of equal chips.
-    filterDivider: {
-      width: StyleSheet.hairlineWidth,
-      alignSelf: 'stretch',
-      marginHorizontal: TOKENS.space['2xs'],
-      backgroundColor: t.color.border.hairline,
+    picksTitle: {
+      ...TOKENS.typography.titleMediumEmphasized,
+      color: t.color.text.primary,
+    },
+    picksScroll: {
+      flexDirection: 'row',
+      gap: TOKENS.space.xs,
+      paddingHorizontal: TOKENS.space.md,
+      paddingBottom: TOKENS.space.sm,
+    },
+    // Type and age, stacked and labelled: every option visible at once.
+    filters: {
+      paddingHorizontal: TOKENS.space.md,
+      paddingBottom: TOKENS.space.sm,
+      gap: TOKENS.space.sm,
+    },
+    filterGroup: {
+      gap: TOKENS.space['2xs'],
+    },
+    filterLabel: {
+      ...TOKENS.typography.labelMedium,
+      color: t.color.text.secondary,
+    },
+    filterChips: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: TOKENS.space.xs,
     },
     exploreTitle: {
       ...TOKENS.typography.headlineSmallEmphasized,

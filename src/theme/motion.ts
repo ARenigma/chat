@@ -255,6 +255,28 @@ export const fadeSwapFast = FadeIn.duration(DURATION.fast).reduceMotion(
 );
 
 /**
+ * Opening and closing search: a CROSSFADE in place, both directions, 150ms.
+ *
+ * Telegram's, read from source rather than guessed. `toggleSearch` animates the
+ * search container's alpha against the action bar's menu icons — the field
+ * fades up exactly as the icons fade out, `setDuration(150)`, and closing runs
+ * the same animation in reverse (`ActionBarMenuItem.java:1013` opening,
+ * `:1020` closing). Nothing slides and nothing moves: the search field arrives
+ * in the row the icons were in, which is why it reads as the same bar changing
+ * its mind rather than a new screen.
+ *
+ * `searchToggle` is its own token for that reason — it happens to equal
+ * `stepPromote`, and they are unrelated measurements (design/tokens.json).
+ */
+export const searchIn = FadeIn.duration(DURATION.searchToggle).reduceMotion(
+  ReduceMotion.System,
+);
+
+export const searchOut = FadeOut.duration(DURATION.searchToggle).reduceMotion(
+  ReduceMotion.System,
+);
+
+/**
  * A bar that docks in at the TOP of a screen and leaves the same way.
  *
  * Hoisted for the reason every builder here is: they allocate on construction,

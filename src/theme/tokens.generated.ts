@@ -195,6 +195,7 @@ export const LIGHT = {
       spinnerCycle: 800,
       accentShift: 220,
       stepPromote: 150,
+      searchToggle: 150,
       carouselDwell: 1100,
     },
     opacity: {
@@ -755,6 +756,7 @@ export const DARK = {
       spinnerCycle: 800,
       accentShift: 220,
       stepPromote: 150,
+      searchToggle: 150,
       carouselDwell: 1100,
     },
     opacity: {
