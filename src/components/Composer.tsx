@@ -43,6 +43,7 @@ import { SendButton } from './SendButton';
 import { AttachPanel } from './AttachPanel';
 import { EmojiPicker } from './EmojiPicker';
 import { readKeyboardHeight, writeKeyboardHeight } from '../lib/keyboardPanel';
+import { usePanelCeiling } from '../lib/imeGeometry';
 import { Waveform } from './Waveform';
 import { TextField } from './TextField';
 
@@ -91,13 +92,6 @@ interface Props {
    * `panelCeiling`.
    */
   onPanelSearchChange?: (searching: boolean) => void;
-  /**
-   * The tallest the panel may be while the keyboard is also up, in px: the space
-   * between the bottom of the frosted header and the top of the keyboard. The
-   * parent owns it because only the screen knows its own header height. Ignored
-   * outside search, where the panel is exactly the keyboard's size.
-   */
-  panelCeiling?: number;
 }
 
 /**
@@ -159,7 +153,6 @@ function ComposerView({
   onFocusChange,
   onPanelChange,
   onPanelSearchChange,
-  panelCeiling = 0,
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -214,6 +207,26 @@ function ComposerView({
   const landscape = winW > winH;
   const insets = useSafeAreaInsets();
   const [panelHeight, setPanelHeight] = useState(() => readKeyboardHeight(landscape));
+  /**
+   * The tallest the panel may be while the keyboard is also up, in px: the space
+   * between the bottom of the frosted header and the top of the keyboard.
+   * Ignored outside search, where the panel is exactly the keyboard's size.
+   *
+   * READ, not received. It is `winH - barHeight - imeSpace`, and both of those
+   * terms now live in the chat screen's IME store — a prop would be only as
+   * fresh as its owner's last render, and the screen deliberately no longer
+   * renders when they change (src/lib/imeGeometry.ts). It changes far less often
+   * than that sounds: `keyboardHeight` is sticky, so an ordinary show/hide does
+   * not move it at all — only a genuinely different IME height, a rotation, or
+   * the top bar resizing.
+   *
+   * NOTE this is not the same number as `panelHeight` above, deliberately: the
+   * panel uses `readKeyboardHeight`'s clamped, persisted, per-orientation value
+   * while the ceiling is built from the raw measured height. They can disagree
+   * for a keyboard outside the clamp band; that divergence predates this and is
+   * recorded in imeGeometry.ts rather than silently unified here.
+   */
+  const panelCeiling = usePanelCeiling();
   const [elapsed, setElapsed] = useState(0);
   const [levels, setLevels] = useState<readonly number[]>([]);
   const [draft, setDraft] = useState<VoiceDraft | null>(null);
