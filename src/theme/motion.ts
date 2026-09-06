@@ -250,11 +250,30 @@ const _readyCallbacks = new Set<SettledCallback>();
 /**
  * Declare that the screen now mounting is not ready to be animated in yet.
  *
- * The problem this solves, measured on the S22 at 60Hz: a push/pop landed 65%
- * of its frames inside a 16.68ms budget with a 15.40ms median, against
- * Telegram's 97.5% and 7.55ms — while plain scrolling matched them almost
- * exactly. The animation was running while the screen was still becoming
- * itself: hooks firing, queries resolving, a list computing its first layout.
+ * The gap it is aimed at, measured on the S22 at 60Hz: a push/pop landed 65% of
+ * its frames inside a 16.68ms budget with a 15.40ms median, against Telegram's
+ * 97.5% and 7.55ms — while plain scrolling matched them almost exactly. The
+ * animation runs while the screen is still becoming itself: hooks firing,
+ * queries resolving, a list computing its first layout.
+ *
+ * WHAT THIS HOLD ITSELF BUYS IS UNMEASURED, and that is stated rather than
+ * implied. An A/B on the Redmi (debug build, 60Hz), three runs each arm,
+ * alternated, chat push/pop targeted by resource-id and verified per cycle:
+ *
+ *   with hold     within-budget 10.8 / 33.3 / 14.2 %   p50 26.5 / 24.5 / 29.7 ms
+ *   without hold  within-budget 21.7 / 21.7 / 18.3 %   p50 29.6 / 28.8 / 28.1 ms
+ *
+ * p50 favours the hold by ~2ms; within-budget favours its absence; frames past
+ * two budgets are level. The `with` arm's within-budget spread is 22.5 points
+ * across three IDENTICAL runs, so the run-to-run variance of a debug build on a
+ * 2019 phone is larger than the effect being looked for. No conclusion is
+ * available from that data and none is claimed.
+ *
+ * It is kept because it is faithful to the mechanism it copies, it is safe by
+ * construction (ceiling, unmount release, opt-in), and its cost is bounded at
+ * one frame. Where it could actually be proven: the S22 on a RELEASE build with
+ * the panel genuinely at 120Hz, where the budget halves to 8.3ms and mount
+ * contention weighs twice as heavily against it.
  *
  * Telegram does not start on geometry, it starts on DATA.
  * `ChatActivity.needDelayOpenAnimation()` (ChatActivity.java:27014) returns
