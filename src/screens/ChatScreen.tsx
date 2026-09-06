@@ -1336,10 +1336,27 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
           stays hidden until scroll pushes this out of the top band. */}
       {showPinnedExtend ? (
         <View style={styles.extendCard}>
+          {/* The card carries the countdown, because it OWNS this window.
+              `showStickyRecharge` hides the talk bar for exactly as long as
+              this card is up, and the talk bar was the only place the m:ss
+              numerals appeared — so the last five minutes, the one stretch the
+              per-second clock exists for, showed a timeless "Need more time?"
+              instead. Asking the question without printing the answer is the
+              worst of both. `sessionRemaining` is non-null whenever this card
+              renders (it is in `showExtendCard`), so there is no fallback to
+              invent. */}
           <View style={styles.extendCardContent}>
-            <Text allowFontScaling style={styles.extendCardTitle}>
-              Need more time?
-            </Text>
+            <View style={styles.extendCardHeadline}>
+              <Text
+                allowFontScaling={false}
+                testID="chat-extend-timer"
+                style={styles.extendCardTimer}>
+                {formatClock(sessionRemaining ?? 0)}
+              </Text>
+              <Text allowFontScaling style={styles.extendCardTitle}>
+                left
+              </Text>
+            </View>
             <Text allowFontScaling style={styles.extendCardSubtitle}>
               Extend this match to keep talking
             </Text>
@@ -1829,6 +1846,19 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   extendCardContent: {
     flex: 1,
     gap: TOKENS.space['2xs'],
+  },
+  extendCardHeadline: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: TOKENS.space['2xs'],
+  },
+  extendCardTimer: {
+    // The same treatment the talk bar gives this exact number: `numeralMedium`
+    // plus a reserved width, so m:ss does not reflow the row as digits change.
+    // One clock, one type role, wherever it happens to be drawn.
+    ...TOKENS.typography.numeralMedium,
+    color: t.color.text.primary,
+    minWidth: 42,
   },
   extendCardTitle: {
     ...TOKENS.typography.labelMediumEmphasized,

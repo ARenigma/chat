@@ -4377,6 +4377,20 @@ describe('a session is rated when it ends, and the ratings are readable', () => 
     expect(code).toContain("kind === 'outline' ? theme.color.text.primary");
   });
 
+  it('shows the countdown in the window the countdown exists for', () => {
+    // The extend card and the talk bar are mutually exclusive by design
+    // (`showStickyRecharge` is false while the card is up), and they are up for
+    // exactly the same window. The bar held the only m:ss numerals, so the last
+    // five minutes — the whole reason a per-second clock exists — rendered a
+    // timeless "Need more time?" and no number at all.
+    const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+    expect(chat).toMatch(/showStickyRecharge =\s*\n?\s*balance !== null && \(!showExtendCard/);
+    expect(chat).toContain('testID="chat-extend-timer"');
+    expect(chat).toMatch(/testID="chat-extend-timer"[\s\S]{0,80}formatClock\(sessionRemaining/);
+    // Asking the question is not the same as answering it.
+    expect(chat).not.toContain('Need more time?');
+  });
+
   it('is registered in the harness with its suite', () => {
     const dbTest = read('scripts/db-test.mjs');
     expect(dbTest).toContain('066_session_reviews_and_ratings.sql');
