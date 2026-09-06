@@ -40,6 +40,7 @@ import { clearCall } from './src/lib/conversations';
 import {
   memberParent,
   providerParent,
+  transitionFor,
   type ChatDoor,
   type MemberRoute,
   type ProviderRoute,
@@ -87,7 +88,7 @@ import { ConfirmDialog } from './src/components/ConfirmDialog';
 import { HomeTour } from './src/components/HomeTour';
 import { useHomeTour } from './src/store/useHomeTour';
 import { Button } from './src/components/Button';
-import { FloatingToolbar } from './src/components/FloatingToolbar';
+import { FloatingToolbar, type ToolbarKey } from './src/components/FloatingToolbar';
 import { ChatScreen } from './src/screens/ChatScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
@@ -1041,6 +1042,36 @@ function SignedIn({
     // this list never actually changes - it is declared because a dependency
     // that is stable BY ARGUMENT is one edit away from not being.
   }, [setRoute]);
+
+  /*
+   * Which tab the bar highlights. It STICKS while the bar is hidden.
+   *
+   * Now that the bar is never unmounted, a pushed screen would otherwise flip
+   * `active` to a fallback and back again — animating the indicator's spring and
+   * fade on a bar nobody can see, twice per push/pop. Holding the last real tab
+   * means the prop simply does not change while pushed, so the memo holds and
+   * the indicator never moves.
+   *
+   * Written during render on purpose: this is derived, idempotent, and must not
+   * lag the route by a frame the way an effect would. `tabFor` is null exactly
+   * when `transitionFor(route)` is 'push', so the ref only ever takes a real
+   * destination.
+   */
+  const tabFor: ToolbarKey | null =
+    route.name === 'home'
+      ? 'home'
+      : route.name === 'settings'
+        ? 'settings'
+        : route.name === 'calls'
+          ? 'call'
+          : route.name === 'favourites'
+            ? 'favourites'
+            : null;
+  const lastTabRef = useRef<ToolbarKey>('home');
+  if (tabFor !== null) {
+    lastTabRef.current = tabFor;
+  }
+  const activeTab = lastTabRef.current;
   const { role, isPending } = useRole();
   const { data: selfId } = useSelfId();
   const { data: conversations } = useConversations();
@@ -1383,32 +1414,30 @@ function SignedIn({
       </View>
 
       {/*
-        * The docked bottom bar (WhatsApp/iMessage): in the layout flow BELOW the
-        * content area, taking its own height, so nothing scrolls under it and a
-        * list row can never steal a tab's tap. Home and Settings are the two
-        * top-level tabs, so it renders on both and its active pill follows the
-        * route; on chat/call/detail and the other pushed screens it is simply not
-        * rendered, giving them the full height. Calls stay gated (`CALLS_ENABLED`).
+        * The docked bottom bar (WhatsApp/iMessage). It is `position: 'absolute'`
+        * over the content area, NOT in the layout flow — the two tab screens pad
+        * their own scroll content by `NAV_BAR_HEIGHT` so no full-width row sits
+        * under it and steals a tab's tap. Calls stay gated (`CALLS_ENABLED`).
+        *
+        * ALWAYS RENDERED, and hidden on pushed screens rather than unmounted.
+        * The conditional it replaces rebuilt a native RenderEffect blur surface
+        * and eight animated children on every push and every pop, inside the
+        * frame that was already animating the transition. Because the bar takes
+        * no layout, keeping it mounted costs nothing; `display: none` keeps it
+        * out of drawing too. See the note in FloatingToolbar itself.
+        *
+        * Visibility comes from `transitionFor`, not a hand-written list of route
+        * names: it is an exhaustive switch, so a new route has to say which kind
+        * it is or fail typecheck. 'root' and 'tab' are the destinations the bar
+        * navigates between; 'push' is everything deeper.
         */}
-      {route.name === 'home' ||
-      route.name === 'settings' ||
-      route.name === 'calls' ||
-      route.name === 'favourites' ? (
-        <FloatingToolbar
-          active={
-            route.name === 'settings'
-              ? 'settings'
-              : route.name === 'calls'
-                ? 'call'
-                : route.name === 'favourites'
-                  ? 'favourites'
-                  : 'home'
-          }
-          callEnabled={CALLS_ENABLED}
-          homeBadgeCount={totalUnread}
-          onSelect={onSelectTab}
-        />
-      ) : null}
+      <FloatingToolbar
+        active={activeTab}
+        visible={transitionFor(route) !== 'push'}
+        callEnabled={CALLS_ENABLED}
+        homeBadgeCount={totalUnread}
+        onSelect={onSelectTab}
+      />
       <RechargeWalletPage />
       <RechargeScreen />
       {/* One feedback sheet for the whole app: a session can end in a chat or

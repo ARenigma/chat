@@ -878,6 +878,28 @@ describe('device coverage matrix', () => {
     expect(bar).toContain('size={48}');
   });
 
+  it('hides the bottom bar on a push instead of rebuilding it', () => {
+    // The bar is `position: 'absolute'`, so it never took layout from the
+    // content area — the conditional render bought nothing and cost a native
+    // RenderEffect blur surface plus eight animated children, destroyed and
+    // rebuilt on every push and every pop, inside the transition frame.
+    const bar = read('src/components/FloatingToolbar.tsx');
+    expect(bar).toContain("hidden: { display: 'none' }");
+    expect(bar).toMatch(/pointerEvents=\{visible \? 'auto' : 'none'\}/);
+    expect(bar).toMatch(/visible \? null : styles\.hidden/);
+
+    const app = read('App.tsx');
+    // Rendered unconditionally now, with visibility derived from the exhaustive
+    // route classifier rather than a hand-written list of names that a new
+    // route can silently fall out of.
+    expect(app).toMatch(/<FloatingToolbar\n\s+active=\{activeTab\}\n\s+visible=\{transitionFor\(route\) !== 'push'\}/);
+    expect(app).not.toMatch(/route\.name === 'favourites' \? \(\s*<FloatingToolbar/);
+    // The highlighted tab sticks while hidden, so a hidden bar never animates
+    // its indicator.
+    expect(app).toContain('const lastTabRef = useRef<ToolbarKey>');
+    expect(app).toMatch(/if \(tabFor !== null\) \{\s*\n\s*lastTabRef\.current = tabFor;/);
+  });
+
   /** https://developer.android.com/guide/components/activities/testing */
   it('ships a hermetic ActivityScenario launch smoke test', () => {
     const gradle = read('android/app/build.gradle');
