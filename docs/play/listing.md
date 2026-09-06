@@ -194,7 +194,7 @@ the initial approval.
 | -------------- | --------------------------------------------------------- |
 | Privacy policy | `https://chat-arenigmas-projects.vercel.app/privacy.html` |
 | Data deletion  | `https://chat-arenigmas-projects.vercel.app/delete.html`  |
-| Support email  | `testrelay97@gmail.com`                                   |
+| Support email  | `hello@pappal.live`                                       |
 
 Swap the host for the custom domain when it exists, the paths do not change.
 Play lets you edit these after submission, so a `.vercel.app` host is fine for
