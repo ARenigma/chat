@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import {
   Easing,
   FadeIn,
@@ -226,6 +226,86 @@ export function onTransitionSettled(cb: SettledCallback): () => void {
   _settledCallbacks.add(cb);
   return () => {
     _settledCallbacks.delete(cb);
+  };
+}
+
+/* -------------------------------------------------------------------------
+ * Holding a screen's entrance until it has DATA, not just geometry
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Telegram's safety net, in ms. If the arriving screen never reports itself
+ * ready, the animation runs anyway at this deadline.
+ *
+ * `ActionBarLayout.java:2270-2282` posts its delayed-open runnable with a 200ms
+ * delay and `:1920-1927` (`resumeDelayedFragmentAnimation`) cancels it when the
+ * data lands first. So 200 is a CEILING, not a wait: on a warm cache the
+ * release usually arrives in a few frames.
+ */
+const ENTER_HOLD_CEILING_MS = 200;
+
+let _entryHolds = 0;
+const _readyCallbacks = new Set<SettledCallback>();
+
+/**
+ * Declare that the screen now mounting is not ready to be animated in yet.
+ *
+ * The problem this solves, measured on the S22 at 60Hz: a push/pop landed 65%
+ * of its frames inside a 16.68ms budget with a 15.40ms median, against
+ * Telegram's 97.5% and 7.55ms — while plain scrolling matched them almost
+ * exactly. The animation was running while the screen was still becoming
+ * itself: hooks firing, queries resolving, a list computing its first layout.
+ *
+ * Telegram does not start on geometry, it starts on DATA.
+ * `ChatActivity.needDelayOpenAnimation()` (ChatActivity.java:27014) returns
+ * `firstLoading`, and the animation is held with the incoming view at alpha 0
+ * and translateX 48dp until the first message batch has rendered, at which
+ * point `:20613` calls `resumeDelayedFragmentAnimation`.
+ *
+ * CALL THIS DURING THE SCREEN'S FIRST RENDER, not from an effect. A child
+ * renders before its parent's `onLayout` fires, so a hold taken in render is
+ * already visible to `useScreenEnter`; a hold taken in an effect would arrive
+ * after the animation had started and do nothing.
+ *
+ * The default is NOT to hold. Every screen that says nothing animates
+ * immediately, exactly as before — otherwise a screen nobody had thought about
+ * would silently pay the ceiling on every push.
+ *
+ * Returns its own release, which is idempotent and MUST be called from an
+ * unmount cleanup as well as when the data lands. A hold left standing by a
+ * screen the user backed out of would make the NEXT push wait the ceiling.
+ */
+export function holdScreenEnter(): () => void {
+  _entryHolds += 1;
+  let released = false;
+  return () => {
+    if (released) {
+      return;
+    }
+    released = true;
+    _entryHolds = Math.max(0, _entryHolds - 1);
+    if (_entryHolds === 0) {
+      for (const cb of _readyCallbacks) {
+        cb();
+      }
+    }
+  };
+}
+
+/** Whether any arriving screen is still holding its entrance. */
+export function isScreenEnterHeld(): boolean {
+  return _entryHolds > 0;
+}
+
+/**
+ * Run `cb` when the last hold is released. Returns an unsubscribe; call it from
+ * a cleanup, and call it before running `cb` yourself so a late release cannot
+ * start a second animation.
+ */
+export function onScreenEnterReady(cb: SettledCallback): () => void {
+  _readyCallbacks.add(cb);
+  return () => {
+    _readyCallbacks.delete(cb);
   };
 }
 
@@ -534,6 +614,51 @@ export function useScreenEnter(): {
      * `started.value` is set OUTSIDE the callback, so a second `onLayout`
      * arriving before the frame fires cannot start a second animation.
      */
+    /*
+     * Wait for the screen's DATA if it asked us to, and start regardless at the
+     * ceiling. `holdScreenEnter`'s header carries the full reasoning and the
+     * Telegram citations.
+     *
+     * Both paths are one-shot through `begin`, so a release arriving in the
+     * same tick as the ceiling cannot start two animations. The subscription
+     * and the timer are torn down by whichever fires first, and by the
+     * disposer below if the screen is popped mid-wait.
+     */
+    let begun = false;
+    const begin = () => {
+      if (begun) {
+        return;
+      }
+      begun = true;
+      unsubscribe();
+      clearTimeout(ceiling);
+      ramp();
+    };
+    const unsubscribe = isScreenEnterHeld()
+      ? onScreenEnterReady(begin)
+      : () => undefined;
+    const ceiling = isScreenEnterHeld()
+      ? setTimeout(begin, ENTER_HOLD_CEILING_MS)
+      : (undefined as unknown as ReturnType<typeof setTimeout>);
+    cancelWait.current = () => {
+      begun = true;
+      unsubscribe();
+      clearTimeout(ceiling);
+    };
+    if (!isScreenEnterHeld()) {
+      begin();
+    }
+  };
+
+  /*
+   * Popped mid-wait: drop the subscription and the timer so nothing animates a
+   * view that is on its way out, and so the ceiling cannot fire into an
+   * unmounted component.
+   */
+  const cancelWait = useRef<() => void>(() => undefined);
+  useEffect(() => () => cancelWait.current(), []);
+
+  const ramp = () => {
     requestAnimationFrame(() => {
     /*
      * The transition lock is raised HERE, not at the call site.

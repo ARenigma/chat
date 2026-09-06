@@ -1598,22 +1598,55 @@ describe('W5#5 — renderToHardwareTextureAndroid decision is recorded', () => {
     expect(motion).toContain('runOnJS(setTransitioning)(false)');
   });
 
-  it('gives a mounting screen one frame before the animation starts', () => {
-    // onLayout fires in the same frame as the screen's first React commit, so
-    // the animation's opening frames were competing with hooks firing, queries
-    // subscribing and FlashList's first layout. Telegram defers on a DATA
-    // signal (needDelayOpenAnimation -> firstLoading, ActionBarLayout.java:2270);
-    // we cannot see that from a generic hook, so we take the part that
-    // generalises and hand the commit one whole frame.
+  it('waits for the screen to have DATA, not just geometry', () => {
+    // Telegram does not start on layout, it starts when the first message batch
+    // has rendered (ChatActivity.java:27014 -> :20613 ->
+    // resumeDelayedFragmentAnimation), with a 200ms ceiling
+    // (ActionBarLayout.java:2270-2282). Measured gap at 60Hz on the S22 before
+    // this: 65% of push frames inside budget against their 97.5%.
+    const motion = read('src/theme/motion.ts');
+    expect(motion).toContain('export function holdScreenEnter()');
+    expect(motion).toContain('const ENTER_HOLD_CEILING_MS = 200;');
+    // The ceiling must exist, or a screen that never reports ready hangs the
+    // animation forever.
+    expect(motion).toContain('setTimeout(begin, ENTER_HOLD_CEILING_MS)');
+    // One-shot: a release landing in the same tick as the ceiling must not
+    // start two animations.
+    expect(motion).toMatch(/const begin = \(\) => \{\s*\n\s*if \(begun\) \{/);
+    // And a screen popped mid-wait tears the wait down rather than animating a
+    // view on its way out.
+    expect(motion).toContain('useEffect(() => () => cancelWait.current(), [])');
+
+    // Not holding is the DEFAULT. A screen nobody thought about must animate
+    // immediately rather than silently paying the ceiling on every push.
+    expect(motion).toMatch(/if \(!isScreenEnterHeld\(\)\) \{\s*\n\s*begin\(\);/);
+  });
+
+  it('gives the mount its own frame, and guards against a second start', () => {
     const motion = read('src/theme/motion.ts');
     const hook = motion.slice(motion.indexOf('export function useScreenEnter'));
-    expect(hook).toMatch(/started\.value = true;[\s\S]{0,2600}requestAnimationFrame\(\(\) => \{/);
-    // The guard is set OUTSIDE the frame callback, or a second onLayout
-    // arriving first would start a second animation.
+    // The ramp itself is still deferred one frame, so the animation's first
+    // frame is never the same frame as the screen's first React commit.
+    expect(hook).toContain('requestAnimationFrame(() => {');
+    // The re-entry guard is set before any waiting begins, or a second
+    // onLayout arriving during the wait would start a second animation.
     const guardAt = hook.indexOf('started.value = true;');
-    const rafAt = hook.indexOf('requestAnimationFrame(() => {');
+    const waitAt = hook.indexOf('let begun = false;');
     expect(guardAt).toBeGreaterThan(-1);
-    expect(guardAt).toBeLessThan(rafAt);
+    expect(waitAt).toBeGreaterThan(guardAt);
+  });
+
+  it('releases the hold on unmount as well as on data', () => {
+    // A hold left standing by a screen the user backed out of would make the
+    // NEXT push wait the full ceiling.
+    const chat = read('src/screens/ChatScreen.tsx');
+    expect(chat).toContain('useEffect(() => releaseEnter, [releaseEnter])');
+    // Taken in RENDER, not an effect: a child renders before its parent's
+    // onLayout fires, so an effect-taken hold would arrive too late to matter.
+    expect(chat).toMatch(/useState\(\(\) =>\s*\n?\s*messages === undefined \? holdScreenEnter\(\) : NO_HOLD/);
+    // And an empty conversation releases too -- no data is coming, so waiting
+    // for it would burn the whole ceiling on every new chat.
+    expect(chat).toContain('if (messages !== undefined || !messagesPending)');
   });
 
   it('Sheet.tsx documents the hardware-texture decision', () => {
