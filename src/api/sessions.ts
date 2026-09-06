@@ -10,7 +10,7 @@
  *               claim_session_lease.
  */
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
@@ -154,6 +154,54 @@ export function useCreateSessionRequest() {
       });
     },
   });
+}
+
+/**
+ * What `announce_chat_open` answered (migration 068, goal items 3 and 4).
+ *
+ * `alerted` is true ONLY when a push was actually dispatched, which is what
+ * makes "We have notified them" safe to render. Every other outcome carries the
+ * reason, so the screen can stay silent about a doorbell it did not ring.
+ */
+export interface ChatOpenAlert {
+  alerted: boolean;
+  reason: string | null;
+  peer_present?: boolean;
+}
+
+/**
+ * Tell the other participant this chat was just opened, once per visit.
+ *
+ * A mutation dressed as a mount effect rather than a query: it has a side
+ * effect and must fire exactly once per conversation opened, which is the one
+ * thing a `useQuery` with a staleTime cannot promise.
+ */
+export function useAnnounceChatOpen(
+  conversationId: string | undefined,
+  enabled: boolean,
+): ChatOpenAlert | null {
+  const [result, setResult] = useState<ChatOpenAlert | null>(null);
+
+  useEffect(() => {
+    if (conversationId === undefined || !enabled) {
+      return;
+    }
+    let live = true;
+    setResult(null);
+    void supabase
+      .rpc('announce_chat_open', { p_conversation_id: conversationId })
+      .then(({ data, error }) => {
+        if (!live || error || data === null) {
+          return;
+        }
+        setResult(data as unknown as ChatOpenAlert);
+      });
+    return () => {
+      live = false;
+    };
+  }, [conversationId, enabled]);
+
+  return result;
 }
 
 /** A chat request ringing at the provider right now (goal item 13). */

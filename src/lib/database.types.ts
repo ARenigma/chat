@@ -1182,6 +1182,10 @@ export type Database = {
         Args: { p_request_id: string };
         Returns: { success: boolean; status?: string; error?: string };
       };
+      announce_chat_open: {
+        Args: { p_conversation_id: string };
+        Returns: { alerted: boolean; reason: string | null; peer_present?: boolean };
+      };
       /** End an active session with an optional content report. Migration 030. */
       end_session: {
         Args: {
