@@ -78,7 +78,9 @@ export type MemberRoute =
   /** Account & privacy, a mounted screen now rather than a bottom sheet. */
   | { readonly name: 'settings' }
   /** Recharge history and invoice downloads. */
-  | { readonly name: 'transactions' };
+  | { readonly name: 'transactions' }
+  /** Per-session usage: what each conversation cost. Migration 069. */
+  | { readonly name: 'usage' };
 
 export type ProviderRoute =
   | { readonly name: 'home' }
@@ -86,6 +88,8 @@ export type ProviderRoute =
   | { readonly name: 'settings' }
   /** Bank/UPI + PAN payout setup. */
   | { readonly name: 'payout' }
+  /** Per-session earnings: which conversation paid what. Migration 069. */
+  | { readonly name: 'usage' }
   /** A voice or video call on the provider tree. */
   | {
       readonly name: 'call';
@@ -153,6 +157,7 @@ export function memberParent(route: MemberRoute): MemberRoute | null {
     case 'settings':
       return { name: 'home' };
     case 'transactions':
+    case 'usage':
       return { name: 'settings' };
   }
 }
@@ -195,6 +200,7 @@ export function transitionFor(route: MemberRoute): TransitionKind {
     case 'blocked':
     case 'chatsList':
     case 'transactions':
+    case 'usage':
       return 'push';
   }
 }

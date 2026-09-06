@@ -104,6 +104,7 @@ import { ChatsListScreen } from './src/screens/ChatsListScreen';
 import { SettingsSheet } from './src/screens/SettingsSheet';
 import { SplashScreen } from './src/screens/SplashScreen';
 import { TransactionHistoryScreen } from './src/screens/TransactionHistoryScreen';
+import { UsageLedgerScreen } from './src/screens/UsageLedgerScreen';
 
 initSentry();
 
@@ -1189,9 +1190,12 @@ function SignedIn({
                 onSignedOut();
               }}
               onSignedOut={onSignedOut}
+              onUsage={() => pushProvider({ name: 'usage' })}
             />
           ) : providerRoute.name === 'payout' ? (
             <ProviderBankScreen onBack={() => popProvider({ name: 'home' })} />
+          ) : providerRoute.name === 'usage' ? (
+            <UsageLedgerScreen onBack={() => popProvider({ name: 'settings' })} />
           ) : (
             <ProviderHomeScreen
               onOpenConversation={peerId => pushProvider({ name: 'chat', peerId })}
@@ -1252,6 +1256,7 @@ function SignedIn({
           onSignedOut={onSignedOut}
           onBlocked={() => pushRoute({ name: 'blocked' })}
           onTransactions={() => pushRoute({ name: 'transactions' })}
+          onUsage={() => pushRoute({ name: 'usage' })}
         />
       </TabLayer>
 
@@ -1307,7 +1312,8 @@ function SignedIn({
         route.name === 'apply' ||
         route.name === 'applicationStatus' ||
         route.name === 'blocked' ||
-        route.name === 'transactions' ? (
+        route.name === 'transactions' ||
+        route.name === 'usage' ? (
         // Same shape as the chat overlay: content first, then the entrance.
         <AfterPaint>
         <PushedLayer style={styles.overlay}>
@@ -1366,6 +1372,8 @@ function SignedIn({
             <ProviderStatusScreen onBack={backToHome} onEdit={() => pushRoute({ name: 'apply', from: 'applicationStatus' })} />
           ) : route.name === 'blocked' ? (
             <BlockedUsersScreen onBack={backToHome} />
+          ) : route.name === 'usage' ? (
+            <UsageLedgerScreen onBack={() => popRoute({ name: 'settings' })} />
           ) : (
             <TransactionHistoryScreen onBack={() => popRoute({ name: 'settings' })} />
           )}
