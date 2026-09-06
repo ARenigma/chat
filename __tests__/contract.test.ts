@@ -4094,11 +4094,24 @@ describe('the directory is grouped and filterable: Listeners, Astrologers, ages'
     }
   });
 
-  it('shows both tabs from day one and filters Explore by the one you are on', () => {
+  it('shows both tabs from day one and filters the WHOLE screen by the one you are on', () => {
     const home = withoutComments(read('src/screens/HomeScreen.tsx'));
     expect(home).toContain('testID="explore-tabs"');
     expect(home).toContain('testID={`explore-tab-${c}`}');
     expect(home).toContain('accessibilityRole="tab"');
+    /*
+     * The strip sits ABOVE Chats and outside the list, and the rail follows it
+     * too (Amit, 2026-09-06): a tab is a whole view of the app, not a shelf
+     * inside one. Pinned rather than scrolled away with the content, or the
+     * filter control leaves the screen the moment you use the screen.
+     */
+    expect(home.indexOf('testID="explore-tabs"')).toBeLessThan(
+      home.indexOf('ListHeaderComponent={ExploreHeader}'),
+    );
+    expect(home).toContain('(categoryById.get(c.peer_id) ?? DEFAULT_CATEGORY) === exploreCategory');
+    // A peer with no directory row keeps their thread under the default tab: a
+    // conversation you have had is not something a filter may hide from you.
+    expect(home).toContain('categoryById.get(c.peer_id) ?? DEFAULT_CATEGORY');
     // The featured pick comes from the FILTERED list, so the hero always
     // belongs to the tab you are on.
     expect(home).toMatch(/const directory = useMemo\(\s*\(\) =>\s*filterProviders\(allProviders, \{ category: exploreCategory, bands: \[\] \}\)/);
