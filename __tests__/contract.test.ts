@@ -4217,3 +4217,87 @@ describe('search opens the way Telegram opens it, and the week has a carousel', 
     expect(carousel).not.toMatch(/setInterval|carouselDwell/);
   });
 });
+
+describe('a session is rated when it ends, and the ratings are readable', () => {
+  const migration = read('supabase/migrations/066_session_reviews_and_ratings.sql');
+
+  it('rates a SESSION, and every rating counts', () => {
+    // Amit, 2026-09-06: per session, all count. A member who comes back five
+    // times has five opinions, and the chart is only worth drawing if it
+    // reflects real volume.
+    expect(migration).toContain('add column if not exists session_id uuid');
+    expect(migration).toContain('reviews_one_per_session');
+    // The 006 trigger already averages every row, so "all count" needs no
+    // change there — and must not have acquired a filter.
+    const trigger = read('supabase/migrations/006_phone_auth_and_provider_onboarding.sql');
+    expect(trigger).toContain('from public.reviews where provider_id = v_provider');
+  });
+
+  it('keeps 006\'s conversation-level entry point working', () => {
+    /*
+     * `submit_review` is pinned by pgTAP 050 and 060, including its upsert, and
+     * its `on conflict (conversation_id)` target no longer exists. It is
+     * re-stated to rate the conversation's LATEST session, so both submissions
+     * resolve to the same row and its old contract survives.
+     */
+    expect(migration).toContain('create or replace function public.submit_review');
+    expect(migration).toContain('order  by accepted_at desc nulls last');
+    expect(migration).toContain('reviews_one_per_legacy_conversation');
+    // The strict path is the new one, and it is the one the UI calls.
+    expect(migration).toContain("raise exception 'the session has not ended'");
+    expect(withoutComments(read('src/components/SessionFeedbackSheet.tsx'))).toContain(
+      'useSubmitSessionReview',
+    );
+  });
+
+  it('never publishes who wrote a review', () => {
+    const fn = migration.slice(migration.indexOf('create or replace function public.get_provider_ratings'));
+    expect(fn).not.toMatch(/'member_id'|r\.member_id/);
+    // Five rows, always, zeros included: a chart that omits its empty bars
+    // redraws itself every time somebody rates.
+    expect(fn).toContain('generate_series(1, 5)');
+    expect(fn).toContain("order by s.stars desc");
+    // And only for someone the directory publishes, so it is not a scraper.
+    expect(fn).toContain('from public.provider_directory d where d.id = p_provider_id');
+  });
+
+  it('asks once, on the edge, and only of the member', () => {
+    const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+    // Watches the TRANSITION, not the absence: activeSession is null before a
+    // session exists too, and asking then would prompt for a conversation that
+    // never happened.
+    expect(chat).toContain('const liveSessionRef = useRef<string | null>(null)');
+    expect(chat).toMatch(/if \(isMemberSide\) \{\s*requestReview\(previous, name\);/);
+    // One sheet for the whole app, because a session can end in a call too.
+    expect(withoutComments(read('App.tsx'))).toContain('<SessionFeedbackSheet />');
+    const store = withoutComments(read('src/store/useStore.ts'));
+    expect(store).toContain('pendingReview');
+    // First writer wins: a chat and a call noticing the same end must not
+    // replace a sheet the member is already looking at.
+    expect(store).toMatch(/state\.pendingReview === null \? \{ pendingReview:/);
+  });
+
+  it('lets the member skip, and draws the chart without a new dependency', () => {
+    const sheet = withoutComments(read('src/components/SessionFeedbackSheet.tsx'));
+    // A rating prompt with no way past it is a toll gate on leaving a
+    // conversation somebody may have found difficult.
+    expect(sheet).toContain("cancelLabel=\"Skip\"");
+    expect(sheet).toContain('testID={`session-feedback-star-${n}`}');
+    expect(sheet).toContain('disabled={rating === 0}');
+
+    const detail = withoutComments(read('src/screens/ProviderDetailScreen.tsx'));
+    expect(detail).toContain('testID="ratings-chart"');
+    expect(detail).toContain('testID="ratings-empty"');
+    // RULE 5: react-native-svg is banned. Five horizontal bars are Views.
+    expect(detail).not.toContain('react-native-svg');
+    // Share of the LARGEST bar: with 30 fives and 1 one, shares of the total
+    // make every bar but one invisible.
+    expect(detail).toMatch(/Math\.max\(\.\.\.ratings\.distribution\.map\(b => b\.count\), 1\)/);
+  });
+
+  it('is registered in the harness with its suite', () => {
+    const dbTest = read('scripts/db-test.mjs');
+    expect(dbTest).toContain('066_session_reviews_and_ratings.sql');
+    expect(dbTest).toContain('280_session_reviews_and_ratings.sql');
+  });
+});

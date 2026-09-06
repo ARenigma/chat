@@ -48,6 +48,16 @@ export interface AppState {
   refillVisible: boolean;
   /** Full-page Recharge, opened only from the wallet pill. */
   walletVisible: boolean;
+  /**
+   * A session that just ended and has not been rated yet (goal item 14).
+   *
+   * Lives in the store rather than in ChatScreen because a session can end
+   * anywhere: a chat, a call started from the provider's page, or the server
+   * ending it when the balance runs out. Whoever notices sets this; ONE sheet
+   * at the App level renders it. `peerName` is carried along because the sheet
+   * may outlive the screen that knew it.
+   */
+  pendingReview: { sessionId: string; peerName: string } | null;
   notice: string | null;
   noticeTone: NoticeTone;
   playing: PlayingVoice | null;
@@ -78,6 +88,8 @@ export interface AppState {
   setPlaying: (playing: PlayingVoice | null) => void;
   openRefill: () => void;
   closeRefill: () => void;
+  requestReview: (sessionId: string, peerName: string) => void;
+  clearReview: () => void;
   openWallet: () => void;
   closeWallet: () => void;
   /**
@@ -103,6 +115,7 @@ const INITIAL = {
   peerTyping: false,
   refillVisible: false,
   walletVisible: false,
+  pendingReview: null,
   notice: null,
   noticeTone: 'error' as NoticeTone,
   playing: null,
@@ -116,6 +129,8 @@ const INITIAL = {
   | 'setPlaying'
   | 'openRefill'
   | 'closeRefill'
+  | 'requestReview'
+  | 'clearReview'
   | 'openWallet'
   | 'closeWallet'
   | 'setNotice'
@@ -134,6 +149,16 @@ export const useStore = create<AppState>()(set => ({
   setPlaying: playing => set({ playing }),
   openRefill: () => set({ refillVisible: true, walletVisible: false }),
   closeRefill: () => set({ refillVisible: false }),
+  /*
+   * First writer wins: if a call and its chat both notice the same session
+   * ending, the second call must not replace a sheet the member is already
+   * looking at (or re-open one they just dismissed).
+   */
+  requestReview: (sessionId, peerName) =>
+    set(state =>
+      state.pendingReview === null ? { pendingReview: { sessionId, peerName } } : state,
+    ),
+  clearReview: () => set({ pendingReview: null }),
   openWallet: () => set({ walletVisible: true, refillVisible: false }),
   closeWallet: () => set({ walletVisible: false }),
   setNotice: (notice, tone = 'error') => set({ notice, noticeTone: tone }),

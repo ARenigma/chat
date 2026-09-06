@@ -343,6 +343,35 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
     isMemberSide && !peerOffersChat && activeSession === null && pendingRequest === null;
   const peerName = peerThread?.peer_display_name ?? provider?.display_name;
   const name = peerName ?? 'Conversation';
+
+  /*
+   * When a session this member was in ends, ask how it went (goal item 14).
+   *
+   * Watches for the transition rather than for the absence: `activeSession` is
+   * null before a session exists too, and asking then would prompt for a
+   * conversation that never happened. The ref remembers the last LIVE session,
+   * so the trigger fires once, on the edge.
+   *
+   * Member side only — a provider rating a member is a different feature with
+   * different consequences (006's rule, kept).
+   */
+  const liveSessionRef = useRef<string | null>(null);
+  const requestReview = useStore(s => s.requestReview);
+  useEffect(() => {
+    const live =
+      activeSession != null && activeSession.ended_at === null ? activeSession.id : null;
+    const previous = liveSessionRef.current;
+    if (live !== null) {
+      liveSessionRef.current = live;
+      return;
+    }
+    if (previous !== null) {
+      liveSessionRef.current = null;
+      if (isMemberSide) {
+        requestReview(previous, name);
+      }
+    }
+  }, [activeSession, isMemberSide, name, requestReview]);
   const initial = initialOf(peerName);
   const avatarUrl = peerThread?.peer_avatar_url ?? provider?.avatar_url ?? null;
 

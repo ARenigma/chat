@@ -22,6 +22,7 @@ import { sizedStorageImageUri } from '../lib/storageImage';
 import { contentColumnWidth } from '../lib/windowSize';
 import { rateLabel, type Channel } from '../lib/rates';
 import { useConversations, useProfile, useProviders } from '../api/chat';
+import { useProviderRatings } from '../api/provider';
 import { CALLS_ENABLED } from '../api/calls';
 import { useEconomicsConfig, useKillSwitches, FALLBACK_ECONOMICS } from '../api/appConfig';
 import { useStore } from '../store/useStore';
@@ -73,6 +74,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
   const audioRate = economics?.audio_rate_tokens_per_min ?? FALLBACK_ECONOMICS.audio_rate_tokens_per_min;
   const videoRate = economics?.video_rate_tokens_per_min ?? FALLBACK_ECONOMICS.video_rate_tokens_per_min;
   const { data: providers, isPending } = useProviders();
+  const { data: ratings } = useProviderRatings(providerId);
   const { data: conversations } = useConversations();
   // Favourites are persisted now (#10), not throwaway local state — the heart
   // reads and writes the saved-favourites store, which the Favourites tab lists.
@@ -159,6 +161,98 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
               label={`Video call ${provider.display_name}`}
             />
           </View>
+
+          <View style={styles.hairline} />
+
+          {/* Ratings, in detail (goal item 10). Bars are Views with a width
+              percentage — `react-native-svg` is banned (RULE 5) and a chart of
+              five horizontal bars does not need it. Always five rows, 5..1,
+              zeros included: the server returns them that way so the chart does
+              not reshape itself as ratings arrive, and a zero IS information. */}
+          <Text allowFontScaling style={styles.aboutLabel}>
+            RATINGS
+          </Text>
+          {ratings === null || ratings === undefined || ratings.rating_count === 0 ? (
+            <Text allowFontScaling style={styles.aboutBody} testID="ratings-empty">
+              No ratings yet. Yours would be the first.
+            </Text>
+          ) : (
+            <View testID="ratings-chart">
+              <View style={styles.ratingSummary}>
+                <Text
+                  maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineMediumEmphasized}
+                  allowFontScaling
+                  style={styles.ratingBig}>
+                  {(ratings.rating_avg ?? 0).toFixed(1)}
+                </Text>
+                <View style={styles.ratingSummaryText}>
+                  <View style={styles.ratingStars}>
+                    {[1, 2, 3, 4, 5].map(n => (
+                      <Icon
+                        key={n}
+                        name="star"
+                        size={14}
+                        color={
+                          n <= Math.round(ratings.rating_avg ?? 0)
+                            ? theme.color.text.token
+                            : theme.color.border.strong
+                        }
+                      />
+                    ))}
+                  </View>
+                  <Text allowFontScaling style={styles.ratingCount}>
+                    {`${ratings.rating_count} ${ratings.rating_count === 1 ? 'rating' : 'ratings'}`}
+                  </Text>
+                </View>
+              </View>
+              {ratings.distribution.map(bar => (
+                <View key={bar.stars} style={styles.ratingRow}>
+                  <Text allowFontScaling={false} style={styles.ratingRowLabel}>
+                    {bar.stars}
+                  </Text>
+                  <View style={styles.ratingTrack}>
+                    <View
+                      style={[
+                        styles.ratingFill,
+                        {
+                          // Share of the LARGEST bar, not of the total: with
+                          // 30 fives and 1 one, shares of the total make every
+                          // bar but one invisible.
+                          width: `${
+                            ratings.rating_count === 0
+                              ? 0
+                              : (bar.count /
+                                  Math.max(...ratings.distribution.map(b => b.count), 1)) *
+                                100
+                          }%`,
+                        },
+                      ]}
+                    />
+                  </View>
+                  <Text allowFontScaling={false} style={styles.ratingRowCount}>
+                    {bar.count}
+                  </Text>
+                </View>
+              ))}
+              {ratings.recent.map((r, i) => (
+                <View key={`${r.created_at}-${i}`} style={styles.reviewRow}>
+                  <View style={styles.ratingStars}>
+                    {[1, 2, 3, 4, 5].map(n => (
+                      <Icon
+                        key={n}
+                        name="star"
+                        size={12}
+                        color={n <= r.rating ? theme.color.text.token : theme.color.border.strong}
+                      />
+                    ))}
+                  </View>
+                  <Text allowFontScaling style={styles.reviewBody}>
+                    {r.comment}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
 
           <View style={styles.hairline} />
 
@@ -561,6 +655,54 @@ const makeStyles = (t: Theme) =>
       backgroundColor: t.color.border.hairline,
       marginTop: TOKENS.space.xl,
     },
+    ratingSummary: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.sm,
+      paddingBottom: TOKENS.space.sm,
+    },
+    ratingBig: {
+      ...TOKENS.typography.headlineMediumEmphasized,
+      color: t.color.text.primary,
+    },
+    ratingSummaryText: { gap: TOKENS.space['2xs'] },
+    ratingStars: { flexDirection: 'row', gap: TOKENS.space.hair },
+    ratingCount: { ...TOKENS.typography.bodySmall, color: t.color.text.secondary },
+    ratingRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.xs,
+      paddingVertical: TOKENS.space.hair,
+    },
+    ratingRowLabel: {
+      ...TOKENS.typography.bodySmall,
+      color: t.color.text.secondary,
+      width: 10,
+      textAlign: 'right',
+    },
+    ratingTrack: {
+      flex: 1,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: t.color.bg.sunken,
+      overflow: 'hidden',
+    },
+    ratingFill: {
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: t.color.text.token,
+    },
+    ratingRowCount: {
+      ...TOKENS.typography.bodySmall,
+      color: t.color.text.tertiary,
+      minWidth: 18,
+      textAlign: 'right',
+    },
+    reviewRow: {
+      gap: TOKENS.space['2xs'],
+      paddingTop: TOKENS.space.sm,
+    },
+    reviewBody: { ...TOKENS.typography.bodyMedium, color: t.color.text.secondary },
     aboutLabel: {
       ...TOKENS.typography.labelMediumEmphasized,
       color: t.color.text.secondary,

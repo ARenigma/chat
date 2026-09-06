@@ -21,6 +21,7 @@ import type {
   PresenceChoice,
   Profile,
   ProviderEarnings,
+  ProviderRatings,
 } from '../lib/database.types';
 import { track } from '../lib/telemetry';
 import { errorTick, tick } from '../lib/haptics';
@@ -767,6 +768,74 @@ export function useSetClayAvatar() {
     onError: () => {
       errorTick();
       setNotice('Could not update your avatar. Try again.');
+    },
+  });
+}
+
+/**
+ * A member rating ONE ended session (migration 066, goal item 14).
+ *
+ * The post-disconnect path. Distinct from `useSubmitReview` below, which is
+ * 006's lenient conversation-level entry point: this one refuses a session that
+ * has not ended, and re-submitting corrects the rating rather than adding a
+ * second opinion. Every rating counts toward the provider's average — a member
+ * who comes back five times has five opinions (Amit, 2026-09-06).
+ */
+export function useSubmitSessionReview() {
+  const queryClient = useQueryClient();
+  const setNotice = useStore(s => s.setNotice);
+
+  return useMutation<void, Error, { sessionId: string; rating: number; comment: string | null }>({
+    mutationFn: async input => {
+      const { error } = await supabase.rpc('submit_session_review', {
+        p_session_id: input.sessionId,
+        p_rating: input.rating,
+        p_comment: input.comment,
+      });
+      if (error) {
+        throw new Error(error.message);
+      }
+    },
+    onSuccess: (_void, input) => {
+      tick();
+      // A 1..5 integer is safe as a telemetry dimension; the free text never is.
+      track('review_submitted', { rating: input.rating });
+      setNotice('Thanks, that helps the next person choose.', 'confirm');
+      void queryClient.invalidateQueries({ queryKey: keys.providers });
+      void queryClient.invalidateQueries({ queryKey: ['provider-ratings'] });
+    },
+    onError: err => {
+      errorTick();
+      setNotice(
+        /has not ended/.test(err.message)
+          ? 'You can rate this once the session ends.'
+          : 'Could not save that rating.',
+      );
+    },
+  });
+}
+
+/**
+ * A provider's reputation as a member reads it (item 10): the average, the
+ * count, a five-row 5..1 distribution and the recent comments.
+ *
+ * An RPC rather than a table read, because 006's RLS lets a member read only
+ * reviews they are party to — which is right, and also means the raw table
+ * cannot answer this question.
+ */
+export function useProviderRatings(providerId: string | null) {
+  return useQuery<ProviderRatings | null>({
+    queryKey: ['provider-ratings', providerId ?? ''],
+    enabled: providerId !== null,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('get_provider_ratings', {
+        p_provider_id: providerId as string,
+      });
+      if (error) {
+        throw new Error(error.message);
+      }
+      return (data as ProviderRatings | null) ?? null;
     },
   });
 }
