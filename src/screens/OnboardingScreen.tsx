@@ -779,7 +779,7 @@ export function OnboardingScreen({ onDone }: Props) {
                       key={spec.key}
                       onPress={() => goToStep(spec.key as IdentifyStage)}
                       press="none"
-                      highlight="ios"
+                      highlight="dim"
                       accessibilityLabel={`Go to ${spec.title}`}
                       testID={`step-nav-${spec.key}`}>
                       {row}

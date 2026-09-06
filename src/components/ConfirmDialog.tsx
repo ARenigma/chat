@@ -79,7 +79,7 @@ export function ConfirmDialog({
                 accessibilityRole="button"
                 accessibilityLabel={cancelLabel}
                 press="none"
-                highlight="ios"
+                highlight="dim"
                 style={styles.cancelHit}>
                 <Text allowFontScaling style={[styles.cancel, busy && styles.busy]}>
                   {cancelLabel}

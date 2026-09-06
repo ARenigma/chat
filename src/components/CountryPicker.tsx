@@ -77,7 +77,7 @@ export function CountryPicker({ value, onChange, testID }: Props) {
             }}
             accessibilityLabel={`${country.name} ${country.dialCode}`}
             press="row"
-            highlight="ios"
+            highlight="dim"
             style={[styles.row, country.dialCode === value ? styles.rowActive : null]}>
             <Text style={styles.rowFlag}>{country.flag}</Text>
             <Text allowFontScaling style={styles.rowName}>{country.name}</Text>

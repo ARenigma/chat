@@ -288,7 +288,7 @@ export function SettingsSheet({
                     testID="settings-back"
                     accessibilityLabel="Back"
                     press="none"
-                    highlight="ios"
+                    highlight="dim"
                     size={48}
                     style={styles.backButton}>
                     <Icon name="back" size={20} />
@@ -306,7 +306,7 @@ export function SettingsSheet({
               testID="settings-avatar"
               accessibilityLabel="Change avatar"
               press="none"
-              highlight="ios"
+              highlight="dim"
               disabled={setClayAvatar.isPending}
               style={styles.profileAvatarHit}>
               <Avatar
@@ -341,7 +341,7 @@ export function SettingsSheet({
             testID="settings-presence"
             accessibilityLabel={`Presence, ${presenceLabel}`}
             press="none"
-            highlight="ios"
+            highlight="dim"
             style={styles.row}>
             <SettingsRowContent
               icon="person"
@@ -357,7 +357,7 @@ export function SettingsSheet({
                 testID="settings-blocked"
                 accessibilityLabel="Blocked People"
                 press="none"
-                highlight="ios"
+                highlight="dim"
                 style={styles.row}>
                 <SettingsRowContent
                   icon="block"
@@ -376,7 +376,7 @@ export function SettingsSheet({
             testID="settings-theme"
             accessibilityLabel={`Theme, ${themeLabel}`}
             press="none"
-            highlight="ios"
+            highlight="dim"
             style={styles.row}>
             <SettingsRowContent icon="settings" title="Theme" detail={themeLabel} />
           </Pressable>
@@ -391,7 +391,7 @@ export function SettingsSheet({
                   testID="settings-verify-phone"
                   accessibilityLabel="Verify Phone Number"
                   press="none"
-                  highlight="ios"
+                  highlight="dim"
                   style={styles.row}>
                   <SettingsRowContent
                     icon="call"
@@ -416,7 +416,7 @@ export function SettingsSheet({
                 testID="settings-transactions"
                 accessibilityLabel="Recharge history"
                 press="none"
-                highlight="ios"
+                highlight="dim"
                 style={styles.row}>
                 <SettingsRowContent
                   icon="wallet"
@@ -437,7 +437,7 @@ export function SettingsSheet({
               testID="settings-usage"
               accessibilityLabel="Usage by session"
               press="none"
-              highlight="ios"
+              highlight="dim"
               style={styles.row}>
               <SettingsRowContent
                 icon="listen"
@@ -467,7 +467,7 @@ export function SettingsSheet({
             testID="settings-terms"
             accessibilityLabel="Terms of Service"
             press="none"
-            highlight="ios"
+            highlight="dim"
             style={styles.row}>
             <SettingsRowContent icon="report" title="Terms of service" />
           </Pressable>
@@ -479,7 +479,7 @@ export function SettingsSheet({
             testID="settings-privacy"
             accessibilityLabel="Privacy Policy"
             press="none"
-            highlight="ios"
+            highlight="dim"
             style={styles.row}>
             <SettingsRowContent icon="block" title="Privacy policy" />
           </Pressable>
@@ -495,7 +495,7 @@ export function SettingsSheet({
             testID="sign-out"
             accessibilityLabel="Sign Out"
             press="none"
-            highlight="ios"
+            highlight="dim"
             style={styles.row}>
             <SettingsRowContent icon="logout" title="Sign out" chevron={false} />
           </Pressable>
@@ -508,7 +508,7 @@ export function SettingsSheet({
             testID="delete-account"
             accessibilityLabel="Delete Account"
             press="none"
-            highlight="ios"
+            highlight="dim"
             style={styles.row}>
             <SettingsRowContent
               icon="report"
@@ -533,7 +533,7 @@ export function SettingsSheet({
             testID="settings-rate"
             accessibilityLabel="Rate us on the Play Store"
             press="none"
-            highlight="ios"
+            highlight="dim"
             style={styles.rateFooter}>
             <Icon name="star" size={13} color={theme.color.text.secondary} />
             <Text allowFontScaling style={styles.rateFooterText}>
@@ -565,7 +565,7 @@ export function SettingsSheet({
                   checked={on}
                   accessibilityLabel={option.label}
                   press="none"
-                  highlight="ios"
+                  highlight="dim"
                   style={styles.row}>
                   <SettingsRowContent
                     icon="person"
@@ -604,7 +604,7 @@ export function SettingsSheet({
                   checked={on}
                   accessibilityLabel={label}
                   press="none"
-                  highlight="ios"
+                  highlight="dim"
                   style={styles.row}>
                   <SettingsRowContent
                     icon="settings"

@@ -244,7 +244,7 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
                       checked={on}
                       accessibilityLabel={name}
                       press="none"
-                      highlight="ios"
+                      highlight="dim"
                       style={[
                         styles.row,
                         index === 0 && styles.rowFirst,
@@ -281,7 +281,7 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
                 testID="payment-web"
                 accessibilityLabel="Pay with card, net banking or wallets"
                 press="none"
-                highlight="ios"
+                highlight="dim"
                 style={styles.webRow}>
                 <Text allowFontScaling style={styles.webRowText}>
                   Card, Net Banking & Wallets

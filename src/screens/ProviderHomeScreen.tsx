@@ -136,7 +136,7 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
           testID={`provider-thread-${item.peer_id}`}
           accessibilityLabel={`${label}${unread ? ', waiting for a reply' : ''}`}
           press="none"
-          highlight="ios"
+          highlight="dim"
           style={styles.row}>
           <Avatar
             initial={initialOf(label)}
@@ -258,7 +258,7 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
                   testID="open-settings"
                   accessibilityLabel="Account and Privacy"
                   press="none"
-                  highlight="ios"
+                  highlight="dim"
                   size={40}
                   style={styles.iconButton}>
                   <Icon name="settings" size={20} color={theme.color.text.secondary} />
@@ -356,7 +356,7 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
                   testID="open-payout"
                   accessibilityLabel="Set up how you get paid"
                   press="none"
-                  highlight="ios"
+                  highlight="dim"
                   style={styles.payoutRow}>
                   <Icon name="wallet" size={20} color={theme.color.text.onAccent} />
                   <Text allowFontScaling style={styles.payoutLabel}>
@@ -426,7 +426,7 @@ function TabButton({
       checked={active}
       accessibilityLabel={label}
       press="none"
-      highlight="ios"
+      highlight="dim"
       style={styles.tab}>
       <View>
         <Icon name={icon} size={24} color={color} />

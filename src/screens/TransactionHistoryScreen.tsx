@@ -161,7 +161,7 @@ function TransactionRow({ tx, onDownload }: RowProps) {
             accessibilityLabel={`Download invoice for ${formatPaise(tx.amountPaise)} recharge on ${shortDate(tx.createdAt)}`}
             accessibilityRole="button"
             press="none"
-            highlight="ios"
+            highlight="dim"
             style={styles.downloadBtn}>
             <Icon name="download" size={18} color={theme.color.text.secondary} />
           </Pressable>

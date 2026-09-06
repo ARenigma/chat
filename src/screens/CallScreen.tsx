@@ -492,7 +492,7 @@ function CallAction({
         testID={testID}
         accessibilityLabel={label}
         press="none"
-        highlight="ios"
+        highlight="dim"
         size={72}
         style={[styles.action, tone === 'danger' ? styles.danger : styles.accept]}>
         <Icon name={glyph} size={30} color={LIGHT.color.text.onAccent} />
@@ -542,7 +542,7 @@ function BarButton({
         testID={testID}
         accessibilityLabel={label}
         press="none"
-        highlight="ios"
+        highlight="dim"
         size={BTN}
         style={[
           styles.barButton,

@@ -150,7 +150,7 @@ export function PaperMenu({ visible, items, onClose, anchor, testID }: Props) {
               accessibilityRole="menuitem"
               accessibilityLabel={item.label}
               press="none"
-              highlight="ios"
+              highlight="dim"
               testID={`paper-menu-${item.key}`}
               style={styles.row}>
               <Text

@@ -87,7 +87,7 @@ const Cell = memo(function CellView({
       onLongPress={onHold === undefined ? undefined : () => onHold(char)}
       accessibilityLabel={char}
       press="none"
-      highlight="ios"
+      highlight="dim"
       style={[styles.cell, { width: size, height: size }]}>
       <Text allowFontScaling={false} style={styles.glyph}>
         {char}
@@ -328,7 +328,7 @@ function EmojiPickerView({
             testID="emoji-search-close"
             accessibilityLabel="Close search"
             press="none"
-            highlight="ios"
+            highlight="dim"
             size={32}
             style={styles.close}>
             <Icon name="close" size={14} color={theme.color.text.secondary} />
@@ -348,7 +348,7 @@ function EmojiPickerView({
               accessibilityLabel={i === 0 ? 'Default skin tone' : `Skin tone ${i}`}
               selected={t === tone}
               press="none"
-              highlight="ios"
+              highlight="dim"
               style={styles.tab}>
               <Text allowFontScaling={false} style={styles.tabGlyph}>
                 {TONE_SWATCHES[i]}
@@ -380,7 +380,7 @@ function EmojiPickerView({
               selected={c.id === category}
               testID={`emoji-tab-${c.id}`}
               press="none"
-              highlight="ios"
+              highlight="dim"
               style={[styles.tab, c.id === category ? styles.tabOn : null]}>
               <Text allowFontScaling={false} style={styles.tabGlyph}>
                 {c.glyph}

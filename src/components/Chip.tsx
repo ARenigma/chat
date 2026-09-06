@@ -45,7 +45,7 @@ function ChipView({ label, tone = 'neutral', onPress, selected = false }: Props)
       accessibilityLabel={`Start with: ${label}`}
       testID={`starter-${tone}`}
       press="none"
-      highlight="ios"
+      highlight="dim"
       style={[
         styles.chip,
         tone === 'warm' && styles.chipWarm,
