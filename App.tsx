@@ -116,6 +116,27 @@ const LAST_PROVIDER_KEY = 'companion.lastProvider';
  * its mirror. The entrance is effect-driven (`useScreenEnter`) because the
  * `entering` layout animation does not run on this mount path — see motion.ts.
  * One component so every push in both trees moves identically.
+ *
+ * W5#5 — `renderToHardwareTextureAndroid` NOT added, and that is a decision
+ * rather than an omission.
+ *
+ * The prop promotes the view to a GPU texture so the compositor can handle the
+ * push/pop translate with a matrix multiply rather than re-drawing children per
+ * frame. That IS the right use case. But the plan requires it be "toggled while
+ * animating, never left on" — a permanent texture costs real GPU memory even
+ * when the screen is settled. Proper toggling needs `onTransitionSettled` from
+ * motion.ts to know when the 150 ms slide has finished; that shared value is not
+ * yet exposed here. Until the toggle can be wired cleanly, leaving the prop off
+ * is better than pinning a texture that never releases.
+ *
+ * Pre-condition for adding it: a `framestats.mjs` run on the S22 (not the
+ * SwiftShader emulator, where any measurement is noise — see BloomField.tsx:325)
+ * showing that push/pop frames exceed budget and that adding the prop reduces
+ * jank by a meaningful margin. If they do, implement as:
+ *   `renderToHardwareTextureAndroid={transitioning.value}`
+ * via a `useAnimatedProps` driven by the `transitioning` shared value in
+ * motion.ts.
+ * https://reactnative.dev/docs/view-style-props#rendertohardwaretextureandroid
  */
 function PushedLayer({
   style,

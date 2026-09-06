@@ -487,6 +487,9 @@ describe('motion tokens', () => {
     expect(press.chip).toBeLessThan(press.button);
     expect(press.button).toBeLessThan(press.card);
     expect(press.send).toBeLessThan(press.chip);
+    // An emoji grid cell is smaller than send in every dimension so it gets
+    // the deepest transient scale (0.80 < 0.86). Telegram: EmojiView 0.8 scale.
+    expect(press.cell).toBeLessThan(press.send);
   });
 
   it('squashes the send non-uniformly', () => {
@@ -520,6 +523,23 @@ describe('motion tokens', () => {
     // And a word has to hold longer than it takes to swap, or it is never still
     // long enough to read.
     expect(duration.carouselDwell).toBeGreaterThan(duration.base * 2);
+  });
+
+  it('keeps the three W4 durations in their measured relationships', () => {
+    // pressRamp is the press-in ramp for emoji cells and icon buttons (Telegram
+    // EmojiView ~80ms, rounded to 100). It must be faster than `instant` (110ms),
+    // because the whole point is that press feedback is attached to the finger.
+    expect(duration.pressRamp).toBeLessThan(duration.instant);
+    // listAdd is the bubble-arrive fade (120ms). Faster than `fast` (170ms) so
+    // a received message resolves quickly rather than lingering mid-opacity.
+    expect(duration.listAdd).toBeLessThan(duration.fast);
+    // sendReveal is the mic→send crossfade in useCrossfade (Telegram 220ms).
+    // Faster than `base` (240ms) so it reads as snappy, not laboured.
+    expect(duration.sendReveal).toBeLessThan(duration.base);
+    // All three are independent measurements; none equals another, so retuning
+    // one cannot silently retune the others.
+    expect(duration.pressRamp).not.toBe(duration.listAdd);
+    expect(duration.listAdd).not.toBe(duration.sendReveal);
   });
 
   it('separates hiding information from de-emphasising it', () => {
@@ -600,6 +620,9 @@ describe('material 3 motion tokens', () => {
       m3.easing.standard,
       m3.easing.decelerate,
       m3.easing.easeOutQuint,
+      // Added W4#1: timed-curve easings for animations with no finger velocity.
+      m3.easing.easeOut,
+      m3.easing.ease,
     ]) {
       expect(curve).toHaveLength(4);
       expect(curve[0]).toBeGreaterThanOrEqual(0);
@@ -610,11 +633,12 @@ describe('material 3 motion tokens', () => {
   });
 
   it('keeps the M3 durations ascending', () => {
-    const { short2, short3, short4, medium2, medium4, long2 } = m3.duration;
+    const { short2, short3, short4, medium2, medium3, medium4, long2 } = m3.duration;
     expect(short2).toBeLessThan(short3);
     expect(short3).toBeLessThan(short4);
     expect(short4).toBeLessThan(medium2);
-    expect(medium2).toBeLessThan(medium4);
+    expect(medium2).toBeLessThan(medium3);
+    expect(medium3).toBeLessThan(medium4);
     expect(medium4).toBeLessThan(long2);
   });
 
@@ -1089,6 +1113,47 @@ describe('motion lives in one module', () => {
     // Nothing in this change writes its own physics. The screens ask for a named
     // builder and the builders are the only place a duration appears.
     expect(read('src/components/Button.tsx')).toContain('fadeSwapFast');
+  });
+
+  it('exposes a timed press-ramp builder, not a spring', () => {
+    // Rule (motion-system.md 2026-09-06): a spring where a finger's velocity is
+    // being continued; a timed curve where it is not. A tap has no accumulated
+    // velocity, so pressIn uses withTiming, not withSpring.
+    const motion = read('src/theme/motion.ts');
+    expect(motion).toContain('export function pressIn(');
+    const start = motion.indexOf('export function pressIn(');
+    const block = motion.slice(start, start + 300);
+    expect(block).toContain('withTiming');
+    expect(block).not.toContain('withSpring');
+    expect(block).toContain('DURATION.pressRamp');
+  });
+
+  it('exposes a transition-lock primitive for W5 deferral', () => {
+    // W5 #6 gates realtime inserts, image fetches and Avatar loads on this;
+    // the five call sites are wired there. Only the primitive is built here.
+    const motion = read('src/theme/motion.ts');
+    expect(motion).toContain('export const transitioning');
+    expect(motion).toContain('export function onTransitionSettled(');
+    expect(motion).toContain('export function setTransitioning(');
+  });
+
+  it('animates bubbleArrive on timed curves, not springs', () => {
+    // Rule (motion-system.md 2026-09-06): a peer's message arriving from the
+    // network has no gesture velocity — a spring would overshoot for no reason
+    // the user caused. Re-cut to 120ms fade (listAdd) + 250ms keyboard-cubic
+    // translate (medium1). Scale removed: a scale with no gesture behind it
+    // reads as the animation shrinking the object, not as mass or direction.
+    const motion = read('src/theme/motion.ts');
+    const start = motion.indexOf('export function bubbleArrive(');
+    const block = motion.slice(start, start + 800);
+    expect(block).not.toContain('withSpring');
+    expect(block).toContain('DURATION.listAdd');
+    expect(block).toContain('KEYBOARD_CUBIC');
+    expect(block).toContain('M3.duration.medium1');
+    // The fade is the accessible fallback and must always run.
+    expect(block).toContain('ReduceMotion.Never');
+    // The translate collapses under reduce-motion.
+    expect(block).toContain('ReduceMotion.System');
   });
 
   it('honours the OS reduce-motion setting on every transition builder', () => {

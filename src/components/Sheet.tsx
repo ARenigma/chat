@@ -256,6 +256,32 @@ function SheetView({
           accessibilityState={{ disabled: !dismissOnScrim }}
         />
         <GestureDetector gesture={pan}>
+          {/*
+           * W5#5 — `renderToHardwareTextureAndroid` NOT added to this container,
+           * and that is a recorded decision.
+           *
+           * The sheet slides in/out with a Reanimated translateY. During that
+           * animation the subtree is visually static, so a hardware texture would
+           * let the compositor handle the slide as a matrix multiply rather than
+           * re-drawing children — the right use case on paper.
+           *
+           * Two problems prevent doing it correctly:
+           *
+           *   1. "Never left on." A texture that persists while the sheet is open
+           *      and settled pays real GPU memory for no benefit. Toggling requires
+           *      knowing when `y.value` has settled at 0 — i.e. an `onSettled`
+           *      callback from the spring/timing animation — which would add
+           *      complexity to every animation path in this file.
+           *
+           *   2. No real-hardware measurement yet. `scripts/framestats.mjs` exists
+           *      but has not been run against sheet open/close on the S22. Without
+           *      a number that shows frames over budget during the 400 ms slide,
+           *      adding a GPU memory allocation is speculative.
+           *
+           * Revisit after a `framestats.mjs` run on the S22 confirms sheet open/
+           * close frames exceed the 8.33 ms budget.
+           * https://reactnative.dev/docs/view-style-props#rendertohardwaretextureandroid
+           */}
           <Animated.View
             testID={testID}
             onLayout={measure}

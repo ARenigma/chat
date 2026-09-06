@@ -94,6 +94,33 @@ const EASE_OUT_QUINT = Easing.bezier(
   M3.easing.easeOutQuint[3],
 );
 /**
+ * Standard CSS ease-out (0,0,0.58,1) — a decelerating curve for timed
+ * animations that have no finger velocity to carry. Used for the press-ramp
+ * in (the scale-down on a cell or icon button press) where the movement is
+ * caused by a tap, not a drag. Named `easeOut` in the token to distinguish it
+ * from the quint variant: quint is the much harder early deceleration used for
+ * the send-button reveal; this is the softer general-purpose version.
+ * https://developer.mozilla.org/en-US/docs/Web/CSS/easing-function#ease-out
+ */
+export const EASE_OUT = Easing.bezier(
+  M3.easing.easeOut[0],
+  M3.easing.easeOut[1],
+  M3.easing.easeOut[2],
+  M3.easing.easeOut[3],
+);
+/**
+ * Standard CSS ease (0.25,0.1,0.25,1) — a gentle start-and-end curve for
+ * in-place timed changes that want a softer character than ease-out: camera
+ * slot collapse, composer multi-line growth, etc. Named `ease` in the token.
+ * https://developer.mozilla.org/en-US/docs/Web/CSS/easing-function#ease
+ */
+export const EASE = Easing.bezier(
+  M3.easing.ease[0],
+  M3.easing.ease[1],
+  M3.easing.ease[2],
+  M3.easing.ease[3],
+);
+/**
  * The keyboard's own curve, for a panel that stands in for the keyboard.
  *
  * `CubicBezierInterpolator(0.19919472913616398, 0.010644531250000006,
@@ -146,6 +173,77 @@ export function dockTo(to: number, animate: boolean) {
       reduceMotion: ReduceMotion.System,
     }),
   );
+}
+
+/**
+ * Scale a pressable element to its named press scale over `pressRamp` ms.
+ *
+ * The rule that governs the curve: a spring where a finger's velocity is being
+ * continued; a timed curve where it is not. A tap has no accumulated velocity
+ * so the ramp is `EASE_OUT`, not a spring. The short duration (100ms) keeps
+ * feedback attached to the finger — Telegram's emoji cell presses to 0.8 in
+ * ~80ms (`EmojiView.java`). `ReduceMotion.System` collapses the scale to
+ * nothing under the OS "remove animations" setting; the element still responds
+ * (the state change fires), it just does not move.
+ */
+export function pressIn(kind: keyof typeof PRESS): number {
+  'worklet';
+  return withTiming(PRESS[kind], {
+    duration: DURATION.pressRamp,
+    easing: EASE_OUT,
+    reduceMotion: ReduceMotion.System,
+  });
+}
+
+/**
+ * True while a screen or surface transition is running.
+ *
+ * W5 #6 gates deferred work on this value — realtime message inserts,
+ * EmojiPicker pre-mount, image fetches, Avatar loads and ChatWallpaper are
+ * buffered here and flushed only after `onTransitionSettled` fires. Mutation
+ * is through `setTransitioning`; the transition builders (push/pop/sheetIn)
+ * are the only callers. Reading from any component or hook is safe.
+ */
+export const transitioning = makeMutable<boolean>(false);
+
+type SettledCallback = () => void;
+const _settledCallbacks = new Set<SettledCallback>();
+
+/**
+ * Subscribe to the moment the current transition settles.
+ *
+ * Returns an unsubscribe function — call it from a `useEffect` cleanup to
+ * prevent a leak when the subscribing component unmounts mid-transition.
+ *
+ * Callbacks run synchronously on the JS thread in insertion order the moment
+ * `setTransitioning(false)` is called, which is after the animation has
+ * completed and the UI thread has reported its final position.
+ *
+ * W5 #6 wires the five deferral call sites; this primitive is only built here.
+ */
+export function onTransitionSettled(cb: SettledCallback): () => void {
+  _settledCallbacks.add(cb);
+  return () => {
+    _settledCallbacks.delete(cb);
+  };
+}
+
+/**
+ * Mark a transition as started or finished.
+ *
+ * Call with `true` when a screen push/pop, sheet open or panel swap begins,
+ * and with `false` in the animation's completion callback once it has settled.
+ * Setting `false` notifies every `onTransitionSettled` subscriber in insertion
+ * order, then clears nothing — subscribers remain registered until they call
+ * their own unsubscribe return value.
+ */
+export function setTransitioning(active: boolean): void {
+  transitioning.value = active;
+  if (!active) {
+    for (const cb of _settledCallbacks) {
+      cb();
+    }
+  }
 }
 
 const EMPH_ACCEL = Easing.bezier(
@@ -611,21 +709,48 @@ export function bubbleLaunch() {
  * A peer's message arriving. Deliberately *not* the launch animation.
  *
  * Their message did not come out of your composer, so giving it the same
- * squash would be a small lie about where it came from. It slides in from the
- * left edge with `gentle` and no overshoot.
+ * squash would be a small lie about where it came from.
+ *
+ * Rule (motion-system.md, 2026-09-06): a spring where a finger's velocity is
+ * being continued; a timed curve where it is not. A received message has no
+ * gesture behind it, so both channels are timed — the previous version used
+ * `SPRING.gentle` for both translate and scale, which overshoots for no reason
+ * a user caused. Re-cut to:
+ *
+ *   opacity  — 120ms (`listAdd`) on emphasized-decelerate: the fade is the
+ *              accessible fallback and must always run (`Never`).
+ *   translateX — 250ms (`medium1`) on the keyboard cubic: the same curve and
+ *              duration the IME panel travels on, so the bubble arrives as if
+ *              it came from the same slot the keyboard did. Collapses under
+ *              reduce-motion (`System`).
+ *
+ * Scale is removed entirely: a scale with no gesture behind it reads as the
+ * animation just making the object smaller for a moment, rather than
+ * expressing mass or direction.
+ *
+ * Source: `design/references/motion-system.md` §Refinement 2026-09-06.
  */
 export function bubbleArrive() {
   'worklet';
   return {
     initialValues: {
       opacity: 0,
-      transform: [{ translateX: -14 }, { scale: 0.96 }],
+      transform: [{ translateX: -14 }],
     },
     animations: {
-      opacity: withTiming(1, { duration: DURATION.fast }),
+      opacity: withTiming(1, {
+        duration: DURATION.listAdd,
+        easing: EMPH_DECEL,
+        reduceMotion: ReduceMotion.Never,
+      }),
       transform: [
-        { translateX: withSpring(0, SPRING.gentle) },
-        { scale: withSpring(1, SPRING.gentle) },
+        {
+          translateX: withTiming(0, {
+            duration: M3.duration.medium1,
+            easing: KEYBOARD_CUBIC,
+            reduceMotion: ReduceMotion.System,
+          }),
+        },
       ],
     },
   };

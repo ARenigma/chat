@@ -3855,7 +3855,10 @@ describe('attach panel', () => {
   it('unbinds the camera when the panel is hidden or the app backgrounds', () => {
     // The panel stays MOUNTED so the swap is cheap, so visibility alone cannot
     // gate the hardware — a bound camera lights the OS in-use indicator.
-    expect(panel).toContain('visible && foreground && cameraGranted');
+    // `slotSettled` is a second gate: CameraX must not bind to a TextureView
+    // that is still mid-travel (zero-sized or clipped), verified on the API-36
+    // emulator 2026-09-04.
+    expect(panel).toContain('visible && slotSettled && foreground && cameraGranted');
     expect(panel).toContain("AppState.addEventListener('change'");
   });
 });

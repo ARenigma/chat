@@ -25,6 +25,8 @@ class MainApplication : Application(), ReactApplication {
           add(CameraTilePackage())
           // GPU hardware blur: PappalBlurRoot + PappalBlurSurface.
           add(BlurPackage())
+          // Device performance class (low / average / high) for blur quality.
+          add(DeviceClassPackage())
         },
     )
   }

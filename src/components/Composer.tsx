@@ -17,7 +17,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { DOCK_DELAY_MS, dockTo, useCrossfade } from '../theme/motion';
+import { DOCK_DELAY_MS, dockTo, useCrossfade, M3 } from '../theme/motion';
 import { requestAndroidPermission } from '../lib/permissions';
 import {
   launchCamera,
@@ -35,7 +35,7 @@ import {
   type RecordingHandle,
 } from '../lib/recorder';
 import { MAX_VOICE_MS, clock, isSendable, type VoiceDraft } from '../lib/voice';
-import { MAX_ATTACHMENT_BYTES, type ImageDraft } from '../lib/attachments';
+import { MAX_ATTACHMENT_BYTES, MAX_PICK, type ImageDraft } from '../lib/attachments';
 import { useStore } from '../store/useStore';
 import { Icon } from './Icon';
 import { Pressable } from './Pressable';
@@ -394,6 +394,59 @@ function ComposerView({
   }, [emojiOpen, attachOpen]);
 
   /**
+   * Settle gate for the camera tile (W3#2).
+   *
+   * CameraX cannot configure a capture session on a TextureView that is still
+   * mid-travel — the surface is zero-sized or partially clipped, and the native
+   * layer logs "Unable to configure camera … not done within 5000ms" while the
+   * tile renders black. Verified on the API-36 emulator 2026-09-04. `slotSettled`
+   * starts false whenever the attach surface is not shown. When it becomes shown
+   * we wait for the dock's animation window before flipping true, so CameraX only
+   * binds to a surface that is already in its final position.
+   *
+   * Three cases, each with a different wait:
+   *   – panel-to-panel swap (emoji → attach): dock height unchanged, no travel;
+   *     settle immediately.
+   *   – opened with keyboard up (`animateNext` false): keyboard exit is the
+   *     motion; dock doesn't travel; settle immediately.
+   *   – opened from closed with animation: wait DOCK_DELAY_MS + medium1 (300ms).
+   *
+   * The timeout expression mirrors the `setShown(null)` teardown timer above so
+   * both always agree on when the animation has finished.
+   *
+   * `prevShownRef` tracks the value of `shown` from the PREVIOUS effect run, which
+   * is `shown` one state-change earlier — the standard pattern for "previous value"
+   * without lifting state. It is updated at the end of each effect body, so the
+   * next run reads the prior value before overwriting it.
+   */
+  const prevShownRef = useRef<'emoji' | 'attach' | null>(null);
+  const [slotSettled, setSlotSettled] = useState(false);
+  useEffect(() => {
+    const prev = prevShownRef.current;
+    prevShownRef.current = shown;
+    if (shown !== 'attach') {
+      setSlotSettled(false);
+      return;
+    }
+    // Emoji → attach swap: dock height does not change, no slide occurs.
+    if (prev !== null) {
+      setSlotSettled(true);
+      return;
+    }
+    // Keyboard was up: its own exit is the motion; dock stays put.
+    if (!animateNext.current) {
+      setSlotSettled(true);
+      return;
+    }
+    // Dock sliding in from closed: wait for DOCK_DELAY_MS (50) + medium1 (250).
+    const t = setTimeout(
+      () => setSlotSettled(true),
+      DOCK_DELAY_MS + TOKENS.motion.m3.duration.medium1,
+    );
+    return () => clearTimeout(t);
+  }, [shown]);
+
+  /**
    * The travel, keyed on WHETHER a surface is drawn — not on which one.
    *
    * `shown` flipping 'emoji' to 'attach' must not animate: the dock's height
@@ -459,7 +512,11 @@ function ComposerView({
   const cameraOpen = useSharedValue(ready ? 0 : 1);
   useEffect(() => {
     cameraOpen.value = withTiming(ready ? 0 : 1, {
-      duration: TOKENS.motion.duration.fast,
+      // M3 short2 = 100ms. Telegram fades its attach icons in 100ms
+      // (`ChatActivityEnterView.java:7947`). `duration.fast` (170ms) was
+      // the mic↔send reveal timing — a different action on a different path.
+      // Using the token via the M3 export from motion.ts, not a raw literal.
+      duration: M3.duration.short2,
     });
   }, [ready, cameraOpen]);
   const cameraStyle = useAnimatedStyle(() => ({
@@ -467,6 +524,10 @@ function ComposerView({
     width: CAMERA_SLOT * cameraOpen.value,
     // The gap collapses with it, or the capsule stops short of the send button.
     marginLeft: TOKENS.space.xs * cameraOpen.value,
+    // Pinches to half-width as it collapses (scaleX 0.5 at value=0, 1 at value=1)
+    // so the icon reads as withdrawing rather than cutting out. Width still drives
+    // the actual space reclaim; scaleX is the visual read.
+    transform: [{ scaleX: 0.5 + 0.5 * cameraOpen.value }],
   }));
 
   const finish = useCallback((next: VoiceDraft | null) => {
@@ -742,51 +803,55 @@ function ComposerView({
   }, [draft, onSendVoice]);
 
   /**
-   * Validate a picker/camera result and hand the photo up.
+   * Validate all picked / captured assets and hand each photo up in turn.
    *
-   * Shared by the gallery and the camera so the size ceiling, the unreadable-asset
-   * guard and the `onSendImage` contract are identical for both — the division of
-   * labour the mic button has with `onSendVoice`. The size check mirrors the
-   * bucket's ceiling so an oversized pick is refused here rather than after the
-   * bytes are already on their way.
+   * Shared by the gallery picker (which may return up to MAX_PICK photos via
+   * Android's `PickMultipleVisualMedia`) and the camera (which returns exactly
+   * one). Looping here so every asset goes through the same size and
+   * readability checks — the division of labour the mic button has with
+   * `onSendVoice`.
+   *
+   * The panel closes once after the first successful send. Telegram dismisses
+   * its whole attach sheet on a successful send (`ChatAttachAlert.dismiss()`),
+   * and leaving ours open puts a live viewfinder under the message that was
+   * just sent — which reads as "it did not go". Only on the success path: a
+   * refused pick (too large, unreadable) leaves the panel up so the next
+   * attempt is one tap, not four.
+   *
+   * https://github.com/react-native-image-picker/react-native-image-picker
    */
-  const handleAsset = useCallback(
+  const handleAssets = useCallback(
     (result: ImagePickerResponse | null) => {
       if (result === null || result.didCancel) {
         return;
       }
-      const asset = result.assets?.[0];
-      if (
-        asset === undefined ||
-        asset.uri === undefined ||
-        asset.width === undefined ||
-        asset.height === undefined
-      ) {
-        setNotice('That photo could not be read.');
-        errorTick();
-        return;
+      let sentAny = false;
+      for (const asset of result.assets ?? []) {
+        if (
+          asset.uri === undefined ||
+          asset.width === undefined ||
+          asset.height === undefined
+        ) {
+          setNotice('That photo could not be read.');
+          errorTick();
+          continue;
+        }
+        if (asset.fileSize !== undefined && asset.fileSize > MAX_ATTACHMENT_BYTES) {
+          setNotice('That photo is too large. Pick one under 10 MB.');
+          errorTick();
+          continue;
+        }
+        sentAny = true;
+        onSendImage({
+          uri: asset.uri,
+          width: asset.width,
+          height: asset.height,
+          mime: asset.type ?? null,
+        });
       }
-      if (asset.fileSize !== undefined && asset.fileSize > MAX_ATTACHMENT_BYTES) {
-        setNotice('That photo is too large. Pick one under 10 MB.');
-        errorTick();
-        return;
+      if (sentAny) {
+        setAttachOpen(false);
       }
-      /*
-       * The panel goes with the send. Telegram dismisses its whole attach sheet
-       * on a successful send (`ChatAttachAlert.dismiss()` from the send path),
-       * and leaving ours open puts a live viewfinder under the message that was
-       * just sent — which reads as "it did not go".
-       *
-       * Only on the success path: a refused pick (too large, unreadable) leaves
-       * the panel up so the next attempt is one tap, not four.
-       */
-      setAttachOpen(false);
-      onSendImage({
-        uri: asset.uri,
-        width: asset.width,
-        height: asset.height,
-        mime: asset.type ?? null,
-      });
     },
     [onSendImage, setNotice],
   );
@@ -794,6 +859,14 @@ function ComposerView({
   /**
    * Pick from the library. The Android 13+ system photo picker needs no
    * permission at all, so there is nothing to request here.
+   *
+   * `selectionLimit: MAX_PICK` routes through `PickMultipleVisualMedia` on
+   * Android (react-native-image-picker v7.x, ImagePickerModuleImpl.java:154),
+   * which is the same system Photo Picker as the single-select path — no extra
+   * permission, no Play policy risk. Multi-select was confirmed supported in
+   * v7.2.3 (installed); no version bump needed (RULE 5).
+   *
+   * https://developer.android.com/training/data-storage/shared/photopicker
    */
   const pickImage = useCallback(async () => {
     if (disabled) {
@@ -801,11 +874,11 @@ function ComposerView({
     }
     const result = await launchImageLibrary({
       mediaType: 'photo',
-      selectionLimit: 1,
+      selectionLimit: MAX_PICK,
       quality: 0.9,
     }).catch(() => null);
-    handleAsset(result);
-  }, [disabled, handleAsset]);
+    handleAssets(result);
+  }, [disabled, handleAssets]);
 
   /**
    * Capture a live photo (#8). Camera capture, unlike the library picker, needs
@@ -839,8 +912,8 @@ function ComposerView({
       quality: 0.9,
       saveToPhotos: false,
     }).catch(() => null);
-    handleAsset(result);
-  }, [disabled, handleAsset, setNotice]);
+    handleAssets(result);
+  }, [disabled, handleAssets, setNotice]);
 
   if (mode === 'recording') {
     return (
@@ -1159,6 +1232,7 @@ function ComposerView({
           visible={shown === 'attach'}
           height={panelHeight + insets.bottom}
           cameraGranted={cameraGranted}
+          slotSettled={slotSettled}
           onCamera={() => {
             void takePhoto();
           }}

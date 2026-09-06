@@ -1566,6 +1566,120 @@ describe('hardware back reaches the app', () => {
  *   https://developer.android.com/topic/performance/benchmarking/macrobenchmark-overview
  *   https://developer.android.com/topic/performance/benchmarking/macrobenchmark-metrics
  */
+/**
+ * W5#5 — renderToHardwareTextureAndroid on PushedLayer and Sheet.
+ *
+ * The promotion was considered for both surfaces and deliberately not applied.
+ * The decision is recorded in each file rather than silently omitted — this
+ * assertion makes sure the reasoning survives future edits (RULE 1: assert
+ * what can be checked mechanically so the requirement cannot be forgotten).
+ *
+ * Condition for revisiting: a `framestats.mjs` run on the S22 (not the
+ * SwiftShader emulator — see BloomField.tsx:325) that shows push/pop or
+ * sheet-open frames exceed the 8.33 ms budget. If they do, implement as a
+ * Reanimated-driven toggle tied to the `transitioning` shared value in
+ * motion.ts, never as a permanently-on prop.
+ * https://reactnative.dev/docs/view-style-props#rendertohardwaretextureandroid
+ */
+describe('W5#5 — renderToHardwareTextureAndroid decision is recorded', () => {
+  it('PushedLayer in App.tsx documents the hardware-texture decision', () => {
+    // The decision must survive in the source so a future reader cannot mistake
+    // "not set" for "not considered". The BloomField.tsx:325 pattern is the
+    // precedent: measured or argued, never silently absent.
+    expect(read('App.tsx')).toContain('renderToHardwareTextureAndroid');
+  });
+
+  it('Sheet.tsx documents the hardware-texture decision', () => {
+    expect(read('src/components/Sheet.tsx')).toContain('renderToHardwareTextureAndroid');
+  });
+});
+
+/**
+ * W5#8 — device class module for blur quality tiers.
+ *
+ * The API-31 guard in BlurPackage covers Android 7–11 (no RenderEffect). This
+ * module covers the remaining gap: API 31+ devices with isLowRamDevice()=true,
+ * which the API-level guard cannot reach.
+ *
+ * https://developer.android.com/reference/android/app/ActivityManager#isLowRamDevice()
+ */
+describe('W5#8 — DeviceClassModule (low / average / high blur tiers)', () => {
+  const MODULE_KT =
+    'android/app/src/main/java/com/companionchat/DeviceClassModule.kt';
+
+  it('DeviceClassPackage is registered in MainApplication', () => {
+    // Not autolinkable — must be added manually, like BlurPackage and
+    // CameraTilePackage. Registration in MainApplication is the house pattern
+    // for non-autolinkable packages (see BlurPackage, InAppUpdatePackage).
+    expect(read('android/app/src/main/java/com/companionchat/MainApplication.kt')).toContain(
+      'add(DeviceClassPackage())',
+    );
+  });
+
+  it('DeviceClassModule exports the canonical module name', () => {
+    // NativeModules.DeviceClass is what the JS bridge resolves on. A rename
+    // here without updating src/lib/deviceClass.ts silently breaks the call.
+    expect(read(MODULE_KT)).toContain('const val NAME = "DeviceClass"');
+    expect(read('src/lib/deviceClass.ts')).toContain('NativeModules.DeviceClass');
+  });
+
+  it('uses isLowRamDevice() as the low-class signal', () => {
+    /**
+     * isLowRamDevice() is the OS-sanctioned flag for devices with ≤ 1 GB RAM —
+     * the same signal Android's own memory-trimming uses. Trusting it is
+     * preferable to re-implementing the heuristic from total RAM alone.
+     * https://developer.android.com/reference/android/app/ActivityManager#isLowRamDevice()
+     */
+    const kt = read(MODULE_KT);
+    expect(kt).toContain('am.isLowRamDevice');
+    expect(kt).toContain('CLASS_LOW');
+    expect(kt).toContain('https://developer.android.com/reference/android/app/ActivityManager#isLowRamDevice()');
+  });
+
+  it('uses ActivityManager.MemoryInfo to split average from high', () => {
+    /**
+     * getMemoryInfo().totalMem is the total installed RAM in bytes. Used to
+     * separate cheap-but-not-low-RAM devices (average) from capable ones (high).
+     * https://developer.android.com/reference/android/app/ActivityManager#getMemoryInfo(android.app.ActivityManager.MemoryInfo)
+     */
+    const kt = read(MODULE_KT);
+    expect(kt).toContain('ActivityManager.MemoryInfo()');
+    expect(kt).toContain('am.getMemoryInfo(info)');
+    expect(kt).toContain('info.totalMem');
+  });
+
+  it('is synchronous so the class is known before the first rendered frame', () => {
+    // A Promise-based query would return after the first render — too late to
+    // decide whether BlurSurface should be mounted at all.
+    expect(read(MODULE_KT)).toContain('isBlockingSynchronousMethod = true');
+  });
+
+  it('JS side defaults to high when the module is absent (iOS or OTA skew)', () => {
+    // `high` on absence means the user gets the designed experience rather than
+    // a silently-degraded one. OTA skew (JS bundle newer than APK) is the
+    // window where the module can be genuinely missing on Android.
+    const ts = read('src/lib/deviceClass.ts');
+    expect(ts).toContain("? _module.getDeviceClass()");
+    expect(ts).toContain(": 'high'");
+  });
+
+  it('exports BLUR_DISABLED and BLUR_REDUCED from deviceClass.ts', () => {
+    // Callers import the pre-computed booleans rather than string-comparing
+    // DEVICE_CLASS themselves — a typo at the call site cannot silently be wrong.
+    const ts = read('src/lib/deviceClass.ts');
+    expect(ts).toContain("export const BLUR_DISABLED = DEVICE_CLASS === 'low'");
+    expect(ts).toContain("export const BLUR_REDUCED = DEVICE_CLASS === 'average'");
+  });
+
+  it('records that the API-31 guard and device class cover distinct cases', () => {
+    // BlurPackage.kt gates on API 31 (handles Android 7–11). DeviceClassModule
+    // gates on isLowRamDevice() (handles low-RAM Android 12+). The overlap
+    // region — isLowRamDevice() on API < 31 — is correctly handled by the API
+    // guard (blur is off entirely), so no double-gating occurs.
+    expect(read(MODULE_KT)).toContain('API-level guard');
+  });
+});
+
 describe('W0 measurement scripts — Perfetto and Macrobenchmark gate', () => {
   it('ships perfetto-feel.sh, wires it into package.json, and cites its docs', () => {
     expect(existsSync(join(ROOT, 'scripts/perfetto-feel.sh'))).toBe(true);
