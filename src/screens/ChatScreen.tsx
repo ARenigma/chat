@@ -56,6 +56,7 @@ import type { ReactionEmoji } from '../lib/database.types';
 import { useStore } from '../store/useStore';
 import {
   useActiveSession,
+  useAnnounceChatOpen,
   useEndSession,
   usePendingSessionRequest,
   useSessionLease,
@@ -339,6 +340,17 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
    * a request already pending runs to its end. Turning chat off is a statement
    * about the next conversation, not a way to walk out of this one.
    */
+  /*
+   * Tell the other person this chat was just opened (goal items 3 and 4).
+   *
+   * The server decides whether that is worth a push — the member must hold a
+   * minute whoever opened, the peer must be away, no session may be live, and
+   * a cooldown must have passed — and answers with what it actually did. The
+   * banner below renders only `alerted: true`, so it can never claim a
+   * notification that was not sent.
+   */
+  const openAlert = useAnnounceChatOpen(conversationId, conversationId !== undefined);
+
   const chatClosed =
     isMemberSide && !peerOffersChat && activeSession === null && pendingRequest === null;
   const peerName = peerThread?.peer_display_name ?? provider?.display_name;
@@ -1249,6 +1261,19 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
       {/* Recharge talk-bar: hidden while the extend card owns the top band;
           slides in from the top once the transcript has scrolled the extend
           card out of sight (or when extend is not eligible). */}
+      {/* Item 4: when the other person is away and we actually pinged them,
+          say so. A persistent line rather than a 4s notice, because it is a
+          STATE of this conversation ("they know you are here") and not an
+          event — and it renders only on `alerted`, which the server sets only
+          when a push really went out. */}
+      {openAlert?.alerted === true ? (
+        <View style={styles.notifiedBar} testID="peer-notified">
+          <Text allowFontScaling style={styles.notifiedText}>
+            {`We have notified ${name}.`}
+          </Text>
+        </View>
+      ) : null}
+
       {showStickyRecharge ? (
         <Animated.View
           entering={barIn}
@@ -1602,6 +1627,16 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   // Low balance keeps its coral wash: scarcity is the one thing here worth
   // overriding the glass for, and the tint is the same signal the balance pill
   // and the recharge banner use.
+  notifiedBar: {
+    paddingHorizontal: TOKENS.space.md,
+    paddingVertical: TOKENS.space.xs,
+    backgroundColor: t.color.bg.sunken,
+  },
+  notifiedText: {
+    ...TOKENS.typography.bodySmall,
+    color: t.color.text.secondary,
+    textAlign: 'center',
+  },
   talkBarLow: {
     backgroundColor: t.color.bg.accentTint,
   },

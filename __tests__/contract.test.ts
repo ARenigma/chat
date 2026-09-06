@@ -140,6 +140,10 @@ describe('the AI path is gone, not dormant', () => {
       'generate-invoice',
       'send-call',
       'send-engagement',
+      // send-open-alert: "someone opened your chat", dispatched by
+      // announce_chat_open (068) after the SERVER has decided it is worth
+      // sending. Resolves who to name and hands it to FCM; no model path.
+      'send-open-alert',
       'send-push',
       'send-sms',
       // verify-order: client-initiated server-to-server payment confirmation after
@@ -4376,5 +4380,68 @@ describe('a chat request rings, and can be answered either way', () => {
     const dbTest = read('scripts/db-test.mjs');
     expect(dbTest).toContain('067_decline_session_request.sql');
     expect(dbTest).toContain('290_decline_session_request.sql');
+  });
+});
+
+describe('opening a chat tells the other person, both ways', () => {
+  const migration = read('supabase/migrations/068_chat_open_alerts.sql');
+
+  it('gates on the MEMBER\'s minute whoever opened', () => {
+    /*
+     * "if bal > 1 min" (goal item 3), and it holds in both directions: pinging
+     * a member with an empty wallet pushes them at a paywall, and pinging a
+     * provider about a member who cannot pay wastes the one person whose time
+     * is the product.
+     */
+    expect(migration).toContain('select token_balance into v_balance from public.profiles where id = v_member');
+    expect(migration).toMatch(/if coalesce\(v_balance, 0\) < v_rate then[\s\S]*?'no_balance'/);
+  });
+
+  it('does not ring a doorbell', () => {
+    // Away only, not mid-session, and one alert per direction per cooldown.
+    expect(migration).toContain("'peer_present'");
+    expect(migration).toContain("'in_session'");
+    expect(migration).toContain('chat_open_alert_cooldown_minutes');
+    expect(migration).toContain("'cooldown'");
+    // A timestamp per direction, on a table that carries no content by design.
+    expect(migration).toContain('add column if not exists member_alerted_at');
+    expect(migration).toContain('add column if not exists provider_alerted_at');
+    expect(migration).not.toMatch(/last_body|message_text/);
+  });
+
+  it('never claims a push it did not send', () => {
+    /*
+     * The banner is built from this answer, so `alerted` is true only after the
+     * dispatch. With the Vault URL unset the feature is dark and says so —
+     * the same quiet no-op dispatch_call_push uses (017:60).
+     */
+    expect(migration).toContain("'not_configured'");
+    const afterDispatch = migration.slice(migration.indexOf('perform net.http_post'));
+    expect(afterDispatch).toContain("'alerted', true");
+    const beforeDispatch = migration.slice(0, migration.indexOf('perform net.http_post'));
+    expect(beforeDispatch).not.toContain("'alerted', true");
+
+    const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+    expect(chat).toContain('openAlert?.alerted === true');
+    expect(chat).toContain('testID="peer-notified"');
+    expect(chat).toContain('`We have notified ${name}.`');
+  });
+
+  it('reuses the notification kind the app already builds', () => {
+    // kind 'engagement' is read by readEngagementPush and rendered natively
+    // already, so this needed no app release and no native work. The copy
+    // differs because the copy is in the payload.
+    const fn = read('supabase/functions/send-open-alert/index.ts');
+    expect(fn).toContain("kind: 'engagement'");
+    expect(fn).toContain("title: 'Someone wants to talk'");
+    // A member is never named: they have no directory row and get the handle.
+    expect(fn).toContain("db.rpc('member_handle'");
+    expect(fn).toContain("role !== 'service_role'");
+  });
+
+  it('is registered in the harness with its suite', () => {
+    const dbTest = read('scripts/db-test.mjs');
+    expect(dbTest).toContain('068_chat_open_alerts.sql');
+    expect(dbTest).toContain('300_chat_open_alerts.sql');
   });
 });
