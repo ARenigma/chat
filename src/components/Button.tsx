@@ -38,7 +38,7 @@ interface Props {
  * **The radius morph is gone.** A corner that tightens under the finger is
  * Material 3 Expressive's shape-morphing and iOS has no analogue for it, a UIKit
  * button dims its content and does not move or change shape. That is what
- * `highlight="ios"` now does here, and the constant it replaced is the reason
+ * `highlight="dim"` now does here, and the constant it replaced is the reason
  * `radius.pressButton` still exists in the tokens with no consumer.
  *
  * The label is `headline` (17 SemiBold), not `labelMedium` (15): an iOS filled
@@ -107,7 +107,7 @@ function ButtonView({
       // than only seeing it.
       accessibilityLabel={shown}
       press="none"
-      highlight="ios"
+      highlight="dim"
       style={[styles.base, styles[kind]]}>
       {/* The reserved slot. Always rendered, occupied only while busy. */}
       <View style={styles.spinnerSlot}>

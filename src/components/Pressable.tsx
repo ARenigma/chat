@@ -23,7 +23,7 @@ export type PressKind = 'card' | 'row' | 'button' | 'chip' | 'send' | 'none';
  * Which platform's press model this surface uses.
  *
  * `material` is the default and nothing existing changes: scale, an optional
- * radius morph, and the container's ON colour at 10%. `ios` is the other half of
+ * radius morph, and the container's ON colour at 10%. `dim` is the other half of
  * the decision recorded in theme.test.ts: a UIKit control does not scale and does
  * not change shape under a finger, it flashes the whole cell systemGray4. Rows,
  * table cells and stars ask for it; buttons and chips keep the state layer.
@@ -38,7 +38,7 @@ export type PressKind = 'card' | 'row' | 'button' | 'chip' | 'send' | 'none';
  * combine it with a lightweight iOS fallback or accept the platform split.
  * https://reactnative.dev/docs/pressable#android_ripple
  */
-export type Highlight = 'material' | 'ios' | 'ripple';
+export type Highlight = 'material' | 'dim' | 'ripple';
 
 interface Props {
   onPress: () => void;
@@ -55,7 +55,16 @@ interface Props {
   testID?: string;
   /** `card` for rows, `button` for actions, `chip` for pills, `send` for the one. */
   press?: PressKind;
-  /** `ios` forces no scale, no morph, and a full-bleed cell fill. */
+  /**
+   * `dim` forces no scale, no morph, and a full-bleed cell fill.
+   *
+   * It was called `ios` until 2026-09-06, which named a PLATFORM in an
+   * Android-only app and told a reader nothing about what it does — it also
+   * implied cross-platform branching that does not exist here. The behaviour it
+   * describes is the UIKit one (a row greys under the finger, no ink radiates),
+   * chosen deliberately for list and settings rows; `ripple` is the Material
+   * alternative. Amit's call, 2026-09-06: keep the behaviour, fix the name.
+   */
   highlight?: Highlight;
   /**
    * Animate the corner radius under the finger, from resting to pressed. Both
@@ -163,7 +172,7 @@ function PressableView({
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
-  const ios = highlight === 'ios';
+  const dim = highlight === 'dim';
   const ripple = highlight === 'ripple';
   // Resolved in the body, not as a default parameter: the default is a theme
   // value and a hook cannot be called in a parameter list.
@@ -173,17 +182,17 @@ function PressableView({
   // models cannot share one number.
   // On the ripple model the native Android ink wave IS the feedback, so the
   // Reanimated state layer is hidden (opacity 0) to avoid doubling up.
-  const layerColor = ios ? theme.color.bg.selected : onColor ?? theme.color.text.primary;
+  const layerColor = dim ? theme.color.bg.selected : onColor ?? theme.color.text.primary;
   const p = useSharedValue(0);
   // Read out of the token tables once, on the JS thread: indexing them inside a
   // worklet would capture the whole table into the animation closure.
-  const target = press === 'none' || ios || ripple ? 1 : PRESS[press];
-  const squashY = press === 'send' && !ios && !ripple ? PRESS.sendSquashY : 1;
+  const target = press === 'none' || dim || ripple ? 1 : PRESS[press];
+  const squashY = press === 'send' && !dim && !ripple ? PRESS.sendSquashY : 1;
   // `morph` is ignored under the iOS and ripple models rather than being an
   // error: a caller can pass one shape to both platforms and the platform decides.
-  const from = ios || ripple ? undefined : morph?.from;
-  const to = ios || ripple ? undefined : morph?.to;
-  const layerOpacity = ios ? 1 : ripple ? 0 : INTERACTION.statePressed;
+  const from = dim || ripple ? undefined : morph?.from;
+  const to = dim || ripple ? undefined : morph?.to;
+  const layerOpacity = dim ? 1 : ripple ? 0 : INTERACTION.statePressed;
 
   /**
    * The held compression, on its own value rather than folded into `p`.

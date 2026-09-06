@@ -484,7 +484,7 @@ function ActionButton({
           enabled ? '' : offered ? ', coming soon' : ', not offered'
         }`}
         press="none"
-        highlight="ios"
+        highlight="dim"
         style={[
           styles.actionButton,
           kind === 'primary' && styles.actionPrimary,

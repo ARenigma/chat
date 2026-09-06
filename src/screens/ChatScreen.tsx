@@ -1194,7 +1194,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
           testID="chat-back"
           accessibilityLabel="Back to the directory"
           press="none"
-          highlight="ios"
+          highlight="dim"
           size={28}
           style={styles.navButton}>
           <Icon name="chevronLeft" size={22} />
@@ -1220,7 +1220,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
             onOpenProfile !== undefined ? 'Opens their profile' : 'Opens safety options'
           }
           press="none"
-          highlight="ios"
+          highlight="dim"
           style={styles.identity}>
           <Avatar initial={initial} uri={avatarUrl} size={30} online={presence.here} />
           <View style={styles.identityText}>
@@ -1405,7 +1405,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
             testID="chat-extend-dismiss"
             accessibilityLabel="Dismiss extend card"
             press="none"
-            highlight="ios"
+            highlight="dim"
             size={28}
             style={styles.extendCardClose}>
             <Icon name="close" size={12} color={theme.color.text.secondary} />
@@ -1535,7 +1535,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
                 testID="cancel-reply"
                 accessibilityLabel="Cancel reply"
                 press="none"
-                highlight="ios"
+                highlight="dim"
                 size={32}
                 style={styles.replyClose}>
                 <Icon name="close" size={12} color={theme.color.text.secondary} />

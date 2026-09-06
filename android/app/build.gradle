@@ -244,6 +244,12 @@ android {
             debugSymbolLevel "SYMBOL_TABLE"
         }
 
+        // Capture gate — safe default: blocked everywhere unless the build
+        // variant explicitly sets it to true. Only `internal` does so, to open
+        // the runtime @example.test account check in WindowChromeModule.
+        // https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE
+        buildConfigField "boolean", "ALLOW_DEV_CAPTURE", "false"
+
         // https://developer.android.com/training/testing/instrumented-tests
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -288,6 +294,10 @@ android {
             shrinkResources true
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
             buildConfigField "boolean", "BLOCK_SCREENSHOTS", "true"
+            // Explicit false even though defaultConfig already sets it: any
+            // reader auditing capture policy must find the answer here without
+            // tracing the inheritance chain.
+            buildConfigField "boolean", "ALLOW_DEV_CAPTURE", "false"
         }
 
         /**
@@ -340,9 +350,18 @@ android {
             signingConfig hasReleaseKeystore ? signingConfigs.release : null
 
             /*
-             * Firebase founder builds also stay capturable for defect reports.
+             * Internal builds default to blocking captures (BLOCK_SCREENSHOTS = true)
+             * so real members are protected even when a tester has this APK.
+             *
+             * ALLOW_DEV_CAPTURE = true opens a runtime gate in WindowChromeModule
+             * that lifts FLAG_SECURE only for accounts whose email ends with
+             * @example.test — the dev-seed domain from scripts/seed-dev.sql.
+             * A real member on an internal build stays protected.
+             *
+             * https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE
              */
-            buildConfigField "boolean", "BLOCK_SCREENSHOTS", "false"
+            buildConfigField "boolean", "BLOCK_SCREENSHOTS", "true"
+            buildConfigField "boolean", "ALLOW_DEV_CAPTURE", "true"
         }
     }
 }

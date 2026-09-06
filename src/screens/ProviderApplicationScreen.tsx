@@ -910,7 +910,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
                   key={seed}
                   onPress={() => setAvatarSeed(selected ? null : seed)}
                   press="none"
-                  highlight="ios"
+                  highlight="dim"
                   accessibilityRole="button"
                   accessibilityLabel={selected ? `Avatar ${seed}, selected` : `Avatar ${seed}`}
                   style={[styles.avatarCell, selected && styles.avatarCellSelected]}>
@@ -951,7 +951,7 @@ function Header({ onBack }: { onBack: () => void }) {
         testID="application-back"
         accessibilityLabel="Back"
         press="none"
-        highlight="ios"
+        highlight="dim"
         style={styles.back}>
         <Icon name="chevronLeft" size={22} />
       </Pressable>

@@ -18,7 +18,7 @@ interface Props {
  * The one back affordance, so every screen's back reads and presses the same.
  *
  * The design audit found seven different back buttons: some `chevronLeft` at 22
- * with `highlight="ios"`, some at 26 with none, and Settings on Paper's Appbar.
+ * with `highlight="dim"`, some at 26 with none, and Settings on Paper's Appbar.
  * This is the single source — a bare chevron in a transparent 28pt target with
  * the iOS press highlight — that they all now use.
  */
@@ -30,7 +30,7 @@ export function BackButton({ onPress, testID, accessibilityLabel = 'Back', style
       testID={testID}
       accessibilityLabel={accessibilityLabel}
       press="none"
-      highlight="ios"
+      highlight="dim"
       size={28}
       style={[styles.button, style]}>
       <Icon name="chevronLeft" size={22} color={tint ?? theme.color.text.primary} />

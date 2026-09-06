@@ -255,6 +255,52 @@ capsule's first child, inside the pill on its leading edge ("EMOJI should be on
 left corner of pill"). The side, the bottom gravity and the circular press disc
 are Telegram's; the containment is not.
 
+## Bar shape — NOT a capsule (2026-09-06, re-read from source)
+
+Telegram's composer bar is a **full-width flat bar**, not a pill/capsule.
+`key_chat_messagePanelBackground` is a solid colour fill across the whole bar
+(`ChatActivityEnterView.java:4711`); there is no `drawRoundRect` call on the bar
+itself. The `RADIUS = 19` found at `:15409` belongs to a nested StarSendReaction
+price chip, not to the bar.
+
+**Our departure, by product intent.** Ours has always been a floating capsule
+rather than a flat bar (Amit, 2026-09-04: "no bar bg … pill stays solid
+white"). `radius.bubble` (22dp) is now the corner for both the capsule and the
+message bubbles: at single-line height (≈40dp) `2×22 = 44` produces a perfect
+pill, identical in appearance to the old `radius.pill = 999`. At multi-line
+heights the capsule becomes a rounded rectangle at the same 22dp corner as the
+bubbles, which is what makes the two surfaces look like a continuous grid as the
+transcript scrolls.
+
+## Horizontal grid alignment — Pappal specifics (2026-09-06)
+
+Telegram's chat list has no explicit horizontal content padding — bubbles sit at
+a native RecyclerView's margin. Our FlashList uses
+`contentContainerStyle.paddingHorizontal: TOKENS.space.md` (16dp).
+
+The previous `row.paddingHorizontal: xs` (8dp) put the capsule's outer edges 8dp
+closer to the screen edges than the bubble column, so the capsule visibly
+overhangs the bubbles. The note "the horizontal inset of 8dp already matched
+Telegram's 10.3dp closely enough" was correct as a comparison to Telegram's
+device measurement, but it did not account for the alignment with our OWN bubble
+column (at 16dp from edge). Changed to `md` (16dp) so both use one token.
+
+## Multi-line growth (2026-09-06)
+
+Bar-height animation in Telegram: `ValueAnimator` on `changeBoundAnimator` runs
+`ChatListItemAnimator.DEFAULT_DURATION` (= **250ms**, `:46`) on
+`DEFAULT_INTERPOLATOR` (`CubicBezierInterpolator(0.199, 0.011, 0.279, 0.910)`,
+`:47`). Those values are already in `TOKENS.motion.m3.duration.medium1` and
+`TOKENS.motion.m3.easing.keyboard`. Text content offset is also animated over
+the same timing (`messageEditTextAnimator`, `ChatActivity.java:7935-7940`).
+
+**Our approach.** `onContentSizeChange` drives a Reanimated `useSharedValue`
+over the same 250ms + keyboard cubic via `withTiming`. The `Animated.View`
+wrapper owns the height; the `TextField` inside fills it (`flex: 1`). This
+replaces the previous unconstrained `minHeight`/`maxHeight` flex approach that
+allowed an instantaneous jump when crossing a line boundary — the "dip" the
+owner rejected (Amit, 2026-09-06: "no dip allowed").
+
 ## Panel lifecycle (2026-09-04)
 
 `createEmojiView()` builds the panel ONCE; every subsequent open is

@@ -180,7 +180,7 @@ function ProviderRowView({
         testID={`provider-${provider.id}`}
         accessibilityLabel={accessibility}
         press="none"
-        highlight="ios"
+        highlight="dim"
         style={styles.row}>
         {/* The avatar is its own target: it opens the profile card, while the
             rest of the row opens the conversation. Nested inside the row

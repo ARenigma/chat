@@ -158,7 +158,7 @@ export function PermissionsScreen({ onGranted, onSignOut }: Props) {
                       Linking.openSettings().catch(() => undefined);
                     }}
                     press="none"
-                    highlight="ios"
+                    highlight="dim"
                     accessibilityRole="link"
                     accessibilityLabel={`Open Settings to allow ${p.title}`}
                     testID={`permissions-open-settings-${p.kind}`}>

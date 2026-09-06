@@ -1424,8 +1424,22 @@ describe('the redesign holds its own invariants', () => {
     expect(release).toContain('buildConfigField "boolean", "BLOCK_SCREENSHOTS", "true"');
     const closed = gradle.slice(gradle.indexOf('closedTest {'), gradle.indexOf('internal {'));
     expect(closed).toContain('buildConfigField "boolean", "BLOCK_SCREENSHOTS", "false"');
+    /*
+     * INTERNAL TIGHTENED, 2026-09-06. It used to be freely capturable like
+     * closedTest. Amit asked for capture "when signed in by our dev accounts in
+     * internal build ... needed for product demo", and the narrow reading is the
+     * safer one: internal now BLOCKS by default, and a runtime gate lifts
+     * FLAG_SECURE only for the dev-seed accounts. A tester holding an internal
+     * APK and talking to a real member is protected again, which the old
+     * blanket `false` did not do.
+     */
     const internal = gradle.slice(gradle.indexOf('internal {'));
-    expect(internal).toContain('buildConfigField "boolean", "BLOCK_SCREENSHOTS", "false"');
+    expect(internal).toContain('buildConfigField "boolean", "BLOCK_SCREENSHOTS", "true"');
+    expect(internal).toContain('buildConfigField "boolean", "ALLOW_DEV_CAPTURE", "true"');
+    // The carve-out cannot exist in the shipping variant at all: with the field
+    // false, R8 resolves the guard to an unconditional return and the
+    // clearFlags branch is dead code, not merely unreachable at runtime.
+    expect(release).toContain('buildConfigField "boolean", "ALLOW_DEV_CAPTURE", "false"');
   });
 
   it('renders the peer profile image before the first bubble in a group', () => {
@@ -2609,16 +2623,20 @@ describe('chat chrome occludes what is behind it', () => {
       composer.indexOf('  inputBar: {'),
       composer.indexOf('  attach: {'),
     );
-    expect(bar).toContain('borderRadius: TOKENS.radius.pill');
+    // radius.bubble (22dp) matches the message-bubble corner so capsule and
+    // bubbles share a continuous grid edge. At single-line height (~40dp) a
+    // 22dp radius is a perfect pill (2×22=44≈height), so the visual is unchanged
+    // from the old radius.pill at that size. Changed 2026-09-06.
+    expect(bar).toContain('borderRadius: TOKENS.radius.bubble');
     expect(bar).toContain('backgroundColor: t.color.bg.raised');
     expect(bar).toContain("overflow: 'hidden'");
     // And `field` must NOT also carry a fill, or it is a pill inside a pill.
     const field = composer.slice(
       composer.indexOf('  field: {'),
-      composer.indexOf('  input: {'),
+      composer.indexOf('  inputWrapper: {'),
     );
     expect(field).not.toContain('backgroundColor: t.color.bg.raised');
-    expect(field).not.toContain('borderRadius: TOKENS.radius.pill');
+    expect(field).not.toContain('borderRadius: TOKENS.radius.bubble');
   });
 
   it('the reply strip has a surface of its own', () => {
@@ -4848,5 +4866,76 @@ describe('W5 #6 transition lock: deferred call sites read the primitive', () => 
     expect(panelOpen).toBeGreaterThan(-1);
     expect(settledGate).toBeGreaterThan(panelOpen);
     expect(panelClose).toBeGreaterThan(settledGate);
+  });
+});
+
+/**
+ * Composer capsule and message bubbles share the same horizontal grid and
+ * corner radius.
+ *
+ * The alignment that makes the transcript and the input look like one continuous
+ * surface — "chat input bar exactly aligned with chat bubbles grid width and
+ * roundness" (Amit, 2026-09-06) — depends on three values never drifting:
+ *
+ *   1. Horizontal inset: Composer `row.paddingHorizontal` must use the same
+ *      token as ChatScreen's `list.paddingHorizontal` (both `TOKENS.space.md`).
+ *   2. Corner radius: `inputBar` and bubble must both reference `TOKENS.radius.bubble`
+ *      so the curve matches as bubbles scroll past the capsule edge.
+ *   3. Multi-line growth: height animation must use a token duration (M3.duration)
+ *      and the keyboard easing token, not raw literals that cannot be reviewed
+ *      together with the related dock-travel animation.
+ *
+ * These are structural assertions on the source text, not runtime checks, because
+ * the failure mode is "looks fine on one screen size, wrong on another" — not a
+ * crash.
+ */
+describe('composer capsule and bubbles share one horizontal grid and radius', () => {
+  const composer = read('src/components/Composer.tsx');
+  const turn = read('src/components/Turn.tsx');
+
+  it('composer row uses the same horizontal-inset token as the chat list', () => {
+    // ChatScreen list.paddingHorizontal = TOKENS.space.md (16dp).
+    // Composer row.paddingHorizontal must match so capsule edges land on the same
+    // column as the bubble edges. A raw number here or a different token means
+    // the alignment is coincidental and will break the first time either changes.
+    expect(withoutComments(composer)).toContain('paddingHorizontal: TOKENS.space.md');
+  });
+
+  it('composer inputBar and Turn bubbles use the same radius token', () => {
+    // Both must reference TOKENS.radius.bubble (22dp) so the capsule corner and
+    // the bubble corner are provably the same number. radius.pill (999) on the
+    // capsule produced a different visual at multi-line height, where the stadium
+    // shape diverged from the rounded-rect bubble corner.
+    expect(withoutComments(composer)).toContain('borderRadius: TOKENS.radius.bubble');
+    // Turn uses BUBBLE_RADIUS which is assigned TOKENS.radius.bubble.
+    expect(turn).toContain('TOKENS.radius.bubble');
+  });
+
+  it('multi-line growth is animated via M3 token duration, not a raw literal', () => {
+    // The duration must come from the M3 export (= TOKENS.motion.m3.duration)
+    // so the bar-growth timing is in the same token namespace as the dock-travel
+    // timing. A raw number here cannot be reviewed alongside the related motion.
+    // Telegram: DEFAULT_DURATION = 250 ms (ChatListItemAnimator.java:46).
+    expect(withoutComments(composer)).toMatch(/M3\.duration\.\w+/);
+    // The easing must come from KEYBOARD_EASING (built from M3.easing.keyboard),
+    // not a raw Easing call with literal coefficients inline.
+    expect(withoutComments(composer)).toContain('KEYBOARD_EASING');
+  });
+
+  it('MIN_INPUT_H and MAX_INPUT_H are the only height bounds in the input style', () => {
+    // The two exported constants replace the old literal minHeight/maxHeight on
+    // the input style. Checking that no bare 36 or 132 is left inside the styles
+    // object (comments are stripped so cited numbers in prose don't trigger).
+    // We assert the constants exist and are exported by Composer.
+    expect(composer).toContain('export const MIN_INPUT_H');
+    expect(composer).toContain('export const MAX_INPUT_H');
+    // The input style block must not set minHeight or maxHeight directly —
+    // those constraints now live in the onContentSizeChange handler.
+    const inputStyleBlock = composer.slice(
+      composer.indexOf('inputWrapper:'),
+      composer.indexOf('// The same capsule as the field'),
+    );
+    expect(inputStyleBlock).not.toContain('minHeight:');
+    expect(inputStyleBlock).not.toContain('maxHeight:');
   });
 });

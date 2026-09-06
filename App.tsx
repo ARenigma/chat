@@ -56,6 +56,7 @@ import {
   trackScreenOpened,
 } from './src/lib/perfTelemetry';
 import { supabase } from './src/lib/supabase';
+import { applyDemoCapturePolicy } from './src/lib/demoCapture';
 import { currentSession, handleAuthDeepLink, signOut } from './src/api/auth';
 import {
   effectivePermissionLevel,
@@ -472,6 +473,21 @@ function Root() {
       setRoute({ name: 'apply', from: 'home' });
     }
   }, [boot.phase, pendingProviderApply, route.name]);
+
+  /**
+   * Demo-capture policy: lifted for @example.test accounts in the `internal`
+   * build, blocked everywhere else. Both gates (build variant + account) are
+   * enforced independently in the native layer — this just drives the auth
+   * signal. See src/lib/demoCapture.ts and WindowChromeModule.kt.
+   */
+  useEffect(() => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      applyDemoCapturePolicy(session?.user?.email ?? null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

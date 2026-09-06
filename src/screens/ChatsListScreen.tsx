@@ -175,7 +175,7 @@ function ChatListRow({
         testID={`chatlist-${c.peer_id}`}
         accessibilityLabel={unread ? `${name}, ${unreadCount} unread` : name}
         press="none"
-        highlight="ios"
+        highlight="dim"
         style={styles.row}>
         <Avatar
           initial={initialOf(c.peer_display_name)}

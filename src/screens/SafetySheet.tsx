@@ -99,7 +99,7 @@ export function SafetySheet({
                 testID={`reason-${r.value}`}
                 accessibilityLabel={r.label}
                 press="none"
-                highlight="ios"
+                highlight="dim"
                 onPress={() => {
                   setReason(r.value);
                   setStep('detail');

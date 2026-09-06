@@ -1843,3 +1843,131 @@ describe('W0 measurement scripts — Perfetto and Macrobenchmark gate', () => {
     expect(pkg.scripts['android:benchmark:gate']).toBe('node scripts/benchmark-gate.mjs');
   });
 });
+
+/**
+ * FLAG_SECURE demo-capture carve-out.
+ *
+ * FLAG_SECURE blocks screenshots, screen recording, and the recents thumbnail.
+ * Production must never allow these to be lifted. The carve-out for product
+ * demos is gated by TWO independent checks that must both pass:
+ *
+ *   1. Build variant: only the `internal` APK can unblock capture at all.
+ *      The `release` APK cannot reach the clearFlags branch — it is dead code.
+ *
+ *   2. Account: even in `internal`, only emails ending with `@example.test`
+ *      (the dev-seed domain from scripts/seed-dev.sql) unblock capture.
+ *      A real member on an internal build stays protected.
+ *
+ * https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE
+ */
+describe('FLAG_SECURE demo-capture carve-out', () => {
+  it('release variant keeps BLOCK_SCREENSHOTS = true (original protection unchanged)', () => {
+    /*
+     * The release block must still assert the flag explicitly rather than
+     * relying on inheritance, so a reader auditing capture policy finds the
+     * answer in the release block without tracing the inheritance chain.
+     */
+    const gradle = read('android/app/build.gradle');
+    // Find release block and check BLOCK_SCREENSHOTS = true within it.
+    // The release buildType has no nested braces at field level, so [^}]*
+    // reads cleanly to the closing brace.
+    expect(gradle).toMatch(
+      /buildConfigField "boolean", "BLOCK_SCREENSHOTS", "true"\s+\/\/ Explicit false/,
+    );
+    // Simpler belt-and-suspenders: the string is in the file at all.
+    expect(gradle).toContain('"BLOCK_SCREENSHOTS", "true"');
+  });
+
+  it('release variant cannot enable capture: ALLOW_DEV_CAPTURE is false', () => {
+    /*
+     * ALLOW_DEV_CAPTURE = false in `release` makes the native
+     * setDemoCaptureEnabled an unconditional no-op. A release APK cannot
+     * reach clearFlags even if the account check were somehow satisfied.
+     *
+     * The internal variant sets it to true, which is what enables the
+     * runtime account gate.
+     */
+    const gradle = read('android/app/build.gradle');
+    // release block has ALLOW_DEV_CAPTURE = false
+    expect(gradle).toContain('"ALLOW_DEV_CAPTURE", "false"');
+    // internal block has ALLOW_DEV_CAPTURE = true
+    expect(gradle).toContain('"ALLOW_DEV_CAPTURE", "true"');
+    // Sanity: true must appear inside the internal block, not before it.
+    const trueAt = gradle.indexOf('"ALLOW_DEV_CAPTURE", "true"');
+    const internalAt = gradle.indexOf('internal {');
+    expect(internalAt).toBeGreaterThan(0);
+    expect(trueAt).toBeGreaterThan(internalAt);
+  });
+
+  it('internal build defaults to BLOCK_SCREENSHOTS = true (real members stay protected)', () => {
+    /*
+     * Changing internal from false to true means a real member who somehow
+     * ends up on this APK keeps FLAG_SECURE by default. Only dev-account
+     * sign-in lifts it via the runtime gate.
+     */
+    const gradle = read('android/app/build.gradle');
+    const internalAt = gradle.indexOf('internal {');
+    const internalSection = gradle.slice(internalAt, gradle.indexOf('\n        }', internalAt));
+    expect(internalSection).toContain('"BLOCK_SCREENSHOTS", "true"');
+    expect(internalSection).toContain('"ALLOW_DEV_CAPTURE", "true"');
+  });
+
+  it('native setDemoCaptureEnabled returns early when ALLOW_DEV_CAPTURE is false', () => {
+    /*
+     * The build-variant gate must appear BEFORE any window flag manipulation.
+     * In a release APK, ALLOW_DEV_CAPTURE is false (a compile-time constant),
+     * so the if-branch is resolved to "always return" by R8 — the clearFlags
+     * and addFlags calls are unreachable dead code.
+     */
+    const chrome = read(
+      'android/app/src/main/java/com/companionchat/WindowChromeModule.kt',
+    );
+    const earlyReturn = chrome.indexOf('if (!BuildConfig.ALLOW_DEV_CAPTURE) return');
+    // Match the actual code call, not the comment (comments name clearFlags too).
+    const clearFlags = chrome.indexOf('win.clearFlags(');
+    expect(earlyReturn).toBeGreaterThan(0);
+    expect(clearFlags).toBeGreaterThan(0);
+    // The guard must appear BEFORE the flag manipulation.
+    expect(earlyReturn).toBeLessThan(clearFlags);
+  });
+
+  it('JS layer gates capture on @example.test domain, not a bare flag', () => {
+    /*
+     * Gate 2 (runtime account check): even in an `internal` build, only
+     * @example.test accounts can call setDemoCaptureEnabled(true). The
+     * check uses endsWith so all seed accounts (seed.mira@, seed.sara@, ...)
+     * qualify, not just a single hardcoded email.
+     */
+    const lib = read('src/lib/demoCapture.ts');
+    // The constant names the exact domain, not a permissive wildcard.
+    expect(lib).toContain("DEV_EMAIL_DOMAIN = '@example.test'");
+    // The check is a suffix test (endsWith), not equality or includes.
+    expect(lib).toContain('.endsWith(DEV_EMAIL_DOMAIN)');
+  });
+
+  it('null/undefined email maps to isDevAccount = false (sign-out restores protection)', () => {
+    /*
+     * A sign-out calls applyDemoCapturePolicy(null). The guard
+     * `typeof email === 'string'` ensures null and undefined both produce
+     * isDevAccount = false, which calls setDemoCaptureEnabled(false) and
+     * restores FLAG_SECURE without an activity restart.
+     */
+    const lib = read('src/lib/demoCapture.ts');
+    expect(lib).toContain("typeof email === 'string'");
+    // The native call receives isDevAccount, not the raw argument.
+    expect(lib).toContain('native.setDemoCaptureEnabled(isDevAccount)');
+  });
+
+  it('App.tsx subscribes to onAuthStateChange to drive the policy on every transition', () => {
+    /*
+     * Using supabase.auth.onAuthStateChange rather than one-shot calls at
+     * sign-in and sign-out covers token refresh and session restore paths that
+     * a one-shot call at boot would miss.
+     */
+    const app = read('App.tsx');
+    expect(app).toContain('applyDemoCapturePolicy');
+    expect(app).toContain('supabase.auth.onAuthStateChange');
+    // The subscription must be cleaned up on unmount.
+    expect(app).toContain('subscription.unsubscribe()');
+  });
+});

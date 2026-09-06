@@ -58,7 +58,7 @@ export function UpdateBanner() {
         accessibilityLabel="Restart to finish updating"
         accessibilityHint="Closes and reopens the app"
         press="none"
-        highlight="ios"
+        highlight="dim"
         testID="update-restart"
         style={styles.action}>
         <Text allowFontScaling style={styles.actionLabel}>

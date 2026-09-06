@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
+  Easing,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -56,6 +57,36 @@ const CAMERA_SLOT = 40;
  * would make the capsule taller than the 40 measured on device.
  */
 const EMOJI_BUTTON = 36;
+
+/**
+ * Input field height bounds (dp).
+ *
+ * MIN matches the previous `minHeight: 36` so the single-line capsule is unchanged.
+ * MAX encodes 6 lines — `TEXT_HEIGHT_MAX = 6` in Telegram
+ * (ChatActivityEnterView.java:5778) — at lineHeight 20 plus paddingTop+Bottom 4+4:
+ * 6×20 + 8 = 128dp, kept at the existing 132 cap for a hair of breathing room.
+ *
+ * Both constants are referenced by `onContentSizeChange` (animation) and the
+ * contract test; one number cannot drift from the other.
+ */
+export const MIN_INPUT_H = 36;
+export const MAX_INPUT_H = 132;
+
+/**
+ * The Bézier curve Telegram uses for its bar-growth animator.
+ *
+ * Source: ChatListItemAnimator.java:47
+ *   `new CubicBezierInterpolator(0.199..., 0.011..., 0.279..., 0.910...)`
+ * Already tokenised as `TOKENS.motion.m3.easing.keyboard`; consumed here via the
+ * `M3` import from motion.ts so the value cannot drift between the dock travel and
+ * the multi-line growth.
+ *
+ * Duration: ChatListItemAnimator.java:46 `DEFAULT_DURATION = 250`
+ *   → `M3.duration.medium1`.  Used at the call-site, not here, so it is visible
+ *   in the withTiming call without hunting.
+ */
+const [kbX1, kbY1, kbX2, kbY2] = M3.easing.keyboard as [number, number, number, number];
+const KEYBOARD_EASING = Easing.bezier(kbX1, kbY1, kbX2, kbY2);
 
 interface Props {
   onSend: (text: string) => void;
@@ -363,6 +394,19 @@ function ComposerView({
   const surfaceOpen = emojiOpen || attachOpen;
   const slotHeight = panelHeight + insets.bottom;
   const dockY = useSharedValue(0);
+  /**
+   * Animated height of the text-input wrapper.
+   *
+   * `onContentSizeChange` measures the content, clamps it to [MIN_INPUT_H,
+   * MAX_INPUT_H], and drives this value over 250ms on the keyboard's Bézier
+   * (Telegram DEFAULT_INTERPOLATOR, ChatListItemAnimator.java:47) so the capsule
+   * grows and shrinks with each added or removed line — no jump, no dip.
+   *
+   * Using a shared value rather than state so the animation starts on the UI
+   * thread the same frame the content size changes, not one commit later.
+   */
+  const inputH = useSharedValue(MIN_INPUT_H);
+  const inputHStyle = useAnimatedStyle(() => ({ height: inputH.value }));
   const animateNext = useRef(true);
   const dockStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: dockY.value }],
@@ -926,7 +970,7 @@ function ComposerView({
             testID="voice-cancel"
             accessibilityLabel="Cancel recording"
             press="none"
-            highlight="ios"
+            highlight="dim"
             size={32}
             style={styles.panelButton}
           >
@@ -960,7 +1004,7 @@ function ComposerView({
             accessibilityLabel="Stop recording"
             accessibilityHint={`Up to ${clock(MAX_VOICE_MS)}`}
             press="none"
-            highlight="ios"
+            highlight="dim"
             size={32}
             style={styles.stop}
           >
@@ -982,7 +1026,7 @@ function ComposerView({
             testID="voice-discard"
             accessibilityLabel="Discard this recording"
             press="none"
-            highlight="ios"
+            highlight="dim"
             size={32}
             style={styles.panelButton}
           >
@@ -1068,29 +1112,49 @@ function ComposerView({
             color={theme.color.text.secondary}
           />
         </Pressable>
-        <TextField
-          ref={inputRef}
-          testID="composer-input"
-          style={styles.input}
-          value={value}
-          onChangeText={change}
-          placeholder={placeholder}
-          // Tertiary, not secondary: iOS's placeholder is tertiaryLabel, and at
-          // secondary the hint was close enough to real input to be misread as
-          // one.
-          placeholderTextColor={theme.color.text.tertiary}
-          multiline
-          maxLength={MAX_MESSAGE_CHARS}
-          allowFontScaling
-          returnKeyType="send"
-          submitBehavior="submit"
-          onSubmitEditing={submit}
-          accessibilityLabel="Message"
-          accessibilityHint="One message costs one token"
-          underlineColorAndroid="transparent"
-          onFocus={onFieldFocus}
-          onBlur={onFieldBlur}
-        />
+        {/*
+          * The wrapper's height is the animated value; the field inside fills
+          * it via `flex: 1`. `onContentSizeChange` reports the natural content
+          * height (all lines, regardless of the container) so it drives the
+          * animation even while the field is constrained to a smaller size.
+          * Telegram: bar growth 250ms on DEFAULT_INTERPOLATOR
+          * (ChatListItemAnimator.java:46-47; ChatActivity.java:7896-7940).
+          */}
+        <Animated.View style={[styles.inputWrapper, inputHStyle]}>
+          <TextField
+            ref={inputRef}
+            testID="composer-input"
+            style={styles.input}
+            value={value}
+            onChangeText={change}
+            placeholder={placeholder}
+            // Tertiary, not secondary: iOS's placeholder is tertiaryLabel, and at
+            // secondary the hint was close enough to real input to be misread as
+            // one.
+            placeholderTextColor={theme.color.text.tertiary}
+            multiline
+            maxLength={MAX_MESSAGE_CHARS}
+            allowFontScaling
+            returnKeyType="send"
+            submitBehavior="submit"
+            onSubmitEditing={submit}
+            accessibilityLabel="Message"
+            accessibilityHint="One message costs one token"
+            underlineColorAndroid="transparent"
+            onFocus={onFieldFocus}
+            onBlur={onFieldBlur}
+            onContentSizeChange={e => {
+              const h = Math.max(
+                MIN_INPUT_H,
+                Math.min(MAX_INPUT_H, e.nativeEvent.contentSize.height),
+              );
+              inputH.value = withTiming(h, {
+                duration: M3.duration.medium1,
+                easing: KEYBOARD_EASING,
+              });
+            }}
+          />
+        </Animated.View>
       </View>
 
       {/* Camera. It replaces the old "+" as the single media entry point and
@@ -1269,7 +1333,13 @@ const makeStyles = (t: Theme) => StyleSheet.create({
      * 9.2dp; the horizontal inset of 8dp already matched Telegram's 10.3dp
      * closely enough that changing it would move the pill for no visible gain.
      */
-    paddingHorizontal: TOKENS.space.xs,
+    /*
+     * md (16dp) matches ChatScreen's `list.paddingHorizontal: TOKENS.space.md`,
+     * so the capsule's outer edges land on the same vertical column as the bubble
+     * edges — both read the same token and cannot drift independently.
+     * (Was `xs` (8dp); changed to align with the chat-list content inset.)
+     */
+    paddingHorizontal: TOKENS.space.md,
     paddingTop: TOKENS.space['2xs'],
     paddingBottom: TOKENS.space.xs,
     backgroundColor: 'transparent',
@@ -1300,7 +1370,18 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     // sits inside the capsule and brings its own optical padding.
     paddingLeft: TOKENS.space.hair,
     paddingRight: TOKENS.space.hair,
-    borderRadius: TOKENS.radius.pill,
+    /*
+     * `radius.bubble` (22dp) rather than `radius.pill` (999).
+     *
+     * At single-line height (~40dp) both produce an identical pill — 2×22 = 44 ≈
+     * height, so the ends are fully curved either way. At multi-line heights the
+     * capsule is now a rounded rectangle at the SAME corner as the message bubbles
+     * (Turn.tsx uses `TOKENS.radius.bubble` for both mine/peer), which is what
+     * makes the edges look like one continuous grid as the transcript scrolls
+     * past the composer. `radius.pill` at a tall height looks like a stadium;
+     * `radius.bubble` looks like a bubble. One token, two components, zero drift.
+     */
+    borderRadius: TOKENS.radius.bubble,
     borderCurve: 'continuous',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: t.color.border.hairline,
@@ -1378,19 +1459,33 @@ const makeStyles = (t: Theme) => StyleSheet.create({
      * inside a pill.
      */
   },
-  input: {
+  /*
+   * Animated wrapper for the text field.
+   *
+   * `flex: 1` fills the remaining horizontal space in the `field` row (replacing
+   * the `flex: 1` that was on `input` directly). The vertical size is driven by
+   * the `inputHStyle` shared value, not by any style here, so the compiler cannot
+   * accidentally add a height literal.
+   *
+   * `overflow: 'hidden'` is omitted: `inputBar` already clips via its own
+   * overflow, and a second clip here would be redundant.
+   */
+  inputWrapper: {
     flex: 1,
-    // Mapped to Telegram measured ON DEVICE (S22, density 2.8125×), not the source
-    // dp: its composer text is 16sp (glyph extent 17.4dp), NOT the 18 the source
-    // constant implied, and its single-line field is ~40dp. The earlier 18/44
-    // refactor rendered visibly larger than the real app. So: 16 text, a compact
-    // field, includeFontPadding off to sit the glyph tight like Telegram's.
-    // Capsule height = minHeight + field paddingVertical·2 ≈ 32 + 8 = 40.
-    // Telegram's single-line field is 40dp with the 16sp text centred in it (not a
-    // 28dp field with padding around it). So the INPUT itself is 40 and the capsule
-    // wraps it with zero field padding — a true 40/40, matching the app on device.
-    minHeight: 36,
-    maxHeight: 132,
+  },
+  input: {
+    /*
+     * `flex: 1` fills the wrapper's height in the column direction (Animated.View
+     * defaults to column; its height comes from `inputHStyle`).
+     *
+     * `minHeight` and `maxHeight` are removed — the wrapper is the height-owning
+     * element now. MIN_INPUT_H and MAX_INPUT_H are enforced in `onContentSizeChange`.
+     *
+     * Telegram source: 16sp text, includeFontPadding false, bottom gravity, max
+     * 6 lines — ChatActivityEnterView.java:5779,5781,5778,5750.
+     * Measured on S22 Ultra: single-line field 40dp (density 2.8125×).
+     */
+    flex: 1,
     paddingTop: 4,
     paddingBottom: 4,
     ...TOKENS.typography.bodyLarge,

@@ -93,7 +93,7 @@ export function ProviderBankScreen({ onBack }: Props) {
           testID="bank-back"
           accessibilityLabel="Back"
           press="none"
-          highlight="ios"
+          highlight="dim"
           size={28}
           style={styles.back}>
           <Icon name="chevronLeft" size={22} />

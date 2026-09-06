@@ -5,6 +5,7 @@ import android.graphics.Shader
 import android.os.Build
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -85,6 +86,40 @@ class WindowChromeModule(private val reactContext: ReactApplicationContext) :
             // caller keeps its own estimate rather than believing a zero.
             val hz = display?.refreshRate ?: 0f
             promise.resolve(if (hz > 1f) hz.toDouble() else null)
+        }
+    }
+
+    /**
+     * Lift or restore FLAG_SECURE for product-demo purposes.
+     *
+     * Two independent gates must both pass before capture is unblocked:
+     *
+     *   1. Build variant (compile-time): `BuildConfig.ALLOW_DEV_CAPTURE` is
+     *      `true` only in the `internal` build variant. In `release` this
+     *      method is an unconditional no-op — the APK cannot reach the
+     *      `clearFlags` branch regardless of what the caller passes.
+     *      https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE
+     *
+     *   2. Account (runtime): the JS caller (`src/lib/demoCapture.ts`) passes
+     *      `enabled = true` only when the signed-in email ends with
+     *      `@example.test` (the dev-seed domain from `scripts/seed-dev.sql`).
+     *      A real member on an internal build keeps FLAG_SECURE.
+     *
+     * `clearFlags`/`addFlags` are symmetric so a sign-out (enabled = false)
+     * immediately restores protection without an activity restart.
+     */
+    @ReactMethod
+    fun setDemoCaptureEnabled(enabled: Boolean) {
+        // Gate 1: compile-time variant check. `release` always takes this
+        // branch and returns before any window flag is touched.
+        if (!BuildConfig.ALLOW_DEV_CAPTURE) return
+        UiThreadUtil.runOnUiThread {
+            val win = reactContext.currentActivity?.window ?: return@runOnUiThread
+            if (enabled) {
+                win.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            } else {
+                win.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            }
         }
     }
 

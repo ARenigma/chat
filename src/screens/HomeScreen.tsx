@@ -616,7 +616,7 @@ export function HomeScreen({
               checked={on}
               accessibilityLabel={CATEGORY_LABEL[c]}
               press="none"
-              highlight="ios"
+              highlight="dim"
               style={styles.tab}>
               <Text
                 maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}

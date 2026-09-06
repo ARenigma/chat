@@ -31,7 +31,7 @@ const SIZE = 38;
  * one gesture rhyme, squeezed here, released there.
  *
  * **This is a deliberate brand exception to the iOS pass, not an oversight.**
- * Every other press model in the app moved to `highlight="ios"`, which does not
+ * Every other press model in the app moved to `highlight="dim"`, which does not
  * scale at all; iOS's own send button scales *up* briefly and dims. The squash
  * stays because it is the one moment the product is built around and because it
  * rhymes with the bubble's arrival, which nothing on the platform does. Stated

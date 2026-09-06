@@ -66,7 +66,7 @@ export function PolicyGateScreen({ onAccepted }: Props) {
                   Linking.openURL(policy.url).catch(() => undefined);
                 }}
                 press="none"
-                highlight="ios"
+                highlight="dim"
                 accessibilityRole="link"
                 accessibilityLabel={`Read ${policy.kind === 'terms' ? 'Terms of Service' : 'Privacy Policy'}`}
               >

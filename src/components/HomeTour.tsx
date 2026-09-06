@@ -90,7 +90,7 @@ export function HomeTour() {
               onPress={skip}
               accessibilityLabel="Skip tutorial"
               press="none"
-              highlight="ios"
+              highlight="dim"
               testID="home-tour-skip"
               style={styles.action}>
               <Text allowFontScaling style={styles.skipLabel}>
@@ -101,7 +101,7 @@ export function HomeTour() {
               onPress={next}
               accessibilityLabel={last ? 'Done' : 'Next'}
               press="none"
-              highlight="ios"
+              highlight="dim"
               testID="home-tour-next"
               style={styles.action}>
               <Text allowFontScaling style={styles.nextLabel}>

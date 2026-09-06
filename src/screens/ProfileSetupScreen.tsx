@@ -219,7 +219,7 @@ export function ProfileSetupScreen({
                 checked={selected}
                 accessibilityLabel={bracket}
                 press="none"
-                highlight="ios"
+                highlight="dim"
                 style={[
                   styles.ageChip,
                   selected && styles.ageChipSelected,
@@ -301,7 +301,7 @@ export function ProfileSetupScreen({
                 key={seed}
                 onPress={() => setAvatarSeed(seed)}
                 press="none"
-                highlight="ios"
+                highlight="dim"
                 accessibilityRole="button"
                 accessibilityLabel={
                   selected ? `Avatar ${seed}, selected` : `Avatar ${seed}`
@@ -319,7 +319,7 @@ export function ProfileSetupScreen({
           <Pressable
             onPress={() => setTermsChecked(v => !v)}
             press="none"
-            highlight="ios"
+            highlight="dim"
             accessibilityRole="checkbox"
             checked={termsChecked}
             accessibilityLabel="Accept terms and privacy"
