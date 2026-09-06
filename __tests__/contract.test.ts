@@ -1309,6 +1309,17 @@ describe('in-app updates are wired end to end', () => {
     expect(gradle).toContain('versionName versionNameProperty');
     // No hardcoded version left behind for the two to drift apart.
     expect(gradle).not.toMatch(/versionName\s+"\d+\.\d+\.\d+"/);
+
+    // The derivation only stays monotonic while minor and patch are under 100,
+    // which the gradle comment states and nothing enforced. A 100th patch
+    // silently collides with the next minor and the tester prompt goes quiet.
+    const name = /^VERSION_NAME=(\d+)\.(\d+)\.(\d+)$/m.exec(
+      read('android/gradle.properties'),
+    );
+    expect(name).not.toBeNull();
+    const [, , minor, patch] = name as RegExpExecArray;
+    expect(Number(minor)).toBeLessThan(100);
+    expect(Number(patch)).toBeLessThan(100);
   });
 
   it('limits cleartext to the debug emulator-host exception', () => {
