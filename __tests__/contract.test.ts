@@ -1409,6 +1409,32 @@ describe('a block is visible where it matters and reversible everywhere', () => 
   });
 });
 
+describe('the website download link', () => {
+  it('points at a STABLE asset name in the latest release', () => {
+    /*
+     * Every download button on the site resolves
+     * `releases/latest/download/Pappal.apk` against whatever release is newest.
+     * On 2026-09-07 a release was published whose asset was named
+     * `Pappal-1.1.6.apk`, and every download button on the live site returned
+     * 404 until an asset named exactly `Pappal.apk` was added to it.
+     *
+     * So the filename is a CONTRACT between this repo and ARenigma/pappal-downloads:
+     * every release must carry an asset named exactly `Pappal.apk`. A
+     * version-stamped name may sit alongside it; it may not replace it.
+     */
+    const STABLE = 'https://github.com/ARenigma/pappal-downloads/releases/latest/download/Pappal.apk';
+    const pages = readdirSync(join(ROOT, 'web')).filter(f => f.endsWith('.html'));
+    expect(pages.length).toBeGreaterThan(0);
+    for (const page of pages) {
+      const html = read(join('web', page));
+      const links = html.match(/https:\/\/github\.com\/ARenigma\/pappal-downloads[^"']*/g) ?? [];
+      for (const link of links) {
+        expect(link).toBe(STABLE);
+      }
+    }
+  });
+});
+
 describe('shipping to Play', () => {
   const fastfile = read('fastlane/Fastfile');
   const ci = read('.gitlab-ci.yml');
