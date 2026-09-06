@@ -1899,16 +1899,22 @@ describe('FLAG_SECURE demo-capture carve-out', () => {
     expect(trueAt).toBeGreaterThan(internalAt);
   });
 
-  it('internal build defaults to BLOCK_SCREENSHOTS = true (real members stay protected)', () => {
+  it('leaves the internal build capturable, because that is the point of it', () => {
     /*
-     * Changing internal from false to true means a real member who somehow
-     * ends up on this APK keeps FLAG_SECURE by default. Only dev-account
-     * sign-in lifts it via the runtime gate.
+     * Tried the other way first and it was verified WRONG on the S22: internal
+     * was set to block by default with a runtime exemption for `@example.test`
+     * accounts, and every screencap came back a solid black frame. That domain
+     * matches only the seeded fake providers in scripts/seed-dev.sql, never the
+     * real account a product demo is actually given from — so the carve-out
+     * blocked precisely what it was built to allow.
+     *
+     * ALLOW_DEV_CAPTURE remains for an account-scoped policy later; today the
+     * variant decides.
      */
     const gradle = read('android/app/build.gradle');
     const internalAt = gradle.indexOf('internal {');
     const internalSection = gradle.slice(internalAt, gradle.indexOf('\n        }', internalAt));
-    expect(internalSection).toContain('"BLOCK_SCREENSHOTS", "true"');
+    expect(internalSection).toContain('"BLOCK_SCREENSHOTS", "false"');
     expect(internalSection).toContain('"ALLOW_DEV_CAPTURE", "true"');
   });
 

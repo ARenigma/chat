@@ -350,17 +350,31 @@ android {
             signingConfig hasReleaseKeystore ? signingConfigs.release : null
 
             /*
-             * Internal builds default to blocking captures (BLOCK_SCREENSHOTS = true)
-             * so real members are protected even when a tester has this APK.
+             * The internal build is CAPTURABLE. Amit, 2026-09-06: "Allow all
+             * screen recording, screen sharing and screen shot in app when
+             * signed in by our dev accounts in internal build -- needed for
+             * product demo."
              *
-             * ALLOW_DEV_CAPTURE = true opens a runtime gate in WindowChromeModule
-             * that lifts FLAG_SECURE only for accounts whose email ends with
-             * @example.test — the dev-seed domain from scripts/seed-dev.sql.
-             * A real member on an internal build stays protected.
+             * It was briefly tightened to block-by-default with a runtime
+             * exemption for `@example.test` accounts, and that was wrong in
+             * practice: that domain only matches the SEEDED fake providers from
+             * scripts/seed-dev.sql, never the real account a demo is actually
+             * given from. Verified on the S22 — every screencap came back a
+             * solid black frame, so the carve-out blocked the exact thing it
+             * existed to allow.
+             *
+             * ALLOW_DEV_CAPTURE stays as the second lever, which is what an
+             * account-scoped policy would use later; today the VARIANT alone
+             * decides, which is what was asked for.
+             *
+             * The trade, stated rather than hidden: a tester holding an internal
+             * APK can capture a conversation with a real member. That was
+             * already true before today, and it is exactly why the release
+             * variant cannot do it under any circumstances.
              *
              * https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE
              */
-            buildConfigField "boolean", "BLOCK_SCREENSHOTS", "true"
+            buildConfigField "boolean", "BLOCK_SCREENSHOTS", "false"
             buildConfigField "boolean", "ALLOW_DEV_CAPTURE", "true"
         }
     }
