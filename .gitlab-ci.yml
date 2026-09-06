@@ -244,7 +244,12 @@ android:
       else
         echo "no keystore variable — the build will be unsigned and cannot be installed"
       fi
-    - cd android && ./gradlew assembleRelease bundleRelease --no-daemon && cd ..
+    # `bundleClosedTest` as well as the release pair: the Play lanes upload
+    # CLOSED_TEST_AAB (bundle/closedTest/app-closedTest.aab), and nothing here
+    # built it — so `play-internal` would have failed on a missing file the
+    # first time anyone tagged a release. Found 2026-09-06 while wiring the
+    # closed-testing lane.
+    - cd android && ./gradlew assembleRelease bundleRelease bundleClosedTest --no-daemon && cd ..
     # The merged manifest is the only artefact reflecting what dependencies added.
     - npm run verify:manifest
     - npm run verify:hermes
