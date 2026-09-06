@@ -2476,11 +2476,21 @@ describe('iOS list separators are drawn the way iOS draws them', () => {
     const source = read('src/components/ProviderRow.tsx');
     expect(source).toContain('TOKENS.space.md + ROW_SEPARATOR_INSET');
     expect(source).toContain('paddingHorizontal: TOKENS.space.md');
-    // ...and the directory list (now HomeScreen's Explore section) stops fighting
-    // the row's own hairline with a gap.
-    expect(withoutComments(read('src/screens/HomeScreen.tsx'))).not.toContain(
-      'gap: TOKENS.space.sm',
-    );
+    /*
+     * ...and the directory list (now HomeScreen's Explore section) stops
+     * fighting the row's own hairline with a gap.
+     *
+     * Scoped to the LIST's own content style, not the whole file: this was a
+     * file-wide `not.toContain('gap: TOKENS.space.sm')`, which is the same
+     * rule stated too widely — it failed the day the search filter panel
+     * (nothing to do with any list) used that gap for its own two groups
+     * (2026-09-06). The rule is about what separates provider ROWS.
+     */
+    const home = withoutComments(read('src/screens/HomeScreen.tsx'));
+    const listStyle = home.slice(home.indexOf('    scroll: {'), home.indexOf('    state: {'));
+    expect(listStyle).not.toMatch(/\bgap:/);
+    // And the rows themselves are not spaced apart by their container.
+    expect(home).not.toContain('ItemSeparatorComponent');
   });
 
   it('gives the pick-a-person list a disclosure indicator', () => {
@@ -4098,7 +4108,10 @@ describe('the directory is grouped and filterable: Listeners, Astrologers, ages'
     const home = withoutComments(read('src/screens/HomeScreen.tsx'));
     expect(home).toContain('testID="search-filters"');
     // Search spans BOTH categories: the tab is an Explore idea.
-    expect(home).toMatch(/return filterProviders\(allProviders, searchFilter\)/);
+    expect(home).toContain('const narrowed = filterProviders(allProviders, searchFilter)');
+    // Chips alone are a search: no query required (Amit, 2026-09-06).
+    expect(home).toContain('return isFiltering(searchFilter) ? narrowed : []');
+    expect(home).toContain("const asking = trimmed !== '' || isFiltering(searchFilter)");
     // Filters are per search session, or the next search silently returns
     // fewer people for a reason that is off screen.
     expect(home).toMatch(/setSearching\(false\);[\s\S]{0,120}setSearchFilter\(NO_FILTER\)/);
@@ -4122,5 +4135,85 @@ describe('the directory is grouped and filterable: Listeners, Astrologers, ages'
     const dbTest = read('scripts/db-test.mjs');
     expect(dbTest).toContain('065_provider_category.sql');
     expect(dbTest).toContain('270_provider_category.sql');
+  });
+});
+
+describe('search opens the way Telegram opens it, and the week has a carousel', () => {
+  const home = withoutComments(read('src/screens/HomeScreen.tsx'));
+
+  it('crossfades one row in place, on Telegram\'s own 150ms', () => {
+    /*
+     * Read from source, not guessed: `toggleSearch` animates the search
+     * container's alpha against the action bar's menu icons and back,
+     * `setDuration(150)` in both directions (ActionBarMenuItem.java:1013
+     * opening, :1020 closing). Nothing slides — the field lands in the row the
+     * icons were in, which is what makes it the same bar changing its mind.
+     */
+    expect(read('design/tokens.json')).toContain('"searchToggle": 150');
+    const motion = read('src/theme/motion.ts');
+    expect(motion).toContain('export const searchIn = FadeIn.duration(DURATION.searchToggle)');
+    expect(motion).toContain('export const searchOut = FadeOut.duration(DURATION.searchToggle)');
+    expect(motion).toContain('ActionBarMenuItem.java');
+    // Both states are Animated rows sharing one container, so the crossfade has
+    // nothing to reflow.
+    expect(home).toContain('entering={searchIn}');
+    expect(home).toContain('exiting={searchOut}');
+    expect(home.match(/style=\{styles\.navRow\}/g)?.length).toBe(2);
+  });
+
+  it('shows exactly one cross: the field clears, an arrow leaves', () => {
+    // With a cross in the nav AND the field's own clear, a member with text
+    // typed saw two and could not tell which lost their query (Amit,
+    // 2026-09-06). Telegram uses the ActionBar back arrow for the same reason.
+    const searchRow = home.slice(home.indexOf('key="search-row"'), home.indexOf('key="nav-row"'));
+    expect(searchRow).toContain('<Icon name="back"');
+    expect(searchRow).not.toContain('name="close"');
+    expect(searchRow).toContain('accessibilityLabel="Leave search"');
+    // The one cross is SearchBar's, and it only exists while there is text.
+    expect(withoutComments(read('src/components/SearchBar.tsx'))).toContain('value.length > 0 ?');
+  });
+
+  it('stacks the filters and lets them search on their own', () => {
+    // One scrolling row put four of six chips off screen; the age bands were
+    // something you had to discover by dragging (Amit, 2026-09-06).
+    expect(home).toContain('testID="search-filters"');
+    expect(home).toContain('style={styles.filters}');
+    expect(home).not.toContain('styles.filterRowContent');
+    const filters = home.slice(home.indexOf('    filters: {'), home.indexOf('    filterChips: {'));
+    expect(filters).not.toContain("flexDirection: 'row'");
+    expect(home).toContain('style={styles.filterChips}');
+    // Both groups are labelled, so a chip row is never an unexplained pill.
+    expect(home).toContain('What they offer');
+    expect(home).toContain('>\n              Age\n            </Text>');
+    // A filter with no query is a search: the list reads `results` directly.
+    expect(home).toContain('data={results}');
+    expect(home).not.toContain("data={trimmed === '' ? [] : results}");
+  });
+
+  it('spotlights three profiles in an M3 hero carousel, not one card', () => {
+    /*
+     * Android's carousel guidance names hero for "spotlighting content that you
+     * want to emphasize" and describes it as one large image with "a peek of
+     * what's next". Three items, snapped to the item pitch, with the peek
+     * derived from the column so it holds on a 320dp phone.
+     *
+     * NOT the banned WordCarousel: that was a TEXT fade at 10% alpha which
+     * could not reach AA at body size, and it auto-advanced, which is how it
+     * ran backwards through three green builds. This has no fading text and no
+     * auto-advance.
+     */
+    expect(existsSync(join(ROOT, 'src/components/WordCarousel.tsx'))).toBe(false);
+    expect(home).toContain('const TOP_PICKS = 3');
+    expect(home).toContain('testID="top-picks"');
+    expect(home).toContain('Top profiles this week');
+    expect(home).toContain('snapToInterval={heroItemWidth + TOKENS.space.xs}');
+    expect(home).toContain('.slice(0, TOP_PICKS)');
+    // Derived from the content column, never a fixed dp.
+    expect(home).toMatch(/heroItemWidth =\s*columnWidth - TOKENS\.space\.md \* 2 - HERO_PEEK/);
+    // The picks are lifted out of the list below, so nobody appears twice.
+    expect(home).toContain('const shown = new Set(topPicks.map(p => p.id))');
+    // No timer anywhere near it.
+    const carousel = home.slice(home.indexOf('testID="top-picks"') - 1200, home.indexOf('testID="top-picks"') + 600);
+    expect(carousel).not.toMatch(/setInterval|carouselDwell/);
   });
 });
