@@ -3829,3 +3829,70 @@ describe('docked panel travel', () => {
     expect(composer).toMatch(/if \(shown === null\) \{\s*dockY\.value = slotHeight/);
   });
 });
+
+describe('profiles: every server-owned column is guarded against the owner', () => {
+  /*
+   * Migration 054 redefined guard_privileged_profile_columns() and dropped the
+   * suspension and reputation guards without anyone noticing, and the balance
+   * buckets from 028 were never guarded at all — any signed-in user could set
+   * promo_balance on their own row and sync_token_balance() minted the tokens
+   * (found 2026-09-06, fixed in 063). The guard is redefined wholesale each
+   * time, so this pins the NEWEST definition: whoever redefines it next must
+   * keep every column below, or say so here.
+   */
+  const DEFINE = 'create or replace function public.guard_privileged_profile_columns';
+  const files = readdirSync(join(ROOT, 'supabase/migrations'))
+    .filter(f => f.endsWith('.sql'))
+    .sort()
+    .filter(f => read(`supabase/migrations/${f}`).includes(DEFINE));
+  const last = files[files.length - 1] ?? '';
+  const newest = last === '' ? '' : read(`supabase/migrations/${last}`);
+  // From the LAST definition to the end of ITS body. Slicing on the bare name
+  // would start at the `comment on function` line below the body and match
+  // nothing — which is how this block first shipped green-looking and empty.
+  const fromDefine = newest.slice(newest.lastIndexOf(DEFINE));
+  const body = fromDefine.slice(0, fromDefine.indexOf('$$;') + 3);
+
+  it('is last redefined in 063 or later, and the slice is the body not the comment', () => {
+    expect(last >= '063').toBe(true);
+    expect(body).toContain('returns trigger');
+    expect(body).toContain("current_user in ('authenticated', 'anon')");
+  });
+
+  it.each([
+    'role',
+    'identity_verified_at',
+    'identity_state',
+    'date_of_birth',
+    'age_bracket',
+    'suspended_until',
+    'profile_completed_at',
+    'promo_balance',
+    'purchased_balance',
+    'token_balance',
+    'last_refill_at',
+    'rating_avg',
+    'rating_count',
+    'median_reply_seconds',
+    'engagement_nudged_at',
+  ])('guards profiles.%s', column => {
+    expect(body).toMatch(new RegExp(`new\\.${column} is distinct from old\\.${column}`));
+  });
+
+  it('leaves the client\'s real direct writes alone', () => {
+    // src/api/provider.ts writes exactly these from the device.
+    for (const column of ['is_available', 'presence', 'presence_visible', 'avatar_url']) {
+      expect(body).not.toMatch(new RegExp(`new\\.${column} is distinct from`));
+    }
+    const provider = withoutComments(read('src/api/provider.ts'));
+    for (const column of ['promo_balance', 'purchased_balance', 'token_balance', 'rating_avg', 'suspended_until']) {
+      expect(provider).not.toMatch(new RegExp(`\\.update\\(\\{[^}]*${column}`));
+    }
+  });
+
+  it('is registered in the harness with its suite', () => {
+    const dbTest = read('scripts/db-test.mjs');
+    expect(dbTest).toContain('063_profile_guard_covers_every_server_owned_column.sql');
+    expect(dbTest).toContain('250_profile_guard_server_owned_columns.sql');
+  });
+});
