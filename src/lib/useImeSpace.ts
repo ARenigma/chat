@@ -30,9 +30,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
  * `insets.bottom` is added because `endCoordinates.height` measures the IME
  * alone and EXCLUDES the navigation-bar inset the IME is drawn over — the same
  * 15dp discrepancy that made the chat composer jump when the emoji panel was
- * sized from it (see the note on `imeSpace` in ChatScreen.tsx). On a device
+ * sized from it (the measured note now lives in `imeGeometry.ts`). On a device
  * whose nav bar sits outside the app window (MIUI three-button) that term is
  * simply 0.
+ *
+ * NOT the same rule as `imeGeometry.ts`, and the difference is deliberate: this
+ * returns 0 the moment the IME hides, because a form only needs padding while
+ * the keyboard is actually there. The chat screen keeps the last measured height
+ * and gates on a separate `keyboardUp` flag, because it has to size a panel that
+ * is open precisely when the keyboard is not.
  */
 export function useImeSpace(): number {
   const insets = useSafeAreaInsets();

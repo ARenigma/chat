@@ -1,11 +1,15 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlashList, type FlashListRef, type ListRenderItemInfo } from '@shopify/flash-list';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Keyboard,
+  FlashList,
+  type FlashListRef,
+  type ListRenderItem,
+  type ListRenderItemInfo,
+} from '@shopify/flash-list';
+import {
   useWindowDimensions,
+  type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
-  Platform,
   StyleSheet,
   Text,
   View,
@@ -15,6 +19,17 @@ import { barIn, barOut } from '../theme/motion';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
+import {
+  ImeGeometryProvider,
+  useBarHeight,
+  useBodyInset,
+  useChatImeStore,
+  useComposerFocused,
+  useComposerInset,
+  useImeStore,
+  useListPad,
+} from '../lib/imeGeometry';
+import { readKeyboardHeight } from '../lib/keyboardPanel';
 import { initialOf } from '../lib/display';
 import { isPending, PENDING_PREFIX } from '../lib/transcript';
 import {
@@ -40,7 +55,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { readPresence } from '../lib/presence';
 import { SCROLL_PHYSICS } from '../lib/scroll';
-import { readKeyboardHeight } from '../lib/keyboardPanel';
 import { DEFAULT_RATES, isLowBalance } from '../lib/rates';
 import {
   clockTickMs,
@@ -79,6 +93,37 @@ import { TokenCounter } from '../components/TokenCounter';
 import { CallLogRow } from '../components/CallLogRow';
 import { MyTurn, PeerTurn, type ActionTarget, type ImageBody, type Quote, type VoiceBody } from '../components/Turn';
 import { SafetySheet } from './SafetySheet';
+
+/*
+ * The transcript's two row shapes, at module scope rather than inside the
+ * `rows` useMemo, so the `Transcript` leaf at the foot of this file can name
+ * what it renders. Same shapes, moved.
+ */
+type Message = NonNullable<ReturnType<typeof useMessages>['data']>[number];
+type CallRecord = NonNullable<ReturnType<typeof useCalls>['data']>[number];
+
+type MessageRow = {
+  kind: 'message';
+  localKey: string;
+  sortAt: string;
+  message: Message;
+  mine: boolean;
+  first: boolean;
+  last: boolean;
+  opensDay: boolean;
+  voice?: VoiceBody;
+  image?: ImageBody;
+};
+
+type CallRow = {
+  kind: 'call';
+  localKey: string;
+  sortAt: string;
+  call: CallRecord;
+  opensDay: boolean;
+};
+
+export type TranscriptRow = MessageRow | CallRow;
 
 interface Props {
   providerId: string;
@@ -137,17 +182,6 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   const queryClient = useQueryClient();
   const firstSendRefillShown = useRef(false);
   const [sendHaloKey, setSendHaloKey] = useState(0);
-  // Drives the dock's frost: composing drops the bar entirely (see the Frost
-  // below), leaving a floating capsule over the transcript.
-  const [composerFocused, setComposerFocused] = useState(false);
-  // The docked emoji panel is sized to the keyboard, so while it is up the dock
-  // must not also add the safe-area inset the keyboard-down case needs.
-  const [emojiPanelOpen, setEmojiPanelOpen] = useState(false);
-  // The panel's own search field has the keyboard: panel AND IME up together.
-  const [emojiSearching, setEmojiSearching] = useState(false);
-  // The dock's measured height while collapsed, so the transcript can be padded
-  // clear of it. Not updated while searching — see `listPad`.
-  const [dockHeight, setDockHeight] = useState(0);
   const [leaveDialogVisible, setLeaveDialogVisible] = useState(false);
   // The same dialog serves back (end and leave) and the End chip (end, stay).
   const [leaveIntent, setLeaveIntent] = useState<'leave' | 'end'>('leave');
@@ -181,43 +215,39 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   // The message the next send replies to. Cleared on send and on cancel, and
   // never persisted: a half-composed reply is not worth surviving a screen.
   const [replyTo, setReplyTo] = useState<ActionTarget | null>(null);
-  // Whether the IME is up, and how tall it says it is. Both feed the single
-  // `imeSpace` number the dock and the emoji panel are sized from — see the note
-  // on `composerInset`. The height is seeded from the remembered measurement so
-  // the very first show has something to lift by on the same frame.
-  const [keyboardUp, setKeyboardUp] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(() =>
-    readKeyboardHeight(false),
-  );
   // Dismissing the prompt is per-visit, not persisted. A member who says "not
   // now" and comes back tomorrow is a different question from one who said it a
   // second ago, and persisting it would need a key per conversation for a
   // decision worth almost nothing.
-  // Height of the frosted top bar (header + talk strip + status-bar inset),
-  // measured rather than guessed: the strip is conditional on balance and the
-  // inset varies by device, so the transcript's top spacer has to track it.
-  const [barHeight, setBarHeight] = useState(0);
-
-  // `Will` rather than `Did` on iOS: the padding has to change on the same frame
-  // the keyboard starts moving, or the composer visibly jumps 34pt at the end of
-  // the animation. Android only emits the `Did` pair.
-  useEffect(() => {
-    const show = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      e => {
-        setKeyboardHeight(e.endCoordinates.height);
-        setKeyboardUp(true);
-      },
-    );
-    const hide = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => setKeyboardUp(false),
-    );
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
+  /*
+   * The IME's geometry — keyboard, panel, dock and bar heights, and the five
+   * numbers derived from them — lives in a screen-scoped store, not in this
+   * component's state. A keyboard show used to re-render all 1858 lines of this
+   * screen, twice, to move two numbers. See src/lib/imeGeometry.ts, which also
+   * carries the measured 96px/34dp note that used to sit over `imeSpace` here.
+   *
+   * This screen holds the HANDLE and subscribes to nothing. Only the four leaf
+   * components at the bottom of this file read a value. Calling `useBodyInset()`
+   * or its siblings from this body would silently restore the full re-render,
+   * so a contract test asserts that none of them appear here.
+   */
+  const ime = useChatImeStore({
+    insetBottom: insets.bottom,
+    winH,
+    seedKeyboardHeight: readKeyboardHeight(false),
+  });
+  const onComposerFocus = useCallback(
+    (v: boolean) => ime.getState().set({ composerFocused: v }),
+    [ime],
+  );
+  const onPanelChange = useCallback(
+    (v: boolean) => ime.getState().set({ emojiPanelOpen: v }),
+    [ime],
+  );
+  const onPanelSearchChange = useCallback(
+    (v: boolean) => ime.getState().set({ emojiSearching: v }),
+    [ime],
+  );
 
   useProfile();
   const { data: selfId } = useSelfId();
@@ -574,26 +604,6 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
    */
   const rows = useMemo(() => {
     const list = messages ?? [];
-
-    type MessageRow = {
-      kind: 'message';
-      localKey: string;
-      sortAt: string;
-      message: (typeof list)[number];
-      mine: boolean;
-      first: boolean;
-      last: boolean;
-      opensDay: boolean;
-      voice?: VoiceBody;
-      image?: ImageBody;
-    };
-    type CallRow = {
-      kind: 'call';
-      localKey: string;
-      sortAt: string;
-      call: NonNullable<typeof callRecords>[number];
-      opensDay: boolean;
-    };
 
     const messageRows: MessageRow[] = list.map((m, i) => {
       const newer = list[i - 1];
@@ -1041,10 +1051,12 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   // here — a ListFooterComponent on FlashList v2's inverted list does not land
   // at the visual top reliably; the card is pinned inside the Frost header
   // instead, which auto-grows barHeight so this spacer still tracks it.)
-  const footer = useCallback(
-    () => <View style={{ height: barHeight }} />,
-    [barHeight],
-  );
+  // Permanently stable. FlashList does `React.createElement(ListFooterComponent)`,
+  // so a callback whose identity changed with `barHeight` changed the element
+  // TYPE and React unmounted and remounted the spacer — on an inverted list that
+  // is the visual-top spacer, remounting exactly while the talk strip plays its
+  // barIn/barOut. `BarSpacer` subscribes to the height itself instead.
+  const footer = useCallback(() => <BarSpacer />, []);
   /**
    * Still resolving covers three cases, not one.
    *
@@ -1064,62 +1076,15 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
     (knownThread !== undefined && conversationId !== undefined && messages === undefined && messagesPending);
   const empty = !loading && rows.length === 0;
 
-  /**
-   * ONE number for the space under the composer row, so the row cannot move when
-   * the keyboard and the emoji panel trade places.
-   *
-   * **The bug this replaces, measured (S22 Ultra, 2026-09-04).** The composer
-   * dropped 96px — exactly 34dp — every time the panel opened, and rose 34dp
-   * every time the keyboard came back. Two independent errors summed to it:
-   *
-   *  - 19dp: `composerInset` was zeroed on `emojiPanelOpen`, so the safe-area
-   *    padding present in the keyboard state vanished in the panel state.
-   *  - 15dp: the panel was sized from `keyboardDidShow.endCoordinates.height`,
-   *    which under edge-to-edge EXCLUDES the navigation-bar inset, while the IME
-   *    window runs to the bottom of the screen. `dumpsys window` put the IME
-   *    frame at [0,1382][1080,2316] (332dp) while RN reported 317dp.
-   *
-   * `KeyboardAvoidingView behavior="height"` is gone with them. It stacked a
-   * second resize mechanism on top of `adjustResize` and shrank the body by RN's
-   * short number, so its lift could never agree with the panel's height. We lift
-   * the body ourselves by the height the IME actually occupies, which is the same
-   * expression the panel is sized from — the two are equal by construction now,
-   * not by coincidence.
-   * https://developer.android.com/develop/ui/views/layout/edge-to-edge
+  /*
+   * `imeSpace`, `bodyInset`, `panelCeiling`, `listPad` and `composerInset` are
+   * derived together in src/lib/imeGeometry.ts, from one input set, so they
+   * cannot drift by a commit. The measured 96px/34dp note that argued for them
+   * moved with them. Nothing in this body reads one — the leaves do.
    */
-  const imeSpace = keyboardHeight + insets.bottom;
-  /**
-   * The keyboard and the panel are mutually exclusive EXCEPT while the panel's
-   * own search field has focus, when both are up: the dock is lifted above the
-   * keyboard and the panel expands into what is left. Telegram's arrangement —
-   * search open expands the panel from just under the action bar down to the
-   * composer, rather than leaving it keyboard-sized with a keyboard-sized hole
-   * beneath it. Recorded in `design/references/telegram.md`.
-   */
-  const bodyInset =
-    keyboardUp && (!emojiPanelOpen || emojiSearching) ? imeSpace : 0;
-  /**
-   * Everything the header and the raised keyboard leave over. The Composer
-   * subtracts its own input row, which it measures, because the row grows with
-   * the draft and with font scale and only it knows how tall it currently is.
-   */
-  const panelCeiling = Math.max(0, winH - barHeight - imeSpace);
-  /**
-   * How far the transcript is padded clear of the dock. The COLLAPSED dock only:
-   * the search expansion overlays the chat behind a scrim rather than pushing it,
-   * so growing this with it would scroll the conversation away — the exact thing
-   * the overlay exists to prevent.
-   */
-  const listPad = TOKENS.space.md + bodyInset + dockHeight;
-  /**
-   * The dock's own bottom padding. Zero whenever something is filling the space
-   * below it — the IME covers the navigation bar, and so does the panel — and the
-   * safe-area inset only when the screen bottom is bare.
-   */
-  const composerInset =
-    keyboardUp || emojiPanelOpen ? 0 : insets.bottom + TOKENS.space['2xs'];
 
   return (
+    <ImeGeometryProvider value={ime}>
     <View style={styles.root}>
       {/**
        * The header + talk-time strip, now a single frosted overlay.
@@ -1130,13 +1095,14 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
        * the top-bar case, not the bottom-nav one: a message bubble is not a
        * full-width touch target, so nothing underneath can steal the bar's taps,
        * and the bar renders last in z-order so its own controls take them. The
-       * inverted list reserves `barHeight` at its visual top (a footer spacer, see
-       * below) so the oldest message can still scroll clear of the frost.
+       * inverted list reserves the bar's measured height at its visual top (the
+       * `BarSpacer` footer, see below) so the oldest message can still scroll
+       * clear of the frost.
        */}
       <Frost
         edge="bottom"
         style={[styles.barStack, { paddingTop: insets.top }]}
-        onLayout={e => setBarHeight(e.nativeEvent.layout.height)}>
+        onLayout={e => ime.getState().set({ barHeight: e.nativeEvent.layout.height })}>
       {/**
        * The header, and it is a restructure rather than a restyle.
        *
@@ -1412,28 +1378,13 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
             </View>
           </View>
         ) : (
-          <FlashList
-            ref={listRef}
-            data={rows}
-            inverted
-            // localKey carries the stable key for both message rows and call rows.
-            // Message rows use localKey from transcript; call rows use `call-${id}`.
-            keyExtractor={r => r.localKey}
+          <Transcript
+            listRef={listRef}
+            rows={rows}
             renderItem={renderItem}
-            ListHeaderComponent={header}
-            ListFooterComponent={footer}
-            contentContainerStyle={[styles.list, { paddingTop: listPad }]}
-            keyboardDismissMode="interactive"
-            keyboardShouldPersistTaps="handled"
+            header={header}
+            footer={footer}
             onScroll={onTranscriptScroll}
-            scrollEventThrottle={16}
-            // Two recycle pools: message bubbles and call-log rows have very
-            // different heights and layouts. Keeping them separate prevents
-            // FlashList from handing a recycled bubble cell to a call row (or
-            // vice versa), which would produce a visible layout jump on scroll.
-            getItemType={item => item.kind}
-            showsVerticalScrollIndicator={false}
-            {...SCROLL_PHYSICS}
           />
         )}
 
@@ -1467,17 +1418,12 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
          * transcript instead of out of it, so the viewport is stable by
          * construction.
          *
-         * `listPad` keeps the newest message clear of the collapsed dock, and is
-         * deliberately NOT grown by the search expansion — that is what the scrim
-         * is for.
+         * The transcript's pad (`listPad`, derived in src/lib/imeGeometry.ts)
+         * keeps the newest message clear of the collapsed dock, and is
+         * deliberately NOT grown by the search expansion — that is what the
+         * scrim is for.
          */}
-        <View
-          style={[styles.dockStack, { transform: [{ translateY: -bodyInset }] }]}
-          onLayout={e => {
-            if (!emojiSearching) {
-              setDockHeight(e.nativeEvent.layout.height);
-            }
-          }}>
+        <DockStack>
         <NoticeBar />
 
         {/* Blush strip sits above the white composer dock so the pills match
@@ -1509,13 +1455,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
             mounted at blur 0 rather than being swapped for a plain View — its
             children must remain its children or the blur bakes them in as a
             ghost halo (see Frost's own note). */}
-        <Frost
-          // No hairline at all. The dock carries no fill, so a top border was
-          // drawing a line across the transcript with nothing on the other side
-          // of it (Amit, 2026-09-04); the blur alone separates the two.
-          tint="none"
-          blur={!composerFocused}
-          style={{ paddingBottom: composerInset }}>
+        <DockFrost>
           {replyTo !== null ? (
             <View style={styles.replyBar}>
               <View style={styles.replyRule} />
@@ -1556,13 +1496,12 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
                   : 'Make your first move'
             }
             sendHaloKey={sendHaloKey}
-            onFocusChange={setComposerFocused}
-            onPanelChange={setEmojiPanelOpen}
-            onPanelSearchChange={setEmojiSearching}
-            panelCeiling={panelCeiling}
+            onFocusChange={onComposerFocus}
+            onPanelChange={onPanelChange}
+            onPanelSearchChange={onPanelSearchChange}
           />
-        </Frost>
-        </View>
+        </DockFrost>
+        </DockStack>
       </View>
 
       <SafetySheet
@@ -1598,7 +1537,110 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
         onConfirm={leaveIntent === 'end' ? confirmEnd : confirmLeave}
       />
     </View>
+    </ImeGeometryProvider>
   );
+}
+
+/**
+ * The transcript, wrapped so `listPad` can change without rendering the screen.
+ *
+ * `contentContainerStyle` stays a PLAIN style object. That is the mechanism the
+ * 96px fix was measured against on a device, and a re-render refactor is not the
+ * place to swap it for an animated spacer — if that is ever wanted it needs its
+ * own change and its own device pass.
+ */
+interface TranscriptProps {
+  listRef: React.RefObject<FlashListRef<TranscriptRow> | null>;
+  rows: TranscriptRow[];
+  renderItem: ListRenderItem<TranscriptRow>;
+  header: () => React.ReactElement;
+  footer: () => React.ReactElement;
+  onScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
+}
+
+const Transcript = memo(function TranscriptView({
+  listRef,
+  rows,
+  renderItem,
+  header,
+  footer,
+  onScroll,
+}: TranscriptProps) {
+  const styles = useStyles(makeStyles);
+  const listPad = useListPad();
+  return (
+    <FlashList
+      ref={listRef}
+      data={rows}
+      inverted
+      // localKey carries the stable key for both message rows and call rows.
+      // Message rows use localKey from transcript; call rows use `call-${id}`.
+      keyExtractor={r => r.localKey}
+      renderItem={renderItem}
+      ListHeaderComponent={header}
+      ListFooterComponent={footer}
+      contentContainerStyle={[styles.list, { paddingTop: listPad }]}
+      keyboardDismissMode="interactive"
+      keyboardShouldPersistTaps="handled"
+      onScroll={onScroll}
+      scrollEventThrottle={16}
+      // Two recycle pools: message bubbles and call-log rows have very
+      // different heights and layouts. Keeping them separate prevents
+      // FlashList from handing a recycled bubble cell to a call row (or
+      // vice versa), which would produce a visible layout jump on scroll.
+      getItemType={item => item.kind}
+      showsVerticalScrollIndicator={false}
+      {...SCROLL_PHYSICS}
+    />
+  );
+});
+
+/** The dock, lifted clear of the IME. */
+function DockStack({ children }: { children: React.ReactNode }) {
+  const styles = useStyles(makeStyles);
+  const ime = useImeStore();
+  const bodyInset = useBodyInset();
+  // Reads `emojiSearching` from the store rather than from a captured render
+  // value, so the guard cannot go stale inside a closure.
+  const onLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      const state = ime.getState();
+      if (!state.emojiSearching) {
+        state.set({ dockHeight: e.nativeEvent.layout.height });
+      }
+    },
+    [ime],
+  );
+  return (
+    <View
+      style={[styles.dockStack, { transform: [{ translateY: -bodyInset }] }]}
+      onLayout={onLayout}>
+      {children}
+    </View>
+  );
+}
+
+/** The dock's frosted plate. */
+function DockFrost({ children }: { children: React.ReactNode }) {
+  const composerInset = useComposerInset();
+  const focused = useComposerFocused();
+  return (
+    <Frost
+      // No hairline at all. The dock carries no fill, so a top border was
+      // drawing a line across the transcript with nothing on the other side
+      // of it (Amit, 2026-09-04); the blur alone separates the two.
+      tint="none"
+      blur={!focused}
+      style={{ paddingBottom: composerInset }}>
+      {children}
+    </Frost>
+  );
+}
+
+/** Reserves the frosted top bar at the inverted list's visual top. */
+function BarSpacer() {
+  const barHeight = useBarHeight();
+  return <View style={{ height: barHeight }} />;
 }
 
 const makeStyles = (t: Theme) => StyleSheet.create({

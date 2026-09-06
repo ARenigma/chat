@@ -1864,11 +1864,49 @@ describe('the chat restyle is wired, not just drawn', () => {
     // The fix is that both states resolve to `keyboardHeight + insets.bottom`,
     // so they are equal by construction. These assertions are what stops the two
     // expressions drifting apart again.
-    expect(chatCode).toContain('const imeSpace = keyboardHeight + insets.bottom');
+    //
+    // The expressions moved out of the screen and into one derivation
+    // (src/lib/imeGeometry.ts) so they come from one input set and cannot land
+    // one commit apart; the gate followed them rather than being deleted.
+    const imeCode = withoutComments(read('src/lib/imeGeometry.ts'));
+    expect(imeCode).toContain('const imeSpace = i.keyboardHeight + i.insetBottom');
     expect(chatCode).toContain('bodyInset');
     expect(withoutComments(read('src/components/Composer.tsx'))).toContain(
       'panelHeight + insets.bottom',
     );
+    // And the screen cannot re-derive any of it inline behind the gate's back.
+    expect(chatCode).not.toContain('keyboardHeight +');
+    expect(chatCode).not.toMatch(
+      /const \[(keyboardUp|keyboardHeight|barHeight|dockHeight|emojiPanelOpen|emojiSearching|composerFocused),/,
+    );
+  });
+
+  it('keeps the owner holding the handle and the leaves holding the subscription', () => {
+    // The whole point of the store is that ChatScreen does NOT subscribe. If its
+    // body ever calls one of the value hooks, the screen silently goes back to
+    // re-rendering all 1858 lines on every keyboard show — with every other test
+    // still green. So the body is checked directly: the four leaf components at
+    // the foot of the file are allowed to call them, and nothing above is.
+    const body = chatCode.slice(0, chatCode.indexOf('const Transcript = memo('));
+    expect(body).not.toMatch(
+      /use(BodyInset|ListPad|ComposerInset|PanelCeiling|BarHeight|ComposerFocused)\(/,
+    );
+    // The handle itself is fine, and is how the screen writes.
+    expect(body).toContain('useChatImeStore({');
+    expect(body).toContain('seedKeyboardHeight: readKeyboardHeight(false)');
+
+    // Composer reads `panelCeiling` from context, so a SECOND call site would
+    // silently get the unwritten default store, a zero ceiling, and an emoji
+    // panel that collapses whenever its search field has focus.
+    const usages = spawnSync(
+      'grep',
+      ['-rl', '--include=*.tsx', '<Composer', join(ROOT, 'src')],
+      { encoding: 'utf8' },
+    )
+      .stdout.trim()
+      .split('\n')
+      .filter(Boolean);
+    expect(usages).toEqual([join(ROOT, 'src', 'screens', 'ChatScreen.tsx')]);
   });
 
   it('keeps the emoji panel open while its own search field has the keyboard', () => {
@@ -1885,7 +1923,9 @@ describe('the chat restyle is wired, not just drawn', () => {
     expect(composer).toMatch(/!emojiOpen && searchingRef\.current/);
     // And the dock is lifted above the keyboard in that state, or the expanded
     // panel would render underneath it.
-    expect(chatCode).toContain('!emojiPanelOpen || emojiSearching');
+    expect(withoutComments(read('src/lib/imeGeometry.ts'))).toContain(
+      '!i.emojiPanelOpen || i.emojiSearching',
+    );
   });
 
   it('does not stack KeyboardAvoidingView on top of adjustResize', () => {
