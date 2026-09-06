@@ -98,6 +98,17 @@ const makeStyles = (t: Theme) =>
   StyleSheet.create({
     container: {
       height: SEARCH_BAR_HEIGHT,
+      /*
+       * Fills its row, and this is not cosmetic.
+       *
+       * The input inside carries `flex: 1`, which resolves against THIS box.
+       * Without a flex here the container hugged its content — an icon and a
+       * zero-width input — so the field rendered as a small pill and the text a
+       * member typed was invisible. Search still filtered correctly, which is
+       * why no test caught it: found on the Redmi 2026-09-06 by typing "Mira"
+       * and watching the list narrow to one row with an empty field above it.
+       */
+      flex: 1,
       flexDirection: 'row',
       alignItems: 'center',
       backgroundColor: t.color.bg.sunken,

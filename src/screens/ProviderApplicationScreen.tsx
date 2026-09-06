@@ -27,6 +27,12 @@ import {
 import { useImeSpace } from '../lib/useImeSpace';
 import { useCheckDisplayName } from '../api/profileSetup';
 import {
+  CATEGORY_BADGE,
+  DEFAULT_CATEGORY,
+  PROVIDER_CATEGORIES,
+  type ProviderCategory,
+} from '../lib/providerFilters';
+import {
   STAGE_NAME_HINT,
   stageNamePii,
   stageNamePiiMessage,
@@ -171,6 +177,12 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
   const [nameError, setNameError] = useState<string | null>(null);
   /** The suggestion currently in the field, so "untouched" can be told from "typed". */
   const [suggested, setSuggested] = useState<string | null>(null);
+  /**
+   * What they offer, which the directory groups by (migration 065). First,
+   * because it frames every field under it — a stage name and a headline read
+   * differently for an astrologer than for a listener.
+   */
+  const [category, setCategory] = useState<ProviderCategory>(DEFAULT_CATEGORY);
 
   const savePan = useSavePan();
   const savePayout = useSavePayoutAccount();
@@ -416,6 +428,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
           headline: headline.trim(),
           languages,
           about: about.trim(),
+          category,
         });
         setPhase('done');
       } catch (err) {
@@ -435,7 +448,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
         // Everything else is surfaced by useCompleteProviderOnboarding's notice.
       }
     })();
-  }, [avatarSeed, setClay, complete, displayName, headline, languages, about]);
+  }, [avatarSeed, setClay, complete, displayName, headline, languages, about, category]);
 
   // ── Phase: verify — identity AND payout, in one pass ────────────────────
   if (phase === 'verify') {
@@ -763,6 +776,23 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
         <Text allowFontScaling style={styles.subtitle}>
           This is all a member sees. Your real name is never shown.
         </Text>
+
+        <Field label="What you offer">
+          <View style={styles.chips} testID="provider-category">
+            {PROVIDER_CATEGORIES.map(c => (
+              <Chip
+                key={c}
+                label={CATEGORY_BADGE[c]}
+                tone={category === c ? 'warm' : 'neutral'}
+                selected={category === c}
+                onPress={() => setCategory(c)}
+              />
+            ))}
+          </View>
+          <Text allowFontScaling style={styles.verifyHint}>
+            Members browse Listeners and Astrologers separately. Same rates either way.
+          </Text>
+        </Field>
 
         <Field label="Stage name">
           <TextField

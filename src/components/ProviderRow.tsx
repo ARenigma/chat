@@ -11,6 +11,7 @@ import { Avatar } from './Avatar';
 import { Icon } from './Icon';
 import { MetaChip } from './MetaChip';
 import { Pressable } from './Pressable';
+import { CATEGORY_BADGE, categoryOf } from '../lib/providerFilters';
 
 interface Props {
   provider: ProviderSummary;
@@ -34,6 +35,15 @@ interface Props {
    * can be hoisted as stable callbacks in the parent.
    */
   onPressAvatar?: (id: string) => void;
+  /**
+   * Whether to name the provider's category on the row (migration 065).
+   *
+   * On Explore the tab above the list already says which category you are
+   * looking at, so repeating it on every row is noise. In SEARCH there are no
+   * tabs and the results span both, so without this a member cannot tell an
+   * astrologer from a listener.
+   */
+  showCategory?: boolean;
   /**
    * Whether to run the entrance animation. Defaults to true.
    *
@@ -121,7 +131,15 @@ export const ROW_SEPARATOR_INSET = ROW_AVATAR + TOKENS.space.sm;
  * making rows variable-height, and a list whose rows disagree about their height
  * cannot carry a hairline convincingly.
  */
-function ProviderRowView({ provider, index, isLast, onPress, onPressAvatar, animateEntrance }: Props) {
+function ProviderRowView({
+  provider,
+  index,
+  isLast,
+  onPress,
+  onPressAvatar,
+  animateEntrance = true,
+  showCategory = false,
+}: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const initial = initialOf(provider.display_name);
@@ -129,6 +147,7 @@ function ProviderRowView({ provider, index, isLast, onPress, onPressAvatar, anim
   // Fact chips: experience + top languages. Experience is SEEDED until the
   // directory carries a real column — deterministic per id, stable across renders.
   const chips = [
+    ...(showCategory ? [CATEGORY_BADGE[categoryOf(provider)]] : []),
     `${seededExperienceYears(provider.id)} yrs`,
     ...provider.languages.slice(0, 2),
   ].filter(c => c !== '');

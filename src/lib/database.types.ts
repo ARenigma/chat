@@ -105,6 +105,8 @@ export type Profile = {
   chat_enabled: boolean;
   audio_enabled: boolean;
   video_enabled: boolean;
+  /** listener | astrologer (065). Set once at onboarding; in the 065 guard. */
+  provider_category: string;
   /** Non-null and future-dated means suspended. A ban is a far-future value. */
   suspended_until: string | null;
   /**
@@ -351,6 +353,13 @@ export type ProviderSummary = {
   chat_enabled: boolean;
   audio_enabled: boolean;
   video_enabled: boolean;
+  /**
+   * listener | astrologer (migration 065): which tab a member finds them
+   * under, and what search filters by. A tag on the same provider — same
+   * onboarding, same rates. Read it through `categoryOf` in
+   * lib/providerFilters.ts, which defaults a row from an older server.
+   */
+  provider_category: string;
 };
 
 /**
@@ -1011,6 +1020,12 @@ export type Database = {
           p_headline: string;
           p_languages: string[];
           p_about: string;
+          /**
+           * listener | astrologer (migration 065). Defaulted server-side, and
+           * the 4-arg signature was DROPPED rather than overloaded so no call
+           * can be ambiguous.
+           */
+          p_provider_category?: string;
         };
         Returns: undefined;
       };

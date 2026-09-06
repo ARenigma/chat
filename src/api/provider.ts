@@ -31,6 +31,7 @@ import {
 } from '../lib/cashfreeOnboarding';
 import { useStore } from '../store/useStore';
 import { keys, useProfile } from './chat';
+import type { ProviderCategory } from '../lib/providerFilters';
 
 export const providerKeys = {
   application: ['my-application'] as const,
@@ -159,6 +160,8 @@ export interface ProviderProfileDraft {
   headline: string;
   languages: string[];
   about: string;
+  /** listener | astrologer (migration 065); chosen once, on the profile step. */
+  category: ProviderCategory;
 }
 
 /**
@@ -191,6 +194,7 @@ export function useCompleteProviderOnboarding() {
         p_headline: draft.headline,
         p_languages: draft.languages,
         p_about: draft.about,
+        p_provider_category: draft.category,
       });
       if (error) {
         throw new Error(error.message);
