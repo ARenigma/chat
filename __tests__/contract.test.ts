@@ -4445,3 +4445,55 @@ describe('opening a chat tells the other person, both ways', () => {
     expect(dbTest).toContain('300_chat_open_alerts.sql');
   });
 });
+
+describe('the usage ledger answers where the tokens went, from both sides', () => {
+  const migration = read('supabase/migrations/069_usage_ledger.sql');
+
+  it('lets the SERVER decide which number the caller is entitled to', () => {
+    /*
+     * One RPC for both roles, because it is one question asked from two sides
+     * of the same row. A member reads what they spent, a provider their own
+     * share (ADR-0021's 60%) — and the branch is in SQL, so a client-side
+     * mistake cannot hand a member the split or a provider the gross.
+     */
+    expect(migration).toMatch(/when ps\.member_id = v_uid then ps\.tokens_debited/);
+    expect(migration).toContain('coalesce(e.provider_tokens, 0)');
+    const screen = withoutComments(read('src/screens/UsageLedgerScreen.tsx'));
+    expect(screen).not.toContain('provider_tokens');
+    expect(screen).not.toContain('gross');
+  });
+
+  it('names a provider and handles a member, like every other surface', () => {
+    expect(migration).toContain('public.member_handle(ps.member_id)');
+    expect(migration).toContain('coalesce(d.display_name');
+    // No content can leak: paid_sessions carries none, and nothing is joined
+    // to messages.
+    expect(migration).not.toMatch(/public\.messages|last_body/);
+  });
+
+  it('lists billed sessions only', () => {
+    // A request that never became a minute is not a line in a ledger; it is
+    // something that did not happen.
+    expect(migration).toContain('ps.minutes_billed > 0');
+  });
+
+  it('is reachable from Settings on BOTH trees', () => {
+    const settings = withoutComments(read('src/screens/SettingsSheet.tsx'));
+    expect(settings).toContain('testID="settings-usage"');
+    // The title takes the caller's own side of the row.
+    expect(settings).toContain("isProvider ? 'Earnings by session' : 'Usage by session'");
+    const app = withoutComments(read('App.tsx'));
+    expect(app).toContain("pushRoute({ name: 'usage' })");
+    expect(app).toContain("pushProvider({ name: 'usage' })");
+    // And the route exists in both unions, with a parent that is Settings.
+    const routes = read('src/lib/routes.ts');
+    expect(routes.match(/name: 'usage'/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(routes).toMatch(/case 'transactions':\s*\n\s*case 'usage':\s*\n\s*return \{ name: 'settings' \}/);
+  });
+
+  it('is registered in the harness with its suite', () => {
+    const dbTest = read('scripts/db-test.mjs');
+    expect(dbTest).toContain('069_usage_ledger.sql');
+    expect(dbTest).toContain('310_usage_ledger.sql');
+  });
+});

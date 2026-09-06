@@ -1186,6 +1186,10 @@ export type Database = {
         Args: { p_conversation_id: string };
         Returns: { alerted: boolean; reason: string | null; peer_present?: boolean };
       };
+      get_usage_ledger: {
+        Args: { p_limit?: number; p_before?: string | null };
+        Returns: unknown;
+      };
       /** End an active session with an optional content report. Migration 030. */
       end_session: {
         Args: {

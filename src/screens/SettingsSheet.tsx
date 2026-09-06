@@ -45,6 +45,12 @@ interface Props {
   onBlocked?: () => void;
   /** Opens the recharge history + invoice download screen. Member tree only. */
   onTransactions?: () => void;
+  /**
+   * Opens the per-session usage ledger. On BOTH trees (goal item 2): a member
+   * asks where the tokens went, a provider asks which conversation paid what,
+   * and it is the same rows read from two sides.
+   */
+  onUsage?: () => void;
 }
 
 /**
@@ -131,6 +137,7 @@ export function SettingsSheet({
   onSignedOut,
   onBlocked,
   onTransactions,
+  onUsage,
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -418,6 +425,31 @@ export function SettingsSheet({
                 />
               </Pressable>
               <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
+          </View>
+        ) : null}
+
+        {/* Usage by session (goal item 2). On both trees, with the title the
+            caller's own side of the row: a member spent, a provider earned. */}
+        {onUsage !== undefined ? (
+          <View style={styles.group}>
+            <Pressable
+              onPress={onUsage}
+              testID="settings-usage"
+              accessibilityLabel="Usage by session"
+              press="none"
+              highlight="ios"
+              style={styles.row}>
+              <SettingsRowContent
+                icon="listen"
+                title={isProvider ? 'Earnings by session' : 'Usage by session'}
+                detail={
+                  isProvider
+                    ? 'What each conversation paid'
+                    : 'Where your tokens went'
+                }
+              />
+            </Pressable>
+            <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
           </View>
         ) : null}
 

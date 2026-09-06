@@ -1,0 +1,88 @@
+-- ===========================================================================
+-- 069  The usage ledger: what each session cost, or earned
+-- ===========================================================================
+-- Goal item 2 (Amit, 2026-09-05): "usage ledger by session in settings for
+-- users and providers". A member can see a balance and a recharge history but
+-- has never been able to answer "where did my tokens go"; a provider can see
+-- one total and has never been able to answer "which conversation was that".
+--
+-- One RPC for both roles rather than two, because it is one question asked from
+-- two sides of the same row. What differs is the number: a member reads
+-- `tokens_debited` (what they spent), a provider reads
+-- `provider_earnings_ledger.provider_tokens` (their 60% share, ADR-0021), and
+-- neither is shown the other's figure — a member has no business knowing the
+-- split, and a provider has no business knowing the gross.
+--
+-- The counterpart is named the way the rest of the app names them: a provider
+-- by their stage name, a member never (member_handle's pseudonymous handle).
+-- No message content appears here and none can: paid_sessions carries none.
+
+create or replace function public.get_usage_ledger(
+  p_limit  integer default 50,
+  p_before timestamptz default null
+)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_uid   uuid := auth.uid();
+  v_limit integer := least(greatest(coalesce(p_limit, 50), 1), 100);
+  v_rows  jsonb;
+begin
+  if v_uid is null then
+    raise exception 'UNAUTHORIZED' using errcode = '42501';
+  end if;
+
+  select coalesce(jsonb_agg(row order by row_started_at desc), '[]'::jsonb)
+  into   v_rows
+  from (
+    select
+      jsonb_build_object(
+        'session_id', ps.id,
+        'channel',    ps.channel,
+        'started_at', ps.started_at,
+        'ended_at',   ps.ended_at,
+        'minutes',    ps.minutes_billed,
+        -- The caller's own side of the money, never both.
+        'i_am_member', ps.member_id = v_uid,
+        'tokens', case
+          when ps.member_id = v_uid then ps.tokens_debited
+          else coalesce(e.provider_tokens, 0)
+        end,
+        'earnings_status', case when ps.provider_id = v_uid then e.status end,
+        'peer_id', case when ps.member_id = v_uid then ps.provider_id else ps.member_id end,
+        'peer_name', case
+          when ps.member_id = v_uid
+            then coalesce(d.display_name, 'Someone')
+          else public.member_handle(ps.member_id)
+        end
+      ) as row,
+      coalesce(ps.started_at, ps.accepted_at) as row_started_at
+    from   public.paid_sessions ps
+    left join public.provider_directory d on d.id = ps.provider_id
+    left join public.provider_earnings_ledger e
+           on e.session_id = ps.id and e.provider_id = v_uid
+    where  (ps.member_id = v_uid or ps.provider_id = v_uid)
+      -- Billed sessions only. A request that never became a minute is not a
+      -- line in a ledger; it is something that did not happen.
+      and  ps.minutes_billed > 0
+      and  (p_before is null or coalesce(ps.started_at, ps.accepted_at) < p_before)
+    order  by coalesce(ps.started_at, ps.accepted_at) desc
+    limit  v_limit
+  ) t;
+
+  return v_rows;
+end;
+$$;
+
+comment on function public.get_usage_ledger(integer, timestamptz) is
+  'Per-session usage for the caller, newest first (069). One RPC for both '
+  'roles: a member reads what they spent, a provider reads their own share, '
+  'and neither is shown the other''s figure. Billed sessions only. Carries no '
+  'message content, because paid_sessions has none to carry.';
+
+revoke all on function public.get_usage_ledger(integer, timestamptz) from public, anon;
+grant execute on function public.get_usage_ledger(integer, timestamptz) to authenticated;

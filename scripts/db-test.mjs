@@ -109,6 +109,7 @@ const MIGRATIONS = [
   'supabase/migrations/066_session_reviews_and_ratings.sql',
   'supabase/migrations/067_decline_session_request.sql',
   'supabase/migrations/068_chat_open_alerts.sql',
+  'supabase/migrations/069_usage_ledger.sql',
 ];
 
 const docker = (args, options = {}) =>
@@ -493,6 +494,10 @@ const suites = [
   {
     file: join(ROOT, 'supabase/tests/300_chat_open_alerts.sql'),
     label: 'chat-open alerts: both ways, and only when it could matter',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/310_usage_ledger.sql'),
+    label: "usage ledger: one row, two sides, neither sees the other's figure",
   },
 ];
 

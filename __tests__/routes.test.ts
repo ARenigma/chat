@@ -98,6 +98,7 @@ describe('transitionFor', () => {
     favourites: { name: 'favourites' },
     settings: { name: 'settings' },
     transactions: { name: 'transactions' },
+    usage: { name: 'usage' },
   };
 
   it('treats Home as the root floor', () => {
