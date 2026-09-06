@@ -59,6 +59,11 @@ interface Props {
    * activity without navigating to the chats list.
    */
   homeBadgeCount?: number;
+  /**
+   * False on a pushed screen. The bar is HIDDEN, never unmounted — see the note
+   * on the returned element.
+   */
+  visible?: boolean;
 }
 
 /**
@@ -94,7 +99,13 @@ function Indicator({ active }: { active: boolean }) {
  * rectangle. See m3.material.io/foundations/interaction/states/state-layers and
  * NavigationBarItem's indicator-shaped ripple.
  */
-function FloatingToolbarView({ active, onSelect, callEnabled = false, homeBadgeCount = 0 }: Props) {
+function FloatingToolbarView({
+  active,
+  onSelect,
+  callEnabled = false,
+  homeBadgeCount = 0,
+  visible = true,
+}: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -106,9 +117,30 @@ function FloatingToolbarView({ active, onSelect, callEnabled = false, homeBadgeC
   const visibleTabs = CALLS_TAB_ENABLED ? TABS : TABS.filter(t => t.key !== 'call');
 
   return (
+    /*
+     * Kept MOUNTED on pushed screens and hidden with `display: none`, not
+     * unmounted — the same treatment, for the same reason, as the emoji panel
+     * (EmojiPicker.tsx:258, citing Telegram's create-once/setVisibility
+     * lifecycle at ChatActivityEnterView.java:12622 and :12746).
+     *
+     * Rendering it conditionally meant every push and every pop destroyed and
+     * rebuilt a `Frost` — one of our native RenderEffect blur surfaces — plus
+     * four Pressables and four Indicators with their shared values, on the JS
+     * thread, inside the frame that was already animating a screen transition.
+     *
+     * This costs nothing in layout because the bar is `position: 'absolute'`:
+     * it never took height from the content area, and pushed screens were
+     * already full height. `display: none` also takes it out of layout and out
+     * of drawing, so a hidden bar is not blurring a chat transcript behind it.
+     */
     <Frost
       edge="top"
-      style={[styles.bar, { paddingBottom: insets.bottom + TOKENS.space['2xs'] }]}>
+      pointerEvents={visible ? 'auto' : 'none'}
+      style={[
+        styles.bar,
+        { paddingBottom: insets.bottom + TOKENS.space['2xs'] },
+        visible ? null : styles.hidden,
+      ]}>
         {visibleTabs.map(tab => {
           const on = tab.key === active;
           const disabled = tab.key === 'call' && !callEnabled;
@@ -177,6 +209,10 @@ const makeStyles = (t: Theme) =>
       paddingTop: TOKENS.space.xs,
       paddingHorizontal: TOKENS.space.sm,
     },
+    // Out of layout and out of drawing, rather than transparent: an
+    // `opacity: 0` bar would still lay out and still run its RenderEffect blur
+    // over whatever screen is on top of it, every frame, forever.
+    hidden: { display: 'none' },
     slot: {
       flex: 1,
       minHeight: 48,
