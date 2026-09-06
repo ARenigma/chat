@@ -1582,11 +1582,38 @@ describe('hardware back reaches the app', () => {
  * https://reactnative.dev/docs/view-style-props#rendertohardwaretextureandroid
  */
 describe('W5#5 — renderToHardwareTextureAndroid decision is recorded', () => {
-  it('PushedLayer in App.tsx documents the hardware-texture decision', () => {
-    // The decision must survive in the source so a future reader cannot mistake
-    // "not set" for "not considered". The BloomField.tsx:325 pattern is the
-    // precedent: measured or argued, never silently absent.
-    expect(read('App.tsx')).toContain('renderToHardwareTextureAndroid');
+  it('promotes a pushed screen to a texture only WHILE it moves', () => {
+    // The precondition this was held back for is met: on the S22 at 60Hz a
+    // push/pop landed 44.2% of frames inside budget with a 17.85ms p50, against
+    // Telegram's 97.5% and 7.55ms, while plain scrolling matched them almost
+    // exactly. So the texture is on for the animation and off the instant it
+    // settles -- a permanent one is ~8MB of GPU memory held while nothing moves.
+    const app = read('App.tsx');
+    expect(app).toContain('renderToHardwareTextureAndroid: transitioning.value');
+    expect(app).toContain('animatedProps={textureWhileMoving}');
+    // Driven on the UI thread, not through a JS round-trip behind the animation.
+    expect(app).toContain('useAnimatedProps(() => ({');
+    // And the release is guaranteed by the lock's own completion callback.
+    const motion = read('src/theme/motion.ts');
+    expect(motion).toContain('runOnJS(setTransitioning)(false)');
+  });
+
+  it('gives a mounting screen one frame before the animation starts', () => {
+    // onLayout fires in the same frame as the screen's first React commit, so
+    // the animation's opening frames were competing with hooks firing, queries
+    // subscribing and FlashList's first layout. Telegram defers on a DATA
+    // signal (needDelayOpenAnimation -> firstLoading, ActionBarLayout.java:2270);
+    // we cannot see that from a generic hook, so we take the part that
+    // generalises and hand the commit one whole frame.
+    const motion = read('src/theme/motion.ts');
+    const hook = motion.slice(motion.indexOf('export function useScreenEnter'));
+    expect(hook).toMatch(/started\.value = true;[\s\S]{0,2600}requestAnimationFrame\(\(\) => \{/);
+    // The guard is set OUTSIDE the frame callback, or a second onLayout
+    // arriving first would start a second animation.
+    const guardAt = hook.indexOf('started.value = true;');
+    const rafAt = hook.indexOf('requestAnimationFrame(() => {');
+    expect(guardAt).toBeGreaterThan(-1);
+    expect(guardAt).toBeLessThan(rafAt);
   });
 
   it('Sheet.tsx documents the hardware-texture decision', () => {

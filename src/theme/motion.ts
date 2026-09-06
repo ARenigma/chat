@@ -508,6 +508,34 @@ export function useScreenEnter(): {
     }
     started.value = true;
     /*
+     * ONE FRAME between the mount commit and the animation's first frame.
+     *
+     * `onLayout` fires in the same frame as the screen's first React commit, so
+     * the animation's opening frames were competing with the mount itself:
+     * hooks firing, queries subscribing, FlashList computing its first layout.
+     * Measured on the S22 at 60Hz, a push/pop had a p50 frame of 17.85ms
+     * against Telegram's 7.55ms, with 44% of frames inside budget against
+     * their 97.5% — while plain scrolling matched them almost exactly. The
+     * transition was the whole gap.
+     *
+     * Telegram solves this with a DATA signal, not a geometry one:
+     * `needDelayOpenAnimation()` holds the incoming screen at alpha 0 and
+     * translateX 48dp until the first message batch has rendered
+     * (ChatActivity.java:27014 returning `firstLoading`, cleared at :20613,
+     * which calls `resumeDelayedFragmentAnimation`), with a 200ms timeout as
+     * the safety net (ActionBarLayout.java:2270-2282, :1920-1927).
+     *
+     * We cannot see that signal from here — this hook knows nothing about any
+     * particular screen's queries — so we take the part that generalises: give
+     * the commit one whole frame to itself before starting. The screen sits
+     * invisible for one extra frame (16.7ms at 60Hz), which is below the
+     * threshold at which a tapped transition reads as delayed.
+     *
+     * `started.value` is set OUTSIDE the callback, so a second `onLayout`
+     * arriving before the frame fires cannot start a second animation.
+     */
+    requestAnimationFrame(() => {
+    /*
      * The transition lock is raised HERE, not at the call site.
      *
      * Every push in both trees goes through this hook, so raising it here means
@@ -538,6 +566,7 @@ export function useScreenEnter(): {
       },
     );
     shift.value = springTo(0, 'spatialDefault');
+    });
   };
   const style = useAnimatedStyle(() => ({
     opacity: progress.value,
