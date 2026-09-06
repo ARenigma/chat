@@ -181,6 +181,7 @@ export const LIGHT = {
       send: 0.86,
       sendSquashY: 0.78,
       busy: 0.98,
+      cell: 0.8,
     },
     stagger: {
       row: 42,
@@ -197,6 +198,9 @@ export const LIGHT = {
       stepPromote: 150,
       searchToggle: 150,
       carouselDwell: 1100,
+      sendReveal: 220,
+      pressRamp: 100,
+      listAdd: 120,
     },
     opacity: {
       neighbour: 0.1,
@@ -286,6 +290,8 @@ export const LIGHT = {
         decelerate: [0.33, 1, 0.68, 1],
         easeOutQuint: [0.23, 1, 0.32, 1],
         keyboard: [0.19919472913616398, 0.010644531250000006, 0.27920937042459737, 0.91025390625],
+        easeOut: [0, 0, 0.58, 1],
+        ease: [0.25, 0.1, 0.25, 1],
       },
       duration: {
         short2: 100,
@@ -295,6 +301,7 @@ export const LIGHT = {
         medium4: 400,
         long2: 500,
         medium1: 250,
+        medium3: 350,
       },
       distance: {
         push: 48,
@@ -743,6 +750,7 @@ export const DARK = {
       send: 0.86,
       sendSquashY: 0.78,
       busy: 0.98,
+      cell: 0.8,
     },
     stagger: {
       row: 42,
@@ -759,6 +767,9 @@ export const DARK = {
       stepPromote: 150,
       searchToggle: 150,
       carouselDwell: 1100,
+      sendReveal: 220,
+      pressRamp: 100,
+      listAdd: 120,
     },
     opacity: {
       neighbour: 0.1,
@@ -848,6 +859,8 @@ export const DARK = {
         decelerate: [0.33, 1, 0.68, 1],
         easeOutQuint: [0.23, 1, 0.32, 1],
         keyboard: [0.19919472913616398, 0.010644531250000006, 0.27920937042459737, 0.91025390625],
+        easeOut: [0, 0, 0.58, 1],
+        ease: [0.25, 0.1, 0.25, 1],
       },
       duration: {
         short2: 100,
@@ -857,6 +870,7 @@ export const DARK = {
         medium4: 400,
         long2: 500,
         medium1: 250,
+        medium3: 350,
       },
       distance: {
         push: 48,

@@ -15,6 +15,18 @@ import type { Message } from './database.types';
 /** The bucket's `file_size_limit`. A pick larger than this is refused before upload. */
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
+/**
+ * The maximum number of photos returned in one gallery launch.
+ *
+ * Android routes `selectionLimit > 1` through `PickMultipleVisualMedia`, the
+ * system Photo Picker with multi-select support, which needs no extra permission
+ * (`react-native-image-picker` v7.x android/ImagePickerModuleImpl.java:154).
+ * Each selected asset goes through the same validation path as a single pick and
+ * costs one token per send. Ten matches the WhatsApp per-pick ceiling without
+ * requiring a bulk-send contract this product does not have.
+ */
+export const MAX_PICK = 10;
+
 /** The three formats the bucket accepts, MIME -> extension. */
 const EXT_BY_MIME: Record<string, 'jpg' | 'png' | 'webp'> = {
   'image/jpeg': 'jpg',

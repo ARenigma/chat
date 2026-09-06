@@ -36,6 +36,18 @@ interface Props {
   onGallery: () => void;
   /** Whether the CAMERA permission is currently granted, so the tile knows. */
   cameraGranted: boolean;
+  /**
+   * Whether the dock's slide animation has finished and the tile surface is in
+   * its final position.
+   *
+   * CameraX configures a capture session the moment `CameraPreview` mounts.
+   * If the TextureView is still mid-travel its size is zero or clipped, and the
+   * native layer logs "Unable to configure camera … not done within 5000ms"
+   * while rendering a black tile. Verified on the API-36 emulator 2026-09-04.
+   * Driven from the `shown`-tracking effect in Composer so the gate lifts as
+   * soon as DOCK_DELAY_MS + medium1 have elapsed, not before.
+   */
+  slotSettled: boolean;
 }
 
 /**
@@ -69,6 +81,7 @@ function AttachPanelView({
   onCamera,
   onGallery,
   cameraGranted,
+  slotSettled,
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -107,7 +120,7 @@ function AttachPanelView({
     return () => sub.remove();
   }, []);
 
-  const live = visible && foreground && cameraGranted && CAMERA_PREVIEW_AVAILABLE;
+  const live = visible && slotSettled && foreground && cameraGranted && CAMERA_PREVIEW_AVAILABLE;
 
   const camera = useCallback(() => onCamera(), [onCamera]);
   const gallery = useCallback(() => onGallery(), [onGallery]);
