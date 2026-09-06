@@ -103,6 +103,7 @@ const MIGRATIONS = [
   'supabase/migrations/060_payout_transfer_settle.sql',
   'supabase/migrations/061_media_cogs_reconcile_tighten.sql',
   'supabase/migrations/062_session_seconds_remaining.sql',
+  'supabase/migrations/063_profile_guard_covers_every_server_owned_column.sql',
 ];
 
 const docker = (args, options = {}) =>
@@ -458,6 +459,14 @@ const suites = [
     file: join(ROOT, 'supabase/tests/240_session_seconds_remaining.sql'),
     label:
       'session seconds_remaining: one snapshot, member only, cron-lag invariant',
+  },
+  {
+    file: join(
+      ROOT,
+      'supabase/tests/250_profile_guard_server_owned_columns.sql',
+    ),
+    label:
+      'profiles guard: wallet buckets, reputation, suspension are not client-writable',
   },
 ];
 
