@@ -319,6 +319,28 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   const peerThread = knownThread;
   const isMemberSide = peerThread?.i_am_member ?? true;
   const provider = providers?.find(p => p.id === providerId);
+  /*
+   * What this provider offers (migration 064), folded into the operator's own
+   * switches. Two different refusals with two different remedies: a kill switch
+   * is ours and the member can only wait, a channel switch is theirs and the
+   * member can pick another one. The button is disabled either way; only the
+   * second is worth explaining, which ProviderDetailScreen does.
+   *
+   * Defaults to true: on the PROVIDER's side of a thread the peer is a member
+   * and has no directory row at all, and a missing row must never read as
+   * "offers nothing".
+   */
+  const peerOffersChat = provider?.chat_enabled ?? true;
+  const canStartAudio = voiceCallsEnabled && (provider?.audio_enabled ?? true);
+  const canStartVideo = videoCallsEnabled && (provider?.video_enabled ?? true);
+  /*
+   * The composer closes only when a NEW chat session would be refused: the
+   * trigger fires on INSERT into session_requests, so a session already live or
+   * a request already pending runs to its end. Turning chat off is a statement
+   * about the next conversation, not a way to walk out of this one.
+   */
+  const chatClosed =
+    isMemberSide && !peerOffersChat && activeSession === null && pendingRequest === null;
   const peerName = peerThread?.peer_display_name ?? provider?.display_name;
   const name = peerName ?? 'Conversation';
   const initial = initialOf(peerName);
@@ -1152,7 +1174,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
         <Pressable
           onPress={() => onStartCall?.('video')}
           disabled={
-            !videoCallsEnabled ||
+            !canStartVideo ||
             activeSession !== null ||
             pendingRequest !== null
           }
@@ -1162,7 +1184,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
           size={28}
           style={[
             styles.navButton,
-            (!videoCallsEnabled ||
+            (!canStartVideo ||
               activeSession !== null ||
               pendingRequest !== null) &&
               styles.navDisabled,
@@ -1172,7 +1194,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
         <Pressable
           onPress={() => onStartCall?.('audio')}
           disabled={
-            !voiceCallsEnabled ||
+            !canStartAudio ||
             activeSession !== null ||
             pendingRequest !== null
           }
@@ -1182,7 +1204,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
           size={28}
           style={[
             styles.navButton,
-            (!voiceCallsEnabled ||
+            (!canStartAudio ||
               activeSession !== null ||
               pendingRequest !== null) &&
               styles.navDisabled,
@@ -1452,13 +1474,15 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
             onSendVoice={onSendVoice}
             onSendImage={onSendImage}
             onTyping={notifyTyping}
-            disabled={conversationId === undefined}
+            disabled={conversationId === undefined || chatClosed}
             placeholder={
-              memberHasSent
-                ? replyTo !== null
-                  ? 'Reply'
-                  : 'Message'
-                : 'Make your first move'
+              chatClosed
+                ? `${name} is not taking chats right now`
+                : memberHasSent
+                  ? replyTo !== null
+                    ? 'Reply'
+                    : 'Message'
+                  : 'Make your first move'
             }
             sendHaloKey={sendHaloKey}
             onFocusChange={setComposerFocused}

@@ -96,6 +96,15 @@ export type Profile = {
    */
   identity_state: 'none' | 'pending' | 'verified';
   is_available: boolean;
+  /**
+   * Provider-only in practice: which channels they offer (migration 064).
+   * Client-writable by their owner and in no guard trigger, like `presence` —
+   * with a database floor (`profiles_at_least_one_channel`) rather than trust,
+   * because "offering nothing" is what `is_available = false` already says.
+   */
+  chat_enabled: boolean;
+  audio_enabled: boolean;
+  video_enabled: boolean;
   /** Non-null and future-dated means suspended. A ban is a far-future value. */
   suspended_until: string | null;
   /**
@@ -329,6 +338,19 @@ export type ProviderSummary = {
    * entitled to be here and closed for work, or listed and asleep.
    */
   presence: PresenceChoice;
+  /**
+   * Which channels this provider offers (migration 064). A third question again:
+   * `is_available` is whether they are taking anyone new at all, `presence` is
+   * whether they are around, and these are what they are willing to do — a
+   * provider who types at 2am but will not be on camera. At least one is always
+   * true (`profiles_at_least_one_channel`).
+   *
+   * The member's buttons read these so a channel that is not offered says so
+   * before it is tapped; the trigger on `session_requests` is what enforces it.
+   */
+  chat_enabled: boolean;
+  audio_enabled: boolean;
+  video_enabled: boolean;
 };
 
 /**
@@ -505,7 +527,15 @@ export type SendError =
   // Added by migration 005. None of these debit a token.
   | 'BLOCKED'
   | 'SUSPENDED'
-  | 'RATE_LIMITED';
+  | 'RATE_LIMITED'
+  /**
+   * Migration 064: the provider has switched this channel off. Distinct from
+   * FORBIDDEN, which the member cannot act on — this one they can, by picking a
+   * channel the provider still offers. Reaches the client two ways: as a
+   * structured error from `start_call`, and as a raised P0009 from the trigger
+   * for a first text (`send_message` inserts the request directly).
+   */
+  | 'CHANNEL_DISABLED_BY_PROVIDER';
 
 /**
  * The call RPCs reuse `send_message`'s error vocabulary and add two of their own,

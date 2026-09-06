@@ -12,7 +12,7 @@ import {
   type TranscriptMessage,
 } from '../lib/transcript';
 import { track } from '../lib/telemetry';
-import type { Message, SendError, SendResult } from '../lib/database.types';
+import type { Message, SendError } from '../lib/database.types';
 import {
   attachmentExt,
   attachmentMime,
@@ -22,6 +22,7 @@ import {
 } from '../lib/attachments';
 import { useStore } from '../store/useStore';
 import { keys } from './chat';
+import { sendResultFrom } from '../lib/sendErrors';
 
 /** The private bucket created by migration 014. */
 const BUCKET = 'attachments';
@@ -44,6 +45,7 @@ const NOTICE: Record<SendError | 'UPLOAD', string> = {
   BLOCKED: 'You can no longer message each other.',
   SUSPENDED: 'Your account is under review and cannot send messages.',
   RATE_LIMITED: 'Slow down a moment, then try again.',
+  CHANNEL_DISABLED_BY_PROVIDER: 'They are not taking chats right now.',
   UPLOAD: 'The photo could not be uploaded. Check your connection.',
 };
 
@@ -230,7 +232,7 @@ export function useSendImage(
       });
       setSending(false);
 
-      const result: SendResult | null = error ? null : data;
+      const result = sendResultFrom(data, error);
 
       if (result === null || !result.success) {
         const code = result?.error;

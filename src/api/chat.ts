@@ -8,7 +8,6 @@ import type {
   Profile,
   ProviderSummary,
   SendError,
-  SendResult,
 } from '../lib/database.types';
 import { canSend } from '../lib/tokenLedger';
 import { errorTick, tick } from '../lib/haptics';
@@ -21,6 +20,7 @@ import {
 import { track } from '../lib/telemetry';
 import { useStore } from '../store/useStore';
 import { messagesKey } from './realtime';
+import { sendResultFrom } from '../lib/sendErrors';
 
 /** Newest-first: the transcript renders into an inverted list. */
 const PAGE_SIZE = 100;
@@ -45,7 +45,11 @@ const NOTICE: Record<SendError, string> = {
   BLOCKED: 'You can no longer message each other.',
   SUSPENDED: 'Your account is under review and cannot send messages.',
   RATE_LIMITED: 'Slow down a moment, then try again.',
+  // Names the channel, not the person: they have not gone away, they are not
+  // taking this one. The call buttons carry the same fact before it is tapped.
+  CHANNEL_DISABLED_BY_PROVIDER: 'They are not taking chats right now.',
 };
+
 
 async function requireUserId(): Promise<string> {
   const { data } = await supabase.auth.getUser();
@@ -288,7 +292,7 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
       });
       setSending(false);
 
-      const result: SendResult | null = error ? null : data;
+      const result = sendResultFrom(data, error);
 
       if (result === null || !result.success) {
         queryClient.setQueryData<TranscriptMessage[]>(key, prev =>

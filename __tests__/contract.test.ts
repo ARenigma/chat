@@ -2194,11 +2194,21 @@ describe('calling ships visible and on, wired to a real media layer', () => {
     // channels, because one conversation has one paid session at a time.
     expect(chat).toContain('voiceCallsEnabled');
     expect(chat).toContain('videoCallsEnabled');
-    expect(chat).toMatch(
-      /!videoCallsEnabled\s*\|\|\s*activeSession !== null\s*\|\|\s*pendingRequest !== null/,
+    // Since 064 the button reads ONE derived flag that folds the operator's
+    // switch together with this provider's own (`canStartAudio`/`canStartVideo`),
+    // so the assertion follows it there rather than pinning the raw name at the
+    // button. Both halves must still be in the composition.
+    expect(chat).toContain(
+      'const canStartAudio = voiceCallsEnabled && (provider?.audio_enabled ?? true)',
+    );
+    expect(chat).toContain(
+      'const canStartVideo = videoCallsEnabled && (provider?.video_enabled ?? true)',
     );
     expect(chat).toMatch(
-      /!voiceCallsEnabled\s*\|\|\s*activeSession !== null\s*\|\|\s*pendingRequest !== null/,
+      /!canStartVideo\s*\|\|\s*activeSession !== null\s*\|\|\s*pendingRequest !== null/,
+    );
+    expect(chat).toMatch(
+      /!canStartAudio\s*\|\|\s*activeSession !== null\s*\|\|\s*pendingRequest !== null/,
     );
     // Real, and ready for the flag flip: the tap starts a call.
     expect(chat).toContain("onStartCall?.('video')");
@@ -3494,10 +3504,13 @@ describe('independent call controls', () => {
   it('gates each app action with its matching control', () => {
     const chat = read('src/screens/ChatScreen.tsx');
     const detail = read('src/screens/ProviderDetailScreen.tsx');
-    expect(chat).toContain('!voiceCallsEnabled');
-    expect(chat).toContain('!videoCallsEnabled');
-    expect(detail).toContain('enabled={voiceCallsEnabled}');
-    expect(detail).toContain('enabled={videoCallsEnabled}');
+    // Each live control still reaches its own action; since 064 it does so
+    // ANDed with the provider's own switch for that channel, never replaced by
+    // it. An operator stop and a provider's choice both have to hold.
+    expect(chat).toContain('voiceCallsEnabled && (provider?.audio_enabled ?? true)');
+    expect(chat).toContain('videoCallsEnabled && (provider?.video_enabled ?? true)');
+    expect(detail).toContain('enabled={voiceCallsEnabled && provider.audio_enabled}');
+    expect(detail).toContain('enabled={videoCallsEnabled && provider.video_enabled}');
   });
 
   it('enforces both controls inside start_call, not only in the UI', () => {
@@ -3894,5 +3907,116 @@ describe('profiles: every server-owned column is guarded against the owner', () 
     const dbTest = read('scripts/db-test.mjs');
     expect(dbTest).toContain('063_profile_guard_covers_every_server_owned_column.sql');
     expect(dbTest).toContain('250_profile_guard_server_owned_columns.sql');
+  });
+});
+
+describe('a provider offers the channels they choose, and at least one', () => {
+  const migration = read('supabase/migrations/064_provider_channels.sql');
+
+  it('holds the floor in the database, not in the screen', () => {
+    // "At least one stays on" (Amit, 2026-09-06). A CHECK, because "listed but
+    // unreachable on every channel" is exactly what is_available = false
+    // already says, and it says it honestly.
+    expect(migration).toContain('profiles_at_least_one_channel');
+    expect(migration).toContain('check (chat_enabled or audio_enabled or video_enabled)');
+  });
+
+  it('enforces on the table every path inserts into, not in the callers', () => {
+    /*
+     * start_call and the provider's return invite go through
+     * create_session_request; a member's FIRST TEXT inserts the request itself
+     * (037:216). A caller-side check would have missed the second entirely, and
+     * adding one would have meant re-stating a 330-line RPC — which is how 054
+     * silently dropped four guards (063). So: one BEFORE INSERT trigger.
+     */
+    expect(migration).toContain('before insert on public.session_requests');
+    expect(migration).toContain('execute function public.enforce_provider_channel()');
+    expect(migration).toContain("errcode = 'P0009'");
+    // The predicate must survive a missing row as "allowed", and must say so
+    // by returning true rather than by leaning on NULL semantics in the caller.
+    expect(migration).toMatch(/select coalesce\(\s*\(\s*select case p_channel/);
+  });
+
+  it('re-states start_call with exactly one added branch', () => {
+    // The body is 053's verbatim plus the P0009 branch. Everything else that
+    // gates a call — the kill switches, suspension, the cold-call rule — must
+    // still be there, because a wholesale re-statement is where guards vanish.
+    const body = migration.slice(migration.indexOf('create or replace function public.start_call'));
+    expect(body).toContain("when sqlstate 'P0009' then");
+    expect(body).toContain('CHANNEL_DISABLED_BY_PROVIDER');
+    for (const kept of [
+      "'voice_calls_enabled'",
+      "'video_calls_enabled'",
+      "'SUSPENDED'",
+      "when sqlstate 'P0003' then",
+      "when sqlstate 'P0005' then",
+      'when others then',
+    ]) {
+      expect(body).toContain(kept);
+    }
+  });
+
+  it('publishes the three columns to the member, appended to the directory', () => {
+    const view = migration.slice(migration.indexOf('create or replace view public.provider_directory'));
+    // Appended AFTER the 042 columns: create or replace cannot drop or reorder
+    // what other objects select from.
+    expect(view.indexOf('p.about')).toBeLessThan(view.indexOf('p.chat_enabled'));
+    for (const column of ['p.chat_enabled', 'p.audio_enabled', 'p.video_enabled']) {
+      expect(view).toContain(column);
+    }
+    expect(read('src/lib/database.types.ts')).toMatch(/chat_enabled: boolean;\s*\n\s*audio_enabled: boolean;/);
+  });
+
+  it('leaves the columns the provider\'s own, like availability', () => {
+    // Deliberately NOT in the 063 guard: being reachable or not is the one
+    // thing about themselves a person must be able to change instantly.
+    const guard = read('supabase/migrations/063_profile_guard_covers_every_server_owned_column.sql');
+    for (const column of ['chat_enabled', 'audio_enabled', 'video_enabled']) {
+      expect(guard).not.toContain(`new.${column} is distinct from`);
+    }
+    expect(withoutComments(read('src/api/provider.ts'))).toContain('export function useSetChannels');
+  });
+
+  it('says so on every member surface before the tap, and once after', () => {
+    const detail = withoutComments(read('src/screens/ProviderDetailScreen.tsx'));
+    expect(detail).toContain('enabled={provider.chat_enabled}');
+    expect(detail).toContain('enabled={voiceCallsEnabled && provider.audio_enabled}');
+    expect(detail).toContain('enabled={videoCallsEnabled && provider.video_enabled}');
+    // A kill switch and a provider's choice are different refusals with
+    // different remedies, so they read differently.
+    expect(detail).toContain("', not offered'");
+
+    const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+    expect(chat).toContain('const canStartAudio = voiceCallsEnabled && (provider?.audio_enabled ?? true)');
+    expect(chat).toContain('const canStartVideo = videoCallsEnabled && (provider?.video_enabled ?? true)');
+    // The composer closes only when a NEW session would be refused.
+    expect(chat).toMatch(/chatClosed =\s*isMemberSide && !peerOffersChat && activeSession === null && pendingRequest === null/);
+
+    // And the refusal that still gets through is mapped once, for all three
+    // send paths, rather than three times.
+    const helper = withoutComments(read('src/lib/sendErrors.ts'));
+    expect(helper).toContain("CHANNEL_DISABLED_SQLSTATE = 'P0009'");
+    for (const file of ['src/api/chat.ts', 'src/api/voice.ts', 'src/api/attachments.ts']) {
+      expect(withoutComments(read(file))).toContain('sendResultFrom(data, error)');
+      expect(read(file)).toContain('CHANNEL_DISABLED_BY_PROVIDER');
+    }
+  });
+
+  it('gives the provider the switches next to the availability switch', () => {
+    const home = withoutComments(read('src/screens/ProviderHomeScreen.tsx'));
+    expect(home).toContain('testID="provider-channels"');
+    for (const key of ['chat_enabled', 'audio_enabled', 'video_enabled']) {
+      expect(home).toContain(`testID={\`channel-toggle-\${row.key}\`}`);
+      expect(home).toContain(key);
+    }
+    // The last one on is held, not hidden: a disabled switch states the rule.
+    expect(home).toMatch(/const last = on && enabledCount === 1/);
+    expect(home).toContain('disabled={setChannels.isPending || last}');
+  });
+
+  it('is registered in the harness with its suite', () => {
+    const dbTest = read('scripts/db-test.mjs');
+    expect(dbTest).toContain('064_provider_channels.sql');
+    expect(dbTest).toContain('260_provider_channels.sql');
   });
 });

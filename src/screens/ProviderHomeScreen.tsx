@@ -10,7 +10,7 @@ import { SCROLL_PHYSICS } from '../lib/scroll';
 import { listStamp } from '../lib/datetime';
 import { track } from '../lib/telemetry';
 import { useConversations, useProfile } from '../api/chat';
-import { useEarnings, useSetAvailability } from '../api/provider';
+import { useEarnings, useSetAvailability, useSetChannels } from '../api/provider';
 import { Avatar } from '../components/Avatar';
 import { LoadingIndicator } from '../components/LoadingIndicator';
 import { ROW_AVATAR, ROW_SEPARATOR_INSET } from '../components/ProviderRow';
@@ -25,6 +25,15 @@ interface Props {
 }
 
 type Tab = 'chats' | 'you';
+
+/** The three channel switches, in the order the member's own buttons sit. */
+type ChannelKey = 'chat_enabled' | 'audio_enabled' | 'video_enabled';
+
+const CHANNEL_ROWS: readonly { key: ChannelKey; title: string; glyph: IconName }[] = [
+  { key: 'chat_enabled', title: 'Chat', glyph: 'chat' },
+  { key: 'audio_enabled', title: 'Voice calls', glyph: 'call' },
+  { key: 'video_enabled', title: 'Video calls', glyph: 'video' },
+];
 
 function threadLabel(thread: ConversationSummary): string {
   if (thread.last_session_status === 'active') return 'Active session';
@@ -57,9 +66,22 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
   const { data: allThreads, isPending } = useConversations();
   const { data: earnings } = useEarnings();
   const setAvailability = useSetAvailability();
+  const setChannels = useSetChannels();
 
   const [tab, setTab] = useState<Tab>('chats');
   const available = profile?.is_available ?? false;
+  // What they are willing to do, which is a different question from whether
+  // they are taking anyone new (migration 064). Default on, so a provider whose
+  // profile has not loaded yet is never shown as offering nothing.
+  const channels = useMemo(
+    () => ({
+      chat_enabled: profile?.chat_enabled ?? true,
+      audio_enabled: profile?.audio_enabled ?? true,
+      video_enabled: profile?.video_enabled ?? true,
+    }),
+    [profile?.chat_enabled, profile?.audio_enabled, profile?.video_enabled],
+  );
+  const enabledCount = CHANNEL_ROWS.filter(r => channels[r.key]).length;
 
   /**
    * Two groups, because a provider can be on either side of a thread (a provider
@@ -87,6 +109,13 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
       setAvailability.mutate(next);
     },
     [setAvailability],
+  );
+
+  const toggleChannel = useCallback(
+    (key: ChannelKey, next: boolean) => {
+      setChannels.mutate({ [key]: next });
+    },
+    [setChannels],
   );
 
   // Only work counts as waiting. Their own thread is not a person waiting on them.
@@ -260,6 +289,49 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
                   accessibilityLabel="Open to new conversations"
                   tone="presence"
                 />
+              </View>
+
+              {/* What they offer, directly under what they are open to: the
+                  same card, because a provider reasoning about "can anyone
+                  reach me" is reasoning about both at once (goal item 7). The
+                  last one on is held rather than hidden — a disabled switch
+                  says the rule, a missing one would just look broken. The
+                  database refuses it too (profiles_at_least_one_channel). */}
+              <View style={styles.channels} testID="provider-channels">
+                <Text allowFontScaling style={styles.channelsLabel}>
+                  What you offer
+                </Text>
+                {CHANNEL_ROWS.map(row => {
+                  const on = channels[row.key];
+                  const last = on && enabledCount === 1;
+                  return (
+                    <View key={row.key} style={styles.channelRow}>
+                      <Icon
+                        name={row.glyph}
+                        size={18}
+                        color={on ? theme.color.text.primary : theme.color.text.tertiary}
+                      />
+                      <View style={styles.channelText}>
+                        <Text allowFontScaling style={styles.channelTitle}>
+                          {row.title}
+                        </Text>
+                        {last ? (
+                          <Text allowFontScaling style={styles.channelHint}>
+                            Keep at least one on so members can reach you.
+                          </Text>
+                        ) : null}
+                      </View>
+                      <Toggle
+                        testID={`channel-toggle-${row.key}`}
+                        value={on}
+                        onValueChange={next => toggleChannel(row.key, next)}
+                        disabled={setChannels.isPending || last}
+                        accessibilityLabel={`Offer ${row.title}`}
+                        tone="presence"
+                      />
+                    </View>
+                  );
+                })}
               </View>
 
               {/* Earnings — motivating, never a bleak "0". 1 token = ₹1 (ADR-0021). */}
@@ -443,6 +515,26 @@ const makeStyles = (t: Theme) =>
       borderCurve: 'continuous',
       backgroundColor: t.color.bg.sunken,
     },
+    // Channels sit inside the availability card, separated by a hairline rather
+    // than a gap: one card, two related questions.
+    channels: {
+      gap: TOKENS.space.sm,
+      paddingTop: TOKENS.space.sm,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: t.color.border.hairline,
+    },
+    channelsLabel: { ...TOKENS.typography.labelMedium, color: t.color.text.secondary },
+    channelRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.sm,
+      // A switch is a touch target before it is a row, so the M3 minimum is the
+      // right floor here rather than a list-row height.
+      minHeight: TOKENS.interaction.minTarget,
+    },
+    channelText: { flex: 1, gap: TOKENS.space.hair },
+    channelTitle: { ...TOKENS.typography.bodyLarge, color: t.color.text.primary },
+    channelHint: { ...TOKENS.typography.bodySmall, color: t.color.text.tertiary },
     availabilityText: { flex: 1, gap: TOKENS.space.hair },
     availabilityTitle: { ...TOKENS.typography.titleMediumEmphasized, color: t.color.text.primary },
     availabilitySub: { ...TOKENS.typography.bodySmall, color: t.color.text.secondary },
