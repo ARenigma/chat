@@ -1889,7 +1889,7 @@ describe('the chat restyle is wired, not just drawn', () => {
     // the foot of the file are allowed to call them, and nothing above is.
     const body = chatCode.slice(0, chatCode.indexOf('const Transcript = memo('));
     expect(body).not.toMatch(
-      /use(BodyInset|ListPad|ComposerInset|PanelCeiling|BarHeight|ComposerFocused)\(/,
+      /use(BodyInset|ListPad|ComposerInset|PanelCeiling|DockCeiling|BarHeight|BarCollapsed|ShortWindow|ComposerFocused)\(/,
     );
     // The handle itself is fine, and is how the screen writes.
     expect(body).toContain('useChatImeStore({');
@@ -1907,6 +1907,56 @@ describe('the chat restyle is wired, not just drawn', () => {
       .split('\n')
       .filter(Boolean);
     expect(usages).toEqual([join(ROOT, 'src', 'screens', 'ChatScreen.tsx')]);
+  });
+
+  it('caps the docked panel so a short window cannot push the composer off the top', () => {
+    // Landscape on the Redmi Note 7 Pro (851x393dp): bar 185 + row 55 + panel
+    // 204 is 444dp of a 393dp window. The dock is bottom-anchored, so the
+    // overflow went UPWARD and `composer-input` came to rest at y=257 behind a
+    // frost bar ending at y=357 — where it could not even take a tap, because
+    // the bar took it instead (measured 2026-09-06).
+    //
+    // The browsing panel had no ceiling at all outside search. It has one now,
+    // and it is the same number the dock's travel uses, or the slide would
+    // overshoot where the panel actually stops.
+    const composer = withoutComments(read('src/components/Composer.tsx'));
+    expect(composer).toContain('const dockCeiling = useDockCeiling()');
+    expect(composer).toMatch(
+      /const slotHeight = Math\.min\(\s*panelHeight \+ insets\.bottom,\s*Math\.max\(0, dockCeiling - rowHeight\),\s*\)/,
+    );
+    // A zero measurement must not be stored: the row reports 0 on its way out of
+    // layout, and the docked height would then be computed against that 0.
+    expect(composer).toContain('if (h > 0)');
+
+    // Expanded search takes the message row OUT of layout, so it is gated on the
+    // panel being DRAWN and not merely on the search flag. Without `shown` a
+    // stale flag leaves the row hidden with nothing in its place — a composer
+    // that is simply gone (seen once in a landscape screen recording,
+    // 2026-09-06, and not reproducible by hand, so it is closed by construction).
+    expect(composer).toContain(
+      "const panelExpanded = shortWindow && emojiSearching && shown === 'emoji'",
+    );
+
+    // And the rows under the header stand down while something is docked, which
+    // is what makes the room. It has to be a LEAF: called from the screen body
+    // the subscription re-renders 1900 lines on every keyboard show.
+    expect(chatCode).toContain('<BarExtras>');
+    expect(chatCode).toMatch(/function BarExtras\(\{[\s\S]*?useBarCollapsed\(\)/);
+    // `headerHeight` is measured separately so the collapse costs no frame.
+    expect(chatCode).toContain('headerHeight: insets.top + e.nativeEvent.layout.height');
+  });
+
+  it('gates the short-window layout on the published compact-height breakpoint', () => {
+    // https://developer.android.com/develop/ui/compose/layouts/adaptive/use-window-size-classes
+    // Not `winW > winH`, and not a number invented here: the same 480dp class
+    // `windowSize.ts` already publishes, so landscape, a short multi-window
+    // split and a flippable's outer display all get the same layout.
+    const ime = withoutComments(read('src/lib/imeGeometry.ts'));
+    expect(ime).toContain("heightSizeClass(i.winH) === 'compact'");
+    expect(ime).toContain('i.winH > 0 &&');
+    expect(ime).toContain(
+      'const barCollapsed = shortWindow && (i.keyboardUp || i.emojiPanelOpen)',
+    );
   });
 
   it('keeps the emoji panel open while its own search field has the keyboard', () => {
@@ -3794,7 +3844,15 @@ describe('attach panel', () => {
 
   it('sizes both panels from the same expression', () => {
     // If these ever diverge the composer moves on the swap between them.
-    const heights = composer.match(/height=\{[^}]*panelHeight \+ insets\.bottom[^}]*\}/g);
+    //
+    // It used to be the expression written out twice; it is now the one
+    // `slotHeight` binding, which is what the dock's travel also uses. Stricter
+    // than the duplicate — two copies could still be edited apart — and it had
+    // to become a binding once the height acquired a ceiling in short windows.
+    expect(composer).toMatch(
+      /const slotHeight = Math\.min\(\s*panelHeight \+ insets\.bottom,/,
+    );
+    const heights = composer.match(/height=\{[^}]*slotHeight[^}]*\}/g);
     expect(heights?.length).toBeGreaterThanOrEqual(2);
   });
 

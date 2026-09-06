@@ -43,7 +43,7 @@ import { SendButton } from './SendButton';
 import { AttachPanel } from './AttachPanel';
 import { EmojiPicker } from './EmojiPicker';
 import { readKeyboardHeight, writeKeyboardHeight } from '../lib/keyboardPanel';
-import { usePanelCeiling } from '../lib/imeGeometry';
+import { useDockCeiling, usePanelCeiling, useShortWindow } from '../lib/imeGeometry';
 import { Waveform } from './Waveform';
 import { TextField } from './TextField';
 
@@ -227,6 +227,17 @@ function ComposerView({
    * recorded in imeGeometry.ts rather than silently unified here.
    */
   const panelCeiling = usePanelCeiling();
+  /**
+   * The same question with no keyboard up: what the top bar leaves for the whole
+   * dock. It caps the browsing panel, which until now had no ceiling at all
+   * outside search — and in a 393dp landscape window a 204dp panel plus a 55dp
+   * row plus a 185dp bar does not fit, so the dock overflowed upward and put the
+   * composer behind the frost. Never binds in portrait: 851 − 185 − 55 is 611dp
+   * against a panel `keyboardPanel` already clamps to 420dp.
+   */
+  const dockCeiling = useDockCeiling();
+  /** Compact height (< 480dp) — a phone in landscape. See imeGeometry.ts. */
+  const shortWindow = useShortWindow();
   const [elapsed, setElapsed] = useState(0);
   const [levels, setLevels] = useState<readonly number[]>([]);
   const [draft, setDraft] = useState<VoiceDraft | null>(null);
@@ -335,6 +346,7 @@ function ComposerView({
     return () => sub.remove();
   }, [emojiOpen, attachOpen]);
 
+
   /**
    * Closing the panel closes its search with it. Without this the ref stays
    * true, and the next time the composer field raises the keyboard the listener
@@ -361,7 +373,18 @@ function ComposerView({
    * already the movement.
    */
   const surfaceOpen = emojiOpen || attachOpen;
-  const slotHeight = panelHeight + insets.bottom;
+  /**
+   * The browsing panel: the keyboard's height, but never more than the bar
+   * actually leaves once this row has taken its share.
+   *
+   * `slotHeight` is the travel distance as well as the height, so the two have to
+   * be the same number — a cap applied to one and not the other would slide the
+   * dock past where it stops.
+   */
+  const slotHeight = Math.min(
+    panelHeight + insets.bottom,
+    Math.max(0, dockCeiling - rowHeight),
+  );
   const dockY = useSharedValue(0);
   const animateNext = useRef(true);
   const dockStyle = useAnimatedStyle(() => ({
@@ -445,6 +468,31 @@ function ComposerView({
     );
     return () => clearTimeout(t);
   }, [shown]);
+
+  /**
+   * Emoji search, in a window too short to dock it.
+   *
+   * Docked, the panel is what the bar and the raised keyboard leave MINUS this
+   * row: in landscape that came to 4dp and rendered as a 22px sliver — the search
+   * field being typed into was itself clipped away (Redmi Note 7 Pro, measured
+   * 2026-09-06). Amit's call over capping it at ~1 emoji row: in a short window
+   * the panel takes the whole ceiling and the message row stands down for the
+   * duration, since the panel's own search field is the input at that moment and
+   * the row is behind the IME anyway. 4dp → 105dp, ~2 rows of results under the
+   * field. Portrait is untouched and stays docked, which is the WhatsApp
+   * arrangement Amit asked for on 2026-09-05.
+   *
+   * `shown === 'emoji'` and not `emojiSearching` alone, and this is the
+   * load-bearing part: what this flag does is take the message row OUT of
+   * layout, so it must be false whenever the panel that replaces it is not on
+   * screen. `shown` is the surface actually DRAWN — it lags `emojiOpen` by the
+   * close animation and is null whenever nothing is docked — so a stale search
+   * flag can leave the row hidden with nothing in its place. Seen once in a
+   * screen recording (2026-09-06, landscape, after a rotation with a query still
+   * in the field) and not reproducible by hand afterwards, which is exactly the
+   * kind of state to close by construction rather than by retrying.
+   */
+  const panelExpanded = shortWindow && emojiSearching && shown === 'emoji';
 
   /**
    * The travel, keyed on WHETHER a surface is drawn — not on which one.
@@ -1032,8 +1080,21 @@ function ComposerView({
     <Animated.View style={dockStyle}>
     {/* Measured, not assumed: the panel's expanded height while searching is
         everything the header and the keyboard leave over, minus this row, and
-        the row grows with the field (up to six lines) and with font scale. */}
-    <View style={styles.row} onLayout={e => setRowHeight(e.nativeEvent.layout.height)}>
+        the row grows with the field (up to six lines) and with font scale.
+
+        `display: none` while the panel is expanded, not unmounted: the field
+        keeps its draft and its focus state, and the row is back the moment
+        search closes. A zero measurement is DISCARDED rather than stored — the
+        row reports 0 on its way out, and the docked height on the way back in
+        would be computed against that 0 for a frame and open too tall. */}
+    <View
+      style={[styles.row, panelExpanded && styles.rowHidden]}
+      onLayout={e => {
+        const h = e.nativeEvent.layout.height;
+        if (h > 0) {
+          setRowHeight(h);
+        }
+      }}>
       <View style={styles.inputBar}>
       {/* The capsule. A SOLID themed surface, not a nested blur.
 
@@ -1212,11 +1273,17 @@ function ComposerView({
          *
          * `Math.min`, where this was `Math.max`. That one word was the whole
          * difference between a docked tray and a full-screen takeover.
+         *
+         * And a third case under those two, for the window that has room for
+         * neither: `panelExpanded`. There the row is out of layout, so the whole
+         * ceiling is the panel's - see `panelExpanded` above.
          */
         height={
-          emojiSearching
-            ? Math.max(0, Math.min(panelHeight, panelCeiling - rowHeight))
-            : panelHeight + insets.bottom
+          panelExpanded
+            ? panelCeiling
+            : emojiSearching
+              ? Math.max(0, Math.min(panelHeight, panelCeiling - rowHeight))
+              : slotHeight
         }
         onBackspace={backspace}
         onPick={addEmoji}
@@ -1230,7 +1297,9 @@ function ComposerView({
       {attachMounted ? (
         <AttachPanel
           visible={shown === 'attach'}
-          height={panelHeight + insets.bottom}
+          // Same ceiling as the emoji panel: it shares the slot, so it overflows
+          // a short window in exactly the same way if it is left uncapped.
+          height={slotHeight}
           cameraGranted={cameraGranted}
           slotSettled={slotSettled}
           onCamera={() => {
@@ -1273,6 +1342,15 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     paddingTop: TOKENS.space['2xs'],
     paddingBottom: TOKENS.space.xs,
     backgroundColor: 'transparent',
+  },
+  /*
+   * Out of layout, not merely invisible, while emoji search is expanded in a
+   * short window: the point is to give the row's 55dp to the panel, and a
+   * zero-opacity row would still occupy them. `display: none` keeps the field
+   * mounted, so the draft and the focus survive the round trip.
+   */
+  rowHidden: {
+    display: 'none',
   },
   /*
    * THE CAPSULE. One floating pill that contains everything.

@@ -3,6 +3,7 @@ import { Keyboard, Platform } from 'react-native';
 import { useStore as useZustandStore } from 'zustand';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { TOKENS } from '../theme/tokens';
+import { heightSizeClass } from './windowSize';
 
 /**
  * Where the chat screen's IME geometry lives, and why it is not React state.
@@ -61,6 +62,58 @@ import { TOKENS } from '../theme/tokens';
  * is deliberately STICKY and gated on `keyboardUp`, so `panelCeiling` — which
  * sizes a panel that is open precisely when the keyboard is not — stays a real
  * number across a show/hide cycle.
+ *
+ * ---------------------------------------------------------------------------
+ * Short windows, and why the arithmetic alone could not save them
+ * ---------------------------------------------------------------------------
+ * Every number above is correct in landscape and the screen was still unusable,
+ * because in a compact-height window there is genuinely no room to divide.
+ *
+ * **Measured, Redmi Note 7 Pro in landscape (2026-09-06).** Window 851×393dp;
+ * the navigation bar moves to the RIGHT edge, so `insetBottom` is 0.
+ *
+ *   status inset + header row   84dp
+ *   talk-time strip             46dp
+ *   "We have notified X"        55dp
+ *   composer row                55dp
+ *   IME (`keyboardDidShow`)    204dp
+ *   ------------------------------- window 393dp
+ *
+ * Header + strip + IME + row is 389dp, so the transcript was already zero. Add
+ * the notified banner and the total is 444dp: the dock is bottom-anchored, so it
+ * overflowed UPWARD and `composer-input` landed at y=257 under a frost bar
+ * ending at y=357 — not merely clipped, but unable to take a tap, because the
+ * frost took it instead. With the panel's search field focused `panelCeiling`
+ * came to 4dp and the panel rendered as a 22px sliver: the field being typed
+ * into was itself clipped away.
+ *
+ * Two rules govern it and neither is optional:
+ * https://developer.android.com/develop/adaptive-apps/guides/app-orientation-aspect-ratio-resizability
+ *   "Enable app layouts to scroll to verify all content is reachable regardless
+ *    of the height of the display."
+ * https://developer.android.com/develop/ui/compose/layouts/adaptive/adaptive-dos-and-donts
+ *   "Change UI components as the window size changes."
+ * Restricting orientation to dodge it is the one thing the same pages forbid,
+ * and ADR-0017 already decided we do not.
+ *
+ * So two derived booleans, on the published 480dp compact-height breakpoint
+ * (`windowSize.ts`, itself from `use-window-size-classes`):
+ *
+ *  - `barCollapsed` — in a short window, while the keyboard or a docked panel is
+ *    up, the frosted bar carries the header row ONLY. The talk strip, the
+ *    notified line and the extend card stand down for the duration. 185dp → 84dp
+ *    (Amit's call, 2026-09-06, over folding them into the header row or letting
+ *    them scroll away with the transcript; the countdown is not persistent while
+ *    someone is typing, and that is the accepted cost).
+ *  - `dockCeiling` — what the bar leaves for the dock with no keyboard up, so
+ *    the panel can be capped and the overflow becomes impossible rather than
+ *    merely absent. It does not bind in portrait: 851 − 185 − 55 is 611dp
+ *    against a panel the `keyboardPanel` clamp already holds to 420dp.
+ *
+ * `barSpace` prefers the separately measured `headerHeight` the instant the bar
+ * collapses, rather than waiting for the Frost's own `onLayout` to report the
+ * new number. Without it the panel opens one frame short — capped against a bar
+ * that is on its way out — and pops to full height on the next.
  */
 export interface ImeInputs {
   /** The IME is up. Not the same as "has a height": the height is sticky. */
@@ -75,6 +128,12 @@ export interface ImeInputs {
   dockHeight: number;
   /** The frosted top bar's measured height. */
   barHeight: number;
+  /**
+   * What the bar measures with the header row alone — status inset included, so
+   * it is comparable with `barHeight`. Measured always, used only while
+   * `barCollapsed`, so the collapse costs no frame. See the header note.
+   */
+  headerHeight: number;
   insetBottom: number;
   winH: number;
 }
@@ -82,7 +141,13 @@ export interface ImeInputs {
 export interface ImeGeometry extends ImeInputs {
   imeSpace: number;
   bodyInset: number;
+  /** The window is compact-height (< 480dp): a phone in landscape. */
+  shortWindow: boolean;
+  /** Short window, and something is docked: the bar keeps the header row only. */
+  barCollapsed: boolean;
   panelCeiling: number;
+  /** What the bar leaves for the dock with no keyboard up. */
+  dockCeiling: number;
   listPad: number;
   composerInset: number;
 }
@@ -95,6 +160,7 @@ const INPUT_KEYS = [
   'composerFocused',
   'dockHeight',
   'barHeight',
+  'headerHeight',
   'insetBottom',
   'winH',
 ] as const;
@@ -107,6 +173,7 @@ const DEFAULTS: ImeInputs = {
   composerFocused: false,
   dockHeight: 0,
   barHeight: 0,
+  headerHeight: 0,
   insetBottom: 0,
   winH: 0,
 };
@@ -133,6 +200,9 @@ function inputsOf(g: ImeInputs): ImeInputs {
  * Composer subtracts its own input row, which it measures, because the row grows
  * with the draft and with font scale and only it knows how tall it currently is.
  *
+ * `dockCeiling`: the same question with no keyboard up — everything the bar
+ * leaves. It is what stops the panel overflowing a short window; see the header.
+ *
  * `listPad`: how far the transcript is padded clear of the dock. The COLLAPSED
  * dock only — the search expansion overlays the chat rather than pushing it, so
  * growing this with it would scroll the conversation away.
@@ -144,11 +214,31 @@ function inputsOf(g: ImeInputs): ImeInputs {
 export function deriveImeGeometry(i: ImeInputs): ImeGeometry {
   const imeSpace = i.keyboardHeight + i.insetBottom;
   const bodyInset = i.keyboardUp && (!i.emojiPanelOpen || i.emojiSearching) ? imeSpace : 0;
-  const panelCeiling = Math.max(0, i.winH - i.barHeight - imeSpace);
+  /*
+   * `winH > 0` is not defensive noise: an unmeasured window is 0, and 0 is
+   * compact, so without it every screen would spend its first frame believing it
+   * was in landscape and collapse the bar.
+   */
+  const shortWindow = i.winH > 0 && heightSizeClass(i.winH) === 'compact';
+  const barCollapsed = shortWindow && (i.keyboardUp || i.emojiPanelOpen);
+  const barSpace =
+    barCollapsed && i.headerHeight > 0 ? i.headerHeight : i.barHeight;
+  const panelCeiling = Math.max(0, i.winH - barSpace - imeSpace);
+  const dockCeiling = Math.max(0, i.winH - barSpace);
   const listPad = TOKENS.space.md + bodyInset + i.dockHeight;
   const composerInset =
     i.keyboardUp || i.emojiPanelOpen ? 0 : i.insetBottom + TOKENS.space['2xs'];
-  return { ...i, imeSpace, bodyInset, panelCeiling, listPad, composerInset };
+  return {
+    ...i,
+    imeSpace,
+    bodyInset,
+    shortWindow,
+    barCollapsed,
+    panelCeiling,
+    dockCeiling,
+    listPad,
+    composerInset,
+  };
 }
 
 export interface ImeState extends ImeGeometry {
@@ -205,8 +295,11 @@ const selectBodyInset = (g: ImeState): number => g.bodyInset;
 const selectListPad = (g: ImeState): number => g.listPad;
 const selectComposerInset = (g: ImeState): number => g.composerInset;
 const selectPanelCeiling = (g: ImeState): number => g.panelCeiling;
+const selectDockCeiling = (g: ImeState): number => g.dockCeiling;
 const selectBarHeight = (g: ImeState): number => g.barHeight;
 const selectComposerFocused = (g: ImeState): boolean => g.composerFocused;
+const selectShortWindow = (g: ImeState): boolean => g.shortWindow;
+const selectBarCollapsed = (g: ImeState): boolean => g.barCollapsed;
 
 export const useBodyInset = (): number => useZustandStore(useImeStore(), selectBodyInset);
 export const useListPad = (): number => useZustandStore(useImeStore(), selectListPad);
@@ -214,9 +307,15 @@ export const useComposerInset = (): number =>
   useZustandStore(useImeStore(), selectComposerInset);
 export const usePanelCeiling = (): number =>
   useZustandStore(useImeStore(), selectPanelCeiling);
+export const useDockCeiling = (): number =>
+  useZustandStore(useImeStore(), selectDockCeiling);
 export const useBarHeight = (): number => useZustandStore(useImeStore(), selectBarHeight);
 export const useComposerFocused = (): boolean =>
   useZustandStore(useImeStore(), selectComposerFocused);
+export const useShortWindow = (): boolean =>
+  useZustandStore(useImeStore(), selectShortWindow);
+export const useBarCollapsed = (): boolean =>
+  useZustandStore(useImeStore(), selectBarCollapsed);
 
 /**
  * The screen's own store, created once and fed by the Keyboard listeners.

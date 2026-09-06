@@ -24,22 +24,17 @@ import {
   type EmojiCategoryId,
 } from '../lib/emoji';
 import { pushRecent, readRecents, readTone, writeTone } from '../lib/emojiRecents';
+import { EMOJI_GRID_PAD, emojiGridColumns } from '../lib/windowSize';
 import { Icon } from './Icon';
 import { Pressable } from './Pressable';
 import { TextField } from './TextField';
-
-/**
- * Columns in the grid. Eight is what a 393dp phone fits at a comfortable 44dp
- * target — the same count every system keyboard uses at this width.
- */
-const COLUMNS = 8;
 
 /**
  * The grid's horizontal padding. Telegram's emoji grid uses 5dp either side
  * (`EmojiView.java:1751`); eight columns then divide the rest of the width
  * exactly, with no dead strip at the edge.
  */
-const GRID_PAD = 5;
+const GRID_PAD = EMOJI_GRID_PAD;
 
 /**
  * The floating backspace: 48dp square, 2dp from the grid's bottom-right corner.
@@ -214,7 +209,11 @@ function EmojiPickerView({
    * (`EmojiView.java:1751`, recorded in design/references/telegram.md).
    */
   const { width } = useWindowDimensions();
-  const cellSize = Math.floor((width - GRID_PAD * 2) / COLUMNS);
+  // The count follows the window and the cell does not — see
+  // `emojiGridColumns`. A fixed eight made each cell 105dp in landscape, which
+  // is a row too tall to fit inside the panel that holds it.
+  const columns = emojiGridColumns(width);
+  const cellSize = Math.floor((width - GRID_PAD * 2) / columns);
 
   // Recents are read once at mount; re-read on each open so a pick made in
   // another conversation this session is reflected.
@@ -393,7 +392,10 @@ function EmojiPickerView({
       <FlatList
         data={data as string[]}
         keyExtractor={(item, i) => `${item}-${i}`}
-        numColumns={COLUMNS}
+        numColumns={columns}
+        // FlatList caches its column layout, so the count has to be part of the
+        // identity or a rotation keeps the old grid.
+        key={columns}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.grid}
         renderItem={({ item }) => (

@@ -694,3 +694,82 @@ The `OnBackPressedCallback` note from the doc is the safety net either way:
 `BackHandler` continues to fire through `onBackPressed` regardless of the
 `enableOnBackInvokedCallback` flag, so the guard stack keeps working
 correctly in the current state.
+
+---
+
+## 2026-09-06 — Compact-height windows: the chat screen in landscape
+
+Pages read: `develop/adaptive-apps/guides/app-orientation-aspect-ratio-resizability`
+("Enable app layouts to scroll to verify all content is reachable regardless of
+the height of the display"; "Avoid stretched UI components ... Add a maximum
+width to components to avoid stretching"),
+`develop/ui/compose/layouts/adaptive/use-window-size-classes` (compact height is
+< 480dp, "99.78% of phones in landscape"), and
+`develop/ui/compose/layouts/adaptive/adaptive-dos-and-donts` ("Change UI
+components as the window size changes"; do not restrict orientation).
+
+**Measured, Redmi Note 7 Pro in landscape.** Window 851×393dp; the navigation
+bar moves to the RIGHT edge, so `insets.bottom` is 0.
+
+| piece                     |  dp |
+| ------------------------- | --: |
+| status inset + header row |  84 |
+| talk-time strip           |  46 |
+| "We have notified X"      |  55 |
+| composer row              |  55 |
+| IME (`keyboardDidShow`)   | 204 |
+| **window**                | 393 |
+
+Three defects, all pre-existing and all confirmed on device:
+
+1. **The dock overflowed upward.** 185 + 55 + 204 = 444dp of a 393dp window. The
+   dock is bottom-anchored, so `composer-input` came to rest at y=257 under a
+   frost bar ending at y=357 — and could not be tapped, because the frost took
+   the tap. The browsing panel had no ceiling at all outside search.
+2. **Emoji search collapsed to a 22px sliver.** `panelCeiling - rowHeight` came
+   to 4dp. The field being typed into was itself clipped away. This one
+   reproduces with a _correct_ keyboard measurement, so it was not a stale-value
+   edge case.
+3. **The emoji grid stretched.** `COLUMNS = 8` was a constant, so each cell grew
+   to 105dp in an 851dp window and one row no longer fitted inside the panel:
+   the first row of search results was cut in half by the keyboard.
+
+**Fixed** 2026-09-06. Orientation stays unrestricted (ADR-0017); the fix is in
+the layout, on the published 480dp compact-height breakpoint that
+`src/lib/windowSize.ts` already carried and nothing used:
+
+- `barCollapsed` (`src/lib/imeGeometry.ts`) — in a short window, while the
+  keyboard or a docked panel is up, the frosted bar keeps the header row only.
+  185dp → 84dp. Amit's call on 2026-09-06 over folding the strip into the header
+  row or letting it scroll away with the transcript; the accepted cost is that
+  the countdown is not on screen while typing and the bar changes height when
+  the keyboard opens.
+- `dockCeiling` — what the bar leaves for the dock, so the panel is capped and
+  the overflow is impossible rather than merely absent. Does not bind in
+  portrait (611dp against a panel clamped to 420dp), which is why the pinned
+  portrait geometry is unchanged.
+- `panelExpanded` (`src/components/Composer.tsx`) — expanded emoji search in a
+  short window: the panel takes the whole ceiling and the message row leaves
+  layout, since the panel's own search field is the input at that moment. 4dp →
+  105dp. Gated on the panel being DRAWN, not on the search flag alone, so a
+  stale flag can never leave the row hidden with nothing in its place.
+- `emojiGridColumns` (`src/lib/windowSize.ts`) — the cell is held at 48dp and the
+  count grows with the window: 17 columns at 851dp, still 8 (and 47dp) in
+  portrait.
+
+Guards: `__tests__/imeGeometry.test.ts` (the landscape arithmetic, and that a
+tall window is untouched), `__tests__/windowSize.test.ts` (the breakpoint and the
+grid), `__tests__/contract.test.ts` (the cap, the `BarExtras` leaf, the
+separately measured `headerHeight`, the drawn-panel gate).
+
+Device-verified on the Redmi Note 7 Pro, both orientations, frame by frame from
+`screenrecord`: bar collapses with the keyboard, panel docks with the composer
+row visible, search expands into the freed space, and rotating back restores the
+full bar and the 8-column grid.
+
+**Not covered.** The verification ran with the talk strip present but without
+the "We have notified X" line, which the server had cleared by then; it shares
+the `BarExtras` wrapper with the strip and the 185dp case is pinned in the unit
+test, but it has not been seen collapsing on a device. Chat bubbles still stretch
+to the full 851dp in landscape — `contentColumnWidth` is applied on Home only,
+and the "Window size classes" row above stays **Partial** for that reason.

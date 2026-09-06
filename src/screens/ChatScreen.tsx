@@ -21,6 +21,7 @@ import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import {
   ImeGeometryProvider,
+  useBarCollapsed,
   useBarHeight,
   useBodyInset,
   useChatImeStore,
@@ -1150,7 +1151,16 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
        * all of `src`, so removing it from here would keep jest green and break the
        * only gate that would notice.
        */}
-      <View style={styles.header}>
+      {/* Measured on its own, and `insets.top` added back so the number is
+          comparable with the Frost's own `barHeight`: it is what the bar becomes
+          the moment `barCollapsed` turns on in a short window, and knowing it in
+          advance is what keeps the panel from opening one frame short against a
+          bar that is already on its way out. See src/lib/imeGeometry.ts. */}
+      <View
+        style={styles.header}
+        onLayout={e =>
+          ime.getState().set({ headerHeight: insets.top + e.nativeEvent.layout.height })
+        }>
         <Pressable
           onPress={requestLeave}
           testID="chat-back"
@@ -1249,6 +1259,13 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
         <TokenCounter balance={balance} onPress={openWallet} />
       </View>
 
+      {/* Everything below the header row stands down in a short window while
+          something is docked — see `BarExtras` at the foot of this file, and the
+          measured landscape arithmetic in src/lib/imeGeometry.ts. The elements
+          are still built here (they are cheap objects, and they read this
+          screen's state); the leaf decides whether they mount, so a keyboard
+          show does not re-render the screen to hide them. */}
+      <BarExtras>
       {/* Recharge talk-bar: hidden while the extend card owns the top band;
           slides in from the top once the transcript has scrolled the extend
           card out of sight (or when extend is not eligible). */}
@@ -1374,6 +1391,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
           </Pressable>
         </View>
       ) : null}
+      </BarExtras>
       </Frost>
 
       <View style={styles.body}>
@@ -1666,6 +1684,30 @@ function DockFrost({ children }: { children: React.ReactNode }) {
 function BarSpacer() {
   const barHeight = useBarHeight();
   return <View style={{ height: barHeight }} />;
+}
+
+/**
+ * The rows under the header, which a short window cannot afford while composing.
+ *
+ * The talk strip, the "We have notified X" line and the extend card are 101dp of
+ * the 393dp a phone in landscape has. With the keyboard (204dp) and the composer
+ * row (55dp) also on screen there is nothing left, and the dock — bottom
+ * anchored — overflowed upward until the composer sat behind the frost and could
+ * not be tapped (measured on the Redmi Note 7 Pro, 2026-09-06; the arithmetic and
+ * the two Android pages that forbid it are in src/lib/imeGeometry.ts).
+ *
+ * Only while something is docked, and only in a short window: portrait keeps all
+ * three rows in every state, and landscape gets them back the moment the keyboard
+ * goes down. The cost Amit accepted when he chose this over folding them into the
+ * header row: the last-five-minutes countdown is not on screen while typing, and
+ * the bar changes height when the keyboard opens.
+ *
+ * A leaf, not a branch in the screen body, for the reason the whole store exists
+ * — `useBarCollapsed()` up there would re-render all 1900 lines on every keyboard
+ * show. `__tests__/contract.test.ts` asserts it stays down here.
+ */
+function BarExtras({ children }: { children: React.ReactNode }) {
+  return useBarCollapsed() ? null : <>{children}</>;
 }
 
 const makeStyles = (t: Theme) => StyleSheet.create({
