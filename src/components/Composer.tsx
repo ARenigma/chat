@@ -73,6 +73,18 @@ export const MIN_INPUT_H = 36;
 export const MAX_INPUT_H = 132;
 
 /**
+ * The line geometry MIN/MAX are built from, named so the growth handler can
+ * quantise to whole lines instead of chasing a pixel measurement.
+ *
+ * 6 lines is Telegram's cap (ChatActivityEnterView.java:5778); 20 is the
+ * field's lineHeight and 8 its paddingTop + paddingBottom, which is exactly
+ * how MAX_INPUT_H's 6x20 + 8 = 128 was derived above.
+ */
+export const INPUT_LINE_H = 20;
+export const INPUT_PAD_V = 8;
+export const MAX_INPUT_LINES = 6;
+
+/**
  * The Bézier curve Telegram uses for its bar-growth animator.
  *
  * Source: ChatListItemAnimator.java:47
@@ -406,6 +418,8 @@ function ComposerView({
    * thread the same frame the content size changes, not one commit later.
    */
   const inputH = useSharedValue(MIN_INPUT_H);
+  /** Last settled line count, so an identical remeasure starts no animation. */
+  const lineCountRef = useRef(1);
   const inputHStyle = useAnimatedStyle(() => ({ height: inputH.value }));
   const animateNext = useRef(true);
   const dockStyle = useAnimatedStyle(() => ({
@@ -1144,11 +1158,41 @@ function ComposerView({
             onFocus={onFieldFocus}
             onBlur={onFieldBlur}
             onContentSizeChange={e => {
-              const h = Math.max(
-                MIN_INPUT_H,
-                Math.min(MAX_INPUT_H, e.nativeEvent.contentSize.height),
+              /*
+               * QUANTISED TO WHOLE LINES, and only animated when the line count
+               * actually changes.
+               *
+               * Animating the raw content height looked right and measured
+               * wrong. Frame-stepped on the Redmi at 60fps while typing a
+               * message that wrapped to three lines: the capsule's top edge
+               * jumped DOWN 80px in a single frame (1376 -> 1456) and again by
+               * 40px (1405 -> 1445), and overshot its resting height by 8px
+               * across 17 frames. Android's TextInput fires
+               * `onContentSizeChange` repeatedly mid-layout and reports
+               * transient heights while a line is wrapping; each one restarted
+               * a 250ms animation toward a different target, and the restarts
+               * are the dip.
+               *
+               * Telegram sizes from the LINE COUNT, not the pixel height
+               * (ChatActivityEnterView.java:5778 caps it at 6). Rounding to a
+               * line makes a transient measurement land on the same integer as
+               * the settled one, so it produces no animation at all — the dip
+               * becomes unrepresentable rather than merely unlikely.
+               */
+              const lines = Math.min(
+                MAX_INPUT_LINES,
+                Math.max(
+                  1,
+                  Math.round(
+                    (e.nativeEvent.contentSize.height - INPUT_PAD_V) / INPUT_LINE_H,
+                  ),
+                ),
               );
-              inputH.value = withTiming(h, {
+              if (lines === lineCountRef.current) {
+                return;
+              }
+              lineCountRef.current = lines;
+              inputH.value = withTiming(lines * INPUT_LINE_H + INPUT_PAD_V, {
                 duration: M3.duration.medium1,
                 easing: KEYBOARD_EASING,
               });
