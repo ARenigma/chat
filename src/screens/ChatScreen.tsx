@@ -15,7 +15,13 @@ import {
   View,
 } from 'react-native';
 import Animated from 'react-native-reanimated';
-import { barIn, barOut, onTransitionSettled, transitioning } from '../theme/motion';
+import {
+  barIn,
+  barOut,
+  holdScreenEnter,
+  onTransitionSettled,
+  transitioning,
+} from '../theme/motion';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -124,6 +130,9 @@ type CallRow = {
 };
 
 export type TranscriptRow = MessageRow | CallRow;
+
+/** A hold that was never taken, so the release is a no-op. */
+const NO_HOLD = (): void => undefined;
 
 interface Props {
   providerId: string;
@@ -310,6 +319,35 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   const { data: openedId } = useConversationId(needsOpen ? providerId : null);
   const conversationId = knownThread?.conversation_id ?? openedId;
   const { data: messages, isPending: messagesPending } = useMessages(conversationId);
+
+  /*
+   * Hold the push animation until this screen has its transcript.
+   *
+   * Telegram's rule, and the reason it feels smoother at the same refresh rate:
+   * a screen is animated in when it has DATA, not when it has geometry. See
+   * `holdScreenEnter` for the citations and the measured gap.
+   *
+   * Taken in RENDER via a `useState` initialiser, so it runs exactly once and
+   * before the parent's `onLayout` — a hold taken in an effect would arrive
+   * after the animation had already started. It is only taken when there is
+   * genuinely nothing to show: with a warm React Query cache `messages` is
+   * already an array on the first render and the push is never delayed.
+   *
+   * Released three ways, and it has to be all three: when the transcript
+   * arrives, when the conversation turns out to be new and empty (there is no
+   * data coming, so waiting for it would burn the whole ceiling), and on
+   * unmount — a hold left standing by a screen the user backed out of would
+   * make the NEXT push wait.
+   */
+  const [releaseEnter] = useState(() =>
+    messages === undefined ? holdScreenEnter() : NO_HOLD,
+  );
+  useEffect(() => releaseEnter, [releaseEnter]);
+  useEffect(() => {
+    if (messages !== undefined || !messagesPending) {
+      releaseEnter();
+    }
+  }, [messages, messagesPending, releaseEnter]);
   /**
    * The cutoff for "this bubble just arrived": the moment the screen opened. A
    * message whose `created_at` is after it is a live arrival and animates in
