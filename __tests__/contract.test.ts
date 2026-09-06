@@ -4331,11 +4331,50 @@ describe('a session is rated when it ends, and the ratings are readable', () => 
     const detail = withoutComments(read('src/screens/ProviderDetailScreen.tsx'));
     expect(detail).toContain('testID="ratings-chart"');
     expect(detail).toContain('testID="ratings-empty"');
-    // RULE 5: react-native-svg is banned. Five horizontal bars are Views.
     expect(detail).not.toContain('react-native-svg');
-    // Share of the LARGEST bar: with 30 fives and 1 one, shares of the total
-    // make every bar but one invisible.
-    expect(detail).toMatch(/Math\.max\(\.\.\.ratings\.distribution\.map\(b => b\.count\), 1\)/);
+  });
+
+  it('shows a verdict and what people said, not a distribution ladder', () => {
+    // Amit, 2026-09-06: "no of stars at centre.. star icons below it and then
+    // reviews below". The five-bar 5-4-3-2-1 chart is gone — on a profile with
+    // three reviews it drew four empty tracks, which reads as absence.
+    const detail = withoutComments(read('src/screens/ProviderDetailScreen.tsx'));
+    expect(detail).not.toContain('ratings.distribution');
+    expect(detail).not.toMatch(/ratingTrack|ratingFill|ratingRowLabel/);
+    // Centred, in that order: number, stars, count, then the reviews.
+    expect(detail).toContain('ratingBlock');
+    const order = ['styles.ratingBig', 'styles.ratingStars', 'styles.ratingCount', 'styles.reviewRow'];
+    let at = detail.indexOf('testID="ratings-chart"');
+    expect(at).toBeGreaterThan(-1);
+    for (const marker of order) {
+      const next = detail.indexOf(marker, at);
+      expect(next).toBeGreaterThan(at);
+      at = next;
+    }
+    // And it sits BELOW About, which is the section it comments on.
+    expect(detail.indexOf('ABOUT')).toBeLessThan(detail.indexOf('RATINGS'));
+    // The server contract is untouched: distribution is still returned, just
+    // not drawn, so nothing else that reads it has to change.
+    expect(read('supabase/migrations/066_session_reviews_and_ratings.sql')).toContain(
+      'distribution',
+    );
+  });
+
+  it('gives the chat action M3 outlined emphasis, not a third fill colour', () => {
+    // Three filled colours in one row read as three unrelated things. M3:
+    // "Outlined buttons pair well with filled buttons to indicate a secondary,
+    // alternate action" — transparent container, 1dp stroke, no elevation.
+    const detail = read('src/screens/ProviderDetailScreen.tsx');
+    expect(detail).toContain(
+      'material-components-android/blob/master/docs/components/CommonButton.md',
+    );
+    const code = withoutComments(detail);
+    expect(code).toMatch(/channel="chat"\s*\n\s*kind="outline"/);
+    expect(code).not.toContain('actionTint');
+    expect(code).toMatch(/actionOutline: \{\s*backgroundColor: 'transparent',\s*borderWidth: 1,/);
+    // The label takes the on-surface colour, not on-accent — there is no accent
+    // behind it any more.
+    expect(code).toContain("kind === 'outline' ? theme.color.text.primary");
   });
 
   it('is registered in the harness with its suite', () => {
@@ -4541,9 +4580,12 @@ describe('seed provider photos', () => {
     bytes: number;
     width: number;
     height: number;
+    apparent_age: number;
   };
   const manifest = JSON.parse(read('assets/seed/providers/manifest.json')) as {
     scope: string;
+    casting: string;
+    naming: string;
     bucket_path: string;
     licence: { name: string; url: string; terms_that_bind_us: string[] };
     photos: SeedPhoto[];
@@ -4562,6 +4604,30 @@ describe('seed provider photos', () => {
       // 3:4 portrait, because the directory card and the detail header both
       // crop to it and a square source loses the face.
       expect(photo.width * 4).toBe(photo.height * 3);
+    }
+  });
+
+  it('casts every subject as an adult inside the directory age band', () => {
+    // The first cut shipped a woman who read about fifty against a profile that
+    // said 34. Nothing caught it because apparent age was never written down —
+    // it lived in whoever last looked at the file. It is a field now, so the
+    // comparison is a check rather than a memory.
+    const ages = new Map<string, number>();
+    for (const m of seed.matchAll(/'(Mira|Sara|Nia|Ivy)',\s*(\d+)/g)) {
+      ages.set(String(m[1]).toLowerCase(), Number(m[2]));
+    }
+    expect(ages.size).toBe(4);
+
+    for (const photo of manifest.photos) {
+      expect(photo.apparent_age).toBeGreaterThanOrEqual(18);
+      // Amit's rule (2026-09-06): nobody older than 35 in the seeded directory.
+      expect(photo.apparent_age).toBeLessThanOrEqual(35);
+      const profile = ages.get(photo.provider);
+      if (profile === undefined) continue; // Ada is seeded outside this file.
+      // Within a few years of the age the card prints beside the face. A photo
+      // that contradicts its own caption reads as fake before anyone gets to
+      // the words.
+      expect(Math.abs(photo.apparent_age - profile)).toBeLessThanOrEqual(4);
     }
   });
 
@@ -4586,14 +4652,28 @@ describe('seed provider photos', () => {
     expect(seed).toContain('DEV SEED ONLY');
   });
 
+  it('names every file after its own contents', () => {
+    // The bucket cannot replace an object at an existing key — `storage rm`
+    // deletes nothing and `cp` has no upsert — and public objects are served
+    // `max-age=31536000, immutable`. Under those two facts a stable filename is
+    // a trap: the new photo either fails to upload or is masked by the old one
+    // for a year. The name carries the hash, so a different photo is a
+    // different URL and neither failure is representable.
+    for (const photo of manifest.photos) {
+      expect(photo.file).toBe(`${photo.provider}-${photo.sha256.slice(0, 8)}.jpg`);
+    }
+  });
+
   it('points the seed at files the manifest covers', () => {
     const declared = new Set(manifest.photos.map((p) => p.file));
-    const used = [...seed.matchAll(/'([a-z0-9]+\.(?:jpg|png))'\)/g)].map((m) => m[1]);
+    const used = [...seed.matchAll(/'([a-z0-9]+-[0-9a-f]{8}\.jpg)'\)/g)].map((m) => m[1]);
     expect(used.length).toBeGreaterThanOrEqual(4);
     for (const file of used) expect(declared).toContain(file);
     // And they are read from the bucket path the manifest documents, not from
     // the bucket root where the previous, unaccounted-for set still sits.
     expect(seed).toContain('/avatars/seed/');
-    expect(manifest.bucket_path).toBe('avatars/seed/<file>');
+    expect(manifest.bucket_path).toBe(
+      'avatars/seed/<provider>-<first 8 of sha256>.jpg',
+    );
   });
 });
