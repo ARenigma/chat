@@ -30,6 +30,14 @@
           }
         },
         {
+          "client_id": "305484620007-qchs35mrfhq8is4as1vjidf558rpt006.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.companionchat",
+            "certificate_hash": "84b2e9bc7b777b02b010b4d32f0e38ead3b3da2d"
+          }
+        },
+        {
           "client_id": "305484620007-qt4tbvd29i5vl6qj34t0vboqvcmjrh73.apps.googleusercontent.com",
           "client_type": 3
         }

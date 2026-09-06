@@ -930,6 +930,61 @@ describe('device coverage matrix', () => {
     expect(pkg.scripts['android:framestats']).toBe('node scripts/framestats.mjs');
   });
 
+  it('has an OAuth client for EVERY certificate the app can ship with', () => {
+    /*
+     * Google Sign-In binds to the SIGNING CERTIFICATE, and this app ships under
+     * three of them. Miss one and sign-in fails only on the builds signed with
+     * it, which is how this has now broken twice:
+     *
+     *   5e8f1606…  debug key       — `assembleDebug`, Metro on a dev phone
+     *   4910a1ff…  upload key      — internal/closedTest APKs, sideload downloads
+     *   84b2e9bc…  PLAY APP SIGNING — every build Play delivers, because Play
+     *                                 re-signs the AAB with its own key
+     *
+     * On 2026-09-07 `google-services.json` carried clients for the first two
+     * only. Registering the third SHA in Firebase on 2026-09-01 had NOT caused
+     * an OAuth client to be created, and the file was byte-for-byte in sync with
+     * live Firebase — so nothing in the repo looked wrong. Closed testers simply
+     * could not sign in, and the symptom (Credential Manager returning no
+     * credentials) pointed at code that was correct.
+     *
+     * This is the gate that makes it loud. It fails the build, not a tester's
+     * sign-in attempt, and it names which certificate lost its client.
+     *
+     * Re-download with:
+     *   gcloud auth application-default login --scopes=…/androidpublisher,…/cloud-platform
+     *   curl -H "Authorization: Bearer $(gcloud auth application-default print-access-token)" \
+     *        -H "x-goog-user-project: chat-d8c87" \
+     *        "https://firebase.googleapis.com/v1beta1/projects/chat-d8c87/androidApps/<appId>/config"
+     * and base64-decode `configFileContents`.
+     */
+    const REQUIRED: Record<string, string> = {
+      '5e8f16062ea3cd2c4a0d547876baa6f38cabf625': 'debug key (assembleDebug)',
+      '4910a1ff7ac9cb1ab11bb46386bf6a7ec4726553': 'upload key (internal, closedTest, sideload)',
+      '84b2e9bc7b777b02b010b4d32f0e38ead3b3da2d': 'PLAY APP SIGNING (every Play-delivered build)',
+    };
+    const cfg = JSON.parse(read('android/app/google-services.json')) as {
+      client: {
+        client_info: { android_client_info: { package_name: string } };
+        oauth_client: { client_type: number; android_info?: { certificate_hash: string } }[];
+      }[];
+    };
+    const present = new Set<string>();
+    for (const client of cfg.client) {
+      expect(client.client_info.android_client_info.package_name).toBe('com.companionchat');
+      for (const oauth of client.oauth_client) {
+        if (oauth.client_type === 1 && oauth.android_info) {
+          present.add(oauth.android_info.certificate_hash.toLowerCase());
+        }
+      }
+    }
+    for (const [sha, why] of Object.entries(REQUIRED)) {
+      // If this fails, an OAuth client is missing for that certificate and every
+      // build signed with it cannot do Google Sign-In.
+      expect({ sha, why, present: present.has(sha) }).toEqual({ sha, why, present: true });
+    }
+  });
+
   /** https://developer.android.com/guide/components/activities/testing */
   it('ships a hermetic ActivityScenario launch smoke test', () => {
     const gradle = read('android/app/build.gradle');

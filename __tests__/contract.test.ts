@@ -1409,6 +1409,39 @@ describe('a block is visible where it matters and reversible everywhere', () => 
   });
 });
 
+describe('one contact address', () => {
+  it('uses hello@pappal.live everywhere a user is asked to write to us', () => {
+    /*
+     * Amit, 2026-09-07: "update hello@pappal.live everywhere on app and website
+     * as our email". It had drifted — the GST invoice a customer receives fell
+     * back to an `@axionix.tech` address, and the Play listing's support email
+     * was `user@pappal.live` while two docs recorded a personal gmail.
+     *
+     * This pins the USER-FACING addresses. Tester Google accounts in
+     * play-upload/06-testers/ are deliberately NOT covered: those are identities
+     * for Play's closed-test cohort, not somewhere to write to, and rewriting
+     * them would remove people from testing.
+     */
+    const CONTACT = 'hello@pappal.live';
+    const surfaces = [
+      'supabase/functions/generate-invoice/index.ts',
+      'web/index.html',
+      'web/privacy.html',
+      'web/terms.html',
+      'web/refund.html',
+      'web/delete.html',
+    ];
+    for (const file of surfaces) {
+      const body = read(file);
+      expect({ file, has: body.includes(CONTACT) }).toEqual({ file, has: true });
+      // and no stale address alongside it
+      for (const stale of ['@axionix.tech', 'privacy@example.invalid', 'user@pappal.live']) {
+        expect({ file, stale, found: body.includes(stale) }).toEqual({ file, stale, found: false });
+      }
+    }
+  });
+});
+
 describe('the website download link', () => {
   it('points at a STABLE asset name in the latest release', () => {
     /*
