@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { spawnSync } from 'child_process';
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
@@ -4508,5 +4509,80 @@ describe('the usage ledger answers where the tokens went, from both sides', () =
     const dbTest = read('scripts/db-test.mjs');
     expect(dbTest).toContain('069_usage_ledger.sql');
     expect(dbTest).toContain('310_usage_ledger.sql');
+  });
+});
+
+/**
+ * Goal item 11 — the seeded directory's photos.
+ *
+ * These are stock photographs of real people, which makes them a licence
+ * obligation rather than an asset. The manifest is the record of that
+ * obligation, and a filename in the seed with no manifest entry is a photo
+ * nobody can trace back to its licence.
+ */
+describe('seed provider photos', () => {
+  type SeedPhoto = {
+    file: string;
+    provider: string;
+    source_url: string;
+    photographer: string;
+    sha256: string;
+    bytes: number;
+    width: number;
+    height: number;
+  };
+  const manifest = JSON.parse(read('assets/seed/providers/manifest.json')) as {
+    scope: string;
+    bucket_path: string;
+    licence: { name: string; url: string; terms_that_bind_us: string[] };
+    photos: SeedPhoto[];
+  };
+  const seed = read('scripts/seed-dev.sql');
+
+  it('records provenance for every photo it ships', () => {
+    expect(manifest.photos.length).toBeGreaterThanOrEqual(5);
+    for (const photo of manifest.photos) {
+      // Enough to find the original again and name who took it. A sha256 with
+      // no source is a checksum of something unaccountable.
+      expect(photo.source_url).toMatch(/^https:\/\/www\.pexels\.com\/photo\/\d+\/$/);
+      expect(photo.photographer.length).toBeGreaterThan(0);
+      expect(photo.sha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(photo.bytes).toBeGreaterThan(0);
+      // 3:4 portrait, because the directory card and the detail header both
+      // crop to it and a square source loses the face.
+      expect(photo.width * 4).toBe(photo.height * 3);
+    }
+  });
+
+  it('describes the bytes that are actually here', () => {
+    // The photos are committed, so the manifest is a checkable claim rather
+    // than a note. Swap a file without updating its row and this fails, which
+    // is the only way a licence record stays attached to what it licenses.
+    for (const photo of manifest.photos) {
+      const bytes = readFileSync(join(ROOT, 'assets/seed/providers', photo.file));
+      expect(bytes.length).toBe(photo.bytes);
+      expect(createHash('sha256').update(bytes).digest('hex')).toBe(photo.sha256);
+    }
+  });
+
+  it('names the licence and the terms that actually restrict us', () => {
+    expect(manifest.licence.url).toBe('https://www.pexels.com/license/');
+    expect(manifest.licence.terms_that_bind_us.join(' ')).toContain('endorsement');
+    // The one that decides where these may be used: a paid companionship
+    // listing implies endorsement by the person in the photo, so the seed set
+    // cannot become the production set by anyone forgetting to ask.
+    expect(manifest.scope).toContain('DEV SEED ONLY');
+    expect(seed).toContain('DEV SEED ONLY');
+  });
+
+  it('points the seed at files the manifest covers', () => {
+    const declared = new Set(manifest.photos.map((p) => p.file));
+    const used = [...seed.matchAll(/'([a-z0-9]+\.(?:jpg|png))'\)/g)].map((m) => m[1]);
+    expect(used.length).toBeGreaterThanOrEqual(4);
+    for (const file of used) expect(declared).toContain(file);
+    // And they are read from the bucket path the manifest documents, not from
+    // the bucket root where the previous, unaccounted-for set still sits.
+    expect(seed).toContain('/avatars/seed/');
+    expect(manifest.bucket_path).toBe('avatars/seed/<file>');
   });
 });

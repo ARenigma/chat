@@ -1,0 +1,80 @@
+{
+  "why": "Provenance and licence for the DEV SEED provider photos. Real Indian portraits, because the seeded directory is the only place anyone sees what this product looks like with people in it, and half the previous seed was not Indian at all (Amit, 2026-09-05, goal item 11).",
+  "scope": "DEV SEED ONLY. These are stock photographs of real people used to populate a demo directory on a test project. They must never be shipped as production provider listings: the Pexels licence forbids implying that a person in a photo endorses a product, and a paid companionship listing is exactly that implication. A real provider uploads their own photo (useUploadAvatar).",
+  "licence": {
+    "name": "Pexels License",
+    "url": "https://www.pexels.com/license/",
+    "attribution_required": false,
+    "terms_that_bind_us": [
+      "Identifiable people may not appear in a bad light or in a way that is offensive.",
+      "Do not imply endorsement of your product by the people in the imagery.",
+      "Do not sell unaltered copies."
+    ]
+  },
+  "retrieved_on": "2026-09-06",
+  "bucket_path": "avatars/seed/<file>",
+  "processing": "Cropped to 3:4 from the top of the frame and resized to 900x1200. No other edit.",
+  "upload": "The files sit next to this manifest so a fresh project can be seeded from a checkout. Push them with: supabase storage cp --linked --experimental assets/seed/providers/<file> ss:///avatars/seed/<file>",
+  "photos": [
+    {
+      "file": "ada.jpg",
+      "provider": "ada",
+      "source": "pexels",
+      "source_url": "https://www.pexels.com/photo/20132403/",
+      "photographer": "ab_h_i-s_h_ek_09-283673767",
+      "subject": "Adult woman in a floral top, outdoors, gentle smile.",
+      "sha256": "9cab1c5c7c7eacb6358f4024851426bdf637360769851aaf30f7d8c211e6df00",
+      "bytes": 261225,
+      "width": 900,
+      "height": 1200
+    },
+    {
+      "file": "ivy.jpg",
+      "provider": "ivy",
+      "source": "pexels",
+      "source_url": "https://www.pexels.com/photo/8720868/",
+      "photographer": "ravi-roshan-2875998",
+      "subject": "Adult woman in a denim jacket, bright open smile.",
+      "sha256": "186efc038cea2ca3a369efb9dc4ef89650fb06bd285c917f72e045db0f7b34c6",
+      "bytes": 204766,
+      "width": 900,
+      "height": 1200
+    },
+    {
+      "file": "mira.jpg",
+      "provider": "mira",
+      "source": "pexels",
+      "source_url": "https://www.pexels.com/photo/36918310/",
+      "photographer": "satyampixels",
+      "subject": "Adult woman outdoors in a city, relaxed and direct to camera.",
+      "sha256": "5e3d8f67721b68d080b282a5620725ea10a3343d0c8ca4f3613292720f681697",
+      "bytes": 213060,
+      "width": 900,
+      "height": 1200
+    },
+    {
+      "file": "nia.jpg",
+      "provider": "nia",
+      "source": "pexels",
+      "source_url": "https://www.pexels.com/photo/15984371/",
+      "photographer": "roy-photos",
+      "subject": "Adult woman in glasses, seated outdoors, warm half-smile.",
+      "sha256": "227dcece3399f2456ea91913a1993ba707fa54605d4ee1c204726acde3109211",
+      "bytes": 350714,
+      "width": 900,
+      "height": 1200
+    },
+    {
+      "file": "sara.jpg",
+      "provider": "sara",
+      "source": "pexels",
+      "source_url": "https://www.pexels.com/photo/29125196/",
+      "photographer": "g-t-1401056130",
+      "subject": "Adult woman in a purple kurta, soft green background.",
+      "sha256": "b4cb2e3fcd855f6994468e74422a7a729a9bfabfbedbf3bc958fc5fd98e18ca5",
+      "bytes": 157717,
+      "width": 900,
+      "height": 1200
+    }
+  ]
+}
