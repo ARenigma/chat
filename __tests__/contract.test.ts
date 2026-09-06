@@ -4315,3 +4315,66 @@ describe('a session is rated when it ends, and the ratings are readable', () => 
     expect(dbTest).toContain('280_session_reviews_and_ratings.sql');
   });
 });
+
+describe('a chat request rings, and can be answered either way', () => {
+  it('gives the ring a second answer, which the schema always had a word for', () => {
+    // session_request_status has carried 'declined' since 030:51 and nothing
+    // could ever write it. A ring with one button is not a ring, it is a summons.
+    const migration = read('supabase/migrations/067_decline_session_request.sql');
+    expect(migration).toContain('create or replace function public.decline_session_request');
+    expect(migration).toContain("v_req.recipient_id <> auth.uid()");
+    // Idempotent: a decline racing an expiry is not an error the provider sees.
+    expect(migration).toMatch(/if v_req\.status <> 'pending' then[\s\S]*?'success', true/);
+    // NOT a cancel: that is the initiator withdrawing, a different actor. The
+    // comment explaining that necessarily says the word, so this asserts on the
+    // WRITE rather than on the prose.
+    expect(migration).not.toMatch(/status\s*=\s*'cancelled'/);
+    expect(migration).toMatch(/status\s*=\s*'declined'/);
+  });
+
+  it('rings in-app only, and says why that is the scope', () => {
+    /*
+     * The out-of-app half is deliberately unchanged: a chat request already
+     * sends the ordinary conversation notification, and this project decided on
+     * 2026-08-27 that even a real CALL rings as a heads-up CallStyle
+     * notification rather than a full-screen takeover. Making chat louder than
+     * calls on the lock screen would invert that.
+     */
+    const ring = read('src/components/ChatRingScreen.tsx');
+    expect(ring).toContain('2026-08-27');
+    expect(ring).toContain('index.js:59');
+    // index.js is untouched: no fourth push kind.
+    expect(withoutComments(read('index.js'))).not.toContain('chat_request');
+  });
+
+  it('rings for 30 seconds and declines nothing by silence', () => {
+    const ring = withoutComments(read('src/components/ChatRingScreen.tsx'));
+    expect(ring).toContain('export const CHAT_RING_SECONDS = 30');
+    // Silence stops the RING, never the request: the row lives its 24 hours
+    // and the thread is still waiting in their list.
+    const timeout = ring.slice(ring.indexOf('if (remaining <= 0)'));
+    expect(timeout).toContain('clearIncoming()');
+    expect(timeout.slice(0, 200)).not.toContain('decline');
+  });
+
+  it('only a provider subscribes, and the first ring wins', () => {
+    const app = withoutComments(read('App.tsx'));
+    // A member never receives one; subscribing them is a socket for nothing.
+    expect(app).toContain("useIncomingChatRequests(role === 'provider' ? selfId : undefined");
+    expect(app).toContain('<ChatRingScreen');
+    // The member has no directory row, so the name is the pseudonymous
+    // fallback ProviderHomeScreen already uses — never a real name.
+    expect(app).toContain('`Member ${request.initiatorId.slice(0, 4)}`');
+    const store = withoutComments(read('src/store/useStore.ts'));
+    expect(store).toMatch(/state\.incomingRequest === null \? \{ incomingRequest: request \}/);
+    // Chat only: a call request already rings through the call path, and two
+    // rings for one event is a bug the member cannot see.
+    expect(withoutComments(read('src/api/sessions.ts'))).toContain("row.channel === 'chat'");
+  });
+
+  it('is registered in the harness with its suite', () => {
+    const dbTest = read('scripts/db-test.mjs');
+    expect(dbTest).toContain('067_decline_session_request.sql');
+    expect(dbTest).toContain('290_decline_session_request.sql');
+  });
+});

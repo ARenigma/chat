@@ -107,6 +107,7 @@ const MIGRATIONS = [
   'supabase/migrations/064_provider_channels.sql',
   'supabase/migrations/065_provider_category.sql',
   'supabase/migrations/066_session_reviews_and_ratings.sql',
+  'supabase/migrations/067_decline_session_request.sql',
 ];
 
 const docker = (args, options = {}) =>
@@ -483,6 +484,10 @@ const suites = [
   {
     file: join(ROOT, 'supabase/tests/280_session_reviews_and_ratings.sql'),
     label: 'session reviews: one per session, all count, and the ratings read',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/290_decline_session_request.sql'),
+    label: 'declining a session request: recipient only, idempotent',
   },
 ];
 
