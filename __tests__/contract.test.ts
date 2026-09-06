@@ -4206,15 +4206,29 @@ describe('search opens the way Telegram opens it, and the week has a carousel', 
     expect(home).toContain('const TOP_PICKS = 3');
     expect(home).toContain('testID="top-picks"');
     expect(home).toContain('Top profiles this week');
-    expect(home).toContain('snapToInterval={heroItemWidth + TOKENS.space.xs}');
+    expect(home).toContain('<HeroCarousel');
     expect(home).toContain('.slice(0, TOP_PICKS)');
-    // Derived from the content column, never a fixed dp.
-    expect(home).toMatch(/heroItemWidth =\s*columnWidth - TOKENS\.space\.md \* 2 - HERO_PEEK/);
     // The picks are lifted out of the list below, so nobody appears twice.
     expect(home).toContain('const shown = new Set(topPicks.map(p => p.id))');
-    // No timer anywhere near it.
-    const carousel = home.slice(home.indexOf('testID="top-picks"') - 1200, home.indexOf('testID="top-picks"') + 600);
-    expect(carousel).not.toMatch(/setInterval|carouselDwell/);
+
+    /*
+     * Centred, peeking BOTH ways, and endless (Amit, 2026-09-06). The geometry
+     * and the wrap arithmetic live in lib/carousel.ts so they can be tested;
+     * the component only owns the ScrollView.
+     */
+    const carousel = withoutComments(read('src/components/HeroCarousel.tsx'));
+    expect(carousel).toContain('snapToInterval={pitch}');
+    expect(carousel).toContain('heroRecentre(');
+    expect(carousel).toContain('paddingHorizontal: inset');
+    // Recentred on BOTH settle paths: a slow drag never gains momentum, and
+    // would otherwise strand the strip in an outer copy.
+    expect(carousel).toContain('onMomentumScrollEnd={onSettled}');
+    expect(carousel).toContain('onScrollEndDrag={onSettled}');
+    // Endless is a swipe that never stops, NOT a timer. The banned component
+    // advanced itself, which is how it ran backwards through three green builds.
+    expect(carousel).not.toMatch(/setInterval|setTimeout|withRepeat|carouselDwell/);
+    // Three copies: one to swipe back into, one to sit in, one to swipe forward.
+    expect(read('src/lib/carousel.ts')).toContain('export const HERO_COPIES = 3');
   });
 });
 

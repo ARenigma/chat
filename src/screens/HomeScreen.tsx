@@ -43,6 +43,7 @@ import { Pressable } from '../components/Pressable';
 import { ProviderRow } from '../components/ProviderRow';
 import { DirectorySkeleton } from '../components/DirectorySkeleton';
 import { Chip } from '../components/Chip';
+import { HeroCarousel } from '../components/HeroCarousel';
 import { MetaChip } from '../components/MetaChip';
 import { SearchBar } from '../components/SearchBar';
 import { Badge } from '../components/Badge';
@@ -65,14 +66,6 @@ const POTD_DISMISSED_KEY = 'companion.potd.dismissed';
  * three"). One card is a claim; three is a choice.
  */
 const TOP_PICKS = 3;
-
-/**
- * The M3 hero item's peek, in dp: how much of the NEXT profile shows past the
- * focused one. Android's carousel guidance describes hero as "one large image
- * to focus on and provides a peek of what's next with a small item"; the peek
- * is what tells the member the row scrolls at all.
- */
-const HERO_PEEK = 56;
 
 interface Props {
   onOpenConversation: (peerId: string) => void;
@@ -107,14 +100,6 @@ export function HomeScreen({
   const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
   const columnWidth = contentColumnWidth(windowWidth);
-  /*
-   * Hero item width: the content column, less its margins, less the peek and
-   * the gap that separates it. Derived rather than fixed so it holds on a
-   * 320dp phone and a large-screen column alike — M3's example
-   * `preferredItemWidth` of 186dp is an illustration, not our layout.
-   */
-  const heroItemWidth =
-    columnWidth - TOKENS.space.md * 2 - HERO_PEEK - TOKENS.space.xs;
   const balance = useStore(s => s.balance);
   const openWallet = useStore(s => s.openWallet);
   useProfile();
@@ -472,42 +457,25 @@ export function HomeScreen({
                 Top profiles this week
               </Text>
             </View>
-            {/* M3 HERO carousel: one large item with a peek of the next, which
-                is the variant Android's own carousel guidance names for
-                spotlighting. Snapping to the item pitch is what makes the peek
-                a promise rather than a cropped card.
-
-                Deviation, stated: M3's hero morphs the small item's width as
-                it scrolls. Every item here is one width and the peek comes from
-                trailing content inset instead — the morph needs a per-frame
-                width interpolation on a horizontal list, and RULE 5's banned
-                `react-native-svg` is not the only dependency whose failure
-                modes outweigh it. The visible outcome (large + peek + snap) is
-                the same.
-
-                Not the banned WordCarousel: that was a TEXT fade at 10% alpha
-                that could not reach AA (contract test). This is images and
-                snap, with no fading text and no auto-advance — the reason that
-                one ran backwards through three green builds. */}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              snapToInterval={heroItemWidth + TOKENS.space.xs}
-              snapToAlignment="start"
-              disableIntervalMomentum
-              {...SCROLL_PHYSICS}
-              contentContainerStyle={styles.picksScroll}
-              testID="top-picks">
-              {topPicks.map(p => (
-                <Card key={p.id} style={{ width: heroItemWidth }}>
+            {/* Centred hero, peeking both ways, endless in both directions
+                (Amit, 2026-09-06). The geometry and the wrap arithmetic live in
+                lib/carousel.ts where they can be tested; this only says which
+                cards go in it. No timer — see HeroCarousel for why. */}
+            <HeroCarousel
+              items={topPicks}
+              columnWidth={columnWidth}
+              keyOf={p => p.id}
+              testID="top-picks"
+              render={(p, width) => (
+                <Card>
                   <FeaturedCard
                     provider={p}
-                    imageWidth={heroItemWidth}
+                    imageWidth={width}
                     onPress={() => onOpenProvider(p.id)}
                   />
                 </Card>
-              ))}
-            </ScrollView>
+              )}
+            />
           </>
         ) : null}
         {/* Spacing that separates the featured card (or explore heading) from
@@ -520,7 +488,7 @@ export function HomeScreen({
       styles,
       topPicks,
       onOpenProvider,
-      heroItemWidth,
+      columnWidth,
       handleOpenConversation,
       onSeeAllChats,
       theme,
@@ -1100,11 +1068,8 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.primary,
     },
-    picksScroll: {
-      flexDirection: 'row',
-      gap: TOKENS.space.xs,
-      paddingHorizontal: TOKENS.space.md,
-      paddingBottom: TOKENS.space.sm,
+    picksBelow: {
+      height: TOKENS.space.sm,
     },
     // Type and age, stacked and labelled: every option visible at once.
     filters: {
