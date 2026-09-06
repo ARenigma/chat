@@ -1409,6 +1409,41 @@ describe('a block is visible where it matters and reversible everywhere', () => 
   });
 });
 
+describe('shipping to Play', () => {
+  const fastfile = read('fastlane/Fastfile');
+  const ci = read('.gitlab-ci.yml');
+
+  it('uploads an AAB that CI actually builds', () => {
+    // `play-internal` uploads CLOSED_TEST_AAB, and the android job built only
+    // the release pair — so the designed publish path would have failed on a
+    // missing file the first time anyone tagged a release.
+    expect(fastfile).toContain(
+      'CLOSED_TEST_AAB = "../android/app/build/outputs/bundle/closedTest/app-closedTest.aab"',
+    );
+    expect(ci).toContain('bundleClosedTest');
+  });
+
+  it('never guesses a closed-testing track name', () => {
+    // Play reserves no id for closed testing: those tracks are created manually
+    // with custom names (https://developers.google.com/android-publisher/tracks).
+    // A default would either fail confusingly or silently create a new track.
+    expect(fastfile).toContain('lane :closed do |options|');
+    expect(fastfile).toContain('UI.user_error!');
+    expect(fastfile).toMatch(/track = options\[:track\]/);
+    // Uploads as a draft so the artefact can be inspected before a tester sees
+    // it, unless the caller asks otherwise.
+    expect(fastfile).toMatch(/release_status: options\[:status\] \|\| "draft"/);
+  });
+
+  it('does not let `beta` masquerade as closed testing', () => {
+    // `beta` IS Play's open-testing track. Reaching for it to do closed testing
+    // publishes to anyone with the opt-in link.
+    const betaLane = fastfile.slice(fastfile.indexOf('lane :beta do'));
+    expect(betaLane).toContain('track: "beta"');
+    expect(fastfile).toContain("`beta` is Play's OPEN testing track");
+  });
+});
+
 describe('the redesign holds its own invariants', () => {
   it('keeps closed-test builds capturable while production remains secure', () => {
     // FLAG_SECURE covers screenshots, screen recording and the app-switcher

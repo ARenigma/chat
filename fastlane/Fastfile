@@ -42,7 +42,53 @@ platform :android do
     )
   end
 
-  desc "Promote internal -> closed beta at a staged percentage"
+  # ---------------------------------------------------------------------------
+  # Closed testing
+  # ---------------------------------------------------------------------------
+  # There was no lane for this, and the nearest-looking one was a trap: `beta`
+  # targets Play's `beta` track, which is OPEN testing — anyone with the opt-in
+  # link. Reaching for it to do "closed testing" publishes far wider than
+  # intended.
+  #
+  # Closed testing has NO reserved track id. Google: "Closed testing tracks are
+  # created manually and they have custom names."
+  # https://developers.google.com/android-publisher/tracks
+  #
+  # So the track name is REQUIRED and never defaulted. A guess here would either
+  # fail loudly (fine) or silently create a new track (not fine) — and the one
+  # value worth guessing, `alpha`, is only right for apps whose closed track
+  # happens to still carry that legacy name.
+  #
+  #   bundle exec fastlane android closed track:"<name from Play Console>"
+  #
+  # `release_status: "draft"` on purpose: it uploads and stops, so the artefact
+  # can be seen in the Console before a single tester gets it. Pass
+  # status:"completed" to hand it straight to the cohort.
+  desc "Upload the gated AAB to a named CLOSED testing track"
+  lane :closed do |options|
+    track = options[:track]
+    UI.user_error!(
+      "Pass the closed-testing track name, e.g. track:\"beta-cohort\". Play does " \
+      "not reserve an id for closed testing — the name is whatever it was " \
+      "created as in the Console. See " \
+      "https://developers.google.com/android-publisher/tracks",
+    ) if track.nil? || track.to_s.strip.empty?
+
+    upload_to_play_store(
+      track: track.to_s,
+      aab: CLOSED_TEST_AAB,
+      release_status: options[:status] || "draft",
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+    )
+  end
+
+  # NOTE the track: `beta` is Play's OPEN testing track, not a closed one — see
+  # the `closed` lane above. The name of this lane is historical; what it does is
+  # a staged OPEN rollout.
+  desc "Staged rollout on the OPEN testing track"
   lane :beta do |options|
     fraction = (options[:rollout] || "0.1").to_f
     upload_to_play_store(
