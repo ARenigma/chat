@@ -76,6 +76,7 @@ import { useRole } from './src/api/provider';
 import { useStore } from './src/store/useStore';
 import { PolicyGateScreen } from './src/screens/PolicyGateScreen';
 import { PermissionsScreen } from './src/screens/PermissionsScreen';
+import { SessionFeedbackSheet } from './src/components/SessionFeedbackSheet';
 import { checkGate, gateSatisfied } from './src/lib/permissionsGate';
 import { ProfileSetupScreen } from './src/screens/ProfileSetupScreen';
 import { WelcomePappalScreen } from './src/screens/WelcomePappalScreen';
@@ -1370,6 +1371,11 @@ function SignedIn({
       ) : null}
       <RechargeWalletPage />
       <RechargeScreen />
+      {/* One feedback sheet for the whole app: a session can end in a chat or
+          in a call started from a provider's page, and the sheet has to outlive
+          whichever screen noticed (goal item 14). It renders nothing until the
+          store holds a session to rate. */}
+      <SessionFeedbackSheet />
     </View>
   );
 }

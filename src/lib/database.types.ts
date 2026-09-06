@@ -199,6 +199,28 @@ export type Review = {
   rating: number;
   comment: string | null;
   created_at: string;
+  /**
+   * The session being rated (migration 066). Null only on rows written before
+   * that, when a review belonged to the whole conversation.
+   */
+  session_id: string | null;
+};
+
+/** One bar of the ratings chart. Always five rows, 5..1, zeros included. */
+export type RatingBar = { stars: 1 | 2 | 3 | 4 | 5; count: number };
+
+/**
+ * What a member reads about a provider's reputation before spending
+ * (`get_provider_ratings`, migration 066). Aggregate plus the recent comments,
+ * and deliberately never a member id: a five-star review is not a reason to
+ * publish who wrote it.
+ */
+export type ProviderRatings = {
+  provider_id: string;
+  rating_avg: number | null;
+  rating_count: number;
+  distribution: RatingBar[];
+  recent: { rating: number; comment: string | null; created_at: string }[];
 };
 
 /**
@@ -1036,6 +1058,14 @@ export type Database = {
       submit_review: {
         Args: { p_conversation_id: string; p_rating: number; p_comment?: string | null };
         Returns: undefined;
+      };
+      submit_session_review: {
+        Args: { p_session_id: string; p_rating: number; p_comment?: string | null };
+        Returns: undefined;
+      };
+      get_provider_ratings: {
+        Args: { p_provider_id: string; p_recent_limit?: number };
+        Returns: ProviderRatings | null;
       };
       claim_daily_tokens: {
         Args: Record<string, never>;
