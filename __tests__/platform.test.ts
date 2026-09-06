@@ -1550,3 +1550,89 @@ describe('hardware back reaches the app', () => {
     expect(read(MANIFEST)).not.toMatch(/enableOnBackInvokedCallback\s*=\s*"true"/);
   });
 });
+
+/**
+ * W0 measurement scripts — Perfetto tracing and Macrobenchmark gate.
+ *
+ * Both files are here because the plan names them alongside framestats.mjs.
+ * Each cites the doc that governed its design so a reader can verify the
+ * claims rather than trust them (RULE 1).
+ *
+ * perfetto-feel.sh:
+ *   https://perfetto.dev/docs/data-sources/frametimeline
+ *   https://perfetto.dev/docs/quickstart/android-tracing
+ *
+ * benchmark-gate.mjs:
+ *   https://developer.android.com/topic/performance/benchmarking/macrobenchmark-overview
+ *   https://developer.android.com/topic/performance/benchmarking/macrobenchmark-metrics
+ */
+describe('W0 measurement scripts — Perfetto and Macrobenchmark gate', () => {
+  it('ships perfetto-feel.sh, wires it into package.json, and cites its docs', () => {
+    expect(existsSync(join(ROOT, 'scripts/perfetto-feel.sh'))).toBe(true);
+
+    const script = read('scripts/perfetto-feel.sh');
+
+    // The FrameTimeline data source name is the load-bearing string: it is
+    // what the on-device perfetto binary uses to select which events to record.
+    // https://perfetto.dev/docs/data-sources/frametimeline
+    expect(script).toContain('android.surfaceflinger.frametimeline');
+
+    // The VSYNC-app track comes from atrace gfx events. The gfx category is
+    // what makes Choreographer fence events appear on that track.
+    expect(script).toContain('atrace_categories: "gfx"');
+
+    // adb resolution mirrors framestats.mjs: local.properties → known paths.
+    // Both tools must find the same binary without a separate setup step.
+    expect(script).toContain('local.properties');
+
+    // The minSdk (24) is below the API 29 floor for the on-device perfetto
+    // binary. The script documents this so nobody wastes time debugging on a
+    // 60Hz Android 7 test device.
+    expect(script).toContain('API 29');
+
+    // The doc URLs must survive in the file — RULE 1 requires them.
+    expect(script).toContain('https://perfetto.dev/docs/data-sources/frametimeline');
+    expect(script).toContain('https://perfetto.dev/docs/quickstart/android-tracing');
+
+    // How to open the trace — the reason the script exists is so someone can
+    // actually measure; the open instruction completes that loop.
+    expect(script).toContain('https://ui.perfetto.dev');
+
+    const pkg = JSON.parse(read('package.json')) as { scripts: Record<string, string> };
+    expect(pkg.scripts['android:perfetto']).toBe('bash scripts/perfetto-feel.sh');
+  });
+
+  it('ships benchmark-gate.mjs, wires it into package.json, and cites its docs', () => {
+    expect(existsSync(join(ROOT, 'scripts/benchmark-gate.mjs'))).toBe(true);
+
+    const script = read('scripts/benchmark-gate.mjs');
+
+    // The script must be honest about what was verified: no benchmarkData.json
+    // existed in the repo when it was written. A file that claims certainty it
+    // does not have will mislead the next person who reads it.
+    expect(script).toContain('never been run');
+
+    // The gate thresholds from the W0 plan.
+    // https://developer.android.com/topic/performance/benchmarking/macrobenchmark-metrics
+    expect(script).toContain('frameDurationCpuMs');
+    expect(script).toContain('frameOverrunMs');
+    expect(script).toContain('8.3');
+    expect(script).toContain('16.7');
+
+    // When the JSON is absent the script must exit 1 with a command the user
+    // can copy — not a stack trace or a silent wrong result.
+    expect(script).toContain('npm run android:benchmark:startup');
+    expect(script).toContain('process.exit(1)');
+
+    // The schema assumption is documented next to the code that reads it, so a
+    // schema change is caught at the point of confusion rather than downstream.
+    expect(script).toContain('"benchmarks" array');
+
+    // Doc URLs — RULE 1.
+    expect(script).toContain('https://developer.android.com/topic/performance/benchmarking/macrobenchmark-overview');
+    expect(script).toContain('https://developer.android.com/topic/performance/benchmarking/macrobenchmark-metrics');
+
+    const pkg = JSON.parse(read('package.json')) as { scripts: Record<string, string> };
+    expect(pkg.scripts['android:benchmark:gate']).toBe('node scripts/benchmark-gate.mjs');
+  });
+});

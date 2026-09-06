@@ -3909,6 +3909,36 @@ describe('docked panel travel', () => {
   });
 });
 
+/**
+ * W4#4 — ambient beats are silent.
+ *
+ * Tab select, emoji tap and picker launch are not confirmations of a committed
+ * action. Telegram does not buzz for any of them (telegram.md §Haptics, negative
+ * rows). A device that buzzes on every emoji tap reads as cheap.
+ *
+ * Voice-record start and stop survive: the voice-record lock is in Telegram's own
+ * haptics table (`ChatActivityEnterView.java:4630`), and stopping is the committed
+ * action that produces a sendable note.
+ */
+describe('ambient beats (tab-select, emoji-pick, picker-open) are silent', () => {
+  it('FloatingToolbar fires no tick on tab select', () => {
+    expect(withoutComments(read('src/components/FloatingToolbar.tsx'))).not.toContain('tick()');
+  });
+
+  it('EmojiPicker fires no tick on pick or tone-strip open', () => {
+    expect(withoutComments(read('src/components/EmojiPicker.tsx'))).not.toContain('tick()');
+  });
+
+  it('Composer fires no tick when the gallery or camera picker opens', () => {
+    const composer = withoutComments(read('src/components/Composer.tsx'));
+    // Picker launches are silent.
+    expect(composer).not.toMatch(/pickImage[\s\S]{0,300}tick\(\)/);
+    expect(composer).not.toMatch(/takePhoto[\s\S]{0,300}tick\(\)/);
+    // Voice-record start (record) and stop are intentionally kept — two calls total.
+    expect(composer.match(/tick\(\)/g)?.length ?? 0).toBe(2);
+  });
+});
+
 describe('profiles: every server-owned column is guarded against the owner', () => {
   /*
    * Migration 054 redefined guard_privileged_profile_columns() and dropped the

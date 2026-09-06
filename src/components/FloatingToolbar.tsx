@@ -8,7 +8,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { DURATION, fadeTo, springTo } from '../theme/motion';
-import { tick } from '../lib/haptics';
 import { CALLS_TAB_ENABLED } from '../config';
 import { Frost } from './Frost';
 import { Icon, type IconName } from './Icon';
@@ -149,7 +148,8 @@ function FloatingToolbarView({
           const tabButton = (
             <Pressable
               onPress={() => {
-                tick();
+                // No haptic: a tab select is navigation, not a committed action.
+                // Telegram does not buzz for it (telegram.md §Haptics, negative rows).
                 onSelect(tab.key);
               }}
               disabled={disabled}

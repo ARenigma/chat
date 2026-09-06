@@ -542,3 +542,78 @@ Home is gated until all that apply are granted; "cancel" is Sign out. Reasoning
 and the not-yet-built kill switch are in ADR-0026. Guard: contract test named in
 the ADR; `__tests__/permissionsGate.test.ts` for the applies/satisfied
 arithmetic (notifications only from API 33; pass-through off Android).
+
+---
+
+## Frame measurement protocol, 2026-09-06
+
+### Preconditions — without these the numbers are wrong
+
+**Samsung S22 Ultra: set "Motion smoothness" to "Adaptive" before any
+measurement.** The S22 ships with this option disabled by default. With it
+disabled the display locks to 60Hz regardless of what `MainActivity`
+requests, so `dumpsys gfxinfo` and `scripts/framestats.mjs` report a 16.7ms
+vsync period and `inferredHz: 60.0` even while the app has voted for 120Hz.
+Any frame-budget number taken without this setting is a 60Hz number on a
+120Hz panel, and the 95%-within-budget gate, which targets 8.33ms, will fail
+every frame. Path: Settings → Display → Motion smoothness → Adaptive.
+
+**Redmi Note 7 Pro: runs the Metro-served DEBUG build only.** This is the
+phone on the daily-driver bench. Its numbers are not release numbers. It runs
+API 29, a 60Hz panel, and a Metro-served dev-mode React bundle — no R8, no
+Baseline Profile, no bundle minification. The ~500ms chat tap→first-paint
+measured here was investigated on 2026-09-03 and confirmed to be a debug
+artefact (see the ChatScreen chat-open entry in the "Closed" table). Do not
+cite any Redmi timing as a performance claim, only as an API-floor
+compatibility check. The Macrobenchmark cannot run on it at all: the
+benchmark APK cannot be installed over the debug APK without uninstalling, and
+uninstalling clears the signed-in session.
+
+### scripts/framestats.mjs — what it does
+
+`scripts/framestats.mjs` is the automated gate for `adb shell dumpsys gfxinfo`
+frame data. Read the file before running it rather than relying on this
+summary; the header comment records decisions about the format.
+
+Key behaviours:
+
+- **Resets the ring buffer with `--reset`.** The `dumpsys gfxinfo` ring holds
+  ~120 frames. Without an explicit reset it returns stale frames from whatever
+  the app was doing earlier, or returns no PROFILEDATA block at all if the
+  buffer drained. The script calls `dumpsys gfxinfo <pkg> reset` when
+  invoked with `--reset`, then exits; the measurement run is a second
+  invocation.
+
+- **Derives the budget from the observed vsync period.** The period is the
+  median gap between consecutive `IntendedVsync` timestamps in the framestats
+  output. The script prints `inferredHz` alongside `vsyncPeriodMs` — this is
+  the answer to the question "is the panel actually in its fast mode right
+  now?" Use `--budget 8.33` to force the 120Hz gate explicitly if needed, but
+  the derived period is the correct number for the Redmi.
+
+- **Reports per window.** An RN `<Modal>` is its own window with its own
+  refresh-rate vote. The script keeps each `Window: …` block separate so a
+  Modal running at a different rate from the main window is visible as a
+  distinct entry, not averaged in.
+
+- **Gate:** ≥95% of frames must land within one vsync period; zero frames may
+  exceed two periods (the "dropped frame" threshold). Exit code 1 on failure.
+
+### Order of operations for a valid run
+
+1. **Set "Motion smoothness = Adaptive" on the S22** (one-time; survives
+   reboots).
+2. Open the app; navigate to the surface under test and leave it idle.
+3. `node scripts/framestats.mjs --reset` — zeros the buffer and prints a
+   confirmation. This must happen immediately before driving the flow, not
+   minutes before.
+4. Drive the interaction: open the emoji panel, scroll the transcript, tap
+   send — whatever the flow under test is. Keep it under ~four seconds so the
+   ring does not wrap.
+5. `node scripts/framestats.mjs` — reports per-window results and exits 0
+   (pass) or 1 (fail). The `vsyncPeriodMs` and `inferredHz` lines are the
+   first thing to check: if the S22 reports ~16.7ms / ~60Hz, stop, set
+   Adaptive, and repeat from step 2.
+6. For deeper attribution, capture with `scripts/perfetto-feel.sh` (VSYNC-app
+   - FrameTimeline tracks) over the same interaction window and open the trace
+     in the Perfetto UI.

@@ -311,6 +311,7 @@ export const LIGHT = {
     stateDragged: 0.16,
     scrim: 0.4,
     scrimFocus: 0.54,
+    rippleRadius: 20,
   },
   toggle: {
     trackWidth: 52,
@@ -872,6 +873,7 @@ export const DARK = {
     stateDragged: 0.16,
     scrim: 0.4,
     scrimFocus: 0.54,
+    rippleRadius: 20,
   },
   toggle: {
     trackWidth: 52,

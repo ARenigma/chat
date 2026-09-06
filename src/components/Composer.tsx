@@ -799,7 +799,6 @@ function ComposerView({
     if (disabled) {
       return;
     }
-    tick();
     const result = await launchImageLibrary({
       mediaType: 'photo',
       selectionLimit: 1,
@@ -835,7 +834,6 @@ function ComposerView({
       setNotice('The camera needs permission. Turn it on in Settings.');
       return;
     }
-    tick();
     const result = await launchCamera({
       mediaType: 'photo',
       quality: 0.9,

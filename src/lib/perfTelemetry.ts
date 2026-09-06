@@ -1,5 +1,6 @@
 import { InteractionManager } from 'react-native';
 import { track } from './telemetry';
+import { readRefreshRate } from './windowChrome';
 
 /**
  * First-party perf signals. No analytics SDK (manifest + data-safety).
@@ -11,8 +12,14 @@ let lastJankAt = 0;
 /**
  * Common Android panel intervals in ms — 60/90/120/144 Hz. The observed frame
  * interval is snapped to the nearest of these so a noisy sample cannot drift the
- * jank threshold; RN 0.86 exposes no display-refresh-rate API, so the rate is
- * inferred from `requestAnimationFrame` deltas rather than read.
+ * jank threshold.
+ *
+ * This is the FALLBACK now, not the only source: `readRefreshRate()` asks the
+ * display what mode it is actually in (WindowChromeModule.getRefreshRate), and
+ * the inference carries the first ~20 frames until that answer lands, plus any
+ * platform where it cannot be read. The inference alone could never tell a
+ * 60 Hz panel from a 120 Hz panel dropping every other frame, because both
+ * produce a ~16.7 ms median.
  * https://developer.android.com/media/optimize/performance/frame-rate
  */
 const KNOWN_INTERVALS_MS = [1000 / 144, 1000 / 120, 1000 / 90, 1000 / 60];
@@ -49,6 +56,18 @@ export function startFrameWatch(): () => void {
   let raf = 0;
   const window: number[] = [];
   let intervalMs = 1000 / 60; // until enough samples land, assume 60 Hz
+  /*
+   * Once the display tells us its mode, stop guessing. `measured` latches so a
+   * late-arriving native answer is not then overwritten by the rAF median on
+   * the next frame — the whole point is that the read beats the inference.
+   */
+  let measured = false;
+  void readRefreshRate().then(hz => {
+    if (hz !== null) {
+      intervalMs = 1000 / hz;
+      measured = true;
+    }
+  });
   const step = (now: number) => {
     if (last > 0) {
       const delta = now - last;
@@ -59,7 +78,7 @@ export function startFrameWatch(): () => void {
         if (window.length > 60) {
           window.shift();
         }
-        if (window.length >= 20) {
+        if (!measured && window.length >= 20) {
           const sorted = [...window].sort((a, b) => a - b);
           const median = sorted[Math.floor(sorted.length / 2)] ?? intervalMs;
           intervalMs = nearestInterval(median);
