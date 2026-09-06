@@ -1170,13 +1170,23 @@ describe('motion lives in one module', () => {
      * (which is a test grading prose).
      */
     const motion = stripComments(read('src/theme/motion.ts'));
-    const spatialBuilders = ['useScreenEnter', 'screenOut', 'menuIn', 'rowIn'];
-    for (const name of spatialBuilders) {
+    /*
+     * Bounded by the NEXT top-level export, not by a magic character count. It
+     * was `start + 700`, which grades position rather than content: adding a
+     * `requestAnimationFrame` wrapper inside `useScreenEnter` pushed its
+     * `withTiming` past the window and failed a gate about accessibility with a
+     * change that had nothing to do with it.
+     */
+    const bodyOf = (name: string): string => {
       const start = motion.indexOf(`export function ${name}(`);
       expect(start).toBeGreaterThan(-1);
-      const block = motion.slice(start, start + 700);
+      const next = motion.indexOf('\nexport ', start + 1);
+      return motion.slice(start, next === -1 ? undefined : next);
+    };
+    const spatialBuilders = ['useScreenEnter', 'screenOut', 'menuIn', 'rowIn'];
+    for (const name of spatialBuilders) {
       // The fade is the fallback (Never); the movement collapses (System, via springTo).
-      expect(block).toContain('ReduceMotion.Never');
+      expect(bodyOf(name)).toContain('ReduceMotion.Never');
     }
     // springTo threads ReduceMotion.System into every spring it builds, which is
     // the transform channel of the spatial builders above.
