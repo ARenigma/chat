@@ -1425,16 +1425,16 @@ describe('the redesign holds its own invariants', () => {
     const closed = gradle.slice(gradle.indexOf('closedTest {'), gradle.indexOf('internal {'));
     expect(closed).toContain('buildConfigField "boolean", "BLOCK_SCREENSHOTS", "false"');
     /*
-     * INTERNAL TIGHTENED, 2026-09-06. It used to be freely capturable like
-     * closedTest. Amit asked for capture "when signed in by our dev accounts in
-     * internal build ... needed for product demo", and the narrow reading is the
-     * safer one: internal now BLOCKS by default, and a runtime gate lifts
-     * FLAG_SECURE only for the dev-seed accounts. A tester holding an internal
-     * APK and talking to a real member is protected again, which the old
-     * blanket `false` did not do.
+     * Internal stays CAPTURABLE, for product demos (Amit, 2026-09-06).
+     *
+     * It was briefly tightened to block-by-default with a runtime exemption for
+     * `@example.test` accounts, and that was verified WRONG on the S22: every
+     * screencap came back a solid black frame, because that domain matches only
+     * the seeded fake providers, never the real account a demo is given from.
+     * The lesson is in the gradle comment; the assertion is here.
      */
     const internal = gradle.slice(gradle.indexOf('internal {'));
-    expect(internal).toContain('buildConfigField "boolean", "BLOCK_SCREENSHOTS", "true"');
+    expect(internal).toContain('buildConfigField "boolean", "BLOCK_SCREENSHOTS", "false"');
     expect(internal).toContain('buildConfigField "boolean", "ALLOW_DEV_CAPTURE", "true"');
     // The carve-out cannot exist in the shipping variant at all: with the field
     // false, R8 resolves the guard to an unconditional return and the
