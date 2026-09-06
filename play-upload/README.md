@@ -13,7 +13,33 @@ Nothing here makes the app searchable on the public store until you publish to *
 | Closed testing | No (opt-in link / list)   | Larger approved cohort                          | Same global `versionCode` ladder         |
 | Production     | Yes                       | Everyone in targeted countries                  | Same ladder                              |
 
-`versionCode` is **global across all tracks**. Internal already has **2** (`1.0.38`). The next build must be **3+**.
+`versionCode` is **global across all tracks**, and this line was STALE for a long
+time — it claimed the ladder was at 2, which cost a rejected upload on
+2026-09-07 ("Version code 3 has already been used").
+
+Do not trust a number written here. Read it from the API:
+
+```bash
+TOK=$(gcloud auth application-default print-access-token)
+ED=$(curl -s -X POST -H "Authorization: Bearer $TOK" -H "x-goog-user-project: chat-d8c87" \
+  -H "Content-Length: 0" \
+  "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/com.companionchat/edits" \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])")
+curl -s -H "Authorization: Bearer $TOK" -H "x-goog-user-project: chat-d8c87" \
+  "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/com.companionchat/edits/$ED/bundles"
+```
+
+The ADC needs the `androidpublisher` scope and a quota project, or it fails with
+`ACCESS_TOKEN_SCOPE_INSUFFICIENT` / "requires a quota project":
+
+```bash
+gcloud auth application-default login \
+  --scopes=https://www.googleapis.com/auth/androidpublisher,https://www.googleapis.com/auth/cloud-platform
+```
+
+As of 2026-09-07 the uploaded bundles are `2, 3, 4, 10043-10048, 10106`, and
+**closed testing is the `alpha` track** — Play reserves no id for closed
+testing, `beta` is OPEN testing.
 
 ### Internal beta loop
 
