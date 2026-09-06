@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'fs';
+import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 
 const ROOT = join(__dirname, '..');
@@ -898,6 +898,36 @@ describe('device coverage matrix', () => {
     // its indicator.
     expect(app).toContain('const lastTabRef = useRef<ToolbarKey>');
     expect(app).toMatch(/if \(tabFor !== null\) \{\s*\n\s*lastTabRef\.current = tabFor;/);
+  });
+
+  it('ships the frame-timing tool MainActivity cites', () => {
+    // MainActivity's refresh-rate note has pointed at this script since the vote
+    // landed — "reports each window's block from dumpsys gfxinfo framestats
+    // separately for exactly this reason" — while the file did not exist. A
+    // comment naming a tool nobody can run is a claim a reader cannot check.
+    const activity = read(
+      'android/app/src/main/java/com/companionchat/MainActivity.kt',
+    );
+    expect(activity).toContain('scripts/framestats.mjs');
+    expect(existsSync(join(ROOT, 'scripts/framestats.mjs'))).toBe(true);
+
+    const script = read('scripts/framestats.mjs');
+    // The claim MainActivity makes is specifically about PER-WINDOW blocks: an
+    // RN <Modal> is its own window with its own refresh-rate vote.
+    expect(script).toContain('---PROFILEDATA---');
+    expect(script).toMatch(/Window:\\s\*\(\.\+\)/);
+    // Columns BY NAME. The Redmi (API 29) emits 16 columns and no
+    // GpuCompleted; a positional read would take the wrong column on one of the
+    // two phones this project ships to.
+    expect(script).toContain("column('FrameCompleted')");
+    expect(script).toContain("column('IntendedVsync')");
+    expect(script).not.toMatch(/cells\[13\]|cells\[1\]/);
+    // And the budget is derived from the observed vsync period, not hardcoded
+    // to 8.33ms — which would fail every frame on a 60Hz panel.
+    expect(script).toContain("arg('budget', vsyncPeriod)");
+
+    const pkg = JSON.parse(read('package.json')) as { scripts: Record<string, string> };
+    expect(pkg.scripts['android:framestats']).toBe('node scripts/framestats.mjs');
   });
 
   /** https://developer.android.com/guide/components/activities/testing */
