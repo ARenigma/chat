@@ -28,6 +28,7 @@ import {
   DEFAULT_CATEGORY,
   NO_FILTER,
   PROVIDER_CATEGORIES,
+  categoryOf,
   filterProviders,
   isFiltering,
   toggleBand,
@@ -113,10 +114,41 @@ export function HomeScreen({
   const [menuPeer, setMenuPeer] = useState<string | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<MenuAnchor | null>(null);
 
+  /*
+   * A tab is a whole view of the app, not a section of one (Amit, 2026-09-06):
+   * the strip sits above Chats and BOTH sections follow it, so Listeners and
+   * Astrologers are two separate places rather than one place with a filtered
+   * shelf in the middle.
+   *
+   * A peer with no directory row — a suspended provider, or a member on the
+   * provider tree — keeps their thread visible under the default tab rather
+   * than disappearing from the app: a conversation you have had is not
+   * something a filter should be able to hide from you.
+   */
+  /**
+   * Listeners and Astrologers are two views of the whole app, not two shelves
+   * inside one (Amit, 2026-09-06): the strip sits above Chats and both the
+   * rail and Explore follow it. In search there are no tabs, so a chip row
+   * filters by type AND age there instead (goal item 12).
+   */
+  const [exploreCategory, setExploreCategory] = useState<ProviderCategory>(DEFAULT_CATEGORY);
+  const [searchFilter, setSearchFilter] = useState<DirectoryFilter>(NO_FILTER);
+
+  const categoryById = useMemo(() => {
+    const map = new Map<string, ProviderCategory>();
+    for (const p of providers ?? []) {
+      map.set(p.id, categoryOf(p));
+    }
+    return map;
+  }, [providers]);
+
   const chats = useMemo(
     () =>
       (conversations ?? [])
         .filter(c => !blocked.has(c.peer_id) && visibleOnRail(railPrefs, c.peer_id))
+        .filter(
+          c => (categoryById.get(c.peer_id) ?? DEFAULT_CATEGORY) === exploreCategory,
+        )
         .slice()
         .sort((a, b) =>
           compareConversations(
@@ -125,16 +157,8 @@ export function HomeScreen({
             { peerId: b.peer_id, at: b.last_session_at ?? '' },
           ),
         ),
-    [conversations, blocked, railPrefs],
+    [conversations, blocked, railPrefs, categoryById, exploreCategory],
   );
-
-  /**
-   * Explore is grouped into Listeners and Astrologers (migration 065, goal item
-   * 9). The tab is the type filter here; in search, where there are no tabs, a
-   * chip row filters by type AND age (goal item 12).
-   */
-  const [exploreCategory, setExploreCategory] = useState<ProviderCategory>(DEFAULT_CATEGORY);
-  const [searchFilter, setSearchFilter] = useState<DirectoryFilter>(NO_FILTER);
 
   // The directory, blocked people removed. The featured pick is lifted out of the
   // list so it is not shown twice.
@@ -417,36 +441,6 @@ export function HomeScreen({
           </Text>
         </View>
         </TourAnchor>
-        {/* Listeners / Astrologers. Text-only M3 primary tabs: the label and
-            the underline carry the state, which is the one thing that
-            distinguishes the two lists. Always both, from day one — an empty
-            Astrologers tab is an honest "nobody yet", and hiding it would make
-            the strip appear under a member the day one signs up. */}
-        <View style={styles.tabs} testID="explore-tabs">
-          {PROVIDER_CATEGORIES.map(c => {
-            const on = c === exploreCategory;
-            return (
-              <Pressable
-                key={c}
-                onPress={() => setExploreCategory(c)}
-                testID={`explore-tab-${c}`}
-                accessibilityRole="tab"
-                checked={on}
-                accessibilityLabel={CATEGORY_LABEL[c]}
-                press="none"
-                highlight="ios"
-                style={styles.tab}>
-                <Text
-                  maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
-                  allowFontScaling
-                  style={[styles.tabLabel, on && styles.tabLabelOn]}>
-                  {CATEGORY_LABEL[c]}
-                </Text>
-                <View style={[styles.tabRule, on && styles.tabRuleOn]} />
-              </Pressable>
-            );
-          })}
-        </View>
         {topPicks.length > 0 ? (
           <>
             <View style={styles.picksHead}>
@@ -492,9 +486,6 @@ export function HomeScreen({
       handleOpenConversation,
       onSeeAllChats,
       theme,
-      // The tab strip lives in this header, so the selected tab has to be a
-      // dependency or the underline never moves. Caught by exhaustive-deps.
-      exploreCategory,
     ],
   );
 
@@ -603,6 +594,42 @@ export function HomeScreen({
           </Animated.View>
         )}
       </View>
+
+      {/* Listeners / Astrologers, ABOVE Chats and outside the list, so the strip
+          stays put while everything under it scrolls. A tab is a whole view of
+          the app: the rail and Explore both follow it (Amit, 2026-09-06).
+          Text-only M3 primary tabs — the label and the underline carry the
+          state, which is the one thing that distinguishes the two lists. Always
+          both, from day one: an empty Astrologers tab is an honest "nobody
+          yet", and hiding it would make the strip appear under a member the day
+          one signs up. */}
+      {searching ? null : (
+      <View style={styles.tabs} testID="explore-tabs">
+        {PROVIDER_CATEGORIES.map(c => {
+          const on = c === exploreCategory;
+          return (
+            <Pressable
+              key={c}
+              onPress={() => setExploreCategory(c)}
+              testID={`explore-tab-${c}`}
+              accessibilityRole="tab"
+              checked={on}
+              accessibilityLabel={CATEGORY_LABEL[c]}
+              press="none"
+              highlight="ios"
+              style={styles.tab}>
+              <Text
+                maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
+                allowFontScaling
+                style={[styles.tabLabel, on && styles.tabLabelOn]}>
+                {CATEGORY_LABEL[c]}
+              </Text>
+              <View style={[styles.tabRule, on && styles.tabRuleOn]} />
+            </Pressable>
+          );
+        })}
+      </View>
+      )}
 
       {/* Search filters, vertical (Amit, 2026-09-06). They were one scrolling
           row, which put four of the six chips off screen and made the age bands
