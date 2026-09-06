@@ -178,6 +178,15 @@ function AvatarView({
           ]}>
           {initial}
         </Text>
+        {/* NOT held back behind a screen transition, and that is a decision.
+            W5#6 named "avatar fetches" as a deferral site, and the mechanism
+            exists (`useAfterTransition` in theme/motion.ts, used by Turn's
+            photo bubbles). It is wrong here: this component's fallback is the
+            person's INITIALS, which mean "no photo", not "loading". Holding the
+            Image back would show initials for a few frames and then swap in a
+            face — a content change that reads as the wrong person, which is
+            worse than the decode it would save. Turn's photos have a designed
+            grey placeholder and can be deferred; an identity cannot. */}
         {uri ? (
           <Image
             source={

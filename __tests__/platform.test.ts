@@ -1636,6 +1636,39 @@ describe('W5#5 — renderToHardwareTextureAndroid decision is recorded', () => {
     expect(waitAt).toBeGreaterThan(guardAt);
   });
 
+  it('defers a photo decode but never an identity', () => {
+    // W5#6's last two named sites, and they get opposite answers on purpose.
+    // Turn's photo has a DESIGNED grey placeholder (the state it already shows
+    // while a signed URL resolves), so holding the decode back a few frames
+    // reuses an existing appearance. Avatar's fallback is the person's
+    // INITIALS, which mean "no photo" rather than "loading" -- swapping those
+    // for a face mid-transition reads as the wrong person.
+    const turn = read('src/components/Turn.tsx');
+    expect(turn).toContain('useAfterTransition()');
+    expect(turn).toContain('uri !== undefined && afterTransition ?');
+    // The loading overlay has to cover the held-back window too, or the bubble
+    // reads as grey nothing rather than as a photo arriving.
+    expect(turn).toContain('pending || uri === undefined || !afterTransition ?');
+
+    const avatar = read('src/components/Avatar.tsx');
+    // Comments stripped: the file EXPLAINS why it does not use the hook, and a
+    // gate that cannot tell prose from code fails on its own rationale.
+    const avatarCode = avatar
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    expect(avatarCode).not.toContain('useAfterTransition');
+    // The reasoning is recorded next to the code, not left as an absence.
+    expect(avatar).toContain('W5#6 named "avatar fetches" as a deferral site');
+
+    // And the shared hook cannot strand anything: the idle fallback is
+    // unconditional, so a lock that never lowers still releases the photo.
+    const motion = read('src/theme/motion.ts');
+    const hook = motion.slice(motion.indexOf('export function useAfterTransition'));
+    expect(hook).toContain('requestIdleCallback(go)');
+    expect(hook).toContain('cancelIdleCallback(idle)');
+  });
+
   it('releases the hold on unmount as well as on data', () => {
     // A hold left standing by a screen the user backed out of would make the
     // NEXT push wait the full ceiling.

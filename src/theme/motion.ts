@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Easing,
   FadeIn,
@@ -307,6 +307,46 @@ export function onScreenEnterReady(cb: SettledCallback): () => void {
   return () => {
     _readyCallbacks.delete(cb);
   };
+}
+
+/**
+ * True once the current screen transition has settled — or immediately, if
+ * there was never one to wait for.
+ *
+ * The shared form of the deferral the chat wallpaper and the emoji panel each
+ * hand-rolled: subscribe to `onTransitionSettled`, with an idle callback as an
+ * unconditional fallback so nothing can be stranded if the settle never
+ * arrives, and first-one-wins between them.
+ *
+ * Use it to hold back work that is expensive and invisible — an image decode
+ * behind a placeholder that already exists. Do NOT use it to hold back content
+ * whose fallback means something different: swapping an avatar's initials for a
+ * photo mid-transition reads as the wrong person, not as loading.
+ */
+export function useAfterTransition(): boolean {
+  const [settled, setSettled] = useState(!transitioning.value);
+  useEffect(() => {
+    if (settled) {
+      return;
+    }
+    let done = false;
+    const go = () => {
+      if (done) {
+        return;
+      }
+      done = true;
+      setSettled(true);
+    };
+    const unsubscribe = onTransitionSettled(go);
+    // The fallback is unconditional on purpose: a lock that never lowers must
+    // not be able to leave a photo permanently unmounted.
+    const idle = requestIdleCallback(go);
+    return () => {
+      unsubscribe();
+      cancelIdleCallback(idle);
+    };
+  }, [settled]);
+  return settled;
 }
 
 /**
