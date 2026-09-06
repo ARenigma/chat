@@ -1,4 +1,5 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { onTransitionSettled } from '../theme/motion';
 import {
   FlatList,
   Keyboard,
@@ -132,6 +133,32 @@ function EmojiPickerView({
   const searchRef = useRef<TextInput>(null);
   /** Whether the search field holds the focus, so the X can mean "close it". */
   const [searchOpen, setSearchOpen] = useState(false);
+
+  // W5#6: defer the heavy FlatList/tabs/search mount until after the push
+  // transition settles. EmojiPicker is kept mounted-but-hidden (display:none)
+  // from first open; without this gate its ~1,800 cells would mount on the same
+  // frame as the entering screen, competing for frame budget. Once `visible`
+  // becomes true the user has already opened the picker, so we show content
+  // regardless — user interaction always wins over the pre-warm gate.
+  // `requestIdleCallback` is the unconditional fallback: if setTransitioning(false)
+  // is never called (App.tsx PushedLayer write side not yet wired), the content
+  // always appears on the next idle frame — not permanently stranded.
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    let fired = false;
+    const settle = () => {
+      if (!fired) {
+        fired = true;
+        setSettled(true);
+      }
+    };
+    const unsubscribe = onTransitionSettled(settle);
+    const idle = requestIdleCallback(settle);
+    return () => {
+      unsubscribe();
+      cancelIdleCallback(idle);
+    };
+  }, []);
 
   const onFocus = useCallback(() => {
     setSearchOpen(true);
@@ -268,6 +295,10 @@ function EmojiPickerView({
       style={[styles.panel, { height }, visible ? null : styles.hidden]}
       pointerEvents={visible ? 'auto' : 'none'}
       testID="emoji-panel">
+    {/* W5#6 gate: render the heavy content only after the push transition
+        settles (or immediately if the user already opened the picker). The outer
+        View above is always rendered so the slot holds its height in the dock. */}
+    {(settled || visible) ? <>
       <View style={styles.searchRow}>
         <Icon name="search" size={16} color={theme.color.text.tertiary} />
         <TextField
@@ -401,6 +432,7 @@ function EmojiPickerView({
           <Icon name="delete" size={20} color={theme.color.text.secondary} />
         </Pressable>
       </View>
+    </> : null}
     </View>
   );
 }
