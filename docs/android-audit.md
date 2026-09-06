@@ -617,3 +617,80 @@ Key behaviours:
 6. For deeper attribution, capture with `scripts/perfetto-feel.sh` (VSYNC-app
    - FrameTimeline tracks) over the same interaction window and open the trace
      in the Perfetto UI.
+
+---
+
+## 2026-09-06 — W6 predictive back: deliberate non-adoption
+
+**Pages read.**
+
+- `developer.android.com/guide/navigation/custom-back/predictive-back-gesture`
+  (overview + callback guidelines)
+
+**What the docs require.**
+
+To receive in-app gesture progress (the W6 animation), an app must:
+
+1. Set `android:enableOnBackInvokedCallback="true"` in the manifest.
+2. Register `OnBackAnimationCallback` (API 34+), which fires
+   `onBackStarted()` / `onBackProgressed()` / `onBackInvoked()` /
+   `onBackCancelled()` as the gesture unfolds.
+
+The docs contain an explicit warning about the app's current pattern:
+
+> "If your app was previously associating back logic with **conditional
+> statements**, this might signify you are reacting to the back event after
+> it has already **occurred**. **Avoid this pattern** with newer callbacks.
+> If possible, move the callback outside of the conditional statement and
+> instead associate the callback to an observable data holder type."
+
+The doc's recommended pattern is: **register a callback when the UI state
+that needs interception is active; unregister it when that state ends.**
+
+**Why this app's back-guard contract is incompatible — for now.**
+
+`App.tsx` holds a single `BackHandler.addEventListener('hardwareBackPress')`
+subscription. Inside it, `consumeBack()` (from `src/lib/backGuard.ts`)
+iterates a guard stack at the moment the event fires. When ChatScreen has a
+live paid session its guard returns `true`, the confirm dialog appears, and
+the pop is prevented.
+
+That is precisely the "conditional at event time" pattern the docs warn
+against. Adopting `OnBackAnimationCallback` without resolving it causes:
+
+1. `onBackStarted()` fires → the W6 animation begins (chat screen starts to
+   slide away).
+2. `onBackInvoked()` fires → `consumeBack()` runs → the guard intercepts →
+   a confirm dialog appears.
+3. But the animation already played. The screen must visually snap back, then
+   a dialog appears. That looks like a rendering bug, not a polish feature.
+
+Preventing the animation from starting when a guard is active would require
+synchronous Kotlin-side knowledge of JS guard state — either a native mirror
+of `backGuardCount()` updated by `backGuard.ts`, or a per-guard
+`OnBackPressedCallback` registered and unregistered as sessions open and close.
+Both require refactoring `backGuard.ts` (and App.tsx's back handler) to the
+doc's recommended "enable/disable by observable state" model.
+
+**Decision (RULE 1 point 6 — stated departure).**
+
+W6 is **not implemented**. No manifest change, no `PredictiveBackModule.kt`,
+no `src/lib/predictiveBack.ts`. The existing `platform.test.ts` assertion
+that `enableOnBackInvokedCallback="true"` is absent remains correct and must
+not be deleted — its comment now records the pre-condition for W6 adoption.
+
+**Pre-condition before W6 can be re-attempted:**
+
+Refactor the back-guard system so that each guard registers an
+`OnBackPressedCallback` (via a native bridge or via RN's own
+`AndroidX OnBackPressedDispatcher`) for the duration of the state that needs
+interception, instead of using a single always-on subscription with a
+conditional. Once guards are expressed as registered/unregistered callbacks
+rather than a conditional at event time, `OnBackAnimationCallback` can be
+registered only when no guard is active and a route exists to pop — and the
+animation will only ever start when the back will actually commit.
+
+The `OnBackPressedCallback` note from the doc is the safety net either way:
+`BackHandler` continues to fire through `onBackPressed` regardless of the
+`enableOnBackInvokedCallback` flag, so the guard stack keeps working
+correctly in the current state.

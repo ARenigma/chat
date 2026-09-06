@@ -15,7 +15,7 @@ import {
   View,
 } from 'react-native';
 import Animated from 'react-native-reanimated';
-import { barIn, barOut } from '../theme/motion';
+import { barIn, barOut, onTransitionSettled, transitioning } from '../theme/motion';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -194,17 +194,29 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
     (killSwitches?.voice_calls_enabled ?? true) && CALLS_ENABLED;
   const videoCallsEnabled =
     (killSwitches?.video_calls_enabled ?? true) && CALLS_ENABLED;
-  // A1: defer ChatWallpaper's ~800 View+Text nodes until the JS thread is idle
-  // after the SlideInRight open, so the transition frame budget is not eaten by
-  // a synchronous mount. The transcript sits above the wallpaper, so a 1-frame-
-  // late wallpaper is invisible to the user. `InteractionManager` is deprecated
-  // — idle callback is the RN-sanctioned replacement.
+  // A1 / W5#6: defer ChatWallpaper's ~800 View+Text nodes until the push
+  // transition settles AND the JS thread is idle. `onTransitionSettled` fires
+  // after `setTransitioning(false)` in App.tsx's PushedLayer (the call site
+  // that writes the flag — see the W5#6 note in src/theme/motion.ts).
+  // `requestIdleCallback` is the unconditional fallback: if the write side has
+  // not yet been wired, the idle slot fires anyway so the wallpaper is never
+  // permanently stranded. Whichever fires first wins; the guard (`fired`) stops
+  // a second call from triggering a redundant re-render.
   const [wallpaperReady, setWallpaperReady] = useState(false);
   useEffect(() => {
-    const idle = requestIdleCallback(() => {
-      setWallpaperReady(true);
-    });
-    return () => cancelIdleCallback(idle);
+    let fired = false;
+    const settle = () => {
+      if (!fired) {
+        fired = true;
+        setWallpaperReady(true);
+      }
+    };
+    const unsubscribe = onTransitionSettled(settle);
+    const idle = requestIdleCallback(settle);
+    return () => {
+      unsubscribe();
+      cancelIdleCallback(idle);
+    };
   }, []);
   // Which message the safety sheet was opened from, so a report can attach the
   // specific message rather than only the thread.
@@ -686,13 +698,26 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   useEffect(() => {
     const len = rows.length;
     if (len > prevRowsLen.current) {
+      prevRowsLen.current = len;
+      // W5#6: a message arriving during a push transition triggers scrollToOffset
+      // + FlashList re-layout mid-animation. Gate on the lock and defer to after
+      // the transition settles. Safety: if setTransitioning(false) is never called
+      // (App.tsx PushedLayer write side not yet wired), the else branch runs the
+      // scroll immediately — no insert is ever permanently stranded.
+      if (transitioning.value) {
+        return onTransitionSettled(() => {
+          // FlashList v2: wait one frame after the settle so cells are committed.
+          requestAnimationFrame(() => {
+            listRef.current?.scrollToOffset({ offset: 0, animated: true });
+          });
+        });
+      }
       // FlashList v2 commits its native cells after React publishes `data`.
       // Waiting one frame prevents an offset-0 request from landing against the
       // old layout and becoming a no-op when a batch arrives after invalidation.
       const frame = requestAnimationFrame(() => {
         listRef.current?.scrollToOffset({ offset: 0, animated: true });
       });
-      prevRowsLen.current = len;
       return () => cancelAnimationFrame(frame);
     }
     prevRowsLen.current = len;

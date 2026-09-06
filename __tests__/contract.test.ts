@@ -4764,3 +4764,89 @@ describe('seed provider photos', () => {
     );
   });
 });
+
+/**
+ * W5 #6 — Transition lock: deferred call sites (src/theme/motion.ts primitive).
+ *
+ * Three of the five deferred sites live in files we own. The other two
+ * (Turn images and Avatar fetches) are in Turn.tsx and Avatar.tsx, which are
+ * edited concurrently and are asserted separately by their owners.
+ *
+ * Every deferral must be safe if `setTransitioning(false)` never fires:
+ * `requestIdleCallback` is the unconditional fallback in each one. A lock
+ * that can strand a message insert or hide a wallpaper permanently is worse
+ * than the jank it avoids.
+ *
+ * The write side (`setTransitioning(true/false)`) is NOT in any of these files.
+ * It belongs in App.tsx's PushedLayer, the component that drives the screen
+ * push animation. The one-liner needed there is:
+ *
+ *   setTransitioning(true)  — before the entering animation starts
+ *   setTransitioning(false) — in the animation's completion callback (onFinished)
+ *
+ * These assertions verify only the READ side (the deferred consumers).
+ */
+describe('W5 #6 transition lock: deferred call sites read the primitive', () => {
+  const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+  const picker = withoutComments(read('src/components/EmojiPicker.tsx'));
+
+  it('ChatScreen imports transitioning and onTransitionSettled from motion', () => {
+    // Both must be named in the same import so a future refactor cannot pull one
+    // without the other: `transitioning` is read for the scroll gate,
+    // `onTransitionSettled` is the callback for both the wallpaper and the scroll.
+    expect(chat).toMatch(/import\s*\{[^}]*\bonTransitionSettled\b[^}]*\}\s*from\s*['"]\.\.\/theme\/motion['"]/);
+    expect(chat).toMatch(/import\s*\{[^}]*\btransitioning\b[^}]*\}\s*from\s*['"]\.\.\/theme\/motion['"]/);
+  });
+
+  it('ChatWallpaper mount uses onTransitionSettled with a requestIdleCallback fallback', () => {
+    // The fallback prevents a permanent stall if App.tsx has not yet called
+    // setTransitioning(false). Both must appear in the same effect, not separately.
+    const wallpaperEffect = chat.slice(
+      chat.indexOf('wallpaperReady'),
+      chat.indexOf('wallpaperReady') + 600,
+    );
+    expect(wallpaperEffect).toContain('onTransitionSettled(');
+    expect(wallpaperEffect).toContain('requestIdleCallback(');
+    // And both cleanup arms must exist, so neither leaks across remounts.
+    expect(wallpaperEffect).toContain('unsubscribe()');
+    expect(wallpaperEffect).toContain('cancelIdleCallback(');
+  });
+
+  it('message-insert scroll gates on transitioning.value and defers via onTransitionSettled', () => {
+    // The scroll still always happens — either immediately (not transitioning)
+    // or after the settle (transitioning). `prevRowsLen` stays so the existing
+    // assertion on it still holds.
+    const scrollEffect = chat.slice(
+      chat.indexOf('prevRowsLen'),
+      chat.indexOf('prevRowsLen') + 800,
+    );
+    expect(scrollEffect).toContain('transitioning.value');
+    expect(scrollEffect).toContain('onTransitionSettled(');
+    // The scroll path is present in both branches.
+    expect(scrollEffect.match(/scrollToOffset\(\s*\{/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+  });
+
+  it('EmojiPicker imports onTransitionSettled and gates heavy content on settled', () => {
+    // The gate is `settled || visible`: when the user opens the picker before
+    // the transition settles, interaction wins and the content shows immediately.
+    expect(picker).toContain('onTransitionSettled');
+    expect(picker).toContain('settled');
+    expect(picker).toContain('settled || visible');
+    // requestIdleCallback is the unconditional fallback in the same effect.
+    expect(picker).toContain('requestIdleCallback(');
+    expect(picker).toContain('cancelIdleCallback(');
+  });
+
+  it('EmojiPicker keeps the outer panel shell always rendered (height preserved)', () => {
+    // The outer View with testID="emoji-panel" must always render so the dock
+    // slot holds its height. Only the inner heavy content (FlatList, tabs) is
+    // deferred — confirmed by the settled gate sitting INSIDE the outer View.
+    const panelOpen = picker.indexOf('"emoji-panel"');
+    const settledGate = picker.indexOf('settled || visible', panelOpen);
+    const panelClose = picker.indexOf('</View>', settledGate);
+    // The gate sits between the outer View open and its corresponding close.
+    expect(panelOpen).toBeGreaterThan(-1);
+    expect(settledGate).toBeGreaterThan(panelOpen);
+    expect(panelClose).toBeGreaterThan(settledGate);
+  });
+});

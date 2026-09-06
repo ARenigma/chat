@@ -159,6 +159,17 @@ function FloatingToolbarView({
               accessibilityRole="tab"
               selected={on}
               press="none"
+              // M3 NavigationBar clips its state layer to the indicator PILL,
+              // not the full slot. `ripple` replaces the Reanimated state layer
+              // with the native Android ink wave; borderless + rippleRadius (20dp,
+              // the pill's visual half-height) confines the wave to the pill area.
+              // The Indicator component's scaleX animation is independent and runs
+              // alongside it — fill marks WHICH tab, ripple marks THAT A TAP
+              // happened. `foreground: true` keeps the wave visible over the tonal
+              // fill. On iOS `android_ripple` is a no-op and no alternative is
+              // needed: a nav tab on iOS does not have a press effect.
+              // https://m3.material.io/foundations/interaction/states/state-layers
+              highlight="ripple"
               size={48}
               style={styles.indicator}>
               <Indicator active={on} />

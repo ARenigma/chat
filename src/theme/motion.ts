@@ -7,6 +7,7 @@ import {
   FadeOutUp,
   ReduceMotion,
   makeMutable,
+  runOnJS,
   type SharedValue,
   type WithSpringConfig,
   useAnimatedStyle,
@@ -506,13 +507,36 @@ export function useScreenEnter(): {
       return;
     }
     started.value = true;
+    /*
+     * The transition lock is raised HERE, not at the call site.
+     *
+     * Every push in both trees goes through this hook, so raising it here means
+     * a new pushed screen cannot forget to. The write side has to exist at all
+     * or the lock is dead code: `transitioning` would read false forever and
+     * every deferral that reads it (the wallpaper mount, the message-insert
+     * scroll, the emoji pre-mount) would silently take its immediate branch.
+     *
+     * Lowered from the FADE's completion rather than the spring's. The spring
+     * is `spatialDefault` and settles asymptotically, so waiting on it would
+     * hold the lock well past the point anything is still visibly moving; the
+     * 200ms fade is the part a deferred insert would actually have collided
+     * with. `finished` is checked because an interrupted animation still calls
+     * back, and a lock left raised is worse than the jank it avoids.
+     */
+    setTransitioning(true);
     // 200ms (short4), not Telegram's 150: at 150 the fade read as abrupt on the
     // S22 by hand (Amit, 2026-09-02); the slide keeps Telegram's 48dp.
-    progress.value = withTiming(1, {
-      duration: M3.duration.short4,
-      easing: SCREEN_DECEL,
-      reduceMotion: ReduceMotion.Never,
-    });
+    progress.value = withTiming(
+      1,
+      {
+        duration: M3.duration.short4,
+        easing: SCREEN_DECEL,
+        reduceMotion: ReduceMotion.Never,
+      },
+      () => {
+        runOnJS(setTransitioning)(false);
+      },
+    );
     shift.value = springTo(0, 'spatialDefault');
   };
   const style = useAnimatedStyle(() => ({

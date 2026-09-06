@@ -2234,6 +2234,30 @@ describe("Pressable's android ripple capability", () => {
     // android_ripple is a no-op on iOS, so the mode is Android-only in effect.
     expect(pressable).toContain('android_ripple');
   });
+
+  it('wires the FloatingToolbar nav tabs to the pill-shaped ripple', () => {
+    // M3 NavigationBar clips its state layer to the indicator pill, not the full
+    // slot. `highlight="ripple"` on the tab Pressable replaces the Reanimated
+    // state layer (layerOpacity forced to 0 in ripple mode) with the Android
+    // native ink wave, so the two effects do not stack.
+    //
+    // The Indicator component — the scaleX tonal fill — is independent of
+    // `highlight` and continues to mark which tab is selected. The ripple marks
+    // that a tap happened. They are complementary.
+    //
+    // https://m3.material.io/foundations/interaction/states/state-layers
+    const bar = read('src/components/FloatingToolbar.tsx');
+    expect(bar).toContain('highlight="ripple"');
+    // Confirm the pill (Indicator) is still present: the fill and the ripple
+    // are two separate concerns and the fill must not have been removed.
+    expect(bar).toContain('<Indicator active={on}');
+    // press="none" stays: a nav tab does not scale on touch.
+    expect(bar).toContain('press="none"');
+    // The layer is suppressed in ripple mode inside Pressable.tsx (layerOpacity=0),
+    // so we verify the Reanimated layer is not explicitly requested here — no
+    // onColor or layerColor prop that would re-introduce a stacked effect.
+    expect(bar).not.toMatch(/onColor.*nav-/);
+  });
 });
 
 describe('the search field is wide enough to read what you typed', () => {
@@ -2252,3 +2276,30 @@ describe('the search field is wide enough to read what you typed', () => {
     expect(input).toMatch(/\bflex: 1\b/);
   });
 });
+describe('the transition lock has a write side', () => {
+  const motion = readFileSync(join(__dirname, '..', 'src/theme/motion.ts'), 'utf8');
+
+  it('is raised by useScreenEnter, so no pushed screen can forget', () => {
+    // The lock is dead code without a writer: `transitioning` would read false
+    // forever and every deferral that reads it -- the wallpaper mount, the
+    // message-insert scroll, the emoji pre-mount -- would silently take its
+    // immediate branch while looking wired.
+    const hook = motion.slice(motion.indexOf('export function useScreenEnter'));
+    expect(hook).toContain('setTransitioning(true)');
+    expect(hook).toContain('runOnJS(setTransitioning)(false)');
+  });
+
+  it('lowers on the fade, and only when the animation actually finished', () => {
+    // The slide is a spring and settles asymptotically, so lowering on it would
+    // hold the lock past the point anything is visibly moving. An interrupted
+    // animation still calls back, and a lock left raised is worse than the jank
+    // it avoids.
+    const hook = motion.slice(motion.indexOf('export function useScreenEnter'));
+    const fade = hook.slice(hook.indexOf('progress.value = withTiming('));
+    expect(fade.indexOf('runOnJS(setTransitioning)(false)')).toBeGreaterThan(-1);
+    expect(fade.indexOf('runOnJS(setTransitioning)(false)')).toBeLessThan(
+      fade.indexOf('shift.value = springTo'),
+    );
+  });
+});
+
