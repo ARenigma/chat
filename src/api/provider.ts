@@ -233,6 +233,51 @@ export function useCompleteProviderOnboarding() {
  * places, which meant a provider who wanted work but had put the phone down
  * still read as here. Presence is `useSetPresence` below.
  */
+/** The three channel switches, as the provider sets them (migration 064). */
+export interface ProviderChannels {
+  chat_enabled: boolean;
+  audio_enabled: boolean;
+  video_enabled: boolean;
+}
+
+/**
+ * Turn a channel on or off.
+ *
+ * A direct column write, like `useSetAvailability` above: these are the
+ * provider's own columns and are deliberately outside
+ * `guard_privileged_profile_columns` (063). The database holds the floor —
+ * `profiles_at_least_one_channel` refuses the update that would leave a
+ * provider offering nothing — so the last switch is disabled in the UI as
+ * courtesy, not as the rule.
+ */
+export function useSetChannels() {
+  const queryClient = useQueryClient();
+  const setNotice = useStore(s => s.setNotice);
+
+  return useMutation<void, Error, Partial<ProviderChannels>>({
+    mutationFn: async patch => {
+      const { data } = await supabase.auth.getUser();
+      const me = data.user?.id;
+      if (me === undefined) {
+        throw new Error('No session');
+      }
+      const { error } = await supabase.from('profiles').update(patch).eq('id', me);
+      if (error) {
+        throw new Error(error.message);
+      }
+    },
+    onSuccess: () => {
+      tick();
+      void queryClient.invalidateQueries({ queryKey: keys.profile });
+      void queryClient.invalidateQueries({ queryKey: keys.providers });
+    },
+    onError: () => {
+      errorTick();
+      setNotice('Could not change what you offer.');
+    },
+  });
+}
+
 export function useSetAvailability() {
   const queryClient = useQueryClient();
   const setNotice = useStore(s => s.setNotice);

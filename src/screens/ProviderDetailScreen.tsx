@@ -133,7 +133,8 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
               kind="primary"
               glyph="call"
               rate={audioRate}
-              enabled={voiceCallsEnabled}
+              enabled={voiceCallsEnabled && provider.audio_enabled}
+              offered={provider.audio_enabled}
               onPress={onAudio}
               label={`Call ${provider.display_name}`}
             />
@@ -142,7 +143,8 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
               kind="tint"
               glyph="chat"
               rate={chatRate}
-              enabled
+              enabled={provider.chat_enabled}
+              offered={provider.chat_enabled}
               onPress={onChat}
               label={`Message ${provider.display_name}`}
             />
@@ -151,7 +153,8 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
               kind="dark"
               glyph="video"
               rate={videoRate}
-              enabled={videoCallsEnabled}
+              enabled={videoCallsEnabled && provider.video_enabled}
+              offered={provider.video_enabled}
               onPress={onVideo}
               label={`Video call ${provider.display_name}`}
             />
@@ -352,6 +355,7 @@ function ActionButton({
   glyph,
   rate,
   enabled,
+  offered = true,
   onPress,
   label,
 }: {
@@ -361,6 +365,13 @@ function ActionButton({
   /** Live admin rate (tokens/min). Falls back to DEFAULT_RATES[channel] at the call site. */
   rate: number;
   enabled: boolean;
+  /**
+   * False when THIS PROVIDER does not offer the channel (migration 064), as
+   * opposed to an operator kill switch. Both disable the button; only this one
+   * is about them, so only this one says so. Defaults true so a caller that has
+   * not thought about it reads as "we are the ones who turned it off".
+   */
+  offered?: boolean;
   onPress: () => void;
   label: string;
 }) {
@@ -379,7 +390,9 @@ function ActionButton({
         onPress={onPress}
         disabled={!enabled}
         testID={`action-${channel}`}
-        accessibilityLabel={`${label}, ${rateLabel(rate)}${enabled ? '' : ', coming soon'}`}
+        accessibilityLabel={`${label}, ${rateLabel(rate)}${
+          enabled ? '' : offered ? ', coming soon' : ', not offered'
+        }`}
         press="none"
         highlight="ios"
         style={[
