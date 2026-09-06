@@ -58,6 +58,19 @@ export interface AppState {
    * may outlive the screen that knew it.
    */
   pendingReview: { sessionId: string; peerName: string } | null;
+  /**
+   * A chat request ringing at this provider right now (goal item 13).
+   *
+   * In the store for the same reason `pendingReview` is: the ring has to cover
+   * whatever screen the provider is on, and it arrives from a realtime
+   * subscription that belongs to the app, not to a screen.
+   */
+  incomingRequest: {
+    requestId: string;
+    conversationId: string;
+    peerId: string;
+    peerName: string;
+  } | null;
   notice: string | null;
   noticeTone: NoticeTone;
   playing: PlayingVoice | null;
@@ -90,6 +103,8 @@ export interface AppState {
   closeRefill: () => void;
   requestReview: (sessionId: string, peerName: string) => void;
   clearReview: () => void;
+  setIncomingRequest: (request: AppState['incomingRequest']) => void;
+  clearIncomingRequest: () => void;
   openWallet: () => void;
   closeWallet: () => void;
   /**
@@ -116,6 +131,7 @@ const INITIAL = {
   refillVisible: false,
   walletVisible: false,
   pendingReview: null,
+  incomingRequest: null,
   notice: null,
   noticeTone: 'error' as NoticeTone,
   playing: null,
@@ -131,6 +147,8 @@ const INITIAL = {
   | 'closeRefill'
   | 'requestReview'
   | 'clearReview'
+  | 'setIncomingRequest'
+  | 'clearIncomingRequest'
   | 'openWallet'
   | 'closeWallet'
   | 'setNotice'
@@ -159,6 +177,13 @@ export const useStore = create<AppState>()(set => ({
       state.pendingReview === null ? { pendingReview: { sessionId, peerName } } : state,
     ),
   clearReview: () => set({ pendingReview: null }),
+  /*
+   * First ring wins, like the review sheet: a second request arriving while
+   * the provider is deciding must not swap the face under their thumb.
+   */
+  setIncomingRequest: request =>
+    set(state => (state.incomingRequest === null ? { incomingRequest: request } : state)),
+  clearIncomingRequest: () => set({ incomingRequest: null }),
   openWallet: () => set({ walletVisible: true, refillVisible: false }),
   closeWallet: () => set({ walletVisible: false }),
   setNotice: (notice, tone = 'error') => set({ notice, noticeTone: tone }),

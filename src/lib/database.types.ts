@@ -1178,6 +1178,10 @@ export type Database = {
         Args: { p_request_id: string };
         Returns: string;
       };
+      decline_session_request: {
+        Args: { p_request_id: string };
+        Returns: { success: boolean; status?: string; error?: string };
+      };
       /** End an active session with an optional content report. Migration 030. */
       end_session: {
         Args: {

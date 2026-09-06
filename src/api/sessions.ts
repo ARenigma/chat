@@ -156,6 +156,92 @@ export function useCreateSessionRequest() {
   });
 }
 
+/** A chat request ringing at the provider right now (goal item 13). */
+export interface IncomingChatRequest {
+  requestId: string;
+  conversationId: string;
+  /** The member who asked. Members have no directory row, so this is all we get. */
+  initiatorId: string;
+  expiresAt: string;
+}
+
+/**
+ * Chat requests arriving for this provider, live.
+ *
+ * The same shape as `useIncomingCalls` (api/calls.ts) and for the same reason:
+ * an INSERT the recipient is subscribed to is the only signal that arrives
+ * while they are looking at another screen. Filtered to chat, because a call
+ * request already rings through the call path and two rings for one event is a
+ * bug the member cannot see.
+ */
+export function useIncomingChatRequests(
+  selfId: string | undefined,
+  onIncoming: (request: IncomingChatRequest) => void,
+): void {
+  useEffect(() => {
+    if (selfId === undefined) {
+      return;
+    }
+    const channel = supabase
+      .channel(`incoming-chat-requests:${selfId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'session_requests',
+          filter: `recipient_id=eq.${selfId}`,
+        },
+        payload => {
+          const row = payload.new as {
+            id: string;
+            conversation_id: string;
+            initiator_id: string;
+            channel: SessionChannel;
+            status: string;
+            expires_at: string;
+          };
+          if (row.channel === 'chat' && row.status === 'pending') {
+            onIncoming({
+              requestId: row.id,
+              conversationId: row.conversation_id,
+              initiatorId: row.initiator_id,
+              expiresAt: row.expires_at,
+            });
+          }
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [selfId, onIncoming]);
+}
+
+/**
+ * The recipient says no (migration 067).
+ *
+ * Idempotent server-side, so a decline racing an expiry is not an error the
+ * provider has to see.
+ */
+export function useDeclineSessionRequest() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ requestId }: { requestId: string; conversationId: string }) => {
+      const { error } = await supabase.rpc('decline_session_request', {
+        p_request_id: requestId,
+      });
+      if (error) throw error;
+    },
+    onSuccess: (_void, { conversationId }) => {
+      void queryClient.invalidateQueries({
+        queryKey: sessionKeys.pendingRequest(conversationId),
+      });
+      void queryClient.invalidateQueries({ queryKey: ['conversation-list'] });
+    },
+  });
+}
+
 /** Accept an incoming session request. */
 export function useAcceptSessionRequest() {
   const queryClient = useQueryClient();
