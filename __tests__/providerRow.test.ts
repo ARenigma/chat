@@ -244,9 +244,46 @@ describe('every row is still the same height', () => {
     // A ScrollView's cross-axis size comes from its content unless it is told
     // otherwise, which is precisely how a scroller changes a row's height.
     const strip = stripStyle();
-    expect(strip).toContain('height: META_CHIP_HEIGHT');
+    expect(strip).toContain('height: TOKENS.interaction.minTarget');
     expect(strip).not.toMatch(/minHeight|maxHeight|flex|padding/);
     expect(stripContentStyle()).not.toMatch(/height|padding/);
+  });
+
+  it('gives the drag a 48dp activation band without moving the row', () => {
+    /*
+     * Amit, 2026-09-07: "schip scroll is not working correctly.. pls check
+     * activation area." The band WAS the visible chip height, 32dp — and a
+     * ScrollView's touch area is its layout box, since hitSlop "never extends
+     * past the parent view bounds". 32 is under the 48dp minimum, and the cost
+     * is worse than a missed tap because this band competes with a VERTICAL
+     * list for the same gesture: Android arbitrates on touch slop, so a drag
+     * starting even slightly diagonal in a 32dp window goes to the FlashList.
+     *
+     * Asserted as ARITHMETIC on the tokens, not as three literals, because the
+     * whole point is that the three numbers cancel: the band grows to 48 and
+     * the row's contribution stays exactly what `space['2xs'] +
+     * META_CHIP_HEIGHT` was, so the chips do not move and the 108dp height
+     * gate above still holds.
+     */
+    const strip = stripStyle();
+    expect(strip).toContain('height: TOKENS.interaction.minTarget');
+    // The band is a real target.
+    expect(TOKENS.interaction.minTarget).toBeGreaterThanOrEqual(48);
+    // Both margins are derived from the same difference, never written out.
+    const bleed = (TOKENS.interaction.minTarget - 32) / 2;
+    expect(strip).toContain(
+      "marginTop: TOKENS.space['2xs'] - (TOKENS.interaction.minTarget - META_CHIP_HEIGHT) / 2",
+    );
+    expect(strip).toContain(
+      'marginBottom: -(TOKENS.interaction.minTarget - META_CHIP_HEIGHT) / 2',
+    );
+    // And they cancel: the row's contribution is unchanged, which is what keeps
+    // the height gate above true and the chips where they were.
+    const contribution =
+      TOKENS.space['2xs'] - bleed + TOKENS.interaction.minTarget - bleed;
+    expect(contribution).toBe(TOKENS.space['2xs'] + 32);
+    // The chips still begin exactly `space['2xs']` under the headline.
+    expect(TOKENS.space['2xs'] - bleed + bleed).toBe(TOKENS.space['2xs']);
   });
 
   it('takes that height from the chip rather than repeating 32', () => {

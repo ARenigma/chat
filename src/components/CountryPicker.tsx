@@ -5,8 +5,34 @@ import {
 } from 'react-native';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
+import {
+  INDIA,
+  PHONE_COUNTRIES,
+  type CountryIso,
+  type PhoneCountry,
+} from '../lib/phone';
 import { Sheet } from './Sheet';
 import { Pressable } from './Pressable';
+
+/**
+ * The part of a country that is presentation rather than numbering.
+ *
+ * **Typed as a total `Record<CountryIso, …>` on purpose.** The dial codes used
+ * to live here, in a list of their own, while `src/lib/phone.ts` had no idea
+ * this picker existed — so a seventh country added to the picker would have
+ * been formatted and capped with India's rules, silently. Keying this off
+ * `CountryIso` makes that a compile error instead: `PHONE_COUNTRIES` is the one
+ * list, and a territory added there does not build until it has a flag and a
+ * name here.
+ */
+const PRESENTATION: Record<CountryIso, { readonly flag: string; readonly name: string }> = {
+  IN: { flag: '🇮🇳', name: 'India' },
+  US: { flag: '🇺🇸', name: 'United States' },
+  GB: { flag: '🇬🇧', name: 'United Kingdom' },
+  AE: { flag: '🇦🇪', name: 'UAE' },
+  SG: { flag: '🇸🇬', name: 'Singapore' },
+  AU: { flag: '🇦🇺', name: 'Australia' },
+};
 
 interface Country {
   readonly flag: string;
@@ -17,18 +43,21 @@ interface Country {
 /**
  * Curated list of common countries for the Indian-first audience.
  * A full ISO set is unnecessary and would overwhelm the picker.
+ *
+ * Order and dial codes come from `PHONE_COUNTRIES`, which is also what decides
+ * how many digits each one takes and where its separators go. India is first
+ * there, so India is first here.
  */
-const COUNTRIES: readonly Country[] = [
-  { flag: '🇮🇳', name: 'India', dialCode: '+91' },
-  { flag: '🇺🇸', name: 'United States', dialCode: '+1' },
-  { flag: '🇬🇧', name: 'United Kingdom', dialCode: '+44' },
-  { flag: '🇦🇪', name: 'UAE', dialCode: '+971' },
-  { flag: '🇸🇬', name: 'Singapore', dialCode: '+65' },
-  { flag: '🇦🇺', name: 'Australia', dialCode: '+61' },
-];
+const COUNTRIES: readonly Country[] = PHONE_COUNTRIES.map(
+  (c: PhoneCountry): Country => ({
+    flag: PRESENTATION[c.iso].flag,
+    name: PRESENTATION[c.iso].name,
+    dialCode: c.dialCode,
+  }),
+);
 
 /** Default dial code: India, the primary target market. */
-export const DEFAULT_DIAL_CODE = '+91';
+export const DEFAULT_DIAL_CODE = INDIA.dialCode;
 
 interface Props {
   value: string;
