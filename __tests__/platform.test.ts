@@ -580,15 +580,42 @@ describe('conversation notifications actually open the conversation', () => {
 
 describe('the chat transcript is readable by a screen reader', () => {
   /** https://reactnative.dev/docs/accessibility */
-  it('does not override message text with the long-press label', () => {
+  it('binds the long-press affordance to a HINT, not a label', () => {
     /*
      * accessibilityLabel REPLACES concatenated child text for TalkBack. Setting
      * it to the long-press hint on every bubble made the entire transcript
      * unreadable — TalkBack announced only "Long press for message actions". A
      * hint appends on Android instead, leaving the message body to be read.
+     *
+     * There was a second assertion here, `not.toMatch(/accessibilityLabel=\
+     * {onLongPress/)`, and it was removed on 2026-09-07 for two reasons rather
+     * than one — the same pair that retired the `fontWeight` ban in
+     * providerPhotos.test.ts.
+     *
+     * It could not fail. `git log -S 'accessibilityLabel={onLongPress' --all`
+     * over Turn.tsx returns nothing: that exact expression has never been in
+     * the file, in any commit, so the pattern forbade a spelling nobody had
+     * written. The defect it was named for was a LABEL on the gesture wrapper,
+     * which the regression would reintroduce under whatever expression came to
+     * hand — `accessibilityLabel={hint}`, or a string literal — and none of
+     * those match.
+     *
+     * And it is already covered, properly. chatSurface.test.ts › "offers the
+     * same thing to a screen reader" bounds the ban to the ELEMENT: it extracts
+     * the prop list of the one `<Animated.View ref={bubbleRef}>` that carries
+     * the gesture and asserts that list contains `accessibilityHint=` and no
+     * `accessibilityLabel` at all. That version goes red for any spelling, and
+     * it has to be element-bounded because `accessibilityLabel="Dismiss
+     * reactions"` on the reaction strip's backdrop is legitimate and lives in
+     * the same function. Two copies of one rule is one copy to forget when the
+     * rule changes, so the file-wide one is gone and the bounded one is the
+     * gate.
+     *
+     * What stays here is the half chatSurface does NOT assert: that the hint is
+     * bound to `onLongPress` specifically, which is what makes the announcement
+     * describe the gesture that actually exists.
      */
     const turn = read('src/components/Turn.tsx');
-    expect(turn).not.toMatch(/accessibilityLabel=\{onLongPress/);
     expect(turn).toMatch(/accessibilityHint=\{\s*onLongPress/);
   });
 });

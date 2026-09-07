@@ -514,10 +514,11 @@ describe('the photo viewer dismisses on a swipe and zooms on a pinch', () => {
 
   it('zooms about the focal point, incrementally', () => {
     // `focalX`/`focalY` are the "center anchor point of gesture" and must be
-    // read after activation (onStart/onUpdate/onChange, never onBegan);
-    // `onChange` is what supplies `scaleChange`, the ratio since the previous
-    // event, so the anchor arithmetic needs no saved origin scale.
-    // https://docs.swmansion.com/react-native-gesture-handler/docs/legacy-gestures/pinch-gesture
+    // read after activation — "make sure to use it after the gesture had
+    // activated", never in the pre-activation callback; `onChange` is what
+    // supplies `scaleChange`, "The incremental change in scale since the last
+    // event frame", so the anchor arithmetic needs no saved origin scale.
+    // https://docs.swmansion.com/react-native-gesture-handler/docs/gestures/use-pinch-gesture
     expect(viewer).toMatch(/Gesture\.Pinch\(\)[\s\S]{0,400}\.onChange\(/);
     expect(viewer).toContain('e.scaleChange');
     expect(viewer).toContain('e.focalX');
@@ -583,6 +584,44 @@ describe('the photo viewer dismisses on a swipe and zooms on a pinch', () => {
     expect(viewer).toContain('onRequestClose={onClose}');
     // Gestures inside a Modal need their own root on Android.
     expect(viewer).toContain('<GestureHandlerRootView');
+  });
+
+  it('cites the doc tree for the API it calls, not the legacy one', () => {
+    /*
+     * RULE 1's "find the page" half, mechanised — because getting this wrong is
+     * silent. RNGH 3.2.1 publishes TWO doc trees for two APIs:
+     * `docs/legacy-gestures/*` documents the pre-3.0 handler COMPONENTS, and
+     * `docs/gestures/use-*-gesture` documents the hooks that supersede the
+     * `Gesture.*` builder this file still calls. Four of the viewer's five
+     * citations pointed into `legacy-gestures/`, and the cost was not cosmetic:
+     * the Remarks quoted next to the focal-point arithmetic named `onStart`,
+     * `onUpdate` and `onBegan`, none of which is the wording on the page that
+     * governs today, so a reader checking the claim would have been sent to a
+     * page describing different callbacks from the ones in the code.
+     *
+     * RAW source on purpose. A citation only ever lives in a comment, so this
+     * is the one assertion in this file that must NOT be comment-stripped —
+     * `withoutComments` would delete the very text under test.
+     */
+    const raw = read('src/components/MediaViewer.tsx');
+    expect(raw).toContain('docs/gestures/use-pinch-gesture');
+    expect(raw).toContain('docs/gestures/use-pan-gesture');
+    expect(raw).toContain('docs/composition/use-simultaneous-gestures');
+    expect(raw).toContain('docs/composition/use-competing-gestures');
+    expect(raw).not.toContain('docs/legacy-gestures/');
+
+    /*
+     * And the departure is recorded rather than left to be discovered. The
+     * builder API carries a top-level `@deprecated` in the installed typings
+     * (node_modules/react-native-gesture-handler/lib/typescript/handlers/
+     * gestures/gestureObjects.d.ts), so a file that keeps using it owes the
+     * reader the reason — which here is that contract.test.ts's
+     * "limits gesture declarations" tripwire matches `/Gesture\.\w+\(/` against
+     * raw source, so this file cannot migrate on its own.
+     */
+    expect(raw).toContain('usePinchGesture');
+    expect(raw).toContain('useCompetingGestures');
+    expect(raw).toMatch(/@deprecated `Gesture` builder API is deprecated/);
   });
 });
 

@@ -133,16 +133,16 @@ Flag column names the `src/config.ts` export; current value in parentheses.
 
 ## Design System Components (notable)
 
-| Component          | What it does                                                              | Key file                                                                                         |
-| ------------------ | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `LoadingIndicator` | Native M3 wait: expressive morph under 5s, then indeterminate circular    | `src/components/LoadingIndicator.tsx` + `MaterialIndicatorPackage.kt` — not RN ActivityIndicator |
-| `ProgressBar`      | M3 linear determinate / indeterminate progress                            | `src/components/ProgressBar.tsx`                                                                 |
-| `WordColumn`       | Sliding column of words used on `OnboardingScreen`                        | `src/components/WordColumn.tsx`                                                                  |
-| `Sheet`            | Draggable bottom sheet with gesture handler                               | `src/components/Sheet.tsx` — GestureHandlerRootView required at app root                         |
-| `SpotlightCard`    | Full-image-bleed hero modal (SP first visit)                              | `src/components/SpotlightCard.tsx`                                                               |
-| `Divider`          | M3 full / inset divider; `insetStart` for non-avatar lists                | `src/components/Divider.tsx`                                                                     |
-| `FloatingToolbar`  | Docked bottom tab bar (Home / Favourites / You; Calls gated)              | `src/components/FloatingToolbar.tsx`                                                             |
-| `Icon`             | All icons via Lucide font glyph; filled heart via PappalGlyphs            | `src/components/Icon.tsx`                                                                        |
-| `Frost`            | Translucent frosted-glass surface (80% opaque approximation, no blur dep) | `src/components/Frost.tsx`                                                                       |
-| `Pressable`        | M3 state-layer Pressable with spring press scale                          | `src/components/Pressable.tsx`                                                                   |
-| `NoticeBar`        | Inline info/warning banner                                                | `src/components/NoticeBar.tsx`                                                                   |
+| Component          | What it does                                                               | Key file                                                                                                             |
+| ------------------ | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `LoadingIndicator` | Native M3 wait: expressive morph under 5s, then indeterminate circular     | `src/components/LoadingIndicator.tsx` + `MaterialIndicatorPackage.kt` — not RN ActivityIndicator                     |
+| `ProgressBar`      | M3 linear determinate / indeterminate progress                             | `src/components/ProgressBar.tsx`                                                                                     |
+| `WordColumn`       | Sliding column of words used on `OnboardingScreen`                         | `src/components/WordColumn.tsx`                                                                                      |
+| `Sheet`            | Draggable bottom sheet with gesture handler                                | `src/components/Sheet.tsx` — GestureHandlerRootView required at app root                                             |
+| `SpotlightCard`    | Full-image-bleed hero modal (SP first visit)                               | `src/components/SpotlightCard.tsx`                                                                                   |
+| `Divider`          | M3 full / inset divider; `insetStart` for non-avatar lists                 | `src/components/Divider.tsx`                                                                                         |
+| `FloatingToolbar`  | Docked bottom tab bar (Home / Favourites / You; Calls gated)               | `src/components/FloatingToolbar.tsx`                                                                                 |
+| `Icon`             | All icons via Lucide font glyph; `active` thickens the STROKE, never fills | `src/components/Icon.tsx` — no filled face since 2026-09-07 ([ADR-0018](adr/0018-icons-are-a-config-driven-font.md)) |
+| `Frost`            | Translucent frosted-glass surface (80% opaque approximation, no blur dep)  | `src/components/Frost.tsx`                                                                                           |
+| `Pressable`        | M3 state-layer Pressable with spring press scale                           | `src/components/Pressable.tsx`                                                                                       |
+| `NoticeBar`        | Inline info/warning banner                                                 | `src/components/NoticeBar.tsx`                                                                                       |

@@ -1841,12 +1841,24 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     color: t.color.text.secondary,
     flex: 1,
   },
+  // accentStrong, not accent — and note `talkDot` above keeps the bright step
+  // deliberately, so the difference is not an inconsistency.
+  //
+  // A dot is a non-text mark and clears the 3:1 minimum in light; this pill
+  // carries `talkRechargeLabel`, white 12dp Bold. developer.android.com/guide/
+  // topics/ui/accessibility/apps ("Increase text visibility"): "If the text is
+  // smaller than 18sp ... at least 4.5:1." bg/accent measured 3.44:1 light and
+  // 2.59:1 dark under this label — it fails the 3:1 non-text floor in dark too,
+  // so there was no reading of the rule that saved it. bg/accentStrong is
+  // 5.19:1 / 6.13:1, the same fill the member's own bubble uses, and
+  // design/tokens.json names it for exactly this: bg/accent "must NEVER sit
+  // under small white text; that is what bg/accentStrong is for".
   talkRecharge: {
     paddingHorizontal: TOKENS.space.md,
     paddingVertical: TOKENS.space['2xs'],
     borderRadius: TOKENS.radius.pill,
     borderCurve: 'continuous',
-    backgroundColor: t.color.bg.accent,
+    backgroundColor: t.color.bg.accentStrong,
   },
   talkRechargeLabel: {
     ...TOKENS.typography.labelMediumEmphasized,

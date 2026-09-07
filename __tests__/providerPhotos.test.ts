@@ -8,12 +8,25 @@ const read = (p: string): string => readFileSync(join(ROOT, p), 'utf8');
 /*
  * Source with its comments removed, for every assertion that BANS a token.
  *
- * Not optional here, and not defensive style: the files under test deliberately
- * name `snapToInterval`, `directionalLockEnabled`, `nestedScrollEnabled`,
- * `PappalGlyphs` and `setFakeBoldText` IN PROSE, because each comment exists to
- * say why that API is not the answer. A raw `not.toContain` would fail on the
- * documentation and pass on nothing — which is the false gate this repo has now
- * shipped three times.
+ * Not optional here, and not defensive style. These five bans name a token that
+ * the file they read ALSO names in prose, because each of those comments exists
+ * to say why that API is not the answer, so a raw `not.toContain` would fail on
+ * the documentation and pass on nothing:
+ *
+ *   `snapToInterval`, `directionalLockEnabled`, `nestedScrollEnabled`
+ *                                     — ProviderDetailScreen.tsx, the hero pager
+ *   `announceForAccessibility`        — ProviderDetailScreen.tsx, the live region
+ *   `READ_MEDIA_IMAGES`               — ProviderHomeScreen.tsx, the photo picker
+ *
+ * That list is the whole justification and it is checked, not remembered. It
+ * used to name `PappalGlyphs` and `setFakeBoldText` as well, and by 2026-09-07
+ * neither was a reason for anything: `PappalGlyphs` appears nowhere in `src/` in
+ * any form (the filled-heart face is gone, so the ban on it is a pure standing
+ * ban and needs no stripping at all), and the prose about
+ * `Paint.setFakeBoldText` in Icon.tsx was only ever load-bearing for the
+ * `not.toContain('fontWeight')` assertion that was deleted from this file the
+ * same day. A justification that outlives the thing it justifies is how a
+ * helper keeps getting applied for a reason nobody can check.
  *
  * Stripping is only half of it. A ban is green on code that never had the
  * feature, so every ban below is either bounded to a slice that must EXIST
@@ -33,6 +46,39 @@ const code = (p: string): string =>
  * no block comments.
  */
 const sqlCode = (p: string): string => read(p).replace(/--.*$/gm, '');
+
+/**
+ * A slice bounded by two markers that must both EXIST.
+ *
+ * This is the rule stated at the top of this file, applied to itself. Every
+ * bounded slice here was written as `source.slice(source.indexOf(marker))`, and
+ * `indexOf` returns -1 when the marker is gone — at which point `slice(-1)` is
+ * not the empty string, it is the LAST CHARACTER of the file. A one-character
+ * string satisfies every `not.toContain` under it. So the `avatar_url` ban below
+ * did not fail when `useProviderPhotos` was renamed; it passed on the letter
+ * `}`. Exactly the vacuous pass the header above exists to forbid.
+ *
+ * An unfound END marker is the quieter half of the same bug. `slice(i, -1)` is
+ * the rest of the file bar one character, so a ban scoped to one JSX block
+ * silently widens to the whole module and a positive `toContain` starts being
+ * satisfiable by code somewhere else entirely — no failure, just a gate that has
+ * stopped meaning what its name says.
+ *
+ * Both bounds are therefore asserted here rather than at each call site, and the
+ * end marker is searched FROM the start marker: searching from 0 also let a
+ * marker that appears before `from` produce a backwards, empty slice.
+ * Omitting `to` means "to end of file" as a stated intent, not as an accident.
+ */
+function between(source: string, from: string, to?: string): string {
+  const start = source.indexOf(from);
+  expect(start).toBeGreaterThan(-1);
+  if (to === undefined) {
+    return source.slice(start);
+  }
+  const end = source.indexOf(to, start);
+  expect(end).toBeGreaterThan(start);
+  return source.slice(start, end);
+}
 
 /**
  * Migration 070 — a provider publishes several photos, one of them is the face.
@@ -55,7 +101,7 @@ describe('a provider publishes several photos, and one of them is the face', () 
     // And the client must not be a second writer of the same fact: nothing in
     // the gallery hooks touches avatar_url.
     const api = code('src/api/provider.ts');
-    const gallery = api.slice(api.indexOf('export function useProviderPhotos'));
+    const gallery = between(api, 'export function useProviderPhotos');
     expect(gallery).not.toContain('avatar_url');
   });
 
@@ -152,11 +198,11 @@ describe('a provider publishes several photos, and one of them is the face', () 
      * https://supabase.com/docs/guides/storage/management/delete-objects
      */
     const api = code('src/api/provider.ts');
-    const add = api.slice(
-      api.indexOf('export function useAddProviderPhotos'),
-      api.indexOf('export function useSetPrimaryPhoto'),
+    const add = between(
+      api,
+      'export function useAddProviderPhotos',
+      'export function useSetPrimaryPhoto',
     );
-    expect(add.length).toBeGreaterThan(0);
 
     // The keys deleted are the ones THIS call built, collected beside the urls
     // as the loop uploads them — never a listing of the folder, which would
@@ -177,9 +223,10 @@ describe('a provider publishes several photos, and one of them is the face', () 
     // And the cleanup cannot itself become the failure: it reports through
     // `{ error }`, so the returned error is read rather than thrown, and an
     // unexpected throw is caught.
-    const discard = api.slice(
-      api.indexOf('async function discardUploads'),
-      api.indexOf('export function useAddProviderPhotos'),
+    const discard = between(
+      api,
+      'async function discardUploads',
+      'export function useAddProviderPhotos',
     );
     expect(discard).toContain("supabase.storage.from('avatars').remove(paths)");
     expect(discard).toMatch(/const \{ error \} = await supabase\.storage/);
@@ -201,11 +248,7 @@ describe('a provider publishes several photos, and one of them is the face', () 
     expect(home).toContain('accessibilityRole="radiogroup"');
     expect(home).toContain('accessibilityRole="radio"');
     expect(home).toContain('useSetPrimaryPhoto');
-    const block = home.slice(
-      home.indexOf('testID="provider-photos"'),
-      home.indexOf('testID="earned-notice"'),
-    );
-    expect(block.length).toBeGreaterThan(0);
+    const block = between(home, 'testID="provider-photos"', 'testID="earned-notice"');
     expect(block).not.toContain('<Toggle');
   });
 
@@ -238,21 +281,13 @@ describe('a provider publishes several photos, and one of them is the face', () 
      * tab badge).
      */
     const home = code('src/screens/ProviderHomeScreen.tsx');
-    const block = home.slice(
-      home.indexOf('testID="provider-photos"'),
-      home.indexOf('testID="earned-notice"'),
-    );
-    expect(block.length).toBeGreaterThan(0);
+    const block = between(home, 'testID="provider-photos"', 'testID="earned-notice"');
 
     // A plain View carries the position and wraps the control.
     expect(block).toMatch(/<View style=\{styles\.photoRemoveSlot\}>\s*<Pressable/);
 
     // The slot positions; the control does not.
-    const styleBlock = (name: string): string => {
-      const at = home.indexOf(`${name}: {`);
-      expect(at).toBeGreaterThan(-1);
-      return home.slice(at, home.indexOf('},', at));
-    };
+    const styleBlock = (name: string): string => between(home, `${name}: {`, '},');
     const slot = styleBlock('photoRemoveSlot');
     expect(slot).toContain("position: 'absolute'");
     expect(slot).toMatch(/top:/);
@@ -267,15 +302,47 @@ describe('a provider publishes several photos, and one of them is the face', () 
      * 48dp".
      * https://developer.android.com/guide/topics/ui/accessibility/apps
      *
-     * Computed with Pressable's own arithmetic rather than restating 12, so a
-     * change to either the badge size or the primitive's slop formula is caught
-     * here instead of shipping a 24dp target.
+     * What actually gates that, and what only looked like it did.
+     *
+     * The old version claimed to compute "with Pressable's own arithmetic ...
+     * so a change to either the badge size or the primitive's slop formula is
+     * caught here", and it did neither. It RESTATED the formula
+     * (`max(8, ceil((48 - badge) / 2))`) as a literal, so Pressable.tsx was the
+     * one file it could not see; and the inequality it ended on is a tautology
+     * in `badge`. For any badge < 48, `2 * ceil((48 - badge) / 2) >= 48 - badge`,
+     * so `badge + 2 * slop >= 48` identically; for any badge >= 48 it holds
+     * trivially. REMOVE_BADGE could have been set to 6 and this test would have
+     * stayed green while shipping a 6dp dot.
+     *
+     * So the arithmetic below is kept as the STATEMENT of the requirement, and
+     * the two assertions that can actually go red are named:
+     *
+     *  - `size={REMOVE_BADGE}` is passed. This is the real failure mode and the
+     *    only reachable route to a sub-48 target: without `size` the primitive
+     *    takes its other branch, `ceil(48 / 6)` = 8, and today's 24dp badge
+     *    would ship a 40dp target.
+     *  - Pressable.tsx still computes slop with these two expressions, read out
+     *    of the primitive instead of copied from it. That is the coverage the
+     *    old comment promised, and it is what makes a change to the primitive's
+     *    formula fail HERE rather than on a device.
+     *
+     * Deliberately NOT asserted: that the no-size branch would miss 48. It is
+     * true at 24 and stops being true at 32, so it would fail on a badge
+     * change that breaks nothing — a gate whose first failure is a false alarm
+     * is a gate that gets relaxed.
      */
     const badge = Number(/const REMOVE_BADGE = (\d+);/.exec(home)?.[1]);
     expect(badge).toBeGreaterThan(0);
     expect(block).toContain('size={REMOVE_BADGE}');
-    const slop = Math.max(8, Math.ceil((TOKENS.interaction.minTarget - badge) / 2));
-    expect(badge + slop * 2).toBeGreaterThanOrEqual(TOKENS.interaction.minTarget);
+
+    const pressable = code('src/components/Pressable.tsx');
+    expect(pressable).toContain(
+      'Math.max(8, Math.ceil((INTERACTION.minTarget - size) / 2))',
+    );
+    expect(pressable).toContain('Math.ceil(INTERACTION.minTarget / 6)');
+
+    const sized = Math.max(8, Math.ceil((TOKENS.interaction.minTarget - badge) / 2));
+    expect(badge + sized * 2).toBeGreaterThanOrEqual(TOKENS.interaction.minTarget);
   });
 });
 
@@ -303,10 +370,7 @@ describe('the provider hero pages between photos', () => {
      * code: a gate that cannot go red is documentation with a test runner
      * attached. Slicing to the props that must exist is what gives it teeth.
      */
-    const opens = detail.indexOf('horizontal');
-    const closes = detail.indexOf('testID="hero-pager"');
-    const pager = opens > -1 && closes > opens ? detail.slice(opens, closes) : '';
-    expect(pager.length).toBeGreaterThan(0);
+    const pager = between(detail, 'horizontal', 'testID="hero-pager"');
     expect(pager).toContain('pagingEnabled');
     expect(pager).not.toContain('snapToInterval');
 
@@ -330,11 +394,11 @@ describe('the provider hero pages between photos', () => {
      * silently stops working when someone reorders the JSX.
      * https://reactnative.dev/docs/view#pointerevents
      */
-    const dots = detail.slice(
-      detail.indexOf('style={styles.pagerDots}'),
-      detail.indexOf('accessibilityLiveRegion="polite"'),
+    const dots = between(
+      detail,
+      'style={styles.pagerDots}',
+      'accessibilityLiveRegion="polite"',
     );
-    expect(dots.length).toBeGreaterThan(0);
     expect(dots).toContain('pointerEvents="none"');
   });
 
@@ -452,7 +516,7 @@ describe('removing a photo removes the object too', () => {
   it('deletes the row first and the object second', () => {
     // An orphaned object is the sweep's problem; a row pointing at a deleted
     // object is a broken hero a member sees. So the order is load-bearing.
-    const remove = api.slice(api.indexOf('export function useRemoveProviderPhoto'));
+    const remove = between(api, 'export function useRemoveProviderPhoto');
     const rowDelete = remove.indexOf(".from('provider_photos').delete()");
     const objectDelete = remove.indexOf('avatarObjectKey(photo.url)');
     expect(rowDelete).toBeGreaterThan(-1);

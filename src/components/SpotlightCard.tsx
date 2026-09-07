@@ -366,6 +366,25 @@ const makeStyles = (t: Theme) =>
     slot: {
       flex: 1,
     },
+    /*
+     * accentStrong, not accent: `ctaLabel` below is white 14dp Bold.
+     *
+     * developer.android.com/guide/topics/ui/accessibility/apps ("Increase text
+     * visibility"): "If the text is smaller than 18sp, or if the text is bold
+     * and smaller than 14sp, use foreground and background colors that result in
+     * a color contrast ratio of at least 4.5:1." labelLargeEmphasized is 14dp,
+     * which is smaller than 18sp, so 4.5:1 is the floor — the bold-under-14sp
+     * clause is a second way to land on the same number, not an exemption from
+     * it. `bg/accent` under this label measured 3.44:1 light and 2.70:1 dark
+     * (the hardcoded #FFFFFF, not the token's #FAFAFA); `bg/accentStrong` is
+     * 5.19:1 and 6.40:1.
+     *
+     * The fill moves rather than the label because the coral is the point — this
+     * is the one action on the card — and design/tokens.json says so on the token
+     * itself: bg/accent "must NEVER sit under small white text; that is what
+     * bg/accentStrong is for". Darkening a step within the accent family keeps
+     * the brand; swapping to ink would not, and ink is white in dark mode anyway.
+     */
     cta: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -374,7 +393,7 @@ const makeStyles = (t: Theme) =>
       minHeight: 48,
       paddingHorizontal: TOKENS.space.md,
       paddingVertical: TOKENS.space.sm,
-      backgroundColor: t.color.bg.accent,
+      backgroundColor: t.color.bg.accentStrong,
       borderRadius: TOKENS.radius.pill,
       borderCurve: 'continuous',
     },

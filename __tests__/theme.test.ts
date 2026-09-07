@@ -314,9 +314,27 @@ describe('typography is bound to real font files', () => {
      * ships (Lucide has no filled twin; the active state is colour only for most
      * icons).
      *
-     * PappalGlyphs: the filled-heart icon face, referenced by Icon.tsx. Provides
-     * a FILLED heart glyph at U+2665 for the favourite toggle active state, since
-     * Lucide ships no filled 'heart' twin.
+     * PappalGlyphs: RETAINED DELIBERATELY, AND GENUINELY ORPHANED. This entry
+     * used to say "the filled-heart icon face, referenced by Icon.tsx", and that
+     * stopped being true on 2026-09-07 when Amit removed the heart fill ("Remove
+     * the heart fill; keep the outline, heavier"). No file in `src/` names the
+     * face any more — the active favourite is the same Lucide outline dilated in
+     * layout space (`HEAVY_DILATION` in Icon.tsx), and `ICON_FAMILY_FILLED`, which
+     * Icon.tsx does still import, resolves to `'Lucide'` in icons.generated.ts.
+     * Do not read that surviving constant as a reference to this face.
+     *
+     * So this is an exemption for an orphan, which is the one thing this test
+     * exists to forbid, and it is here on purpose for exactly one reason:
+     * removing the file is not a change this suite can make safely. Fonts are
+     * packaged at build time, not served over Metro, so deleting
+     * `PappalGlyphs.ttf` (804 bytes) and its Apache-2.0 notice
+     * `LICENSE-PappalGlyphs.txt` (10,897 bytes) needs a rebuild and a device
+     * pass, and it also touches the NOTICE map below and the prose in
+     * providerPhotos.test.ts. Recorded as a loose end in ADR-0018's 2026-09-07
+     * update rather than left to look like a live reference.
+     *
+     * When that rebuild happens, delete the face, its notice, the NOTICE entry
+     * and this paragraph together, and this regex goes back to /^Lucide/.
      */
     const ICON_FONTS = /^(Lucide|PappalGlyphs)/;
     const orphans = FACES.filter(
