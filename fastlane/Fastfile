@@ -5,8 +5,11 @@
 
 default_platform(:android)
 
-PRODUCTION_AAB = "../android/app/build/outputs/bundle/release/app-release.aab"
-CLOSED_TEST_AAB = "../android/app/build/outputs/bundle/closedTest/app-closedTest.aab"
+# Resolved from this Fastfile, not from cwd. `bundle exec fastlane` is run
+# from the repo root in CI, so a `../android/...` relative path looked for
+# a sibling of the repo and missed the AAB that was just built.
+PRODUCTION_AAB = File.expand_path("../android/app/build/outputs/bundle/release/app-release.aab", __dir__)
+CLOSED_TEST_AAB = File.expand_path("../android/app/build/outputs/bundle/closedTest/app-closedTest.aab", __dir__)
 
 platform :android do
   # Store listing text (and, opt-in, images) with no build attached. Reads the
