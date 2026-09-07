@@ -35,6 +35,7 @@ import {
   type DirectoryFilter,
   type ProviderCategory,
 } from '../lib/providerFilters';
+import { useBackGuard } from '../lib/backGuard';
 import { useBlockedPeerIds } from '../api/safety';
 import { useStore } from '../store/useStore';
 import { Avatar } from '../components/Avatar';
@@ -289,6 +290,39 @@ export function HomeScreen({
     // next search silently returns fewer people for a reason off screen.
     setSearchFilter(NO_FILTER);
   }, []);
+
+  /*
+   * Hardware back leaves search, the way the arrow does.
+   *
+   * Found on a device 2026-09-07: the "Leave search" arrow worked and the system
+   * back button did nothing at all. `searching` is local state that no guard
+   * knew about, so the press fell through to App.tsx's route handler, which sees
+   * Home as the root and has nothing to pop — two presses in a row left the
+   * member still staring at the search field.
+   *
+   * Android treats this as a correctness requirement, not a nicety: search is
+   * exactly the "temporary UI state" the custom-back guidance says must be
+   * dismissed by back before the screen itself is left, and the same page says
+   * to intercept ONLY in the state that needs it — hence `searching ? … : null`
+   * rather than an always-on guard, which is also what keeps ordinary
+   * navigation off Home immediate.
+   * https://developer.android.com/guide/navigation/custom-back/predictive-back-gesture
+   *
+   * The guard returns TRUE because it HANDLED the press — `consumeBack` stops at
+   * the first guard that does, which is what keeps the press from also reaching
+   * App.tsx's route handler and popping Home out from under the member. It
+   * cannot just be `closeSearch`: that returns void, and void is not "handled".
+   *
+   * Memoised on `closeSearch` alone, which itself has an empty dep list, so the
+   * identity is stable and this registers once when search opens and
+   * unregisters when it closes — the guard stack cannot accumulate duplicates
+   * across renders.
+   */
+  const searchBackGuard = useCallback(() => {
+    closeSearch();
+    return true;
+  }, [closeSearch]);
+  useBackGuard(searching ? searchBackGuard : null);
 
   const loading = convosPending || providersPending;
   const firstUser = balance === 0;

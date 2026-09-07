@@ -4489,6 +4489,35 @@ describe('search opens the way Telegram opens it, and the week has a carousel', 
     expect(home.match(/style=\{styles\.navRow\}/g)?.length).toBe(2);
   });
 
+  it('lets the hardware back button leave search, not just the arrow', () => {
+    // FOUND ON A DEVICE, 2026-09-07, and only on a device: the "Leave search"
+    // arrow worked while the system back button did nothing. Two presses in a
+    // row and the member was still in the search field.
+    //
+    // `searching` is local state in HomeScreen that no back guard knew about, so
+    // the press fell through to App.tsx's single subscription, which asks
+    // src/lib/backGuard.ts and then handles the ROUTE — and Home is the root, so
+    // there was nothing to pop and nothing happened. Every green build had this.
+    //
+    // Android's custom-back guidance makes dismissing temporary UI state on back
+    // a requirement, and says to intercept only in the state that needs it —
+    // which is why the guard is conditional rather than always registered.
+    const code = withoutComments(read('src/screens/HomeScreen.tsx'));
+    expect(code).toContain("import { useBackGuard } from '../lib/backGuard'");
+    // Conditional, and wired to the SAME handler the arrow calls, so the two
+    // routes out of search cannot diverge.
+    expect(code).toContain('useBackGuard(searching ? searchBackGuard : null)');
+    // The guard must report the press as HANDLED, or consumeBack falls through
+    // to App.tsx's route handler and the press does double duty.
+    expect(code).toMatch(
+      /const searchBackGuard = useCallback\(\(\) => \{\s*closeSearch\(\);\s*return true;/,
+    );
+    expect(code).toMatch(/const closeSearch = useCallback\(/);
+    expect(read('src/screens/HomeScreen.tsx')).toContain(
+      'developer.android.com/guide/navigation/custom-back/predictive-back-gesture',
+    );
+  });
+
   it('shows exactly one cross: the field clears, an arrow leaves', () => {
     // With a cross in the nav AND the field's own clear, a member with text
     // typed saw two and could not tell which lost their query (Amit,
