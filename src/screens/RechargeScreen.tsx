@@ -8,8 +8,9 @@ import {
   DEFAULT_RATES,
   formatRupees,
   formatTokens,
-  gstExclusiveLabel,
-  gstExclusiveParts,
+  gstAddedLabel,
+  gstAddedSpoken,
+  packTotalInr,
   PAYMENTS_ENABLED,
   RECHARGE_PACKS,
   talkMinutesLeft,
@@ -76,6 +77,7 @@ export function RechargeScreen() {
         footer={
           <RechargeSheetFooter
             amount={amount}
+            gstRateBps={gstRateBps}
             onPay={() => requestAnimationFrame(() => setPayOpen(true))}
           />
         }>
@@ -137,8 +139,8 @@ function RechargeSheetForm({
         {livePacks.slice(0, 4).map(pack => {
           const selected = pack === amount;
           const popular = pack === popularAmount;
-          const gst = gstExclusiveParts(pack, gstRateBps);
-          const gstSpoken = gstExclusiveLabel(pack, gstRateBps);
+          const gst = gstAddedLabel(pack, gstRateBps);
+          const gstSpoken = gstAddedSpoken(pack, gstRateBps);
           return (
             <View key={pack} style={styles.cardSlot}>
               <Pressable
@@ -191,18 +193,11 @@ function RechargeSheetForm({
                     #non-linear-font-scaling asks for testing to 200%, where
                     truncating a tax figure is worse than two lines. */}
                 {gst ? (
-                  <View style={styles.tokensGstBlock}>
-                    <Text
-                      allowFontScaling
-                      style={[styles.tokensGst, selected && styles.tokensGstOn]}>
-                      {gst.base}
-                    </Text>
-                    <Text
-                      allowFontScaling
-                      style={[styles.tokensGst, selected && styles.tokensGstOn]}>
-                      {gst.tax}
-                    </Text>
-                  </View>
+                  <Text
+                    allowFontScaling
+                    style={[styles.tokensGst, selected && styles.tokensGstOn]}>
+                    {gst}
+                  </Text>
                 ) : null}
               </Pressable>
             </View>
@@ -213,7 +208,7 @@ function RechargeSheetForm({
   );
 }
 
-function RechargeSheetFooter({ amount, onPay }: { amount: number; onPay: () => void }) {
+function RechargeSheetFooter({ amount, gstRateBps, onPay }: { amount: number; gstRateBps: number; onPay: () => void }) {
   const styles = useStyles(makeCompactStyles);
   const theme = useTheme();
   return (
@@ -247,12 +242,12 @@ function RechargeSheetFooter({ amount, onPay }: { amount: number; onPay: () => v
       <Pressable
         onPress={onPay}
         testID="recharge-pay"
-        accessibilityLabel={`Pay ${formatRupees(amount)}`}
+        accessibilityLabel={`Pay ${formatRupees(packTotalInr(amount, gstRateBps))}`}
         press="button"
         onColor={theme.color.text.onAccent}
         style={styles.payButton}>
         <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.payButtonLabel}>
-          {`Pay ${formatRupees(amount)}`}
+          {`Pay ${formatRupees(packTotalInr(amount, gstRateBps))}`}
         </Text>
       </Pressable>
     </>
@@ -314,7 +309,7 @@ export function RechargeWalletPage() {
       </ScrollView>
       <View style={[styles.payBar, { paddingBottom: Math.max(insets.bottom, TOKENS.space.md) }]}>
         <Button
-          label={`Pay ${formatRupees(amount)}`}
+          label={`Pay ${formatRupees(packTotalInr(amount, gstRateBps))}`}
           onPress={() => requestAnimationFrame(() => setPayOpen(true))}
           testID="recharge-wallet-pay"
         />
@@ -383,8 +378,8 @@ function RechargeForm({
           const badge =
             pack === popularAmount ? 'Popular' : pack === bestValueAmount ? 'Best value' : null;
           const minutes = Math.floor(pack / chatRate);
-          const gst = gstExclusiveParts(pack, gstRateBps);
-          const gstSpoken = gstExclusiveLabel(pack, gstRateBps);
+          const gst = gstAddedLabel(pack, gstRateBps);
+          const gstSpoken = gstAddedSpoken(pack, gstRateBps);
           return (
             <View key={pack} style={styles.cardSlot}>
               <Pressable
@@ -473,14 +468,9 @@ function RechargeForm({
                     the offer (price → tokens → talk time → tax). No
                     `numberOfLines`, for the reason given on the compact chip. */}
                 {gst ? (
-                  <View style={styles.cardGstBlock}>
-                    <Text allowFontScaling style={[styles.cardGst, on && styles.cardUnitOn]}>
-                      {gst.base}
-                    </Text>
-                    <Text allowFontScaling style={[styles.cardGst, on && styles.cardUnitOn]}>
-                      {gst.tax}
-                    </Text>
-                  </View>
+                  <Text allowFontScaling style={[styles.cardGst, on && styles.cardUnitOn]}>
+                    {gst}
+                  </Text>
                 ) : null}
               </Pressable>
             </View>

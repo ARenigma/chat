@@ -1,6 +1,6 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { gstExclusiveLabel, gstExclusiveParts, gstSplit } from '../src/lib/rates';
+import { gstAddedLabel, gstAddedSpoken, gstOnTop, gstSplit } from '../src/lib/rates';
 
 const ROOT = join(__dirname, '..');
 const read = (relative: string): string => readFileSync(join(ROOT, relative), 'utf8');
@@ -43,34 +43,48 @@ const PALETTE = (
 ).color.tokens;
 const hex = (token: string, mode: 'Light' | 'Dark'): string => PALETTE[token]![mode]!;
 
-describe('recharge chips present GST exclusive of the base', () => {
+describe('recharge chips present GST exclusive — charged on top of the base (ADR-0029)', () => {
   /*
-   * The distinction this whole change turns on: an exclusive PRESENTATION of an
-   * inclusive PRICE. ADR-0021 ("Recharge pack pricing (GST-inclusive)") fixes
-   * pack prices as tax-inclusive and `create-order` sends the nominal pack price
-   * as `order_amount`, so a chip that added tax on top would name a number no
-   * member is ever charged. The base and the tax must sum back to the price.
+   * Under the exclusive model the pack price IS what the member gets in tokens;
+   * the tax is added on top. Selecting ₹300 puts 300 tokens in the wallet and
+   * captures ₹354. `gstAddedLabel` names only the tax — "+ ₹54 GST" — so the
+   * card's headline (₹300) stays the dominant figure.
    */
-  it('splits each pack into a base and a tax that add back up to what Cashfree captures', () => {
-    expect(gstExclusiveLabel(5000, 1800)).toBe('₹4,237.29 + ₹762.71 GST');
-    expect(gstExclusiveLabel(300, 1800)).toBe('₹254.24 + ₹45.76 GST');
-    expect(gstExclusiveParts(5000, 1800)).toEqual({
-      base: '₹4,237.29',
-      tax: '+ ₹762.71 GST',
-    });
+  it('adds the tax on top of the base, naming only the tax on the chip', () => {
+    expect(gstAddedLabel(300, 1800)).toBe('+ ₹54 GST');
+    expect(gstAddedLabel(5000, 1800)).toBe('+ ₹900 GST');
+    expect(gstAddedSpoken(300, 1800)).toBe('plus ₹54 GST, ₹354 total');
 
-    // An unregistered seller (gst_rate_bps = 0) removes the disclosure entirely,
-    // and so does a zero pack — every surface guards on the null.
-    expect(gstExclusiveLabel(300, 0)).toBeNull();
-    expect(gstExclusiveParts(300, 0)).toBeNull();
-    expect(gstExclusiveLabel(0, 1800)).toBeNull();
+    // An unregistered seller (gst_rate_bps = 0) removes the disclosure entirely.
+    expect(gstAddedLabel(300, 0)).toBeNull();
+    expect(gstAddedLabel(0, 1800)).toBeNull();
+    expect(gstAddedSpoken(300, 0)).toBeNull();
+  });
 
-    const order = read('supabase/functions/create-order/index.ts');
-    expect(order).toContain('order_amount: opts.amountInr');
+  it('round-trips through the inclusive back-out used by generate-invoice', () => {
+    // The invoice is generated from amount_paise (the total captured) using the
+    // inclusive back-out formula in gstSplit. The back-out must recover the
+    // original base exactly or the screen and the invoice disagree.
     for (const pack of [100, 300, 500, 1000, 2500, 5000]) {
-      const { taxablePaise, gstPaise } = gstSplit(pack, 1800);
-      expect(taxablePaise + gstPaise).toBe(pack * 100);
-      // \b so the 100 pack does not match `amountInr: 1000`.
+      const { basePaise, gstPaise, totalPaise } = gstOnTop(pack, 1800);
+      const { taxablePaise, gstPaise: invoiceGst } = gstSplit(totalPaise / 100, 1800);
+      expect({ pack, taxablePaise, invoiceGst }).toEqual({
+        pack,
+        taxablePaise: basePaise,
+        invoiceGst: gstPaise,
+      });
+    }
+  });
+
+  it('create-order sends the total (base + tax) to Cashfree, not the bare base', () => {
+    const order = read('supabase/functions/create-order/index.ts');
+    // The total is computed by packTotalPaise and passed as amountInr.
+    expect(order).toContain('packTotalPaise(');
+    expect(order).toContain('amountInr: totalPaise / 100');
+    // amount_paise stores the total captured, which generate-invoice backs out.
+    expect(order).toContain('amount_paise: totalPaise');
+    // RECHARGE_PACKS still defines amountInr as the base pack value.
+    for (const pack of [100, 300, 500, 1000, 2500, 5000]) {
       expect(order).toMatch(new RegExp(`amountInr:\\s*${pack}\\b`));
     }
   });
@@ -85,42 +99,38 @@ describe('recharge chips present GST exclusive of the base', () => {
     expect(payment).not.toMatch(/incl\./);
 
     // Four chip/label call sites (two per host) plus the pay step.
-    expect(recharge.match(/gstExclusive(Parts|Label)\(/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
-    expect(payment).toContain('gstExclusiveLabel(');
+    expect(recharge.match(/gstAdded(Label|Spoken)\(/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
+    expect(payment).toContain('gstAddedLabel(');
   });
 
   /*
    * "remove inc xxx gst from footer" (Amit, 2026-09-06).
    *
-   * The pass before this one deleted the literal string and substituted GST
-   * copy for it — "each pack shows base + 18% GST" in the sheet footer, and a
-   * wallet-page note that grew from two sentences to three. That is not a
-   * removal. This gate is deliberately blunt: the screen's own strings name no
-   * tax at all, on either host, and the tax reaches the member from
-   * `gstExclusiveParts`/`gstExclusiveLabel` — i.e. from the chips and the pay
-   * step, which is where it was asked to live.
-   *
-   * It is not a dropped disclosure either. ADR-0021 makes pack prices
-   * GST-inclusive and puts the legal instrument on the invoice Axionix issues;
-   * the base and the tax are still named on every chip (asserted above and in
-   * contract.test.ts) and again in the payment sheet's body.
+   * The footers carry only the rate and the unit — "1 token = ₹1" — because the
+   * chip already names the base and the tax and the Pay bar names the total.
+   * `gstRateBps` is present in the footer to compute the Pay button total, which
+   * is correct; the assertion is that the INFORMATIONAL copy in the ⓘ row and the
+   * wallet note contains no GST wording.
    */
-  it('takes GST off both footers and leaves the rate and the unit behind', () => {
+  it('takes GST copy off both footers and leaves the rate and the unit behind', () => {
     const recharge = withoutComments(read('src/screens/RechargeScreen.tsx'));
 
-    expect(recharge).not.toMatch(/GST/);
     expect(recharge).not.toContain('gstPercentLabel');
     expect(recharge).not.toContain('gstSplit');
 
-    // The compact sheet's ⓘ row and the wallet page's note, both unconditional:
-    // no `taxed` branch, so no wording that can appear or vanish with the rate.
     const footer = recharge.slice(
       recharge.indexOf('function RechargeSheetFooter'),
       recharge.indexOf('export function RechargeWalletPage'),
     );
     expect(footer).toContain('1 token = ₹1 · you are charged in rupees at checkout');
-    expect(footer).not.toContain('gstRateBps');
     expect(recharge).toContain('1 token = ₹1. You are charged in rupees at checkout.');
+  });
+
+  it('the pay bar shows what Cashfree will actually capture, not just the base', () => {
+    const recharge = withoutComments(read('src/screens/RechargeScreen.tsx'));
+    // Both pay buttons must be driven by packTotalInr, not by amount directly.
+    const payMatches = (recharge.match(/packTotalInr\(/g) ?? []).length;
+    expect(payMatches).toBeGreaterThanOrEqual(2);
   });
 });
 
@@ -258,32 +268,33 @@ describe('a money chip shows the price it charges', () => {
    * The blocker this describe exists for: for one pass the wallet-page pack card
    * rendered a token count with no currency mark, a talk-time pill, and then the
    * GST base and tax — so the largest rupee figure on the ₹5,000 card was
-   * ₹4,237.29, a number `create-order` never captures (it sends
-   * `order_amount: opts.amountInr`, the nominal pack price) and no invoice ever
-   * totals. GST "exclusive on the chips" means naming the base and the tax IN
-   * ADDITION to the price, not INSTEAD of it.
+   * ₹4,237.29, a number no invoice ever totals. GST "exclusive on the chips" means
+   * naming the base and the tax IN ADDITION to the price, not INSTEAD of it.
    *
-   * Order matters as much as presence: price first because it is what the card
-   * is selling, the split last because a disclosure reads after the offer.
+   * Under the exclusive model (ADR-0029): price is the base (what you get in
+   * tokens), the GST line is one string ("+ ₹54 GST"), and the Pay bar shows the
+   * total. Order matters as much as presence: price first, then tokens, then the
+   * GST note.
    */
   it.each([
     ['the compact sheet chip', 'compact' as const],
     ['the wallet-page pack card', 'wallet' as const],
-  ])('renders price, then tokens, then base + tax on %s', (_name, key) => {
+  ])('renders price, then tokens, then the gst note on %s', (_name, key) => {
     const host = renderOf(HOSTS[key]);
     const price = host.indexOf('{formatRupees(pack)}');
     const tokens = host.indexOf('${formatTokens(pack)} tokens`');
-    const base = host.indexOf('{gst.base}');
-    const tax = host.indexOf('{gst.tax}');
-    expect({ price: price > -1, tokens: tokens > -1, base: base > -1, tax: tax > -1 }).toEqual({
+    // Under the exclusive model the GST line is a single Text with {gst}.
+    const gstNote = host.indexOf('{gst}');
+    expect({ price: price > -1, tokens: tokens > -1, gstNote: gstNote > -1 }).toEqual({
       price: true,
       tokens: true,
-      base: true,
-      tax: true,
+      gstNote: true,
     });
     expect(price).toBeLessThan(tokens);
-    expect(tokens).toBeLessThan(base);
-    expect(base).toBeLessThan(tax);
+    expect(tokens).toBeLessThan(gstNote);
+    // The old two-Text pattern ({gst.base} / {gst.tax}) must be gone.
+    expect(host).not.toContain('{gst.base}');
+    expect(host).not.toContain('{gst.tax}');
   });
 
   /*
