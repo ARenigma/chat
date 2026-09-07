@@ -837,6 +837,12 @@ export function HomeScreen({
               onChangeText={setQuery}
               placeholder="Search by name or language"
               onClear={() => { setQuery(''); }}
+              /* The trailing mark is the exit as well as the clear, which is
+                 what the reference's is: its handler clears what is clearable
+                 and otherwise runs `onCloseSearch`
+                 (FragmentSearchField.java:142-155). Same `closeSearch` the
+                 hardware back button uses, so the two ways out cannot diverge. */
+              onExit={closeSearch}
             />
           </Animated.View>
         ) : (

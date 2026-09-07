@@ -26,7 +26,31 @@ interface Props {
  * Display-only — not an AssistChip action target. The row/card owns the press.
  * https://m3.material.io/components/chips/specs
  * https://developer.android.com/reference/kotlin/androidx/compose/material3/AssistChipDefaults
+ *
+ * NO `flexShrink: 0` AND NO `minWidth`, reviewed 2026-09-07 rather than left
+ * unexamined, because the obvious guard against "a chip squeezed to an ellipsis
+ * mid-strip" would break the other call site.
+ *
+ * There is no squeeze to guard against in ProviderRow any more: its strip is a
+ * horizontal ScrollView, whose main axis is unbounded, so a chip in it is laid
+ * out at its natural width and there is no shrink pressure to ellipsize under.
+ * ProviderCard's strip is the opposite case — a bounded, WRAPPING row — and
+ * there `flexShrink: 1` (the default) is the correct behaviour for the one chip
+ * that is longer than the card is wide: it shrinks and its label truncates,
+ * where `flexShrink: 0` would push it out past the card's edge. A `minWidth`
+ * would do the same thing more quietly. So the fix for the row belongs in the
+ * row's layout, which is where it now is, and this component keeps flexing.
  */
+
+/**
+ * AssistChip height, exported so a container can size itself to the chip.
+ *
+ * ProviderRow's scroller needs a FIXED height — a ScrollView measures its
+ * cross axis from its content, and that list's rows must all be the same height
+ * — and it takes this constant rather than repeating 32, so the scroller and the
+ * chip inside it cannot drift apart.
+ */
+export const META_CHIP_HEIGHT = 32;
 function MetaChipView({ label, tone = 'surface', testID, style }: Props) {
   const styles = useStyles(makeStyles);
   return (
@@ -58,8 +82,8 @@ export const MetaChip = memo(MetaChipView);
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
     chip: {
-      height: 32,
-      minHeight: 32,
+      height: META_CHIP_HEIGHT,
+      minHeight: META_CHIP_HEIGHT,
       paddingHorizontal: TOKENS.space.sm,
       justifyContent: 'center',
       borderRadius: TOKENS.radius.xs,

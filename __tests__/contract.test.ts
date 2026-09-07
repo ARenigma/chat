@@ -4633,7 +4633,13 @@ describe('search opens the way Telegram opens it, and the week has a carousel', 
     const searchRow = home.slice(home.indexOf('key="search-row"'), home.indexOf('key="nav-row"'));
     expect(searchRow).not.toContain('<Icon name="back"');
     expect(searchRow).not.toContain('name="close"');
-    expect(searchRow).not.toContain('accessibilityLabel="Leave search"');
+    /*
+     * "Leave search" is BACK, but on the field's own trailing mark rather than
+     * on a sibling arrow — the reference's close control clears what is
+     * clearable and otherwise exits (FragmentSearchField.java:142-155), so one
+     * control carries both jobs and the row stays full width.
+     */
+    expect(searchRow).toContain('onExit={closeSearch}');
     // The field IS the row: one child, on the reference's own 7dp margin.
     expect(searchRow).toContain('<SearchBar');
     expect(searchRow).toContain('style={styles.searchRow}');
@@ -4663,8 +4669,17 @@ describe('search opens the way Telegram opens it, and the week has a carousel', 
       "importantForAccessibility={hasText ? 'yes' : 'no-hide-descendants'}",
     );
     expect(bar).toContain('const hasText = clearTarget === 1');
-    // Exactly one clear control in the file, and it is the field's.
-    expect(bar.match(/accessibilityLabel="Clear search"/g)?.length).toBe(1);
+    /*
+     * Exactly ONE trailing control in the field, and its label names whichever
+     * of its two jobs it will do — a screen reader must not announce "clear" on
+     * a control that is about to leave the screen. The literal moved from a
+     * fixed string to the ternary when the control gained the exit.
+     */
+    expect(
+      bar.match(/accessibilityLabel=\{hasQuery \? 'Clear search' : 'Leave search'\}/g)
+        ?.length,
+    ).toBe(1);
+    expect(bar).not.toContain('accessibilityLabel="Clear search"');
   });
 
   it('stacks the filters and lets them search on their own', () => {

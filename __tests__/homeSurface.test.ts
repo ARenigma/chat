@@ -290,7 +290,21 @@ describe('the search field is the one Telegram actually ships', () => {
     expect(styles).not.toContain('marginHorizontal');
     expect(styles).not.toContain('gap: TOKENS.space.sm');
     // The slot is laid out always; only its opacity/scale/rotation change.
-    expect(bar).toContain('const clearTarget = value.length > 0 ? 1 : 0');
+    /*
+     * The condition gained a second term on 2026-09-07: the trailing mark is
+     * now the EXIT as well as the clear, so it must be visible in the state
+     * where there is nothing to clear (Amit: "Please bring exit back in search
+     * right edge like telegram"). The reference supports exactly this —
+     * visibility is `closeButtonForcedVisible || editText.length() > 0`
+     * (FragmentSearchField.java:326) with a public setter at `:321`.
+     *
+     * What this test is FOR is unchanged and is the line below: the slot is
+     * always LAID OUT, so the text inset never moves while you type. Only its
+     * opacity, scale and rotation animate.
+     */
+    expect(bar).toContain(
+      'const clearTarget = hasQuery || onExit !== undefined ? 1 : 0',
+    );
     expect(bar).not.toMatch(/value\.length > 0 \?\s*\(?\s*<Pressable/);
   });
 
