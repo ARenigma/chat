@@ -127,7 +127,13 @@ function RechargeSheetForm({
         <Text allowFontScaling style={styles.balanceLabel}>
           Your balance
         </Text>
-        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized} allowFontScaling style={styles.balanceValue}>
+        {/* No maxFontSizeMultiplier: the balance is a NUMERAL role, and ADR-0024
+            leaves body, label and numerals uncapped on purpose so a 200%
+            accessibility setting still enlarges the reading text and the
+            balance — `fontScaleCap` has no numeral key to wire. The cap that
+            used to sit here named titleLargeEmphasized, the role this style no
+            longer uses. */}
+        <Text allowFontScaling style={styles.balanceValue}>
           {`${formatTokens(balance)} tokens`}
         </Text>
       </View>
@@ -358,7 +364,8 @@ function RechargeForm({
         <Text allowFontScaling style={styles.balanceLabel}>
           Balance
         </Text>
-        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized} allowFontScaling style={styles.balanceValue}>
+        {/* Uncapped, same reason as the sheet's balance figure above. */}
+        <Text allowFontScaling style={styles.balanceValue}>
           {`${formatTokens(balance)} tokens`}
         </Text>
         <Text allowFontScaling style={styles.balanceHint}>
@@ -555,17 +562,48 @@ const makeStyles = (t: Theme) =>
       padding: TOKENS.space.lg,
       gap: TOKENS.space.hair,
     },
+    // bodyLarge, the app's SUPPORTING_LINE — the role the eleven-item pass
+    // anchored on `Sheet.body` and pinned across every sheet and screen. It was
+    // bodyMedium here against bodyLarge in the compact sheet's `balanceLabel`:
+    // the same two words naming the same figure at two sizes, and the wrong half
+    // was the page. bodyMedium's "sheet body" clause is the one ADR-0024 shipped
+    // and that pass retired, on the evidence that a 14dp regular face is what
+    // made a modal quieter than its own screen; the page had the same defect
+    // pointing the other way.
     balanceLabel: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.text.onInverse,
       opacity: 0.7,
     },
+    // The balance figure, and a TOKEN role rather than the bespoke
+    // 34/40/-0.4/tabular block this slot carried out of the M3 migration.
+    // ADR-0024 put the app on the M3 scale in absolute dp, so a hand-rolled size
+    // beside it is a 16th role no audit can find — and this one was the last
+    // bespoke type block in the file.
+    //
+    // numeralLarge (Geist-Bold 24/32, tabular) — Amit's call, 2026-09-07, and
+    // the same role in the compact sheet, so the figure reads one way whichever
+    // host you reach recharge from.
+    //
+    // It is a NUMERAL role and not the titleLargeEmphasized MONEY_FIGURE that
+    // `amount` / `cardAmount` / PaymentSheet's `totalValue` take, because this
+    // figure is not money: it is a token count, and the app already draws that
+    // distinction — PaymentSheet's `successBalance`, the other "N tokens" line in
+    // the flow, is a supporting line rather than a money figure. What the balance
+    // shares with the numerals is that it is a FIGURE, so it wants the tabular
+    // digits the bespoke block it replaces was hand-rolling and the text roles do
+    // not carry.
+    //
+    // Not numeralDisplay, whose own note in design/tokens.json names "Balance
+    // hero numeral": that role is 32dp and the sheet's balance ROW cannot seat
+    // it. On a 360dp window that row has 224dp for its label and its value (312dp
+    // of Sheet content, less md a side, less the 32dp ₹ mark and two 12dp gaps),
+    // and "12,345 tokens" measures 237.6dp of it at 32dp Geist-Bold — the label
+    // would have negative room. At 24dp it is 178.2dp and the label keeps 45.8dp,
+    // which wraps "Your balance" to two 24dp lines inside a 70dp row. A role only
+    // one host can render cannot be the role for a figure both hosts show.
     balanceValue: {
-      fontFamily: 'Geist-Bold',
-      fontSize: 34,
-      lineHeight: 40,
-      letterSpacing: -0.4,
-      fontVariant: ['tabular-nums'],
+      ...TOKENS.typography.numeralLarge,
       color: t.color.text.onInverse,
     },
     balanceHint: {
@@ -795,12 +833,33 @@ const makeCompactStyles = (t: Theme) =>
       ...TOKENS.typography.bodyLarge,
       color: t.color.text.secondary,
     },
+    // Same numeral role as the wallet page's `balanceValue` — see the note there
+    // for why a token balance takes a numeral role rather than the
+    // titleLargeEmphasized money figure, and why 24dp and not numeralDisplay's
+    // 32dp. This row is the host that cannot seat 32dp, and the 224dp of width it
+    // has for label + value is measured on itself.
+    //
+    // Was titleLargeEmphasized: a text role on a tabular figure, so the balance
+    // rendered with proportional digits while every other figure in the app is
+    // tabular. 22 → 24dp, inside a row whose minHeight is 70.
     balanceValue: {
-      ...TOKENS.typography.titleLargeEmphasized,
+      ...TOKENS.typography.numeralLarge,
       color: t.color.text.primary,
     },
+    // titleMediumEmphasized, matching the wallet page's `section`. Both were
+    // already 16dp, so this changes the FACE and not the size: bodyLarge is
+    // Geist-Regular, so "Choose a pack" sat at body weight and did not read as a
+    // heading, while "Add tokens" one host over did. Bold-16-with-primary-ink is
+    // the app's settled in-flow section heading (ProfileSetupScreen `section`);
+    // labelMediumEmphasized on secondary ink is the other, quieter pattern and it
+    // belongs to list-group overlines (SettingsSheet `subheader`,
+    // ProviderHomeScreen `sectionTitle`), which this is not.
+    //
+    // The Text was already wiring fontScaleCap.titleMediumEmphasized while this
+    // style said bodyLarge, which is where the drift showed: the cap names the
+    // role the call site meant.
     section: {
-      ...TOKENS.typography.bodyLarge,
+      ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.primary,
       paddingTop: TOKENS.space.xs,
     },
