@@ -18,12 +18,16 @@ import type { ProviderSummary } from './database.types';
 /**
  * The languages a member may say they want, and where the list comes from.
  *
- * **Derived, not invented.** It is the set a provider can actually claim, which
- * is `LANGUAGES` in `src/screens/ProviderApplicationScreen.tsx:56` — the only
- * place in the app that decides what goes into `profiles.languages`, and
- * therefore the only set a match can ever be found in. Offering a member a
- * language no provider is able to tick would be a question whose answer can
- * never change the order of anything.
+ * **The set a provider can actually claim, and now the only copy of it.** It
+ * began as a mirror of a `LANGUAGES` literal in
+ * `src/screens/ProviderApplicationScreen.tsx`, kept in step by a drift test,
+ * because that screen is the only place in the app that decides what goes into
+ * `profiles.languages` and therefore the only set a match can ever be found in.
+ * That screen now imports this constant instead, so the member's question and
+ * the provider's answer are the same list rather than two lists that agree.
+ * Offering a member a language no provider is able to tick would be a question
+ * whose answer can never change the order of anything, and with one list it is
+ * no longer possible to.
  *
  * `scripts/seed-dev.sql:87-96` uses five of the six (English, Hindi, Marathi,
  * Tamil, Bengali); Telugu is offered to providers and simply has no seeded

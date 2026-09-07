@@ -112,29 +112,31 @@ const provider = (id: string, languages: string[]): ProviderSummary =>
   }) as unknown as ProviderSummary;
 
 describe('the offered set comes from what a provider can actually claim', () => {
-  it('is exactly the provider application form\'s list, in its order', () => {
+  it('is the ONLY list: the provider form imports it and declares none', () => {
     /*
-     * The drift gate, and the reason this file reads source text at all.
+     * This gate used to compare two lists and assert they matched. The provider
+     * application form declared its own `LANGUAGES` literal — it is the only
+     * screen that decides what goes into `profiles.languages` — and this test
+     * kept `OFFERED_LANGUAGES` in step with it.
      *
-     * `LANGUAGES` in ProviderApplicationScreen is the only place that decides
-     * what goes into `profiles.languages`, and therefore the only set a match
-     * can ever be found in. If it grows a seventh language and this list does
-     * not, the member is never offered a language that providers now speak —
-     * a silent hole with no type error and no runtime failure, only a sort that
-     * quietly cannot see somebody.
+     * A drift test is a good answer to two sources of truth, and one source of
+     * truth is a better one. The form now imports this list, so there is
+     * nothing left to drift, and what is worth asserting changed with it:
+     * that the second declaration has not come back. A future edit that
+     * re-adds a local literal would compile, render, and silently re-open the
+     * hole where a provider speaks a language no member is ever offered.
      *
-     * Bounded to the declaration rather than the file, and read from stripped
-     * source, so a language named only in a comment cannot satisfy it.
+     * Read from stripped source so the explanatory comment above the import —
+     * which names both `LANGUAGES` and `OFFERED_LANGUAGES` — cannot satisfy or
+     * fail this.
      */
     const form = stripComments(read('src/screens/ProviderApplicationScreen.tsx'));
-    const match = form.match(/const LANGUAGES\s*=\s*\[([^\]]+)\]/);
-    expect(match).not.toBeNull();
-    const declared = (match?.[1] ?? '')
-      .split(',')
-      .map(s => s.trim().replace(/['"]/g, ''))
-      .filter(Boolean);
-    expect(declared.length).toBeGreaterThan(0);
-    expect([...OFFERED_LANGUAGES]).toEqual(declared);
+    expect(form).toMatch(
+      /import \{[^}]*OFFERED_LANGUAGES[^}]*\}\s*from\s*'\.\.\/lib\/languagePrefs'/,
+    );
+    expect(form).toMatch(/OFFERED_LANGUAGES\.map\(/);
+    // The literal, in any spelling of the declaration.
+    expect(form).not.toMatch(/const\s+LANGUAGES\s*=/);
   });
 
   it('covers every language the dev seed gives a provider', () => {
@@ -422,5 +424,76 @@ describe('the onboarding step is a step, not a screen', () => {
     // would make an optional preference a gate.
     expect(screen).toContain('Skip for now');
     expect(screen).toMatch(/languages\.length === 0/);
+  });
+});
+
+describe('both sign-in routes ask the language question', () => {
+  /*
+   * The parity gate (Amit, 2026-09-07): "bring parity between all login options
+   * and onboarding flow so that there is no work around".
+   *
+   * There are two ways into the member tree and only one of them used to ask.
+   * Credential Manager resolves in-process, so `OnboardingScreen` stays mounted
+   * and runs its own language step. The browser redirect resolves through
+   * `handleAuthDeepLink`, App re-renders with a session, and that screen
+   * unmounts before its step can run — so picking the browser was a way around
+   * the question, with no error and nothing to notice.
+   *
+   * These read source text because the property is structural: it is about which
+   * screens can be reached from which entry point, and no unit test of either
+   * screen alone can see it.
+   */
+  const app = stripComments(read('App.tsx'));
+  const setup = stripComments(read('src/screens/ProfileSetupScreen.tsx'));
+  const inline = stripComments(read('src/screens/OnboardingScreen.tsx'));
+
+  it('asks it inline on the Credential Manager path', () => {
+    expect(inline).toContain('needsLanguagePreference');
+    expect(inline).toMatch(/OFFERED_LANGUAGES\.map\(/);
+  });
+
+  it('asks it at the boot gate on the browser-redirect path', () => {
+    // The flag is computed from the profile and reaches the screen. Both halves
+    // matter: computing it and not passing it is the same bug with more code.
+    expect(app).toContain('needsLanguagePreference(p)');
+    expect(app).toMatch(/needsLanguages=\{boot\.needsLanguages\}/);
+    expect(setup).toMatch(/OFFERED_LANGUAGES\.map\(/);
+  });
+
+  it('is gated independently of age and username, not chained behind them', () => {
+    /*
+     * Chaining is the subtle version of the same hole: a member who already has
+     * a bracket and a name — anyone predating migration 072 — would never be
+     * asked, because the step they were hidden behind never fires.
+     */
+    expect(app).toMatch(/needsUsername \|\| needsAge \|\| needsLanguages/);
+    // And the screen orders whatever it is given rather than assuming all three.
+    expect(setup).toContain("ordered.push('languages')");
+    expect(setup).toMatch(/if \(needsLanguages\)/);
+  });
+
+  it('uses the same control and the same copy on both routes', () => {
+    /*
+     * Same question, same words, same widget — a member cannot be able to tell
+     * that two screens were involved. Shared imports rather than matched
+     * literals is what keeps that true without proofreading.
+     */
+    for (const source of [inline, setup]) {
+      expect(source).toMatch(/from '\.\.\/lib\/languagePrefs'/);
+      expect(source).toContain('FilterChip');
+      expect(source).toContain('setPreferredLanguages');
+      expect(source).toContain('Skip for now');
+    }
+  });
+
+  it('lets a failed preference write through on both routes', () => {
+    // The preference only reorders a list. Holding a member at a chip row over
+    // it would be the worst trade available for the least important thing either
+    // screen collects — so both swallow and advance.
+    for (const source of [inline, setup]) {
+      const at = source.indexOf('await setPreferredLanguages(languages)');
+      expect(at).toBeGreaterThan(0);
+      expect(source.slice(at, at + 200)).toContain('catch');
+    }
   });
 });

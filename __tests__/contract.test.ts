@@ -3012,7 +3012,16 @@ describe('provider identity is verified, not typed', () => {
     expect(fn).toContain('onProviderPath');
     expect(fn).toContain('PROVIDER_INTENT_KEY');
     expect(fn).toContain('identity_state');
-    expect(fn).toMatch(/if \(!onProviderPath && \(needsUsername \|\| needsAge\)\)/);
+    expect(fn).toMatch(
+      /if \(!onProviderPath && \(needsUsername \|\| needsAge \|\| needsLanguages\)\)/,
+    );
+    /*
+     * `needsLanguages` is in that condition and must stay there: it is the
+     * whole of the login parity fix. The inline flow asks for a language
+     * preference, the browser-redirect flow unmounts that screen before it can,
+     * and this gate is where the browser path gets asked instead. Drop the term
+     * and choosing the browser silently becomes a way around the question again.
+     */
     // And every caller goes through it rather than deciding for itself.
     const callers = app.match(/bootPhaseAfterAuth\(/g) ?? [];
     expect(callers.length).toBeGreaterThan(2);

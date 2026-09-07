@@ -46,6 +46,15 @@ import { Pressable } from '../components/Pressable';
 import { LoadingIndicator } from '../components/LoadingIndicator';
 import { NoticeBar } from '../components/NoticeBar';
 import { M3Field } from '../components/TextField';
+/*
+ * The offered set now comes from `lib/languagePrefs.ts` rather than a literal
+ * here. It was declared in this file because this screen is the only place that
+ * decides what may go into `profiles.languages`, and `OFFERED_LANGUAGES` was
+ * written to mirror it with a test gating the two against each other. One list
+ * with a drift test is still two lists; importing it means the member's question
+ * and the provider's answer cannot disagree at all.
+ */
+import { OFFERED_LANGUAGES } from '../lib/languagePrefs';
 
 interface Props {
   onBack: () => void;
@@ -53,7 +62,7 @@ interface Props {
   onSubmitted: () => void;
 }
 
-const LANGUAGES = ['English', 'Hindi', 'Tamil', 'Telugu', 'Bengali', 'Marathi'];
+
 
 type Phase = 'verify' | 'checking' | 'confirm' | 'profile' | 'done';
 
@@ -857,7 +866,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
 
         <Field label="Languages">
           <View style={styles.chips}>
-            {LANGUAGES.map(l => (
+            {OFFERED_LANGUAGES.map(l => (
               <Chip
                 key={l}
                 label={l}
