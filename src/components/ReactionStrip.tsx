@@ -86,7 +86,7 @@ function ReactionStripView({
         size={36}
         onPress={onReply}
         style={styles.action}>
-        <Icon name="reply" size={16} color={theme.color.text.primary} />
+        <Icon name="reply" size={TOKENS.icon.sm} color={theme.color.text.primary} />
       </Pressable>
       {!mine && onReport ? (
         <Pressable
@@ -96,7 +96,7 @@ function ReactionStripView({
           size={36}
           onPress={onReport}
           style={styles.action}>
-          <Icon name="report" size={15} color={theme.color.state.danger} />
+          <Icon name="report" size={TOKENS.icon.sm} color={theme.color.state.danger} />
         </Pressable>
       ) : null}
     </Animated.View>

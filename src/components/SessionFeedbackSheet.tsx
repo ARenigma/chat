@@ -158,7 +158,7 @@ export function SessionFeedbackSheet() {
                   agree about their optical weight forever. */}
               <Icon
                 name="star"
-                size={34}
+                size={TOKENS.icon['2xl']}
                 color={on ? theme.color.text.token : theme.color.border.strong}
               />
             </Pressable>

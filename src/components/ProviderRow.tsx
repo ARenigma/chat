@@ -238,7 +238,7 @@ function ProviderRowView({
             Tapping a row here pushes a conversation, which is exactly where iOS
             puts UITableViewCellAccessoryDisclosureIndicator, and its absence was
             the reason a row read as a card that happened to be tappable. */}
-        <Icon name="chevronRight" size={13} color={theme.color.text.tertiary} />
+        <Icon name="chevronRight" size={TOKENS.icon.sm} color={theme.color.text.tertiary} />
       </Pressable>
       {isLast ? null : <View style={styles.separator} />}
     </Animated.View>

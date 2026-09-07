@@ -229,7 +229,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
                   <Icon
                     key={n}
                     name="star"
-                    size={20}
+                    size={TOKENS.icon.md}
                     color={
                       n <= Math.round(ratings.rating_avg ?? 0)
                         ? theme.color.text.token
@@ -249,7 +249,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
                       <Icon
                         key={n}
                         name="star"
-                        size={12}
+                        size={TOKENS.icon.xs}
                         color={n <= r.rating ? theme.color.text.token : theme.color.border.strong}
                       />
                     ))}
@@ -273,7 +273,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
               accessibilityHint="Opens safety options"
               press="row"
               style={styles.safetyRow}>
-              <Icon name="block" size={18} color={theme.color.text.secondary} />
+              <Icon name="block" size={TOKENS.icon.md} color={theme.color.text.secondary} />
               <Text allowFontScaling style={styles.safetyLabel}>
                 Block or report {provider.display_name}
               </Text>
@@ -341,7 +341,7 @@ function FavoriteButton({
         <Icon
           name="heart"
           active={favorite}
-          size={22}
+          size={TOKENS.icon.md}
           color={favorite ? accent : LIGHT.color.text.onAccent}
         />
       </Animated.View>
@@ -650,7 +650,7 @@ function ActionButton({
           kind === 'dark' && styles.actionDark,
           !enabled && styles.actionDisabled,
         ]}>
-        <Icon name={glyph} size={22} color={fg} />
+        <Icon name={glyph} size={TOKENS.icon.lg} color={fg} />
         <Text allowFontScaling numberOfLines={1} style={[styles.actionRate, { color: fg }]}>
           {rateLabel(rate)}
         </Text>

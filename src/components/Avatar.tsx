@@ -20,7 +20,17 @@ import { isClayUri, resolveAvatarSource } from '../lib/clayAvatars';
  * `ROW_SEPARATOR_INSET` derives from it, which is the point of exporting
  * `ROW_AVATAR`.
  */
-type Size = 26 | 30 | 34 | 40 | 48 | 56 | 76 | 88;
+/*
+ * A closed union rather than `number`, so a new size is a decision someone
+ * makes once here instead of a literal that drifts across screens.
+ *
+ * 42 joins it for the chat header (2026-09-07). It is the reference's value,
+ * not a nudge: `ChatAvatarContainer` sets
+ * `avatarImageView.setRoundRadius(dp(21))` (:265), and a circular avatar's
+ * round radius is half its side. The header had been using 30 — a LIST ROW
+ * size — which is what read as too small.
+ */
+type Size = 26 | 30 | 34 | 40 | 42 | 48 | 56 | 76 | 88;
 
 interface Props {
   initial: string;
@@ -61,6 +71,9 @@ const FONT: Record<Size, number> = {
   30: 12,
   34: 13,
   40: 15,
+  // 16 sits on the line the neighbours already describe: the map runs at very
+  // close to 0.375x the diameter (40->15, 48->18), and 42*0.375 = 15.75.
+  42: 16,
   48: 18,
   56: 20,
   76: 27,
@@ -81,6 +94,10 @@ const DOT: Record<Size, number> = {
   30: 10,
   34: 13,
   40: 13,
+  // 13, with 40 rather than with 48. The dot is a presence mark, not a
+  // proportion: 48 is the one avatar Figma measured a bigger circle on, and 42
+  // is nearer the row sizes that all carry 13.
+  42: 13,
   48: 16,
   56: 13,
   76: 18,

@@ -101,7 +101,7 @@ export function ProviderBankScreen({ onBack }: Props) {
           // https://developer.android.com/training/material/animations
           shape="circle"
           style={styles.back}>
-          <Icon name="chevronLeft" size={22} />
+          <Icon name="chevronLeft" size={TOKENS.icon.md} />
         </Pressable>
         <Text
           maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
@@ -227,7 +227,7 @@ export function ProviderBankScreen({ onBack }: Props) {
 
         {accountStatus !== null ? (
           <View style={styles.statusRow}>
-            <Icon name={accountStatus.icon} size={16} color={accountStatus.color(theme)} />
+            <Icon name={accountStatus.icon} size={TOKENS.icon.sm} color={accountStatus.color(theme)} />
             <Text allowFontScaling style={[styles.statusText, { color: accountStatus.color(theme) }]}>
               {accountStatus.label}
               {account?.verification_error != null ? `: ${account.verification_error}` : ''}
@@ -255,7 +255,7 @@ export function ProviderBankScreen({ onBack }: Props) {
         </Text>
         {panStatus !== null ? (
           <View style={styles.statusRow}>
-            <Icon name={panStatus.icon} size={16} color={panStatus.color(theme)} />
+            <Icon name={panStatus.icon} size={TOKENS.icon.sm} color={panStatus.color(theme)} />
             <Text allowFontScaling style={[styles.statusText, { color: panStatus.color(theme) }]}>
               {panStatus.label}
             </Text>

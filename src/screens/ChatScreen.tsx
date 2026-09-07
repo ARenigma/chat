@@ -1272,7 +1272,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
           highlight="dim"
           size={28}
           style={styles.navButton}>
-          <Icon name="chevronLeft" size={22} />
+          <Icon name="chevronLeft" size={TOKENS.icon.md} />
         </Pressable>
         {/* One target for the avatar, the name and the presence line. A centred
             identity block that pushes somewhere is what an iOS nav title does.
@@ -1297,7 +1297,16 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
           press="none"
           highlight="dim"
           style={styles.identity}>
-          <Avatar initial={initial} uri={avatarUrl} size={30} online={presence.here} />
+          {/* 42, not 30 (Amit, 2026-09-07: "dp size too small on chat header").
+              Taken from the reference rather than guessed: ChatAvatarContainer
+              sets `avatarImageView.setRoundRadius(dp(21))` (:265, and again at
+              :1487), and a circular avatar's round radius is half its side — so
+              the 1:1 chat header carries a 42dp picture. Ours was 30, which is
+              the size a LIST ROW wants, not a header.
+              It still fits: the header's `minHeight` is `layout.appBarSmall`
+              (64dp), and the row centres on one axis, so a 42dp avatar and the
+              40dp two-line text column stay concentric. */}
+          <Avatar initial={initial} uri={avatarUrl} size={42} online={presence.here} />
           {/* The two-line reservation is on the COLUMN, and the column centres
               whatever it actually has inside it — see IDENTITY_LINES. That is
               what puts the name on the avatar's axis in the one-line state,
@@ -1340,7 +1349,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
               pendingRequest !== null) &&
               styles.navDisabled,
           ]}>
-          <Icon name="video" size={20} color={theme.color.text.secondary} />
+          <Icon name="video" size={TOKENS.icon.md} color={theme.color.text.secondary} />
         </Pressable>
         <Pressable
           onPress={() => onStartCall?.('audio')}
@@ -1363,7 +1372,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
           {/* 18, not 20: Lucide's phone glyph fills more of its em vertically than
               the video glyph, so at a matched fontSize it read visibly taller next
               to it (#1). Two points down evens the pair. */}
-          <Icon name="call" size={18} color={theme.color.text.secondary} />
+          <Icon name="call" size={TOKENS.icon.md} color={theme.color.text.secondary} />
         </Pressable>
         {/* END, and it lives HERE rather than in the talk bar (Amit, 2026-09-07).
             The bar now appears only inside the last five minutes — "only one
@@ -1392,7 +1401,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
             size={28}
             shape="circle"
             style={styles.navButton}>
-            <Icon name="stop" size={18} color={theme.color.state.danger} />
+            <Icon name="stop" size={TOKENS.icon.md} color={theme.color.state.danger} />
           </Pressable>
         ) : null}
         <TokenCounter balance={balance} onPress={openWallet} />
@@ -1505,7 +1514,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
             // kind. https://developer.android.com/training/material/animations
             shape="circle"
             style={styles.extendCardClose}>
-            <Icon name="close" size={12} color={theme.color.text.secondary} />
+            <Icon name="close" size={TOKENS.icon.xs} color={theme.color.text.secondary} />
           </Pressable>
         </View>
       ) : null}
@@ -1639,7 +1648,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
                 // https://developer.android.com/training/material/animations
                 shape="circle"
                 style={styles.replyClose}>
-                <Icon name="close" size={12} color={theme.color.text.secondary} />
+                <Icon name="close" size={TOKENS.icon.xs} color={theme.color.text.secondary} />
               </Pressable>
             </View>
           ) : null}

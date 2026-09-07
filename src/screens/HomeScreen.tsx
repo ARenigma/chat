@@ -126,6 +126,24 @@ const TAB_COUNT = PROVIDER_CATEGORIES.length;
  */
 const TOP_PICKS = 3;
 
+/**
+ * The search field's side margin, in dp, and it is 7 rather than a token
+ * because the reference measures 7.
+ *
+ * `contentView.addView(fragmentSearchField, LayoutHelper.createFrame(
+ *    LayoutHelper.MATCH_PARENT, 48, Gravity.TOP, 7, -2, 7, 0))`
+ * — DialogsActivity.java:5344 in the 12.10.1 tree. MATCH_PARENT width, 48dp
+ * tall, 7dp either side.
+ *
+ * Named and commented rather than inlined because 7 looks like a mistake next
+ * to a spacing scale of 4/8/12/16: the app's `space.xs` is 8 and `space.md` is
+ * 16, and someone tidying this to either would move the magnifier off the mark.
+ * The field's own 12dp glyph inset is what supplies the optical margin, so the
+ * outer one is deliberately smaller than anything else on the screen — the two
+ * together are the reference's 23dp from screen edge to glyph box.
+ */
+const SEARCH_ROW_SIDE_MARGIN = 7;
+
 interface Props {
   onOpenConversation: (peerId: string) => void;
   onOpenProvider: (providerId: string) => void;
@@ -627,7 +645,7 @@ export function HomeScreen({
                 <Text allowFontScaling style={styles.seeAllText}>
                   See all
                 </Text>
-                <Icon name="chevronRight" size={14} color={theme.color.text.secondary} />
+                <Icon name="chevronRight" size={TOKENS.icon.xs} color={theme.color.text.secondary} />
               </Pressable>
             ) : null}
           </View>
@@ -793,23 +811,26 @@ export function HomeScreen({
             key="search-row"
             entering={searchIn}
             exiting={searchOut}
-            style={styles.navRow}>
-            <Pressable
-              onPress={closeSearch}
-              testID="home-search-close"
-              accessibilityLabel="Leave search"
-              press="none"
-              size={TOKENS.interaction.minTarget}
-              /* Circle, not the 48dp touch box. `navIcon` is a bare box with no
-                 radius, so the state layer was clipped to the box and painted a
-                 full 48dp SQUARE behind a 22pt glyph — the defect Amit reported
-                 ("clicking any icon shows a square container and not contained
-                 within the button"). An icon-only control takes circular ink.
-                 https://developer.android.com/training/material/animations */
-              shape="circle"
-              style={styles.navIcon}>
-              <Icon name="back" size={22} color={theme.color.text.secondary} />
-            </Pressable>
+            style={styles.searchRow}>
+            {/* NO arrow beside the field, and the field takes the whole row.
+                Amit, 2026-09-07: "telegram search icon is on left edge of the
+                bar and one cross to the right edge on the bar with full width
+                bar -- see clearly". He is right, and the source is unambiguous:
+                  contentView.addView(fragmentSearchField,
+                    LayoutHelper.createFrame(MATCH_PARENT, 48, Gravity.TOP,
+                                             7, -2, 7, 0));
+                (DialogsActivity.java:5344) — MATCH_PARENT with 7dp side
+                margins, no sibling. The magnifier is a 24dp box at 12dp from
+                the field's own left edge and the cross the mirror of it at 12dp
+                from the right (FragmentSearchField.java:132 and :159), which is
+                what puts each mark AT its end of the bar.
+                Ours had a 48dp arrow as a row sibling, so the pill started
+                ~70dp in and the magnifier another 16dp inside that. That is the
+                whole of the difference he was pointing at.
+                Leaving search is the hardware back button, which is wired and
+                device-verified as of today (HomeScreen's `searchBackGuard`), and
+                the cross clears the query — the two jobs the reference splits
+                the same way. */}
             <SearchBar
               testID="home-search-input"
               value={query}
@@ -837,7 +858,20 @@ export function HomeScreen({
                 /* Circle, for the same reason as the leave-search arrow above. */
                 shape="circle"
                 style={styles.navIcon}>
-                <Icon name="search" size={24} color={theme.color.text.secondary} />
+                {/* 20, not 24 (Amit, 2026-09-07: "our search icon is too big"
+                    — and he meant this one, in the Home nav row, not the one
+                    inside the field).
+                    Measured on the Redmi before changing it: at size 24 the
+                    magnifier inked 66px at density 2.75 = exactly 24.00dp,
+                    against the wallet glyph beside it at ~18dp. A third larger
+                    than its own neighbour, in the same row, which is what makes
+                    it look wrong rather than any absolute value.
+                    `size` is NOT the rendered size: Icon.tsx multiplies by
+                    ICON_SCALE (1.2) and Lucide inks 19.97 of its 24-unit grid,
+                    so 20 -> em round(24) -> ink 24 * 19.97/24 = 19.97dp. That
+                    lands it on the chat header's video glyph, which is the
+                    nearest comparable control in the app. */}
+                <Icon name="search" size={TOKENS.icon.md} color={theme.color.text.secondary} />
               </Pressable>
               <TourAnchor id="wallet">
                 <TokenCounter balance={balance} onPress={openWallet} />
@@ -1635,6 +1669,28 @@ const makeStyles = (t: Theme) =>
       alignItems: 'center',
       justifyContent: 'space-between',
       gap: TOKENS.space.xs,
+    },
+    /*
+     * The search row is NOT `navRow`, and the difference is the point.
+     *
+     * `navRow` is `space-between` with a gap, which is right for the resting
+     * chrome (wordmark, search, wallet) and wrong for search: it would hold the
+     * field to its content width and centre it in the leftovers. The field has
+     * to be the row.
+     *
+     * `SEARCH_ROW_SIDE_MARGIN` is the reference's own 7dp
+     * (DialogsActivity.java:5344 `createFrame(MATCH_PARENT, 48, ..., 7, -2, 7,
+     * 0)`) rather than the app's usual `space.md`. It is deliberately narrower
+     * than every other margin on this screen, because the field's 12dp internal
+     * glyph inset already supplies the optical inset — stacking 16dp on top of
+     * that is exactly how the magnifier ended up 28dp from the screen edge
+     * instead of 23.
+     */
+    searchRow: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginHorizontal: SEARCH_ROW_SIDE_MARGIN,
     },
     /*
      * "Top profiles this week" over the hero carousel. A heading, because a row

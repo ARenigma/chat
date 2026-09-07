@@ -300,7 +300,7 @@ function EmojiPickerView({
         View above is always rendered so the slot holds its height in the dock. */}
     {(settled || visible) ? <>
       <View style={styles.searchRow}>
-        <Icon name="search" size={16} color={theme.color.text.tertiary} />
+        <Icon name="search" size={TOKENS.icon.sm} color={theme.color.text.tertiary} />
         <TextField
           ref={searchRef}
           value={query}
@@ -331,7 +331,7 @@ function EmojiPickerView({
             highlight="dim"
             size={32}
             style={styles.close}>
-            <Icon name="close" size={14} color={theme.color.text.secondary} />
+            <Icon name="close" size={TOKENS.icon.sm} color={theme.color.text.secondary} />
           </Pressable>
         ) : null}
       </View>
@@ -429,7 +429,7 @@ function EmojiPickerView({
           highlight="material"
           size={BACKSPACE}
           style={styles.backspace}>
-          <Icon name="delete" size={20} color={theme.color.text.secondary} />
+          <Icon name="delete" size={TOKENS.icon.md} color={theme.color.text.secondary} />
         </Pressable>
       </View>
     </> : null}

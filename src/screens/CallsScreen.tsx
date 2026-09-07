@@ -26,7 +26,7 @@ export function CallsScreen() {
         </Text>
       </View>
       <View style={styles.empty}>
-        <Icon name="call" size={36} color={theme.color.text.tertiary} />
+        <Icon name="call" size={TOKENS.icon['2xl']} color={theme.color.text.tertiary} />
         <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.emptyTitle}>
           No calls yet
         </Text>

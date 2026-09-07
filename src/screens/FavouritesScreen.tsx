@@ -119,7 +119,7 @@ export function FavouritesScreen({ onOpenProvider }: Props) {
         />
       ) : (
         <View style={styles.empty}>
-          <Icon name="heart" size={36} color={theme.color.text.tertiary} />
+          <Icon name="heart" size={TOKENS.icon['2xl']} color={theme.color.text.tertiary} />
           <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.emptyTitle}>
             No favourites yet
           </Text>

@@ -346,7 +346,7 @@ export function ProfileSetupScreen({
             style={styles.checkboxHit}>
             <View style={[styles.checkbox, termsChecked && styles.checkboxOn]}>
               {termsChecked ? (
-                <Icon name="check" size={14} color={theme.color.text.onAccent} />
+                <Icon name="check" size={TOKENS.icon.xs} color={theme.color.text.onAccent} />
               ) : null}
             </View>
           </Pressable>

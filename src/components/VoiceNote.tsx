@@ -115,9 +115,9 @@ function VoiceNoteView({
             // on a bad connection, and a play button that does nothing visible in
             // that second gets tapped again, which stops what the first tap
             // started. Three dots is the smallest honest "working on it".
-            <Icon name="more" size={16} color={tint} />
+            <Icon name="more" size={TOKENS.icon.sm} color={tint} />
           ) : (
-            <Icon name={playing ? 'pause' : 'play'} size={14} color={tint} />
+            <Icon name={playing ? 'pause' : 'play'} size={TOKENS.icon.sm} color={tint} />
           )}
         </Pressable>
 

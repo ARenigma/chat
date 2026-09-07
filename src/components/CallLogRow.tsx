@@ -55,7 +55,7 @@ function CallLogRowView({ call }: { call: CallRecord }) {
   return (
     <View style={styles.row}>
       <View style={styles.pill}>
-        <Icon name={iconName} size={11} color={styles.text.color as string} />
+        <Icon name={iconName} size={TOKENS.icon.xs} color={styles.text.color as string} />
         <Text allowFontScaling style={styles.text}>
           {label}
         </Text>

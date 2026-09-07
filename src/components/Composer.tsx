@@ -1019,7 +1019,7 @@ function ComposerView({
             shape="circle"
             style={styles.panelButton}
           >
-            <Icon name="close" size={14} color={theme.color.text.secondary} />
+            <Icon name="close" size={TOKENS.icon.sm} color={theme.color.text.secondary} />
           </Pressable>
           {/* The one red thing in the app, and it earns it: this is the only
               moment the microphone is live, and every recorder on every platform
@@ -1053,7 +1053,7 @@ function ComposerView({
             size={32}
             style={styles.stop}
           >
-            <Icon name="stop" size={14} color={theme.color.text.primary} />
+            <Icon name="stop" size={TOKENS.icon.sm} color={theme.color.text.primary} />
           </Pressable>
         </View>
       </View>
@@ -1079,7 +1079,7 @@ function ComposerView({
             shape="circle"
             style={styles.panelButton}
           >
-            <Icon name="close" size={14} color={theme.color.text.secondary} />
+            <Icon name="close" size={TOKENS.icon.sm} color={theme.color.text.secondary} />
           </Pressable>
           <Text testID="voice-length" allowFontScaling style={styles.clock}>
             {clock(draft.durationMs)}
@@ -1157,7 +1157,7 @@ function ComposerView({
           style={styles.emoji}>
           <Icon
             name={emojiOpen ? 'keyboard' : 'smile'}
-            size={24}
+            size={TOKENS.icon.lg}
             color={theme.color.text.secondary}
           />
         </Pressable>
@@ -1256,7 +1256,7 @@ function ComposerView({
           highlight="material"
           size={40}
           style={styles.camera}>
-          <Icon name="camera" size={22} color={theme.color.text.secondary} />
+          <Icon name="camera" size={TOKENS.icon.md} color={theme.color.text.secondary} />
         </Pressable>
       </Animated.View>
 
@@ -1282,7 +1282,7 @@ function ComposerView({
             highlight="material"
             size={40}
             style={styles.mic}>
-            <Icon name="mic" size={22} color={theme.color.text.secondary} />
+            <Icon name="mic" size={TOKENS.icon.md} color={theme.color.text.secondary} />
           </Pressable>
         </Animated.View>
         <Animated.View

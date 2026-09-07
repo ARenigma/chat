@@ -143,7 +143,7 @@ export function PermissionsScreen({ onGranted, onSignOut }: Props) {
                   action or a state, and the accent budget (theme.test) is for
                   those two only. */}
               <View style={styles.disc}>
-                <Icon name={p.icon} size={22} color={theme.color.text.secondary} />
+                <Icon name={p.icon} size={TOKENS.icon.md} color={theme.color.text.secondary} />
               </View>
               <View style={styles.rowText}>
                 <Text allowFontScaling style={styles.rowTitle}>

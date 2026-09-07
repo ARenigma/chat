@@ -55,7 +55,7 @@ function TokenCounterView({ balance, onPress }: Props) {
       }
       accessibilityHint={critical ? 'Opens Recharge' : 'Opens Recharge and explains rates'}>
       <Animated.View style={[styles.pill, pillStyle(tone, theme), animated]}>
-        <Icon name="wallet" active size={15} color={ink} />
+        <Icon name="wallet" active size={TOKENS.icon.xs} color={ink} />
         <Text
           testID="token-count"
           allowFontScaling

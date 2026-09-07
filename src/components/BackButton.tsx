@@ -1,5 +1,6 @@
 import React from 'react';
 import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import { TOKENS } from '../theme/tokens';
 import { useTheme } from '../theme/ThemeProvider';
 import { Icon } from './Icon';
 import { Pressable } from './Pressable';
@@ -46,7 +47,7 @@ export function BackButton({ onPress, testID, accessibilityLabel = 'Back', style
       // mean widening the box to 40, which moves the header layout.
       shape="circle"
       style={[styles.button, style]}>
-      <Icon name="chevronLeft" size={22} color={tint ?? theme.color.text.primary} />
+      <Icon name="chevronLeft" size={TOKENS.icon.md} color={tint ?? theme.color.text.primary} />
     </Pressable>
   );
 }

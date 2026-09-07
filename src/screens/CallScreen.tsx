@@ -607,7 +607,7 @@ function CallAction({
         highlight="dim"
         size={72}
         style={[styles.action, tone === 'danger' ? styles.danger : styles.accept]}>
-        <Icon name={glyph} size={30} color={LIGHT.color.text.onAccent} />
+        <Icon name={glyph} size={TOKENS.icon.xl} color={LIGHT.color.text.onAccent} />
       </Pressable>
       <Text allowFontScaling style={styles.actionLabel}>
         {label}
@@ -663,7 +663,7 @@ function BarButton({
           tone !== 'danger' && fill === 'ghost' && styles.barButtonGhost,
           active && tone !== 'danger' && fill === 'ghost' && styles.barButtonActive,
         ]}>
-        <Icon name={glyph} size={24} color={fg} />
+        <Icon name={glyph} size={TOKENS.icon.lg} color={fg} />
       </Pressable>
       <Text allowFontScaling style={styles.barLabel}>
         {label}

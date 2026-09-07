@@ -180,7 +180,7 @@ function FloatingToolbarView({
                 // a filled heart reads as a save action instead of navigation.
                 active={on && tab.key !== 'favourites'}
                 // 20 * the 1.2 icon scale = ~24px, the Material 3 nav icon size.
-                size={20}
+                size={TOKENS.icon.md}
                 color={
                   on
                     ? theme.color.text.accent

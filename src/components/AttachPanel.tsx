@@ -162,7 +162,7 @@ function AttachPanelView({
             />
           ) : (
             <View style={styles.placeholder}>
-              <Icon name="camera" size={28} color={theme.color.text.secondary} />
+              <Icon name="camera" size={TOKENS.icon.xl} color={theme.color.text.secondary} />
             </View>
           )}
           {/* The label stays over the live preview: without it a viewfinder in a
@@ -186,7 +186,7 @@ function AttachPanelView({
           press="card"
           highlight="material"
           style={[styles.cell, styles.galleryCell, { height: cellSize }]}>
-          <Icon name="image" size={28} color={theme.color.text.secondary} />
+          <Icon name="image" size={TOKENS.icon.xl} color={theme.color.text.secondary} />
           <Text allowFontScaling={false} style={styles.galleryLabel}>
             Photos
           </Text>

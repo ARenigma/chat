@@ -1697,7 +1697,7 @@ describe('the redesign holds its own invariants', () => {
     expect(typing).not.toMatch(/width:\s*26/);
 
     // The header is where the avatar now lives, exclusively.
-    expect(chat).toContain('<Avatar initial={initial} uri={avatarUrl} size={30}');
+    expect(chat).toContain('<Avatar initial={initial} uri={avatarUrl} size={42}');
   });
 
   it('routes the back gesture through the parent map rather than branching inline', () => {
@@ -4564,7 +4564,19 @@ describe('search opens the way Telegram opens it, and the week has a carousel', 
     // nothing to reflow.
     expect(home).toContain('entering={searchIn}');
     expect(home).toContain('exiting={searchOut}');
-    expect(home.match(/style=\{styles\.navRow\}/g)?.length).toBe(2);
+    /*
+     * ONE `navRow` now, not two. The search state has its own `searchRow`
+     * (2026-09-07): the field is MATCH_PARENT with 7dp side margins in the
+     * reference (DialogsActivity.java:5344), so it cannot share a
+     * `space-between` row with a sibling arrow and still reach both edges.
+     * What this gate is really for — that the two states are Animated rows in
+     * ONE container, so the crossfade has nothing to reflow — is unchanged and
+     * asserted directly below.
+     */
+    expect(home.match(/style=\{styles\.navRow\}/g)?.length).toBe(1);
+    expect(home).toContain('style={styles.searchRow}');
+    expect(home).toMatch(/searchRow: \{[\s\S]{0,200}marginHorizontal: SEARCH_ROW_SIDE_MARGIN/);
+    expect(home).toContain('const SEARCH_ROW_SIDE_MARGIN = 7;');
   });
 
   it('lets the hardware back button leave search, not just the arrow', () => {
@@ -4596,14 +4608,35 @@ describe('search opens the way Telegram opens it, and the week has a carousel', 
     );
   });
 
-  it('shows exactly one cross: the field clears, an arrow leaves', () => {
-    // With a cross in the nav AND the field's own clear, a member with text
-    // typed saw two and could not tell which lost their query (Amit,
-    // 2026-09-06). Telegram uses the ActionBar back arrow for the same reason.
+  it('shows exactly one cross, and the field is the whole row', () => {
+    /*
+     * The original rule (Amit, 2026-09-06) was "one cross": a cross in the nav
+     * AND the field's own clear meant a member with text typed saw two and could
+     * not tell which lost their query. That rule still holds and is asserted
+     * below.
+     *
+     * What changed on 2026-09-07 is the OTHER control. The row used to carry a
+     * back arrow beside the field to leave search; it now carries nothing but
+     * the field. Amit: "telegram search icon is on left edge of the bar and one
+     * cross to the right edge on the bar with full width bar". The source agrees
+     * and is unambiguous —
+     *   contentView.addView(fragmentSearchField, LayoutHelper.createFrame(
+     *     LayoutHelper.MATCH_PARENT, 48, Gravity.TOP, 7, -2, 7, 0));
+     * (DialogsActivity.java:5344) — MATCH_PARENT, 7dp either side, no sibling.
+     * A 48dp arrow in the row is what made our pill start ~70dp in and put the
+     * magnifier another 16dp inside that.
+     *
+     * Leaving search is the hardware back button, which is wired and was
+     * verified on the Redmi the same day (`searchBackGuard`, gated just below).
+     * That is also what the reference relies on.
+     */
     const searchRow = home.slice(home.indexOf('key="search-row"'), home.indexOf('key="nav-row"'));
-    expect(searchRow).toContain('<Icon name="back"');
+    expect(searchRow).not.toContain('<Icon name="back"');
     expect(searchRow).not.toContain('name="close"');
-    expect(searchRow).toContain('accessibilityLabel="Leave search"');
+    expect(searchRow).not.toContain('accessibilityLabel="Leave search"');
+    // The field IS the row: one child, on the reference's own 7dp margin.
+    expect(searchRow).toContain('<SearchBar');
+    expect(searchRow).toContain('style={styles.searchRow}');
     /*
      * GATE CORRECTION, 2026-09-07. This used to assert that SearchBar.tsx
      * contains the literal `'value.length > 0 ?'` and called that "the one cross

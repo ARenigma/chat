@@ -80,7 +80,7 @@ export function TransactionHistoryScreen({ onBack }: Props) {
       ) : !data || data.length === 0 ? (
         /* Empty state — expected today with PAYMENTS_ENABLED=false */
         <View style={styles.center}>
-          <Icon name="wallet" size={40} color={theme.color.text.tertiary} />
+          <Icon name="wallet" size={TOKENS.icon['2xl']} color={theme.color.text.tertiary} />
           <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.emptyTitle}>
             No recharges yet
           </Text>
@@ -169,7 +169,7 @@ function TransactionRow({ tx, onDownload }: RowProps) {
             // https://developer.android.com/training/material/animations
             shape="circle"
             style={styles.downloadBtn}>
-            <Icon name="download" size={18} color={theme.color.text.secondary} />
+            <Icon name="download" size={TOKENS.icon.md} color={theme.color.text.secondary} />
           </Pressable>
         ) : null}
       </View>
