@@ -2330,11 +2330,19 @@ describe('voice notes are recorded, uploaded and sent through the one send path'
   const api = read('src/api/voice.ts');
   const composer = read('src/components/Composer.tsx');
 
-  it('sends through send_message rather than inserting a row', () => {
-    // The RPC debits the token and writes the row in one transaction. A client
-    // insert would need an INSERT policy on `messages`, which deliberately does
-    // not exist, and would put a second pricing path next to the first.
-    expect(api).toContain("supabase.rpc('send_message'");
+  it('sends through the one send RPC rather than inserting a row', () => {
+    // The RPC writes the row, attaches the session and enforces the block graph
+    // in one transaction. A client insert would need an INSERT policy on
+    // `messages`, which deliberately does not exist, and would put a second
+    // pricing path next to the first.
+    //
+    // Matched on the `send_message` PREFIX, so it holds for
+    // `send_message_idempotent` (migration 081) without going blind to a future
+    // second send path: a direct insert still fails the last assertion.
+    expect(api).toMatch(/supabase\.rpc\('send_message(_idempotent)?'/);
+    // 081: the idempotency key must actually be passed, or the wrapper silently
+    // degrades to the un-deduped path it wraps.
+    expect(api).toContain('p_client_nonce: nonce');
     expect(api).toContain('p_voice_path: path');
     expect(api).toContain('p_voice_duration_ms: draft.durationMs');
     expect(withoutComments(api)).not.toMatch(/from\('messages'\)\s*\.\s*insert/);
@@ -2345,9 +2353,9 @@ describe('voice notes are recorded, uploaded and sent through the one send path'
     // `guard_message_reply_and_voice`. So the row is written once and has to
     // reference audio that already exists.
     const body = withoutComments(api);
-    expect(body.indexOf('uploadRecording')).toBeLessThan(
-      body.indexOf("supabase.rpc('send_message'"),
-    );
+    const sendAt = body.search(/supabase\.rpc\('send_message(_idempotent)?'/);
+    expect(sendAt).toBeGreaterThan(0);
+    expect(body.indexOf('uploadRecording')).toBeLessThan(sendAt);
   });
 
   it('does not reach for storage-js upload, which throws in React Native', () => {

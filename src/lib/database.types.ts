@@ -1012,6 +1012,31 @@ export type Database = {
        * unchanged, but exactly one of `p_body`, `p_voice_path` and
        * `p_attachment_path` may be set (014 made the payload three-way).
        */
+      /**
+       * `send_message` with Telegram-style idempotency (migration 081). A retry
+       * carrying the same `p_client_nonce` returns the ORIGINAL message with
+       * `deduped: true` rather than inserting a second row.
+       *
+       * The nonce is first in the argument list on the server so the two
+       * functions can never be confused positionally; named args here make that
+       * moot, but the order is mirrored anyway.
+       */
+      send_message_idempotent: {
+        Args: {
+          /** Client-generated v4 uuid. Reused unchanged on retry — that reuse is what makes the retry safe. */
+          p_client_nonce: string | null;
+          p_conversation_id: string;
+          p_body?: string | null;
+          p_reply_to_id?: string | null;
+          p_voice_path?: string | null;
+          p_voice_duration_ms?: number | null;
+          p_attachment_path?: string | null;
+          p_attachment_width?: number | null;
+          p_attachment_height?: number | null;
+          p_voice_peaks?: number[] | null;
+        };
+        Returns: SendResult;
+      };
       send_message: {
         Args: {
           p_conversation_id: string;
