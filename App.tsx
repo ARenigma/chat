@@ -1243,6 +1243,7 @@ function SignedIn({
         <PushedLayer key={providerRoute.name} style={styles.fill}>
           {providerRoute.name === 'call' ? (
             <CallScreen
+              key={providerRoute.callId ?? 'starting'}
               providerId={providerRoute.peerId}
               direction={providerRoute.direction}
               callId={providerRoute.callId}
@@ -1250,11 +1251,27 @@ function SignedIn({
               // Symmetry with the member tree: hanging up returns to that peer's
               // chat, not the provider home (user 2026-08-31).
               onEnd={() => popProvider({ name: 'chat', peerId: providerRoute.peerId })}
+              onUpgradeToVideo={newCallId =>
+                pushProvider({
+                  name: 'call',
+                  peerId: providerRoute.peerId,
+                  direction: 'out',
+                  callId: newCallId,
+                  medium: 'video',
+                })
+              }
             />
           ) : providerRoute.name === 'chat' ? (
             <ChatScreen
               providerId={providerRoute.peerId}
               onBack={() => popProvider({ name: 'home' })}
+              onOpenEarnings={() =>
+                pushProvider({
+                  name: 'usage',
+                  from: 'chat',
+                  peerId: providerRoute.peerId,
+                })
+              }
               onStartCall={channel =>
                 pushProvider({
                   name: 'call',
@@ -1273,12 +1290,23 @@ function SignedIn({
                 onSignedOut();
               }}
               onSignedOut={onSignedOut}
-              onUsage={() => pushProvider({ name: 'usage' })}
+              onUsage={() => pushProvider({ name: 'usage', from: 'settings' })}
             />
           ) : providerRoute.name === 'payout' ? (
             <ProviderBankScreen onBack={() => popProvider({ name: 'home' })} />
           ) : providerRoute.name === 'usage' ? (
-            <UsageLedgerScreen onBack={() => popProvider({ name: 'settings' })} />
+            <UsageLedgerScreen
+              onBack={() => {
+                if (
+                  providerRoute.from === 'chat' &&
+                  providerRoute.peerId !== undefined
+                ) {
+                  popProvider({ name: 'chat', peerId: providerRoute.peerId });
+                  return;
+                }
+                popProvider({ name: 'settings' });
+              }}
+            />
           ) : (
             <ProviderHomeScreen
               onOpenConversation={peerId => pushProvider({ name: 'chat', peerId })}
@@ -1403,6 +1431,7 @@ function SignedIn({
           {route.name === 'call' ? (
             <AfterPaint>
               <CallScreen
+                key={route.callId ?? 'starting'}
                 providerId={route.providerId}
                 direction={route.direction}
                 callId={route.callId}
@@ -1413,6 +1442,15 @@ function SignedIn({
                 // outgoing call (started from the chat) and an answered incoming
                 // ring, which should also drop the member into that SP's thread.
                 onEnd={() => openChat(route.providerId)}
+                onUpgradeToVideo={newCallId =>
+                  setRoute({
+                    name: 'call',
+                    providerId: route.providerId,
+                    direction: 'out',
+                    callId: newCallId,
+                    medium: 'video',
+                  })
+                }
               />
             </AfterPaint>
           ) : route.name === 'providerDetail' ? (

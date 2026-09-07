@@ -114,6 +114,7 @@ const MIGRATIONS = [
   'supabase/migrations/071_config_readable_by_the_server.sql',
   'supabase/migrations/072_member_language_preferences.sql',
   'supabase/migrations/073_call_upgrade_from_chat.sql',
+  'supabase/migrations/074_audio_to_video_upgrade.sql',
 ];
 
 const docker = (args, options = {}) =>
