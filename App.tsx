@@ -919,7 +919,15 @@ function Root() {
    * A dev on an older native shell, anyone offline, and every current client
    * fall straight through.
    */
-  const support = supportVerdict(currentVersionCode(), clientSupport?.min_version_code ?? 0);
+  const support = supportVerdict(
+    currentVersionCode(),
+    clientSupport?.min_version_code ?? 0,
+    // Debug builds carry versionCode 1 (gradle's default; release codes are
+    // passed in at build time), which is below any floor anyone would publish.
+    // Without this the first raise of the floor would lock every dev out of the
+    // hot-reload device. See `supportVerdict`.
+    __DEV__,
+  );
   if (support.state === 'must-update') {
     return (
       <View style={styles.fatal}>
