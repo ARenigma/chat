@@ -9,9 +9,15 @@ import { Icon } from './Icon';
 import { Pressable } from './Pressable';
 
 interface Props {
-  /** The token balance. Null while loading. */
+  /** The token balance (members) or earnings total (providers). Null while loading. */
   balance: number | null;
   onPress: () => void;
+  /**
+   * Members buy talk time; providers are paid for it. Same pill, different number
+   * and destination — recharge vs earnings ledger. Default keeps every existing
+   * call site on the member path.
+   */
+  variant?: 'balance' | 'earnings';
 }
 
 /**
@@ -20,13 +26,15 @@ interface Props {
  * Tone is talk-time, not a raw token count (2026-08-29): deep green when an hour
  * or more remains at the chat rate, red under ten minutes, lime yellow otherwise.
  * The flinch still fires only on the transition into critical so navigation
- * remounts do not twitch the pill.
+ * remounts do not twitch the pill. Earnings never flinch: a zero payout is not
+ * an urgent wallet state.
  */
-function TokenCounterView({ balance, onPress }: Props) {
+function TokenCounterView({ balance, onPress, variant = 'balance' }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
-  const tone = walletTone(balance);
-  const critical = tone === 'critical';
+  const earnings = variant === 'earnings';
+  const tone = earnings ? 'healthy' : walletTone(balance);
+  const critical = !earnings && tone === 'critical';
   const flinch = useSharedValue(0);
   const wasCritical = useRef(critical);
 
@@ -42,6 +50,8 @@ function TokenCounterView({ balance, onPress }: Props) {
   }));
 
   const ink = inkForTone(tone, theme);
+  const label =
+    balance === null ? '' : earnings ? `₹${formatTokens(balance)}` : formatTokens(balance);
 
   return (
     <Pressable
@@ -50,17 +60,27 @@ function TokenCounterView({ balance, onPress }: Props) {
       press="chip"
       accessibilityLabel={
         balance === null
-          ? 'Balance loading'
-          : `${formatTokens(balance)} tokens. Talk time is charged by the minute.`
+          ? earnings
+            ? 'Earnings loading'
+            : 'Balance loading'
+          : earnings
+            ? `${formatTokens(balance)} rupees earned. Opens your earnings by session.`
+            : `${formatTokens(balance)} tokens. Talk time is charged by the minute.`
       }
-      accessibilityHint={critical ? 'Opens Recharge' : 'Opens Recharge and explains rates'}>
+      accessibilityHint={
+        earnings
+          ? 'Opens earnings by session'
+          : critical
+            ? 'Opens Recharge'
+            : 'Opens Recharge and explains rates'
+      }>
       <Animated.View style={[styles.pill, pillStyle(tone, theme), animated]}>
         <Icon name="wallet" active size={TOKENS.icon.xs} color={ink} />
         <Text
           testID="token-count"
           allowFontScaling
           style={[styles.label, { color: ink }]}>
-          {balance === null ? '' : formatTokens(balance)}
+          {label}
         </Text>
       </Animated.View>
     </Pressable>
