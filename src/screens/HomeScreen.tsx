@@ -1690,7 +1690,24 @@ const makeStyles = (t: Theme) =>
       flex: 1,
       flexDirection: 'row',
       alignItems: 'center',
-      marginHorizontal: SEARCH_ROW_SIDE_MARGIN,
+      /*
+       * NEGATIVE, and that is the point: this has to CANCEL the parent.
+       *
+       * `nav` above carries `paddingHorizontal: TOKENS.space.md` (16dp), which
+       * is right for the resting chrome and wrong for search — it is a padding,
+       * so a child cannot opt out of it, only pull back through it. Measured on
+       * the Redmi before this line existed: the pill sat 26.9dp from each screen
+       * edge, which is exactly 16 (nav) + 7 (this margin) + 4 (the pill's own
+       * inset) and 16dp further in than the reference on both sides.
+       *
+       * The reference is 7dp of row margin over a 4dp pill inset — 11dp from
+       * screen edge to pill (DialogsActivity.java:5344 `createFrame(
+       * MATCH_PARENT, 48, Gravity.TOP, 7, -2, 7, 0)` and :3294
+       * `setPadding(dp(4) x4)`). So the margin is `7 - 16 = -9`, written as the
+       * subtraction rather than as `-9` so that changing either the nav padding
+       * or the reference's 7 keeps this correct instead of silently drifting.
+       */
+      marginHorizontal: SEARCH_ROW_SIDE_MARGIN - TOKENS.space.md,
     },
     /*
      * "Top profiles this week" over the hero carousel. A heading, because a row
