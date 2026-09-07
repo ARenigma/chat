@@ -9,7 +9,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { formatRupees, formatTokens, gstExclusiveLabel, MOCK_PAYMENTS, PAYMENTS_ENABLED } from '../lib/rates';
+import { formatRupees, formatTokens, gstAddedLabel, packTotalInr, MOCK_PAYMENTS, PAYMENTS_ENABLED } from '../lib/rates';
 import { FALLBACK_ECONOMICS, useEconomicsConfig } from '../api/appConfig';
 import { supabase } from '../lib/supabase';
 import { Button } from '../components/Button';
@@ -61,7 +61,9 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
   // the same way the pack states it — base + tax, the two summing exactly to
   // the total on the button. One line rather than two: unlike a 48%-wide card
   // the sheet body has the full width, and the total already precedes it.
-  const gst = gstExclusiveLabel(amount, economics?.gst_rate_bps ?? FALLBACK_ECONOMICS.gst_rate_bps);
+  const gstRateBps = economics?.gst_rate_bps ?? FALLBACK_ECONOMICS.gst_rate_bps;
+  const gst = gstAddedLabel(amount, gstRateBps);
+  const total = packTotalInr(amount, gstRateBps);
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const queryClient = useQueryClient();
@@ -152,10 +154,10 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
     mockPhase === 'success'
       ? undefined
       : mockPhase === 'processing'
-        ? `Paying ${formatRupees(amount)} via ${isCashfree ? 'Cashfree' : method}`
+        ? `Paying ${formatRupees(total)} via ${isCashfree ? 'Cashfree' : method}`
         : isCashfree
-          ? `Add ${formatTokens(amount)} tokens  ·  ${formatRupees(amount)}${gst ? ` (${gst})` : ''}  ·  Sandbox checkout`
-          : `Add ${formatTokens(amount)} tokens  ·  ${formatRupees(amount)}${gst ? ` (${gst})` : ''}`;
+          ? `Add ${formatTokens(amount)} tokens  ·  ${formatRupees(total)}${gst ? ` (${gst})` : ''}  ·  Sandbox checkout`
+          : `Add ${formatTokens(amount)} tokens  ·  ${formatRupees(total)}${gst ? ` (${gst})` : ''}`;
 
   if (mockPhase === 'success') {
     return (
@@ -273,7 +275,7 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
               {/* One-tap: fires the UPI intent chooser and deep-links into the
                   member's own GPay / PhonePe / Paytm (research 2026-08-30). */}
               <Button
-                label={`Pay ${formatRupees(amount)}  ·  UPI`}
+                label={`Pay ${formatRupees(total)}  ·  UPI`}
                 onPress={() => handleCashfreePay('upi')}
                 testID="payment-confirm"
               />

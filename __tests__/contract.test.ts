@@ -242,7 +242,7 @@ describe('GST is disclosed where money moves and nowhere else', () => {
     // `gst_rate_bps = 0` has to zero the tax in the ARITHMETIC, not just hide a
     // label, or the base line would still be short of the price. The label side
     // of this — every disclosure returning null at rate 0 — is asserted on
-    // `gstExclusiveLabel`/`gstExclusiveParts` in rechargeChips.test.ts.
+    // `gstAddedLabel`/`gstAddedSpoken` in rechargeChips.test.ts.
     expect(gstSplit(300, 0).gstPaise).toBe(0);
     expect(gstSplit(300, 0).taxablePaise).toBe(30000);
   });
@@ -281,12 +281,16 @@ describe('GST is disclosed where money moves and nowhere else', () => {
     const rates = withoutComments(read('src/lib/rates.ts'));
     expect(rates).not.toContain('gstIncludedLabel');
     expect(rates).not.toContain('gstPercentLabel');
-    // The arithmetic and the exclusive presentation are what remain, and both are
-    // load-bearing: gstExclusiveParts calls gstSplit, and gstSplit is the shared
-    // expression generate-invoice prints.
+    // The arithmetic and the exclusive-on-top presentation are what remain.
+    // gstSplit is the shared back-out expression generate-invoice prints;
+    // gstOnTop / gstAddedLabel / gstAddedSpoken are the ADR-0029 exports.
     expect(rates).toContain('export function gstSplit(');
-    expect(rates).toContain('export function gstExclusiveParts(');
-    expect(rates).toContain('export function gstExclusiveLabel(');
+    expect(rates).toContain('export function gstOnTop(');
+    expect(rates).toContain('export function gstAddedLabel(');
+    expect(rates).toContain('export function gstAddedSpoken(');
+    // The old inclusive names must be gone from code (still named in comments).
+    expect(rates).not.toContain('export function gstExclusiveParts(');
+    expect(rates).not.toContain('export function gstExclusiveLabel(');
   });
 
   it('keeps the fallback rate in step with the admin economics fallback', () => {
@@ -300,14 +304,12 @@ describe('GST is disclosed where money moves and nowhere else', () => {
   it('names GST on every recharge surface and on no chat surface', () => {
     // Positive: the pack cards (both hosts), the pay row and the payment sheet.
     //
-    // The label these surfaces call is now the EXCLUSIVE one — the price is
-    // still GST-inclusive (ADR-0021, and create-order captures the pack price
-    // exactly), so the only honest tax-exclusive presentation of it is to name
-    // the pre-tax base and the tax separately rather than to add anything on
-    // top. What this gate cares about is unchanged: every surface where rupees
+    // The label these surfaces call is now the EXCLUSIVE-ON-TOP one (ADR-0029):
+    // the pack IS the base, the tax is added on top, and the Pay bar names the
+    // total. What this gate cares about is unchanged: every surface where rupees
     // move names the tax. Matching the family rather than one name so a future
-    // rename cannot silently empty the assertion the way it just did.
-    const NAMES_GST = /gstExclusive(Label|Parts)\(/g;
+    // rename cannot silently empty the assertion.
+    const NAMES_GST = /gstAdded(Label|Spoken)\(/g;
     const recharge = withoutComments(read('src/screens/RechargeScreen.tsx'));
     expect(recharge.match(NAMES_GST)?.length ?? 0).toBeGreaterThanOrEqual(4);
     expect(withoutComments(read('src/screens/PaymentSheet.tsx'))).toMatch(NAMES_GST);
@@ -324,7 +326,7 @@ describe('GST is disclosed where money moves and nowhere else', () => {
         if (!file.endsWith('.tsx') || allowed.has(file)) {
           continue;
         }
-        expect({ file, mentionsGst: /\bGST\b|gst(Split|IncludedLabel|ExclusiveLabel|ExclusiveParts|PercentLabel)/.test(withoutComments(read(`${dir}/${file}`))) })
+        expect({ file, mentionsGst: /\bGST\b|gst(Split|IncludedLabel|ExclusiveLabel|ExclusiveParts|PercentLabel|AddedLabel|AddedSpoken|OnTop)/.test(withoutComments(read(`${dir}/${file}`))) })
           .toEqual({ file, mentionsGst: false });
       }
     }
