@@ -18,6 +18,18 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { ENV } from '../lib/env';
+import {
+  FALLBACK_CLIENT_SUPPORT,
+  type ClientSupportConfig,
+} from '../lib/clientSupport';
+
+/*
+ * The shape and the fallback live in `lib/clientSupport.ts`, not here, because
+ * the decision they feed has to be unit-testable and this module imports
+ * supabase. Re-exported so consumers still have one config import.
+ */
+export { FALLBACK_CLIENT_SUPPORT };
+export type { ClientSupportConfig };
 
 // ─── Domain payload types ────────────────────────────────────────────────────
 
@@ -250,6 +262,29 @@ export function useThresholdsConfig() {
     staleTime: STALE_TIME,
     gcTime: GC_TIME,
     placeholderData: FALLBACK_THRESHOLDS,
+  });
+}
+
+/**
+ * The minimum client this server will talk to.
+ *
+ * PUBLIC, so it resolves before sign-in: an unsupported build must be told so
+ * on the first screen rather than after it has authenticated into a tree whose
+ * RPC contract it cannot satisfy.
+ *
+ * A short stale time and no `placeholderData`. The other domains hand out the
+ * compile-time fallback immediately because a slightly stale rate is harmless;
+ * here the fallback means "no floor", and serving it as placeholder data would
+ * flash the app open for a moment before the real answer arrived. The gate
+ * treats `undefined` as "still asking" and waits.
+ */
+export function useClientSupport() {
+  return useQuery({
+    queryKey: ['config', 'client_support'],
+    queryFn: () =>
+      fetchPublicConfig<ClientSupportConfig>('client_support', FALLBACK_CLIENT_SUPPORT),
+    staleTime: 60 * 1000,
+    gcTime: GC_TIME,
   });
 }
 

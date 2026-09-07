@@ -25,8 +25,27 @@ const NATIVE = (NativeModules as Record<string, unknown>).InAppUpdate as
       startFlexible(): Promise<boolean>;
       startImmediate(): Promise<boolean>;
       complete(): Promise<boolean>;
+      /**
+       * This build's own versionCode, from the module's `getConstants()`.
+       * Optional in the type on purpose: a JS bundle can be newer than the
+       * native shell it is running in (every Metro reload during development),
+       * so the constant may genuinely be absent and the caller must cope.
+       */
+      versionCode?: number;
     }
   | undefined;
+
+/**
+ * This build's versionCode, or 0 when it cannot be determined.
+ *
+ * 0 rather than a throw or a null: `supportVerdict` treats any non-positive
+ * value as "unknown" and declines to gate, which is the behaviour a developer
+ * on an older native shell needs. See `lib/clientSupport.ts`.
+ */
+export function currentVersionCode(): number {
+  const raw = NATIVE?.versionCode;
+  return typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? raw : 0;
+}
 
 /** When a flexible update was last offered, so it is not offered every launch. */
 const PROMPTED_KEY = 'companion.updatePromptedAt';
@@ -102,6 +121,35 @@ export async function runUpdateCheck(): Promise<UpdateAction> {
   }
 
   return action;
+}
+
+/**
+ * Start Play's blocking update flow directly, bypassing `decideUpdateAction`.
+ *
+ * The policy in `updatePolicy.ts` deliberately reserves the immediate flow for
+ * priority 4-5 or a month of staleness, because a full-screen block imposed on
+ * someone mid-conversation is worse than shipping a day late. The client-support
+ * gate is the one caller that must skip that judgement: the app is ALREADY
+ * blocked, by the server, and the only question left is whether Play can do
+ * anything about it.
+ *
+ * Returns false rather than throwing when Play has nothing to offer — off Play,
+ * sideloaded, or the release has not reached this device's track — so the caller
+ * can fall back to the store listing and the button is never dead.
+ */
+export async function startImmediateUpdate(): Promise<boolean> {
+  if (!updatesSupported()) {
+    return false;
+  }
+  try {
+    const current = await status();
+    if (!current.available) {
+      return false;
+    }
+    return (await NATIVE?.startImmediate()) ?? false;
+  } catch {
+    return false;
+  }
 }
 
 /** Install a downloaded flexible update. Restarts the app. */

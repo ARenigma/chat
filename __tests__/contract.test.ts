@@ -1604,9 +1604,18 @@ describe('shipping to Play', () => {
     // `play-internal` uploads CLOSED_TEST_AAB, and the android job built only
     // the release pair — so the designed publish path would have failed on a
     // missing file the first time anyone tagged a release.
+    /*
+     * The path, not the whole assignment. The Fastfile now wraps it in
+     * `File.expand_path(..., __dir__)` because `bundle exec fastlane` runs from
+     * the repo root in CI, so a bare `../android/...` looked for a sibling of
+     * the repo and missed the AAB that had just been built. This assertion
+     * pinned the pre-fix literal and had been failing since; it asserts the
+     * artefact path and the resolution, which is what actually has to hold.
+     */
     expect(fastfile).toContain(
-      'CLOSED_TEST_AAB = "../android/app/build/outputs/bundle/closedTest/app-closedTest.aab"',
+      'android/app/build/outputs/bundle/closedTest/app-closedTest.aab',
     );
+    expect(fastfile).toContain('File.expand_path');
     expect(ci).toContain('bundleClosedTest');
   });
 
@@ -2609,7 +2618,17 @@ describe('paid chat sessions expose their live lifecycle', () => {
   });
 
   it('confirms before back ends a live paid session', () => {
-    expect(chat).toContain("'End session and leave?'");
+    /*
+     * The titles, not one title. 1845c2c split this dialog in two — 'Done for
+     * now?' when the member is ending a live session, 'Leave this chat?' when
+     * they are only walking away — as part of the "personal, not SaaS" copy
+     * pass. The assertion tracked the old single string and had been failing
+     * since; updated to the pair rather than deleted, because what it guards is
+     * that leaving a PAID session asks first, and that is still true.
+     */
+    expect(chat).toContain("'Done for now?'");
+    expect(chat).toContain("'Leave this chat?'");
+    expect(chat).toContain('leaveIntent');
     expect(chat).toContain('testID="chat-leave-dialog"');
     expect(chat).toContain("reason: 'manual'");
     expect(chat).toContain('onPress={requestLeave}');
@@ -2845,6 +2864,30 @@ describe('iOS list separators are drawn the way iOS draws them', () => {
   });
 });
 
+/*
+ * The session-consent copy Amit specified on 2026-09-07, verbatim, em dashes
+ * included: "Hey — {name} is here", "Keep it kind…". It shipped in versionCode
+ * 10110.
+ *
+ * These five literals are the one place the house rule below is deliberately
+ * departed from, and the departure is stated here rather than quietly rewritten,
+ * because the copy was reviewed and approved as written. Rewriting an approved
+ * string to satisfy a style gate is the gate winning an argument it should have
+ * lost.
+ *
+ * Same mechanism as `EXEMPT` in iconScale.test.ts and the grandfathered spacing
+ * in theme.test.ts: an allowlist keyed to the exact literal, so the gate stays
+ * armed for every OTHER string and a sixth em dash still fails the build. The
+ * entries are exact matches, not patterns, for that reason.
+ */
+const APPROVED_EM_DASH: readonly string[] = [
+  '"Keep it kind — no sexual or abusive talk. Tokens start when they pick up."',
+  '`Hey — ${name} is here`',
+  "'Keep it kind — no sexual or abusive talk. You will only use tokens once you both start.'",
+  "'They are ready when you are. Keep it kind — no sexual or abusive talk. You will only use tokens once you both start.'",
+  "'You are out of tokens — top up to keep going.'",
+];
+
 describe('no user-facing em dash and no leftover persona pronoun', () => {
   it('keeps the em dash out of every rendered string', () => {
     // House rule. Asserted on string literals only: the character is fine in a
@@ -2857,6 +2900,9 @@ describe('no user-facing em dash and no leftover persona pronoun', () => {
     for (const { file, body } of files) {
       const literals = [...body.matchAll(/'[^'\n]*'|"[^"\n]*"|`[^`]*`/g)].map(m => m[0]);
       for (const literal of literals) {
+        if (APPROVED_EM_DASH.includes(literal)) {
+          continue;
+        }
         // Escaped, not literal: a repo-wide punctuation sweep rewrote the
         // equivalent assertion in presence.test.ts into one that forbade commas.
         expect({ file, literal, dash: literal.includes('\u2014') }).toEqual({
@@ -2865,6 +2911,25 @@ describe('no user-facing em dash and no leftover persona pronoun', () => {
           dash: false,
         });
       }
+    }
+  });
+
+  it('keeps the exemption list honest', () => {
+    /*
+     * An allowlist that outlives the strings it names is worse than no
+     * allowlist: it silently re-permits an em dash the day someone reuses one
+     * of these sentences. So every entry must still be present in the source it
+     * was written for.
+     */
+    const all = ['src/screens', 'src/components']
+      .flatMap(dir =>
+        readdirSync(join(ROOT, dir))
+          .filter(f => f.endsWith('.tsx'))
+          .map(f => withoutComments(read(`${dir}/${f}`))),
+      )
+      .join('\n');
+    for (const literal of APPROVED_EM_DASH) {
+      expect(all).toContain(literal);
     }
   });
 
