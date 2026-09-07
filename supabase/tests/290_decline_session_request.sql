@@ -1,7 +1,7 @@
 -- pgTAP for migration 067: declining a session request.
 --
--- 1. the initiator cannot decline their own request
--- 2. the recipient can
+-- 1. the initiator withdraws (cancelled), not a recipient decline
+-- 2. the recipient can decline a fresh request
 -- 3. ...and the row says so
 -- 4. declining twice is not an error (idempotent)
 -- 5. an unknown request is GONE, not a crash
@@ -44,16 +44,23 @@ select 'req067', public.create_session_request(
 );
 
 select is(
-  public.decline_session_request((select v from test.fixture where k = 'req067')) ->> 'error',
-  'FORBIDDEN',
-  '1. the initiator cannot decline their own request'
+  public.decline_session_request((select v from test.fixture where k = 'req067')) ->> 'status',
+  'cancelled',
+  '1. the initiator withdraws as cancelled'
+);
+
+set local request.jwt.claims =
+  '{"sub":"cc067000-0000-4067-8000-000000000001","role":"authenticated"}';
+insert into test.fixture (k, v)
+select 'req067b', public.create_session_request(
+  (select v from test.fixture where k = 'conv067'), 'chat'
 );
 
 set local request.jwt.claims =
   '{"sub":"cc067000-0000-4067-8000-000000000002","role":"authenticated"}';
 
 select is(
-  public.decline_session_request((select v from test.fixture where k = 'req067')) ->> 'status',
+  public.decline_session_request((select v from test.fixture where k = 'req067b')) ->> 'status',
   'declined',
   '2. the recipient can'
 );
@@ -61,7 +68,7 @@ select is(
 reset role;
 select is(
   (select status::text from public.session_requests
-   where id = (select v from test.fixture where k = 'req067')),
+   where id = (select v from test.fixture where k = 'req067b')),
   'declined',
   '3. and the row says so'
 );
@@ -71,7 +78,7 @@ set local request.jwt.claims =
   '{"sub":"cc067000-0000-4067-8000-000000000002","role":"authenticated"}';
 
 select is(
-  (public.decline_session_request((select v from test.fixture where k = 'req067'))
+  (public.decline_session_request((select v from test.fixture where k = 'req067b'))
     ->> 'success')::boolean,
   true,
   '4. declining twice is not an error'
@@ -86,7 +93,7 @@ select is(
 select throws_ok(
   format(
     $$select public.accept_session_request(%L::uuid)$$,
-    (select v from test.fixture where k = 'req067')
+    (select v from test.fixture where k = 'req067b')
   ),
   'P0001', null,
   '6. a declined request can no longer be accepted'

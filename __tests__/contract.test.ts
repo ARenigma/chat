@@ -4961,6 +4961,63 @@ describe('a chat request rings, and can be answered either way', () => {
   });
 });
 
+describe('the member always starts the session, whoever wrote first', () => {
+  const sql077 = read('supabase/migrations/077_sp_initiate_member_consent.sql');
+  const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+  const call = withoutComments(read('src/screens/CallScreen.tsx'));
+
+  it('keys confirm_chat_session on the conversation member', () => {
+    expect(sql077).toContain('if v_member_id <> auth.uid() then');
+    expect(sql077).toContain('Only the member confirms');
+    expect(sql077).not.toContain('Only the initiator');
+  });
+
+  it('lets the provider write first without creating a paid_session', () => {
+    expect(sql077).toContain('initiator_id, recipient_id,');
+    expect(sql077).toContain('p_conversation_id, \'chat\', v_uid, v_member,');
+    expect(sql077).toContain('now() + interval \'24 hours\', now()');
+  });
+
+  it('drops the cold-call block and checks the member wallet either way', () => {
+    const create = sql077.slice(sql077.indexOf('create or replace function public.create_session_request'));
+    expect(create).not.toContain('P0006');
+    expect(create).toContain('from public.profiles where id = v_member_id');
+    expect(create).toContain("errcode = 'P0003'");
+  });
+
+  it('names the member chat sheet Start session / Decline', () => {
+    expect(chat).toContain('testID="chat-session-consent"');
+    expect(chat).toContain('confirmLabel="Start session"');
+    expect(chat).toContain('cancelLabel="Decline"');
+    expect(chat).toContain('wants to have a chat with you');
+    expect(chat).toContain('Hey — ${name} is here');
+  });
+
+  it('names the incoming member call Start session, the provider Accept', () => {
+    expect(call).toContain("label={isMemberSide ? 'Start session' : 'Accept'}");
+    expect(call).toContain('testID="call-accept"');
+    expect(call).toContain('wants a voice chat');
+    expect(call).toContain('wants a video chat');
+  });
+
+  it('keeps conversation push copy warm and text-free', () => {
+    expect(withoutComments(read('index.js'))).toContain(
+      "wants to have a chat with you",
+    );
+    expect(withoutComments(read('android/app/src/main/java/com/companionchat/Conversations.kt'))).toContain(
+      'wants a video chat',
+    );
+  });
+
+  it('is registered in the harness with its suite', () => {
+    const dbTest = read('scripts/db-test.mjs');
+    expect(dbTest).toContain('077_sp_initiate_member_consent.sql');
+    expect(dbTest).toContain('078_decline_status_cast.sql');
+    expect(dbTest).toContain('079_start_call_status_cast.sql');
+    expect(dbTest).toContain('340_sp_initiate_member_consent.sql');
+  });
+});
+
 describe('opening a chat tells the other person, both ways', () => {
   const migration = read('supabase/migrations/068_chat_open_alerts.sql');
 
@@ -5002,7 +5059,7 @@ describe('opening a chat tells the other person, both ways', () => {
     const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
     expect(chat).toContain('openAlert?.alerted === true');
     expect(chat).toContain('testID="peer-notified"');
-    expect(chat).toContain('`We have notified ${name}.`');
+    expect(chat).toContain('`${name} knows you are here.`');
   });
 
   it('reuses the notification kind the app already builds', () => {
@@ -5011,7 +5068,7 @@ describe('opening a chat tells the other person, both ways', () => {
     // differs because the copy is in the payload.
     const fn = read('supabase/functions/send-open-alert/index.ts');
     expect(fn).toContain("kind: 'engagement'");
-    expect(fn).toContain('wants to talk to you');
+    expect(fn).toContain('Hey, ${opener ?? \'Someone\'} is here');
     // A member is never named: they have no directory row and get the handle.
     expect(fn).toContain("db.rpc('member_handle'");
     expect(fn).toContain("role !== 'service_role'");

@@ -32,7 +32,7 @@ import { Pressable } from '../components/Pressable';
 import { track } from '../lib/telemetry';
 import { useBackGuard } from '../lib/backGuard';
 
-/** Which way the call goes. Outgoing dials; incoming rings and offers Accept. */
+/** Which way the call goes. Outgoing dials; incoming rings and offers answer. */
 export type CallDirection = 'out' | 'in';
 
 interface Props {
@@ -58,15 +58,15 @@ const HEARTBEAT_MS = 20_000;
 
 /** start_call refusals, in words. */
 const START_NOTICE: Record<string, string> = {
-  INSUFFICIENT_BALANCE: 'You need more tokens to start a call.',
+  INSUFFICIENT_BALANCE: 'You need a few more tokens to call.',
   BUSY: 'One of you is already on a call.',
   BLOCKED: 'You can no longer call each other.',
   SUSPENDED: 'Your account is under review and cannot call.',
-  RATE_LIMITED: 'Too many calls just now. Try again shortly.',
+  RATE_LIMITED: 'A few too many calls just now. Try again in a bit.',
   FORBIDDEN: 'That conversation is not available.',
-  NOT_FOUND: 'That conversation no longer exists.',
-  VOICE_CALLS_DISABLED: 'Voice calls are temporarily unavailable.',
-  VIDEO_CALLS_DISABLED: 'Video calls are temporarily unavailable.',
+  NOT_FOUND: 'That conversation is gone.',
+  VOICE_CALLS_DISABLED: 'Voice chats are taking a short break.',
+  VIDEO_CALLS_DISABLED: 'Video chats are taking a short break.',
 };
 
 type Phase = 'starting' | 'ringing' | 'connecting' | 'active' | 'incoming';
@@ -75,8 +75,9 @@ type Phase = 'starting' | 'ringing' | 'connecting' | 'active' | 'incoming';
  * The call, over WebRTC. One screen for both directions, driven by phase.
  *
  * Outgoing: resolves the conversation from the peer, calls `start_call`, then
- * runs the session as the offerer while it rings. Incoming: shows Accept /
- * Decline, and on Accept calls `answer_call` (which starts the meter) and runs
+ * runs the session as the offerer while it rings. Incoming: Decline plus
+ * Accept (provider) or Start session (member). Either confirm calls
+ * `answer_call` (which starts the meter) and runs
  * the session as the answerer. `useCallSession` carries the media; this screen
  * carries the server row (start/answer/heartbeat/end) and the UI.
  *
@@ -287,9 +288,13 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
       } else {
         const code = r?.error;
         track('call_rejected', { reason: code ?? 'network', medium });
-        setNotice(code ? (START_NOTICE[code] ?? 'Could not start the call.') : 'Could not start the call. Check your connection.');
-        if (code === 'INSUFFICIENT_BALANCE') {
-          openRefill();
+        if (code === 'INSUFFICIENT_BALANCE' && !isMemberSide) {
+          setNotice('They need a few more tokens before this call can start.');
+        } else {
+          setNotice(code ? (START_NOTICE[code] ?? 'Could not start the call.') : 'Could not start just now. Check your connection.');
+          if (code === 'INSUFFICIENT_BALANCE') {
+            openRefill();
+          }
         }
         onEnd();
       }
@@ -429,7 +434,13 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   // Status words carry NO trailing "…": the animated CallingDots supply the
   // ellipsis for every waiting phase (user 2026-08-31, copied from the reference
   // where the dots fill in sequence). The timer phase has no dots.
-  const incomingLabel = medium === 'video' ? 'Incoming video call' : 'Incoming voice call';
+  const incomingLabel = isMemberSide
+    ? medium === 'video'
+      ? 'wants a video chat'
+      : 'wants a voice chat'
+    : medium === 'video'
+      ? 'wants a video chat'
+      : 'calling you';
   const status =
     phase === 'active'
       ? timer
@@ -494,6 +505,11 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
             <CallingDots />
           </View>
         )}
+        {phase === 'incoming' && isMemberSide ? (
+          <Text allowFontScaling style={styles.status}>
+            Keep it kind — no sexual or abusive talk
+          </Text>
+        ) : null}
       </View>
 
       {/*
@@ -536,7 +552,13 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
         {phase === 'incoming' ? (
           <View style={styles.incomingRow}>
             <CallAction testID="call-decline" glyph="callEnd" label="Decline" tone="danger" onPress={onEnd} />
-            <CallAction testID="call-accept" glyph="call" label="Accept" tone="accept" onPress={accept} />
+            <CallAction
+              testID="call-accept"
+              glyph="call"
+              label={isMemberSide ? 'Start session' : 'Accept'}
+              tone="accept"
+              onPress={accept}
+            />
           </View>
         ) : (
           <View style={styles.bar}>
@@ -600,10 +622,10 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
           isMemberSide && direction === 'out' && incomingCallId === null && !memberConsented && callId === null
         }
         testID="call-session-consent"
-        title={medium === 'video' ? 'Start a video call?' : 'Start a voice call?'}
-        body="No sexual or abusive talk. Tokens start when they answer."
-        cancelLabel="Cancel"
-        confirmLabel="Call"
+        title={medium === 'video' ? `Video chat with ${name}?` : `Call ${name}?`}
+        body="Keep it kind — no sexual or abusive talk. Tokens start when they pick up."
+        cancelLabel="Not now"
+        confirmLabel={medium === 'video' ? 'Video them' : 'Call them'}
         onCancel={onEnd}
         onConfirm={() => setMemberConsented(true)}
       />
@@ -613,17 +635,17 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
         visible={leaveDialogVisible}
         testID="call-leave-dialog"
         title={
-          phase === 'active' ? 'End call?' : phase === 'incoming' ? 'Decline call?' : 'Cancel call?'
+          phase === 'active' ? 'End the call?' : phase === 'incoming' ? 'Not now?' : 'Hang up?'
         }
         body={
           phase === 'active'
-            ? 'This ends the call for both of you.'
+            ? 'This hangs up for both of you.'
             : phase === 'incoming'
-              ? `${name} is calling.`
-              : `Hang up before ${name} answers?`
+              ? `${name} is waiting on you.`
+              : `Leave before ${name} picks up?`
         }
         cancelLabel="Stay"
-        confirmLabel={phase === 'active' ? 'End call' : phase === 'incoming' ? 'Decline' : 'Cancel call'}
+        confirmLabel={phase === 'active' ? 'Hang up' : phase === 'incoming' ? 'Decline' : 'Hang up'}
         destructive
         onCancel={() => setLeaveDialogVisible(false)}
         onConfirm={() => {
@@ -635,7 +657,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   );
 }
 
-/** Incoming Decline / Accept — large edge-anchored circles with captions. */
+/** Incoming Decline / Accept (or Start session for the member). */
 function CallAction({
   glyph,
   label,
@@ -824,6 +846,7 @@ const makeStyles = (t: Theme) =>
     actionLabel: {
       ...TOKENS.typography.bodySmall,
       color: LIGHT.color.text.onAccent,
+      textAlign: 'center',
     },
     bar: {
       flexDirection: 'row',

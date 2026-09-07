@@ -163,7 +163,7 @@ export function useCreateSessionRequest() {
  * What `announce_chat_open` answered (migration 068, goal items 3 and 4).
  *
  * `alerted` is true ONLY when a push was actually dispatched, which is what
- * makes "We have notified them" safe to render. Every other outcome carries the
+ * makes "{name} knows you are here" safe to render. Every other outcome carries the
  * reason, so the screen can stay silent about a doorbell it did not ring.
  */
 export interface ChatOpenAlert {

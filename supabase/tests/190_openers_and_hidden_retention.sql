@@ -17,7 +17,7 @@
 --   13. automation did not touch the member's token balance.
 --   14. a member's real send is origin='live'.
 --   15. once a live message exists, insert_next_opener is done (no more openers).
---   16. a paid_session exists after the provider's reply (real conversation).
+--   16. a paid_session exists after the member confirms (real conversation).
 --   17. before end, the member can SELECT the session content (5 rows).
 --   18. after end_session, the member sees NOTHING (immediate invisibility).
 --   19. server-side the rows still exist and are all hidden (< 30 days).
@@ -175,7 +175,7 @@ where  conversation_id = (select v::uuid from test.fixture where k = 'conv')
   and  origin = 'automated_opener';
 
 -- ---------------------------------------------------------------------------
--- A real conversation begins: member sends, provider replies (auto-accepts).
+-- A real conversation begins: member sends, provider joins, member confirms.
 -- ---------------------------------------------------------------------------
 set local role authenticated;
 set local request.jwt.claims =
@@ -216,11 +216,16 @@ begin
   );
 end$$;
 
-select is(
-  (select count(*)::int from public.paid_sessions
-   where conversation_id = (select v::uuid from test.fixture where k = 'conv')),
-  1,
-  '16. a paid_session exists after the provider reply'
+set local request.jwt.claims =
+  '{"sub":"aa045000-0000-4045-8000-000000000001","role":"authenticated"}';
+
+select ok(
+  public.confirm_chat_session(
+    (select id from public.session_requests
+     where conversation_id = (select v::uuid from test.fixture where k = 'conv')
+       and channel = 'chat' and status = 'pending')
+  ) is not null,
+  '16. a paid_session exists after the member confirms'
 );
 
 -- ---------------------------------------------------------------------------

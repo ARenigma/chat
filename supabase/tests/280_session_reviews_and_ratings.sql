@@ -92,6 +92,14 @@ do $$ begin
   perform public.send_message((select v from test.fixture where k = 'conv066'), 'hi back');
 end $$;
 
+set local request.jwt.claims =
+  '{"sub":"cc066000-0000-4066-8000-000000000001","role":"authenticated"}';
+select public.confirm_chat_session(
+  (select id from public.session_requests
+   where conversation_id = (select v from test.fixture where k = 'conv066')
+     and channel = 'chat' and status = 'pending')
+);
+
 reset role;
 insert into test.fixture (k, v)
 select 'sess066', id from public.paid_sessions

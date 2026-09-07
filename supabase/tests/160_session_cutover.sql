@@ -10,7 +10,7 @@
 --   6.  send_message does not debit token_balance on text send.
 --   7.  send_message auto-creates a pending chat session_request on member first text.
 --   8.  get_pending_session_request returns the pending request after member text.
---   9.  provider reply auto-accepts and creates a paid_session row.
+--   9.  provider reply joins (responded_at) and does not create a paid_session.
 --   10. message.session_id is linked to the paid_session row.
 --   11. get_active_session returns session data after provider acceptance.
 --   12. get_active_session returns null for an unknown conversation id.
@@ -179,7 +179,7 @@ select ok(
 );
 
 -- ---------------------------------------------------------------------------
--- 9. Provider reply auto-accepts → paid_session created
+-- 9. Provider reply joins — no paid_session until the member confirms
 -- ---------------------------------------------------------------------------
 set local role authenticated;
 set local request.jwt.claims =
@@ -195,6 +195,39 @@ end$$;
 
 select ok(
   (
+    select count(*) = 0
+    from   public.paid_sessions
+    where  conversation_id = (select v::uuid from test.fixture where k = 'conv')
+  )
+  and (
+    select responded_at is not null
+      and  status = 'pending'
+    from   public.session_requests
+    where  conversation_id = (select v::uuid from test.fixture where k = 'conv')
+      and  channel         = 'chat'
+      and  status          = 'pending'
+  ),
+  '9. provider reply joins (responded_at) and does not create a paid_session'
+);
+
+-- ---------------------------------------------------------------------------
+-- 10. Member confirm creates the paid_session and backfills message.session_id
+-- ---------------------------------------------------------------------------
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub":"cc037000-0000-4037-8000-000000000001","role":"authenticated"}';
+
+select public.confirm_chat_session(
+  (select sr.id
+   from   public.session_requests sr
+   where  sr.conversation_id = (select v::uuid from test.fixture where k = 'conv')
+     and  sr.channel         = 'chat'
+     and  sr.status          = 'pending'
+   limit  1)
+);
+
+select ok(
+  (
     select count(*) = 1
     from   public.paid_sessions
     where  conversation_id = (select v::uuid from test.fixture where k = 'conv')
@@ -202,15 +235,8 @@ select ok(
       and  status          in ('pending_leases', 'active')
       and  member_id       = 'cc037000-0000-4037-8000-000000000001'
       and  provider_id     = 'cc037000-0000-4037-8000-000000000002'
-  ),
-  '9. provider reply auto-accepts and creates a paid_session row'
-);
-
--- ---------------------------------------------------------------------------
--- 10. message.session_id is linked to the paid_session
--- ---------------------------------------------------------------------------
-select ok(
-  (
+  )
+  and (
     select m.session_id is not null
       and  m.session_id = (
              select id from public.paid_sessions
@@ -222,23 +248,19 @@ select ok(
       and  m.sender_id       = 'cc037000-0000-4037-8000-000000000002'
     limit  1
   ),
-  '10. provider message.session_id is linked to the paid_session row'
+  '10. member confirm_chat_session creates the paid_session and links messages'
 );
 
 -- ---------------------------------------------------------------------------
--- 11. get_active_session returns data after provider acceptance
+-- 11. get_active_session returns data after member confirm
 -- ---------------------------------------------------------------------------
-set local role authenticated;
-set local request.jwt.claims =
-  '{"sub":"cc037000-0000-4037-8000-000000000001","role":"authenticated"}';
-
 select ok(
   (
     public.get_active_session(
       (select v::uuid from test.fixture where k = 'conv')
     )->>'channel' = 'chat'
   ),
-  '11. get_active_session returns session data after provider acceptance'
+  '11. get_active_session returns session data after member confirm'
 );
 
 -- ---------------------------------------------------------------------------
