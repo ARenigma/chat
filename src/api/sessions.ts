@@ -230,6 +230,38 @@ export function useIncomingChatRequests(
     if (selfId === undefined) {
       return;
     }
+
+    // Recovery fetch: if the provider opened the app after the INSERT arrived
+    // (wrong account, late open, etc.) the realtime INSERT will never fire.
+    // On subscribe we fetch any still-pending chat request for this recipient
+    // and surface it once, allowing the store's de-dup guard to ignore it if
+    // one was already set by a concurrent INSERT event.
+    async function recoverPending() {
+      // `session_requests` is not in the generated types — same situation as the
+      // realtime subscription above which uses channel.on() without type checks.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = (await (supabase as any)
+        .from('session_requests')
+        .select('id, conversation_id, initiator_id, expires_at')
+        .eq('recipient_id', selfId as string)
+        .eq('channel', 'chat')
+        .eq('status', 'pending')
+        .gt('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()) as {
+        data: { id: string; conversation_id: string; initiator_id: string; expires_at: string } | null;
+      };
+      if (result.data) {
+        onIncoming({
+          requestId: result.data.id,
+          conversationId: result.data.conversation_id,
+          initiatorId: result.data.initiator_id,
+          expiresAt: result.data.expires_at,
+        });
+      }
+    }
+
     const channel = supabase
       .channel(`incoming-chat-requests:${selfId}`)
       .on(
@@ -259,7 +291,11 @@ export function useIncomingChatRequests(
           }
         },
       )
-      .subscribe();
+      .subscribe(status => {
+        if (status === 'SUBSCRIBED') {
+          void recoverPending();
+        }
+      });
     return () => {
       void supabase.removeChannel(channel);
     };

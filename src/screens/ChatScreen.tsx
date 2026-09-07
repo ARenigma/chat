@@ -88,6 +88,7 @@ import {
   useSessionLease,
   useSessionRealtime,
 } from '../api/sessions';
+import { useEarnings } from '../api/provider';
 import { Avatar } from '../components/Avatar';
 import { ChatWallpaper } from '../components/ChatWallpaper';
 import { FirstMovePills } from '../components/FirstMovePills';
@@ -156,6 +157,12 @@ interface Props {
    * the identity still opens the safety sheet.
    */
   onOpenProfile?: (providerId: string) => void;
+  /**
+   * Open the provider's earnings ledger. Only meaningful on the provider tree
+   * (where the peer is a member). When absent the TokenCounter onPress falls
+   * back to openWallet.
+   */
+  onOpenEarnings?: () => void;
 }
 
 // ActionTarget is defined and exported from Turn.tsx; imported above.
@@ -211,7 +218,7 @@ const IDENTITY_LINES =
  * one reply per turn; against a person, sending two messages in a row is normal
  * conversation and the UI should not fight it.
  */
-export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: Props) {
+export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onOpenEarnings }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -226,6 +233,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   const balance = useStore(s => s.balance);
   const openRefill = useStore(s => s.openRefill);
   const openWallet = useStore(s => s.openWallet);
+  // Providers see their earnings in the header instead of the member wallet.
+  const { data: earnings } = useEarnings();
   const setNotice = useStore(s => s.setNotice);
   const setPeerTyping = useStore(s => s.setPeerTyping);
   const queryClient = useQueryClient();
@@ -910,7 +919,9 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
 
   // "Need more time?" when the live session is inside the countdown window —
   // the same threshold the bar's numerals use, from the same server figure.
+  // Member-only: providers do not recharge; their wallet is earnings.
   const showExtendCard =
+    isMemberSide &&
     sessionIsActive &&
     countingDown &&
     sessionRemaining !== null &&
@@ -943,7 +954,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
    * The extend-card clause stays: the card owns the top band while it is
    * pinned, and two things cannot occupy one band.
    */
-  const showStickyRecharge = countingDown && (!showExtendCard || extendScrolledAway);
+  const showStickyRecharge =
+    isMemberSide && countingDown && (!showExtendCard || extendScrolledAway);
 
   useEffect(() => {
     if (!showExtendCard) {
@@ -1325,9 +1337,11 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
         </Pressable>
         </View>
         {/* Rendered and disabled rather than hidden so flipping either admin
-            control never changes the header geometry. A pending or live paid
-            session also blocks both: start_call enforces one concurrent session
-            per pair, so an enabled-looking button there would only return BUSY. */}
+            control never changes the header geometry. A pending session or a
+            live non-chat session blocks both: tapping Call/Video while a chat
+            session is live upgrades to the call (start_call ends the chat
+            session first — migration 073). A live audio/video session or an
+            in-flight ring still returns BUSY from the server. */}
         {/* Real Pressables, not Views posing as buttons: TalkBack now announces a
             control that actually does something, and the disabled state is an
             honest gate (CALLS_ENABLED) rather than a role that never fires. */}
@@ -1335,8 +1349,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
           onPress={() => onStartCall?.('video')}
           disabled={
             !canStartVideo ||
-            activeSession !== null ||
-            pendingRequest !== null
+            pendingRequest !== null ||
+            (activeSession != null && activeSession.channel !== 'chat')
           }
           testID="call-video"
           accessibilityLabel={`Video call ${name}`}
@@ -1345,8 +1359,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
           style={[
             styles.navButton,
             (!canStartVideo ||
-              activeSession !== null ||
-              pendingRequest !== null) &&
+              pendingRequest !== null ||
+              (activeSession != null && activeSession.channel !== 'chat')) &&
               styles.navDisabled,
           ]}>
           <Icon name="video" size={TOKENS.icon.md} color={theme.color.text.secondary} />
@@ -1355,8 +1369,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
           onPress={() => onStartCall?.('audio')}
           disabled={
             !canStartAudio ||
-            activeSession !== null ||
-            pendingRequest !== null
+            pendingRequest !== null ||
+            (activeSession != null && activeSession.channel !== 'chat')
           }
           testID="call-voice"
           accessibilityLabel={`Voice call ${name}`}
@@ -1365,8 +1379,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
           style={[
             styles.navButton,
             (!canStartAudio ||
-              activeSession !== null ||
-              pendingRequest !== null) &&
+              pendingRequest !== null ||
+              (activeSession != null && activeSession.channel !== 'chat')) &&
               styles.navDisabled,
           ]}>
           {/* 18, not 20: Lucide's phone glyph fills more of its em vertically than
@@ -1404,7 +1418,11 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
             <Icon name="stop" size={TOKENS.icon.md} color={theme.color.state.danger} />
           </Pressable>
         ) : null}
-        <TokenCounter balance={balance} onPress={openWallet} />
+        <TokenCounter
+          variant={isMemberSide ? 'balance' : 'earnings'}
+          balance={isMemberSide ? balance : (earnings?.provider_tokens ?? 0)}
+          onPress={isMemberSide ? openWallet : (onOpenEarnings ?? openWallet)}
+        />
       </View>
 
       {/* Recharge talk-bar: hidden while the extend card owns the top band;

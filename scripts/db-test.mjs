@@ -112,6 +112,8 @@ const MIGRATIONS = [
   'supabase/migrations/069_usage_ledger.sql',
   'supabase/migrations/070_provider_photos.sql',
   'supabase/migrations/071_config_readable_by_the_server.sql',
+  'supabase/migrations/072_member_language_preferences.sql',
+  'supabase/migrations/073_call_upgrade_from_chat.sql',
 ];
 
 const docker = (args, options = {}) =>
@@ -505,6 +507,11 @@ const suites = [
     file: join(ROOT, 'supabase/tests/320_provider_photos.sql'),
     label:
       'provider photos: own rows only, one primary, and avatar_url follows it',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/330_member_language_preferences.sql'),
+    label:
+      'language preference: the owner writes it, nobody else reads it, and the 063 guard still bites',
   },
 ];
 

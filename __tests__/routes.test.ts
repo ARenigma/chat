@@ -75,9 +75,19 @@ describe('memberParent', () => {
 });
 
 describe('providerParent', () => {
-  it('is a two-screen tree', () => {
+  it('returns home from chat and settings', () => {
     expect(providerParent({ name: 'home' })).toBeNull();
     expect(providerParent({ name: 'chat', peerId: 'm1' })).toEqual({ name: 'home' });
+    expect(providerParent({ name: 'settings' })).toEqual({ name: 'home' });
+  });
+
+  it('returns the chat that opened earnings, otherwise settings', () => {
+    expect(
+      providerParent({ name: 'usage', from: 'chat', peerId: 'm1' }),
+    ).toEqual({ name: 'chat', peerId: 'm1' });
+    expect(providerParent({ name: 'usage', from: 'settings' })).toEqual({
+      name: 'settings',
+    });
   });
 });
 
