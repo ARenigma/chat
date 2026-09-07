@@ -93,7 +93,7 @@ export function ProviderStatusScreen({ onBack, onEdit }: Props) {
           // https://developer.android.com/training/material/animations
           shape="circle"
           style={styles.back}>
-          <Icon name="chevronLeft" size={22} />
+          <Icon name="chevronLeft" size={TOKENS.icon.md} />
         </Pressable>
         <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling numberOfLines={1} style={styles.headerTitle}>
           Your Application

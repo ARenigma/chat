@@ -89,7 +89,7 @@ function SettingsRowContent({
       <View style={[styles.iconBox, danger && styles.iconBoxDanger]}>
         <Icon
           name={icon}
-          size={19}
+          size={TOKENS.icon.md}
           color={danger ? theme.color.state.danger : theme.color.text.secondary}
         />
       </View>
@@ -106,9 +106,9 @@ function SettingsRowContent({
         ) : null}
       </View>
       {selected ? (
-        <Icon name="check" size={18} color={theme.color.text.primary} />
+        <Icon name="check" size={TOKENS.icon.sm} color={theme.color.text.primary} />
       ) : chevron ? (
-        <Icon name="chevronRight" size={18} color={theme.color.text.tertiary} />
+        <Icon name="chevronRight" size={TOKENS.icon.sm} color={theme.color.text.tertiary} />
       ) : null}
     </>
   );
@@ -302,7 +302,7 @@ export function SettingsSheet({
                     // box, which is the defect being fixed.
                     shape="circle"
                     style={styles.backButton}>
-                    <Icon name="back" size={20} />
+                    <Icon name="back" size={TOKENS.icon.md} />
                   </Pressable>
                 }
               />
@@ -328,7 +328,7 @@ export function SettingsSheet({
               <View style={styles.profileCamera}>
                 {/* A "+" edit affordance, not a camera: tapping the avatar opens
                     the DiceBear picker, not a photo/camera upload. */}
-                <Icon name="plus" size={15} color={theme.color.text.onAccent} />
+                <Icon name="plus" size={TOKENS.icon.sm} color={theme.color.text.onAccent} />
               </View>
             </Pressable>
             <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling numberOfLines={1} style={styles.profileName}>
@@ -546,7 +546,7 @@ export function SettingsSheet({
             press="none"
             highlight="dim"
             style={styles.rateFooter}>
-            <Icon name="star" size={13} color={theme.color.text.secondary} />
+            <Icon name="star" size={TOKENS.icon.xs} color={theme.color.text.secondary} />
             <Text allowFontScaling style={styles.rateFooterText}>
               Rate Pappal on the Play Store
             </Text>

@@ -36,6 +36,7 @@ const KNOWN_TOP_LEVEL = new Set([
   'color',
   'space',
   'radius',
+  'icon',
   'motion',
   'interaction',
   'toggle',
@@ -350,6 +351,7 @@ export const LIGHT = ${render(
     color: colorObject('Light'),
     space: values(spec.space),
     radius: values(spec.radius),
+    icon: values(spec.icon),
     layout: values(spec.layout),
     motion: motion(),
     interaction: values(spec.interaction),
@@ -367,6 +369,7 @@ export const DARK = ${render(
     color: colorObject('Dark'),
     space: values(spec.space),
     radius: values(spec.radius),
+    icon: values(spec.icon),
     layout: values(spec.layout),
     motion: motion(),
     interaction: values(spec.interaction),
@@ -424,6 +427,7 @@ console.log(
     `${Object.keys(values(spec.space)).length} space, ${
       Object.keys(values(spec.layout)).length
     } layout, ${Object.keys(values(spec.radius)).length} radius, ` +
+    `${Object.keys(values(spec.icon)).length} icon, ` +
     `${Object.keys(typography()).length} type styles, ${
       Object.keys(spec.motion.spring).length
     } springs -> src/theme/tokens.generated.ts`,

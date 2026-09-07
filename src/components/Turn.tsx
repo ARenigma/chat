@@ -247,7 +247,7 @@ function MetaRow({
       {receipt !== undefined ? (
         <Icon
           name={receipt === 'read' ? 'checkCheck' : 'check'}
-          size={11}
+          size={TOKENS.icon.xs}
           color={receipt === 'read' ? readColor : sentColor}
         />
       ) : null}
@@ -483,7 +483,7 @@ function MediaBubble({
             {receipt !== undefined && !pending ? (
               <Icon
                 name={receipt === 'read' ? 'checkCheck' : 'check'}
-                size={11}
+                size={TOKENS.icon.xs}
                 color={receipt === 'read' ? '#85D4A0' : 'rgba(255,255,255,0.65)'}
               />
             ) : null}
@@ -1085,7 +1085,7 @@ function InteractiveBubble({
             mine ? styles.replyRevealMine : styles.replyRevealPeer,
             replyRevealStyle,
           ]}>
-          <Icon name="reply" size={18} color={theme.color.text.secondary} />
+          <Icon name="reply" size={TOKENS.icon.md} color={theme.color.text.secondary} />
         </Animated.View>
       ) : null}
       {/*

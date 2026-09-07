@@ -464,7 +464,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
           <View style={styles.verifyIcon}>
-            <Icon name="wallet" size={30} color={theme.color.text.onAccent} />
+            <Icon name="wallet" size={TOKENS.icon.xl} color={theme.color.text.onAccent} />
           </View>
           <Text
             maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized}
@@ -656,7 +656,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}>
           <View style={styles.verifyIcon}>
-            <Icon name="check" size={30} color={theme.color.text.onAccent} />
+            <Icon name="check" size={TOKENS.icon.xl} color={theme.color.text.onAccent} />
           </View>
           <Text
             maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized}
@@ -731,7 +731,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
         entering={topLevelIn}
         style={[styles.root, styles.doneRoot, { paddingTop: insets.top }]}>
         <View style={styles.doneCheck}>
-          <Icon name="check" size={34} color={theme.color.text.onAccent} />
+          <Icon name="check" size={TOKENS.icon['2xl']} color={theme.color.text.onAccent} />
         </View>
         <Text
           maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized}
@@ -960,7 +960,7 @@ function Header({ onBack }: { onBack: () => void }) {
         // https://developer.android.com/training/material/animations
         shape="circle"
         style={styles.back}>
-        <Icon name="chevronLeft" size={22} />
+        <Icon name="chevronLeft" size={TOKENS.icon.md} />
       </Pressable>
     </View>
   );
@@ -1005,9 +1005,9 @@ function LadderStep({
         {state === 'running' ? (
           <LoadingIndicator size={22} />
         ) : state === 'ok' ? (
-          <Icon name="check" size={20} color={theme.color.text.positive} />
+          <Icon name="check" size={TOKENS.icon.md} color={theme.color.text.positive} />
         ) : state === 'failed' ? (
-          <Icon name="close" size={20} color={theme.color.text.accent} />
+          <Icon name="close" size={TOKENS.icon.md} color={theme.color.text.accent} />
         ) : (
           // A waiting rung is drawn, not hidden: the ladder should show how
           // many checks there are from the first frame, so a second one

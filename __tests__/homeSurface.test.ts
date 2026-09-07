@@ -668,7 +668,7 @@ describe('every control on Home is a real 48dp box, not slop a parent clips', ()
     );
   });
 
-  it('gives the button that opens search — and the one that leaves it — a 48dp box', () => {
+  it('gives the button that opens search a 48dp box', () => {
     /*
      * Both nav controls share `styles.navIcon`, and it was `width: 28, height:
      * 40` with `size={28}` on the Pressable, i.e. `max(8, ceil((48 - 28) / 2))
@@ -689,7 +689,15 @@ describe('every control on Home is a real 48dp box, not slop a parent clips', ()
     // Both Pressables that wear it ask for that same 48, so the style and the
     // component agree instead of one of them quietly deciding — and the 28 they
     // used to pass cannot creep back under a 48dp style and look correct.
-    expect(home.match(/size=\{TOKENS\.interaction\.minTarget\}/g)?.length).toBe(2);
+    /*
+     * ONE, not two. The "leave search" arrow is gone as of 2026-09-07: the
+     * reference's field is MATCH_PARENT with 7dp side margins
+     * (DialogsActivity.java:5344) and has no sibling, so an arrow in the row was
+     * what stopped our bar reaching both edges and pushed the magnifier ~70dp
+     * in. Leaving search is the hardware back button, wired and device-verified
+     * the same day (HomeScreen's `searchBackGuard`).
+     */
+    expect(home.match(/size=\{TOKENS\.interaction\.minTarget\}/g)?.length).toBe(1);
     expect(home).not.toContain('size={28}');
     // And Home reaches a target by laying out a box, never by hanging slop off
     // one, which is the rule SearchBar.tsx states for itself.

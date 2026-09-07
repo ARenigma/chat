@@ -103,6 +103,14 @@ export const LIGHT = {
     thread: 24,
     sheet: 28,
   },
+  icon: {
+    xs: 12,
+    sm: 16,
+    md: 20,
+    lg: 24,
+    xl: 28,
+    '2xl': 32,
+  },
   layout: {
     rowOneLine: 56,
     rowTwoLine: 72,
@@ -674,6 +682,14 @@ export const DARK = {
     bubble: 22,
     thread: 24,
     sheet: 28,
+  },
+  icon: {
+    xs: 12,
+    sm: 16,
+    md: 20,
+    lg: 24,
+    xl: 28,
+    '2xl': 32,
   },
   layout: {
     rowOneLine: 56,

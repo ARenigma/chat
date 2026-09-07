@@ -27,7 +27,7 @@ export function ChatStartHint() {
         press="button"
         size={56}
         style={styles.plus}>
-        <Icon name="plus" size={22} color={styles.plusInk.color} />
+        <Icon name="plus" size={TOKENS.icon.lg} color={styles.plusInk.color} />
       </Pressable>
       <Modal
         visible={open}

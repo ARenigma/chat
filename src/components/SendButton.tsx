@@ -1,7 +1,7 @@
 import React, { memo, useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
-import type { Theme } from '../theme/tokens';
+import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { DURATION, fadeTo, springTo } from '../theme/motion';
 import { Icon } from './Icon';
@@ -79,7 +79,7 @@ function SendButtonView({ onPress, disabled, sendHaloKey }: Props) {
         style={[styles.button, disabled && styles.buttonDisabled]}>
         <Icon
           name="arrowUp"
-          size={20}
+          size={TOKENS.icon.md}
           color={disabled ? theme.color.text.tertiary : theme.color.text.onAccent}
         />
       </Pressable>

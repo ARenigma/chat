@@ -108,7 +108,7 @@ export function SafetySheet({
                 <Text allowFontScaling style={styles.reasonLabel}>
                   {r.label}
                 </Text>
-                <Icon name="chevronRight" size={13} color={theme.color.text.tertiary} />
+                <Icon name="chevronRight" size={TOKENS.icon.sm} color={theme.color.text.tertiary} />
               </Pressable>
               {i === liveReasons.length - 1 ? null : <View style={styles.reasonSeparator} />}
             </React.Fragment>

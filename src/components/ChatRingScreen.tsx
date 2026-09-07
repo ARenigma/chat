@@ -185,7 +185,7 @@ function RingAction({
         accessibilityLabel={label}
         press="button"
         style={[styles.actionButton, { backgroundColor: background }]}>
-        <Icon name={glyph} size={30} color={tint} />
+        <Icon name={glyph} size={TOKENS.icon.xl} color={tint} />
       </Pressable>
       <Text allowFontScaling style={styles.actionLabel}>
         {label}

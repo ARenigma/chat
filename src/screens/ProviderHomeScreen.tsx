@@ -276,7 +276,7 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
             // The watermark a brand-new provider sees. Clean and calm, not "0".
             <View style={styles.empty}>
               <View style={styles.emptyMark}>
-                <Icon name="chat" size={40} color={theme.color.text.tertiary} />
+                <Icon name="chat" size={TOKENS.icon['2xl']} color={theme.color.text.tertiary} />
               </View>
               <Text
                 maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
@@ -341,7 +341,7 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
                   // https://developer.android.com/training/material/animations
                   shape="circle"
                   style={styles.iconButton}>
-                  <Icon name="settings" size={20} color={theme.color.text.secondary} />
+                  <Icon name="settings" size={TOKENS.icon.md} color={theme.color.text.secondary} />
                 </Pressable>
               </View>
 
@@ -388,7 +388,7 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
                     <View key={row.key} style={styles.channelRow}>
                       <Icon
                         name={row.glyph}
-                        size={18}
+                        size={TOKENS.icon.sm}
                         color={on ? theme.color.text.primary : theme.color.text.tertiary}
                       />
                       <View style={styles.channelText}>
@@ -463,7 +463,7 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
                         />
                         {p.is_primary ? (
                           <View style={styles.photoBadge}>
-                            <Icon name="check" size={14} color={theme.color.text.onAccent} />
+                            <Icon name="check" size={TOKENS.icon.xs} color={theme.color.text.onAccent} />
                           </View>
                         ) : null}
                       </Pressable>
@@ -516,7 +516,7 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
                           highlight="dim"
                           size={REMOVE_BADGE}
                           style={styles.photoRemove}>
-                          <Icon name="close" size={14} color={theme.color.text.onInverse} />
+                          <Icon name="close" size={TOKENS.icon.xs} color={theme.color.text.onInverse} />
                         </Pressable>
                       </View>
                     </View>
@@ -541,7 +541,7 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
                       press="card"
                       highlight="material"
                       style={[styles.photoTile, styles.photoAdd]}>
-                      <Icon name="plus" size={24} color={theme.color.text.secondary} />
+                      <Icon name="plus" size={TOKENS.icon.lg} color={theme.color.text.secondary} />
                     </Pressable>
                   ) : null}
                 </View>
@@ -574,11 +574,11 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
                   {/* Both glyphs take the row's own ink, not the card's: the row
                       is `bg/base` now, so `text/onAccent` here would be white on
                       white in light mode. See the note on `payoutRow`. */}
-                  <Icon name="wallet" size={20} color={theme.color.text.accent} />
+                  <Icon name="wallet" size={TOKENS.icon.md} color={theme.color.text.accent} />
                   <Text allowFontScaling style={styles.payoutLabel}>
                     Get paid
                   </Text>
-                  <Icon name="chevronRight" size={18} color={theme.color.text.accent} />
+                  <Icon name="chevronRight" size={TOKENS.icon.sm} color={theme.color.text.accent} />
                 </Pressable>
               </View>
 
@@ -671,7 +671,7 @@ function TabButton({
       highlight="dim"
       style={styles.tab}>
       <View>
-        <Icon name={icon} size={24} color={color} />
+        <Icon name={icon} size={TOKENS.icon.lg} color={color} />
         {badge > 0 ? (
           <View style={styles.tabBadge}>
             <Text allowFontScaling style={styles.tabBadgeText}>

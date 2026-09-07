@@ -933,7 +933,7 @@ export function OnboardingScreen({ onDone }: Props) {
                       ) : (
                         <Icon
                           name="chevronRight"
-                          size={20}
+                          size={TOKENS.icon.md}
                           color={theme.color.text.onAccent}
                         />
                       )}

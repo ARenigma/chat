@@ -623,7 +623,7 @@ function MediaViewerView({
             onColor={CHROME_INK}
             size={CLOSE_GLYPH}
             style={styles.close}>
-            <Icon name="close" size={20} color={CHROME_INK} />
+            <Icon name="close" size={TOKENS.icon.md} color={CHROME_INK} />
           </Pressable>
         </View>
       </GestureHandlerRootView>

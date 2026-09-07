@@ -203,7 +203,7 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
           */}
         <View style={styles.successCard}>
           <View style={styles.successIcon}>
-            <Icon name="check" size={24} color={theme.color.text.positive} />
+            <Icon name="check" size={TOKENS.icon.lg} color={theme.color.text.positive} />
           </View>
           <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized} allowFontScaling style={styles.successDetail}>
             {formatTokens(amount)} tokens added
@@ -282,7 +282,7 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
         <>
           {mockPhase === 'error' && errorMsg !== null ? (
             <View style={styles.errorRow}>
-              <Icon name="callEnd" size={14} color={theme.color.state.danger} />
+              <Icon name="callEnd" size={TOKENS.icon.xs} color={theme.color.state.danger} />
               <Text allowFontScaling style={[styles.errorText, { color: theme.color.state.danger }]}>
                 {errorMsg}
               </Text>
@@ -327,7 +327,7 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
                         accessibilityIgnoresInvertColors
                       />
                       <View style={styles.rowFill} />
-                      {on ? <Icon name="check" size={17} color={theme.color.text.primary} /> : null}
+                      {on ? <Icon name="check" size={TOKENS.icon.sm} color={theme.color.text.primary} /> : null}
                     </Pressable>
                   </React.Fragment>
                 );

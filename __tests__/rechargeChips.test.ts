@@ -208,7 +208,14 @@ describe('a selected money chip is a filled container', () => {
     expect(styleBlock(payment, 'rowOn')).toContain('backgroundColor: t.color.bg.accentTint');
     // The check icon stays: colour is never the only indicator, and the tint on
     // its own is a 1.22:1 boundary against bg/base.
-    expect(payment).toContain('<Icon name="check" size={17}');
+    //
+    // The size moved 17 -> `icon.sm` (16) with ADR-0030, which put every icon on
+    // the Telegram-derived scale. What this line is FOR is that the check is
+    // present at all, so it is re-pinned to the token rather than loosened to a
+    // name-only match: the assertion is exactly as specific as it was, and the
+    // number it names is now true. Which step it is remains the scale's
+    // business, enforced in __tests__/iconScale.test.ts.
+    expect(payment).toContain('<Icon name="check" size={TOKENS.icon.sm}');
   });
 });
 

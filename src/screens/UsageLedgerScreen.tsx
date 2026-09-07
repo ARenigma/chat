@@ -246,7 +246,7 @@ export function UsageLedgerScreen({ onBack }: Props) {
               <View style={styles.glyph}>
                 <Icon
                   name={CHANNEL_GLYPH[row.channel]}
-                  size={18}
+                  size={TOKENS.icon.md}
                   color={theme.color.text.secondary}
                 />
               </View>
