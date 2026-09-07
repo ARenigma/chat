@@ -169,6 +169,23 @@ export type Profile = {
    * the bracket is set. Migration 043.
    */
   age_bracket: '18-24' | '25-34' | '35-44' | '45+' | null;
+  /**
+   * The member's own answer to the onboarding language step (migration 072):
+   * which languages they would rather be talked to in. `not null default '{}'`,
+   * so empty means "no preference" and there is no third undeclared state.
+   *
+   * Client-writable by its owner, and the ONE new column since 063 that is
+   * meant to be: it is deliberately absent from
+   * `guard_privileged_profile_columns()`, in the same set as `presence`,
+   * `presence_visible` and `is_available`. Contrast `age_bracket` directly
+   * above, which is in the guard and needs an RPC.
+   *
+   * Never leaves the owner's own row. It is not in `provider_directory` — the
+   * mirror-image fact for the other side of the marketplace is
+   * `profiles.languages`, published as `ProviderSummary.languages`, and these
+   * two are what `sortByLanguageMatch` compares.
+   */
+  preferred_languages: string[];
   created_at: string;
   last_refill_at: string | null;
 };

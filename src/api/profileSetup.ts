@@ -68,6 +68,69 @@ export function useSetAgeBracket() {
   });
 }
 
+/**
+ * True when a member has never answered the language step.
+ *
+ * `preferred_languages` is `not null default '{}'` (migration 072), so "never
+ * asked" and "asked and skipped" are the same empty array and this returns true
+ * for both. That is deliberate and it is the cost of the skippable decision:
+ * a member who skipped is asked again if they somehow re-enter onboarding.
+ * They cannot in practice — onboarding only runs for a member with no session,
+ * and `isFirstUser` gates it to a zero-balance member on top — and buying a
+ * "declined" state would mean a third value on the column that no reader other
+ * than this one line would ever distinguish.
+ */
+export function needsLanguagePreference(profile: Profile | undefined): boolean {
+  return (
+    profile?.role === 'member' &&
+    (profile.preferred_languages ?? []).length === 0
+  );
+}
+
+/**
+ * Write the member's language preference.
+ *
+ * A plain UPDATE, and NOT an RPC — the one place this deliberately differs from
+ * `setMemberAgeBracket` next door. `age_bracket` needs a SECURITY DEFINER RPC
+ * because migration 063 makes it un-writable by a client: a member who can type
+ * their own age band can defeat the 18+ gate. This column is the member's own
+ * preference about their own feed, it is absent from that guard by design, and
+ * the owner-only RLS policy from 003 already restricts the write to their own
+ * row. An RPC here would add a definer function whose entire body is the
+ * statement RLS was going to allow anyway.
+ *
+ * Idempotent, so the retry the caller offers on a transient error is safe.
+ */
+export async function setPreferredLanguages(
+  languages: readonly string[],
+): Promise<void> {
+  const { data: auth } = await supabase.auth.getUser();
+  const userId = auth.user?.id;
+  if (userId === undefined) {
+    throw new Error('Not signed in.');
+  }
+  const { error } = await supabase
+    .from('profiles')
+    .update({ preferred_languages: [...languages] })
+    // Redundant against the RLS policy and kept anyway: an UPDATE with no
+    // filter is one policy change away from being an UPDATE of every row, and
+    // this is the cheapest possible guard against that.
+    .eq('id', userId);
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export function useSetPreferredLanguages() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: setPreferredLanguages,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: keys.profile });
+    },
+  });
+}
+
 export type DisplayNameStatus = 'available' | 'taken' | 'invalid';
 
 export interface DisplayNameCheck {
