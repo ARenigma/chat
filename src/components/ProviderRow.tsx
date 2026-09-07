@@ -131,6 +131,36 @@ export const ROW_SEPARATOR_INSET = ROW_AVATAR + TOKENS.space.sm;
 export const ROW_CHEVRON_SLOT = TOKENS.icon.md;
 
 /**
+ * The row's laid-out height, DERIVED rather than written down, so the list's
+ * `overrideItemLayout` hint cannot drift away from the row it describes.
+ *
+ * It drifted already: HomeScreen told FlashList `size = 97` in both of its
+ * `overrideItemLayout` callbacks, a number from before this row grew a meta
+ * strip. FlashList v2 measures real cells, so the hint is an estimate it
+ * refines rather than a constraint it enforces — a wrong one costs scrollbar
+ * and scroll-to-index accuracy, not correctness, which is exactly why nobody
+ * noticed for as long as nobody did.
+ *
+ * The terms are the row's own box, top to bottom: `paddingVertical: space.sm`
+ * twice, the name line, `space.hair`, the headline line, `space.hair`, the
+ * strip's `marginTop: space['2xs']`, and the strip itself at
+ * `META_CHIP_HEIGHT`. The separator is 1px and sits OUTSIDE this — it is a
+ * sibling of the Pressable, not a child.
+ *
+ * `__tests__/providerRow.test.ts` pins the arithmetic to 108 from the tokens,
+ * so a change to the type scale or the chip height fails there rather than
+ * silently mis-hinting the list.
+ */
+export const PROVIDER_ROW_HEIGHT =
+  TOKENS.space.sm * 2 +
+  TOKENS.typography.titleMediumEmphasized.lineHeight +
+  TOKENS.space.hair +
+  TOKENS.typography.bodyMedium.lineHeight +
+  TOKENS.space.hair +
+  TOKENS.space['2xs'] +
+  META_CHIP_HEIGHT;
+
+/**
  * A row in the directory. Not a card any more.
  *
  * It was a white card on a grey page, and that was a reasoned choice: colour
@@ -306,7 +336,7 @@ function ProviderRowView({
                  receive the tap." On the search results list that is exactly a
                  member tapping the middle of a row and getting nothing.
                  `'handled'` — correct for the LIST, which is why HomeScreen sets
-                 it there — is also wrong HERE: ScrollView.js:1452-1458 returns
+                 it there — is also wrong HERE: ScrollView.js:1453-1459 returns
                  true from `onStartShouldSetResponder` under `'handled'` while the
                  keyboard is dismissible, so the strip would swallow that tap too.
                  `'always'` is the one value that declines: "the scroll view will

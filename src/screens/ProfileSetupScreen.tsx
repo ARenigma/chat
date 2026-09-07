@@ -28,7 +28,7 @@ import {
 import { Button } from '../components/Button';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
-import { TextField } from '../components/TextField';
+import { M3Field } from '../components/TextField';
 import { LoadingIndicator } from '../components/LoadingIndicator';
 
 /**
@@ -280,10 +280,16 @@ export function ProfileSetupScreen({
           This is how you&apos;ll show up in Pappal.
         </Text>
 
-        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.fieldLabel}>
-          Username
-        </Text>
-        <TextField
+        {/* This screen had the third of three different field conventions — a
+            titleMediumEmphasized label in text.primary over a bg.sunken box with
+            a hairline border, against labelMedium/secondary over bg.base with a
+            1dp border on the provider screens. That spread is what Amit was
+            pointing at, so the label is M3Field's `Above` label now and reads at
+            labelMedium like every other field in the app. The hero copy above
+            ("Claim your username") still carries the screen. */}
+        <M3Field
+          label="Username"
+          containerStyle={styles.field}
           value={displayName}
           onChangeText={setDisplayName}
           placeholder="username"
@@ -291,8 +297,11 @@ export function ProfileSetupScreen({
           autoCorrect={false}
           maxLength={24}
           testID="profile-setup-username"
-          style={styles.field}
         />
+        {/* NOT moved into M3Field's supporting-text slot, deliberately. This is a
+            live availability readout with three tones, and the slot is bodySmall
+            with one error colour — folding it in would flatten "taken" and
+            "available" into the same grey. It stays a sibling at bodyLarge. */}
         {statusLine ? (
           <Text
             allowFontScaling
@@ -474,24 +483,10 @@ const makeStyles = (t: Theme) =>
       color: t.color.text.secondary,
       marginBottom: TOKENS.space.sm,
     },
-    fieldLabel: {
-      ...TOKENS.typography.titleMediumEmphasized,
-      color: t.color.text.primary,
-      fontFamily: 'Geist-SemiBold',
-      marginTop: TOKENS.space.md,
-      marginBottom: TOKENS.space.xs,
-    },
+    /* Only the gap above the field is left here — the label, container, stroke
+       and padding are M3Field's. */
     field: {
-      minHeight: 56,
-      ...TOKENS.typography.bodyLarge,
-      paddingVertical: TOKENS.space.sm,
-      paddingHorizontal: TOKENS.space.md,
-      borderRadius: TOKENS.radius.field,
-      borderCurve: 'continuous',
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: t.color.border.hairline,
-      backgroundColor: t.color.bg.sunken,
-      color: t.color.text.primary,
+      marginTop: TOKENS.space.md,
     },
     status: {
       ...TOKENS.typography.bodyLarge,

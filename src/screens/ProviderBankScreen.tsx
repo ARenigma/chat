@@ -16,7 +16,7 @@ import {
 import { Button } from '../components/Button';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
-import { TextField } from '../components/TextField';
+import { M3Field } from '../components/TextField';
 
 interface Props {
   onBack: () => void;
@@ -173,55 +173,44 @@ export function ProviderBankScreen({ onBack }: Props) {
         </View>
 
         {method === 'upi' ? (
-          <Field label="UPI ID">
-            <TextField
-              value={vpa}
-              onChangeText={setVpa}
-              placeholder="yourname@upi"
-              placeholderTextColor={theme.color.text.tertiary}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="email-address"
-              testID="bank-vpa"
-              style={styles.input}
-            />
-          </Field>
+          <M3Field
+            label="UPI ID"
+            value={vpa}
+            onChangeText={setVpa}
+            placeholder="yourname@upi"
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
+            testID="bank-vpa"
+          />
         ) : (
           <>
-            <Field label="Account number">
-              <TextField
-                value={accountNumber}
-                onChangeText={t => setAccountNumber(t.replace(/[^0-9]/g, ''))}
-                placeholder="Account number"
-                placeholderTextColor={theme.color.text.tertiary}
-                keyboardType="number-pad"
-                testID="bank-account-number"
-                style={styles.input}
-              />
-            </Field>
-            <Field label="IFSC">
-              <TextField
-                value={ifsc}
-                onChangeText={t => setIfsc(t.toUpperCase())}
-                placeholder="HDFC0000001"
-                placeholderTextColor={theme.color.text.tertiary}
-                autoCapitalize="characters"
-                autoCorrect={false}
-                maxLength={11}
-                testID="bank-ifsc"
-                style={styles.input}
-              />
-            </Field>
-            <Field label="Account holder name">
-              <TextField
-                value={holder}
-                onChangeText={setHolder}
-                placeholder="As printed on the account"
-                placeholderTextColor={theme.color.text.tertiary}
-                testID="bank-holder"
-                style={styles.input}
-              />
-            </Field>
+            <M3Field
+              label="Account number"
+              value={accountNumber}
+              onChangeText={t => setAccountNumber(t.replace(/[^0-9]/g, ''))}
+              placeholder="Account number"
+              inputMode="numeric"
+              keyboardType="number-pad"
+              testID="bank-account-number"
+            />
+            <M3Field
+              label="IFSC"
+              value={ifsc}
+              onChangeText={t => setIfsc(t.toUpperCase())}
+              placeholder="HDFC0000001"
+              autoCapitalize="characters"
+              autoCorrect={false}
+              maxLength={11}
+              testID="bank-ifsc"
+            />
+            <M3Field
+              label="Account holder name"
+              value={holder}
+              onChangeText={setHolder}
+              placeholder="As printed on the account"
+              testID="bank-holder"
+            />
           </>
         )}
 
@@ -237,22 +226,21 @@ export function ProviderBankScreen({ onBack }: Props) {
 
         <View style={styles.divider} />
 
-        <Field label="PAN">
-          <TextField
-            value={pan}
-            onChangeText={t => setPan(t.toUpperCase())}
-            placeholder="ABCPV1234D"
-            placeholderTextColor={theme.color.text.tertiary}
-            autoCapitalize="characters"
-            autoCorrect={false}
-            maxLength={10}
-            testID="bank-pan"
-            style={styles.input}
-          />
-        </Field>
-        <Text allowFontScaling style={styles.hint}>
-          Required. With your PAN, tax withheld on your earnings is 0.1% instead of 5%.
-        </Text>
+        <M3Field
+          label="PAN"
+          value={pan}
+          onChangeText={t => setPan(t.toUpperCase())}
+          placeholder="ABCPV1234D"
+          autoCapitalize="characters"
+          autoCorrect={false}
+          maxLength={10}
+          testID="bank-pan"
+          /* This was a loose `Text` under the field. It is M3's supporting-text
+             slot, so it goes in the slot: same 4dp gap and bodySmall, but now
+             owned by the field rather than by a sibling that a reorder could
+             separate from it. */
+          supportingText="Required. With your PAN, tax withheld on your earnings is 0.1% instead of 5%."
+        />
         {panStatus !== null ? (
           <View style={styles.statusRow}>
             <Icon name={panStatus.icon} size={TOKENS.icon.sm} color={panStatus.color(theme)} />
@@ -278,18 +266,6 @@ export function ProviderBankScreen({ onBack }: Props) {
           </Text>
         ) : null}
       </ScrollView>
-    </View>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }): React.JSX.Element {
-  const styles = useStyles(makeStyles);
-  return (
-    <View style={styles.field}>
-      <Text allowFontScaling style={styles.fieldLabel}>
-        {label}
-      </Text>
-      {children}
     </View>
   );
 }
@@ -378,20 +354,9 @@ const makeStyles = (t: Theme) =>
     },
     tabLabel: { ...TOKENS.typography.labelLargeEmphasized, color: t.color.text.primary },
     tabLabelActive: { color: t.color.text.onInverse },
-    field: { gap: TOKENS.space['2xs'] },
-    fieldLabel: { ...TOKENS.typography.labelMedium, color: t.color.text.secondary },
-    input: {
-      ...TOKENS.typography.bodyLarge,
-      color: t.color.text.primary,
-      height: 52,
-      paddingHorizontal: TOKENS.space.md,
-      borderRadius: TOKENS.radius.field,
-      borderCurve: 'continuous',
-      borderWidth: 1,
-      borderColor: t.color.border.strong,
-      backgroundColor: t.color.bg.base,
-    },
-    hint: { ...TOKENS.typography.bodySmall, color: t.color.text.secondary },
+    /* `field`, `fieldLabel`, `input` and `hint` all lived here and are now
+       M3Field's: the local Field wrapper duplicated the label, and `input` was a
+       52dp-tall copy of the container that M3 specifies at 56. */
     statusRow: {
       flexDirection: 'row',
       alignItems: 'center',

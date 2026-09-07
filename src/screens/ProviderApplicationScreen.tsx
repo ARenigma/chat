@@ -45,7 +45,7 @@ import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { LoadingIndicator } from '../components/LoadingIndicator';
 import { NoticeBar } from '../components/NoticeBar';
-import { TextField } from '../components/TextField';
+import { M3Field } from '../components/TextField';
 
 interface Props {
   onBack: () => void;
@@ -478,26 +478,21 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
             TDS. We keep only the result.
           </Text>
 
-          <Field label="PAN">
-            <TextField
-              value={pan}
-              onChangeText={t => setPan(t.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10))}
-              placeholder="ABCDE1234F"
-              placeholderTextColor={theme.color.text.tertiary}
-              autoCapitalize="characters"
-              autoCorrect={false}
-              maxLength={10}
-              allowFontScaling
-              accessibilityLabel="PAN number"
-              testID="provider-pan"
-              style={styles.input}
-            />
-            {panError !== null ? (
-              <Text allowFontScaling style={styles.verifyError}>
-                {panError}
-              </Text>
-            ) : null}
-          </Field>
+          <M3Field
+            label="PAN"
+            value={pan}
+            onChangeText={t => setPan(t.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10))}
+            placeholder="ABCDE1234F"
+            autoCapitalize="characters"
+            autoCorrect={false}
+            maxLength={10}
+            accessibilityLabel="PAN number"
+            testID="provider-pan"
+            /* Was a sibling Text inside the old Field wrapper. As the field's own
+               error it now also drives the container's stroke to state.danger,
+               which the loose Text could not do. */
+            error={panError}
+          />
 
           <Text allowFontScaling style={styles.verifyBodyText}>
             Where your earnings go. The name on it has to match the name on your
@@ -527,52 +522,41 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
           </View>
 
           {payoutMethod === 'upi' ? (
-            <Field label="UPI ID">
-              <TextField
-                value={upiVpa}
-                onChangeText={setUpiVpa}
-                placeholder="yourname@bank"
-                placeholderTextColor={theme.color.text.tertiary}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="email-address"
-                allowFontScaling
-                accessibilityLabel="UPI ID"
-                testID="provider-upi"
-                style={styles.input}
-              />
-            </Field>
+            <M3Field
+              label="UPI ID"
+              value={upiVpa}
+              onChangeText={setUpiVpa}
+              placeholder="yourname@bank"
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="email-address"
+              accessibilityLabel="UPI ID"
+              testID="provider-upi"
+            />
           ) : (
             <>
-              <Field label="Account number">
-                <TextField
-                  value={accountNumber}
-                  onChangeText={t => setAccountNumber(t.replace(/[^0-9]/g, '').slice(0, 18))}
-                  placeholder="9 to 18 digits"
-                  placeholderTextColor={theme.color.text.tertiary}
-                  keyboardType="number-pad"
-                  maxLength={18}
-                  allowFontScaling
-                  accessibilityLabel="Bank account number"
-                  testID="provider-account-number"
-                  style={styles.input}
-                />
-              </Field>
-              <Field label="IFSC">
-                <TextField
-                  value={ifsc}
-                  onChangeText={t => setIfsc(t.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 11))}
-                  placeholder="HDFC0001234"
-                  placeholderTextColor={theme.color.text.tertiary}
-                  autoCapitalize="characters"
-                  autoCorrect={false}
-                  maxLength={11}
-                  allowFontScaling
-                  accessibilityLabel="IFSC code"
-                  testID="provider-ifsc"
-                  style={styles.input}
-                />
-              </Field>
+              <M3Field
+                label="Account number"
+                value={accountNumber}
+                onChangeText={t => setAccountNumber(t.replace(/[^0-9]/g, '').slice(0, 18))}
+                placeholder="9 to 18 digits"
+                inputMode="numeric"
+                keyboardType="number-pad"
+                maxLength={18}
+                accessibilityLabel="Bank account number"
+                testID="provider-account-number"
+              />
+              <M3Field
+                label="IFSC"
+                value={ifsc}
+                onChangeText={t => setIfsc(t.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 11))}
+                placeholder="HDFC0001234"
+                autoCapitalize="characters"
+                autoCorrect={false}
+                maxLength={11}
+                accessibilityLabel="IFSC code"
+                testID="provider-ifsc"
+              />
             </>
           )}
 
@@ -794,10 +778,16 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
           </Text>
         </Field>
 
+        {/* The local `Field` stays here rather than becoming an `M3Field label=`,
+            because this section is the input PLUS a reroll chip and a status
+            line, and M3Field takes no children. Its label styling is identical
+            (labelMedium/secondary, 4dp gap), so the two read the same. The
+            M3Field inside is deliberately label-less — the section owns the
+            label. */}
         <Field label="Stage name">
-          <TextField
+          <M3Field
             testID="provider-name"
-            style={styles.input}
+            accessibilityLabel="Stage name"
             value={displayName}
             onChangeText={t => {
               setDisplayName(t);
@@ -806,10 +796,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
               setNameError(null);
             }}
             placeholder="The name members will see"
-            placeholderTextColor={theme.color.text.tertiary}
             maxLength={40}
-            allowFontScaling
-            underlineColorAndroid="transparent"
           />
           <View style={styles.nameRow}>
             <Pressable
@@ -859,19 +846,14 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
           </View>
         </Field>
 
-        <Field label="Headline">
-          <TextField
-            testID="provider-headline"
-            style={styles.input}
-            value={headline}
-            onChangeText={setHeadline}
-            placeholder={'“I listen more than I talk”'}
-            placeholderTextColor={theme.color.text.tertiary}
-            maxLength={140}
-            allowFontScaling
-            underlineColorAndroid="transparent"
-          />
-        </Field>
+        <M3Field
+          label="Headline"
+          testID="provider-headline"
+          value={headline}
+          onChangeText={setHeadline}
+          placeholder={'“I listen more than I talk”'}
+          maxLength={140}
+        />
 
         <Field label="Languages">
           <View style={styles.chips}>
@@ -886,20 +868,20 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
           </View>
         </Field>
 
-        <Field label="About">
-          <TextField
-            testID="provider-about"
-            style={[styles.input, styles.multiline]}
-            value={about}
-            onChangeText={setAbout}
-            placeholder="Why are you good at this?"
-            placeholderTextColor={theme.color.text.tertiary}
-            multiline
-            maxLength={2000}
-            allowFontScaling
-            underlineColorAndroid="transparent"
-          />
-        </Field>
+        <M3Field
+          label="About"
+          testID="provider-about"
+          value={about}
+          onChangeText={setAbout}
+          placeholder="Why are you good at this?"
+          multiline
+          maxLength={2000}
+          /* M3Field's multiline floor is the spec's 56dp container. A bio asked
+             for in one line is a bio nobody writes, so this one field opens at
+             110 — the height it already had. Only the floor is overridden; the
+             stroke, radius, padding and states stay the component's. */
+          style={styles.about}
+        />
 
         <Field label="Photo (optional)">
           <View style={styles.avatarGrid}>
@@ -1083,20 +1065,13 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.bodyLarge,
       color: t.color.text.secondary,
     },
-    panField: {
-      alignSelf: 'stretch',
-      marginTop: TOKENS.space.lg,
-      paddingVertical: TOKENS.space.sm,
-      paddingHorizontal: TOKENS.space.md,
-      borderRadius: TOKENS.radius.field,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: t.color.border.hairline,
-      backgroundColor: t.color.bg.raised,
-      ...TOKENS.typography.bodyLarge,
-      color: t.color.text.primary,
-      textAlign: 'center',
-      letterSpacing: 2,
-    },
+    /* `panField` was here — a fifth field container, centred and letter-spaced,
+       left over from an earlier PAN step and with no consumer since. Deleted
+       rather than kept as a spare: an unused style that declares a border, a
+       radius and body type reads as this screen's field geometry to anyone who
+       greps for it, which is the same trap the `layout` note in
+       design/tokens.json describes for a token with no consumer. The PAN input
+       is an M3Field now. */
     verifyHint: {
       ...TOKENS.typography.bodyMedium,
       color: t.color.text.tertiary,
@@ -1197,18 +1172,10 @@ const makeStyles = (t: Theme) =>
     nameRerollLabel: { ...TOKENS.typography.labelMedium, color: t.color.text.accent },
     nameStatus: { flex: 1, paddingTop: TOKENS.space['2xs'] },
     namePositive: { ...TOKENS.typography.bodyMedium, color: t.color.text.positive },
-    input: {
-      minHeight: 52,
-      paddingHorizontal: TOKENS.space.md,
-      borderRadius: TOKENS.radius.field,
-      borderCurve: 'continuous',
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: t.color.border.strong,
-      backgroundColor: t.color.bg.base,
-      ...TOKENS.typography.bodyLarge,
-      color: t.color.text.primary,
-    },
-    multiline: { minHeight: 110, paddingTop: TOKENS.space.md, textAlignVertical: 'top' },
+    /* `input` and `multiline` were a 52dp-tall hand-rolled copy of the M3
+       container; both are M3Field's now. `about` is the one surviving override:
+       a taller floor for the bio, nothing else. */
+    about: { minHeight: 110 },
     chips: { flexDirection: 'row', flexWrap: 'wrap', gap: TOKENS.space['2xs'] },
     avatarGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: TOKENS.space.sm },
     avatarCell: {
