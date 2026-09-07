@@ -123,7 +123,7 @@ export function ChatRingScreen({ onOpenConversation }: Props) {
           {incoming.peerName}
         </Text>
         <Text allowFontScaling style={styles.sub} testID="chat-ring-countdown">
-          {`wants to talk · ${formatClock(Math.max(0, left))}`}
+          {`wants to chat · ${formatClock(Math.max(0, left))}`}
         </Text>
       </View>
 

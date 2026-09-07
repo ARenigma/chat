@@ -462,6 +462,10 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
     pendingRequest.channel === 'chat' &&
     pendingRequest.responded_at != null &&
     activeSession == null;
+  const theyOpenedTheChat =
+    pendingRequest != null &&
+    selfId != null &&
+    pendingRequest.initiator_id !== selfId;
   const spJoining =
     isMemberSide &&
     pendingRequest != null &&
@@ -1429,7 +1433,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
       {openAlert?.alerted === true ? (
         <View style={styles.notifiedBar} testID="peer-notified">
           <Text allowFontScaling style={styles.notifiedText}>
-            {`We have notified ${name}.`}
+            {`${name} knows you are here.`}
           </Text>
         </View>
       ) : null}
@@ -1676,14 +1680,14 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
               chatClosed
                 ? `${name} is not taking chats right now`
                 : awaitingMemberConsent
-                  ? 'Accept the session to continue'
+                  ? 'Say yes above when you are ready'
                   : spJoining
-                    ? `${name} is joining`
+                    ? `${name} is on their way`
                     : memberHasSent
                       ? replyTo !== null
                         ? 'Reply'
                         : 'Message'
-                      : 'Make your first move'
+                      : 'Say hello'
             }
             sendHaloKey={sendHaloKey}
             onFocusChange={onComposerFocus}
@@ -1706,12 +1710,20 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
       <ConfirmDialog
         visible={awaitingMemberConsent}
         testID="chat-session-consent"
-        title="Start this session?"
-        body={`${name} is here. No sexual or abusive talk. Tokens start when you accept.`}
-        cancelLabel="Not now"
-        confirmLabel="Accept"
+        title={
+          theyOpenedTheChat
+            ? `Hey, ${name} wants to have a chat with you`
+            : `Hey — ${name} is here`
+        }
+        body={
+          theyOpenedTheChat
+            ? 'Keep it kind — no sexual or abusive talk. You will only use tokens once you both start.'
+            : 'They are ready when you are. Keep it kind — no sexual or abusive talk. You will only use tokens once you both start.'
+        }
+        cancelLabel="Decline"
+        confirmLabel="Start session"
         busy={confirmChat.isPending || declineChatRequest.isPending}
-        busyLabel="Working"
+        busyLabel="Just a moment"
         onCancel={() => {
           if (pendingRequest == null || conversationId === undefined) {
             return;
@@ -1728,7 +1740,16 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
           confirmChat.mutate(
             { requestId: pendingRequest.id, conversationId },
             {
-              onSuccess: () => setNotice('Session started', 'confirm'),
+              onSuccess: () => setNotice('You are in', 'confirm'),
+              onError: err => {
+                const msg = err instanceof Error ? err.message : '';
+                if (msg.toLowerCase().includes('insufficient')) {
+                  setNotice('You are out of tokens — top up to keep going.');
+                  openRefill();
+                  return;
+                }
+                setNotice('Could not start just now.');
+              },
             },
           );
         }}
@@ -1739,21 +1760,21 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
       <ConfirmDialog
         visible={leaveDialogVisible}
         testID="chat-leave-dialog"
-        title={leaveIntent === 'end' ? 'End session?' : 'End session and leave?'}
+        title={leaveIntent === 'end' ? 'Done for now?' : 'Leave this chat?'}
         body={
           sessionIsActive
-            ? `Your paid session has been running for ${sessionClock ?? '0:00'}.${
-                leaveIntent === 'end' ? ' Ending it stops the charge.' : ''
+            ? `This chat has been going for ${sessionClock ?? '0:00'}.${
+                leaveIntent === 'end' ? ' This stops the chat and the charge.' : ''
               }`
             : leaveIntent === 'end'
-              ? 'The session is still connecting. Ending it now cancels it.'
-              : 'The session is still connecting. Leaving will end it.'
+              ? 'You are still connecting. Stopping now cancels it.'
+              : 'You are still connecting. Leaving will end it.'
         }
         cancelLabel={leaveIntent === 'end' ? 'Keep going' : 'Stay'}
-        confirmLabel="End session"
+        confirmLabel="End chat"
         destructive
         busy={endingSession}
-        busyLabel="Ending session…"
+        busyLabel="Ending…"
         onCancel={() => setLeaveDialogVisible(false)}
         onConfirm={leaveIntent === 'end' ? confirmEnd : confirmLeave}
       />

@@ -60,7 +60,7 @@ if (__DEV__) {
  *   - `kind: 'engagement'` → a BigPicture re-engagement nudge (an SP photo plus a
  *     call to action), for when there is no real message.
  *   - anything else → a MessagingStyle conversation notification for a real
- *     message. Its body is deliberately generic and never carries message text:
+ *     message. Its body is a warm line and never carries message text:
  *     content on a lock screen is a disclosure this product cannot make, given
  *     who the conversations are with.
  */
@@ -79,7 +79,7 @@ setBackgroundMessageHandler(getMessaging(), async remote => {
   if (push === null) {
     return;
   }
-  await notifyConversation(push, 'wants to talk to you');
+  await notifyConversation(push, 'wants to have a chat with you');
 });
 
 AppRegistry.registerComponent(appName, () => App);

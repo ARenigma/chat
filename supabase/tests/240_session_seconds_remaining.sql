@@ -17,7 +17,7 @@ select plan(7);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures: member + provider, policies accepted, a chat request the provider
--- auto-accepts by replying (the 037 handshake), then both leases claimed.
+-- joins by replying, the member confirms, then both leases claimed.
 -- ---------------------------------------------------------------------------
 insert into auth.users (id) values
   ('cc062000-0000-4062-8000-000000000001'),  -- member
@@ -66,6 +66,15 @@ begin
     'reply from provider'
   );
 end$$;
+
+set local request.jwt.claims =
+  '{"sub":"cc062000-0000-4062-8000-000000000001","role":"authenticated"}';
+
+select public.confirm_chat_session(
+  (select id from public.session_requests
+   where conversation_id = (select v from test.fixture where k = 'conv062')
+     and channel = 'chat' and status = 'pending')
+);
 
 insert into test.fixture (k, v)
 select 'sess062', id
