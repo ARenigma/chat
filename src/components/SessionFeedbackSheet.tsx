@@ -10,7 +10,7 @@
  * toll gate on leaving a conversation somebody may have found difficult, and
  * the one thing this product cannot afford is making the exit feel expensive.
  */
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -23,6 +23,29 @@ import { Sheet } from './Sheet';
 import { TextField } from './TextField';
 
 const STARS = [1, 2, 3, 4, 5] as const;
+
+/**
+ * One session, one prompt — for the whole run of the app.
+ *
+ * Two screens notice a session ending now: ChatScreen watches `activeSession`
+ * cross from live to null, and CallScreen fires on unmount. They are not
+ * alternatives, they overlap, because `get_active_session` (037:732) selects the
+ * conversation's latest live session WITHOUT filtering by channel — so the chat
+ * the member lands on after hanging up reads back the audio/video session row
+ * they were just in and watches it end a second time.
+ *
+ * The store's first-writer-wins only holds while a sheet is still up. Once the
+ * member has rated or skipped, `clearReview` has set `pendingReview` back to
+ * null, and the second notice arriving a poll later would open a fresh sheet for
+ * a session they have already answered about — the exact thing that comment
+ * promises not to do.
+ *
+ * So the "already asked" memory lives here, beside the thing that must not
+ * appear twice, rather than in the store. Module scope because it has to outlive
+ * this component's mounts, and ids only, so it costs a handful of uuids per app
+ * run. A session id is never reissued, so there is nothing to evict.
+ */
+const ASKED = new Set<string>();
 
 /** Names the number, so a tap has a meaning and not just a count. */
 const RATING_WORD: Record<number, string> = {
@@ -41,12 +64,36 @@ export function SessionFeedbackSheet() {
   const submit = useSubmitSessionReview();
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
+  /**
+   * The session this mount is currently asking about, which is what makes the
+   * `ASKED` check above safe to read during render: the id goes into the set the
+   * moment the sheet is claimed, so without a separate record of "and it is
+   * mine" the very sheet that just registered would hide itself on the next
+   * render. Cleared by `close`, so a repeat notice for the same session finds
+   * `askedFor === null`, falls to the `ASKED` branch, and is dropped.
+   */
+  const [askedFor, setAskedFor] = useState<string | null>(null);
 
   const close = useCallback(() => {
     setRating(0);
     setComment('');
+    setAskedFor(null);
     clearReview();
   }, [clearReview]);
+
+  useEffect(() => {
+    if (pending === null || askedFor === pending.sessionId) {
+      return;
+    }
+    if (ASKED.has(pending.sessionId)) {
+      // Somebody already put this session to the member. Drop the notice rather
+      // than leave it pending, or it would re-open on the next render.
+      clearReview();
+      return;
+    }
+    ASKED.add(pending.sessionId);
+    setAskedFor(pending.sessionId);
+  }, [pending, askedFor, clearReview]);
 
   const send = useCallback(() => {
     if (pending === null || rating === 0) {
@@ -64,7 +111,7 @@ export function SessionFeedbackSheet() {
     );
   }, [pending, rating, comment, submit, close]);
 
-  if (pending === null) {
+  if (pending === null || askedFor !== pending.sessionId) {
     return null;
   }
 
@@ -99,7 +146,13 @@ export function SessionFeedbackSheet() {
               checked={on}
               accessibilityLabel={`${n} ${n === 1 ? 'star' : 'stars'}, ${RATING_WORD[n]}`}
               press="none"
-              size={48}>
+              size={48}
+              // The one icon site with no `style` at all, so there was no radius
+              // for the state layer to inherit and it painted a square behind the
+              // star glyph. A star is an icon-only control like any other, and
+              // those take borderless (circular) ink.
+              // https://developer.android.com/training/material/animations
+              shape="circle">
               {/* Filled by colour, not by a second glyph: the icon font has one
                   star, and a hollow-vs-solid pair would be two glyphs that must
                   agree about their optical weight forever. */}

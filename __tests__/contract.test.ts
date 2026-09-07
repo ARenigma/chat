@@ -2566,9 +2566,27 @@ describe('paid chat sessions expose their live lifecycle', () => {
     // The repaint cadence follows the remainder: no unconditional 1 Hz clock.
     expect(code).toContain('clockTickMs(sessionRemaining)');
     expect(code).not.toMatch(/setInterval\([^;]*,\s*1000\)/);
-    // Numerals only while counting down; whole minutes otherwise.
-    expect(code).toContain('formatClock(sessionRemaining)');
-    expect(code).toContain('formatMinutes(');
+    /*
+     * ONE time display, not two (Amit, 2026-09-07: "Dont need two timers --
+     * only one countdown which activates when <=5 mins is left with dynamic
+     * timer and rechage button").
+     *
+     * This used to require BOTH `formatClock` and `formatMinutes` — numerals
+     * inside the window, whole minutes above it. The whole-minutes half was the
+     * second timer: an always-present bar reading "240 min of talk time left",
+     * repainting every 15 s, carrying no seconds. The bar is now gated on
+     * `countingDown`, so it is the last five minutes or nothing, and the
+     * estimate and its helpers are gone from the screen entirely.
+     *
+     * The threshold itself is unchanged and still single-sourced in
+     * sessionClock.ts — that is what the assertions above and below pin.
+     */
+    expect(code).toContain('formatClock(sessionRemaining ?? 0)');
+    expect(code).not.toContain('formatMinutes(');
+    expect(code).not.toContain('estimatedTalkSeconds(');
+    // The bar cannot come back above the window: its own visibility is the
+    // countdown flag, so there is no state in which it shows without a clock.
+    expect(code).toMatch(/showStickyRecharge\s*=\s*countingDown\s*&&/);
     // The extend card and the numerals share one threshold and one figure.
     expect(code).toMatch(/showExtendCard\s*=\s*sessionIsActive\s*&&\s*countingDown/);
 
@@ -4809,7 +4827,14 @@ describe('a session is rated when it ends, and the ratings are readable', () => 
     // five minutes — the whole reason a per-second clock exists — rendered a
     // timeless "Need more time?" and no number at all.
     const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
-    expect(chat).toMatch(/showStickyRecharge =\s*\n?\s*balance !== null && \(!showExtendCard/);
+    /*
+     * The bar's visibility WAS `balance !== null && (!showExtendCard …)`, i.e.
+     * any chat with a loaded balance. It is now `countingDown && (…)`
+     * (Amit, 2026-09-07) — the bar is the countdown, so it exists only in the
+     * window the countdown exists for, which is what this test is named after
+     * and could not previously assert.
+     */
+    expect(chat).toMatch(/showStickyRecharge = countingDown && \(!showExtendCard/);
     expect(chat).toContain('testID="chat-extend-timer"');
     expect(chat).toMatch(/testID="chat-extend-timer"[\s\S]{0,80}formatClock\(sessionRemaining/);
     // Asking the question is not the same as answering it.
@@ -5051,18 +5076,30 @@ describe('seed provider photos', () => {
     // said 34. Nothing caught it because apparent age was never written down —
     // it lived in whoever last looked at the file. It is a field now, so the
     // comparison is a check rather than a memory.
-    const ages = new Map<string, number>();
-    for (const m of seed.matchAll(/'(Mira|Sara|Nia|Ivy)',\s*(\d+)/g)) {
-      ages.set(String(m[1]).toLowerCase(), Number(m[2]));
+    // Joined through the seed's uuid, NOT through the display name. A photo
+    // filename is a bucket key, so it keeps the slug it was uploaded under
+    // (`mira-`, `nia-`, …) even after the cast is renamed — which it was, to
+    // Indian names, 2026-09-07. Keying this on the name made the test the
+    // reason a name could not change, and a spelling choice is not a contract.
+    const ageById = new Map<string, number>();
+    for (const m of seed.matchAll(/\('([0-9a-f-]{36})'::uuid, '[A-Za-z0-9_]+', (\d+),/g)) {
+      ageById.set(String(m[1]), Number(m[2]));
     }
-    expect(ages.size).toBe(4);
+    expect(ageById.size).toBe(4);
+    const idByFile = new Map<string, string>();
+    for (const m of seed.matchAll(
+      /\('([0-9a-f-]{36})'::uuid, '([a-z0-9]+-[0-9a-f]{8}\.jpg)'\)/g,
+    )) {
+      idByFile.set(String(m[2]), String(m[1]));
+    }
+    expect(idByFile.size).toBe(4);
 
     for (const photo of manifest.photos) {
       expect(photo.apparent_age).toBeGreaterThanOrEqual(18);
       // Amit's rule (2026-09-06): nobody older than 35 in the seeded directory.
       expect(photo.apparent_age).toBeLessThanOrEqual(35);
-      const profile = ages.get(photo.provider);
-      if (profile === undefined) continue; // Ada is seeded outside this file.
+      const profile = ageById.get(idByFile.get(photo.file) ?? '');
+      if (profile === undefined) continue; // The `ada-` photo is seeded outside this file.
       // Within a few years of the age the card prints beside the face. A photo
       // that contradicts its own caption reads as fake before anyone gets to
       // the words.

@@ -290,6 +290,17 @@ export function SettingsSheet({
                     press="none"
                     highlight="dim"
                     size={48}
+                    // `backButton` sets no radius, so the `dim` fill painted a
+                    // solid 48dp square behind a 20pt glyph. Icon-only controls
+                    // take borderless (circular) ink.
+                    // https://developer.android.com/training/material/animations
+                    //
+                    // Deviation, stated per rule 1.6: the box IS the 48dp touch
+                    // target, so the circle is 48dp where M3 draws a 40dp layer
+                    // inside a 48dp target. Shrinking it would need a nested view;
+                    // a 48dp circle already reads as the button rather than as a
+                    // box, which is the defect being fixed.
+                    shape="circle"
                     style={styles.backButton}>
                     <Icon name="back" size={20} />
                   </Pressable>

@@ -445,10 +445,25 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   },
   // Plain tinted text, not a button. An iOS sheet's bar actions have no fill and
   // no border; the tint is what says they are tappable.
+  //
+  // bodyLarge (Regular) rather than the labelLargeEmphasized every OTHER text
+  // action in the app uses, and that is deliberate rather than drift: this bar
+  // has no equivalent on any screen — TopAppBar's actions are icons — so there
+  // is no screen/sheet pair for it to disagree with, and the tint plus the bar
+  // position is what marks it, not the weight. ADR-0024 supersedes ADR-0012's
+  // type ladder but not its iOS interaction model, and this is that model.
   action: {
     ...TOKENS.typography.bodyLarge,
     color: t.color.text.accent,
   },
+  // THE supporting-line role for the whole app, and the reason it is worth
+  // naming here: every sheet's subhead comes through this one style, so it is
+  // the anchor the screen side has to match. A screen's supporting copy is
+  // bodyLarge too (TransactionHistoryScreen `emptyBody`/`hintText`, NoticeBar
+  // `text`, SessionFeedbackSheet `word`), and __tests__/theme.test.ts pins the
+  // pair so a sheet cannot quietly drop to bodyMedium — which is what
+  // PaymentSheet had done. bodyMedium's home in ADR-0024 is list previews and
+  // timestamps, not a sheet's own subhead.
   body: {
     ...TOKENS.typography.bodyLarge,
     color: t.color.text.secondary,

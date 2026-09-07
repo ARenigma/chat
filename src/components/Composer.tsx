@@ -1011,6 +1011,12 @@ function ComposerView({
             press="none"
             highlight="dim"
             size={32}
+            // Circle, not the square touch box: `panelButton` sets no radius, so
+            // the `dim` fill painted a solid 32dp square behind a 14pt glyph.
+            // Icon-only controls take borderless (circular) ink here, not the
+            // bounded rectangular kind.
+            // https://developer.android.com/training/material/animations
+            shape="circle"
             style={styles.panelButton}
           >
             <Icon name="close" size={14} color={theme.color.text.secondary} />
@@ -1067,6 +1073,10 @@ function ComposerView({
             press="none"
             highlight="dim"
             size={32}
+            // Same as voice-cancel above: `panelButton` has no radius of its own,
+            // so the `dim` fill needs the circle or it paints a 32dp square.
+            // https://developer.android.com/training/material/animations
+            shape="circle"
             style={styles.panelButton}
           >
             <Icon name="close" size={14} color={theme.color.text.secondary} />

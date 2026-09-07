@@ -63,8 +63,22 @@ describe('the search field is the one Telegram actually ships', () => {
      * changed, and the `not.toContain('export const SEARCH_')` below is what stops
      * them drifting back out without a consumer arriving with them.
      */
+    /*
+     * The 40 is now DERIVED from the reference's one `setPadding` call rather
+     * than written out, so it is read here as arithmetic on values: 48 minus 4
+     * top and bottom. `setPadding(dp(4), dp(4), dp(4), dp(4))` is a single call
+     * with a single number in it, and splitting it into a vertical constant and
+     * a horizontal one is what let the horizontal half get dropped.
+     */
     expect(bar).toContain('const SEARCH_ROW_HEIGHT = 48');
-    expect(bar).toContain('const SEARCH_PILL_HEIGHT = 40');
+    expect(bar).toContain('const PILL_INSET = 4');
+    expect(bar).toContain(
+      'const SEARCH_PILL_HEIGHT = SEARCH_ROW_HEIGHT - PILL_INSET * 2',
+    );
+    const row = Number(/const SEARCH_ROW_HEIGHT = (\d+)/.exec(bar)?.[1]);
+    const pillInset = Number(/const PILL_INSET = (\d+)/.exec(bar)?.[1]);
+    expect(row).toBe(48);
+    expect(row - pillInset * 2).toBe(40);
     expect(bar).not.toContain('export const SEARCH_');
     expect(bar).toContain('const GLYPH_BOX = 24');
     expect(bar).toContain('const GLYPH_INSET = 12');
@@ -77,6 +91,182 @@ describe('the search field is the one Telegram actually ships', () => {
     expect(styles).toContain("position: 'absolute'");
     // And the M3 number it replaced is gone, not merely unused.
     expect(bar).not.toContain('SEARCH_BAR_HEIGHT');
+  });
+
+  it('insets the pill 4dp on ALL FOUR sides, the two that were dropped included', () => {
+    /*
+     * THE DEFECT THIS GATE HOLDS, and it is a retraction rather than a new
+     * finding. Until 2026-09-07 this file inset the pill 4dp top and bottom and
+     * NOTHING left or right, on the recorded argument that "the horizontal half
+     * exists only so `setupBlurredBackground` has 4dp to bleed into". The source
+     * says the opposite. `dispatchDraw` bounds the pill drawable to the padding
+     * box on every side —
+     *
+     *   bg.setBounds(getPaddingLeft(), getPaddingTop(),
+     *                getWidth() - getPaddingRight(),
+     *                getHeight() - getPaddingBottom())
+     *
+     * FragmentSearchField.java:187-193 — while the BLUR is given bounds expanded
+     * back OUT by dp(4) on each side (`:196-200`) so that, with its own
+     * `setPadding(dp(4))` (`:209`), it lands on the same rect the pill does. The
+     * padding shapes the pill; the blur cancels the padding. Cost of the
+     * misreading: a pill 8dp wider than the reference's with both glyphs 4dp too
+     * far out — which is what "icon placement is still not exactly the same"
+     * describes.
+     *
+     * Asserted per edge rather than as one string, because the shape of the bug
+     * was two edges present and two edges missing.
+     */
+    const pill = styles.slice(
+      styles.indexOf('pill: {'),
+      styles.indexOf('glyphSlot: {'),
+    );
+    for (const edge of ['left', 'right', 'top', 'bottom']) {
+      expect(pill).toContain(`${edge}: PILL_INSET`);
+    }
+    // The flush-to-the-edge form cannot come back looking correct.
+    expect(pill).not.toMatch(/left: 0\b/);
+    expect(pill).not.toMatch(/right: 0\b/);
+
+    /*
+     * And the inset is SPENT ON THE SLOTS, not on the container, so the text
+     * inset stays at the reference's 48dp measured from the PILL — every one of
+     * its numbers is measured from the padding box, because a FrameLayout lays
+     * its children out inside the parent's padding and `checkUi_editTextPaddings`
+     * (`:239-254`) then sets the EditText's own 48dp on top of that.
+     *
+     *   4 + 48 = 52 to the text, 4 + 12 = 16 to the glyph frame
+     *
+     * Read as arithmetic on the file's own values so it cannot be satisfied by
+     * any comment: 4 + 48 has to come out at 52 and 4 + 12 at 16.
+     */
+    const pillInset = Number(/const PILL_INSET = (\d+)/.exec(bar)?.[1]);
+    const glyphInset = Number(/const GLYPH_INSET = (\d+)/.exec(bar)?.[1]);
+    const glyphBox = Number(/const GLYPH_BOX = (\d+)/.exec(bar)?.[1]);
+    expect(pillInset + glyphInset * 2 + glyphBox).toBe(52);
+    expect(pillInset + glyphInset).toBe(16);
+    const leading = styles.slice(
+      styles.indexOf('glyphSlot: {'),
+      styles.indexOf('clearSlot: {'),
+    );
+    const trailing = styles.slice(
+      styles.indexOf('clearSlot: {'),
+      styles.indexOf('clearTarget: {'),
+    );
+    /*
+     * A 48dp box on a 4dp MARGIN, not a 52dp box with 4dp of padding. Both give
+     * the same two insets, and only the margin keeps the box's centre on the
+     * glyph's centre — which is the pivot `clearStyle` scales and rotates about,
+     * and the reference transforms the 24dp `closeIcon` view itself
+     * (FragmentFloatingButton.java:250-258), whose pivot IS the mark. Padding
+     * would put the pivot 2dp off and drift the glyph ~1dp sideways through the
+     * 380ms reveal.
+     */
+    expect(leading).toContain('width: GLYPH_SLOT');
+    expect(leading).toContain('marginLeft: PILL_INSET');
+    expect(trailing).toContain('width: GLYPH_SLOT');
+    expect(trailing).toContain('marginRight: PILL_INSET');
+    // Outer side only, and no padding: either would move the glyph off the
+    // slot's centre, which is the whole reason it is a margin.
+    expect(leading).not.toContain('marginRight');
+    expect(trailing).not.toContain('marginLeft');
+    expect(leading).not.toContain('padding');
+    expect(trailing).not.toContain('padding');
+  });
+
+  it('sizes both glyphs to the reference INK, not to the reference FRAME', () => {
+    /*
+     * THE SECOND RETRACTION. This file used to say "size=20 because Icon.tsx
+     * renders at round(size * 1.2), so 20 -> a 24dp box", matching our em box to
+     * Telegram's 24dp `createFrame`. Those are not the same kind of thing. The
+     * reference's 24dp is where the mark is PUT — `createFrame(24, 24, ..., 12,
+     * 0, 12, 0)` at FragmentSearchField.java:132 and :159 — and both its marks
+     * are drawn at `ImageView.ScaleType.CENTER` (`:130`, `:139`), which never
+     * scales a drawable, so the mark is its own intrinsic size and much smaller
+     * than the frame:
+     *
+     *   search  res/drawable/outline_search_1_24.xml, 24dp wide on a 72-unit
+     *           viewport, fill path spanning x 15.700..57.525
+     *           -> 41.825 / 72 * 24 = 13.94dp
+     *   close   res/drawable-*\/miniplayer_close.webp, intrinsic 12x14dp at every
+     *           bucket; alpha bounding box 12x12dp at mdpi, 11x11dp at xhdpi and
+     *           xxhdpi -> 11-12dp
+     *
+     * A Lucide glyph also inks a fraction of its em rather than filling it (the
+     * ICON_SCALE docblock in Icon.tsx measures the set and explains why), so our
+     * ink is `round(size * ICON_SCALE) * gridUnits / 24`. At the old size 20 the
+     * magnifier drew 19.97dp against 13.94 — 43% oversized, on the one control
+     * Amit named.
+     *
+     * WHAT IS AND IS NOT VERIFIED MECHANICALLY HERE. `ICON_SCALE` is parsed out
+     * of Icon.tsx, so a change to it fails this. The reference's ink is
+     * RECOMPUTED from the drawable's own four numbers rather than being asserted
+     * as a constant. The two Lucide grid extents are values recorded here from a
+     * fontTools outline-bounds pen over assets/fonts/Lucide.ttf (uniE151 =
+     * `search`, uniE1B2 = `close`; the glyf header's xMin/yMin are zeroed by
+     * lucide-static and must not be used, which is the trap Icon.tsx's header
+     * documents) — Jest has no TTF outline parser, so those two are not
+     * re-measured, and that is stated rather than implied.
+     */
+    const ICON_SCALE = Number(
+      /const ICON_SCALE = ([\d.]+)/.exec(read('src/components/Icon.tsx'))?.[1],
+    );
+    expect(ICON_SCALE).toBe(1.2);
+    /** Lucide draws on a 24x24 grid and the font maps it onto the em 1:1. */
+    const LUCIDE_GRID = 24;
+    const inkOf = (size: number, gridUnits: number): number =>
+      (Math.round(size * ICON_SCALE) * gridUnits) / LUCIDE_GRID;
+
+    const searchSize = Number(
+      /const SEARCH_GLYPH_SIZE = (\d+)/.exec(bar)?.[1],
+    );
+    const clearSize = Number(/const CLEAR_GLYPH_SIZE = (\d+)/.exec(bar)?.[1]);
+
+    const referenceSearchInk = ((57.525 - 15.7) / 72) * 24;
+    expect(referenceSearchInk).toBeGreaterThan(13.9);
+    expect(referenceSearchInk).toBeLessThan(14);
+    // Within half a dp of the reference's mark, which is the closest any step of
+    // `size` can land: 15 would give 14.98 and 13 would give 12.98.
+    expect(Math.abs(inkOf(searchSize, 19.97) - referenceSearchInk)).toBeLessThan(
+      0.5,
+    );
+    // The clear cross, inside the range the reference's own density buckets
+    // disagree over rather than at one end of it.
+    expect(inkOf(clearSize, 13.97)).toBeGreaterThanOrEqual(11);
+    expect(inkOf(clearSize, 13.97)).toBeLessThanOrEqual(12);
+    // And the oversized value cannot come back at either call site.
+    expect(bar).toContain('size={SEARCH_GLYPH_SIZE}');
+    expect(bar).toContain('size={CLEAR_GLYPH_SIZE}');
+    expect(bar).not.toMatch(/name="search"\s*\n?\s*size=\{20\}/);
+    expect(bar).not.toContain('size={20}');
+  });
+
+  it('centres the input in the row the way the doc pairs the two props', () => {
+    /*
+     * The reference sets the gravity explicitly: `editText.setGravity((isRTL ?
+     * Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL)`
+     * (FragmentSearchField.java:107). Here it was left to `textAlignVertical`'s
+     * default of `'auto'`
+     * (https://reactnative.dev/docs/text-style-props#textalignvertical), which
+     * resolves to `Gravity.NO_GRAVITY` and therefore to whatever gravity the
+     * theme's `editTextStyle` constructed the EditText with
+     * (ReactEditText.kt:188-193 sets `defaultGravityVertical` in `init`, and the
+     * `gravityVertical` setter falls back to it when the value is 0) — an
+     * inherited default rather than a decision.
+     *
+     * `includeFontPadding: false` is on the SAME doc page's own instruction, not
+     * as a second opinion: "With some fonts, this padding can make text look
+     * slightly misaligned when centered vertically. For best results also set
+     * textAlignVertical to center." This field renders a custom face, so the
+     * pair travels together — which is what Composer.tsx already does for the
+     * message field, and this gate holds both so one cannot be removed alone.
+     */
+    const input = styles.slice(styles.indexOf('input: {'));
+    expect(input).toContain("textAlignVertical: 'center'");
+    expect(input).toContain('includeFontPadding: false');
+    expect(withoutComments(read('src/components/Composer.tsx'))).toContain(
+      'includeFontPadding: false',
+    );
   });
 
   it('holds the text inset constant while you type, the way FragmentSearchField does', () => {
@@ -131,6 +321,13 @@ describe('the search field is the one Telegram actually ships', () => {
     expect(bar).toContain('style={styles.clearTarget}');
     expect(bar).toContain('size={GLYPH_SLOT}');
     expect(bar).not.toContain('hitSlop');
+    /*
+     * The animated wrapper and the Pressable inside it are BOTH declared at the
+     * 48dp slot, which is the point — the wrapper cannot shrink the Pressable
+     * and the Pressable cannot outgrow the wrapper. The pill's 4dp sits on the
+     * wrapper as a margin, outside both boxes, so it takes nothing off the
+     * target.
+     */
     const slots = bar.slice(bar.indexOf('clearSlot: {'), bar.indexOf('input: {'));
     expect(slots.match(/width: GLYPH_SLOT/g)?.length).toBe(2);
     expect(slots.match(/height: SEARCH_ROW_HEIGHT/g)?.length).toBe(2);
@@ -175,9 +372,12 @@ describe('the search field is the one Telegram actually ships', () => {
     expect(bar).toContain('TOKENS.motion.m3.easing.easeOutQuint');
     expect(bar).toContain('const CLEAR_HIDDEN_SCALE = 0.4');
     expect(bar).toContain('const CLEAR_HIDDEN_ROTATION_DEG = 90');
-    // Both glyph boxes are 24dp: Icon.tsx renders at round(size * 1.2), so the
-    // trailing icon is size 20 (-> 24), not the 18 (-> 22) it used to be.
-    expect(bar).toContain('<Icon name="close" size={20}');
+    // The glyph it animates is the clear cross, at the size the ink-parity gate
+    // above derives. It used to be asserted here as `size={20}`, matching our em
+    // box to the reference's positioning FRAME; that gate is retired and the
+    // arithmetic one replaces it.
+    expect(bar).toContain('name="close"');
+    expect(bar).toContain('size={CLEAR_GLYPH_SIZE}');
   });
 
   it('paints the pill with a measurable token, and says so as a departure', () => {
@@ -443,13 +643,13 @@ describe('every control on Home is a real 48dp box, not slop a parent clips', ()
      * (Read from the Material source: m3.material.io is client-rendered and
      * returns nothing but a title to a fetch.)
      */
-    const rule = home.slice(home.indexOf('    tabRule: {'), home.indexOf('    tabRuleOn: {'));
-    const ruleHeight = Number(/height: (\d+)/.exec(rule)?.[1]);
-    expect(ruleHeight).toBe(2);
+    const indicatorHeight = Number(
+      /const TAB_INDICATOR_HEIGHT = (\d+)/.exec(home)?.[1],
+    );
     const content =
       TOKENS.typography.titleMediumEmphasized.lineHeight +
       TOKENS.space['2xs'] +
-      ruleHeight;
+      indicatorHeight;
     const sizelessSlop = Math.ceil(TOKENS.interaction.minTarget / 6);
     expect(content).toBeLessThan(TOKENS.interaction.minTarget);
     expect(content + sizelessSlop * 2).toBeLessThan(TOKENS.interaction.minTarget);
@@ -459,6 +659,13 @@ describe('every control on Home is a real 48dp box, not slop a parent clips', ()
     // Bottom edge, where TabLayout draws its own indicator. Centring it would
     // meet the target and still leave the underline floating mid-box.
     expect(tab).toContain("justifyContent: 'flex-end'");
+    // The label sits exactly where the removed per-tab rule left it: the space
+    // that rule and its gap occupied is now padding, so nothing about the
+    // 48dp box or the label's baseline moved when the indicator became one
+    // shared, animated view.
+    expect(tab).toContain(
+      "paddingBottom: TAB_INDICATOR_HEIGHT + TOKENS.space['2xs']",
+    );
   });
 
   it('gives the button that opens search — and the one that leaves it — a 48dp box', () => {
@@ -487,6 +694,213 @@ describe('every control on Home is a real 48dp box, not slop a parent clips', ()
     // And Home reaches a target by laying out a box, never by hanging slop off
     // one, which is the rule SearchBar.tsx states for itself.
     expect(home).not.toContain('hitSlop');
+  });
+});
+
+describe('the type tabs are a Material tab row, division and indicator both', () => {
+  const home = withoutComments(read('src/screens/HomeScreen.tsx'));
+  const motion = withoutComments(read('src/theme/motion.ts'));
+
+  it('divides the whole strip between the tabs, which is the TabLayout default', () => {
+    /*
+     * "Type tab should take full width" (Amit) — and it is not a preference, it
+     * is the component's default behaviour, which this strip was not following.
+     * `TabLayout` defaults `mode` to `MODE_FIXED` and `tabGravity` to
+     * `GRAVITY_FILL` (material-components-android
+     * lib/java/com/google/android/material/tabs/TabLayout.java:674-675), and
+     * under that pair `updateTabViewLayoutParams` sets every tab to
+     * `lp.width = 0; lp.weight = 1` (:1797-1805) — LinearLayout's "share the
+     * parent equally", which is `flex: 1` here. `MODE_FIXED` is documented on
+     * the same class as "Fixed tabs display all tabs concurrently" (:1124).
+     *
+     * The strip was `paddingHorizontal: md` + `gap: lg` with content-sized tabs,
+     * so on a 360dp window roughly 160dp of the row was reachable by nothing.
+     * Both must stay gone: either one takes width away from the share each tab
+     * is entitled to, and `MODE_FIXED` explicitly zeroes the strip's own start
+     * padding (`slidingTabIndicator.setPaddingRelative(paddingStart, 0, 0, 0)`
+     * with `paddingStart` computed only for the scrollable modes, :2085-2091).
+     */
+    const tabs = home.slice(
+      home.indexOf('    tabs: {'),
+      home.indexOf('    tab: {'),
+    );
+    expect(tabs).toContain("flexDirection: 'row'");
+    expect(tabs).not.toContain('paddingHorizontal');
+    expect(tabs).not.toContain('gap:');
+    const tab = home.slice(home.indexOf('    tab: {'), home.indexOf('    tabLabel: {'));
+    expect(tab).toContain('flex: 1');
+    // `marginBottom`, not `paddingBottom`: the indicator is an absolute child at
+    // `bottom: 0`, and whether Yoga measures that from the padding edge or the
+    // border edge is not something the indicator's position should depend on.
+    expect(tabs).toContain('marginBottom: TOKENS.space.sm');
+    expect(tabs).not.toContain('paddingBottom');
+  });
+
+  it('has ONE indicator that moves, not one per tab that switches colour', () => {
+    /*
+     * The answer to "is this standard animation?" is yes, and the class that
+     * does it is called `SlidingTabIndicator`. `animateIndicatorToPosition`
+     * (TabLayout.java:3334) — "Animate the position of the indicator from its
+     * current position to a new position. This is typically used when a tab
+     * destination is tapped." — runs a `ValueAnimator` (:3379-3386) and feeds
+     * every frame to `TabIndicatorInterpolator.updateIndicatorForOffset`, which
+     * LERPS THE LEFT AND RIGHT BOUNDS INDEPENDENTLY between the two tabs
+     * (TabIndicatorInterpolator.java). Position and width both animate.
+     *
+     * So: the two static styles are gone, and what replaced them is one
+     * absolutely-positioned Animated.View whose width and translateX come from a
+     * worklet. Asserted as the ABSENCE of the switch and the PRESENCE of the
+     * animated style, because the defect was that a state change was expressed
+     * as a style swap.
+     */
+    expect(home).not.toContain('tabRule');
+    expect(home).not.toContain('tabRuleOn');
+    expect(home).toContain('style={[styles.tabIndicator, tabIndicatorStyle]}');
+    expect(home).toContain('const tabIndicatorStyle = useAnimatedStyle(');
+    // Exactly one indicator view in the strip, whatever the tab count.
+    expect(home.match(/styles\.tabIndicator/g)?.length).toBe(1);
+    const indicator = home.slice(
+      home.indexOf('    tabIndicator: {'),
+      home.indexOf('    navRow: {'),
+    );
+    expect(indicator).toContain("position: 'absolute'");
+    expect(indicator).toContain('left: 0');
+    expect(indicator).toContain('bottom: 0');
+    // The offset rides on a transform, not on an animated `left`, so a tab
+    // change does not re-run layout for every frame of the move.
+    const style = home.slice(
+      home.indexOf('const tabIndicatorStyle = useAnimatedStyle('),
+      home.indexOf('const categoryById = useMemo('),
+    );
+    expect(style).toContain('transform: [{ translateX: left }]');
+    expect(indicator).not.toContain('right:');
+  });
+
+  it('sizes the indicator to the LABEL, which is the M3 PRIMARY tab rule', () => {
+    /*
+     * The one place the two M3 tab flavours disagree, and the source settles it:
+     * `Base.Widget.Material3.TabLayout` (primary) sets
+     * `<item name="tabIndicatorFullWidth">false</item>` while
+     * `Base.Widget.Material3.TabLayout.Secondary` sets it `true`
+     * (material-components-android
+     * lib/java/com/google/android/material/tabs/res/values/styles.xml). With it
+     * false, `calculateIndicatorWidthForTab` returns
+     * `calculateTabViewContentBounds(tab, MIN_INDICATOR_WIDTH)` — the LABEL's
+     * bounds, floored at 24dp — rather than the tab's own left/right
+     * (TabIndicatorInterpolator.java).
+     *
+     * This strip is primary tabs (title-weight labels, no icons, documented as
+     * such at the call site), so THE TAB IS FULL WIDTH AND THE INDICATOR IS NOT.
+     * They are two separate settings in the reference and conflating them is the
+     * easy mistake here — it would have been one line shorter to stretch the bar
+     * across each half.
+     *
+     * The floor is read as a value, so it cannot drift away from the
+     * reference's 24 without failing.
+     */
+    expect(home).toContain('const TAB_INDICATOR_MIN_WIDTH = 24');
+    expect(Number(/const TAB_INDICATOR_MIN_WIDTH = (\d+)/.exec(home)?.[1])).toBe(24);
+    const style = home.slice(
+      home.indexOf('const tabIndicatorStyle = useAnimatedStyle('),
+      home.indexOf('const categoryById = useMemo('),
+    );
+    // The label's measured width, floored, is what sets the bar's edges.
+    expect(style).toContain('tabLabelWidths.value');
+    expect(style).toContain(
+      'Math.max(widths[index] ?? 0, TAB_INDICATOR_MIN_WIDTH)',
+    );
+    // And the width is animated rather than being a constant dash: the two
+    // labels differ ("Listeners" against "Astrologers"), so even a rigid move
+    // has to resize.
+    expect(style).toContain('width: Math.max(right - left, 0)');
+    // The labels are measured — without this the indicator would silently be
+    // the 24dp floor forever.
+    expect(home).toContain('onTabLabelLayout(index, e.nativeEvent.layout.width)');
+    expect(home).toContain('onTabStripLayout(e.nativeEvent.layout.width)');
+
+    /*
+     * 3dp tall with the top corners rounded and the bottom square, which is the
+     * primary indicator's own drawable: `m3_tabs_rounded_line_indicator` is a
+     * rectangle with topLeft/topRight 3dp and bottomLeft/bottomRight 0dp, sized
+     * to `m3_comp_primary_navigation_tab_active_indicator_height` = 3dp
+     * (the tabs component's res/drawable and res/values/tokens.xml). It was a
+     * 2dp bar rounded on all four corners; the bottom radius rounded against an
+     * edge nothing can see.
+     */
+    expect(Number(/const TAB_INDICATOR_HEIGHT = (\d+)/.exec(home)?.[1])).toBe(3);
+    const indicator = home.slice(
+      home.indexOf('    tabIndicator: {'),
+      home.indexOf('    navRow: {'),
+    );
+    expect(indicator).toContain('height: TAB_INDICATOR_HEIGHT');
+    expect(indicator).toContain('borderTopLeftRadius: TAB_INDICATOR_HEIGHT');
+    expect(indicator).toContain('borderTopRightRadius: TAB_INDICATOR_HEIGHT');
+    expect(indicator).not.toMatch(/borderRadius:/);
+    expect(indicator).not.toMatch(/borderBottom\w*Radius/);
+  });
+
+  it('takes the timing from tokens and the shape from the elastic interpolator', () => {
+    /*
+     * Duration: `Base.Widget.Material3.TabLayout` sets
+     * `<item name="tabIndicatorAnimationDuration">?attr/motionDurationLong2</item>`
+     * (the tabs component's res/values/styles.xml), `motionDurationLong2` maps to
+     * `@integer/m3_sys_motion_duration_long2` (theme/res/values/themes_base.xml)
+     * and that integer is 500 (motion/res/values/tokens.xml). `M3.duration.long2`
+     * is 500 — asserted as a value, so this is not the repo grepping its own
+     * comment, and it is the first consumer of a token the map had reserved.
+     *
+     * Shape: the same style asks for
+     * `<item name="tabIndicatorAnimationMode">elastic</item>`, and
+     * `ElasticTabIndicatorInterpolator` gives the two edges different easings so
+     * the bar stretches across the gap and gathers in on arrival —
+     * `decInterp` = `Math.sin((fraction * Math.PI) / 2.0)` for the edge being
+     * travelled toward, `accInterp` = `1.0 - Math.cos((fraction * Math.PI) /
+     * 2.0)` for the edge being left. Both are exact here; a sine did not have to
+     * be approximated into a bezier. The functions are asserted as CODE, not as
+     * a claim about code, because getting the two the wrong way round inverts the
+     * stretch into a squash and no still frame would show it.
+     *
+     * Easing: the reference's TIME curve is `motionEasingEmphasizedInterpolator`
+     * (TabLayout.java:663-665), and M3's `emphasized` is a two-segment PATH —
+     * `path(M 0,0 C 0.05,0 0.133333,0.06 0.166666,0.4 C 0.208333,0.82 0.25,1
+     * 1,1)` — not a single cubic bezier, so `Easing.bezier` cannot express it and
+     * design/tokens.json carries only its decelerate and accelerate halves.
+     * `M3.easing.standard`, cubic-bezier(0.2, 0, 0, 1), is the closest exact M3
+     * token the map holds. That is a stated departure, and this gate pins it so a
+     * later pass that adds a real `emphasized` token has to come back here.
+     */
+    expect(TOKENS.motion.m3.duration.long2).toBe(500);
+    expect(TOKENS.motion.m3.easing.standard).toEqual([0.2, 0, 0, 1]);
+    const tabs = motion.slice(motion.indexOf('export const TAB_INDICATOR'));
+    expect(tabs).toMatch(
+      /TAB_INDICATOR = \{\s*duration: M3\.duration\.long2,\s*easing: M3_STANDARD,\s*reduceMotion: ReduceMotion\.System,/,
+    );
+    expect(motion).toMatch(
+      /const M3_STANDARD = Easing\.bezier\(\s*M3\.easing\.standard\[0\]/,
+    );
+    expect(tabs).toContain('return withTiming(index, TAB_INDICATOR)');
+    expect(tabs).toMatch(
+      /export function tabIndicatorLead[\s\S]*?return Math\.sin\(\(fraction \* Math\.PI\) \/ 2\);/,
+    );
+    expect(tabs).toMatch(
+      /export function tabIndicatorTrail[\s\S]*?return 1 - Math\.cos\(\(fraction \* Math\.PI\) \/ 2\);/,
+    );
+    // The leading edge is the one being travelled toward, in BOTH directions.
+    const style = home.slice(
+      home.indexOf('const tabIndicatorStyle = useAnimatedStyle('),
+      home.indexOf('const categoryById = useMemo('),
+    );
+    expect(style).toContain('const movingRight = to.left > from.left');
+    expect(style).toMatch(
+      /leftFraction = movingRight\s*\?\s*tabIndicatorTrail\(fraction\)\s*:\s*tabIndicatorLead\(fraction\)/,
+    );
+    expect(style).toMatch(
+      /rightFraction = movingRight\s*\?\s*tabIndicatorLead\(fraction\)\s*:\s*tabIndicatorTrail\(fraction\)/,
+    );
+    // No hand-written duration or curve at the call site: HomeScreen holds the
+    // geometry, motion.ts holds every number that is about time.
+    expect(style).not.toMatch(/duration:|easing:|withTiming|withSpring/);
+    expect(home).toContain('tabSlide.value = tabIndicatorTo(tabIndex)');
   });
 });
 

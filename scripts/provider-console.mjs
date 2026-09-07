@@ -122,7 +122,7 @@ const threads = await rest('conversation_summaries?order=last_message_at.desc');
 if (threads.length === 0) {
   console.log(
     `signed in as ${EMAIL}\n\n` +
-      'No conversations yet. Open the app on your phone, tap Ada in the\n' +
+      'No conversations yet. Open the app on your phone, tap Aanya in the\n' +
       'directory, send a message, then re-run this.',
   );
   process.exit(0);

@@ -86,6 +86,12 @@ export function ProviderStatusScreen({ onBack, onEdit }: Props) {
           press="none"
           highlight="dim"
           size={28}
+          // `back` sets no radius, so the `dim` fill painted a solid 28x40
+          // rectangle behind the chevron — the "filled grey box" this header
+          // comment was written to get rid of, reappearing on press. Oblong box,
+          // so the pill resolves to a 28-wide stadium, not a true circle.
+          // https://developer.android.com/training/material/animations
+          shape="circle"
           style={styles.back}>
           <Icon name="chevronLeft" size={22} />
         </Pressable>

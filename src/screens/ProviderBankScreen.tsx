@@ -95,6 +95,11 @@ export function ProviderBankScreen({ onBack }: Props) {
           press="none"
           highlight="dim"
           size={28}
+          // `back` sets no radius, so the `dim` fill painted a solid 28x40
+          // rectangle behind the chevron. Oblong box, so the pill resolves to a
+          // 28-wide stadium rather than a true circle.
+          // https://developer.android.com/training/material/animations
+          shape="circle"
           style={styles.back}>
           <Icon name="chevronLeft" size={22} />
         </Pressable>

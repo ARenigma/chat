@@ -32,6 +32,19 @@ export function BackButton({ onPress, testID, accessibilityLabel = 'Back', style
       press="none"
       highlight="dim"
       size={28}
+      // The `dim` fill has to follow the button, not the square touch box: this
+      // box sets no radius, so the layer painted a solid 28x40 rectangle behind
+      // a 22pt chevron. Icon-only controls get borderless (circular) ink on this
+      // platform rather than the bounded rectangular kind — see
+      // `selectableItemBackgroundBorderless` vs `selectableItemBackground`.
+      // https://developer.android.com/training/material/animations
+      //
+      // Deviation, stated per rule 1.6: the box is 28x40, not square, so the
+      // pill resolves to a 28-wide stadium rather than a true circle (CSS
+      // corner-overlap clamps the radius to half the shorter side). That is the
+      // intended reading for an oblong icon slot; a true 40dp M3 circle would
+      // mean widening the box to 40, which moves the header layout.
+      shape="circle"
       style={[styles.button, style]}>
       <Icon name="chevronLeft" size={22} color={tint ?? theme.color.text.primary} />
     </Pressable>

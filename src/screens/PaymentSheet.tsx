@@ -57,10 +57,12 @@ type MockPhase = 'idle' | 'processing' | 'success' | 'error';
 
 export function PaymentSheet({ visible, amount, onClose }: Props) {
   const { data: economics } = useEconomicsConfig();
-  // The last line the member reads before money moves, so the tax is named here
-  // the same way the pack states it — base + tax, the two summing exactly to
-  // the total on the button. One line rather than two: unlike a 48%-wide card
-  // the sheet body has the full width, and the total already precedes it.
+  // The last surface the member reads before money moves, so the tax is named
+  // here the same way the pack states it — base + tax, the two summing exactly
+  // to the total on the button. One line rather than two: unlike a 48%-wide card
+  // the sheet has the full width. Both now live in the `totalRow` below rather
+  // than in the sheet's supporting subhead, at the same roles the recharge chips
+  // use for the same two facts (price, then its composition).
   const gstRateBps = economics?.gst_rate_bps ?? FALLBACK_ECONOMICS.gst_rate_bps;
   const gst = gstAddedLabel(amount, gstRateBps);
   const total = packTotalInr(amount, gstRateBps);
@@ -150,14 +152,34 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
         : isCashfree
           ? 'Continue to Cashfree'
           : 'Pay with UPI';
+  /*
+   * The total is NOT in this string any more, and that is the point of this pass.
+   *
+   * Sheet's `body` is bodyLarge — 16dp Geist-REGULAR (ADR-0024 § 1: weight is a
+   * bundled static face, and bodyLarge's face is Regular). So the rupee figure
+   * the member is about to be charged was being stated in the same regular
+   * supporting line as "Add 300 tokens", while the identical figure one surface
+   * behind it — RechargeScreen's `amount` / `cardAmount` / `balanceValue` — is
+   * titleLargeEmphasized, 22dp Geist-BOLD. Same number, two weights, depending
+   * on whether a sheet happened to be over the screen (Amit, 2026-09-07: "the
+   * type font is not consistent -- recharge screens show heavy weight but modal
+   * is normal weight").
+   *
+   * A supporting line is the wrong slot for a money total regardless of its
+   * role: M3's bottom-sheet anatomy puts the sheet's own subhead above the
+   * content and the content below it, and a total is content
+   * (m3.material.io/components/bottom-sheets/guidelines). It now renders as its
+   * own row at the price role — see `totalValue` — and this line is back to the
+   * one fact it is the only place for: what the pack adds.
+   */
   const sheetBody =
     mockPhase === 'success'
       ? undefined
       : mockPhase === 'processing'
-        ? `Paying ${formatRupees(total)} via ${isCashfree ? 'Cashfree' : method}`
+        ? `Paying via ${isCashfree ? 'Cashfree' : method}`
         : isCashfree
-          ? `Add ${formatTokens(amount)} tokens  ·  ${formatRupees(total)}${gst ? ` (${gst})` : ''}  ·  Sandbox checkout`
-          : `Add ${formatTokens(amount)} tokens  ·  ${formatRupees(total)}${gst ? ` (${gst})` : ''}`;
+          ? `Add ${formatTokens(amount)} tokens  ·  Sandbox checkout`
+          : `Add ${formatTokens(amount)} tokens`;
 
   if (mockPhase === 'success') {
     return (
@@ -183,7 +205,7 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
           <View style={styles.successIcon}>
             <Icon name="check" size={24} color={theme.color.text.positive} />
           </View>
-          <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.successDetail}>
+          <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized} allowFontScaling style={styles.successDetail}>
             {formatTokens(amount)} tokens added
           </Text>
           {successBalance !== null ? (
@@ -205,6 +227,49 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
       onClose={onClose}
       onCancel={mockPhase === 'idle' || mockPhase === 'error' ? onClose : undefined}
       cancelLabel="Back">
+
+      {/*
+        * THE TOTAL, at the same role the recharge screen states it.
+        *
+        * `totalValue` is titleLargeEmphasized — 22dp Geist-Bold — which is
+        * literally the style RechargeScreen's own price chip uses (`amount` in
+        * its makeCompactStyles, and `cardAmount` on the wallet page). The chip
+        * behind this sheet and the total in front of it are now one figure said
+        * once, in one weight; before this pass the sheet restated it in a 16dp
+        * Regular supporting line, i.e. the modal was QUIETER about the charge
+        * than the screen that offered it.
+        *
+        * Rendered outside the phase branch on purpose: idle, error and
+        * processing all show it. A member watching a spinner should still be
+        * able to see what is being taken, and a payment that failed should not
+        * blank the amount that failed.
+        *
+        * The GST split under it is bodySmall, the role the recharge chips'
+        * `tokensGst` / `cardGst` already use for exactly this disclosure. It
+        * moved DOWN a step here (it was riding the bodyLarge body line): the
+        * base and the tax are what the total is made of, never the offer, and
+        * ADR-0029 puts the pack price — this total — as the base fact.
+        */}
+      <View style={styles.totalRow}>
+        <Text allowFontScaling style={styles.totalLabel}>
+          Total
+        </Text>
+        <View style={styles.totalFill} />
+        <View style={styles.totalFigures}>
+          <Text
+            maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized}
+            allowFontScaling
+            testID="payment-total"
+            style={styles.totalValue}>
+            {formatRupees(total)}
+          </Text>
+          {gst ? (
+            <Text allowFontScaling style={styles.totalGst}>
+              {gst}
+            </Text>
+          ) : null}
+        </View>
+      </View>
 
       {mockPhase === 'processing' ? (
         <View style={styles.centreState}>
@@ -372,8 +437,62 @@ const makeStyles = (t: Theme) =>
       minHeight: TOKENS.interaction.minTarget,
       marginTop: TOKENS.space.xs,
     },
+    /*
+     * The total row: label on the leading edge, figure and its tax on the
+     * trailing one. A row rather than a stacked block because the sheet has the
+     * full width (the same reason the GST line here is one line and not two),
+     * and the figure wants to sit at the reading end next to the Pay button
+     * directly beneath it.
+     */
+    totalRow: {
+      alignSelf: 'stretch',
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: TOKENS.space.sm,
+      paddingBottom: TOKENS.space.xs,
+    },
+    totalFill: {
+      flex: 1,
+    },
+    totalFigures: {
+      alignItems: 'flex-end',
+    },
+    // The label beside the figure is a supporting line, so it takes the app's
+    // supporting-line role (bodyLarge) rather than the 14dp bodyMedium this file
+    // used to reach for. bodyMedium's documented home in ADR-0024 is "list
+    // previews, timestamps" — a two-item row on a payment sheet is neither.
+    totalLabel: {
+      ...TOKENS.typography.bodyLarge,
+      color: t.color.text.secondary,
+    },
+    // 22dp Geist-Bold, byte-for-byte the role RechargeScreen's price chip uses.
+    // This is the parity that __tests__/theme.test.ts now pins: if either side
+    // moves without the other, the gate fails rather than a member noticing that
+    // the number got lighter when the sheet opened.
+    totalValue: {
+      ...TOKENS.typography.titleLargeEmphasized,
+      color: t.color.text.primary,
+    },
+    // The disclosure, one step below the figure — the recharge chips' own role
+    // for the base + tax line (`tokensGst`, `cardGst`), same colour too.
+    totalGst: {
+      ...TOKENS.typography.bodySmall,
+      color: t.color.text.tertiary,
+    },
+    // A text button, so it takes the app's text-button role: labelLargeEmphasized,
+    // 14dp Geist-Bold. It was `TOKENS.typography.bodyMedium` — 14dp
+    // Geist-REGULAR, and naming it in full here is deliberate: the gate that
+    // forbids that role on this surface strips comments before matching, so this
+    // line is also the proof it does. It made this the
+    // only tappable text label in the app set in a regular face, against
+    // ConfirmDialog's `cancel`, SettingsSheet's `rateFooterText`, CodeField's
+    // `verifyLabel`, HomeTour's `skipLabel`/`nextLabel`, UpdateBanner's
+    // `actionLabel`, SpotlightCard's `ctaLabel`/`notNow`, BlockedUsersScreen's
+    // `unblockLabel` and Chip's `label`, which are all labelLargeEmphasized. Same
+    // dp, correct face — this is a weight fix, not a size change, which is the
+    // whole shape of the complaint that started this pass.
     webRowText: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.labelLargeEmphasized,
       color: t.color.text.secondary,
     },
     centreState: {
@@ -382,8 +501,14 @@ const makeStyles = (t: Theme) =>
       paddingVertical: TOKENS.space.lg,
       gap: TOKENS.space.sm,
     },
+    // The "the app is doing something right now" line, and the app states that
+    // at bodyLarge everywhere else it states it: TransactionHistoryScreen's
+    // centred `hintText` ("Loading…") and NoticeBar's `text`. It was bodyMedium,
+    // which also meant this sheet carried TWO supporting lines eight dp apart at
+    // two different sizes — Sheet's own bodyLarge `body` above, this bodyMedium
+    // below it — on one surface.
     centreLabel: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.text.secondary,
     },
     /*
@@ -414,12 +539,24 @@ const makeStyles = (t: Theme) =>
       backgroundColor: t.color.bg.base,
       marginBottom: TOKENS.space.xs,
     },
+    // The terminal figure of the whole flow — "5,000 tokens added" — so it takes
+    // the money/balance role, titleLargeEmphasized, the one RechargeScreen's
+    // `balanceValue` uses for the same quantity on the surface behind. It was
+    // titleMediumEmphasized, which is the FILLED-BUTTON role (Button.tsx line
+    // 177, and ADR-0024 names it "filled-button label"): the confirmation of a
+    // payment was set at the weight of a button label and one step below the
+    // ₹ figure that produced it.
     successDetail: {
-      ...TOKENS.typography.titleMediumEmphasized,
+      ...TOKENS.typography.titleLargeEmphasized,
       color: t.color.text.positive,
     },
+    // The line under that figure is a supporting line, so bodyLarge — the role
+    // Sheet's own `body` uses, and the role every screen's supporting copy uses
+    // (TransactionHistoryScreen `emptyBody`/`hintText`, SessionFeedbackSheet
+    // `word`, SafetySheet `reasonLabel`). At bodyMedium a balance the member had
+    // just paid for was the quietest text on its own success card.
     successBalance: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.bodyLarge,
       color: t.color.text.positive,
     },
     errorRow: {

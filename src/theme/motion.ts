@@ -738,6 +738,132 @@ export const barOut = FadeOutUp.duration(DURATION.fast).reduceMotion(
   ReduceMotion.System,
 );
 
+/* -------------------------------------------------------------------------
+ * The tab strip's ACTIVE INDICATOR, which is a Material component's motion and
+ * not a decision this app gets to make
+ * ------------------------------------------------------------------------- */
+
+/**
+ * M3's `standard` easing, cubic-bezier(0.2, 0, 0, 1), precomputed once.
+ *
+ * The exact string, from the platform's own token file:
+ * `<string name="m3_sys_motion_easing_standard">cubic-bezier(0.2, 0, 0, 1)</string>`
+ * — material-components-android
+ * `lib/java/com/google/android/material/motion/res/values/tokens.xml`, which is
+ * the same four numbers already in the token map as `motion.m3.easing.standard`.
+ * M3's own guidance is that `standard` is the curve for a simple in-place change,
+ * which is what an indicator moving inside a strip that is not itself moving is.
+ *
+ * WHY THIS AND NOT THE CURVE THE REFERENCE ACTUALLY USES, stated because it is a
+ * departure and RULE 1 §6 requires departures to be named. `TabLayout` runs the
+ * indicator on `motionEasingEmphasizedInterpolator`
+ * (`lib/java/com/google/android/material/tabs/TabLayout.java:663-665`), and M3's
+ * `emphasized` easing is NOT a single cubic bezier — it is a two-segment path,
+ * `path(M 0,0 C 0.05,0 0.133333,0.06 0.166666,0.4 C 0.208333,0.82 0.25,1 1,1)`
+ * (the same `motion/res/values/tokens.xml`, rendered by a `pathInterpolator`).
+ * `Easing.bezier` takes four control values and cannot express two joined
+ * cubics, and `design/tokens.json` carries only the emphasized DECELERATE and
+ * ACCELERATE halves plus `standard`, so the reference's own curve is not
+ * available as a token here. Adding it would mean editing
+ * `design/tokens.json` — which is outside this change set — AND writing a
+ * hand-rolled path easing, which RULE 1 §3 argues against. `standard` is the
+ * closest curve the token map actually holds; the shape of the motion is carried
+ * by the two sine functions below, which ARE the reference's, exactly.
+ */
+const M3_STANDARD = Easing.bezier(
+  M3.easing.standard[0],
+  M3.easing.standard[1],
+  M3.easing.standard[2],
+  M3.easing.standard[3],
+);
+
+/**
+ * The timing of one indicator move, taken from the M3 tab style.
+ *
+ * `Base.Widget.Material3.TabLayout` sets
+ * `<item name="tabIndicatorAnimationDuration">?attr/motionDurationLong2</item>`
+ * (material-components-android
+ * `lib/java/com/google/android/material/tabs/res/values/styles.xml`), and
+ * `motionDurationLong2` resolves to `m3_sys_motion_duration_long2` = **500**
+ * (`lib/java/com/google/android/material/motion/res/values/tokens.xml`,
+ * mapped in `theme/res/values/themes_base.xml`). That is `M3.duration.long2`
+ * here, exactly — the first consumer of a token the map had reserved.
+ *
+ * 500 is longer than it sounds because the M3 indicator does not merely
+ * translate: it STRETCHES across the gap and contracts on arrival (see
+ * `tabIndicatorLead` / `tabIndicatorTrail`), and a stretch needs time to be
+ * read as one object rather than as a jump. `TabLayout`'s own pre-M3 default is
+ * `ANIMATION_DURATION = 300` (`TabLayout.java:200`), which is `M3.duration.
+ * medium2`, if this ever needs to be quicker — that is a one-token swap, not a
+ * new number.
+ *
+ * `ReduceMotion.System` because the travel is the decorative half: under the OS
+ * "remove animations" setting the indicator jumps to the tab that was tapped,
+ * which still says which tab is live (the label's ink changes too, so the state
+ * is never carried by movement alone).
+ */
+export const TAB_INDICATOR = {
+  duration: M3.duration.long2,
+  easing: M3_STANDARD,
+  reduceMotion: ReduceMotion.System,
+} as const;
+
+/**
+ * Drive the indicator's progress toward a tab index.
+ *
+ * A TIMED CURVE rather than a spring, and against this file's opening rule that
+ * nothing which changes position or size is animated with a curve — so it is
+ * worth saying why. That rule exists because a curve cannot accept the velocity
+ * a finger left behind. A tab is TAPPED: there is no gesture, no velocity, and
+ * nothing to continue, which is the same reasoning `pressIn` already states for
+ * the press ramp. And the reference is unambiguous — the indicator is a
+ * `ValueAnimator` with an interpolator and a duration
+ * (`TabLayout.java:3379-3386`), not a `SpringAnimation`. Where a spring WOULD be
+ * right is a swipe between tab pages, which this strip does not have:
+ * `TabLayout` drives that case from the pager's own offset instead
+ * (`setIndicatorPositionFromTabPosition`, `TabLayout.java:3157`).
+ */
+export function tabIndicatorTo(index: number): number {
+  'worklet';
+  return withTiming(index, TAB_INDICATOR);
+}
+
+/**
+ * The LEADING edge's share of the move — ease-out sine, so it leaves first.
+ *
+ * `ElasticTabIndicatorInterpolator.decInterp`: `(float) Math.sin((fraction *
+ * Math.PI) / 2.0)`, material-components-android
+ * `lib/java/com/google/android/material/tabs/ElasticTabIndicatorInterpolator.java`.
+ * The class exists because the M3 tab style asks for it —
+ * `<item name="tabIndicatorAnimationMode">elastic</item>` in
+ * `Base.Widget.Material3.TabLayout` — and its own docstring says it "translates
+ * the left and right sides of a selected tab indicator independently to make the
+ * indicator grow and shrink between destinations".
+ *
+ * Applied to the edge the indicator is travelling TOWARD (`isMovingRight ?
+ * rightFraction = decInterp : leftFraction = decInterp`), so that edge covers
+ * most of the gap early while the other lags: the bar stretches out of the tab
+ * it is leaving and gathers back in at the tab it arrives at.
+ */
+export function tabIndicatorLead(fraction: number): number {
+  'worklet';
+  return Math.sin((fraction * Math.PI) / 2);
+}
+
+/**
+ * The TRAILING edge's share — ease-in sine, so it leaves last.
+ *
+ * `ElasticTabIndicatorInterpolator.accInterp`: `(float) (1.0 - Math.cos((
+ * fraction * Math.PI) / 2.0))`, same file. Given to the edge the indicator is
+ * travelling AWAY from. The pair is what makes the move elastic rather than a
+ * rigid slide, and both are exact — a sine is not something that had to be
+ * approximated into a bezier.
+ */
+export function tabIndicatorTrail(fraction: number): number {
+  'worklet';
+  return 1 - Math.cos((fraction * Math.PI) / 2);
+}
+
 /**
  * Entrances, hoisted.
  *

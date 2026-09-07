@@ -6,7 +6,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
-import type { Theme } from '../theme/tokens';
+import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { INTERACTION, PRESS, springTo } from '../theme/motion';
 
@@ -66,6 +66,33 @@ interface Props {
    * alternative. Amit's call, 2026-09-06: keep the behaviour, fix the name.
    */
   highlight?: Highlight;
+  /**
+   * The shape the STATE LAYER is clipped to, when the caller's own style does
+   * not already say.
+   *
+   * Why this exists (Amit, 2026-09-07: "clicking any icon shows a square
+   * container and not contained within the button"). `styles.clip` carries
+   * `overflow: 'hidden'` but no radius of its own, and `borderRadius` is
+   * deliberately NOT in `BOX_KEYS`, so it stays on the inner view and the layer
+   * is clipped to whatever radius the CALLER happened to set. An icon button is
+   * usually a bare square box — `navIcon` is 48x48 with no radius at all — so
+   * the layer painted a full 48dp SQUARE behind a 22dp glyph. It read as an
+   * unrelated box rather than as the button reacting, which is exactly what he
+   * saw. `photoRemove` looked right only because it happened to set
+   * `borderRadius: REMOVE_BADGE / 2`.
+   *
+   * `'circle'` rather than a number, because the number is the bug: every icon
+   * site would have to re-derive half its own height, and `REMOVE_BADGE / 2` is
+   * the kind of arithmetic that goes wrong silently when a size changes later.
+   * A name cannot drift. Material 3 makes this the right default for the case:
+   * the standard icon button's state layer is a circle, not a rounded square.
+   * https://developer.android.com/develop/ui/views/components/button
+   *
+   * Default is `'inherit'` — today's behaviour exactly — so no existing caller
+   * moves. Anything whose own style sets a radius keeps using it: `'circle'` is
+   * for the bare boxes that never said.
+   */
+  shape?: 'inherit' | 'circle';
   /**
    * Animate the corner radius under the finger, from resting to pressed. Both
    * numbers must come from `radius` tokens, see Button for the canonical pair.
@@ -160,6 +187,7 @@ function PressableView({
   testID,
   press = 'card',
   highlight = 'material',
+  shape = 'inherit',
   morph,
   onColor,
   size,
@@ -269,6 +297,23 @@ function PressableView({
   const rootStyle = split?.root;
   const innerStyle = split?.inner;
 
+  /*
+   * `shape="circle"` fills in the radius the caller never set, so the state
+   * layer is clipped to a circle instead of the square touch box.
+   *
+   * `radius.pill` (999) rather than half the height: the inner view has no
+   * height here to halve — box sizing moved to the ROOT (see the long note
+   * above `splitBox`) — and CSS Backgrounds 3 corner-overlap, which RN Android
+   * implements verbatim in `BorderRadiusStyle.ensureNoOverlap()`, scales an
+   * oversized radius down to exactly half the shorter side. So an
+   * unreachably-large radius resolves to the true circle on any square box and
+   * to a stadium on an oblong one, which is what an oblong icon slot wants too.
+   *
+   * It goes BEFORE `innerStyle` so a caller who did set a radius still wins.
+   * `shape` is meant to supply a missing answer, never to override a given one.
+   */
+  const shapeStyle = shape === 'circle' ? { borderRadius: TOKENS.radius.pill } : null;
+
   return (
     <RNPressable
       style={rootStyle}
@@ -312,7 +357,7 @@ function PressableView({
         ...(selected !== undefined ? { selected } : null),
         ...(checked !== undefined ? { checked } : null),
       }}>
-      <Animated.View style={[styles.clip, innerStyle, animated]}>
+      <Animated.View style={[styles.clip, shapeStyle, innerStyle, animated]}>
         {/* Absolutely positioned and FIRST, so it paints between the caller's
             background and the content. It used to come last, which tinted the
             label as well as the surface, tolerable at M3's 10%, and fatal under

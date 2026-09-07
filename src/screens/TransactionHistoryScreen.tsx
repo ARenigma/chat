@@ -162,6 +162,12 @@ function TransactionRow({ tx, onDownload }: RowProps) {
             accessibilityRole="button"
             press="none"
             highlight="dim"
+            // `downloadBtn` sets no radius, so the `dim` fill painted a solid
+            // 48dp square behind an 18pt glyph — at the row's trailing edge, where
+            // it read as a mystery box rather than as this button. Icon-only
+            // controls take borderless (circular) ink.
+            // https://developer.android.com/training/material/animations
+            shape="circle"
             style={styles.downloadBtn}>
             <Icon name="download" size={18} color={theme.color.text.secondary} />
           </Pressable>
