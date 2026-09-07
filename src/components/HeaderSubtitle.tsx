@@ -16,8 +16,14 @@ import type { PresenceRead } from '../lib/presence';
  *
  * Priority: typing > online > last-seen / away / nothing.
  *
- * The row is always rendered (even as an empty string) so the header does
- * not jump height when presence data arrives or the peer starts typing.
+ * The row is dropped entirely when there is nothing to announce, which is what
+ * Material 3's own bar does: `TopAppBarLayout` composes the title as a two-child
+ * `Column` only `if (subtitle != null)` and as a single `Box` otherwise — it
+ * never reserves a blank subtitle line (androidx.compose.material3 AppBar.kt).
+ * The header still cannot change height: `ChatScreen`'s `identityText` reserves
+ * `IDENTITY_LINES * fontScale` in both states, which is where M3 puts the
+ * reservation (`AppBarSmallTokens.ContainerHeight`), and unlike a blank line box
+ * it lets the single-line state centre on the 30dp avatar.
  */
 function HeaderSubtitleView({ presence }: { presence: PresenceRead }) {
   const styles = useStyles(makeStyles);
@@ -35,6 +41,20 @@ function HeaderSubtitleView({ presence }: { presence: PresenceRead }) {
   // Quiet (tertiary) only when there is nothing active to announce. Typing and
   // "Online" both carry the positive colour so they read as live signals.
   const quiet = !typing && !presence.here;
+
+  // Nothing to say, so nothing rendered. `presence.line` is null for 'hidden'
+  // and for a peer that has not loaded, which is the DEFAULT state, and the
+  // empty line box this used to render is what held the name 8dp above the
+  // avatar's centre. src/lib/presence.ts has always documented this behaviour
+  // ("the chat header renders the name alone rather than reserving a blank
+  // row"); the code now agrees with it.
+  //
+  // Returning null rather than being conditionally rendered by ChatScreen: this
+  // component stays MOUNTED and keeps its narrow `selectPeerTyping`
+  // subscription, so a typing broadcast still re-renders only this leaf.
+  if (label === '') {
+    return null;
+  }
 
   return (
     <Text

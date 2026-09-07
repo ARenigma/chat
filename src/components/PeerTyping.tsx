@@ -3,7 +3,6 @@ import { StyleSheet, View } from 'react-native';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import { selectPeerTyping, useStore } from '../store/useStore';
-import { Avatar } from './Avatar';
 import { TypingIndicator } from './TypingIndicator';
 
 /**
@@ -15,7 +14,7 @@ import { TypingIndicator } from './TypingIndicator';
  * layout work. Its identity is stable (module-level memo), so handing it to
  * `ListHeaderComponent` does not invalidate the list either.
  */
-function PeerTypingView({ initial, name }: { initial: string; name: string }) {
+function PeerTypingView({ name }: { name: string }) {
   const styles = useStyles(makeStyles);
   const typing = useStore(selectPeerTyping);
 
@@ -25,13 +24,18 @@ function PeerTypingView({ initial, name }: { initial: string; name: string }) {
 
   return (
     <View style={styles.row}>
-      <View style={styles.slot}>
-        <Avatar initial={initial} size={26} breathing />
-      </View>
-      {/* In a bubble, at the peer's bubble position. Three loose dots beside an
-          avatar is not where iOS Messages puts the typing state, and the same
-          `bg/sunken` fill Turn.tsx uses is what makes it read as a bubble the
-          other person is about to fill. */}
+      {/* In a bubble, at the peer's bubble position — and "the peer's bubble
+          position" is now the content edge, which is why the avatar that used
+          to sit here is gone.
+          The transcript's incoming avatar was removed so the composer capsule
+          could trace the bubble grid on both edges (Amit, 2026-09-07: "remove
+          it, align the grid"), which moved every peer bubble 34dp left. This
+          row kept its own 26dp `slot` and 8dp gap, so the typing bubble was
+          left standing alone at the OLD column, 34dp right of the message it
+          precedes. Dropping the avatar here is not a second decision; it is the
+          same one, applied to the one surface that duplicated the inset.
+          The `bg/sunken` fill Turn.tsx uses is what makes this read as a bubble
+          the other person is about to fill. */}
       <View style={styles.bubble}>
         <TypingIndicator label={`${name} is typing`} />
       </View>
@@ -47,7 +51,6 @@ const makeStyles = (_t: Theme) => StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: TOKENS.space.xs,
     width: '100%',
     /*
      * The same vertical rhythm a Turn has, and it was missing entirely.
@@ -63,9 +66,6 @@ const makeStyles = (_t: Theme) => StyleSheet.create({
      */
     marginTop: TOKENS.space['2xs'],
     marginBottom: TOKENS.space['2xs'],
-  },
-  slot: {
-    width: 26,
   },
   bubble: {
     paddingHorizontal: TOKENS.space.md,

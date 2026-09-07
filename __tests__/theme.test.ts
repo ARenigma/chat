@@ -413,9 +413,18 @@ describe('typography is bound to real font files', () => {
   });
 
   it('never sets a fontWeight anywhere in the app', () => {
+    // Comments stripped first, like every other source-reading gate in this
+    // file. The rule is "never SETS a fontWeight", and prose sets nothing:
+    // Icon.tsx now carries a long comment explaining why the heavy heart is
+    // drawn by dilation rather than by asking for `fontWeight`, and the word
+    // appearing in that explanation was failing the very gate the explanation
+    // exists to honour. A gate that cannot tell code from the reasoning about
+    // the code has failed three times in this repo already.
     const sources = ['src/components', 'src/screens']
-      .flatMap(dir => readdirSync(join(ROOT, dir)).map(f => read(`${dir}/${f}`)))
-      .concat(read('App.tsx'));
+      .flatMap(dir =>
+        readdirSync(join(ROOT, dir)).map(f => stripComments(read(`${dir}/${f}`))),
+      )
+      .concat(stripComments(read('App.tsx')));
     for (const body of sources) {
       expect(body).not.toMatch(/fontWeight/);
     }

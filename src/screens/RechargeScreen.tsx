@@ -8,8 +8,8 @@ import {
   DEFAULT_RATES,
   formatRupees,
   formatTokens,
-  gstIncludedLabel,
-  gstPercentLabel,
+  gstExclusiveLabel,
+  gstExclusiveParts,
   PAYMENTS_ENABLED,
   RECHARGE_PACKS,
   talkMinutesLeft,
@@ -46,7 +46,7 @@ function useRechargePacks() {
     livePacks,
     paymentsEnabled: killSwitches?.payments_enabled ?? PAYMENTS_ENABLED,
     // Admin-set (ADR-0021). 0 for a seller without a GSTIN, and every GST line
-    // on this screen goes with it — see `gstIncludedLabel`.
+    // on this screen goes with it — see `gstExclusiveParts`.
     gstRateBps: economics?.gst_rate_bps ?? FALLBACK_ECONOMICS.gst_rate_bps,
   };
 }
@@ -76,7 +76,6 @@ export function RechargeScreen() {
         footer={
           <RechargeSheetFooter
             amount={amount}
-            gstRateBps={gstRateBps}
             onPay={() => requestAnimationFrame(() => setPayOpen(true))}
           />
         }>
@@ -111,6 +110,7 @@ function RechargeSheetForm({
   gstRateBps: number;
 }) {
   const styles = useStyles(makeCompactStyles);
+  const theme = useTheme();
   const balance = useStore(s => s.balance);
   const popularAmount = livePacks[1] ?? null;
 
@@ -137,7 +137,8 @@ function RechargeSheetForm({
         {livePacks.slice(0, 4).map(pack => {
           const selected = pack === amount;
           const popular = pack === popularAmount;
-          const gst = gstIncludedLabel(pack, gstRateBps);
+          const gst = gstExclusiveParts(pack, gstRateBps);
+          const gstSpoken = gstExclusiveLabel(pack, gstRateBps);
           return (
             <View key={pack} style={styles.cardSlot}>
               <Pressable
@@ -148,26 +149,60 @@ function RechargeSheetForm({
                 testID={`pack-${pack}`}
                 accessibilityRole="radio"
                 checked={selected}
-                accessibilityLabel={`${formatRupees(pack)}, ${formatTokens(pack)} tokens${gst ? `, ${gst}` : ''}${popular ? ', popular' : ''}`}
+                accessibilityLabel={`${formatRupees(pack)}, ${formatTokens(pack)} tokens${gstSpoken ? `, ${gstSpoken}` : ''}${popular ? ', popular' : ''}`}
                 press="card"
+                // The M3 pressed state layer is the container's ON colour at 10%
+                // (androidx StateTokens.kt `PressedStateLayerOpacity = 0.1f`,
+                // mirrored by TOKENS.interaction.statePressed). Pressable.tsx
+                // falls back to `text.primary` — dark ink — which on the now
+                // filled coral chip would flash DARKER on press instead of
+                // lighter, reading as a different component.
+                onColor={selected ? theme.color.text.onAccent : undefined}
                 style={[styles.card, selected && styles.cardSelected]}>
                 {popular ? (
-                  <View style={styles.popular}>
+                  <View style={[styles.popular, selected && styles.popularOn]}>
                     <Text allowFontScaling={false} style={styles.popularText}>
                       Popular
                     </Text>
                   </View>
                 ) : null}
-                <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized} allowFontScaling style={styles.amount}>
+                <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized} allowFontScaling style={[styles.amount, selected && styles.amountOn]}>
                   {formatRupees(pack)}
                 </Text>
-                <Text allowFontScaling style={styles.tokens}>
+                <Text allowFontScaling style={[styles.tokens, selected && styles.tokensOn]}>
                   {`${formatTokens(pack)} tokens`}
                 </Text>
+                {/* The SUPPORTING line under the price: what the ₹300 above is
+                    made of. The price stays the headline — a store card that
+                    shows only a base and a tax names a number nobody is charged
+                    (₹254.24), which is what the wallet card next door did until
+                    this pass. Two Texts, not one wrapped Text — see
+                    gstExclusiveParts in src/lib/rates.ts for the width
+                    arithmetic and the Android numberOfLines caveat that rules
+                    the wrapped form out.
+
+                    No `numberOfLines`: with the break already chosen by the
+                    design (base on one Text, tax on the next) a wrap can only
+                    happen INSIDE one of them, and there it breaks at the space
+                    before "GST" rather than truncating the word. "+ ₹762.71
+                    GST" is 87dp at bodySmall against 116dp of card on a 360dp
+                    window, so it wraps only above ~1.3 font scale — and
+                    developer.android.com/about/versions/14/features
+                    #non-linear-font-scaling asks for testing to 200%, where
+                    truncating a tax figure is worse than two lines. */}
                 {gst ? (
-                  <Text allowFontScaling numberOfLines={1} style={styles.tokensGst}>
-                    {gst}
-                  </Text>
+                  <View style={styles.tokensGstBlock}>
+                    <Text
+                      allowFontScaling
+                      style={[styles.tokensGst, selected && styles.tokensGstOn]}>
+                      {gst.base}
+                    </Text>
+                    <Text
+                      allowFontScaling
+                      style={[styles.tokensGst, selected && styles.tokensGstOn]}>
+                      {gst.tax}
+                    </Text>
+                  </View>
                 ) : null}
               </Pressable>
             </View>
@@ -178,18 +213,9 @@ function RechargeSheetForm({
   );
 }
 
-function RechargeSheetFooter({
-  amount,
-  gstRateBps,
-  onPay,
-}: {
-  amount: number;
-  gstRateBps: number;
-  onPay: () => void;
-}) {
+function RechargeSheetFooter({ amount, onPay }: { amount: number; onPay: () => void }) {
   const styles = useStyles(makeCompactStyles);
   const theme = useTheme();
-  const gst = gstIncludedLabel(amount, gstRateBps);
   return (
     <>
       <View style={styles.rate}>
@@ -201,9 +227,21 @@ function RechargeSheetFooter({
           ⓘ
         </Text>
         <Text allowFontScaling style={styles.rateText}>
-          {/* The pay button under this row names the total, so the row names
-              the tax inside it — the same figure the invoice will print. */}
-          {gst ? `1 token = ₹1 · ${gst} (${gstPercentLabel(gstRateBps)})` : '1 token = ₹1'}
+          {/* NO GST in this row, of any wording (Amit, 2026-09-06: "remove inc
+              xxx gst from footer"). The tax moved onto the chips, where each
+              pack names its own base and its own tax — so the footer is back to
+              the two facts it is the only place for: what a token costs, and
+              that the charge is in rupees.
+
+              This is not a dropped disclosure. ADR-0021 ("Recharge pack pricing
+              (GST-inclusive)") requires the tax to be derivable and INVOICED —
+              "Axionix Technologies issues the GST invoice for Cashfree-path
+              purchases" — and the screen still names the base and the tax on
+              every chip and again on the pay step before money moves. What is
+              gone is a second, weaker statement of the same fact in a footer,
+              which is what was asked for. `gstRateBps` is no longer read here
+              at all, so this row cannot drift from the chips. */}
+          1 token = ₹1 · you are charged in rupees at checkout
         </Text>
       </View>
       <Pressable
@@ -312,12 +350,12 @@ function RechargeForm({
   gstRateBps: number;
 }) {
   const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const balance = useStore(s => s.balance);
   const chatRate = DEFAULT_RATES.chat;
   const balanceMinutes = Math.floor(talkMinutesLeft(balance, chatRate));
   const popularAmount = livePacks[1] ?? null;
   const bestValueAmount = livePacks[livePacks.length - 1] ?? null;
-  const selectedGst = gstIncludedLabel(amount, gstRateBps);
 
   return (
     <View style={styles.form}>
@@ -345,7 +383,8 @@ function RechargeForm({
           const badge =
             pack === popularAmount ? 'Popular' : pack === bestValueAmount ? 'Best value' : null;
           const minutes = Math.floor(pack / chatRate);
-          const gst = gstIncludedLabel(pack, gstRateBps);
+          const gst = gstExclusiveParts(pack, gstRateBps);
+          const gstSpoken = gstExclusiveLabel(pack, gstRateBps);
           return (
             <View key={pack} style={styles.cardSlot}>
               <Pressable
@@ -354,8 +393,34 @@ function RechargeForm({
                   setAmount(pack);
                 }}
                 testID={`pack-${pack}`}
-                accessibilityLabel={`Add ${formatTokens(pack)} tokens, ${formatRupees(pack)}${gst ? ` ${gst}` : ''}, about ${minutes} minutes of talk${badge ? `, ${badge}` : ''}${on ? ', selected' : ''}`}
+                // The label is the card read aloud, in the card's own order:
+                // price, then tokens, then talk time, then the base and the tax.
+                // It used to lead with "Add 5,000 tokens" and then speak a
+                // ₹5,000 that was nowhere on the card, so TalkBack and a sighted
+                // user were told different prices — the defect
+                // developer.android.com/guide/topics/ui/accessibility/apps
+                // rules out under "Describe each UI element" ("Use descriptions
+                // to convey the purpose and result of the interaction, not the
+                // visual details" — and never a figure the screen does not
+                // show). Commas between the parts, so the price and its
+                // composition do not run together as one long number.
+                //
+                // ", selected" is NOT in the label: state travels as
+                // accessibilityState via `checked` below, which is what
+                // Pressable.tsx documents and what the compact chip already
+                // does. The same page tells you to expose the TYPE through the
+                // role rather than the text, so this is `radio`, and TalkBack
+                // says "radio button, checked" in the user's own language
+                // instead of an English word baked into our string.
+                accessibilityRole="radio"
+                checked={on}
+                accessibilityLabel={`${formatRupees(pack)}, ${formatTokens(pack)} tokens, about ${minutes} minutes of talk${gstSpoken ? `, ${gstSpoken}` : ''}${badge ? `, ${badge}` : ''}`}
                 press="card"
+                // Same M3 state-layer reason as the compact chip above:
+                // StateTokens.kt `PressedStateLayerOpacity = 0.1f` over the
+                // container's ON colour, not over Pressable's `text.primary`
+                // default, which would darken the coral fill on press.
+                onColor={on ? theme.color.text.onAccent : undefined}
                 style={[styles.card, on && styles.cardOn]}>
                 {/* Corner ribbon — flush to the top-right corner (folded-tab
                     look), not a floating chip. The card's paddingTop reserves the
@@ -369,54 +434,53 @@ function RechargeForm({
                     </Text>
                   </View>
                 ) : null}
-                <View style={styles.cardRow}>
-                  {/* Coin chip — the gamified token mark, same ₹ disc as the
-                      balance header. Flips to a light disc on the selected coral
-                      card so it stays legible. */}
-                  <View style={[styles.coin, on && styles.coinOn]}>
-                    <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized}
-                      allowFontScaling={false}
-                      style={[styles.coinMark, on && styles.coinMarkOn]}>
-                      ₹
-                    </Text>
-                  </View>
-                  <View style={styles.cardText}>
-                    <Text
-                      allowFontScaling
-                      numberOfLines={1}
-                      style={[styles.cardAmount, on && styles.cardTextOn]}>
-                      {formatTokens(pack)}
-                    </Text>
-                    <Text
-                      allowFontScaling
-                      numberOfLines={1}
-                      style={[styles.cardUnit, on && styles.cardUnitOn]}>
-                      tokens
-                    </Text>
-                  </View>
-                </View>
-                <View style={[styles.minutesTag, on && styles.minutesTagOn]}>
+                {/* THE PRICE, and the card's headline figure. It went missing:
+                    this card's biggest number was a token count with no ₹ mark,
+                    so once the tax split arrived the only rupee figures on it
+                    were ₹4,237.29 and ₹762.71 — a base and a tax, neither of
+                    which is what leaves the member's account. A store card
+                    shows what it costs.
+
+                    Same style, same order and now the same type role as the
+                    compact chip in this file (price → tokens → base + tax), so
+                    the two grids are one control read twice. */}
+                <View style={styles.cardHead}>
                   <Text
+                    maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized}
                     allowFontScaling
                     numberOfLines={1}
-                    style={[styles.minutesText, on && styles.minutesTextOn]}>
+                    style={[styles.cardAmount, on && styles.cardAmountOn]}>
+                    {formatRupees(pack)}
+                  </Text>
+                  <Text allowFontScaling style={[styles.cardUnit, on && styles.cardUnitOn]}>
+                    {`${formatTokens(pack)} tokens`}
+                  </Text>
+                </View>
+                {/* Talk-time pill: page colour + accent ink whether the card is
+                    selected or not, so the label needs no `On` variant. */}
+                <View style={[styles.minutesTag, on && styles.minutesTagOn]}>
+                  <Text allowFontScaling numberOfLines={1} style={styles.minutesText}>
                     {`≈ ${minutes} min talk`}
                   </Text>
                 </View>
-                {/* The tax inside this price, on the card itself (Amit,
-                    2026-09-05: "GST on recharge chips"). The rupee total is the
-                    token count — 1 token = ₹1 — so the card names only the part
-                    of it that is not a token. Full card width, last: beside the
-                    coin the text column is ~70dp and "incl. ₹762.71 GST" was
-                    ellipsised on every card; and it is a disclosure, so it
-                    reads after the offer (amount → unit → talk time → tax). */}
+                {/* What the price above is MADE of (Amit, 2026-09-06: "GST
+                    exclusive on the chips") — the supporting line, never the
+                    substitute. These two add back up to the ₹5,000 headline to
+                    the paisa: 4,23,729 + 76,271 = 5,00,000 paise, the same
+                    integer split generate-invoice prints.
+
+                    Last, and full width: it is a disclosure, so it reads after
+                    the offer (price → tokens → talk time → tax). No
+                    `numberOfLines`, for the reason given on the compact chip. */}
                 {gst ? (
-                  <Text
-                    allowFontScaling
-                    numberOfLines={1}
-                    style={[styles.cardGst, on && styles.cardUnitOn]}>
-                    {gst}
-                  </Text>
+                  <View style={styles.cardGstBlock}>
+                    <Text allowFontScaling style={[styles.cardGst, on && styles.cardUnitOn]}>
+                      {gst.base}
+                    </Text>
+                    <Text allowFontScaling style={[styles.cardGst, on && styles.cardUnitOn]}>
+                      {gst.tax}
+                    </Text>
+                  </View>
                 ) : null}
               </Pressable>
             </View>
@@ -427,10 +491,19 @@ function RechargeForm({
       {/* No payment-method options here: the Cashfree checkout sheet that opens
           on Pay is where UPI / cards / net-banking are chosen. Listing them here
           too was a duplicate the page had to scroll to fit. */}
+      {/* Two sentences, no tax, no rate branch (Amit, 2026-09-06: "remove inc
+          xxx gst from footer"). The previous pass took the literal string out
+          and put three sentences of GST copy back in its place, which grew the
+          footer rather than clearing it.
+
+          Nothing here has to carry the tax any more: every card names its own
+          base and its own tax, the pay step names them again, and ADR-0021 puts
+          the legal instrument on the invoice Axionix issues. The clause that
+          WAS load-bearing — "the pack price, not the base, is what leaves your
+          account" — is load-bearing no longer, because the pack price is now
+          the largest figure on the card instead of being absent from it. */}
       <Text allowFontScaling style={styles.rupeeNote}>
-        {selectedGst
-          ? `1 token = ₹1. Price ${selectedGst} (${gstPercentLabel(gstRateBps)}). You are charged in rupees at checkout.`
-          : '1 token = ₹1. You are charged in rupees at checkout.'}
+        1 token = ₹1. You are charged in rupees at checkout.
       </Text>
     </View>
   );
@@ -540,9 +613,33 @@ const makeStyles = (t: Theme) =>
       gap: TOKENS.space.sm,
       overflow: 'hidden',
     },
+    // The selected card is a FILLED tonal container, and the fill is the deep
+    // step, not the bright one.
+    //
+    // M3 puts the fill here: androidx FilterChipTokens.kt has
+    // `FlatSelectedContainerColor = SecondaryContainer` with
+    // `SelectedLabelTextColor = OnSecondaryContainer`, and
+    // `FlatSelectedOutlineWidth = 0.0.dp` — the outline belongs to the
+    // UNSELECTED chip, the container colour to the selected one.
+    //
+    // Which fill is not a preference. developer.android.com/guide/topics/ui/
+    // accessibility/apps: "If the text is smaller than 18sp, or if the text is
+    // bold and smaller than 14sp, use foreground and background colors that
+    // result in a color contrast ratio of at least 4.5:1. For all other text,
+    // set the color contrast ratio to at least 3:1." cardUnit and cardGst are
+    // 12sp, so 4.5:1 is the floor here regardless of what the 22px bold price
+    // above them would be allowed on its own. bg/accent measures 3.44:1 light
+    // and 2.59:1 dark against text/onAccent and fails both — it fails 3:1 in
+    // dark for the price too, and no ink in this palette rescues it (text/
+    // primary on bg/accent is 4.95:1 light but 2.70:1 dark). design/tokens.json
+    // says
+    // so on the token itself ("must NEVER sit under small white text; that is
+    // what bg/accentStrong is for") and theme.test.ts records it as a fact.
+    // bg/accentStrong is 5.19:1 / 6.13:1 — the same fill the message bubble and
+    // the Pay button already use.
     cardOn: {
-      backgroundColor: t.color.bg.accent,
-      borderColor: t.color.bg.accent,
+      backgroundColor: t.color.bg.accentStrong,
+      borderColor: t.color.bg.accentStrong,
     },
     // Corner ribbon flush to the top-right corner (folded-tab look): the outer
     // corner matches the card radius, the inner corner is rounded. Not a chip.
@@ -568,44 +665,48 @@ const makeStyles = (t: Theme) =>
     ribbonTextOn: {
       color: t.color.text.accent,
     },
-    cardRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: TOKENS.space.sm,
+    // The price and what it buys are one statement, so the pair sits tighter
+    // than the card's own 12dp `gap` would put them.
+    cardHead: {
+      gap: TOKENS.space.hair,
     },
-    // The gamified coin chip carrying the ₹ mark.
-    coin: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: t.color.bg.accentTint,
-    },
-    coinOn: {
-      backgroundColor: 'rgba(255,255,255,0.22)',
-    },
-    coinMark: {
-      ...TOKENS.typography.titleLargeEmphasized,
-      color: t.color.text.accent,
-    },
-    coinMarkOn: {
-      color: t.color.text.onAccent,
-    },
-    cardText: {
-      flex: 1,
-    },
+    // The price. The ₹ coin disc that used to lead this row is gone, and the
+    // reason is arithmetic rather than taste: on a 360dp window this card has
+    // 115.8dp of inner width (312dp of content, halved at 48%, less a 1dp
+    // border and 16dp of padding a side), a 40dp disc plus its 12dp gap left
+    // 63.8dp for the text, and "₹5,000" needs 74.4dp. The price cannot share a
+    // row with the disc on the narrowest phone we support without being
+    // ellipsised — and it was the disc's ₹ glyph that was standing in for the
+    // missing currency mark in the first place, so once the headline IS a rupee
+    // figure the disc is a duplicate of it.
+    //
+    // titleLargeEmphasized (22px Geist-Bold) rather than the bespoke 24px this
+    // slot carried while it held a token count: 24px puts "₹5,000" at 81.4dp,
+    // and at the 1.5 title cap at 123.3dp against 115.8dp of card, i.e. the
+    // PRICE would ellipsise on a large-text phone.
+    // developer.android.com/about/versions/14/features#non-linear-font-scaling
+    // ("you should still perform UI testing with the maximum font size enabled
+    // (200%)") is the reason that is not acceptable. At 22px it is 74.4dp, and
+    // 111.6dp at the cap — inside the card at every scale the cap allows. It is
+    // also the role the compact chip's price already uses, so both grids state
+    // a price the same way.
+    //
+    // Tabular figures + tight tracking, the app's numeral treatment: without
+    // tabular-nums the prices (₹1,000 / ₹2,500) render with uneven widths and
+    // read as ragged down a two-column grid. Matches TOKENS.typography.numeral*.
     cardAmount: {
-      fontFamily: 'Geist-Bold',
-      fontSize: 24,
-      lineHeight: 28,
-      // Tabular figures + tight tracking, the app's numeral treatment: without
-      // tabular-nums the pack amounts (1,000 / 2,500) render with uneven widths
-      // and read as ragged. Matches TOKENS.typography.numeral*.
+      ...TOKENS.typography.titleLargeEmphasized,
       letterSpacing: -0.4,
       fontVariant: ['tabular-nums'],
       color: t.color.text.primary,
     },
+    cardAmountOn: {
+      color: t.color.text.onAccent,
+    },
+    // What the price buys, under it. One line ("5,000 tokens", 77.6dp of the
+    // card's 115.8dp) rather than the number-over-noun pair the coin row held,
+    // because the number is now the price above and repeating it at 24px made
+    // two headline figures out of one fact.
     cardUnit: {
       ...TOKENS.typography.bodySmall,
       color: t.color.text.secondary,
@@ -619,12 +720,13 @@ const makeStyles = (t: Theme) =>
     cardGst: {
       ...TOKENS.typography.bodySmall,
       color: t.color.text.tertiary,
-      // The card's own `gap` already separates this from the talk-time tag; a
-      // negative nudge pulls it back to the tag's rhythm rather than a full step.
-      marginTop: -TOKENS.space['2xs'],
     },
-    cardTextOn: {
-      color: t.color.text.onAccent,
+    // The nudge moved off the line and onto the block: two lines now, and a
+    // negative margin on each would have closed the gap between them as well as
+    // the gap above. The card's own `gap` already separates this from the
+    // talk-time tag; this pulls it back to the tag's rhythm, not a full step.
+    cardGstBlock: {
+      marginTop: -TOKENS.space['2xs'],
     },
     // Talk-time value tag along the bottom of the card.
     minutesTag: {
@@ -635,15 +737,17 @@ const makeStyles = (t: Theme) =>
       borderCurve: 'continuous',
       backgroundColor: t.color.bg.sunken,
     },
+    // Same inset-pill rule as `ribbonOn` and the compact chip's `popularOn`:
+    // anything inset into a selected card takes the page colour and accent ink.
+    // The old translucent white measured 2.81:1 light / 2.12:1 dark under a
+    // 12sp label — the worst-failing pair on the screen, and this label is the
+    // talk time, which is the offer. bg/base + text/accent is 8.17:1 / 7.54:1.
     minutesTagOn: {
-      backgroundColor: 'rgba(255,255,255,0.18)',
+      backgroundColor: t.color.bg.base,
     },
     minutesText: {
       ...TOKENS.typography.labelMediumEmphasized,
       color: t.color.text.accent,
-    },
-    minutesTextOn: {
-      color: t.color.text.onAccent,
     },
     rupeeNote: {
       ...TOKENS.typography.bodySmall,
@@ -707,16 +811,52 @@ const makeCompactStyles = (t: Theme) =>
       width: '100%',
       minHeight: 104,
       justifyContent: 'center',
+      // Real vertical padding, not slack borrowed from `minHeight`.
+      //
+      // This chip had neither: 104dp of minHeight against 96dp of content left
+      // 8dp of slack, centred, so the price line began 4dp below the border —
+      // and the `popular` pill is absolutely positioned at top 12dp and is a
+      // fixed 22dp tall (bodySmall's 16dp line plus 3dp a side, with
+      // allowFontScaling={false}), i.e. it owns the band from 12dp to 34dp. The
+      // price ran straight under it. At the 1.3 font scale this shows on any
+      // pack: "₹300" grows from 57.6dp to 74.9dp and reaches the pill's left
+      // edge at 74.9dp from the card's inner left.
+      //
+      // So the strip the pill sits in is RESERVED, exactly as the wallet card
+      // reserves its ribbon strip: 32dp of paddingTop puts the price's cap
+      // height at about 38dp, clear of the pill's 34dp bottom edge, and the
+      // clearance only grows with the font scale because the padding does not
+      // scale with it (m3.material.io/foundations/layout/understanding-layout/
+      // spacing — spacing is preserved as text scales, so a container grows by
+      // its text and never by its padding). paddingBottom balances it at the
+      // step below.
+      paddingTop: TOKENS.space['2xl'],
       paddingHorizontal: TOKENS.space.md,
+      paddingBottom: TOKENS.space.md,
       borderRadius: TOKENS.radius.sm,
       borderCurve: 'continuous',
       borderWidth: 1,
       borderColor: t.color.border.hairline,
       backgroundColor: t.color.bg.raised,
     },
+    // Was outline-only while the wallet card next door was filled; the two
+    // grids are the same control and now read the same way (Amit, 2026-09-06:
+    // "money chips should have a fill like the recharge screen when selected").
+    //
+    // M3 says the fill, not the outline, is the selected state: androidx
+    // FilterChipTokens.kt gives the flat chip
+    // `FlatSelectedContainerColor = SecondaryContainer` and
+    // `FlatSelectedOutlineWidth = 0.0.dp`, with `FlatUnselectedOutlineColor`
+    // existing only for the unselected chip. The old `borderWidth: 2` went with
+    // it for a second reason: `card` already sets borderWidth 1, so 1→2 shifted
+    // every child of the chip by a dp on selection.
+    //
+    // bg/accentStrong rather than bg/accent for the same reason as `cardOn`:
+    // this chip carries bodyLarge 16sp and bodySmall 12sp, both under the 18sp
+    // line at which developer.android.com drops the requirement to 3:1.
     cardSelected: {
-      borderWidth: 2,
-      borderColor: t.color.border.accent,
+      backgroundColor: t.color.bg.accentStrong,
+      borderColor: t.color.bg.accentStrong,
     },
     popular: {
       position: 'absolute',
@@ -727,6 +867,12 @@ const makeCompactStyles = (t: Theme) =>
       borderRadius: TOKENS.radius.pill,
       backgroundColor: t.color.bg.accentTint,
     },
+    // Inset pill on a selected chip: page colour, accent ink — the same rule the
+    // wallet card's ribbon and talk-time tag follow. accentTint on the deep
+    // coral would have been 4.26:1 light but 1.93:1 dark, i.e. invisible.
+    popularOn: {
+      backgroundColor: t.color.bg.base,
+    },
     popularText: {
       ...TOKENS.typography.bodySmall,
       color: t.color.text.accent,
@@ -735,15 +881,30 @@ const makeCompactStyles = (t: Theme) =>
       ...TOKENS.typography.titleLargeEmphasized,
       color: t.color.text.primary,
     },
+    // M3 pairs the selected container with its guaranteed on-colour
+    // (FilterChipTokens.kt `SelectedLabelTextColor = OnSecondaryContainer`);
+    // ours is text/onAccent, 5.19:1 light and 6.13:1 dark on bg/accentStrong.
+    amountOn: {
+      color: t.color.text.onAccent,
+    },
     tokens: {
       ...TOKENS.typography.bodyLarge,
       color: t.color.text.secondary,
       paddingTop: TOKENS.space.xs,
     },
+    tokensOn: {
+      color: t.color.text.onAccent,
+    },
     tokensGst: {
       ...TOKENS.typography.bodySmall,
       color: t.color.text.tertiary,
+    },
+    // The step above the pair, not above each line — see `cardGstBlock`.
+    tokensGstBlock: {
       paddingTop: TOKENS.space['2xs'],
+    },
+    tokensGstOn: {
+      color: t.color.text.onAccent,
     },
     rate: {
       minHeight: 28,

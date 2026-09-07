@@ -295,7 +295,35 @@ Deno.serve(async (request: Request) => {
     const sellerEmail = Deno.env.get('SELLER_EMAIL') ?? 'hello@pappal.live';
     const sellerGstin = Deno.env.get('SELLER_GSTIN') ?? '';
     const sellerSac = Deno.env.get('SELLER_SAC') ?? '998439';
-    const gstRateBpsEnv = parseInt(Deno.env.get('GST_RATE_BPS') ?? '1800', 10);
+
+    /*
+     * The GST rate comes from the ADMIN CONFIG, not from this function's own
+     * environment — one source of truth, because there were two.
+     *
+     * `GST_RATE_BPS` here and `economics.gst_rate_bps` in the admin control
+     * plane (migration 026, read by the app through `get_active_config`) were
+     * independent values that happened to agree only because both defaulted to
+     * 1800. Nothing tied them together, so publishing a new rate from the admin
+     * dashboard would have changed every price the app displays while this
+     * function kept taxing at the old rate — and the invoice is the legal
+     * document, so the disagreement would have been in the worst possible
+     * place. `get_active_config` is the same RPC the client calls
+     * (src/api/appConfig.ts `fetchAuthConfig`), so screen and invoice now read
+     * one number by construction rather than by coincidence (Amit, 2026-09-07).
+     *
+     * The env var is still honoured as the FALLBACK: if the RPC fails or the
+     * domain has no published version, an invoice must still be issuable. A
+     * failed config read must never become a failed invoice.
+     */
+    const gstRateBpsEnvFallback = parseInt(Deno.env.get('GST_RATE_BPS') ?? '1800', 10);
+    const { data: economics } = await admin.rpc('get_active_config', {
+      p_domain: 'economics',
+    });
+    const configuredRate = (economics as { gst_rate_bps?: number } | null)?.gst_rate_bps;
+    const gstRateBpsEnv =
+      typeof configuredRate === 'number' && Number.isInteger(configuredRate) && configuredRate >= 0
+        ? configuredRate
+        : gstRateBpsEnvFallback;
 
     // 3. GST computation (integer paise, exact) ----------------------------
     const totalPaise = tx.amount_paise;

@@ -73,6 +73,31 @@ export const MIN_INPUT_H = 36;
 export const MAX_INPUT_H = 132;
 
 /**
+ * The shortest the capsule may be and still PAINT `TOKENS.radius.bubble`.
+ *
+ * This is the number that makes "the composer shares the bubbles' roundness"
+ * true rather than merely declared. CSS Backgrounds 3, Overlapping Curves:
+ * "let f = min(Li/Si) ... if f < 1, then all corner radii are reduced by
+ * multiplying them by f", where Lleft = Lright = the height of the box and Si is
+ * the sum of that side's two radii. React Native implements exactly that on
+ * Android — `BorderRadiusStyle.ensureNoOverlap()` computes
+ * `leftEdgeRadiiScale = minOf(height / (topLeft.vertical + bottomLeft.vertical), 1f)`
+ * and multiplies every corner by it.
+ * https://www.w3.org/TR/css-backgrounds-3/#corner-overlap
+ *
+ * The capsule's children are 40dp at their tallest (CAMERA_SLOT and the
+ * trailing mic/send slot), so before this the bar laid out at 40, declared a
+ * 22dp corner and PAINTED 22 x 40/44 = 20 — while a one-line message bubble is
+ * about 54dp tall and painted a true 22. Two silhouettes, one grid, and nothing
+ * in the code said why. 2 x radius.bubble is the height at which the scale
+ * factor reaches 1 and the two coincide.
+ *
+ * Derived from the same token `Turn.tsx`'s BUBBLE_RADIUS reads, so the corner
+ * and the height that lets it be drawn cannot drift apart.
+ */
+export const CAPSULE_MIN_H = TOKENS.radius.bubble * 2;
+
+/**
  * The line geometry MIN/MAX are built from, named so the growth handler can
  * quantise to whole lines instead of chasing a pixel measurement.
  *
@@ -1415,15 +1440,27 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     paddingLeft: TOKENS.space.hair,
     paddingRight: TOKENS.space.hair,
     /*
+     * 44dp, not the 40 the children add up to, and this is a correctness fix
+     * rather than a taste one: at 40 the declared corner below was scaled to
+     * 22 x 40/44 = 20 by RN Android's corner-overlap clamp while the message
+     * bubbles painted a true 22, so the capsule and the bubble scrolling under
+     * it traced different silhouettes. See CAPSULE_MIN_H for the rule and its
+     * source. `space.hair` (2) top and bottom is the mechanism — it takes the
+     * 40dp of children to the floor and keeps them optically centred under
+     * `alignItems: 'flex-end'` — and `minHeight` is the floor itself, stated so
+     * the requirement survives a change to the children.
+     */
+    minHeight: CAPSULE_MIN_H,
+    paddingVertical: TOKENS.space.hair,
+    /*
      * `radius.bubble` (22dp) rather than `radius.pill` (999).
      *
-     * At single-line height (~40dp) both produce an identical pill — 2×22 = 44 ≈
-     * height, so the ends are fully curved either way. At multi-line heights the
-     * capsule is now a rounded rectangle at the SAME corner as the message bubbles
-     * (Turn.tsx uses `TOKENS.radius.bubble` for both mine/peer), which is what
-     * makes the edges look like one continuous grid as the transcript scrolls
-     * past the composer. `radius.pill` at a tall height looks like a stadium;
-     * `radius.bubble` looks like a bubble. One token, two components, zero drift.
+     * The SAME corner as the message bubbles (Turn.tsx reads the same token for
+     * both mine/peer), which is what makes the edges read as one continuous grid
+     * as the transcript scrolls past the composer. `radius.pill` at a tall
+     * multi-line height looks like a stadium; this looks like a bubble. One
+     * token, two components, zero drift — and paired with `minHeight` above,
+     * because a box shorter than twice its corner cannot draw that corner.
      */
     borderRadius: TOKENS.radius.bubble,
     borderCurve: 'continuous',
@@ -1493,9 +1530,11 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     // sat on the trailing edge.)
     paddingLeft: TOKENS.space.hair,
     paddingRight: TOKENS.space.md,
-    // Zero: the 40dp input is the tallest child and IS the capsule height, so the
-    // capsule is a true 40 (Telegram's, measured on device). Any field padding here
-    // stacks on top of the 40 input and reads taller than the real app.
+    // Zero. The 40dp of children is the capsule's CONTENT height; the capsule
+    // itself is CAPSULE_MIN_H (44) because a 40dp box cannot paint a 22dp
+    // corner. That 4dp lives on `inputBar`'s own paddingVertical, where it is
+    // symmetric — any field padding here would stack on top of the 40 and push
+    // the capsule taller still.
     paddingVertical: 0,
     /*
      * No surface of its own any more - the capsule moved up to `inputBar` so the
@@ -1547,7 +1586,14 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     minHeight: 50,
     paddingLeft: TOKENS.space['2xs'],
     paddingRight: 6,
-    borderRadius: TOKENS.radius.pill,
+    /*
+     * The same corner as the typing capsule and the bubbles, so all three
+     * composer modes trace one silhouette in the same slot. `radius.pill` here
+     * was clamped to 25 by the corner-overlap rule at this 50dp height (see
+     * CAPSULE_MIN_H) and read as a stadium beside a 22dp bubble. 50 > 44, so
+     * this corner paints unscaled.
+     */
+    borderRadius: TOKENS.radius.bubble,
     borderCurve: 'continuous',
     backgroundColor: t.color.bg.sunken,
   },

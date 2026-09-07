@@ -9,7 +9,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { formatRupees, formatTokens, gstIncludedLabel, MOCK_PAYMENTS, PAYMENTS_ENABLED } from '../lib/rates';
+import { formatRupees, formatTokens, gstExclusiveLabel, MOCK_PAYMENTS, PAYMENTS_ENABLED } from '../lib/rates';
 import { FALLBACK_ECONOMICS, useEconomicsConfig } from '../api/appConfig';
 import { supabase } from '../lib/supabase';
 import { Button } from '../components/Button';
@@ -57,9 +57,11 @@ type MockPhase = 'idle' | 'processing' | 'success' | 'error';
 
 export function PaymentSheet({ visible, amount, onClose }: Props) {
   const { data: economics } = useEconomicsConfig();
-  // The last line the member reads before money moves, so the tax inside the
-  // total is named here too — the same `gstIncludedLabel` the pack cards use.
-  const gst = gstIncludedLabel(amount, economics?.gst_rate_bps ?? FALLBACK_ECONOMICS.gst_rate_bps);
+  // The last line the member reads before money moves, so the tax is named here
+  // the same way the pack states it — base + tax, the two summing exactly to
+  // the total on the button. One line rather than two: unlike a 48%-wide card
+  // the sheet body has the full width, and the total already precedes it.
+  const gst = gstExclusiveLabel(amount, economics?.gst_rate_bps ?? FALLBACK_ECONOMICS.gst_rate_bps);
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const queryClient = useQueryClient();
@@ -152,8 +154,8 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
       : mockPhase === 'processing'
         ? `Paying ${formatRupees(amount)} via ${isCashfree ? 'Cashfree' : method}`
         : isCashfree
-          ? `Add ${formatTokens(amount)} tokens  ·  ${formatRupees(amount)}${gst ? ` ${gst}` : ''}  ·  Sandbox checkout`
-          : `Add ${formatTokens(amount)} tokens  ·  ${formatRupees(amount)}${gst ? ` ${gst}` : ''}`;
+          ? `Add ${formatTokens(amount)} tokens  ·  ${formatRupees(amount)}${gst ? ` (${gst})` : ''}  ·  Sandbox checkout`
+          : `Add ${formatTokens(amount)} tokens  ·  ${formatRupees(amount)}${gst ? ` (${gst})` : ''}`;
 
   if (mockPhase === 'success') {
     return (
@@ -249,6 +251,7 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
                         styles.row,
                         index === 0 && styles.rowFirst,
                         index === METHODS.length - 1 && styles.rowLast,
+                        on && styles.rowOn,
                       ]}>
                       <Image
                         source={LOGOS[name].src}
@@ -329,6 +332,20 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: TOKENS.space.md,
       minHeight: 48,
       backgroundColor: t.color.bg.base,
+    },
+    // Selection here was a single 17px check and nothing else. M3's selected
+    // state is a tonal CONTAINER — androidx FilterChipTokens.kt
+    // `FlatSelectedContainerColor = SecondaryContainer` — and the Compose chip
+    // guide shows the two together ("Selected filter chip, with a check and a
+    // colored background"), so the check stays: it is the non-colour indicator,
+    // and the tint alone would be a 1.22:1 boundary against bg/base.
+    //
+    // bg/accentTint, not the deep fill the pack chips take: nothing here is
+    // white-on-coral text — the row holds a brand lockup and a text/primary
+    // check, which reads 13.98:1 light / 12.33:1 dark on the tint — and a full
+    // coral row would compete with the Pay button directly beneath it.
+    rowOn: {
+      backgroundColor: t.color.bg.accentTint,
     },
     rowFirst: {
       borderTopLeftRadius: TOKENS.radius.field,

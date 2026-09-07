@@ -141,6 +141,12 @@ export type Profile = {
   /**
    * Provider directory photo (public Storage URL). Null until set; UI falls
    * back to an initial. Members never publish this off the directory (013).
+   *
+   * Since 070 this MIRRORS the primary row of `provider_photos` and is written
+   * by trigger whenever the gallery changes. It stays client-writable only so a
+   * bundled `clay:<seed>` avatar can still be chosen (`useSetClayAvatar`); while
+   * a gallery is non-empty the photos win, and the next gallery change
+   * overwrites a directly-written value.
    */
   avatar_url: string | null;
   /** Derived from `reviews` by trigger. Not writable by its subject. */
@@ -222,6 +228,34 @@ export type ProviderRatings = {
   distribution: RatingBar[];
   recent: { rating: number; comment: string | null; created_at: string }[];
 };
+
+/**
+ * One published photo in a provider's gallery (migration 070).
+ *
+ * `url` is the same shape `profiles.avatar_url` holds, because the primary row
+ * IS `avatar_url`: a trigger mirrors it, one-directionally. Exactly one row per
+ * provider is primary while the gallery is non-empty, and the database enforces
+ * it (`provider_photos_one_primary` plus the BEFORE trigger that demotes the old
+ * one), so a client never has to demote anything — setting a new primary is one
+ * UPDATE of one column.
+ */
+export type ProviderPhoto = {
+  id: string;
+  provider_id: string;
+  url: string;
+  is_primary: boolean;
+  created_at: string;
+};
+
+/**
+ * The ceiling the 070 trigger raises P0010 above.
+ *
+ * Six, not ten: two rows of three tiles in the provider's manager, and a page
+ * indicator that still reads as dots rather than a smear on a 360dp hero. The
+ * number is duplicated here only so the UI can grey out the add button before a
+ * round trip; the database is what actually refuses the seventh.
+ */
+export const MAX_PROVIDER_PHOTOS = 6;
 
 /**
  * Provider earnings summary from the `provider_earnings` view (migration 038+).
@@ -797,6 +831,22 @@ export type Database = {
         // computed server-side rather than asserted by the client.
         Insert: never;
         Update: never;
+        Relationships: [];
+      };
+      /**
+       * The provider's own rows: they insert and delete, and the ONLY column a
+       * client may update is `is_primary` — and only upwards
+       * (`guard_provider_photo_columns`, migration 070). A url a provider can
+       * rewrite after it is published is a url that can be swapped for something
+       * else after a member has looked at it, so replacing a photo is a delete
+       * and an insert; and clearing `is_primary` would leave a non-empty gallery
+       * with no face, so the way to stop a photo being the face is to make
+       * another one the face.
+       */
+      provider_photos: {
+        Row: ProviderPhoto;
+        Insert: { provider_id: string; url: string };
+        Update: { is_primary: boolean };
         Relationships: [];
       };
       reviews: {

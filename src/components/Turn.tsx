@@ -36,14 +36,11 @@ import type { ReactionEmoji } from '../lib/database.types';
 import type { VoicePlayer } from '../lib/voice';
 import { useAttachmentUrl } from '../api/attachments';
 import { useStore } from '../store/useStore';
-import { Avatar } from './Avatar';
 import { BubbleTime } from './BubbleTime';
 import { Icon } from './Icon';
 import { ProgressBar } from './ProgressBar';
 import { ReactionStrip } from './ReactionStrip';
 import { VoiceNote } from './VoiceNote';
-
-const AVATAR_SLOT = 26;
 
 /**
  * Symmetric on all four corners, on both sides, and now a token.
@@ -93,6 +90,19 @@ export function mediaInnerRadius(): number {
 const MEDIA_WIDTH = 240;
 const MEDIA_MIN_HEIGHT = 120;
 const MEDIA_MAX_HEIGHT = 320;
+
+/**
+ * The one standard accessibility action a photo bubble offers.
+ *
+ * `'activate'` is "engaged when a screen reader user double taps the component"
+ * (https://reactnative.dev/docs/accessibility), and it is how the photo becomes
+ * openable at all with TalkBack on: the tap that opens the viewer for everyone
+ * else is a native RNGH recogniser, which a screen reader cannot see.
+ *
+ * Hoisted to module scope so it is not a fresh array on every render of every
+ * photo in the transcript.
+ */
+const ACTIVATE_ACTION = [{ name: 'activate' as const }];
 
 /** The message this one is replying to, rendered inside the bubble above the body. */
 export interface Quote {
@@ -186,6 +196,14 @@ interface Shared {
   onReportMessage?: (messageId: string) => void;
   /** Which emoji the caller already has on this message. */
   chosenReaction?: ReactionEmoji | null;
+  /**
+   * Tapping a photo opens it full screen.
+   *
+   * The viewer itself is hosted by ChatScreen, not here: a Modal declared inside
+   * a FlashList cell unmounts with the cell when the list recycles it, and the
+   * transcript recycles while a paid session is delivering messages.
+   */
+  onOpenImage?: (image: ImageBody) => void;
 }
 
 /**
@@ -325,6 +343,7 @@ function MediaBubble({
   pending,
   timestamp,
   receipt,
+  onTap,
 }: {
   image: ImageBody;
   onAccent: boolean;
@@ -332,6 +351,12 @@ function MediaBubble({
   /** Rendered INSIDE the image box. See `mediaTime`. */
   timestamp?: string;
   receipt?: 'sent' | 'read';
+  /**
+   * Open the photo full screen. Taken here ONLY for the screen-reader path: the
+   * pointer gesture that does the same thing lives on `InteractiveBubble`, and
+   * TalkBack cannot see an RNGH recogniser.
+   */
+  onTap?: () => void;
 }) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -391,6 +416,19 @@ function MediaBubble({
             source={{ uri }}
             style={styles.mediaImage}
             resizeMode="cover"
+            /* The photo is now openable, so it declares itself a control and
+               offers the standard `activate` action TalkBack raises on a double
+               tap. `imagebutton` is "used when the element should be treated as
+               a button and is also an image".
+               https://reactnative.dev/docs/accessibility
+               Deliberately NOT on the InteractiveBubble wrapper: an
+               accessibilityLabel there REPLACES the concatenated child text and
+               made the whole transcript unreadable once before
+               (platform.test.ts pins that rule). */
+            accessible
+            accessibilityRole="imagebutton"
+            accessibilityActions={ACTIVATE_ACTION}
+            onAccessibilityAction={onTap}
             accessibilityLabel={
               pending && uploadFraction !== undefined
                 ? `Sending photo, ${Math.round(uploadFraction * 100)} percent`
@@ -454,11 +492,6 @@ function MediaBubble({
 
 interface PeerProps extends Shared {
   message: string;
-  initial: string;
-  /** Profile image shown before the first bubble in each peer-message group. */
-  avatarUri?: string | null;
-  /** First of a group shows the avatar; continued turns keep the slot, hide the mark. */
-  first: boolean;
   animate?: boolean;
 }
 
@@ -486,18 +519,39 @@ interface PeerProps extends Shared {
  * compensating for the missing fill, and a filled bubble with a stroke is neither
  * platform's bubble. `text/primary` on `bg/sunken` measures about 13:1.
  *
- * Both sides are `maxWidth: '80%'` now. They disagreed before, the peer column
- * was width-limited by a `paddingRight` and mine by a percentage, which came to
- * 274pt against 262pt on a 360pt screen.
+ * Both sides are `maxWidth: '80%'` now, and as of the avatar removal below that
+ * is finally TRUE rather than merely written down. They disagreed twice: first
+ * the peer column was width-limited by a `paddingRight` and mine by a percentage
+ * (274pt against 262pt on a 360pt screen), and then both read `'80%'` while the
+ * peer's 80% was taken of a column already 34dp narrower than mine.
  *
- * The avatar slot is still always reserved, so the text edge never shifts between
- * a first and a continued turn.
+ * THE IN-TRANSCRIPT AVATAR IS GONE, and this is the third reversal in this file.
+ *
+ * It was a 26dp `slot` plus `peerRow`'s `space.xs` gap, so an incoming bubble's
+ * left edge sat at 16 + 26 + 8 = 50dp while the composer capsule's left edge and
+ * the outgoing bubble's right edge both sat 16dp from their side. One grid on one
+ * edge and a different grid on the other is the thing this file and
+ * `Composer.tsx`'s CAPSULE_MIN_H are jointly about; `chatSurface.test.ts` could
+ * only ever assert the outgoing half of it because the incoming half was wrong.
+ *
+ * Amit, asked directly and answering directly: "Remove it, align the grid."
+ * The supporting facts, all checkable: this app is exclusively 1:1, so an avatar
+ * in the transcript identifies nobody — Telegram shows none in a 1:1 thread,
+ * which is exactly why its input bar traces its bubble grid; and the chat header
+ * already carries the peer's photo, name and presence (`ChatScreen`'s identity
+ * block, 30dp `Avatar` + `HeaderSubtitle`), so nothing is lost, only repeated.
+ *
+ * What that removes with it: `AVATAR_SLOT`, the `slot` spacer, the `initial` and
+ * `avatarUri` props, the `first` prop, `peerColumn`, and `peerRow`'s row
+ * direction and gap. `peerRow` is now the mirror of `myColumn` — full width,
+ * `2xs` gap, aligned to its own side — which is the symmetry the paragraphs above
+ * argue for, expressed in the layout instead of asserted in a comment.
+ *
+ * `first` still exists in `ChatScreen`, where it drives `turnOpensGroup`'s larger
+ * top padding. Grouping survives the avatar; it was never the avatar's job.
  */
 function PeerTurnView({
   message,
-  initial,
-  avatarUri,
-  first,
   timestamp,
   animate,
   quote,
@@ -512,6 +566,7 @@ function PeerTurnView({
   onReact,
   onReportMessage,
   chosenReaction,
+  onOpenImage,
 }: PeerProps) {
   const styles = useStyles(makeStyles);
   const target = useMemo<ActionTarget | null>(
@@ -521,61 +576,66 @@ function PeerTurnView({
         : null,
     [messageId, author, rawBody],
   );
+  // Built here rather than inline in the JSX so the bubble's `memo` still holds:
+  // `image` has a stable identity from ChatScreen's `rows` memo and
+  // `onOpenImage` is a stable useCallback, so this closure is stable too.
+  const openImage = useCallback(() => {
+    if (image !== undefined) {
+      onOpenImage?.(image);
+    }
+  }, [image, onOpenImage]);
   return (
     <Animated.View
       entering={animate === true ? bubbleArrive : undefined}
       style={styles.peerRow}
     >
-      <View style={styles.slot}>
-        {first ? <Avatar initial={initial} uri={avatarUri} size={26} /> : null}
-      </View>
-      <View style={styles.peerColumn}>
-        <View
-          style={[
-            styles.bubbleStack,
-            reactions && reactions.length > 0 ? styles.bubbleStackWithReaction : null,
-          ]}>
-          <InteractiveBubble
-            mine={false}
-            target={target}
-            bubbleStyle={styles.peerBubble}
-            media={image !== undefined}
-            onSwipeReply={onSwipeReply}
-            onReact={onReact}
-            onReportMessage={onReportMessage}
-            chosenReaction={chosenReaction}>
-            {image !== undefined ? (
-              /* Same fix as the outgoing side: the timestamp is the photo's, so
-                 MediaBubble renders it inside the image's clipped box. A peer
-                 photo carries no delivery receipt, so none is passed. */
-              <MediaBubble
-                image={image}
-                onAccent={false}
+      <View
+        style={[
+          styles.bubbleStack,
+          reactions && reactions.length > 0 ? styles.bubbleStackWithReaction : null,
+        ]}>
+        <InteractiveBubble
+          mine={false}
+          target={target}
+          bubbleStyle={styles.peerBubble}
+          media={image !== undefined}
+          onTap={image !== undefined ? openImage : undefined}
+          onSwipeReply={onSwipeReply}
+          onReact={onReact}
+          onReportMessage={onReportMessage}
+          chosenReaction={chosenReaction}>
+          {image !== undefined ? (
+            /* Same fix as the outgoing side: the timestamp is the photo's, so
+               MediaBubble renders it inside the image's clipped box. A peer
+               photo carries no delivery receipt, so none is passed. */
+            <MediaBubble
+              image={image}
+              onAccent={false}
+              pending={false}
+              timestamp={timestamp}
+              onTap={openImage}
+            />
+          ) : (
+            <>
+              {quote ? <QuoteBlock quote={quote} onAccent={false} /> : null}
+              <Body
+                message={message}
+                voice={voice}
+                voicePlayer={voicePlayer}
                 pending={false}
+                onAccent={false}
+                textStyle={styles.peerText}
+                testID="bubble-peer"
                 timestamp={timestamp}
               />
-            ) : (
-              <>
-                {quote ? <QuoteBlock quote={quote} onAccent={false} /> : null}
-                <Body
-                  message={message}
-                  voice={voice}
-                  voicePlayer={voicePlayer}
-                  pending={false}
-                  onAccent={false}
-                  textStyle={styles.peerText}
-                  testID="bubble-peer"
-                  timestamp={timestamp}
-                />
-              </>
-            )}
-          </InteractiveBubble>
-          {reactions && reactions.length > 0 ? (
-            <View style={[styles.reactionAttach, styles.reactionAttachPeer]}>
-              <ReactionRow reactions={reactions} testID="reactions-peer" />
-            </View>
-          ) : null}
-        </View>
+            </>
+          )}
+        </InteractiveBubble>
+        {reactions && reactions.length > 0 ? (
+          <View style={[styles.reactionAttach, styles.reactionAttachPeer]}>
+            <ReactionRow reactions={reactions} testID="reactions-peer" />
+          </View>
+        ) : null}
       </View>
     </Animated.View>
   );
@@ -636,6 +696,7 @@ function MyTurnView({
   onReact,
   onReportMessage,
   chosenReaction,
+  onOpenImage,
 }: MineProps) {
   const styles = useStyles(makeStyles);
   const target = useMemo<ActionTarget | null>(
@@ -650,6 +711,12 @@ function MyTurnView({
         : null,
     [pending, messageId, author, rawBody],
   );
+  // See the twin in PeerTurnView: stable identity, so `memo` still holds.
+  const openImage = useCallback(() => {
+    if (image !== undefined) {
+      onOpenImage?.(image);
+    }
+  }, [image, onOpenImage]);
   return (
     <Animated.View entering={isNew === true ? bubbleLaunch : undefined} style={styles.myColumn}>
       <View
@@ -663,6 +730,7 @@ function MyTurnView({
           target={target}
           bubbleStyle={[styles.bubble, pending === true && styles.pending]}
           media={image !== undefined}
+          onTap={image !== undefined ? openImage : undefined}
           onSwipeReply={onSwipeReply}
           onReact={onReact}
           onReportMessage={onReportMessage}
@@ -675,6 +743,7 @@ function MyTurnView({
               pending={pending === true}
               timestamp={timestamp}
               receipt={pending ? undefined : receipt}
+              onTap={openImage}
             />
           ) : (
             <>
@@ -705,6 +774,17 @@ function MyTurnView({
 
 export const MyTurn = memo(MyTurnView);
 
+/**
+ * The drag that ACTIVATES a swipe-reply, and the ceiling on how far a TAP may
+ * travel and still count.
+ *
+ * One number with two consumers on purpose. Under it the pan cannot have
+ * activated, so a drag that quotes a message can never also open the photo
+ * viewer; over it the finger was never tapping. Two independently-chosen numbers
+ * would leave a band where both gestures are true at once.
+ */
+const REPLY_ACTIVATE = 16;
+
 /** Drag distance that commits a swipe-reply (Telegram ChatActivity.java:5033). */
 const REPLY_TRIGGER = 50;
 /** Hard clamp on the drag; Telegram does not rubber-band past this. */
@@ -734,6 +814,7 @@ function InteractiveBubble({
   chosenReaction,
   alignEnd,
   media,
+  onTap,
   children,
 }: {
   mine: boolean;
@@ -746,6 +827,8 @@ function InteractiveBubble({
   alignEnd?: boolean;
   /** When true, MediaBubble owns the frame — do not wrap in bubbleStyle. */
   media?: boolean;
+  /** Set on a photo bubble: a tap opens the full-screen viewer. */
+  onTap?: () => void;
   children: React.ReactNode;
 }) {
   const styles = useStyles(makeStyles);
@@ -796,7 +879,7 @@ function InteractiveBubble({
   }, [target, onSwipeReply]);
 
   const pan = Gesture.Pan()
-    .activeOffsetX([-16, 16])
+    .activeOffsetX([-REPLY_ACTIVATE, REPLY_ACTIVATE])
     .failOffsetY([-12, 12])
     .onUpdate(e => {
       // Peer: drag right; mine: drag left — both toward the screen edge, like WA.
@@ -833,10 +916,90 @@ function InteractiveBubble({
       runOnJS(openStrip)();
     });
 
-  const composed =
-    target === null ? pan : Gesture.Simultaneous(pan, longPress);
-  // Truthy iff the long-press strip is available — used for the accessibility hint
-  // so TalkBack appends the action description rather than replacing the message.
+  /*
+   * Tap opens the photo. Two bounds, and both are load-bearing.
+   *
+   * EXCLUSIVE with the long press, in that order. RNGH: "builds a composed
+   * gesture where only one of the provided gestures can become active. Priority
+   * is decided through the order of gestures: the first one has higher priority
+   * than the second one". So a 500ms hold opens the reaction strip and does NOT
+   * also open the viewer when the finger lifts. Simultaneous would do exactly
+   * that, because RNGH's Android tap defaults to
+   * `DEFAULT_MAX_DURATION_MS: Long = 500` (TapGestureHandler.kt) - the same 500
+   * the strip is built on, so the two would resolve together on every hold.
+   * https://docs.swmansion.com/react-native-gesture-handler/docs/fundamentals/gesture-composition/
+   *
+   * `maxDistance(REPLY_ACTIVATE)` is the pan's own activation offset. RNGH's
+   * Android tap has NO distance limit by default (`maxDist = MAX_VALUE_IGNORE`,
+   * TapGestureHandler.kt), and `pan` runs Simultaneous rather than racing, so
+   * without this bound a completed swipe-to-reply would ALSO register as a tap
+   * and open the viewer on top of the quote it just made.
+   */
+  const openViewer = onTap;
+  const tap = Gesture.Tap()
+    .maxDistance(REPLY_ACTIVATE)
+    .onEnd((_e, success) => {
+      if (success && openViewer !== undefined) {
+        runOnJS(openViewer)();
+      }
+    });
+
+  /*
+   * The nesting is supported and deliberate: `SimultaneousGesture.prepare()`
+   * flattens its siblings but explicitly leaves a nested ExclusiveGesture alone
+   * ("we don't want to make exclusive gestures simultaneous",
+   * gestureComposition.ts), so the drag stays simultaneous with both while the
+   * tap still waits for the long press to fail.
+   *
+   * The `target === null` branch matters: an outgoing photo that is still
+   * uploading has no action target and therefore no long press, and it must
+   * still open from its local file.
+   */
+  const discrete =
+    target !== null && onTap !== undefined
+      ? Gesture.Exclusive(longPress, tap)
+      : target !== null
+        ? longPress
+        : onTap !== undefined
+          ? tap
+          : null;
+  const composed = discrete === null ? pan : Gesture.Simultaneous(pan, discrete);
+  /*
+   * Truthy iff the long-press strip is available — used for the accessibility
+   * hint below rather than for a LABEL, because a label here replaces the
+   * concatenated child text and made the whole transcript unreadable once.
+   *
+   * ------------------------------------------------------------------------
+   * AUDIT NOTE (2026-09-07), recorded because a claim about it was checked and
+   * found wrong, and because what IS wrong is worth knowing.
+   * ------------------------------------------------------------------------
+   * The claim: "the TalkBack `activate` path on the photo may be unreachable on
+   * API 24-25 because this wrapper already carries an accessibilityHint, and
+   * minSdk is 24." It is not. Read in RN 0.86:
+   *
+   *   - `ReactAccessibilityDelegate.setDelegate` installs its delegate only when
+   *     the view has an `accessibility_role`, `accessibility_state`,
+   *     `accessibility_actions`, `react_test_id`, `accessibility_collection_item`,
+   *     `accessibility_links` or `role` tag. `accessibility_hint` is NOT in that
+   *     list, and this Animated.View has none of the others.
+   *   - Even with a delegate, the hint maps to `info.tooltipText` and nothing
+   *     else, and `hasContentToAnnounce` (the condition that synthesises
+   *     `info.contentDescription = getTalkbackDescription(host, info)`) does not
+   *     include the hint.
+   *
+   * So this wrapper is not an accessibility node, does not set a
+   * contentDescription, and does not hide its descendants on ANY API level. The
+   * photo's own `accessibilityRole="imagebutton"` + `accessibilityActions` node
+   * inside MediaBubble keeps its focus and its `activate` action from 24 up.
+   *
+   * What the reading DID turn up: because no delegate is installed here, this
+   * hint is inert on every API level — "Long press for message actions" is never
+   * announced. Fixing that means making the bubble wrapper an accessibility node
+   * (an `accessibilityActions` entry is the cheapest tag that installs the
+   * delegate), which collapses the bubble into one TalkBack node and would take
+   * the photo's own `activate` node with it. That is a transcript-wide
+   * accessibility change, not a nit, and it is deliberately NOT made here.
+   */
   const onLongPress = target !== null ? openStrip : undefined;
   const slideStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: tx.value }],
@@ -1031,16 +1194,19 @@ function ReactionRow({
 
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
+    /*
+     * The incoming column, and the exact mirror of `myColumn` below.
+     *
+     * It was `flexDirection: 'row'` with a 26dp avatar `slot` and a `space.xs`
+     * gap in front of the bubble, which pushed an incoming bubble's left edge to
+     * 16 + 26 + 8 = 50dp against the composer capsule's 16dp. With the avatar
+     * gone (see PeerTurnView) there is one child, so there is no row: full width,
+     * aligned to the leading edge, `2xs` between the bubble and its reaction
+     * chip. `bubbleStack`'s `maxWidth: '80%'` is now taken of the SAME width the
+     * outgoing side measures against, which is what makes the two `'80%'`s equal.
+     */
     peerRow: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      gap: TOKENS.space.xs,
-    },
-    slot: {
-      width: AVATAR_SLOT,
-    },
-    peerColumn: {
-      flex: 1,
+      width: '100%',
       alignItems: 'flex-start',
       gap: TOKENS.space['2xs'],
     },

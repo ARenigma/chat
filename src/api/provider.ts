@@ -21,8 +21,10 @@ import type {
   PresenceChoice,
   Profile,
   ProviderEarnings,
+  ProviderPhoto,
   ProviderRatings,
 } from '../lib/database.types';
+import { MAX_PROVIDER_PHOTOS } from '../lib/database.types';
 import { track } from '../lib/telemetry';
 import { errorTick, tick } from '../lib/haptics';
 import {
@@ -40,6 +42,8 @@ export const providerKeys = {
   payoutAccount: ['provider-payout-account'] as const,
   payoutReadiness: ['provider-payout-readiness'] as const,
   tax: ['provider-tax-profile'] as const,
+  /** One gallery per provider, so the id is part of the key (migration 070). */
+  photos: (providerId: string) => ['provider-photos', providerId] as const,
 };
 
 export type PayoutMethod = 'upi' | 'bank';
@@ -768,6 +772,284 @@ export function useSetClayAvatar() {
     onError: () => {
       errorTick();
       setNotice('Could not update your avatar. Try again.');
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// The gallery (migration 070). A provider publishes several photos and marks
+// one as the face; `profiles.avatar_url` mirrors that one by trigger, so
+// nothing here ever writes avatar_url and nothing else in the app has to learn
+// about this table.
+// ---------------------------------------------------------------------------
+
+/**
+ * The object key inside the public `avatars` bucket for a stored avatar URL, or
+ * null for anything else — a bundled `clay:<seed>` sentinel, a foreign CDN, a
+ * malformed string.
+ *
+ * Null rather than a throw: removing the ROW is the operation that matters, and
+ * a key we cannot parse means the object is left to the orphan sweep, which is
+ * the same trade `useRemoveAvatar` already makes above.
+ *
+ * https://supabase.com/docs/reference/javascript/storage-from-remove
+ */
+export function avatarObjectKey(url: string): string | null {
+  const marker = '/storage/v1/object/public/avatars/';
+  const at = url.indexOf(marker);
+  if (at < 0) {
+    return null;
+  }
+  const key = url.slice(at + marker.length).split('?')[0] ?? '';
+  return key === '' ? null : key;
+}
+
+/**
+ * A provider's published photos, primary first and then oldest.
+ *
+ * That order is the same order the detail hero pages in, so page 1 is always
+ * the face and always matches the avatar the member has already seen in the
+ * directory, the rail and the push notification.
+ */
+export function useProviderPhotos(providerId: string | null) {
+  return useQuery<ProviderPhoto[]>({
+    queryKey: providerKeys.photos(providerId ?? ''),
+    enabled: providerId !== null,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('provider_photos')
+        .select('id, provider_id, url, is_primary, created_at')
+        .eq('provider_id', providerId as string)
+        .order('is_primary', { ascending: false })
+        .order('created_at', { ascending: true });
+      if (error) {
+        throw new Error(error.message);
+      }
+      return data ?? [];
+    },
+  });
+}
+
+/**
+ * Throw away storage objects a failed batch has already uploaded.
+ *
+ * `useAddProviderPhotos` uploads every object BEFORE the row insert, because
+ * the row's `url` is not known until the object exists. If the insert is then
+ * refused — the P0010 ceiling, or the missing-relation error before 070 is
+ * applied — the objects are unreachable by any row and would sit in the bucket
+ * until the orphan sweep. This deletes exactly the keys THIS call created, so a
+ * pre-existing photo can never be caught by it, and one `remove` call rather
+ * than one per key because that is the API's shape (and its 1000-key limit is
+ * two orders of magnitude above `MAX_PROVIDER_PHOTOS`).
+ * https://supabase.com/docs/guides/storage/management/delete-objects
+ *
+ * Failure-tolerant by construction: `remove` reports through `{ error }` rather
+ * than throwing, and both that and an unexpected throw are swallowed here so
+ * the caller can raise the ORIGINAL insert failure — the one the provider needs
+ * to see. A cleanup that could not run leaves the same orphan we started with,
+ * which is the trade `useRemoveProviderPhoto` and `useRemoveAvatar` already
+ * make; it is logged in dev, like the auth-callback diagnostics.
+ */
+async function discardUploads(paths: string[]): Promise<void> {
+  if (paths.length === 0) {
+    return;
+  }
+  try {
+    const { error } = await supabase.storage.from('avatars').remove(paths);
+    if (error !== null && __DEV__) {
+      console.warn(`provider photos: ${paths.length} uploads left orphaned: ${error.message}`);
+    }
+  } catch (err) {
+    if (__DEV__) {
+      console.warn(`provider photos: could not discard ${paths.length} uploads`, err);
+    }
+  }
+}
+
+/**
+ * Publish one or more photos.
+ *
+ * Reuses 038's public `avatars` bucket and 013's `{uid}/{stamp}.{ext}` path
+ * shape through the same RN-FormData POST `useUploadAvatar` uses above — a
+ * second upload path would be a second set of storage policies to keep right.
+ * The only difference is the destination of the URL: a row in
+ * `provider_photos` rather than `profiles.avatar_url`, which the 070 trigger
+ * writes from the primary row.
+ *
+ * The rows go in as ONE insert so the gallery either gains all of the batch or
+ * none of it, and so the database's ceiling sees the true count.
+ *
+ * https://developer.android.com/training/data-storage/shared/photopicker
+ */
+export function useAddProviderPhotos() {
+  const queryClient = useQueryClient();
+  const setNotice = useStore(s => s.setNotice);
+
+  return useMutation<number, Error, { uri: string; mime?: string }[]>({
+    mutationFn: async drafts => {
+      const { data: auth } = await supabase.auth.getUser();
+      const me = auth.user?.id;
+      const session = (await supabase.auth.getSession()).data.session;
+      if (me === undefined || session?.access_token === undefined) {
+        throw new Error('No session');
+      }
+
+      // Two parallel lists on purpose: the row takes the public URL, the
+      // cleanup below takes the object key, and deriving one from the other
+      // after the fact would mean re-parsing a URL we already have the key for.
+      const urls: string[] = [];
+      const uploaded: string[] = [];
+      for (const [index, draft] of drafts.entries()) {
+        const mime = draft.mime ?? 'image/jpeg';
+        const ext = mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : 'jpg';
+        const path = `${me}/${Date.now()}-${index}.${ext}`;
+        const form = new FormData();
+        form.append('cacheControl', '3600');
+        form.append('', {
+          uri:
+            draft.uri.startsWith('file://') || draft.uri.startsWith('content://')
+              ? draft.uri
+              : `file://${draft.uri}`,
+          name: `photo.${ext}`,
+          type: mime,
+        } as unknown as Blob);
+
+        const response = await fetch(
+          `${ENV.supabaseUrl}/storage/v1/object/avatars/${path}`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+              apikey: ENV.supabaseAnonKey,
+              'x-upsert': 'true',
+            },
+            body: form,
+          },
+        );
+        // One bad frame out of five should not lose the other four; the ones
+        // that landed are still worth publishing.
+        if (response.ok) {
+          urls.push(`${ENV.supabaseUrl}/storage/v1/object/public/avatars/${path}`);
+          uploaded.push(path);
+        }
+      }
+
+      if (urls.length === 0) {
+        throw new Error('UPLOAD');
+      }
+
+      const { error } = await supabase
+        .from('provider_photos')
+        .insert(urls.map(url => ({ provider_id: me, url })));
+      if (error) {
+        // The batch was refused, so every object uploaded for it is now an
+        // orphan: no row points at it and nothing in the app will ever ask for
+        // it again. Awaited before the throw so the notice the provider reads
+        // is not racing a delete, and swallowed inside `discardUploads` so a
+        // failed cleanup cannot replace the reason the insert failed.
+        await discardUploads(uploaded);
+        // P0010 is the 070 ceiling. Matched on the code first, because the
+        // message is the database's wording and not ours to depend on.
+        throw new Error(
+          error.code === 'P0010' || /at most \d+ photos/.test(error.message)
+            ? 'CAP'
+            : error.message,
+        );
+      }
+      return urls.length;
+    },
+    onSuccess: () => {
+      tick();
+      setNotice('Photos added. Members will see them on your profile.', 'confirm');
+      void queryClient.invalidateQueries({ queryKey: ['provider-photos'] });
+      void queryClient.invalidateQueries({ queryKey: keys.profile });
+      void queryClient.invalidateQueries({ queryKey: keys.providers });
+    },
+    onError: err => {
+      errorTick();
+      setNotice(
+        err.message === 'CAP'
+          ? `You can publish up to ${MAX_PROVIDER_PHOTOS} photos.`
+          : 'Could not upload those photos. Try again.',
+      );
+    },
+  });
+}
+
+/**
+ * Make one photo the face.
+ *
+ * ONE statement: the 070 BEFORE trigger demotes the previous primary and the
+ * AFTER trigger rewrites `profiles.avatar_url`, so the client never issues a
+ * second write that could race the first — and the partial unique index never
+ * sees two primaries.
+ */
+export function useSetPrimaryPhoto() {
+  const queryClient = useQueryClient();
+  const setNotice = useStore(s => s.setNotice);
+
+  return useMutation<void, Error, string>({
+    mutationFn: async photoId => {
+      const { error } = await supabase
+        .from('provider_photos')
+        .update({ is_primary: true })
+        .eq('id', photoId);
+      if (error) {
+        throw new Error(error.message);
+      }
+    },
+    onSuccess: () => {
+      tick();
+      void queryClient.invalidateQueries({ queryKey: ['provider-photos'] });
+      void queryClient.invalidateQueries({ queryKey: keys.profile });
+      void queryClient.invalidateQueries({ queryKey: keys.providers });
+    },
+    onError: () => {
+      errorTick();
+      setNotice('Could not change your main photo.');
+    },
+  });
+}
+
+/**
+ * Unpublish one photo.
+ *
+ * The row goes first and the storage object second, best-effort: an orphaned
+ * object is the sweep's problem, whereas a row pointing at a deleted object is
+ * a broken hero a member sees. If the deleted photo was the primary, the 070
+ * trigger promotes the oldest survivor and moves `avatar_url` with it.
+ */
+export function useRemoveProviderPhoto() {
+  const queryClient = useQueryClient();
+  const setNotice = useStore(s => s.setNotice);
+
+  return useMutation<void, Error, ProviderPhoto>({
+    mutationFn: async photo => {
+      const { error } = await supabase.from('provider_photos').delete().eq('id', photo.id);
+      if (error) {
+        throw new Error(error.message);
+      }
+      const key = avatarObjectKey(photo.url);
+      if (key !== null) {
+        // Swallowed on purpose: the row is gone, which is what members see, and
+        // a surviving object is the orphan sweep's problem — exactly the trade
+        // useRemoveAvatar already makes.
+        await supabase.storage
+          .from('avatars')
+          .remove([key])
+          .catch(() => undefined);
+      }
+    },
+    onSuccess: () => {
+      tick();
+      void queryClient.invalidateQueries({ queryKey: ['provider-photos'] });
+      void queryClient.invalidateQueries({ queryKey: keys.profile });
+      void queryClient.invalidateQueries({ queryKey: keys.providers });
+    },
+    onError: () => {
+      errorTick();
+      setNotice('Could not remove that photo.');
     },
   });
 }

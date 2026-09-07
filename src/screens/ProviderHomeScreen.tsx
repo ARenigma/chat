@@ -1,22 +1,52 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { SectionList, StyleSheet, Text, View } from 'react-native';
+import { Image, PixelRatio, SectionList, StyleSheet, Text, View } from 'react-native';
+import { launchImageLibrary } from 'react-native-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import type { ConversationSummary } from '../lib/database.types';
+import type { ConversationSummary, ProviderPhoto } from '../lib/database.types';
+import { MAX_PROVIDER_PHOTOS } from '../lib/database.types';
 import { initialOf } from '../lib/display';
 import { readPresence } from '../lib/presence';
 import { SCROLL_PHYSICS } from '../lib/scroll';
+import { sizedStorageImageUri } from '../lib/storageImage';
 import { listStamp } from '../lib/datetime';
 import { track } from '../lib/telemetry';
 import { useConversations, useProfile } from '../api/chat';
-import { useEarnings, useSetAvailability, useSetChannels } from '../api/provider';
+import {
+  useAddProviderPhotos,
+  useEarnings,
+  useProviderPhotos,
+  useRemoveProviderPhoto,
+  useSetAvailability,
+  useSetChannels,
+  useSetPrimaryPhoto,
+} from '../api/provider';
 import { Avatar } from '../components/Avatar';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { LoadingIndicator } from '../components/LoadingIndicator';
 import { ROW_AVATAR, ROW_SEPARATOR_INSET } from '../components/ProviderRow';
 import { Icon, type IconName } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { Toggle } from '../components/Toggle';
+
+/**
+ * The gallery tile, in dp. A measured size gets a name rather than sitting as a
+ * bare number in three style blocks: three across the 360dp column with the
+ * card's own 16dp margins and a 12dp gutter.
+ */
+const PHOTO_TILE = 88;
+
+/**
+ * The remove badge's drawn size, in dp. Named because the touch target is
+ * DERIVED from it rather than declared: `Pressable`'s `size` prop turns this
+ * into `hitSlop = ceil((interaction.minTarget - 24) / 2) = 12` on every side,
+ * so a 24dp disc is pressable across 48dp — "we recommend that each interactive
+ * UI element have a focusable area, or touch target size, of at least 48dp ×
+ * 48dp".
+ * https://developer.android.com/guide/topics/ui/accessibility/apps
+ */
+const REMOVE_BADGE = 24;
 
 interface Props {
   onOpenConversation: (peerId: string) => void;
@@ -67,8 +97,15 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
   const { data: earnings } = useEarnings();
   const setAvailability = useSetAvailability();
   const setChannels = useSetChannels();
+  const { data: photos } = useProviderPhotos(profile?.id ?? null);
+  const addPhotos = useAddProviderPhotos();
+  const setPrimary = useSetPrimaryPhoto();
+  const removePhoto = useRemoveProviderPhoto();
 
   const [tab, setTab] = useState<Tab>('chats');
+  const [pendingDelete, setPendingDelete] = useState<ProviderPhoto | null>(null);
+  const gallery = photos ?? [];
+  const remaining = MAX_PROVIDER_PHOTOS - gallery.length;
   const available = profile?.is_available ?? false;
   // What they are willing to do, which is a different question from whether
   // they are taking anyone new (migration 064). Default on, so a provider whose
@@ -117,6 +154,43 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
     },
     [setChannels],
   );
+
+  /**
+   * Add photos.
+   *
+   * `selectionLimit` greater than 1 routes through `PickMultipleVisualMedia` —
+   * the system photo picker, which requires NO runtime permission and is not the
+   * MediaStore / READ_MEDIA_IMAGES path AttachPanel refuses on Play-policy
+   * grounds. That is already proven in Composer on the installed
+   * react-native-image-picker 7.2.3, so this adds no dependency and no native
+   * change (RULE 5).
+   *
+   * Clamped to the free slots so the picker never hands back more than the 070
+   * trigger will accept; a clamp of 1 is plain single-select, which is the right
+   * behaviour for the last slot.
+   *
+   * https://developer.android.com/training/data-storage/shared/photopicker
+   */
+  const pickPhotos = useCallback(async () => {
+    if (remaining <= 0) {
+      return;
+    }
+    const result = await launchImageLibrary({
+      mediaType: 'photo',
+      selectionLimit: Math.max(1, remaining),
+      quality: 0.9,
+    }).catch(() => null);
+    if (result === null || result.didCancel === true) {
+      return;
+    }
+    const drafts = (result.assets ?? [])
+      .filter(a => a.uri !== undefined)
+      .slice(0, remaining)
+      .map(a => ({ uri: a.uri as string, mime: a.type }));
+    if (drafts.length > 0) {
+      addPhotos.mutate(drafts);
+    }
+  }, [remaining, addPhotos]);
 
   // Only work counts as waiting. Their own thread is not a person waiting on them.
   const waiting = work.filter(t => Number(t.unread_count_provider) > 0).length;
@@ -334,6 +408,139 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
                 })}
               </View>
 
+              {/* The gallery (migration 070). It lives HERE and not in the
+                  one-time application flow, because this is the surface a
+                  provider comes back to when they want to change what members
+                  see — next to what they are open to and what they offer. */}
+              <View style={styles.photos} testID="provider-photos">
+                <Text allowFontScaling style={styles.channelsLabel}>
+                  Your photos
+                </Text>
+                <Text allowFontScaling style={styles.channelHint}>
+                  Members swipe these on your profile. Tap one to make it your main photo.
+                </Text>
+                {/* One-of-N, so radios and not switches. Toggle.tsx is an M3
+                    SWITCH (accessibilityRole="switch"), and a row of switches
+                    would say each photo can be the main one independently —
+                    which the database (provider_photos_one_primary) makes
+                    untrue. Same control the age brackets and the rating stars
+                    already use.
+                    https://m3.material.io/components/radio-button/guidelines */}
+                <View style={styles.photoStrip} accessibilityRole="radiogroup">
+                  {gallery.map((p, i) => (
+                    <View key={p.id}>
+                      <Pressable
+                        onPress={() => {
+                          if (!p.is_primary) {
+                            setPrimary.mutate(p.id);
+                          }
+                        }}
+                        disabled={setPrimary.isPending}
+                        testID={`photo-primary-${i}`}
+                        accessibilityRole="radio"
+                        checked={p.is_primary}
+                        accessibilityLabel={`Photo ${i + 1} of ${gallery.length}`}
+                        accessibilityHint="Makes this your main photo"
+                        press="card"
+                        highlight="material"
+                        style={[styles.photoTile, p.is_primary && styles.photoTilePrimary]}>
+                        <Image
+                          source={{
+                            uri: sizedStorageImageUri(
+                              p.url,
+                              PHOTO_TILE,
+                              PHOTO_TILE,
+                              PixelRatio.get(),
+                            ),
+                          }}
+                          style={styles.photoImg}
+                        />
+                        {p.is_primary ? (
+                          <View style={styles.photoBadge}>
+                            <Icon name="check" size={14} color={theme.color.text.onAccent} />
+                          </View>
+                        ) : null}
+                      </Pressable>
+                      {/* Removal is its own small target rather than a second
+                          full-width button per photo, and it opens a
+                          confirmation rather than acting — the two controls
+                          overlap at the corner, so a mis-tap has to be
+                          recoverable.
+
+                          THE ABSOLUTE POSITION LIVES ON THIS WRAPPER VIEW, NOT
+                          ON THE PRESSABLE — the same gotcha as the favourite
+                          heart in ProviderDetailScreen.tsx, and the same fix.
+                          `Pressable` splits the caller's style: only the
+                          box-sizing keys (BOX_KEYS in Pressable.tsx) reach the
+                          touchable root, and `position`/`top`/`right` stay on
+                          the inner Animated.View. Set on the Pressable they
+                          therefore anchored the badge to the Pressable's own
+                          24dp box, and the control laid out in normal flow
+                          BELOW the tile instead of on its corner.
+
+                          The 48dp target survives the move: `size` is what makes
+                          the hitSlop arithmetic explicit (24 + 2×12), and the
+                          slop reaching 8dp past the tile's top and right edges
+                          is genuinely pressable, not merely declared. Three
+                          things in RN 0.86 have to hold for that and all three
+                          were read rather than assumed:
+                            * `ReactViewGroup.initView` sets
+                              `clipChildren = false` (ReactViewGroup.kt:172), so
+                              a child outside the parent's box still draws and
+                              still hit-tests;
+                            * `TouchTargetHelper.findTouchTargetView` only
+                              refuses an out-of-bounds descendant when the
+                              ancestor's overflow is hidden/scroll or it clips
+                              (TouchTargetHelper.kt:188-208) — every ancestor
+                              here is an overflow-visible View, and the tile's
+                              own `overflow: 'hidden'` is on a SIBLING;
+                            * a child's hitSlop is unioned into the parent's
+                              overflow inset by Fabric itself —
+                              `contentBounds.unionInPlace(outsetBy(frame,
+                              hitSlop))`, YogaLayoutableShadowNode.cpp:777 — so
+                              the inset the check above consults already
+                              includes this slop.
+                          https://reactnative.dev/docs/pressable#hitslop */}
+                      <View style={styles.photoRemoveSlot}>
+                        <Pressable
+                          onPress={() => setPendingDelete(p)}
+                          testID={`photo-remove-${i}`}
+                          accessibilityLabel={`Remove photo ${i + 1}`}
+                          press="none"
+                          highlight="dim"
+                          size={REMOVE_BADGE}
+                          style={styles.photoRemove}>
+                          <Icon name="close" size={14} color={theme.color.text.onInverse} />
+                        </Pressable>
+                      </View>
+                    </View>
+                  ))}
+                  {remaining > 0 ? (
+                    <Pressable
+                      onPress={() => {
+                        void pickPhotos();
+                      }}
+                      /* `disabled` while the upload is in flight, not `busy`.
+                         `busy` is the held-compression state that pairs with
+                         `busyLabel` — the participle a Button swaps into its
+                         label — and this tile has no label to swap; Pressable
+                         accordingly has no `busyLabel`. contract.test's
+                         "narrates every mutation a button starts" counts the two
+                         props together for exactly that reason, so an icon-only
+                         control says "not now" instead of pretending to narrate.
+                         The outcome arrives as a notice. */
+                      disabled={addPhotos.isPending}
+                      testID="photo-add"
+                      accessibilityLabel={`Add photos, ${remaining} of ${MAX_PROVIDER_PHOTOS} slots free`}
+                      press="card"
+                      highlight="material"
+                      style={[styles.photoTile, styles.photoAdd]}>
+                      <Icon name="plus" size={24} color={theme.color.text.secondary} />
+                    </Pressable>
+                  ) : null}
+                </View>
+              </View>
+
               {/* Earnings — motivating, never a bleak "0". 1 token = ₹1 (ADR-0021). */}
               <View style={styles.earnCard}>
                 <Text allowFontScaling style={styles.earnLabel}>
@@ -379,6 +586,32 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
           )}
         />
       )}
+
+      {/* Removing a photo is not undoable — the object goes with the row — so it
+          takes M3's basic confirmation dialog, with the consequence named rather
+          than a vague "are you sure". */}
+      <ConfirmDialog
+        visible={pendingDelete !== null}
+        title="Remove this photo?"
+        body={
+          pendingDelete?.is_primary === true
+            ? 'It is your main photo. The next one becomes your main photo.'
+            : 'Members will no longer see it on your profile.'
+        }
+        cancelLabel="Keep"
+        confirmLabel="Remove"
+        destructive
+        busy={removePhoto.isPending}
+        busyLabel="Removing"
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => {
+          if (pendingDelete !== null) {
+            removePhoto.mutate(pendingDelete);
+          }
+          setPendingDelete(null);
+        }}
+        testID="photo-remove-confirm"
+      />
 
       {/* Two-tab bottom nav. Named `tabs`/`tab` so the component-height gate does
           not read it as an M3 row/bar. */}
@@ -524,6 +757,69 @@ const makeStyles = (t: Theme) =>
       borderTopColor: t.color.border.hairline,
     },
     channelsLabel: { ...TOKENS.typography.labelMedium, color: t.color.text.secondary },
+    /*
+     * The gallery block. Hairline-topped like `channels`, but with the same
+     * horizontal margin as `availability` and `earnCard` so its label and tiles
+     * line up with the rest of the tab rather than running to the screen edge.
+     */
+    photos: {
+      gap: TOKENS.space.sm,
+      marginHorizontal: TOKENS.space.md,
+      paddingTop: TOKENS.space.sm,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: t.color.border.hairline,
+    },
+    photoStrip: { flexDirection: 'row', flexWrap: 'wrap', gap: TOKENS.space.sm },
+    photoTile: {
+      width: PHOTO_TILE,
+      height: PHOTO_TILE,
+      borderRadius: TOKENS.radius.field,
+      borderCurve: 'continuous',
+      overflow: 'hidden',
+      backgroundColor: t.color.bg.sunken,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    // The main photo is marked twice — a border AND the check badge — because a
+    // ring alone is a colour-only signal (WCAG 2.2 SC 1.4.1).
+    photoTilePrimary: { borderWidth: 2, borderColor: t.color.border.accent },
+    photoImg: { width: '100%', height: '100%' },
+    photoBadge: {
+      position: 'absolute',
+      left: TOKENS.space['2xs'],
+      bottom: TOKENS.space['2xs'],
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: t.color.bg.accent,
+    },
+    photoAdd: {
+      borderWidth: 1,
+      borderColor: t.color.border.strong,
+      backgroundColor: 'transparent',
+    },
+    /*
+     * The corner the remove control hangs on. POSITION ONLY, and that split is
+     * the point: `position`/`top`/`right` are the properties `Pressable` keeps
+     * on its inner view, so they have to be applied by a plain View that wraps
+     * it. The control's own box stays below, where Pressable forwards it to the
+     * touchable root.
+     */
+    photoRemoveSlot: {
+      position: 'absolute',
+      top: -TOKENS.space['2xs'],
+      right: -TOKENS.space['2xs'],
+    },
+    photoRemove: {
+      width: REMOVE_BADGE,
+      height: REMOVE_BADGE,
+      borderRadius: REMOVE_BADGE / 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(0,0,0,0.6)',
+    },
     channelRow: {
       flexDirection: 'row',
       alignItems: 'center',

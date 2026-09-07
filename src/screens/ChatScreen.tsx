@@ -93,6 +93,7 @@ import { Frost } from '../components/Frost';
 import { Icon } from '../components/Icon';
 import { NoticeBar } from '../components/NoticeBar';
 import { HeaderSubtitle } from '../components/HeaderSubtitle';
+import { MediaViewer } from '../components/MediaViewer';
 import { PeerTyping } from '../components/PeerTyping';
 import { Pressable } from '../components/Pressable';
 import { TokenCounter } from '../components/TokenCounter';
@@ -164,6 +165,35 @@ const OPENER_MS_PER_CHAR = 45;
 const OPENER_PAUSE_MS = 450;
 
 /**
+ * The height the header's identity column always reserves: the name's line box
+ * plus the presence line's, whether or not there is a presence line to show.
+ *
+ * Material 3 reserves top-app-bar height on the CONTAINER, not with a blank
+ * subtitle row. `TopAppBarLayout` composes the title as a two-child `Column`
+ * only `if (subtitle != null)` and a single `Box` otherwise, and `placeTopAppBar`
+ * then centres BOTH the navigation icon and the whole title block:
+ * `y = (contentHeight - navigationIconPlaceable.height) / 2` and
+ * `Arrangement.Center -> (contentHeight - titlePlaceable.height) / 2`
+ * (androidx.compose.material3 AppBar.kt). The bar's own floor is
+ * `AppBarSmallTokens.ContainerHeight = 64.dp`.
+ *
+ * Reserving it here, on the column, rather than only on the bar buys the same
+ * fixed height AND lets the single-line state centre on the avatar, which a
+ * reserved blank line cannot do: an always-rendered empty presence row pinned
+ * the name's cap band 8dp above the 30dp avatar's centre, which is the defect
+ * this fixes.
+ *
+ * Multiplied by `fontScale` at the call site rather than baked in: the title is
+ * capped at 1.5 (ADR-0024) and the presence line is uncapped, so `40 * s` is
+ * exactly the two-line content height for every s <= 1.5 and a safe upper bound
+ * above it. Either way the column is the same height in both presence states, so
+ * the bar cannot change height as presence arrives and goes.
+ */
+const IDENTITY_LINES =
+  TOKENS.typography.titleMediumEmphasized.lineHeight +
+  TOKENS.typography.labelMedium.lineHeight;
+
+/**
  * `inverted` is load-bearing: it anchors the transcript to the bottom, so a
  * keyboard opening or a bubble arriving changes nobody's scroll offset. Combined
  * with a stable `data` reference (the typing indicator lives in
@@ -179,7 +209,11 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { height: winH } = useWindowDimensions();
+  // `fontScale` is "the scale of the font currently used", and the hook
+  // "automatically updates all of its values when screen size or font scale
+  // changes" — the documented reactive source for the header's height
+  // reservation. https://reactnative.dev/docs/usewindowdimensions
+  const { height: winH, fontScale } = useWindowDimensions();
   // Explicit ref so we can force scrollToOffset(0) on every new message.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const listRef = useRef<FlashListRef<any>>(null);
@@ -236,6 +270,11 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   // The message the next send replies to. Cleared on send and on cancel, and
   // never persisted: a half-composed reply is not worth surviving a screen.
   const [replyTo, setReplyTo] = useState<ActionTarget | null>(null);
+  // The photo the full-screen viewer is showing, or null when it is closed.
+  // Held by the screen and not by the bubble: a Modal inside a FlashList cell
+  // unmounts when the list recycles that cell, which happens while messages
+  // arrive — so a viewer owned by the bubble would vanish mid-look.
+  const [viewerImage, setViewerImage] = useState<ImageBody | null>(null);
   // Dismissing the prompt is per-visit, not persisted. A member who says "not
   // now" and comes back tomorrow is a different question from one who said it a
   // second ago, and persisting it would need a key per conversation for a
@@ -999,6 +1038,10 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
     setSafety({ open: true, messageId });
   }, []);
 
+  /** Tapping a photo bubble opens it full screen; see `<MediaViewer />` below. */
+  const openImage = useCallback((image: ImageBody) => setViewerImage(image), []);
+  const closeImage = useCallback(() => setViewerImage(null), []);
+
   const renderItem = useCallback(
     ({ item }: ListRenderItemInfo<(typeof rows)[number]>) => {
       // Call log row: non-interactive inline entry.
@@ -1053,6 +1096,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
               onReact={reactOnMessage}
               onReportMessage={reportMessage}
               chosenReaction={chosen}
+              onOpenImage={openImage}
               receipt={
                 !isPending(message)
                   ? message.read_at !== null
@@ -1067,9 +1111,6 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
               // Only live arrivals animate in; history and paged-in rows mount
               // still. See `arrivalCutoff`.
               animate={Date.parse(message.created_at) > arrivalCutoff.current}
-              initial={initial}
-              avatarUri={avatarUrl}
-              first={first}
               timestamp={stamp}
               quote={quote}
               reactions={reactions}
@@ -1083,15 +1124,19 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
               onReact={reactOnMessage}
               onReportMessage={reportMessage}
               chosenReaction={chosen}
+              onOpenImage={openImage}
             />
           )}
         </View>
       );
     },
     [
-      avatarUrl,
-      initial,
+      // `avatarUrl` and `initial` left with the transcript avatar (see
+      // Turn.tsx's PeerTurnView): they are still read by the header identity
+      // block and by PeerTyping, but no longer by a row, so keeping them here
+      // would re-render every bubble whenever the peer changed their photo.
       name,
+      openImage,
       parents,
       reactOnMessage,
       reactionRows,
@@ -1105,8 +1150,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
   );
 
   const header = useCallback(
-    () => <PeerTyping initial={initial} name={name} />,
-    [initial, name],
+    () => <PeerTyping name={name} />,
+    [name],
   );
   // On an inverted list the footer renders at the visual TOP, so this reserves
   // the frosted bar's height there: the oldest message scrolls clear of the
@@ -1223,13 +1268,19 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
           highlight="dim"
           style={styles.identity}>
           <Avatar initial={initial} uri={avatarUrl} size={30} online={presence.here} />
-          <View style={styles.identityText}>
+          {/* The two-line reservation is on the COLUMN, and the column centres
+              whatever it actually has inside it — see IDENTITY_LINES. That is
+              what puts the name on the avatar's axis in the one-line state,
+              which a blank presence row could not do. */}
+          <View style={[styles.identityText, { minHeight: IDENTITY_LINES * fontScale }]}>
             <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} testID="chat-title" allowFontScaling numberOfLines={1} style={styles.title}>
               {name}
             </Text>
-            {/* Rendered even when it has nothing to say, so the header does not
-                change height as presence arrives and goes. `line` is null for
-                'hidden' and the empty string keeps the row reserved. */}
+            {/* Renders nothing when it has nothing to say, the way M3's own bar
+                composes no subtitle row when there is no subtitle. The height it
+                would have taken is reserved by the minHeight above, so the
+                header still does not change height as presence arrives and
+                goes. */}
             <HeaderSubtitle presence={presence} />
           </View>
         </Pressable>
@@ -1437,7 +1488,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
                 is most wanted: a new peer typing the first message in a thread
                 showed nothing at all. */}
             <View style={styles.starters}>
-              <PeerTyping initial={initial} name={name} />
+              <PeerTyping name={name} />
             </View>
           </View>
         ) : (
@@ -1599,6 +1650,12 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
         onCancel={() => setLeaveDialogVisible(false)}
         onConfirm={leaveIntent === 'end' ? confirmEnd : confirmLeave}
       />
+
+      {/* The full-screen photo. A sibling of the other Modal-hosted surfaces and
+          never open at the same time as one: the tap that opens it is Exclusive
+          with the long press that opens the reaction strip, so the two cannot
+          both resolve. */}
+      <MediaViewer image={viewerImage} onClose={closeImage} />
     </View>
     </ImeGeometryProvider>
   );
@@ -1730,6 +1787,12 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     paddingHorizontal: TOKENS.space.md,
     paddingTop: TOKENS.space.xs,
     paddingBottom: TOKENS.space.sm,
+    // The M3 small top app bar's container height, stated rather than left to
+    // arithmetic. `AppBarSmallTokens.ContainerHeight = 64.0.dp`, and the measure
+    // policy floors the bar at it — `max(height.roundToPx(), titlePlaceable.height)`
+    // — rather than letting it shrink to its content. 8 + 44 + 12 already lands
+    // on 64; this is what keeps it there if the identity block ever gets shorter.
+    minHeight: TOKENS.layout.appBarSmall,
     // No hairline here: `Frost edge="bottom"` draws the one edge, so the header
     // stays fully transparent and the blur reads to the bar's bottom lip.
   },
@@ -1815,8 +1878,20 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     borderRadius: TOKENS.radius.xs,
     borderCurve: 'continuous',
   },
+  // `flex: 1` is the horizontal fill (the main axis of `identity`).
+  // `justifyContent` centres the one-or-two lines inside the height reserved by
+  // IDENTITY_LINES, which is what M3 does with a title block shorter than its
+  // container: `Arrangement.Center -> (contentHeight - titlePlaceable.height) / 2`
+  // (androidx.compose.material3 AppBar.kt, `placeTopAppBar`).
+  //
+  // No marginTop, marginBottom or translateY nudge here or on `title`: every M3
+  // role carries `LineHeightStyle(alignment = Center, trim = None)`
+  // (TypographyTokens.kt), and RN 0.86's CustomLineHeightSpan splits the leading
+  // the same way, so block centring IS the spec and a hand-tuned offset would be
+  // a departure from it.
   identityText: {
     flex: 1,
+    justifyContent: 'center',
   },
   title: {
     ...TOKENS.typography.titleMediumEmphasized,
@@ -1837,7 +1912,27 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     right: 0,
     bottom: 0,
   },
-  // 40% black — Telegram's `alpha = 102` of 255, not a rounded-off "0.4-ish".
+  /*
+   * The transcript's content column, and one half of the chat's horizontal grid.
+   *
+   * `md` (16) is the same token Composer's `row.paddingHorizontal` and the reply
+   * strip's `marginHorizontal` read, so an outgoing bubble's outer edge and the
+   * composer capsule's outer edge land on the same x: 16 + 0 of bubble margin on
+   * one side, 16 + 0 of bar margin on the other. FlashList honours it — for a
+   * vertical list the cell width comes from the padded inner container — so the
+   * column really is [16, W-16].
+   *
+   * BOTH halves now. This comment used to end by excusing the incoming side —
+   * "deliberately inset further by the always-reserved 26dp avatar slot plus its
+   * 8dp gap; that is the avatar's column, not a different grid" — which was a
+   * 34dp asymmetry described as if it were intentional geometry. The avatar is
+   * gone (Turn.tsx's PeerTurnView carries the decision and the arithmetic), so an
+   * incoming bubble's left edge is 16 and an outgoing bubble's right edge is
+   * W-16: the same two columns the capsule sits in.
+   *
+   * (An earlier version of this comment described a 40% scrim that no longer
+   * exists anywhere in this file.)
+   */
   list: {
     paddingHorizontal: TOKENS.space.md,
   },
@@ -1870,7 +1965,12 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: TOKENS.space.xs,
-    marginHorizontal: TOKENS.space.xs,
+    // `md`, the same inset `list.paddingHorizontal` and Composer's
+    // `row.paddingHorizontal` use. It was `xs` (8), so while a reply was being
+    // composed the dock showed TWO gutters at once — the strip 8dp from the
+    // edge, the capsule directly under it 16dp — which is the one-grid read
+    // failing in the most visible place there is.
+    marginHorizontal: TOKENS.space.md,
     marginBottom: TOKENS.space['2xs'],
     paddingVertical: TOKENS.space.xs,
     paddingHorizontal: TOKENS.space.sm,

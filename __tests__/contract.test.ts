@@ -261,9 +261,18 @@ describe('GST is disclosed where money moves and nowhere else', () => {
 
   it('names GST on every recharge surface and on no chat surface', () => {
     // Positive: the pack cards (both hosts), the pay row and the payment sheet.
+    //
+    // The label these surfaces call is now the EXCLUSIVE one — the price is
+    // still GST-inclusive (ADR-0021, and create-order captures the pack price
+    // exactly), so the only honest tax-exclusive presentation of it is to name
+    // the pre-tax base and the tax separately rather than to add anything on
+    // top. What this gate cares about is unchanged: every surface where rupees
+    // move names the tax. Matching the family rather than one name so a future
+    // rename cannot silently empty the assertion the way it just did.
+    const NAMES_GST = /gstExclusive(Label|Parts)\(/g;
     const recharge = withoutComments(read('src/screens/RechargeScreen.tsx'));
-    expect(recharge.match(/gstIncludedLabel\(/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
-    expect(withoutComments(read('src/screens/PaymentSheet.tsx'))).toContain('gstIncludedLabel(');
+    expect(recharge.match(NAMES_GST)?.length ?? 0).toBeGreaterThanOrEqual(4);
+    expect(withoutComments(read('src/screens/PaymentSheet.tsx'))).toMatch(NAMES_GST);
 
     // Negative: tokens are prepaid, tax was settled when the rupees were paid.
     // A per-minute rate, a balance, a timer or a bubble that mentioned GST would
@@ -277,7 +286,7 @@ describe('GST is disclosed where money moves and nowhere else', () => {
         if (!file.endsWith('.tsx') || allowed.has(file)) {
           continue;
         }
-        expect({ file, mentionsGst: /\bGST\b|gst(Split|IncludedLabel|PercentLabel)/.test(withoutComments(read(`${dir}/${file}`))) })
+        expect({ file, mentionsGst: /\bGST\b|gst(Split|IncludedLabel|ExclusiveLabel|ExclusiveParts|PercentLabel)/.test(withoutComments(read(`${dir}/${file}`))) })
           .toEqual({ file, mentionsGst: false });
       }
     }
@@ -831,7 +840,16 @@ describe('gesture handling reaches every root', () => {
       .filter(s => /Gesture\.\w+\(/.test(s.body))
       .map(s => s.file)
       .sort();
-    expect(users).toEqual(['Sheet.tsx', 'SpotlightCard.tsx', 'Turn.tsx']);
+    // MediaViewer.tsx is the full-screen photo: swipe-down to dismiss and
+    // pinch to zoom, which are the two gestures a photo viewer is expected to
+    // have and which nothing else in the app can host — the viewer is a Modal,
+    // so its gestures cannot collide with the transcript's.
+    expect(users).toEqual([
+      'MediaViewer.tsx',
+      'Sheet.tsx',
+      'SpotlightCard.tsx',
+      'Turn.tsx',
+    ]);
   });
 });
 
@@ -1536,12 +1554,42 @@ describe('the redesign holds its own invariants', () => {
     expect(release).toContain('buildConfigField "boolean", "ALLOW_DEV_CAPTURE", "false"');
   });
 
-  it('renders the peer profile image before the first bubble in a group', () => {
-    const turn = read('src/components/Turn.tsx');
-    const chat = read('src/screens/ChatScreen.tsx');
-    expect(turn).toContain('avatarUri?: string | null');
-    expect(turn).toContain('<Avatar initial={initial} uri={avatarUri} size={26}');
-    expect(chat).toContain('avatarUri={avatarUrl}');
+  it('draws no avatar in the transcript, so both bubble edges are the composer edges', () => {
+    // SUPERSEDES 'renders the peer profile image before the first bubble in a
+    // group'. The incoming avatar shipped for months, and it is gone on a
+    // product decision (Amit, 2026-09-07: "remove it, align the grid").
+    //
+    // The reason is geometric, not cosmetic. A peer row was
+    // [26dp avatar][8dp gap][bubble], so an incoming bubble's left edge sat at
+    // 16 + 34 = 50dp while the composer capsule's edges are at 16dp and
+    // W - 16dp. The outgoing bubble already ended at W - 16, so the capsule
+    // traced the grid on the right and missed it by 34dp on the left, and a
+    // bubble scrolling under the capsule did not share its silhouette. This app
+    // is exclusively 1:1 and the header already carries the peer's avatar, name
+    // and presence, so the transcript copy was redundant as well as costly —
+    // which is also why Telegram, the reference, draws no avatar in a 1:1
+    // transcript and its input bar lines up.
+    //
+    // Comments stripped: the files still EXPLAIN the removed avatar at length,
+    // and a gate that reads prose would be satisfied by the explanation.
+    const turn = withoutComments(read('src/components/Turn.tsx'));
+    const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+    const typing = withoutComments(read('src/components/PeerTyping.tsx'));
+
+    // Nothing reintroduces the slot, the plumbing, or the component.
+    expect(turn).not.toContain('AVATAR_SLOT');
+    expect(turn).not.toContain('avatarUri');
+    expect(turn).not.toMatch(/from '\.\/Avatar'/);
+    expect(chat).not.toContain('avatarUri=');
+
+    // PeerTyping is the ListHeaderComponent and duplicated the same inset, so
+    // it has to lose it too or the typing bubble stands 34dp right of the
+    // message it precedes.
+    expect(typing).not.toMatch(/from '\.\/Avatar'/);
+    expect(typing).not.toMatch(/width:\s*26/);
+
+    // The header is where the avatar now lives, exclusively.
+    expect(chat).toContain('<Avatar initial={initial} uri={avatarUrl} size={30}');
   });
 
   it('routes the back gesture through the parent map rather than branching inline', () => {
@@ -4355,19 +4403,37 @@ describe('the directory is grouped and filterable: Listeners, Astrologers, ages'
 describe('search opens the way Telegram opens it, and the week has a carousel', () => {
   const home = withoutComments(read('src/screens/HomeScreen.tsx'));
 
-  it('crossfades one row in place, on Telegram\'s own 150ms', () => {
+  it('crossfades one row in place, on Telegram\'s own 350ms', () => {
     /*
-     * Read from source, not guessed: `toggleSearch` animates the search
-     * container's alpha against the action bar's menu icons and back,
-     * `setDuration(150)` in both directions (ActionBarMenuItem.java:1013
-     * opening, :1020 closing). Nothing slides — the field lands in the row the
-     * icons were in, which is what makes it the same bar changing its mind.
+     * CORRECTED 2026-09-07, and this gate is the reason the correction had to
+     * reach a test rather than only a comment: it pinned `searchToggle` = 150
+     * and the exact `FadeIn.duration(DURATION.searchToggle)` text, so it held
+     * the WRONG number in place. 150 was read from
+     * `ActionBar/ActionBarMenuItem.java` — Telegram's LEGACY action-bar search,
+     * a 36dp bare EditText with `setBackgroundResource(0)` and no pill, which
+     * the dialogs list stopped using several versions ago — and even inside that
+     * class the two `setDuration(150)` calls are at :1019 and :973, not the
+     * :1013/:1020 this comment used to cite.
+     *
+     * The field the reference ships is `Components/FragmentSearchField.java`
+     * (built at DialogsActivity.java:3285, added at :5344), and it opens and
+     * closes on `BoolAnimator animatorSearchVisible`, constructed with
+     * `CubicBezierInterpolator.EASE_OUT_QUINT` and `350`
+     * (DialogsActivity.java:307-308), symmetric in both directions. The curve is
+     * as load-bearing as the duration: with no `.easing()` at all Reanimated ran
+     * its default `Easing.inOut(Easing.quad)`, a symmetric ease against a
+     * reference that eases out hard.
+     *
+     * __tests__/homeSurface.test.ts carries the rest of the transition — the
+     * content swap underneath, its scales and its 20ms close delay.
      */
-    expect(read('design/tokens.json')).toContain('"searchToggle": 150');
+    expect(read('design/tokens.json')).toContain('"searchField": 350');
+    expect(read('design/tokens.json')).not.toContain('"searchToggle"');
     const motion = read('src/theme/motion.ts');
-    expect(motion).toContain('export const searchIn = FadeIn.duration(DURATION.searchToggle)');
-    expect(motion).toContain('export const searchOut = FadeOut.duration(DURATION.searchToggle)');
-    expect(motion).toContain('ActionBarMenuItem.java');
+    expect(motion).toContain('export const searchIn = FadeIn.duration(DURATION.searchField)');
+    expect(motion).toContain('export const searchOut = FadeOut.duration(DURATION.searchField)');
+    expect(motion).toContain('.easing(EASE_OUT_QUINT)');
+    expect(motion).toContain('DialogsActivity.java:307-308');
     // Both states are Animated rows sharing one container, so the crossfade has
     // nothing to reflow.
     expect(home).toContain('entering={searchIn}');
@@ -4383,8 +4449,34 @@ describe('search opens the way Telegram opens it, and the week has a carousel', 
     expect(searchRow).toContain('<Icon name="back"');
     expect(searchRow).not.toContain('name="close"');
     expect(searchRow).toContain('accessibilityLabel="Leave search"');
-    // The one cross is SearchBar's, and it only exists while there is text.
-    expect(withoutComments(read('src/components/SearchBar.tsx'))).toContain('value.length > 0 ?');
+    /*
+     * GATE CORRECTION, 2026-09-07. This used to assert that SearchBar.tsx
+     * contains the literal `'value.length > 0 ?'` and called that "the one cross
+     * ... only exists while there is text". The literal still appears — as
+     * `const clearTarget = value.length > 0 ? 1 : 0` — so the gate stayed green
+     * while the behaviour it named became false: the cross is now always
+     * MOUNTED, because Telegram holds `pEnd` at a constant `dp(48)` whether or
+     * not the glyph is showing (FragmentSearchField.java:242) and only animates
+     * its alpha, scale and rotation. The gate was passing on an incidental
+     * ternary.
+     *
+     * What is still true, and is what matters to the member the original rule
+     * was written for, is that an EMPTY field offers no reachable cross. That is
+     * now assertable against the real mechanism: `pointerEvents="none"` takes it
+     * out of hit testing (https://reactnative.dev/docs/view#pointerevents) and
+     * `importantForAccessibility="no-hide-descendants"` takes it out of the
+     * accessibility tree (https://reactnative.dev/docs/view#importantforaccessibility),
+     * so with no text there is nothing to tap and nothing for TalkBack to reach.
+     * The 48dp box itself is gated in __tests__/homeSurface.test.ts.
+     */
+    const bar = withoutComments(read('src/components/SearchBar.tsx'));
+    expect(bar).toContain("pointerEvents={hasText ? 'auto' : 'none'}");
+    expect(bar).toContain(
+      "importantForAccessibility={hasText ? 'yes' : 'no-hide-descendants'}",
+    );
+    expect(bar).toContain('const hasText = clearTarget === 1');
+    // Exactly one clear control in the file, and it is the field's.
+    expect(bar.match(/accessibilityLabel="Clear search"/g)?.length).toBe(1);
   });
 
   it('stacks the filters and lets them search on their own', () => {
