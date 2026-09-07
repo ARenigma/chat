@@ -53,6 +53,9 @@ export interface PaidSession {
 export interface PendingSessionRequest {
   id: string;
   channel: SessionChannel;
+  status: string;
+  /** Set when the provider has joined; member then confirms billing. */
+  responded_at: string | null;
   initiator_id: string;
   recipient_id: string;
   expires_at: string;
@@ -322,6 +325,26 @@ export function useDeclineSessionRequest() {
         queryKey: sessionKeys.pendingRequest(conversationId),
       });
       void queryClient.invalidateQueries({ queryKey: ['conversation-list'] });
+    },
+  });
+}
+
+/** Member confirms chat billing after the provider has joined (076). */
+export function useConfirmChatSession() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ requestId }: { requestId: string; conversationId: string }) => {
+      const { data, error } = await supabase.rpc('confirm_chat_session', {
+        p_request_id: requestId,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_id, { conversationId }) => {
+      void queryClient.invalidateQueries({ queryKey: sessionKeys.active(conversationId) });
+      void queryClient.invalidateQueries({
+        queryKey: sessionKeys.pendingRequest(conversationId),
+      });
     },
   });
 }

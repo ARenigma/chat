@@ -2529,10 +2529,10 @@ describe('calling ships visible and on, wired to a real media layer', () => {
     // Chat session is an upgrade path, not a block: only non-chat activeSession
     // disables the buttons (migration 073 ends the chat session on the server).
     expect(chat).toMatch(
-      /!canStartVideo\s*\|\|\s*pendingRequest !== null\s*\|\|\s*\(activeSession != null && activeSession\.channel !== 'chat'\)/,
+      /!canStartVideo\s*\|\|\s*\(activeSession != null && activeSession\.channel !== 'chat'\)/,
     );
     expect(chat).toMatch(
-      /!canStartAudio\s*\|\|\s*pendingRequest !== null\s*\|\|\s*\(activeSession != null && activeSession\.channel !== 'chat'\)/,
+      /!canStartAudio\s*\|\|\s*\(activeSession != null && activeSession\.channel !== 'chat'\)/,
     );
     // Real, and ready for the flag flip: the tap starts a call.
     expect(chat).toContain("onStartCall?.('video')");
@@ -3962,29 +3962,9 @@ describe('first-send refill: all three send paths open recharge on first success
     expect(image).toMatch(/return false/);
   });
 
-  it('ChatScreen awaits voice result and guards with wasFirstMemberSend', () => {
-    // onSendVoice must await the hook, check wasFirstMemberSend, and call
-    // openRefill() through the shared firstSendRefillShown guard — same logic
-    // as onSend. A provider's sends (isMemberSide=false) never set wasFirstMemberSend.
-    expect(chat).toMatch(/const ok = await sendVoice/);
-    expect(chat).toMatch(/if \(ok && wasFirstMemberSend && !firstSendRefillShown\.current\)/);
-  });
-
-  it('ChatScreen awaits image result and guards with wasFirstMemberSend', () => {
-    // onSendImage follows the same pattern.
-    expect(chat).toMatch(/const ok = await sendImage/);
-    // Both onSendVoice and onSendImage share the same guard, so one regex covers
-    // both via the surrounding lines.
-    expect(chat).toMatch(/firstSendRefillShown\.current = true[\s\S]{0,120}openRefill\(\)/);
-  });
-
-  it('firstSendRefillShown is idempotent across all three paths', () => {
-    // Only one modal per conversation: the ref is checked before setting.
-    // All three send paths must read the same ref.
-    const guards = (chat.match(/firstSendRefillShown\.current/g) ?? []).length;
-    // onSend + onSendVoice + onSendImage = at least 6 references
-    // (3 reads + 3 writes, though the write is shared at the end of the check block)
-    expect(guards).toBeGreaterThanOrEqual(6);
+  it('does not open refill on first successful member send', () => {
+    expect(chat).not.toContain('firstSendRefillShown');
+    expect(chat).not.toContain('wasFirstMemberSend');
   });
 
   it('INSUFFICIENT_BALANCE still opens refill directly from the send hooks', () => {
@@ -4962,16 +4942,13 @@ describe('a chat request rings, and can be answered either way', () => {
     expect(timeout.slice(0, 200)).not.toContain('decline');
   });
 
-  it('only a provider subscribes, and the first ring wins', () => {
+  it('does not mount a provider ChatRing — member consent is the sheet', () => {
     const app = withoutComments(read('App.tsx'));
-    // A member never receives one; subscribing them is a socket for nothing.
-    expect(app).toContain("useIncomingChatRequests(role === 'provider' ? selfId : undefined");
-    expect(app).toContain('<ChatRingScreen');
-    // The member has no directory row, so the name is the pseudonymous
-    // fallback ProviderHomeScreen already uses — never a real name.
-    expect(app).toContain('`Member ${request.initiatorId.slice(0, 4)}`');
-    const store = withoutComments(read('src/store/useStore.ts'));
-    expect(store).toMatch(/state\.incomingRequest === null \? \{ incomingRequest: request \}/);
+    expect(app).not.toContain('useIncomingChatRequests');
+    expect(app).not.toContain('<ChatRingScreen');
+    expect(withoutComments(read('src/screens/ChatScreen.tsx'))).toContain(
+      'testID="chat-session-consent"',
+    );
     // Chat only: a call request already rings through the call path, and two
     // rings for one event is a bug the member cannot see.
     expect(withoutComments(read('src/api/sessions.ts'))).toContain("row.channel === 'chat'");
@@ -5034,7 +5011,7 @@ describe('opening a chat tells the other person, both ways', () => {
     // differs because the copy is in the payload.
     const fn = read('supabase/functions/send-open-alert/index.ts');
     expect(fn).toContain("kind: 'engagement'");
-    expect(fn).toContain("title: 'Someone wants to talk'");
+    expect(fn).toContain('wants to talk to you');
     // A member is never named: they have no directory row and get the handle.
     expect(fn).toContain("db.rpc('member_handle'");
     expect(fn).toContain("role !== 'service_role'");

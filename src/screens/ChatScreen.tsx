@@ -83,6 +83,8 @@ import { useStore } from '../store/useStore';
 import {
   useActiveSession,
   useAnnounceChatOpen,
+  useConfirmChatSession,
+  useDeclineSessionRequest,
   useEndSession,
   usePendingSessionRequest,
   useSessionLease,
@@ -238,7 +240,6 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   const setNotice = useStore(s => s.setNotice);
   const setPeerTyping = useStore(s => s.setPeerTyping);
   const queryClient = useQueryClient();
-  const firstSendRefillShown = useRef(false);
   const [sendHaloKey, setSendHaloKey] = useState(0);
   const [leaveDialogVisible, setLeaveDialogVisible] = useState(false);
   // The same dialog serves back (end and leave) and the End chip (end, stay).
@@ -419,6 +420,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   const { data: activeSession, dataUpdatedAt: sessionSyncedAt } = useActiveSession(conversationId);
   const { data: pendingRequest } = usePendingSessionRequest(conversationId);
   const { mutate: endSessionMutate, isPending: endingSession } = useEndSession();
+  const confirmChat = useConfirmChatSession();
+  const declineChatRequest = useDeclineSessionRequest();
 
   useSessionRealtime(conversationId);
   useSessionLease(activeSession ?? null);
@@ -453,6 +456,18 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
    */
   const peerThread = knownThread;
   const isMemberSide = peerThread?.i_am_member ?? true;
+  const awaitingMemberConsent =
+    isMemberSide &&
+    pendingRequest != null &&
+    pendingRequest.channel === 'chat' &&
+    pendingRequest.responded_at != null &&
+    activeSession == null;
+  const spJoining =
+    isMemberSide &&
+    pendingRequest != null &&
+    pendingRequest.channel === 'chat' &&
+    pendingRequest.responded_at == null &&
+    activeSession == null;
   const provider = providers?.find(p => p.id === providerId);
   /*
    * What this provider offers (migration 064), folded into the operator's own
@@ -639,15 +654,9 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
       setSendHaloKey(n => n + 1);
       const parent = replyTo;
       setReplyTo(null);
-      const wasFirstMemberSend =
-        isMemberSide && !memberHasSent && activeSession == null;
-      const ok = await send(text, parent?.id ?? null);
-      if (ok && wasFirstMemberSend && !firstSendRefillShown.current) {
-        firstSendRefillShown.current = true;
-        openRefill();
-      }
+      await send(text, parent?.id ?? null);
     },
-    [send, replyTo, isMemberSide, memberHasSent, activeSession, openRefill],
+    [send, replyTo],
   );
 
   /**
@@ -663,15 +672,9 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
       setSendHaloKey(n => n + 1);
       const parent = replyTo;
       setReplyTo(null);
-      const wasFirstMemberSend =
-        isMemberSide && !memberHasSent && activeSession == null;
-      const ok = await sendVoice(draft, parent?.id ?? null);
-      if (ok && wasFirstMemberSend && !firstSendRefillShown.current) {
-        firstSendRefillShown.current = true;
-        openRefill();
-      }
+      await sendVoice(draft, parent?.id ?? null);
     },
-    [sendVoice, replyTo, isMemberSide, memberHasSent, activeSession, openRefill],
+    [sendVoice, replyTo],
   );
 
   /**
@@ -684,15 +687,9 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
       setSendHaloKey(n => n + 1);
       const parent = replyTo;
       setReplyTo(null);
-      const wasFirstMemberSend =
-        isMemberSide && !memberHasSent && activeSession == null;
-      const ok = await sendImage(draft, parent?.id ?? null);
-      if (ok && wasFirstMemberSend && !firstSendRefillShown.current) {
-        firstSendRefillShown.current = true;
-        openRefill();
-      }
+      await sendImage(draft, parent?.id ?? null);
     },
-    [sendImage, replyTo, isMemberSide, memberHasSent, activeSession, openRefill],
+    [sendImage, replyTo],
   );
 
   /**
@@ -1349,7 +1346,6 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
           onPress={() => onStartCall?.('video')}
           disabled={
             !canStartVideo ||
-            pendingRequest !== null ||
             (activeSession != null && activeSession.channel !== 'chat')
           }
           testID="call-video"
@@ -1359,7 +1355,6 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
           style={[
             styles.navButton,
             (!canStartVideo ||
-              pendingRequest !== null ||
               (activeSession != null && activeSession.channel !== 'chat')) &&
               styles.navDisabled,
           ]}>
@@ -1369,7 +1364,6 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
           onPress={() => onStartCall?.('audio')}
           disabled={
             !canStartAudio ||
-            pendingRequest !== null ||
             (activeSession != null && activeSession.channel !== 'chat')
           }
           testID="call-voice"
@@ -1379,7 +1373,6 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
           style={[
             styles.navButton,
             (!canStartAudio ||
-              pendingRequest !== null ||
               (activeSession != null && activeSession.channel !== 'chat')) &&
               styles.navDisabled,
           ]}>
@@ -1676,15 +1669,21 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
             onSendVoice={onSendVoice}
             onSendImage={onSendImage}
             onTyping={notifyTyping}
-            disabled={conversationId === undefined || chatClosed}
+            disabled={
+              conversationId === undefined || chatClosed || awaitingMemberConsent
+            }
             placeholder={
               chatClosed
                 ? `${name} is not taking chats right now`
-                : memberHasSent
-                  ? replyTo !== null
-                    ? 'Reply'
-                    : 'Message'
-                  : 'Make your first move'
+                : awaitingMemberConsent
+                  ? 'Accept the session to continue'
+                  : spJoining
+                    ? `${name} is joining`
+                    : memberHasSent
+                      ? replyTo !== null
+                        ? 'Reply'
+                        : 'Message'
+                      : 'Make your first move'
             }
             sendHaloKey={sendHaloKey}
             onFocusChange={onComposerFocus}
@@ -1702,6 +1701,37 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
         peerId={providerId}
         peerName={name}
         messageId={safety.messageId}
+      />
+
+      <ConfirmDialog
+        visible={awaitingMemberConsent}
+        testID="chat-session-consent"
+        title="Start this session?"
+        body={`${name} is here. No sexual or abusive talk. Tokens start when you accept.`}
+        cancelLabel="Not now"
+        confirmLabel="Accept"
+        busy={confirmChat.isPending || declineChatRequest.isPending}
+        busyLabel="Working"
+        onCancel={() => {
+          if (pendingRequest == null || conversationId === undefined) {
+            return;
+          }
+          declineChatRequest.mutate({
+            requestId: pendingRequest.id,
+            conversationId,
+          });
+        }}
+        onConfirm={() => {
+          if (pendingRequest == null || conversationId === undefined) {
+            return;
+          }
+          confirmChat.mutate(
+            { requestId: pendingRequest.id, conversationId },
+            {
+              onSuccess: () => setNotice('Session started', 'confirm'),
+            },
+          );
+        }}
       />
 
       {/* One dialog, two intents: back (end and leave) and the End chip (end,

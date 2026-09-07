@@ -68,6 +68,14 @@ export function setNotificationPolicy(level: 'optional' | 'required'): void {
   _notificationPolicy = level;
 }
 
+/** Whether this device can receive FCM lock-screen rings. */
+export async function notificationsGranted(): Promise<boolean> {
+  if (Platform.OS === 'android' && Number(Platform.Version) >= 33) {
+    return PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+  }
+  return true;
+}
+
 /**
  * Android 13 made notifications a runtime permission, so on API 33+ a token
  * without a granted permission is a token that will never ring. Below 33 the

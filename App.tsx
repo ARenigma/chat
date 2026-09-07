@@ -77,13 +77,11 @@ import {
   setVideoResolution,
 } from './src/api/callMedia/profile';
 import { useConversations, useSelfId } from './src/api/chat';
-import { useIncomingChatRequests } from './src/api/sessions';
 import { useRole } from './src/api/provider';
 import { useStore } from './src/store/useStore';
 import { PolicyGateScreen } from './src/screens/PolicyGateScreen';
 import { PermissionsScreen } from './src/screens/PermissionsScreen';
 import { SessionFeedbackSheet } from './src/components/SessionFeedbackSheet';
-import { ChatRingScreen } from './src/components/ChatRingScreen';
 import { checkGate, gateSatisfied } from './src/lib/permissionsGate';
 import { ProfileSetupScreen } from './src/screens/ProfileSetupScreen';
 import { WelcomePappalScreen } from './src/screens/WelcomePappalScreen';
@@ -1231,36 +1229,6 @@ function SignedIn({
   );
   useIncomingCalls(selfId, onIncoming);
 
-  /*
-   * A chat request rings too (goal item 13). Only in the provider tree: a
-   * member never receives one, and subscribing them to a filter that can never
-   * match is a socket for nothing.
-   *
-   * The member has no directory row, so the name is the same pseudonymous
-   * fallback ProviderHomeScreen uses for a thread — never a real name we do not
-   * have and would not publish.
-   */
-  const setIncomingRequest = useStore(s => s.setIncomingRequest);
-  const onIncomingRequest = useCallback(
-    (request: { requestId: string; conversationId: string; initiatorId: string }) => {
-      const known = (conversations ?? []).find(c => c.peer_id === request.initiatorId);
-      setIncomingRequest({
-        requestId: request.requestId,
-        conversationId: request.conversationId,
-        peerId: request.initiatorId,
-        peerName: known?.peer_display_name ?? `Member ${request.initiatorId.slice(0, 4)}`,
-      });
-    },
-    [conversations, setIncomingRequest],
-  );
-  useIncomingChatRequests(role === 'provider' ? selfId : undefined, onIncomingRequest);
-
-  /** Where accepting a ring lands: the provider tree's own chat route. */
-  const openProviderConversation = useCallback(
-    (peerId: string) => pushProvider({ name: 'chat', peerId }),
-    [pushProvider],
-  );
-
   // No retry handler here on purpose: the profile query owns its own retries, and
   // a button that re-runs a query React Query is already retrying would only
   // look like it did something.
@@ -1575,7 +1543,6 @@ function SignedIn({
           Renders nothing unless a request is live, and only a provider ever
           receives one. `openConversation` is the provider tree's own opener,
           so accepting lands them in the thread. */}
-      <ChatRingScreen onOpenConversation={openProviderConversation} />
     </View>
   );
 }

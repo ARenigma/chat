@@ -33,6 +33,16 @@ export const keys = {
   messages: messagesKey,
 };
 
+/** Wallet debit is a member problem. Thread side beats a stale profile cache. */
+export function memberPaysInThread(
+  queryClient: QueryClient,
+  conversationId: string,
+): boolean {
+  const list = queryClient.getQueryData<ConversationSummary[]>(keys.conversationList);
+  const row = list?.find(c => c.conversation_id === conversationId);
+  return row?.i_am_member ?? true;
+}
+
 const NOTICE: Record<SendError, string> = {
   INSUFFICIENT_BALANCE: 'You are out of tokens.',
   POLICY_REQUIRED: 'Accept the latest Terms and Privacy Policy to continue.',
@@ -242,8 +252,7 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
       // Providers never pay to reply — balance is a member wallet. A provider at
       // 0 tokens (the normal state) used to open refill and abort before the RPC,
       // so accepting a pending chat request by sending never left the device.
-      const role = queryClient.getQueryData<Profile>(keys.profile)?.role;
-      if (role !== 'provider' && !canSend(useStore.getState().balance)) {
+      if (memberPaysInThread(queryClient, conversationId) && !canSend(useStore.getState().balance)) {
         errorTick();
         openRefill();
         return false;

@@ -117,7 +117,7 @@ async function send(
             // States the fact and nothing more. No "waiting", which would be a
             // claim about how long; no count, which would be a claim about
             // demand. Someone opened the thread — that is all that happened.
-            title: 'Someone wants to talk',
+            title: `${opener ?? 'Someone'} wants to talk to you`,
             body: `${opener} just opened your chat`,
             ...(openerAvatar ? { senderAvatar: openerAvatar } : {}),
           },
