@@ -9,9 +9,9 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 import {
-  Gesture,
   GestureDetector,
   GestureHandlerRootView,
+  usePanGesture,
 } from 'react-native-gesture-handler';
 import Animated, {
   interpolate,
@@ -177,13 +177,26 @@ function SheetView({
     [sheetHeight],
   );
 
-  const pan = Gesture.Pan()
-    .onChange(e => {
+  /*
+   * Drag-to-dismiss.
+   *
+   * `onUpdate` and `onDeactivate` and not the builder's `onChange`/`onEnd`: RNGH
+   * 3 deprecates the `Gesture.*` builder outright, modifiers become config keys,
+   * "`onEnd` -> `onDeactivate`", and "`onChange` callback has been removed, and
+   * its functionality has been integrated into `onUpdate`. You can now access
+   * `change*` properties in `onUpdate` callback" — which is why nothing is lost
+   * by the merge: `translationY` was always on both, and the change calculator
+   * only ADDS `changeX`/`changeY` (v3/hooks/gestures/pan/usePanGesture.ts).
+   * https://docs.swmansion.com/react-native-gesture-handler/docs/guides/upgrading-to-3/
+   * https://docs.swmansion.com/react-native-gesture-handler/docs/gestures/use-pan-gesture
+   */
+  const pan = usePanGesture({
+    onUpdate: e => {
       // Downward is free, upward is resisted. A sheet that cannot move up at all
       // reads as broken; one that moves freely up reads as detached.
       y.value = e.translationY > 0 ? e.translationY : e.translationY / 3;
-    })
-    .onEnd(e => {
+    },
+    onDeactivate: e => {
       const measuredHeight = sheetHeight.value;
       const far = measuredHeight > 0 && y.value > measuredHeight * GESTURE.dismissDistance;
       const fast = e.velocityY > GESTURE.dismissVelocity;
@@ -194,7 +207,8 @@ function SheetView({
         return;
       }
       y.value = sheetIn(e.velocityY);
-    });
+    },
+  });
 
   const sheetStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: y.value }],

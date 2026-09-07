@@ -11,9 +11,9 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 import {
-  Gesture,
   GestureDetector,
   GestureHandlerRootView,
+  usePanGesture,
 } from 'react-native-gesture-handler';
 import Animated, {
   interpolate,
@@ -83,8 +83,8 @@ function SpotlightCardView({ visible, name, avatarUri, online = false, onClose, 
 
   const y = useSharedValue(SHEET_ENTRY_OFFSET);
   // Gesture worklets must read layout through a shared value. React state is
-  // captured when Gesture.Pan is built and can stay null on Android even after
-  // onLayout, which would make slow distance-based dismissal impossible.
+  // captured when the pan config is built and can stay null on Android even
+  // after onLayout, which would make slow distance-based dismissal impossible.
   const sheetHeight = useSharedValue(0);
   const openedAt = useRef(0);
 
@@ -102,12 +102,17 @@ function SpotlightCardView({ visible, name, avatarUri, online = false, onClose, 
     sheetHeight.value = e.nativeEvent.layout.height;
   }, [sheetHeight]);
 
-  const pan = Gesture.Pan()
-    .onChange(e => {
+  // Same drag-to-dismiss as Sheet.tsx, and the same callback mapping recorded
+  // there: `onChange` folded into `onUpdate` and `onEnd` renamed
+  // `onDeactivate` when the `Gesture.*` builder was deprecated in RNGH 3.
+  // https://docs.swmansion.com/react-native-gesture-handler/docs/guides/upgrading-to-3/
+  // https://docs.swmansion.com/react-native-gesture-handler/docs/gestures/use-pan-gesture
+  const pan = usePanGesture({
+    onUpdate: e => {
       // Downward is free, upward is resisted.
       y.value = e.translationY > 0 ? e.translationY : e.translationY / 3;
-    })
-    .onEnd(e => {
+    },
+    onDeactivate: e => {
       const measuredHeight = sheetHeight.value;
       const far = measuredHeight > 0 && y.value > measuredHeight * GESTURE.dismissDistance;
       const fast = e.velocityY > GESTURE.dismissVelocity;
@@ -117,7 +122,8 @@ function SpotlightCardView({ visible, name, avatarUri, online = false, onClose, 
         return;
       }
       y.value = sheetIn(e.velocityY);
-    });
+    },
+  });
 
   const sheetStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: y.value }],
