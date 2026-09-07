@@ -709,3 +709,105 @@ The `OnBackPressedCallback` note from the doc is the safety net either way:
 `BackHandler` continues to fire through `onBackPressed` regardless of the
 `enableOnBackInvokedCallback` flag, so the guard stack keeps working
 correctly in the current state.
+
+## 2026-09-07 — RNGH: off the `Gesture.*` builder, onto the v3 hooks
+
+**Pages read.**
+
+- `docs.swmansion.com/react-native-gesture-handler/docs/guides/upgrading-to-3/`
+  — the migration guide, and the only page that states the callback renames.
+- `docs/gestures/use-pan-gesture`, `use-pinch-gesture`, `use-tap-gesture`,
+  `use-long-press-gesture`
+- `docs/composition/use-competing-gestures`, `use-simultaneous-gestures`,
+  `use-exclusive-gestures`
+
+**Why now.** The installed RNGH 3.2.1 marks the builder object itself
+`@deprecated` ("Please migrate to the new, hook-based API",
+`handlers/gestures/gestureObjects.d.ts:14`) and names a hook replacement for
+every member. Four files were on it: `MediaViewer.tsx`, `Turn.tsx`,
+`Sheet.tsx`, `SpotlightCard.tsx`.
+
+**Why it could not be done one file at a time.** `contract.test.ts`'s
+"limits gesture declarations" tripwire enumerated the gesture-declaring files
+by matching `/Gesture\.\w+\(/` against RAW source. Two consequences, both
+observed by running it:
+
+1. Migrating a file's CODE but leaving prose that says
+   `SimultaneousGesture.prepare()` kept the test GREEN — `Gesture.prepare(`
+   matches. **A tripwire that can be satisfied by its own documentation.**
+2. Migrating code AND prose made it FAIL, because the file then dropped out of
+   the `toEqual` list.
+
+So the tripwire had to move in the same commit as the four files. It now matches
+`/use(Tap|Pan|Pinch|Rotation|Fling|LongPress|Native|Manual|Hover)Gesture\(/`
+against comment-stripped source, and a second assertion bans
+`/\bGesture\.\w+\(/` outright so a revert to the builder fails rather than
+quietly dropping off the list.
+
+**The mapping, and the one place a rename is not enough.**
+
+| Builder                | Hook config               | Note                                                                                                                                                                                                                                                  |
+| ---------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Gesture.Pan()`        | `usePanGesture({...})`    | modifiers become config keys verbatim: `.maxPointers(1)` → `maxPointers: 1`, `.activeOffsetX([-a, a])` → `activeOffsetX: [-a, a]`                                                                                                                     |
+| `.onStart`             | `onActivate`              | same firing condition (`oldState BEGAN\|UNDETERMINED` → `ACTIVE`)                                                                                                                                                                                     |
+| `.onChange`            | `onUpdate`                | "`onChange` callback has been removed, and its functionality has been integrated into `onUpdate`" — pan and pinch install their `changeEventCalculator` unconditionally, so `scaleChange`/`changeX`/`changeY` arrive on `onUpdate`                    |
+| `.onEnd(e, success)`   | `onDeactivate(e)`         | **the sense is inverted.** "the logic is inverted — `canceled: true` corresponds to the old `success: false`". A mechanical rename that kept `if (!success ...)` reading a now-truthy `canceled` inverts the branch. Pinned by `chatSurface.test.ts`. |
+| `Gesture.Race`         | `useCompetingGestures`    |                                                                                                                                                                                                                                                       |
+| `Gesture.Simultaneous` | `useSimultaneousGestures` |                                                                                                                                                                                                                                                       |
+| `Gesture.Exclusive`    | `useExclusiveGestures`    |                                                                                                                                                                                                                                                       |
+
+Firing conditions are otherwise unchanged: v3's `onDeactivate` runs only when
+`oldState === State.ACTIVE`, exactly the guard legacy `onEnd` had — compare
+`v3/hooks/callbacks/eventHandler.ts` with
+`handlers/gestures/eventReceiver.ts`.
+
+**The one structural change: `Turn.tsx` switches its discretes with `enabled`.**
+
+The builder let the composition be assembled by a ternary chain
+(`target !== null && onTap !== undefined ? Exclusive(longPress, tap) : ...`)
+because `Gesture.LongPress()` was a plain constructor. `useLongPressGesture` is
+a hook: it and `useTapGesture` run on every render whatever the props are, and
+`useGesture` creates the native handler in an effect keyed only on the handler
+tag — so selecting a subtree afterwards saves nothing and makes the composed
+tree's SHAPE depend on props. Both are now declared unconditionally and gated
+with `enabled`.
+
+That is only equivalent because of an Android fact rather than a hope:
+`GestureHandlerOrchestrator.recordViewHandlersForPointer` skips a handler when
+`!handler.isEnabled` before it is ever added to the orchestrator's list, and
+`hasOtherHandlerToWaitFor` only consults that list. So the disabled long press
+of a still-uploading photo cannot strand the tap that waits for it in the
+`Exclusive`. Asserted in `chatSurface.test.ts`.
+
+**Coordinate space: unchanged, and it needed checking.** The v3 detector
+inserts a native `RNGestureHandlerDetectorView` and attaches the handlers to
+THAT view, not to the child — which would have moved the pinch focal point out
+of the frame `MediaViewer`'s `onLayout` measures. It does not:
+`GestureHandler.coordinateView` descends into the detector's single child, "the
+same coordinate space V2 and the V3 VirtualGestureDetector report in", and the
+detector is `display: 'contents'` so it takes no part in layout.
+
+**New gate — `platform.test.ts` › "gesture callbacks are workletized".**
+
+A gesture callback that is not workletized still works; it is dispatched to JS
+instead, one round trip per frame. Nothing throws and nothing warns, and the
+only symptom is a drag that lags the finger. RNGH 3 passes callbacks as
+properties of a config object, and it is the `react-native-worklets` babel
+plugin that adds the `'worklet'` directive: the hook names are listed in
+`gestureHandlerObjectHooks`, argument 0 of each is registered as a workletizable
+OBJECT, and `forEachWorkletizableObjectProperty` workletizes every
+function-valued property of it (no allow-list of callback names, which is why
+`onActivate`/`onUpdate`/`onDeactivate` are covered without the plugin knowing
+those names). The gate compiles all four files through the project's real
+`babel.config.js` and asserts every callback carries `__workletHash` and
+`__closure` — 15 callbacks across the four files. It catches both a worklets
+upgrade dropping a hook name AND a config the plugin cannot traverse (a spread,
+a `useMemo`, a variable built elsewhere); both mutations were run and both fail
+it.
+
+**Dead citation found.** `Turn.tsx` cited
+`docs/fundamentals/gesture-composition/` for the Exclusive wording. That URL is
+a **404** — a citation that had gone dead survived every green build, and the
+wording it carried ("Priority is decided through the order of gestures") is not
+the wording on the page that governs today. `chatSurface.test.ts` now bans that
+path alongside `docs/legacy-gestures/`.
