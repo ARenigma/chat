@@ -841,6 +841,170 @@ describe('large text roles carry a font-scale cap', () => {
   });
 });
 
+/**
+ * A kind of text reads at one role, whether it is on a screen or in a sheet.
+ *
+ * The defect this exists for: RechargeScreen set the pack price in
+ * titleLargeEmphasized (22dp Geist-Bold) and PaymentSheet — the MODAL for that
+ * same money — restated the identical rupee figure inside Sheet's `body`, which
+ * is bodyLarge, 16dp Geist-Regular. Same number, two weights, decided by whether
+ * a sheet happened to be over the screen (Amit, 2026-09-07: "the type font is
+ * not consistent -- recharge screens show heavy weight but modal is normal
+ * weight"). Three more had drifted the same way in the same file: a payment
+ * confirmation at the filled-button role, a status line and a text button at
+ * bodyMedium.
+ *
+ * ADR-0024 is what makes this checkable rather than a matter of taste. The app
+ * is on the M3 scale in absolute dp, weight is a bundled static FACE and never a
+ * numeric fontWeight, and each role has a documented home — bodyMedium's is
+ * "list previews, timestamps". So "which role does this kind of text take" has
+ * one answer per kind, and the answer is readable out of the source.
+ *
+ * Comments are stripped before anything is matched, and the role is read by
+ * BRACE-MATCHING the named style block rather than by a regex window — this repo
+ * has shipped gates that graded their own explanatory prose (see the fontWeight
+ * gate's comment), and the prose above names every role it forbids.
+ */
+describe('a kind of text reads at one role, screen or sheet', () => {
+  /** The four kinds, and the one role each takes. */
+  const MONEY_FIGURE = 'titleLargeEmphasized';
+  const SUPPORTING_LINE = 'bodyLarge';
+  const DISCLOSURE = 'bodySmall';
+  const TEXT_BUTTON = 'labelLargeEmphasized';
+
+  /**
+   * The typography role a named style spreads.
+   *
+   * Brace-matched from `<name>: {` to its own closing brace, so a style that
+   * contains a nested object (`transform: [{ scale }]`) is still read whole and
+   * a style cannot be credited with the role of the one after it. Returns null
+   * when the style is gone, and every assertion below compares against a role
+   * string, so a renamed or deleted style fails loudly instead of passing
+   * vacuously.
+   */
+  const roleOf = (file: string, styleName: string): string | null => {
+    const body = stripComments(read(file));
+    const at = body.search(new RegExp(`\\b${styleName}\\s*:\\s*\\{`));
+    if (at === -1) return null;
+    let depth = 0;
+    let end = body.indexOf('{', at);
+    const start = end;
+    for (; end < body.length; end++) {
+      if (body[end] === '{') depth += 1;
+      else if (body[end] === '}') {
+        depth -= 1;
+        if (depth === 0) break;
+      }
+    }
+    return /\.\.\.\s*TOKENS\.typography\.(\w+)/.exec(body.slice(start, end + 1))?.[1] ?? null;
+  };
+
+  const RECHARGE = 'src/screens/RechargeScreen.tsx';
+  const PAYMENT = 'src/screens/PaymentSheet.tsx';
+  const SHEET = 'src/components/Sheet.tsx';
+
+  it('proves the four roles differ by FACE, not only by size', () => {
+    // Without this the rest of the file is just string equality. These are the
+    // ADR-0024 face mappings: emphasized -> Geist-Bold, Regular -> Geist-Regular.
+    // The money figure is Bold and the line the sheet had been using is Regular,
+    // which is exactly the "heavy on the screen, normal in the modal" report.
+    expect(LIGHT.typography[MONEY_FIGURE].fontFamily).toBe('Geist-Bold');
+    expect(LIGHT.typography[SUPPORTING_LINE].fontFamily).toBe('Geist-Regular');
+    expect(LIGHT.typography[DISCLOSURE].fontFamily).toBe('Geist-Regular');
+    expect(LIGHT.typography[TEXT_BUTTON].fontFamily).toBe('Geist-Bold');
+    // The text-button fix is a pure WEIGHT fix: labelLargeEmphasized and the
+    // bodyMedium it replaced are both 14dp, so nothing moved on the layout.
+    expect(LIGHT.typography[TEXT_BUTTON].fontSize).toBe(
+      LIGHT.typography.bodyMedium.fontSize,
+    );
+    expect(LIGHT.typography.bodyMedium.fontFamily).toBe('Geist-Regular');
+  });
+
+  it('states a money figure at the same role on the screen and in its sheet', () => {
+    // The screen side: the compact chip's price and the wallet page's price.
+    expect(roleOf(RECHARGE, 'amount')).toBe(MONEY_FIGURE);
+    expect(roleOf(RECHARGE, 'cardAmount')).toBe(MONEY_FIGURE);
+    // The sheet side, for the SAME money: the checkout total, and the terminal
+    // "N tokens added" that confirms it. successDetail was
+    // titleMediumEmphasized, which ADR-0024 assigns to the filled-button label
+    // (Button.tsx) — a payment confirmation set at the weight of a button.
+    expect(roleOf(PAYMENT, 'totalValue')).toBe(MONEY_FIGURE);
+    expect(roleOf(PAYMENT, 'successDetail')).toBe(MONEY_FIGURE);
+  });
+
+  it('states a supporting line at the same role on every screen and sheet', () => {
+    // Sheet's `body` is the anchor: every sheet subhead in the app comes through
+    // this one style, so the screen side has to match it rather than the reverse.
+    expect(roleOf(SHEET, 'body')).toBe(SUPPORTING_LINE);
+    for (const [file, style] of [
+      [PAYMENT, 'totalLabel'],
+      [PAYMENT, 'centreLabel'],
+      [PAYMENT, 'successBalance'],
+      ['src/screens/SafetySheet.tsx', 'reasonLabel'],
+      ['src/screens/SettingsSheet.tsx', 'rowTitle'],
+      ['src/components/SessionFeedbackSheet.tsx', 'word'],
+      // The screen half of the pair — a centred "Loading…" and an empty-state
+      // body on a full page, the same job centreLabel does inside the sheet.
+      ['src/screens/TransactionHistoryScreen.tsx', 'hintText'],
+      ['src/screens/TransactionHistoryScreen.tsx', 'emptyBody'],
+      ['src/components/NoticeBar.tsx', 'text'],
+    ] as const) {
+      expect(roleOf(file, style)).toBe(SUPPORTING_LINE);
+    }
+  });
+
+  it('states a tax or caption disclosure at the same role, chip or sheet', () => {
+    // The base + tax line is the same disclosure whether it is under a pack chip
+    // or under the checkout total (ADR-0029: the pack is the base, the charge is
+    // base + tax). On the sheet it used to ride the bodyLarge subhead, i.e. the
+    // DISCLOSURE was louder in the modal than on the screen while the TOTAL was
+    // quieter — the inversion, both directions at once.
+    expect(roleOf(RECHARGE, 'tokensGst')).toBe(DISCLOSURE);
+    expect(roleOf(RECHARGE, 'cardGst')).toBe(DISCLOSURE);
+    expect(roleOf(PAYMENT, 'totalGst')).toBe(DISCLOSURE);
+    expect(roleOf('src/screens/SettingsSheet.tsx', 'rowDetail')).toBe(DISCLOSURE);
+  });
+
+  it('sets every text button in the bold label face', () => {
+    // A tappable text label is bold everywhere in the app. PaymentSheet's
+    // "Card, Net Banking & Wallets" was the one exception, in a regular face.
+    for (const [file, style] of [
+      [PAYMENT, 'webRowText'],
+      ['src/components/ConfirmDialog.tsx', 'cancel'],
+      ['src/screens/SettingsSheet.tsx', 'rateFooterText'],
+      ['src/components/CodeField.tsx', 'verifyLabel'],
+      ['src/components/UpdateBanner.tsx', 'actionLabel'],
+      ['src/screens/BlockedUsersScreen.tsx', 'unblockLabel'],
+    ] as const) {
+      expect(roleOf(file, style)).toBe(TEXT_BUTTON);
+    }
+  });
+
+  it('keeps bodyMedium out of the sheet and dialog surfaces entirely', () => {
+    // bodyMedium's documented home in ADR-0024 is "list previews, timestamps,
+    // sheet body" — and the sheet-body clause is the one this pass retired, on
+    // the evidence that it is what made the modal quieter than its screen. None
+    // of these six surfaces renders a list preview or a timestamp, so after this
+    // pass none of them has a reason to reach for a 14dp regular face; the ones
+    // that had were all drift from a role decided elsewhere.
+    //
+    // Scoped to these six files rather than the whole app on purpose: bodyMedium
+    // is CORRECT on ChatsListScreen's `rowPreview`, ProviderHomeScreen's
+    // `rowTime` and TopAppBar's `subtitle`, which are the previews and timestamps
+    // the role exists for.
+    for (const file of [
+      'src/components/Sheet.tsx',
+      'src/components/ConfirmDialog.tsx',
+      'src/components/SessionFeedbackSheet.tsx',
+      'src/screens/PaymentSheet.tsx',
+      'src/screens/SafetySheet.tsx',
+      'src/screens/SettingsSheet.tsx',
+    ]) {
+      expect(stripComments(read(file))).not.toMatch(/TOKENS\.typography\.bodyMedium/);
+    }
+  });
+});
+
 describe('spacing lives in tokens', () => {
   const SPACING = /\b(padding|margin|gap|rowGap|columnGap)(Top|Bottom|Left|Right|Horizontal|Vertical|Start|End)?\s*:\s*(-?[1-9]\d*)\b/g;
   const sources = ['src/components', 'src/screens']

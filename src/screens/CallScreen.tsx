@@ -14,7 +14,7 @@ import type { CallResult, ProviderSummary } from '../lib/database.types';
 import type { CallMedium } from '../lib/database.types';
 import { initialOf } from '../lib/display';
 import { sizedStorageImageUri } from '../lib/storageImage';
-import { useConversationId, useProviders } from '../api/chat';
+import { useConversationId, useConversations, useProviders } from '../api/chat';
 import { answerCall, endCall, heartbeatCall, startCall } from '../api/calls';
 import { useCallSession } from '../api/callMedia';
 import { CallVideoView } from '../api/callMedia/CallVideoView';
@@ -97,6 +97,33 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   const name = provider?.display_name ?? (direction === 'in' ? 'Incoming call' : 'Calling');
   const initial = initialOf(provider?.display_name);
 
+  /*
+   * Which side of this thread we are on, and who the review sheet should name.
+   *
+   * Same source and the same reason as ChatScreen (ChatScreen.tsx:440):
+   * `i_am_member` on the summary row, never `profiles.role`, because migration
+   * 007 lets a member admitted as a provider keep the threads they paid for —
+   * and because this screen serves the provider tree too, where `providerId` is
+   * a *member's* profile id that `provider_directory` will never contain, so
+   * the directory lookup above cannot answer the question.
+   *
+   * Defaults to true for the one case the list cannot cover: a member calling
+   * straight from the directory, before any summary row for that thread has
+   * reached this device. The server is the real gate — `submit_session_review`
+   * refuses anybody but the session's member (066:109) — so this default costs
+   * at worst one sheet whose Send fails, where defaulting the other way would
+   * silently swallow the review after every first call.
+   *
+   * The last-resort name is ChatScreen's ('Conversation'), not a new string:
+   * both paths fill the same sheet title, and a second word for the same hole
+   * is how two screens end up disagreeing about the same missing peer.
+   */
+  const { data: threads } = useConversations();
+  const peerThread = threads?.find(t => t.peer_id === providerId);
+  const isMemberSide = peerThread?.i_am_member ?? true;
+  const reviewPeerName =
+    peerThread?.peer_display_name ?? provider?.display_name ?? 'Conversation';
+
   const [callId, setCallId] = useState<string | null>(incomingCallId);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [accepted, setAccepted] = useState(direction === 'out');
@@ -132,6 +159,91 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
       stopCallForegroundService();
     },
     [],
+  );
+
+  /*
+   * The call is over — ask the member how it went (goal item 14).
+   *
+   * ChatScreen has done this since 066 for a session that ends in a thread
+   * (ChatScreen.tsx:491), and the store's own comment on `requestReview`
+   * ("if a call and its chat both notice the same session ending") describes
+   * this half as if it existed. It did not. Every voice or video session that
+   * ended while the member was on THIS screen — which is every call that is not
+   * abandoned back into the chat — was never rated, and the directory's ratings
+   * were therefore a chat-only measurement.
+   *
+   * Unmount is the trigger because unmount is already this screen's single
+   * exit. End Call, Decline, the back-guard dialog, a peer hang-up noticed by
+   * the heartbeat (`status === 'ended'`), a media failure (`connState ===
+   * 'failed'`) and a server-side end for an exhausted balance all funnel into
+   * `onEnd`, which pops the route and unmounts us; the effect above is the
+   * proof, because it is how the server learns the call ended at all. Five
+   * separate triggers for one exit is five chances to miss one.
+   *
+   * Declared AFTER that effect on purpose: React runs cleanups in declaration
+   * order, so `endCall` is in flight before the sheet opens, and
+   * `submit_session_review` refuses a session whose status is not yet 'ended'
+   * (066:115). `end_call` is what ends it (037:1152).
+   *
+   * TWO conditions, and they answer different questions.
+   *
+   * `sessionId !== null` asks "did this bill anything". `start_call` (044:196)
+   * hands back a `session_request_id` and no session, so a refused start, a
+   * call cancelled while ringing and a declined incoming ring all reach here
+   * with nothing to rate.
+   *
+   * `connectedTrackedRef` asks "was there ever a call to have an opinion
+   * about", and it is the one Amit named (2026-09-07: "session end review
+   * should not fire when there was no connection"). It is needed because the
+   * first condition is not sufficient: `answer_call` (037:1039) creates the
+   * paid_sessions row and bills minute one BEFORE any media exists, so a call
+   * that was answered and then failed to connect has a billed session id and
+   * nothing whatsoever to review. Asking "how was your session?" about a call
+   * that never audibly happened is worse than not asking — it invites a
+   * one-star rating of the network onto a provider's directory average.
+   *
+   * The latch is reused rather than added: it already exists to fire
+   * `call_answered` exactly once (:325), is set only in the
+   * `connState === 'connected'` branch, and is never reset — so at cleanup it
+   * means "media connected at least once during this screen's life", which is
+   * exactly the question. Reading `connState` here would not work: by unmount
+   * it has moved to `closed`.
+   *
+   * It is declared BELOW this effect (:281) and that is safe rather than
+   * lucky: the only read is inside the returned cleanup, which cannot run
+   * until the whole component body has evaluated. Nothing reads it during
+   * render, so there is no temporal-dead-zone hazard.
+   *
+   * That a failed-after-answer call is still CHARGED for its first minute is a
+   * separate defect and is deliberately not hidden by this change; it wants a
+   * refund path, not a suppressed prompt. Flagged rather than fixed here.
+   *
+   * The one end left uncovered is a hang-up in the same second the media
+   * connected, before the first heartbeat has answered with the id — the id is
+   * the review's primary key, so there is no row to write the rating against.
+   *
+   * Member side only, and that is the schema's decision rather than a product
+   * one: `submit_session_review` raises `only the member may review` whenever
+   * `auth.uid() <> paid_sessions.member_id` (066:109). Prompting the provider
+   * would be a sheet whose Send button cannot succeed.
+   */
+  const requestReview = useStore(s => s.requestReview);
+  // Refs for the same reason `callIdRef` has one: the cleanup must see the
+  // latest values without the effect re-subscribing on every heartbeat.
+  const sessionIdRef = useRef<string | null>(sessionId);
+  sessionIdRef.current = sessionId;
+  const isMemberSideRef = useRef(isMemberSide);
+  isMemberSideRef.current = isMemberSide;
+  const reviewPeerNameRef = useRef(reviewPeerName);
+  reviewPeerNameRef.current = reviewPeerName;
+  useEffect(
+    () => () => {
+      const billed = sessionIdRef.current;
+      if (billed !== null && isMemberSideRef.current && connectedTrackedRef.current) {
+        requestReview(billed, reviewPeerNameRef.current);
+      }
+    },
+    [requestReview],
   );
 
   // Outgoing: place the call once the conversation resolves.

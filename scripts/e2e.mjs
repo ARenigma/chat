@@ -186,7 +186,7 @@ sql(
 // `presence` alongside `is_available` since 012 split them: the flow checks a
 // directory row, and without a declared presence the row renders no dot.
 sql(
-  `update public.profiles set display_name = 'Ada', is_available = true,
+  `update public.profiles set display_name = 'Aanya', is_available = true,
      presence = 'here', presence_visible = true where id = '${PROVIDER_ID}'`,
 );
 // Migration 006 made admission conditional on a complete application and a
@@ -194,7 +194,7 @@ sql(
 sql(
   `insert into public.provider_applications
      (user_id, status, display_name, gender, date_of_birth, headline, languages, about)
-   values ('${PROVIDER_ID}', 'submitted', 'Ada', 'female',
+   values ('${PROVIDER_ID}', 'submitted', 'Aanya', 'female',
            (current_date - interval '26 years')::date,
            'I listen more than I talk', ARRAY['English','Hindi'],
            'I have spent years sitting with friends through the hour after the news lands. I do not tidy your story. I stay with it until it has room to breathe.')
@@ -204,7 +204,7 @@ sql(`select public.approve_provider_application('${PROVIDER_ID}')`);
 if (sql('select count(*) from public.provider_directory') !== '1') {
   fail('the provider fixture is not visible in provider_directory');
 }
-console.log('   provider "Ada" admitted and discoverable');
+console.log('   provider "Aanya" admitted and discoverable');
 
 // A member session, injected rather than earned.
 //

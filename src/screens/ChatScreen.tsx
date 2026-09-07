@@ -61,12 +61,18 @@ import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { readPresence } from '../lib/presence';
 import { SCROLL_PHYSICS } from '../lib/scroll';
-import { DEFAULT_RATES, isLowBalance } from '../lib/rates';
+/*
+ * `DEFAULT_RATES`, `isLowBalance`, `estimatedTalkSeconds` and `formatMinutes`
+ * are all gone from this screen as of 2026-09-07, and they went together
+ * because they were one feature: the whole-minutes talk-time estimate the bar
+ * used to show above the five-minute mark. With the bar reduced to the
+ * countdown alone there is nothing left that needs to guess at minutes from a
+ * balance and a rate, so the imports go rather than sitting here looking
+ * load-bearing. They all still exist for their other callers.
+ */
 import {
   clockTickMs,
-  estimatedTalkSeconds,
   formatClock,
-  formatMinutes,
   secondsRemainingNow,
   showsCountdown,
 } from '../lib/sessionClock';
@@ -912,8 +918,32 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
     !extendCardDismissed;
 
   const showPinnedExtend = showExtendCard && !extendScrolledAway;
-  const showStickyRecharge =
-    balance !== null && (!showExtendCard || extendScrolledAway);
+  /*
+   * The talk bar is the COUNTDOWN, and nothing else (Amit, 2026-09-07: "Dont
+   * need two timers -- only one countdown which activates when <=5 mins is left
+   * with dynamic timer and rechage button").
+   *
+   * It used to show for the whole of any chat with a loaded balance, reading
+   * "240 min of talk time left" — a second, coarser time display sitting above
+   * the real countdown's slot. Two figures for one fact, and the always-present
+   * one was the less useful of the two: it repainted every 15 s, carried no
+   * seconds, and mostly said "you have plenty".
+   *
+   * Now it is gated on `countingDown`, so it is the last five minutes of a live
+   * session or nothing. `showsCountdown` already owned that threshold
+   * (sessionClock.ts), and `clockTickMs` already returns the 1 s tick for
+   * exactly this window — so the bar is on screen only when the clock beneath
+   * it is genuinely moving per second. That is the whole point: it appears
+   * BECAUSE something is running out.
+   *
+   * The balance itself has not gone anywhere. `TokenCounter` in the header
+   * carries it permanently and opens Recharge, which is where a member who
+   * wants to know their balance without being warned about it should look.
+   *
+   * The extend-card clause stays: the card owns the top band while it is
+   * pinned, and two things cannot occupy one band.
+   */
+  const showStickyRecharge = countingDown && (!showExtendCard || extendScrolledAway);
 
   useEffect(() => {
     if (!showExtendCard) {
@@ -1335,6 +1365,36 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
               to it (#1). Two points down evens the pair. */}
           <Icon name="call" size={18} color={theme.color.text.secondary} />
         </Pressable>
+        {/* END, and it lives HERE rather than in the talk bar (Amit, 2026-09-07).
+            The bar now appears only inside the last five minutes — "only one
+            countdown which activates when <=5 mins is left with dynamic timer
+            and rechage button" — and that countdown slot belongs to Recharge.
+            Leaving End in the bar would have meant a member could not end a
+            session they were paying for until it had nearly run out, which is
+            the one moment ending it no longer saves them anything.
+            Rendered only while a session is live: an End button with nothing to
+            end is a control that lies about what state you are in. */}
+        {activeSession ? (
+          <Pressable
+            onPress={requestEnd}
+            /* `disabled` while the request is in flight, not `busy`. `busy` is
+               the held-compression state that pairs with `busyLabel` — the
+               participle a Button swaps into its label — and an icon-only
+               control has no label to swap. contract.test's "narrates every
+               mutation a button starts" counts the two props together for
+               exactly that reason, so this says "not now" rather than
+               pretending to narrate. The outcome arrives as the dialog. */
+            disabled={endingSession}
+            testID="chat-end-session"
+            accessibilityLabel="End paid session"
+            accessibilityHint="Stops the per-minute charge"
+            press="none"
+            size={28}
+            shape="circle"
+            style={styles.navButton}>
+            <Icon name="stop" size={18} color={theme.color.state.danger} />
+          </Pressable>
+        ) : null}
         <TokenCounter balance={balance} onPress={openWallet} />
       </View>
 
@@ -1358,48 +1418,29 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
         <Animated.View
           entering={barIn}
           exiting={barOut}
-          style={[styles.talkBar, (countingDown || isLowBalance(balance)) && styles.talkBarLow]}>
+          style={[styles.talkBar, styles.talkBarLow]}>
           <View style={styles.talkDot} />
-          {/* Live and inside the last five minutes: the countdown, in numerals,
-              ticking. Otherwise the whole minutes the balance buys — the
-              server's figure once billing is live, the balance ÷ rate estimate
-              before that — with no seconds to tick. */}
-          {countingDown && sessionRemaining !== null ? (
-            <Text
-              allowFontScaling={false}
-              testID="chat-session-timer"
-              style={styles.talkTimer}>
-              {formatClock(sessionRemaining)}
-            </Text>
-          ) : null}
-          <Text allowFontScaling style={styles.talkText}>
-            {countingDown
-              ? 'left'
-              : `${formatMinutes(
-                  sessionRemaining ??
-                    estimatedTalkSeconds(
-                      balance,
-                      activeSession?.rate_tokens_per_min ?? DEFAULT_RATES.chat,
-                    ),
-                )} of talk time left`}
+          {/* ONE time display, and no branch to choose it.
+              The bar exists only while `countingDown` is true, so this is
+              always the ticking `m:ss` — the old "N min of talk time left"
+              alternative was the second timer Amit asked to remove, and the
+              `formatMinutes`/`estimatedTalkSeconds` fallback it needed has gone
+              with it.
+              `allowFontScaling={false}` on purpose: a monospaced clock that
+              grows with the system font pushes the Recharge button off a 360dp
+              bar, and this is the one string a member reads glancing, not
+              reading. */}
+          <Text
+            allowFontScaling={false}
+            testID="chat-session-timer"
+            style={styles.talkTimer}>
+            {formatClock(sessionRemaining ?? 0)}
           </Text>
-          {activeSession ? (
-            <Pressable
-              onPress={requestEnd}
-              disabled={endingSession}
-              testID="chat-end-session"
-              accessibilityLabel="End paid session"
-              press="chip"
-              style={styles.talkRecharge}>
-              {endingSession ? (
-                <LoadingIndicator size={16} color={theme.color.text.positive} containerColor="transparent" />
-              ) : (
-                <Text allowFontScaling style={styles.talkRechargeLabel}>
-                  End
-                </Text>
-              )}
-            </Pressable>
-          ) : null}
+          <Text allowFontScaling style={styles.talkText}>
+            left
+          </Text>
+          {/* Recharge, not End. End is in the header now, live for the whole
+              session rather than only its last five minutes. */}
           <Pressable
             onPress={openRefill}
             testID="chat-recharge"
@@ -1458,6 +1499,11 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
             press="none"
             highlight="dim"
             size={28}
+            // Circle, not the square touch box: this box sets no radius, so the
+            // `dim` fill painted a solid 28dp square behind a 12pt glyph. Icon-only
+            // controls take borderless (circular) ink, not the bounded rectangular
+            // kind. https://developer.android.com/training/material/animations
+            shape="circle"
             style={styles.extendCardClose}>
             <Icon name="close" size={12} color={theme.color.text.secondary} />
           </Pressable>
@@ -1588,6 +1634,10 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile }: P
                 press="none"
                 highlight="dim"
                 size={32}
+                // Circle, not the square touch box — this box sets no radius, so
+                // the `dim` fill painted a solid 32dp square behind a 12pt glyph.
+                // https://developer.android.com/training/material/animations
+                shape="circle"
                 style={styles.replyClose}>
                 <Icon name="close" size={12} color={theme.color.text.secondary} />
               </Pressable>

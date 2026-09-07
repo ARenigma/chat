@@ -11,6 +11,20 @@
  * (migration 069) — a member reads what they spent, a provider their own share
  * — so this screen renders whatever it is given and cannot leak the other side
  * by getting a branch wrong.
+ *
+ * TWO totals at the top, not one (Amit, 2026-09-07: "usage ledger should have
+ * two total level KPIs for sessions and spends at top and then ledger rows").
+ * A single token total answers "how much" and leaves "how much of what"
+ * unanswered — ₹1,200 across three long video calls and across forty short
+ * chats are different facts about the same person, and the row list makes the
+ * reader count to find out. The count is the second KPI so neither figure has
+ * to be inferred from the other.
+ *
+ * Both KPIs are still only the caller's own side of the money. The count is
+ * safe by construction (a row the caller can see is a row they were in), and
+ * the token figure is the same sum this screen has always shown — server-chosen
+ * per row, so a provider's 60% share is what is added up and the gross never
+ * reaches this file to be leaked.
  */
 import React from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -46,15 +60,128 @@ function minutesLabel(minutes: number): string {
   return minutes < 1 ? 'under 1 min' : `${minutes} min`;
 }
 
+/** The two top-level figures, with the words that make each one mean something. */
+export interface UsageKpis {
+  /** How many billed sessions are in this ledger. A COUNT of rows. */
+  sessions: number;
+  /** The visible word under the count: "Session" at one, "Sessions" otherwise. */
+  sessionsLabel: string;
+  /** The spoken form — what the number means, not the number. */
+  sessionsSpoken: string;
+  /** The caller's own token figure: what they spent, or what they were paid. */
+  tokens: number;
+  /** "Tokens spent" for a member, "Tokens earned" for a provider. */
+  tokensLabel: string;
+  /** The spoken form of the same. */
+  tokensSpoken: string;
+  /** True when the caller is being paid for these sessions rather than paying. */
+  earning: boolean;
+}
+
+/**
+ * The two KPIs, or `null` when there is nothing to total.
+ *
+ * `null` and not `{ sessions: 0, tokens: 0 }` on purpose. Two cards reading
+ * zero are two things a first-time member has to read, understand and dismiss
+ * before reaching the sentence that actually helps them ("Every conversation
+ * you have will be listed here, with what it cost"). An empty state is one
+ * message, so the caller renders the empty state OR the KPIs and can never
+ * render both — the impossibility is in this return type rather than in a
+ * `rows.length > 0` that a later edit could drop.
+ *
+ * `sessions` is `rows.length`. It is stated here and gated in
+ * __tests__/usageLedger.test.ts because a count and a sum look identical in a
+ * card and diverge the moment a session costs anything other than one token —
+ * which every session does.
+ *
+ * The role comes off the newest row's `i_am_member`, which is what the screen
+ * title has always used. It is the caller's side of the ledger, not a claim
+ * about the whole list: an account that is both a member and a provider gets
+ * one label and one summed figure for a list that mixes both. That predates
+ * these KPIs (the single total had it too) and belongs to the RPC, which would
+ * have to return the two sides separately before this screen could show them.
+ */
+export function usageKpis(rows: readonly UsageRow[]): UsageKpis | null {
+  if (rows.length === 0) {
+    return null;
+  }
+  const earning = rows[0]?.i_am_member === false;
+  const sessions = rows.length;
+  // Both totals are the caller's own: a member's spend, a provider's share.
+  const tokens = rows.reduce((sum, r) => sum + r.tokens, 0);
+  const amount = formatTokens(tokens);
+  const singular = sessions === 1;
+  return {
+    sessions,
+    // "1 sessions" is the tell that nobody looked at a one-row ledger.
+    sessionsLabel: singular ? 'Session' : 'Sessions',
+    sessionsSpoken: `${formatTokens(sessions)} ${
+      singular ? 'session' : 'sessions'
+    } in this ledger`,
+    tokens,
+    /*
+     * A provider is not spending. The word has to move with the role or the
+     * screen tells someone being paid that they spent the money — which is the
+     * same reason the title above already says "Earnings by session". Neither
+     * wording exposes the other side's figure: it renames the caller's own.
+     */
+    tokensLabel: earning ? 'Tokens earned' : 'Tokens spent',
+    tokensSpoken: earning
+      ? `${amount} tokens earned across these sessions`
+      : `${amount} tokens spent across these sessions`,
+    earning,
+  };
+}
+
+/**
+ * One KPI card: the figure, then what the figure is.
+ *
+ * The two Texts are ONE accessibility node. "Describe each UI element" asks a
+ * description to convey purpose rather than visual detail, and left unmerged
+ * TalkBack reads "3" and then, separately, "Sessions" — two fragments a
+ * listener has to reassemble, in an order the layout happens to impose. So the
+ * container takes `accessible` (React Native's equivalent of Compose's
+ * `mergeDescendants`, which the principles page names for exactly this) and one
+ * `accessibilityLabel` that states the meaning: "3 sessions in this ledger".
+ * https://developer.android.com/guide/topics/ui/accessibility/apps
+ * https://developer.android.com/guide/topics/ui/accessibility/principles
+ *
+ * No `maxFontSizeMultiplier` on the value: design/tokens.json leaves numerals
+ * uncapped deliberately, "so accessibility scaling still enlarges reading text
+ * and the balance", and a KPI is a balance.
+ */
+function Kpi({
+  value,
+  label,
+  spoken,
+  testID,
+}: {
+  value: string;
+  label: string;
+  spoken: string;
+  testID: string;
+}) {
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={styles.kpi} accessible accessibilityLabel={spoken}>
+      <Text allowFontScaling style={styles.kpiValue} testID={testID}>
+        {value}
+      </Text>
+      <Text allowFontScaling style={styles.kpiLabel}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
 export function UsageLedgerScreen({ onBack }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { data, isLoading } = useUsageLedger();
   const rows = data ?? [];
-  // Both totals are the caller's own: a member's spend, a provider's share.
-  const total = rows.reduce((sum, r) => sum + r.tokens, 0);
-  const earning = rows.length > 0 && rows[0]?.i_am_member === false;
+  const kpis = usageKpis(rows);
+  const earning = kpis?.earning ?? false;
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]} testID="usage-ledger">
@@ -72,7 +199,10 @@ export function UsageLedgerScreen({ onBack }: Props) {
         <View style={styles.state}>
           <LoadingIndicator />
         </View>
-      ) : rows.length === 0 ? (
+      ) : /* `kpis === null` IS `rows.length === 0` — see usageKpis. Branching on
+             the KPIs rather than on the row count is what makes "empty state or
+             KPIs, never both" a fact about the types instead of a convention. */
+      kpis === null ? (
         <View style={styles.state}>
           <Text
             maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
@@ -92,17 +222,23 @@ export function UsageLedgerScreen({ onBack }: Props) {
             styles.scroll,
             { paddingBottom: insets.bottom + TOKENS.space.xl },
           ]}>
-          <View style={styles.totalCard}>
-            <Text allowFontScaling style={styles.totalLabel}>
-              {earning ? 'Earned across these sessions' : 'Spent across these sessions'}
-            </Text>
-            <Text
-              maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineMediumEmphasized}
-              allowFontScaling
-              style={styles.totalValue}
-              testID="usage-total">
-              {`${formatTokens(total)} tokens`}
-            </Text>
+          {/* Two up, above the rows. Equal `flex: 1` halves rather than a fixed
+              width, so the pair survives every screen width without a
+              breakpoint, and separated by the same space.xs the row list is
+              already gapped by — one rhythm down the screen, not two. */}
+          <View style={styles.kpiRow}>
+            <Kpi
+              value={formatTokens(kpis.sessions)}
+              label={kpis.sessionsLabel}
+              spoken={kpis.sessionsSpoken}
+              testID="usage-sessions"
+            />
+            <Kpi
+              value={formatTokens(kpis.tokens)}
+              label={kpis.tokensLabel}
+              spoken={kpis.tokensSpoken}
+              testID="usage-total"
+            />
           </View>
 
           {rows.map(row => (
@@ -160,16 +296,39 @@ const makeStyles = (t: Theme) =>
     emptyTitle: { ...TOKENS.typography.titleMediumEmphasized, color: t.color.text.primary },
     emptyBody: { ...TOKENS.typography.bodyMedium, color: t.color.text.secondary, textAlign: 'center' },
     scroll: { paddingHorizontal: TOKENS.space.md, gap: TOKENS.space.xs },
-    totalCard: {
+    kpiRow: { flexDirection: 'row', gap: TOKENS.space.xs, marginBottom: TOKENS.space.xs },
+    /*
+     * The card interior stays space.lg, which is where design/tokens.json keeps
+     * card interiors ("Recharge balance, Provider detail sections, Payment
+     * success") and what the single total card used before it became two. Half
+     * the width, so it was worth checking the number still fits rather than
+     * assuming: at 360dp the content box is (360 − 2×16 − 8)/2 − 2×20 = 120dp,
+     * and the widest figure this ledger can produce — 50 sessions is the RPC's
+     * cap (migration 069) at the 35/min video rate — is six digits, ~101dp of
+     * numeralLarge. Two-line wrap above that, never a clip.
+     */
+    kpi: {
+      flex: 1,
       backgroundColor: t.color.bg.raised,
       borderRadius: TOKENS.radius.lg,
       borderCurve: 'continuous',
       padding: TOKENS.space.lg,
       gap: TOKENS.space.hair,
-      marginBottom: TOKENS.space.xs,
     },
-    totalLabel: { ...TOKENS.typography.bodySmall, color: t.color.text.secondary },
-    totalValue: { ...TOKENS.typography.headlineMediumEmphasized, color: t.color.text.primary },
+    /*
+     * numeralLarge, not the headlineMediumEmphasized the single total wore.
+     *
+     * DEPARTURE, stated: the brief named numeralMedium/numeralSmall for the
+     * values. Both are tabular, which was the point of naming them — a figure
+     * that changes must not twitch — but numeralMedium is 14pt, the size this
+     * screen already uses for a single ROW's amount, and a top-level total set
+     * smaller than or equal to the lines it totals is not a KPI. numeralLarge
+     * is the same tabular Bold face on the M3 headlineSmall grid (24/32), so it
+     * keeps the tabular guarantee, reads as the summary, and is 4pt narrower
+     * than the 28pt it replaces — which is what buys the fit computed above.
+     */
+    kpiValue: { ...TOKENS.typography.numeralLarge, color: t.color.text.primary },
+    kpiLabel: { ...TOKENS.typography.bodySmall, color: t.color.text.secondary },
     row: {
       flexDirection: 'row',
       alignItems: 'center',

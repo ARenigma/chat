@@ -16,7 +16,10 @@ import type { ConversationSummary, ProviderSummary } from '../lib/database.types
 import { initialOf } from '../lib/display';
 import { readPresence } from '../lib/presence';
 import { SCROLL_PHYSICS } from '../lib/scroll';
-import Animated from 'react-native-reanimated';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+} from 'react-native-reanimated';
 import { contentColumnWidth } from '../lib/windowSize';
 import { sizedStorageImageUri } from '../lib/storageImage';
 import { storage } from '../lib/storage';
@@ -66,9 +69,56 @@ import {
   searchOut,
   searchResultsIn,
   searchResultsOut,
+  tabIndicatorLead,
+  tabIndicatorTo,
+  tabIndicatorTrail,
 } from '../theme/motion';
 
 const POTD_DISMISSED_KEY = 'companion.potd.dismissed';
+
+/**
+ * The tab strip's active indicator: 3dp tall, rounded on the TOP corners only.
+ *
+ * Both numbers are the M3 primary-tab indicator's own, not a choice made here.
+ * `Base.Widget.Material3.TabLayout` draws it with
+ * `<item name="tabIndicator">@drawable/m3_tabs_rounded_line_indicator</item>`
+ * (material-components-android
+ * `lib/java/com/google/android/material/tabs/res/values/styles.xml`), and that
+ * drawable is a rectangle with `topLeftRadius`/`topRightRadius` of `3dp`,
+ * `bottomLeftRadius`/`bottomRightRadius` of `0dp`, sized to
+ * `@dimen/m3_comp_primary_navigation_tab_active_indicator_height`, which the
+ * component's token file declares as `3dp`
+ * (`lib/java/com/google/android/material/tabs/res/values/tokens.xml`).
+ *
+ * It was a 2dp bar with a 1dp radius on all four corners. 2dp is not a Material
+ * number for this part and the bottom radius is actively wrong: the indicator
+ * sits ON the bottom edge of the strip, so rounding the bottom corners rounds
+ * them against an edge nothing can see, which reads as a slightly blurred bar
+ * rather than as a rounded one.
+ */
+const TAB_INDICATOR_HEIGHT = 3;
+
+/**
+ * The floor on the indicator's width — 24dp, and it is the reference's floor.
+ *
+ * `TabIndicatorInterpolator.MIN_INDICATOR_WIDTH = 24`
+ * (material-components-android
+ * `lib/java/com/google/android/material/tabs/TabIndicatorInterpolator.java`),
+ * applied inside `calculateTabViewContentBounds`: "if the calculated difference
+ * between the left and right bounds is less than 24dp, then left and right
+ * bounds are adjusted such that the difference between them is equal to 24dp".
+ * It matters here only as a guard — both labels are far wider than 24dp — but a
+ * label has a frame in which it has not measured yet, and this is what the
+ * indicator is that frame instead of being zero-width.
+ */
+const TAB_INDICATOR_MIN_WIDTH = 24;
+
+/**
+ * How many tabs share the strip. Hoisted so the indicator's worklet captures a
+ * NUMBER rather than the category array — a worklet's closure is serialised to
+ * the UI runtime, and `count` is the only thing about the list it needs.
+ */
+const TAB_COUNT = PROVIDER_CATEGORIES.length;
 
 /**
  * How many profiles the week's carousel holds (Amit, 2026-09-06: "at least
@@ -141,6 +191,137 @@ export function HomeScreen({
    */
   const [exploreCategory, setExploreCategory] = useState<ProviderCategory>(DEFAULT_CATEGORY);
   const [searchFilter, setSearchFilter] = useState<DirectoryFilter>(NO_FILTER);
+
+  /*
+   * ONE indicator that moves between the tabs, rather than one per tab that
+   * switches colour. This is the Material component's own behaviour and the
+   * whole class that draws it is called `SlidingTabIndicator` —
+   * `animateIndicatorToPosition` (material-components-android
+   * `lib/java/com/google/android/material/tabs/TabLayout.java:3334`) whose
+   * docstring reads "Animate the position of the indicator from its current
+   * position to a new position. This is typically used when a tab destination is
+   * tapped." It runs a `ValueAnimator` (`:3379-3386`) and hands every frame's
+   * fraction to `TabIndicatorInterpolator.updateIndicatorForOffset`, which
+   * LERPS THE LEFT AND RIGHT BOUNDS INDEPENDENTLY between the two tabs
+   * (`TabIndicatorInterpolator.java`). So the indicator's position AND its width
+   * are animated; nothing about it is a hard switch.
+   *
+   * The three shared values below are exactly the three things that method needs
+   * and no more:
+   *
+   *   tabStripWidth — the strip's measured width, so each tab's slot is
+   *                   `width / count`. `MODE_FIXED` + `GRAVITY_FILL` (both
+   *                   `TabLayout` defaults, `:674-675`) give every tab
+   *                   `lp.width = 0; lp.weight = 1` (`:1797-1805`), i.e. an
+   *                   equal share of the whole strip, so a tab's centre is
+   *                   `(i + 0.5) * slot` and needs no measuring of its own.
+   *   tabLabelWidths — each LABEL's measured width, because an M3 PRIMARY tab's
+   *                   indicator is the width of the label, not of the tab. See
+   *                   `styles.tabIndicator` for the citation; this is the one
+   *                   place the strip has to measure a child.
+   *   tabOrigin/tabTarget/tabSlide — the tab the current move started from, the
+   *                   one it is heading to, and the progress between them.
+   *                   `updateIndicatorForOffset` takes a startTitle, an endTitle
+   *                   and an offset; these are those three. The origin is
+   *                   snapped to a whole tab rather than to the interpolated
+   *                   position when a move is interrupted, which is the
+   *                   reference's behaviour too — it re-targets from
+   *                   `getChildAt(getSelectedTabPosition())` (`:3358`), the
+   *                   selected tab, not from where the bar happens to be.
+   */
+  const tabIndex = PROVIDER_CATEGORIES.indexOf(exploreCategory);
+  const tabStripWidth = useSharedValue(0);
+  const tabLabelWidths = useSharedValue<number[]>(
+    PROVIDER_CATEGORIES.map(() => 0),
+  );
+  const tabOrigin = useSharedValue(tabIndex);
+  const tabTarget = useSharedValue(tabIndex);
+  const tabSlide = useSharedValue(tabIndex);
+  useEffect(() => {
+    tabOrigin.value = tabTarget.value;
+    tabTarget.value = tabIndex;
+    tabSlide.value = tabIndicatorTo(tabIndex);
+  }, [tabIndex, tabOrigin, tabTarget, tabSlide]);
+
+  const onTabStripLayout = useCallback(
+    (width: number) => {
+      tabStripWidth.value = width;
+    },
+    [tabStripWidth],
+  );
+  /*
+   * Written through a ref as well as the shared value because a label's width
+   * has to be read to be updated — the shared value's own `.value` is readable
+   * from the JS thread, but reading it to build the next array on every layout
+   * pass is a UI-thread round trip for something React already owns.
+   */
+  const labelWidths = useRef<number[]>(PROVIDER_CATEGORIES.map(() => 0));
+  const onTabLabelLayout = useCallback(
+    (index: number, width: number) => {
+      if (labelWidths.current[index] === width) {
+        return;
+      }
+      labelWidths.current = labelWidths.current.map((w, i) =>
+        i === index ? width : w,
+      );
+      tabLabelWidths.value = labelWidths.current;
+    },
+    [tabLabelWidths],
+  );
+
+  /*
+   * `ElasticTabIndicatorInterpolator.updateIndicatorForOffset`, re-expressed.
+   *
+   * The M3 tab style asks for the elastic variant by name —
+   * `<item name="tabIndicatorAnimationMode">elastic</item>` in
+   * `Base.Widget.Material3.TabLayout` (material-components-android
+   * `lib/java/com/google/android/material/tabs/res/values/styles.xml`) — and
+   * that subclass gives the two edges DIFFERENT easings so the bar grows across
+   * the gap and shrinks on arrival: the edge being travelled toward takes
+   * `decInterp` (ease-out sine) and the edge being left takes `accInterp`
+   * (ease-in sine). Both live in `src/theme/motion.ts` as `tabIndicatorLead` /
+   * `tabIndicatorTrail`, with the file:line, because a curve is a motion
+   * decision and this file is not allowed to hold one.
+   *
+   * `width` is animated, not just `translateX`, which is the point of lerping
+   * the two bounds separately — a fixed-width bar sliding across cannot stretch,
+   * and the two labels are different widths anyway ("Listeners" against
+   * "Astrologers"), so even a rigid move has to resize.
+   */
+  const tabIndicatorStyle = useAnimatedStyle(() => {
+    const slot = tabStripWidth.value / TAB_COUNT;
+    if (slot <= 0) {
+      // The strip has not measured yet. The reference hides the indicator in
+      // the same case — `tweenIndicatorPosition` sets its bounds to -1 when the
+      // start title has no width (`TabLayout.java:3311-3320`).
+      return { width: 0, opacity: 0, transform: [{ translateX: 0 }] };
+    }
+    const widths = tabLabelWidths.value;
+    const edgesOf = (index: number) => {
+      const label = Math.max(widths[index] ?? 0, TAB_INDICATOR_MIN_WIDTH);
+      const centre = (index + 0.5) * slot;
+      return { left: centre - label / 2, right: centre + label / 2 };
+    };
+    const from = edgesOf(tabOrigin.value);
+    const to = edgesOf(tabTarget.value);
+    const span = tabTarget.value - tabOrigin.value;
+    const fraction =
+      span === 0 ? 1 : (tabSlide.value - tabOrigin.value) / span;
+    const movingRight = to.left > from.left;
+    const leftFraction = movingRight
+      ? tabIndicatorTrail(fraction)
+      : tabIndicatorLead(fraction);
+    const rightFraction = movingRight
+      ? tabIndicatorLead(fraction)
+      : tabIndicatorTrail(fraction);
+    const left = from.left + (to.left - from.left) * leftFraction;
+    const right = from.right + (to.right - from.right) * rightFraction;
+    return {
+      width: Math.max(right - left, 0),
+      opacity: 1,
+      transform: [{ translateX: left }],
+    };
+  });
 
   const categoryById = useMemo(() => {
     const map = new Map<string, ProviderCategory>();
@@ -619,6 +800,13 @@ export function HomeScreen({
               accessibilityLabel="Leave search"
               press="none"
               size={TOKENS.interaction.minTarget}
+              /* Circle, not the 48dp touch box. `navIcon` is a bare box with no
+                 radius, so the state layer was clipped to the box and painted a
+                 full 48dp SQUARE behind a 22pt glyph — the defect Amit reported
+                 ("clicking any icon shows a square container and not contained
+                 within the button"). An icon-only control takes circular ink.
+                 https://developer.android.com/training/material/animations */
+              shape="circle"
               style={styles.navIcon}>
               <Icon name="back" size={22} color={theme.color.text.secondary} />
             </Pressable>
@@ -646,6 +834,8 @@ export function HomeScreen({
                 accessibilityLabel="Search people"
                 press="none"
                 size={TOKENS.interaction.minTarget}
+                /* Circle, for the same reason as the leave-search arrow above. */
+                shape="circle"
                 style={styles.navIcon}>
                 <Icon name="search" size={24} color={theme.color.text.secondary} />
               </Pressable>
@@ -660,14 +850,25 @@ export function HomeScreen({
       {/* Listeners / Astrologers, ABOVE Chats and outside the list, so the strip
           stays put while everything under it scrolls. A tab is a whole view of
           the app: the rail and Explore both follow it (Amit, 2026-09-06).
-          Text-only M3 primary tabs — the label and the underline carry the
-          state, which is the one thing that distinguishes the two lists. Always
-          both, from day one: an empty Astrologers tab is an honest "nobody
-          yet", and hiding it would make the strip appear under a member the day
-          one signs up. */}
+          Text-only M3 primary tabs — the label and the active indicator carry
+          the state, which is the one thing that distinguishes the two lists.
+          Always both, from day one: an empty Astrologers tab is an honest
+          "nobody yet", and hiding it would make the strip appear under a member
+          the day one signs up.
+
+          Two tabs sharing the strip equally, with ONE indicator that moves
+          between them: `MODE_FIXED` + `GRAVITY_FILL` for the division and
+          `SlidingTabIndicator.animateIndicatorToPosition` for the move, both
+          Material defaults. The citations are in `styles.tabs`,
+          `styles.tabIndicator` and `tabIndicatorStyle`; each names the
+          material-components-android file and line, because "does Material
+          animate this?" is a question with a published answer and it is yes. */}
       {searching ? null : (
-      <View style={styles.tabs} testID="explore-tabs">
-        {PROVIDER_CATEGORIES.map(c => {
+      <View
+        style={styles.tabs}
+        testID="explore-tabs"
+        onLayout={e => onTabStripLayout(e.nativeEvent.layout.width)}>
+        {PROVIDER_CATEGORIES.map((c, index) => {
           const on = c === exploreCategory;
           return (
             <Pressable
@@ -678,18 +879,45 @@ export function HomeScreen({
               checked={on}
               accessibilityLabel={CATEGORY_LABEL[c]}
               press="none"
-              highlight="dim"
+              /*
+               * `ripple`, not `dim`, and the change is forced by the tab
+               * becoming full-width. `dim` is a full-bleed fill of the whole
+               * Pressable in `bg/selected` (Pressable.tsx: "a full-bleed cell
+               * fill"), which was a small block behind a hugged label and is now
+               * half the screen flashing solid on every tap. The reference gives
+               * a tab a bounded ink ripple — `tabRippleColor` with
+               * `tabUnboundedRipple` false in `Base.Widget.Material3.TabLayout`
+               * / `Widget.Material3.TabLayout` (material-components-android
+               * `lib/java/com/google/android/material/tabs/res/values/
+               * styles.xml`) — and RULE 1 §3 says take the platform's own
+               * solution: `highlight="ripple"` is `android_ripple`
+               * (https://reactnative.dev/docs/pressable#android_ripple).
+               * DEPARTURE: ours is a 20dp wave at `interaction.rippleRadius`
+               * rather than one that fills the tab's bounds, because that radius
+               * is the app's single ripple size — the same departure
+               * SearchBar.tsx already records for the clear control.
+               */
+              highlight="ripple"
               style={styles.tab}>
               <Text
                 maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
                 allowFontScaling
+                onLayout={e => onTabLabelLayout(index, e.nativeEvent.layout.width)}
                 style={[styles.tabLabel, on && styles.tabLabelOn]}>
                 {CATEGORY_LABEL[c]}
               </Text>
-              <View style={[styles.tabRule, on && styles.tabRuleOn]} />
             </Pressable>
           );
         })}
+        {/* One indicator for the whole strip, absolutely positioned so it can
+            move across tab boundaries. `pointerEvents="none"` keeps it out of
+            hit testing — it sits over the bottom edge of both 48dp targets, and
+            "The View is never the target of touch events"
+            (https://reactnative.dev/docs/view#pointerevents). */}
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.tabIndicator, tabIndicatorStyle]}
+        />
       </View>
       )}
 
@@ -1265,15 +1493,46 @@ const makeStyles = (t: Theme) =>
       paddingTop: TOKENS.space.xs,
       paddingBottom: TOKENS.space.sm,
     },
-    // Listeners / Astrologers. The label and the 2dp rule under it carry the
-    // state; the accent on the rule is what distinguishes two otherwise
-    // identical grey labels, which is the accent budget's "state, not
-    // decoration" case (theme.test lists HomeScreen for this).
+    /*
+     * Listeners / Astrologers, dividing the whole strip between them.
+     *
+     * The label and the accent indicator under it carry the state; the accent is
+     * what distinguishes two otherwise identical grey labels, which is the accent
+     * budget's "state, not decoration" case (theme.test lists HomeScreen for
+     * this).
+     *
+     * IT USED TO HUG ITS CONTENT at the left — `paddingHorizontal: md` plus
+     * `gap: lg` with each tab sized to its label, so the two tabs occupied about
+     * 200 of a 360dp window and the remaining 160dp was dead space no tap could
+     * reach. Material's tab row does not work that way and never has: `mode`
+     * defaults to `MODE_FIXED` and `tabGravity` to `GRAVITY_FILL`
+     * (material-components-android
+     * `lib/java/com/google/android/material/tabs/TabLayout.java:674-675`), and
+     * under that pair `updateTabViewLayoutParams` gives every tab
+     * `lp.width = 0; lp.weight = 1` (`:1797-1805`) — LinearLayout's "share the
+     * parent equally" idiom, which is `flex: 1` here. `MODE_FIXED` is documented
+     * on the same class as "Fixed tabs display all tabs concurrently" (`:1124`).
+     *
+     * So: no `paddingHorizontal` and no `gap`. Both would eat into the share each
+     * tab gets and neither has an equivalent in the reference — for `MODE_FIXED`
+     * it explicitly zeroes the strip's own start padding
+     * (`slidingTabIndicator.setPaddingRelative(paddingStart = 0, ...)`, `:2085-
+     * 2091`, where `paddingStart` is only computed for the scrollable modes).
+     * The consequence is that each label is now centred in its half rather than
+     * left-aligned on the md content boundary, which is also what the reference
+     * does (`slidingTabIndicator.setGravity(Gravity.CENTER_HORIZONTAL)` for
+     * `MODE_FIXED`, `:2094-2101`).
+     *
+     * `marginBottom` rather than `paddingBottom`, and the difference matters:
+     * the indicator is an absolutely-positioned child at `bottom: 0`, and
+     * whether Yoga measures an absolute child's offsets from the padding edge or
+     * the border edge is not something this file should be betting the
+     * indicator's position on. A margin is outside the box either way, so
+     * `bottom: 0` is unambiguously the bottom of the 48dp tab row.
+     */
     tabs: {
       flexDirection: 'row',
-      paddingHorizontal: TOKENS.space.md,
-      gap: TOKENS.space.lg,
-      paddingBottom: TOKENS.space.sm,
+      marginBottom: TOKENS.space.sm,
     },
     /*
      * Each tab is a 48dp box with its indicator on the bottom edge, not a 30dp
@@ -1300,16 +1559,28 @@ const makeStyles = (t: Theme) =>
      * so the Material fact is taken from the AndroidX/Material source that
      * implements it.)
      *
-     * `justifyContent: 'flex-end'` keeps the 2dp indicator on the bottom edge of
-     * that box, which is where TabLayout draws its own; the 18dp it opens up
+     * `justifyContent: 'flex-end'` keeps the label at the bottom of that box,
+     * which is where TabLayout draws its own indicator; the 18dp it opens up
      * above the label is touch target, not padding — the whole 48dp is tappable,
      * which is the point.
+     *
+     * `flex: 1` is `lp.width = 0; lp.weight = 1` — the equal share every tab gets
+     * under `MODE_FIXED` + `GRAVITY_FILL`; see the `tabs` comment above for the
+     * file:line. It is what makes the strip full-width, and it also means a tab's
+     * centre is arithmetic (`(i + 0.5) * width / count`) rather than something
+     * the indicator has to measure.
+     *
+     * `paddingBottom` replaces the `gap` the removed per-tab rule used to sit
+     * after. The label's baseline has to stay where it was, so the space the rule
+     * occupied (its 3dp plus the 4dp gap above it) is now padding under the
+     * label, and the indicator draws inside it.
      */
     tab: {
+      flex: 1,
       minHeight: TOKENS.interaction.minTarget,
       alignItems: 'center',
       justifyContent: 'flex-end',
-      gap: TOKENS.space['2xs'],
+      paddingBottom: TAB_INDICATOR_HEIGHT + TOKENS.space['2xs'],
     },
     tabLabel: {
       ...TOKENS.typography.titleMediumEmphasized,
@@ -1318,13 +1589,42 @@ const makeStyles = (t: Theme) =>
     tabLabelOn: {
       color: t.color.text.primary,
     },
-    tabRule: {
-      height: 2,
-      alignSelf: 'stretch',
-      borderRadius: 1,
-      backgroundColor: 'transparent',
-    },
-    tabRuleOn: {
+    /*
+     * ONE indicator for the strip, sized to the SELECTED LABEL and not to the
+     * tab, which is the M3 primary-tab rule rather than a leftover from the
+     * per-tab rule this replaced.
+     *
+     * The two M3 tab flavours differ on exactly this and the source is explicit:
+     * `Base.Widget.Material3.TabLayout` — primary tabs — sets
+     * `<item name="tabIndicatorFullWidth">false</item>`, while
+     * `Base.Widget.Material3.TabLayout.Secondary` sets it to `true`
+     * (material-components-android
+     * `lib/java/com/google/android/material/tabs/res/values/styles.xml`). With
+     * it false, `TabIndicatorInterpolator.calculateIndicatorWidthForTab` returns
+     * `calculateTabViewContentBounds(tab, MIN_INDICATOR_WIDTH)` — the label's
+     * bounds, floored at 24dp — instead of the tab's own left/right
+     * (`TabIndicatorInterpolator.java`). This strip is documented as primary
+     * tabs at the call site and is styled as them (title-weight labels, no
+     * icons), so the label's width is the correct one. THE TAB IS FULL WIDTH;
+     * THE INDICATOR IS NOT, and those are two separate settings in the
+     * reference, not one.
+     *
+     * `left: 0` with the offset carried by `translateX` in the animated style,
+     * rather than an animated `left`: a transform is a UI-thread compositor
+     * property, whereas animating `left` re-runs layout for every frame of every
+     * tab change.
+     *
+     * `bottom: 0` is `tabIndicatorGravity` = `bottom`, the `Widget.Design.
+     * TabLayout` default carried through the M3 styles (same styles.xml).
+     */
+    tabIndicator: {
+      position: 'absolute',
+      left: 0,
+      bottom: 0,
+      height: TAB_INDICATOR_HEIGHT,
+      // Top corners only, at the drawable's own 3dp; see TAB_INDICATOR_HEIGHT.
+      borderTopLeftRadius: TAB_INDICATOR_HEIGHT,
+      borderTopRightRadius: TAB_INDICATOR_HEIGHT,
       backgroundColor: t.color.bg.accent,
     },
     // Both nav states occupy the same row so the crossfade has nothing to

@@ -952,6 +952,13 @@ function Header({ onBack }: { onBack: () => void }) {
         accessibilityLabel="Back"
         press="none"
         highlight="dim"
+        // `back` sets no radius, so the `dim` fill painted a solid 28x40
+        // rectangle behind the chevron. Icon-only controls take borderless
+        // (circular) ink, not the bounded rectangular kind. The box is oblong, so
+        // the pill resolves to a 28-wide stadium rather than a true circle —
+        // intended for an oblong icon slot, stated per rule 1.6.
+        // https://developer.android.com/training/material/animations
+        shape="circle"
         style={styles.back}>
         <Icon name="chevronLeft" size={22} />
       </Pressable>

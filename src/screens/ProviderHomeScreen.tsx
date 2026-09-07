@@ -334,6 +334,12 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
                   press="none"
                   highlight="dim"
                   size={40}
+                  // `iconButton` sets no radius, so the `dim` fill painted a solid
+                  // 40dp square behind a 20pt gear. Square box, so the pill
+                  // resolves to a true 40dp circle — the M3 icon-button state
+                  // layer size exactly.
+                  // https://developer.android.com/training/material/animations
+                  shape="circle"
                   style={styles.iconButton}>
                   <Icon name="settings" size={20} color={theme.color.text.secondary} />
                 </Pressable>

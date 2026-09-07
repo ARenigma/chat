@@ -28,13 +28,13 @@ insert into auth.users (instance_id, id, aud, role, email, encrypted_password,
                         email_confirmed_at, created_at, updated_at)
 values
   ('00000000-0000-0000-0000-000000000000', '11111111-1111-4111-8111-111111111111',
-   'authenticated', 'authenticated', 'seed.mira@example.test', 'x', now(), now(), now()),
+   'authenticated', 'authenticated', 'seed.meera@example.test', 'x', now(), now(), now()),
   ('00000000-0000-0000-0000-000000000000', '22222222-2222-4222-8222-222222222222',
-   'authenticated', 'authenticated', 'seed.sara@example.test', 'x', now(), now(), now()),
+   'authenticated', 'authenticated', 'seed.sanya@example.test', 'x', now(), now(), now()),
   ('00000000-0000-0000-0000-000000000000', '33333333-3333-4333-8333-333333333333',
-   'authenticated', 'authenticated', 'seed.nia@example.test', 'x', now(), now(), now()),
+   'authenticated', 'authenticated', 'seed.mrunal@example.test', 'x', now(), now(), now()),
   ('00000000-0000-0000-0000-000000000000', '44444444-4444-4444-8444-444444444444',
-   'authenticated', 'authenticated', 'seed.ivy@example.test', 'x', now(), now(), now())
+   'authenticated', 'authenticated', 'seed.iniya@example.test', 'x', now(), now(), now())
 on conflict (id) do nothing;
 
 -- `identity_verified_at` matters as much as the role: the directory publishes
@@ -46,9 +46,20 @@ on conflict (id) do nothing;
 -- assets/seed/providers/manifest.json and a contract test holds the two within
 -- four years of each other.
 --
--- Sara at 24 is also the only provider in the 18-24 band. The casting rule caps
+-- Sanya at 24 is also the only provider in the 18-24 band. The casting rule caps
 -- the seed at 35, so 35-44 and 45+ can never populate; without her the age
 -- filter had one live band out of four and could not demonstrate itself.
+--
+-- The names are Indian and contemporary, and each is paired with the languages
+-- its row already claims: Sanya for Hindi, Mrunal for Marathi, Iniya for Tamil.
+-- The set before this one (Mira, Sara, Nia, Ivy) read as deliberately short and
+-- international in a product that ships only in India, and a Tamil-speaking
+-- provider under a name from the other end of the country is the detail that
+-- tells a member the directory was invented by someone who is not from here.
+-- All four are also <= 10 characters, which is what `railName` in HomeScreen
+-- (width 64, bodySmall, numberOfLines 1) fits before it ellipsises — the old
+-- set had that budget by accident, this one has it on purpose, and
+-- __tests__/seedProviders.test.ts holds it.
 update public.profiles p set
   role = 'provider',
   display_name = v.name,
@@ -60,25 +71,25 @@ update public.profiles p set
   is_available = v.available,
   -- Set alongside `is_available` rather than derived from it, because 012 split
   -- the two and the seed is the one place that has to show both states on a
-  -- device: Nia is closed for work AND away, so the directory can be checked
+  -- device: Mrunal is closed for work AND away, so the directory can be checked
   -- with a row that has no dot and no presence line.
   presence = case when v.available then 'here'::public.presence_choice else 'away' end,
   presence_visible = true,
   identity_verified_at = now()
 from (values
-  ('11111111-1111-4111-8111-111111111111'::uuid, 'Mira', 28,
+  ('11111111-1111-4111-8111-111111111111'::uuid, 'Meera', 28,
    'No advice unless you ask for it',
    'I sit with whatever you bring and I do not rush you toward a conclusion. Most people already know what they think; they need a quiet hour where nobody is scoring them. Ask for advice if you want it. Otherwise I just stay with you.',
    array['English'], true),
-  ('22222222-2222-4222-8222-222222222222'::uuid, 'Sara', 24,
+  ('22222222-2222-4222-8222-222222222222'::uuid, 'Sanya', 24,
    'Good at 2am conversations',
    'Late nights are when the real sentences come out. I am used to that hour: the half-formed worry, the thing you cannot say at dinner. We can ramble, we can sit in silence, we can start again. I will still be here after nine.',
    array['English', 'Hindi'], true),
-  ('33333333-3333-4333-8333-333333333333'::uuid, 'Nia', 34,
+  ('33333333-3333-4333-8333-333333333333'::uuid, 'Mrunal', 34,
    'I will just listen if that helps',
    'Some days you do not want a plan. You want someone who will not fill the gaps. I listen first and I stay there unless you ask me to step in. If all you need is a witness for twenty minutes, that is enough work for me.',
    array['English', 'Marathi'], false),
-  ('44444444-4444-4444-8444-444444444444'::uuid, 'Ivy', 29,
+  ('44444444-4444-4444-8444-444444444444'::uuid, 'Iniya', 29,
    'Tell me about your week',
    'Tell me the ordinary parts. The commute, the message you did not send, the week that felt longer than it was. I like the small facts; they are usually where the feeling is hiding. We can go slow. Nothing here has to be impressive.',
    array['English', 'Tamil'], true)
@@ -100,8 +111,16 @@ where p.id = v.id;
 -- points the rows at them. Each name carries the first eight hex of its own
 -- sha256 because the bucket cannot replace an object at an existing key and
 -- serves public objects immutably: a different photo is a different URL, which
--- is the only version of this that a CDN cannot get wrong. Ada is not created by this seed — she exists only on
--- the linked dev project — so her row is repointed by hand.
+-- is the only version of this that a CDN cannot get wrong.
+--
+-- Which is also why the slugs still read `mira-`, `sara-`, `nia-`, `ivy-` after
+-- the cast was renamed: the filename IS the bucket key and those objects are
+-- already public and cached, so renaming a face means re-uploading it, not
+-- editing a string here. The manifest keys its licence rows on the same slugs,
+-- so the photo-to-age contract test joins photo -> row through THIS uuid map
+-- rather than through the display name. The `ada-` photo is not used by this
+-- seed — that provider exists only on the linked dev project, created by
+-- scripts/e2e.mjs — so her row is repointed by hand.
 update public.profiles set avatar_url =
   'https://uvghvhcrovmuwivgijvl.supabase.co/storage/v1/object/public/avatars/seed/' || fn
 from (values

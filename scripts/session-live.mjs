@@ -174,7 +174,7 @@ await adminSqlish(`/rest/v1/profiles?id=eq.${provider.userId}`, {
   method: 'PATCH',
   body: JSON.stringify({
     role: 'provider',
-    display_name: 'Ada',
+    display_name: 'Aanya',
     is_available: true,
     identity_verified_at: new Date().toISOString(),
     date_of_birth: '1998-01-01',
@@ -183,7 +183,9 @@ await adminSqlish(`/rest/v1/profiles?id=eq.${provider.userId}`, {
 await adminSqlish(`/rest/v1/profiles?id=eq.${member.userId}`, {
   method: 'PATCH',
   body: JSON.stringify({
-    display_name: 'Ada Member',
+    // No space: a member display_name is a username since 040 (3–24 chars of
+    // [A-Za-z0-9_]), and 'Ada Member' would not survive check_display_name.
+    display_name: 'AanyaMember',
     purchased_balance: 500,
   }),
 });

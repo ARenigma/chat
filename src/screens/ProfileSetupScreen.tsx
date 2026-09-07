@@ -31,6 +31,24 @@ import { Pressable } from '../components/Pressable';
 import { TextField } from '../components/TextField';
 import { LoadingIndicator } from '../components/LoadingIndicator';
 
+/**
+ * The terms checkbox's corner radius, shared by the visible box and the
+ * Pressable's state-layer clip.
+ *
+ * One constant rather than the literal twice, because the two MUST agree: the
+ * state layer is clipped by the Pressable's inner view, so if the hit box's
+ * radius is smaller than the visible box's, the `dim` fill — which is a full
+ * opacity fill, not a 10% tint — shows as four square nubs poking out past the
+ * checkbox's rounded corners. With the literal in two places that is a silent
+ * break the next time either number is touched.
+ *
+ * NOT `shape="circle"`: a checkbox is a rounded square and its state layer
+ * follows the container's shape, which for a checkbox is a small corner radius,
+ * never a pill. The circle belongs to the icon button.
+ * https://developer.android.com/develop/ui/views/components/checkbox
+ */
+const CHECKBOX_RADIUS = 6;
+
 interface Props {
   onDone: () => void;
   /**
@@ -526,13 +544,18 @@ const makeStyles = (t: Theme) =>
       // this 22dp visual to the Android 48dp touch target with hitSlop.
       width: 22,
       height: 22,
+      // Matches `checkbox` below so the state layer is clipped to the shape the
+      // user can see. Without it the layer took the hit box's square corners and
+      // the `dim` fill leaked past the rounded checkbox at all four corners. A
+      // rounded square, not a circle — see the note on CHECKBOX_RADIUS.
+      borderRadius: CHECKBOX_RADIUS,
       alignItems: 'center',
       justifyContent: 'center',
     },
     checkbox: {
       width: 22,
       height: 22,
-      borderRadius: 6,
+      borderRadius: CHECKBOX_RADIUS,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: t.color.border.hairline,
       alignItems: 'center',
