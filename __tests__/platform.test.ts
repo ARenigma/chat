@@ -1155,6 +1155,106 @@ describe('sheet motion and display refresh', () => {
 });
 
 /**
+ * Every gesture callback runs on the UI thread.
+ *
+ * A gesture callback that is NOT workletized still works — it is dispatched to
+ * JS instead, one round trip per frame. Nothing throws, nothing warns, and the
+ * only symptom is that a drag lags the finger, which is the class of failure
+ * RULE 2 says a green build cannot see. So it is asserted here rather than
+ * noticed on a device.
+ *
+ * The mechanism, and why it is worth pinning. RNGH 3's hook API takes callbacks
+ * as properties of a config object, and it is `react-native-worklets`' babel
+ * plugin that adds the `'worklet'` directive to them: `useTapGesture`,
+ * `usePanGesture`, `usePinchGesture`, `useLongPressGesture` and the rest are
+ * listed in `gestureHandlerObjectHooks`, argument 0 of each is registered as a
+ * workletizable OBJECT, and `forEachWorkletizableObjectProperty` then
+ * workletizes every function-valued property of it — no allow-list of callback
+ * names, which is why `onActivate` / `onUpdate` / `onDeactivate` all get the
+ * treatment without the plugin knowing those names
+ * (node_modules/react-native-worklets/plugin/index.js).
+ *
+ * Two ways that can break silently, both covered by compiling the real files
+ * through the real config rather than by reading the plugin's tables:
+ *
+ *  1. A worklets upgrade drops a hook name from `gestureHandlerObjectHooks`.
+ *  2. Someone passes a config the plugin cannot see through — a spread, a
+ *     variable built elsewhere, a `useMemo` — because only argument 0 as an
+ *     object literal (or an identifier resolving to one) is traversed.
+ *
+ * https://docs.swmansion.com/react-native-gesture-handler/docs/guides/upgrading-to-3/
+ * https://docs.swmansion.com/react-native-reanimated/docs/fundamentals/glossary#worklet
+ */
+describe('gesture callbacks are workletized by the worklets plugin', () => {
+  const GESTURE_FILES = [
+    'src/components/MediaViewer.tsx',
+    'src/components/Turn.tsx',
+    'src/components/Sheet.tsx',
+    'src/components/SpotlightCard.tsx',
+  ];
+
+  /**
+   * The callback properties, matched on the NAME alone.
+   *
+   * Not `name:\s*function`, which was the first version of this and was a
+   * tautology: the plugin replaces a workletized property with a factory
+   * `function`, so requiring `function` matched only the callbacks that had
+   * already passed. An un-workletized arrow was simply not found, and the check
+   * fell through to the count assertion below — the right verdict by the wrong
+   * route, and only because that count guard existed.
+   */
+  const CALLBACK = /(onActivate|onUpdate|onDeactivate|onFinalize):/g;
+
+  const compiled = (relative: string): string => {
+    // Required lazily: pulling babel into every suite in this file would cost
+    // more than the one assertion below is worth.
+    const babel = require('@babel/core');
+    const out = babel.transformSync(read(relative), {
+      filename: join(ROOT, relative),
+      cwd: ROOT,
+      root: ROOT,
+      configFile: join(ROOT, 'babel.config.js'),
+    });
+    expect(out?.code).toBeTruthy();
+    return String(out.code);
+  };
+
+  it.each(GESTURE_FILES)('%s', file => {
+    const out = compiled(file);
+    const found = [...out.matchAll(CALLBACK)];
+    // Guard the guard: a rename that made the pattern match nothing would let
+    // this pass vacuously.
+    expect(found.length).toBeGreaterThan(0);
+
+    found.forEach((match, i) => {
+      /*
+       * `__workletHash` and `__closure` are the plugin's own markers on a
+       * rewritten function, and they sit inside the factory the property was
+       * replaced with. The slice runs to the NEXT callback property rather than
+       * a fixed window, so a long body cannot push the markers out of view and a
+       * neighbour's markers cannot be read as this one's.
+       */
+      const end = found[i + 1]?.index ?? out.length;
+      const fn = out.slice(match.index, end);
+      expect(fn).toContain('__workletHash');
+      expect(fn).toContain('__closure');
+    });
+  });
+
+  it('leaves nothing on the deprecated builder to be workletized instead', () => {
+    /*
+     * The plugin still carries `gestureHandlerBuilderMethods` (`onStart`,
+     * `onChange`, `onEnd`, ...) for the `Gesture.*` API, so a file that slid
+     * back to the builder would keep working and would keep passing the test
+     * above. Named here so the two halves of the migration fail together.
+     */
+    for (const file of GESTURE_FILES) {
+      expect(code(file)).not.toMatch(/\bGesture\.\w+\(/);
+    }
+  });
+});
+
+/**
  * CameraX live-preview native view — wiring and safety assertions.
  *
  * The requirements that follow are structural (RULE 1: take them from the
