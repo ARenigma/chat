@@ -565,11 +565,14 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
                   press="none"
                   highlight="dim"
                   style={styles.payoutRow}>
-                  <Icon name="wallet" size={20} color={theme.color.text.onAccent} />
+                  {/* Both glyphs take the row's own ink, not the card's: the row
+                      is `bg/base` now, so `text/onAccent` here would be white on
+                      white in light mode. See the note on `payoutRow`. */}
+                  <Icon name="wallet" size={20} color={theme.color.text.accent} />
                   <Text allowFontScaling style={styles.payoutLabel}>
                     Get paid
                   </Text>
-                  <Icon name="chevronRight" size={18} color={theme.color.text.onAccent} />
+                  <Icon name="chevronRight" size={18} color={theme.color.text.accent} />
                 </Pressable>
               </View>
 
@@ -784,6 +787,20 @@ const makeStyles = (t: Theme) =>
     // ring alone is a colour-only signal (WCAG 2.2 SC 1.4.1).
     photoTilePrimary: { borderWidth: 2, borderColor: t.color.border.accent },
     photoImg: { width: '100%', height: '100%' },
+    /*
+     * accentStrong on the weaker non-text floor, exactly as `checkboxOn` in
+     * ProfileSetupScreen took it: the mark inside is a 14dp `check` Icon rather
+     * than a label, so it answers to 3:1 and not 4.5:1 —
+     * developer.android.com/guide/topics/ui/accessibility/apps, "For all other
+     * text, set the color contrast ratio to at least 3:1". `bg/accent` clears
+     * that in light (3.44:1) and misses it in dark (2.59:1), where the accent is
+     * a light blue and the tick is `text/onAccent`. 5.19:1 / 6.13:1 here.
+     *
+     * Included with the earnings card above rather than left for a later pass
+     * because it is the same token pair on the same screen, and the header of
+     * `__tests__/walletTone.test.ts` exists because splitting this defect by
+     * surface is what kept four of the first five wrong.
+     */
     photoBadge: {
       position: 'absolute',
       left: TOKENS.space['2xs'],
@@ -793,7 +810,7 @@ const makeStyles = (t: Theme) =>
       borderRadius: 11,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: t.color.bg.accent,
+      backgroundColor: t.color.bg.accentStrong,
     },
     photoAdd: {
       borderWidth: 1,
@@ -834,22 +851,84 @@ const makeStyles = (t: Theme) =>
     availabilityText: { flex: 1, gap: TOKENS.space.hair },
     availabilityTitle: { ...TOKENS.typography.titleMediumEmphasized, color: t.color.text.primary },
     availabilitySub: { ...TOKENS.typography.bodySmall, color: t.color.text.secondary },
+    /*
+     * accentStrong, not accent — and the card is only half of the fix, because
+     * the OPACITY on two of its three labels was the other half.
+     *
+     * Three labels sit on this fill, all `text/onAccent`, and Android's rule
+     * sorts them into two groups —
+     * developer.android.com/guide/topics/ui/accessibility/apps ("Increase text
+     * visibility"): "If the text is smaller than 18sp, or if the text is bold
+     * and smaller than 14sp, use foreground and background colors that result
+     * in a color contrast ratio of at least 4.5:1. For all other text, set the
+     * color contrast ratio to at least 3:1."
+     *
+     *   - `earnValue` is 28dp Bold, so it is neither under 18sp nor bold-under-
+     *     14sp: it lands in "all other text" at 3:1. On `bg/accent` it passed in
+     *     light (3.44:1) and FAILED in dark (2.59:1), because the dark-mode
+     *     accent is a light blue. It is 5.19:1 / 6.13:1 here and comfortable.
+     *   - `earnLabel` (12dp) and `earnSub` (12dp) are under 18sp, so both take
+     *     4.5:1, and both were at 3.44:1 / 2.59:1.
+     *
+     * THE OPACITY IS PART OF THE MEASUREMENT, which is the thing that makes
+     * this card different from the six surfaces fixed in aba2c13. `opacity` on
+     * a `Text` composites the whole view, so the rendered ink was not
+     * `text/onAccent` at all — it was white at 80% / 85% over the fill, and WCAG
+     * measures the pixel that lands. Moving the fill alone would have left them
+     * at 3.87:1 and 4.16:1 in light: better, still short, and silently so.
+     * At full strength both are 5.19:1 / 6.13:1.
+     *
+     * Dropping the alpha does not break the rule that the FILL moves and the
+     * label never does — `text/onAccent` is still the token on all three. The
+     * hierarchy the alpha was buying is already carried by the type scale, 12dp
+     * Medium against 28dp Bold, which is a far louder difference than 15% of
+     * white; and there is no fill in the palette that carries 80% white at
+     * 4.5:1 while still being the accent, so the alpha was the only lever left.
+     */
     earnCard: {
       marginHorizontal: TOKENS.space.md,
       padding: TOKENS.space.lg,
       borderRadius: TOKENS.radius.lg,
       borderCurve: 'continuous',
-      backgroundColor: t.color.bg.accent,
+      backgroundColor: t.color.bg.accentStrong,
       gap: TOKENS.space['2xs'],
     },
-    earnLabel: { ...TOKENS.typography.labelMedium, color: t.color.text.onAccent, opacity: 0.8 },
+    earnLabel: { ...TOKENS.typography.labelMedium, color: t.color.text.onAccent },
     earnValue: { ...TOKENS.typography.headlineMediumEmphasized, color: t.color.text.onAccent },
     earnSub: {
       ...TOKENS.typography.bodySmall,
       color: t.color.text.onAccent,
-      opacity: 0.85,
       marginBottom: TOKENS.space.xs,
     },
+    /*
+     * The page colour and accent ink, because the card above it is now the fill
+     * this row used to be.
+     *
+     * This row was `bg/accentStrong` on an `bg/accent` card — a deeper step
+     * inset into a brighter one, which is what made it read as a control. Once
+     * the card takes `accentStrong` for its labels' sake, an unchanged row is
+     * the SAME colour as its container: 1.00:1, a "Get paid" button that is not
+     * on screen at all. That is a worse outcome than the contrast bug being
+     * fixed, so the two moves are one move.
+     *
+     * It takes the same answer the rest of the app already gives, stated as a
+     * rule on `minutesTagOn` in RechargeScreen.tsx: anything inset into a
+     * selected/filled accent card takes the page colour and accent ink. See
+     * also `ribbonOn` and the compact chip's `popularOn` there. Two accent steps
+     * exist; there is no third, so an inset element cannot be a deeper one.
+     *
+     * The numbers improve on both counts. `text/accent` on `bg/base` is 8.17:1
+     * light / 7.54:1 dark, against the 5.19:1 / 6.13:1 the white-on-accentStrong
+     * pairing gave, so the 16dp label and the two glyphs are better off. The
+     * row's BOUNDARY against the card is 5.19:1 light and 2.63:1 dark — the dark
+     * figure is under the 3:1 that WCAG 1.4.11 asks of a component boundary, and
+     * it is named here rather than glossed: it is the same figure every other
+     * inset pill in the app already carries, the row is identified by a wallet
+     * glyph, a bold label and a chevron rather than by its edge alone, and it is
+     * a large improvement on the 2.37:1 the old accentStrong-on-accent nesting
+     * measured. Closing it properly needs a third accent step, which is a
+     * palette decision and not this change's to make.
+     */
     payoutRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -858,11 +937,11 @@ const makeStyles = (t: Theme) =>
       height: TOKENS.layout.rowOneLine,
       borderRadius: TOKENS.radius.field,
       borderCurve: 'continuous',
-      backgroundColor: t.color.bg.accentStrong,
+      backgroundColor: t.color.bg.base,
     },
     payoutLabel: {
       ...TOKENS.typography.titleMediumEmphasized,
-      color: t.color.text.onAccent,
+      color: t.color.text.accent,
       flex: 1,
     },
     stats: {

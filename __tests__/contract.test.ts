@@ -4728,7 +4728,18 @@ describe('a session is rated when it ends, and the ratings are readable', () => 
     expect(code).toMatch(/actionOutline: \{\s*backgroundColor: 'transparent',\s*borderWidth: 1,/);
     // The label takes the on-surface colour, not on-accent — there is no accent
     // behind it any more.
-    expect(code).toContain("kind === 'outline' ? theme.color.text.primary");
+    //
+    // A regex across whitespace rather than the one-line literal this used to
+    // be. The `fg` ternary gained a `dark` branch on 2026-09-07 (that kind was
+    // pairing `text/onAccent` with a `text/primary` fill — 1.04:1 in dark mode,
+    // white on white) and Prettier then wrapped the expression, which turned a
+    // still-true claim red on indentation alone. The claim is the mapping from
+    // kind to ink; its formatting is Prettier's business.
+    expect(code).toMatch(/kind === 'outline'\s*\?\s*theme\.color\.text\.primary/);
+    // The other two are argued in walletTone.test.ts, where the accent-step
+    // pairings live; asserted here too because this is the block that owns the
+    // three-kind mapping and a kind added without an ink would land here first.
+    expect(code).toMatch(/kind === 'dark'\s*\?\s*theme\.color\.text\.onInverse/);
   });
 
   it('shows the countdown in the window the countdown exists for', () => {
