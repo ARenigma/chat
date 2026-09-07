@@ -115,11 +115,12 @@ const MIGRATIONS = [
   'supabase/migrations/072_member_language_preferences.sql',
   'supabase/migrations/073_call_upgrade_from_chat.sql',
   'supabase/migrations/074_audio_to_video_upgrade.sql',
+  'supabase/migrations/075_provider_languages_are_mandatory.sql',
   'supabase/migrations/076_handoff_and_member_consent.sql',
   'supabase/migrations/077_sp_initiate_member_consent.sql',
   'supabase/migrations/078_decline_status_cast.sql',
   'supabase/migrations/079_start_call_status_cast.sql',
-  'supabase/migrations/075_provider_languages_are_mandatory.sql',
+  'supabase/migrations/080_client_support_floor.sql',
 ];
 
 const docker = (args, options = {}) =>
@@ -523,6 +524,11 @@ const suites = [
     file: join(ROOT, 'supabase/tests/331_provider_languages_are_mandatory.sql'),
     label:
       'provider languages: a direct PATCH cannot empty them, but an edit still can change them',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/340_client_support_floor.sql'),
+    label:
+      'client support floor: anon can read it, and the allowlist 080 rewrote is intact',
   },
   {
     file: join(ROOT, 'supabase/tests/340_sp_initiate_member_consent.sql'),

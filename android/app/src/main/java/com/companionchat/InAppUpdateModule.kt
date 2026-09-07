@@ -41,6 +41,50 @@ class InAppUpdateModule(private val reactContext: ReactApplicationContext) :
 
     override fun getName(): String = NAME
 
+    /**
+     * This build's own versionCode, exposed as a constant so JS can read it on
+     * the first frame with no promise to await.
+     *
+     * Here rather than in a module of its own because this class is already the
+     * one that deals in version numbers — `check()` reports the version Play has
+     * — and the minimum-supported-client gate needs the other half of that
+     * comparison: the version we ARE.
+     *
+     * `PackageManager.getPackageInfo` is what the platform names for this:
+     * "The Android framework provides an API to let you query the system for
+     * version information about your app. To obtain version information, use
+     * the PackageManager.getPackageInfo(java.lang.String, int) method."
+     * https://developer.android.com/studio/publish/versioning
+     *
+     * The API-28 split is real: `longVersionCode` replaced the now-deprecated
+     * `versionCode` field, and minSdk here is 24, so both branches must exist.
+     * The reference page for `PackageInfo` does not render to a plain fetch
+     * (same as m3.material.io), so rather than cite a page I could not read,
+     * the guard is left to be verified mechanically — Android Lint's `NewApi`
+     * check fails the build if a 28+ API is reached without this exact
+     * `Build.VERSION.SDK_INT` guard. Play caps versionCode at 2,100,000,000, so
+     * the value always fits the Double that the bridge carries it over as.
+     *
+     * Returns -1 when the lookup fails, which cannot happen for our own package
+     * but is not worth throwing over: JS treats any non-positive value as
+     * "unknown" and skips the gate entirely rather than locking someone out of
+     * an app over a version number it could not read.
+     */
+    override fun getConstants(): Map<String, Any> {
+        val code: Long = try {
+            val info = reactContext.packageManager.getPackageInfo(reactContext.packageName, 0)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                info.longVersionCode
+            } else {
+                @Suppress("DEPRECATION")
+                info.versionCode.toLong()
+            }
+        } catch (e: android.content.pm.PackageManager.NameNotFoundException) {
+            -1L
+        }
+        return mapOf("versionCode" to code.toDouble())
+    }
+
     private val manager: AppUpdateManager by lazy {
         AppUpdateManagerFactory.create(reactContext)
     }

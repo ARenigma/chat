@@ -61,8 +61,11 @@ import { currentSession, handleAuthDeepLink, signOut } from './src/api/auth';
 import {
   effectivePermissionLevel,
   FALLBACK_PERMISSIONS,
+  useClientSupport,
   type PermissionsConfig,
 } from './src/api/appConfig';
+import { currentVersionCode, startImmediateUpdate } from './src/lib/appUpdate';
+import { supportVerdict } from './src/lib/clientSupport';
 import {
   getSignedInProfile,
   isFirstUser,
@@ -110,8 +113,6 @@ import { TransactionHistoryScreen } from './src/screens/TransactionHistoryScreen
 import { UsageLedgerScreen } from './src/screens/UsageLedgerScreen';
 
 initSentry();
-
-const LAST_PROVIDER_KEY = 'companion.lastProvider';
 
 /**
  * A pushed screen's layer: enters on the M3 forward/back transition, leaves on
@@ -469,6 +470,11 @@ async function bootPhaseAfterAuth(profile: Profile | null): Promise<PostAuthBoot
  */
 function Root() {
   const styles = useStyles(makeStyles);
+  /*
+   * Read before `boot`, because the support gate renders ahead of every boot
+   * phase. Public RPC, so it resolves without a session.
+   */
+  const { data: clientSupport } = useClientSupport();
   const [boot, setBoot] = useState<Boot>({ phase: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [route, setRoute] = useState<MemberRoute>({ name: 'home' });
@@ -536,19 +542,24 @@ function Root() {
           setBoot({ phase: 'signedOut' });
           return;
         }
-        // Every fresh boot / re-auth lands on Home. A stored conversation or a
-        // notification tap below may override this, but a stale route must not
-        // survive: signing out from Settings and back in was dropping the user
-        // on Settings instead of Home.
+        /*
+         * Every fresh boot / re-auth lands on Home, full stop.
+         *
+         * This used to reopen the last conversation from a persisted
+         * `companion.lastProvider`, so a cold start dropped you back into a
+         * thread. Removed on Amit's call (2026-09-08): "always home page after
+         * restart". A restart is the one moment someone has clearly chosen to
+         * leave whatever they were doing, and reopening a paid conversation
+         * uninvited is the wrong default in an app that bills by the minute.
+         *
+         * The whole key is gone rather than just this read — a stored value
+         * nobody restores is a write that only ever misleads the next reader.
+         *
+         * A notification tap still wins, below. That is not a remembered route:
+         * it is an explicit statement, made just now, about what this person
+         * opened the app to do.
+         */
         setRoute({ name: 'home' });
-        // Synchronous, so the first frame can already be the right screen.
-        const stored = storage.get(LAST_PROVIDER_KEY);
-        if (isUuid(stored)) {
-          setRoute({ name: 'chat', providerId: stored, from: 'home' });
-        }
-        // A notification tap outranks the remembered conversation: it is the
-        // more recent, more explicit statement of what this person opened the
-        // app to do.
         const tapped = await initialNotificationPeer();
         if (tapped !== null) {
           setRoute({ name: 'chat', providerId: tapped, from: 'home' });
@@ -781,7 +792,6 @@ function Root() {
     (id: string, from: ChatDoor = 'home') => {
       pushRoute({ name: 'chat', providerId: id, from });
       track('conversation_opened');
-      storage.set(LAST_PROVIDER_KEY, id);
     },
     [pushRoute],
   );
@@ -806,7 +816,6 @@ function Root() {
     }
     setRoute(next);
     resetConversation();
-    storage.remove(LAST_PROVIDER_KEY);
   }, [resetConversation]);
 
   const backToHome = useCallback(() => popRoute({ name: 'home' }), [popRoute]);
@@ -862,7 +871,6 @@ function Root() {
       if (parent !== null) {
         if (route.name === 'chat') {
           resetConversation();
-          storage.remove(LAST_PROVIDER_KEY);
         }
         // A hardware/gesture back is always a pop, so the leaving screen slides
         // off to the right and its parent enters from the left. Home's slide is
@@ -896,6 +904,65 @@ function Root() {
   // route and providerRoute are intentionally omitted: they are read via refs
   // inside onBack so the listener is stable across navigations.
   }, [walletVisible, closeWallet, refillVisible, closeRefill, resetConversation]);
+
+  /*
+   * The client-support gate, ahead of EVERY other phase including sign-out.
+   *
+   * An unsupported build must not reach sign-in, because the thing it cannot do
+   * is satisfy the server's RPC contract — authenticating first only gets it
+   * deeper into a tree where nothing works. See `lib/clientSupport.ts` for the
+   * incident this exists for: 10109 against migrations 077-079 deadlocked with
+   * no error on any layer.
+   *
+   * `supportVerdict` fails open on both unknowns, so this renders nothing at all
+   * until the public config has actually answered with a floor above this build.
+   * A dev on an older native shell, anyone offline, and every current client
+   * fall straight through.
+   */
+  const support = supportVerdict(currentVersionCode(), clientSupport?.min_version_code ?? 0);
+  if (support.state === 'must-update') {
+    return (
+      <View style={styles.fatal}>
+        <Text style={styles.fatalTitle} allowFontScaling>
+          Time for an update
+        </Text>
+        <Text style={styles.fatalBody} allowFontScaling>
+          {/*
+            * No version numbers in the copy. "You are on 10109, you need 10110"
+            * is the truth and is useless to the person reading it — there is
+            * exactly one action available and the sentence should be about that.
+            * The numbers are in the verdict for logs, not for the screen.
+            */}
+          Pappal has changed since this version. Update from the Play Store to
+          keep chatting. Your conversations and tokens are safe.
+        </Text>
+        <View style={styles.retryWrap}>
+          <Button
+            label="Update"
+            onPress={() => {
+              /*
+               * Ask Play for the immediate (blocking) flow, which is the honest
+               * match for a build that genuinely cannot continue. If Play has
+               * nothing to offer — sideloaded, no Play Store, or the release has
+               * not reached this device's track yet — `startImmediateUpdate`
+               * resolves false and we open the store listing instead, so the
+               * button is never a no-op.
+               */
+              void (async () => {
+                if (!(await startImmediateUpdate())) {
+                  void Linking.openURL('market://details?id=com.companionchat').catch(() => {
+                    void Linking.openURL(
+                      'https://play.google.com/store/apps/details?id=com.companionchat',
+                    );
+                  });
+                }
+              })();
+            }}
+          />
+        </View>
+      </View>
+    );
+  }
 
   if (boot.phase === 'loading') {
     return (
