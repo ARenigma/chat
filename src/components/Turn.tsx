@@ -13,9 +13,13 @@ import {
   type ViewStyle,
 } from 'react-native';
 import {
-  Gesture,
   GestureDetector,
   GestureHandlerRootView,
+  useExclusiveGestures,
+  useLongPressGesture,
+  usePanGesture,
+  useSimultaneousGestures,
+  useTapGesture,
 } from 'react-native-gesture-handler';
 import Animated, {
   interpolate,
@@ -878,10 +882,20 @@ function InteractiveBubble({
     }
   }, [target, onSwipeReply]);
 
-  const pan = Gesture.Pan()
-    .activeOffsetX([-REPLY_ACTIVATE, REPLY_ACTIVATE])
-    .failOffsetY([-12, 12])
-    .onUpdate(e => {
+  /*
+   * Swipe-to-reply. `.activeOffsetX([...])`/`.failOffsetY([...])` became config
+   * keys with the same names and the same array shape when the builder was
+   * deprecated in RNGH 3 — the guide's rule is that modifiers move into the
+   * config object verbatim, and the three renamed callbacks are `onStart` ->
+   * `onActivate`, `onEnd` -> `onDeactivate`, `onTouchesCancelled` ->
+   * `onTouchesCancel`.
+   * https://docs.swmansion.com/react-native-gesture-handler/docs/guides/upgrading-to-3/
+   * https://docs.swmansion.com/react-native-gesture-handler/docs/gestures/use-pan-gesture
+   */
+  const pan = usePanGesture({
+    activeOffsetX: [-REPLY_ACTIVATE, REPLY_ACTIVATE],
+    failOffsetY: [-12, 12],
+    onUpdate: e => {
       // Peer: drag right; mine: drag left — both toward the screen edge, like WA.
       // Hard clamp at MAX_DRAG with no rubber-band: Telegram's swipe-to-reply
       // does not spring past its limit (design/references/telegram.md).
@@ -898,72 +912,97 @@ function InteractiveBubble({
       } else if (crossed.value) {
         crossed.value = false;
       }
-    })
-    .onEnd(() => {
+    },
+    onDeactivate: () => {
       if (Math.abs(tx.value) >= REPLY_TRIGGER) {
         runOnJS(triggerReply)();
       }
       tx.value = springTo(0, 'smooth');
       crossed.value = false;
-    });
+    },
+  });
 
-  const longPress = Gesture.LongPress()
+  /*
+   * The long-press reaction strip, and the tap that opens a photo.
+   *
+   * Both are declared unconditionally and switched with `enabled`, which is the
+   * one structural change this migration makes and is stated here per RULE 1.
+   * The builder let the composition be assembled by a ternary chain, because
+   * `Gesture.LongPress()` was a plain constructor; `useLongPressGesture` is a
+   * hook, so it and `useTapGesture` run on every render whatever the props are,
+   * and their native handlers are created either way
+   * (`useGesture` calls `NativeProxy.createGestureHandler` in an effect keyed
+   * only on the handler tag). Selecting a subtree afterwards would therefore
+   * save nothing and would make the composed tree's SHAPE depend on props.
+   *
+   * `enabled: false` is equivalent to leaving the gesture out, and on Android
+   * that is decidable rather than hopeful: `recordViewHandlersForPointer` skips
+   * a handler when `!handler.isEnabled` before it is ever added to the
+   * orchestrator's list, and `hasOtherHandlerToWaitFor` only looks at handlers
+   * in that list — so a disabled long press cannot strand the tap that waits for
+   * it (android/.../core/GestureHandlerOrchestrator.kt).
+   *
+   * The `target === null` case this covers: an outgoing photo that is still
+   * uploading has no action target and therefore no long press, and it must
+   * still open from its local file.
+   */
+  const longPress = useLongPressGesture({
+    enabled: target !== null,
     // The Android system long-press timeout, which is what Telegram opens the
     // reaction menu on (ReactionsContainerLayout.java:2262). Was 400ms.
-    .minDuration(500)
-    .onStart(() => {
+    minDuration: 500,
+    onActivate: () => {
       runOnJS(longPressHaptic)();
       runOnJS(openStrip)();
-    });
+    },
+  });
 
   /*
    * Tap opens the photo. Two bounds, and both are load-bearing.
    *
-   * EXCLUSIVE with the long press, in that order. RNGH: "builds a composed
-   * gesture where only one of the provided gestures can become active. Priority
-   * is decided through the order of gestures: the first one has higher priority
-   * than the second one". So a 500ms hold opens the reaction strip and does NOT
-   * also open the viewer when the finger lifts. Simultaneous would do exactly
-   * that, because RNGH's Android tap defaults to
+   * EXCLUSIVE with the long press, in that order. RNGH: "Only one of the
+   * provided gestures can become active. Priority is determined by the order of
+   * the arguments, where the first gesture has the highest priority, and the
+   * last has the lowest", and "A gesture can activate only after all
+   * higher-priority gestures before it have failed". So a 500ms hold opens the
+   * reaction strip and does NOT also open the viewer when the finger lifts.
+   * Simultaneous would do exactly that, because RNGH's Android tap defaults to
    * `DEFAULT_MAX_DURATION_MS: Long = 500` (TapGestureHandler.kt) - the same 500
    * the strip is built on, so the two would resolve together on every hold.
-   * https://docs.swmansion.com/react-native-gesture-handler/docs/fundamentals/gesture-composition/
+   * https://docs.swmansion.com/react-native-gesture-handler/docs/composition/use-exclusive-gestures
    *
-   * `maxDistance(REPLY_ACTIVATE)` is the pan's own activation offset. RNGH's
+   * `maxDistance: REPLY_ACTIVATE` is the pan's own activation offset. RNGH's
    * Android tap has NO distance limit by default (`maxDist = MAX_VALUE_IGNORE`,
-   * TapGestureHandler.kt), and `pan` runs Simultaneous rather than racing, so
-   * without this bound a completed swipe-to-reply would ALSO register as a tap
-   * and open the viewer on top of the quote it just made.
+   * TapGestureHandler.kt), and `pan` runs simultaneously rather than competing,
+   * so without this bound a completed swipe-to-reply would ALSO register as a
+   * tap and open the viewer on top of the quote it just made.
+   * https://docs.swmansion.com/react-native-gesture-handler/docs/gestures/use-tap-gesture
    */
   const openViewer = onTap;
-  const tap = Gesture.Tap()
-    .maxDistance(REPLY_ACTIVATE)
-    .onEnd((_e, success) => {
-      if (success && openViewer !== undefined) {
+  const tap = useTapGesture({
+    enabled: openViewer !== undefined,
+    maxDistance: REPLY_ACTIVATE,
+    onDeactivate: e => {
+      // `!e.canceled` is the old `onEnd`'s `success`: "the logic is inverted —
+      // `canceled: true` corresponds to the old `success: false`"
+      // (docs/guides/upgrading-to-3/).
+      if (!e.canceled && openViewer !== undefined) {
         runOnJS(openViewer)();
       }
-    });
+    },
+  });
 
   /*
-   * The nesting is supported and deliberate: `SimultaneousGesture.prepare()`
-   * flattens its siblings but explicitly leaves a nested ExclusiveGesture alone
-   * ("we don't want to make exclusive gestures simultaneous",
-   * gestureComposition.ts), so the drag stays simultaneous with both while the
-   * tap still waits for the long press to fail.
-   *
-   * The `target === null` branch matters: an outgoing photo that is still
-   * uploading has no action target and therefore no long press, and it must
-   * still open from its local file.
+   * The nesting is supported and deliberate. `traverseAndConfigureRelations`
+   * seeds the live simultaneous set from the root Simultaneous node's tags, then
+   * DELETES a non-simultaneous child's tags on the way into it — so descending
+   * into the exclusive pair leaves only `pan` in the set. The drag ends up
+   * simultaneous with both discretes, while the tap keeps the long press in its
+   * `waitFor` and cannot activate until the hold has failed
+   * (v3/detectors/utils.ts).
    */
-  const discrete =
-    target !== null && onTap !== undefined
-      ? Gesture.Exclusive(longPress, tap)
-      : target !== null
-        ? longPress
-        : onTap !== undefined
-          ? tap
-          : null;
-  const composed = discrete === null ? pan : Gesture.Simultaneous(pan, discrete);
+  const discrete = useExclusiveGestures(longPress, tap);
+  const composed = useSimultaneousGestures(pan, discrete);
   /*
    * Truthy iff the long-press strip is available — used for the accessibility
    * hint below rather than for a LABEL, because a label here replaces the

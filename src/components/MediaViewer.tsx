@@ -9,9 +9,13 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 import {
-  Gesture,
   GestureDetector,
   GestureHandlerRootView,
+  useCompetingGestures,
+  usePanGesture,
+  usePinchGesture,
+  useSimultaneousGestures,
+  useTapGesture,
 } from 'react-native-gesture-handler';
 import Animated, {
   clamp,
@@ -199,67 +203,63 @@ function fittedBox(
  * ------------------------------------------------------------------------
  * The gestures, and why they are composed the way they are
  * ------------------------------------------------------------------------
- * Three recognisers, in the shape RNGH's own gallery example uses: "if you want
- * to make a gallery app, you might want the user to be able to zoom, rotate and
- * pan around photos. You can do it with useSimultaneousGestures".
+ * Three recognisers, in the shape RNGH's own gallery example uses: the
+ * `useSimultaneousGestures` page composes `usePanGesture`, `usePinchGesture` and
+ * `useRotationGesture` for exactly this — a gallery where one photo can be
+ * zoomed, rotated and dragged at once.
  * https://docs.swmansion.com/react-native-gesture-handler/docs/composition/use-simultaneous-gestures
  *
- *   Race( Simultaneous(pinch, pan), tap )
+ *   useCompetingGestures( useSimultaneousGestures(pinch, pan), tap )
  *
- * `Simultaneous` because a pinch and a pan must run together — that is what lets
- * a finger keep dragging a photo while the other two are still spreading it:
- * "All of the provided gestures can activate at the same time. Activation of one
- * will not cancel the other."
+ * Simultaneous because a pinch and a pan must run together — that is what lets a
+ * finger keep dragging a photo while the other two are still spreading it: "All
+ * of the provided gestures can activate at the same time. Activation of one will
+ * not cancel the other."
  *
- * `Race` for the tap, because the tap is the only one of the three whose intent
- * is mutually exclusive with the others: "Only one of the provided gestures can
- * become active at the same time. The first gesture to become active will cancel
- * the rest of the gestures." A tap cannot activate before a drag or a zoom
- * (RNGH's tap resolves on the last finger UP), so racing means the moment either
- * continuous gesture activates the tap is cancelled and cannot also close the
- * viewer on release.
+ * Competing for the tap, because the tap is the only one of the three whose
+ * intent is mutually exclusive with the others: "Only one of the provided
+ * gestures can become active at the same time. The first gesture to become
+ * active will cancel the rest of the gestures." A tap cannot activate before a
+ * drag or a zoom (RNGH's tap resolves on the last finger UP), so competing means
+ * the moment either continuous gesture activates the tap is cancelled and cannot
+ * also close the viewer on release.
  * https://docs.swmansion.com/react-native-gesture-handler/docs/composition/use-competing-gestures
  *
  * The composition is nested rather than flat, and that is load-bearing: the
  * relation is all-to-all WITHIN a Simultaneous node, so a flat
- * `Simultaneous(pinch, pan, tap)` would make the tap simultaneous with the
- * pinch — see TAP_SLOP for what that costs. Nesting it under a Race keeps the
- * pinch/pan pair simultaneous with each other and leaves the tap simultaneous
- * with nothing. Traced in both implementations and identical in both:
- * `SimultaneousGesture.prepare()` gives each member the raw gestures of its
- * SIBLINGS while `ComposedGesture.prepare()` passes the outer relation down
- * without collapsing the inner one (handlers/gestures/gestureComposition.ts),
- * and `traverseAndConfigureRelations` reaches the same three relation sets by
- * adding a Simultaneous child's tags on the way in and deleting them on the way
- * out (v3/detectors/utils.ts).
+ * `useSimultaneousGestures(pinch, pan, tap)` would make the tap simultaneous
+ * with the pinch — see TAP_SLOP for what that costs. Nesting it under a
+ * competing node keeps the pinch/pan pair simultaneous with each other and
+ * leaves the tap simultaneous with nothing. `traverseAndConfigureRelations`
+ * reaches those three relation sets by adding a Simultaneous child's tags to the
+ * live set on the way in and deleting them on the way out, and by removing a
+ * leaf's own tag before descending so nothing is simultaneous with itself
+ * (v3/detectors/utils.ts).
  *
  * ------------------------------------------------------------------------
- * WHY THIS IS STILL THE `Gesture.*` BUILDER AND NOT THE HOOKS
+ * The hooks, not the `Gesture.*` builder
  * ------------------------------------------------------------------------
- * Stated because it is a deliberate departure, per RULE 1's "say so when
- * departing" — the builder is deprecated and the hooks are the supported path.
- * The installed RNGH 3.2.1 marks `Gesture` itself
- * "@deprecated `Gesture` builder API is deprecated and will be removed in a
- * future version of Gesture Handler. Please migrate to the new, hook-based API."
- * (handlers/gestures/gestureObjects.d.ts:14) and names a replacement for every
- * member used here: `usePinchGesture`, `usePanGesture`, `useTapGesture`,
- * `useCompetingGestures`, `useSimultaneousGestures`. They are exported from the
- * package root (`export * from './v3'`, index.d.ts:52), the callbacks map
- * onStart->onActivate / onChange->onUpdate / onEnd(e, success)->onDeactivate
- * with `!e.canceled`, and the installed react-native-worklets 4.6.0 babel plugin
- * already autoworkletizes those hook config objects — so the migration compiles
- * and is behaviour-preserving. It is NOT done here because it cannot be done
- * here alone: `__tests__/contract.test.ts` › "limits gesture declarations"
- * enumerates the gesture-declaring files by matching `/Gesture\.\w+\(/` against
- * RAW source, so a migrated MediaViewer drops out of its `toEqual` list and
- * fails a gate this file cannot edit. Turn.tsx, Sheet.tsx and SpotlightCard.tsx
- * are on the builder too; all four plus that tripwire have to move together.
- * Nothing is broken meanwhile — the v3 `GestureDetector` dispatches on
- * `props.gesture instanceof ComposedGesture || instanceof BaseGesture` and
- * routes builder gestures to the legacy detector (v3/detectors/GestureDetector.tsx).
+ * RNGH 3 deprecates the whole builder: the installed 3.2.1 marks `Gesture`
+ * itself "@deprecated `Gesture` builder API is deprecated and will be removed in
+ * a future version of Gesture Handler. Please migrate to the new, hook-based
+ * API." (handlers/gestures/gestureObjects.d.ts:14) and names a hook for every
+ * member. The migration is mechanical and the guide states each rule:
+ * modifiers become config keys (`.minDistance(25)` -> `minDistance: 25`), and
+ * "Three callbacks have been renamed: `onStart` -> `onActivate`, `onEnd` ->
+ * `onDeactivate`, and `onTouchesCancelled` -> `onTouchesCancel`."
+ * https://docs.swmansion.com/react-native-gesture-handler/docs/guides/upgrading-to-3/
  *
- * Tap-to-dismiss is an RNGH `Gesture.Tap` and no longer an RN `Pressable`, for
- * two reasons. It has to be inside the composition to race properly, and the
+ * The one place a rename is not enough is the end callbacks, so it is written
+ * out at each `onDeactivate` below: "In RNGH2, `onEnd` and `onFinalize` received
+ * a second `success` boolean parameter. In RNGH3, this has been replaced with a
+ * `canceled` property on the event object itself. Note that the logic is
+ * inverted — `canceled: true` corresponds to the old `success: false`." Firing
+ * conditions are unchanged: v3's `onDeactivate` runs only when `oldState ===
+ * State.ACTIVE`, exactly the guard legacy `onEnd` had
+ * (v3/hooks/callbacks/eventHandler.ts vs handlers/gestures/eventReceiver.ts).
+ *
+ * Tap-to-dismiss is an RNGH `useTapGesture` and no longer an RN `Pressable`, for
+ * two reasons. It has to be inside the composition to compete properly, and the
  * `Pressable` it replaces was the second node claiming the "Close photo" label:
  * our `Pressable` always sets `accessibilityRole` (defaulting to `button`), and
  * `ReactAccessibilityDelegate.setDelegate` installs its delegate for any view
@@ -306,8 +306,10 @@ function MediaViewerView({
   /*
    * Half-extents of the photo as `contain` actually PAINTS it (no pixel
    * ceiling — see fittedBox case 2), which is what bounds a pan while zoomed.
-   * Plain numbers rather than shared values because the gesture objects below
-   * are rebuilt on every render, so a worklet closes over the current pair; the
+   * Plain numbers rather than shared values because the gesture configs below
+   * are fresh object literals on every render — `useClonedAndRemappedConfig`
+   * memoises on the config identity, so a new literal re-runs it and the
+   * worklets close over the current pair (v3/hooks/utils/configUtils.ts). The
    * STAGE size still goes through shared values, because that one is measured
    * (see `measure`).
    */
@@ -336,6 +338,16 @@ function MediaViewerView({
    * coordinate space of the view the handler is attached to, so the anchor
    * arithmetic below needs THAT view's centre, not the window's. Seeded from the
    * window so the first frame is never a divide by a zero-sized stage.
+   *
+   * Under the hooks the handler is attached to the detector wrapper rather than
+   * to this view, and the stage is still the right frame to measure: the
+   * wrapper carries no user transform, so `GestureHandler.coordinateView`
+   * descends into it when it has exactly one child and reports coordinates
+   * against the visible child — "the same coordinate space V2 and the V3
+   * VirtualGestureDetector report in" (android/.../core/GestureHandler.kt). The
+   * detector view is also `display: 'contents'` and so takes no part in layout
+   * (v3/detectors/common.ts), which is why `onLayout` here still measures the
+   * full window.
    */
   const stageW = useSharedValue(winW);
   const stageH = useSharedValue(winH);
@@ -363,14 +375,17 @@ function MediaViewerView({
   /*
    * Zoom about the point between the fingers.
    *
-   * `onChange` rather than `onUpdate` because it adds `scaleChange`, "The
-   * incremental change in scale since the last event frame", and that ratio is
-   * what makes the anchor arithmetic incremental: no saved origin scale, no
-   * drift when the clamp bites mid-gesture. (On the builder API the two are
-   * separate callbacks and only `onChange` is fed by
-   * `changeEventCalculator`, pinchGesture.ts; under the hooks `onUpdate` IS the
-   * one that carries `scaleChange`, because `transformPinchProps` installs that
-   * calculator unconditionally — v3/hooks/gestures/pinch/usePinchGesture.ts.)
+   * `onUpdate` carries `scaleChange`, "The incremental change in scale since the
+   * last event frame. This value represents the ratio of the current scale to
+   * the previous scale, rather than the total accumulated scale of the gesture",
+   * and that ratio is what makes the anchor arithmetic incremental: no saved
+   * origin scale, no drift when the clamp bites mid-gesture. There is no
+   * `onChange` to reach for any more — "`onChange` callback has been removed,
+   * and its functionality has been integrated into `onUpdate`. You can now
+   * access `change*` properties in `onUpdate` callback"
+   * (docs/guides/upgrading-to-3/), which holds here because
+   * `transformPinchProps` installs the `changeEventCalculator` unconditionally
+   * (v3/hooks/gestures/pinch/usePinchGesture.ts).
    *
    * The anchor. A content point p is drawn at `q = centre + t + s*p`, so holding
    * the point under the focal fixed across a scale change of k = s1/s0 gives
@@ -381,19 +396,18 @@ function MediaViewerView({
    * axis of center anchor point of gesture" and `scale` as "The scale factor
    * relative to the points of the two touches in screen coordinates". The same
    * page is explicit that the focal point must only be read after activation:
-   * "make sure to use it after the gesture had activated, i.e. in `onActivate`
-   * or `onUpdate` callbacks. Using it in `onBegin` may lead to unexpected
-   * behavior" — which is why this reads it in `onChange` (the builder's
-   * post-activation callback) and never in `onBegin`.
+   * "When implementing pinch based on focal point, make sure to use it after the
+   * gesture had activated, i.e. in `onActivate` or `onUpdate` callbacks" — which
+   * is where this reads it, never in `onBegin`.
    * https://docs.swmansion.com/react-native-gesture-handler/docs/gestures/use-pinch-gesture
    */
-  const pinch = Gesture.Pinch()
-    .onStart(() => {
+  const pinch = usePinchGesture({
+    onActivate: () => {
       // A pinch started mid-dismissal cancels the dismissal rather than zooming
       // a photo that is halfway off the screen.
       dragY.value = sheetIn();
-    })
-    .onChange(e => {
+    },
+    onUpdate: e => {
       const next = clamp(scale.value * e.scaleChange, MIN_ZOOM, MAX_ZOOM);
       const k = next / scale.value;
       const ux = e.focalX - stageW.value / 2;
@@ -401,8 +415,8 @@ function MediaViewerView({
       tx.value = tx.value * k + ux * (1 - k);
       ty.value = ty.value * k + uy * (1 - k);
       scale.value = next;
-    })
-    .onEnd(() => {
+    },
+    onDeactivate: () => {
       // Zooming back out can leave the picture parked outside its own new
       // bounds; at MIN_ZOOM the bounds are zero, so this is also what returns a
       // fully-unzoomed photo to dead centre.
@@ -410,12 +424,13 @@ function MediaViewerView({
       const maxY = Math.max(0, halfH * scale.value - stageH.value / 2);
       tx.value = sheetOut(clamp(tx.value, -maxX, maxX));
       ty.value = sheetOut(clamp(ty.value, -maxY, maxY));
-    });
+    },
+  });
 
   /*
    * One drag doing two jobs, decided by whether the photo is zoomed.
    *
-   * `maxPointers(1)` is what keeps it out of the pinch's way, and on Android it
+   * `maxPointers: 1` is what keeps it out of the pinch's way, and on Android it
    * is stronger than the JS docs promise: PanGestureHandler.kt handles
    * ACTION_POINTER_DOWN with `pointerCount > maxPointers` by CANCELLING an
    * already-active pan, not merely failing one that has not activated. So the
@@ -427,13 +442,13 @@ function MediaViewerView({
    * construction.
    * https://docs.swmansion.com/react-native-gesture-handler/docs/gestures/use-pan-gesture
    */
-  const pan = Gesture.Pan()
-    .maxPointers(1)
-    .onStart(() => {
+  const pan = usePanGesture({
+    maxPointers: 1,
+    onActivate: () => {
       startX.value = tx.value;
       startY.value = ty.value;
-    })
-    .onUpdate(e => {
+    },
+    onUpdate: e => {
       if (scale.value > MIN_ZOOM) {
         const maxX = Math.max(0, halfW * scale.value - stageW.value / 2);
         const maxY = Math.max(0, halfH * scale.value - stageH.value / 2);
@@ -446,13 +461,17 @@ function MediaViewerView({
       // cannot be dragged up to anywhere, so the third makes the ceiling felt
       // rather than hit.
       dragY.value = e.translationY > 0 ? e.translationY : e.translationY / 3;
-    })
-    .onEnd((e, success) => {
-      // `success` is false when the gesture was CANCELLED or FAILED
-      // (eventReceiver.ts), which is exactly the second-finger case above: the
-      // drag is abandoned, so settle it instead of reading a dismissal out of
-      // wherever the finger happened to be.
-      if (!success || scale.value > MIN_ZOOM) {
+    },
+    onDeactivate: e => {
+      // `e.canceled` is true when the gesture was CANCELLED or FAILED
+      // (v3/hooks/callbacks/eventHandler.ts sets it from
+      // `state === FAILED || state === CANCELLED`), which is exactly the
+      // second-finger case above: the drag is abandoned, so settle it instead of
+      // reading a dismissal out of wherever the finger happened to be. This is
+      // the old `onEnd(e, success)` with the sense flipped — "the logic is
+      // inverted — `canceled: true` corresponds to the old `success: false`"
+      // (docs/guides/upgrading-to-3/).
+      if (e.canceled || scale.value > MIN_ZOOM) {
         dragY.value = sheetIn();
         return;
       }
@@ -467,22 +486,31 @@ function MediaViewerView({
         return;
       }
       dragY.value = sheetIn(e.velocityY);
-    });
+    },
+  });
 
   /*
    * Tap anywhere to close, which is what Telegram's viewer does. Bounded by
-   * TAP_SLOP, and racing the other two — see the composition note on the
+   * TAP_SLOP, and competing with the other two — see the composition note on the
    * component.
+   *
+   * `onDeactivate` and not `onActivate`, so a tap that activated and was then
+   * cancelled by the pinch/pan pair cannot close the viewer: the end event
+   * carries `canceled`, and only an uncancelled one is a real tap.
    */
-  const tap = Gesture.Tap()
-    .maxDistance(TAP_SLOP)
-    .onEnd((_e, success) => {
-      if (success) {
+  const tap = useTapGesture({
+    maxDistance: TAP_SLOP,
+    onDeactivate: e => {
+      if (!e.canceled) {
         runOnJS(onClose)();
       }
-    });
+    },
+  });
 
-  const composed = Gesture.Race(Gesture.Simultaneous(pinch, pan), tap);
+  const composed = useCompetingGestures(
+    useSimultaneousGestures(pinch, pan),
+    tap,
+  );
 
   const photoStyle = useAnimatedStyle(() => ({
     // Listed translate-then-scale, which is the order the maths above assumes:

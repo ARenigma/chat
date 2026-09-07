@@ -46,6 +46,27 @@ function withoutComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 }
 
+/**
+ * `withoutComments` plus TRAILING line comments, for assertions that must not be
+ * satisfiable by prose at all.
+ *
+ * `withoutComments` only drops a `//` comment that owns its line, so
+ * `const x = 1; // usePanGesture(` survives it — and the gesture tripwire below
+ * exists precisely because its predecessor could be kept green by a comment.
+ *
+ * The strip is guarded on there being no quote earlier in the line, which is what
+ * keeps it from mangling code: `Linking.openURL('market://details?id=...')` in
+ * SettingsSheet.tsx is a code line containing `//`, and a blind strip would
+ * truncate it — and truncation HIDES whatever followed on that line, weakening
+ * the very check this helper is here to strengthen. A quote before the `//` means
+ * the `//` is inside a string, so the line is left alone; a trailing comment on a
+ * line that also contains a string keeps its comment, which is the safe way to be
+ * wrong.
+ */
+function codeOnly(source: string): string {
+  return withoutComments(source).replace(/^([^'"`\n]*?)\/\/.*$/gm, '$1');
+}
+
 describe('isUuid', () => {
   it('accepts a v4 uuid', () => {
     expect(isUuid('3f2504e0-4f89-41d3-9a0c-0305e82c3301')).toBe(true);
@@ -858,36 +879,62 @@ describe('review collection remains deferred', () => {
  * not exist, which no runtime check will catch.
  */
 describe('gesture handling reaches every root', () => {
+  /**
+   * A gesture DECLARATION, matched on the hook that makes one.
+   *
+   * This was `/Gesture\.\w+\(/` against RAW source, and it was wrong twice over.
+   *
+   * Wrong about the API: `Gesture` is the deprecated builder. RNGH 3.2.1 marks
+   * the object itself "@deprecated `Gesture` builder API is deprecated and will
+   * be removed in a future version of Gesture Handler. Please migrate to the
+   * new, hook-based API." (handlers/gestures/gestureObjects.d.ts) and names a
+   * hook for every member, so the pattern went blind the moment the four gesture
+   * files moved to `usePanGesture` and friends — which is a tripwire that stops
+   * ringing exactly when the code it watches is rewritten.
+   *
+   * Wrong about the source: reading raw text meant PROSE satisfied it. A comment
+   * containing `SimultaneousGesture.prepare()` matches `Gesture.prepare(`, so a
+   * file with no gesture left in it stayed on the list. Both halves are fixed —
+   * the hooks are the API, and `codeOnly` strips comments first.
+   *
+   * `useCompetingGestures` / `useSimultaneousGestures` / `useExclusiveGestures`
+   * are deliberately absent from the alternation (and cannot match it anyway,
+   * being plural): composing is not declaring, and the wrapper decision this
+   * list exists to force is owed by whoever creates a recogniser.
+   * https://docs.swmansion.com/react-native-gesture-handler/docs/guides/upgrading-to-3/
+   */
+  const DECLARES_GESTURE =
+    /use(Tap|Pan|Pinch|Rotation|Fling|LongPress|Native|Manual|Hover)Gesture\(/;
+
+  const surfaces = (): { file: string; code: string }[] =>
+    ['src/components', 'src/screens'].flatMap(dir =>
+      readdirSync(join(ROOT, dir))
+        .filter(f => f.endsWith('.tsx'))
+        .map(f => ({ file: f, code: codeOnly(read(`${dir}/${f}`)) })),
+    );
+
   it('wraps the app root', () => {
     expect(read('App.tsx')).toContain('<GestureHandlerRootView');
   });
 
   it('wraps each modal that declares a gesture', () => {
-    const withModals = ['src/components', 'src/screens']
-      .flatMap(dir =>
-        readdirSync(join(ROOT, dir))
-          .filter(f => f.endsWith('.tsx'))
-          .map(f => ({ file: `${dir}/${f}`, body: read(`${dir}/${f}`) })),
-      )
-      .filter(s => s.body.includes('<Modal') && /Gesture\.\w+\(/.test(s.body));
+    const withModals = surfaces().filter(
+      s => s.code.includes('<Modal') && DECLARES_GESTURE.test(s.code),
+    );
 
     expect(withModals.length).toBeGreaterThan(0);
     for (const s of withModals) {
-      expect(s.body).toContain('<GestureHandlerRootView');
+      expect(s.code).toContain('<GestureHandlerRootView');
     }
   });
 
   it('limits gesture declarations to the sheet, the spotlight card, and the chat bubble', () => {
-    // Tripwire: a new Gesture.Pan/LongPress needs a wrapper decision, not a copy.
+    // Tripwire: a new usePanGesture/useLongPressGesture needs a wrapper
+    // decision, not a copy.
     // Turn.tsx is the WhatsApp swipe-to-reply / long-press strip.
     // SpotlightCard.tsx is the M3 bottom sheet with drag-to-dismiss (2026-09).
-    const users = ['src/components', 'src/screens']
-      .flatMap(dir =>
-        readdirSync(join(ROOT, dir))
-          .filter(f => f.endsWith('.tsx'))
-          .map(f => ({ file: f, body: read(`${dir}/${f}`) })),
-      )
-      .filter(s => /Gesture\.\w+\(/.test(s.body))
+    const users = surfaces()
+      .filter(s => DECLARES_GESTURE.test(s.code))
       .map(s => s.file)
       .sort();
     // MediaViewer.tsx is the full-screen photo: swipe-down to dismiss and
@@ -900,6 +947,17 @@ describe('gesture handling reaches every root', () => {
       'SpotlightCard.tsx',
       'Turn.tsx',
     ]);
+  });
+
+  it('has nothing left on the deprecated builder', () => {
+    // The other half of the migration, and the half a hook-shaped tripwire
+    // cannot see: a file that goes BACK to `Gesture.Pan()` would drop off the
+    // list above rather than fail it. Comment-stripped, because the note in
+    // MediaViewer.tsx that explains the move necessarily names the thing it
+    // moved away from.
+    for (const s of surfaces()) {
+      expect(s.code).not.toMatch(/\bGesture\.\w+\(/);
+    }
   });
 });
 
@@ -2398,7 +2456,7 @@ describe('voice notes are recorded, uploaded and sent through the one send path'
     expect(read('supabase/migrations/011_reactions_replies_voice_calls.sql')).toContain(
       'evidence_voice_path',
     );
-    expect(read('src/components/Turn.tsx')).toContain('Gesture.LongPress()');
+    expect(read('src/components/Turn.tsx')).toContain('useLongPressGesture({');
     expect(read('src/components/Turn.tsx')).toContain('onReportMessage');
     expect(read('scripts/moderate.mjs')).toContain('evidence_voice_path');
   });

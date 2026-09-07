@@ -349,17 +349,47 @@ describe('a photo bubble opens full screen on tap', () => {
      * exactly 500 (TapGestureHandler.kt) - the viewer would open behind the
      * reaction strip. A tap with no distance bound fires at the end of every
      * swipe-reply, because that default is MAX_VALUE_IGNORE and `pan` runs
-     * Simultaneous rather than racing.
-     * https://docs.swmansion.com/react-native-gesture-handler/docs/fundamentals/gesture-composition/
+     * simultaneously rather than competing.
+     * https://docs.swmansion.com/react-native-gesture-handler/docs/composition/use-exclusive-gestures
      */
     const bubble = functionBody(turn, 'function InteractiveBubble', 'function QuoteBlock');
-    expect(bubble).toContain('Gesture.Tap()');
-    expect(bubble).toContain('Gesture.Exclusive(longPress, tap)');
-    expect(bubble).toContain('.maxDistance(REPLY_ACTIVATE)');
+    expect(bubble).toContain('useTapGesture({');
+    expect(bubble).toContain('useExclusiveGestures(longPress, tap)');
+    expect(bubble).toContain('useSimultaneousGestures(pan, discrete)');
+    expect(bubble).toContain('maxDistance: REPLY_ACTIVATE');
     // One number, two consumers, so the tap ceiling and the pan's activation
     // offset cannot drift into a band where both gestures are true.
-    expect(bubble).toContain('.activeOffsetX([-REPLY_ACTIVATE, REPLY_ACTIVATE])');
+    expect(bubble).toContain('activeOffsetX: [-REPLY_ACTIVATE, REPLY_ACTIVATE]');
     expect(withoutComments(turn)).toContain('const REPLY_ACTIVATE = 16;');
+  });
+
+  it('switches the discretes with `enabled` rather than by reshaping the tree', () => {
+    /*
+     * The one structural change the hook migration forced, pinned so it cannot
+     * silently regress into a conditional composition.
+     *
+     * `useLongPressGesture` and `useTapGesture` are hooks: they run on every
+     * render whatever the props are, and `useGesture` creates the native handler
+     * in an effect keyed only on the handler tag, so a ternary that picked a
+     * subtree would save nothing and would make the composed tree's shape depend
+     * on props. `enabled` is the config key for the same decision, and on
+     * Android it is equivalent to absence: `recordViewHandlersForPointer` skips
+     * a handler when `!handler.isEnabled` before it reaches the orchestrator's
+     * list, and `hasOtherHandlerToWaitFor` only consults that list — so the
+     * disabled long press of an uploading photo cannot strand the tap that waits
+     * for it.
+     */
+    const bubble = functionBody(turn, 'function InteractiveBubble', 'function QuoteBlock');
+    expect(bubble).toContain('enabled: target !== null');
+    expect(bubble).toContain('enabled: openViewer !== undefined');
+    // And no ternary chain building the composition back up. Bounded to the two
+    // statements themselves — a whole-body `not.toMatch` for `?` would be
+    // satisfied by any optional call anywhere below.
+    for (const name of ['discrete', 'composed']) {
+      const statement = new RegExp(`const ${name}\\s*=([^;]*);`).exec(bubble)?.[1];
+      expect(statement).toBeDefined();
+      expect(statement).not.toContain('?');
+    }
   });
 
   it('offers the same thing to a screen reader, which cannot see a gesture', () => {
@@ -480,26 +510,28 @@ describe('a photo bubble opens full screen on tap', () => {
  * the tap is bounded (RNGH's tap has no distance limit and no pointer ceiling,
  * so an unbounded one fires on the release of a quick two-finger pinch), the pan
  * is single-pointer (or the pinch drags the stage toward dismissal), the pinch
- * reads its anchor incrementally, and the tap RACES rather than running
+ * reads its anchor incrementally, and the tap COMPETES rather than running
  * simultaneously with the continuous pair.
  * https://docs.swmansion.com/react-native-gesture-handler/docs/composition/use-simultaneous-gestures
  */
 describe('the photo viewer dismisses on a swipe and zooms on a pinch', () => {
   const viewer = withoutComments(read('src/components/MediaViewer.tsx'));
 
-  it('races the tap against the simultaneous pinch-and-pan pair', () => {
+  it('competes the tap against the simultaneous pinch-and-pan pair', () => {
     /*
-     * Nested, not flat. `SimultaneousGesture.prepare()` makes each member
-     * simultaneous with the raw gestures of its SIBLINGS, so
-     * `Simultaneous(pinch, pan, tap)` would make the tap simultaneous with the
-     * pinch and a two-finger release could close the viewer;
-     * `ComposedGesture.prepare()` passes the outer relation down without
-     * collapsing the inner one (gestureComposition.ts).
+     * Nested, not flat. The relation is all-to-all within a Simultaneous node,
+     * so `useSimultaneousGestures(pinch, pan, tap)` would make the tap
+     * simultaneous with the pinch and a two-finger release could close the
+     * viewer. `traverseAndConfigureRelations` keeps the nesting honest: a
+     * Simultaneous child's tags join the live set on the way in and leave it on
+     * the way out, so the tap ends up simultaneous with nothing
+     * (v3/detectors/utils.ts).
      */
-    expect(viewer).toContain('Gesture.Race(Gesture.Simultaneous(pinch, pan), tap)');
-    expect(viewer).toContain('Gesture.Pinch()');
-    expect(viewer).toContain('Gesture.Pan()');
-    expect(viewer).toContain('Gesture.Tap()');
+    expect(viewer).toContain('useCompetingGestures(');
+    expect(viewer).toContain('useSimultaneousGestures(pinch, pan)');
+    expect(viewer).toContain('usePinchGesture({');
+    expect(viewer).toContain('usePanGesture({');
+    expect(viewer).toContain('useTapGesture({');
   });
 
   it('bounds the tap and keeps the pan to one finger', () => {
@@ -507,19 +539,21 @@ describe('the photo viewer dismisses on a swipe and zooms on a pinch', () => {
     // pointer config is `minNumberOfPointers` — there is no ceiling.
     // PanGestureHandler.kt: ACTION_POINTER_DOWN past `maxPointers` CANCELS an
     // active pan, which is what hands the photo over to the pinch cleanly.
-    expect(viewer).toContain('.maxDistance(TAP_SLOP)');
+    expect(viewer).toContain('maxDistance: TAP_SLOP');
     expect(viewer).toContain('const TAP_SLOP = 8;');
-    expect(viewer).toContain('.maxPointers(1)');
+    expect(viewer).toContain('maxPointers: 1');
   });
 
   it('zooms about the focal point, incrementally', () => {
     // `focalX`/`focalY` are the "center anchor point of gesture" and must be
     // read after activation — "make sure to use it after the gesture had
-    // activated", never in the pre-activation callback; `onChange` is what
-    // supplies `scaleChange`, "The incremental change in scale since the last
-    // event frame", so the anchor arithmetic needs no saved origin scale.
+    // activated, i.e. in `onActivate` or `onUpdate` callbacks", never in
+    // `onBegin`; `onUpdate` is what supplies `scaleChange`, "The incremental
+    // change in scale since the last event frame", so the anchor arithmetic
+    // needs no saved origin scale.
     // https://docs.swmansion.com/react-native-gesture-handler/docs/gestures/use-pinch-gesture
-    expect(viewer).toMatch(/Gesture\.Pinch\(\)[\s\S]{0,400}\.onChange\(/);
+    expect(viewer).toMatch(/usePinchGesture\(\{[\s\S]{0,400}onUpdate:/);
+    expect(viewer).not.toMatch(/usePinchGesture\(\{[\s\S]{0,400}onBegin:/);
     expect(viewer).toContain('e.scaleChange');
     expect(viewer).toContain('e.focalX');
     expect(viewer).toContain('e.focalY');
@@ -539,9 +573,20 @@ describe('the photo viewer dismisses on a swipe and zooms on a pinch', () => {
     expect(viewer).toContain('GESTURE.dismissDistance');
     expect(viewer).toContain('GESTURE.dismissVelocity');
     expect(TOKENS.motion.gesture.dismissDistance).toBe(0.28);
-    // A cancelled pan (the second-finger case) settles instead of dismissing.
-    expect(viewer).toMatch(/\.onEnd\(\(e, success\) =>/);
-    expect(viewer).toContain('if (!success || scale.value > MIN_ZOOM)');
+    /*
+     * A cancelled pan (the second-finger case) settles instead of dismissing.
+     *
+     * Reading `e.canceled` and not a `success` argument, and the SENSE is the
+     * assertion: RNGH 3 replaced `onEnd(e, success)` with `onDeactivate(e)` and
+     * "the logic is inverted — `canceled: true` corresponds to the old
+     * `success: false`", so a mechanical rename that kept `if (!success ...)`
+     * reading a now-truthy `canceled` would invert the branch and dismiss the
+     * viewer on exactly the drags that were abandoned.
+     * https://docs.swmansion.com/react-native-gesture-handler/docs/guides/upgrading-to-3/
+     */
+    expect(viewer).toMatch(/onDeactivate: e =>/);
+    expect(viewer).toContain('if (e.canceled || scale.value > MIN_ZOOM)');
+    expect(viewer).not.toContain('success');
   });
 
   it('fades the scrim on the same threshold the release commits on', () => {
@@ -580,7 +625,7 @@ describe('the photo viewer dismisses on a swipe and zooms on a pinch', () => {
     expect(viewer).toMatch(/testID="viewer-stage"[\s\S]{0,120}onLayout=\{measure\}/);
     expect(viewer).not.toMatch(/testID="viewer-stage"[\s\S]{0,200}accessibilityLabel/);
     // Tap still closes, and back still closes.
-    expect(viewer).toMatch(/Gesture\.Tap\(\)[\s\S]{0,300}runOnJS\(onClose\)\(\)/);
+    expect(viewer).toMatch(/useTapGesture\(\{[\s\S]{0,300}runOnJS\(onClose\)\(\)/);
     expect(viewer).toContain('onRequestClose={onClose}');
     // Gestures inside a Modal need their own root on Android.
     expect(viewer).toContain('<GestureHandlerRootView');
@@ -591,37 +636,47 @@ describe('the photo viewer dismisses on a swipe and zooms on a pinch', () => {
      * RULE 1's "find the page" half, mechanised — because getting this wrong is
      * silent. RNGH 3.2.1 publishes TWO doc trees for two APIs:
      * `docs/legacy-gestures/*` documents the pre-3.0 handler COMPONENTS, and
-     * `docs/gestures/use-*-gesture` documents the hooks that supersede the
-     * `Gesture.*` builder this file still calls. Four of the viewer's five
-     * citations pointed into `legacy-gestures/`, and the cost was not cosmetic:
-     * the Remarks quoted next to the focal-point arithmetic named `onStart`,
-     * `onUpdate` and `onBegan`, none of which is the wording on the page that
-     * governs today, so a reader checking the claim would have been sent to a
-     * page describing different callbacks from the ones in the code.
+     * `docs/gestures/use-*-gesture` documents the hooks this file now calls.
+     * Four of the viewer's five citations pointed into `legacy-gestures/`, and
+     * the cost was not cosmetic: the Remarks quoted next to the focal-point
+     * arithmetic named `onStart`, `onUpdate` and `onBegan`, none of which is the
+     * wording on the page that governs today, so a reader checking the claim
+     * would have been sent to a page describing different callbacks from the
+     * ones in the code.
+     *
+     * `docs/fundamentals/gesture-composition/` is banned for a blunter reason:
+     * it is a 404. Turn.tsx cited it for the Exclusive wording until this
+     * migration, so a citation that had gone dead survived every green build.
      *
      * RAW source on purpose. A citation only ever lives in a comment, so this
      * is the one assertion in this file that must NOT be comment-stripped —
      * `withoutComments` would delete the very text under test.
      */
+    for (const file of ['src/components/MediaViewer.tsx', 'src/components/Turn.tsx']) {
+      expect(read(file)).not.toContain('docs/legacy-gestures/');
+      expect(read(file)).not.toContain('docs/fundamentals/gesture-composition');
+    }
+
     const raw = read('src/components/MediaViewer.tsx');
     expect(raw).toContain('docs/gestures/use-pinch-gesture');
     expect(raw).toContain('docs/gestures/use-pan-gesture');
     expect(raw).toContain('docs/composition/use-simultaneous-gestures');
     expect(raw).toContain('docs/composition/use-competing-gestures');
-    expect(raw).not.toContain('docs/legacy-gestures/');
 
     /*
-     * And the departure is recorded rather than left to be discovered. The
-     * builder API carries a top-level `@deprecated` in the installed typings
-     * (node_modules/react-native-gesture-handler/lib/typescript/handlers/
-     * gestures/gestureObjects.d.ts), so a file that keeps using it owes the
-     * reader the reason — which here is that contract.test.ts's
-     * "limits gesture declarations" tripwire matches `/Gesture\.\w+\(/` against
-     * raw source, so this file cannot migrate on its own.
+     * And the migration guide, which is the page the callback renames come from.
+     * Cited in every one of the four files that moved, because the rename that
+     * matters most — `onEnd(e, success)` to `onDeactivate(e)` with the sense of
+     * the flag inverted — is the one a reader is most likely to check.
      */
-    expect(raw).toContain('usePinchGesture');
-    expect(raw).toContain('useCompetingGestures');
-    expect(raw).toMatch(/@deprecated `Gesture` builder API is deprecated/);
+    for (const file of [
+      'src/components/MediaViewer.tsx',
+      'src/components/Turn.tsx',
+      'src/components/Sheet.tsx',
+      'src/components/SpotlightCard.tsx',
+    ]) {
+      expect(read(file)).toContain('docs/guides/upgrading-to-3/');
+    }
   });
 });
 
