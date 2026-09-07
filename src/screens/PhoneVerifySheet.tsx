@@ -2,14 +2,19 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { TOKENS, type Theme } from '../theme/tokens';
-import { useStyles, useTheme } from '../theme/ThemeProvider';
+import { useStyles } from '../theme/ThemeProvider';
 import { usePhoneVerification } from '../api/phone';
 import { keys } from '../api/chat';
-import { normalisePhone } from '../lib/phone';
+import {
+  IN_MOBILE_DISPLAY_LENGTH,
+  formatNationalDigits,
+  formatPhoneEdit,
+  normalisePhone,
+} from '../lib/phone';
 import { Button } from '../components/Button';
 import { CodeField } from '../components/CodeField';
 import { Sheet } from '../components/Sheet';
-import { TextField } from '../components/TextField';
+import { M3Field } from '../components/TextField';
 
 /** Matched to the resend button, not to MSG91: see the note on the countdown. */
 const RESEND_SECONDS = 30;
@@ -33,12 +38,39 @@ interface Props {
  */
 export function PhoneVerifySheet({ visible, onClose }: Props) {
   const styles = useStyles(makeStyles);
-  const theme = useTheme();
   const queryClient = useQueryClient();
   const { step, busy, error, identifier, send, confirm, resend, reset } =
     usePhoneVerification();
 
+  /**
+   * **Bare national digits. Never the formatted string.**
+   *
+   * This is the whole safety property of the separator formatting: the `98765
+   * 43210` with the space in it is computed for the `value` prop on the line it
+   * is used and is never stored, so there is no variable holding a formatted
+   * number that could be passed to `send` by a later edit. `send` receives
+   * `phone`, which is at most ten digits by construction (`toNationalDigits`
+   * truncates) and contains nothing else.
+   */
   const [phone, setPhone] = useState('');
+  /**
+   * The caret, owned here because the field's text is rewritten under it.
+   *
+   * React Native's `TextInput` is controlled — "the native value will be forced
+   * to match this value prop if provided"
+   * (https://reactnative.dev/docs/textinput#value) — and inserting a separator
+   * makes the forced value a different length from what the native view had, so
+   * every index after the insertion shifts. `selection` is the prop that puts the
+   * caret back: "Set start and end to the same value to position the cursor"
+   * (https://reactnative.dev/docs/textinput#selection).
+   *
+   * It is also updated from `onSelectionChange`, and that is not optional. A
+   * `selection` prop that only ever moves on text change is a caret the user
+   * cannot reposition — tapping mid-number would snap back to where the last
+   * edit left it. Feeding the user's own taps and drags back into the same state
+   * is what keeps the field editable rather than append-only.
+   */
+  const [caret, setCaret] = useState(0);
   const [code, setCode] = useState('');
   const [errorNonce, setErrorNonce] = useState(0);
   const [cooldown, setCooldown] = useState(0);
@@ -88,6 +120,25 @@ export function PhoneVerifySheet({ visible, onClose }: Props) {
     [busy, confirm],
   );
 
+  /**
+   * One keystroke, paste or deletion, resolved by the pure formatter.
+   *
+   * The formatter is handed the text the native view now holds and the string
+   * that was on screen before it; it works the edit out by diffing those two
+   * rather than by reading the native caret, so it does not depend on the order
+   * `onChangeText` and `onSelectionChange` fire in. Everything it decides —
+   * digits, display, caret — is unit-tested in `__tests__/phone.test.ts`.
+   */
+  const onChangePhone = useCallback(
+    (next: string) => {
+      const edit = formatPhoneEdit(next, formatNationalDigits(phone));
+      setPhone(edit.digits);
+      setCaret(edit.caret);
+    },
+    [phone],
+  );
+
+  const display = formatNationalDigits(phone);
   const canSend = normalisePhone(phone) !== null && busy === null;
 
   if (step === 'verified') {
@@ -120,25 +171,58 @@ export function PhoneVerifySheet({ visible, onClose }: Props) {
       }
       onClose={onClose}>
       {step === 'number' ? (
-        <TextField
+        <M3Field
           testID="phone-verify-input"
-          style={styles.input}
-          value={phone}
-          onChangeText={setPhone}
-          placeholder="Phone number"
-          placeholderTextColor={theme.color.text.tertiary}
+          containerStyle={styles.field}
+          value={display}
+          onChangeText={onChangePhone}
+          selection={{ start: caret, end: caret }}
+          onSelectionChange={e => setCaret(e.nativeEvent.selection.start)}
+          /* Eleven characters: ten digits and the one separator. This is not
+             belt-and-braces on top of the JS cap — the RN docs name it as the
+             fix for exactly the flicker a JS-only cap causes, because a
+             controlled `value` that refuses a keystroke is the
+             "keeping value the same" case they warn about. With this, the
+             native view never accepts the twelfth character at all.
+             https://reactnative.dev/docs/textinput#maxlength */
+          maxLength={IN_MOBILE_DISPLAY_LENGTH}
+          /* The placeholder is a correctly-grouped example rather than the words
+             "Phone number": it says both what the format is and that ten digits
+             is the whole number, which is what the +91 country code being absent
+             from the field would otherwise leave ambiguous. */
+          placeholder="98765 43210"
+          /* `inputMode` "determines which keyboard to open and has precedence
+             over keyboardType" (https://reactnative.dev/docs/textinput#inputmode),
+             so `tel` is the one actually in force; `keyboardType` stays as the
+             long-supported prop underneath it. Both resolve to Android's
+             TYPE_CLASS_PHONE. */
+          inputMode="tel"
           keyboardType="phone-pad"
-          textContentType="telephoneNumber"
+          /* `autoComplete` is what Android autofill reads. `tel` is
+             AUTOFILL_HINT_PHONE_NUMBER, which the platform doc specifies for
+             "requesting a full phone number in a single view" — which this is.
+             The `tel-national` hint exists but the same doc scopes it to apps
+             with "separate views for different parts", and there is no
+             country-code field here. A service that fills the full +91 number is
+             handled: toNationalDigits strips a twelve-digit leading 91.
+             https://developer.android.com/guide/topics/text/autofill-optimize */
           autoComplete="tel"
+          /* The same page says to check this is "set to a value other than `no`".
+             The default is `auto`; naming it makes the field's participation in
+             autofill explicit rather than inherited. */
+          importantForAutofill="yes"
+          /* iOS-only per https://reactnative.dev/docs/textinput#textcontenttype
+             — inert on this Android-only app, kept so the field is correct if it
+             ever ships elsewhere. It does NOT do the Android autofill work;
+             `autoComplete` above does. */
+          textContentType="telephoneNumber"
           returnKeyType="send"
-          allowFontScaling
           editable={busy === null}
           onSubmitEditing={() => {
             if (canSend) {
               void onSend();
             }
           }}
-          underlineColorAndroid="transparent"
         />
       ) : (
         /* Never disabled while confirming. Disabling a focused TextInput blurs
@@ -208,16 +292,9 @@ export function PhoneVerifySheet({ visible, onClose }: Props) {
 
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
-    input: {
-      ...TOKENS.typography.bodyLarge,
-      color: t.color.text.primary,
-      backgroundColor: t.color.bg.base,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: t.color.border.strong,
-      borderRadius: TOKENS.radius.field,
-      borderCurve: 'continuous',
-      paddingHorizontal: TOKENS.space.md,
-      height: 48,
+    /* The field's own geometry — height, stroke, radius, padding — is M3Field's
+       now. All that is left here is the gap to the button under it. */
+    field: {
       marginBottom: TOKENS.space['2xs'],
     },
     // Primary, not a red. Matching the sign-in screen: an OTP that did not work

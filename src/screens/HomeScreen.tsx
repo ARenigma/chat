@@ -45,7 +45,7 @@ import { Avatar } from '../components/Avatar';
 import { NAV_BAR_HEIGHT } from '../components/FloatingToolbar';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
-import { ProviderRow } from '../components/ProviderRow';
+import { ProviderRow, PROVIDER_ROW_HEIGHT } from '../components/ProviderRow';
 import { DirectorySkeleton } from '../components/DirectorySkeleton';
 import { Chip } from '../components/Chip';
 import { HeroCarousel } from '../components/HeroCarousel';
@@ -1061,7 +1061,7 @@ export function HomeScreen({
                 styles.scroll,
                 { paddingBottom: insets.bottom + NAV_BAR_HEIGHT + TOKENS.space.xl },
               ]}
-              overrideItemLayout={layout => { (layout as { span?: number; size?: number }).size = 97; }}
+              overrideItemLayout={layout => { (layout as { span?: number; size?: number }).size = PROVIDER_ROW_HEIGHT; }}
             />
           </Animated.View>
         ) : loading ? (
@@ -1103,7 +1103,7 @@ export function HomeScreen({
                 // rather than behind it.
                 { paddingBottom: insets.bottom + NAV_BAR_HEIGHT + TOKENS.space.xl },
               ]}
-              overrideItemLayout={layout => { (layout as { span?: number; size?: number }).size = 97; }}
+              overrideItemLayout={layout => { (layout as { span?: number; size?: number }).size = PROVIDER_ROW_HEIGHT; }}
             />
           </Animated.View>
         )}
