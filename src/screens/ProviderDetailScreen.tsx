@@ -616,8 +616,17 @@ function ActionButton({
 }) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
+  // One branch per fill, because the three fills are three different token
+  // families and only `primary` is an accent one. `dark` used to fall through to
+  // `text.onAccent` here while its fill was `text.primary`, which paired a
+  // near-white label with a fill that IS white in dark mode (1.04:1); see the
+  // note on `actionDark` in makeStyles.
   const fg =
-    kind === 'outline' ? theme.color.text.primary : theme.color.text.onAccent;
+    kind === 'outline'
+      ? theme.color.text.primary
+      : kind === 'dark'
+        ? theme.color.text.onInverse
+        : theme.color.text.onAccent;
   // The `flex: 1` lives on this wrapper View, not on the Pressable: a `flex: 1`
   // set on a Pressable never reaches its outer touchable (it styles an inner
   // view), so three flex Pressables collapse to content width. The View
@@ -814,8 +823,30 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
       gap: TOKENS.space['2xs'],
     },
+    /*
+     * accentStrong, not accent: this button carries BOTH a label and a glyph.
+     *
+     * `actionRate` is 12dp Bold (labelMediumEmphasized) in `text/onAccent`, and
+     * the `call` glyph beside it is 22dp in the same colour.
+     * developer.android.com/guide/topics/ui/accessibility/apps ("Increase text
+     * visibility"): "If the text is smaller than 18sp, or if the text is bold
+     * and smaller than 14sp, use foreground and background colors that result
+     * in a color contrast ratio of at least 4.5:1. For all other text, set the
+     * color contrast ratio to at least 3:1." 12dp is under 18sp, so the label
+     * takes 4.5:1 — and the glyph does not rescue the fill either, because it
+     * is a 22dp mark on the 3:1 non-text floor and `bg/accent` in DARK mode is
+     * a light blue at 2.59:1, under even that. Measured 3.44:1 light / 2.59:1
+     * dark; `bg/accentStrong` is 5.19:1 / 6.13:1.
+     *
+     * The fill moves rather than `fg`, as on the six surfaces fixed in aba2c13:
+     * this is the primary of three actions and the coral is what says so, while
+     * the only ink that would work is `text/primary` (4.95:1 light, 2.70:1 dark
+     * — in dark it IS white). design/tokens.json says it on the token itself:
+     * bg/accent "must NEVER sit under small white text; that is what
+     * bg/accentStrong is for".
+     */
     actionPrimary: {
-      backgroundColor: t.color.bg.accent,
+      backgroundColor: t.color.bg.accentStrong,
     },
     /*
      * M3 outlined button: transparent container, 1dp stroke, 0dp elevation.
@@ -828,8 +859,30 @@ const makeStyles = (t: Theme) =>
       borderWidth: 1,
       borderColor: t.color.border.strong,
     },
+    /*
+     * `bg/inverse`, not `text/primary`. THE VIDEO BUTTON WAS INVISIBLE IN DARK
+     * MODE, and this is a worse failure than the accent one above rather than a
+     * tidier version of it.
+     *
+     * An ink token was being used as a fill, and the two flip in opposite
+     * directions: `text/primary` is #1C1C1E light but #FFFFFF dark, while its
+     * label `text/onAccent` is white in both. So in dark mode this button
+     * painted #FAFAFA text and a 22dp glyph onto a #FFFFFF fill — 1.04:1, which
+     * is not "hard to read", it is nothing on screen. Against
+     * developer.android.com/guide/topics/ui/accessibility/apps, 4.5:1 for the
+     * 12dp label and 3:1 for the glyph.
+     *
+     * `bg/inverse` is the token for a dark full-width fill and it exists for
+     * exactly this — its own note calls it "Primary button", and it is #1C1C1E
+     * in light, the SAME value `text/primary` has there, so light mode does not
+     * move by a single pixel. Dark flips it to #E9EEF4 with `text/onInverse`
+     * ink at 14.6:1. That pair is already registered in
+     * scripts/check-contrast.mjs as "the primary button label", so this button
+     * is now measured by the gate instead of being an unlisted hand-pairing of
+     * an ink token with an on-accent label.
+     */
     actionDark: {
-      backgroundColor: t.color.text.primary,
+      backgroundColor: t.color.bg.inverse,
     },
     actionDisabled: {
       opacity: 0.5,

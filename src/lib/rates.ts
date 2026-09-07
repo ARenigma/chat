@@ -148,60 +148,127 @@ export function formatRupeesPaise(paise: number): string {
  * lines, and it should arrive with the surface that renders it.
  */
 
-/**
- * The tax in a pack price, stated EXCLUSIVE of it: "₹4,237.29" and
- * "+ ₹762.71 GST", two strings that sum back to the price to the paisa.
+/*
+ * DELETED 2026-09-07: `gstExclusiveParts`.
  *
- * A SUPPORTING pair, not a replacement for the price. Both hosts render the
- * price above these two lines, and they have to: for one pass they did not, and
- * the largest rupee figure on the ₹5,000 card was ₹4,237.29 — a number Cashfree
- * never charges and no invoice ever shows as a total.
+ * It returned the two strings — "₹254.24" and "+ ₹45.76 GST" — that the pack
+ * cards rendered as two stacked Texts under the price, and it existed because
+ * an INCLUSIVE price has to be broken into two numbers before either can be
+ * shown. Its whole width argument (the 87.2dp measurement, the Android
+ * `numberOfLines` caveat, why the break belongs to the design and not to the
+ * layout) was about fitting that pair into a 48%-wide card.
  *
- * Exclusive PRESENTATION, not an exclusive PRICE, and the distinction is the
- * whole of it. ADR-0021 ("Recharge pack pricing (GST-inclusive)") fixes pack
- * prices as tax-inclusive, and `supabase/functions/create-order/index.ts` sends
- * `order_amount: opts.amountInr` — the nominal pack price — so Cashfree captures
- * ₹5,000 for the ₹5,000 pack and not a paisa more. A chip reading "₹5,000 + 18%
- * GST" would name ₹5,900, a price nobody is ever charged, and would break
- * 1 token = ₹1 on the way. Naming the base and the tax separately is the only
- * exclusive reading that is also true, and it is precisely the breakdown
- * `generate-invoice/index.ts:315` prints, so screen and invoice cannot drift.
+ * Exclusive pricing removes the problem rather than solving it. The base IS the
+ * headline now — the card already says ₹300 — so the supporting line has one
+ * number left to state, and one number is one line (Amit, 2026-09-07: "inline
+ * subheader for gst should be one liner, not two"). `gstAddedLabel` below is
+ * that line.
  *
- * Two strings rather than one sentence, because the joined form is 23 characters
- * at bodySmall (12sp) and a 48%-wide pack card has 115.8dp of usable width on a
- * 360dp screen — it wraps, and an unmanaged wrap breaks after the dangling "+".
- * Two Texts break where the design chooses instead. React Native's own caveat
- * rules out the one-Text-two-lines alternative: "On Android, when numberOfLines
- * is set to a value higher than 1, only tail value will work correctly."
- * (https://reactnative.dev/docs/text#ellipsizemode)
- *
- * Neither Text sets `numberOfLines`, so neither truncates. At 12sp the wider of
- * the two ("+ ₹762.71 GST", 87.2dp) clears 115.8dp with room to about a 1.3
- * font scale, above which it wraps at the space before "GST" — a second line,
- * not a lost word, which is what "accommodate larger font sizes without
- * impacting usability" asks for
- * (developer.android.com/about/versions/14/features#non-linear-font-scaling).
- *
- * `null` when no tax is charged, so `rateBps = 0` (an unregistered seller)
- * removes the disclosure from every surface at once.
+ * Grepped before deleting: no consumer left in `src/`. Both recharge hosts and
+ * PaymentSheet moved to `gstAddedLabel` / `packTotalInr` in the same change.
  */
-export function gstExclusiveParts(
-  amountInr: number,
-  rateBps: number,
-): { base: string; tax: string } | null {
-  const { taxablePaise, gstPaise } = gstSplit(amountInr, rateBps);
-  return gstPaise > 0
-    ? { base: formatRupeesPaise(taxablePaise), tax: `+ ${formatRupeesPaise(gstPaise)} GST` }
-    : null;
+
+/** A pack price with the tax ADDED on top of it, in integer paise. */
+export interface GstOnTop {
+  basePaise: number;
+  gstPaise: number;
+  totalPaise: number;
 }
 
 /**
- * The same split on one line — the pay step, where the total is already the
- * headline, and every accessibility label, where a line break means nothing.
+ * The tax ON TOP of a pack price. ₹300 + 18% = ₹354, and 300 tokens.
+ *
+ * THIS REPLACES THE INCLUSIVE MODEL (Amit, 2026-09-07: "gst should be exclusive
+ * and on top of recharge pill values — if I select the 300 pill then I should
+ * get 300 tokens in my wallet but will be charged 300 + gst"). It supersedes
+ * ADR-0021, which fixed pack prices as tax-inclusive; see ADR-0029.
+ *
+ * What actually changed is WHAT IS CHARGED, not how it is worded. Under the old
+ * model the ₹300 pack captured ₹300 and the member was told ₹254.24 of it was
+ * the pack and ₹45.76 was tax. Now the pack IS ₹300, the tax is ₹54 on top, and
+ * Cashfree captures ₹354. Tokens are unchanged at 300, so `1 token = ₹1` still
+ * describes what a token costs — the tax is on the purchase, not in the token.
+ *
+ * `gst = round(base × rate_bps / 10000)`, added rather than backed out, which is
+ * the mirror image of `gstSplit` above. The two must round-trip: an invoice is
+ * generated from `amount_paise` (the TOTAL captured) using the inclusive
+ * back-out, so `gstSplit(total)` has to return this `basePaise` and this
+ * `gstPaise` exactly, or the screen and the invoice disagree by a paisa. It does
+ * for every pack at 18% — that is asserted over the real pack list in
+ * __tests__/contract.test.ts rather than assumed here, because it is a property
+ * of the pack values and the rate, not of the arithmetic alone.
  */
-export function gstExclusiveLabel(amountInr: number, rateBps: number): string | null {
-  const parts = gstExclusiveParts(amountInr, rateBps);
-  return parts === null ? null : `${parts.base} ${parts.tax}`;
+export function gstOnTop(baseInr: number, rateBps: number = DEFAULT_GST_RATE_BPS): GstOnTop {
+  const basePaise = Math.round(baseInr * 100);
+  if (rateBps <= 0 || basePaise <= 0) {
+    return { basePaise, gstPaise: 0, totalPaise: basePaise };
+  }
+  const gstPaise = Math.round((basePaise * rateBps) / 10000);
+  return { basePaise, gstPaise, totalPaise: basePaise + gstPaise };
+}
+
+/**
+ * What the member is actually charged for a pack, in rupees.
+ *
+ * The Pay button and the payment sheet name this, never the pack price. Under
+ * the inclusive model those were the same number and the distinction did not
+ * exist; under exclusive pricing a Pay button reading "Pay ₹300" on a ₹354
+ * charge would be the single worst thing on the screen.
+ */
+export function packTotalInr(baseInr: number, rateBps: number): number {
+  return gstOnTop(baseInr, rateBps).totalPaise / 100;
+}
+
+/**
+ * Rupees from paise, dropping a zero fraction: "₹54", but "₹37.50".
+ *
+ * At 18% every pack in `RECHARGE_PACKS` yields whole rupees of tax — 18, 54, 90,
+ * 180, 450, 900 — because the tax is now computed ON a round number instead of
+ * backed OUT of one. So the exclusive model retires the paise from these screens
+ * almost entirely, and printing "₹54.00" would put decimal noise back on a card
+ * that no longer has any. It is not unconditional: a rate like 1250 bps gives
+ * ₹37.50 on the ₹300 pack, and that half-rupee has to survive.
+ *
+ * `formatRupeesPaise` is left exactly as it was. It is the two-decimal form the
+ * invoice figures use, and its four pinned cases in contract.test.ts are about
+ * that, not about this.
+ */
+function formatRupeesExact(paise: number): string {
+  return paise % 100 === 0 ? formatRupees(paise / 100) : formatRupeesPaise(paise);
+}
+
+/**
+ * The one-line tax note under a pack price: "+ ₹54 GST".
+ *
+ * ONE line, not two (Amit, 2026-09-07). The card's headline is already the base,
+ * so this states the only figure the headline does not, and the total lands on
+ * the Pay bar where the money actually moves. That also makes the old width
+ * problem go away rather than being managed: "+ ₹762.71 GST" was 87.2dp of a
+ * 115.8dp card at bodySmall, and the widest this can now be is "+ ₹900 GST".
+ *
+ * `null` when no tax is charged, so `rateBps = 0` (a seller who is not
+ * GST-registered) removes the disclosure from every surface at once — and,
+ * because `gstOnTop` returns `totalPaise === basePaise` at rate 0, the Pay
+ * button correctly stops adding anything at the same moment.
+ */
+export function gstAddedLabel(baseInr: number, rateBps: number): string | null {
+  const { gstPaise } = gstOnTop(baseInr, rateBps);
+  return gstPaise > 0 ? `+ ${formatRupeesExact(gstPaise)} GST` : null;
+}
+
+/**
+ * The same fact as a sentence, for `accessibilityLabel` and the pay step.
+ *
+ * Spoken labels get the TOTAL as well as the tax. A sighted member reads the
+ * card's price and this line together; TalkBack reads one string, and "plus ₹54
+ * GST" without a total leaves the listener to do the addition that the Pay
+ * button does for everyone else.
+ */
+export function gstAddedSpoken(baseInr: number, rateBps: number): string | null {
+  const { gstPaise, totalPaise } = gstOnTop(baseInr, rateBps);
+  return gstPaise > 0
+    ? `plus ${formatRupeesExact(gstPaise)} GST, ${formatRupeesExact(totalPaise)} total`
+    : null;
 }
 
 /**

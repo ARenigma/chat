@@ -21,6 +21,19 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
 // ---------------------------------------------------------------------------
+// GST — mirrors gstOnTop in src/lib/rates.ts (ADR-0029: exclusive model).
+// Rate is 18% (1800 bps) until the function reads economics config from DB.
+// ---------------------------------------------------------------------------
+const DEFAULT_GST_RATE_BPS = 1800;
+
+function packTotalPaise(baseInr: number, rateBps: number = DEFAULT_GST_RATE_BPS): number {
+  const basePaise = Math.round(baseInr * 100);
+  if (rateBps <= 0 || basePaise <= 0) return basePaise;
+  const gstPaise = Math.round((basePaise * rateBps) / 10000);
+  return basePaise + gstPaise;
+}
+
+// ---------------------------------------------------------------------------
 // Pack config — aligned to src/lib/rates.ts RECHARGE_PACKS: 1 token = ₹1.
 // Product IDs follow the pappal_pack_<amountInr> convention.
 // ---------------------------------------------------------------------------
@@ -151,15 +164,20 @@ Deno.serve(async (request: Request) => {
 
     // Create Cashfree order first; don't insert the transaction row until
     // we have a valid paymentSessionId.
+    // Exclusive GST: member pays base + tax, receives base tokens (ADR-0029).
+    const totalPaise = packTotalPaise(pack.amountInr);
+
     const cashfreeOrder = await createCashfreeOrder({
       orderId,
-      amountInr: pack.amountInr,
+      amountInr: totalPaise / 100,
       userId,
       phone,
     });
 
     // Insert pending transaction row. status='created'; credit happens via webhook
     // or verify-order after server-side payment confirmation.
+    // amount_paise is the TOTAL charged (base + GST) — generate-invoice
+    // backs the tax out of this figure using the inclusive formula.
     const { error: insertErr } = await admin
       .from('token_transactions')
       .insert({
@@ -168,7 +186,7 @@ Deno.serve(async (request: Request) => {
         kind: 'recharge',
         status: 'created',
         tokens_delta: pack.tokens,
-        amount_paise: pack.amountInr * 100,
+        amount_paise: totalPaise,
       });
 
     if (insertErr) {
