@@ -54,6 +54,14 @@ import { LoadingIndicator } from '../components/LoadingIndicator';
 import { CompletionRow } from '../components/CompletionRow';
 import { TextField } from '../components/TextField';
 import { CountryPicker, DEFAULT_DIAL_CODE } from '../components/CountryPicker';
+import {
+  countryForDialCode,
+  formatNationalDigits,
+  formatPhoneEdit,
+  isCompleteNationalNumber,
+  nationalDisplayLength,
+  retargetPhone,
+} from '../lib/phone';
 import { useStore } from '../store/useStore';
 import { storage } from '../lib/storage';
 import { PROVIDER_INTENT_KEY } from '../lib/providerIntent';
@@ -160,7 +168,36 @@ export function OnboardingScreen({ onDone }: Props) {
   const [state, setState] = useState<FieldState>('idle');
   const [failure, setFailure] = useState<string | null>(null);
   const [dialCode, setDialCode] = useState(DEFAULT_DIAL_CODE);
+  /**
+   * **Bare national digits. Never the formatted string.**
+   *
+   * That is the whole safety property of the separator formatting: the
+   * `98765 43210` with the space in it is computed for the `value` prop on the
+   * line it is used and is never stored, so there is no variable holding a
+   * formatted number that a later edit could hand to `sendPhoneOtp`. What that
+   * function receives is `` `${dialCode} ${phone}` ``, and `phone` is at most
+   * `country.nationalLength` digits by construction — `toNationalDigits`
+   * truncates — and contains nothing else.
+   */
   const [phone, setPhone] = useState('');
+  /**
+   * The caret, owned here because the field's text is rewritten under it.
+   *
+   * React Native's `TextInput` is controlled — "the native value will be forced
+   * to match this value prop if provided"
+   * (https://reactnative.dev/docs/textinput#value) — and inserting a separator
+   * makes the forced value a different length from what the native view had, so
+   * every index after the insertion shifts. `selection` is the prop that puts
+   * the caret back: "Set start and end to the same value to position the cursor"
+   * (https://reactnative.dev/docs/textinput#selection).
+   *
+   * It is also updated from `onSelectionChange`, and that is not optional. A
+   * `selection` prop that only ever moves on text change is a caret the user
+   * cannot reposition — tapping mid-number would snap back to where the last
+   * edit left it. Feeding the user's own taps and drags back into the same state
+   * is what keeps the field editable rather than append-only.
+   */
+  const [caret, setCaret] = useState(0);
   const [code, setCode] = useState('');
   const [errorNonce, setErrorNonce] = useState(0);
   const [cooldown, setCooldown] = useState(0);
@@ -423,12 +460,84 @@ export function OnboardingScreen({ onDone }: Props) {
     setFailure(null);
   }, [setPendingProviderApply]);
 
-  /*
-   * The source's `isValid`, which is `!value.isEmpty`. Ours asks for a little
-   * more because an Indian mobile number is ten digits and a one-character
-   * "valid" would enable a submit that the server is certain to reject.
+  /**
+   * The numbering rules for whatever the picker is showing.
+   *
+   * Everything downstream of this line — the grouping, the digit cap, the
+   * `maxLength`, whether the submit lights up — is a function of it, so
+   * switching country switches all of them together. `countryForDialCode`
+   * falls back to India on an unknown code, exactly as `CountryPicker` falls
+   * back to its first row, so the pill and the field cannot disagree.
    */
-  const canSend = phone.trim().length >= 6 && state !== 'loading';
+  const country = countryForDialCode(dialCode);
+
+  /**
+   * One keystroke, paste or deletion, resolved by the pure formatter.
+   *
+   * The formatter is handed the text the native view now holds and the string
+   * that was on screen before it; it works the edit out by diffing those two
+   * rather than by reading the native caret, so it does not depend on the order
+   * `onChangeText` and `onSelectionChange` fire in. Everything it decides —
+   * digits, display, caret — is unit-tested in `__tests__/phone.test.ts`.
+   */
+  const onChangePhone = useCallback(
+    (next: string) => {
+      const edit = formatPhoneEdit(
+        next,
+        formatNationalDigits(phone, country),
+        country,
+      );
+      setPhone(edit.digits);
+      setCaret(edit.caret);
+    },
+    [phone, country],
+  );
+
+  /**
+   * A new country under a number already typed.
+   *
+   * The digits are re-read as the new country's and truncated to its cap if it
+   * cannot hold them — see the reasoning on `retargetPhone`, which owns that
+   * decision. Doing it here rather than in a `useEffect` on `dialCode` matters:
+   * an effect would let one frame render the old digits under the new dial code
+   * with the old grouping, which is the frame in which a member sees a number
+   * that is neither.
+   */
+  const onChangeCountry = useCallback(
+    (next: string) => {
+      // Not a functional `setPhone` updater: it would have to call `setCaret`
+      // from inside itself, and an updater has to be pure — React is free to
+      // run it twice.
+      const edit = retargetPhone(phone, countryForDialCode(next));
+      setDialCode(next);
+      setPhone(edit.digits);
+      setCaret(edit.caret);
+    },
+    [phone],
+  );
+
+  /*
+   * The source's `isValid`, which is `!value.isEmpty`. Ours asks for the whole
+   * number, because a partial one is a submit the server is certain to reject —
+   * and because the field now says how many digits it wants by grouping them,
+   * a button that lights up before the last group is filled contradicts it.
+   *
+   * The length is the selected country's, not ten: Singapore's mobile numbers
+   * are eight digits and Australia's are nine, so a fixed ten would leave the
+   * submit dark on a complete number.
+   */
+  const canSend = isCompleteNationalNumber(phone, country) && state !== 'loading';
+
+  /**
+   * What auth is handed: the dial code, a space, and the bare digits.
+   *
+   * Written once and read by all three call sites, so there is no path on which
+   * a formatted string could be substituted for `phone`. `normalisePhone` in
+   * `src/api/auth.ts` strips everything that is not a digit and, because of the
+   * leading `+`, does not guess a country code — see the note on that function
+   * about the Singapore length collision.
+   */
+  const fullPhone = `${dialCode} ${phone}`;
 
   /** Send directly; OTP verification is the confirmation, so no second prompt. */
   const onSendCode = useCallback(() => {
@@ -438,7 +547,6 @@ export function OnboardingScreen({ onDone }: Props) {
     Keyboard.dismiss();
     setState('loading');
     setFailure(null);
-    const fullPhone = `${dialCode} ${phone.trim()}`;
     void (async () => {
       const result = await sendPhoneOtp(fullPhone);
       if (result.status !== 'failed') {
@@ -451,7 +559,7 @@ export function OnboardingScreen({ onDone }: Props) {
       }
       fail(result.message);
     })();
-  }, [canSend, state, dialCode, phone, fail]);
+  }, [canSend, state, fullPhone, fail]);
 
   /** Resend the OTP from the code-entry stage, respecting the cooldown. */
   const onResend = useCallback(() => {
@@ -460,7 +568,6 @@ export function OnboardingScreen({ onDone }: Props) {
     }
     setState('loading');
     setFailure(null);
-    const fullPhone = `${dialCode} ${phone.trim()}`;
     void (async () => {
       const result = await sendPhoneOtp(fullPhone);
       if (result.status !== 'failed') {
@@ -471,7 +578,7 @@ export function OnboardingScreen({ onDone }: Props) {
       }
       fail(result.message);
     })();
-  }, [cooldown, state, dialCode, phone, fail]);
+  }, [cooldown, state, fullPhone, fail]);
 
   const onChangeNumber = useCallback(() => {
     setCode('');
@@ -530,7 +637,6 @@ export function OnboardingScreen({ onDone }: Props) {
       }
       setState('loading');
       setFailure(null);
-      const fullPhone = `${dialCode} ${phone.trim()}`;
       void (async () => {
         const result = await verifyPhoneOtp(fullPhone, entered);
         if (result.status !== 'failed') {
@@ -543,7 +649,7 @@ export function OnboardingScreen({ onDone }: Props) {
         fail(result.message);
       })();
     },
-    [state, dialCode, phone, fail, completeAuthentication],
+    [state, fullPhone, fail, completeAuthentication],
   );
 
   /**
@@ -887,19 +993,61 @@ export function OnboardingScreen({ onDone }: Props) {
                     {/* Country-code selector leading the national number field. */}
                     <CountryPicker
                       value={dialCode}
-                      onChange={setDialCode}
+                      onChange={onChangeCountry}
                       testID="onboard-country"
                     />
                     <TextField
-                      value={phone}
-                      onChangeText={setPhone}
+                      /* The grouped string, computed on this line and stored
+                         nowhere. `phone` is the bare digits; see its note. */
+                      value={formatNationalDigits(phone, country)}
+                      onChangeText={onChangePhone}
+                      selection={{ start: caret, end: caret }}
+                      onSelectionChange={e =>
+                        setCaret(e.nativeEvent.selection.start)
+                      }
+                      /* The country's digits plus its separators — 11 for
+                         India, 12 for the United States, 9 for Singapore. This
+                         is not belt-and-braces on top of the JS cap: the RN
+                         docs name `maxLength` as the fix for exactly the
+                         flicker a JS-only cap causes, because a controlled
+                         `value` that refuses a keystroke is the "keeping value
+                         the same" case they warn about. With this, the native
+                         view never accepts the digit past the cap at all — and
+                         the same page's "set/update" is why this is derived
+                         from `country` rather than written down.
+                         https://reactnative.dev/docs/textinput#maxlength */
+                      maxLength={nationalDisplayLength(country)}
                       editable={state !== 'loading'}
+                      /* `inputMode` FIRST, because it wins: "inputMode works
+                         similarly to `textContentType` on iOS and
+                         `keyboardType` on Android, but takes precedence over
+                         them". `keyboardType` stays for the platforms and
+                         versions that only read it.
+                         https://reactnative.dev/docs/textinput#inputmode */
+                      inputMode="tel"
                       keyboardType="phone-pad"
+                      /* iOS-only, per the RN docs, so it does none of the
+                         Android work below. Kept, and labelled, so nobody
+                         mistakes it for the autofill hint that matters here. */
                       textContentType="telephoneNumber"
-                      autoComplete="tel"
-                      // Android autofill hint, matching the code field. Without
-                      // it the framework skips the field on API 26+, so a saved
-                      // number is never offered (Twilio/RN autofill guidance).
+                      /* `tel-national`, NOT `tel`.
+                         The autofill page separates the two by whether the
+                         country code has its own view: `tel` maps to
+                         AUTOFILL_HINT_PHONE_NUMBER and is for "requesting a
+                         full phone number in a single view", while
+                         `tel-national` is AUTOFILL_HINT_PHONE_NATIONAL, for the
+                         national part when the code is collected separately.
+                         This screen HAS a separate view for it — the
+                         CountryPicker is the sibling immediately above — so the
+                         field only ever holds the national digits, which is
+                         also exactly what `formatPhoneEdit` and
+                         `nationalDisplayLength` treat it as. Asking autofill for
+                         a full number here invites a +91-prefixed string into a
+                         field capped at the national length.
+                         https://developer.android.com/guide/topics/text/autofill-optimize */
+                      autoComplete="tel-national"
+                      // Without this the framework skips the field on API 26+,
+                      // so a saved number is never offered at all.
                       importantForAutofill="yes"
                       autoFocus
                       placeholder="Your number"
@@ -1326,6 +1474,32 @@ const makeStyles = (t: Theme) =>
      *     the send is a self-padded disc — freeing ~24dp for the number.
      * developer.android.com/develop/ui/views/components/text-fields and M3
      * text-field specs: container height 56, 16dp content padding.
+     */
+    /*
+     * THIS IS ALREADY THE M3 OUTLINED CONTAINER, and that is why the number
+     * field inside it is deliberately NOT `M3Field`.
+     *
+     * Asked on 2026-09-07 to move the sign-in number onto the shared
+     * `M3Field`, since it was one of the last surfaces drawing its own input
+     * chrome. It is not the same case, and the measurements are why — every one
+     * of these already agrees with `OutlinedTextFieldTokens.kt` / `TextFieldImpl.kt`:
+     *
+     *   height       56   OutlinedTextFieldTokens.kt:27 ContainerHeight
+     *   borderWidth   1   :189 resting outline
+     *   paddingLeft  16   TextFieldImpl.kt:2235 TextFieldPadding
+     *   borderRadius      `radius.field`, the product's documented departure
+     *                     from CornerExtraSmall, shared with search and OTP
+     *
+     * The difference is that this is a COMPOUND field: one outlined container
+     * holding the CountryPicker and the national number as two views, which is
+     * the right shape for an input whose country code is chosen rather than
+     * typed — and is what `autoComplete="tel-national"` above depends on.
+     * `M3Field` draws its own 56dp outlined container, so using it here would
+     * put a second one inside this one: two nested outlines, 56dp of chrome
+     * inside 56dp of chrome, and a doubled horizontal inset.
+     *
+     * So the shared component is right for the four single-input screens it now
+     * serves, and wrong here. Stated rather than silently skipped (RULE 1 §6).
      */
     field: {
       flexDirection: 'row',

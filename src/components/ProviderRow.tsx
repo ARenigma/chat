@@ -464,9 +464,47 @@ const makeStyles = (t: Theme) => StyleSheet.create({
    * one row taller than its neighbours. `META_CHIP_HEIGHT` rather than 32, so
    * the scroller cannot drift from the thing it carries.
    */
+  /*
+   * A 48dp ACTIVATION BAND around 32dp of visible chips, and the row does not
+   * grow by a pixel.
+   *
+   * Amit, 2026-09-07: "schip scroll is not working correctly.. pls check
+   * activation area." He was right and the activation area was the whole of it.
+   * The scroller was laid out at exactly `META_CHIP_HEIGHT` — 32dp — and a
+   * ScrollView's touch area IS its layout box (hitSlop is no help: "the touch
+   * area never extends past the parent view bounds",
+   * https://reactnative.dev/docs/view#hitslop, and the repo has already been
+   * bitten by slop hung on a content-sized parent).
+   *
+   * 32dp is below the minimum: "we recommend that each interactive UI element
+   * have a focusable area, or touch target size, of at least 48dp x 48dp"
+   * (https://developer.android.com/guide/topics/ui/accessibility/apps). And the
+   * cost here is worse than a missed tap, because this band is competing with a
+   * VERTICAL list for the same gesture: Android arbitrates on touch slop, so a
+   * drag that begins even slightly diagonal inside a 32dp window is claimed by
+   * the FlashList before the strip's own slop test can win. The thinner the
+   * band, the more of a real thumb's drag falls outside it — which is exactly
+   * "scroll is not working correctly".
+   *
+   * The negative margins are what keep the row's height and the chips' position
+   * unchanged, so this is a touch fix and not a redesign:
+   *
+   *   contribution = -4 + 48 - 8 = 36dp, which is what `space['2xs'] +
+   *   META_CHIP_HEIGHT` (4 + 32) contributed before — so PROVIDER_ROW_HEIGHT
+   *   and its 108dp gate are untouched, deliberately.
+   *
+   * The chips sit in the middle 32dp (`stripContent`'s `alignItems: 'center'`),
+   * so they land exactly where they did: 4dp under the headline. The band
+   * overlaps the headline above and the row's own padding below by 8dp each,
+   * and nothing is lost by that — everything it overlaps is inside the same row
+   * Pressable, and the strip passes taps through to it
+   * (`keyboardShouldPersistTaps="always"`), so a tap in the overlap still opens
+   * the conversation.
+   */
   strip: {
-    height: META_CHIP_HEIGHT,
-    marginTop: TOKENS.space['2xs'],
+    height: TOKENS.interaction.minTarget,
+    marginTop: TOKENS.space['2xs'] - (TOKENS.interaction.minTarget - META_CHIP_HEIGHT) / 2,
+    marginBottom: -(TOKENS.interaction.minTarget - META_CHIP_HEIGHT) / 2,
   },
   // The chips' own row, which for a horizontal ScrollView lives on the content
   // container rather than on the scroller. `flexDirection: 'row'` comes from

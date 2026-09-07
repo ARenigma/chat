@@ -556,3 +556,220 @@ describe('the IME is treated as part of the layout', () => {
     expect(screen).toContain('hidden={keyboardUp}');
   });
 });
+
+/**
+ * Comments removed, string and template literals preserved.
+ *
+ * Duplicated from `textFields.test.ts` rather than imported, which is this
+ * repo's convention: importing another `*.test.ts` would re-register that
+ * file's `describe` blocks inside this suite, because jest's `testMatch` makes
+ * every file in `__tests__` a suite.
+ *
+ * It has to be quote-aware. A naive `//` rule eats the `//` in every
+ * `https://`, and the block below asserts against a file carrying a dozen RULE
+ * 1 doc citations — a naive stripper would delete exactly those and then grade
+ * the wreckage. It also means the prose in a citation cannot satisfy a gate:
+ * the comment beside the field quotes `maxLength`, and that mention must not be
+ * what makes the assertion pass.
+ */
+function stripComments(src: string): string {
+  let out = '';
+  let i = 0;
+  let state: 'code' | 'line' | 'block' | 'sq' | 'dq' | 'tpl' = 'code';
+  while (i < src.length) {
+    const c = src[i];
+    const d = src[i + 1];
+    if (state === 'code') {
+      if (c === '/' && d === '/') {
+        state = 'line';
+        i += 2;
+        continue;
+      }
+      if (c === '/' && d === '*') {
+        state = 'block';
+        i += 2;
+        continue;
+      }
+      if (c === "'") state = 'sq';
+      else if (c === '"') state = 'dq';
+      else if (c === '`') state = 'tpl';
+      out += c;
+      i += 1;
+      continue;
+    }
+    if (state === 'line') {
+      if (c === '\n') {
+        state = 'code';
+        out += c;
+      }
+      i += 1;
+      continue;
+    }
+    if (state === 'block') {
+      if (c === '*' && d === '/') {
+        state = 'code';
+        i += 2;
+        continue;
+      }
+      out += c === '\n' ? '\n' : ' ';
+      i += 1;
+      continue;
+    }
+    if (c === '\\') {
+      out += c + (d ?? '');
+      i += 2;
+      continue;
+    }
+    if (
+      (state === 'sq' && c === "'") ||
+      (state === 'dq' && c === '"') ||
+      (state === 'tpl' && c === '`')
+    ) {
+      state = 'code';
+    }
+    out += c;
+    i += 1;
+  }
+  return out;
+}
+
+/**
+ * The field a new member actually types their number into.
+ *
+ * `PhoneVerifySheet` got the grouped, capped, caret-managed field first, and
+ * this one did not — which meant the screen everybody signs in through was the
+ * screen without it. The behaviour itself is proved as pure functions in
+ * `__tests__/phone.test.ts`; these gates only assert that this field is wired
+ * to those functions, and country-aware rather than hard-coded to India.
+ */
+describe('the sign-in number field is country-aware', () => {
+  const screen = stripComments(read('src/screens/OnboardingScreen.tsx'));
+  /* Bounded from the picker to the end of the input element. Anchoring from
+     the `testID` and searching backwards would be fragile; anchoring forwards
+     from `<CountryPicker` and stopping at the `testID` line's element close
+     keeps the slice over exactly the two controls under test. */
+  const at = screen.indexOf('<CountryPicker');
+  const field = screen.slice(at, screen.indexOf('onboard-send-code', at));
+
+  it('has a slice to assert against', () => {
+    // The trap this closes has caught a block in textFields.test.ts already: an
+    // empty slice makes every `toContain` below pass vacuously.
+    expect(at).toBeGreaterThan(0);
+    expect(field).toContain('onboard-phone');
+    expect(field.length).toBeGreaterThan(200);
+  });
+
+  it('renders the grouped string and stores only bare digits', () => {
+    // `value` is computed on the line it is used. Nothing holds the formatted
+    // number, so no later edit can hand it to sendPhoneOtp.
+    expect(field).toContain('value={formatNationalDigits(phone, country)}');
+    expect(field).toContain('onChangeText={onChangePhone}');
+    // The old wiring put raw user text straight into state, unformatted and
+    // uncapped.
+    expect(field).not.toContain('onChangeText={setPhone}');
+    expect(field).not.toContain('value={phone}');
+  });
+
+  it('caps the display through maxLength, and derives the cap from the country', () => {
+    /*
+     * React Native names `maxLength` as the fix for the flicker a JS-only cap
+     * causes, and says "set/UPDATE maxLength" — so with a picker on screen the
+     * prop has to move when the selection does. A literal here would be 11 for
+     * every country: two digits too many for Singapore, one too few for the US.
+     * https://reactnative.dev/docs/textinput#maxlength
+     */
+    expect(field).toContain('maxLength={nationalDisplayLength(country)}');
+    expect(field).not.toContain('maxLength={IN_MOBILE_DISPLAY_LENGTH}');
+    expect(field).not.toMatch(/maxLength=\{\d+\}/);
+  });
+
+  it('controls the caret and feeds the member’s own taps back into it', () => {
+    // A `selection` that only moves on text change is a caret the user cannot
+    // reposition; without one at all it lands wrong every time a separator is
+    // inserted. https://reactnative.dev/docs/textinput#selection
+    expect(field).toContain('selection={{ start: caret, end: caret }}');
+    expect(field).toContain('setCaret(e.nativeEvent.selection.start)');
+  });
+
+  it('reformats and re-caps when the country changes', () => {
+    // Straight to `setDialCode` left the old country's digits and grouping
+    // under the new dial code.
+    expect(field).toContain('onChange={onChangeCountry}');
+    expect(field).not.toContain('onChange={setDialCode}');
+    expect(screen).toContain('retargetPhone(phone, countryForDialCode(next))');
+    // Not a useEffect on dialCode: that renders one frame of the old digits
+    // under the new dial code.
+    expect(screen).not.toMatch(/useEffect\([^)]*\)[\s\S]{0,400}retargetPhone/);
+  });
+
+  it('gates the submit on the selected country’s length, not a fixed ten', () => {
+    expect(screen).toContain('isCompleteNationalNumber(phone, country)');
+    // The old guard: any six characters lit the button, in every country.
+    expect(screen).not.toContain('phone.trim().length >= 6');
+    expect(screen).not.toMatch(/phone\.length\s*===\s*10/);
+  });
+
+  it('hands auth the dial code and the bare digits, and nothing else', () => {
+    /*
+     * The whole point of keeping `phone` bare. `normalisePhone` inside
+     * `sendPhoneOtp` strips non-digits anyway, but a formatted value reaching
+     * it is how a country-code guess gets a chance to fire on the wrong length.
+     */
+    expect(screen).toContain('const fullPhone = `${dialCode} ${phone}`;');
+    expect(screen).not.toContain('formatNationalDigits(phone, country)}`');
+    // Exactly one place builds it, and all three auth calls read that one.
+    expect(screen.match(/const fullPhone =/g) ?? []).toHaveLength(1);
+    expect(screen).toContain('sendPhoneOtp(fullPhone)');
+    expect(screen).toContain('verifyPhoneOtp(fullPhone, entered)');
+  });
+});
+
+describe('the sign-in number asks Android for the right thing', () => {
+  /* Reuses the file's own `read`. Comments stripped, and line-anchored only: a
+     naive `//` rule eats the `https://` in the citations this repo requires
+     next to every value. */
+  const code = (r: string): string =>
+    read(r).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  it('uses tel-national, because the country code has its own view', () => {
+    /*
+     * The autofill page splits these by exactly that: `tel` is
+     * AUTOFILL_HINT_PHONE_NUMBER, "requesting a full phone number in a single
+     * view", while `tel-national` is AUTOFILL_HINT_PHONE_NATIONAL for the
+     * national part when the code is collected apart from it. This screen has
+     * a CountryPicker sibling, so the field only ever holds national digits —
+     * which is also what `nationalDisplayLength` caps it to. Asking for a full
+     * number invites a +91-prefixed string into a field capped at 10 or 11.
+     */
+    const screen = code('src/screens/OnboardingScreen.tsx');
+    expect(screen).toContain('autoComplete="tel-national"');
+    expect(screen).not.toContain('autoComplete="tel"');
+    // And the picker really is a separate view, which is the premise.
+    expect(screen).toContain('<CountryPicker');
+  });
+
+  it('sets inputMode, which takes precedence over keyboardType', () => {
+    // "inputMode ... takes precedence over" textContentType and keyboardType,
+    // per reactnative.dev/docs/textinput#inputmode. keyboardType stays for the
+    // versions that only read it.
+    const screen = code('src/screens/OnboardingScreen.tsx');
+    expect(screen).toContain('inputMode="tel"');
+    expect(screen).toContain('keyboardType="phone-pad"');
+  });
+
+  it('keeps the compound container instead of nesting a second M3Field', () => {
+    /*
+     * Deliberate, not an oversight. `styles.field` already IS the M3 outlined
+     * container (56dp / 1dp / 16dp), holding the picker and the number as one
+     * compound input. `M3Field` draws its own container, so using it here would
+     * nest 56dp of chrome inside 56dp of chrome.
+     */
+    const screen = code('src/screens/OnboardingScreen.tsx');
+    expect(screen).not.toContain('<M3Field');
+    const field = screen.slice(screen.indexOf('    field: {'));
+    expect(field.slice(0, 400)).toContain('height: 56');
+    expect(field.slice(0, 400)).toContain('borderWidth: 1');
+    expect(field.slice(0, 400)).toContain('paddingLeft: TOKENS.space.md');
+  });
+});
+
