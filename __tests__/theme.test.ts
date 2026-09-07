@@ -1003,6 +1003,156 @@ describe('a kind of text reads at one role, screen or sheet', () => {
       expect(stripComments(read(file))).not.toMatch(/TOKENS\.typography\.bodyMedium/);
     }
   });
+
+  /**
+   * The same, for a kind of text that renders TWICE IN ONE FILE.
+   *
+   * RechargeScreen carries two style factories for one feature —
+   * `makeCompactStyles` for the interrupting Sheet, `makeStyles` for
+   * RechargeWalletPage — and `balanceValue`, `balanceLabel` and `section` each
+   * exist in both. `roleOf` above cannot see that: it brace-matches the FIRST
+   * `<name>: {` in the file, so on these three it would read one half twice and
+   * pass green while the other half said something else. That is not a flaw in
+   * `roleOf` — every style it is used on above is unique in its file — but it is
+   * exactly the drift this file is here to catch, so these three need the factory
+   * as part of the address.
+   */
+  const factoryOf = (file: string, factory: string): string => {
+    const body = stripComments(read(file));
+    const at = body.indexOf(`const ${factory} = (`);
+    expect(at).toBeGreaterThan(-1);
+    // From the declaration to the next top-level `const`, so one factory can
+    // never be credited with a style belonging to the factory after it.
+    const rest = body.slice(at + 1);
+    const next = rest.indexOf('\nconst ');
+    return next > 0 ? rest.slice(0, next) : rest;
+  };
+
+  /** The role `<styleName>: {` spreads, within one factory's body. */
+  const roleInFactory = (body: string, styleName: string): string | null => {
+    const at = body.search(new RegExp(`^ {4}${styleName}\\s*:\\s*\\{`, 'm'));
+    if (at === -1) return null;
+    let depth = 0;
+    let end = body.indexOf('{', at);
+    const start = end;
+    for (; end < body.length; end++) {
+      if (body[end] === '{') depth += 1;
+      else if (body[end] === '}') {
+        depth -= 1;
+        if (depth === 0) break;
+      }
+    }
+    return /\.\.\.\s*TOKENS\.typography\.(\w+)/.exec(body.slice(start, end + 1))?.[1] ?? null;
+  };
+
+  /** In-flow section heading over content: bold 16 on primary ink. */
+  const SECTION_HEADING = 'titleMediumEmphasized';
+
+  /**
+   * The token balance — a FIGURE, not money (Amit, 2026-09-07).
+   *
+   * Deliberately not MONEY_FIGURE. The balance is a token count rather than a
+   * rupee amount, and the app already separates the two: `successBalance`, the
+   * other "N tokens" line in this flow, is a SUPPORTING_LINE and not a money
+   * figure. What the balance shares with the numerals is tabular digits, which
+   * the text roles do not carry and which the bespoke block it replaced was
+   * hand-rolling. Asserted against MONEY_FIGURE below so the distinction is a
+   * decision on the record rather than an oversight someone later "tidies".
+   */
+  const BALANCE_FIGURE = 'numeralLarge';
+
+  const SHEET_HALF = factoryOf(RECHARGE, 'makeCompactStyles');
+  const PAGE_HALF = factoryOf(RECHARGE, 'makeStyles');
+
+  it('addresses each recharge factory separately, or the pairs below prove nothing', () => {
+    // A guard on the guard. `makeStyles` is declared before `makeCompactStyles`
+    // and its name is a prefix of nothing else here, but a careless slice would
+    // swallow the factory after it and read both halves as one.
+    expect(SHEET_HALF).not.toContain('const makeStyles');
+    expect(PAGE_HALF).not.toContain('const makeCompactStyles');
+    // Both halves really do define all three, which is the premise of the pairs.
+    for (const style of ['balanceValue', 'balanceLabel', 'section']) {
+      expect(roleInFactory(SHEET_HALF, style)).not.toBeNull();
+      expect(roleInFactory(PAGE_HALF, style)).not.toBeNull();
+    }
+  });
+
+  it('states the balance figure at one numeral role in both recharge hosts', () => {
+    // The page's half was a bespoke Geist-Bold 34/40/-0.4 block — the last
+    // hand-rolled type in the file, and a 16th role beside ADR-0024's 15. Not
+    // numeralDisplay (32dp), whose note names the balance hero: the sheet's
+    // balance ROW has 224dp for label AND value on a 360dp window and "12,345
+    // tokens" is 237.6dp of it at 32dp, so only one of the two hosts could
+    // render it.
+    expect(roleInFactory(SHEET_HALF, 'balanceValue')).toBe(BALANCE_FIGURE);
+    expect(roleInFactory(PAGE_HALF, 'balanceValue')).toBe(BALANCE_FIGURE);
+  });
+
+  it('keeps the balance figure tabular, and distinct from the money figure', () => {
+    // The whole reason it is a numeral role: a figure that changes wants digits
+    // of equal width. No text role in the scale carries fontVariant.
+    expect(LIGHT.typography[BALANCE_FIGURE].fontVariant).toEqual(['tabular-nums']);
+    expect(LIGHT.typography[BALANCE_FIGURE].fontFamily).toBe('Geist-Bold');
+    expect(LIGHT.typography[MONEY_FIGURE]).not.toHaveProperty('fontVariant');
+    // And the split is intentional, not two names for one thing.
+    expect(BALANCE_FIGURE).not.toBe(MONEY_FIGURE);
+    // Uncapped by construction (ADR-0024 § fontScaleCap: body, label and numerals
+    // scale freely), which is why neither call site wires maxFontSizeMultiplier.
+    expect(TOKENS.fontScaleCap).not.toHaveProperty(BALANCE_FIGURE);
+    expect(TOKENS.fontScaleCap).toHaveProperty(MONEY_FIGURE);
+  });
+
+  it('states the balance label at the supporting-line role in both recharge hosts', () => {
+    // The wrong half was the PAGE: bodyMedium there against the sheet's
+    // bodyLarge. Same direction as the pass above — bodyMedium's retired
+    // "sheet body" clause, showing up on a screen instead of in a modal.
+    expect(roleInFactory(SHEET_HALF, 'balanceLabel')).toBe(SUPPORTING_LINE);
+    expect(roleInFactory(PAGE_HALF, 'balanceLabel')).toBe(SUPPORTING_LINE);
+    // And it is a real size change, not a rename: the two roles differ in dp.
+    expect(LIGHT.typography[SUPPORTING_LINE].fontSize).not.toBe(
+      LIGHT.typography.bodyMedium.fontSize,
+    );
+  });
+
+  it('states the section header at one role, and in the heading FACE', () => {
+    // "Choose a pack" (sheet) and "Add tokens" (page) were both 16dp, so this
+    // pair is a FACE defect rather than a size one: the sheet's bodyLarge is
+    // Geist-Regular, so one host's section header read as body text and the
+    // other's read as a heading.
+    expect(roleInFactory(SHEET_HALF, 'section')).toBe(SECTION_HEADING);
+    expect(roleInFactory(PAGE_HALF, 'section')).toBe(SECTION_HEADING);
+    expect(LIGHT.typography[SECTION_HEADING].fontFamily).toBe('Geist-Bold');
+    expect(LIGHT.typography[SECTION_HEADING].fontSize).toBe(
+      LIGHT.typography[SUPPORTING_LINE].fontSize,
+    );
+    expect(LIGHT.typography[SUPPORTING_LINE].fontFamily).toBe('Geist-Regular');
+  });
+
+  it('leaves no bespoke type block in either recharge factory', () => {
+    // The shape item 1 came in as: a text style setting its own fontSize or
+    // fontFamily instead of spreading a role. Checked PER FACTORY — an `||`
+    // across the two would pass a bespoke block in one half while the other
+    // still spread a role, which is precisely how this one survived.
+    //
+    // `rateIcon` sizes the ⓘ glyph rather than a text role, and `ribbonText` /
+    // `minutesText` borrow a FACE on top of a role (ADR-0024 § the `face`
+    // block) — the latter spread a role first, so they only surface here if that
+    // spread is removed.
+    const BESPOKE = /^ {4}(\w+)\s*:\s*\{[^}]*?\b(fontSize|fontFamily)\s*:/gms;
+    const offenders = (
+      [
+        ['sheet', SHEET_HALF],
+        ['page', PAGE_HALF],
+      ] as const
+    ).flatMap(([host, body]) =>
+      [...body.matchAll(BESPOKE)]
+        .flatMap(m => (m[1] ? [m[1]] : []))
+        .filter(name => name !== 'rateIcon')
+        .filter(name => roleInFactory(body, name) === null)
+        .map(name => `${host}.${name}`),
+    );
+    expect(offenders).toEqual([]);
+  });
 });
 
 describe('spacing lives in tokens', () => {
