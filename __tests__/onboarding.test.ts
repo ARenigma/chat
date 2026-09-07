@@ -81,6 +81,46 @@ describe('the step list', () => {
     expect(phone[phone.length - 1]?.key).toBe('age');
   });
 
+  it('appends the language row after age, and only after it', () => {
+    /*
+     * Order is fixed rather than alphabetical luck: age is the gate the app
+     * cannot start without (`needsAgeBracket`, and App.tsx blocks entry on it),
+     * so it is asked first, and the optional preference is the last thing
+     * between the member and the product.
+     */
+    const both = visibleSteps('google', {
+      includeAge: true,
+      includeLanguages: true,
+    });
+    expect(both.map(s => s.key)).toEqual(['choose', 'age', 'languages']);
+    const phone = visibleSteps('phone', {
+      includeAge: true,
+      includeLanguages: true,
+    });
+    expect(phone.map(s => s.key)).toEqual([
+      'choose',
+      'number',
+      'code',
+      'age',
+      'languages',
+    ]);
+  });
+
+  it('can ask for languages without age', () => {
+    /*
+     * The two are gated independently and either can appear alone. A member who
+     * already has a bracket — anyone who signed up before migration 072, or who
+     * came in through the browser-redirect path where ProfileSetupScreen
+     * collects it — must still be asked the language question. Chaining them
+     * would mean the only people ever asked were the ones who needed both.
+     */
+    expect(
+      visibleSteps('google', { includeLanguages: true }).map(s => s.key),
+    ).toEqual(['choose', 'languages']);
+    // ...and neither flag still means the auth checklist only.
+    expect(visibleSteps('google')).toHaveLength(1);
+  });
+
   it('always leads with the choose step, whichever route is taken', () => {
     for (const route of ['undecided', 'google', 'phone'] as const) {
       expect(visibleSteps(route)[0]?.key).toBe('choose');

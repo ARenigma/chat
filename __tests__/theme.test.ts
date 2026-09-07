@@ -1176,6 +1176,30 @@ describe('spacing lives in tokens', () => {
     ],
     // Optical nudges the 4dp grid cannot name: a 5dp pill pad, a 6dp dot offset,
     // a 1dp tag inset, a 3dp glyph gap. Grandfathered with their reasons.
+    /*
+     * FilterChip's three Material 3 chip measurements that are not on the 4dp
+     * scale, and should not be added to it — a measured value for one component
+     * rather than a step anyone else needs, the same trade `SOURCE_METRICS`
+     * argues in `src/lib/onboarding.ts`.
+     *
+     * Read from material-components-android master, not from m3.material.io
+     * (client-rendered, returns a page title to a fetch):
+     *   paddingEnd 10    styles.xml `Widget.Material3.Chip.Filter`
+     *                    `chipEndPadding`
+     *   marginEnd 6      the spec's effective icon-to-label gap,
+     *                    `iconEndPadding: -2dp` + `textStartPadding: 8dp`
+     *   paddingVertical 6  forced, not chosen: `labelLarge`'s lineHeight is 20,
+     *                    and 20 + 6 + 6 = 32, which is `chipMinHeight`
+     *                    (`m3_comp_filter_chip_container_height`). Any other
+     *                    value misses the spec's own container height.
+     * The matching 8dp start padding IS on the scale and is written as
+     * `space.xs`.
+     */
+    'src/components/Chip.tsx': [
+      'paddingVertical: 6',
+      'paddingEnd: 10',
+      'marginEnd: 6',
+    ],
     'src/components/CallingDots.tsx': ['marginLeft: 6'],
     'src/components/DirectorySkeleton.tsx': ['gap: 6'],
     'src/components/NoticeBar.tsx': ['paddingVertical: 10'],

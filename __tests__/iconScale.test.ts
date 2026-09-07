@@ -257,6 +257,22 @@ const EXEMPT: Record<string, string> = {
    * here would decouple the check from the anatomy it belongs to.
    */
   CHECK: 'Toggle: sized against the M3 thumb box, not the icon scale',
+  /*
+   * The filter chip's leading check is 18dp because the Material 3 chip spec
+   * says 18dp, and it is between two steps of this scale. Read from source
+   * rather than from m3.material.io (client-rendered, returns a page title to a
+   * fetch): `m3_chip_icon_size` in
+   * material-components-android/lib/java/com/google/android/material/chip/res/values/dimens.xml,
+   * agreed by `FilterChipTokens.IconSize get() = 18.0.dp` and by the
+   * `m3_comp_filter_chip_with_icon_icon_size` token.
+   *
+   * `icon.sm` (16) shrinks a mark that already sits inside a 32dp container and
+   * has to read at a glance as "this one is on"; `icon.md` (20) grows the chip,
+   * because the 18dp slot is what `filterIconSlot` reserves to stop the chip
+   * resizing on selection. Same class of exemption as the Fuse SOURCE_METRICS
+   * above: a different source of truth, not a different opinion about this one.
+   */
+  FILTER_CHIP_ICON: 'FilterChip: M3 m3_chip_icon_size, 18dp, between two steps',
 };
 
 /** `TOKENS.icon.md` / `TOKENS.icon['2xl']` / `theme.icon.lg` — any of them. */

@@ -40,7 +40,7 @@ export type Phase = 'welcome' | 'leaving' | 'form' | 'done';
 export type Route = 'undecided' | 'google' | 'phone';
 
 /** The rows the checklist can hold. */
-export type StepKey = 'choose' | 'number' | 'code' | 'age';
+export type StepKey = 'choose' | 'number' | 'code' | 'age' | 'languages';
 
 /**
  * What the flow is currently asking for, within the form.
@@ -122,6 +122,31 @@ export const STEPS: Readonly<Record<StepKey, StepSpec>> = {
      */
     glyph: 'person',
   },
+  languages: {
+    key: 'languages',
+    title: 'Which languages?',
+    /*
+     * The description says what the answer DOES, and says that skipping is
+     * allowed, because both facts change whether the question is worth
+     * answering. A multi-select with no stated consequence reads as a form
+     * field; "we'll put them first" reads as a setting. And the step is
+     * genuinely optional (see `includeLanguages`), so a member who does not
+     * care needs to know that before they start tapping.
+     */
+    description: "Pick any you're comfortable in. We'll put them first.",
+    /*
+     * `globe`, not `chat` and not `people`.
+     *
+     * `chat` is already the choose step's mark and would say "conversation"
+     * twice; `people` is a group, and this is a statement about the member. The
+     * globe is the one glyph in this set that means language without meaning a
+     * particular one, and — the constraint that actually decides it here — it is
+     * a closed circular outline with interior strokes, so unlike `call` and
+     * `phone` (see the notes above) it does not lose its meaning when this row
+     * collapses to 20pt grey, which is where it spends the rest of the flow.
+     */
+    glyph: 'globe',
+  },
 };
 
 export interface VisibleStepsOptions {
@@ -134,6 +159,22 @@ export interface VisibleStepsOptions {
    * not been earned yet.
    */
   includeAge?: boolean;
+  /**
+   * Include the language-preference step as the final checklist row.
+   *
+   * Same contract as `includeAge` and set at the same moment: the two are the
+   * post-auth questions and both are appended once auth succeeds, so the list
+   * grows through the same offset-plus-opacity transition rather than the
+   * screen changing.
+   *
+   * It is a SEPARATE flag rather than being folded into `includeAge` because
+   * the two are asked of different people. Age is a hard gate the app boot
+   * re-checks (`needsAgeBracket`, and `App.tsx` blocks entry on it), so a
+   * member who already has a bracket never sees that row; the language
+   * preference is optional and can be undeclared for a member whose age is
+   * long since set. Either row can therefore appear without the other.
+   */
+  includeLanguages?: boolean;
 }
 
 /**
@@ -152,7 +193,11 @@ export interface VisibleStepsOptions {
  * taken. The growth uses the same offset-plus-opacity transition as everything
  * else, so it reads as part of the flow rather than as a layout jump.
  *
- * `options.includeAge` appends the age-declaration step after auth completes.
+ * `options.includeAge` appends the age-declaration step after auth completes,
+ * and `options.includeLanguages` appends the language-preference step after it.
+ * That order is fixed and is not alphabetical luck: age is the gate the app
+ * cannot start without, so it is asked first, and the optional preference is
+ * the last thing between the member and the product.
  */
 export function visibleSteps(
   route: Route,
@@ -177,6 +222,13 @@ export function visibleSteps(
       throw new Error('age step missing');
     }
     steps.push(age);
+  }
+  if (options.includeLanguages) {
+    const languages = STEPS.languages;
+    if (languages === undefined) {
+      throw new Error('languages step missing');
+    }
+    steps.push(languages);
   }
   return steps;
 }

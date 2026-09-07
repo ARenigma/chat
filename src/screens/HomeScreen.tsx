@@ -38,6 +38,7 @@ import {
   type DirectoryFilter,
   type ProviderCategory,
 } from '../lib/providerFilters';
+import { sortByLanguageMatch } from '../lib/languagePrefs';
 import { useBackGuard } from '../lib/backGuard';
 import { useBlockedPeerIds } from '../api/safety';
 import { useStore } from '../store/useStore';
@@ -179,7 +180,10 @@ export function HomeScreen({
   const columnWidth = contentColumnWidth(windowWidth);
   const balance = useStore(s => s.balance);
   const openWallet = useStore(s => s.openWallet);
-  useProfile();
+  // Read rather than called for its side effect: the directory's ORDER now
+  // depends on the member's language preference, so this screen needs the row
+  // and not just the balance sync it used to be here for.
+  const { data: profile } = useProfile();
   const { data: conversations, isPending: convosPending } = useConversations();
   const { data: providers, isPending: providersPending } = useProviders();
   const blocked = useBlockedPeerIds();
@@ -374,11 +378,55 @@ export function HomeScreen({
     [providers, blocked],
   );
 
-  // What Explore shows: one category at a time. The featured pick and the rows
-  // both come from here, so the hero always belongs to the tab you are on.
+  /**
+   * The member's onboarding answer, and the only thing that reorders Explore.
+   *
+   * Empty for a member who skipped the step or predates it, which
+   * `sortByLanguageMatch` short-circuits to "the order it already had".
+   */
+  /*
+   * Keyed on the CONTENTS, not the array identity. react-query hands back a
+   * fresh array on every refetch, so `[profile?.preferred_languages]` as a memo
+   * dependency would re-sort the whole directory every thirty seconds for no
+   * change. NUL as the separator because it cannot occur in a language name and
+   * cannot occur in a `text[]` element that survived migration 072's floor.
+   */
+  const languageKey = (profile?.preferred_languages ?? []).join('\u0000');
+  const preferredLanguages = useMemo(
+    () => (languageKey === '' ? [] : languageKey.split('\u0000')),
+    [languageKey],
+  );
+
+  /*
+   * What Explore shows: one category at a time. The featured pick and the rows
+   * both come from here, so the hero always belongs to the tab you are on.
+   *
+   * Then reordered so providers who share the member's languages come first
+   * (Amit, 2026-09-07: "sort the profiles with language on user's home screen
+   * according to his selections").
+   *
+   * **A SORT, never a filter, and that is the whole product decision.** The
+   * roster is small enough that "only show me Tamil speakers" can return an
+   * empty screen, and an empty directory is a worse answer than a well-ordered
+   * one. So nobody is removed here — `sortByLanguageMatch` returns every row it
+   * was given, which its own tests assert on every case.
+   *
+   * The existing language FILTER stays exactly as it is, in `searchFilter`
+   * below: sorting is what happens by default, and filtering remains the thing
+   * a member does when they have actively decided to hide people.
+   *
+   * Applied to `directory` rather than to `rows`, so the hero carousel inherits
+   * it too: `topPicks` sorts this list by presence-and-rating, and because that
+   * sort's own tie-break is the incoming order, a language match now decides
+   * which of two equally-rated providers is spotlighted.
+   */
   const directory = useMemo(
-    () => filterProviders(allProviders, { category: exploreCategory, bands: [] }),
-    [allProviders, exploreCategory],
+    () =>
+      sortByLanguageMatch(
+        filterProviders(allProviders, { category: exploreCategory, bands: [] }),
+        preferredLanguages,
+      ),
+    [allProviders, exploreCategory, preferredLanguages],
   );
 
   /**

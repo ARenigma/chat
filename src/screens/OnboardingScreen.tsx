@@ -77,9 +77,17 @@ import {
   getSignedInProfile,
   isFirstUser,
   needsAgeBracket,
+  needsLanguagePreference,
   setMemberAgeBracket,
+  setPreferredLanguages,
   type AgeBracket,
 } from '../api/profileSetup';
+import { FilterChip } from '../components/Chip';
+import {
+  OFFERED_LANGUAGES,
+  isLanguageSelected,
+  toggleLanguage,
+} from '../lib/languagePrefs';
 
 const BLOCK_PAD = SOURCE_METRICS.blockPad;
 const COLUMN_TOP = SOURCE_METRICS.columnTop;
@@ -222,8 +230,37 @@ export function OnboardingScreen({ onDone }: Props) {
    * ProfileSetupScreen instead. This flag is exclusively for the Credential
    * Manager path, which resolves synchronously and stays on screen.
    */
-  const [authDone, setAuthDone] = useState(false);
   const [selectedBracket, setSelectedBracket] = useState<AgeBracket | null>(null);
+
+  /*
+   * WHICH post-auth question the flow is on — one value rather than a boolean
+   * per question.
+   *
+   * This replaces the `authDone` boolean, which said only "auth finished and
+   * there is a question left" and was fine while age was the only one. With
+   * two, independent flags would make "age AND languages" representable, which
+   * is a state with two expanded checklist rows and two control blocks stacked
+   * under each other — reachable by any future edit that sets one without
+   * clearing the other. A single value cannot express it.
+   *
+   * `authDone` survives below as a DERIVED name, because a dozen call sites ask
+   * the coarse question ("are we past auth?") and only three ask the fine one.
+   */
+  const [postAuth, setPostAuth] = useState<'age' | 'languages' | null>(null);
+  const authDone = postAuth !== null;
+  /**
+   * Whether the age row belongs in the checklist at all.
+   *
+   * Separate from `postAuth` because an ANSWERED step stays on screen. Once
+   * age has been asked its row must remain, collapsed, above the language
+   * question — that visible history is why this checklist needs no progress bar
+   * (see `OnboardingStep`'s header) — so this latches true and never clears,
+   * while `postAuth` moves on.
+   */
+  const [askedAge, setAskedAge] = useState(false);
+  /** Whether the language step follows age. Decided once, after auth. */
+  const [wantLanguages, setWantLanguages] = useState(false);
+  const [languages, setLanguages] = useState<readonly string[]>([]);
 
   /*
    * The IME is part of the layout, not something to draw behind.
@@ -279,13 +316,24 @@ export function OnboardingScreen({ onDone }: Props) {
    */
   const formIn = useSharedValue(0);
 
+  /*
+   * The age row stays in the list once it has been answered, rather than being
+   * replaced by the language row: a collapsed answered step above the current
+   * question is the whole reason this checklist needs no progress bar
+   * (`OnboardingStep`'s header). So `includeAge` follows whether age was ever
+   * asked, and the language row is appended beside it.
+   */
   const steps = useMemo(
-    () => visibleSteps(route, { includeAge: authDone }),
-    [route, authDone],
+    () =>
+      visibleSteps(route, {
+        includeAge: askedAge,
+        includeLanguages: postAuth === 'languages',
+      }),
+    [route, postAuth, askedAge],
   );
   // The identify sub-stage IS the active step key now (choose / number / code),
   // so the checklist rows are real steps rather than one "Say hello" catch-all.
-  const activeKey = authDone ? 'age' : identify;
+  const activeKey = postAuth ?? identify;
   // Colour follows the SUB-STAGE, so the field turns over on every tap rather
   // than only when the checklist grows a row. See `paletteFor`.
   const stage = useMemo(
@@ -361,16 +409,31 @@ export function OnboardingScreen({ onDone }: Props) {
     // pending provider intent to that screen. Member and provider are separate
     // worlds (Amit, 2026-09-03).
     const providerSignup = storage.get(PROVIDER_INTENT_KEY) === '1';
-    const collectAge =
-      !providerSignup &&
-      isFirstUser(profile ?? undefined) &&
-      needsAgeBracket(profile ?? undefined);
+    const memberFirstRun = !providerSignup && isFirstUser(profile ?? undefined);
+    const collectAge = memberFirstRun && needsAgeBracket(profile ?? undefined);
+    /*
+     * The language step, gated INDEPENDENTLY of age rather than chained behind
+     * it.
+     *
+     * A member can legitimately have a bracket and no language preference —
+     * anyone who signed up before migration 072, or who came in through the
+     * browser-redirect path where `ProfileSetupScreen` collects the bracket and
+     * this screen never runs. Chaining would mean the only people ever asked
+     * were the ones who happened to need both.
+     */
+    const collectLanguages =
+      memberFirstRun && needsLanguagePreference(profile ?? undefined);
 
     setState('success');
     after(STEP_ADVANCE_MS, () => {
       if (collectAge) {
         setState('idle');
-        setAuthDone(true);
+        setAskedAge(true);
+        setWantLanguages(collectLanguages);
+        setPostAuth('age');
+      } else if (collectLanguages) {
+        setState('idle');
+        setPostAuth('languages');
       } else {
         finish();
       }
@@ -653,7 +716,25 @@ export function OnboardingScreen({ onDone }: Props) {
   );
 
   /**
-   * Age bracket confirmed: save to Supabase then complete onboarding.
+   * Age is answered: either move to the language question or end the flow.
+   *
+   * One function, called from both of the age step's two paths (the chip's
+   * auto-advance and the Continue button), so there is exactly one place that
+   * decides what follows age. Two would be two places to forget the language
+   * step, which is how the age step itself came to be reachable from the
+   * checklist and not from the button.
+   */
+  const afterAge = useCallback(() => {
+    if (wantLanguages) {
+      setState('idle');
+      setPostAuth('languages');
+      return;
+    }
+    finish();
+  }, [wantLanguages, finish]);
+
+  /**
+   * Age bracket confirmed: save to Supabase then move on.
    *
    * Called either from the "Continue" button in the age control block, or when
    * the member taps a chip (auto-advance). The RPC is idempotent, so a retry on
@@ -669,12 +750,60 @@ export function OnboardingScreen({ onDone }: Props) {
       try {
         await setMemberAgeBracket(selectedBracket);
         setState('success');
-        finish();
+        afterAge();
       } catch (err) {
         fail(err instanceof Error ? err.message : 'Could not save age. Please try again.');
       }
     })();
-  }, [selectedBracket, state, finish, fail]);
+  }, [selectedBracket, state, afterAge, fail]);
+
+  const onToggleLanguage = useCallback((language: string) => {
+    // Clear a previous failure on any new interaction: a stale "could not save"
+    // sitting under a chip row the member is actively editing reads as the app
+    // rejecting the tap they just made.
+    setFailure(null);
+    setLanguages(current => toggleLanguage(current, language));
+  }, []);
+
+  /**
+   * Language preference confirmed — or deliberately skipped.
+   *
+   * **No auto-advance here, unlike the age chips**, and that difference is the
+   * point of the control rather than an inconsistency. Age is a single choice,
+   * so the first tap IS the answer and a Continue button after it adds a step
+   * to a decision that is already made. This is a MULTI-select: the first tap
+   * is the beginning of the answer, and a row that submitted on it would make
+   * a second language unreachable.
+   *
+   * An empty selection is a legitimate answer and takes the same path — see
+   * `skipping` below. Writing the empty array rather than skipping the write is
+   * deliberate: the column is `not null default '{}'` so it is a no-op today,
+   * and if a "declined" marker is ever added it is this call site that becomes
+   * the place to record it.
+   *
+   * A failure here does NOT block the flow: the whole preference only reorders
+   * a list. `finish()` runs either way, and the write is retryable from
+   * settings later. Stranding a member on a chip row because a preference did
+   * not save would be the worst possible trade for the least important thing
+   * the flow collects.
+   */
+  const onSubmitLanguages = useCallback(() => {
+    if (!canSubmit(state)) {
+      return;
+    }
+    setState('loading');
+    setFailure(null);
+    void (async () => {
+      try {
+        await setPreferredLanguages(languages);
+      } catch {
+        // Swallowed on purpose, and not even shown: see the note above. There
+        // is nothing the member could do about it and nothing they lose.
+      }
+      setState('success');
+      finish();
+    })();
+  }, [state, languages, finish]);
 
   /*
    * `.transition(.opacity.combined(with: .offset(y: 20)))` from the source: the
@@ -1093,7 +1222,7 @@ export function OnboardingScreen({ onDone }: Props) {
                 </Animated.View>
               ) : null}
 
-              {phase !== 'done' && authDone ? (
+              {phase !== 'done' && postAuth === 'age' ? (
                 /*
                  * M3 filter-chip row: four bands, tonal fill on selection,
                  * then a Continue pill.
@@ -1128,7 +1257,7 @@ export function OnboardingScreen({ onDone }: Props) {
                               void setMemberAgeBracket(bracket)
                                 .then(() => {
                                   setState('success');
-                                  finish();
+                                  afterAge();
                                 })
                                 .catch(err => {
                                   setSelectedBracket(null);
@@ -1185,6 +1314,90 @@ export function OnboardingScreen({ onDone }: Props) {
                     ) : (
                       <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.primaryLabel}>
                         Continue
+                      </Text>
+                    )}
+                  </Pressable>
+                </Animated.View>
+              ) : null}
+
+              {phase !== 'done' && postAuth === 'languages' ? (
+                /*
+                 * The language preference: a row of Material 3 FILTER chips,
+                 * then one pill that both confirms and skips.
+                 *
+                 * **Filter chips, because that is the platform's named control
+                 * for this.** M3 has four chip types and only one is for
+                 * choosing several things out of a set; `FilterChip` in
+                 * `components/Chip.tsx` carries the measurements, read off
+                 * `material-components-android`'s own `styles.xml` /
+                 * `dimens.xml` rather than off m3.material.io, which is
+                 * client-rendered and returns a page title to a fetch.
+                 *
+                 * **Not the age row's chips**, which are a single choice and are
+                 * therefore radios wearing chip clothing — `accessibilityRole`
+                 * "radio" up there, "checkbox" down here, and a leading check on
+                 * these because a multi-select has to say which ones are on
+                 * without relying on fill alone.
+                 *
+                 * **No auto-advance**, unlike age. See `onSubmitLanguages`: the
+                 * first tap on a multi-select is the start of the answer, not
+                 * the answer, so submitting on it would make a second language
+                 * unreachable.
+                 */
+                <Animated.View
+                  entering={FadeInDown.duration(STEP_ADVANCE_MS)}
+                  exiting={FadeOutUp.duration(STEP_EXIT_MS)}
+                  style={styles.ageBlock}>
+                  <View style={styles.languageChips}>
+                    {OFFERED_LANGUAGES.map(language => (
+                      <FilterChip
+                        key={language}
+                        label={language}
+                        selected={isLanguageSelected(languages, language)}
+                        onToggle={onToggleLanguage}
+                        disabled={state === 'loading'}
+                        testID={`language-chip-${language}`}
+                      />
+                    ))}
+                  </View>
+                  {/*
+                   * ONE control, whose label carries the skip.
+                   *
+                   * A separate "Skip" link beside Continue is the obvious build
+                   * and it is worse: it asks the member to classify their own
+                   * inaction, and it puts a second target under a row they may
+                   * still be tapping. With nothing selected the button says so
+                   * and does the same thing — the empty selection has defined
+                   * behaviour all the way down (`sortByLanguageMatch` returns
+                   * the directory in the order it already had), so there is
+                   * genuinely one action here and not two.
+                   *
+                   * Never dimmed, for the same reason: unlike the age button
+                   * above, this control is live from the first frame because
+                   * skipping is a real answer. A `goIdle` fill here would say
+                   * the step cannot be left, which is the opposite of true.
+                   */}
+                  <Pressable
+                    onPress={onSubmitLanguages}
+                    disabled={state === 'loading'}
+                    testID="language-continue"
+                    accessibilityLabel={
+                      languages.length === 0
+                        ? 'Skip choosing languages'
+                        : `Continue with ${languages.length} language${
+                            languages.length === 1 ? '' : 's'
+                          } selected`
+                    }
+                    press="button"
+                    style={styles.primary}>
+                    {state === 'loading' ? (
+                      <LoadingIndicator size={20} containerColor="transparent" />
+                    ) : (
+                      <Text
+                        maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
+                        allowFontScaling
+                        style={styles.primaryLabel}>
+                        {languages.length === 0 ? 'Skip for now' : 'Continue'}
                       </Text>
                     )}
                   </Pressable>
@@ -1553,6 +1766,26 @@ const makeStyles = (t: Theme) =>
       flexDirection: 'row',
       flexWrap: 'wrap',
       gap: TOKENS.space.xs,
+    },
+    /*
+     * The language chip row: wrapping, and with a SMALLER gap than the age row.
+     *
+     * Six chips rather than four, so on the narrowest supported window (the
+     * API 24 floor is 411dp, and this form is inset 42dp a side) they wrap to
+     * three lines. `space.xs` (8) between two 48dp-tall targets leaves a lot of
+     * dead vertical space at three rows; `space.2xs` (4) is the horizontal gap
+     * M3's own chip-group guidance uses and closes it up without the targets
+     * touching — they cannot touch, because the 48dp target is taller than the
+     * 32dp chip inside it, so there is already 8dp of clearance between two
+     * chips' visible edges on adjacent rows.
+     *
+     * The chip's own height comes from `FilterChip`, not from here. This row
+     * only decides how they pack.
+     */
+    languageChips: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: TOKENS.space['2xs'],
     },
     /*
      * M3 filter chip: outlined at rest, tonal fill on selection.
