@@ -8,12 +8,17 @@ import {
   Text,
   View,
   useWindowDimensions,
+  type ImageSourcePropType,
+  type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LIGHT, TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import type { ProviderSummary } from '../lib/database.types';
+import type { ProviderPhoto, ProviderSummary } from '../lib/database.types';
+import { isClayUri, resolveAvatarSource } from '../lib/clayAvatars';
 import { initialOf } from '../lib/display';
 import { presenceForSpeech, readPresence } from '../lib/presence';
 import { tick } from '../lib/haptics';
@@ -22,7 +27,7 @@ import { sizedStorageImageUri } from '../lib/storageImage';
 import { contentColumnWidth } from '../lib/windowSize';
 import { rateLabel, type Channel } from '../lib/rates';
 import { useConversations, useProfile, useProviders } from '../api/chat';
-import { useProviderRatings } from '../api/provider';
+import { useProviderPhotos, useProviderRatings } from '../api/provider';
 import { CALLS_ENABLED } from '../api/calls';
 import { useEconomicsConfig, useKillSwitches, FALLBACK_ECONOMICS } from '../api/appConfig';
 import { useStore } from '../store/useStore';
@@ -35,6 +40,13 @@ import { TokenCounter } from '../components/TokenCounter';
 import { MetaChip } from '../components/MetaChip';
 import { ScreenLoader } from '../components/ScreenLoader';
 import { SafetySheet } from './SafetySheet';
+
+/**
+ * The hero card's height, named because three things now depend on it agreeing:
+ * the card, each page inside the pager, and the pixel size asked of Supabase's
+ * image transform.
+ */
+const HERO_HEIGHT = 420;
 
 interface Props {
   providerId: string;
@@ -53,9 +65,10 @@ interface Props {
  * config (`useEconomicsConfig`) and fall back to `FALLBACK_ECONOMICS` when
  * offline. Audio and video have independent live admin controls; Chat is live.
  *
- * The photo hero degrades to a warm gradient with the person's mark, since the
- * data model has no `avatar_url` yet — same honest fallback as the featured card
- * on Home.
+ * The hero is a pager over the provider's gallery (migration 070), primary photo
+ * first, and degrades in two steps: to the single `avatar_url` for a provider
+ * who has never opened the photo manager, and then to a warm gradient with the
+ * person's mark — the same honest fallback as the featured card on Home.
  */
 export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCall }: Props) {
   const styles = useStyles(makeStyles);
@@ -75,6 +88,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
   const videoRate = economics?.video_rate_tokens_per_min ?? FALLBACK_ECONOMICS.video_rate_tokens_per_min;
   const { data: providers, isPending } = useProviders();
   const { data: ratings } = useProviderRatings(providerId);
+  const { data: photos } = useProviderPhotos(providerId);
   const { data: conversations } = useConversations();
   // Favourites are persisted now (#10), not throwaway local state — the heart
   // reads and writes the saved-favourites store, which the Favourites tab lists.
@@ -122,6 +136,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
           contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + TOKENS.space.xl }]}>
           <Hero
             provider={provider}
+            photos={photos ?? []}
             favorite={favorite}
             onToggleFavorite={() => {
               tick();
@@ -336,10 +351,12 @@ function FavoriteButton({
 
 function Hero({
   provider,
+  photos,
   favorite,
   onToggleFavorite,
 }: {
   provider: ProviderSummary;
+  photos: ProviderPhoto[];
   favorite: boolean;
   onToggleFavorite: () => void;
 }) {
@@ -353,28 +370,122 @@ function Hero({
   const metaParts = [
     provider.rating_count > 0 ? `★ ${provider.rating_avg?.toFixed(1)}` : 'New here',
   ];
+
+  // The gallery when there is one, the single avatar when there is not. Nothing
+  // regresses for a provider (or a seed row) who has never opened the photo
+  // manager, and nothing breaks before migration 070 is applied: the query fails,
+  // `photos` is empty, and the pager is one page that renders as the hero always
+  // did.
+  const gallery = useMemo<string[]>(
+    () =>
+      photos.length > 0
+        ? photos.map(p => p.url)
+        : provider.avatar_url !== null
+          ? [provider.avatar_url]
+          : [],
+    [photos, provider.avatar_url],
+  );
+
+  /*
+   * Seeded from the window rather than 0, because a first frame at width 0 makes
+   * `pagingEnabled` snap against a zero-width page, and corrected by `onLayout`
+   * so a rotation or a 600dp content column lands on whole pages too. The seed
+   * is the same arithmetic the single image used before: the content column less
+   * the ScrollView's own horizontal padding.
+   */
+  const [pageW, setPageW] = useState(() =>
+    Math.round(contentColumnWidth(windowWidth) - TOKENS.space.md * 2),
+  );
+  const [page, setPage] = useState(0);
+
+  const onHeroLayout = useCallback((e: LayoutChangeEvent) => {
+    setPageW(Math.round(e.nativeEvent.layout.width));
+  }, []);
+
+  const onSettled = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const next = Math.round(e.nativeEvent.contentOffset.x / Math.max(1, pageW));
+      setPage(Math.min(Math.max(next, 0), Math.max(0, gallery.length - 1)));
+    },
+    [pageW, gallery.length],
+  );
+
   return (
-    <View style={styles.hero}>
-      {provider.avatar_url ? (
+    <View style={styles.hero} onLayout={onHeroLayout}>
+      {gallery.length > 0 ? (
         <>
-          {/* Brand gradient sits under the photo as its placeholder, so the hero
-              is never a blank rectangle while the full-size image loads — it reads
-              as the coral card, then the photo fades in over it (fadeDuration).
-              This is the "photo load delay": the fetch was fine, the empty frame
-              before it was the problem. */}
+          {/* Brand gradient sits under the strip as its placeholder, so the hero
+              is never a blank rectangle while a page decodes — it reads as the
+              coral card, then the photo fades in over it (fadeDuration). This is
+              the "photo load delay": the fetch was fine, the empty frame before
+              it was the problem. */}
           <View style={[styles.heroFill, { experimental_backgroundImage: gradient }]} />
-          <Image
-            source={{
-              uri: sizedStorageImageUri(
-                provider.avatar_url,
-                contentColumnWidth(windowWidth) - TOKENS.space.md * 2,
-                420,
-                PixelRatio.get(),
-              ),
-            }}
-            fadeDuration={220}
+          <ScrollView
+            horizontal
+            /* `pagingEnabled`, and deliberately NOT `snapToInterval`. The page
+               here IS the pager's own width, which is exactly what pagingEnabled
+               means — "the scroll view stops on multiples of the scroll view's
+               size" — and the same page says snapToInterval "Overrides less
+               configurable pagingEnabled prop", so setting both is a silent
+               conflict in which the interval wins. HeroCarousel on Home uses
+               snapToInterval because its card is NARROWER than its strip; this
+               one is not.
+               https://reactnative.dev/docs/scrollview#pagingenabled
+               https://reactnative.dev/docs/scrollview#snaptointerval
+
+               M3 calls this the "full-screen" carousel strategy — one item
+               filling the whole carousel, recommended for portrait — as opposed
+               to the "hero" strategy (one large item plus a peek) that
+               HeroCarousel implements. Snapping to the nearest item is part of
+               the strategy, not decoration.
+               https://github.com/material-components/material-components-android/blob/master/docs/components/Carousel.md */
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            /* The cross-axis conflict with the vertical parent ScrollView is
+               resolved by the PLATFORM, not by a prop, and the two props that
+               look like the fix are not: `directionalLockEnabled` is iOS-only,
+               and `nestedScrollEnabled` is the SAME-axis case. Android decides
+               in ViewGroup.onInterceptTouchEvent — whichever axis crosses
+               ViewConfiguration.scaledTouchSlop first claims the gesture. What
+               this code controls is that a half-claimed swipe still resolves to
+               a WHOLE page (pagingEnabled, plus settling on both handlers
+               below), and that each page is a plain View with no Pressable
+               competing for the responder.
+               https://developer.android.com/develop/ui/views/touch-and-input/gestures/viewgroup
+               https://reactnative.dev/docs/scrollview#nestedscrollenabled-android */
+            onMomentumScrollEnd={onSettled}
+            /* A slow drag that never gains momentum ends here instead — the same
+               pair HeroCarousel settles on. */
+            onScrollEndDrag={onSettled}
+            scrollEventThrottle={16}
+            {...SCROLL_PHYSICS}
             style={styles.heroFill}
-          />
+            testID="hero-pager">
+            {gallery.map((uri, i) => (
+              <View
+                key={uri}
+                style={[styles.heroPage, { width: pageW }]}
+                accessible
+                /* Purpose, not type: no "image", no "button". The position is in
+                   the label because there is no pager role to carry it, and a
+                   screen-reader user swiping the strip has to know where they
+                   are.
+                   https://developer.android.com/guide/topics/ui/accessibility/principles */
+                accessibilityLabel={`${provider.display_name}, photo ${i + 1} of ${gallery.length}`}>
+                <Image
+                  source={
+                    isClayUri(uri)
+                      ? (resolveAvatarSource(uri) as ImageSourcePropType)
+                      : {
+                          uri: sizedStorageImageUri(uri, pageW, HERO_HEIGHT, PixelRatio.get()),
+                        }
+                  }
+                  fadeDuration={220}
+                  style={styles.heroFill}
+                />
+              </View>
+            ))}
+          </ScrollView>
           <View style={styles.heroScrim} />
         </>
       ) : (
@@ -385,6 +496,44 @@ function Hero({
           </Text>
         </>
       )}
+      {/* The page indicator: a centred row of circles, one per page, the selected
+          one a different colour — the platform's own recipe for a pager.
+          https://developer.android.com/develop/ui/compose/layouts/pager
+
+          DEPARTURE, stated: that page puts the row at the BOTTOM. The bottom
+          120dp of this hero is the name / tagline / meta / language-chip block
+          over the scrim, so dots there land on the name. Top-centre balances the
+          favourite heart at top-right, and is where the apps a member already
+          uses put it.
+
+          This row is full-width (left: 0, right: 0) and sits in the same 16dp
+          band as the favourite heart, so it OVERLAPS a real control. That is
+          resolved by `pointerEvents="none"` — "The View is never the target of
+          touch events" — and not by JSX order. Sibling order does decide
+          hit-testing (TouchTargetHelper walks children back to front), so
+          declaring the dots first happened to work; it is not a layout
+          property, it is a fact about this file's line numbering, and the next
+          person to reorder these two blocks would silently hand the heart's
+          touches to a strip of dots.
+          https://reactnative.dev/docs/view#pointerevents */}
+      {gallery.length > 1 ? (
+        <View
+          style={styles.pagerDots}
+          pointerEvents="none"
+          testID="hero-pager-dots"
+          accessible
+          /* A live region, NOT AccessibilityInfo.announceForAccessibility:
+             Android 16 deprecates announcements and names
+             setAccessibilityLiveRegion as the replacement for "changes to
+             critical UI". targetSdk is 36, so this is the supported route.
+             https://developer.android.com/about/versions/16/behavior-changes-all */
+          accessibilityLiveRegion="polite"
+          accessibilityLabel={`Photo ${page + 1} of ${gallery.length}`}>
+          {gallery.map((uri, i) => (
+            <View key={uri} style={[styles.pagerDot, i === page && styles.pagerDotOn]} />
+          ))}
+        </View>
+      ) : null}
       {/* Absolute position lives on this wrapper View, not on the Pressable:
           Pressable applies `style` to an inner Animated.View, so `position:
           absolute` on it anchors to the Pressable's own bottom-pinned box rather
@@ -535,7 +684,7 @@ const makeStyles = (t: Theme) =>
       textAlign: 'center',
     },
     hero: {
-      height: 420,
+      height: HERO_HEIGHT,
       borderRadius: TOKENS.radius.lg,
       borderCurve: 'continuous',
       overflow: 'hidden',
@@ -543,6 +692,40 @@ const makeStyles = (t: Theme) =>
     },
     heroFill: {
       position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    },
+    /*
+     * One page of the pager. The height is explicit rather than '100%' because a
+     * percentage inside a horizontal ScrollView's content container resolves
+     * against a height the container is still deriving; the card is a fixed
+     * HERO_HEIGHT, so the page can say so.
+     */
+    heroPage: {
+      height: HERO_HEIGHT,
+    },
+    /*
+     * 6dp dots with a 4dp gap, active pure white over the inactive 45% white.
+     * The Compose sample draws 16dp circles, which is a sample's proportion and
+     * not a spec; 6dp matches the palette already used over this media — the
+     * meta line at 82% white, the 10dp presence dot — and keeps six of them
+     * reading as dots rather than as a row of buttons.
+     */
+    pagerDots: {
+      position: 'absolute',
+      top: TOKENS.space.md,
+      left: 0,
+      right: 0,
+      flexDirection: 'row',
+      justifyContent: 'center',
+      gap: TOKENS.space['2xs'],
+    },
+    pagerDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: 'rgba(255,255,255,0.45)',
+    },
+    pagerDotOn: {
+      backgroundColor: '#FFFFFF',
     },
     heroScrim: {
       position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,

@@ -621,12 +621,25 @@ export function SettingsSheet({
 
       {/* Avatar picker: a horizontal slider of the bundled DiceBear "clay"
           avatars. No gallery, no remove — one deliberate pick from a set that
-          ships in the app (Amit, 2026-09-02). */}
+          ships in the app (Amit, 2026-09-02).
+
+          The provider copy says what migration 070 does. `useSetClayAvatar`
+          writes `profiles.avatar_url` directly and succeeds, but the photos are
+          authoritative while a gallery is non-empty: the 070 sync trigger
+          rewrites avatar_url from the primary photo on the next gallery change,
+          and ProviderDetailScreen's hero pages the gallery and never reads
+          avatar_url at all. Picking clay art here and finding a photo tomorrow
+          is a surface silently overruling the person using it, so the surface
+          says so. */}
       <Sheet
         visible={avatarSheet}
         testID="avatar-choice-sheet"
         title="Choose your avatar"
-        body={isProvider ? 'Shown in the directory and in your chats.' : 'Shown to people you chat with.'}
+        body={
+          isProvider
+            ? 'Shown in the directory and in your chats. If you have gallery photos, your main photo is used instead.'
+            : 'Shown to people you chat with.'
+        }
         onClose={() => setAvatarSheet(false)}>
         <ScrollView
           horizontal

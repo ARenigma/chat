@@ -4,20 +4,33 @@ export { PAYMENTS_ENABLED, MOCK_PAYMENTS } from '../config';
 /**
  * Per-minute pricing, kept pure so it can be tested without a device.
  *
- * The member sees **tokens**, never rupees (1 token = ₹1). The ₹ symbol appears
- * in exactly one place — the Recharge pay step, where we ask for real money —
- * and `formatRupees` exists only for that. Everywhere else a balance and a rate
- * are token counts, formatted by `formatTokens`. Metering is still per-minute
- * (ADR-0019); the unit shown just changed from ₹ back to tokens.
+ * The member sees **tokens**, never rupees (1 token = ₹1) — everywhere except
+ * the one place real money is being asked for. That place is the Recharge
+ * screen: the pack chips, which are a price list, and the pay step. A store
+ * card that does not name its price is not a store card, so the chip's headline
+ * is `formatRupees(pack)` and the token count reads as what the price buys.
+ * Everywhere else a balance and a rate are token counts, formatted by
+ * `formatTokens`. Metering is still per-minute (ADR-0019); the unit shown just
+ * changed from ₹ back to tokens.
  *
  * GST follows the same rule, one step stricter: it is shown on the Recharge
  * packs and the pay step ONLY — never on a per-minute rate, a balance, a talk
  * timer or anything in chat. Tokens are a prepaid balance; tax was settled when
  * the rupees were paid, so a "22/min" that mentioned GST would be taxing the
  * same money twice in the reader's head (Amit, 2026-09-05: "GST on recharge
- * chips, no GST in chat"). `gstSplit` is the arithmetic; it is the inclusive
+ * chips, no GST in chat"). `gstSplit` is the arithmetic — the same inclusive
  * split `generate-invoice` prints, so the screen and the invoice can never
- * disagree by a paisa.
+ * disagree by a paisa — and the surfaces PRESENT that split exclusively, as a
+ * base plus a tax (`gstExclusiveParts`). Same money, stated the other way
+ * round: what changed is the wording, never the amount charged.
+ *
+ * "On the packs and the pay step" is now literal: neither recharge FOOTER names
+ * a tax (Amit, 2026-09-06: "remove inc xxx gst from footer"). The footers carry
+ * the rate and the unit — "1 token = ₹1", charged in rupees — and nothing else,
+ * because a chip that already names its own base and its own tax does not need
+ * a weaker second statement of the same fact underneath the grid. The legal
+ * instrument was never the footer either way: ADR-0021 puts it on the invoice
+ * Axionix issues for a Cashfree purchase.
  */
 
 /** The three metered channels. Rates are tokens per minute. */
@@ -50,9 +63,14 @@ export function formatTokens(tokens: number | null): string {
 }
 
 /**
- * Rupees, and the ONLY place the ₹ mark is allowed: the Recharge pay button and
- * the "1 token = ₹1" note. Since a token is a rupee, the number is the same;
- * only the symbol differs, to signal "this is the real-money step".
+ * Rupees, for the surfaces where money is what is being named: the price on a
+ * Recharge pack chip (both hosts), the Pay button, the payment sheet and the
+ * "1 token = ₹1" note. Since a token is a rupee, the number is the same; only
+ * the symbol differs, to signal "this is the real-money step".
+ *
+ * Whole rupees on purpose — `formatRupeesPaise` is the two-decimal form, and it
+ * is used only for the GST split, which is the one figure on these screens that
+ * is not a round sum.
  */
 export function formatRupees(rupees: number | null): string {
   if (rupees === null) {
@@ -112,15 +130,73 @@ export function gstPercentLabel(rateBps: number): string {
 }
 
 /**
- * The one GST sentence every recharge surface shows — "incl. ₹45.76 GST" — or
- * `null` when no tax is charged, so a card, the pay button and the payment
- * sheet can never phrase the same fact three ways. Built here rather than in
- * each screen so `rateBps = 0` (an unregistered seller) removes the line
- * everywhere at once.
+ * The retired INCLUSIVE phrasing — "incl. ₹45.76 GST".
+ *
+ * Nothing renders it any more (Amit, 2026-09-06: "GST exclusive on the chips").
+ * The recharge chips and the pay step state the identical split the other way
+ * round, via `gstExclusiveParts` below. It stays exported only because
+ * `__tests__/contract.test.ts` still pins its output, and that file is outside
+ * this change set's ownership; it and this function retire together.
  */
 export function gstIncludedLabel(amountInr: number, rateBps: number): string | null {
   const { gstPaise } = gstSplit(amountInr, rateBps);
   return gstPaise > 0 ? `incl. ${formatRupeesPaise(gstPaise)} GST` : null;
+}
+
+/**
+ * The tax in a pack price, stated EXCLUSIVE of it: "₹4,237.29" and
+ * "+ ₹762.71 GST", two strings that sum back to the price to the paisa.
+ *
+ * A SUPPORTING pair, not a replacement for the price. Both hosts render the
+ * price above these two lines, and they have to: for one pass they did not, and
+ * the largest rupee figure on the ₹5,000 card was ₹4,237.29 — a number Cashfree
+ * never charges and no invoice ever shows as a total.
+ *
+ * Exclusive PRESENTATION, not an exclusive PRICE, and the distinction is the
+ * whole of it. ADR-0021 ("Recharge pack pricing (GST-inclusive)") fixes pack
+ * prices as tax-inclusive, and `supabase/functions/create-order/index.ts` sends
+ * `order_amount: opts.amountInr` — the nominal pack price — so Cashfree captures
+ * ₹5,000 for the ₹5,000 pack and not a paisa more. A chip reading "₹5,000 + 18%
+ * GST" would name ₹5,900, a price nobody is ever charged, and would break
+ * 1 token = ₹1 on the way. Naming the base and the tax separately is the only
+ * exclusive reading that is also true, and it is precisely the breakdown
+ * `generate-invoice/index.ts:315` prints, so screen and invoice cannot drift.
+ *
+ * Two strings rather than one sentence, because the joined form is 23 characters
+ * at bodySmall (12sp) and a 48%-wide pack card has 115.8dp of usable width on a
+ * 360dp screen — it wraps, and an unmanaged wrap breaks after the dangling "+".
+ * Two Texts break where the design chooses instead. React Native's own caveat
+ * rules out the one-Text-two-lines alternative: "On Android, when numberOfLines
+ * is set to a value higher than 1, only tail value will work correctly."
+ * (https://reactnative.dev/docs/text#ellipsizemode)
+ *
+ * Neither Text sets `numberOfLines`, so neither truncates. At 12sp the wider of
+ * the two ("+ ₹762.71 GST", 87.2dp) clears 115.8dp with room to about a 1.3
+ * font scale, above which it wraps at the space before "GST" — a second line,
+ * not a lost word, which is what "accommodate larger font sizes without
+ * impacting usability" asks for
+ * (developer.android.com/about/versions/14/features#non-linear-font-scaling).
+ *
+ * `null` when no tax is charged, so `rateBps = 0` (an unregistered seller)
+ * removes the disclosure from every surface at once.
+ */
+export function gstExclusiveParts(
+  amountInr: number,
+  rateBps: number,
+): { base: string; tax: string } | null {
+  const { taxablePaise, gstPaise } = gstSplit(amountInr, rateBps);
+  return gstPaise > 0
+    ? { base: formatRupeesPaise(taxablePaise), tax: `+ ${formatRupeesPaise(gstPaise)} GST` }
+    : null;
+}
+
+/**
+ * The same split on one line — the pay step, where the total is already the
+ * headline, and every accessibility label, where a line break means nothing.
+ */
+export function gstExclusiveLabel(amountInr: number, rateBps: number): string | null {
+  const parts = gstExclusiveParts(amountInr, rateBps);
+  return parts === null ? null : `${parts.base} ${parts.tax}`;
 }
 
 /**

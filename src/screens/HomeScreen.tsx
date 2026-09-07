@@ -58,7 +58,14 @@ import { TourAnchor } from '../components/TourAnchor';
 import { compareConversations, visibleOnRail } from '../lib/railPrefs';
 import { useRailPrefs } from '../store/useRailPrefs';
 import { useHomeTour } from '../store/useHomeTour';
-import { searchIn, searchOut } from '../theme/motion';
+import {
+  directoryIn,
+  directoryOut,
+  searchIn,
+  searchOut,
+  searchResultsIn,
+  searchResultsOut,
+} from '../theme/motion';
 
 const POTD_DISMISSED_KEY = 'companion.potd.dismissed';
 
@@ -392,7 +399,7 @@ export function HomeScreen({
         <TourAnchor id="chats">
         <View style={styles.rail}>
           <View style={styles.railHeader}>
-            <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized} allowFontScaling style={styles.railLabel}>
+            <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized} allowFontScaling accessibilityRole="header" style={styles.railLabel}>
               Chats
             </Text>
             {chats.length > 0 ? (
@@ -436,7 +443,16 @@ export function HomeScreen({
         </TourAnchor>
         <TourAnchor id="explore">
         <View style={styles.exploreHead}>
-          <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized} allowFontScaling style={styles.exploreTitle}>
+          {/* Heading ROLE, not decoration: TalkBack lets a user jump between
+              headings instead of walking every row, and the reference marks
+              these same cells with `ViewCompat.setAccessibilityHeading(this,
+              true)` (GraySectionCell.java:76, HeaderCell.java:107). RN's
+              `header` role is "an element that acts as a header for a content
+              section". Applied to Chats, Explore and the picks header, which
+              are Home's three headings.
+              https://reactnative.dev/docs/accessibility
+              https://developer.android.com/guide/topics/ui/accessibility/principles */}
+          <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized} allowFontScaling accessibilityRole="header" style={styles.exploreTitle}>
             Explore
           </Text>
         </View>
@@ -445,8 +461,9 @@ export function HomeScreen({
           <>
             <View style={styles.picksHead}>
               <Text
-                maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
+                maxFontSizeMultiplier={TOKENS.fontScaleCap.titleSmall}
                 allowFontScaling
+                accessibilityRole="header"
                 style={styles.picksTitle}>
                 Top profiles this week
               </Text>
@@ -533,17 +550,28 @@ export function HomeScreen({
       {/* Nav Row — wordmark, search, ₹ balance. Not the collapsing LargeTitleBar:
           v13 Home has a fixed nav row, and the large title belongs to the Explore
           section header below it. */}
-      {/* One row, two states, crossfaded in place over 150ms — Telegram's
-          `toggleSearch` animates the search container's alpha against the
-          action bar's menu icons for exactly that long, in both directions
-          (ActionBarMenuItem.java:1013 / :1020). Nothing slides, because the
+      {/* One row, two states, crossfaded in place. Nothing slides, because the
           field arrives in the row the icons were in.
+
+          350ms on EASE_OUT_QUINT, symmetric — `BoolAnimator
+          animatorSearchVisible` at DialogsActivity.java:307-308, the animator
+          that carries the field and the chrome around it. `searchIn` /
+          `searchOut` in src/theme/motion.ts hold the citation and the
+          correction history (they ran 150ms with no easing at all until
+          2026-09-07, read off ActionBarMenuItem.java, which is the LEGACY
+          action-bar search the dialogs list stopped using several versions
+          ago).
 
           The exit affordance is a BACK ARROW, not a second cross: with a cross
           here and the field's own clear inside it, a member with text typed saw
           two ✗ and could not tell which one lost their query (Amit,
-          2026-09-06). Telegram's is the ActionBar's back arrow for the same
-          reason — arrow leaves, cross clears. */}
+          2026-09-06). Note that Telegram itself has NO back arrow here —
+          `checkUi_itemBackButtonVisibility` hides it while search is open
+          (DialogsActivity.java:14083-14087) and one X, forced visible for the
+          whole session (:3365), both clears the query and closes search
+          (:3306-3316). Keeping the arrow is Amit's decision of 2026-09-06 and
+          the reason he gave (never two crosses) still holds; it is not an
+          oversight. */}
       <View style={[styles.nav, { paddingTop: insets.top + TOKENS.space['2xs'] }]}>
         {searching ? (
           <Animated.View
@@ -681,57 +709,97 @@ export function HomeScreen({
         </View>
       ) : null}
 
-      {searching ? (
-        <FlashList
-          data={results}
-          keyExtractor={p => p.id}
-          renderItem={renderSearchRow}
-          ListHeaderComponent={searchListHeader}
-          ListEmptyComponent={searchListEmpty}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          {...SCROLL_PHYSICS}
-          contentContainerStyle={[
-            styles.scroll,
-            { paddingBottom: insets.bottom + NAV_BAR_HEIGHT + TOKENS.space.xl },
-          ]}
-          overrideItemLayout={layout => { (layout as { span?: number; size?: number }).size = 97; }}
-        />
-      ) : loading ? (
-        <DirectorySkeleton />
-      ) : (
-        // Only the provider rows are virtualised. The chats rail, explore head
-        // and featured card live in ListHeaderComponent so they scroll together
-        // with the list but are always fully rendered.
-        <FlashList
-          testID="home-scroll"
-          data={rows}
-          keyExtractor={p => p.id}
-          renderItem={renderExploreRow}
-          ListHeaderComponent={ExploreHeader}
-          ListFooterComponent={ExploreFooter}
-          ListEmptyComponent={
-            featured === null ? (
-              <View style={styles.empty}>
-                <Text allowFontScaling style={styles.emptyText}>
-                  Nobody is available just yet. Check back shortly.
-                </Text>
-              </View>
-            ) : null
-          }
-          showsVerticalScrollIndicator={false}
-          {...SCROLL_PHYSICS}
-          contentContainerStyle={[
-            styles.scroll,
-            // The nav is a frosted overlay, so the list scrolls under it.
-            // Clear its full height (bar + safe-area inset) plus the usual end
-            // breathing room, so the last row lands above the bar rather than
-            // behind it.
-            { paddingBottom: insets.bottom + NAV_BAR_HEIGHT + TOKENS.space.xl },
-          ]}
-          overrideItemLayout={layout => { (layout as { span?: number; size?: number }).size = 97; }}
-        />
-      )}
+      {/* The content underneath the row, and the second half of Telegram's
+          search transition — the one the row's crossfade is only half of.
+
+          The reference swaps these two on a SEPARATE, faster animator from the
+          350ms field one: `searchAnimator`, 200ms opening / 180ms closing on
+          CubicBezierInterpolator.EASE_OUT, with a 20ms start delay on the close
+          only (DialogsActivity.java:7554-7607, :7590-7594). The results arrive
+          at alpha 0->1 scale 1.05->1 while the directory leaves at alpha 1->0
+          scale 1->0.95, and on the way back each runs in reverse. The builders
+          and every citation live in src/theme/motion.ts.
+
+          THE TWO LAYERS ARE ABSOLUTELY STACKED, and that is load-bearing rather
+          than tidy. FlashList styles its own scroll view `flex: 1` for a
+          vertical list (@shopify/flash-list RecyclerView.js:340), and a
+          Reanimated `exiting` animation keeps the leaving view in the layout
+          tree until it finishes — so as plain flex siblings the outgoing and
+          incoming lists would each take HALF the column for the whole 200ms and
+          the swap would read as a squash, not a dissolve. Stacked, they overlay,
+          which is also what the reference does: `searchViewPager` and
+          `viewPages[0]` are siblings in one FrameLayout and it toggles
+          visibility around the animation rather than removing either.
+
+          The skeleton is deliberately NOT animated. It is a placeholder for
+          content that has not arrived, not a surface the member navigated to. */}
+      <View style={styles.swap}>
+        {searching ? (
+          <Animated.View
+            key="search-results"
+            style={styles.swapLayer}
+            entering={searchResultsIn}
+            exiting={searchResultsOut}>
+            <FlashList
+              data={results}
+              keyExtractor={p => p.id}
+              renderItem={renderSearchRow}
+              ListHeaderComponent={searchListHeader}
+              ListEmptyComponent={searchListEmpty}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              {...SCROLL_PHYSICS}
+              contentContainerStyle={[
+                styles.scroll,
+                { paddingBottom: insets.bottom + NAV_BAR_HEIGHT + TOKENS.space.xl },
+              ]}
+              overrideItemLayout={layout => { (layout as { span?: number; size?: number }).size = 97; }}
+            />
+          </Animated.View>
+        ) : loading ? (
+          <View style={styles.swapLayer}>
+            <DirectorySkeleton />
+          </View>
+        ) : (
+          // Only the provider rows are virtualised. The chats rail, explore head
+          // and featured card live in ListHeaderComponent so they scroll together
+          // with the list but are always fully rendered.
+          <Animated.View
+            key="directory"
+            style={styles.swapLayer}
+            entering={directoryIn}
+            exiting={directoryOut}>
+            <FlashList
+              testID="home-scroll"
+              data={rows}
+              keyExtractor={p => p.id}
+              renderItem={renderExploreRow}
+              ListHeaderComponent={ExploreHeader}
+              ListFooterComponent={ExploreFooter}
+              ListEmptyComponent={
+                featured === null ? (
+                  <View style={styles.empty}>
+                    <Text allowFontScaling style={styles.emptyText}>
+                      Nobody is available just yet. Check back shortly.
+                    </Text>
+                  </View>
+                ) : null
+              }
+              showsVerticalScrollIndicator={false}
+              {...SCROLL_PHYSICS}
+              contentContainerStyle={[
+                styles.scroll,
+                // The nav is a frosted overlay, so the list scrolls under it.
+                // Clear its full height (bar + safe-area inset) plus the usual
+                // end breathing room, so the last row lands above the bar
+                // rather than behind it.
+                { paddingBottom: insets.bottom + NAV_BAR_HEIGHT + TOKENS.space.xl },
+              ]}
+              overrideItemLayout={layout => { (layout as { span?: number; size?: number }).size = 97; }}
+            />
+          </Animated.View>
+        )}
+      </View>
       <SpotlightCard
         visible={potdVisible && featured !== null}
         name={featured?.display_name ?? 'Someone for you'}
@@ -854,11 +922,31 @@ function FeaturedCard({
     provider.headline && provider.headline !== ''
       ? provider.headline
       : provider.languages.slice(0, 2).join(' · ');
+  /*
+   * The rating has to be spoken in WORDS from here, because the chip below is
+   * `accessible={false}` like every other meta chip and its visible text is now
+   * only "★ 4.8" — a glyph and a bare number, which announces nothing about what
+   * the number measures. Same phrasing as ProviderCard.tsx:105-107 and
+   * ProviderRow.tsx:168-170 so the directory speaks one language, and grouped
+   * into the card's own label so TalkBack makes a single announcement rather
+   * than stopping on a decoration.
+   * https://developer.android.com/guide/topics/ui/accessibility/principles
+   * https://reactnative.dev/docs/accessibility
+   */
+  const accessibility = [
+    `Featured: ${provider.display_name}`,
+    tagline,
+    provider.rating_count > 0
+      ? `rated ${(provider.rating_avg ?? 0).toFixed(1)} from ${provider.rating_count} reviews`
+      : 'no reviews yet',
+  ]
+    .filter(Boolean)
+    .join(', ');
   return (
     <Pressable
       onPress={onPress}
       testID={`featured-${provider.id}`}
-      accessibilityLabel={`Featured: ${provider.display_name}. ${tagline}`}
+      accessibilityLabel={accessibility}
       press="card"
       style={styles.featured}>
       {provider.avatar_url ? (
@@ -886,13 +974,24 @@ function FeaturedCard({
           </Text>
         </>
       )}
-      <View style={styles.featuredBadge}>
-        <Text allowFontScaling style={styles.featuredBadgeText}>
-          {provider.rating_count > 0
-            ? `★ ${provider.rating_avg?.toFixed(1)} · Top rated`
-            : 'Top rated'}
-        </Text>
-      </View>
+      {/* The star and the number, nothing else. "Top rated" repeated the section
+          header immediately above the carousel, on all three cards, so it said
+          nothing the header had not already said (Amit). With the words gone
+          there is no sensible fallback: a solid accent pill asserting nothing,
+          on a card in a "Top profiles this week" strip, is an advert rather than
+          a status — so a provider with no ratings gets no pill at all. Same
+          glyph and precision as ProviderCard.tsx:168-170 and
+          ProviderRow.tsx:226-228; `accessible={false}` folds it into the card,
+          whose label says "rated 4.8 from 12 reviews" in words. `?? 0` rather
+          than the peers' `?.` because on the hero a null average would print the
+          literal "★ undefined". */}
+      {provider.rating_count > 0 ? (
+        <View accessible={false} style={styles.featuredBadge}>
+          <Text allowFontScaling style={styles.featuredBadgeText}>
+            {`★ ${(provider.rating_avg ?? 0).toFixed(1)}`}
+          </Text>
+        </View>
+      ) : null}
       {presence.here ? <View style={styles.featuredOnline} /> : null}
       <View style={styles.featuredBody}>
         <View style={styles.featuredNameRow}>
@@ -956,6 +1055,21 @@ const makeStyles = (t: Theme) =>
     // SearchBar takes the full nav row while searching; no custom field needed.
     scroll: {
       paddingTop: TOKENS.space['2xs'],
+    },
+    /*
+     * The stack the directory and the search results swap inside.
+     *
+     * `flex: 1` here takes everything the nav row, the tabs and the filters
+     * leave, and `swapLayer` fills it absolutely so the two layers overlay for
+     * the length of the transition instead of splitting the column between
+     * them. See the comment at the call site for why that is required and not
+     * merely neater.
+     */
+    swap: {
+      flex: 1,
+    },
+    swapLayer: {
+      ...StyleSheet.absoluteFill,
     },
     state: {
       flex: 1,
@@ -1085,15 +1199,35 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'space-between',
       gap: TOKENS.space.xs,
     },
-    // "Top profiles this week" over the hero carousel. A heading, because a row
-    // of three cards with no label is three unexplained adverts.
+    /*
+     * "Top profiles this week" over the hero carousel. A heading, because a row
+     * of three cards with no label is three unexplained adverts — but a QUIET
+     * heading.
+     *
+     * It used to be Bold 16 in the same ink as the Bold 24 "Explore" 8dp above
+     * it, which put ALL the contrast on one axis (size) and none on weight or
+     * colour: two full-ink bold lines that read as two titles arguing rather
+     * than as a title and its section. The reference steps all three at once —
+     * its section-header cells are 14dp + `AndroidUtilities.bold()` in a grey
+     * that is never the title's ink (GraySectionCell.java:57-59,
+     * HeaderCell.java:94-95, key_graySectionText) against a 20dp black ActionBar
+     * title (ActionBar.java:1455).
+     *
+     * `bold()` is NOT weight 700: the field it caches into is literally named
+     * `mediumTypeface` and the SDK-P branch is `Typeface.create(null, 500,
+     * false)` (AndroidUtilities.java:263-272). M3 maps weight 500 to
+     * Geist-SemiBold (ADR-0024 §1), and the M3 role that is 14/20 SemiBold is
+     * `titleSmall` — which is why this is titleSmall and not a label role. The
+     * 0.1 tracking stays M3's; the reference sets none, and 0.1dp at 14dp is
+     * ~1/140 em, not worth forking the scale for.
+     */
     picksHead: {
       paddingHorizontal: TOKENS.space.md,
       paddingBottom: TOKENS.space.xs,
     },
     picksTitle: {
-      ...TOKENS.typography.titleMediumEmphasized,
-      color: t.color.text.primary,
+      ...TOKENS.typography.titleSmall,
+      color: t.color.text.section,
     },
     picksBelow: {
       height: TOKENS.space.sm,
@@ -1144,9 +1278,18 @@ const makeStyles = (t: Theme) =>
       lineHeight: 190,
       color: 'rgba(255,255,255,0.16)',
     },
-    // The status pill: solid accent, matching the v13 frame's "Top rated" badge.
-    // A translucent black chip read as chrome; the frame makes this the one
-    // branded mark on the card.
+    /*
+     * The status pill: the ACCENT-STRONG step, not the bright mark coral. A
+     * translucent black chip read as chrome; the frame makes this the one
+     * branded mark on the card — but 12dp Bold white on bg/accent measures
+     * 3.44:1 in light and 2.59:1 in dark, and Android requires 4.5:1 for text
+     * under 18sp (and for bold under 14sp). design/tokens.json says of bg/accent
+     * "must NEVER sit under small white text; that is what bg/accentStrong is
+     * for" — a rule theme.test.ts already asserts as a fact and which this pill
+     * had been quietly breaking since it shipped. accentStrong with the same
+     * text/onAccent measures 5.19:1 light / 6.13:1 dark.
+     * https://developer.android.com/guide/topics/ui/accessibility/apps
+     */
     featuredBadge: {
       position: 'absolute',
       top: TOKENS.space.md,
@@ -1155,7 +1298,7 @@ const makeStyles = (t: Theme) =>
       paddingVertical: TOKENS.space['2xs'],
       borderRadius: TOKENS.radius.pill,
       borderCurve: 'continuous',
-      backgroundColor: t.color.bg.accent,
+      backgroundColor: t.color.bg.accentStrong,
     },
     featuredBadgeText: {
       ...TOKENS.typography.labelMediumEmphasized,

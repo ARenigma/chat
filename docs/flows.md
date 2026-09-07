@@ -33,4 +33,6 @@ https://m3.material.io/components/menus/guidelines
 ## Heart (locked pair)
 
 - **Nav tab:** outline glyph only — no fill when selected. Active tab still uses the M3 tonal indicator (`accentTint` pill).
-- **Profile heart:** glyph may fill; springs 1 → 1.18 → 1 inside a fixed 40dp slot. Reduce Motion → colour / fill only.
+- **Profile heart:** outline glyph only, in both states — **no fill anywhere** (Amit, 2026-09-07: "Remove the heart fill; keep the outline, heavier"). Selected thickens the STROKE: the same Lucide glyph over-drawn four ways at half a grid unit, `HEAVY_DILATION` in `src/components/Icon.tsx`. Springs 1 → 1.18 → 1 inside a fixed 40dp slot. Reduce Motion → colour and weight only, no spring.
+
+The pair is now one shape with two weights, which is why it is still a locked pair: `PappalGlyphs.ttf` (the single filled U+2665 face) is no longer imported by anything, and `__tests__/providerPhotos.test.ts` fails the build if it comes back.

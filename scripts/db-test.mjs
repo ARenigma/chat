@@ -110,6 +110,8 @@ const MIGRATIONS = [
   'supabase/migrations/067_decline_session_request.sql',
   'supabase/migrations/068_chat_open_alerts.sql',
   'supabase/migrations/069_usage_ledger.sql',
+  'supabase/migrations/070_provider_photos.sql',
+  'supabase/migrations/071_config_readable_by_the_server.sql',
 ];
 
 const docker = (args, options = {}) =>
@@ -498,6 +500,11 @@ const suites = [
   {
     file: join(ROOT, 'supabase/tests/310_usage_ledger.sql'),
     label: "usage ledger: one row, two sides, neither sees the other's figure",
+  },
+  {
+    file: join(ROOT, 'supabase/tests/320_provider_photos.sql'),
+    label:
+      'provider photos: own rows only, one primary, and avatar_url follows it',
   },
 ];
 

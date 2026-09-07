@@ -31,6 +31,7 @@
   --text-primary: #1C1C1E;
   --text-secondary: #55555A;
   --text-tertiary: #78787D;
+  --text-section: #6A6F72;
   --text-muted: #8E8E93;
   --text-accent: #8F2E17;
   --text-on-accent: #FFFFFF;
@@ -69,7 +70,6 @@
   --layout-appbarsmall: 64px;
   --layout-appbarmedium: 112px;
   --layout-appbarmediumsubtitle: 128px;
-  --layout-searchbar: 56px;
 
   --radius-tail: 5px;
   --radius-xs: 8px;
@@ -143,6 +143,7 @@
   --text-primary: #FFFFFF;
   --text-secondary: #8896A4;
   --text-tertiary: #687788;
+  --text-section: #8896A4;
   --text-muted: #5C6B7A;
   --text-accent: #64B5EF;
   --text-on-accent: #FAFAFA;

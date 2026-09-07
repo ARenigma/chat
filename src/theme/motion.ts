@@ -493,25 +493,207 @@ export const fadeSwapFast = FadeIn.duration(DURATION.fast).reduceMotion(
 );
 
 /**
- * Opening and closing search: a CROSSFADE in place, both directions, 150ms.
+ * Opening and closing search: a CROSSFADE in place, both directions, 350ms on
+ * EASE_OUT_QUINT.
  *
- * Telegram's, read from source rather than guessed. `toggleSearch` animates the
- * search container's alpha against the action bar's menu icons — the field
- * fades up exactly as the icons fade out, `setDuration(150)`, and closing runs
- * the same animation in reverse (`ActionBarMenuItem.java:1013` opening,
- * `:1020` closing). Nothing slides and nothing moves: the search field arrives
- * in the row the icons were in, which is why it reads as the same bar changing
- * its mind rather than a new screen.
+ * Telegram's, read from source. Nothing slides and nothing moves: the search
+ * field arrives in the row the icons were in, which is why it reads as the same
+ * bar changing its mind rather than a new screen.
  *
- * `searchToggle` is its own token for that reason — it happens to equal
- * `stepPromote`, and they are unrelated measurements (design/tokens.json).
+ * CORRECTED 2026-09-07, and the correction is the whole reason this docblock is
+ * long. The 150ms these two used to run was read from
+ * `ActionBar/ActionBarMenuItem.java` — Telegram's LEGACY action-bar search,
+ * which the dialogs list has not used for several versions (a 36dp bare
+ * `EditTextBoldCursor` with `setBackgroundResource(0)`, no pill), and the two
+ * `setDuration(150)` calls in it are at `:1019` and `:973`, not the `:1013` /
+ * `:1020` the old comment cited. Neither the class nor the line numbers were
+ * right, and no `.easing()` was set at all, so the curve was Reanimated's
+ * default `Easing.inOut(Easing.quad)`
+ * (https://docs.swmansion.com/react-native-reanimated/docs/animations/withTiming)
+ * — a symmetric ease, against a reference that eases out hard.
+ *
+ * The field the reference ships is `Components/FragmentSearchField.java`, built
+ * at `DialogsActivity.java:3285` and added to the content view at `:5344`. It
+ * opens and closes on `BoolAnimator animatorSearchVisible`, constructed with
+ * `CubicBezierInterpolator.EASE_OUT_QUINT` and `350`
+ * (`DialogsActivity.java:307-308`), symmetric in both directions — hence one
+ * token for both halves here rather than the in/out pair the rest of this file
+ * uses. EASE_OUT_QUINT is `(.23, 1, .32, 1)`
+ * (`CubicBezierInterpolator.java:13`), which is `M3.easing.easeOutQuint`.
+ *
+ * `.easing()` is a layout-animation modifier on the same builder chain as
+ * `.duration()`:
+ * https://docs.swmansion.com/react-native-reanimated/docs/layout-animations/entering-exiting-animations
+ *
+ * `reduceMotion(System)` is kept from the previous version: under the OS
+ * "remove animations" setting the row still swaps, it just swaps instantly.
  */
-export const searchIn = FadeIn.duration(DURATION.searchToggle).reduceMotion(
-  ReduceMotion.System,
-);
+export const searchIn = FadeIn.duration(DURATION.searchField)
+  .easing(EASE_OUT_QUINT)
+  .reduceMotion(ReduceMotion.System);
 
-export const searchOut = FadeOut.duration(DURATION.searchToggle).reduceMotion(
-  ReduceMotion.System,
+export const searchOut = FadeOut.duration(DURATION.searchField)
+  .easing(EASE_OUT_QUINT)
+  .reduceMotion(ReduceMotion.System);
+
+/* -------------------------------------------------------------------------
+ * The other half of opening search: the CONTENT underneath swaps
+ * ------------------------------------------------------------------------- */
+
+/**
+ * The results layer's away scale, 1.05 — it lives ABOVE the directory.
+ *
+ * `ObjectAnimator.ofFloat(searchViewPager, View.SCALE_X, show ? 1.0f : 1.05f)`
+ * (`DialogsActivity.java:7602-7603`). A one-value `ObjectAnimator` runs from the
+ * view's CURRENT value, so the results arrive 1.05 -> 1 and leave 1 -> 1.05:
+ * they always sit slightly nearer the eye than the list they cover, and the swap
+ * reads as depth rather than as two things trading places.
+ */
+const SEARCH_RESULTS_AWAY = 1.05;
+
+/**
+ * The directory layer's away scale, 0.95 — it lives BELOW the results.
+ *
+ * `ObjectAnimator.ofFloat(viewPages[0], View.SCALE_X, show ? 0.95f : 1.0f)`
+ * (`DialogsActivity.java:7556-7557`). Mirror of the above: the list leaves
+ * 1 -> 0.95 and comes back 0.95 -> 1.
+ */
+const SEARCH_DIRECTORY_AWAY = 0.95;
+
+/**
+ * `searchAnimator.setStartDelay(20)`, and only on the close half
+ * (`if (!show)`, `DialogsActivity.java:7593-7595`).
+ *
+ * Twenty milliseconds is a little over one frame at 60Hz, and it is not
+ * decoration: closing search restores the dialogs list, which has been frozen
+ * (`setDialogsListFrozen(true)`, `:7547`) and has to re-bind its rows. Starting
+ * the fade one frame late means the first animated frame is drawn from real
+ * content rather than from a half-built list. Applied to the OPEN half too would
+ * make a tap on the search icon feel a frame late for no gain, which is exactly
+ * why the reference guards it.
+ */
+const SEARCH_CLOSE_DELAY_MS = 20;
+
+/**
+ * A content layer arriving over its counterpart: alpha 0->1 and scale
+ * `away`->1, timed and delayed by the caller.
+ *
+ * A worklet builder rather than `FadeIn.withInitialValues(...)`, because
+ * `FadeIn` animates opacity ONLY — giving it an initial `transform` would set
+ * the scale and never animate it away. The custom shape is
+ * `{ initialValues, animations }` with the same style properties in both, which
+ * is the documented requirement:
+ * https://docs.swmansion.com/react-native-reanimated/docs/layout-animations/custom-animations
+ *
+ * Hoisted through a factory for the reason every builder in this file is: they
+ * allocate on construction, so one built inside a render is a new object per
+ * render.
+ *
+ * Opacity is `Never` and the scale is `System`. That split is this file's rule,
+ * not a preference: the fade is what tells you which surface is live and must
+ * always run, while a 5% scale is the decorative half and is exactly what
+ * someone with vestibular sensitivity asked the OS to stop.
+ */
+function contentArrive(away: number, duration: number, delay: number) {
+  return () => {
+    'worklet';
+    return {
+      initialValues: { opacity: 0, transform: [{ scale: away }] },
+      animations: {
+        opacity: withDelay(
+          delay,
+          withTiming(1, {
+            duration,
+            easing: EASE_OUT,
+            reduceMotion: ReduceMotion.Never,
+          }),
+        ),
+        transform: [
+          {
+            scale: withDelay(
+              delay,
+              withTiming(1, {
+                duration,
+                easing: EASE_OUT,
+                reduceMotion: ReduceMotion.System,
+              }),
+            ),
+          },
+        ],
+      },
+    };
+  };
+}
+
+/** Mirror of `contentArrive`: alpha 1->0 and scale 1->`away`. */
+function contentLeave(away: number, duration: number, delay: number) {
+  return () => {
+    'worklet';
+    return {
+      initialValues: { opacity: 1, transform: [{ scale: 1 }] },
+      animations: {
+        opacity: withDelay(
+          delay,
+          withTiming(0, {
+            duration,
+            easing: EASE_OUT,
+            reduceMotion: ReduceMotion.Never,
+          }),
+        ),
+        transform: [
+          {
+            scale: withDelay(
+              delay,
+              withTiming(away, {
+                duration,
+                easing: EASE_OUT,
+                reduceMotion: ReduceMotion.System,
+              }),
+            ),
+          },
+        ],
+      },
+    };
+  };
+}
+
+/*
+ * The four halves of the swap, and WHICH TOKEN EACH TAKES IS NOT A TYPO.
+ *
+ * The reference runs one `AnimatorSet` for the whole swap and times it by the
+ * DIRECTION OF THE SESSION, not by which view is arriving:
+ * `searchAnimator.setDuration(show ? 200 : 180)` (`DialogsActivity.java:7590`)
+ * with `EASE_OUT` (`:7591`) for every child animator. So entering search is
+ * 200ms for BOTH the results arriving and the directory leaving, and leaving
+ * search is 180ms — plus the 20ms delay — for both of its halves. `searchEnter`
+ * and `searchExit` are named for the session for that reason.
+ *
+ * `directoryIn` also runs on the first load after the skeleton, which the
+ * reference has no equivalent of (its list is simply there). Stated rather than
+ * hidden, per RULE 1 §6: it is the same 180ms EASE_OUT arrival, it reads as the
+ * content landing rather than as a second mechanism, and the alternative — a
+ * module-level "are we closing search" flag read at build time, the
+ * `navDirection` trick — is more machinery than the difference is worth.
+ */
+export const searchResultsIn = contentArrive(
+  SEARCH_RESULTS_AWAY,
+  DURATION.searchEnter,
+  0,
+);
+export const searchResultsOut = contentLeave(
+  SEARCH_RESULTS_AWAY,
+  DURATION.searchExit,
+  SEARCH_CLOSE_DELAY_MS,
+);
+export const directoryIn = contentArrive(
+  SEARCH_DIRECTORY_AWAY,
+  DURATION.searchExit,
+  SEARCH_CLOSE_DELAY_MS,
+);
+export const directoryOut = contentLeave(
+  SEARCH_DIRECTORY_AWAY,
+  DURATION.searchEnter,
+  0,
 );
 
 /**
