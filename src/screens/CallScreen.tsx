@@ -45,6 +45,12 @@ interface Props {
   medium: CallMedium;
   /** Decline (incoming, ringing) or hang up (in call). Leaving the screen ends it. */
   onEnd: () => void;
+  /**
+   * Fired when an audio→video session upgrade succeeds. App.tsx swaps the
+   * route to a fresh outgoing video CallScreen with the new call id so that
+   * the old audio call row is cleaned up on unmount and the new one starts.
+   */
+  onUpgradeToVideo?: (newCallId: string) => void;
 }
 
 /** How long between heartbeats while a call is up; the ticker reads last_seen_at. */
@@ -82,7 +88,7 @@ type Phase = 'starting' | 'ringing' | 'connecting' | 'active' | 'incoming';
  * Toggling uses RTCRtpSender.replaceTrack so no renegotiation is needed. If the
  * call was started as `medium='video'`, the camera is auto-enabled on connect.
  */
-export function CallScreen({ providerId, direction, callId: incomingCallId, medium, onEnd }: Props) {
+export function CallScreen({ providerId, direction, callId: incomingCallId, medium, onEnd, onUpgradeToVideo }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -127,7 +133,12 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   const [callId, setCallId] = useState<string | null>(incomingCallId);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [accepted, setAccepted] = useState(direction === 'out');
-  const [phase, setPhase] = useState<Phase>(direction === 'in' ? 'incoming' : 'starting');
+  // An upgrade-from-audio call already has a callId on mount — skip 'starting'
+  // and go straight to 'ringing'. Normal outgoing calls start with null callId.
+  const [phase, setPhase] = useState<Phase>(
+    direction === 'in' ? 'incoming' : incomingCallId !== null ? 'ringing' : 'starting',
+  );
+  const [upgrading, setUpgrading] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   // Back must not silently end a call. Leaving this screen hangs up (unmount →
   // endCall), so a bare hardware back was a one-tap hang-up with no confirm.
@@ -145,6 +156,9 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   // Outgoing needs the conversation the call belongs to; a member calling a
   // provider resolves it exactly as opening a chat does.
   const { data: openedId } = useConversationId(direction === 'out' ? providerId : null);
+  // For an incoming call (provider receiving), the conversation is in peerThread.
+  // We need it for the audio→video upgrade path regardless of direction.
+  const conversationId = openedId ?? peerThread?.conversation_id;
 
   // End on unmount if the call was live, so End / Decline / hardware-back all
   // hang up through one path. Refs so the cleanup sees the latest without
@@ -530,18 +544,40 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
             />
             <BarButton
               testID="call-video-toggle"
-              glyph={videoEnabled ? 'video' : 'videoOff'}
-              active={!videoEnabled}
-              fill={videoEnabled ? 'ghost' : 'solid'}
+              glyph={medium === 'voice' ? 'video' : videoEnabled ? 'video' : 'videoOff'}
+              active={medium === 'video' && !videoEnabled}
+              fill={medium === 'video' && videoEnabled ? 'ghost' : 'solid'}
+              disabled={medium === 'voice' ? (phase !== 'active' || upgrading || conversationId === undefined) : false}
               onPress={() => {
-                if (videoEnabled) {
-                  disableVideo();
+                if (medium === 'voice') {
+                  // Audio → Video upgrade: end this audio session and start a
+                  // fresh video session request. The server (migration 074) handles
+                  // the paid_session teardown atomically in start_call.
+                  if (phase !== 'active' || conversationId === undefined || onUpgradeToVideo === undefined) return;
+                  setUpgrading(true);
+                  void startCall(conversationId, 'video').then(r => {
+                    if (r?.success && r.call_id) {
+                      // Hand off to App.tsx — it swaps the route so this
+                      // CallScreen unmounts (ending the audio calls row) and a
+                      // fresh outgoing video CallScreen mounts.
+                      onUpgradeToVideo(r.call_id);
+                    } else {
+                      setUpgrading(false);
+                      const code = r?.error;
+                      setNotice(code ? (START_NOTICE[code] ?? 'Could not upgrade the call.') : 'Could not upgrade to video. Check your connection.');
+                    }
+                  });
                 } else {
-                  void enableVideo();
+                  // Video call: toggle camera on/off.
+                  if (videoEnabled) {
+                    disableVideo();
+                  } else {
+                    void enableVideo();
+                  }
                 }
               }}
-              onLongPress={videoEnabled ? switchCamera : undefined}
-              label={videoEnabled ? 'Camera off' : 'Start Video'}
+              onLongPress={medium === 'video' && videoEnabled ? switchCamera : undefined}
+              label={medium === 'voice' ? (upgrading ? 'Upgrading' : 'Switch to Video') : videoEnabled ? 'Camera off' : 'Start Video'}
             />
             <BarButton
               testID="call-mute"
@@ -629,6 +665,7 @@ function BarButton({
   onLongPress,
   label,
   testID,
+  disabled = false,
 }: {
   glyph: IconName;
   active?: boolean;
@@ -638,6 +675,7 @@ function BarButton({
   onLongPress?: () => void;
   label: string;
   testID: string;
+  disabled?: boolean;
 }) {
   const styles = useStyles(makeStyles);
   const fg =
@@ -647,10 +685,10 @@ function BarButton({
         ? LIGHT.color.text.primary
         : LIGHT.color.text.onAccent;
   return (
-    <View style={styles.barSlot}>
+    <View style={[styles.barSlot, disabled && styles.barSlotDisabled]}>
       <Pressable
-        onPress={onPress}
-        onLongPress={onLongPress}
+        onPress={disabled ? () => {} : onPress}
+        onLongPress={disabled ? undefined : onLongPress}
         testID={testID}
         accessibilityLabel={label}
         press="none"
@@ -779,6 +817,9 @@ const makeStyles = (t: Theme) =>
       alignItems: 'center',
       gap: TOKENS.space.xs,
       width: 76,
+    },
+    barSlotDisabled: {
+      opacity: 0.4,
     },
     barButton: {
       width: BTN,
