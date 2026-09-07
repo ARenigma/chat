@@ -115,6 +115,7 @@ const MIGRATIONS = [
   'supabase/migrations/072_member_language_preferences.sql',
   'supabase/migrations/073_call_upgrade_from_chat.sql',
   'supabase/migrations/074_audio_to_video_upgrade.sql',
+  'supabase/migrations/075_provider_languages_are_mandatory.sql',
 ];
 
 const docker = (args, options = {}) =>
@@ -513,6 +514,11 @@ const suites = [
     file: join(ROOT, 'supabase/tests/330_member_language_preferences.sql'),
     label:
       'language preference: the owner writes it, nobody else reads it, and the 063 guard still bites',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/331_provider_languages_are_mandatory.sql'),
+    label:
+      'provider languages: a direct PATCH cannot empty them, but an edit still can change them',
   },
 ];
 

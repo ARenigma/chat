@@ -74,8 +74,10 @@ select function_privs_are(
 -- Migration 006 made admission conditional on a complete application and a
 -- verifiable adult date of birth, so the fixture has to supply both. That the
 -- older fixture no longer suffices is the age gate working.
-insert into public.provider_applications (user_id, display_name, date_of_birth)
-values ('aaaaaaaa-0000-4000-8000-000000000001', 'Ada', (current_date - interval '26 years')::date);
+insert into public.provider_applications (user_id, display_name, date_of_birth, languages)
+-- `languages` is not decoration: migration 075 makes a provider with none
+-- impossible, so admitting one is no longer a state this fixture can model.
+values ('aaaaaaaa-0000-4000-8000-000000000001', 'Ada', (current_date - interval '26 years')::date, array['English']);
 
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"aaaaaaaa-0000-4000-8000-000000000001","role":"authenticated"}';

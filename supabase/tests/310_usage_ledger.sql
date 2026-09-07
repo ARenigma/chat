@@ -20,6 +20,7 @@ insert into auth.users (id) values
 
 update public.profiles
 set    role = 'provider', display_name = 'Provider069',
+       languages = array['English'],
        date_of_birth = (current_date - interval '30 years')::date,
        identity_verified_at = now()
 where  id = 'cc069000-0000-4069-8000-000000000002';

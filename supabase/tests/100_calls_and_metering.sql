@@ -8,11 +8,13 @@ insert into auth.users (id) values
   ('aa100000-0000-4000-8000-000000000001'),
   ('bb100000-0000-4000-8000-000000000002');
 
-insert into public.provider_applications (user_id, display_name, date_of_birth)
+-- `languages` required by migration 075 for the approval below to succeed.
+insert into public.provider_applications (user_id, display_name, date_of_birth, languages)
 values (
   'aa100000-0000-4000-8000-000000000001',
   'Call Provider',
-  (current_date - interval '26 years')::date
+  (current_date - interval '26 years')::date,
+  array['English']
 );
 select public.approve_provider_application(
   'aa100000-0000-4000-8000-000000000001'

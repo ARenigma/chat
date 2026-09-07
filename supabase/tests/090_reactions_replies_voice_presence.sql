@@ -90,9 +90,10 @@ insert into auth.users (id) values
   ('bbbbbbbb-0000-4000-8000-000000000002'),  -- member
   ('cccccccc-0000-4000-8000-000000000003');  -- unrelated member
 
-insert into public.provider_applications (user_id, display_name, date_of_birth)
+-- `languages` required by migration 075 for the approval below to succeed.
+insert into public.provider_applications (user_id, display_name, date_of_birth, languages)
 values ('aaaaaaaa-0000-4000-8000-000000000001', 'Ada',
-        (current_date - interval '26 years')::date);
+        (current_date - interval '26 years')::date, array['English']);
 
 select lives_ok(
   $$select public.approve_provider_application('aaaaaaaa-0000-4000-8000-000000000001')$$,

@@ -67,6 +67,7 @@ import {
   getSignedInProfile,
   isFirstUser,
   needsAgeBracket,
+  needsLanguagePreference,
   needsProfileSetup,
 } from './src/api/profileSetup';
 import type { Profile } from './src/lib/database.types';
@@ -315,8 +316,19 @@ type Boot =
    * (migration 043). `needsUsername` is true for the standard first-run case.
    * Both can be true (new user via browser redirect); only `needsAge` can be
    * true alone (existing user who predates migration 043).
+   *
+   * `needsLanguages` (migration 072) is independent of both: it is true for a
+   * member who has never answered the language step, including one who already
+   * has a name and a bracket. It is what makes this phase the browser-redirect
+   * path's equivalent of the inline flow's language question — see
+   * `PostAuthBoot`.
    */
-  | { phase: 'profileSetup'; needsAge: boolean; needsUsername: boolean }
+  | {
+      phase: 'profileSetup';
+      needsAge: boolean;
+      needsUsername: boolean;
+      needsLanguages: boolean;
+    }
   /**
    * Brief welcome animation after profile setup completes.
    */
@@ -351,12 +363,25 @@ async function fetchPermissionsConfig(): Promise<PermissionsConfig> {
 /**
  * Phases entered after a session is confirmed (excludes welcome — set explicitly).
  *
- * `profileSetup` carries age/username flags so the screen knows which steps to
- * render. Only `needsAge` can be true without `needsUsername` (existing member
- * who predates migration 043); the reverse is always paired.
+ * `profileSetup` carries age/username/language flags so the screen knows which
+ * steps to render. Only `needsAge` can be true without `needsUsername` (existing
+ * member who predates migration 043); the reverse is always paired.
+ *
+ * `needsLanguages` (migration 072) is independent of both and is the flag that
+ * makes this gate the ONLY way into the member tree. `OnboardingScreen` asks the
+ * language question inline for the Credential Manager path, but the
+ * browser-redirect sign-in returns through `handleAuthDeepLink` and unmounts
+ * that screen before it can — so before this flag, choosing the browser instead
+ * of the sheet was a way to never be asked. Same question either way now: the
+ * two paths differ in where it is asked, never in whether.
  */
 type PostAuthBoot =
-  | { phase: 'profileSetup'; needsAge: boolean; needsUsername: boolean }
+  | {
+      phase: 'profileSetup';
+      needsAge: boolean;
+      needsUsername: boolean;
+      needsLanguages: boolean;
+    }
   | { phase: 'policyGate' }
   | { phase: 'permissions' }
   | { phase: 'ready' };
@@ -372,6 +397,16 @@ async function bootPhaseAfterAuth(profile: Profile | null): Promise<PostAuthBoot
   const firstUser = isFirstUser(p);
   const needsUsername = firstUser && needsProfileSetup(p);
   const needsAge = firstUser && needsAgeBracket(p);
+  /*
+   * Gated independently of age and username, not chained behind them.
+   *
+   * A member can legitimately have a bracket and a name and still no language
+   * preference — anyone who signed up before migration 072, and anyone who came
+   * in through the browser redirect while only the inline flow asked. Chaining
+   * this behind `needsAge` would mean the only members ever asked are the ones
+   * who happen to need both, which is how the bypass existed in the first place.
+   */
+  const needsLanguages = firstUser && needsLanguagePreference(p);
 
   /*
    * The member first-run must never open on the provider path.
@@ -403,8 +438,8 @@ async function bootPhaseAfterAuth(profile: Profile | null): Promise<PostAuthBoot
     storage.get(PROVIDER_INTENT_KEY) === '1' ||
     (p?.identity_state !== undefined && p.identity_state !== 'none');
 
-  if (!onProviderPath && (needsUsername || needsAge)) {
-    return { phase: 'profileSetup', needsAge, needsUsername };
+  if (!onProviderPath && (needsUsername || needsAge || needsLanguages)) {
+    return { phase: 'profileSetup', needsAge, needsUsername, needsLanguages };
   }
 
   const { data: pending } = await supabase.rpc('pending_policy_acceptances');
@@ -913,6 +948,7 @@ function Root() {
       <ProfileSetupScreen
         needsAge={boot.needsAge}
         needsUsername={boot.needsUsername}
+        needsLanguages={boot.needsLanguages}
         onDone={async () => {
           if (boot.needsUsername) {
             /*

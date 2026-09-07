@@ -55,9 +55,12 @@ select throws_ok(
 -- The nameless applicant (C) also gets a valid birth date, so the assertion
 -- below still isolates the *name* as the reason for refusal rather than tripping
 -- migration 006's age gate first and passing for the wrong reason.
-insert into public.provider_applications (user_id, display_name, date_of_birth) values
-  ('aaaaaaaa-0000-4000-8000-000000000001', 'Ada', (current_date - interval '26 years')::date),
-  ('cccccccc-0000-4000-8000-000000000003', null, (current_date - interval '26 years')::date);
+-- `languages` on both rows: migration 075 requires a provider to offer at
+-- least one, so an approval without it now raises rather than admitting a
+-- language-less provider into the directory.
+insert into public.provider_applications (user_id, display_name, date_of_birth, languages) values
+  ('aaaaaaaa-0000-4000-8000-000000000001', 'Ada', (current_date - interval '26 years')::date, array['English']),
+  ('cccccccc-0000-4000-8000-000000000003', null, (current_date - interval '26 years')::date, array['English']);
 
 update public.provider_applications
 set missing_fields = ARRAY['display_name']

@@ -33,6 +33,7 @@ insert into auth.users (id) values
 -- refuses a provider who has a role but was never admitted.
 update public.profiles
 set role = 'provider',
+    languages = array['English'],
     display_name = 'Ada',
     date_of_birth = (current_date - interval '26 years')::date,
     identity_verified_at = now(),
@@ -82,6 +83,7 @@ reset role;
 -- members who liked the product are the obvious candidates to become providers.
 update public.profiles
 set role = 'provider',
+    languages = array['English'],
     display_name = 'Bea',
     date_of_birth = (current_date - interval '31 years')::date
 where id = 'bbbbbbbb-0000-4000-8000-000000000002';
