@@ -62,6 +62,21 @@ describe('the client support gate', () => {
       expect(supportVerdict(-1, 10110)).toEqual({ state: 'supported' });
     });
 
+    it('never gates a debug build, whose versionCode is 1', () => {
+      /*
+       * The near-miss. Release builds get an explicit versionCode; debug keeps
+       * gradle's default of 1, confirmed on the Redmi (`versionCode=1`). 1 is a
+       * valid positive number below any real floor, so without the dev
+       * exemption the first raise of `min_version_code` would have shown "time
+       * for an update" on every debug build — on the device whose entire job is
+       * running unreleased code, with no update to install.
+       */
+      expect(supportVerdict(1, 10110, true)).toEqual({ state: 'supported' });
+      // And the exemption is what saves it: the same build without the flag is
+      // gated, which is why the flag has to be passed at the call site.
+      expect(supportVerdict(1, 10110, false).state).toBe('must-update');
+    });
+
     it('does not gate on values that are not real numbers', () => {
       for (const bad of [NaN, Infinity, -Infinity]) {
         expect(supportVerdict(bad, 10110)).toEqual({ state: 'supported' });
@@ -98,8 +113,17 @@ describe('the gate is actually wired, not just written', () => {
   });
 
   it('compares this build against the published floor', () => {
-    expect(app).toContain('supportVerdict(currentVersionCode()');
+    expect(app).toContain('supportVerdict(');
+    expect(app).toContain('currentVersionCode()');
     expect(app).toContain('clientSupport?.min_version_code ?? 0');
+  });
+
+  it('passes the dev exemption, or the floor locks out every debug build', () => {
+    // Asserted at the call site and not only in the pure function, because the
+    // parameter defaults to false: forgetting to pass it is exactly the bug,
+    // and it would only show up the day someone raised the floor.
+    const call = app.slice(app.indexOf('supportVerdict('));
+    expect(call.slice(0, 400)).toContain('__DEV__');
   });
 
   it('offers a way out that cannot be a dead button', () => {

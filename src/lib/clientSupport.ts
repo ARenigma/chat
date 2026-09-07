@@ -67,23 +67,42 @@ export type SupportVerdict =
 /**
  * Compare this build against the floor.
  *
- * Two "unknown" inputs both mean supported, and each is a deliberate escape
+ * Three inputs mean "supported regardless", and each is a deliberate escape
  * hatch rather than an oversight:
  *
- *   `have <= 0`   the native constant is missing or failed. That is every debug
- *                 build predating this module, every JS-only reload against an
- *                 older native shell, and any future host that does not
- *                 implement it. A dev whose Metro bundle is ahead of their
- *                 installed native code must not be locked out of their own app.
+ *   `isDev`       a debug build. **This one is not theoretical and was very
+ *                 nearly a self-inflicted outage.** `android/app/build.gradle`
+ *                 gives release builds a real versionCode but leaves debug at
+ *                 the default of **1** — confirmed on the Redmi, which reports
+ *                 `versionCode=1`. 1 is a perfectly valid positive number below
+ *                 any floor anyone would ever publish, so without this check
+ *                 the first raise of `min_version_code` would show "time for an
+ *                 update" on every debug build in existence, on a device whose
+ *                 whole purpose is hot-reloading unreleased code, with no
+ *                 update to install. The gate would have bricked development
+ *                 the first time it was actually used.
+ *   `have <= 0`   the native constant is missing or failed: a JS bundle newer
+ *                 than its native shell (every Metro reload against an older
+ *                 install), or any host that does not implement it.
  *   `need <= 0`   no floor published, or config unreachable. See
  *                 `FALLBACK_CLIENT_SUPPORT`.
  *
  * Note the comparison is `have < need`, not `!==`. A client NEWER than the
  * floor is fine and common — that is every tester between two server
- * migrations, and it is the normal state of the world for anyone who updates
- * promptly.
+ * migrations, and the normal state for anyone who updates promptly.
+ *
+ * `isDev` is a parameter and not a `__DEV__` read inside the function, because
+ * `__DEV__` is a bundler global and reading it here would make the one decision
+ * in this module untestable in the environment that tests it.
  */
-export function supportVerdict(have: number, need: number): SupportVerdict {
+export function supportVerdict(
+  have: number,
+  need: number,
+  isDev = false,
+): SupportVerdict {
+  if (isDev) {
+    return { state: 'supported' };
+  }
   if (!Number.isFinite(have) || have <= 0) {
     return { state: 'supported' };
   }
