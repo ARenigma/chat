@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  DeviceEventEmitter,
   Image,
   PixelRatio,
   StyleSheet,
@@ -434,6 +435,35 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     }, limit);
     return () => clearTimeout(id);
   }, [phase, onEnd, setNotice]);
+
+  /*
+   * Something OUTSIDE the app ended this call.
+   *
+   * Two sources, one event, because from here they need the same response:
+   *
+   *   'hangUp'         the Hang up action on the call notification
+   *                    (CallActionReceiver.kt:26). **Nothing listened to this
+   *                    before.** The receiver stopped the foreground service
+   *                    and JS never learned, so the call kept running and
+   *                    billing until the server's 90 s lease sweep noticed. A
+   *                    notification button that appears to hang up and does not
+   *                    is worse than no button.
+   *   'audioFocusLost' the user answered a cellular call
+   *                    (CallAudioFocusManager.kt). Telegram's OFFHOOK hang-up,
+   *                    reached through audio focus so it costs no permission —
+   *                    the reasoning is on the native side.
+   *
+   * Registered for every phase, not just `active`: a ring interrupted by a
+   * cellular call should also stop.
+   */
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('callAction', (action: string) => {
+      if (action === 'hangUp' || action === 'audioFocusLost') {
+        onEnd();
+      }
+    });
+    return () => sub.remove();
+  }, [onEnd]);
 
   // The in-call timer, once live.
   useEffect(() => {

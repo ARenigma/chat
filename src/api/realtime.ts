@@ -155,6 +155,29 @@ export function useLiveConversation(
           // A socket that was down may have missed inserts. Refetching on
           // (re)subscribe is what makes a dropped connection self-healing.
           void queryClient.invalidateQueries({ queryKey: key });
+          return;
+        }
+        /*
+         * A channel that FAILED, rather than one that closed.
+         *
+         * Only `SUBSCRIBED` was handled before, which made the self-healing
+         * above conditional on a recovery that may never come: if the socket
+         * reconnects but this channel never reaches SUBSCRIBED again — a known
+         * edge of Supabase's multiplexed channels — nothing refetches and the
+         * transcript is quietly missing every message that arrived in between.
+         * No error is thrown, so nothing surfaces it.
+         *
+         * The refetch is fired HERE too, not just on resubscribe, because the
+         * cheap thing to get right is the data: even if the channel is gone for
+         * good, the member sees the current transcript instead of a stale one.
+         *
+         * Telegram's equivalent is unconditional — it does not wait to be told
+         * the connection is healthy again; a gap in `pts` triggers
+         * `getDifference` regardless of connection state
+         * (MessagesController.java:8206). Same instinct, much smaller hammer.
+         */
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          void queryClient.invalidateQueries({ queryKey: key });
         }
       });
       channelRef.current = channel;

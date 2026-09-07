@@ -226,16 +226,25 @@ interface Shared {
 function MetaRow({
   timestamp,
   receipt,
+  failed,
   onAccent,
 }: {
   timestamp: string;
   receipt?: 'sent' | 'read';
+  failed?: boolean;
   onAccent: boolean;
 }) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const readColor = onAccent ? '#85D4A0' : theme.color.text.positive;
   const sentColor = onAccent ? 'rgba(255,255,255,0.65)' : theme.color.text.tertiary;
+  /*
+   * White on the coral bubble rather than the danger red: `danger` against
+   * `accentStrong` is red on coral, which is both unreadable and reads as
+   * decoration. On the bubble the MARK carries the meaning and full-strength
+   * white is what makes it legible; off the bubble, danger is correct.
+   */
+  const failColor = onAccent ? '#FFFFFF' : theme.color.state.danger;
   return (
     <View style={styles.metaRow}>
       <Text
@@ -244,7 +253,24 @@ function MetaRow({
         style={onAccent ? styles.inlineTimeOnAccent : styles.inlineTimePeer}>
         {timestamp}
       </Text>
-      {receipt !== undefined ? (
+      {/*
+        * A failed send shows a warning mark INSTEAD of a tick, never both. A
+        * check next to "not sent" is the single most misleading thing this
+        * bubble could say.
+        */}
+      {failed === true ? (
+        /*
+         * `close`, not a dedicated warning glyph, and that is a deliberate
+         * stop rather than a shortcut: this icon set has 48 glyphs and none of
+         * them is an alert. Adding one means editing `design/icons.json` and
+         * regenerating (RULE 4), and WHICH warning mark the brand uses —
+         * exclamation in a circle, triangle, filled or outlined — is a creative
+         * decision that belongs to Amit, not one to make silently mid-refactor
+         * (CLAUDE.md, structural vs creative). An X beside a timestamp is
+         * unambiguously "did not send" in the meantime.
+         */
+        <Icon name="close" size={TOKENS.icon.xs} color={failColor} />
+      ) : receipt !== undefined ? (
         <Icon
           name={receipt === 'read' ? 'checkCheck' : 'check'}
           size={TOKENS.icon.xs}
@@ -272,6 +298,7 @@ function Body({
   testID,
   timestamp,
   receipt,
+  failed,
 }: {
   message: string;
   voice: VoiceBody | undefined;
@@ -282,6 +309,7 @@ function Body({
   testID: string;
   timestamp?: string;
   receipt?: 'sent' | 'read';
+  failed?: boolean;
 }) {
   // Must precede the voice-branch early return: a hook cannot be called
   // conditionally (react-hooks/rules-of-hooks).
@@ -301,7 +329,7 @@ function Body({
           speed={voicePlayer.speed}
         />
         {timestamp ? (
-          <MetaRow timestamp={timestamp} receipt={receipt} onAccent={onAccent} />
+          <MetaRow timestamp={timestamp} receipt={receipt} failed={failed} onAccent={onAccent} />
         ) : null}
       </View>
     );
@@ -321,7 +349,7 @@ function Body({
         {message}
       </Text>
       {timestamp ? (
-        <MetaRow timestamp={timestamp} receipt={receipt} onAccent={onAccent} />
+        <MetaRow timestamp={timestamp} receipt={receipt} failed={failed} onAccent={onAccent} />
       ) : null}
     </View>
   );
@@ -663,6 +691,20 @@ interface MineProps extends Shared {
    * to 12 simultaneous launch springs at once.
    */
   isNew?: boolean;
+  /**
+   * The send failed and this bubble is saying so instead of disappearing.
+   *
+   * Telegram's `MESSAGE_SEND_STATE_SEND_ERROR` (MessageObject.java:135). The
+   * bubble stays exactly where it was written, so the member can see what they
+   * said and act on it, rather than watching their words vanish and having to
+   * remember them.
+   */
+  failed?: boolean;
+  /**
+   * Tap the failed bubble to send it again. Undefined when a retry cannot
+   * honestly be offered — a media send whose local file may be gone.
+   */
+  onRetry?: () => void;
 }
 
 /**
@@ -686,6 +728,8 @@ function MyTurnView({
   message,
   timestamp,
   pending,
+  failed,
+  onRetry,
   receipt,
   quote,
   reactions,
@@ -734,7 +778,19 @@ function MyTurnView({
           target={target}
           bubbleStyle={[styles.bubble, pending === true && styles.pending]}
           media={image !== undefined}
-          onTap={image !== undefined ? openImage : undefined}
+          /*
+           * A failed bubble is a retry button. `onRetry` wins over `openImage`
+           * because a media send that did not land has nothing to open — the
+           * bubble is showing a local pick, and tapping it should send it, not
+           * enlarge it.
+           */
+          onTap={
+            failed === true && onRetry !== undefined
+              ? onRetry
+              : image !== undefined
+                ? openImage
+                : undefined
+          }
           onSwipeReply={onSwipeReply}
           onReact={onReact}
           onReportMessage={onReportMessage}
@@ -762,6 +818,7 @@ function MyTurnView({
                 testID="bubble-mine"
                 timestamp={timestamp}
                 receipt={pending ? undefined : receipt}
+                failed={failed}
               />
             </>
           )}

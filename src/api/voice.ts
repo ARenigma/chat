@@ -8,6 +8,7 @@ import { errorTick, tick } from '../lib/haptics';
 import {
   PENDING_PREFIX,
   insertOptimistic,
+  markFailed,
   settleOptimistic,
   type TranscriptMessage,
 } from '../lib/transcript';
@@ -204,9 +205,29 @@ export function useSendVoiceNote(
       );
       setSending(true);
 
+      /*
+       * WITHDRAW: take the bubble away. Correct only before the object exists —
+       * a recording that never uploaded has nothing to retry and nothing to
+       * show, so leaving a failed bubble would offer a retry that cannot work.
+       */
       const withdraw = (notice: string) => {
         queryClient.setQueryData<TranscriptMessage[]>(key, prev =>
           settleOptimistic(prev ?? [], pendingId, null),
+        );
+        setNotice(notice);
+        errorTick();
+      };
+
+      /*
+       * KEEP: the object uploaded and only the send RPC failed, so the bubble
+       * stays and says so. Not queued in the outbox — see `lib/outbox.ts` for
+       * why media is deliberately not replayed across a launch — but within
+       * this session the member can see what happened instead of watching their
+       * voice note evaporate.
+       */
+      const keepFailed = (notice: string) => {
+        queryClient.setQueryData<TranscriptMessage[]>(key, prev =>
+          markFailed(prev ?? [], pendingId),
         );
         setNotice(notice);
         errorTick();
@@ -251,7 +272,7 @@ export function useSendVoiceNote(
       if (result === null || !result.success) {
         const code = result?.error;
         track('send_rejected', { reason: code ?? 'network' });
-        withdraw(
+        keepFailed(
           code !== undefined ? NOTICE[code] : 'Could not send. Check your connection.',
         );
         if (code === 'INSUFFICIENT_BALANCE') {

@@ -74,7 +74,7 @@ import {
   needsProfileSetup,
 } from './src/api/profileSetup';
 import type { Profile } from './src/lib/database.types';
-import { CALLS_ENABLED, useIncomingCalls, type IncomingCall } from './src/api/calls';
+import { CALLS_ENABLED, useIncomingCalls, type IncomingCall, endCall} from './src/api/calls';
 import {
   parseVideoResolution,
   setVideoResolution,
@@ -1236,6 +1236,16 @@ function SignedIn({
   const { role, isPending } = useRole();
   const { data: selfId } = useSelfId();
   const { data: conversations } = useConversations();
+  /*
+   * Mirrors of the route props, so `onIncoming` can ask "am I on a call
+   * already?" without taking the routes as dependencies. A callback that
+   * changes identity on every navigation would resubscribe the incoming-call
+   * channel each time, and a resubscribe is a window in which a ring is missed.
+   */
+  const currentRouteRef = useRef(route);
+  currentRouteRef.current = route;
+  const currentProviderRouteRef = useRef(providerRoute);
+  currentProviderRouteRef.current = providerRoute;
   // Total unread across all conversations for the home tab badge.
   const totalUnread = (conversations ?? []).reduce((sum, c) => {
     const count = c.i_am_member
@@ -1294,6 +1304,33 @@ function SignedIn({
   // Declared before the early return so the hook order is stable.
   const onIncoming = useCallback(
     (incoming: IncomingCall) => {
+      /*
+       * GLARE: a second ring arriving while a call is already on screen.
+       *
+       * This used to route unconditionally, and the consequence was worse than
+       * a missed ring: pushing a call route replaces the live CallScreen, whose
+       * unmount cleanup calls `endCall` on the call in progress. So an incoming
+       * ring **dropped the active paid call** and started ringing the new one.
+       *
+       * Telegram declines the second call outright rather than disturbing the
+       * first (MessagesController.java:20468, "Auto-declining call X because
+       * there's already active one", sending BUSY). Same behaviour here, via
+       * the existing `endCall`: the server derives `declined` for a callee
+       * ending a ringing call (migration 011:1163 — it does not trust a
+       * client-supplied outcome), so the caller learns immediately instead of
+       * ringing out.
+       *
+       * Read through the refs, not `route`/`providerRoute`, so this callback
+       * stays stable across navigations — the same reason `onBack` uses them.
+       */
+      const onACallAlready =
+        role === 'provider'
+          ? currentProviderRouteRef.current.name === 'call'
+          : currentRouteRef.current.name === 'call';
+      if (onACallAlready) {
+        void endCall(incoming.callId);
+        return;
+      }
       if (role === 'provider') {
         pushProvider({ name: 'call', peerId: incoming.callerId, direction: 'in', callId: incoming.callId, medium: incoming.medium });
       } else {

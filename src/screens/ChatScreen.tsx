@@ -46,6 +46,7 @@ import {
   useProfile,
   useProviders,
   useSelfId,
+  useOutboxReplay,
   useSendMessage,
 } from '../api/chat';
 import { useLiveConversation, useMarkRead } from '../api/realtime';
@@ -429,6 +430,22 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   const { notifyTyping } = useLiveConversation(conversationId, selfId);
   useMarkRead(conversationId, selfId);
   const send = useSendMessage(conversationId, selfId);
+  /*
+   * Replay anything the persisted outbox still holds for this thread — a send
+   * that was in flight when the app was killed, or one that failed while
+   * offline. Safe because every entry carries its original nonce, so a replay
+   * of a send that actually landed is collapsed by migration 081 instead of
+   * duplicating.
+   */
+  useOutboxReplay(conversationId, send);
+  /*
+   * `send` behind a ref for the retry tap. Taking it as a `renderItem`
+   * dependency would rebuild renderItem whenever its identity changed and
+   * re-render every bubble in the thread; a retry does not need to be reactive,
+   * it needs to be current when tapped.
+   */
+  const sendRef = useRef(send);
+  sendRef.current = send;
   const sendVoice = useSendVoiceNote(conversationId, selfId);
   const sendImage = useSendImage(conversationId, selfId);
   /**
@@ -1140,6 +1157,24 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
               onReportMessage={reportMessage}
               chosenReaction={chosen}
               onOpenImage={openImage}
+              /*
+               * A failed send keeps its bubble and offers a retry, rather than
+               * vanishing. `retry` is only wired for text: a voice note or
+               * image whose upload landed but whose send failed cannot be
+               * replayed across a launch (see lib/outbox.ts), so those show the
+               * failed state without a retry that could not keep its promise.
+               */
+              failed={message.failed === true}
+              onRetry={
+                message.failed === true && message.body !== null
+                  ? () => {
+                      void sendRef.current(message.body ?? '', message.reply_to_id, {
+                        nonce: message.id.slice(PENDING_PREFIX.length),
+                        createdAt: message.created_at,
+                      });
+                    }
+                  : undefined
+              }
               receipt={
                 !isPending(message)
                   ? message.read_at !== null
