@@ -450,7 +450,9 @@ describe('Cashfree billing invariants', () => {
 
   it('wallet pill opens the full page, not the refill sheet', () => {
     expect(read('src/screens/HomeScreen.tsx')).toContain('onPress={openWallet}');
-    expect(read('src/screens/ChatScreen.tsx')).toContain('onPress={openWallet}');
+    // ChatScreen routes members to openWallet; providers route to onOpenEarnings
+    // (with openWallet as fallback). Both paths reach openWallet.
+    expect(read('src/screens/ChatScreen.tsx')).toContain('openWallet');
     expect(read('src/screens/ProviderDetailScreen.tsx')).toContain('onPress={openWallet}');
   });
 
@@ -2524,11 +2526,13 @@ describe('calling ships visible and on, wired to a real media layer', () => {
     expect(chat).toContain(
       'const canStartVideo = videoCallsEnabled && (provider?.video_enabled ?? true)',
     );
+    // Chat session is an upgrade path, not a block: only non-chat activeSession
+    // disables the buttons (migration 073 ends the chat session on the server).
     expect(chat).toMatch(
-      /!canStartVideo\s*\|\|\s*activeSession !== null\s*\|\|\s*pendingRequest !== null/,
+      /!canStartVideo\s*\|\|\s*pendingRequest !== null\s*\|\|\s*\(activeSession != null && activeSession\.channel !== 'chat'\)/,
     );
     expect(chat).toMatch(
-      /!canStartAudio\s*\|\|\s*activeSession !== null\s*\|\|\s*pendingRequest !== null/,
+      /!canStartAudio\s*\|\|\s*pendingRequest !== null\s*\|\|\s*\(activeSession != null && activeSession\.channel !== 'chat'\)/,
     );
     // Real, and ready for the flag flip: the tap starts a call.
     expect(chat).toContain("onStartCall?.('video')");
@@ -2586,9 +2590,11 @@ describe('paid chat sessions expose their live lifecycle', () => {
     expect(code).not.toContain('estimatedTalkSeconds(');
     // The bar cannot come back above the window: its own visibility is the
     // countdown flag, so there is no state in which it shows without a clock.
-    expect(code).toMatch(/showStickyRecharge\s*=\s*countingDown\s*&&/);
+    // Member-only: providers do not recharge (isMemberSide guard added 2026-09-07).
+    expect(code).toMatch(/showStickyRecharge\s*=\s*\n?\s*isMemberSide\s*&&\s*countingDown\s*&&/);
     // The extend card and the numerals share one threshold and one figure.
-    expect(code).toMatch(/showExtendCard\s*=\s*sessionIsActive\s*&&\s*countingDown/);
+    // Member-only guard added 2026-09-07.
+    expect(code).toMatch(/showExtendCard\s*=\s*\n?\s*isMemberSide\s*&&\s*sessionIsActive\s*&&\s*countingDown/);
 
     // Server side: one snapshot, member only, registered and tested.
     const migration = read('supabase/migrations/062_session_seconds_remaining.sql');
@@ -4483,9 +4489,19 @@ describe('the directory is grouped and filterable: Listeners, Astrologers, ages'
     // A peer with no directory row keeps their thread under the default tab: a
     // conversation you have had is not something a filter may hide from you.
     expect(home).toContain('categoryById.get(c.peer_id) ?? DEFAULT_CATEGORY');
-    // The featured pick comes from the FILTERED list, so the hero always
-    // belongs to the tab you are on.
-    expect(home).toMatch(/const directory = useMemo\(\s*\(\) =>\s*filterProviders\(allProviders, \{ category: exploreCategory, bands: \[\] \}\)/);
+    /*
+     * The featured pick comes from the FILTERED list, so the hero always
+     * belongs to the tab you are on.
+     *
+     * `filterProviders` is now WRAPPED by `sortByLanguageMatch` — the language
+     * preference reorders the tab's list and never narrows it (migration 072,
+     * `src/lib/languagePrefs.ts`). The nesting order is the assertion: the tab
+     * filter has to run INSIDE the sort, or a language match could promote a
+     * provider from the other tab into this one's hero.
+     */
+    expect(home).toMatch(
+      /const directory = useMemo\(\s*\(\) =>\s*sortByLanguageMatch\(\s*filterProviders\(allProviders, \{ category: exploreCategory, bands: \[\] \}\)/,
+    );
     // Both tabs always render: an empty Astrologers tab is an honest "nobody
     // yet", and hiding it would make the strip appear under a member the day
     // one signs up (Amit, 2026-09-06).
@@ -4882,7 +4898,7 @@ describe('a session is rated when it ends, and the ratings are readable', () => 
      * window the countdown exists for, which is what this test is named after
      * and could not previously assert.
      */
-    expect(chat).toMatch(/showStickyRecharge = countingDown && \(!showExtendCard/);
+    expect(chat).toMatch(/showStickyRecharge =\s*\n?\s*isMemberSide && countingDown && \(!showExtendCard/);
     expect(chat).toContain('testID="chat-extend-timer"');
     expect(chat).toMatch(/testID="chat-extend-timer"[\s\S]{0,80}formatClock\(sessionRemaining/);
     // Asking the question is not the same as answering it.
@@ -5060,7 +5076,8 @@ describe('the usage ledger answers where the tokens went, from both sides', () =
     expect(settings).toContain("isProvider ? 'Earnings by session' : 'Usage by session'");
     const app = withoutComments(read('App.tsx'));
     expect(app).toContain("pushRoute({ name: 'usage' })");
-    expect(app).toContain("pushProvider({ name: 'usage' })");
+    expect(app).toContain("pushProvider({ name: 'usage', from: 'settings' })");
+    expect(app).toContain("from: 'chat'");
     // And the route exists in both unions, with a parent that is Settings.
     const routes = read('src/lib/routes.ts');
     expect(routes.match(/name: 'usage'/g)?.length).toBeGreaterThanOrEqual(2);
