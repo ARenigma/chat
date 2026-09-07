@@ -345,6 +345,26 @@ interface Props {
   onBlur?: TextInputProps['onBlur'];
   /** Called when the clear button is pressed. Default: clears the value. */
   onClear?: () => void;
+  /**
+   * Leave search entirely. When set, the trailing control becomes ONE control
+   * with two jobs, which is what the reference's is.
+   *
+   * `closeIcon.setOnClickListener` (FragmentSearchField.java:142-155) clears the
+   * removable filters if there are any and otherwise runs `onCloseSearch` — so
+   * the mark at the right edge is a clear AND an exit, resolved by what there is
+   * to clear. Amit, 2026-09-07: "Please bring exit back in search right edge
+   * like telegram."
+   *
+   * Passing this also FORCES the control visible, because otherwise there would
+   * be nothing to press in the state where it exits. That is the reference's own
+   * supported mode, not an invention: visibility is
+   * `closeButtonForcedVisible || editText.length() > 0` (`:326`) and
+   * `setCloseButtonForcedVisible` is a public setter (`:321`). Stated plainly
+   * though — DialogsActivity does NOT call it, so Telegram's own dialogs search
+   * shows no exit while the field is empty and relies on the system back button.
+   * We show one because Amit asked for one.
+   */
+  onExit?: () => void;
   testID?: string;
 }
 
@@ -355,15 +375,30 @@ function SearchBarView({
   onFocus,
   onBlur,
   onClear,
+  onExit,
   testID,
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const inputRef = useRef<TextInput>(null);
 
-  const handleClear = () => {
-    onClear ? onClear() : onChangeText('');
-    inputRef.current?.focus();
+  const hasQuery = value.length > 0;
+
+  /*
+   * One control, two jobs, resolved by what there is to clear — the reference's
+   * own branch (FragmentSearchField.java:142-155): clear what is clearable, and
+   * if there is nothing, leave.
+   *
+   * The focus call only belongs on the CLEARING branch. Re-focusing the field
+   * after being asked to leave it would raise the keyboard on the way out.
+   */
+  const handleTrailing = () => {
+    if (hasQuery) {
+      onClear ? onClear() : onChangeText('');
+      inputRef.current?.focus();
+      return;
+    }
+    onExit?.();
   };
 
   /*
@@ -372,7 +407,7 @@ function SearchBarView({
    * (`checkCloseButtonVisible`, `FragmentSearchField.java:325-333`) — and that is
    * what keeps `pEnd` at a constant `dp(48)` while you type.
    */
-  const clearTarget = value.length > 0 ? 1 : 0;
+  const clearTarget = hasQuery || onExit !== undefined ? 1 : 0;
   const hasText = clearTarget === 1;
   const clearProgress = useSharedValue(clearTarget);
   useEffect(() => {
@@ -466,8 +501,12 @@ function SearchBarView({
         pointerEvents={hasText ? 'auto' : 'none'}
         importantForAccessibility={hasText ? 'yes' : 'no-hide-descendants'}>
         <Pressable
-          onPress={handleClear}
-          accessibilityLabel="Clear search"
+          onPress={handleTrailing}
+          /* The label has to say which of the two jobs it will do, or a screen
+             reader announces "clear" on a control that is about to leave the
+             screen. */
+          accessibilityLabel={hasQuery ? 'Clear search' : 'Leave search'}
+          testID="search-trailing"
           press="none"
           highlight="ripple"
           size={GLYPH_SLOT}

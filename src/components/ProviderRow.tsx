@@ -1,15 +1,16 @@
-import React, { memo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { memo, useEffect, useRef } from 'react';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ProviderSummary } from '../lib/database.types';
 import { initialOf } from '../lib/display';
 import { presenceForSpeech, readPresence } from '../lib/presence';
+import { SCROLL_PHYSICS } from '../lib/scroll';
 import { rowIn } from '../theme/motion';
 import { Avatar } from './Avatar';
 import { Icon } from './Icon';
-import { MetaChip } from './MetaChip';
+import { META_CHIP_HEIGHT, MetaChip } from './MetaChip';
 import { Pressable } from './Pressable';
 import { CATEGORY_BADGE, categoryOf } from '../lib/providerFilters';
 
@@ -107,6 +108,29 @@ export const ROW_AVATAR = 40;
 export const ROW_SEPARATOR_INSET = ROW_AVATAR + TOKENS.space.sm;
 
 /**
+ * The disclosure chevron's own slot, so it stops sharing the row's flex.
+ *
+ * Amit's report: "we have full pane occupied for arrow button on sp profile row
+ * in homescreen which chuts the language chip -- make the icon individual per
+ * row". The chevron was a bare `Icon` sitting as the row's last flex child, so
+ * what it took from the text column was whatever its glyph happened to measure,
+ * and nothing in the row said "this much and no more".
+ *
+ * `icon.md` (20) rather than `icon.sm` (16), which is the chevron's own `size`:
+ * `Icon` renders a Lucide glyph at `Math.round(size * ICON_SCALE)` — 1.2, see
+ * Icon.tsx — so a 16 chevron occupies a 19dp box and a 16dp slot would clip it.
+ * 20 is the smallest token that cannot, and `__tests__/providerRow.test.ts`
+ * checks that arithmetic against Icon.tsx rather than trusting this sentence.
+ *
+ * A slot and not a second Pressable. "Individual per row" is about the width the
+ * glyph owns, not about a second touch target: the row already opens the
+ * conversation, so a chevron button would be a duplicate action and — like the
+ * avatar, which is folded in with `accessible={false}` below — a second TalkBack
+ * node overlapping the row for no gain.
+ */
+export const ROW_CHEVRON_SLOT = TOKENS.icon.md;
+
+/**
  * A row in the directory. Not a card any more.
  *
  * It was a white card on a grey page, and that was a reasoned choice: colour
@@ -130,6 +154,10 @@ export const ROW_SEPARATOR_INSET = ROW_AVATAR + TOKENS.space.sm;
  * The language pills that used to sit here are gone. They were the only thing
  * making rows variable-height, and a list whose rows disagree about their height
  * cannot carry a hairline convincingly.
+ *
+ * Languages came BACK as AssistChips, and the height invariant survived by being
+ * enforced instead of assumed: the chip strip is one fixed-height row that
+ * SCROLLS sideways (see `styles.strip`) rather than wrapping or being clipped.
  */
 function ProviderRowView({
   provider,
@@ -161,6 +189,27 @@ function ProviderRowView({
    * chat header cannot disagree.
    */
   const presence = readPresence(provider.presence, provider.last_active_at);
+
+  /**
+   * The meta strip's scroller, rewound whenever this cell is recycled onto a
+   * different provider.
+   *
+   * A native scroll offset is not React state, and FlashList re-renders the SAME
+   * component instance with new props instead of mounting a new one — which is
+   * why it ships a hook whose whole job is this class of leftover:
+   * `useRecyclingState`, "automatically resets the state when specified
+   * dependencies change ... when items are recycled"
+   * (@shopify/flash-list@2.3.2 dist/recyclerview/hooks/useRecyclingState.d.ts).
+   * Without the rewind, scrolling one row's languages and then scrolling the
+   * list would hand the next provider a strip already parked on somebody else's
+   * chips. `scrollTo` is the imperative half of that hook, for state Android
+   * holds rather than React.
+   * https://reactnative.dev/docs/scrollview#scrollto
+   */
+  const strip = useRef<ScrollView | null>(null);
+  useEffect(() => {
+    strip.current?.scrollTo({ x: 0, animated: false });
+  }, [provider.id]);
 
   const accessibility = [
     `Message ${provider.display_name}`,
@@ -216,9 +265,72 @@ function ProviderRowView({
               : 'Here to listen'}
           </Text>
           {/* Material 3 AssistChip strip (32dp / 8dp corners / 1dp outline).
-              Rating leads; years + languages follow. One non-wrapping line so
-              every row stays the same height. */}
-          <View style={styles.chips}>
+              Rating leads; years + languages follow. Still ONE non-wrapping
+              line — it now SCROLLS instead of being clipped.
+
+              THE THREE-WAY GESTURE, which is the whole risk here: a horizontal
+              scroller, inside the row's Pressable, inside a vertical FlashList.
+
+              1. A HORIZONTAL DRAG scrolls the strip, and a VERTICAL one scrolls
+                 the list, and neither is decided by a prop. Android arbitrates in
+                 the parent's `onInterceptTouchEvent`: "If you return `true` from
+                 `onInterceptTouchEvent()`, the child view that was previously
+                 handling touch events receives an `ACTION_CANCEL`", and the
+                 sanctioned test for a scroll is the axis distance against
+                 `ViewConfiguration`'s touch slop — "the distance in pixels a
+                 user's touch can wander before the gesture is interpreted as
+                 scrolling". `ReactHorizontalScrollView extends
+                 HorizontalScrollView` (ReactHorizontalScrollView.java:74), so
+                 the X-axis slop test is the platform's own, and when it wins RN
+                 hands the responder over from JS — `notifyNativeGestureStarted`
+                 in `handleInterceptedTouchEvent`
+                 (ReactHorizontalScrollView.java:744), which is what cancels the
+                 row's press mid-drag instead of firing it on lift.
+                 https://developer.android.com/develop/ui/views/touch-and-input/gestures/viewgroup
+
+                 The two props that LOOK like the fix are not, and this is the
+                 same finding the hero pager already carries
+                 (ProviderDetailScreen.tsx): `directionalLockEnabled` is iOS-only
+                 and `nestedScrollEnabled` is the SAME-axis case, "Enables nested
+                 scrolling for Android API level 21+".
+                 https://reactnative.dev/docs/scrollview#nestedscrollenabled-android
+                 https://reactnative.dev/docs/scrollview#directionallockenabled
+
+              2. A TAP still opens the row, and `keyboardShouldPersistTaps` is
+                 what makes that true rather than luck. Responder negotiation
+                 bubbles — "the deepest node is called first" — so the scroller
+                 gets first refusal on every touch that starts on a chip, and at
+                 the DEFAULT of `'never'` it accepts one whenever a keyboard is
+                 up: "tapping outside of the focused text input when the keyboard
+                 is up dismisses the keyboard. When this happens, children won't
+                 receive the tap." On the search results list that is exactly a
+                 member tapping the middle of a row and getting nothing.
+                 `'handled'` — correct for the LIST, which is why HomeScreen sets
+                 it there — is also wrong HERE: ScrollView.js:1452-1458 returns
+                 true from `onStartShouldSetResponder` under `'handled'` while the
+                 keyboard is dismissible, so the strip would swallow that tap too.
+                 `'always'` is the one value that declines: "the scroll view will
+                 not catch taps, but children of the scroll view can catch taps",
+                 and declining is what lets the bubble carry on up to the row's
+                 Pressable.
+                 https://reactnative.dev/docs/scrollview#keyboardshouldpersisttaps
+                 https://reactnative.dev/docs/gesture-responder-system
+
+                 Nothing inside the strip presses. The chips are display-only
+                 Views (`accessible={false}` in MetaChip), so there is no inner
+                 responder competing for the tap the row wants.
+
+              3. THE ROW'S HEIGHT DOES NOT MOVE: `styles.strip` fixes the
+                 scroller at `META_CHIP_HEIGHT`, see the style. */}
+          <ScrollView
+            ref={strip}
+            horizontal
+            keyboardShouldPersistTaps="always"
+            showsHorizontalScrollIndicator={false}
+            {...SCROLL_PHYSICS}
+            style={styles.strip}
+            contentContainerStyle={styles.stripContent}
+            testID={`provider-meta-${provider.id}`}>
             <MetaChip
               testID="provider-rating"
               tone="emphasis"
@@ -231,14 +343,20 @@ function ProviderRowView({
             {chips.map(chip => (
               <MetaChip key={chip} label={chip} />
             ))}
-          </View>
+          </ScrollView>
         </View>
 
         {/* The disclosure indicator, which this list had no version of at all.
             Tapping a row here pushes a conversation, which is exactly where iOS
             puts UITableViewCellAccessoryDisclosureIndicator, and its absence was
-            the reason a row read as a card that happened to be tappable. */}
-        <Icon name="chevronRight" size={TOKENS.icon.sm} color={theme.color.text.tertiary} />
+            the reason a row read as a card that happened to be tappable.
+
+            In its own bounded slot now (ROW_CHEVRON_SLOT), so the width it takes
+            from the text column is stated rather than measured, and every row's
+            chevron lands on the same centre line. */}
+        <View style={styles.chevron}>
+          <Icon name="chevronRight" size={TOKENS.icon.sm} color={theme.color.text.tertiary} />
+        </View>
       </Pressable>
       {isLast ? null : <View style={styles.separator} />}
     </Animated.View>
@@ -293,14 +411,51 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     ...TOKENS.typography.bodySmall,
     color: t.color.text.tertiary,
   },
-  // M3 AssistChip strip under the headline. Clipped to one line so a chip can
-  // never make one row taller than its neighbours.
-  chips: {
-    flexDirection: 'row',
+  /*
+   * M3 AssistChip strip under the headline, in one horizontally scrolling row.
+   *
+   * A single-row chip group IS the platform's answer, and so is the scroller
+   * around it: "A `ChipGroup` can also constrain its chips to a single row using
+   * the `app:singleLine` attribute... Using a single row may necessitate
+   * wrapping the `ChipGroup` with a `HorizontalScrollView`."
+   * https://github.com/material-components/material-components-android/blob/master/docs/components/Chip.md
+   *
+   * `overflow: 'hidden'` USED TO BE HERE, and it is the defect Amit reported
+   * ("full pane occupied for arrow button... which chuts the language chip"):
+   * the strip is wider than the text column whenever a provider has two
+   * languages, and a hard clip cut the last chip through the middle with nothing
+   * on screen to say there was more. A scroller hides the same pixels and hands
+   * them back.
+   *
+   * THE HEIGHT IS FIXED, NOT INTRINSIC, and that is the invariant this list is
+   * built on — every row the same height, which is also what HomeScreen promises
+   * FlashList through `overrideItemLayout`. A ScrollView's cross-axis size is
+   * otherwise measured from its content, so one taller chip could quietly make
+   * one row taller than its neighbours. `META_CHIP_HEIGHT` rather than 32, so
+   * the scroller cannot drift from the thing it carries.
+   */
+  strip: {
+    height: META_CHIP_HEIGHT,
+    marginTop: TOKENS.space['2xs'],
+  },
+  // The chips' own row, which for a horizontal ScrollView lives on the content
+  // container rather than on the scroller. `flexDirection: 'row'` comes from
+  // `horizontal`; the gap and the centring are ours.
+  // https://reactnative.dev/docs/scrollview#contentcontainerstyle
+  stripContent: {
     alignItems: 'center',
     gap: TOKENS.space['2xs'],
-    marginTop: TOKENS.space['2xs'],
-    overflow: 'hidden',
+  },
+  // The chevron's bounded slot. `flexShrink: 0` so it never squeezes, `flexGrow:
+  // 0` so it never claims the text column's width, and a stated `width` so the
+  // glyph's own measurement stops being what the row gives away. See
+  // ROW_CHEVRON_SLOT for why 20 and why this is not a second Pressable.
+  chevron: {
+    width: ROW_CHEVRON_SLOT,
+    flexGrow: 0,
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   secondary: {
     ...TOKENS.typography.bodyMedium,
