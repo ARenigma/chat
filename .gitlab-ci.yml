@@ -58,6 +58,26 @@ default:
       files: [package-lock.json]
     paths: [.npm/]
   before_script:
+    # `node:22-bookworm-slim` ships WITHOUT git, and jobs on this template shell
+    # out to it. GIT_DEPTH: '0' above already says this template needs history;
+    # it needs the binary too, and that was the missing half.
+    #
+    #   - `lint-commits` runs commitlint, which spawns `git merge-base` to
+    #     resolve --from..--to. It died on `Error: spawn git ENOENT` before
+    #     reading a single commit message, so the job reported a commit-message
+    #     failure that had nothing to do with any commit message.
+    #   - `static` runs contract.test.ts, whose `secrets are untrackable` case
+    #     calls `git check-ignore --no-index --stdin`. That reads stdout only, so
+    #     a missing binary is indistinguishable from "nothing is ignored": all
+    #     nine credential-shaped paths came back trackable and the gate failed —
+    #     in CI only, passing on every developer machine, which is the worst
+    #     shape a security gate can fail in.
+    #   - husky's `prepare` also logs `git command not found` during `npm ci`.
+    #
+    # Installed here rather than switching to the non-slim image: `node:22-bookworm`
+    # is ~350 MB larger to pull on every job, against ~5 MB and a few seconds for
+    # the one binary actually missing.
+    - apt-get update -qq && apt-get install -y -qq --no-install-recommends git && rm -rf /var/lib/apt/lists/*
     - npm ci --cache .npm --prefer-offline
 
 # ---------------------------------------------------------------------------
