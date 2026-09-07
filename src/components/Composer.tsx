@@ -201,11 +201,11 @@ type Mode = 'idle' | 'recording' | 'review';
  * should least want to shut out. Having built the tap path, the hold is a second
  * way to do the same thing.
  *
- * It also costs a `Gesture.Pan` inside a row that lives above an inverted list,
- * where a horizontal pan and the list's scroll have to be taught not to fight.
- * `contract.test.ts` asserts that Sheet is still the only file declaring a
- * gesture, precisely so the next pan is a decision rather than a copy, and this
- * one cannot be verified anywhere but on a device.
+ * It also costs a `usePanGesture` inside a row that lives above an inverted
+ * list, where a horizontal pan and the list's scroll have to be taught not to
+ * fight. `contract.test.ts` enumerates every file that declares a gesture,
+ * precisely so the next pan is a decision rather than a copy, and this one
+ * cannot be verified anywhere but on a device.
  *
  * So: tap the mic, watch the meter, tap stop, then send or discard. If the hold
  * is added later it belongs on top of this, not instead of it.
