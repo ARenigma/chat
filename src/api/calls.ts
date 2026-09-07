@@ -100,6 +100,29 @@ export function useIncomingCalls(
     if (selfId === undefined) {
       return;
     }
+    async function recoverRinging() {
+      const { data } = await supabase
+        .from('calls')
+        .select(
+          'id, conversation_id, caller_id, medium, status, media_backend, media_experiment_id',
+        )
+        .eq('callee_id', selfId as string)
+        .eq('status', 'ringing')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data && data.status === 'ringing') {
+        onIncoming({
+          callId: data.id,
+          conversationId: data.conversation_id,
+          callerId: data.caller_id,
+          medium: data.medium,
+          mediaBackend: data.media_backend,
+          mediaExperimentId: data.media_experiment_id,
+        });
+      }
+    }
+
     const channel = supabase
       .channel(`incoming-calls:${selfId}`)
       .on(
@@ -132,7 +155,11 @@ export function useIncomingCalls(
           }
         },
       )
-      .subscribe();
+      .subscribe(status => {
+        if (status === 'SUBSCRIBED') {
+          void recoverRinging();
+        }
+      });
     return () => {
       void supabase.removeChannel(channel);
     };

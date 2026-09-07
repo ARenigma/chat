@@ -335,7 +335,7 @@ object Conversations {
             // is overridden by CallStyle on API 31+, so this is the correct slot for
             // the call type. "Video call" vs "Voice call" tells the user what to expect
             // before they answer.
-            .setSubText(if (medium == "video") "Video call" else "Voice call")
+            .setSubText(if (medium == "video") "is video calling you" else "is calling you")
             // No full-screen intent: the call rings as a heads-up popup, but must
             // never take over the whole screen on top of whatever is running
             // (Amit, 2026-08-27). CallStyle + IMPORTANCE_HIGH is the popup; the tap

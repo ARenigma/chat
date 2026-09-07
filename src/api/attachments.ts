@@ -12,7 +12,7 @@ import {
   type TranscriptMessage,
 } from '../lib/transcript';
 import { track } from '../lib/telemetry';
-import type { Message, Profile, SendError } from '../lib/database.types';
+import type { Message, SendError } from '../lib/database.types';
 import {
   attachmentExt,
   attachmentMime,
@@ -21,7 +21,7 @@ import {
   type ImageDraft,
 } from '../lib/attachments';
 import { useStore } from '../store/useStore';
-import { keys } from './chat';
+import { keys, memberPaysInThread } from './chat';
 import { sendResultFrom } from '../lib/sendErrors';
 
 /** The private bucket created by migration 014. */
@@ -154,8 +154,7 @@ export function useSendImage(
         return false;
       }
       // Same member-only wallet gate as useSendMessage — providers reply at 0.
-      const role = queryClient.getQueryData<Profile>(keys.profile)?.role;
-      if (role !== 'provider' && !canSend(useStore.getState().balance)) {
+      if (memberPaysInThread(queryClient, conversationId) && !canSend(useStore.getState().balance)) {
         errorTick();
         openRefill();
         return false;

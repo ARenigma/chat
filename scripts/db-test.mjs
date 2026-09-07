@@ -115,6 +115,7 @@ const MIGRATIONS = [
   'supabase/migrations/072_member_language_preferences.sql',
   'supabase/migrations/073_call_upgrade_from_chat.sql',
   'supabase/migrations/074_audio_to_video_upgrade.sql',
+  'supabase/migrations/076_handoff_and_member_consent.sql',
   'supabase/migrations/075_provider_languages_are_mandatory.sql',
 ];
 

@@ -1245,6 +1245,10 @@ export type Database = {
         Args: { p_request_id: string };
         Returns: string;
       };
+      confirm_chat_session: {
+        Args: { p_request_id: string };
+        Returns: string;
+      };
       decline_session_request: {
         Args: { p_request_id: string };
         Returns: { success: boolean; status?: string; error?: string };

@@ -1,5 +1,14 @@
-import React, { useCallback, useMemo, useState } from 'react';
-import { Image, PixelRatio, SectionList, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  AppState,
+  Image,
+  Linking,
+  PixelRatio,
+  SectionList,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
@@ -29,6 +38,7 @@ import { ROW_AVATAR, ROW_SEPARATOR_INSET } from '../components/ProviderRow';
 import { Icon, type IconName } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { Toggle } from '../components/Toggle';
+import { notificationsGranted } from '../lib/push';
 
 /**
  * The gallery tile, in dp. A measured size gets a name rather than sitting as a
@@ -104,6 +114,7 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
 
   const [tab, setTab] = useState<Tab>('chats');
   const [pendingDelete, setPendingDelete] = useState<ProviderPhoto | null>(null);
+  const [pushOk, setPushOk] = useState(true);
   const gallery = photos ?? [];
   const remaining = MAX_PROVIDER_PHOTOS - gallery.length;
   const available = profile?.is_available ?? false;
@@ -256,8 +267,42 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
 
   const earned = earnings?.provider_tokens ?? 0;
 
+  useEffect(() => {
+    const refresh = () => {
+      void notificationsGranted().then(setPushOk);
+    };
+    refresh();
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') {
+        refresh();
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
+      {!pushOk ? (
+        <View style={styles.pushGate} testID="provider-push-gate">
+          <Text allowFontScaling style={styles.emptyTitle}>
+            Turn on notifications
+          </Text>
+          <Text allowFontScaling style={styles.emptyBody}>
+            Chats and calls cannot reach you while notifications are off.
+          </Text>
+          <Pressable
+            onPress={() => {
+              Linking.openSettings().catch(() => undefined);
+            }}
+            accessibilityLabel="Open settings"
+            press="button"
+            style={styles.pushGateButton}>
+            <Text allowFontScaling style={styles.pushGateButtonLabel}>
+              Open settings
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
       {tab === 'chats' ? (
         <>
           <View style={styles.head}>
@@ -744,6 +789,27 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.bodyMedium,
       color: t.color.text.secondary,
       textAlign: 'center',
+    },
+    pushGate: {
+      ...StyleSheet.absoluteFill,
+      zIndex: 20,
+      elevation: 20,
+      backgroundColor: t.color.bg.base,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: TOKENS.space['2xl'],
+      gap: TOKENS.space.md,
+    },
+    pushGateButton: {
+      marginTop: TOKENS.space.sm,
+      paddingHorizontal: TOKENS.space.lg,
+      paddingVertical: TOKENS.space.sm,
+      borderRadius: TOKENS.radius.pill,
+      backgroundColor: t.color.bg.accent,
+    },
+    pushGateButtonLabel: {
+      ...TOKENS.typography.labelLarge,
+      color: t.color.text.onAccent,
     },
     youScroll: { flexGrow: 1 },
     you: { gap: TOKENS.space.md, paddingBottom: TOKENS.space.md },

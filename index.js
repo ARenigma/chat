@@ -79,7 +79,7 @@ setBackgroundMessageHandler(getMessaging(), async remote => {
   if (push === null) {
     return;
   }
-  await notifyConversation(push, 'Sent you a message');
+  await notifyConversation(push, 'wants to talk to you');
 });
 
 AppRegistry.registerComponent(appName, () => App);

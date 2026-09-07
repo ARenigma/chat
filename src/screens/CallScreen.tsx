@@ -139,6 +139,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     direction === 'in' ? 'incoming' : incomingCallId !== null ? 'ringing' : 'starting',
   );
   const [upgrading, setUpgrading] = useState(false);
+  const [memberConsented, setMemberConsented] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   // Back must not silently end a call. Leaving this screen hangs up (unmount →
   // endCall), so a bare hardware back was a one-tap hang-up with no confirm.
@@ -265,6 +266,10 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     if (direction !== 'out' || callId !== null || openedId === undefined) {
       return;
     }
+    const needsConsent = isMemberSide && incomingCallId === null;
+    if (needsConsent && !memberConsented) {
+      return;
+    }
     let live = true;
     void startCall(openedId, medium).then((r: CallResult | null) => {
       if (!live) {
@@ -292,7 +297,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     return () => {
       live = false;
     };
-  }, [direction, openedId, callId, medium, onEnd, setNotice, openRefill]);
+  }, [direction, openedId, callId, medium, isMemberSide, incomingCallId, memberConsented, onEnd, setNotice, openRefill]);
 
   useEffect(() => {
     if (callId === null) return;
@@ -590,6 +595,18 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
           </View>
         )}
       </View>
+      <ConfirmDialog
+        visible={
+          isMemberSide && direction === 'out' && incomingCallId === null && !memberConsented && callId === null
+        }
+        testID="call-session-consent"
+        title={medium === 'video' ? 'Start a video call?' : 'Start a voice call?'}
+        body="No sexual or abusive talk. Tokens start when they answer."
+        cancelLabel="Cancel"
+        confirmLabel="Call"
+        onCancel={onEnd}
+        onConfirm={() => setMemberConsented(true)}
+      />
       {/* Copy follows the phase: a live call ends, a ringing one is cancelled,
           an incoming one is declined. One dialog, one exit path (`onEnd`). */}
       <ConfirmDialog

@@ -12,7 +12,7 @@ import {
   type TranscriptMessage,
 } from '../lib/transcript';
 import { track } from '../lib/telemetry';
-import type { Message, Profile, SendError } from '../lib/database.types';
+import type { Message, SendError } from '../lib/database.types';
 import {
   isSendable,
   isVoicePath,
@@ -30,7 +30,7 @@ import {
   storedSpeed,
 } from '../lib/recorder';
 import { useStore } from '../store/useStore';
-import { keys } from './chat';
+import { keys, memberPaysInThread } from './chat';
 import { sendResultFrom } from '../lib/sendErrors';
 
 /** The private bucket created by migration 011. */
@@ -160,8 +160,7 @@ export function useSendVoiceNote(
         return false;
       }
       // Same member-only wallet gate as useSendMessage — providers reply at 0.
-      const role = queryClient.getQueryData<Profile>(keys.profile)?.role;
-      if (role !== 'provider' && !canSend(useStore.getState().balance)) {
+      if (memberPaysInThread(queryClient, conversationId) && !canSend(useStore.getState().balance)) {
         errorTick();
         openRefill();
         return false;
