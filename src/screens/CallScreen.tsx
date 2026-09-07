@@ -56,6 +56,28 @@ interface Props {
 /** How long between heartbeats while a call is up; the ticker reads last_seen_at. */
 const HEARTBEAT_MS = 20_000;
 
+/**
+ * How long a call may ring before this device gives up, per side.
+ *
+ * Ported from Telegram, which bounds a ring on BOTH sides and does not rely on
+ * the server to do it: `callReceiveTimeout` = 20 s for the caller and
+ * `callRingTimeout` = 90 s for the callee (MessagesController.java:1588-1589,
+ * scheduled at VoIPService.java:1151 and 1806).
+ *
+ * We had neither. The only bound was `meter_active_calls`, which marks a
+ * `ringing` call missed after 45 s but is driven by pg_cron on a one-minute
+ * tick — so a call could genuinely ring for **1 m 45 s** with the callee's
+ * screen lit and the foreground service up. Two bounds, because either alone
+ * has a hole: the client is fast and precise but dies with the process; the
+ * cron sweep is slow but survives anything. Telegram's pattern exactly.
+ *
+ * Shorter than Telegram's on the callee side (60 s, not 90 s) because a ring
+ * here holds a paid session request open, and 90 s of ringing on a per-minute
+ * product is most of a chargeable minute spent on a phone nobody answered.
+ */
+const RING_TIMEOUT_OUT_MS = 30_000;
+const RING_TIMEOUT_IN_MS = 60_000;
+
 /** start_call refusals, in words. */
 const START_NOTICE: Record<string, string> = {
   INSUFFICIENT_BALANCE: 'You need a few more tokens to call.',
@@ -386,6 +408,32 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
       onEnd();
     }
   }, [backend, callId, connState, medium, onEnd, setNotice]);
+
+  /*
+   * Give up on an unanswered ring.
+   *
+   * Keyed on the phase rather than on a timestamp, so the window restarts if
+   * the phase legitimately re-enters (a video upgrade remounts this screen with
+   * a fresh callId, and that new ring deserves its own full window).
+   *
+   * `onEnd()` rather than a bespoke "missed" path: unmounting runs the existing
+   * cleanup, which calls `endCall(callIdRef.current)` and stops the foreground
+   * service. The server then records the end reason it already records for a
+   * hang-up during ringing — there is no second code path to keep in step.
+   */
+  useEffect(() => {
+    if (phase !== 'ringing' && phase !== 'incoming') {
+      return;
+    }
+    const limit = phase === 'ringing' ? RING_TIMEOUT_OUT_MS : RING_TIMEOUT_IN_MS;
+    const id = setTimeout(() => {
+      setNotice(
+        phase === 'ringing' ? 'No answer.' : 'You missed the call.',
+      );
+      onEnd();
+    }, limit);
+    return () => clearTimeout(id);
+  }, [phase, onEnd, setNotice]);
 
   // The in-call timer, once live.
   useEffect(() => {

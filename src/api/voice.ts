@@ -177,7 +177,9 @@ export function useSendVoiceNote(
 
       tick();
       const key = keys.messages(conversationId);
-      const pendingId = `${PENDING_PREFIX}${Date.now()}`;
+      // One value for the local row id and the server dedup key. See chat.ts.
+      const nonce = newUuid();
+      const pendingId = `${PENDING_PREFIX}${nonce}`;
       const optimistic: Message = {
         id: pendingId,
         conversation_id: conversationId,
@@ -233,7 +235,8 @@ export function useSendVoiceNote(
         return false;
       }
 
-      const { data, error } = await supabase.rpc('send_message', {
+      const { data, error } = await supabase.rpc('send_message_idempotent', {
+        p_client_nonce: nonce,
         p_conversation_id: conversationId,
         p_body: null,
         p_reply_to_id: replyToId,

@@ -121,6 +121,7 @@ const MIGRATIONS = [
   'supabase/migrations/078_decline_status_cast.sql',
   'supabase/migrations/079_start_call_status_cast.sql',
   'supabase/migrations/080_client_support_floor.sql',
+  'supabase/migrations/081_message_idempotency.sql',
 ];
 
 const docker = (args, options = {}) =>
@@ -529,6 +530,11 @@ const suites = [
     file: join(ROOT, 'supabase/tests/340_client_support_floor.sql'),
     label:
       'client support floor: anon can read it, and the allowlist 080 rewrote is intact',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/350_message_idempotency.sql'),
+    label:
+      'message idempotency: the same nonce twice is one message, a different nonce is two',
   },
   {
     file: join(ROOT, 'supabase/tests/340_sp_initiate_member_consent.sql'),

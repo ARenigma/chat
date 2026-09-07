@@ -17,6 +17,7 @@ import {
   settleOptimistic,
   type TranscriptMessage,
 } from '../lib/transcript';
+import { newUuid } from '../lib/ids';
 import { track } from '../lib/telemetry';
 import { useStore } from '../store/useStore';
 import { messagesKey } from './realtime';
@@ -260,7 +261,16 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
 
       tick();
       const key = keys.messages(conversationId);
-      const pendingId = `${PENDING_PREFIX}${Date.now()}`;
+      /*
+       * The idempotency key, and the local row's identity, are the SAME value.
+       *
+       * `pending-${Date.now()}` collided whenever two sends landed in one
+       * millisecond — which is exactly the case that produced two "launch test"
+       * rows 5 ms apart in production. A uuid cannot collide, and reusing it as
+       * the nonce means the retry of a send is provably the same send.
+       */
+      const nonce = newUuid();
+      const pendingId = `${PENDING_PREFIX}${nonce}`;
       const optimistic: Message = {
         id: pendingId,
         conversation_id: conversationId,
@@ -298,7 +308,8 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
       );
       setSending(true);
 
-      const { data, error } = await supabase.rpc('send_message', {
+      const { data, error } = await supabase.rpc('send_message_idempotent', {
+        p_client_nonce: nonce,
         p_conversation_id: conversationId,
         p_body: body,
         p_reply_to_id: replyToId,

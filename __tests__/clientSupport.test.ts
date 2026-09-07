@@ -157,3 +157,57 @@ describe('the server half', () => {
     expect(migration).toMatch(/"min_version_code":\s*0/);
   });
 });
+
+describe('ported from Telegram: bounded ringing and a grace window', () => {
+  /*
+   * Both of these are places where our only bound was a pg_cron sweep, and
+   * Telegram bounds them on the client as well. Asserted structurally because
+   * neither can be unit-tested without a device: the failure mode is a timer
+   * that was never scheduled, which throws nothing.
+   */
+  const call = read('src/screens/CallScreen.tsx');
+  const sessions = read('src/api/sessions.ts');
+
+  it('bounds an unanswered ring on both sides, in the client', () => {
+    /*
+     * Telegram: callReceiveTimeout 20 s (caller) and callRingTimeout 90 s
+     * (callee), MessagesController.java:1588-1589. We had NO client bound —
+     * only meter_active_calls at 45 s on a one-minute pg_cron tick, so a call
+     * could ring for 1 m 45 s.
+     */
+    expect(call).toContain('RING_TIMEOUT_OUT_MS');
+    expect(call).toContain('RING_TIMEOUT_IN_MS');
+    // Outgoing must be the shorter of the two: the caller learns "no answer"
+    // sooner than the callee is told they missed it, or the caller sits on a
+    // dead ring while the callee's phone has already given up.
+    const out = Number(/RING_TIMEOUT_OUT_MS = ([0-9_]+)/.exec(call)?.[1]?.replace(/_/g, ''));
+    const inc = Number(/RING_TIMEOUT_IN_MS = ([0-9_]+)/.exec(call)?.[1]?.replace(/_/g, ''));
+    expect(out).toBeGreaterThan(0);
+    expect(out).toBeLessThan(inc);
+    // And still inside the server's 45 s sweep for the caller, so the client is
+    // the one that acts first and the sweep stays a backstop.
+    expect(out).toBeLessThanOrEqual(45_000);
+  });
+
+  it('gives a backgrounded chat session a grace window, matching the server', () => {
+    // It used to call end_session on the first non-active AppState event, so a
+    // glance at a notification killed a paid conversation.
+    expect(sessions).toContain('BACKGROUND_GRACE_MS');
+    expect(sessions).toContain('clearTimeout(backgroundTimerRef.current)');
+    // The number must equal the server's lease grace (migration 030). Two
+    // different values and the shorter silently wins.
+    const grace = Number(
+      /BACKGROUND_GRACE_MS = ([0-9_]+)/.exec(sessions)?.[1]?.replace(/_/g, ''),
+    );
+    expect(grace).toBe(30_000);
+  });
+
+  it('still stops heartbeats immediately, so the grace bills nobody', () => {
+    // The window must not be paid for. Heartbeats stop on the event; only the
+    // end_session call is deferred.
+    const at = sessions.indexOf("if (state !== 'active')");
+    expect(at).toBeGreaterThan(0);
+    const block = sessions.slice(at, at + 300);
+    expect(block.indexOf('stop()')).toBeLessThan(block.indexOf('setTimeout'));
+  });
+});

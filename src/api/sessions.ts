@@ -473,6 +473,17 @@ export function usePendingSessionRequest(conversationId: string | undefined) {
 const HEARTBEAT_INTERVAL_MS = 10_000;
 
 /**
+ * How long a backgrounded TEXT session survives before it is ended.
+ *
+ * 30 s, matching the server's lease grace (migration 030) rather than being
+ * chosen: if the two disagreed, the shorter would win silently and the longer
+ * would be dead code. Heartbeats stop the instant the app backgrounds, so this
+ * window is billed to nobody — it only decides whether the session is still
+ * there when the member comes straight back.
+ */
+const BACKGROUND_GRACE_MS = 30_000;
+
+/**
  * Sends foreground lease heartbeats while the component is mounted and the app
  * is in the foreground. Stops immediately on background.
  *
@@ -485,6 +496,12 @@ export function useSessionLease(
   kind: 'foreground' | 'connected' = 'foreground',
 ): void {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  /*
+   * The pending end-of-session from a background transition. A ref, not state:
+   * nothing renders from it, and it must survive re-renders without restarting
+   * the grace window.
+   */
+  const backgroundTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queryClient = useQueryClient();
   const sessionId = session?.id ?? null;
   const channel = session?.channel ?? null;
@@ -532,26 +549,54 @@ export function useSessionLease(
     // Send immediately on mount.
     start();
 
-    // Stop heartbeats when the app moves to the background so the server's
-    // 30 s grace window starts. Resume when the app comes back to the
-    // foreground.
-    // A clean background transition ends text immediately. Connected calls are
-    // kept alive by CallForegroundService; their lease heartbeat therefore
-    // continues instead of applying the text-session rule.
-    // https://developer.android.com/develop/background-work/services/fgs/service-types#phone-call
+    /*
+     * Backgrounding a text session: heartbeats stop at once, but the session is
+     * ended only after a GRACE WINDOW.
+     *
+     * This used to call `end_session` synchronously on the first non-active
+     * AppState event, which meant glancing at a notification, taking a
+     * screenshot, or the OS briefly reporting `inactive` terminated a paid
+     * conversation outright, with no way back into it. Amit, 2026-09-08:
+     * a grace window matching the server's.
+     *
+     * `BACKGROUND_GRACE_MS` is 30 s deliberately — the same window the server
+     * applies to an expired lease (migration 030). Two different numbers here
+     * would mean the client and the server disagreed about when a session was
+     * over, and the shorter one would silently win.
+     *
+     * Heartbeats stop IMMEDIATELY regardless, so nothing is billed for time the
+     * member was away: if they never come back, the server's own lease expiry
+     * ends the session on exactly the same schedule this timer would have. The
+     * grace window costs no tokens; it only decides whether the session is
+     * still there when they return within it.
+     *
+     * Connected calls are exempt and keep heartbeating — CallForegroundService
+     * keeps them alive, so the text-session rule does not apply.
+     * https://developer.android.com/develop/background-work/services/fgs/service-types#phone-call
+     */
     const subscription =
       channel === 'chat'
         ? AppState.addEventListener('change', (state: AppStateStatus) => {
             if (state !== 'active') {
               stop();
-              void supabase.rpc('end_session', {
-                p_session_id: sessionId,
-                p_end_reason: 'background',
-                p_report_reason: null,
-                p_report_message_ids: null,
-                p_report_statement: null,
-              });
+              if (backgroundTimerRef.current === null) {
+                backgroundTimerRef.current = setTimeout(() => {
+                  backgroundTimerRef.current = null;
+                  void supabase.rpc('end_session', {
+                    p_session_id: sessionId,
+                    p_end_reason: 'background',
+                    p_report_reason: null,
+                    p_report_message_ids: null,
+                    p_report_statement: null,
+                  });
+                }, BACKGROUND_GRACE_MS);
+              }
             } else {
+              // Back inside the window: cancel the pending end and resume.
+              if (backgroundTimerRef.current !== null) {
+                clearTimeout(backgroundTimerRef.current);
+                backgroundTimerRef.current = null;
+              }
               start();
             }
           })
@@ -559,6 +604,16 @@ export function useSessionLease(
 
     return () => {
       stop();
+      /*
+       * Cancel a pending background end on unmount rather than letting it fire.
+       * Unmount means the screen was left — which has its own end path — and a
+       * stray timer would call `end_session` for a session that may already have
+       * been ended, or worse, one the member has since resumed.
+       */
+      if (backgroundTimerRef.current !== null) {
+        clearTimeout(backgroundTimerRef.current);
+        backgroundTimerRef.current = null;
+      }
       subscription?.remove();
     };
   }, [sessionId, channel, sendHeartbeat]);
