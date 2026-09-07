@@ -12,7 +12,7 @@ import {
   type TranscriptMessage,
 } from '../lib/transcript';
 import { track } from '../lib/telemetry';
-import type { Message, SendError } from '../lib/database.types';
+import type { Message, Profile, SendError } from '../lib/database.types';
 import {
   attachmentExt,
   attachmentMime,
@@ -153,7 +153,9 @@ export function useSendImage(
         setNotice(NOTICE.BAD_REQUEST);
         return false;
       }
-      if (!canSend(useStore.getState().balance)) {
+      // Same member-only wallet gate as useSendMessage — providers reply at 0.
+      const role = queryClient.getQueryData<Profile>(keys.profile)?.role;
+      if (role !== 'provider' && !canSend(useStore.getState().balance)) {
         errorTick();
         openRefill();
         return false;

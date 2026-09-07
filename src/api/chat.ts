@@ -239,7 +239,11 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
       if (body === '' || conversationId === undefined || selfId === undefined) {
         return false;
       }
-      if (!canSend(useStore.getState().balance)) {
+      // Providers never pay to reply — balance is a member wallet. A provider at
+      // 0 tokens (the normal state) used to open refill and abort before the RPC,
+      // so accepting a pending chat request by sending never left the device.
+      const role = queryClient.getQueryData<Profile>(keys.profile)?.role;
+      if (role !== 'provider' && !canSend(useStore.getState().balance)) {
         errorTick();
         openRefill();
         return false;

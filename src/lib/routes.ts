@@ -89,7 +89,13 @@ export type ProviderRoute =
   /** Bank/UPI + PAN payout setup. */
   | { readonly name: 'payout' }
   /** Per-session earnings: which conversation paid what. Migration 069. */
-  | { readonly name: 'usage' }
+  | {
+      readonly name: 'usage';
+      /** Settings list, or the chat header wallet. */
+      readonly from: 'settings' | 'chat';
+      /** Required when `from === 'chat'` so back restores that thread. */
+      readonly peerId?: string;
+    }
   /** A voice or video call on the provider tree. */
   | {
       readonly name: 'call';
@@ -163,7 +169,22 @@ export function memberParent(route: MemberRoute): MemberRoute | null {
 }
 
 export function providerParent(route: ProviderRoute): ProviderRoute | null {
-  return route.name === 'home' ? null : { name: 'home' };
+  if (route.name === 'home') {
+    return null;
+  }
+  if (route.name === 'usage' && route.from === 'chat' && route.peerId !== undefined) {
+    return { name: 'chat', peerId: route.peerId };
+  }
+  if (route.name === 'usage' && route.from === 'settings') {
+    return { name: 'settings' };
+  }
+  if (route.name === 'settings' || route.name === 'payout') {
+    return { name: 'home' };
+  }
+  if (route.name === 'chat' || route.name === 'call') {
+    return { name: 'home' };
+  }
+  return { name: 'home' };
 }
 
 /**
