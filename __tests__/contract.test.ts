@@ -10,13 +10,7 @@ import {
   STARTING_BALANCE,
 } from '../src/lib/tokenLedger';
 import { MAX_VOICE_MS, MIN_VOICE_MS, isVoicePath } from '../src/lib/voice';
-import {
-  DEFAULT_GST_RATE_BPS,
-  formatRupeesPaise,
-  gstIncludedLabel,
-  gstPercentLabel,
-  gstSplit,
-} from '../src/lib/rates';
+import { DEFAULT_GST_RATE_BPS, formatRupeesPaise, gstSplit } from '../src/lib/rates';
 import { TOKENS } from '../src/theme/tokens';
 
 const ROOT = join(__dirname, '..');
@@ -204,14 +198,23 @@ describe('the AI path is gone, not dormant', () => {
 });
 
 /**
- * Cashfree billing invariants (ADR-0022).
+ * GST is disclosed where money moves and nowhere else.
  *
- * These assert three things that are easy to regress silently:
- *   1. create-order packs match RECHARGE_PACKS in rates.ts exactly.
- *   2. billing.ts does not contain the Cashfree client secret or any cfsk_ prefix —
- *      the secret key must never leave the Edge Functions.
- *   3. PaymentSheet imports CASHFREE_SANDBOX_CHECKOUT (and therefore routes through
- *      the sandbox path when the flag is true).
+ * (This header used to be the Cashfree one, which describes the describe block
+ * below this one — it had drifted up a block. Moved back on 2026-09-07.)
+ *
+ * Two halves, and the second is the one that regresses quietly:
+ *   1. The arithmetic — an inclusive pack price split into a base and a tax, in
+ *      integer paise, using the identical expression `generate-invoice` prints,
+ *      so a chip and the invoice for the same purchase cannot disagree.
+ *   2. The placement — the tax is named on the recharge packs and the pay step,
+ *      and on NO per-minute rate, balance, timer or bubble. Tokens are prepaid;
+ *      tax was settled when the rupees were paid.
+ *
+ * Presentation is EXCLUSIVE (base + tax) on top of an INCLUSIVE price, which is
+ * the distinction the whole area turns on: ADR-0021 fixes pack prices as
+ * tax-inclusive and `create-order` captures the nominal price, so "₹5,000 + 18%
+ * GST" would name a number nobody is ever charged.
  */
 describe('GST is disclosed where money moves and nowhere else', () => {
   // Prices are INCLUSIVE: ₹300 buys 300 tokens and already contains the tax.
@@ -235,20 +238,55 @@ describe('GST is disclosed where money moves and nowhere else', () => {
     expect(rates).toContain(expression);
   });
 
-  it('shows nothing when the seller charges no GST', () => {
+  it('charges no tax at all when the seller is not registered', () => {
+    // `gst_rate_bps = 0` has to zero the tax in the ARITHMETIC, not just hide a
+    // label, or the base line would still be short of the price. The label side
+    // of this — every disclosure returning null at rate 0 — is asserted on
+    // `gstExclusiveLabel`/`gstExclusiveParts` in rechargeChips.test.ts.
     expect(gstSplit(300, 0).gstPaise).toBe(0);
-    expect(gstIncludedLabel(300, 0)).toBeNull();
-    expect(gstIncludedLabel(0, 1800)).toBeNull();
+    expect(gstSplit(300, 0).taxablePaise).toBe(30000);
   });
 
-  it('formats the disclosure the way the pack card, the pay row and the sheet all show it', () => {
+  it('renders paise as two-decimal rupees, the only non-round figure on these screens', () => {
+    /*
+     * Narrowed 2026-09-07, because the old title ("formats the disclosure the way
+     * the pack card, the pay row and the sheet all show it") had stopped
+     * describing the assertions underneath it. Those surfaces no longer render an
+     * inclusive "incl. ₹45.76 GST" phrase or a bare "18%" anywhere — the chips
+     * and the pay step state a base plus a tax, and both footers name no rate —
+     * so `gstIncludedLabel` and `gstPercentLabel` are deleted. What is left here
+     * is the one formatter those surfaces do still route every GST figure
+     * through, and the four cases that matter to it: the two live pack splits,
+     * the grouping separator at four digits, and a sub-rupee value that must keep
+     * its leading zero rather than read as "₹0.5".
+     */
     expect(formatRupeesPaise(4576)).toBe('₹45.76');
     expect(formatRupeesPaise(76271)).toBe('₹762.71');
     expect(formatRupeesPaise(100000)).toBe('₹1,000.00');
     expect(formatRupeesPaise(5)).toBe('₹0.05');
-    expect(gstPercentLabel(1800)).toBe('18%');
-    expect(gstPercentLabel(1250)).toBe('12.5%');
-    expect(gstIncludedLabel(300, 1800)).toBe('incl. ₹45.76 GST');
+  });
+
+  it('states the split one way only — the inclusive phrasing and the bare rate are gone', () => {
+    /*
+     * The retirement gate for the two exports above, and the reason this is a
+     * source assertion rather than a behavioural one: their defect was not a
+     * wrong output, it was existing at all. They formatted correctly and nothing
+     * called them, and the only thing keeping them compiled was this file pinning
+     * their return values.
+     *
+     * Comments stripped, because `rates.ts` names both functions in the block
+     * recording why they were deleted — the gate is about the code, not the
+     * epitaph.
+     */
+    const rates = withoutComments(read('src/lib/rates.ts'));
+    expect(rates).not.toContain('gstIncludedLabel');
+    expect(rates).not.toContain('gstPercentLabel');
+    // The arithmetic and the exclusive presentation are what remain, and both are
+    // load-bearing: gstExclusiveParts calls gstSplit, and gstSplit is the shared
+    // expression generate-invoice prints.
+    expect(rates).toContain('export function gstSplit(');
+    expect(rates).toContain('export function gstExclusiveParts(');
+    expect(rates).toContain('export function gstExclusiveLabel(');
   });
 
   it('keeps the fallback rate in step with the admin economics fallback', () => {
@@ -293,6 +331,16 @@ describe('GST is disclosed where money moves and nowhere else', () => {
   });
 });
 
+/**
+ * Cashfree billing invariants (ADR-0022).
+ *
+ * These assert three things that are easy to regress silently:
+ *   1. create-order packs match RECHARGE_PACKS in rates.ts exactly.
+ *   2. billing.ts does not contain the Cashfree client secret or any cfsk_ prefix —
+ *      the secret key must never leave the Edge Functions.
+ *   3. PaymentSheet imports CASHFREE_SANDBOX_CHECKOUT (and therefore routes through
+ *      the sandbox path when the flag is true).
+ */
 describe('Cashfree billing invariants', () => {
   it('create-order packs align with RECHARGE_PACKS (100 300 500 1000 2500 5000)', () => {
     const fn = read('supabase/functions/create-order/index.ts');

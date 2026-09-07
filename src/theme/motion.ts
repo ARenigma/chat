@@ -544,10 +544,19 @@ export const searchOut = FadeOut.duration(DURATION.searchField)
  * The results layer's away scale, 1.05 — it lives ABOVE the directory.
  *
  * `ObjectAnimator.ofFloat(searchViewPager, View.SCALE_X, show ? 1.0f : 1.05f)`
- * (`DialogsActivity.java:7602-7603`). A one-value `ObjectAnimator` runs from the
- * view's CURRENT value, so the results arrive 1.05 -> 1 and leave 1 -> 1.05:
+ * (`DialogsActivity.java:7573-7574`, with `SCALE_Y` on the second of the two;
+ * the pager is also INITIALISED at that value, `searchViewPager.setScaleX(1.05f)`
+ * / `setScaleY(1.05f)` at `:13284-13285`). A one-value `ObjectAnimator` runs from
+ * the view's CURRENT value, so the results arrive 1.05 -> 1 and leave 1 -> 1.05:
  * they always sit slightly nearer the eye than the list they cover, and the swap
  * reads as depth rather than as two things trading places.
+ *
+ * CITATION CORRECTED 2026-09-07. This said `:7602-7603`, which is inside the
+ * animator's `onAnimationEnd` listener and sets no scale at all — the value was
+ * right and the pointer was not, which is worse than no pointer because it sends
+ * the next reader to a line that quietly disagrees with the comment above it.
+ * Re-read against the 12.10.1 (7038) tree, clone `62b56a07`, the same one
+ * `src/components/SearchBar.tsx` is measured off.
  */
 const SEARCH_RESULTS_AWAY = 1.05;
 
@@ -557,6 +566,17 @@ const SEARCH_RESULTS_AWAY = 1.05;
  * `ObjectAnimator.ofFloat(viewPages[0], View.SCALE_X, show ? 0.95f : 1.0f)`
  * (`DialogsActivity.java:7556-7557`). Mirror of the above: the list leaves
  * 1 -> 0.95 and comes back 0.95 -> 1.
+ *
+ * BOTH away scales are guarded, and it is the same guard: `if (!budget)`
+ * (`:7555` and `:7572`), where `budget` is
+ * `getDevicePerformanceClass() == PERFORMANCE_CLASS_LOW || !LiteMode.isEnabled(
+ * FLAG_CHAT_SCALE)` (`:7530`). On a low-end device, or with the chat-scale lite
+ * flag off, the reference drops the scale animators entirely, sets both pagers
+ * to 1 and animates ALPHA ONLY. That is the same split `contentArrive` /
+ * `contentLeave` make below — opacity `ReduceMotion.Never`, scale
+ * `ReduceMotion.System` — arrived at from the other end: Telegram drops the 5%
+ * for a slow phone, we drop it for someone who asked the OS for less motion, and
+ * in both cases the fade is the part that carries the meaning.
  */
 const SEARCH_DIRECTORY_AWAY = 0.95;
 

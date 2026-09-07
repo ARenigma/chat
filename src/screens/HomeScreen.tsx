@@ -584,7 +584,7 @@ export function HomeScreen({
               testID="home-search-close"
               accessibilityLabel="Leave search"
               press="none"
-              size={28}
+              size={TOKENS.interaction.minTarget}
               style={styles.navIcon}>
               <Icon name="back" size={22} color={theme.color.text.secondary} />
             </Pressable>
@@ -611,7 +611,7 @@ export function HomeScreen({
                 testID="home-search"
                 accessibilityLabel="Search people"
                 press="none"
-                size={28}
+                size={TOKENS.interaction.minTarget}
                 style={styles.navIcon}>
                 <Icon name="search" size={24} color={theme.color.text.secondary} />
               </Pressable>
@@ -721,12 +721,18 @@ export function HomeScreen({
           and every citation live in src/theme/motion.ts.
 
           THE TWO LAYERS ARE ABSOLUTELY STACKED, and that is load-bearing rather
-          than tidy. FlashList styles its own scroll view `flex: 1` for a
-          vertical list (@shopify/flash-list RecyclerView.js:340), and a
-          Reanimated `exiting` animation keeps the leaving view in the layout
-          tree until it finishes — so as plain flex siblings the outgoing and
-          incoming lists would each take HALF the column for the whole 200ms and
-          the swap would read as a squash, not a dissolve. Stacked, they overlay,
+          than tidy. FlashList gives its OWN ROOT VIEW `flex: 1` whenever the
+          list is vertical — `flex: horizontal ? undefined : 1` on the outer
+          `CompatView`, @shopify/flash-list@2.3.2
+          `src/recyclerview/RecyclerView.tsx:537` (compiled to
+          `dist/recyclerview/RecyclerView.js:340`, which is the pointer this
+          comment used to give as a bare "RecyclerView.js:340" and which nobody
+          could resolve; the claim was right, the path was not, and it described
+          the scroll view rather than the wrapper around it). A Reanimated
+          `exiting` animation keeps the leaving view in the layout tree until it
+          finishes — so as plain flex siblings the outgoing and incoming lists
+          would each take HALF the column for the whole 200ms and the swap would
+          read as a squash, not a dissolve. Stacked, they overlay,
           which is also what the reference does: `searchViewPager` and
           `viewPages[0]` are siblings in one FrameLayout and it toggles
           visibility around the animation rather than removing either.
@@ -1046,9 +1052,37 @@ const makeStyles = (t: Theme) =>
       alignItems: 'center',
       gap: TOKENS.space.xs,
     },
+    /*
+     * A real 48dp box with the glyph centred in it, not a 28x40 box with slop.
+     *
+     * Both nav controls wear this style — the button that OPENS search and the
+     * back arrow that leaves it — and both passed `size={28}`, which asks
+     * Pressable for `max(8, ceil((48 - 28) / 2)) = 10` of `hitSlop`
+     * (Pressable.tsx:231-234). Almost none of it survived: "The touch area never
+     * extends past the parent view bounds"
+     * (https://reactnative.dev/docs/view#hitslop), and the search glyph is the
+     * FIRST child of a content-sized `navTrailing` row whose left edge is the
+     * glyph box's own left edge, so the 10dp on that side is clipped to nothing
+     * and the remaining 10dp on the other side falls in the 8dp gap the token
+     * counter's own slop is already claiming. Effective box ~28-36 x 40 against
+     * Android's floor: "we recommend that each interactive UI element have a
+     * focusable area, or touch target size, of at least 48dp x 48dp"
+     * (https://developer.android.com/guide/topics/ui/accessibility/apps).
+     *
+     * This is the same defect the search field's clear control had until
+     * 2026-09-07 and it takes the same fix: one laid-out `interaction.minTarget`
+     * box that no ancestor can shrink, with the glyph centred inside it. See the
+     * GLYPH_SLOT header in src/components/SearchBar.tsx for the long version.
+     * `size` is still passed, now as the same 48, so the Pressable and the style
+     * agree rather than one of them silently deciding.
+     *
+     * It also makes the nav row 48dp tall in BOTH states — this box, or the
+     * search field's own 48dp row — which the content swap below relies on; see
+     * the note on `styles.swap`.
+     */
     navIcon: {
-      width: 28,
-      height: 40,
+      width: TOKENS.interaction.minTarget,
+      height: TOKENS.interaction.minTarget,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -1064,6 +1098,43 @@ const makeStyles = (t: Theme) =>
      * the length of the transition instead of splitting the column between
      * them. See the comment at the call site for why that is required and not
      * merely neater.
+     *
+     * KNOWN, AND THE ARITHMETIC IS HERE: this box's HEIGHT still changes in the
+     * frame the swap starts, because the chrome above it is not animated.
+     * Opening search unmounts the tab strip (48 + 12 = 60dp) and mounts the
+     * filter block (two 16dp labels + two 4dp gaps + two 36dp chip rows + a 12dp
+     * gap between the groups + 12dp below = ~136dp) in one commit, so `flex: 1`
+     * hands the layers ~76dp less than they had and the OUTGOING directory —
+     * absolutely filling this box — is re-laid-out shorter while it is fading.
+     * It is worth being exact about what that does and does not cost, because an
+     * earlier note here overstated it as "the dissolve is not protected":
+     *
+     *   - The stacking still does its job. The two layers overlay; neither ever
+     *     takes half the column, and the swap does not read as a squash.
+     *   - The leaving list's rows do not move — a FlashList is anchored at its
+     *     top — so what is visible is its BOTTOM EDGE clipping ~76dp early, at
+     *     the foot of the screen, under a layer that is already fading in over
+     *     it. The 0.95 scale is about the layer's centre, which also rises ~38dp,
+     *     but at 5% that is a ~2dp difference in where the content lands.
+     *   - The louder half is that the chrome HARD-CUTS while the bodies dissolve
+     *     for 200ms. Giving the two chrome blocks their own `entering`/`exiting`
+     *     makes it worse, not better: an exiting view stays in the layout tree,
+     *     so for those 200ms BOTH blocks would be in the column and this box
+     *     would shrink further still, then spring back.
+     *
+     * Half of it IS fixed: `styles.navIcon` is now a real 48dp box, so the nav
+     * row measures 48 in both states instead of 40 un-searched / 48 searched,
+     * and the 8dp step it used to add to this box on every toggle is gone.
+     *
+     * The rest needs the chrome to move INSIDE the two layers, which is also
+     * what the reference does — `searchTabsView` lives in `searchViewPager` and
+     * the dialogs list in `viewPages[0]`, and it scales each page as one object
+     * (DialogsActivity.java:7555-7576). That is a JSX relocation, and it is
+     * blocked on a gate outside this change set: `__tests__/contract.test.ts`
+     * asserts `'>\n              Age\n            </Text>'`, pinning the filter
+     * block to exactly this nesting depth by whitespace, so moving it turns that
+     * test red. Whoever owns that file next should re-anchor the assertion to
+     * the label text rather than its indentation, then move both blocks in.
      */
     swap: {
       flex: 1,
@@ -1170,8 +1241,40 @@ const makeStyles = (t: Theme) =>
       gap: TOKENS.space.lg,
       paddingBottom: TOKENS.space.sm,
     },
+    /*
+     * Each tab is a 48dp box with its indicator on the bottom edge, not a 30dp
+     * label-and-rule.
+     *
+     * What it used to be: 24 (the label's lineHeight) + 4 (gap) + 2 (rule) =
+     * 30dp of content and no height of its own. The `Pressable` around it passed
+     * no `size`, so it took the default `ceil(48 / 6) = 8` of `hitSlop`
+     * (Pressable.tsx:231-234) — 46dp at the arithmetic's most generous, and less
+     * than that on the device, because "The touch area never extends past the
+     * parent view bounds" (https://reactnative.dev/docs/view#hitslop) and the
+     * strip around it was only 30 + 12 tall, which clips the slop above the
+     * label away entirely (~38dp effective).
+     *
+     * 48 is the platform floor: "we recommend that each interactive UI element
+     * have a focusable area, or touch target size, of at least 48dp x 48dp"
+     * (https://developer.android.com/guide/topics/ui/accessibility/apps). It is
+     * ALSO the height Material's own text-only tab is drawn at —
+     * `DEFAULT_HEIGHT = 48` in material-components-android
+     * `lib/java/com/google/android/material/tabs/TabLayout.java`, against 72 for
+     * a tab carrying both text and an icon — so this is the component's spec
+     * height rather than an accessibility patch bolted onto a smaller one.
+     * (m3.material.io is a client-rendered app that returns nothing to a fetch,
+     * so the Material fact is taken from the AndroidX/Material source that
+     * implements it.)
+     *
+     * `justifyContent: 'flex-end'` keeps the 2dp indicator on the bottom edge of
+     * that box, which is where TabLayout draws its own; the 18dp it opens up
+     * above the label is touch target, not padding — the whole 48dp is tappable,
+     * which is the point.
+     */
     tab: {
+      minHeight: TOKENS.interaction.minTarget,
       alignItems: 'center',
+      justifyContent: 'flex-end',
       gap: TOKENS.space['2xs'],
     },
     tabLabel: {

@@ -56,7 +56,8 @@ design/
   brand/                 Brand assets
 
 assets/
-  fonts/                 Geist (Regular/SemiBold/Bold), TitanOne, Lucide.ttf, PappalGlyphs.ttf
+  fonts/                 Geist (Regular/SemiBold/Bold), TitanOne, Lucide.ttf
+                         (+ PappalGlyphs.ttf, orphaned since 2026-09-07 — see Design System)
 
   supabase/
   migrations/            001–047: sequential SQL migrations (applied in order)
@@ -169,7 +170,8 @@ Runtime config also covers rates, packs, and kill switches via `get_public_confi
 - Body/UI: Geist (Regular, SemiBold, Bold) — `assets/fonts/`
 - Display/wordmark: TitanOne
 - Icons: `Lucide.ttf` — generated from `design/icons.json` by `npm run icons:font` into `src/theme/icons.generated.ts`
-- Filled heart: `PappalGlyphs.ttf` — a custom font with a single glyph (U+2665 BLACK HEART SUIT) for the favourite toggle active state (Lucide has no filled-heart variant).
+- Active favourite heart: **no second face** — the same `Lucide.ttf` outline drawn heavier. Four over-drawn copies offset half a Lucide grid unit (`HEAVY_DILATION = 1/48` in `src/components/Icon.tsx`) take the stroke from Lucide's shipped 2 to 3. `fontWeight` cannot do it: with no `Lucide_bold.ttf` on the asset family, ReactFontManager falls through to `Typeface.create("Lucide", BOLD)`, an unknown family whose fallback has no glyph in the Private Use Area — a silent tofu heart.
+- **Superseded 2026-09-07.** The line above replaced "Filled heart: `PappalGlyphs.ttf` — a custom font with a single glyph (U+2665 BLACK HEART SUIT) for the favourite toggle active state (Lucide has no filled-heart variant)." Amit removed the fill ("Remove the heart fill; keep the outline, heavier"); full reasoning in [ADR-0018](adr/0018-icons-are-a-config-driven-font.md)'s 2026-09-07 update. `PappalGlyphs.ttf` is still in `assets/fonts/` and is now referenced by nothing — see the orphan-face note in `__tests__/theme.test.ts`.
 
 **Icons**: `react-native-svg` is banned. All icons are `<Text>` nodes rendering Lucide font glyphs via `src/components/Icon.tsx`. Adding an icon = add it to `design/icons.json` → run `npm run icons:font`.
 

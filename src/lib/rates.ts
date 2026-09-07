@@ -123,25 +123,30 @@ export function formatRupeesPaise(paise: number): string {
   return `₹${whole.toLocaleString('en-IN')}.${fraction.toString().padStart(2, '0')}`;
 }
 
-/** "18%" from 1800 bps; keeps one decimal only when the rate needs it (1250 → "12.5%"). */
-export function gstPercentLabel(rateBps: number): string {
-  const percent = rateBps / 100;
-  return `${Number.isInteger(percent) ? percent : percent.toFixed(1)}%`;
-}
-
-/**
- * The retired INCLUSIVE phrasing — "incl. ₹45.76 GST".
+/*
+ * DELETED 2026-09-07: `gstIncludedLabel` and `gstPercentLabel`.
  *
- * Nothing renders it any more (Amit, 2026-09-06: "GST exclusive on the chips").
- * The recharge chips and the pay step state the identical split the other way
- * round, via `gstExclusiveParts` below. It stays exported only because
- * `__tests__/contract.test.ts` still pins its output, and that file is outside
- * this change set's ownership; it and this function retire together.
+ * `gstIncludedLabel` returned the INCLUSIVE phrasing, "incl. ₹45.76 GST".
+ * `gstPercentLabel` returned the rate itself, "18%" from 1800 bps. Both went out
+ * of use on 2026-09-06 — the chips and the pay step moved to `gstExclusiveParts`
+ * / `gstExclusiveLabel` below (Amit: "GST exclusive on the chips") and neither
+ * recharge footer names a rate any more (Amit: "remove inc xxx gst from
+ * footer").
+ *
+ * They then survived a day longer than their last caller, kept alive by nothing
+ * but `__tests__/contract.test.ts` pinning their output — a test asserting that
+ * dead code still formats correctly, which is the shape of rot this repo gates
+ * against everywhere else. Grepped before deleting: no consumer in `src/`.
+ *
+ * `gstSplit` stays. It is the shared arithmetic — the same expression
+ * `generate-invoice/index.ts` prints — and `gstExclusiveParts` calls it.
+ *
+ * Restated rather than silently dropped, and gated: `contract.test.ts` › "states
+ * the split one way only — the inclusive phrasing and the bare rate are gone"
+ * fails the build if either name comes back to this file. If a future surface
+ * genuinely needs the inclusive wording, `gstSplit` + `formatRupeesPaise` is two
+ * lines, and it should arrive with the surface that renders it.
  */
-export function gstIncludedLabel(amountInr: number, rateBps: number): string | null {
-  const { gstPaise } = gstSplit(amountInr, rateBps);
-  return gstPaise > 0 ? `incl. ${formatRupeesPaise(gstPaise)} GST` : null;
-}
 
 /**
  * The tax in a pack price, stated EXCLUSIVE of it: "₹4,237.29" and

@@ -127,11 +127,27 @@ import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { Icon } from './Icon';
 import { Pressable } from './Pressable';
 
+/*
+ * MODULE-PRIVATE, and that is the point rather than an oversight.
+ *
+ * Both of these were `export const` from the day they were written and nothing
+ * outside this file ever imported either one. That is the same failure that got
+ * `layout.searchBar` deleted from design/tokens.json in the previous pass: an
+ * unread symbol reads as the app's DECLARED GEOMETRY to the next person who
+ * greps for it, so a stale one quietly becomes the answer to "how tall is search
+ * here?" long after the component has moved on. The token note that replaced
+ * `layout.searchBar` points at these two names in this file, which is exactly
+ * where they should be readable — and not one line further out.
+ *
+ * If a second surface ever needs the row height, export it then, with that
+ * consumer in the same change.
+ */
+
 /** The whole search row. `DialogsActivity.java:295` SEARCH_FIELD_HEIGHT = 48, added at `:5344`. */
-export const SEARCH_ROW_HEIGHT = 48;
+const SEARCH_ROW_HEIGHT = 48;
 
 /** The visible pill inside it: 48 minus the 4dp inset on each side (`DialogsActivity.java:3294`). */
-export const SEARCH_PILL_HEIGHT = 40;
+const SEARCH_PILL_HEIGHT = 40;
 
 /** Both glyph boxes, leading and trailing (`FragmentSearchField.java:132`, `:159`). */
 const GLYPH_BOX = 24;

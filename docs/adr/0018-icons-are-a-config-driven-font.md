@@ -99,11 +99,35 @@ the font measurements are in `src/components/Icon.tsx`.
 
 **Unchanged.** Everything else in this ADR holds. Icons are still a subset font
 generated from `design/icons.json` with a `--check` drift gate, still not SVG and
-still not hand-drawn geometry. `ICON_FAMILY_FILLED` survives as a constant so a
-future family WITH a filled twin needs no call-site change; today it is the same
-face as `ICON_FAMILY`.
+still not hand-drawn geometry. `ICON_FAMILY_FILLED` survives as a constant, still
+imported and still read by `Icon.tsx:228`, so a future family WITH a filled twin
+needs no call-site change; today `icons.generated.ts` resolves it to the same
+`'Lucide'` face as `ICON_FAMILY`. The constant is live code; it is the FACE that
+is orphaned, and the two facts are easy to confuse.
+
+**The Cost section above is Material Symbols' arithmetic, not today's.** "7KB +
+9KB … both instances together" counted two FILL instances of a family that is no
+longer here. One face ships now: `assets/fonts/Lucide.ttf`, 17,136 bytes,
+prebuilt by `lucide-static` and renamed. The conclusion the section drew — a
+subset font is cheaper than one text weight — is unaffected.
+
+**The asset is still bundled, and that is a loose end rather than a decision.**
+`assets/fonts/PappalGlyphs.ttf` (804 bytes) and `assets/fonts/LICENSE-PappalGlyphs.txt`
+(10,897 bytes) are still in the tree and therefore still in the APK. Nothing
+names the face, and nothing needs to for it to ship: Gradle mounts the whole repo
+`assets/` directory as a source dir (`android/app/build.gradle`,
+`sourceSets.main.assets.srcDirs`), so every file in it is packaged whether or not
+a style resolves it. It is exactly the class of orphan `__tests__/theme.test.ts` › "bundles no face it
+does not reference" exists to catch (`Urbanist-Medium.ttf`, 73,320 bytes, shipped
+to every user), and that test allowlists this face BY NAME. Deleting it is not a
+hot-reload change: fonts are packaged at build time, so the removal needs a
+rebuild and a device pass, and it touches two more test files. Left for that
+change set; the allowlist comment now says so instead of claiming the face is in
+use.
 
 **Guards.** `__tests__/providerPhotos.test.ts` › "the favourite heart is an
 outline in both states" fails the build on a reimported `PappalGlyphs` or a
 literal `♥`, and pins the four-way overdraw. `docs/flows.md` › "Heart (locked
-pair)" carries the surface description.
+pair)" carries the surface description. `docs/ARCHITECTURE.md` › Design System
+and `docs/FEATURES.md` › Design System Components were restated on 2026-09-07;
+both had gone on describing the filled face for a day after it was removed.

@@ -73,11 +73,11 @@ const CLOSE_GLYPH = 40;
  * (2500). Past roughly 3x the bitmap has no detail left to reveal and the user
  * is magnifying interpolation.
  *
- * CREATIVE, flagged per RULE 1: the docs sanction any ceiling — RNGH says only
- * that "the distance between the fingers is reported as a scale factor"
- * (https://docs.swmansion.com/react-native-gesture-handler/docs/legacy-gestures/pinch-gesture)
- * and leaves the range to the app. 3 is the recommendation; the pixel argument
- * above is why it is not 6.
+ * CREATIVE, flagged per RULE 1: the docs sanction any ceiling — RNGH defines
+ * `scale` as "The scale factor relative to the points of the two touches in
+ * screen coordinates" and leaves the range to the app.
+ * https://docs.swmansion.com/react-native-gesture-handler/docs/gestures/use-pinch-gesture
+ * 3 is the recommendation; the pixel argument above is why it is not 6.
  */
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 3;
@@ -201,9 +201,7 @@ function fittedBox(
  * ------------------------------------------------------------------------
  * Three recognisers, in the shape RNGH's own gallery example uses: "if you want
  * to make a gallery app, you might want the user to be able to zoom, rotate and
- * pan around photos. You can do it with useSimultaneousGestures" —
- * `Gesture.Simultaneous` being the same relation through the object API this
- * codebase is written against.
+ * pan around photos. You can do it with useSimultaneousGestures".
  * https://docs.swmansion.com/react-native-gesture-handler/docs/composition/use-simultaneous-gestures
  *
  *   Race( Simultaneous(pinch, pan), tap )
@@ -216,17 +214,49 @@ function fittedBox(
  * `Race` for the tap, because the tap is the only one of the three whose intent
  * is mutually exclusive with the others: "Only one of the provided gestures can
  * become active at the same time. The first gesture to become active will cancel
- * the rest." A tap cannot activate before a drag or a zoom (RNGH's tap resolves
- * on the last finger UP), so racing means the moment either continuous gesture
- * activates the tap is cancelled and cannot also close the viewer on release.
- * https://docs.swmansion.com/react-native-gesture-handler/docs/legacy-gestures/gesture-composition
+ * the rest of the gestures." A tap cannot activate before a drag or a zoom
+ * (RNGH's tap resolves on the last finger UP), so racing means the moment either
+ * continuous gesture activates the tap is cancelled and cannot also close the
+ * viewer on release.
+ * https://docs.swmansion.com/react-native-gesture-handler/docs/composition/use-competing-gestures
  *
- * The composition is nested rather than flat, and that is load-bearing:
- * `SimultaneousGesture.prepare()` makes each member simultaneous with the raw
- * gestures of its SIBLINGS, so a flat `Simultaneous(pinch, pan, tap)` would make
- * the tap simultaneous with the pinch — see TAP_SLOP for what that costs.
- * `ComposedGesture.prepare()` passes the outer relation down without collapsing
- * the inner one (gestureComposition.ts).
+ * The composition is nested rather than flat, and that is load-bearing: the
+ * relation is all-to-all WITHIN a Simultaneous node, so a flat
+ * `Simultaneous(pinch, pan, tap)` would make the tap simultaneous with the
+ * pinch — see TAP_SLOP for what that costs. Nesting it under a Race keeps the
+ * pinch/pan pair simultaneous with each other and leaves the tap simultaneous
+ * with nothing. Traced in both implementations and identical in both:
+ * `SimultaneousGesture.prepare()` gives each member the raw gestures of its
+ * SIBLINGS while `ComposedGesture.prepare()` passes the outer relation down
+ * without collapsing the inner one (handlers/gestures/gestureComposition.ts),
+ * and `traverseAndConfigureRelations` reaches the same three relation sets by
+ * adding a Simultaneous child's tags on the way in and deleting them on the way
+ * out (v3/detectors/utils.ts).
+ *
+ * ------------------------------------------------------------------------
+ * WHY THIS IS STILL THE `Gesture.*` BUILDER AND NOT THE HOOKS
+ * ------------------------------------------------------------------------
+ * Stated because it is a deliberate departure, per RULE 1's "say so when
+ * departing" — the builder is deprecated and the hooks are the supported path.
+ * The installed RNGH 3.2.1 marks `Gesture` itself
+ * "@deprecated `Gesture` builder API is deprecated and will be removed in a
+ * future version of Gesture Handler. Please migrate to the new, hook-based API."
+ * (handlers/gestures/gestureObjects.d.ts:14) and names a replacement for every
+ * member used here: `usePinchGesture`, `usePanGesture`, `useTapGesture`,
+ * `useCompetingGestures`, `useSimultaneousGestures`. They are exported from the
+ * package root (`export * from './v3'`, index.d.ts:52), the callbacks map
+ * onStart->onActivate / onChange->onUpdate / onEnd(e, success)->onDeactivate
+ * with `!e.canceled`, and the installed react-native-worklets 4.6.0 babel plugin
+ * already autoworkletizes those hook config objects — so the migration compiles
+ * and is behaviour-preserving. It is NOT done here because it cannot be done
+ * here alone: `__tests__/contract.test.ts` › "limits gesture declarations"
+ * enumerates the gesture-declaring files by matching `/Gesture\.\w+\(/` against
+ * RAW source, so a migrated MediaViewer drops out of its `toEqual` list and
+ * fails a gate this file cannot edit. Turn.tsx, Sheet.tsx and SpotlightCard.tsx
+ * are on the builder too; all four plus that tripwire have to move together.
+ * Nothing is broken meanwhile — the v3 `GestureDetector` dispatches on
+ * `props.gesture instanceof ComposedGesture || instanceof BaseGesture` and
+ * routes builder gestures to the legacy detector (v3/detectors/GestureDetector.tsx).
  *
  * Tap-to-dismiss is an RNGH `Gesture.Tap` and no longer an RN `Pressable`, for
  * two reasons. It has to be inside the composition to race properly, and the
@@ -333,23 +363,29 @@ function MediaViewerView({
   /*
    * Zoom about the point between the fingers.
    *
-   * `onChange` rather than `onUpdate` because it adds `scaleChange`, "the ratio
-   * since the previous event" (pinchGesture.ts's changeEventCalculator), and
-   * that ratio is what makes the anchor arithmetic incremental: no saved origin
-   * scale, no drift when the clamp bites mid-gesture.
+   * `onChange` rather than `onUpdate` because it adds `scaleChange`, "The
+   * incremental change in scale since the last event frame", and that ratio is
+   * what makes the anchor arithmetic incremental: no saved origin scale, no
+   * drift when the clamp bites mid-gesture. (On the builder API the two are
+   * separate callbacks and only `onChange` is fed by
+   * `changeEventCalculator`, pinchGesture.ts; under the hooks `onUpdate` IS the
+   * one that carries `scaleChange`, because `transformPinchProps` installs that
+   * calculator unconditionally — v3/hooks/gestures/pinch/usePinchGesture.ts.)
    *
    * The anchor. A content point p is drawn at `q = centre + t + s*p`, so holding
    * the point under the focal fixed across a scale change of k = s1/s0 gives
    *
    *     t1 = t0*k + u*(1 - k),   u = focal - stage centre
    *
-   * `focalX`/`focalY` are documented as the "center anchor point of gesture" and
-   * `scale` as "the scale factor relative to the points of the two touches"; the
-   * same page's Remarks are explicit that the focal point must only be read
-   * "after gesture has activated, i.e. in onStart, onUpdate or onChange
-   * callbacks. Using it in onBegan may lead to unexpected behavior" — hence
-   * onChange and not onBegin.
-   * https://docs.swmansion.com/react-native-gesture-handler/docs/legacy-gestures/pinch-gesture
+   * `focalX`/`focalY` are documented as "Position expressed in points along X
+   * axis of center anchor point of gesture" and `scale` as "The scale factor
+   * relative to the points of the two touches in screen coordinates". The same
+   * page is explicit that the focal point must only be read after activation:
+   * "make sure to use it after the gesture had activated, i.e. in `onActivate`
+   * or `onUpdate` callbacks. Using it in `onBegin` may lead to unexpected
+   * behavior" — which is why this reads it in `onChange` (the builder's
+   * post-activation callback) and never in `onBegin`.
+   * https://docs.swmansion.com/react-native-gesture-handler/docs/gestures/use-pinch-gesture
    */
   const pinch = Gesture.Pinch()
     .onStart(() => {
@@ -385,9 +421,11 @@ function MediaViewerView({
    * already-active pan, not merely failing one that has not activated. So the
    * instant a second finger lands the drag stops and the zoom takes over, and
    * the two cannot both move the photo. `averageTouches` is therefore moot —
-   * that flag exists to make a MULTI-finger Android pan track the centre of mass
-   * instead of the last finger down, and this pan is single-pointer by
-   * construction. https://docs.swmansion.com/react-native-gesture-handler/docs/legacy-gestures/pan-gesture
+   * that flag exists to change Android's default of calculating "translation
+   * values based on the position of the leading pointer" to "the averaged
+   * position of all active pointers", and this pan is single-pointer by
+   * construction.
+   * https://docs.swmansion.com/react-native-gesture-handler/docs/gestures/use-pan-gesture
    */
   const pan = Gesture.Pan()
     .maxPointers(1)

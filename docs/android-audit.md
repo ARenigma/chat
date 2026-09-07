@@ -299,14 +299,14 @@ Reference: current `com.whatsapp` installed on a Samsung SM-S908E, inspected
 side-by-side with Pappal on the same display. This supersedes generic web palette
 articles; the installed app paints different values.
 
-| Role                    | WhatsApp measured        | Pappal measured               | Decision                                                                                                              |
-| ----------------------- | ------------------------ | ----------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| App / list base         | `#0A1014`                | `#0B141A`                     | Keep Pappal. It is one small luminance step lighter and preserves the product decision against AMOLED-black surfaces. |
-| Search / composer       | `#23282C`                | `#202C33`                     | Close structural match; Pappal is slightly bluer.                                                                     |
-| Overflow menu           | `#12181C`                | `#111B21` token               | Close structural match.                                                                                               |
-| Incoming bubble         | `#20272B`                | `#202C33`                     | Close; Pappal is slightly bluer/brighter.                                                                             |
-| Primary action / unread | `#21C063`                | `#F2543D`                     | Intentional brand departure: WhatsApp green vs Pappal coral.                                                          |
-| Incoming group avatar   | 26dp before first bubble | 26dp slot before first bubble | Fixed this pass: Pappal now passes the peer image URI instead of always rendering an initial.                         |
+| Role                    | WhatsApp measured        | Pappal measured                 | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ----------------------- | ------------------------ | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| App / list base         | `#0A1014`                | `#0B141A`                       | Keep Pappal. It is one small luminance step lighter and preserves the product decision against AMOLED-black surfaces.                                                                                                                                                                                                                                                                                                                                                                  |
+| Search / composer       | `#23282C`                | `#202C33`                       | Close structural match; Pappal is slightly bluer.                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Overflow menu           | `#12181C`                | `#111B21` token                 | Close structural match.                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Incoming bubble         | `#20272B`                | `#202C33`                       | Close; Pappal is slightly bluer/brighter.                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Primary action / unread | `#21C063`                | `#F2543D`                       | Intentional brand departure: WhatsApp green vs Pappal coral.                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Incoming group avatar   | 26dp before first bubble | **none — 0dp** since 2026-09-07 | **Superseded.** This row read "26dp slot before first bubble / Fixed this pass: Pappal now passes the peer image URI instead of always rendering an initial." The slot is gone: a deliberate, stated departure from the benchmark, decided by Amit ("Remove it, align the grid") and recorded in [ADR-0028](adr/0028-the-transcript-carries-no-peer-avatar.md). The 26dp measurement of WhatsApp is unchanged and still correct — it is a GROUP avatar, and Pappal is exclusively 1:1. |
 
 Structural findings: WhatsApp places time and ticks together at the bubble's
 bottom-right; Pappal already follows that metadata row. WhatsApp's current
@@ -315,6 +315,21 @@ one-to-one bubbles use a tighter radius and directional tail; Pappal's symmetric
 uses a reaction pill plus action app bar without a dimmed backdrop; Pappal's
 anchored vertical menu and protected-card cutout are an explicit product
 departure requested on 2026-08-30.
+
+**Correction, 2026-09-07.** The avatar row above was the one finding in this
+benchmark that got applied without asking what it was a measurement OF. WhatsApp
+reserves that 26dp in a thread that can hold more than two people, where the
+avatar answers "who said this"; Pappal's transcript is 1:1 by construction and
+the question never arises, so the slot bought nothing and cost the incoming
+bubble its alignment — 16 + 26 + 8 = 50dp of left inset against the composer
+capsule's 16dp, which is neither a consistent keyline nor a multiple of 8. Both
+of those are things the platform's own layout guidance asks for: "Provide
+consistent alignment between similar content and UI elements" and "Establish
+consistent spacing between like elements"
+([layout basics](https://developer.android.com/design/ui/mobile/guides/layout-and-content/layout-basics)),
+and "If using a baseline grid, stick to measurements of 4 and 8"
+([grids and units](https://developer.android.com/design/ui/mobile/guides/layout-and-content/grids-and-units)).
+Full decision and arithmetic: [ADR-0028](adr/0028-the-transcript-carries-no-peer-avatar.md).
 
 ## Screen transition motion, 2026-09-02
 

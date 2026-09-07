@@ -118,6 +118,42 @@ const PAIRS = [
     target: 4.5,
     what: 'the label on your own bubble',
   },
+  /*
+   * The bright accent, registered because it must NEVER carry a label.
+   *
+   * This pair's ABSENCE was the defect. `text/onAccent` was measured against
+   * `bg/accentStrong` above and against nothing else, so the file reported "56
+   * pairs meet WCAG AA targets" while white 12sp and 14sp labels shipped on
+   * `bg/accent` on five surfaces — a spotlight CTA, the talk-time meter's
+   * Recharge pill, the wallet ₹ disc, a recharge pack ribbon and the selected
+   * age chip. A gate that only measures the pairs somebody remembered to list
+   * cannot report the pair somebody forgot, so the forgotten one is listed.
+   *
+   * developer.android.com/guide/topics/ui/accessibility/apps ("Increase text
+   * visibility"): "If the text is smaller than 18sp, or if the text is bold and
+   * smaller than 14sp, use foreground and background colors that result in a
+   * color contrast ratio of at least 4.5:1. For all other text, set the color
+   * contrast ratio to at least 3:1." Every one of those five labels was under
+   * 18sp, so 4.5:1 was the floor and 3.44:1 light / 2.59:1 dark was the reality.
+   *
+   * `target` is the measured floor, not a legibility threshold — the same move
+   * `border/hairline` on `bg/raised` makes at 1.2. It cannot be 4.5, and it
+   * cannot even be the 3:1 large-text step, because in dark mode the accent is a
+   * LIGHT blue (#5FA3DE) and 2.59:1 clears neither. There is no size at which
+   * white is legible on this fill in dark, and no ink in the palette rescues it
+   * either (`text/primary` on `bg/accent` is 4.95:1 light but 2.70:1 dark, and
+   * in dark `text/primary` IS white). So the honest reading is not "large text
+   * only" — it is that this pair has no permitted use, which is what
+   * design/tokens.json says on the token itself.
+   */
+  {
+    fg: 'text/onAccent',
+    bg: 'bg/accent',
+    target: 2.5,
+    what: 'NOT A PERMITTED PAIR — the bright accent under a white label',
+    exempt:
+      'registered at its measured floor rather than at a legibility target, because no text may sit on bg/accent at any size in either mode — bg/accentStrong (5.19:1 / 6.13:1) is the step that carries a label, and this row exists so the number is printed and a palette tune cannot move it unnoticed',
+  },
   {
     fg: 'text/onInverse',
     bg: 'bg/inverse',

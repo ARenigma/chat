@@ -643,6 +643,14 @@ const makeStyles = (t: Theme) =>
     },
     // Corner ribbon flush to the top-right corner (folded-tab look): the outer
     // corner matches the card radius, the inner corner is rounded. Not a chip.
+    //
+    // Same fill as `cardOn` above, and for the same reason spelled out there:
+    // `ribbonText` is 12dp on this ribbon, and the Android rule quoted above
+    // puts anything under 18sp at 4.5:1. The card moved to bg/accentStrong in an
+    // earlier pass and this ribbon was left on bg/accent (3.44:1 light / 2.59:1
+    // dark), which is the same defect one view up — "Popular" / "Best value" is
+    // the whole content of the ribbon, so if the word is not readable the ribbon
+    // is doing nothing but tinting a corner.
     ribbon: {
       position: 'absolute',
       top: 0,
@@ -652,7 +660,7 @@ const makeStyles = (t: Theme) =>
       borderTopRightRadius: TOKENS.radius.md,
       borderBottomLeftRadius: TOKENS.radius.md,
       borderCurve: 'continuous',
-      backgroundColor: t.color.bg.accent,
+      backgroundColor: t.color.bg.accentStrong,
     },
     ribbonOn: {
       backgroundColor: t.color.bg.base,
@@ -773,13 +781,20 @@ const makeCompactStyles = (t: Theme) =>
       borderColor: t.color.border.hairline,
       backgroundColor: t.color.bg.raised,
     },
+    // The ₹ disc, and the ₹ is TEXT, not an icon: `balanceMarkText` is
+    // labelMediumEmphasized (12dp Bold) with `allowFontScaling={false}`, so the
+    // 4.5:1 floor applies at a fixed 12dp — developer.android.com/guide/topics/
+    // ui/accessibility/apps, "If the text is smaller than 18sp ... at least
+    // 4.5:1". A glyph disc could have kept the bright coral at the 3:1 non-text
+    // minimum in light; a glyph disc with a character in it cannot, and it
+    // measured 3.44:1 light / 2.59:1 dark. bg/accentStrong is 5.19:1 / 6.13:1.
     balanceMark: {
       width: 32,
       height: 32,
       borderRadius: 16,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: t.color.bg.accent,
+      backgroundColor: t.color.bg.accentStrong,
     },
     balanceMarkText: {
       ...TOKENS.typography.labelMediumEmphasized,

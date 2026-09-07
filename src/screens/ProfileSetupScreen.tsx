@@ -403,9 +403,32 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
       minHeight: TOKENS.interaction.minTarget,
     },
+    /*
+     * The selected fill is the DEEP step of the accent, not the bright one.
+     *
+     * `ageChipLabelSelected` is `text/onAccent` over this, and
+     * titleMediumEmphasized is 16dp Bold.
+     * developer.android.com/guide/topics/ui/accessibility/apps ("Increase text
+     * visibility"): "If the text is smaller than 18sp, or if the text is bold
+     * and smaller than 14sp, use foreground and background colors that result
+     * in a color contrast ratio of at least 4.5:1. For all other text, set the
+     * color contrast ratio to at least 3:1." 16dp is smaller than 18sp, so this
+     * label takes 4.5:1 — being bold does not promote it, the bold clause only
+     * pulls MORE text down to 4.5 (anything bold under 14sp).
+     *
+     * bg/accent measured 3.44:1 light and 2.59:1 dark here, which fails 4.5:1 in
+     * both and the 3:1 fallback in dark as well. design/tokens.json says it on
+     * the token: bg/accent "must NEVER sit under small white text; that is what
+     * bg/accentStrong is for". bg/accentStrong is 5.19:1 / 6.13:1.
+     *
+     * The fill moves rather than the label because this surface is light and the
+     * chip's fill IS the selection signal — and because the only ink that would
+     * work is `text/primary`, which is 4.95:1 light but 2.70:1 dark (in dark it
+     * IS white), so it is not an answer, just a different failure.
+     */
     ageChipSelected: {
-      backgroundColor: t.color.bg.accent,
-      borderColor: t.color.bg.accent,
+      backgroundColor: t.color.bg.accentStrong,
+      borderColor: t.color.bg.accentStrong,
     },
     ageChipLabel: {
       ...TOKENS.typography.titleMediumEmphasized,
@@ -516,9 +539,16 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
       backgroundColor: t.color.bg.sunken,
     },
+    // Same fill as `ageChipSelected`, for a weaker but still real reason: the
+    // 14dp check inside is a non-text mark at the 3:1 minimum rather than a
+    // label at 4.5:1, and bg/accent clears 3:1 in light (3.44:1) but not in dark
+    // (2.59:1) — so the tick was the faintest thing on the row in the theme
+    // where it mattered most. It is also the same "on" state as the age chip one
+    // screen section up, and two selected affordances on one screen answering to
+    // two different corals is how a palette stops meaning anything.
     checkboxOn: {
-      backgroundColor: t.color.bg.accent,
-      borderColor: t.color.bg.accent,
+      backgroundColor: t.color.bg.accentStrong,
+      borderColor: t.color.bg.accentStrong,
     },
     termsText: {
       flex: 1,

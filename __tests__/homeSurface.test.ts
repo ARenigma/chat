@@ -55,8 +55,17 @@ describe('the search field is the one Telegram actually ships', () => {
      * The 48dp row is also the Android minimum touch target, which the 40dp pill
      * is not — https://developer.android.com/guide/topics/ui/accessibility/apps
      */
-    expect(bar).toContain('export const SEARCH_ROW_HEIGHT = 48');
-    expect(bar).toContain('export const SEARCH_PILL_HEIGHT = 40');
+    /*
+     * Not `export const`: neither name ever had a consumer outside this file, and
+     * an unread export reads as the app's declared geometry to whoever greps for
+     * it next — the same failure that got `layout.searchBar` deleted from
+     * design/tokens.json. The VALUES are still pinned here; only their reach
+     * changed, and the `not.toContain('export const SEARCH_')` below is what stops
+     * them drifting back out without a consumer arriving with them.
+     */
+    expect(bar).toContain('const SEARCH_ROW_HEIGHT = 48');
+    expect(bar).toContain('const SEARCH_PILL_HEIGHT = 40');
+    expect(bar).not.toContain('export const SEARCH_');
     expect(bar).toContain('const GLYPH_BOX = 24');
     expect(bar).toContain('const GLYPH_INSET = 12');
     expect(styles).toContain('height: SEARCH_ROW_HEIGHT');
@@ -309,13 +318,20 @@ describe('search MOVES the way Telegram moves it, not only measures like it', ()
 
   it('stacks the two layers, so an exiting list cannot halve the column', () => {
     /*
-     * FlashList styles its own scroll view `flex: 1` for a vertical list
-     * (@shopify/flash-list RecyclerView.js:340) and a Reanimated `exiting`
+     * FlashList gives its own ROOT view `flex: 1` whenever the list is vertical
+     * — `flex: horizontal ? undefined : 1` on the outer `CompatView`,
+     * @shopify/flash-list@2.3.2 src/recyclerview/RecyclerView.tsx:537 (compiled
+     * to dist/recyclerview/RecyclerView.js:340) — and a Reanimated `exiting`
      * animation keeps the leaving view in the layout tree until it finishes. As
      * plain flex siblings the outgoing and incoming lists would each take HALF
      * the column for the whole 200ms, so the swap would read as a squash rather
      * than a dissolve. The reference stacks them too: `searchViewPager` and
      * `viewPages[0]` are siblings in one FrameLayout.
+     *
+     * This comment used to cite a bare "RecyclerView.js:340" with no path, which
+     * a reader cannot resolve — there is no RecyclerView.js at the package root
+     * — and which described the SCROLL VIEW rather than the wrapper the flex
+     * actually sits on. The claim held; the pointer did not.
      */
     expect(home).toContain('entering={searchResultsIn}');
     expect(home).toContain('exiting={searchResultsOut}');
@@ -325,6 +341,152 @@ describe('search MOVES the way Telegram moves it, not only measures like it', ()
     const stack = home.slice(home.indexOf('swap: {'), home.indexOf('state: {'));
     expect(stack).toContain('flex: 1');
     expect(stack).toContain('StyleSheet.absoluteFill');
+  });
+});
+
+describe('a citation resolves to what the comment claims', () => {
+  /*
+   * The premise of this whole change set is that a wrong pointer is worse than
+   * no pointer, because a reader checks it and is misled. Two of the three the
+   * audit found are in files this suite already covers, and each gets the
+   * strongest gate its source admits.
+   */
+
+  it('checks the flash-list line against the installed package, not against itself', () => {
+    /*
+     * The stacking comment justifies itself with FlashList's own `flex: 1`. It
+     * used to cite "@shopify/flash-list RecyclerView.js:340" — no path, and
+     * there is no RecyclerView.js at the package root, so nobody could resolve
+     * it. The claim was true; it lives on the outer `CompatView` in
+     * src/recyclerview/RecyclerView.tsx, compiled to
+     * dist/recyclerview/RecyclerView.js:340.
+     *
+     * So the line number is PARSED OUT of the comment and checked against the
+     * installed source. That makes this a real gate rather than the repo
+     * grepping its own documentation: it goes red if the citation is wrong, and
+     * it goes red if a flash-list upgrade moves the line — which is precisely
+     * when the citation would have gone stale without anyone noticing.
+     */
+    const home = read('src/screens/HomeScreen.tsx');
+    expect(home).not.toContain('(@shopify/flash-list RecyclerView.js:340)');
+    const cited = /src\/recyclerview\/RecyclerView\.tsx:(\d+)/.exec(home)?.[1];
+    expect(cited).toBeDefined();
+    const source = read(
+      'node_modules/@shopify/flash-list/src/recyclerview/RecyclerView.tsx',
+    ).split('\n');
+    expect(source[Number(cited) - 1]).toContain('flex: horizontal ? undefined : 1');
+  });
+
+  it('retires the wrong DialogsActivity line for the 1.05 away scale', () => {
+    /*
+     * `:7602-7603` is inside `searchAnimator`'s `onAnimationEnd` listener — a
+     * closing brace and `setDialogsListFrozen(false)` — and sets no scale at
+     * all. The 1.05 pair is at `:7573-7574`, guarded by `if (!budget)` at
+     * `:7572`, with the pager initialised to the same value at `:13284-13285`.
+     * Read against the 12.10.1 (7038) tree, clone 62b56a07.
+     *
+     * A `not.toContain` on the KNOWN-WRONG string, deliberately. The reference
+     * tree is not in this repo, so nothing here can verify the right line the
+     * way the flash-list gate above does; and a gate that grepped for the RIGHT
+     * string would be matching this repo's own documentation, which is the false
+     * gate this file's header exists to warn about. Forbidding the retired
+     * pointer cannot pass by accident, and it is what stops a revert.
+     *
+     * Matched WITH the file prefix, `DialogsActivity.java:7602-7603`, which is
+     * the citation FORM the reverted comment carries. The correction note in
+     * motion.ts names the retired number in prose as a bare `:7602-7603` so the
+     * history stays readable without tripping its own gate.
+     */
+    const raw = read('src/theme/motion.ts');
+    expect(raw).not.toContain('DialogsActivity.java:7602-7603');
+    expect(raw).toContain('DialogsActivity.java:7573-7574');
+  });
+});
+
+describe('every control on Home is a real 48dp box, not slop a parent clips', () => {
+  const home = withoutComments(read('src/screens/HomeScreen.tsx'));
+
+  /*
+   * Android's floor, quoted so the number in these tests is never a preference:
+   * "we recommend that each interactive UI element have a focusable area, or
+   * touch target size, of at least 48dp x 48dp. Larger is even better."
+   * https://developer.android.com/guide/topics/ui/accessibility/apps
+   *
+   * NOT taken from the Telegram Mini Apps UI kit, which was mined as a reference
+   * while this was being written and which cannot support a claim about Android
+   * sizes at all: EVERY control it ships is under 48 (icon buttons 32/40/44, the
+   * segmented track 44, the small button 38) and its "Android" icon-button set is
+   * dimensionally identical to its iOS set, so the kit carries no Android
+   * provenance for dimensions and must not be cited to excuse a sub-48 target.
+   */
+  it('starts from the platform minimum, as a value', () => {
+    expect(TOKENS.interaction.minTarget).toBe(48);
+  });
+
+  it('gives each Explore tab a 48dp box with the indicator on its bottom edge', () => {
+    /*
+     * The defect: `tab` declared no height, so the box was its content — the
+     * label's 24dp lineHeight + a 4dp gap + the 2dp rule = 30dp — and the
+     * `Pressable` around it passed no `size`, taking Pressable's sizeless
+     * default of `ceil(minTarget / 6)` slop (Pressable.tsx:231-234). The
+     * arithmetic below is spelled out as VALUES rather than asserted as source
+     * text, so this cannot be satisfied by a comment and cannot silently pass if
+     * the type scale moves: 30 + 8 + 8 = 46, two dp short even before the
+     * clipping, and "The touch area never extends past the parent view bounds"
+     * (https://reactnative.dev/docs/view#hitslop) took more of it off the top
+     * because the strip's own box was only 30 + 12 tall.
+     *
+     * 48 is also Material's own text-only tab height — `DEFAULT_HEIGHT = 48` in
+     * material-components-android lib/java/com/google/android/material/tabs/
+     * TabLayout.java, against DEFAULT_HEIGHT_WITH_TEXT_ICON = 72 — so the fix is
+     * the component's spec height, not an accessibility patch on a smaller one.
+     * (Read from the Material source: m3.material.io is client-rendered and
+     * returns nothing but a title to a fetch.)
+     */
+    const rule = home.slice(home.indexOf('    tabRule: {'), home.indexOf('    tabRuleOn: {'));
+    const ruleHeight = Number(/height: (\d+)/.exec(rule)?.[1]);
+    expect(ruleHeight).toBe(2);
+    const content =
+      TOKENS.typography.titleMediumEmphasized.lineHeight +
+      TOKENS.space['2xs'] +
+      ruleHeight;
+    const sizelessSlop = Math.ceil(TOKENS.interaction.minTarget / 6);
+    expect(content).toBeLessThan(TOKENS.interaction.minTarget);
+    expect(content + sizelessSlop * 2).toBeLessThan(TOKENS.interaction.minTarget);
+
+    const tab = home.slice(home.indexOf('    tab: {'), home.indexOf('    tabLabel: {'));
+    expect(tab).toContain('minHeight: TOKENS.interaction.minTarget');
+    // Bottom edge, where TabLayout draws its own indicator. Centring it would
+    // meet the target and still leave the underline floating mid-box.
+    expect(tab).toContain("justifyContent: 'flex-end'");
+  });
+
+  it('gives the button that opens search — and the one that leaves it — a 48dp box', () => {
+    /*
+     * Both nav controls share `styles.navIcon`, and it was `width: 28, height:
+     * 40` with `size={28}` on the Pressable, i.e. `max(8, ceil((48 - 28) / 2))
+     * = 10` of hitSlop (Pressable.tsx:231-234) hung on a content-sized parent.
+     * The search glyph is the FIRST child of `navTrailing`, whose left edge IS
+     * the glyph box's left edge, so that side is clipped to nothing —
+     * https://reactnative.dev/docs/view#hitslop. Exactly the defect the search
+     * field's clear control had, and it takes the same fix: a laid-out
+     * `interaction.minTarget` box, declared on the style AND on the Pressable so
+     * neither can shrink the other.
+     */
+    const navIcon = home.slice(home.indexOf('    navIcon: {'), home.indexOf('    scroll: {'));
+    expect(navIcon).toContain('width: TOKENS.interaction.minTarget');
+    expect(navIcon).toContain('height: TOKENS.interaction.minTarget');
+    // No raw box left behind for the token to shadow.
+    expect(navIcon).not.toMatch(/width: \d/);
+    expect(navIcon).not.toMatch(/height: \d/);
+    // Both Pressables that wear it ask for that same 48, so the style and the
+    // component agree instead of one of them quietly deciding — and the 28 they
+    // used to pass cannot creep back under a 48dp style and look correct.
+    expect(home.match(/size=\{TOKENS\.interaction\.minTarget\}/g)?.length).toBe(2);
+    expect(home).not.toContain('size={28}');
+    // And Home reaches a target by laying out a box, never by hanging slop off
+    // one, which is the rule SearchBar.tsx states for itself.
+    expect(home).not.toContain('hitSlop');
   });
 });
 
