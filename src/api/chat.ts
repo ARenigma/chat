@@ -1,5 +1,6 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { AppState } from 'react-native';
 import { supabase } from '../lib/supabase';
 import type {
   ClaimResult,
@@ -14,10 +15,17 @@ import { errorTick, tick } from '../lib/haptics';
 import {
   PENDING_PREFIX,
   insertOptimistic,
+  markFailed,
   settleOptimistic,
   type TranscriptMessage,
 } from '../lib/transcript';
 import { newUuid } from '../lib/ids';
+import {
+  dequeue,
+  enqueue,
+  pendingFor,
+  recordAttempt,
+} from '../lib/outboxStore';
 import { track } from '../lib/telemetry';
 import { useStore } from '../store/useStore';
 import { messagesKey } from './realtime';
@@ -245,7 +253,19 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
   const openRefill = useStore(s => s.openRefill);
 
   return useCallback(
-    async (raw: string, replyToId: string | null = null): Promise<boolean> => {
+    async (
+      raw: string,
+      replyToId: string | null = null,
+      /*
+       * A REPLAY of an already-queued send, rather than a new one.
+       *
+       * Supplied by `useOutboxReplay` when draining the persisted queue: the
+       * nonce and timestamp must be the ORIGINALS, or the replay is a different
+       * message. Reusing the nonce is what makes it safe — migration 081
+       * collapses it if the first attempt in fact landed.
+       */
+      resume?: { readonly nonce: string; readonly createdAt: string },
+    ): Promise<boolean> => {
       const body = raw.trim();
       if (body === '' || conversationId === undefined || selfId === undefined) {
         return false;
@@ -269,7 +289,7 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
        * rows 5 ms apart in production. A uuid cannot collide, and reusing it as
        * the nonce means the retry of a send is provably the same send.
        */
-      const nonce = newUuid();
+      const nonce = resume?.nonce ?? newUuid();
       const pendingId = `${PENDING_PREFIX}${nonce}`;
       const optimistic: Message = {
         id: pendingId,
@@ -299,7 +319,10 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
         session_id: null,
         // A human send is always live; only the server writes automated openers.
         origin: 'live',
-        created_at: new Date().toISOString(),
+        // A replay keeps its original timestamp, so a message written before a
+        // crash sorts where it was written rather than jumping to the bottom of
+        // the thread when it finally lands.
+        created_at: resume?.createdAt ?? new Date().toISOString(),
         read_at: null,
       };
 
@@ -307,6 +330,30 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
         insertOptimistic(prev ?? [], optimistic),
       );
       setSending(true);
+
+      /*
+       * Persist the intent BEFORE the request. That ordering is the whole
+       * mechanism, and it is Telegram's: a row at `send_state = 1` exists
+       * before the network is touched, so a process kill in the window between
+       * tapping send and the server answering loses nothing
+       * (MessagesStorage.java:551, replayed from ApplicationLoader.java:259).
+       *
+       * Safe to replay because the nonce goes with it — see `lib/outbox.ts`.
+       */
+      if (resume === undefined) {
+        enqueue({
+          nonce,
+          conversationId,
+          body,
+          replyToId: replyToId ?? null,
+          createdAt: optimistic.created_at,
+          attempts: 1,
+        });
+      } else {
+        // Already queued; count the attempt instead of re-adding it, so the
+        // replay cap in `useOutboxReplay` can actually be reached.
+        recordAttempt(nonce);
+      }
 
       const { data, error } = await supabase.rpc('send_message_idempotent', {
         p_client_nonce: nonce,
@@ -319,8 +366,21 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
       const result = sendResultFrom(data, error);
 
       if (result === null || !result.success) {
+        /*
+         * The bubble STAYS, marked failed. It used to be spliced out, which
+         * meant the member watched their message vanish and had to retype it.
+         *
+         * The outbox entry stays too — but only for a failure that retrying
+         * could plausibly fix. A refusal (blocked, rate limited, no balance)
+         * would replay forever against a server that will keep saying no, so
+         * those are dropped from the queue and left on screen as failed.
+         */
+        const worthRetrying = result === null || result.error === undefined;
+        if (!worthRetrying) {
+          dequeue(nonce);
+        }
         queryClient.setQueryData<TranscriptMessage[]>(key, prev =>
-          settleOptimistic(prev ?? [], pendingId, null),
+          markFailed(prev ?? [], pendingId),
         );
         const code = result?.error;
         // The rejection *reason* is the signal worth watching: a spike in
@@ -360,6 +420,8 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
             }
           : null;
 
+      // Landed — or was collapsed by the nonce, which is the same outcome.
+      dequeue(nonce);
       queryClient.setQueryData<TranscriptMessage[]>(key, prev =>
         settleOptimistic(prev ?? [], pendingId, confirmed),
       );
@@ -440,4 +502,83 @@ export function useClaimTokens() {
     },
     onError: () => setNotice('Refill unavailable right now.'),
   });
+}
+
+/**
+ * How many times a queued send is replayed automatically before it is left to
+ * the member.
+ *
+ * A cap, not a retry policy. Anything still failing after five launches is
+ * failing for a reason a sixth attempt will not change, and an uncapped replay
+ * on every mount is an infinite loop with a network call in it. The bubble
+ * stays on screen marked failed, so nothing is lost — it just stops trying by
+ * itself, which is the honest state to be in.
+ */
+export const REPLAY_LIMIT = 5;
+
+/**
+ * Drain the persisted outbox for this conversation.
+ *
+ * Telegram's `checkUnsentMessages()` (ApplicationLoader.java:259), scoped to
+ * one thread rather than run globally at boot: we have no local transcript to
+ * replay into, so a queued send is only meaningful once the screen that shows
+ * it is open. That is a real difference from Telegram, and it means a queued
+ * message is sent when the member next opens THAT chat rather than at launch.
+ *
+ * Runs on mount and whenever the app returns to the foreground — the two
+ * moments at which connectivity has plausibly changed. Deliberately NOT on a
+ * timer: a queue that retries on a clock is a queue that retries while the
+ * member is watching it fail.
+ */
+export function useOutboxReplay(
+  conversationId: string | undefined,
+  send: (
+    raw: string,
+    replyToId?: string | null,
+    resume?: { readonly nonce: string; readonly createdAt: string },
+  ) => Promise<boolean>,
+): void {
+  /*
+   * `send` through a ref. It is recreated on most renders, and taking it as a
+   * dependency would re-run the drain on every one of them — replaying the
+   * queue dozens of times per second while the screen is alive.
+   */
+  const sendRef = useRef(send);
+  sendRef.current = send;
+
+  useEffect(() => {
+    if (conversationId === undefined) {
+      return;
+    }
+    let cancelled = false;
+
+    const drain = () => {
+      for (const entry of pendingFor(conversationId)) {
+        if (entry.attempts >= REPLAY_LIMIT) {
+          continue;
+        }
+        if (cancelled) {
+          return;
+        }
+        // Sequential would be tidier but a queue of two or three short strings
+        // does not justify serialising them, and each is independently
+        // idempotent, so an interleaved failure cannot corrupt another.
+        void sendRef.current(entry.body, entry.replyToId, {
+          nonce: entry.nonce,
+          createdAt: entry.createdAt,
+        });
+      }
+    };
+
+    drain();
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') {
+        drain();
+      }
+    });
+    return () => {
+      cancelled = true;
+      sub.remove();
+    };
+  }, [conversationId]);
 }

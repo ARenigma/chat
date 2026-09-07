@@ -120,7 +120,18 @@ export function useSessionRealtime(conversationId: string | undefined): void {
         invalidate,
       )
       .subscribe(status => {
-        if (status === 'SUBSCRIBED') invalidate();
+        // CHANNEL_ERROR / TIMED_OUT as well as SUBSCRIBED: the same omission as
+        // in realtime.ts, and worse here, because the state this channel
+        // carries is whether a paid session is running. A channel that fails
+        // without ever resubscribing would leave the screen believing a session
+        // is live — or absent — indefinitely.
+        if (
+          status === 'SUBSCRIBED' ||
+          status === 'CHANNEL_ERROR' ||
+          status === 'TIMED_OUT'
+        ) {
+          invalidate();
+        }
       });
 
     return () => {

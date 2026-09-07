@@ -45,6 +45,17 @@ export type TranscriptMessage = Message & {
    * settles, at which point the bubble re-resolves through a signed URL.
    */
   localImageUri?: string;
+  /**
+   * The send failed and the bubble is STAYING, with a retry affordance.
+   *
+   * Set instead of removing the row. Deleting the bubble on failure was the old
+   * behaviour (`settleOptimistic(..., null)`) and it is the worst of the
+   * options: the member watches what they wrote disappear, learns the app eats
+   * messages, and has to retype it. Telegram keeps the row at
+   * `MESSAGE_SEND_STATE_SEND_ERROR` with a tap-to-retry mark
+   * (MessageObject.java:135) and so do we.
+   */
+  failed?: boolean;
 };
 
 /** Marks a locally-created row that the server has not yet confirmed. */
@@ -52,6 +63,23 @@ export const PENDING_PREFIX = 'pending-';
 
 export function isPending(message: TranscriptMessage): boolean {
   return message.id.startsWith(PENDING_PREFIX);
+}
+
+/**
+ * Mark a pending row as failed, keeping it in place.
+ *
+ * The counterpart to `settleOptimistic(list, id, confirmed)`. That function
+ * still removes the row when handed `null`, because two callers legitimately
+ * want a withdrawal — a voice upload that never produced an object has nothing
+ * to retry — but the text and media SEND failures now land here instead.
+ */
+export function markFailed(
+  list: readonly TranscriptMessage[],
+  pendingId: string,
+): TranscriptMessage[] {
+  return list.map(row =>
+    row.id === pendingId ? { ...row, failed: true } : row,
+  );
 }
 
 /** Newest-first insertion point for `created_at`. */
