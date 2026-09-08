@@ -111,13 +111,23 @@ describe('the explore row is Astrotalk anatomy, measured rather than eyeballed',
     expect(style('separator')).toContain('TOKENS.space.md + ROW_SEPARATOR_INSET');
   });
 
-  it('renders no rating count line that changes the row height', () => {
-    // Both branches produce a line. A provider with no reviews must occupy the
-    // same 16dp as one with a thousand, or the left column measures differently
-    // per row and PROVIDER_ROW_HEIGHT is a promise the row does not keep.
+  it('renders one count line at every rating count, including zero', () => {
+    /*
+     * A provider with no reviews must occupy the same 16dp as one with a
+     * thousand, or the left column measures differently per row and
+     * PROVIDER_ROW_HEIGHT is a promise the row does not keep.
+     *
+     * There is now no branch at all, which is the stronger form: the count is
+     * unconditional and only the plural changes. The first device build had a
+     * branch, and its zero case read "no ratings yet" — fourteen characters in
+     * a 76dp column, so the Redmi rendered "no ratings …". An ellipsis on a
+     * fixed-width label is the label being wrong, not the width.
+     */
     const jsx = code(ROW);
-    expect(jsx).toContain("'no ratings yet'");
-    expect(jsx).toMatch(/rating_count > 0[\s\S]{0,160}no ratings yet/);
+    expect(jsx).not.toContain('no ratings');
+    expect(jsx).toMatch(/rating_count === 1 \? 'rating' : 'ratings'/);
+    // The star line is what says "New"; the count line is only ever a number.
+    expect(jsx).toContain("'★ New'");
   });
 });
 
@@ -158,7 +168,10 @@ describe('the gesture conflict is removed rather than tuned', () => {
     // words, so a TalkBack user gets them in one utterance rather than as three
     // unlabelled stops.
     expect(code('src/components/MetaChip.tsx')).toContain('accessible={false}');
-    expect(code(ROW)).toMatch(/tags\.length > 0 \? tags\.join\(', '\) : null/);
+    // The spoken label carries whichever the line is showing — the tags when
+    // there are tags, the headline when there are not — so a TalkBack user
+    // hears the same fact a sighted one reads, in one utterance.
+    expect(code(ROW)).toMatch(/tags\.length > 0 \? tags\.join\(', '\) : headline/);
   });
 });
 
@@ -329,5 +342,57 @@ describe('MetaChip keeps flexing, and that was a decision', () => {
     expect(chip).not.toContain('minWidth');
     // The bounded, wrapping call site the ban protects.
     expect(code('src/components/ProviderCard.tsx')).toContain("flexWrap: 'wrap'");
+  });
+});
+
+describe('the tag line always has something in it', () => {
+  /*
+   * BOTH ASSERTIONS HERE COME FROM A DEVICE BUILD, not from review, and neither
+   * would have failed anything before it. That is the whole of RULE 2 in one
+   * suite: `npm run verify` was green, 1608 tests passed, and the row on the
+   * Redmi was visibly wrong in two ways.
+   */
+  it('falls back to the headline, so an untagged provider is not a 24dp hole', () => {
+    /*
+     * On the first Redmi build every row had a gap where the pills go — 083 is
+     * not on prod, so no provider has tags, and the line is fixed-height
+     * because `PROVIDER_ROW_HEIGHT` is a promise to FlashList. It read as a
+     * rendering bug on every row.
+     *
+     * The fallback also restored something the rebuild had dropped without
+     * anyone noticing: the previous row showed the headline on its second line,
+     * and the tags took that slot.
+     */
+    const body = code(ROW);
+    expect(body).toContain('tags.length > 0 ? (');
+    expect(body).toContain('styles.headline');
+    expect(body).toContain("'Here to listen'");
+    // Still one fixed-height line either way, which is the constraint that made
+    // collapsing it impossible.
+    expect(style('tagLine')).toContain('height: ROW_TAG_LINE');
+  });
+
+  it('states the avatar box, because inferring it hid the rating entirely', () => {
+    /*
+     * `Pressable` moves only the BOX keys (width, height, flex*, aspectRatio)
+     * to the touchable root and gives the inner view `flexGrow: 1`.
+     * `avatarTap` set none of them, so the root had no size of its own, grew to
+     * the column, and pushed the rating and count past the clip:
+     * `uiautomator` listed both Texts with inverted bounds while the screen
+     * showed neither.
+     *
+     * Asserted on both styles, because either one alone leaves the row's
+     * geometry inferred from content — and this list's whole invariant is that
+     * it is not.
+     */
+    const tap = style('avatarTap');
+    expect(tap).toContain('width: ROW_AVATAR');
+    expect(tap).toContain('height: ROW_AVATAR');
+    const left = style('leftColumn');
+    expect(left).toContain('width: ROW_AVATAR');
+    expect(left).toContain('height: PROVIDER_ROW_LEFT_COLUMN');
+    // And the constant it is stated in terms of is the same one the row height
+    // is derived from, so the two cannot drift.
+    expect(read(ROW)).toContain('export const PROVIDER_ROW_LEFT_COLUMN');
   });
 });

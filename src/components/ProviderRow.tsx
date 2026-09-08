@@ -295,6 +295,32 @@ function ProviderRowView({
   ].slice(0, ROW_EXPERTISE_LIMIT);
 
   /*
+   * WHAT GOES ON THE TAG LINE WHEN THERE ARE NO TAGS, which the first build on
+   * the Redmi answered as "a 24dp hole" — and it looked like a rendering bug on
+   * every row, because 083 is not on prod yet so no provider has any.
+   *
+   * The line cannot collapse: its height is part of the promise
+   * `PROVIDER_ROW_HEIGHT` makes to FlashList, and a row that keeps that promise
+   * only for providers with tags does not keep it. So it needs content.
+   *
+   * The headline is the right content, and noticing that fixed a second defect
+   * this rebuild had introduced without anyone saying so: the previous row
+   * showed the headline on its second line — "No advice unless you ask for it",
+   * "Tell me about your week" — and the rebuild dropped it for the tags. That
+   * is the most human sentence on the row, written by the provider about
+   * themselves, and it had quietly become the price of the redesign.
+   *
+   * So the line degrades instead of emptying: pills when there are tags, the
+   * headline when there are not. Both are "what this person is about", one in
+   * their words and one in the product's vocabulary, and the tags win when
+   * present because they are scannable down a column in a way prose is not.
+   */
+  const headline =
+    provider.headline !== null && provider.headline.trim() !== ''
+      ? provider.headline
+      : 'Here to listen';
+
+  /*
    * Languages as plain text, not pills, which is a reversal of the strip this
    * row used to carry and the reason the horizontally-scrolling ScrollView is
    * gone with it.
@@ -346,7 +372,7 @@ function ProviderRowView({
     provider.rating_count > 0
       ? `rated ${provider.rating_avg?.toFixed(1)} from ${provider.rating_count} reviews`
       : 'no reviews yet',
-    tags.length > 0 ? tags.join(', ') : null,
+    tags.length > 0 ? tags.join(', ') : headline,
     languages === '' ? null : `speaks ${languages}`,
     // Spoken as a sentence, because "₹22/min" is read out as a string of
     // symbols by TalkBack and the rate is the one number here that costs money.
@@ -399,14 +425,21 @@ function ProviderRowView({
             style={styles.rating}>
             {provider.rating_count > 0 ? `★ ${provider.rating_avg?.toFixed(1)}` : '★ New'}
           </Text>
-          {/* The count is its own line even when it is empty of content, so the
-              left column measures the same on a provider with no reviews as on
-              one with a thousand. A column that changes height by 16dp between
-              rows is the invariant this list is built on, broken. */}
+          {/* The count is its own line even at zero, so the left column
+              measures the same on a provider with no reviews as on one with a
+              thousand. A column that changes height by 16dp between rows is the
+              invariant this list is built on, broken.
+
+              "0 ratings" and not "no ratings yet", which is what the first
+              device build showed — TRUNCATED, as "no ratings …", because the
+              column is `ROW_AVATAR` wide (76dp) and fourteen characters of
+              bodySmall are not. An ellipsis on a fixed-width label is the label
+              being wrong, not the width. The numeric form is also exactly
+              parallel to the rated case above it, so the two states read as one
+              line with a changing number rather than as two different
+              sentences, and the star already carries "New". */}
           <Text allowFontScaling numberOfLines={1} style={styles.ratingCount}>
-            {provider.rating_count > 0
-              ? `${provider.rating_count} ${provider.rating_count === 1 ? 'rating' : 'ratings'}`
-              : 'no ratings yet'}
+            {`${provider.rating_count} ${provider.rating_count === 1 ? 'rating' : 'ratings'}`}
           </Text>
         </View>
 
@@ -433,9 +466,13 @@ function ProviderRowView({
               has. `PROVIDER_ROW_HEIGHT` is a promise to FlashList, and a row
               that keeps it only for populated providers does not keep it. */}
           <View style={styles.tagLine} testID={`provider-tags-${provider.id}`}>
-            {tags.map(tag => (
-              <MetaChip key={tag} size="sm" label={tag} />
-            ))}
+            {tags.length > 0 ? (
+              tags.map(tag => <MetaChip key={tag} size="sm" label={tag} />)
+            ) : (
+              <Text allowFontScaling numberOfLines={1} style={styles.headline}>
+                {headline}
+              </Text>
+            )}
           </View>
 
           <Text allowFontScaling numberOfLines={1} style={styles.secondary}>
@@ -496,11 +533,36 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   // Fixed width, so every row's text column starts on the same x and the
   // separator inset below stays true. Without it the column would be as wide as
   // the widest of the avatar and the two labels, which varies by rating count.
+  /*
+   * BOTH DIMENSIONS STATED, and the height is not decoration — without it the
+   * rating and the count did not render at all, which is what the first build
+   * on the Redmi showed.
+   *
+   * `Pressable` splits a caller's style: only the BOX keys (width, height,
+   * flex*, aspectRatio) reach the touchable root, and everything else moves to
+   * an inner view that is given `flexGrow: 1`. `avatarTap` set none of them —
+   * only a radius, an overflow and a margin — so the root had no size of its
+   * own and took it from an inner view that grows. In a column with no stated
+   * height that resolved to the whole column: `uiautomator` reported the
+   * avatar's touch node 130.5dp tall inside a 112dp column, and the two Text
+   * siblings underneath were laid out past the clip and painted nothing.
+   *
+   * Nothing was wrong with the Texts, which is why this cost a device build to
+   * find — the dump listed both of them, with inverted bounds, while the screen
+   * showed neither.
+   *
+   * Stating the avatar's box is also just correct on its own terms: a touch
+   * target whose size is inferred from its content is a touch target nobody
+   * decided the size of.
+   */
   leftColumn: {
     width: ROW_AVATAR,
+    height: PROVIDER_ROW_LEFT_COLUMN,
     alignItems: 'center',
   },
   avatarTap: {
+    width: ROW_AVATAR,
+    height: ROW_AVATAR,
     borderRadius: ROW_AVATAR / 2,
     // The Avatar's presence dot sits just past the circle at the bottom-right;
     // without this the rounded tap target clips it in half on Android.
@@ -550,6 +612,14 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     height: ROW_TAG_LINE,
     gap: TOKENS.space['2xs'],
     overflow: 'hidden',
+  },
+  // The headline, on the tag line, when there are no tags. `bodyMedium` rather
+  // than the languages line's `bodySmall`: it is the provider's own sentence and
+  // stands in for three pills, so it should not read as the quietest thing in
+  // the row. It fits — the line is 24dp and bodyMedium's box is 20.
+  headline: {
+    ...TOKENS.typography.bodyMedium,
+    color: t.color.text.secondary,
   },
   secondary: {
     ...TOKENS.typography.bodySmall,
