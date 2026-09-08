@@ -1483,11 +1483,21 @@ const makeStyles = (t: Theme) =>
       borderCurve: 'continuous',
       overflow: 'hidden',
     },
+    /*
+     * The media frame IS the bubble, so it takes the bubble tokens.
+     *
+     * These were `bg/accentStrong` and `bg/sunken` — correct while the text
+     * bubble used those same two tokens. After the WhatsApp change the text
+     * bubble moved to `bubble/mine` (#D9FDD3, pale) and these did not, so a
+     * photo I sent got a heavy dark-green frame while my words got a pale one.
+     * Caught by looking at the Redmi, not by a test: both values are valid
+     * colours from the palette, so nothing could fail.
+     */
     mediaFrameMine: {
-      backgroundColor: t.color.bg.accentStrong,
+      backgroundColor: t.color.bubble.mine,
     },
     mediaFramePeer: {
-      backgroundColor: t.color.bg.sunken,
+      backgroundColor: t.color.bubble.theirs,
     },
     // The image area: a neutral loading fill under a concentric-radius clip, the
     // Image fills it once its source resolves.
