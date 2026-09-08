@@ -5032,7 +5032,19 @@ describe('a session is rated when it ends, and the ratings are readable', () => 
 
     const detail = withoutComments(read('src/screens/ProviderDetailScreen.tsx'));
     expect(detail).toContain('testID="ratings-chart"');
-    expect(detail).toContain('testID="ratings-empty"');
+    /*
+     * "ratings-empty" is GONE, 2026-09-08, and that is a fix rather than a
+     * regression. Found on the device: a card reading "4.7 stars, 5.8k
+     * reviews" opened a profile that said "No ratings yet. Yours would be the
+     * first" — the member taps the number and lands on its own contradiction.
+     *
+     * The chart now always renders, through `displayRating` — the same
+     * function the card and the hero use — so there is no empty state left to
+     * reach. The REVIEW LIST underneath still can be empty; that list is real
+     * text and is not faked.
+     */
+    expect(detail).not.toContain('testID="ratings-empty"');
+    expect(detail).toContain('displayRating(provider)');
     expect(detail).not.toContain('react-native-svg');
   });
 
@@ -5370,6 +5382,15 @@ describe('seed provider photos', () => {
     width: number;
     height: number;
     apparent_age: number;
+    /**
+     * Who this photo is cast as, present on the astrologer entries added
+     * 2026-09-08. Optional because the four listener rows predate it and are
+     * matched by id through `scripts/seed-dev.sql` instead — a photo's
+     * FILENAME is a bucket key and must survive a cast member being renamed,
+     * which is why neither of those maps is keyed on the name.
+     */
+    seeds?: string;
+    added?: string;
   };
   const manifest = JSON.parse(read('assets/seed/providers/manifest.json')) as {
     scope: string;
@@ -5419,16 +5440,73 @@ describe('seed provider photos', () => {
     }
     expect(idByFile.size).toBe(4);
 
+    /*
+     * The 35 ceiling is a LISTENER rule and stopped being a directory-wide one
+     * on 2026-09-08.
+     *
+     * Amit set it on 2026-09-06 — "nobody older than 35 in the seeded
+     * directory" — when the directory was listeners only. Migration 085 added
+     * astrologers with "astrologers can be of older age as well", and 087 gave
+     * them faces to match: 32 to 65. Applying a listener ceiling to an
+     * astrologer would now fail the build for doing exactly what was asked.
+     *
+     * Which photo is which is read from the manifest's own `seeds` field rather
+     * than from the filename, so renaming a cast member does not silently move
+     * them between rules — the same reasoning the comment above gives for not
+     * keying the age map on the name.
+     */
+    const ASTROLOGERS = new Set([
+      'Pandit Raghav',
+      'Lalita Devi',
+      'Devraj Iyer',
+      'Shubhra Mishra',
+      'Venkatesh Rao',
+      'Rukmini Bhat',
+    ]);
+    let astrologerPhotos = 0;
     for (const photo of manifest.photos) {
       expect(photo.apparent_age).toBeGreaterThanOrEqual(18);
-      // Amit's rule (2026-09-06): nobody older than 35 in the seeded directory.
-      expect(photo.apparent_age).toBeLessThanOrEqual(35);
+      const isAstrologer = ASTROLOGERS.has(String(photo.seeds ?? ''));
+      if (isAstrologer) {
+        astrologerPhotos += 1;
+        // No ceiling, but still a person and not a caricature: an astrologer
+        // photographed at 90 would be a costume rather than a provider.
+        expect(photo.apparent_age).toBeLessThanOrEqual(75);
+      } else {
+        expect(photo.apparent_age).toBeLessThanOrEqual(35);
+      }
       const profile = ageById.get(idByFile.get(photo.file) ?? '');
-      if (profile === undefined) continue; // The `ada-` photo is seeded outside this file.
+      if (profile === undefined) continue; // Seeded outside scripts/seed-dev.sql.
       // Within a few years of the age the card prints beside the face. A photo
       // that contradicts its own caption reads as fake before anyone gets to
-      // the words.
+      // the words. This is why 087 moved Devraj Iyer from 47 to 33 rather than
+      // shipping a thirty-year-old face under a forty-seven-year-old label.
       expect(Math.abs(photo.apparent_age - profile)).toBeLessThanOrEqual(4);
+    }
+    // All six are present and were classified — a typo in the set above would
+    // otherwise silently put an astrologer back under the listener ceiling.
+    expect(astrologerPhotos).toBe(6);
+
+    /*
+     * And the astrologer ages in migration 085/087 track their faces too. The
+     * profile ages come from a different file than the listeners', so the
+     * `ageById` map above cannot see them; checked directly against the
+     * manifest here rather than left unasserted.
+     */
+    const astro = read('supabase/migrations/085_seed_astrologers.sql');
+    const photo087 = read('supabase/migrations/087_seed_astrologer_photos.sql');
+    for (const photo of manifest.photos) {
+      if (!ASTROLOGERS.has(String(photo.seeds ?? ''))) continue;
+      const name = String(photo.seeds);
+      // 087 may override an age 085 set; the later file wins, as it does in the
+      // database.
+      const override = /interval '(\d+) years'\)::date\s*\nwhere\s+id = '([0-9a-f-]+)'/.exec(photo087);
+      const seeded = new RegExp(`'${name}', '\\w+', (\\d+),`).exec(astro);
+      const declared = Number(
+        photo.file.startsWith('devraj') && override ? override[1] : seeded?.[1],
+      );
+      expect(Number.isFinite(declared)).toBe(true);
+      expect(Math.abs(photo.apparent_age - declared)).toBeLessThanOrEqual(4);
     }
   });
 

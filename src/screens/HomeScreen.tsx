@@ -1475,14 +1475,19 @@ function FeaturedCard({
         <>
           <Image
             source={{
+              /*
+               * The full 3:4 frame, not a 210dp band: the crop happens in the
+               * layout above (`featuredPhoto`), so asking the server for a
+               * short image would centre-crop the head off before it arrived.
+               */
               uri: sizedStorageImageUri(
                 provider.avatar_url,
                 imageWidth,
-                210,
+                Math.round((imageWidth * 4) / 3),
                 PixelRatio.get(),
               ),
             }}
-            style={styles.featuredFill}
+            style={styles.featuredPhoto}
           />
           {/* A dark scrim under the text so white copy stays legible over any
               photo, not only the coral fallback. */}
@@ -1987,9 +1992,37 @@ const makeStyles = (t: Theme) =>
     featured: {
       height: 210,
       justifyContent: 'flex-end',
+      // The photo is taller than this frame and anchored to its top; without
+      // the clip it would spill over the card below. See `featuredPhoto`.
+      overflow: 'hidden',
     },
+    /*
+     * The GRADIENT fallback fills the frame exactly — there is nothing in it to
+     * crop badly.
+     */
     featuredFill: {
       position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    },
+    /*
+     * A PHOTO is anchored to the TOP instead, at its natural 3:4, and the frame
+     * clips the rest.
+     *
+     * Supabase's image transform only offers `resize=cover`, which crops from
+     * the CENTRE and has no gravity parameter. A 900x1200 portrait squeezed
+     * into a 210dp landscape band centre-crops to the middle third — which on
+     * the first astrologer build was a suit and a chin, with the head cut off
+     * above the frame. The listeners never showed it because their crops happen
+     * to put the face near the middle.
+     *
+     * So the crop is done here rather than asked for: the image keeps its 3:4
+     * ratio (roughly 341dp tall at this card's width), sits at top: 0, and the
+     * parent's overflow does the cutting. The face is 34% down a 3:4 frame by
+     * construction — 087 crops it there — so it lands around 116dp, comfortably
+     * inside the 210dp window, for every photo rather than by luck.
+     */
+    featuredPhoto: {
+      position: 'absolute', top: 0, left: 0, right: 0,
+      aspectRatio: 3 / 4,
     },
     featuredScrim: {
       position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
