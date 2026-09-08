@@ -380,9 +380,15 @@ describe('the CTA is 48dp, and the reference is the thing that is wrong', () => 
     const body = code(ROW);
     expect(body).not.toContain('lineThrough');
     expect(body).not.toContain('textDecorationLine');
-    // One rate, formatted through the money formatter rather than interpolated.
-    expect(body).toContain('formatRupees(ratePerMin)');
-    expect(body.match(/formatRupees\(/g)?.length).toBe(2); // the line and the spoken label
+    /*
+     * One rate, through `RupeeAmount` on the card and `formatRupees` in the
+     * spoken label — the ₹ glyph sweep (2026-09-08) moved the visible figure
+     * off a raw `formatRupees(...)` call so the glyph could render in a lighter
+     * weight than the digits, without touching what TalkBack hears.
+     */
+    expect(body).toContain('<RupeeAmount value={ratePerMin}');
+    expect(body).toContain('formatRupees(ratePerMin)'); // the spoken label
+    expect(body.match(/formatRupees\(/g)?.length).toBe(1);
   });
 
   it('does not offer a Call button to a provider who has switched calls off', () => {
@@ -407,7 +413,7 @@ describe('the CTA is 48dp, and the reference is the thing that is wrong', () => 
     // says in a word.
     const priceLine = between(code(ROW), '<View style={styles.priceLine}>', '</View>');
     expect(priceLine).not.toContain('<Icon');
-    expect(priceLine).toContain('formatRupees(ratePerMin)');
+    expect(priceLine).toContain('<RupeeAmount value={ratePerMin}');
   });
 });
 

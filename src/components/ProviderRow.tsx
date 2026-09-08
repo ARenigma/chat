@@ -14,6 +14,7 @@ import { Pressable } from './Pressable';
 import { CATEGORY_BADGE, categoryOf } from '../lib/providerFilters';
 import { rowExpertise } from '../lib/expertise';
 import { formatRupees } from '../lib/rates';
+import { RupeeAmount } from './RupeeAmount';
 import { displayRating, formatReviewCount } from '../lib/systemRating';
 import { RatingStars, STARS_HEIGHT } from './RatingStars';
 
@@ -576,7 +577,9 @@ function ProviderRowView({
                   outright. */}
               <Text allowFontScaling numberOfLines={1} style={styles.ctaLabel}>
                 {ctaLabel}
-                <Text style={styles.ctaRate}>{`  ${formatRupees(ratePerMin)}/min`}</Text>
+                <Text style={styles.ctaRate}>{'  '}</Text>
+                <RupeeAmount value={ratePerMin} style={styles.ctaRate} />
+                <Text style={styles.ctaRate}>/min</Text>
               </Text>
             </Pressable>
           </View>

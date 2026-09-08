@@ -309,7 +309,19 @@ describe('a money chip shows the price it charges', () => {
     ['the wallet-page pack card', 'wallet' as const],
   ])('renders price, then tokens, then the gst note on %s', (_name, key) => {
     const host = renderOf(HOSTS[key]);
-    const price = host.indexOf('{formatRupees(pack)}');
+    /*
+     * The price moved to `<RupeeAmount value={pack} .../>` on 2026-09-08 (the ₹
+     * glyph weight sweep), which no longer contains the literal
+     * `{formatRupees(pack)}` this assertion originally scanned for. Matched on
+     * either form so a future rewrite of one card and not the other still
+     * satisfies "price appears before the GST note" rather than silently
+     * finding neither.
+     */
+    const price = (() => {
+      const asText = host.indexOf('{formatRupees(pack)}');
+      if (asText > -1) return asText;
+      return host.search(/<RupeeAmount\s+value=\{pack\}/);
+    })();
     // Under the exclusive model the GST line is a single Text with {gst}.
     const gstNote = host.indexOf('{gst}');
     expect({ price: price > -1, gstNote: gstNote > -1 }).toEqual({

@@ -244,7 +244,14 @@ describe('the KPIs are wired above the rows', () => {
      * behaviour under an honest name.
      */
     expect(SCREEN).toContain('value={formatCount(kpis.sessions)}');
-    expect(SCREEN).toContain('value={formatRupees(kpis.tokens)}');
+    /*
+     * The tokens KPI passes a NODE now, not a `formatRupees(...)` string — the
+     * ₹ glyph sweep (2026-09-08) routes it through `RupeeAmount` so the rupee
+     * mark renders lighter than the figure, same as every other headline
+     * price. `Kpi.value` was widened to `React.ReactNode` for exactly this.
+     */
+    expect(SCREEN).toContain('<RupeeAmount value={kpis.tokens}');
+    expect(SCREEN).not.toContain('value={formatRupees(kpis.tokens)}');
     expect(SCREEN).toContain('label={kpis.sessionsLabel}');
     expect(SCREEN).toContain('label={kpis.tokensLabel}');
   });

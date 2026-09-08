@@ -639,6 +639,14 @@ describe('every control on Home is a real 48dp box, not slop a parent clips', ()
 
   it('gives each Explore tab a 48dp box with the indicator on its bottom edge', () => {
     /*
+     * Reads `ProviderTypeTabs.tsx` for this one `it`, unlike its neighbours in
+     * this describe block, because the tab strip moved there on 2026-09-08 and
+     * this file's own `home` binding still (correctly) means HomeScreen.tsx for
+     * every other assertion around it — so this local is named `tabsSource`
+     * rather than shadowing it.
+     */
+    const tabsSource = withoutComments(read('src/components/ProviderTypeTabs.tsx'));
+    /*
      * The defect: `tab` declared no height, so the box was its content — the
      * label's 24dp lineHeight + a 4dp gap + the 2dp rule = 30dp — and the
      * `Pressable` around it passed no `size`, taking Pressable's sizeless
@@ -658,7 +666,7 @@ describe('every control on Home is a real 48dp box, not slop a parent clips', ()
      * returns nothing but a title to a fetch.)
      */
     const indicatorHeight = Number(
-      /const TAB_INDICATOR_HEIGHT = (\d+)/.exec(home)?.[1],
+      /const TAB_INDICATOR_HEIGHT = (\d+)/.exec(tabsSource)?.[1],
     );
     const content =
       TOKENS.typography.titleMediumEmphasized.lineHeight +
@@ -668,7 +676,7 @@ describe('every control on Home is a real 48dp box, not slop a parent clips', ()
     expect(content).toBeLessThan(TOKENS.interaction.minTarget);
     expect(content + sizelessSlop * 2).toBeLessThan(TOKENS.interaction.minTarget);
 
-    const tab = home.slice(home.indexOf('    tab: {'), home.indexOf('    tabLabel: {'));
+    const tab = tabsSource.slice(tabsSource.indexOf('    tab: {'), tabsSource.indexOf('    tabLabel: {'));
     expect(tab).toContain('minHeight: TOKENS.interaction.minTarget');
     // Bottom edge, where TabLayout draws its own indicator. Centring it would
     // meet the target and still leave the underline floating mid-box.
@@ -720,7 +728,16 @@ describe('every control on Home is a real 48dp box, not slop a parent clips', ()
 });
 
 describe('the type tabs are a Material tab row, division and indicator both', () => {
-  const home = withoutComments(read('src/screens/HomeScreen.tsx'));
+  /*
+   * REPOINTED 2026-09-08: this suite used to read HomeScreen.tsx directly. The
+   * whole tab strip — hooks, JSX and styles — was extracted verbatim into
+   * `ProviderTypeTabs.tsx` so Favourites could carry the same tabs (Amit:
+   * "favourites should also have type tabs at top") without a second hand-built
+   * copy of an elastic M3 indicator. Every assertion below is unchanged; only
+   * the file it reads from moved, which is exactly what should happen when code
+   * moves without changing behaviour.
+   */
+  const home = withoutComments(read('src/components/ProviderTypeTabs.tsx'));
   const motion = withoutComments(read('src/theme/motion.ts'));
 
   it('divides the whole strip between the tabs, which is the TabLayout default', () => {
@@ -783,7 +800,7 @@ describe('the type tabs are a Material tab row, division and indicator both', ()
     expect(home.match(/styles\.tabIndicator/g)?.length).toBe(1);
     const indicator = home.slice(
       home.indexOf('    tabIndicator: {'),
-      home.indexOf('    navRow: {'),
+      home.length,
     );
     expect(indicator).toContain("position: 'absolute'");
     expect(indicator).toContain('left: 0');
@@ -792,7 +809,7 @@ describe('the type tabs are a Material tab row, division and indicator both', ()
     // change does not re-run layout for every frame of the move.
     const style = home.slice(
       home.indexOf('const tabIndicatorStyle = useAnimatedStyle('),
-      home.indexOf('const categoryById = useMemo('),
+      home.length,
     );
     expect(style).toContain('transform: [{ translateX: left }]');
     expect(indicator).not.toContain('right:');
@@ -824,7 +841,7 @@ describe('the type tabs are a Material tab row, division and indicator both', ()
     expect(Number(/const TAB_INDICATOR_MIN_WIDTH = (\d+)/.exec(home)?.[1])).toBe(24);
     const style = home.slice(
       home.indexOf('const tabIndicatorStyle = useAnimatedStyle('),
-      home.indexOf('const categoryById = useMemo('),
+      home.length,
     );
     // The label's measured width, floored, is what sets the bar's edges.
     expect(style).toContain('tabLabelWidths.value');
@@ -852,7 +869,7 @@ describe('the type tabs are a Material tab row, division and indicator both', ()
     expect(Number(/const TAB_INDICATOR_HEIGHT = (\d+)/.exec(home)?.[1])).toBe(3);
     const indicator = home.slice(
       home.indexOf('    tabIndicator: {'),
-      home.indexOf('    navRow: {'),
+      home.length,
     );
     expect(indicator).toContain('height: TAB_INDICATOR_HEIGHT');
     expect(indicator).toContain('borderTopLeftRadius: TAB_INDICATOR_HEIGHT');
@@ -910,7 +927,7 @@ describe('the type tabs are a Material tab row, division and indicator both', ()
     // The leading edge is the one being travelled toward, in BOTH directions.
     const style = home.slice(
       home.indexOf('const tabIndicatorStyle = useAnimatedStyle('),
-      home.indexOf('const categoryById = useMemo('),
+      home.length,
     );
     expect(style).toContain('const movingRight = to.left > from.left');
     expect(style).toMatch(

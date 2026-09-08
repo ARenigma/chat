@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlashList, type FlashListProps } from '@shopify/flash-list';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, {
@@ -16,6 +16,12 @@ import { NAV_BAR_HEIGHT } from '../components/FloatingToolbar';
 import { TopAppBar } from '../components/TopAppBar';
 import { Icon } from '../components/Icon';
 import { SquareProviderCard, SQUARE_CARD_ESTIMATE } from '../components/ProviderCard';
+import { ProviderTypeTabs } from '../components/ProviderTypeTabs';
+import {
+  categoryOf,
+  DEFAULT_CATEGORY,
+  type ProviderCategory,
+} from '../lib/providerFilters';
 
 interface Props {
   onOpenProvider: (id: string) => void;
@@ -42,10 +48,42 @@ export function FavouritesScreen({ onOpenProvider }: Props) {
   useProfile();
   const { data: providers } = useProviders();
   const ids = useFavorites(s => s.ids);
-  const favourites = useMemo(
+  const allFavourites = useMemo(
     () => (providers ?? []).filter(p => ids.includes(p.id)),
     [providers, ids],
   );
+
+  /*
+   * Listener / Astrologer tabs, added 2026-09-08 (Amit: "favourites should also
+   * have type tabs at top"), and the SAME component Explore uses
+   * (`ProviderTypeTabs`) rather than a second hand-built strip — the tab is
+   * measured M3 machinery (an elastic sliding indicator), not a a few lines of
+   * markup, and Explore's copy was already the one implementation once this
+   * screen needed its own.
+   *
+   * Unlike Explore, this tab can legitimately start on an EMPTY list — a
+   * member may have favourited only listeners — so, unlike Explore, favourites
+   * are counted per category up front and the initial tab is whichever one
+   * actually has someone in it, favouring listeners on a tie. Landing on an
+   * empty Astrologers tab when every favourite is a listener would look like
+   * the heart taps were lost.
+   */
+  const [category, setCategory] = useState<ProviderCategory>(DEFAULT_CATEGORY);
+  const initialCategorySet = useRef(false);
+  const favourites = useMemo(
+    () => allFavourites.filter(p => categoryOf(p) === category),
+    [allFavourites, category],
+  );
+  useEffect(() => {
+    if (initialCategorySet.current || providers === undefined) {
+      return;
+    }
+    initialCategorySet.current = true;
+    const hasListener = allFavourites.some(p => categoryOf(p) === 'listener');
+    if (!hasListener && allFavourites.some(p => categoryOf(p) === 'astrologer')) {
+      setCategory('astrologer');
+    }
+  }, [allFavourites, providers]);
 
   // Stable callback so ProviderCard.memo holds across re-renders.
   const handleOpenProvider = useCallback(
@@ -95,6 +133,7 @@ export function FavouritesScreen({ onOpenProvider }: Props) {
         scrollY={scrollY}
         testID="favourites-app-bar"
       />
+      <ProviderTypeTabs value={category} onChange={setCategory} testID="favourites-tabs" />
       {favourites.length > 0 ? (
         <AnimatedFlashList
           data={favourites}
@@ -121,10 +160,17 @@ export function FavouritesScreen({ onOpenProvider }: Props) {
         <View style={styles.empty}>
           <Icon name="heart" size={TOKENS.icon['2xl']} color={theme.color.text.tertiary} />
           <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.emptyTitle}>
-            No favourites yet
+            {allFavourites.length === 0
+              ? 'No favourites yet'
+              : `No ${category === 'listener' ? 'listeners' : 'astrologers'} favourited`}
           </Text>
           <Text allowFontScaling style={styles.emptyBody}>
-            Tap the heart on someone's profile to save them here.
+            {allFavourites.length === 0
+              ? "Tap the heart on someone's profile to save them here."
+              : // A real favourite exists, just not in this tab — distinct from
+                // "you have never favourited anyone", which is what the message
+                // above this one is for.
+                `Your ${category === 'listener' ? 'astrologer' : 'listener'} favourites are on the other tab.`}
           </Text>
         </View>
       )}
