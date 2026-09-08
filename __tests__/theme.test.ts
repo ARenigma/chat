@@ -2284,14 +2284,46 @@ describe('light and dark', () => {
    * Audit: docs/android-audit.md dark-theme section.
    * Platform doc: developer.android.com/develop/ui/views/theming/darktheme
    */
-  it('defaults to light on first install (documented deviation from Android System recommendation)', () => {
+  it('takes its fresh-install default from config, and it is dark', () => {
+    /*
+     * REWRITTEN 2026-09-08. This asserted the fallback was the literal 'light'
+     * inside ThemeProvider. Amit moved the product to dark by default and asked
+     * for it to live in config "for easy experimentation", so the assertion
+     * follows: the provider must DELEGATE, and config must hold the value.
+     *
+     * Still a departure from Android's dark-theme guidance, which recommends
+     * defaulting to System — 'dark' departs from it just as 'light' did, in the
+     * other direction, so the deviation note in docs/android-audit.md stands.
+     */
     const provider = read('src/theme/ThemeProvider.tsx');
-    // The fallback when no stored mode exists must be 'light', not 'system'.
-    // 'system' still appears as a valid stored/context value above this line.
-    expect(provider).toMatch(/:\s*'light'.*fresh.install/s);
-    // System mode handler (Appearance listener) must still be present so a
-    // stored 'system' choice continues to work on upgrade.
-    expect(provider).toContain("Appearance.addChangeListener");
+    const config = read('src/config.ts');
+
+    /*
+     * The provider delegates rather than hardcoding a mode. Asserted as "the
+     * fallback IS the constant" rather than as "the literal 'light' is absent"
+     * — an earlier draft did the latter and it was both fragile and weaker:
+     * 'light' legitimately appears in this file as a valid stored value and as
+     * part of the ThemeMode union, so its absence was never the invariant.
+     */
+    expect(provider).toMatch(/:\s*stored\b[\s\S]{0,120}THEME_DEFAULT_MODE|THEME_DEFAULT_MODE;/);
+
+    // Config holds it, and it is dark.
+    expect(config).toMatch(/THEME_DEFAULT_MODE:\s*'light'\s*\|\s*'dark'\s*\|\s*'system'\s*=\s*'dark'/);
+
+    /*
+     * A STORED choice must still win. This is the ordering that stops a config
+     * flip from silently undoing somebody who has already been to Appearance —
+     * the storage read has to come first and the default has to be the
+     * fallback, not an override.
+     */
+    const fn = provider.slice(
+      provider.indexOf('function readStoredMode'),
+      provider.indexOf('function readStoredMode') + 400,
+    );
+    expect(fn.indexOf('storage.get')).toBeLessThan(fn.indexOf('THEME_DEFAULT_MODE'));
+
+    // A stored 'system' choice must keep working on upgrade.
+    expect(provider).toContain('Appearance.addChangeListener');
   });
 
   it('flips the status bar with the mode', () => {
