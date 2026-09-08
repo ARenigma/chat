@@ -33,7 +33,7 @@ import {
   unreadFromPeer,
   type TranscriptMessage,
 } from '../lib/transcript';
-import { recoverMessageGap } from './chat';
+import { recoverMessageGap, keys } from './chat';
 import { useStore } from '../store/useStore';
 
 /** How long a typing broadcast keeps the indicator up without a refresh. */
@@ -268,6 +268,13 @@ export function useMarkRead(conversationId: string | undefined, selfId: string |
             // Left out of `inFlight` so a transient failure retries on the next
             // cache change rather than being swallowed for the session.
             ids.forEach(id => inFlightRef.current.delete(id));
+          } else {
+            // Dissolve the unread badge in the conversation list. The DB update
+            // above changes `unread_count_provider` on the server but the
+            // conversation-list query would otherwise sit stale until its next
+            // poll. Invalidating here is cheap (one refetch, already stale at
+            // 10 s) and the only way the badge disappears promptly.
+            void queryClient.invalidateQueries({ queryKey: keys.conversationList });
           }
         });
     };
