@@ -236,3 +236,58 @@ describe('the provider can actually set their tags', () => {
     expect(form).toContain('expertiseFor(category)');
   });
 });
+
+describe('the star row reserves the box the glyph actually renders at', () => {
+  /*
+   * Amit, on the device: "align the starts below centre of dp -- it seems a
+   * bit to the right as of now". Measured before being explained: a pixel scan
+   * of the Redmi screenshot put the avatar ring's true centre at x182 and the
+   * five-star row's true ink centre at x193 — an ~11px (~4dp) rightward
+   * offset, in the direction reported.
+   *
+   * The cause: `Icon` sets its own Text node's width/height to
+   * `Math.round(size * ICON_SCALE)`, not to the `size` prop — so a caller who
+   * reserves `size` dp per glyph reserves less than the glyph's real box.
+   * RatingStars did exactly that for its WIDTH (but, by luck, not for its
+   * height, which already used the same 1.2 factor spelled out by hand) — the
+   * empty row of five icons is not width-constrained, so it laid out at its
+   * true 5*14+4*1=74dp while the `host` box everything else centres against
+   * was fixed at the wrong 5*12+4*1=64dp, and the last star or two silently
+   * overflowed the centred box to the right.
+   */
+  it('exports ICON_SCALE, so a caller can compute the real render box', () => {
+    const icon = read('src/components/Icon.tsx');
+    expect(icon).toContain('export const ICON_SCALE = 1.2');
+    // And Icon's own arithmetic still uses it, so the export cannot drift from
+    // what Icon actually does.
+    expect(icon).toContain('const px = Math.round(size * ICON_SCALE)');
+  });
+
+  it('sizes STARS_WIDTH from the rendered box, not the nominal icon.xs step', () => {
+    const stars = read('src/components/RatingStars.tsx');
+    expect(stars).toContain(
+      'export const STARS_WIDTH = STAR_COUNT * STAR_BOX + (STAR_COUNT - 1) * STAR_GAP',
+    );
+    expect(stars).toContain('const STAR_BOX = Math.round(STAR * ICON_SCALE)');
+    // The two dimensions now come from the SAME constant, which is the
+    // invariant that broke: one was scaled and the other was not.
+    expect(stars).toContain('export const STARS_HEIGHT = STAR_BOX');
+
+    const star = 12; // TOKENS.icon.xs on this build
+    const starBox = Math.round(star * 1.2);
+    expect(starBox).toBe(14);
+    const starsWidth = 5 * starBox + 4 * 1;
+    expect(starsWidth).toBe(74);
+    // The old, wrong arithmetic — kept here as the number this gate refuses to
+    // regress to, not as a live computation.
+    const wrongStarsWidth = 5 * star + 4 * 1;
+    expect(wrongStarsWidth).toBe(64);
+    expect(starsWidth).not.toBe(wrongStarsWidth);
+  });
+
+  it('clips the host, so a future drift shrinks the row instead of shifting it', () => {
+    const stars = read('src/components/RatingStars.tsx');
+    const host = stars.slice(stars.indexOf('host: {'), stars.indexOf('row: {'));
+    expect(host).toContain("overflow: 'hidden'");
+  });
+});

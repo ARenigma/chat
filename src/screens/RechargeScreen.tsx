@@ -380,6 +380,10 @@ function RechargeForm({
           const on = pack === amount;
           const badge =
             pack === popularAmount ? 'Popular' : pack === bestValueAmount ? 'Best value' : null;
+          // No longer shown as a visual pill (Amit: "Remove ~mins from
+          // recharge chips all around"), but still spoken below — TalkBack
+          // loses nothing the sighted card used to say just because the pill
+          // is gone.
           const minutes = Math.floor(pack / chatRate);
           const gst = gstAddedLabel(pack, gstRateBps);
           const gstSpoken = gstAddedSpoken(pack, gstRateBps);
@@ -463,13 +467,6 @@ function RechargeForm({
                     numberOfLines={1}
                     style={[styles.cardAmount, on && styles.cardAmountOn]}
                   />
-                </View>
-                {/* Talk-time pill: page colour + accent ink whether the card is
-                    selected or not, so the label needs no `On` variant. */}
-                <View style={[styles.minutesTag, on && styles.minutesTagOn]}>
-                  <Text allowFontScaling numberOfLines={1} style={styles.minutesText}>
-                    {`≈ ${minutes} min talk`}
-                  </Text>
                 </View>
                 {/* What the price above is MADE of (Amit, 2026-09-06: "GST
                     exclusive on the chips") — the supporting line, never the
