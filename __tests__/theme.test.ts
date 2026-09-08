@@ -732,12 +732,26 @@ describe('the app is wired to the M3 transitions', () => {
      * visited tab mounted and animates `opacity` only.
      *
      * What still has to hold is that the movement is a FADE and nothing slides:
-     * no translate on the tab layer, and the opacity drives `display` so a
-     * hidden tab leaves layout instead of being measured behind the active one.
+     * no translate on the tab layer, and a hidden tab leaves layout instead of
+     * being measured behind the active one.
+     *
+     * `display` moved OUT of the worklet on 2026-09-08 and this gate moved with
+     * it. Computing it inside `useAnimatedStyle` flipped the property on the UI
+     * thread, behind React's back, and Android's view flattening
+     * (NativeViewHierarchyOptimizer) did not rebuild the flattened children of
+     * the revealed subtree: the Favourites top bar came back with its wallet
+     * chip (a real view, it has a fill) and without its title or magnifier
+     * (flattened, they draw nothing of their own). It is React state now,
+     * hidden one fade-duration after the tab goes inactive, which is the same
+     * moment the worklet used to pick.
      */
     const layer = app.slice(app.indexOf('function TabLayer'), app.indexOf('const { StartupTiming }'));
     expect(layer).toContain('opacity: opacity.value');
-    expect(layer).toContain("display: opacity.value === 0 ? ('none' as const)");
+    expect(layer).toContain('const animated = useAnimatedStyle(() => ({ opacity: opacity.value }))');
+    expect(layer).toContain('laidOut ? null : HIDDEN_LAYER.hidden');
+    expect(layer).toContain('setTimeout(() => setLaidOut(false), FADE.duration)');
+    // Still no `display` computed on the UI thread — that is the defect above.
+    expect(layer).not.toMatch(/useAnimatedStyle[\s\S]*display:/);
     expect(layer).not.toMatch(/translate[XY]/);
     // And the tabs are mounted through it rather than conditionally rendered.
     for (const tab of ['favourites', 'calls', 'settings']) {
@@ -1961,6 +1975,15 @@ describe('accent budget is enforced in code, not just documented', () => {
        * stranger's list avatar.
        */
       'SpotlightCard.tsx',
+      /*
+       * The bar every tab wears, extracted from HomeScreen on 2026-09-08 so
+       * Home, Favourites and Settings render one row rather than three that
+       * drift. It holds the accent for the same reason HomeScreen did before
+       * the move: the WORDMARK is the brand mark in the brand colour. Every
+       * other tab's title takes `text.primary` — see the `title` style — so
+       * this exemption covers a logo, not a screen heading.
+       */
+      'TabTopBar.tsx',
       'ThreadBubble.tsx',
       'Toggle.tsx',
       /*

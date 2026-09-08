@@ -449,7 +449,9 @@ describe('Cashfree billing invariants', () => {
   });
 
   it('wallet pill opens the full page, not the refill sheet', () => {
-    expect(read('src/screens/HomeScreen.tsx')).toContain('onPress={openWallet}');
+    // The pill moved into `TabTopBar` on 2026-09-08, where Home, Favourites and
+    // Settings all render it from one place. Same assertion, new file.
+    expect(read('src/components/TabTopBar.tsx')).toContain('onPress={openWallet}');
     // ChatScreen routes members to openWallet; providers route to onOpenEarnings
     // (with openWallet as fallback). Both paths reach openWallet.
     expect(read('src/screens/ChatScreen.tsx')).toContain('openWallet');
@@ -4790,8 +4792,22 @@ describe('search opens the way Telegram opens it, and the week has a carousel', 
     expect(motion).toContain('DialogsActivity.java:307-308');
     // Both states are Animated rows sharing one container, so the crossfade has
     // nothing to reflow.
-    expect(home).toContain('entering={searchIn}');
-    expect(home).toContain('exiting={searchOut}');
+    // The nav row lives in `TabTopBar` since 2026-09-08 — one bar for every
+    // tab, so it cannot drift between them.
+    const bar = read('src/components/TabTopBar.tsx');
+    /*
+     * `entering={enter}` / `exiting={exit}`, not the animations by name: the
+     * first render passes neither, because a subtree that mounts inside
+     * `TabLayer`'s `display: 'none'` never runs its entering animation and
+     * would stay at FadeIn's opacity 0 forever (device-found on Favourites —
+     * see the comment on `mounted` in TabTopBar.tsx). Every render after the
+     * first uses `searchIn` / `searchOut`, which is when the crossfade is
+     * wanted, and that binding is what these two lines pin.
+     */
+    expect(bar).toContain('entering={enter}');
+    expect(bar).toContain('exiting={exit}');
+    expect(bar).toContain('const enter = mounted.current ? searchIn : undefined');
+    expect(bar).toContain('const exit = mounted.current ? searchOut : undefined');
     /*
      * ONE `navRow` now, not two. The search state has its own `searchRow`
      * (2026-09-07): the field is MATCH_PARENT with 7dp side margins in the
@@ -4801,10 +4817,14 @@ describe('search opens the way Telegram opens it, and the week has a carousel', 
      * ONE container, so the crossfade has nothing to reflow — is unchanged and
      * asserted directly below.
      */
-    expect(home.match(/style=\{styles\.navRow\}/g)?.length).toBe(1);
-    expect(home).toContain('style={styles.searchRow}');
-    expect(home).toMatch(/searchRow: \{[\s\S]{0,200}marginHorizontal: SEARCH_ROW_SIDE_MARGIN/);
-    expect(home).toContain('const SEARCH_ROW_SIDE_MARGIN = 7;');
+    expect(bar.match(/style=\{styles\.navRow\}/g)?.length).toBe(1);
+    expect(bar).toContain('style={styles.searchRow}');
+    // Comment-stripped: the rationale between the two lines is longer than the
+    // window, and it is the CODE that has to keep them adjacent.
+    expect(withoutComments(bar)).toMatch(
+      /searchRow: \{[\s\S]{0,200}marginHorizontal: SEARCH_ROW_SIDE_MARGIN/,
+    );
+    expect(bar).toContain('const SEARCH_ROW_SIDE_MARGIN = 7;');
   });
 
   it('lets the hardware back button leave search, not just the arrow', () => {
@@ -4858,7 +4878,11 @@ describe('search opens the way Telegram opens it, and the week has a carousel', 
      * verified on the Redmi the same day (`searchBackGuard`, gated just below).
      * That is also what the reference relies on.
      */
-    const searchRow = home.slice(home.indexOf('key="search-row"'), home.indexOf('key="nav-row"'));
+    const topBar = read('src/components/TabTopBar.tsx');
+    const searchRow = topBar.slice(
+      topBar.indexOf('key="search-row"'),
+      topBar.indexOf('key="nav-row"'),
+    );
     expect(searchRow).not.toContain('<Icon name="back"');
     expect(searchRow).not.toContain('name="close"');
     /*
@@ -4867,7 +4891,10 @@ describe('search opens the way Telegram opens it, and the week has a carousel', 
      * clearable and otherwise exits (FragmentSearchField.java:142-155), so one
      * control carries both jobs and the row stays full width.
      */
-    expect(searchRow).toContain('onExit={closeSearch}');
+    // `onSearchClose` is the prop each screen passes its own exit to — Home
+    // still hands it `closeSearch`, gated just below.
+    expect(searchRow).toContain('onExit={onSearchClose}');
+    expect(read('src/screens/HomeScreen.tsx')).toContain('onSearchClose={closeSearch}');
     // The field IS the row: one child, on the reference's own 7dp margin.
     expect(searchRow).toContain('<SearchBar');
     expect(searchRow).toContain('style={styles.searchRow}');

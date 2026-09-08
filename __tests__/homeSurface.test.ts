@@ -485,8 +485,27 @@ describe('search MOVES the way Telegram moves it, not only measures like it', ()
     expect(crossfade).toMatch(
       /searchOut = FadeOut\.duration\(DURATION\.searchField\)\s*\.easing\(EASE_OUT_QUINT\)/,
     );
-    expect(home).toContain('entering={searchIn}');
-    expect(home).toContain('exiting={searchOut}');
+    /*
+     * 2026-09-08: this row moved out of HomeScreen into `TabTopBar`, the one
+     * component Home, Favourites and Settings all render, so the bar cannot
+     * drift between tabs (Amit: "home to fovourties o setting the top app bar
+     * remians constant"). The assertions are unchanged — only the file they
+     * read is.
+     */
+    const bar = withoutComments(read('src/components/TabTopBar.tsx'));
+    /*
+     * `entering={enter}` / `exiting={exit}`, not the animations by name: the
+     * first render passes neither, because a subtree that mounts inside
+     * `TabLayer`'s `display: 'none'` never runs its entering animation and
+     * would stay at FadeIn's opacity 0 forever (device-found on Favourites —
+     * see the comment on `mounted` in TabTopBar.tsx). Every render after the
+     * first uses `searchIn` / `searchOut`, which is when the crossfade is
+     * wanted, and that binding is what these two lines pin.
+     */
+    expect(bar).toContain('entering={enter}');
+    expect(bar).toContain('exiting={exit}');
+    expect(bar).toContain('const enter = mounted.current ? searchIn : undefined');
+    expect(bar).toContain('const exit = mounted.current ? searchOut : undefined');
   });
 
   it('swaps the content underneath on the second animator, scales and close delay included', () => {
@@ -618,7 +637,6 @@ describe('a citation resolves to what the comment claims', () => {
 });
 
 describe('every control on Home is a real 48dp box, not slop a parent clips', () => {
-  const home = withoutComments(read('src/screens/HomeScreen.tsx'));
 
   /*
    * Android's floor, quoted so the number in these tests is never a preference:
@@ -702,7 +720,15 @@ describe('every control on Home is a real 48dp box, not slop a parent clips', ()
      * `interaction.minTarget` box, declared on the style AND on the Pressable so
      * neither can shrink the other.
      */
-    const navIcon = home.slice(home.indexOf('    navIcon: {'), home.indexOf('    scroll: {'));
+    /*
+     * 2026-09-08: this row moved out of HomeScreen into `TabTopBar`, the one
+     * component Home, Favourites and Settings all render, so the bar cannot
+     * drift between tabs (Amit: "home to fovourties o setting the top app bar
+     * remians constant"). The assertions are unchanged — only the file they
+     * read is.
+     */
+    const bar = withoutComments(read('src/components/TabTopBar.tsx'));
+    const navIcon = bar.slice(bar.indexOf('    navIcon: {'), bar.indexOf('    navRow: {'));
     expect(navIcon).toContain('width: TOKENS.interaction.minTarget');
     expect(navIcon).toContain('height: TOKENS.interaction.minTarget');
     // No raw box left behind for the token to shadow.
@@ -719,11 +745,11 @@ describe('every control on Home is a real 48dp box, not slop a parent clips', ()
      * in. Leaving search is the hardware back button, wired and device-verified
      * the same day (HomeScreen's `searchBackGuard`).
      */
-    expect(home.match(/size=\{TOKENS\.interaction\.minTarget\}/g)?.length).toBe(1);
-    expect(home).not.toContain('size={28}');
-    // And Home reaches a target by laying out a box, never by hanging slop off
-    // one, which is the rule SearchBar.tsx states for itself.
-    expect(home).not.toContain('hitSlop');
+    expect(bar.match(/size=\{TOKENS\.interaction\.minTarget\}/g)?.length).toBe(1);
+    expect(bar).not.toContain('size={28}');
+    // And the bar reaches a target by laying out a box, never by hanging slop
+    // off one, which is the rule SearchBar.tsx states for itself.
+    expect(bar).not.toContain('hitSlop');
   });
 });
 

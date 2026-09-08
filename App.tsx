@@ -201,6 +201,9 @@ const FADE = { duration: TOKENS.motion.duration.fast } as const;
  * fully hidden keeps an inactive tab out of layout entirely; `pointerEvents`
  * stops an invisible layer eating touches mid-fade.
  */
+/** Theme-independent, so `TabLayer` needs no `useStyles`. */
+const HIDDEN_LAYER = StyleSheet.create({ hidden: { display: 'none' } });
+
 function TabLayer({
   active,
   style,
@@ -223,20 +226,47 @@ function TabLayer({
     opacity.value = withTiming(active ? 1 : 0, FADE);
   }, [active, opacity]);
 
-  const animated = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    // A fully faded tab leaves layout entirely, so its list is not measured
-    // behind the active one — but the subtree stays MOUNTED, which is the whole
-    // point: state, scroll position and cached queries all survive the switch.
-    display: opacity.value === 0 ? ('none' as const) : ('flex' as const),
-  }));
+  /*
+   * `display` is REACT state here, not a value the animated style computes, and
+   * that distinction is a device-found bug rather than a preference.
+   *
+   * It used to be `display: opacity.value === 0 ? 'none' : 'flex'` inside the
+   * worklet. On the Favourites tab that left the top bar half-drawn: the wallet
+   * chip painted and the title and the magnifier beside it did not, on a row
+   * whose three children are siblings. What separates them is a background —
+   * Android's view flattening (NativeViewHierarchyOptimizer) folds a View or
+   * Text that draws nothing of its own into its parent, and a flattened node
+   * inside a subtree whose `display` flips on the UI thread, behind React's
+   * back, is not re-created when the subtree comes back. The chip has a fill,
+   * so it survives as a real view; a plain Text does not.
+   *
+   * Driving `display` from state puts the change back through the normal
+   * commit, which rebuilds the flattened children correctly. The hide is
+   * delayed by the fade's own duration so it still happens only once the layer
+   * is invisible, which is all the original worklet was buying.
+   */
+  const [laidOut, setLaidOut] = useState(active);
+  useEffect(() => {
+    if (active) {
+      setLaidOut(true);
+      return;
+    }
+    const timer = setTimeout(() => setLaidOut(false), FADE.duration);
+    return () => clearTimeout(timer);
+  }, [active]);
+
+  const animated = useAnimatedStyle(() => ({ opacity: opacity.value }));
 
   if (!mounted) {
     return null;
   }
   return (
     <Animated.View
-      style={[style, animated]}
+      // A fully faded tab leaves layout entirely, so its list is not measured
+      // behind the active one — but the subtree stays MOUNTED, which is the
+      // whole point: state, scroll position and cached queries all survive the
+      // switch.
+      style={[style, animated, laidOut ? null : HIDDEN_LAYER.hidden]}
       // Touches are refused the moment the tab stops being active, not when the
       // fade ends, so a half-faded layer cannot swallow a tap.
       pointerEvents={active ? 'auto' : 'none'}

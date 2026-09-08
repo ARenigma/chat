@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { DEFAULT_RATES, formatRupees, gstAddedLabel, gstAddedSpoken, packTotalInr, PAYMENTS_ENABLED, RECHARGE_PACKS, talkMinutesLeft } from '../lib/rates';
+import { DEFAULT_RATES, formatRupees, gstAddedLabel, gstAddedSpoken, packTotalInr, PAYMENTS_ENABLED, RECHARGE_PACKS } from '../lib/rates';
 import {
   useRechargeConfig,
   useKillSwitches,
@@ -352,23 +352,22 @@ function RechargeForm({
   const theme = useTheme();
   const balance = useStore(s => s.balance);
   const chatRate = DEFAULT_RATES.chat;
-  const balanceMinutes = Math.floor(talkMinutesLeft(balance, chatRate));
   const popularAmount = livePacks[1] ?? null;
   const bestValueAmount = livePacks[livePacks.length - 1] ?? null;
 
   return (
     <View style={styles.form}>
+      {/* Row, not stacked (Amit: "remove talktime from recharge KPI and align
+          amount to balance vertically"): the talk-time line is gone, and with
+          only the label and the figure left, they read as one KPI — label
+          and value on one line, centred against each other — rather than two
+          lines that used to need the third to justify the card's height. */}
       <View style={styles.balanceCard}>
         <Text allowFontScaling style={styles.balanceLabel}>
           Balance
         </Text>
         {/* Uncapped, same reason as the sheet's balance figure above. */}
         <RupeeAmount value={balance} allowFontScaling style={styles.balanceValue} />
-        <Text allowFontScaling style={styles.balanceHint}>
-          {balance === null || balance === 0
-            ? 'Add money to start talking.'
-            : `≈ ${balanceMinutes} min of talk time`}
-        </Text>
       </View>
 
       <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.section}>
@@ -558,12 +557,19 @@ const makeStyles = (t: Theme) =>
     form: {
       gap: TOKENS.space.sm,
     },
+    // Row, label-then-figure, vertically centred against each other — the
+    // talk-time line that used to sit under the amount is gone (Amit: "remove
+    // talktime from recharge KPI and align amount to balance vertically"), so
+    // the two remaining facts read as one KPI rather than a stack that needed
+    // a third line to fill the card.
     balanceCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
       backgroundColor: t.color.bg.inverse,
       borderRadius: TOKENS.radius.lg,
       borderCurve: 'continuous',
       padding: TOKENS.space.lg,
-      gap: TOKENS.space.hair,
     },
     // bodyLarge, the app's SUPPORTING_LINE — the role the eleven-item pass
     // anchored on `Sheet.body` and pinned across every sheet and screen. It was
@@ -608,11 +614,6 @@ const makeStyles = (t: Theme) =>
     balanceValue: {
       ...TOKENS.typography.numeralLarge,
       color: t.color.text.onInverse,
-    },
-    balanceHint: {
-      ...TOKENS.typography.bodySmall,
-      color: t.color.text.onInverse,
-      opacity: 0.55,
     },
     section: {
       ...TOKENS.typography.titleMediumEmphasized,
