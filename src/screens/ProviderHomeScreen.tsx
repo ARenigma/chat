@@ -323,10 +323,9 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
         <>
           <View style={styles.head}>
             <Text
-              maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized}
-              allowFontScaling
-              style={styles.headTitle}>
-              Chats
+              allowFontScaling={false}
+              style={styles.headWordmark}>
+              Pappal
             </Text>
           </View>
           {isPending ? (
@@ -785,6 +784,12 @@ const makeStyles = (t: Theme) =>
       paddingBottom: TOKENS.space.md,
     },
     headTitle: { ...TOKENS.typography.headlineSmallEmphasized, color: t.color.text.primary },
+    headWordmark: {
+      fontFamily: TOKENS.face.wordmark,
+      fontSize: 28,
+      lineHeight: 34,
+      color: t.color.bg.accent,
+    },
     spacer: { flex: 1 },
     iconButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
     centre: { flex: 1, alignItems: 'center', justifyContent: 'center' },
@@ -1099,6 +1104,7 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
       gap: TOKENS.space.hair,
       paddingVertical: TOKENS.space['2xs'],
+      borderRadius: TOKENS.radius.pill,
     },
     tabLabel: { ...TOKENS.typography.labelSmall },
     tabBadge: {
