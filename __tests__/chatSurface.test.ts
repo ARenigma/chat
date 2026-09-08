@@ -778,15 +778,32 @@ describe('the composer and the bubbles share one grid and one corner', () => {
      * https://www.w3.org/TR/css-backgrounds-3/#corner-overlap
      */
     expect(withoutComments(composer)).toContain(
-      'export const CAPSULE_MIN_H = TOKENS.radius.bubble * 2;',
+      'export const CAPSULE_MIN_H = TOKENS.interaction.minTarget;',
     );
-    expect(TOKENS.radius.bubble * 2).toBe(44);
+    /*
+     * No longer derived from the bubble. `radius * 2` is the height at which a
+     * pill's two arcs meet, which was the right rule while the bubble radius
+     * was a pill radius (22 -> 44). WhatsApp's bubble is 9dp and that rule
+     * would give an 18dp text input, so the capsule now takes the 48dp touch
+     * target floor — 1.8dp taller than WhatsApp's own 46.2dp capsule, which
+     * sits below the Android minimum.
+     */
+    expect(TOKENS.interaction.minTarget).toBe(48);
     const bar = styleBlock(composer, 'inputBar');
-    expect(bar).toContain('borderRadius: TOKENS.radius.bubble');
+          /*
+       * The composer no longer shares the bubble's radius token, and that is a
+       * measurement rather than a drift. WhatsApp on the Redmi: bubble corner
+       * 9dp, composer capsule corner 10.5dp. They are the same FAMILY — close
+       * enough to read as one system — but not one value, and asserting
+       * identity would be asserting something WhatsApp does not do.
+       */
+      expect(bar).toContain('borderRadius: TOKENS.radius.composer');
+      // Same family: within 2dp of each other in either direction.
+      expect(Math.abs(TOKENS.radius.composer - TOKENS.radius.bubble)).toBeLessThanOrEqual(2);
     expect(bar).toContain('minHeight: CAPSULE_MIN_H');
     // The recording/review capsule shares the slot, so it shares the corner:
     // `radius.pill` was clamped to 25 there and read as a stadium.
-    expect(styleBlock(composer, 'panel')).toContain('borderRadius: TOKENS.radius.bubble');
+    expect(styleBlock(composer, 'panel')).toContain('borderRadius: TOKENS.radius.composer');
     // ...and the bubble's own corner is the same token, not a second number.
     expect(withoutComments(turn)).toContain('const BUBBLE_RADIUS = TOKENS.radius.bubble;');
   });
