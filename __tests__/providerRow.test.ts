@@ -552,7 +552,10 @@ describe('every row is still the same height', () => {
      * instead of 11, which is why pinning the IMPORT matters more than it did.
      */
     const home = code('src/screens/HomeScreen.tsx');
-    expect(home).toContain("PROVIDER_ROW_HEIGHT } from '../components/ProviderRow'");
+    // The import is multi-line now (HomeScreen also pulls
+    // `seededExperienceYears` for the hero's meta line), so match the symbol
+    // rather than a one-line import shape.
+    expect(home).toMatch(/PROVIDER_ROW_HEIGHT,[\s\S]{0,120}from '\.\.\/components\/ProviderRow'/);
     expect(home.match(/\.size = PROVIDER_ROW_HEIGHT;/g)?.length).toBe(2);
     expect(home).not.toMatch(/\.size = \d+;/);
   });

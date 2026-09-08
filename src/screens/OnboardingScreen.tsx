@@ -1486,9 +1486,29 @@ export function OnboardingScreen({ onDone }: Props) {
 
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
+    /*
+     * `bg/raised`, not `bg/base`. Amit, 2026-09-08, looking at the device:
+     * "Onboarding white space has turned very dark -- please change token color
+     * here to app inside right".
+     *
+     * The token was already "correct" and that is why this is worth writing
+     * down. Measured off the Redmi: this field was #151E27 and the Explore page
+     * is #151E27 — the same `bg/base`, exactly. But almost nothing a member
+     * looks at INSIDE the app is that colour. The content sits on cards at
+     * `bg/raised` #1D2733, and the page only shows through as the gaps between
+     * them. Onboarding is an unbroken field of the darkest step with nothing
+     * lighter anywhere on it, so it reads as a darker screen than the app while
+     * measuring identical to it.
+     *
+     * One step up puts the first screen on the same surface as the app's
+     * content rather than on the same surface as its gaps. Light mode moves by
+     * nothing at all: `bg/base` and `bg/raised` are both #FFFFFF there, which
+     * is what makes this safe to change on a screen built from a light-mode
+     * reference.
+     */
     root: {
       flex: 1,
-      backgroundColor: t.color.bg.base,
+      backgroundColor: t.color.bg.raised,
     },
     /*
      * `flexShrink` so a short window takes height from the carousel rather than

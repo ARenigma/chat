@@ -4714,7 +4714,13 @@ describe('the directory is grouped and filterable: Listeners, Astrologers, ages'
      */
     const row = withoutComments(read('src/components/ProviderRow.tsx'));
     expect(row).not.toContain('showCategory');
-    expect(row).toContain('CATEGORY_BADGE[categoryOf(provider)]');
+    // Split into `categoryKey` so the tone can be keyed off it: the chip is
+    // FILLED and hue-coded per type now, and passing the KEY (not the label) to
+    // `tone` is what makes a third category fail to compile rather than render
+    // as an outlined chip.
+    expect(row).toContain('const categoryKey = categoryOf(provider)');
+    expect(row).toContain('CATEGORY_BADGE[categoryKey]');
+    expect(row).toContain('tone={categoryKey}');
     expect(row).toContain('testID="provider-category"');
     // In the price line's slot, not the pill row's.
     const priceLine = row.slice(row.indexOf('<View style={styles.priceLine}>'));

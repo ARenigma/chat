@@ -347,7 +347,8 @@ function ProviderRowView({
    * search — the one screen where the topics matter most.
    */
   const tags = rowExpertise(provider);
-  const category = CATEGORY_BADGE[categoryOf(provider)];
+  const categoryKey = categoryOf(provider);
+  const category = CATEGORY_BADGE[categoryKey];
 
   /*
    * What sits on the expertise line when a provider has no tags.
@@ -532,7 +533,17 @@ function ProviderRowView({
                 — the tab above Explore already says which you are looking at,
                 but search spans both and a member should not have to remember
                 which list they are in to know what they are buying. */}
-            <MetaChip size="sm" tone="emphasis" label={category} testID="provider-category" />
+            {/* FILLED and hue-coded per type, so the two are distinguishable
+                at a glance down a scrolling column. `categoryKey` is
+                listener | astrologer, which are the tone names, so a third
+                category added to migration 065 fails to compile here rather
+                than silently rendering as an outlined chip. */}
+            <MetaChip
+              size="sm"
+              tone={categoryKey}
+              label={category}
+              testID="provider-category"
+            />
             <View style={styles.priceSpacer} />
             <Pressable
               onPress={() =>

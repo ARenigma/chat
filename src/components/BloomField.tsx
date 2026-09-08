@@ -208,7 +208,14 @@ function BloomFieldView({ elapsed, stage, hidden = false }: Props) {
   return (
     <Animated.View
       pointerEvents="none"
-      style={[styles.host, { backgroundColor: theme.color.bg.base }, host]}>
+      /*
+       * `bg/raised`, matching OnboardingScreen's root — see the long note
+       * there. The two MUST move together: this view is the same surface, and
+       * one on base under the other on raised would draw a seam across the
+       * screen exactly where the bloom's transparent edge is least able to hide
+       * it.
+       */
+      style={[styles.host, { backgroundColor: theme.color.bg.raised }, host]}>
       {BLOOM_LAYERS.map(layer => (
         <BloomLayer
           key={layer.name}

@@ -242,6 +242,34 @@ const PAIRS = [
     what: 'the review prompt',
   },
   {
+    fg: 'text/onListener',
+    bg: 'bg/listener',
+    target: 4.5,
+    what: 'the Listener type tag on a directory card',
+  },
+  {
+    fg: 'text/onAstrologer',
+    bg: 'bg/astrologer',
+    target: 4.5,
+    what: 'the Astrologer type tag on a directory card',
+  },
+  {
+    fg: 'bg/listener',
+    bg: 'bg/raised',
+    target: 1.15,
+    what: 'the Listener tag FILL against the card it sits on',
+    exempt:
+      'not a legibility target — the label inside already clears 4.5:1. This pins that the FILL is visible AS a fill, which is the whole request ("should be filled to be highlighted"). Registered at a measured floor because the first violet tried measured 1.01:1 against the dark card and was invisible; anything at or under 1.1 is not a filled chip, it is an unfilled one',
+  },
+  {
+    fg: 'bg/astrologer',
+    bg: 'bg/raised',
+    target: 1.15,
+    what: 'the Astrologer tag FILL against the card it sits on',
+    exempt:
+      'same as the Listener fill above: a visibility floor for the fill itself, not a text target',
+  },
+  {
     fg: 'text/token',
     bg: 'bg/token',
     target: 4.5,
