@@ -1021,6 +1021,7 @@ FUNCTION claim_daily_tokens() returns integer security=definer
 FUNCTION claim_member_profile(p_display_name text, p_avatar_seed text) returns jsonb security=definer
 FUNCTION claim_provider_application_review(p_user_id uuid) returns void security=definer
 FUNCTION claim_session_lease(p_session_id uuid, p_kind lease_kind) returns text security=definer
+FUNCTION clear_chat_consent_on_session() returns trigger security=invoker
 FUNCTION clear_pending_earnings() returns integer security=definer
 FUNCTION cmp_ok(anyelement, text, anyelement) returns text security=invoker
 FUNCTION cmp_ok(anyelement, text, anyelement, text) returns text security=invoker
@@ -2158,6 +2159,7 @@ TRIGGER messages.guard_message_retention_columns
 TRIGGER messages.messages_touch_session_activity
 TRIGGER moderation_actions.moderation_actions_no_update
 TRIGGER paid_sessions.paid_sessions_accrue_on_end
+TRIGGER paid_sessions.paid_sessions_clear_chat_consent
 TRIGGER profiles.guard_profile_phone_columns
 TRIGGER profiles.guard_profile_pii_columns
 TRIGGER profiles.guard_profile_presence_columns

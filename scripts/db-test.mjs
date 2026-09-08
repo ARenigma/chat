@@ -125,6 +125,7 @@ const MIGRATIONS = [
   'supabase/migrations/082_decline_means_no_session.sql',
   'supabase/migrations/083_provider_expertise.sql',
   'supabase/migrations/084_seed_provider_expertise.sql',
+  'supabase/migrations/086_only_the_member_starts_a_paid_chat.sql',
 ];
 
 /**
@@ -680,6 +681,11 @@ const suites = [
     file: join(ROOT, 'supabase/tests/370_provider_expertise.sql'),
     label:
       'provider expertise: the provider owns their own tags, and approval carries them',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/380_only_the_member_pays.sql'),
+    label:
+      'only the member pays: a provider cannot start a paid chat, and a decline binds server-side',
   },
   {
     file: join(ROOT, 'supabase/tests/340_sp_initiate_member_consent.sql'),
