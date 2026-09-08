@@ -1,7 +1,7 @@
-Chat polish, You settings, and safer sessions.
+Calling, wallet, and notification fixes.
 
-• Profile-first You tab with Material dividers
-• Native Material loading indicators
-• Dark mode charcoal palette and chat fixes
-• Messages hide when a session ends; kept 30 days for disputes, then removed
-• Independent voice and video call controls
+• Speaker and video toggles now work in every call
+• Wallet updates during and right after a session
+• Message notifications arrive instantly
+• Permissions are re-checked when you return to the app
+• Provider app polish: wallet, unread badges, and branding
