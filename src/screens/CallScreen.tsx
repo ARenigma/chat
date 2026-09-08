@@ -16,7 +16,7 @@ import type { CallMedium } from '../lib/database.types';
 import { initialOf } from '../lib/display';
 import { sizedStorageImageUri } from '../lib/storageImage';
 import { useConversationId, useConversations, useProviders } from '../api/chat';
-import { answerCall, endCall, heartbeatCall, startCall } from '../api/calls';
+import { answerCall, endCall, heartbeatCall, startCall, useCallEnded } from '../api/calls';
 import { useCallSession } from '../api/callMedia';
 import { CallVideoView } from '../api/callMedia/CallVideoView';
 import { useSessionLease } from '../api/sessions';
@@ -234,12 +234,12 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
    * `connectedTrackedRef` asks "was there ever a call to have an opinion
    * about", and it is the one Amit named (2026-09-07: "session end review
    * should not fire when there was no connection"). It is needed because the
-   * first condition is not sufficient: `answer_call` (037:1039) creates the
-   * paid_sessions row and bills minute one BEFORE any media exists, so a call
-   * that was answered and then failed to connect has a billed session id and
-   * nothing whatsoever to review. Asking "how was your session?" about a call
-   * that never audibly happened is worse than not asking — it invites a
-   * one-star rating of the network onto a provider's directory average.
+   * first condition is not sufficient: `answer_call` (037:1008) creates the
+   * paid_sessions row for a call that has not connected yet, so a call that was
+   * answered and then failed to connect has a session id and nothing whatsoever
+   * to review. Asking "how was your session?" about a call that never audibly
+   * happened is worse than not asking — it invites a one-star rating of the
+   * network onto a provider's directory average.
    *
    * The latch is reused rather than added: it already exists to fire
    * `call_answered` exactly once (:325), is set only in the
@@ -253,9 +253,16 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
    * until the whole component body has evaluated. Nothing reads it during
    * render, so there is no temporal-dead-zone hazard.
    *
-   * That a failed-after-answer call is still CHARGED for its first minute is a
-   * separate defect and is deliberately not hidden by this change; it wants a
-   * refund path, not a suppressed prompt. Flagged rather than fixed here.
+   * A NOTE THAT USED TO SAY THE OPPOSITE. This block previously claimed a
+   * failed-after-answer call "is still CHARGED for its first minute" and asked
+   * for a refund path. That was true of the pre-037 model and is not true now:
+   * `accept_session_request` (086:174) inserts the session at `pending_leases`
+   * and debits nothing, and the first `deduct_tokens` happens in
+   * `claim_session_lease` (037:439) only once both sides hold a `connected`
+   * lease. A call that never connects bills zero, so a refund path would credit
+   * tokens that were never taken. The real hole was on this client — it
+   * asserted a `connected` lease before media existed — and that is fixed at
+   * `useSessionLease` above, where the untrue claim was being made.
    *
    * The one end left uncovered is a hang-up in the same second the media
    * connected, before the first heartbeat has answered with the id — the id is
@@ -375,17 +382,73 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     }
   }, [callId, mediaReady, name, videoEnabled]);
 
+  /*
+   * The lease has to tell the TRUTH about media, because billing reads it.
+   *
+   * `claim_session_lease` (037:427-441) starts the meter — the first
+   * `deduct_tokens`, `minutes_billed = 1` — only when BOTH participants hold a
+   * lease of kind `connected` inside the 30 s window, and for a call it
+   * requires that `connected` kind specifically rather than mere presence.
+   * That gate is the thing standing between a member and being charged for a
+   * call that never audibly happened.
+   *
+   * This passed `'connected'` unconditionally, from the moment a session id
+   * existed. On the callee that id arrives from `answer_call` BEFORE any media
+   * is up, so this device asserted "my media is connected" while it was still
+   * negotiating — a claim the billing gate believes. Paired with a caller whose
+   * media genuinely was up, that bills minute one for a call the callee could
+   * not hear.
+   *
+   * `connState === 'connected'` is `mediaReady` (agora.ts:302) and is set from
+   * `onUserJoined`, not from joining Agora's edge — the adapter is explicit
+   * that "Joining Agora's edge is not the same as the other endpoint
+   * answering" (agora.ts:143-145). So this now says `connected` when, and only
+   * when, there is a remote endpoint in the channel.
+   *
+   * `'foreground'` before then, not "no lease at all": presence is real and the
+   * server wants it (it is what advances a chat session and what the 30 s
+   * expiry sweeps), it just is not media.
+   */
   useSessionLease(
     sessionId
       ? { id: sessionId, channel: medium === 'voice' ? 'audio' : 'video' }
       : null,
-    'connected',
+    connState === 'connected' ? 'connected' : 'foreground',
   );
 
   // Keep the latest enableVideo in a ref so the connection effect can call it
   // without becoming a dependency that changes on every render.
   const enableVideoRef = useRef(enableVideo);
   enableVideoRef.current = enableVideo;
+
+  /*
+   * One end, and the FIRST one wins — because there are now two detectors and
+   * they disagree about wording.
+   *
+   * A peer hang-up trips both: Agora reports the channel closed
+   * (`connState === 'closed'`) and the peer's own `end_call` updates the row,
+   * which arrives through `useCallEnded`. A decline trips only the second, and
+   * it is the one that knows the word "declined" — so if the media detector
+   * were allowed to run afterwards it would replace a true "Declined." with a
+   * generic "Call ended." The latch keeps whichever fired first, which is
+   * whichever actually knows what happened.
+   *
+   * A ref rather than state: this must be read and set inside the same tick a
+   * handler runs in, and re-rendering on it would do nothing but re-run the
+   * effects that already fired.
+   */
+  const endedRef = useRef(false);
+  const finish = useCallback(
+    (notice: string) => {
+      if (endedRef.current) {
+        return;
+      }
+      endedRef.current = true;
+      setNotice(notice);
+      onEnd();
+    },
+    [onEnd, setNotice],
+  );
 
   // Media connected → active; failed → tell the user and leave. When the call
   // was started as video, auto-enable the camera once the connection is live.
@@ -405,10 +468,65 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
         void enableVideoRef.current();
       }
     } else if (connState === 'failed') {
-      setNotice('The call could not connect.');
-      onEnd();
+      finish('The call could not connect.');
+    } else if (connState === 'closed') {
+      /*
+       * THE OTHER SIDE LEFT. Nothing handled this, and it is the common end of
+       * a call rather than an edge case.
+       *
+       * `'closed'` has exactly one source: Agora's `onUserOffline`
+       * (agora.ts:127-130), which fires the instant the remote party leaves the
+       * channel — so it means "the peer hung up", never "we are still dialling"
+       * (that is `'connecting'`, the initial state) and never a local failure
+       * (that is `'failed'`). Acting on it cannot fire early.
+       *
+       * Without this branch the remaining side kept a fully live `active`
+       * screen — running timer, live mute and camera controls — until the
+       * 20 s `HEARTBEAT_MS` tick happened to read `status === 'ended'` back
+       * from the server. Up to twenty seconds of a call that one party had
+       * already left, which reads as the app having hung.
+       *
+       * "Call ended." is the same copy the heartbeat path uses for the same
+       * fact, so the two routes to this end say one thing.
+       */
+      finish('Call ended.');
     }
-  }, [backend, callId, connState, medium, onEnd, setNotice]);
+  }, [backend, callId, connState, medium, finish]);
+
+  /*
+   * The server said this call is over — decline, cancel, or a server-side end.
+   *
+   * The ring timeout below can only ever say "No answer.", because until this
+   * hook there was nothing watching the row while it rang (see `useCallEnded`
+   * in api/calls.ts for the full defect). `declined` is a different fact from
+   * `missed` and the server has always recorded which one happened; this is
+   * where that word finally reaches the person who needs it.
+   *
+   * Registered for every phase, not just ringing: it also beats the 20 s
+   * heartbeat to a server-side end mid-call (an exhausted balance), which is
+   * the same class of stale-screen problem as the peer hang-up above.
+   *
+   * No notice for our OWN hang-up: the unmount cleanup calls `endCall`, which
+   * updates the row, which echoes back here — but by then this screen is gone,
+   * so there is nothing to tell and nobody to tell it to.
+   */
+  const endedNotice = useCallback(
+    (ended: { status: string; endReason: string | null }) => {
+      if (ended.status === 'declined') {
+        finish(direction === 'out' ? 'Declined.' : 'Call declined.');
+      } else if (ended.status === 'missed') {
+        finish(direction === 'out' ? 'No answer.' : 'You missed the call.');
+      } else if (ended.status === 'failed') {
+        finish('The call could not connect.');
+      } else if (ended.endReason === 'balance_exhausted') {
+        finish('Your balance ran out.');
+      } else {
+        finish('Call ended.');
+      }
+    },
+    [direction, finish],
+  );
+  useCallEnded(callId, endedNotice);
 
   /*
    * Give up on an unanswered ring.
@@ -428,13 +546,10 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     }
     const limit = phase === 'ringing' ? RING_TIMEOUT_OUT_MS : RING_TIMEOUT_IN_MS;
     const id = setTimeout(() => {
-      setNotice(
-        phase === 'ringing' ? 'No answer.' : 'You missed the call.',
-      );
-      onEnd();
+      finish(phase === 'ringing' ? 'No answer.' : 'You missed the call.');
     }, limit);
     return () => clearTimeout(id);
-  }, [phase, onEnd, setNotice]);
+  }, [phase, finish]);
 
   /*
    * Something OUTSIDE the app ended this call.
@@ -483,13 +598,12 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
       void heartbeatCall(callId).then(r => {
         if (r?.session_id) setSessionId(r.session_id);
         if (r?.success && r.status === 'ended') {
-          setNotice('Call ended.');
-          onEnd();
+          finish('Call ended.');
         }
       });
     }, HEARTBEAT_MS);
     return () => clearInterval(id);
-  }, [phase, callId, onEnd, setNotice]);
+  }, [phase, callId, finish]);
 
   const accept = useCallback(() => {
     if (callId === null) {

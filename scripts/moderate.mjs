@@ -451,7 +451,14 @@ async function decline() {
 }
 
 async function maintenance() {
-  const refunded = await rpc('refund_unanswered_messages');
+  /*
+   * `refund_unanswered_messages` is NOT called here any more, and must not be
+   * added back. It credits one token per unanswered member message, which was
+   * right when a message cost a token; migration 037 moved chat to per-minute
+   * paid sessions and `send_message` (077) debits nothing per message, so every
+   * credit it issues today refunds a charge that never happened. Migration 088
+   * makes the function itself a no-op and carries the full reasoning.
+   */
   const latencies = await rpc('refresh_reply_latencies');
   /**
    * Storage has no foreign key to `messages`, so deleting an account cascades the
@@ -463,7 +470,6 @@ async function maintenance() {
    * constraint they protect. See `purge_orphaned_voice_notes` in migration 011.
    */
   const audio = await rpc('purge_orphaned_voice_notes');
-  console.log(`refunded ${refunded} unanswered message(s)`);
   console.log(`refreshed reply latency for ${latencies} provider(s)`);
   console.log(`deleted ${audio} orphaned voice note(s)`);
 }

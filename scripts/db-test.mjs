@@ -126,6 +126,8 @@ const MIGRATIONS = [
   'supabase/migrations/083_provider_expertise.sql',
   'supabase/migrations/084_seed_provider_expertise.sql',
   'supabase/migrations/086_only_the_member_starts_a_paid_chat.sql',
+  'supabase/migrations/088_unanswered_message_refund_is_pre_cutover.sql',
+  'supabase/migrations/089_repair_call_media_assignment_kind_check.sql',
 ];
 
 /**
@@ -694,6 +696,11 @@ const suites = [
     file: join(ROOT, 'supabase/tests/340_sp_initiate_member_consent.sql'),
     label:
       'SP-initiate: provider first chat and call, member confirms the session',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/390_calls_can_actually_start.sql'),
+    label:
+      'calls can start: the media-assignment trigger and its constraint agree',
   },
 ];
 

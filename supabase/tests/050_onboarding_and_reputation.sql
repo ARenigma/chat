@@ -7,7 +7,7 @@
 --   - "what is missing" is computed server-side, so nobody is told "Something
 --     Missing" and left to guess
 --   - reputation is derived, never asserted by its subject
---   - an unanswered message is refunded, and refunded exactly once
+--   - the unanswered-message refund is a no-op under session billing (088)
 
 \set ON_ERROR_STOP on
 begin;
@@ -271,20 +271,32 @@ delete from public.messages where sender_id = 'aaaaaaaa-0000-4000-8000-000000000
 update public.messages set created_at = now() - interval '48 hours'
 where sender_id = 'bbbbbbbb-0000-4000-8000-000000000002';
 
+-- 088 REVERSED THIS BLOCK, and the previous version of it is the reason why.
+--
+-- It used to assert a credit of one token, with this comment attached to the
+-- expected balance: "In the session model messages carry no per-message cost,
+-- so the refund function credits one token onto the pre-send balance
+-- (500 + 1 = 501)." That sentence states the defect and then locks it in — it
+-- notices there was no debit, and still expects a credit. Someone updated the
+-- arithmetic after the 037 cutover without asking whether the payout still had
+-- a charge behind it.
+--
+-- It does not. `send_message` (077) debits nothing per message; chat is billed
+-- per minute by the session meter. So a credit here is a gift, once per
+-- unanswered message. Migration 088 makes the function a no-op and this asserts
+-- that: nothing returned, nothing credited, nothing marked.
 select is(
-  public.refund_unanswered_messages(), 1,
-  'an unanswered message is refunded after the window'
+  public.refund_unanswered_messages(), 0,
+  'the refund is a no-op: nothing is credited where nothing was charged'
 );
 select is(
   (select token_balance from public.profiles
     where id = 'bbbbbbbb-0000-4000-8000-000000000002'),
-  -- In the session model messages carry no per-message cost, so the refund
-  -- function credits one token onto the pre-send balance (500 + 1 = 501).
-  501, 'refund credits one token; balance reflects no prior per-message debit'
+  500, 'the balance is untouched — no free token for an unanswered message'
 );
 select is(
-  public.refund_unanswered_messages(), 0,
-  'refunding is idempotent, the same message is never credited twice'
+  (select count(*)::int from public.messages where refunded_at is not null),
+  0, 'and no message is marked refunded, so the old ledger is not rewritten'
 );
 
 select * from finish();

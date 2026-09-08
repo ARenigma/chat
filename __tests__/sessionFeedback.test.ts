@@ -57,7 +57,15 @@ describe('a call asks for feedback too', () => {
      * which pops the route and unmounts the screen. If one of them ever stops
      * going through `onEnd` it will stop asking for feedback, so they are named
      * here: the list is the claim that unmount is sufficient.
+     *
+     * 2026-09-08: the paths that end the call FROM CODE now go through
+     * `finish`, which is `setNotice` + `onEnd` behind a once-only latch (see
+     * the next test for why the latch exists). The claim this test makes is
+     * unchanged — every path still reaches `onEnd` — so the funnel is asserted
+     * once, here, and each path is then asserted to enter it.
      */
+    expect(call).toMatch(/const finish = useCallback\([\s\S]{0,400}onEnd\(\);/);
+
     // The member hangs up.
     expect(call).toMatch(/testID="call-end"[\s\S]{0,200}onPress=\{onEnd\}/);
     // The member declines a ring (nothing billed — see the next test).
@@ -66,9 +74,36 @@ describe('a call asks for feedback too', () => {
     expect(call).toMatch(/setLeaveDialogVisible\(false\);\s*onEnd\(\);/);
     // The peer hangs up, or the balance runs out: the server ends the call and
     // the heartbeat reads it back.
-    expect(call).toMatch(/r\.status === 'ended'[\s\S]{0,80}onEnd\(\)/);
+    expect(call).toMatch(/r\.status === 'ended'[\s\S]{0,80}finish\(/);
     // The media dies under a call that had already been paid for.
-    expect(call).toMatch(/connState === 'failed'[\s\S]{0,120}onEnd\(\)/);
+    expect(call).toMatch(/connState === 'failed'[\s\S]{0,120}finish\(/);
+    // The PEER LEAVES THE CHANNEL. Agora reports this the instant it happens
+    // (`onUserOffline` -> 'closed'); before 2026-09-08 nothing handled it and
+    // the remaining side sat on a live-looking call for up to one 20 s
+    // heartbeat before the server's 'ended' was read back.
+    expect(call).toMatch(/connState === 'closed'[\s\S]{0,1200}finish\(/);
+    // The server says so — a decline while ringing, or a server-side end —
+    // delivered by the row subscription rather than waited for.
+    expect(call).toMatch(/useCallEnded\(callId, endedNotice\)/);
+  });
+
+  it('keeps the first end, so a decline is not overwritten by a hang-up', () => {
+    /*
+     * Two detectors now see a peer hang-up: the media adapter ('closed') and
+     * the row subscription. Only the second one knows whether the call was
+     * DECLINED or merely missed — the server records that distinction in
+     * `end_call` and nothing read it until now. Without a latch the media
+     * detector could land second and replace a true "Declined." with a generic
+     * "Call ended.", which is the same class of lie the subscription was added
+     * to remove.
+     */
+    const finish = call.slice(call.indexOf('const finish = useCallback'));
+    expect(finish.slice(0, 300)).toMatch(/if \(endedRef\.current\) \{\s*return;\s*\}/);
+    expect(finish.slice(0, 300)).toContain('endedRef.current = true');
+    // The declined/missed wording exists at all, and comes from the server's
+    // own word rather than from a timeout guessing.
+    expect(call).toMatch(/ended\.status === 'declined'[\s\S]{0,160}Declined\./);
+    expect(call).toMatch(/ended\.status === 'missed'/);
   });
 
   it('asks only for a session that billed, and does not use the phase to decide', () => {
@@ -76,10 +111,10 @@ describe('a call asks for feedback too', () => {
      * `sessionId !== null` is the test. `start_call` returns a
      * `session_request_id` and no session, so a refused start, a ring cancelled
      * before it was answered and a declined incoming call all reach the cleanup
-     * with nothing to rate. `answer_call` creates the row and bills minute one,
-     * so an accepted call whose media then failed HAS been paid for while never
-     * reaching `phase === 'active'` — which is why the phase must not be the
-     * guard.
+     * with nothing to rate. `answer_call` creates the row (at `pending_leases`,
+     * billing nothing — 086:174), so an accepted call whose media then failed
+     * has a session id to rate while never reaching `phase === 'active'`, which
+     * is why the phase must not be the guard.
      */
     expect(reviewEffect).toContain('const billed = sessionIdRef.current');
     expect(reviewEffect).not.toContain('phaseRef');
