@@ -2898,8 +2898,8 @@ describe('iOS list separators are drawn the way iOS draws them', () => {
 const APPROVED_EM_DASH: readonly string[] = [
   '"Keep it kind — no sexual or abusive talk. Tokens start when they pick up."',
   '`Hey — ${name} is here`',
-  "'Keep it kind — no sexual or abusive talk. You will only use tokens once you both start.'",
-  "'They are ready when you are. Keep it kind — no sexual or abusive talk. You will only use tokens once you both start.'",
+  "'Keep it kind — no sexual or abusive talk. You are only charged once you both start.'",
+  "'They are ready when you are. Keep it kind — no sexual or abusive talk. You are only charged once you both start.'",
   "'You are out of tokens — top up to keep going.'",
 ];
 

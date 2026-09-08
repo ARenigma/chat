@@ -4,14 +4,30 @@ export { PAYMENTS_ENABLED, MOCK_PAYMENTS } from '../config';
 /**
  * Per-minute pricing, kept pure so it can be tested without a device.
  *
- * The member sees **tokens**, never rupees (1 token = ₹1) — everywhere except
- * the one place real money is being asked for. That place is the Recharge
- * screen: the pack chips, which are a price list, and the pay step. A store
- * card that does not name its price is not a store card, so the chip's headline
- * is `formatRupees(pack)` and the token count reads as what the price buys.
- * Everywhere else a balance and a rate are token counts, formatted by
- * `formatTokens`. Metering is still per-minute (ADR-0019); the unit shown just
- * changed from ₹ back to tokens.
+ * The member sees **rupees**, everywhere (Amit, 2026-09-08: "remove tokens and
+ * replace with rs everywhere").
+ *
+ * This reverses the previous policy, which is worth stating rather than
+ * quietly deleting: the member used to see TOKEN counts everywhere except the
+ * Recharge screen, on the argument that a prepaid balance is not money and that
+ * naming rupees outside the pay step would imply GST had not been settled.
+ * The counter-argument won, and it is simpler: a member reasons in rupees, and
+ * a second unit that happens to be 1:1 with the first is a unit nobody needed.
+ *
+ * Because 1 token = ₹1, this is a RENDERING change and not a conversion. The
+ * ledger, the metering and every stored balance are untouched; only what the
+ * screen says changed. `formatRupees` is gone rather than aliased, so the
+ * compiler had to visit all 24 of its call sites instead of leaving some of
+ * them rendering the old unit.
+ *
+ * Metering is still per-minute (ADR-0019).
+ *
+ * ONE distinction survives and must not be flattened: the STORAGE unit is still
+ * tokens. `profiles.token_balance`, `rate_tokens_per_min`, the ledger and every
+ * RPC still speak tokens, and code comments about those still say tokens —
+ * changing them would make the prose disagree with the column it describes.
+ * Rupees are what the SCREEN says. The two are 1:1, which is exactly why the
+ * display could change without touching anything below it.
  *
  * GST follows the same rule, one step stricter: it is shown on the Recharge
  * packs and the pay step ONLY — never on a per-minute rate, a balance, a talk
@@ -52,17 +68,6 @@ export const DEFAULT_RATES: Readonly<Record<Channel, number>> = {
 };
 
 /**
- * A token balance for display: a plain count, grouped `en-IN` (1,20,000), with
- * no currency mark. This is what the wallet pill and the balance card show.
- */
-export function formatTokens(tokens: number | null): string {
-  if (tokens === null) {
-    return '0';
-  }
-  return tokens.toLocaleString('en-IN', { maximumFractionDigits: 0 });
-}
-
-/**
  * Rupees, for the surfaces where money is what is being named: the price on a
  * Recharge pack chip (both hosts), the Pay button, the payment sheet and the
  * "1 token = ₹1" note. Since a token is a rupee, the number is the same; only
@@ -72,6 +77,25 @@ export function formatTokens(tokens: number | null): string {
  * is used only for the GST split, which is the one figure on these screens that
  * is not a round sum.
  */
+/**
+ * A plain grouped COUNT, `en-IN` (1,20,000), with no currency mark.
+ *
+ * This is what `formatTokens` actually was, and removing that name exposed the
+ * fact that it had two jobs: most of its call sites were rendering money, but
+ * some were rendering counts — the usage ledger's "5 sessions" among them.
+ * Renaming every site to `formatRupees` turned a session count into "₹5", which
+ * the ledger's own tests caught immediately.
+ *
+ * So the two jobs now have two names. Money is `formatRupees`; anything that is
+ * not money and merely wants Indian digit grouping is this.
+ */
+export function formatCount(value: number | null): string {
+  if (value === null) {
+    return '0';
+  }
+  return value.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+}
+
 export function formatRupees(rupees: number | null): string {
   if (rupees === null) {
     return '₹0';
@@ -94,7 +118,7 @@ export interface GstSplit {
 }
 
 /**
- * The GST inside a pack price. Prices are INCLUSIVE — ₹300 buys 300 tokens and
+ * The GST inside a pack price. Prices are INCLUSIVE — ₹300 buys ₹300 and
  * the ₹300 already contains the tax — so this backs the tax out of the total
  * rather than adding it on top.
  *
@@ -176,11 +200,11 @@ export interface GstOnTop {
 }
 
 /**
- * The tax ON TOP of a pack price. ₹300 + 18% = ₹354, and 300 tokens.
+ * The tax ON TOP of a pack price. ₹300 + 18% = ₹354, and ₹300.
  *
  * THIS REPLACES THE INCLUSIVE MODEL (Amit, 2026-09-07: "gst should be exclusive
  * and on top of recharge pill values — if I select the 300 pill then I should
- * get 300 tokens in my wallet but will be charged 300 + gst"). It supersedes
+ * get ₹300 in my wallet but will be charged 300 + gst"). It supersedes
  * ADR-0021, which fixed pack prices as tax-inclusive; see ADR-0029.
  *
  * What actually changed is WHAT IS CHARGED, not how it is worded. Under the old
@@ -233,9 +257,7 @@ export function packTotalInr(baseInr: number, rateBps: number): number {
  * invoice figures use, and its four pinned cases in contract.test.ts are about
  * that, not about this.
  */
-function formatRupeesExact(paise: number): string {
-  return paise % 100 === 0 ? formatRupees(paise / 100) : formatRupeesPaise(paise);
-}
+function formatRupeesExact(paise: number): string { return paise % 100 === 0 ? formatRupees(paise / 100) : formatRupeesPaise(paise); }
 
 /**
  * The one-line tax note under a pack price: "+ ₹54 GST".
@@ -253,7 +275,7 @@ function formatRupeesExact(paise: number): string {
  */
 export function gstAddedLabel(baseInr: number, rateBps: number): string | null {
   const { gstPaise } = gstOnTop(baseInr, rateBps);
-  return gstPaise > 0 ? `+ ${formatRupeesExact(gstPaise)} GST` : null;
+  return gstPaise > 0 ? `+ ${ formatRupeesExact(gstPaise) } GST` : null;
 }
 
 /**
@@ -267,7 +289,7 @@ export function gstAddedLabel(baseInr: number, rateBps: number): string | null {
 export function gstAddedSpoken(baseInr: number, rateBps: number): string | null {
   const { gstPaise, totalPaise } = gstOnTop(baseInr, rateBps);
   return gstPaise > 0
-    ? `plus ${formatRupeesExact(gstPaise)} GST, ${formatRupeesExact(totalPaise)} total`
+    ? `plus ${ formatRupeesExact(gstPaise) } GST, ${ formatRupeesExact(totalPaise) } total`
     : null;
 }
 

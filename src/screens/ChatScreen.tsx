@@ -1857,8 +1857,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
         }
         body={
           theyOpenedTheChat
-            ? 'Keep it kind — no sexual or abusive talk. You will only use tokens once you both start.'
-            : 'They are ready when you are. Keep it kind — no sexual or abusive talk. You will only use tokens once you both start.'
+            ? 'Keep it kind — no sexual or abusive talk. You are only charged once you both start.'
+            : 'They are ready when you are. Keep it kind — no sexual or abusive talk. You are only charged once you both start.'
         }
         cancelLabel="Decline"
         confirmLabel="Start session"
