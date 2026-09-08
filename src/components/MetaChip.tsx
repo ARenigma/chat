@@ -4,11 +4,14 @@ import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 
 type Tone = 'surface' | 'emphasis' | 'onMedia';
+type Size = 'md' | 'sm';
 
 interface Props {
   label: string;
   /** surface = M3 AssistChip; emphasis = rating lead; onMedia = photo overlay. */
   tone?: Tone;
+  /** md = M3's 32dp AssistChip. sm = the 24dp tag pill; see META_CHIP_HEIGHT_SM. */
+  size?: Size;
   testID?: string;
   style?: StyleProp<ViewStyle>;
 }
@@ -51,7 +54,30 @@ interface Props {
  * chip inside it cannot drift apart.
  */
 export const META_CHIP_HEIGHT = 32;
-function MetaChipView({ label, tone = 'surface', testID, style }: Props) {
+
+/**
+ * The 24dp tag pill, and a STATED DEPARTURE from the 32dp spec above.
+ *
+ * M3 gives assist chips one height, 32dp, and this is 24. The reason the spec
+ * says 32 is the touch target — "chips are compact elements that represent an
+ * input, attribute, or action" and the same page's accessibility section sizes
+ * them to be tapped. Nothing here is tappable: every chip this component
+ * renders is `accessible={false}` and sits inside a Pressable that owns the
+ * gesture, so there is no target to undersize. The constraint that produces 32
+ * does not apply to a label.
+ *
+ * What DOES apply is the row's budget. The explore row (083) carries three
+ * expertise tags on their own line above two more text lines and a 48dp CTA;
+ * at 32dp the tag line alone is a third of the row, and the row passes 150dp.
+ * The reference this row is built from puts its equivalent line — Astrotalk's
+ * `skillET`, measured on the Redmi at 17.1dp — in plain text with no pill at
+ * all. 24dp is the compromise: Clarity's pill shape, close to Astrotalk's line
+ * height.
+ * https://m3.material.io/components/chips/specs
+ */
+export const META_CHIP_HEIGHT_SM = 24;
+
+function MetaChipView({ label, tone = 'surface', size = 'md', testID, style }: Props) {
   const styles = useStyles(makeStyles);
   return (
     <View
@@ -59,6 +85,7 @@ function MetaChipView({ label, tone = 'surface', testID, style }: Props) {
       accessible={false}
       style={[
         styles.chip,
+        size === 'sm' && styles.chipSm,
         tone === 'emphasis' && styles.emphasis,
         tone === 'onMedia' && styles.onMedia,
         style,
@@ -68,6 +95,7 @@ function MetaChipView({ label, tone = 'surface', testID, style }: Props) {
         numberOfLines={1}
         style={[
           styles.label,
+          size === 'sm' && styles.labelSm,
           tone === 'emphasis' && styles.labelEmphasis,
           tone === 'onMedia' && styles.labelOnMedia,
         ]}>
@@ -91,6 +119,18 @@ const makeStyles = (t: Theme) =>
       borderWidth: 1,
       borderColor: t.color.border.strong,
       backgroundColor: t.color.bg.base,
+    },
+    // 8dp of side padding rather than 12: the pill is 8dp shorter, and keeping
+    // the horizontal inset would leave it visibly wider than tall for a
+    // one-word tag.
+    chipSm: {
+      height: META_CHIP_HEIGHT_SM,
+      minHeight: META_CHIP_HEIGHT_SM,
+      paddingHorizontal: TOKENS.space.xs,
+      borderRadius: TOKENS.radius.xs,
+    },
+    labelSm: {
+      ...TOKENS.typography.labelSmall,
     },
     emphasis: {
       borderColor: t.color.border.strong,

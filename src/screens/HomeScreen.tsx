@@ -47,6 +47,7 @@ import { NAV_BAR_HEIGHT } from '../components/FloatingToolbar';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { ProviderRow, PROVIDER_ROW_HEIGHT } from '../components/ProviderRow';
+import { FALLBACK_ECONOMICS, useEconomicsConfig } from '../api/appConfig';
 import { DirectorySkeleton } from '../components/DirectorySkeleton';
 import { Chip } from '../components/Chip';
 import { HeroCarousel } from '../components/HeroCarousel';
@@ -630,6 +631,24 @@ export function HomeScreen({
     searchSeenIds.current.clear();
   }, [trimmed]);
 
+  /*
+   * The rate the rows quote, read ONCE here and passed down.
+   *
+   * `ProviderRow` deliberately does not call `useEconomicsConfig()` itself —
+   * see its `ratePerMin` prop. React Query would dedupe the fetch, but every
+   * visible row would subscribe, so one admin edit re-renders the whole list
+   * and `memo` stops holding across balance ticks.
+   *
+   * The CHAT rate, because the row's action is Chat and its CTA says so. The
+   * glyph beside it switches to a phone for a provider who takes calls, which
+   * is honest today only because `chat_rate` and `audio_rate` are both ₹22 —
+   * ProviderRow's own comment names this as the site that has to choose if they
+   * ever diverge.
+   */
+  const { data: economics } = useEconomicsConfig();
+  const ratePerMin =
+    economics?.chat_rate_tokens_per_min ?? FALLBACK_ECONOMICS.chat_rate_tokens_per_min;
+
   const renderExploreRow = useCallback(
     ({ item, index }: { item: ProviderSummary; index: number }) => {
       const animate = !seenIds.current.has(item.id);
@@ -643,11 +662,12 @@ export function HomeScreen({
           isLast={index === rows.length - 1}
           onPress={handleOpenProvider}
           onPressAvatar={handleOpenProvider}
+          ratePerMin={ratePerMin}
           animateEntrance={animate}
         />
       );
     },
-    [rows.length, handleOpenProvider],
+    [rows.length, handleOpenProvider, ratePerMin],
   );
 
   const renderSearchRow = useCallback(
@@ -663,12 +683,13 @@ export function HomeScreen({
           isLast={index === results.length - 1}
           onPress={handleOpenProvider}
           onPressAvatar={handleOpenProvider}
+          ratePerMin={ratePerMin}
           animateEntrance={animate}
           showCategory
         />
       );
     },
-    [results.length, handleOpenProvider],
+    [results.length, handleOpenProvider, ratePerMin],
   );
 
   // ListHeaderComponent for the main Explore FlashList: chats rail + section

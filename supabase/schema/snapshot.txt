@@ -336,6 +336,7 @@ COLUMN profiles.created_at timestamp with time zone null=NO default=now()
 COLUMN profiles.date_of_birth date null=YES default=-
 COLUMN profiles.display_name text null=YES default=-
 COLUMN profiles.engagement_nudged_at timestamp with time zone null=YES default=-
+COLUMN profiles.expertise ARRAY null=NO default='{}'::text[]
 COLUMN profiles.gender text null=YES default=-
 COLUMN profiles.headline text null=YES default=-
 COLUMN profiles.id uuid null=NO default=-
@@ -366,6 +367,7 @@ COLUMN provider_applications.about text null=YES default=-
 COLUMN provider_applications.created_at timestamp with time zone null=NO default=now()
 COLUMN provider_applications.date_of_birth date null=YES default=-
 COLUMN provider_applications.display_name text null=YES default=-
+COLUMN provider_applications.expertise ARRAY null=NO default='{}'::text[]
 COLUMN provider_applications.gender text null=YES default=-
 COLUMN provider_applications.headline text null=YES default=-
 COLUMN provider_applications.id uuid null=NO default=gen_random_uuid()
@@ -383,6 +385,7 @@ COLUMN provider_directory.avatar_url text null=YES default=-
 COLUMN provider_directory.chat_enabled boolean null=YES default=-
 COLUMN provider_directory.created_at timestamp with time zone null=YES default=-
 COLUMN provider_directory.display_name text null=YES default=-
+COLUMN provider_directory.expertise ARRAY null=YES default=-
 COLUMN provider_directory.gender text null=YES default=-
 COLUMN provider_directory.headline text null=YES default=-
 COLUMN provider_directory.id uuid null=YES default=-
@@ -671,6 +674,7 @@ CONSTRAINT profiles.member_is_pseudonymous CHECK (((role = 'provider'::user_role
 CONSTRAINT profiles.profiles_about_check CHECK (((about IS NULL) OR (length(about) <= 2000)))
 CONSTRAINT profiles.profiles_age_bracket_values CHECK (((age_bracket IS NULL) OR (age_bracket = ANY (ARRAY['18-24'::text, '25-34'::text, '35-44'::text, '45+'::text]))))
 CONSTRAINT profiles.profiles_at_least_one_channel CHECK ((chat_enabled OR audio_enabled OR video_enabled))
+CONSTRAINT profiles.profiles_expertise_sane CHECK (expertise_list_is_sane(expertise))
 CONSTRAINT profiles.profiles_gender_check CHECK (((gender IS NULL) OR (gender = ANY (ARRAY['female'::text, 'male'::text, 'other'::text]))))
 CONSTRAINT profiles.profiles_headline_check CHECK (((headline IS NULL) OR ((length(btrim(headline)) >= 1) AND (length(btrim(headline)) <= 140))))
 CONSTRAINT profiles.profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE
@@ -687,6 +691,7 @@ CONSTRAINT profiles.profiles_token_balance_check CHECK ((token_balance >= 0))
 CONSTRAINT profiles.provider_has_display_name CHECK (((role <> 'provider'::user_role) OR (btrim(COALESCE(display_name, ''::text)) <> ''::text)))
 CONSTRAINT profiles.provider_is_adult CHECK (((role <> 'provider'::user_role) OR ((date_of_birth IS NOT NULL) AND (date_of_birth <= (CURRENT_DATE - '18 years'::interval)))))
 CONSTRAINT provider_applications.provider_applications_about_check CHECK (((about IS NULL) OR (length(about) <= 2000)))
+CONSTRAINT provider_applications.provider_applications_expertise_sane CHECK (expertise_list_is_sane(expertise))
 CONSTRAINT provider_applications.provider_applications_gender_check CHECK (((gender IS NULL) OR (gender = ANY (ARRAY['female'::text, 'male'::text, 'other'::text]))))
 CONSTRAINT provider_applications.provider_applications_pkey PRIMARY KEY (id)
 CONSTRAINT provider_applications.provider_applications_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
@@ -1155,6 +1160,7 @@ FUNCTION enums_are(name, name[]) returns text security=invoker
 FUNCTION enums_are(name, name[], text) returns text security=invoker
 FUNCTION enums_are(name[]) returns text security=invoker
 FUNCTION enums_are(name[], text) returns text security=invoker
+FUNCTION expertise_list_is_sane(p text[]) returns boolean security=invoker
 FUNCTION extensions_are(name, name[]) returns text security=invoker
 FUNCTION extensions_are(name, name[], text) returns text security=invoker
 FUNCTION extensions_are(name[]) returns text security=invoker
@@ -1869,6 +1875,7 @@ FUNCTION set_ne(text, anyarray, text) returns text security=invoker
 FUNCTION set_ne(text, text) returns text security=invoker
 FUNCTION set_ne(text, text, text) returns text security=invoker
 FUNCTION set_next_call_media_backend(p_conversation_id uuid, p_backend call_media_backend, p_experiment_id text, p_run_id uuid) returns void security=definer
+FUNCTION set_provider_expertise(p_expertise text[]) returns text[] security=definer
 FUNCTION settle_call(p_call_id uuid) returns calls security=definer
 FUNCTION settle_provider_payout_batch(p_batch_id uuid, p_cashfree_id text, p_ok boolean) returns void security=definer
 FUNCTION skip(integer) returns text security=invoker

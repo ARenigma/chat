@@ -2871,11 +2871,35 @@ describe('iOS list separators are drawn the way iOS draws them', () => {
     expect(home).not.toContain('ItemSeparatorComponent');
   });
 
-  it('gives the pick-a-person list a disclosure indicator', () => {
-    // Tapping a directory row pushes a conversation, which is exactly where iOS
-    // puts UITableViewCellAccessoryDisclosureIndicator. There was not one
-    // anywhere in the app, and `chevron-right` was dead code.
-    expect(read('src/components/ProviderRow.tsx')).toContain('name="chevronRight"');
+  it('says what a directory row does, in words rather than a chevron', () => {
+    /*
+     * REPLACED 2026-09-08, and the replacement is a promotion rather than a
+     * removal.
+     *
+     * The original: tapping a directory row pushes a conversation, which is
+     * exactly where iOS puts UITableViewCellAccessoryDisclosureIndicator, and
+     * the app had none anywhere — a row read as a card that happened to be
+     * tappable. That was right, and the chevron fixed it.
+     *
+     * The row now ends in a "Chat" CTA. A chevron is a mute gesture at a
+     * destination; a labelled control names the action, which is strictly more
+     * of what the original assertion wanted. Keeping both would put two
+     * trailing affordances on one row saying the same thing once vaguely.
+     *
+     * The invariant survives, restated: the row must carry SOME trailing
+     * indication that it goes somewhere. The chevron is gone from this file
+     * only — the inbox and the settings rows still use it, and this asserts
+     * that so the glyph does not quietly become dead code again.
+     */
+    const row = read('src/components/ProviderRow.tsx');
+    expect(row).not.toContain('name="chevronRight"');
+    expect(row).toContain('styles.cta');
+    expect(row).toMatch(/>\s*Chat\s*</);
+    // Still live elsewhere, which is what made it worth adding in the first place.
+    const chevronUsers = walk(join(ROOT, 'src'))
+      .filter(f => /\.tsx$/.test(f))
+      .filter(f => readFileSync(f, 'utf8').includes('name="chevronRight"'));
+    expect(chevronUsers.length).toBeGreaterThan(0);
   });
 });
 

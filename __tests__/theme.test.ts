@@ -1894,6 +1894,26 @@ describe('accent budget is enforced in code, not just documented', () => {
       'ProviderDetailScreen.tsx',
       'ProviderHomeScreen.tsx',
       /*
+       * The explore row, which JOINED this list on 2026-09-08 when it grew a
+       * "Chat" CTA — and it is the exemption in this file most worth reading,
+       * because the rule right below ("leaves the provider directory
+       * monochrome") is aimed at this exact file.
+       *
+       * The two are not in conflict once the rule's own reason is applied. The
+       * reason is that this is the one screen where a member compares
+       * strangers, so tinting one of them is a recommendation the product has
+       * not earned. The CTA tints no stranger: it is IDENTICAL on every row, so
+       * it can only say "this is the action", which is what the budget reserves
+       * the colour for everywhere else — the Recharge selected card, the
+       * SpotlightCard CTA, the Detail screen's Call.
+       *
+       * What stays monochrome is everything that describes the PERSON: the
+       * avatar (never `warm`), the name, the expertise pills, the languages,
+       * the rating. The narrowed assertion below pins that, so the exemption
+       * cannot widen from an action to an endorsement without failing.
+       */
+      'ProviderRow.tsx',
+      /*
        * Recharge (v10 layout, ADR-0019). The coral is the selected amount card,
        * the daily-credit strip and the payment icon — a selection state and the
        * one action on the screen, which is exactly what the budget reserves it
@@ -1985,10 +2005,76 @@ describe('accent budget is enforced in code, not just documented', () => {
     }
   });
 
-  it('leaves the provider directory monochrome', () => {
-    // The one screen where a member compares strangers. Tinting any of them is a
-    // recommendation the product has not earned the right to make.
-    expect(read('src/components/ProviderRow.tsx')).not.toMatch(/accent/);
+  it('leaves the provider directory monochrome — every stranger, not every pixel', () => {
+    /*
+     * NARROWED on 2026-09-08, from "no accent anywhere in this file" to "no
+     * accent on anything that describes a person", and the narrowing is the
+     * point rather than a concession.
+     *
+     * The rule's stated reason is that this is the one screen where a member
+     * compares strangers, so tinting one is a recommendation the product has
+     * not earned. The row now carries a "Chat" CTA whose outline and label are
+     * accent — identical on every row, so it recommends nobody. A blanket
+     * `not.toMatch(/accent/)` cannot tell those two cases apart, and the case
+     * it was written to catch is the second one.
+     *
+     * So the assertion moves to the style block. Accent may appear ONLY in
+     * `cta` and `ctaLabel`. Every style that renders the person — avatar,
+     * name, nameAge, rating, ratingCount, tagLine, secondary, price — is
+     * checked to be free of it, which is stricter about the thing that matters
+     * than the old line was.
+     */
+    /*
+     * Comments stripped FIRST, and this test failed on its own documentation
+     * before they were — the paragraph above says the word `warm` in order to
+     * explain why the code must not. Every source-scanning assertion in this
+     * repo has hit that trap at least once; contract.test.ts carries a shared
+     * `withoutComments` for it, and this file has no equivalent, so the strip
+     * is local and minimal.
+     */
+    const body = read('src/components/ProviderRow.tsx')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+
+    // The style block only, so the prose above it cannot satisfy or break this.
+    const styleBlock = body.slice(body.indexOf('const makeStyles'));
+    const PERSON_STYLES = [
+      'avatarTap',
+      'rating',
+      'ratingCount',
+      'name',
+      'nameAge',
+      'tagLine',
+      'secondary',
+      'price',
+      'perMin',
+      'row',
+      'leftColumn',
+      'label',
+      'separator',
+    ];
+    for (const key of PERSON_STYLES) {
+      const rule = styleBlock.match(new RegExp(`\\b${key}: \\{[^}]*\\}`));
+      expect(rule).not.toBeNull();
+      expect(rule?.[0]).not.toMatch(/accent/);
+    }
+
+    // And the accent that IS here is only ever the action's.
+    const accentLines = styleBlock
+      .split('\n')
+      // `[Cc]olor` so the border line counts: it is `borderColor:`, and a
+      // lowercase-only match would have silently counted one of the two and
+      // passed while the outline drifted anywhere it liked.
+      .filter(line => /[Cc]olor: t\.color\.(bg|text)\.accent/.test(line));
+    expect(accentLines).toEqual([
+      '    borderColor: t.color.bg.accent,',
+      '    color: t.color.text.accent,',
+    ]);
+
+    // The avatar is never warm — unchanged, and the original rule's sharpest
+    // edge: a stranger's mark washed in the brand colour reads as a
+    // recommendation even when nothing else on the row does.
+    expect(body).not.toMatch(/warm/);
   });
 });
 
