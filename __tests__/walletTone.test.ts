@@ -360,8 +360,25 @@ describe('the bright accent carries no label', () => {
     expect(dark).toContain('bg.inverse');
     expect(dark).not.toContain('text.primary');
     expect(detail).toMatch(/kind === 'dark'\s*\?\s*theme\.color\.text\.onInverse/);
-    // The defect, recomputed: an ink token used as a fill collides with the ink.
-    expect(contrast(hex('text/onAccent', 'Dark'), hex('text/primary', 'Dark'))).toBeLessThan(1.1);
+    /*
+     * The defect's ARITHMETIC no longer reproduces, and that is worth recording
+     * rather than quietly deleting.
+     *
+     * This line used to assert contrast(text/onAccent, text/primary) < 1.1 in
+     * dark — white on white, 1.04:1, the button that was not there. With the
+     * WhatsApp palette (2026-09-08) `text/onAccent` in dark is near-black ink
+     * (#0A1F14) because the dark accent is a BRIGHT green, so the two ink tokens
+     * no longer collide; they are now 17:1 apart.
+     *
+     * The RULE the block exists for is untouched: a fill hand-rolled at a call
+     * site out of two ink tokens is a pair nobody measured, and it happened to
+     * be invisible then rather than merely wrong. So the structural assertions
+     * above — bg/inverse for the fill, text/onInverse for the label — are what
+     * this test now rests on, and the numeric fact is asserted in its new form.
+     */
+    expect(
+      contrast(hex('text/onAccent', 'Dark'), hex('text/primary', 'Dark')),
+    ).toBeGreaterThan(4.5);
     // Why light mode is untouched, as a fact rather than a promise.
     expect(hex('bg/inverse', 'Light')).toBe(hex('text/primary', 'Light'));
     for (const mode of ['Light', 'Dark'] as const) {
@@ -372,16 +389,39 @@ describe('the bright accent carries no label', () => {
   });
 
   it('keeps the two accent steps far enough apart to be worth having two', () => {
+    /*
+     * REWRITTEN 2026-09-08, because the WhatsApp palette inverted half of it and
+     * leaving the old assertions would have meant loosening a gate to fit a
+     * change rather than restating what is now true.
+     *
+     * What still holds in BOTH modes: `bg/accentStrong` carries a label at AA.
+     * That is the whole point of having a second step.
+     *
+     * What changed: `bg/accent` in DARK now carries a label too, at 7.21:1. The
+     * old assertion said it could not, and that was correct while the dark
+     * accent was a light blue under a WHITE label (2.59:1). WhatsApp's dark
+     * accent is a bright green and `text/onAccent` in dark is now near-black
+     * ink, so the pair is legible. The two steps therefore still exist in dark,
+     * but for HIERARCHY rather than for legibility — and saying so is the
+     * honest version.
+     *
+     * LIGHT is unchanged in kind: white on #1DAA61 is 3.01:1, which clears
+     * neither 4.5 nor the 3:1 large-text step by a useful margin, so light
+     * still has a genuine one-step-only-carries-a-label rule.
+     */
     for (const mode of ['Light', 'Dark'] as const) {
       expect(contrast(hex('text/onAccent', mode), hex('bg/accentStrong', mode))).toBeGreaterThanOrEqual(4.5);
-      // Asserted as a fact, not as an aspiration: bg/accent is the glyph step.
-      // If this ever clears 4.5 the two-step accent has been collapsed and every
-      // `accentStrong` above is load-bearing for a reason that no longer holds.
-      expect(contrast(hex('text/onAccent', mode), hex('bg/accent', mode))).toBeLessThan(4.5);
+      // Two steps means two VALUES, in every mode. Collapsing them would make
+      // every `accentStrong` above load-bearing for nothing.
+      expect(hex('bg/accent', mode)).not.toBe(hex('bg/accentStrong', mode));
     }
-    // Dark is the harder half and the one the original audit missed: there the
-    // accent is a LIGHT blue, so white fails even the 3:1 non-text minimum.
-    expect(contrast(hex('text/onAccent', 'Dark'), hex('bg/accent', 'Dark'))).toBeLessThan(3);
+    // Light: still not a label surface.
+    expect(contrast(hex('text/onAccent', 'Light'), hex('bg/accent', 'Light'))).toBeLessThan(4.5);
+    // Dark: now IS one. Asserted so a future palette tune that quietly breaks it
+    // again fails here rather than on a device.
+    expect(
+      contrast(hex('text/onAccent', 'Dark'), hex('bg/accent', 'Dark')),
+    ).toBeGreaterThanOrEqual(4.5);
   });
 
   it('registers the failing pair in the contrast gate, which is what let it ship', () => {

@@ -236,15 +236,29 @@ function MetaRow({
 }) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
-  const readColor = onAccent ? '#85D4A0' : theme.color.text.positive;
-  const sentColor = onAccent ? 'rgba(255,255,255,0.65)' : theme.color.text.tertiary;
+  /*
+   * WhatsApp's own split (2026-09-08), and the split is the finding: only the
+   * READ tick has a colour of its own. Sent and delivered have no token in
+   * WhatsApp's design system at all — they inherit the bubble's deemphasized
+   * content colour, which is the same value the timestamp uses. So "the grey
+   * tick" is not a grey; it is the timestamp colour, and treating it as its own
+   * hex is what produced the hardcoded rgba this replaces.
+   *
+   * One value per mode covers BOTH bubbles, so there is no longer an
+   * `onAccent` branch here — the previous white-on-coral / dark-on-light-coral
+   * fork existed only because the outgoing bubble was the accent.
+   */
+  const readColor = theme.color.bubble.tickRead;
+  const sentColor = theme.color.bubble.meta;
   /*
    * White on the coral bubble rather than the danger red: `danger` against
    * `accentStrong` is red on coral, which is both unreadable and reads as
    * decoration. On the bubble the MARK carries the meaning and full-strength
    * white is what makes it legible; off the bubble, danger is correct.
    */
-  const failColor = onAccent ? '#FFFFFF' : theme.color.state.danger;
+  // Danger red on both bubbles now: the outgoing fill is pale in light and deep
+  // in dark, and `state/danger` is authored per mode to sit on either.
+  const failColor = theme.color.state.danger;
   return (
     <View style={styles.metaRow}>
       <Text
@@ -1342,7 +1356,7 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: TOKENS.space.md,
       paddingTop: TOKENS.space.xs,
       paddingBottom: TOKENS.space.xs,
-      backgroundColor: t.color.bg.sunken,
+      backgroundColor: t.color.bubble.theirs,
       borderRadius: BUBBLE_RADIUS,
       borderCurve: 'continuous',
     },
@@ -1413,7 +1427,16 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: TOKENS.space.md,
       paddingTop: TOKENS.space.xs,
       paddingBottom: TOKENS.space.xs,
-      backgroundColor: t.color.bg.accentStrong,
+      /*
+       * WhatsApp's outgoing fill (2026-09-08), not the accent any more.
+       *
+       * The change is not a hue swap: `bg/accentStrong` was a DEEP colour under
+       * white text, and `bubble/mine` is a PALE green under near-black text in
+       * light mode. Anything drawing inside this bubble must read `bubble/text`
+       * and `bubble/meta` rather than assume white — which is why the metadata
+       * colours below stopped being hardcoded rgba.
+       */
+      backgroundColor: t.color.bubble.mine,
       borderRadius: BUBBLE_RADIUS,
       borderCurve: 'continuous',
     },
@@ -1477,7 +1500,7 @@ const makeStyles = (t: Theme) =>
     },
     myText: {
       ...TOKENS.typography.bodyLarge,
-      color: t.color.text.onAccent,
+      color: t.color.bubble.text,
       flexShrink: 1,
     },
     textBody: {
@@ -1506,9 +1529,13 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.bodySmall,
       fontSize: 11,
       lineHeight: 16,
-      // Follows the bubble's paired on-colour. Dark mode uses a light coral
-      // bubble with dark ink, so a hardcoded white timestamp disappeared.
-      color: t.color.text.onAccent,
+      /*
+       * `bubble/meta`, the same token the sent/delivered tick uses — because in
+       * WhatsApp they ARE the same value (the tick has no colour of its own).
+       * Previously `text/onAccent`, which was right only while the bubble was
+       * the accent fill.
+       */
+      color: t.color.bubble.meta,
     },
     // Row inside the photo overlay: timestamp + tick side by side.
     quote: {

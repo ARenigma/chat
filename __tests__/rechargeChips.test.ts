@@ -164,7 +164,20 @@ describe('a selected money chip is a filled container', () => {
     // which is exactly what bg/accent (3.44 / 2.59) does not do.
     for (const mode of ['Light', 'Dark'] as const) {
       expect(contrast(hex('text/onAccent', mode), hex('bg/accentStrong', mode))).toBeGreaterThanOrEqual(4.5);
-      expect(contrast(hex('text/onAccent', mode), hex('bg/accent', mode))).toBeLessThan(4.5);
+      /*
+       * `accentStrong` is the step a LABEL sits on — that is what this chip
+       * needs and it holds in both modes.
+       *
+       * The second half used to assert that bg/accent could NOT carry a label
+       * in either mode, which was true while the dark accent was a light blue
+       * under white text (2.59:1). With WhatsApp green (2026-09-08) dark
+       * flipped text/onAccent to near-black ink and the pair is now 7.21:1, so
+       * the claim is only true in LIGHT. Narrowed rather than deleted: light is
+       * still the mode where a filled chip must use the deeper step.
+       */
+      if (mode === 'Light') {
+        expect(contrast(hex('text/onAccent', mode), hex('bg/accent', mode))).toBeLessThan(4.5);
+      }
     }
   });
 
