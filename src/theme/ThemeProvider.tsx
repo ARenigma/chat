@@ -15,6 +15,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { storage } from '../lib/storage';
+import { THEME_DEFAULT_MODE } from '../config';
 import { DARK, LIGHT, type Theme } from './tokens';
 import { DURATION } from './motion';
 
@@ -53,21 +54,30 @@ const ThemeContext = createContext<ThemeState>({
 });
 
 /**
- * Fresh-install default is 'light', not 'system'.
+ * Fresh-install default comes from `THEME_DEFAULT_MODE` in src/config.ts, and
+ * as of 2026-09-08 it is 'dark' (Amit).
  *
- * Android dark-theme guidance recommends defaulting to System so the app
- * follows the device immediately. This product departs from that recommendation:
- * dark mode is a deliberate personalisation in a chat product, not a base
- * expectation. A first-time user who has never touched the Appearance setting
- * gets Light mode; only an explicit choice (stored in MMKV) activates Dark or
- * System. The departure is documented in docs/android-audit.md (dark-theme
- * section) and asserted mechanically in __tests__/theme.test.ts.
+ * It was hardcoded 'light' here with a long argument for why: dark being a
+ * deliberate personalisation rather than a base expectation. That argument has
+ * been overtaken by a product decision, and the value moved to config so the
+ * next such decision is a one-line flip rather than an edit to this function.
+ *
+ * Either way it remains a DEPARTURE from Android's dark-theme guidance, which
+ * recommends defaulting to System so the app follows the device immediately —
+ * 'dark' departs from it just as 'light' did, in the other direction. Recorded
+ * in docs/android-audit.md and asserted in __tests__/theme.test.ts.
+ * https://developer.android.com/develop/ui/views/theming/darktheme
+ *
+ * A stored choice always wins over the default. That ordering is the whole
+ * reason this reads storage first: flipping the config must not override
+ * somebody who has already chosen, or their setting would undo itself on the
+ * next upgrade.
  */
 function readStoredMode(): ThemeMode {
   const stored = storage.get(MODE_KEY);
   return stored === 'light' || stored === 'dark' || stored === 'system'
     ? stored
-    : 'light'; // fresh-install default — documented deviation from Android System recommendation
+    : THEME_DEFAULT_MODE;
 }
 
 /**

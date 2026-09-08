@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated from 'react-native-reanimated';
 import { NAV_BAR_HEIGHT } from '../components/FloatingToolbar';
 import { SCROLL_PHYSICS } from '../lib/scroll';
+import { THEME_DEFAULT_MODE } from '../config';
 import { Button } from '../components/Button';
 import { Icon, type IconName } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
@@ -595,7 +596,19 @@ export function SettingsSheet({
         visible={choiceSheet === 'theme'}
         testID="theme-choice-sheet"
         title="Theme"
-        body="Light is the default. System follows your device setting."
+        /*
+         * The copy names the ACTUAL default, so it cannot go stale silently
+         * again: it read "Light is the default" until 2026-09-08, which the
+         * config flip to dark made false in the one place a member goes to
+         * check. Derived from THEME_DEFAULT_MODE rather than written out.
+         */
+        body={`${
+          THEME_DEFAULT_MODE === 'system'
+            ? 'Your device setting'
+            : THEME_DEFAULT_MODE === 'dark'
+              ? 'Dark'
+              : 'Light'
+        } is the default. System follows your device setting.`}
         onClose={() => setChoiceSheet(null)}>
         <View style={styles.choiceList}>
           {(['light', 'dark', 'system'] as const).map((option, index) => {

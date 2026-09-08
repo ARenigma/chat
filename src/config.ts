@@ -58,3 +58,32 @@ export const CASHFREE_SANDBOX_CHECKOUT = APP_ENV !== 'production';
  * by adding a button. See auth.ts for the full DLT/SMS note.
  */
 export const PHONE_AUTH_ENABLED = true;
+
+/**
+ * Which theme a FRESH INSTALL opens in.
+ *
+ * Amit, 2026-09-08: "default app at dark mode ... and all this should be in
+ * config for easy experimentation". So the value lives here, as one line to
+ * flip, rather than buried in `readStoredMode`.
+ *
+ * `'dark' | 'light' | 'system'`:
+ *   'dark'    ships dark regardless of the device setting. The current choice.
+ *   'light'   the previous behaviour, kept because it was a documented
+ *             deliberate deviation and may be wanted back.
+ *   'system'  follow the device, which is what Android's dark-theme guidance
+ *             actually recommends.
+ *
+ * ONLY the fresh-install default. Any explicit choice the member makes is
+ * stored in MMKV and always wins — flipping this does not override somebody
+ * who has already been to Appearance, and it must not, or the setting would
+ * silently undo itself on upgrade.
+ *
+ * This is deliberately a compile-time constant and NOT an appConfig domain.
+ * A runtime-flippable default would mean the very first frame of a cold start
+ * waiting on the network to know what colour to be — and the fallback while it
+ * waited would be a flash of the wrong theme, which is the one thing a theme
+ * default must never do.
+ *
+ * https://developer.android.com/develop/ui/views/theming/darktheme
+ */
+export const THEME_DEFAULT_MODE: 'light' | 'dark' | 'system' = 'dark';
