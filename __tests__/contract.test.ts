@@ -2896,11 +2896,11 @@ describe('iOS list separators are drawn the way iOS draws them', () => {
  * entries are exact matches, not patterns, for that reason.
  */
 const APPROVED_EM_DASH: readonly string[] = [
-  '"Keep it kind — no sexual or abusive talk. Tokens start when they pick up."',
+  '"Keep it kind — no sexual or abusive talk. Charging starts when they pick up."',
   '`Hey — ${name} is here`',
   "'Keep it kind — no sexual or abusive talk. You are only charged once you both start.'",
   "'They are ready when you are. Keep it kind — no sexual or abusive talk. You are only charged once you both start.'",
-  "'You are out of tokens — top up to keep going.'",
+  "'Your balance is empty — top up to keep going.'",
 ];
 
 describe('no user-facing em dash and no leftover persona pronoun', () => {
@@ -5536,5 +5536,88 @@ describe('composer capsule and bubbles share one horizontal grid and radius', ()
     );
     expect(inputStyleBlock).not.toContain('minHeight:');
     expect(inputStyleBlock).not.toContain('maxHeight:');
+  });
+});
+
+describe('the member reads rupees; "token" is a storage word, never a shown one', () => {
+  /*
+   * Amit, 2026-09-08: "remove tokens and replace with rs everywhere".
+   *
+   * The formatter sweep (ea25b11) caught every site that rendered a NUMBER,
+   * because deleting `formatTokens` made the compiler visit all 24 of them. It
+   * could not catch the sites that spelled the word out in prose — there was no
+   * formatter to delete. Nine survived it, in six files, including a settings
+   * line that interpolated the raw column and appended "tokens", and one
+   * consent sheet telling members "Tokens start when they pick up".
+   *
+   * So the word gets a gate rather than a second careful read. `token` remains
+   * completely legal in code — `token_balance` is still the column, `TOKENS` is
+   * still the design-token object, FCM still has push tokens. What is banned is
+   * the word reaching a person: inside a quoted string, in a screen or a
+   * component, as an English word.
+   *
+   * Comments are stripped first. This suite's own prose quotes the banned
+   * strings at length, and the em-dash gate above already learned that lesson
+   * the hard way.
+   */
+  const UI_DIRS = ['src/screens', 'src/components'];
+
+  /*
+   * Identifiers that merely CONTAIN the letters, and are never read aloud.
+   * Kept as exact strings rather than a loose pattern so that adding a new one
+   * is a decision someone makes on purpose.
+   */
+  const NOT_PROSE = new Set([
+    '../theme/tokens',
+    './tokens',
+    'token-badge',
+    'token-count',
+  ]);
+
+  const literals = (source: string): string[] =>
+    codeOnly(source).match(/'[^'\n]*'|"[^"\n]*"|`[^`\n]*`/g) ?? [];
+
+  it('no screen or component puts the word in front of a member', () => {
+    const offenders: string[] = [];
+    for (const dir of UI_DIRS) {
+      for (const file of walk(join(ROOT, dir)).filter(f => /\.tsx?$/.test(f))) {
+        for (const raw of literals(readFileSync(file, 'utf8'))) {
+          /*
+           * `${...}` is code, not prose, and is stripped for the same reason
+           * comments are. The ledger row renders `${formatRupees(row.tokens)}`
+           * — `row.tokens` is the RPC's field name, which is exactly the
+           * storage-layer usage this gate is not about. Without the strip the
+           * gate would push a rename of the wire contract, which is the change
+           * it is meant to leave alone.
+           */
+          const body = raw.slice(1, -1).replace(/\$\{[^}]*\}/g, '');
+          if (NOT_PROSE.has(body)) continue;
+          // `\b` alone would match inside `token_balance` and `push_token`, both
+          // of which are correct: the ban is on the English word, so a
+          // neighbouring underscore or hyphen means it is an identifier.
+          if (/(^|[^\w-])[Tt]okens?([^\w-]|$)/.test(body)) {
+            offenders.push(`${file.replace(`${ROOT}/`, '')}: ${raw}`);
+          }
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('and nothing quotes a price for sending, because sending is free', () => {
+    /*
+     * A separate assertion because it is a separate defect, and the more
+     * serious one. The composer's three hints and the send button's read
+     * "…costs one token" — not stale vocabulary but a false statement of
+     * price. Migration 037 made `spend_chat_minute` a no-op and moved billing
+     * to per-minute on a live session, so a TalkBack user was quoted a charge
+     * for typing that no longer exists and is not levied in any unit.
+     *
+     * Renaming the unit would have kept the lie and made it read correctly,
+     * which is why this is asserted on the CLAIM and not on the word.
+     */
+    for (const file of ['src/components/Composer.tsx', 'src/components/SendButton.tsx']) {
+      expect(codeOnly(read(file))).not.toMatch(/costs? (one|a)\b/i);
+    }
   });
 });

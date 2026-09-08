@@ -81,7 +81,7 @@ const RING_TIMEOUT_IN_MS = 60_000;
 
 /** start_call refusals, in words. */
 const START_NOTICE: Record<string, string> = {
-  INSUFFICIENT_BALANCE: 'You need a few more tokens to call.',
+  INSUFFICIENT_BALANCE: 'Your balance is too low to call.',
   BUSY: 'One of you is already on a call.',
   BLOCKED: 'You can no longer call each other.',
   SUSPENDED: 'Your account is under review and cannot call.',
@@ -312,7 +312,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
         const code = r?.error;
         track('call_rejected', { reason: code ?? 'network', medium });
         if (code === 'INSUFFICIENT_BALANCE' && !isMemberSide) {
-          setNotice('They need a few more tokens before this call can start.');
+          setNotice('Their balance is too low to start this call.');
         } else {
           setNotice(code ? (START_NOTICE[code] ?? 'Could not start the call.') : 'Could not start just now. Check your connection.');
           if (code === 'INSUFFICIENT_BALANCE') {
@@ -701,7 +701,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
         }
         testID="call-session-consent"
         title={medium === 'video' ? `Video chat with ${name}?` : `Call ${name}?`}
-        body="Keep it kind — no sexual or abusive talk. Tokens start when they pick up."
+        body="Keep it kind — no sexual or abusive talk. Charging starts when they pick up."
         cancelLabel="Not now"
         confirmLabel={medium === 'video' ? 'Video them' : 'Call them'}
         onCancel={onEnd}

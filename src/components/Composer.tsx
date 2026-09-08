@@ -1201,8 +1201,22 @@ function ComposerView({
             returnKeyType="send"
             submitBehavior="submit"
             onSubmitEditing={submit}
+            /*
+             * The three composer hints used to end "…costs one token" — on the
+             * field, the attach button and the mic. All three were false, not
+             * merely old vocabulary: migration 037 made `spend_chat_minute` a
+             * no-op and billing became per-minute on a live session, so nothing
+             * here is charged per item. TalkBack users were being quoted a
+             * price that does not exist.
+             *
+             * The two that describe a real non-obvious outcome kept a hint with
+             * the price claim removed. This one lost its hint entirely, because
+             * once the false half is gone the rest only restates the label —
+             * which the accessibility guidance names as the thing a hint must
+             * not do:
+             * developer.android.com/guide/topics/ui/accessibility/principles
+             */
             accessibilityLabel="Message"
-            accessibilityHint="One message costs one token"
             underlineColorAndroid="transparent"
             onFocus={onFieldFocus}
             onBlur={onFieldBlur}
@@ -1265,7 +1279,7 @@ function ComposerView({
           disabled={disabled || ready}
           testID="composer-attach"
           accessibilityLabel="Add media"
-          accessibilityHint="Camera or photos. One photo costs one token"
+          accessibilityHint="Camera or photos"
           press="none"
           highlight="material"
           size={40}
@@ -1291,7 +1305,7 @@ function ComposerView({
             disabled={disabled || ready}
             testID="voice-record"
             accessibilityLabel="Record a voice note"
-            accessibilityHint="Recording starts on tap and stops when you tap stop. One voice note costs one token"
+            accessibilityHint="Recording starts on tap and stops when you tap stop"
             press="none"
             highlight="material"
             size={40}
