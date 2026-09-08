@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  AppState,
   BackHandler,
   Linking,
   NativeModules,
@@ -511,6 +512,10 @@ function Root() {
    */
   const { data: clientSupport } = useClientSupport();
   const [boot, setBoot] = useState<Boot>({ phase: 'loading' });
+  // Ref so the AppState listener always reads the current phase without being
+  // in the effect's dep array — the listener is registered once for lifetime.
+  const bootPhaseRef = useRef(boot.phase);
+  bootPhaseRef.current = boot.phase;
   const [attempt, setAttempt] = useState(0);
   const [route, setRoute] = useState<MemberRoute>({ name: 'home' });
   const [providerRoute, setProviderRoute] = useState<ProviderRoute>({ name: 'home' });
@@ -817,6 +822,47 @@ function Root() {
       unsubscribeOpen();
     };
   }, [boot.phase]);
+
+  /*
+   * FOREGROUND-RETURN PERMISSION GUARD.
+   *
+   * Android's permission model allows the user to revoke a permission at any
+   * time via Settings while the app is backgrounded. When they return, the app
+   * would be running in a state where it believes permissions are granted but
+   * they are not — mic, camera, and notification access are all mandatory for
+   * this product.
+   *
+   * Platform doc: "You must check whether you have a permission every time you
+   * perform an operation that requires that permission."
+   * https://developer.android.com/training/permissions/requesting#handle-denied
+   *
+   * The listener tracks the PREVIOUS AppState so it only fires on the
+   * `background → active` transition (user returned from another app or from
+   * Settings), not on `inactive → active` (lock screen, notification shade,
+   * or rotation). `inactive` is a transient Android state and is not the
+   * "went to Settings" moment — only `background` is.
+   *
+   * Registered once (empty dep array); reads `bootPhaseRef` so it always has
+   * the current phase without being in the dep array and without needing to
+   * re-subscribe on every boot state change.
+   */
+  useEffect(() => {
+    let prevState = AppState.currentState;
+
+    const sub = AppState.addEventListener('change', async (next) => {
+      const prev = prevState;
+      prevState = next;
+      if (prev === 'background' && next === 'active' && bootPhaseRef.current === 'ready') {
+        const statuses = await checkGate();
+        if (!gateSatisfied(statuses)) {
+          setBoot({ phase: 'permissions' });
+        }
+      }
+    });
+
+    return () => sub.remove();
+   
+  }, []);
 
   /*
    * Every navigation declares its direction before it changes the route.
