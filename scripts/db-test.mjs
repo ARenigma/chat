@@ -124,6 +124,7 @@ const MIGRATIONS = [
   'supabase/migrations/081_message_idempotency.sql',
   'supabase/migrations/082_decline_means_no_session.sql',
   'supabase/migrations/083_provider_expertise.sql',
+  'supabase/migrations/084_seed_provider_expertise.sql',
 ];
 
 const docker = (args, options = {}) =>

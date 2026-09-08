@@ -1219,7 +1219,6 @@ describe('spacing lives in tokens', () => {
       'marginEnd: 6',
     ],
     'src/components/CallingDots.tsx': ['marginLeft: 6'],
-    'src/components/DirectorySkeleton.tsx': ['gap: 6'],
     'src/components/NoticeBar.tsx': ['paddingVertical: 10'],
     'src/components/ProviderCard.tsx': ['gap: 3'],
     'src/components/ReactionStrip.tsx': ['paddingHorizontal: 6'],
@@ -1996,62 +1995,70 @@ describe('accent budget is enforced in code, not just documented', () => {
       // atmospheric-surface exemption class as the hero surfaces above.
       'SpotlightCard.tsx',
     ]);
+    /*
+     * COMMENTS STRIPPED, added 2026-09-08 after this failed on RatingStars.tsx
+     * — whose docblock lists `react-native-svg` and a gradient mask among the
+     * approaches it REJECTED, and says why each is wrong. The alternatives were
+     * an EXEMPT entry for a file that draws no gradient (switching the rule off
+     * for it) or rewording prose to dodge a regex (letting the gate edit the
+     * documentation). Neither is right; the gate should read code.
+     *
+     * Every source-scanning ban in this repo has hit this trap at least once.
+     */
+    const codeOnly = (body: string): string =>
+      body.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     for (const s of componentSources.concat(screenSources)) {
       if (EXEMPT.has(s.file.split('/').pop() ?? '')) {
         continue;
       }
-      expect(s.body).not.toMatch(/gradient/i);
-      expect(s.body).not.toMatch(/accentGlow/);
+      expect(codeOnly(s.body)).not.toMatch(/gradient/i);
+      expect(codeOnly(s.body)).not.toMatch(/accentGlow/);
     }
   });
 
   it('leaves the provider directory monochrome — every stranger, not every pixel', () => {
     /*
-     * NARROWED on 2026-09-08, from "no accent anywhere in this file" to "no
-     * accent on anything that describes a person", and the narrowing is the
-     * point rather than a concession.
+     * NARROWED TWICE, and both are recorded because the rule keeps being right
+     * about something slightly different from what it says.
      *
-     * The rule's stated reason is that this is the one screen where a member
-     * compares strangers, so tinting one is a recommendation the product has
-     * not earned. The row now carries a "Chat" CTA whose outline and label are
-     * accent — identical on every row, so it recommends nobody. A blanket
-     * `not.toMatch(/accent/)` cannot tell those two cases apart, and the case
-     * it was written to catch is the second one.
+     * ORIGINALLY: no accent anywhere in ProviderRow.tsx, because this is the
+     * one screen where a member compares strangers and tinting one of them is a
+     * recommendation the product has not earned.
      *
-     * So the assertion moves to the style block. Accent may appear ONLY in
-     * `cta` and `ctaLabel`. Every style that renders the person — avatar,
-     * name, nameAge, rating, ratingCount, tagLine, secondary, price — is
-     * checked to be free of it, which is stricter about the thing that matters
-     * than the old line was.
-     */
-    /*
-     * Comments stripped FIRST, and this test failed on its own documentation
-     * before they were — the paragraph above says the word `warm` in order to
-     * explain why the code must not. Every source-scanning assertion in this
-     * repo has hit that trap at least once; contract.test.ts carries a shared
-     * `withoutComments` for it, and this file has no equivalent, so the strip
-     * is local and minimal.
+     * (a) The card grew a "Call" CTA in the accent. Identical on every card, so
+     *     it recommends nobody — and a blanket `not.toMatch(/accent/)` cannot
+     *     tell that from the case the rule was written against.
+     *
+     * (b) Amit asked for an accent RING on every avatar ("token color of ring
+     *     around dp always") and a certified badge. A ring around a stranger's
+     *     face is the closest this has come to the original worry, and it still
+     *     passes the rule's own test, because it is on EVERY face. Uniform
+     *     decoration cannot rank anyone. What WOULD break the rule is a ring
+     *     that appeared for some providers and not others — an "available now"
+     *     or "top rated" ring — which is why the assertion below is that the
+     *     accent styles are unconditional, not merely that they are few.
      */
     const body = read('src/components/ProviderRow.tsx')
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/^\s*\/\/.*$/gm, '');
-
-    // The style block only, so the prose above it cannot satisfy or break this.
     const styleBlock = body.slice(body.indexOf('const makeStyles'));
+
+    // Everything that renders a VARIABLE fact about the person stays
+    // monochrome. This is the half the rule has always really been about.
     const PERSON_STYLES = [
-      'avatarTap',
-      'rating',
-      'ratingCount',
+      'card',
+      'leftColumn',
+      'reviews',
+      'label',
+      'nameLine',
       'name',
       'nameAge',
       'tagLine',
+      'headline',
       'secondary',
+      'priceLine',
       'price',
       'perMin',
-      'row',
-      'leftColumn',
-      'label',
-      'separator',
     ];
     for (const key of PERSON_STYLES) {
       const rule = styleBlock.match(new RegExp(`\\b${key}: \\{[^}]*\\}`));
@@ -2059,21 +2066,36 @@ describe('accent budget is enforced in code, not just documented', () => {
       expect(rule?.[0]).not.toMatch(/accent/);
     }
 
-    // And the accent that IS here is only ever the action's.
+    /*
+     * Exactly four accent uses, in order, each unconditional. `[Cc]olor` so
+     * `borderColor` and `backgroundColor` both count — a lowercase-only match
+     * would have counted one of the four and passed while the rest drifted.
+     */
     const accentLines = styleBlock
       .split('\n')
-      // `[Cc]olor` so the border line counts: it is `borderColor:`, and a
-      // lowercase-only match would have silently counted one of the two and
-      // passed while the outline drifted anywhere it liked.
       .filter(line => /[Cc]olor: t\.color\.(bg|text)\.accent/.test(line));
     expect(accentLines).toEqual([
-      '    borderColor: t.color.bg.accent,',
-      '    color: t.color.text.accent,',
+      '    borderColor: t.color.bg.accent,', // the ring, on every avatar
+      '    borderColor: t.color.bg.accent,', // the CTA outline
+      '    color: t.color.text.accent,', // the CTA label
     ]);
 
-    // The avatar is never warm — unchanged, and the original rule's sharpest
-    // edge: a stranger's mark washed in the brand colour reads as a
-    // recommendation even when nothing else on the row does.
+    /*
+     * ...and the JSX, which is a hole this rule had until the certified badge
+     * moved out of the style block.
+     *
+     * The badge was a filled accent disc — a `backgroundColor` the scan above
+     * caught. It is now one Lucide glyph tinted by a `color` PROP, so the style
+     * block no longer mentions it and a style-only assertion would have let any
+     * amount of accent into the tree without noticing. Counted here instead.
+     */
+    const jsxAccent = body
+      .split('\n')
+      .filter(line => /theme\.color\.(bg|text)\.accent/.test(line));
+    expect(jsxAccent).toEqual(['                color={theme.color.bg.accent}']);
+
+    // The avatar is never warm — the original rule's sharpest edge, and the one
+    // thing the ring must not become: a FILL behind one stranger's mark.
     expect(body).not.toMatch(/warm/);
   });
 });

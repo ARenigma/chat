@@ -35,10 +35,12 @@ import {
   filterProviders,
   isFiltering,
   toggleBand,
+  toggleFilterExpertise,
+  toggleFilterLanguage,
   type DirectoryFilter,
   type ProviderCategory,
 } from '../lib/providerFilters';
-import { sortByLanguageMatch } from '../lib/languagePrefs';
+import { OFFERED_LANGUAGES, sortByLanguageMatch } from '../lib/languagePrefs';
 import { useBackGuard } from '../lib/backGuard';
 import { useBlockedPeerIds } from '../api/safety';
 import { useStore } from '../store/useStore';
@@ -48,6 +50,7 @@ import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { ProviderRow, PROVIDER_ROW_HEIGHT } from '../components/ProviderRow';
 import { FALLBACK_ECONOMICS, useEconomicsConfig } from '../api/appConfig';
+import { OFFERED_EXPERTISE, expertiseFor } from '../lib/expertise';
 import { DirectorySkeleton } from '../components/DirectorySkeleton';
 import { Chip } from '../components/Chip';
 import { HeroCarousel } from '../components/HeroCarousel';
@@ -149,6 +152,16 @@ const SEARCH_ROW_SIDE_MARGIN = 7;
 interface Props {
   onOpenConversation: (peerId: string) => void;
   onOpenProvider: (providerId: string) => void;
+  /**
+   * Ring a provider straight from their card's CTA.
+   *
+   * A DIFFERENT action from `onOpenProvider` and from the card body, which is
+   * why the card carries a second touch target: Amit, 2026-09-08, "our CTA will
+   * be call not chat". The row falls back to opening the conversation when this
+   * is absent or when the provider has switched calls off, so the button never
+   * promises something `start_call` will refuse.
+   */
+  onCallProvider: (providerId: string) => void;
   /** Open the full chats list from the rail's "See all". */
   onSeeAllChats: () => void;
 }
@@ -172,6 +185,7 @@ interface Props {
 export function HomeScreen({
   onOpenConversation,
   onOpenProvider,
+  onCallProvider,
   onSeeAllChats,
 }: Props) {
   const styles = useStyles(makeStyles);
@@ -421,10 +435,35 @@ export function HomeScreen({
    * sort's own tie-break is the incoming order, a language match now decides
    * which of two equally-rated providers is spotlighted.
    */
+  /*
+   * The topic chips the search panel offers.
+   *
+   * 083 splits the vocabulary by provider_category, so the panel follows the
+   * category chip above it — offering Tarot next to Anxiety would describe
+   * neither kind of provider. With no category picked, search spans both tabs,
+   * so the union is shown rather than an arbitrary default; a member who has
+   * not narrowed to Astrologers should still be able to ask for Tarot.
+   *
+   * Deduplicated, because the two lists genuinely overlap: 'Career' is offered
+   * to both, and two identical chips in one row is a visible bug.
+   */
+  const searchTopics = useMemo(() => {
+    if (searchFilter.category !== null) {
+      return [...expertiseFor(searchFilter.category)];
+    }
+    return [...new Set([...OFFERED_EXPERTISE.listener, ...OFFERED_EXPERTISE.astrologer])];
+  }, [searchFilter.category]);
+
   const directory = useMemo(
     () =>
       sortByLanguageMatch(
-        filterProviders(allProviders, { category: exploreCategory, bands: [] }),
+        /*
+         * `...NO_FILTER` rather than two more empty arrays: Explore filters by
+         * the TAB only. Language is a sort here and a filter in search (see
+         * DirectoryFilter.languages for why the two differ on purpose), and
+         * expertise is not a browse-level question at all.
+         */
+        filterProviders(allProviders, { ...NO_FILTER, category: exploreCategory }),
         preferredLanguages,
       ),
     [allProviders, exploreCategory, preferredLanguages],
@@ -662,12 +701,13 @@ export function HomeScreen({
           isLast={index === rows.length - 1}
           onPress={handleOpenProvider}
           onPressAvatar={handleOpenProvider}
+          onCall={onCallProvider}
           ratePerMin={ratePerMin}
           animateEntrance={animate}
         />
       );
     },
-    [rows.length, handleOpenProvider, ratePerMin],
+    [rows.length, handleOpenProvider, onCallProvider, ratePerMin],
   );
 
   const renderSearchRow = useCallback(
@@ -683,13 +723,14 @@ export function HomeScreen({
           isLast={index === results.length - 1}
           onPress={handleOpenProvider}
           onPressAvatar={handleOpenProvider}
+          onCall={onCallProvider}
           ratePerMin={ratePerMin}
           animateEntrance={animate}
           showCategory
         />
       );
     },
-    [results.length, handleOpenProvider, ratePerMin],
+    [results.length, handleOpenProvider, onCallProvider, ratePerMin],
   );
 
   // ListHeaderComponent for the main Explore FlashList: chats rail + section
@@ -1073,6 +1114,64 @@ export function HomeScreen({
                   tone={searchFilter.bands.includes(band) ? 'warm' : 'neutral'}
                   selected={searchFilter.bands.includes(band)}
                   onPress={() => setSearchFilter(f => toggleBand(f, band))}
+                />
+              ))}
+            </View>
+          </View>
+          {/* Language (Amit, 2026-09-08: "give language and expertise filer in
+              search").
+
+              A FILTER here, where Home sorts by the same field. That looks
+              inconsistent and is the product decision, recorded on
+              DirectoryFilter.languages: browsing must not be able to empty
+              itself, but a member who has typed a query has asked to narrow,
+              and quietly widening what they asked for would be the worse
+              answer.
+
+              `OFFERED_LANGUAGES` is the same list a provider ticks, so a member
+              can never filter on a language nobody is able to claim. */}
+          <View style={styles.filterGroup}>
+            <Text allowFontScaling style={styles.filterLabel}>
+              Language
+            </Text>
+            <View style={styles.filterChips}>
+              {OFFERED_LANGUAGES.map(language => (
+                <Chip
+                  key={language}
+                  label={language}
+                  tone={searchFilter.languages.includes(language) ? 'warm' : 'neutral'}
+                  selected={searchFilter.languages.includes(language)}
+                  onPress={() =>
+                    setSearchFilter(f =>
+                      toggleFilterLanguage(f, language, OFFERED_LANGUAGES),
+                    )
+                  }
+                />
+              ))}
+            </View>
+          </View>
+          {/* Topic. The chips follow the CATEGORY chip above, because 083 keeps
+              two vocabularies and offering Tarot alongside Anxiety would
+              describe neither kind of provider.
+
+              With no category picked the union is shown: search spans both
+              tabs, so a member who has not narrowed to one should still be able
+              to ask for Tarot. `expertiseFor` gives one list, so the union is
+              built here rather than in the lib, where nothing else needs it. */}
+          <View style={styles.filterGroup}>
+            <Text allowFontScaling style={styles.filterLabel}>
+              Topic
+            </Text>
+            <View style={styles.filterChips}>
+              {searchTopics.map(topic => (
+                <Chip
+                  key={topic}
+                  label={topic}
+                  tone={searchFilter.expertise.includes(topic) ? 'warm' : 'neutral'}
+                  selected={searchFilter.expertise.includes(topic)}
+                  onPress={() =>
+                    setSearchFilter(f => toggleFilterExpertise(f, topic, searchTopics))
+                  }
                 />
               ))}
             </View>

@@ -11,6 +11,8 @@
     "close": "x",
     "check": "check",
     "checkCheck": "check-check",
+    "$badgeCheckNote": "The certified badge on a directory card (Amit, 2026-09-08: \"certified icon should be like clarity.. lucide deosnthav eit or what?\" — it does). Lucide's `badge-check` is the scalloped rosette with a check inside, which is the mark Clarity and Astrotalk both use. Drawn as ONE glyph in the accent rather than as our own check inside an accent disc, which is what it was first built as: two shapes stacked to approximate a shape the icon set already had. Outline rather than the references' solid fill, because every other mark in this app is Lucide outline and one filled badge would read as a different system.",
+    "badgeCheck": "badge-check",
     "more": "ellipsis",
     "home": "house",
     "chat": "message-circle",

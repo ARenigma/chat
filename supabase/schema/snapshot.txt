@@ -359,6 +359,7 @@ COLUMN profiles.purchased_balance integer null=NO default=0
 COLUMN profiles.rating_avg numeric null=YES default=-
 COLUMN profiles.rating_count integer null=NO default=0
 COLUMN profiles.role USER-DEFINED null=NO default='member'::user_role
+COLUMN profiles.seeded_expertise_at timestamp with time zone null=YES default=-
 COLUMN profiles.suspended_until timestamp with time zone null=YES default=-
 COLUMN profiles.token_balance integer null=NO default=0
 COLUMN profiles.username text null=YES default='Friend'::text
@@ -1843,6 +1844,7 @@ FUNCTION schema_privs_are(name, name, name[], text) returns text security=invoke
 FUNCTION schemas_are(name[]) returns text security=invoker
 FUNCTION schemas_are(name[], text) returns text security=invoker
 FUNCTION seed_conversation_openers(p_provider_id uuid) returns jsonb security=definer
+FUNCTION seed_expertise_for(p_id uuid, p_category text) returns text[] security=invoker
 FUNCTION send_message(p_conversation_id uuid, p_body text, p_reply_to_id uuid, p_voice_path text, p_voice_duration_ms integer, p_attachment_path text, p_attachment_width integer, p_attachment_height integer, p_voice_peaks real[]) returns json security=definer
 FUNCTION send_message_idempotent(p_client_nonce uuid, p_conversation_id uuid, p_body text, p_reply_to_id uuid, p_voice_path text, p_voice_duration_ms integer, p_attachment_path text, p_attachment_width integer, p_attachment_height integer, p_voice_peaks real[]) returns jsonb security=definer
 FUNCTION sequence_owner_is(name, name) returns text security=invoker

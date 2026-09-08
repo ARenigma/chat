@@ -87,3 +87,20 @@ export const PHONE_AUTH_ENABLED = true;
  * https://developer.android.com/develop/ui/views/theming/darktheme
  */
 export const THEME_DEFAULT_MODE: 'light' | 'dark' | 'system' = 'dark';
+
+/**
+ * Whether an unrated provider is shown a manufactured rating and review count.
+ *
+ * Amit, 2026-09-08: system ratings until a provider has genuine ones. The
+ * numbers, the band and the reasoning live in `src/lib/systemRating.ts`; this
+ * is the switch.
+ *
+ * A compile-time constant and NOT an appConfig domain, deliberately, and for
+ * the opposite reason to THEME_DEFAULT_MODE above. That one is compile-time
+ * because a network round trip would cost a frame. This one is compile-time
+ * because it should be hard to flip: turning fabricated social proof on or off
+ * for a live marketplace from an admin console, with no build, no review and no
+ * commit naming who did it, is not a knob this app should have. Changing it
+ * costs a release, which is the correct price.
+ */
+export const SYSTEM_RATINGS_ENABLED = true;

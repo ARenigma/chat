@@ -34,7 +34,22 @@ import {
 import { Avatar } from '../components/Avatar';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { LoadingIndicator } from '../components/LoadingIndicator';
-import { ROW_AVATAR, ROW_SEPARATOR_INSET } from '../components/ProviderRow';
+/*
+ * OWN CONSTANTS since 2026-09-08, where this used to import ROW_AVATAR and
+ * ROW_SEPARATOR_INSET from ProviderRow.
+ *
+ * That import was fine while both lists were 40dp inbox-shaped rows, and it
+ * silently became wrong when the directory row was rebuilt as an Astrotalk card
+ * with a 76dp ringed avatar: this screen would have inherited a 76dp face on
+ * every thread and a separator inset 36dp further in, without a line of it
+ * being edited.
+ *
+ * The two lists are answering different questions — this is the provider's own
+ * inbox, which should look like an inbox — so the seam belongs here rather than
+ * in a shared constant that happens to suit both.
+ */
+const THREAD_AVATAR = 40;
+const THREAD_SEPARATOR_INSET = THREAD_AVATAR + TOKENS.space.sm;
 import { Icon, type IconName } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { Toggle } from '../components/Toggle';
@@ -225,7 +240,7 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
           style={styles.row}>
           <Avatar
             initial={initialOf(label)}
-            size={ROW_AVATAR}
+            size={THREAD_AVATAR}
             online={readPresence(item.peer_presence, item.peer_last_active_at).here}
           />
           <View style={styles.rowBody}>
@@ -1043,7 +1058,7 @@ const makeStyles = (t: Theme) =>
     },
     separator: {
       height: StyleSheet.hairlineWidth,
-      marginLeft: TOKENS.space.md + ROW_SEPARATOR_INSET,
+      marginLeft: TOKENS.space.md + THREAD_SEPARATOR_INSET,
       backgroundColor: t.color.border.hairline,
     },
     rowBody: { flex: 1, gap: 3 },
