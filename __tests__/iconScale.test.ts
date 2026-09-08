@@ -239,6 +239,14 @@ const EXEMPT: Record<string, string> = {
    * __tests__/homeSurface.test.ts.
    */
   SEARCH_GLYPH_SIZE: 'SearchBar: matched to the reference glyph ink, 13.94dp',
+  /*
+   * The chat header's handset. Not a step, deliberately: two controls sitting
+   * beside each other must present the same INK, and at 20dp the handset's
+   * outline inks 20.0dp against the video camera's 19.3dp. Measured on the
+   * Redmi at density 440. Same class as SEARCH_GLYPH_SIZE above — a different
+   * source of truth (matched ink), not a different opinion about the scale.
+   */
+  CALL_GLYPH_SIZE: 'ChatScreen header: matched to the video glyph ink, 19.3dp',
   CLEAR_GLYPH_SIZE: 'SearchBar: matched to the reference clear mark, 11-12dp',
   /*
    * Sizes translated from the measured Fuse onboarding source (RULE 3), which

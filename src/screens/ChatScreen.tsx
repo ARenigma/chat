@@ -178,6 +178,19 @@ interface Props {
  * before each opener is proportional to its length (so a longer greeting reads
  * as typed) but clamped, so a template can neither stall the thread nor flash.
  */
+/**
+ * The header handset, one step under `icon.md`, for an optical reason.
+ *
+ * Measured on the Redmi at density 440: at the same `size` token the video
+ * glyph inks 19.3 x 19.3dp and the handset 19.6 x 20.0dp, so equal sizes give
+ * unequal ink and the call control read as the bigger of the pair (Amit spotted
+ * it). 19 brings the handset to ~19.0dp and the two to within 0.3dp.
+ *
+ * Named rather than inline because the icon-scale gate requires it: a raw
+ * number is indistinguishable from a drift, and a name can carry its reason.
+ */
+const CALL_GLYPH_SIZE = 19;
+
 const OPENER_TYPING_MIN_MS = 700;
 const OPENER_TYPING_MAX_MS = 2200;
 const OPENER_MS_PER_CHAR = 45;
@@ -1443,7 +1456,20 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
           {/* 18, not 20: Lucide's phone glyph fills more of its em vertically than
               the video glyph, so at a matched fontSize it read visibly taller next
               to it (#1). Two points down evens the pair. */}
-          <Icon name="call" size={TOKENS.icon.md} color={theme.color.text.secondary} />
+          {/*
+            * 19, not icon.md (20), and this is an OPTICAL correction rather
+            * than a drift. Measured on the Redmi at density 440: the video
+            * glyph's ink is 19.3 x 19.3dp and the handset's is 19.6 x 20.0dp
+            * at the SAME size token — the outlines differ, so equal `size`
+            * gives unequal ink and the call button read as the larger of the
+            * two (Amit spotted it). Dropping one step brings the handset's ink
+            * to ~19.0 and the pair to within 0.3dp.
+            *
+            * Same class of departure as the 28pt carousel glyph: the token
+            * scale exists to stop arbitrary values, not to override a measured
+            * one. Exempted in __tests__/iconScale.test.ts with this reason.
+            */}
+          <Icon name="call" size={CALL_GLYPH_SIZE} color={theme.color.text.secondary} />
         </Pressable>
         {/* END, and it lives HERE rather than in the talk bar (Amit, 2026-09-07).
             The bar now appears only inside the last five minutes — "only one
