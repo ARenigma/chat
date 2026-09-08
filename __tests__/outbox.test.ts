@@ -177,3 +177,69 @@ describe('a failed send keeps its bubble', () => {
     expect(turn).toContain('failed === true && onRetry !== undefined');
   });
 });
+
+describe('the bubble tail, ported from WhatsApp', () => {
+  /*
+   * Confirmed on the Redmi before being built: WhatsApp Android DOES draw a
+   * tail, at the bubble's TOP corner, widest at the top and tapering down —
+   * matching its own tail-out.svg viewBox "0 0 8 13". Not the bottom corner,
+   * which is where iMessage puts it and where most clones put theirs.
+   */
+  const turn = read('src/components/Turn.tsx');
+  const chat = read('src/screens/ChatScreen.tsx');
+
+  it('uses WhatsApp own 8x13 dimensions', () => {
+    expect(turn).toMatch(/TAIL_W = 8/);
+    expect(turn).toMatch(/TAIL_H = 13/);
+  });
+
+  it('draws it with borders, not react-native-svg', () => {
+    /*
+     * RULE 5: react-native-svg is banned — it throws
+     * synchronouslyUpdateUIProps inside Reanimated views and kills touch on the
+     * whole subtree, which is precisely the subtree a chat bubble lives in.
+     */
+    /*
+     * Comments stripped first. The naive version of this assertion failed on
+     * the comment above it, which names the banned package in order to explain
+     * why it is banned — the same self-referential trap that the fontWeight
+     * gate hit once before.
+     */
+    const code = turn.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(code).not.toMatch(/react-native-svg/);
+    expect(turn).toContain('borderTopColor: t.color.bubble.mine');
+    expect(turn).toContain('borderTopColor: t.color.bubble.theirs');
+  });
+
+  it('puts it on the top corner, outside the bubble, on both sides', () => {
+    for (const side of ['tailMine', 'tailPeer'] as const) {
+      const at = turn.indexOf(`${side}: {`);
+      expect(at).toBeGreaterThan(0);
+      const block = turn.slice(at, at + 340);
+      expect(block).toContain('top: 0');
+      // Negative offset: outside the bubble, so it costs the text box no width.
+      expect(block).toMatch(/-TAIL_W/);
+    }
+  });
+
+  it('squares the tail-side corner only', () => {
+    // Measured ~1dp on WhatsApp against 9dp on the other three. Without it the
+    // tail looks detached from a rounded corner instead of growing out of one.
+    expect(turn).toContain('tailCornerMine: { borderTopRightRadius: 1 }');
+    expect(turn).toContain('tailCornerPeer: { borderTopLeftRadius: 1 }');
+  });
+
+  it('shows it only on the first bubble of a run', () => {
+    // WhatsApp tails the oldest bubble of a run; the rest are fully rounded.
+    // `first` already means exactly that (sender differs from the older
+    // neighbour), so no second notion of grouping was invented.
+    expect(chat).toContain('tail={first}');
+    expect(turn).toContain('testID="bubble-tail-mine"');
+    expect(turn).toContain('testID="bubble-tail-peer"');
+  });
+
+  it('does not let the tail take a tap meant for the bubble', () => {
+    const at = turn.indexOf('testID="bubble-tail-mine"');
+    expect(turn.slice(at - 200, at)).toContain('pointerEvents="none"');
+  });
+});

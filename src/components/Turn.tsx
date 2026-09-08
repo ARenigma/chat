@@ -83,6 +83,26 @@ const BUBBLE_RADIUS = TOKENS.radius.bubble;
  * geometry that motivated the radius change is the geometry the photo now uses,
  * `inner = outer - inset`, so the picture reads as inside the bubble.
  */
+/**
+ * The bubble tail, 8x13dp.
+ *
+ * Straight from WhatsApp's own `tail-out.svg`, whose viewBox is "0 0 8 13" —
+ * and the shape is confirmed on the Redmi: a wedge at the bubble's TOP corner,
+ * widest at the top, tapering to a point 13dp below. Not the bottom corner,
+ * which is where iMessage puts its tail and where most clones put theirs.
+ *
+ * DEPARTURE, stated because RULE 1 asks for it: WhatsApp's tail is a bezier
+ * with a ~1.4px rounded tip; ours is a straight taper. It is drawn with the
+ * border trick (a zero-size View with one coloured and one transparent border)
+ * because `react-native-svg` is banned by RULE 5 — it throws
+ * `synchronouslyUpdateUIProps` inside Reanimated views and kills touch on the
+ * whole subtree, which is exactly the subtree a chat bubble lives in. At 8dp
+ * the curvature is under a pixel of difference; the tip radius is not
+ * reproducible this way and is the one visible compromise.
+ */
+export const TAIL_W = 8;
+export const TAIL_H = 13;
+
 export const MEDIA_INSET = 3;
 
 /** Concentric with the bubble's corner: `inner = outer - inset`. */
@@ -537,6 +557,8 @@ function MediaBubble({
 }
 
 interface PeerProps extends Shared {
+  /** Draw the mirrored tail. First bubble of a run — see MineProps.tail. */
+  tail?: boolean;
   message: string;
   animate?: boolean;
 }
@@ -599,6 +621,7 @@ interface PeerProps extends Shared {
 function PeerTurnView({
   message,
   timestamp,
+  tail,
   animate,
   quote,
   reactions,
@@ -640,10 +663,19 @@ function PeerTurnView({
           styles.bubbleStack,
           reactions && reactions.length > 0 ? styles.bubbleStackWithReaction : null,
         ]}>
+        {/*
+          * The tail sits in the STACK, not inside the bubble, so the bubble's
+          * own clipping cannot cut it off and it costs the text box no width.
+          * `pointerEvents="none"` because it is decoration — a tap near it must
+          * reach the bubble's own target, not a triangle.
+          */}
+        {tail === true ? (
+          <View style={styles.tailPeer} pointerEvents="none" testID="bubble-tail-peer" />
+        ) : null}
         <InteractiveBubble
           mine={false}
           target={target}
-          bubbleStyle={styles.peerBubble}
+          bubbleStyle={[styles.peerBubble, tail === true && styles.tailCornerPeer]}
           media={image !== undefined}
           onTap={image !== undefined ? openImage : undefined}
           onSwipeReply={onSwipeReply}
@@ -706,6 +738,12 @@ interface MineProps extends Shared {
    */
   isNew?: boolean;
   /**
+   * Draw the tail. True for the FIRST bubble of a run from this sender, which
+   * is where WhatsApp puts it — subsequent bubbles in a run have all four
+   * corners rounded and no tail.
+   */
+  tail?: boolean;
+  /**
    * The send failed and this bubble is saying so instead of disappearing.
    *
    * Telegram's `MESSAGE_SEND_STATE_SEND_ERROR` (MessageObject.java:135). The
@@ -742,6 +780,7 @@ function MyTurnView({
   message,
   timestamp,
   pending,
+  tail,
   failed,
   onRetry,
   receipt,
@@ -787,10 +826,23 @@ function MyTurnView({
           styles.bubbleStackEnd,
           reactions && reactions.length > 0 ? styles.bubbleStackWithReaction : null,
         ]}>
+        {/*
+          * In the STACK, not inside the bubble: the bubble clips its own
+          * overflow for media, and the stack is `overflow: visible`.
+          * `pointerEvents="none"` — decoration must not steal a tap from the
+          * bubble's target.
+          */}
+        {tail === true ? (
+          <View style={styles.tailMine} pointerEvents="none" testID="bubble-tail-mine" />
+        ) : null}
         <InteractiveBubble
           mine
           target={target}
-          bubbleStyle={[styles.bubble, pending === true && styles.pending]}
+          bubbleStyle={[
+            styles.bubble,
+            pending === true && styles.pending,
+            tail === true && styles.tailCornerMine,
+          ]}
           media={image !== undefined}
           /*
            * A failed bubble is a retry button. `onRetry` wins over `openImage`
@@ -1493,6 +1545,43 @@ const makeStyles = (t: Theme) =>
      * Caught by looking at the Redmi, not by a test: both values are valid
      * colours from the palette, so nothing could fail.
      */
+    /*
+     * The tail wedges. `borderTopWidth` carries the fill and the side border is
+     * transparent, which renders a right triangle: flat along the top, vertical
+     * against the bubble, point at the bottom. Mirrored per side.
+     *
+     * Positioned OUTSIDE the bubble (negative offset) so it does not eat into
+     * the text box, and the bubble must therefore not clip its overflow.
+     */
+    tailMine: {
+      position: 'absolute',
+      top: 0,
+      right: -TAIL_W,
+      width: 0,
+      height: 0,
+      borderTopWidth: TAIL_H,
+      borderTopColor: t.color.bubble.mine,
+      borderRightWidth: TAIL_W,
+      borderRightColor: 'transparent',
+    },
+    tailPeer: {
+      position: 'absolute',
+      top: 0,
+      left: -TAIL_W,
+      width: 0,
+      height: 0,
+      borderTopWidth: TAIL_H,
+      borderTopColor: t.color.bubble.theirs,
+      borderLeftWidth: TAIL_W,
+      borderLeftColor: 'transparent',
+    },
+    /*
+     * The tail-side corner squares off when a tail is present — measured at
+     * ~1dp on WhatsApp against 9dp on the other three. Without this the tail
+     * appears to float away from a rounded corner instead of growing out of it.
+     */
+    tailCornerMine: { borderTopRightRadius: 1 },
+    tailCornerPeer: { borderTopLeftRadius: 1 },
     mediaFrameMine: {
       backgroundColor: t.color.bubble.mine,
     },

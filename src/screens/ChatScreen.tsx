@@ -1164,6 +1164,9 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
               timestamp={stamp}
               pending={isPending(message)}
               isNew={isPending(message)}
+              // WhatsApp puts the tail on the oldest bubble of a run; `first`
+              // already marks exactly that (sender differs from the older neighbour).
+              tail={first}
               quote={quote}
               reactions={reactions}
               voice={voice}
@@ -1206,6 +1209,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
           ) : (
             <PeerTurn
               message={text}
+              // Mirrored tail on the oldest bubble of the peer's run.
+              tail={first}
               // Only live arrivals animate in; history and paged-in rows mount
               // still. See `arrivalCutoff`.
               animate={Date.parse(message.created_at) > arrivalCutoff.current}
