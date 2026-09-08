@@ -713,6 +713,14 @@ const suites = [
     file: join(ROOT, 'supabase/tests/410_upgrade_handoff_is_writable.sql'),
     label: 'upgrade handoff: start_call can end the session it is taking over',
   },
+  {
+    file: join(
+      ROOT,
+      'supabase/tests/420_writers_stay_inside_their_constraints.sql',
+    ),
+    label:
+      'writers vs constraints: no function writes a literal its CHECK forbids',
+  },
 ];
 
 let passed = 0;
