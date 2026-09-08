@@ -124,6 +124,41 @@ const CHECKS = [
       order by c.created_at`,
   },
   {
+    name: 'a member is being billed for a session they declined',
+    /*
+     * THE ONE ON THIS LIST THAT COSTS SOMEBODY MONEY, and the only one added
+     * after a defect was reproduced rather than imagined.
+     *
+     * Before migration 086, `accept_session_request` let the RECIPIENT of a
+     * chat request create the paid session — and on the ordinary member-first
+     * path the recipient is the PROVIDER. So tapping Accept on ChatRingScreen
+     * started billing a member who had confirmed nothing, and it kept working
+     * after the member declined, because 082's decline was enforced in the
+     * client's composer and a build without 082 keeps sending.
+     *
+     * 086 makes both impossible. This query is what proves it stayed
+     * impossible, and it is also the query to run FIRST if a member ever
+     * disputes a charge: it lists every live session on a conversation whose
+     * member has declined.
+     *
+     * No grace window. There is no timing under which this is legitimate — the
+     * trigger 086 adds clears the flag the instant a member consents, so a row
+     * that is both in a session and declined cannot exist for a moment.
+     */
+    sql: `
+      select s.id::text        as session_id,
+             s.member_id::text as member_id,
+             s.status,
+             c.chat_consent_declined_at,
+             round(extract(epoch from (now() - s.accepted_at)) / 60) as minutes_old
+      from   paid_sessions s
+      join   conversations c on c.id = s.conversation_id
+      where  s.channel = 'chat'
+        and  c.chat_consent_declined_at is not null
+        and  s.status in ('pending_leases', 'active', 'warning', 'grace')
+      order  by s.accepted_at`,
+  },
+  {
     name: 'provider live with no language',
     /*
      * Migration 075 makes this impossible with a CHECK constraint, so this
