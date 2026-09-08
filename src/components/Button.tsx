@@ -160,8 +160,31 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     borderRadius: TOKENS.radius.field,
     borderCurve: 'continuous',
   },
+  /*
+   * THE BRAND COLOUR, and it was `bg/inverse` until 2026-09-08.
+   *
+   * Amit: "all prompts CTAs should also follow our token system not black and
+   * white -- understood? real inconsistency here". He is right and the word
+   * "inconsistency" is the precise complaint: `bg/inverse` is off-black in
+   * light and near-white in dark, so the app's primary action was the only
+   * major control with no brand in it — sitting one screen away from an accent
+   * "Call" button, an accent wallet pill, an accent tab underline and an accent
+   * ring on every avatar. A confirmation dialog is the highest-stakes button in
+   * the product and it looked like a different app's.
+   *
+   * `accentStrong` and NOT `accent`, and the tokens already decided that:
+   * check-contrast registers `text/onAccent on bg/accent` at 3.01:1 in light
+   * with the note "NOT PERMITTED IN LIGHT... bg/accentStrong (4.52:1) is the
+   * step that carries a label there". The bright accent is a fill for things
+   * with no text on them — the ring, an outline — and the deep step is the one
+   * a label sits on. Picking the wrong one here would have been legible in dark
+   * and failed AA in light, which is the half nobody checks.
+   *
+   * The pair is already in check-contrast as "the label on a filled accent
+   * control": 4.52:1 light, 5.72:1 dark.
+   */
   primary: {
-    backgroundColor: t.color.bg.inverse,
+    backgroundColor: t.color.bg.accentStrong,
   },
   secondary: {
     backgroundColor: t.color.bg.raised,
@@ -177,7 +200,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     ...TOKENS.typography.titleMediumEmphasized,
   },
   primaryLabel: {
-    color: t.color.text.onInverse,
+    color: t.color.text.onAccent,
   },
   secondaryLabel: {
     color: t.color.text.primary,

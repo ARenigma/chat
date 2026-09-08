@@ -2353,16 +2353,32 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     ...TOKENS.typography.bodySmall,
     color: t.color.text.secondary,
   },
+  /*
+   * ACCENT since 2026-09-08, and it was `bg/inverse` — Amit: "all prompts CTAs
+   * should also follow our token system not black and white".
+   *
+   * "Extend" is the one action on this card (the other control dismisses it),
+   * and it appears at the moment a member is about to run out of paid time. A
+   * black pill at the point of purchase, on a screen whose header pill and send
+   * button are both accent, was the inconsistency he means.
+   *
+   * `accentStrong` rather than `accent`, for the reason check-contrast records
+   * on the token: a label on the bright step measures 3.01:1 in light and the
+   * deep step is the one that carries text (4.52:1). Unlike
+   * ProviderDetailScreen's `actionDark`, which stays inverse on purpose — it is
+   * the SECOND of three actions in a row whose first is already accent, and
+   * making both accent would delete the hierarchy rather than fix a colour.
+   */
   extendCardButton: {
     paddingHorizontal: TOKENS.space.md,
     paddingVertical: TOKENS.space['2xs'],
     borderRadius: TOKENS.radius.pill,
     borderCurve: 'continuous',
-    backgroundColor: t.color.bg.inverse,
+    backgroundColor: t.color.bg.accentStrong,
   },
   extendCardButtonLabel: {
     ...TOKENS.typography.labelMediumEmphasized,
-    color: t.color.text.onInverse,
+    color: t.color.text.onAccent,
   },
   /*
    * The declined-state Start control sits where the composer's text row would,

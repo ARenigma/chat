@@ -1762,6 +1762,27 @@ describe('accent budget is enforced in code, not just documented', () => {
        */
       'Badge.tsx',
       /*
+       * `Button.tsx` JOINED this list on 2026-09-08, and it is the entry that
+       * most tests whether the budget is a rule or a habit.
+       *
+       * The primary button was `bg/inverse` — off-black in light, near-white in
+       * dark — so the app's single most important control was the only major
+       * one with no brand colour in it, one screen away from an accent Call
+       * button, an accent wallet pill and an accent tab underline. Amit: "all
+       * prompts CTAs should also follow our token system not black and white --
+       * understood? real inconsistency here".
+       *
+       * This is the budget being SPENT WELL rather than widened: the whole
+       * point of reserving the accent for "the one action" is that the primary
+       * button IS the one action, on every screen that has one. It was the
+       * budget's intended beneficiary and had somehow never received it.
+       *
+       * `bg/accentStrong`, not `bg/accent` — check-contrast prohibits a label
+       * on the bright step in light mode (3.01:1) and names the deep one as the
+       * step that carries text (4.52:1).
+       */
+      'Button.tsx',
+      /*
        * The call surfaces (gated, ADR-0019). The warm field IS the call
        * background — same class as the bloom — built from the accent tokens; the
        * accept button is sage, the end/decline button state/danger.
@@ -2895,3 +2916,94 @@ describe('the transition lock has a write side', () => {
   });
 });
 
+
+describe('a primary action is the brand colour, not black and white', () => {
+  /*
+   * Amit, 2026-09-08: "all prompts CTAs should also follow our token system not
+   * black and white -- understood? real inconsistency here".
+   *
+   * The primary Button was `bg/inverse` — off-black in light, near-white in
+   * dark — so the single most important control in the app was the only major
+   * one with no brand in it, one screen away from an accent Call button, an
+   * accent wallet pill, an accent tab underline and an accent ring on every
+   * avatar. Every confirmation dialog in the product inherited it.
+   *
+   * This suite is narrow on purpose. `bg/inverse` is a legitimate token with
+   * real users, and a blanket ban would be a worse rule than the bug: it is the
+   * snackbar layer in UpdateBanner, the dark balance card on Recharge, and the
+   * SECOND of three actions in ProviderDetailScreen's row — where the first is
+   * already accent, and making both accent would delete a hierarchy rather than
+   * fix a colour. What is asserted is the specific controls, by name.
+   */
+  const src = (p: string): string =>
+    read(p)
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+
+  const rule = (body: string, name: string): string => {
+    const m = body.match(new RegExp(`\\b${name}: \\{[^}]*\\}`));
+    expect(m).not.toBeNull();
+    return m?.[0] ?? '';
+  };
+
+  it('fills the primary Button with the accent, and its label with on-accent', () => {
+    const button = src('src/components/Button.tsx');
+    expect(rule(button, 'primary')).toContain('backgroundColor: t.color.bg.accentStrong');
+    expect(rule(button, 'primaryLabel')).toContain('color: t.color.text.onAccent');
+    expect(rule(button, 'primary')).not.toContain('bg.inverse');
+  });
+
+  it('uses accentSTRONG, never the bright step, under a label', () => {
+    /*
+     * The tokens already decided this and the decision is easy to get wrong in
+     * the direction that only fails in light mode. check-contrast registers
+     * `text/onAccent on bg/accent` at 3.01:1 in light with the note "NOT
+     * PERMITTED IN LIGHT... bg/accentStrong (4.52:1) is the step that carries a
+     * label there", while dark measures 7.21:1 — so the wrong choice looks fine
+     * on the device this app is developed against and fails AA on the other
+     * theme.
+     */
+    for (const file of ['src/components/Button.tsx', 'src/screens/ChatScreen.tsx']) {
+      const body = src(file);
+      for (const line of body.split('\n')) {
+        if (/backgroundColor: t\.color\.bg\.accent,/.test(line)) {
+          // A bright-accent FILL is fine where nothing sits on it; this asserts
+          // it is never the pair used for a labelled control in these files.
+          expect(body).not.toMatch(
+            /backgroundColor: t\.color\.bg\.accent,[\s\S]{0,200}color: t\.color\.text\.onAccent/,
+          );
+        }
+      }
+    }
+  });
+
+  it('makes the chat extend pill accent too, since it is the one action there', () => {
+    // It appears exactly when a member is about to run out of paid time. A
+    // black pill at the point of purchase, on a screen whose header pill and
+    // send button are both accent.
+    const chat = src('src/screens/ChatScreen.tsx');
+    expect(rule(chat, 'extendCardButton')).toContain('t.color.bg.accentStrong');
+    expect(rule(chat, 'extendCardButtonLabel')).toContain('t.color.text.onAccent');
+  });
+
+  it('leaves the three surfaces where inverse is right, and says which', () => {
+    /*
+     * Pinned so a later sweep of "make everything accent" has to argue with
+     * these rather than tidy them away:
+     *
+     *   UpdateBanner   a snackbar layer over whatever screen you are on. M3
+     *                  gives a snackbar inverseSurface for exactly this.
+     *   RechargeScreen the dark balance card, which is a surface and not a
+     *                  control — the theme EXEMPT note already names it.
+     *   ProviderDetail the second of three actions, first is accentStrong.
+     */
+    expect(src('src/components/UpdateBanner.tsx')).toContain('t.color.bg.inverse');
+    expect(rule(src('src/screens/RechargeScreen.tsx'), 'balanceCard')).toContain(
+      't.color.bg.inverse',
+    );
+    const detail = src('src/screens/ProviderDetailScreen.tsx');
+    expect(rule(detail, 'actionDark')).toContain('t.color.bg.inverse');
+    // ...and only because the primary beside it carries the brand.
+    expect(rule(detail, 'actionPrimary')).toContain('t.color.bg.accentStrong');
+  });
+});
