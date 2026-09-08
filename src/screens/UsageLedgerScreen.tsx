@@ -35,6 +35,7 @@ import { SCROLL_PHYSICS } from '../lib/scroll';
 import { listStamp } from '../lib/datetime';
 import { formatCount, formatRupees } from '../lib/rates';
 import { useUsageLedger, type UsageRow } from '../api/usage';
+import { useProfile } from '../api/chat';
 import { BackButton } from '../components/BackButton';
 import { Icon, type IconName } from '../components/Icon';
 import { LoadingIndicator } from '../components/LoadingIndicator';
@@ -195,9 +196,13 @@ export function UsageLedgerScreen({ onBack }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { data, isLoading } = useUsageLedger();
+  const { data: profile } = useProfile();
   const rows = data ?? [];
   const kpis = usageKpis(rows);
-  const earning = kpis?.earning ?? false;
+  // When there are no rows yet, fall back to the profile role so a provider
+  // always sees "Earnings" language, not "Usage" language, even before their
+  // first session.
+  const earning = kpis?.earning ?? (profile?.role === 'provider');
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]} testID="usage-ledger">
@@ -227,7 +232,9 @@ export function UsageLedgerScreen({ onBack }: Props) {
             Nothing yet
           </Text>
           <Text allowFontScaling style={styles.emptyBody}>
-            Every conversation you have will be listed here, with what it cost.
+            {earning
+              ? 'Every conversation you have will appear here, showing what you earned.'
+              : 'Every conversation you have will be listed here, with what it cost.'}
           </Text>
         </View>
       ) : (
