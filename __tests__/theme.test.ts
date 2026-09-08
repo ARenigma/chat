@@ -1915,7 +1915,14 @@ describe('accent budget is enforced in code, not just documented', () => {
       'SpotlightCard.tsx',
       'ThreadBubble.tsx',
       'Toggle.tsx',
-      'Turn.tsx',
+      /*
+       * `Turn.tsx` LEFT this list on 2026-09-08, and that is the change worth
+       * noting rather than just deleting a line: the chat bubbles used to spend
+       * the accent budget (outgoing fill = bg/accentStrong, and every metadata
+       * colour derived from text/onAccent). They now read the `bubble/*` group,
+       * so the single largest consumer of the accent in the app no longer
+       * consumes it at all. The budget this test enforces got cheaper.
+       */
       'TypingIndicator.tsx',
       'WordColumn.tsx',
     ]);
