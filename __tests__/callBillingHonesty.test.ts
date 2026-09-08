@@ -6,6 +6,7 @@ const withoutComments = (source: string): string =>
   source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
 const call = withoutComments(read('src/screens/CallScreen.tsx'));
+const callsApi = withoutComments(read('src/api/calls.ts'));
 const cutover = read('supabase/migrations/037_session_cutover.sql');
 const noop = read(
   'supabase/migrations/088_unanswered_message_refund_is_pre_cutover.sql',
@@ -125,5 +126,63 @@ describe('the unanswered-message refund is not revived by accident', () => {
     // call, not a quietly gutted maintenance path.
     expect(fn).toMatch(/rpc\('refresh_reply_latencies'\)/);
     expect(fn).toMatch(/rpc\('purge_orphaned_voice_notes'\)/);
+  });
+});
+
+describe('a raised RPC is not reported as a dead network', () => {
+  /*
+   * THE OUTAGE'S SECOND HALF. On 2026-09-08 a check constraint rejected every
+   * `start_call` with SQLSTATE 23514. All four call RPCs ended
+   * `return error ? null : (data as CallResult)`, so the code was thrown away,
+   * CallScreen's no-code branch said "Could not start just now. Check your
+   * connection.", and telemetry recorded `reason: 'network'`. The screen and
+   * the analytics both asserted a network fault for a schema fault, and the
+   * only way to see the truth was to patch a console.warn into the file.
+   *
+   * These RPCs report their ordinary refusals STRUCTURALLY ({success:false,
+   * error:'BUSY'}), so a non-null `error` never means "we refused you" — it
+   * means the function raised, or the transport died. That is exactly the case
+   * worth naming.
+   */
+  it('turns every raised call RPC into SERVER_ERROR, not null', () => {
+    // The bare collapse is the bug. None of the four may go back to it.
+    expect(callsApi).not.toMatch(/return error \? null :/);
+    for (const rpc of ['start_call', 'answer_call', 'heartbeat_call', 'end_call']) {
+      expect(callsApi).toMatch(
+        new RegExp(`rpc\\('${rpc}'[\\s\\S]{0,200}return error \\? raised\\(error\\)`),
+      );
+    }
+    expect(callsApi).toMatch(/error: 'SERVER_ERROR', sqlstate: error\.code/);
+  });
+
+  it('carries the sqlstate but never the row values Postgres puts in details', () => {
+    /*
+     * `error.code` is a five-character class (23514 a check constraint, 42501 a
+     * grant, 42883 a signature). `error.details` is where Postgres writes
+     * "Failing row contains (...)", which for `messages` would be the body of
+     * somebody's message. One is safe to log; the other must never be.
+     */
+    expect(callsApi).not.toMatch(/error\.details/);
+    expect(callsApi).not.toMatch(/error\.message/);
+  });
+
+  it('does not invent a telemetry event the server would reject', () => {
+    /*
+     * The events table raises `unknown event name` (22023) for any name outside
+     * its allowlist (033:80-93). Emitting a new one without a migration would
+     * be the SAME defect — a writer sending a value its constraint forbids —
+     * so the allowlisted `call_rejected` carries this instead.
+     */
+    expect(callsApi).not.toMatch(/track\(/);
+    expect(call).toMatch(/track\('call_rejected', \{[\s\S]{0,160}sqlstate/);
+  });
+
+  it('says something true on the screen for a server fault', () => {
+    expect(call).toContain("SERVER_ERROR: SERVER_ERROR_NOTICE");
+    expect(call).toMatch(/const SERVER_ERROR_NOTICE =\s*\n?\s*'[^']*Nothing was charged/);
+    // Answering must not claim the call is gone when it is our server that broke.
+    expect(call).toMatch(
+      /result\?\.error === 'SERVER_ERROR'[\s\S]{0,120}This call is no longer available/,
+    );
   });
 });

@@ -79,6 +79,20 @@ const HEARTBEAT_MS = 20_000;
 const RING_TIMEOUT_OUT_MS = 30_000;
 const RING_TIMEOUT_IN_MS = 60_000;
 
+/*
+ * Not a code any RPC returns — src/api/calls.ts synthesises it when the RPC
+ * RAISES. Worth its own sentence rather than falling through to the generic
+ * "Could not start the call", because it says the two things a member actually
+ * needs: it is not their phone, and it did not cost them anything. The
+ * 2026-09-08 outage said "Check your connection" for a whole day while a check
+ * constraint rejected every call.
+ *
+ * A named constant because two call sites need it and `START_NOTICE` is a
+ * `Record<string, string>`, so reading a key off it is `string | undefined`.
+ */
+const SERVER_ERROR_NOTICE =
+  'Something went wrong on our side. Nothing was charged.';
+
 /** start_call refusals, in words. */
 const START_NOTICE: Record<string, string> = {
   INSUFFICIENT_BALANCE: 'Your balance is too low to call.',
@@ -90,6 +104,7 @@ const START_NOTICE: Record<string, string> = {
   NOT_FOUND: 'That conversation is gone.',
   VOICE_CALLS_DISABLED: 'Voice chats are taking a short break.',
   VIDEO_CALLS_DISABLED: 'Video chats are taking a short break.',
+  SERVER_ERROR: SERVER_ERROR_NOTICE,
 };
 
 type Phase = 'starting' | 'ringing' | 'connecting' | 'active' | 'incoming';
@@ -317,7 +332,22 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
         setPhase('ringing');
       } else {
         const code = r?.error;
-        track('call_rejected', { reason: code ?? 'network', medium });
+        /*
+         * `sqlstate` is only ever set on a synthesised SERVER_ERROR, and it is
+         * the difference between "calls are down" and "one member had bad
+         * wifi" in the events table. Before this, a raised RPC returned null,
+         * so `reason` was literally 'network' for a schema fault — the
+         * analytics agreed with the wrong message on the screen.
+         *
+         * Empty string rather than omitted: EventProps takes primitives only.
+         * The key clears telemetryGuard's FORBIDDEN_PROP_KEY, and the value is
+         * five characters of SQLSTATE, never row data.
+         */
+        track('call_rejected', {
+          reason: code ?? 'network',
+          medium,
+          sqlstate: r?.sqlstate ?? '',
+        });
         if (code === 'INSUFFICIENT_BALANCE' && !isMemberSide) {
           setNotice('Their balance is too low to start this call.');
         } else {
@@ -613,7 +643,18 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     setPhase('connecting');
     void answerCall(callId).then(result => {
       if (!result?.success) {
-        setNotice('This call is no longer available.');
+        /*
+         * "No longer available" is a claim about the CALL — that the other
+         * side hung up or it was already answered — and it is false when the
+         * RPC raised. The call is still ringing; our server failed. Saying the
+         * former sends the member back to a directory to try someone else for
+         * a fault that will repeat.
+         */
+        setNotice(
+          result?.error === 'SERVER_ERROR'
+            ? SERVER_ERROR_NOTICE
+            : 'This call is no longer available.',
+        );
         onEnd();
         return;
       }
