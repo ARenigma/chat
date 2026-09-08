@@ -24,6 +24,7 @@ import { PRESENCE_OPTIONS, presenceDetail } from '../lib/presence';
 import { PHONE_VERIFY_ENABLED } from '../api/phone';
 import { legalUrl } from '../lib/legal';
 import { initialOf } from '../lib/display';
+import { formatRupees } from '../lib/rates';
 import { Avatar } from '../components/Avatar';
 import { PhoneVerifySheet } from './PhoneVerifySheet';
 import { resetStore, useStore } from '../store/useStore';
@@ -248,10 +249,17 @@ export function SettingsSheet({
   const themeLabel = mode === 'light' ? 'Light' : mode === 'dark' ? 'Dark' : 'System';
   // Members no longer see an account-type label under the avatar (Amit,
   // 2026-09-02): it stated the obvious. Providers keep theirs — the directory
-  // side is the meaningful distinction. The token balance carries the rest.
+  // side is the meaningful distinction. The balance carries the rest.
   const accountLabel = isProvider ? 'Provider account' : '';
   const profileName = profile?.display_name?.trim() || 'Your account';
-  const profileMetaText = [accountLabel, profile ? `${profile.token_balance} tokens` : '']
+  /*
+   * `token_balance` is the COLUMN; ₹ is what the member reads. This line
+   * interpolated the raw integer and appended the word "tokens", so it was the
+   * one balance in the app the currency sweep could not reach by changing a
+   * formatter — there was no formatter. It also skipped grouping, rendering
+   * 120000 rather than ₹1,20,000.
+   */
+  const profileMetaText = [accountLabel, profile ? formatRupees(profile.token_balance) : '']
     .filter(Boolean)
     .join(' · ');
 
@@ -457,7 +465,7 @@ export function SettingsSheet({
                 detail={
                   isProvider
                     ? 'What each conversation paid'
-                    : 'Where your tokens went'
+                    : 'What each conversation cost'
                 }
               />
             </Pressable>

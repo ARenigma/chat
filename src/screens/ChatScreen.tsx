@@ -1884,7 +1884,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
               onError: err => {
                 const msg = err instanceof Error ? err.message : '';
                 if (msg.toLowerCase().includes('insufficient')) {
-                  setNotice('You are out of tokens — top up to keep going.');
+                  setNotice('Your balance is empty — top up to keep going.');
                   openRefill();
                   return;
                 }

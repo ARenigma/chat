@@ -75,7 +75,20 @@ function SendButtonView({ onPress, disabled, sendHaloKey }: Props) {
         press="send"
         testID="composer-send"
         accessibilityLabel="Send message"
-        accessibilityHint="Spends one token"
+        /*
+         * No hint, because the only one this button ever had was false.
+         *
+         * It read "Spends one token", which was true when chat was metered per
+         * message. Migration 037 made `spend_chat_minute` a no-op and moved
+         * billing to per-minute on a live session, so sending costs nothing on
+         * its own — a TalkBack user was being told they were paying to type.
+         *
+         * Nothing replaces it. An accessibilityHint is for a non-obvious
+         * OUTCOME, and the outcome of the send button is that the message
+         * sends, which the label already says. Restating the label as a hint is
+         * the pattern the docs single out as noise:
+         * developer.android.com/guide/topics/ui/accessibility/principles
+         */
         style={[styles.button, disabled && styles.buttonDisabled]}>
         <Icon
           name="arrowUp"

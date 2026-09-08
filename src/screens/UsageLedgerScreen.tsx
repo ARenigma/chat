@@ -68,9 +68,9 @@ export interface UsageKpis {
   sessionsLabel: string;
   /** The spoken form — what the number means, not the number. */
   sessionsSpoken: string;
-  /** The caller's own token figure: what they spent, or what they were paid. */
+  /** The caller's own figure in ₹: what they spent, or what they were paid. */
   tokens: number;
-  /** "Tokens spent" for a member, "Tokens earned" for a provider. */
+  /** "Spent" for a member, "Earned" for a provider; the ₹ sits beneath it. */
   tokensLabel: string;
   /** The spoken form of the same. */
   tokensSpoken: string;
