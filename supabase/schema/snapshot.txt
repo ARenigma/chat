@@ -1163,6 +1163,7 @@ FUNCTION enums_are(name, name[], text) returns text security=invoker
 FUNCTION enums_are(name[]) returns text security=invoker
 FUNCTION enums_are(name[], text) returns text security=invoker
 FUNCTION expertise_list_is_sane(p text[]) returns boolean security=invoker
+FUNCTION expire_stale_session_requests() returns integer security=definer
 FUNCTION extensions_are(name, name[]) returns text security=invoker
 FUNCTION extensions_are(name, name[], text) returns text security=invoker
 FUNCTION extensions_are(name[]) returns text security=invoker

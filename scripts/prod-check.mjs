@@ -101,6 +101,37 @@ const CHECKS = [
       order by r.responded_at`,
   },
   {
+    name: 'request pending past its own expiry',
+    /*
+     * A `pending` request whose `expires_at` has passed. Both readers of a
+     * request — `confirm_chat_session` (077:41) and `accept_session_request`
+     * (086) — already refuse one in this state and mark it expired, so a row
+     * that stays pending is a row lying about a decision the clock already
+     * made.
+     *
+     * It matters because `send_message` (077:168) opens a request only when
+     * none is `pending`, testing the status and not the expiry, while
+     * `session_requests_one_pending` permits one pending row per conversation
+     * and channel. So a single stale row suppresses every later request in that
+     * conversation: messages keep flowing, no session can open, nobody is
+     * billed, and nothing throws. That is the 2026-09-07 shape and it was found
+     * live on 2026-09-08.
+     *
+     * Migration 090 sweeps these every minute. Grace is 5 minutes, which is
+     * five missed sweeps — enough that a slow tick is not noise, little enough
+     * that a dead sweep is caught the same day.
+     */
+    sql: `
+      select r.id::text as request_id,
+             r.conversation_id::text as conversation_id,
+             r.channel::text as channel,
+             round(extract(epoch from (now() - r.expires_at)) / 60) as expired_minutes_ago
+      from session_requests r
+      where r.status = 'pending'
+        and r.expires_at < now() - interval '5 minutes'
+      order by r.expires_at`,
+  },
+  {
     name: 'session live with no active lease',
     /*
      * A `paid_sessions` row with no `ended_at` whose newest lease heartbeat is
