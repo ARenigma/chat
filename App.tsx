@@ -672,11 +672,22 @@ function Root() {
        */
       /*
        * An incoming-call deep link, checked first. `companionchat://call/<peerId>
-       * ?callId=<id>&action=answer|decline` is fired by the CallStyle
-       * notification's Answer/Decline PendingIntents (Conversations.callActionIntent).
-       * Both open the in-app incoming-call screen, which owns the answer_call /
-       * end_call RPCs with the user's session; the notification only rings and
-       * wakes. The notification is cleared here since the app now has the call.
+       * ?callId=<id>&action=answer|decline&medium=voice|video` is fired by the
+       * CallStyle notification's Answer/Decline PendingIntents
+       * (Conversations.callActionIntent), and by a tap on the notification body,
+       * which reuses the answer intent.
+       *
+       * `action` is HONOURED, not ignored. It used to be parsed only in this
+       * comment, so Decline opened the full incoming-call screen — the loudest
+       * possible response to someone saying no, and it left the caller ringing
+       * until the 30s sweep called it missed rather than declined. Declining ends
+       * the call from here and never navigates; `end_call` derives the word
+       * server-side (callee ends a ringing call => 'declined').
+       *
+       * Answer still routes into the screen rather than calling answer_call here:
+       * that screen owns the lease and the media, and answering without it would
+       * put a connected call behind a UI that does not exist yet.
+       *
        * Parsed with regex, not URLSearchParams, which Hermes does not ship.
        */
       const callMatch = url.match(/^companionchat:\/\/call\/([^?]+)\?(.*)$/);
@@ -684,10 +695,16 @@ function Root() {
         const callPeer = callMatch[1] ?? '';
         const qs = callMatch[2] ?? '';
         const callId = qs.match(/callId=([^&]+)/)?.[1];
-        // Bug fix: was hardcoded 'voice', dropped video for notification-driven answers (android-audit.md 2026-08-29)
+        const action = qs.match(/action=([^&]+)/)?.[1] ?? 'answer';
+        // `medium` is now sent by callActionIntent. The 'voice' fallback stays for
+        // a notification posted by an older build still sitting in the shade.
         const medium = (qs.match(/medium=([^&]+)/)?.[1] ?? 'voice') as 'voice' | 'video';
         if (isUuid(callPeer) && callId !== undefined && isUuid(callId)) {
           void clearCall(callId);
+          if (action === 'decline') {
+            void endCall(callId);
+            return;
+          }
           setRoute({ name: 'call', providerId: callPeer, direction: 'in', callId, medium });
         }
         return;

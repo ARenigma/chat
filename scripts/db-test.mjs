@@ -130,6 +130,7 @@ const MIGRATIONS = [
   'supabase/migrations/089_repair_call_media_assignment_kind_check.sql',
   'supabase/migrations/090_expire_stale_session_requests.sql',
   'supabase/migrations/091_upgraded_to_call_is_an_end_reason.sql',
+  'supabase/migrations/092_messages_push_immediately.sql',
 ];
 
 /**

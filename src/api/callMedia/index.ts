@@ -24,6 +24,8 @@ const pendingSession: CallMediaSession = {
   mediaReady: false,
   muted: false,
   toggleMute: noop,
+  speakerOn: false,
+  setSpeaker: noop,
   localVideo: null,
   remoteVideo: null,
   videoEnabled: false,
@@ -49,6 +51,12 @@ export function useCallSession(
   callId: string | null,
   _isCaller: boolean,
   enabled: boolean,
+  /**
+   * Video calls default to the speaker, voice calls to the earpiece — the
+   * distinction is how the phone is held, so it belongs to the caller of this
+   * hook rather than to the adapter.
+   */
+  defaultToSpeaker = false,
 ): CallMediaSession {
   const [credentialState, setCredentialState] = useState<{
     callId: string;
@@ -82,7 +90,12 @@ export function useCallSession(
 
   const agoraEnabled =
     enabled && credentials?.backend === 'agora' && !credentialFailed;
-  const agora = useAgoraCallSession(callId, agoraEnabled, credentials);
+  const agora = useAgoraCallSession(
+    callId,
+    agoraEnabled,
+    credentials,
+    defaultToSpeaker,
+  );
 
   if (credentialFailed) return failedSession;
   if (!enabled || !credentials) return pendingSession;

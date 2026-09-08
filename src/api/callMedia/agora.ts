@@ -34,13 +34,19 @@ export function useAgoraCallSession(
   callId: string | null,
   enabled: boolean,
   credentials?: CallMediaCredentials,
+  defaultToSpeaker = false,
 ): CallMediaSession {
   const [connState, setConnState] = useState<CallMediaSession['connState']>('connecting');
   const [muted, setMuted] = useState(false);
+  const [speakerOn, setSpeakerOn] = useState(defaultToSpeaker);
   const [videoEnabled, setVideoEnabled] = useState(false);
   const [remoteVideoEnabled, setRemoteVideoEnabled] = useState(false);
   const [remoteUid, setRemoteUid] = useState<number | null>(null);
   const engineRef = useRef<IRtcEngine | null>(null);
+  // In a ref, not the effect's deps: the route default is fixed for the life of
+  // a call, and re-running the join effect would drop the channel.
+  const defaultSpeakerRef = useRef(defaultToSpeaker);
+  defaultSpeakerRef.current = defaultToSpeaker;
   const remotePresentRef = useRef(false);
   const connectionStateRef = useRef<CallMediaSession['connState']>('connecting');
   const latestQualityRef = useRef<Partial<CallQualitySample>>({});
@@ -226,6 +232,18 @@ export function useAgoraCallSession(
       engine.initialize({ appId });
       engine.registerEventHandler(handler);
       engine.setChannelProfile(ChannelProfileType.ChannelProfileCommunication1v1);
+      /*
+       * The default audio route, set before joining so the first second of
+       * audio already comes out of the right place: earpiece for a voice call
+       * (it is held to the ear), speaker for video (it is held at arm's length).
+       *
+       * `setDefaultAudioRouteToSpeakerphone` is the channel default;
+       * `setEnableSpeakerphone` below overrides it for this channel only when
+       * the member taps Speaker. Agora's own note says NOT to mix either with
+       * `setRouteInCommunicationMode`, so that API is deliberately unused.
+       * https://docs.agora.io/en/video-calling/get-started/get-started-sdk
+       */
+      engine.setDefaultAudioRouteToSpeakerphone(defaultSpeakerRef.current);
       const profile = getVideoCaptureProfile();
       engine.setVideoEncoderConfiguration({
         codecType: VideoCodecType.VideoCodecH264,
@@ -262,6 +280,24 @@ export function useAgoraCallSession(
       engineRef.current?.muteLocalAudioStream(next);
       return next;
     });
+  }, []);
+
+  /*
+   * THE SPEAKER BUTTON. Until 2026-09-08 this was `setSpeakerOn(v => !v)` in
+   * CallScreen and nothing else — the pill lit up and the audio route never
+   * moved (the comment there said "audio-route wiring is a follow-up (no
+   * InCallManager yet)"). Reported from a device by Amit: "speaker button not
+   * working in audio call and /or video call".
+   *
+   * No new dependency: the Agora engine already owns the route, so asking it is
+   * both correct and one call. `setEnableSpeakerphone` affects the current
+   * channel only, which is what a per-call toggle means.
+   */
+  const setSpeaker = useCallback((on: boolean) => {
+    // Only claim the new state if the SDK accepted it; a negative return is a
+    // failure and leaving the pill lit would lie about where the audio is.
+    if ((engineRef.current?.setEnableSpeakerphone(on) ?? -1) < 0) return;
+    setSpeakerOn(on);
   }, []);
 
   const enableVideo = useCallback(async () => {
@@ -302,6 +338,8 @@ export function useAgoraCallSession(
     mediaReady: connState === 'connected',
     muted,
     toggleMute,
+    speakerOn,
+    setSpeaker,
     localVideo,
     remoteVideo,
     videoEnabled,
