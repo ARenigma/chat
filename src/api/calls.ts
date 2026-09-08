@@ -11,7 +11,7 @@
  * Media transport is vendor-selected by `calls.media_backend` (default agora).
  * The client adapter is `src/api/callMedia`; CallScreen never imports an SDK.
  */
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { ENV } from '../lib/env';
 import type {
@@ -70,6 +70,72 @@ export async function endCall(
     p_reason: reason,
   });
   return error ? null : (data as CallResult);
+}
+
+/** How a call finished, as the server recorded it. See `end_call` (037:1111). */
+export interface CallEnded {
+  status: 'ended' | 'missed' | 'declined' | 'failed';
+  endReason: string | null;
+}
+
+/**
+ * The other side ended it — told to this device the moment it happens.
+ *
+ * WHY THIS EXISTS. `useIncomingCalls` below subscribes to INSERTs only, which
+ * is everything the CALLEE needs (a fresh ring). Nothing watched UPDATEs, so
+ * the CALLER learned about a decline in one of two ways: not at all while
+ * ringing (the heartbeat poll is gated on `phase === 'active'`), or 20 s late
+ * once a call was up. Concretely, a callee who declined instantly left the
+ * caller's screen saying "Ringing" for the full 30 s ring timeout and then
+ * "No answer." — which is a false statement about what the other person did.
+ *
+ * The DISTINCTION already exists server-side and was simply never read:
+ * `end_call` writes `declined` when the callee ends a ringing call and
+ * `missed` when the caller does (037:1155-1160). This hook carries that word
+ * back so the copy can be true.
+ *
+ * Realtime enforces RLS on `postgres_changes` and "Participants read their
+ * calls" (011:751) scopes `calls` to its two parties, so the `id` filter is
+ * bandwidth rather than security — the same reasoning as the `callee_id`
+ * filter below.
+ */
+export function useCallEnded(
+  callId: string | null,
+  onEnded: (ended: CallEnded) => void,
+): void {
+  // A ref so a re-render with a fresh closure does not tear down and re-open
+  // the socket mid-ring — the window this hook exists to cover is ~2 s long.
+  const handler = useRef(onEnded);
+  handler.current = onEnded;
+
+  useEffect(() => {
+    if (callId === null) {
+      return;
+    }
+    const terminal = ['ended', 'missed', 'declined', 'failed'] as const;
+    const channel = supabase
+      .channel(`call-status:${callId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'calls',
+          filter: `id=eq.${callId}`,
+        },
+        payload => {
+          const row = payload.new as { status: string; end_reason: string | null };
+          const hit = terminal.find(s => s === row.status);
+          if (hit !== undefined) {
+            handler.current({ status: hit, endReason: row.end_reason });
+          }
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [callId]);
 }
 
 /** What a fresh ring hands the callee's app so it can raise the incoming screen. */
