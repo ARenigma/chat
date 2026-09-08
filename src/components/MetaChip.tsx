@@ -3,12 +3,22 @@ import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-na
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 
-type Tone = 'surface' | 'emphasis' | 'onMedia';
+type Tone = 'surface' | 'emphasis' | 'onMedia' | 'listener' | 'astrologer';
 type Size = 'md' | 'sm';
 
 interface Props {
   label: string;
-  /** surface = M3 AssistChip; emphasis = rating lead; onMedia = photo overlay. */
+  /**
+   * surface = M3 AssistChip; emphasis = rating lead; onMedia = photo overlay;
+   * listener / astrologer = the FILLED provider-type tag (Amit, 2026-09-08:
+   * "SP type tag should be filled to be highlighted and type should have
+   * unique colors").
+   *
+   * The two type tones live here rather than as a colour prop on the caller,
+   * because a `fill`/`ink` prop would put a pair of raw colours outside the
+   * styled component — where neither the accent budget nor the contrast gate
+   * can see them. A named tone keeps both checkable.
+   */
   tone?: Tone;
   /** md = M3's 32dp AssistChip. sm = the 24dp tag pill; see META_CHIP_HEIGHT_SM. */
   size?: Size;
@@ -88,6 +98,8 @@ function MetaChipView({ label, tone = 'surface', size = 'md', testID, style }: P
         size === 'sm' && styles.chipSm,
         tone === 'emphasis' && styles.emphasis,
         tone === 'onMedia' && styles.onMedia,
+        tone === 'listener' && styles.listener,
+        tone === 'astrologer' && styles.astrologer,
         style,
       ]}>
       <Text
@@ -98,6 +110,8 @@ function MetaChipView({ label, tone = 'surface', size = 'md', testID, style }: P
           size === 'sm' && styles.labelSm,
           tone === 'emphasis' && styles.labelEmphasis,
           tone === 'onMedia' && styles.labelOnMedia,
+          tone === 'listener' && styles.labelListener,
+          tone === 'astrologer' && styles.labelAstrologer,
         ]}>
         {label}
       </Text>
@@ -135,6 +149,29 @@ const makeStyles = (t: Theme) =>
     emphasis: {
       borderColor: t.color.border.strong,
       backgroundColor: t.color.bg.raised,
+    },
+    /*
+     * FILLED, and the border goes transparent rather than being removed: the
+     * chip keeps its 1dp box so a filled tag and an outlined one are the same
+     * size to the pixel, and a row of mixed tones does not jitter.
+     *
+     * Two hues, because the two types have to be told apart at a glance down a
+     * scrolling column and hue is the only channel that does that without
+     * making one look more important than the other — size or weight would.
+     */
+    listener: {
+      backgroundColor: t.color.bg.listener,
+      borderColor: 'transparent',
+    },
+    astrologer: {
+      backgroundColor: t.color.bg.astrologer,
+      borderColor: 'transparent',
+    },
+    labelListener: {
+      color: t.color.text.onListener,
+    },
+    labelAstrologer: {
+      color: t.color.text.onAstrologer,
     },
     // Over a photo: white outline + translucent fill so the chip still reads as
     // the same 32×8 geometry without fighting the scrim.

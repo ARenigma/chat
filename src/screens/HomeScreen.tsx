@@ -48,13 +48,18 @@ import { Avatar } from '../components/Avatar';
 import { NAV_BAR_HEIGHT } from '../components/FloatingToolbar';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
-import { ProviderRow, PROVIDER_ROW_HEIGHT } from '../components/ProviderRow';
+import {
+  PROVIDER_ROW_HEIGHT,
+  ProviderRow,
+  seededExperienceYears,
+} from '../components/ProviderRow';
 import { FALLBACK_ECONOMICS, useEconomicsConfig } from '../api/appConfig';
 import { OFFERED_EXPERTISE, expertiseFor } from '../lib/expertise';
+import { genderLetter } from '../lib/display';
+import { displayRating, formatReviewCount } from '../lib/systemRating';
 import { DirectorySkeleton } from '../components/DirectorySkeleton';
 import { Chip } from '../components/Chip';
 import { HeroCarousel } from '../components/HeroCarousel';
-import { MetaChip } from '../components/MetaChip';
 import { SearchBar } from '../components/SearchBar';
 import { Badge } from '../components/Badge';
 import { Card } from '../components/Card';
@@ -1391,12 +1396,55 @@ function FeaturedCard({
   // The gradient is built from the accent tokens rather than raw hex, so the
   // featured hero stays inside the accent budget and follows a theme change.
   const gradient = `linear-gradient(140deg, ${theme.color.bg.accent} 0%, ${theme.color.bg.accentStrong} 100%)`;
-  const age = provider.age !== null ? ` ${provider.age}` : '';
+  /*
+   * "F-34", the same shorthand the explore card uses.
+   *
+   * Found on the device: the card showed "Rukmini Bhat F-34" while this hero
+   * showed "Lalita Devi 54" — the same person, two surfaces, one of them
+   * missing the letter, because the card got `genderLetter` and this did not.
+   * It reads as a data gap rather than as two components, which is why it is
+   * worth fixing rather than leaving to the redesign that eventually merges
+   * them.
+   */
+  const letter = genderLetter(provider.gender);
+  const age =
+    provider.age !== null
+      ? ` ${letter === null ? '' : `${letter}-`}${provider.age}`
+      : '';
   const presence = readPresence(provider.presence, provider.last_active_at);
   const tagline =
     provider.headline && provider.headline !== ''
       ? provider.headline
       : provider.languages.slice(0, 2).join(' · ');
+  /*
+   * The same numbers the cards below show, through the same function.
+   *
+   * This badge used to read `provider.rating_avg` directly and hide itself when
+   * `rating_count` was 0 — so once the cards started showing a system rating,
+   * the hero was the one surface still saying nothing for an unrated provider,
+   * and where both appeared they could disagree. One provider, two numbers, on
+   * one screen.
+   */
+  const rating = displayRating(provider);
+  const years = seededExperienceYears(provider.id);
+  /*
+   * Experience and reviews INLINE (Amit, 2026-09-08: "carousle cards should
+   * laos have experience and ratings inline -- place them smartly and space
+   * efficiently").
+   *
+   * One text line REPLACING the two language chips, rather than a third row
+   * added under them. The chips cost 32dp of a 210dp card to say two words that
+   * fit in a shared line with room to spare; dot-separated text carries four
+   * facts in 16dp. That is where the "space efficiently" is — the card did not
+   * get taller.
+   */
+  const heroMeta = [
+    `${formatReviewCount(rating.count)} reviews`,
+    `${years} ${years === 1 ? 'yr' : 'yrs'}`,
+    provider.languages.slice(0, 2).join(', '),
+  ]
+    .filter(x => x !== '')
+    .join('  ·  ');
   /*
    * The rating has to be spoken in WORDS from here, because the chip below is
    * `accessible={false}` like every other meta chip and its visible text is now
@@ -1411,9 +1459,8 @@ function FeaturedCard({
   const accessibility = [
     `Featured: ${provider.display_name}`,
     tagline,
-    provider.rating_count > 0
-      ? `rated ${(provider.rating_avg ?? 0).toFixed(1)} from ${provider.rating_count} reviews`
-      : 'no reviews yet',
+    `rated ${rating.score.toFixed(1)} from ${rating.count} reviews`,
+    `${years} ${years === 1 ? 'year' : 'years'} experience`,
   ]
     .filter(Boolean)
     .join(', ');
@@ -1460,13 +1507,11 @@ function FeaturedCard({
           whose label says "rated 4.8 from 12 reviews" in words. `?? 0` rather
           than the peers' `?.` because on the hero a null average would print the
           literal "★ undefined". */}
-      {provider.rating_count > 0 ? (
-        <View accessible={false} style={styles.featuredBadge}>
-          <Text allowFontScaling style={styles.featuredBadgeText}>
-            {`★ ${(provider.rating_avg ?? 0).toFixed(1)}`}
-          </Text>
-        </View>
-      ) : null}
+      <View accessible={false} style={styles.featuredBadge}>
+        <Text allowFontScaling style={styles.featuredBadgeText}>
+          {`★ ${rating.score.toFixed(1)}`}
+        </Text>
+      </View>
       {presence.here ? <View style={styles.featuredOnline} /> : null}
       <View style={styles.featuredBody}>
         <View style={styles.featuredNameRow}>
@@ -1480,13 +1525,11 @@ function FeaturedCard({
             {tagline}
           </Text>
         ) : null}
-        {/* Languages only — age already sits beside the name. Same M3
-            AssistChip geometry as the list; onMedia keeps them legible. */}
-        <View style={styles.featuredChips}>
-          {provider.languages.slice(0, 2).map(lang => (
-            <MetaChip key={lang} tone="onMedia" label={lang} />
-          ))}
-        </View>
+        {/* Reviews, experience and languages on one line, where two language
+            chips used to sit. See `heroMeta`. */}
+        <Text allowFontScaling numberOfLines={1} style={styles.featuredMeta}>
+          {heroMeta}
+        </Text>
       </View>
     </Pressable>
   );
@@ -2021,11 +2064,17 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.bodyMedium,
       color: 'rgba(255,255,255,0.92)',
     },
-    featuredChips: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: TOKENS.space['2xs'],
-      paddingTop: TOKENS.space.xs,
+    /*
+     * The hero's meta line, where two language chips used to be. `onMedia` is
+     * the tone the chips carried and the reason is unchanged: this text sits
+     * over a photo or a gradient, so it needs the white that the scrim above it
+     * guarantees rather than a theme ink that flips to dark.
+     */
+    featuredMeta: {
+      ...TOKENS.typography.bodySmall,
+      color: '#FFFFFF',
+      opacity: 0.85,
+      paddingTop: TOKENS.space['2xs'],
     },
     rows: {
       paddingTop: TOKENS.space.sm,

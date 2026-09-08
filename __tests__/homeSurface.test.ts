@@ -941,16 +941,63 @@ describe('the week\'s carousel says the rating and nothing else', () => {
      * accent pill asserting nothing.
      */
     expect(featured).not.toContain('Top rated');
-    expect(featured).toContain('{provider.rating_count > 0 ? (');
     expect(featured).toContain('accessible={false}');
+    /*
+     * UNCONDITIONAL since 2026-09-08, where this asserted
+     * `provider.rating_count > 0 ? (` — a real change, not a loosening.
+     *
+     * The old rule was that an unrated provider gets no pill, because a pill
+     * asserting nothing on a "Top profiles this week" card is an advert rather
+     * than a status. That was right while the number could be absent. It no
+     * longer can: `displayRating` always returns one, so the hero hiding its
+     * pill made it the ONE surface still saying nothing for a provider whose
+     * card below showed four and a half stars — and where both were visible
+     * they could disagree, because this read `rating_avg` directly instead of
+     * going through the same function.
+     */
+    expect(featured).not.toContain('provider.rating_count > 0');
+    expect(featured).toContain('rating.score.toFixed(1)');
+    expect(featured).toContain('displayRating(provider)');
+  });
+
+  it('carries experience and reviews inline, without growing the card', () => {
+    /*
+     * Amit, 2026-09-08: "carousle cards should laos have experience and ratings
+     * inline -- place them smartly and space efficiently".
+     *
+     * One text line REPLACING the two language chips, not a third row added
+     * under them. The chips cost 32dp of a 210dp card to say two words; the
+     * dot-separated line carries reviews, experience AND languages in 16dp. The
+     * card did not get taller, which is where the "space efficiently" is.
+     */
+    expect(featured).toContain('heroMeta');
+    expect(featured).toContain('formatReviewCount(rating.count)');
+    expect(featured).toContain('seededExperienceYears(provider.id)');
+    expect(featured).not.toMatch(/<MetaChip[^>]*tone="onMedia"/);
+    expect(featured).toMatch(/numberOfLines=\{1\}[\s\S]{0,80}featuredMeta/);
   });
 
   it('still announces what the number means', () => {
     // The chip is accessible={false} like every MetaChip, so "★ 4.8" is never
     // spoken as glyphs; the card's own label carries it in the directory's words.
     // https://developer.android.com/guide/topics/ui/accessibility/principles
-    expect(featured).toContain('from ${provider.rating_count} reviews');
-    expect(featured).toContain("'no reviews yet'");
+    // Through `rating` now, so the spoken number is the same one the pill
+    // shows — including when it is a system rating.
+    expect(featured).toContain('from ${rating.count} reviews');
+    /*
+     * The experience is spoken too, and pluralised — `${years} ${years === 1 ?
+     * 'year' : 'years'} experience`, so a one-year provider is not announced as
+     * "1 years".
+     */
+    expect(featured).toContain("'year' : 'years'} experience");
+    /*
+     * "no reviews yet" is GONE from this card, and that is the point of the
+     * change above: `displayRating` always returns a count, so there is no
+     * unrated branch left to speak. A provider with no genuine reviews is
+     * announced with the system number the pill is showing, which is at least
+     * consistent with what a sighted user sees.
+     */
+    expect(featured).not.toContain("'no reviews yet'");
     expect(featured).toContain('accessibilityLabel={accessibility}');
   });
 
