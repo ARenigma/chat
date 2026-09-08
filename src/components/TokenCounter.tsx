@@ -1,11 +1,12 @@
 import React, { memo, useEffect, useRef } from 'react';
-import { StyleSheet, Text } from 'react-native';
+import { StyleSheet } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence } from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { formatRupees, walletTone, type WalletTone } from '../lib/rates';
 import { springTo } from '../theme/motion';
 import { Icon } from './Icon';
+import { RupeeAmount } from './RupeeAmount';
 import { Pressable } from './Pressable';
 
 interface Props {
@@ -50,8 +51,14 @@ function TokenCounterView({ balance, onPress, variant = 'balance' }: Props) {
   }));
 
   const ink = inkForTone(tone, theme);
-  const label =
-    balance === null ? '' : earnings ? `₹${formatRupees(balance)}` : formatRupees(balance);
+  /*
+   * `formatRupees` ALREADY PREPENDS ITS OWN "₹" — this was rendering "₹₹5,278"
+   * on the earnings variant, a double glyph nobody would have caught by
+   * reading the string in code, only by looking at the pill. Found while
+   * auditing every price display for the ₹ glyph sweep (Amit, 2026-09-08).
+   * The two variants render the identical figure; there was never a reason for
+   * one to differ.
+   */
 
   return (
     <Pressable
@@ -76,12 +83,14 @@ function TokenCounterView({ balance, onPress, variant = 'balance' }: Props) {
       }>
       <Animated.View style={[styles.pill, pillStyle(tone, theme), animated]}>
         <Icon name="wallet" active size={TOKENS.icon.xs} color={ink} />
-        <Text
-          testID="token-count"
-          allowFontScaling
-          style={[styles.label, { color: ink }]}>
-          {label}
-        </Text>
+        {balance === null ? null : (
+          <RupeeAmount
+            value={balance}
+            testID="token-count"
+            allowFontScaling
+            style={[styles.label, { color: ink }]}
+          />
+        )}
       </Animated.View>
     </Pressable>
   );

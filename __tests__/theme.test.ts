@@ -1934,6 +1934,14 @@ describe('accent budget is enforced in code, not just documented', () => {
        */
       'ProviderRow.tsx',
       /*
+       * The Listener/Astrologer tab strip, extracted from HomeScreen on
+       * 2026-09-08 (see the module docblock) so Favourites could carry the same
+       * tabs. Same exemption HomeScreen already held for this exact code before
+       * the move: the accent SELECTED-tab label and the sliding indicator are a
+       * navigation state, not a description of any one provider.
+       */
+      'ProviderTypeTabs.tsx',
+      /*
        * Recharge (v10 layout, ADR-0019). The coral is the selected amount card,
        * the daily-credit strip and the payment icon — a selection state and the
        * one action on the screen, which is exactly what the budget reserves it

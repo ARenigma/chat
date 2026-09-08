@@ -4649,8 +4649,20 @@ describe('the directory is grouped and filterable: Listeners, Astrologers, ages'
   it('shows both tabs from day one and filters the WHOLE screen by the one you are on', () => {
     const home = withoutComments(read('src/screens/HomeScreen.tsx'));
     expect(home).toContain('testID="explore-tabs"');
-    expect(home).toContain('testID={`explore-tab-${c}`}');
-    expect(home).toContain('accessibilityRole="tab"');
+    /*
+     * The tab strip itself moved into `ProviderTypeTabs.tsx` on 2026-09-08 (so
+     * Favourites could carry the same tabs), and with it the per-tab testID
+     * convention changed one character: it used to be a literal
+     * `explore-tab-${c}` written by hand in this file; the shared component
+     * derives it from whatever `testID` the caller passes, so HomeScreen's
+     * "explore-tabs" now produces "explore-tabs-listener" /
+     * "explore-tabs-astrologer" rather than "explore-tab-listener". No test,
+     * script or Maestro flow referenced the old string (checked before
+     * renaming), so this is a safe rename rather than a broken contract.
+     */
+    const tabs = withoutComments(read('src/components/ProviderTypeTabs.tsx'));
+    expect(tabs).toContain('testID={`${testID}-${c}`}');
+    expect(tabs).toContain('accessibilityRole="tab"');
     /*
      * The strip sits ABOVE Chats and outside the list, and the rail follows it
      * too (Amit, 2026-09-06): a tab is a whole view of the app, not a shelf

@@ -38,6 +38,7 @@ import { useUsageLedger, type UsageRow } from '../api/usage';
 import { BackButton } from '../components/BackButton';
 import { Icon, type IconName } from '../components/Icon';
 import { LoadingIndicator } from '../components/LoadingIndicator';
+import { RupeeAmount } from '../components/RupeeAmount';
 
 interface Props {
   onBack: () => void;
@@ -161,7 +162,11 @@ function Kpi({
   spoken,
   testID,
 }: {
-  value: string;
+  // A node, not just a string: the tokens KPI passes a `RupeeAmount` so its
+  // rupee glyph renders in a lighter weight than the figure, and the sessions
+  // KPI still passes a plain string (`formatCount` — no currency, nothing to
+  // split).
+  value: React.ReactNode;
   label: string;
   spoken: string;
   testID: string;
@@ -169,9 +174,15 @@ function Kpi({
   const styles = useStyles(makeStyles);
   return (
     <View style={styles.kpi} accessible accessibilityLabel={spoken}>
-      <Text allowFontScaling style={styles.kpiValue} testID={testID}>
-        {value}
-      </Text>
+      {typeof value === 'string' ? (
+        <Text allowFontScaling style={styles.kpiValue} testID={testID}>
+          {value}
+        </Text>
+      ) : (
+        // Already a styled node (RupeeAmount carries `styles.kpiValue` itself);
+        // wrapping it in another Text would nest two Text trees for one line.
+        <View testID={testID}>{value}</View>
+      )}
       <Text allowFontScaling style={styles.kpiLabel}>
         {label}
       </Text>
@@ -239,7 +250,9 @@ export function UsageLedgerScreen({ onBack }: Props) {
               testID="usage-sessions"
             />
             <Kpi
-              value={formatRupees(kpis.tokens)}
+              value={
+                <RupeeAmount value={kpis.tokens} allowFontScaling style={styles.kpiValue} />
+              }
               label={kpis.tokensLabel}
               spoken={kpis.tokensSpoken}
               testID="usage-total"

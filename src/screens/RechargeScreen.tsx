@@ -19,6 +19,7 @@ import { useStore } from '../store/useStore';
 import { BackButton } from '../components/BackButton';
 import { Button } from '../components/Button';
 import { Pressable } from '../components/Pressable';
+import { RupeeAmount } from '../components/RupeeAmount';
 import { Sheet } from '../components/Sheet';
 import { PaymentSheet } from './PaymentSheet';
 
@@ -123,9 +124,7 @@ function RechargeSheetForm({
             balance — `fontScaleCap` has no numeral key to wire. The cap that
             used to sit here named titleLargeEmphasized, the role this style no
             longer uses. */}
-        <Text allowFontScaling style={styles.balanceValue}>
-          {`${formatRupees(balance)}`}
-        </Text>
+        <RupeeAmount value={balance} allowFontScaling style={styles.balanceValue} />
       </View>
 
       <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.section}>
@@ -164,9 +163,12 @@ function RechargeSheetForm({
                     </Text>
                   </View>
                 ) : null}
-                <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized} allowFontScaling style={[styles.amount, selected && styles.amountOn]}>
-                  {formatRupees(pack)}
-                </Text>
+                <RupeeAmount
+                  value={pack}
+                  maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized}
+                  allowFontScaling
+                  style={[styles.amount, selected && styles.amountOn]}
+                />
                 {/*
                   * The second line is GONE (2026-09-08). It read "300 tokens"
                   * under a "₹300" headline — the price and what the price
@@ -361,9 +363,7 @@ function RechargeForm({
           Balance
         </Text>
         {/* Uncapped, same reason as the sheet's balance figure above. */}
-        <Text allowFontScaling style={styles.balanceValue}>
-          {`${formatRupees(balance)}`}
-        </Text>
+        <RupeeAmount value={balance} allowFontScaling style={styles.balanceValue} />
         <Text allowFontScaling style={styles.balanceHint}>
           {balance === null || balance === 0
             ? 'Add money to start talking.'
@@ -443,16 +443,26 @@ function RechargeForm({
                     compact chip in this file (price → tokens → base + tax), so
                     the two grids are one control read twice. */}
                 <View style={styles.cardHead}>
-                  <Text
+                  {/*
+                   * The second Text here was a LEFTOVER duplicate, not a
+                   * second fact — found during the ₹ glyph sweep (2026-09-08).
+                   * It rendered `formatRupees(pack)` a second time under
+                   * `cardAmount`'s identical figure: "₹5,000" over "₹5,000".
+                   * This is exactly the bug the comment above already diagnosed
+                   * and fixed on the compact chip ("With rupees everywhere it
+                   * renders '₹300' under '₹300', which is not a supporting
+                   * line, it is the same fact twice") — it was just never
+                   * applied here, on this card's twin. `cardUnit`/`cardUnitOn`
+                   * are unused now; left in the stylesheet rather than deleted,
+                   * since RULE 4 says nothing about a style block and a second
+                   * user of this card shape may want the same type role.
+                   */}
+                  <RupeeAmount
+                    value={pack}
                     maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized}
-                    allowFontScaling
                     numberOfLines={1}
-                    style={[styles.cardAmount, on && styles.cardAmountOn]}>
-                    {formatRupees(pack)}
-                  </Text>
-                  <Text allowFontScaling style={[styles.cardUnit, on && styles.cardUnitOn]}>
-                    {`${formatRupees(pack)}`}
-                  </Text>
+                    style={[styles.cardAmount, on && styles.cardAmountOn]}
+                  />
                 </View>
                 {/* Talk-time pill: page colour + accent ink whether the card is
                     selected or not, so the label needs no `On` variant. */}

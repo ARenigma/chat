@@ -292,8 +292,21 @@ export function iconPressables(source: string, file: string): Site[] {
       const close = matchingClose(src, e + 1);
       children = close === -1 ? '' : src.slice(e + 1, close);
     }
-    // `[\s/>]` so `<Text` does not also match `<TextField`.
-    if (/<Icon[\s/>]/.test(children) && !/<Text[\s/>]/.test(children)) {
+    /*
+     * `[\s/>]` so `<Text` does not also match `<TextField`.
+     *
+     * `<RupeeAmount` counts as text too, added 2026-09-08: it is a component
+     * that renders a `<Text>` internally, and a SOURCE scan cannot see through
+     * a component boundary to know that. Without this, TokenCounter's wallet
+     * pill — Icon + RupeeAmount, no literal `<Text` in this file at all since
+     * the ₹ glyph sweep — was misread as an icon-ONLY control and flagged for
+     * a shape prop it does not need, because it is not icon-only.
+     */
+    if (
+      /<Icon[\s/>]/.test(children) &&
+      !/<Text[\s/>]/.test(children) &&
+      !/<RupeeAmount[\s/>]/.test(children)
+    ) {
       const match = /\bstyle\s*=\s*\{/.exec(openTag);
       let styleSrc = '';
       if (match !== null) {

@@ -16,6 +16,7 @@ import { Button } from '../components/Button';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { Sheet } from '../components/Sheet';
+import { RupeeAmount } from '../components/RupeeAmount';
 import { LoadingIndicator } from '../components/LoadingIndicator';
 import { useStore } from '../store/useStore';
 import { CASHFREE_SANDBOX_CHECKOUT } from '../config';
@@ -256,13 +257,13 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
         </Text>
         <View style={styles.totalFill} />
         <View style={styles.totalFigures}>
-          <Text
+          <RupeeAmount
+            value={total}
             maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized}
             allowFontScaling
             testID="payment-total"
-            style={styles.totalValue}>
-            {formatRupees(total)}
-          </Text>
+            style={styles.totalValue}
+          />
           {gst ? (
             <Text allowFontScaling style={styles.totalGst}>
               {gst}

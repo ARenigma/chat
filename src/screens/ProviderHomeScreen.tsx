@@ -34,6 +34,7 @@ import {
 import { Avatar } from '../components/Avatar';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { LoadingIndicator } from '../components/LoadingIndicator';
+import { RupeeAmount } from '../components/RupeeAmount';
 /*
  * OWN CONSTANTS since 2026-09-08, where this used to import ROW_AVATAR and
  * ROW_SEPARATOR_INSET from ProviderRow.
@@ -612,13 +613,21 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
                 <Text allowFontScaling style={styles.earnLabel}>
                   Earned so far
                 </Text>
-                <Text
+                {/*
+                 * `₹{earned}` was a hand-built string with no thousands
+                 * grouping — an earnings figure past 999 would have printed
+                 * "₹12500" rather than "₹12,500". Found during the ₹ glyph
+                 * sweep alongside TokenCounter's doubled glyph; `RupeeAmount`
+                 * routes through `formatRupees`, so both defects are the same
+                 * fix.
+                 */}
+                <RupeeAmount
+                  value={earned}
                   testID="earned-notice"
                   maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineMediumEmphasized}
                   allowFontScaling
-                  style={styles.earnValue}>
-                  ₹{earned}
-                </Text>
+                  style={styles.earnValue}
+                />
                 <Text allowFontScaling style={styles.earnSub}>
                   {earned > 0
                     ? 'Held for payout. Transfers land in your account.'
