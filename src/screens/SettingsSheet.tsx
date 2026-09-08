@@ -9,7 +9,7 @@ import { Button } from '../components/Button';
 import { Icon, type IconName } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { Sheet } from '../components/Sheet';
-import { TopAppBar } from '../components/TopAppBar';
+import { TopAppBar, TOP_APP_BAR_HEIGHT } from '../components/TopAppBar';
 import { TabTopBar } from '../components/TabTopBar';
 import { ChatWallpaper } from '../components/ChatWallpaper';
 import { Divider } from '../components/Divider';
@@ -326,13 +326,28 @@ export function SettingsSheet({
             https://developer.android.com/develop/ui/compose/components/app-bars */}
         {needle !== '' ? null : (
         <View style={styles.profileHero}>
-          <View style={styles.profileCover}>
+          {/*
+            * On the TAB the cover is shorter by exactly the app bar it no
+            * longer holds. Its 168 was sized around a bar sitting INSIDE it
+            * (see the style's own note); with `TabTopBar` above the scroll
+            * view instead, that 64dp became dead space over the avatar. The
+            * subtraction is written out rather than replaced with 104 so the
+            * two numbers cannot drift apart.
+            */}
+          <View
+            style={[
+              styles.profileCover,
+              showBack ? null : { height: 168 - TOP_APP_BAR_HEIGHT },
+            ]}>
             <ChatWallpaper />
             {/* The cover's back arrow is the PUSHED case only: on the member
                 tree Settings is a tab, and a tab's first screen has nothing to
                 go back to (Amit, 2026-09-08). `TabTopBar` above carries that
                 case, so this whole bar would be a second, contradictory one. */}
-            <View style={{ paddingTop: insets.top }}>
+            {/* The status-bar inset belongs to whichever bar is topmost. On the
+                tab that is `TabTopBar`, which pads itself, so reserving it here
+                too would put the gap back. */}
+            <View style={showBack ? { paddingTop: insets.top } : null}>
               {showBack ? (
               <TopAppBar
                 title=""
