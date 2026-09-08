@@ -128,6 +128,7 @@ const MIGRATIONS = [
   'supabase/migrations/086_only_the_member_starts_a_paid_chat.sql',
   'supabase/migrations/088_unanswered_message_refund_is_pre_cutover.sql',
   'supabase/migrations/089_repair_call_media_assignment_kind_check.sql',
+  'supabase/migrations/090_expire_stale_session_requests.sql',
 ];
 
 /**
@@ -701,6 +702,11 @@ const suites = [
     file: join(ROOT, 'supabase/tests/390_calls_can_actually_start.sql'),
     label:
       'calls can start: the media-assignment trigger and its constraint agree',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/400_stale_requests_do_not_suppress.sql'),
+    label:
+      'stale requests: an expired pending row stops blocking the next request',
   },
 ];
 
