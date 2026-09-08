@@ -211,6 +211,20 @@ const PAIRS = [
   },
   {
     fg: 'text/accent',
+    bg: 'bg/base',
+    target: 4.5,
+    what: 'the explore row CTA label',
+  },
+  {
+    fg: 'bg/accent',
+    bg: 'bg/base',
+    target: 3,
+    what: 'the outline around the explore row CTA',
+    exempt:
+      'a non-text boundary, and never the only signal — the label inside it reads "Chat" in text/accent at full AA. 3:1 is the non-text target from developer.android.com/guide/topics/ui/accessibility/apps',
+  },
+  {
+    fg: 'text/accent',
     bg: 'bg/raised',
     target: 4.5,
     what: 'accent text in a card',

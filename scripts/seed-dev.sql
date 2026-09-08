@@ -68,6 +68,11 @@ update public.profiles p set
   headline = v.headline,
   about = v.about,
   languages = v.languages,
+  -- 083. Deliberately UNEVEN across the four: Meera carries three (the row's
+  -- cap), Sanya two, Iniya one, and Mrunal none at all. A seed where everybody
+  -- has exactly three would make the row's empty and partial states unreachable
+  -- on a device, and those are the states that break a fixed-height list.
+  expertise = v.expertise,
   is_available = v.available,
   -- Set alongside `is_available` rather than derived from it, because 012 split
   -- the two and the seed is the one place that has to show both states on a
@@ -80,20 +85,20 @@ from (values
   ('11111111-1111-4111-8111-111111111111'::uuid, 'Meera', 28,
    'No advice unless you ask for it',
    'I sit with whatever you bring and I do not rush you toward a conclusion. Most people already know what they think; they need a quiet hour where nobody is scoring them. Ask for advice if you want it. Otherwise I just stay with you.',
-   array['English'], true),
+   array['English'], array['Anxiety', 'Stress', 'Self-esteem'], true),
   ('22222222-2222-4222-8222-222222222222'::uuid, 'Sanya', 24,
    'Good at 2am conversations',
    'Late nights are when the real sentences come out. I am used to that hour: the half-formed worry, the thing you cannot say at dinner. We can ramble, we can sit in silence, we can start again. I will still be here after nine.',
-   array['English', 'Hindi'], true),
+   array['English', 'Hindi'], array['Loneliness', 'Relationships'], true),
   ('33333333-3333-4333-8333-333333333333'::uuid, 'Mrunal', 34,
    'I will just listen if that helps',
    'Some days you do not want a plan. You want someone who will not fill the gaps. I listen first and I stay there unless you ask me to step in. If all you need is a witness for twenty minutes, that is enough work for me.',
-   array['English', 'Marathi'], false),
+   array['English', 'Marathi'], '{}'::text[], false),
   ('44444444-4444-4444-8444-444444444444'::uuid, 'Iniya', 29,
    'Tell me about your week',
    'Tell me the ordinary parts. The commute, the message you did not send, the week that felt longer than it was. I like the small facts; they are usually where the feeling is hiding. We can go slow. Nothing here has to be impressive.',
-   array['English', 'Tamil'], true)
-) as v(id, name, age, headline, about, languages, available)
+   array['English', 'Tamil'], array['Career'], true)
+) as v(id, name, age, headline, about, languages, expertise, available)
 where p.id = v.id;
 
 -- Profile photos, from the public `avatars` storage bucket (013) under `seed/`.

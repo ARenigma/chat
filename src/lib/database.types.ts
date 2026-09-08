@@ -433,6 +433,22 @@ export type ProviderSummary = {
    * lib/providerFilters.ts, which defaults a row from an older server.
    */
   provider_category: string;
+  /**
+   * What this provider helps with, as short topic tags (migration 083):
+   * Anxiety, Relationships, Tarot. Provider-written and never derived — a tag
+   * mined out of the headline would be a guess about a human being rendered as
+   * a fact.
+   *
+   * Always an array, never null: the column is `not null default '{}'`, so the
+   * explore row branches on `length` rather than on nullness. Empty is legal —
+   * unlike languages (075) this is not a promotion requirement, because a
+   * provider with no tags is harder to find rather than unusable.
+   *
+   * Read it through `rowExpertise` in lib/expertise.ts, which dedupes and caps
+   * it; 083's CHECK is a shape floor and permits 'Anxiety' and 'anxiety' in the
+   * same array.
+   */
+  expertise: string[];
 };
 
 /**

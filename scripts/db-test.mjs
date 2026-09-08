@@ -123,6 +123,7 @@ const MIGRATIONS = [
   'supabase/migrations/080_client_support_floor.sql',
   'supabase/migrations/081_message_idempotency.sql',
   'supabase/migrations/082_decline_means_no_session.sql',
+  'supabase/migrations/083_provider_expertise.sql',
 ];
 
 const docker = (args, options = {}) =>
@@ -652,6 +653,11 @@ const suites = [
     file: join(ROOT, 'supabase/tests/360_decline_means_no_session.sql'),
     label:
       'decline means no session: the flag outlives the request, so the prompt stops returning',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/370_provider_expertise.sql'),
+    label:
+      'provider expertise: the provider owns their own tags, and approval carries them',
   },
   {
     file: join(ROOT, 'supabase/tests/340_sp_initiate_member_consent.sql'),

@@ -9,6 +9,7 @@ import {
   sortByLanguageMatch,
   toggleLanguage,
 } from '../src/lib/languagePrefs';
+import { OFFERED_EXPERTISE } from '../src/lib/expertise';
 
 const ROOT = join(__dirname, '..');
 const read = (relative: string) => readFileSync(join(ROOT, relative), 'utf8');
@@ -148,15 +149,56 @@ describe('the offered set comes from what a provider can actually claim', () => 
      * never promote, on the only dataset anyone develops against.
      */
     const seed = read('scripts/seed-dev.sql');
-    const seeded = new Set(
-      [...seed.matchAll(/array\[([^\]]*)\]/g)]
-        .flatMap(m => (m[1] ?? '').split(','))
-        .map(s => s.trim().replace(/'/g, ''))
-        .filter(s => /^[A-Z][a-z]+$/.test(s)),
-    );
+
+    /*
+     * COLUMN-AWARE since 2026-09-08, and it had to become so.
+     *
+     * The scrape was every `array[...]` in the file, filtered to Capitalised
+     * words — which worked only while languages were the sole such literal.
+     * Migration 083 added `expertise` to the same VALUES tuples, so the next
+     * run demanded that OFFERED_LANGUAGES contain 'Anxiety'. The gate was not
+     * wrong to fire; it was reading the wrong column and had no way to know.
+     *
+     * The tuple is `(id, name, age, headline, about, languages, expertise,
+     * available)`, so languages is the FIRST array literal in each row and
+     * expertise the second. Pairing them and taking the first is what makes
+     * this specific rather than lucky, and the assertion below that both
+     * columns were seen is what stops a future column reordering from
+     * silently checking nothing.
+     */
+    const rows = [...seed.matchAll(/array\[([^\]]*)\]\s*,\s*(?:array\[([^\]]*)\]|'\{\}'::text\[\])/g)];
+    expect(rows.length).toBeGreaterThan(0);
+
+    const words = (list: string | undefined): string[] =>
+      (list ?? '')
+        .split(',')
+        .map(w => w.trim().replace(/'/g, ''))
+        .filter(w => /^[A-Z][a-z-]+$/.test(w));
+
+    const seeded = new Set(rows.flatMap(m => words(m[1])));
     expect(seeded.size).toBeGreaterThan(0);
     for (const language of seeded) {
       expect(OFFERED_LANGUAGES).toContain(language);
+    }
+
+    /*
+     * And the mirror, which is the half the old shape could not express: the
+     * seed's EXPERTISE column must also be claimable, or the dev directory
+     * shows tags no provider could have chosen through the form.
+     *
+     * Not one list but two — 083 splits the vocabulary by provider_category —
+     * so membership is checked against the union. Which of the two a given
+     * seeded provider should be offered is `expertiseFor`'s job and is tested
+     * in expertise.test.ts; here the question is only whether the value exists
+     * in the product at all.
+     */
+    const offeredTopics = new Set([
+      ...OFFERED_EXPERTISE.listener,
+      ...OFFERED_EXPERTISE.astrologer,
+    ]);
+    const seededTopics = new Set(rows.flatMap(m => words(m[2])));
+    for (const topic of seededTopics) {
+      expect([...offeredTopics]).toContain(topic);
     }
   });
 

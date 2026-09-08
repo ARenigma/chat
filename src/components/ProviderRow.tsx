@@ -1,18 +1,19 @@
-import React, { memo, useEffect, useRef } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { memo } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ProviderSummary } from '../lib/database.types';
 import { initialOf } from '../lib/display';
 import { presenceForSpeech, readPresence } from '../lib/presence';
-import { SCROLL_PHYSICS } from '../lib/scroll';
 import { rowIn } from '../theme/motion';
 import { Avatar } from './Avatar';
 import { Icon } from './Icon';
-import { META_CHIP_HEIGHT, MetaChip } from './MetaChip';
+import { META_CHIP_HEIGHT_SM, MetaChip } from './MetaChip';
 import { Pressable } from './Pressable';
 import { CATEGORY_BADGE, categoryOf } from '../lib/providerFilters';
+import { ROW_EXPERTISE_LIMIT, rowExpertise } from '../lib/expertise';
+import { formatRupees } from '../lib/rates';
 
 interface Props {
   provider: ProviderSummary;
@@ -53,6 +54,17 @@ interface Props {
    * stagger animation on every appearance.
    */
   animateEntrance?: boolean;
+  /**
+   * ₹ per minute, passed IN rather than read from `useEconomicsConfig()` here.
+   *
+   * The hook would work — React Query dedupes the fetch — but every row would
+   * subscribe to the config query, so one admin change re-renders the whole
+   * list and `memo` stops holding. The list screens already read the config for
+   * other reasons; one read at the top and a number down the tree keeps this
+   * component a pure function of its props, which is also what makes it
+   * assertable without a renderer.
+   */
+  ratePerMin: number;
 }
 
 /**
@@ -93,18 +105,27 @@ export function replyLatency(seconds: number | null): string | null {
 /**
  * Avatar diameter. Exported because the separator inset is derived from it.
  *
- * 40, not 42: iOS Messages and Contacts both use 40 in a list row, and the two
- * lists in this app should agree with the platform rather than with each other by
- * a couple of points.
- */
-export const ROW_AVATAR = 40;
-
-/**
- * Where a row's separator starts: past the avatar, at the text edge.
+ * 76, measured. It was 40 — an iOS Messages/Contacts list-row size, and the
+ * right answer while this row was a two-line inbox-shaped cell. The row is now
+ * built on Astrotalk's anatomy (Amit, 2026-09-08: "astrotalk layout with
+ * clarity tags"), read off the Redmi with `uiautomator dump` at density 440,
+ * 2.75 px/dp, rather than from a screenshot.
  *
- * Derived rather than typed as a number, so changing the avatar size cannot leave
- * the separators misaligned by a value nobody remembers is related.
+ * 76 and not 72, and the difference is which of Astrotalk's two circles to
+ * match. Its `user_pic` is 72.0dp sitting inside a 76.4dp
+ * `background_user_pic`, the yellow ring. The ring is NOT reproduced — a halo
+ * on every row of a directory of strangers reads as a badge that has been
+ * awarded rather than a frame, the same argument that keeps our avatars off
+ * `warm` — so our visible circle is the OUTER one, and 76 is what lands in the
+ * same footprint.
+ *
+ * It is also already in `Avatar`'s size union, which is closed on purpose
+ * ("a new size is a decision someone makes") and carries hand-tuned FONT and
+ * DOT entries per value. Adding 72 would have meant inventing both for a
+ * measurement that 76 already satisfies to within 0.4dp.
  */
+export const ROW_AVATAR = 76;
+
 export const ROW_SEPARATOR_INSET = ROW_AVATAR + TOKENS.space.sm;
 
 /**
@@ -131,6 +152,27 @@ export const ROW_SEPARATOR_INSET = ROW_AVATAR + TOKENS.space.sm;
 export const ROW_CHEVRON_SLOT = TOKENS.icon.md;
 
 /**
+ * The tag pill line, the languages line and the price line, named so the height
+ * arithmetic below reads as the row rather than as a sum of tokens.
+ */
+const ROW_TAG_LINE = META_CHIP_HEIGHT_SM;
+
+/**
+ * The CTA's height, and the one number in this row that is NOT the reference.
+ *
+ * Astrotalk's `call_rl` measures 36.0dp on the Redmi. Amit: "48dp". He is right
+ * and the platform agrees — "we recommend that each interactive UI element have
+ * a focusable area, or touch target size, of at least 48dp x 48dp"
+ * (https://developer.android.com/guide/topics/ui/accessibility/apps) — and
+ * unlike the chip pills above, this one really is tappable, so the 48 applies
+ * with full force. A 36dp button is the reference being wrong.
+ */
+export const ROW_CTA_HEIGHT = TOKENS.interaction.minTarget;
+
+/** The CTA's width. Astrotalk's is 95.3dp; 96 is the same number on our grid. */
+export const ROW_CTA_WIDTH = 96;
+
+/**
  * The row's laid-out height, DERIVED rather than written down, so the list's
  * `overrideItemLayout` hint cannot drift away from the row it describes.
  *
@@ -141,53 +183,88 @@ export const ROW_CHEVRON_SLOT = TOKENS.icon.md;
  * and scroll-to-index accuracy, not correctness, which is exactly why nobody
  * noticed for as long as nobody did.
  *
- * The terms are the row's own box, top to bottom: `paddingVertical: space.sm`
- * twice, the name line, `space.hair`, the headline line, `space.hair`, the
- * strip's `marginTop: space['2xs']`, and the strip itself at
- * `META_CHIP_HEIGHT`. The separator is 1px and sits OUTSIDE this — it is a
- * sibling of the Pressable, not a child.
+ * TWO COLUMNS NOW, and the row is the taller of them plus its padding. That is
+ * the shape Astrotalk uses and the reason the avatar grew: the left column is
+ * the avatar with the rating stacked under it, the right column is four lines,
+ * and neither is a fixed multiple of the other.
  *
- * `__tests__/providerRow.test.ts` pins the arithmetic to 108 from the tokens,
- * so a change to the type scale or the chip height fails there rather than
- * silently mis-hinting the list.
+ *   left   avatar 76 · 4 · rating 16 · count 16                = 112
+ *   right  name 24 · 2 · tags 24 · 2 · languages 16 · 2 · CTA 48 = 118
+ *
+ * The last line is a ROW — price on the left, CTA on the right — so it costs
+ * the CTA's 48 rather than 48 plus the price's own 20. That is where Astrotalk
+ * puts its button too: `call_rl` spans y361.5–397.5, straddling the experience
+ * and price lines rather than sitting under them.
+ *
+ * 142dp against Astrotalk's 146.2dp `row_content_holder`, which is as close as
+ * two different type scales get without copying one.
+ *
+ * `__tests__/providerRow.test.ts` pins the arithmetic from the tokens, so a
+ * change to the type scale or a chip height fails there rather than silently
+ * mis-hinting the list.
  */
-export const PROVIDER_ROW_HEIGHT =
-  TOKENS.space.sm * 2 +
+export const PROVIDER_ROW_LEFT_COLUMN =
+  ROW_AVATAR +
+  TOKENS.space['2xs'] +
+  TOKENS.typography.labelMedium.lineHeight +
+  TOKENS.typography.bodySmall.lineHeight;
+
+export const PROVIDER_ROW_RIGHT_COLUMN =
   TOKENS.typography.titleMediumEmphasized.lineHeight +
   TOKENS.space.hair +
-  TOKENS.typography.bodyMedium.lineHeight +
+  ROW_TAG_LINE +
   TOKENS.space.hair +
-  TOKENS.space['2xs'] +
-  META_CHIP_HEIGHT;
+  TOKENS.typography.bodySmall.lineHeight +
+  TOKENS.space.hair +
+  ROW_CTA_HEIGHT;
+
+export const PROVIDER_ROW_HEIGHT =
+  TOKENS.space.sm * 2 +
+  Math.max(PROVIDER_ROW_LEFT_COLUMN, PROVIDER_ROW_RIGHT_COLUMN);
+
 
 /**
- * A row in the directory. Not a card any more.
+ * A row in the directory, rebuilt on Astrotalk's anatomy with Clarity's tags.
  *
- * It was a white card on a grey page, and that was a reasoned choice: colour
- * difference separates two strangers better than a line does, on the one screen
- * where a member is comparing people side by side. It is being reversed
- * deliberately, not corrected. The reference this now follows puts rows directly
- * on the page divided by hairlines, the way iMessage and WhatsApp do, and the
- * argument for it is consistency: a member moves between this list and the inbox
- * constantly, and two list idioms in one app reads as two apps.
+ * Amit, 2026-09-08: "explore rows first — astrotalk layout with clarity tags",
+ * after "they dont look nice.. or catchy". The reference was read off the
+ * Redmi with `uiautomator dump` rather than from a screenshot, so every number
+ * below is a measurement: 72dp avatar, the rating stacked beneath it, four text
+ * lines beside it, an outlined CTA on the price line.
  *
- * Three departures from the reference, all deliberate:
+ * WHAT CAME FROM WHERE, and it matters because the two references disagree:
  *
- *   - **No photographs.** Every mockup shows faces. We publish initials, and the
- *     avatar is never `warm`, because washing one stranger's mark in the brand
- *     colour reads as a recommendation nobody made.
- *   - **No price.** One token per message for everyone, an invariant with a SQL
- *     parity test behind it, so a per-provider price would be a lie.
- *   - **Reply latency instead.** The most-upvoted negative review of the app this
- *     was studied from is about a listener who never replied while the meter ran.
+ *   Astrotalk  the anatomy. Big avatar, rating + count under it, name / detail
+ *              lines / price stacked to its right, outlined CTA on the price
+ *              line. Its detail lines are plain comma-joined text.
+ *   Clarity    the tags themselves, as pills rather than a comma list, which is
+ *              the half of "best of both" that Astrotalk does not have.
  *
- * The language pills that used to sit here are gone. They were the only thing
- * making rows variable-height, and a list whose rows disagree about their height
- * cannot carry a hairline convincingly.
+ * FIVE DELIBERATE DEPARTURES, stated because RULE 1 asks for them:
  *
- * Languages came BACK as AssistChips, and the height invariant survived by being
- * enforced instead of assumed: the chip strip is one fixed-height row that
- * SCROLLS sideways (see `styles.strip`) rather than wrapping or being clipped.
+ *   1. **48dp CTA, not Astrotalk's 36.** See ROW_CTA_HEIGHT — this one is
+ *      genuinely tappable, so the 48dp minimum applies and the reference is
+ *      simply wrong.
+ *   2. **No struck-through price.** Astrotalk renders "₹ 24 ₹ 5/min" with the
+ *      first crossed out. Amit: "no struck price". We have one rate and it is
+ *      not discounted, so a struck price would be an invented anchor.
+ *   3. **No yellow ring on the avatar.** See ROW_AVATAR.
+ *   4. **No photographs.** Unchanged from the previous row and for the same
+ *      reason: we publish initials, and the avatar is never `warm`.
+ *   5. **The seeded experience line is gone.** Astrotalk's "Exp- 14 Years" is a
+ *      real column; ours came from `seededExperienceYears`, a hash of the id.
+ *      It survived as one chip among several, where it read as one fact among
+ *      many. Given its own line in the reference's anatomy it would be a
+ *      fabricated number with a line of its own, which is a different and worse
+ *      thing. The function stays exported and tested — the profile still uses
+ *      it — but the browse surface no longer states it.
+ *
+ * The row is still a ROW: hairline-divided, on the page, no card. That is the
+ * one place the anatomy is followed and the styling is not, and it is a real
+ * choice rather than an omission — Astrotalk's rows are cards on grey. The
+ * argument that put this list on hairlines still holds: a member moves between
+ * this list and the inbox constantly, and two list idioms in one app reads as
+ * two apps. Reversing it is one style block if Amit wants the cards.
  */
 function ProviderRowView({
   provider,
@@ -195,20 +272,45 @@ function ProviderRowView({
   isLast,
   onPress,
   onPressAvatar,
+  ratePerMin,
   animateEntrance = true,
   showCategory = false,
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const initial = initialOf(provider.display_name);
-  const latency = replyLatency(provider.median_reply_seconds);
-  // Fact chips: experience + top languages. Experience is SEEDED until the
-  // directory carries a real column — deterministic per id, stable across renders.
-  const chips = [
+
+  /*
+   * The tag line. Category leads when there are no tabs above the list to say
+   * it (search), which is the same rule the old chip strip used — it is a fact
+   * about this person of exactly the tag kind, so it belongs in the same line
+   * rather than in a second one.
+   *
+   * `rowExpertise` caps and dedupes; the slice after it keeps the total at
+   * three so a categorised search row does not run four pills wide.
+   */
+  const tags = [
     ...(showCategory ? [CATEGORY_BADGE[categoryOf(provider)]] : []),
-    `${seededExperienceYears(provider.id)} yrs`,
-    ...provider.languages.slice(0, 2),
-  ].filter(c => c !== '');
+    ...rowExpertise(provider),
+  ].slice(0, ROW_EXPERTISE_LIMIT);
+
+  /*
+   * Languages as plain text, not pills, which is a reversal of the strip this
+   * row used to carry and the reason the horizontally-scrolling ScrollView is
+   * gone with it.
+   *
+   * That scroller existed to stop a second language being clipped, and it cost
+   * a three-way gesture negotiation between the strip, the row's Pressable and
+   * the vertical FlashList — documented at length in the version this replaces,
+   * and the source of "schip scroll is not working correctly". With the tags
+   * taking the pill line, languages have a line of their own at the full text
+   * width, where two of them fit in plain text with room to spare. Astrotalk
+   * renders its `language` line exactly this way, at 17.1dp.
+   *
+   * Removing the scroller removes the gesture conflict rather than tuning it,
+   * which is the only fix for that class that stays fixed.
+   */
+  const languages = provider.languages.slice(0, 3).join(', ');
 
   /**
    * The dot and the trailing line both come from `presence` now. They used to
@@ -220,26 +322,23 @@ function ProviderRowView({
    */
   const presence = readPresence(provider.presence, provider.last_active_at);
 
-  /**
-   * The meta strip's scroller, rewound whenever this cell is recycled onto a
-   * different provider.
+  /*
+   * WHICH GLYPH SITS ON THE PRICE, and why it is conditional.
    *
-   * A native scroll offset is not React state, and FlashList re-renders the SAME
-   * component instance with new props instead of mounting a new one — which is
-   * why it ships a hook whose whole job is this class of leftover:
-   * `useRecyclingState`, "automatically resets the state when specified
-   * dependencies change ... when items are recycled"
-   * (@shopify/flash-list@2.3.2 dist/recyclerview/hooks/useRecyclingState.d.ts).
-   * Without the rewind, scrolling one row's languages and then scrolling the
-   * list would hand the next provider a strip already parked on somebody else's
-   * chips. `scrollTo` is the imperative half of that hook, for state Android
-   * holds rather than React.
-   * https://reactnative.dev/docs/scrollview#scrollto
+   * Amit asked for "call icon and rs 15/min just like how clarity shows". A
+   * phone beside a rate is a claim that the rate buys a call, and
+   * `audio_enabled` (migration 064) is a provider's own answer to whether they
+   * take them. Showing a phone next to a provider who has switched calls off
+   * would quote a price for something that cannot be bought — the same defect
+   * class as the composer hints removed in 75ced47, arrived at from the other
+   * direction. So a chat glyph when they only type.
+   *
+   * The RATE is the same either way today (chat and audio are both ₹22/min in
+   * `appConfig`), so this changes the picture and not the number. If the two
+   * rates ever diverge, this is the site that has to choose, and the comment is
+   * here so it gets chosen rather than defaulted.
    */
-  const strip = useRef<ScrollView | null>(null);
-  useEffect(() => {
-    strip.current?.scrollTo({ x: 0, animated: false });
-  }, [provider.id]);
+  const canCall = provider.audio_enabled;
 
   const accessibility = [
     `Message ${provider.display_name}`,
@@ -247,7 +346,11 @@ function ProviderRowView({
     provider.rating_count > 0
       ? `rated ${provider.rating_avg?.toFixed(1)} from ${provider.rating_count} reviews`
       : 'no reviews yet',
-    latency,
+    tags.length > 0 ? tags.join(', ') : null,
+    languages === '' ? null : `speaks ${languages}`,
+    // Spoken as a sentence, because "₹22/min" is read out as a string of
+    // symbols by TalkBack and the rate is the one number here that costs money.
+    `${formatRupees(ratePerMin)} per minute`,
   ]
     .filter(Boolean)
     .join(', ');
@@ -261,131 +364,108 @@ function ProviderRowView({
         press="none"
         highlight="dim"
         style={styles.row}>
-        {/* The avatar is its own target: it opens the profile card, while the
-            rest of the row opens the conversation. Nested inside the row
-            Pressable, the inner one captures taps that land on the photo. */}
-        <Pressable
-          onPress={() => (onPressAvatar ?? onPress)(provider.id)}
-          testID={`provider-avatar-${provider.id}`}
-          accessibilityLabel={`${provider.display_name}'s profile`}
-          // Folded into the row for TalkBack: the avatar is a sighted-tap
-          // shortcut to the profile, not a second focus target overlapping the
-          // row. The row's own label already carries who this is; screen-reader
-          // users open the conversation (the row's action) and lose nothing.
-          accessible={false}
-          press="none"
-          style={styles.avatarTap}>
-          <Avatar
-            initial={initial}
-            uri={provider.avatar_url}
-            size={ROW_AVATAR}
-            online={presence.here}
-          />
-        </Pressable>
+        {/* LEFT COLUMN: the avatar with its rating stacked underneath, which is
+            the arrangement that makes the 72dp avatar pay for itself — at 40dp
+            the rating had to live in the text column as a chip, competing with
+            the facts. Astrotalk stacks a 5-star RatingBar (80×16dp) and
+            "10k+ orders" (16.7dp) here; we have one number and a count, so it
+            is a figure and a label rather than five glyphs. */}
+        <View style={styles.leftColumn}>
+          {/* The avatar is its own target: it opens the profile card, while the
+              rest of the row opens the conversation. Nested inside the row
+              Pressable, the inner one captures taps that land on the photo. */}
+          <Pressable
+            onPress={() => (onPressAvatar ?? onPress)(provider.id)}
+            testID={`provider-avatar-${provider.id}`}
+            accessibilityLabel={`${provider.display_name}'s profile`}
+            // Folded into the row for TalkBack: the avatar is a sighted-tap
+            // shortcut to the profile, not a second focus target overlapping the
+            // row. The row's own label already carries who this is; screen-reader
+            // users open the conversation (the row's action) and lose nothing.
+            accessible={false}
+            press="none"
+            style={styles.avatarTap}>
+            <Avatar
+              initial={initial}
+              uri={provider.avatar_url}
+              size={ROW_AVATAR}
+              online={presence.here}
+            />
+          </Pressable>
+          <Text
+            allowFontScaling
+            numberOfLines={1}
+            testID={`provider-rating-${provider.id}`}
+            style={styles.rating}>
+            {provider.rating_count > 0 ? `★ ${provider.rating_avg?.toFixed(1)}` : '★ New'}
+          </Text>
+          {/* The count is its own line even when it is empty of content, so the
+              left column measures the same on a provider with no reviews as on
+              one with a thousand. A column that changes height by 16dp between
+              rows is the invariant this list is built on, broken. */}
+          <Text allowFontScaling numberOfLines={1} style={styles.ratingCount}>
+            {provider.rating_count > 0
+              ? `${provider.rating_count} ${provider.rating_count === 1 ? 'rating' : 'ratings'}`
+              : 'no ratings yet'}
+          </Text>
+        </View>
+
+        {/* RIGHT COLUMN: name, tags, languages, then price-and-CTA on one line. */}
         <View style={styles.label}>
-          <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling numberOfLines={1} style={styles.name}>
+          <Text
+            maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
+            allowFontScaling
+            numberOfLines={1}
+            style={styles.name}>
             {provider.display_name}
             {provider.age !== null ? (
               <Text style={styles.nameAge}> {provider.age}</Text>
             ) : null}
           </Text>
-          <Text allowFontScaling numberOfLines={1} style={styles.secondary}>
-            {provider.headline !== null && provider.headline !== ''
-              ? provider.headline
-              : 'Here to listen'}
-          </Text>
-          {/* Material 3 AssistChip strip (32dp / 8dp corners / 1dp outline).
-              Rating leads; years + languages follow. Still ONE non-wrapping
-              line — it now SCROLLS instead of being clipped.
 
-              THE THREE-WAY GESTURE, which is the whole risk here: a horizontal
-              scroller, inside the row's Pressable, inside a vertical FlashList.
+          {/* The tag line. A plain non-scrolling row: three pills at 24dp fit
+              the text column at every offered value, which is what
+              ROW_EXPERTISE_LIMIT is chosen to guarantee, so there is nothing to
+              scroll and no gesture to negotiate.
 
-              1. A HORIZONTAL DRAG scrolls the strip, and a VERTICAL one scrolls
-                 the list, and neither is decided by a prop. Android arbitrates in
-                 the parent's `onInterceptTouchEvent`: "If you return `true` from
-                 `onInterceptTouchEvent()`, the child view that was previously
-                 handling touch events receives an `ACTION_CANCEL`", and the
-                 sanctioned test for a scroll is the axis distance against
-                 `ViewConfiguration`'s touch slop — "the distance in pixels a
-                 user's touch can wander before the gesture is interpreted as
-                 scrolling". `ReactHorizontalScrollView extends
-                 HorizontalScrollView` (ReactHorizontalScrollView.java:74), so
-                 the X-axis slop test is the platform's own, and when it wins RN
-                 hands the responder over from JS — `notifyNativeGestureStarted`
-                 in `handleInterceptedTouchEvent`
-                 (ReactHorizontalScrollView.java:744), which is what cancels the
-                 row's press mid-drag instead of firing it on lift.
-                 https://developer.android.com/develop/ui/views/touch-and-input/gestures/viewgroup
-
-                 The two props that LOOK like the fix are not, and this is the
-                 same finding the hero pager already carries
-                 (ProviderDetailScreen.tsx): `directionalLockEnabled` is iOS-only
-                 and `nestedScrollEnabled` is the SAME-axis case, "Enables nested
-                 scrolling for Android API level 21+".
-                 https://reactnative.dev/docs/scrollview#nestedscrollenabled-android
-                 https://reactnative.dev/docs/scrollview#directionallockenabled
-
-              2. A TAP still opens the row, and `keyboardShouldPersistTaps` is
-                 what makes that true rather than luck. Responder negotiation
-                 bubbles — "the deepest node is called first" — so the scroller
-                 gets first refusal on every touch that starts on a chip, and at
-                 the DEFAULT of `'never'` it accepts one whenever a keyboard is
-                 up: "tapping outside of the focused text input when the keyboard
-                 is up dismisses the keyboard. When this happens, children won't
-                 receive the tap." On the search results list that is exactly a
-                 member tapping the middle of a row and getting nothing.
-                 `'handled'` — correct for the LIST, which is why HomeScreen sets
-                 it there — is also wrong HERE: ScrollView.js:1453-1459 returns
-                 true from `onStartShouldSetResponder` under `'handled'` while the
-                 keyboard is dismissible, so the strip would swallow that tap too.
-                 `'always'` is the one value that declines: "the scroll view will
-                 not catch taps, but children of the scroll view can catch taps",
-                 and declining is what lets the bubble carry on up to the row's
-                 Pressable.
-                 https://reactnative.dev/docs/scrollview#keyboardshouldpersisttaps
-                 https://reactnative.dev/docs/gesture-responder-system
-
-                 Nothing inside the strip presses. The chips are display-only
-                 Views (`accessible={false}` in MetaChip), so there is no inner
-                 responder competing for the tap the row wants.
-
-              3. THE ROW'S HEIGHT DOES NOT MOVE: `styles.strip` fixes the
-                 scroller at `META_CHIP_HEIGHT`, see the style. */}
-          <ScrollView
-            ref={strip}
-            horizontal
-            keyboardShouldPersistTaps="always"
-            showsHorizontalScrollIndicator={false}
-            {...SCROLL_PHYSICS}
-            style={styles.strip}
-            contentContainerStyle={styles.stripContent}
-            testID={`provider-meta-${provider.id}`}>
-            <MetaChip
-              testID="provider-rating"
-              tone="emphasis"
-              label={
-                provider.rating_count > 0
-                  ? `★ ${provider.rating_avg?.toFixed(1)}`
-                  : '★ New'
-              }
-            />
-            {chips.map(chip => (
-              <MetaChip key={chip} label={chip} />
+              Rendered as a fixed-height View even when there are no tags, so
+              that a provider who has not set any is the same height as one who
+              has. `PROVIDER_ROW_HEIGHT` is a promise to FlashList, and a row
+              that keeps it only for populated providers does not keep it. */}
+          <View style={styles.tagLine} testID={`provider-tags-${provider.id}`}>
+            {tags.map(tag => (
+              <MetaChip key={tag} size="sm" label={tag} />
             ))}
-          </ScrollView>
-        </View>
+          </View>
 
-        {/* The disclosure indicator, which this list had no version of at all.
-            Tapping a row here pushes a conversation, which is exactly where iOS
-            puts UITableViewCellAccessoryDisclosureIndicator, and its absence was
-            the reason a row read as a card that happened to be tappable.
+          <Text allowFontScaling numberOfLines={1} style={styles.secondary}>
+            {languages === '' ? ' ' : languages}
+          </Text>
 
-            In its own bounded slot now (ROW_CHEVRON_SLOT), so the width it takes
-            from the text column is stated rather than measured, and every row's
-            chevron lands on the same centre line. */}
-        <View style={styles.chevron}>
-          <Icon name="chevronRight" size={TOKENS.icon.sm} color={theme.color.text.tertiary} />
+          <View style={styles.priceLine}>
+            <Icon
+              name={canCall ? 'call' : 'chat'}
+              size={TOKENS.icon.sm}
+              color={theme.color.text.secondary}
+            />
+            <Text allowFontScaling numberOfLines={1} style={styles.price}>
+              {formatRupees(ratePerMin)}
+              <Text style={styles.perMin}>/min</Text>
+            </Text>
+            <View style={styles.priceSpacer} />
+            {/* The CTA. Not a Pressable: it performs the row's own action, so a
+                second touch target on top of the row would be a duplicate — the
+                same argument the chevron lost. What it adds is a place for the
+                eye to land and a statement of what the row DOES, which is the
+                thing the chevron never said. `accessible={false}` keeps it out
+                of TalkBack for the same reason: the row's label already names
+                the action. */}
+            <View style={styles.cta} accessible={false} testID={`provider-cta-${provider.id}`}>
+              <Text allowFontScaling numberOfLines={1} style={styles.ctaLabel}>
+                Chat
+              </Text>
+            </View>
+          </View>
         </View>
       </Pressable>
       {isLast ? null : <View style={styles.separator} />}
@@ -398,7 +478,10 @@ export const ProviderRow = memo(ProviderRowView);
 const makeStyles = (t: Theme) => StyleSheet.create({
   row: {
     flexDirection: 'row',
-    alignItems: 'center',
+    // `flex-start`, not `center`: the two columns are different heights by
+    // design (112 and 118), and centring would float the avatar 5dp down from
+    // the name it belongs to. Astrotalk top-aligns them too.
+    alignItems: 'flex-start',
     gap: TOKENS.space.sm,
     paddingVertical: TOKENS.space.sm,
     // The row owns its horizontal margin now, rather than inheriting it from the
@@ -410,11 +493,27 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     // No radius, no border, no elevation. The page is the surface now.
     backgroundColor: t.color.bg.base,
   },
+  // Fixed width, so every row's text column starts on the same x and the
+  // separator inset below stays true. Without it the column would be as wide as
+  // the widest of the avatar and the two labels, which varies by rating count.
+  leftColumn: {
+    width: ROW_AVATAR,
+    alignItems: 'center',
+  },
   avatarTap: {
     borderRadius: ROW_AVATAR / 2,
     // The Avatar's presence dot sits just past the circle at the bottom-right;
     // without this the rounded tap target clips it in half on Android.
     overflow: 'visible',
+    marginBottom: TOKENS.space['2xs'],
+  },
+  rating: {
+    ...TOKENS.typography.labelMedium,
+    color: t.color.text.primary,
+  },
+  ratingCount: {
+    ...TOKENS.typography.bodySmall,
+    color: t.color.text.tertiary,
   },
   // Inset to the text edge, iMessage style. A separator that runs under the
   // avatar cuts the person in half instead of dividing two of them.
@@ -441,92 +540,77 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     ...TOKENS.typography.bodySmall,
     color: t.color.text.tertiary,
   },
-  /*
-   * M3 AssistChip strip under the headline, in one horizontally scrolling row.
-   *
-   * A single-row chip group IS the platform's answer, and so is the scroller
-   * around it: "A `ChipGroup` can also constrain its chips to a single row using
-   * the `app:singleLine` attribute... Using a single row may necessitate
-   * wrapping the `ChipGroup` with a `HorizontalScrollView`."
-   * https://github.com/material-components/material-components-android/blob/master/docs/components/Chip.md
-   *
-   * `overflow: 'hidden'` USED TO BE HERE, and it is the defect Amit reported
-   * ("full pane occupied for arrow button... which chuts the language chip"):
-   * the strip is wider than the text column whenever a provider has two
-   * languages, and a hard clip cut the last chip through the middle with nothing
-   * on screen to say there was more. A scroller hides the same pixels and hands
-   * them back.
-   *
-   * THE HEIGHT IS FIXED, NOT INTRINSIC, and that is the invariant this list is
-   * built on — every row the same height, which is also what HomeScreen promises
-   * FlashList through `overrideItemLayout`. A ScrollView's cross-axis size is
-   * otherwise measured from its content, so one taller chip could quietly make
-   * one row taller than its neighbours. `META_CHIP_HEIGHT` rather than 32, so
-   * the scroller cannot drift from the thing it carries.
-   */
-  /*
-   * A 48dp ACTIVATION BAND around 32dp of visible chips, and the row does not
-   * grow by a pixel.
-   *
-   * Amit, 2026-09-07: "schip scroll is not working correctly.. pls check
-   * activation area." He was right and the activation area was the whole of it.
-   * The scroller was laid out at exactly `META_CHIP_HEIGHT` — 32dp — and a
-   * ScrollView's touch area IS its layout box (hitSlop is no help: "the touch
-   * area never extends past the parent view bounds",
-   * https://reactnative.dev/docs/view#hitslop, and the repo has already been
-   * bitten by slop hung on a content-sized parent).
-   *
-   * 32dp is below the minimum: "we recommend that each interactive UI element
-   * have a focusable area, or touch target size, of at least 48dp x 48dp"
-   * (https://developer.android.com/guide/topics/ui/accessibility/apps). And the
-   * cost here is worse than a missed tap, because this band is competing with a
-   * VERTICAL list for the same gesture: Android arbitrates on touch slop, so a
-   * drag that begins even slightly diagonal inside a 32dp window is claimed by
-   * the FlashList before the strip's own slop test can win. The thinner the
-   * band, the more of a real thumb's drag falls outside it — which is exactly
-   * "scroll is not working correctly".
-   *
-   * The negative margins are what keep the row's height and the chips' position
-   * unchanged, so this is a touch fix and not a redesign:
-   *
-   *   contribution = -4 + 48 - 8 = 36dp, which is what `space['2xs'] +
-   *   META_CHIP_HEIGHT` (4 + 32) contributed before — so PROVIDER_ROW_HEIGHT
-   *   and its 108dp gate are untouched, deliberately.
-   *
-   * The chips sit in the middle 32dp (`stripContent`'s `alignItems: 'center'`),
-   * so they land exactly where they did: 4dp under the headline. The band
-   * overlaps the headline above and the row's own padding below by 8dp each,
-   * and nothing is lost by that — everything it overlaps is inside the same row
-   * Pressable, and the strip passes taps through to it
-   * (`keyboardShouldPersistTaps="always"`), so a tap in the overlap still opens
-   * the conversation.
-   */
-  strip: {
-    height: TOKENS.interaction.minTarget,
-    marginTop: TOKENS.space['2xs'] - (TOKENS.interaction.minTarget - META_CHIP_HEIGHT) / 2,
-    marginBottom: -(TOKENS.interaction.minTarget - META_CHIP_HEIGHT) / 2,
-  },
-  // The chips' own row, which for a horizontal ScrollView lives on the content
-  // container rather than on the scroller. `flexDirection: 'row'` comes from
-  // `horizontal`; the gap and the centring are ours.
-  // https://reactnative.dev/docs/scrollview#contentcontainerstyle
-  stripContent: {
+  // Fixed height and `overflow: hidden`. The height is the row's promise to
+  // FlashList; the clip is what makes a fourth pill impossible rather than
+  // merely unlikely, since a category badge plus three tags would otherwise
+  // wrap and push the price line down.
+  tagLine: {
+    flexDirection: 'row',
     alignItems: 'center',
+    height: ROW_TAG_LINE,
     gap: TOKENS.space['2xs'],
-  },
-  // The chevron's bounded slot. `flexShrink: 0` so it never squeezes, `flexGrow:
-  // 0` so it never claims the text column's width, and a stated `width` so the
-  // glyph's own measurement stops being what the row gives away. See
-  // ROW_CHEVRON_SLOT for why 20 and why this is not a second Pressable.
-  chevron: {
-    width: ROW_CHEVRON_SLOT,
-    flexGrow: 0,
-    flexShrink: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
+    overflow: 'hidden',
   },
   secondary: {
-    ...TOKENS.typography.bodyMedium,
+    ...TOKENS.typography.bodySmall,
     color: t.color.text.secondary,
+  },
+  priceLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: ROW_CTA_HEIGHT,
+    gap: TOKENS.space['2xs'],
+  },
+  price: {
+    ...TOKENS.typography.labelLarge,
+    color: t.color.text.primary,
+  },
+  // "/min" quieter and smaller than the figure, so the rate reads as one price
+  // rather than as two words. Astrotalk splits these into two TextViews at
+  // 21.8dp and 17.1dp for the same reason; nested Text is how RN does it.
+  perMin: {
+    ...TOKENS.typography.bodySmall,
+    color: t.color.text.tertiary,
+  },
+  // A spacer rather than `justifyContent: 'space-between'`, because the glyph
+  // and the price must stay adjacent to each other while the CTA goes to the
+  // far edge — three children and one gap cannot express that.
+  priceSpacer: {
+    flex: 1,
+  },
+  /*
+   * The CTA. Outlined, not filled, which is the reference and also the right
+   * call here: every row has one, and a list of filled accent buttons is a
+   * screen with no primary action at all. Astrotalk's is outlined green on
+   * white for the same reason.
+   */
+  cta: {
+    width: ROW_CTA_WIDTH,
+    height: ROW_CTA_HEIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: TOKENS.radius.xs,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: t.color.bg.accent,
+    backgroundColor: t.color.bg.base,
+  },
+  /*
+   * `text/accent`, NOT `bg/accent`, and the two are different greens on
+   * purpose: #15603E against #1DAA61 in light mode. `bg/accent` is a FILL
+   * colour — it is what a button is painted, with `text/onAccent` on top of it
+   * — and setting it as a label colour on a white card gives 2.9:1, under the
+   * 4.5:1 AA floor for text. `text/accent` exists for exactly this and is
+   * already checked against bg/base by scripts/check-contrast.mjs.
+   *
+   * The BORDER keeps `bg/accent`, which is the lighter green and matches the
+   * reference. A border is a non-text boundary, so 3:1 is its target rather
+   * than 4.5 — and it is not the only signal either way, since the label it
+   * surrounds says "Chat". The pair is added to check-contrast rather than
+   * argued for here, so the claim is verified on every run.
+   */
+  ctaLabel: {
+    ...TOKENS.typography.labelLarge,
+    color: t.color.text.accent,
   },
 });

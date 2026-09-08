@@ -1,0 +1,162 @@
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import {
+  MAX_EXPERTISE,
+  OFFERED_EXPERTISE,
+  ROW_EXPERTISE_LIMIT,
+  expertiseFor,
+  isExpertiseSelected,
+  offeredFor,
+  rowExpertise,
+  toggleExpertise,
+} from '../src/lib/expertise';
+import type { ProviderSummary } from '../src/lib/database.types';
+
+const ROOT = join(__dirname, '..');
+const read = (p: string): string => readFileSync(join(ROOT, p), 'utf8');
+
+const provider = (expertise: string[]): Pick<ProviderSummary, 'expertise'> =>
+  ({ expertise }) as Pick<ProviderSummary, 'expertise'>;
+
+describe('the offered vocabulary is split the way the roster is', () => {
+  it('gives a listener topics and an astrologer disciplines', () => {
+    // A single flat list would offer Tarot to a listener or drop it entirely.
+    // `provider_category` (065) already splits the directory into two tabs, so
+    // this follows a split that exists rather than inventing a second axis.
+    expect(expertiseFor('listener')).toContain('Anxiety');
+    expect(expertiseFor('listener')).not.toContain('Tarot');
+    expect(expertiseFor('astrologer')).toContain('Tarot');
+    expect(expertiseFor('astrologer')).not.toContain('Anxiety');
+  });
+
+  it('falls back to listener for a category it does not recognise', () => {
+    // Same defaulting `categoryOf` does, and for the same reason: a row from an
+    // older server must not become unpickable.
+    expect(expertiseFor('')).toBe(OFFERED_EXPERTISE.listener);
+    expect(expertiseFor('shaman')).toBe(OFFERED_EXPERTISE.listener);
+    expect(
+      offeredFor({ provider_category: 'astrologer' } as ProviderSummary),
+    ).toBe(OFFERED_EXPERTISE.astrologer);
+  });
+
+  it('offers more than a row can show, in both columns', () => {
+    // If the vocabulary were shorter than the row's cap the cap would never
+    // bind, and every test of it below would be vacuous.
+    expect(OFFERED_EXPERTISE.listener.length).toBeGreaterThan(ROW_EXPERTISE_LIMIT);
+    expect(OFFERED_EXPERTISE.astrologer.length).toBeGreaterThan(ROW_EXPERTISE_LIMIT);
+  });
+
+  it('is frozen, so a caller cannot sort the shared array under everyone else', () => {
+    expect(Object.isFrozen(OFFERED_EXPERTISE)).toBe(true);
+    expect(Object.isFrozen(OFFERED_EXPERTISE.listener)).toBe(true);
+    expect(Object.isFrozen(OFFERED_EXPERTISE.astrologer)).toBe(true);
+  });
+
+  it('mirrors the ceiling migration 083 enforces', () => {
+    /*
+     * The form must not be able to build a selection the server refuses with a
+     * constraint violation the provider cannot act on. Read out of the
+     * migration rather than retyped, which is the same arrangement
+     * languagePrefs has with 072.
+     */
+    const migration = read('supabase/migrations/083_provider_expertise.sql');
+    const ceiling = /cardinality\(p\), 0\) <= (\d+)/.exec(migration)?.[1];
+    expect(Number(ceiling)).toBe(MAX_EXPERTISE);
+    // And it is DIFFERENT from the language ceiling, deliberately — a topic
+    // list is a claim, not a capability.
+    expect(MAX_EXPERTISE).toBe(8);
+  });
+});
+
+describe('toggling keeps the offered order, never the tap order', () => {
+  const offered = OFFERED_EXPERTISE.listener;
+
+  it('inserts in offered order however it was tapped', () => {
+    // A chip row that reorders itself under the finger loses the provider's
+    // place in it. Same rule as toggleLanguage and toggleBand.
+    let sel: string[] = [];
+    sel = toggleExpertise(sel, 'Career', offered);
+    sel = toggleExpertise(sel, 'Anxiety', offered);
+    sel = toggleExpertise(sel, 'Breakup', offered);
+    expect(sel).toEqual(['Anxiety', 'Breakup', 'Career']);
+  });
+
+  it('removes case- and whitespace-insensitively', () => {
+    // 083's CHECK is a shape floor and permits any value, and the column is
+    // writable by the admin console and the seed, so ' anxiety ' is reachable.
+    expect(toggleExpertise([' anxiety '], 'Anxiety', offered)).toEqual([]);
+    expect(isExpertiseSelected([' anxiety '], 'ANXIETY')).toBe(true);
+    expect(isExpertiseSelected(['Anxiety'], 'Stress')).toBe(false);
+  });
+
+  it('does nothing at the ceiling rather than evicting the oldest', () => {
+    /*
+     * Silently dropping a tag the provider chose, to make room for one they
+     * just tapped, is a worse answer than the tap doing nothing — the form
+     * disables unselected chips at the ceiling so the dead tap is visible
+     * before it happens.
+     */
+    const full = offered.slice(0, MAX_EXPERTISE);
+    const next = toggleExpertise(full, offered[MAX_EXPERTISE] as string, offered);
+    expect(next).toEqual([...full]);
+    expect(next).not.toBe(full); // a copy, never the caller's array
+    // Deselecting still works at the ceiling, or it would be a trap.
+    expect(toggleExpertise(full, full[0] as string, offered)).toHaveLength(
+      MAX_EXPERTISE - 1,
+    );
+  });
+
+  it('keeps a retired topic rather than dropping a claim somebody made', () => {
+    // A topic removed from the vocabulary must not vanish from the selection of
+    // a provider who never revisited the form.
+    const sel = toggleExpertise(['Astral projection'], 'Anxiety', offered);
+    expect(sel).toContain('Astral projection');
+    expect(sel).toContain('Anxiety');
+    // The unknown sorts after everything offered, so the known ones stay in
+    // vocabulary order at the front.
+    expect(sel[0]).toBe('Anxiety');
+  });
+});
+
+describe('what a row shows', () => {
+  it('takes the first three, in the provider order', () => {
+    expect(
+      rowExpertise(provider(['Anxiety', 'Stress', 'Career', 'Sleep'])),
+    ).toEqual(['Anxiety', 'Stress', 'Career']);
+  });
+
+  it('dedupes on the fold, keeping the first spelling', () => {
+    // The column has no uniqueness constraint — 083 bounds the length and the
+    // element size and nothing else — so the same tag twice is reachable, and
+    // two identical pills is a visible bug.
+    expect(rowExpertise(provider(['Anxiety', 'anxiety', ' ANXIETY ', 'Stress']))).toEqual([
+      'Anxiety',
+      'Stress',
+    ]);
+  });
+
+  it('drops blank elements instead of rendering an empty pill', () => {
+    expect(rowExpertise(provider(['Anxiety', '   ', 'Stress']))).toEqual([
+      'Anxiety',
+      'Stress',
+    ]);
+  });
+
+  it('survives a provider with none, and a row from a server without the column', () => {
+    /*
+     * Two different absences, both real. Empty is a LEGAL provider — 083 makes
+     * this no promotion requirement, unlike languages under 075 — and
+     * `undefined` is what a client reads from a server that predates the
+     * column, which is exactly the skew window the 2026-09-07 incident lived
+     * in. Neither may throw, and neither may render a pill.
+     */
+    expect(rowExpertise(provider([]))).toEqual([]);
+    expect(
+      rowExpertise({ expertise: undefined } as unknown as Pick<ProviderSummary, 'expertise'>),
+    ).toEqual([]);
+  });
+
+  it('trims, so a stray space cannot widen a pill', () => {
+    expect(rowExpertise(provider(['  Anxiety  ']))).toEqual(['Anxiety']);
+  });
+});

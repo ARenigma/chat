@@ -50,301 +50,264 @@ function between(source: string, from: string, to?: string): string {
 const ROW = 'src/components/ProviderRow.tsx';
 const CHIP = 'src/components/MetaChip.tsx';
 
-/**
- * The chip strip's scroller, JSX only.
- *
- * Bounded from `ref={strip}` and NOT from `<ScrollView`, which first appears
- * ~700 characters earlier as the type argument in `useRef<ScrollView | null>`:
- * slicing from there swept in the row's own Pressable and made the "no second
- * press target inside the strip" ban fail on the row's onPress. The marker has
- * to be unique to the element, not merely present in it.
- */
-const stripJsx = (): string => between(code(ROW), 'ref={strip}', '</ScrollView>');
-/** The text column, from its opening tag to the end of the scroller inside it. */
-const labelColumn = (): string =>
-  between(code(ROW), '<View style={styles.label}>', '</ScrollView>');
-/** `styles.strip`, the scroller's own box. */
-const stripStyle = (): string => between(code(ROW), '  strip: {', '  },');
-/** `styles.stripContent`, the chips' row inside it. */
-const stripContentStyle = (): string => between(code(ROW), '  stripContent: {', '  },');
-/** `styles.chevron`, the disclosure glyph's slot. */
-const chevronStyle = (): string => between(code(ROW), '  chevron: {', '  },');
+/** A named style rule from `makeStyles`, comments already stripped. */
+const style = (name: string): string => between(code(ROW), `  ${name}: {`, '  },');
 /** Everything from `makeStyles` down: the row's layout, and nothing else. */
 const rowStyles = (): string => between(code(ROW), 'const makeStyles');
 
-describe('the provider row meta strip scrolls instead of clipping', () => {
-  /*
-   * Amit, both halves of one defect: "we have full pane occupied for arrow
-   * button on sp profile row in homescreen which chuts the language chip" and
-   * "info strip in explorer row should be scrollable hroziontally".
-   *
-   * The cut was `overflow: 'hidden'` on a flex-1 row of chips: with a rating, a
-   * years chip and two languages the strip is wider than the text column, so the
-   * last chip was sliced through the middle with nothing on screen to say more
-   * existed.
-   */
-  it('carries the chips in a horizontal scroller, not a clipped row', () => {
-    // A ScrollView, and inside the text column rather than beside it.
-    expect(labelColumn()).toContain('<ScrollView');
-    const strip = stripJsx();
-    expect(strip).toContain('horizontal');
-    expect(strip).toContain('style={styles.strip}');
-    expect(strip).toContain('contentContainerStyle={styles.stripContent}');
-    expect(strip).toContain('showsHorizontalScrollIndicator={false}');
-    // The chips are still inside it — a scroller with the strip left behind
-    // outside would satisfy every assertion above and show nothing.
-    expect(strip).toContain('<MetaChip');
-    expect(strip).toContain('{chips.map(chip => (');
-  });
-
-  it('no longer starves the strip with a hard clip', () => {
-    // Bounded to the row's OWN styles, which must exist, so this cannot pass
-    // vacuously; and it goes red the moment the old `chips` style comes back.
-    expect(rowStyles()).not.toContain("overflow: 'hidden'");
-    expect(stripStyle()).not.toContain('overflow');
-    // `avatarTap` still needs its own escape hatch for the presence dot, so the
-    // ban above is on the CLIP, not on the property.
-    expect(rowStyles()).toContain("overflow: 'visible'");
-  });
-
-  it('keeps one line and never wraps into a second', () => {
-    // The other way to lose the same-height invariant: a wrapping strip grows
-    // the row instead of clipping it.
-    expect(rowStyles()).not.toContain('flexWrap');
-  });
-
-  it('rewinds the scroller when FlashList recycles the cell onto someone else', () => {
-    // A native scroll offset is not React state, so a recycled cell would open
-    // on the previous provider's languages.
-    const row = code(ROW);
-    expect(row).toContain('const strip = useRef<ScrollView | null>(null)');
-    expect(row).toContain('strip.current?.scrollTo({ x: 0, animated: false })');
-    expect(row).toContain('}, [provider.id]);');
-    expect(row).toContain('ref={strip}');
-  });
-});
-
-describe('a tap on the strip still opens the row', () => {
-  /*
-   * The deliberate half of the three-way gesture, and the one that would be
-   * worse than a clipped chip if it went wrong: a member taps the middle of a
-   * row and nothing happens.
-   *
-   * Responder negotiation bubbles from the deepest node up
-   * (https://reactnative.dev/docs/gesture-responder-system), so the scroller
-   * gets first refusal on every touch starting on a chip. At the DEFAULT
-   * `keyboardShouldPersistTaps` of 'never' it accepts one whenever a keyboard is
-   * up — "children won't receive the tap" — and under 'handled' it also returns
-   * true from onStartShouldSetResponder while the keyboard is dismissible
-   * (react-native@0.86.2 Libraries/Components/ScrollView/ScrollView.js:1453).
-   * Either would eat the tap on a search-results row, where the keyboard IS up.
-   * 'always' is the one value that declines: "the scroll view will not catch
-   * taps".
-   * https://reactnative.dev/docs/scrollview#keyboardshouldpersisttaps
-   */
-  it('declines the tap at the scroller so it can bubble to the row', () => {
-    expect(stripJsx()).toContain('keyboardShouldPersistTaps="always"');
-  });
-
-  it('does not take either value that would swallow it', () => {
-    const strip = stripJsx();
-    expect(strip).not.toContain('"handled"');
-    expect(strip).not.toContain('"never"');
-  });
-
-  it('puts no second press target inside the strip', () => {
-    // A Pressable among the chips would be a responder deeper than the scroller
-    // and would win the tap the row wants.
-    const strip = stripJsx();
-    expect(strip).not.toContain('Pressable');
-    expect(strip).not.toContain('onPress');
-    // MetaChip stays display-only, which is what makes that true.
-    expect(code(CHIP)).toContain('accessible={false}');
-    expect(code(CHIP)).not.toContain('onPress');
-  });
-
-  it('leaves the row Pressable wrapping the strip, still the one action', () => {
-    const row = code(ROW);
-    const rowPress = row.indexOf('style={styles.row}');
-    const scroller = row.indexOf('ref={strip}');
-    expect(rowPress).toBeGreaterThan(-1);
-    expect(scroller).toBeGreaterThan(rowPress);
-    expect(row).toContain('onPress={() => onPress(provider.id)}');
-  });
-
-  it('resolves the drag axis on the platform, not with two props that cannot', () => {
+/**
+ * REWRITTEN 2026-09-08, and the deletions are the interesting part.
+ *
+ * This file used to hold four suites about a horizontally-scrolling chip strip
+ * and a disclosure chevron: how the strip declined a tap so the row could have
+ * it, how Android arbitrated a diagonal drag between the strip and the
+ * FlashList, how the chevron got a bounded slot so it stopped eating the text
+ * column. Every one of them was a correct test of a real defect.
+ *
+ * They are gone because the things they guarded are gone. The row was rebuilt
+ * on Astrotalk's anatomy (Amit: "astrotalk layout with clarity tags") and the
+ * rebuild removed the scroller — expertise tags took the pill line, languages
+ * got a full-width line of their own in plain text, and with nothing to scroll
+ * there is no three-way gesture to negotiate. The chevron went with it: the CTA
+ * says "Chat", which is what the chevron was a mute gesture towards.
+ *
+ * Deleting a passing test is normally how coverage rots, so the replacement is
+ * stated: the invariant those suites really protected is "the row is the same
+ * height on every provider and a gesture in it opens the conversation", and
+ * that is asserted below against the new layout instead of the old one.
+ */
+describe('the explore row is Astrotalk anatomy, measured rather than eyeballed', () => {
+  it('takes the avatar from the reference, at a size Avatar already has', () => {
     /*
-     * The same finding the hero pager carries (ProviderDetailScreen.tsx, and
-     * providerPhotos.test.ts asserts it there): `directionalLockEnabled` is
-     * iOS-only, `nestedScrollEnabled` is the SAME-axis case. A cross-axis
-     * conflict is decided in Android's onInterceptTouchEvent by whichever axis
-     * crosses touch slop first.
-     * https://developer.android.com/develop/ui/views/touch-and-input/gestures/viewgroup
+     * 76, from `uiautomator dump` on the Redmi at density 440 (2.75 px/dp):
+     * `user_pic` is 72.0dp inside a 76.4dp `background_user_pic`. We do not
+     * draw the ring, so our visible circle matches the OUTER one.
      *
-     * Bounded to the scroller, which must exist, so it is not a standing ban on
-     * a feature the file never had.
+     * And 76 is in `Avatar`'s closed size union, which carries hand-tuned FONT
+     * and DOT entries per value — 72 would have meant inventing both.
      */
-    const strip = stripJsx();
-    expect(strip).not.toContain('directionalLockEnabled');
-    expect(strip).not.toContain('nestedScrollEnabled');
-    // And the app's one scroll feel, not a bespoke one for this strip.
-    expect(strip).toContain('{...SCROLL_PHYSICS}');
+    expect(read(ROW)).toContain('export const ROW_AVATAR = 76');
+    const union = /type Size = ([^;]+);/.exec(read('src/components/Avatar.tsx'))?.[1];
+    expect(union).toContain('76');
+    expect(code(ROW)).toContain('size={ROW_AVATAR}');
+  });
+
+  it('stacks the rating under the avatar instead of putting it in the text column', () => {
+    // The arrangement that pays for a 76dp avatar: at 40dp the rating had to
+    // live among the facts as a chip, competing with them.
+    const left = between(code(ROW), '<View style={styles.leftColumn}>', '</View>\n        </View>');
+    expect(left).toContain('styles.rating');
+    expect(left).toContain('styles.ratingCount');
+    // Fixed width, so every row's text column starts on the same x — otherwise
+    // the column is as wide as the longest rating count and the separator inset
+    // stops being true.
+    expect(style('leftColumn')).toContain('width: ROW_AVATAR');
+  });
+
+  it('keeps the separator inset derived from the avatar, not retyped', () => {
+    // The avatar quadrupled in area; a hand-written inset would now be 36dp
+    // wrong and would look like a design choice.
+    expect(read(ROW)).toContain('export const ROW_SEPARATOR_INSET = ROW_AVATAR + TOKENS.space.sm');
+    expect(style('separator')).toContain('TOKENS.space.md + ROW_SEPARATOR_INSET');
+  });
+
+  it('renders no rating count line that changes the row height', () => {
+    // Both branches produce a line. A provider with no reviews must occupy the
+    // same 16dp as one with a thousand, or the left column measures differently
+    // per row and PROVIDER_ROW_HEIGHT is a promise the row does not keep.
+    const jsx = code(ROW);
+    expect(jsx).toContain("'no ratings yet'");
+    expect(jsx).toMatch(/rating_count > 0[\s\S]{0,160}no ratings yet/);
   });
 });
 
-describe('the disclosure chevron has a bounded slot of its own', () => {
-  it('states the width instead of taking whatever the glyph measures', () => {
-    const chevron = chevronStyle();
-    expect(chevron).toContain('width: ROW_CHEVRON_SLOT');
-    expect(chevron).toContain('flexGrow: 0');
-    expect(chevron).toContain('flexShrink: 0');
-    expect(code(ROW)).toContain('export const ROW_CHEVRON_SLOT = TOKENS.icon.md');
-  });
-
-  it('sizes that slot from the glyph box Icon actually renders', () => {
+describe('the gesture conflict is removed rather than tuned', () => {
+  it('has no ScrollView left in the row at all', () => {
     /*
-     * The arithmetic the comment on ROW_CHEVRON_SLOT claims, checked rather than
-     * trusted: Icon renders a Lucide glyph at Math.round(size * ICON_SCALE), so
-     * a 16 chevron occupies 19dp and a 16dp slot would clip it.
+     * The strongest form of the old suite: not "the scroller declines the tap
+     * correctly" but "there is no scroller". The previous row nested a
+     * horizontal ScrollView inside a Pressable inside a vertical FlashList and
+     * needed `keyboardShouldPersistTaps="always"` plus a paragraph of
+     * ViewConfiguration reasoning to make a tap reach the row. Amit's report —
+     * "schip scroll is not working correctly" — was that arbitration losing.
+     *
+     * Deleting the scroller deletes the arbitration. This is the assertion that
+     * keeps it deleted.
      */
-    const iconScale = /const ICON_SCALE = ([\d.]+);/.exec(read('src/components/Icon.tsx'));
-    expect(iconScale).not.toBeNull();
-    const glyphBox = Math.round(TOKENS.icon.sm * Number(iconScale?.[1]));
-    expect(glyphBox).toBeGreaterThan(TOKENS.icon.sm);
-    expect(TOKENS.icon.md).toBeGreaterThanOrEqual(glyphBox);
-    // …and the chevron is still rendered at `icon.sm` inside that slot.
-    expect(between(code(ROW), '<View style={styles.chevron}>', '</View>')).toContain(
-      'name="chevronRight" size={TOKENS.icon.sm}',
-    );
+    const body = code(ROW);
+    expect(body).not.toContain('ScrollView');
+    expect(body).not.toContain('keyboardShouldPersistTaps');
+    expect(body).not.toContain('SCROLL_PHYSICS');
+    // ...and the recycling rewind that only existed to serve it.
+    expect(body).not.toContain('scrollTo');
+    expect(body).not.toContain('useRef');
   });
 
-  it('is a slot and not a second touch target', () => {
-    // "Make the icon individual per row" is about the width the glyph owns. A
-    // chevron button would duplicate the row's own action and add a second
-    // TalkBack node overlapping it.
-    const chevron = between(code(ROW), '<View style={styles.chevron}>', '</View>');
-    expect(chevron).not.toContain('Pressable');
-    expect(chevron).not.toContain('onPress');
+  it('still has exactly two press targets: the row, and the avatar inside it', () => {
+    // Unchanged invariant, re-asserted against the new tree. The CTA is a View,
+    // not a third Pressable — it performs the row's own action, so a target on
+    // top of the row would be a duplicate, and a second TalkBack node for it
+    // would be noise. Same argument the chevron lost.
+    const body = code(ROW);
+    expect(body.match(/<Pressable/g)?.length).toBe(2);
+    expect(between(body, 'styles.cta', '</View>')).not.toContain('onPress');
   });
 
-  it('sits outside the text column, after the strip', () => {
-    const row = code(ROW);
-    expect(row.indexOf('<View style={styles.label}>')).toBeGreaterThan(-1);
-    expect(row.indexOf('</ScrollView>')).toBeGreaterThan(
-      row.indexOf('<View style={styles.label}>'),
-    );
-    expect(row.indexOf('<View style={styles.chevron}>')).toBeGreaterThan(
-      row.indexOf('</ScrollView>'),
-    );
+  it('keeps the tag pills out of the accessibility tree', () => {
+    // MetaChip is `accessible={false}`; the row's own label carries the tags in
+    // words, so a TalkBack user gets them in one utterance rather than as three
+    // unlabelled stops.
+    expect(code('src/components/MetaChip.tsx')).toContain('accessible={false}');
+    expect(code(ROW)).toMatch(/tags\.length > 0 \? tags\.join\(', '\) : null/);
+  });
+});
+
+describe('the CTA is 48dp, and the reference is the thing that is wrong', () => {
+  it('states the departure from the measured 36dp', () => {
+    /*
+     * Astrotalk's `call_rl` is 36.0×95.3dp on the Redmi. Amit: "48dp". The
+     * platform agrees — 48dp is the documented minimum touch target — and
+     * unlike the 24dp tag pills, this one really is inside the row's tappable
+     * area, so the minimum applies with full force.
+     */
+    expect(read(ROW)).toContain('export const ROW_CTA_HEIGHT = TOKENS.interaction.minTarget');
+    expect(TOKENS.interaction.minTarget).toBe(48);
+    // Width follows the reference, since nothing about a width is unsafe.
+    expect(read(ROW)).toContain('export const ROW_CTA_WIDTH = 96');
+    const cta = style('cta');
+    expect(cta).toContain('height: ROW_CTA_HEIGHT');
+    expect(cta).toContain('width: ROW_CTA_WIDTH');
+  });
+
+  it('quotes one price and never a struck-through one', () => {
+    /*
+     * Astrotalk renders "₹ 24 ₹ 5/min" with the first crossed out. Amit: "no
+     * struck price". We have one rate and it is not discounted, so an anchor
+     * price would be invented — the same class of claim as the false per-message
+     * cost removed in 75ced47.
+     */
+    const body = code(ROW);
+    expect(body).not.toContain('lineThrough');
+    expect(body).not.toContain('textDecorationLine');
+    // One rate, formatted through the money formatter rather than interpolated.
+    expect(body).toContain('formatRupees(ratePerMin)');
+    expect(body.match(/formatRupees\(/g)?.length).toBe(2); // the line and the spoken label
+  });
+
+  it('does not promise a call to a provider who has switched calls off', () => {
+    // `audio_enabled` is migration 064's provider-owned switch. A phone glyph
+    // beside a rate claims the rate buys a call; for a chat-only provider that
+    // is a price quoted for something unpurchasable.
+    const body = code(ROW);
+    expect(body).toContain('const canCall = provider.audio_enabled');
+    expect(body).toMatch(/name=\{canCall \? 'call' : 'chat'\}/);
   });
 });
 
 describe('every row is still the same height', () => {
-  it('fixes the scroller height rather than letting it measure content', () => {
-    // A ScrollView's cross-axis size comes from its content unless it is told
-    // otherwise, which is precisely how a scroller changes a row's height.
-    const strip = stripStyle();
-    expect(strip).toContain('height: TOKENS.interaction.minTarget');
-    expect(strip).not.toMatch(/minHeight|maxHeight|flex|padding/);
-    expect(stripContentStyle()).not.toMatch(/height|padding/);
-  });
-
-  it('gives the drag a 48dp activation band without moving the row', () => {
+  it('cannot grow a fourth tag pill', () => {
     /*
-     * Amit, 2026-09-07: "schip scroll is not working correctly.. pls check
-     * activation area." The band WAS the visible chip height, 32dp — and a
-     * ScrollView's touch area is its layout box, since hitSlop "never extends
-     * past the parent view bounds". 32 is under the 48dp minimum, and the cost
-     * is worse than a missed tap because this band competes with a VERTICAL
-     * list for the same gesture: Android arbitrates on touch slop, so a drag
-     * starting even slightly diagonal in a 32dp window goes to the FlashList.
-     *
-     * Asserted as ARITHMETIC on the tokens, not as three literals, because the
-     * whole point is that the three numbers cancel: the band grows to 48 and
-     * the row's contribution stays exactly what `space['2xs'] +
-     * META_CHIP_HEIGHT` was, so the chips do not move and the 108dp height
-     * gate above still holds.
+     * Three, and the ceiling is enforced twice on purpose. `ROW_EXPERTISE_LIMIT`
+     * caps the array — including the category badge that search prepends, which
+     * is why the slice is applied AFTER the concat — and the style clips, so a
+     * longer set cannot wrap and push the price line down even if the cap were
+     * ever raised without looking here.
      */
-    const strip = stripStyle();
-    expect(strip).toContain('height: TOKENS.interaction.minTarget');
-    // The band is a real target.
-    expect(TOKENS.interaction.minTarget).toBeGreaterThanOrEqual(48);
-    // Both margins are derived from the same difference, never written out.
-    const bleed = (TOKENS.interaction.minTarget - 32) / 2;
-    expect(strip).toContain(
-      "marginTop: TOKENS.space['2xs'] - (TOKENS.interaction.minTarget - META_CHIP_HEIGHT) / 2",
-    );
-    expect(strip).toContain(
-      'marginBottom: -(TOKENS.interaction.minTarget - META_CHIP_HEIGHT) / 2',
-    );
-    // And they cancel: the row's contribution is unchanged, which is what keeps
-    // the height gate above true and the chips where they were.
-    const contribution =
-      TOKENS.space['2xs'] - bleed + TOKENS.interaction.minTarget - bleed;
-    expect(contribution).toBe(TOKENS.space['2xs'] + 32);
-    // The chips still begin exactly `space['2xs']` under the headline.
-    expect(TOKENS.space['2xs'] - bleed + bleed).toBe(TOKENS.space['2xs']);
+    expect(code('src/lib/expertise.ts')).toContain('export const ROW_EXPERTISE_LIMIT = 3');
+    expect(code(ROW)).toContain('.slice(0, ROW_EXPERTISE_LIMIT)');
+    const line = style('tagLine');
+    expect(line).toContain('height: ROW_TAG_LINE');
+    expect(line).toContain("overflow: 'hidden'");
+    expect(line).not.toContain('flexWrap');
   });
 
-  it('takes that height from the chip rather than repeating 32', () => {
-    expect(code(CHIP)).toContain('export const META_CHIP_HEIGHT = 32');
-    const chip = between(code(CHIP), '    chip: {', '    },');
-    expect(chip).toContain('height: META_CHIP_HEIGHT');
-    expect(chip).toContain('minHeight: META_CHIP_HEIGHT');
-    expect(chip).not.toMatch(/height: 32/);
-    expect(code(ROW)).toContain("import { META_CHIP_HEIGHT, MetaChip } from './MetaChip'");
+  it('takes the pill height from the chip rather than repeating 24', () => {
+    expect(code(CHIP)).toContain('export const META_CHIP_HEIGHT_SM = 24');
+    expect(code(ROW)).toContain("import { META_CHIP_HEIGHT_SM, MetaChip } from './MetaChip'");
+    expect(code(ROW)).toContain('const ROW_TAG_LINE = META_CHIP_HEIGHT_SM');
   });
 
-  it('computes to the same height it did before the strip scrolled', () => {
+  it('computes to 142dp, as the taller of two columns plus its padding', () => {
     /*
-     * The row's height is the label column (the 40dp avatar is shorter), and
-     * every term is a token:
+     * The row is now TWO columns of different heights, which is the shape the
+     * reference uses and the reason the avatar grew. Every term is a token, so
+     * a change to the type scale or a chip height fails here rather than
+     * silently mis-hinting the list.
      *
-     *   paddingVertical ×2 + name + gap + headline + gap + strip marginTop
-     *   + strip height
+     *   left   avatar 76 · 4 · rating 16 · count 16                   = 112
+     *   right  name 24 · 2 · tags 24 · 2 · languages 16 · 2 · CTA 48  = 118
      *
-     * The scroller contributes META_CHIP_HEIGHT, which is exactly what the row
-     * of chips it replaced contributed, so this number is unchanged by the
-     * change these tests cover — it is pinned so that a future height on the
-     * strip, or a second line anywhere, has to come here and say so.
+     * The last line is a ROW — price left, CTA right — so it costs the CTA's 48
+     * rather than 48 plus the price's own 20. Astrotalk does the same: its
+     * `call_rl` spans y361.5–397.5, straddling the lines rather than sitting
+     * under them.
      *
-     * NOTE for whoever lands here after changing it: HomeScreen.tsx tells
-     * FlashList `size = 97` in `overrideItemLayout`, which is already ~11dp
-     * short of this and is a hint rather than a constraint (FlashList v2
-     * measures the real cell). That file is not this component's to edit.
+     * 142 against the reference's 146.2dp `row_content_holder`.
      */
-    const metaChipHeight = Number(
-      /export const META_CHIP_HEIGHT = (\d+)/.exec(read(CHIP))?.[1],
-    );
-    expect(metaChipHeight).toBe(32);
-    const rowHeight =
-      TOKENS.space.sm * 2 +
+    const smallChip = Number(/export const META_CHIP_HEIGHT_SM = (\d+)/.exec(read(CHIP))?.[1]);
+    expect(smallChip).toBe(24);
+
+    const left =
+      76 +
+      TOKENS.space['2xs'] +
+      TOKENS.typography.labelMedium.lineHeight +
+      TOKENS.typography.bodySmall.lineHeight;
+    const right =
       TOKENS.typography.titleMediumEmphasized.lineHeight +
       TOKENS.space.hair +
-      TOKENS.typography.bodyMedium.lineHeight +
+      smallChip +
       TOKENS.space.hair +
-      TOKENS.space['2xs'] +
-      metaChipHeight;
-    expect(rowHeight).toBe(108);
+      TOKENS.typography.bodySmall.lineHeight +
+      TOKENS.space.hair +
+      TOKENS.interaction.minTarget;
+    expect(left).toBe(112);
+    expect(right).toBe(118);
+    expect(TOKENS.space.sm * 2 + Math.max(left, right)).toBe(142);
 
+    // And the component derives it rather than writing 142 down.
+    const src = read(ROW);
+    expect(src).toContain('Math.max(PROVIDER_ROW_LEFT_COLUMN, PROVIDER_ROW_RIGHT_COLUMN)');
+    expect(src).not.toMatch(/PROVIDER_ROW_HEIGHT = \d/);
+  });
+
+  it('and the LIST estimate is that constant, not a copy of the number', () => {
     /*
-     * And the LIST's estimate is that same constant, not a copy of the number.
-     *
      * HomeScreen carried `size = 97` in both `overrideItemLayout` callbacks — a
-     * value from before this row grew a meta strip, so it had been 11dp wrong
-     * for as long as the strip has existed. FlashList v2 measures real cells, so
-     * a wrong hint costs scrollbar and scroll-to-index accuracy rather than
-     * correctness, which is precisely why nobody noticed.
-     *
-     * Pinning the IMPORT rather than a number is the point: a literal here
-     * would just be the same drift one file further along.
+     * value from before the row grew a meta strip, so it had been wrong for as
+     * long as the strip existed. FlashList v2 measures real cells, so a wrong
+     * hint costs scrollbar and scroll-to-index accuracy rather than
+     * correctness, which is precisely why nobody noticed. It is now 45dp wrong
+     * instead of 11, which is why pinning the IMPORT matters more than it did.
      */
     const home = code('src/screens/HomeScreen.tsx');
     expect(home).toContain("PROVIDER_ROW_HEIGHT } from '../components/ProviderRow'");
     expect(home.match(/\.size = PROVIDER_ROW_HEIGHT;/g)?.length).toBe(2);
     expect(home).not.toMatch(/\.size = \d+;/);
   });
+
+  it('reads the rate from one place, not once per row', () => {
+    /*
+     * `ratePerMin` is a prop. `useEconomicsConfig()` inside the row would work —
+     * React Query dedupes the fetch — but every visible row would subscribe, so
+     * one admin edit re-renders the whole list and `memo` stops holding across
+     * balance ticks, which is the exact regression the id-only `onPress`
+     * contract was introduced to fix.
+     */
+    expect(code(ROW)).not.toContain('useEconomicsConfig');
+    expect(code(ROW)).toContain('ratePerMin');
+    const home = code('src/screens/HomeScreen.tsx');
+    expect(home).toContain('useEconomicsConfig()');
+    expect(home.match(/ratePerMin=\{ratePerMin\}/g)?.length).toBe(2);
+  });
+
+  it('leaves the row itself top-aligned, since the columns differ', () => {
+    // `center` would float the 112dp avatar column 3dp down from the name it
+    // belongs to. Astrotalk top-aligns for the same reason.
+    expect(style('row')).toContain("alignItems: 'flex-start'");
+    expect(rowStyles()).not.toContain('rowTwoLine');
+  });
 });
+
 
 describe('MetaChip keeps flexing, and that was a decision', () => {
   /*
