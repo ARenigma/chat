@@ -183,8 +183,14 @@ export const ROW_CTA_WIDTH = 136;
 /** The card's inner padding. Astrotalk insets its avatar 12dp from the card. */
 const CARD_PAD = TOKENS.space.sm;
 
-/** Card-to-card gap. Astrotalk's is 9.1dp between one card and the next. */
-export const ROW_CARD_GAP = TOKENS.space.xs;
+/**
+ * Card-to-card gap. Astrotalk's is 9.1dp between one card and the next; `xs`
+ * (8) undershot that, and Amit asked for it to read closer to Astrotalk's
+ * spacing ("gap between cards should be more like astrotalk"). `sm` (12) is
+ * the nearest step on the token scale to 9.1 that is not a hand-picked
+ * in-between value.
+ */
+export const ROW_CARD_GAP = TOKENS.space.sm;
 
 /**
  * The card's laid-out height, DERIVED rather than written down, so the list's

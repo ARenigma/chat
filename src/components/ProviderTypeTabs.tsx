@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Dimensions, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -30,6 +30,49 @@ const TAB_INDICATOR_HEIGHT = 3;
 const TAB_INDICATOR_MIN_WIDTH = 24;
 const TAB_COUNT = PROVIDER_CATEGORIES.length;
 
+/**
+ * Seeds for `tabStripWidth` / `tabLabelWidths`, so the indicator is CORRECT
+ * from the very first frame rather than invisible until `onLayout` fires.
+ *
+ * Found on the device, and it is the specific defect behind two of Amit's
+ * reports at once — "type tab should be fixed in viewport and never move when
+ * changing screens between home and favourites" and "there is slight
+ * misalignment right now horizontally between listeners and astrologers tab".
+ * Measured with a pixel scan of both screens' first frame: Home's underline was
+ * a solid bar from x168 to x372; Favourites', captured at the same moment, had
+ * NONE — no bar anywhere in the row. Not misaligned. Not present. The
+ * `tabIndicatorStyle` worklet returns `{ width: 0, opacity: 0 }` whenever
+ * `tabStripWidth.value` is still its initial 0, which it is until the strip's
+ * own `onLayout` round-trips through the bridge — and `FavouritesScreen`'s
+ * `ProviderTypeTabs` is a FRESH instance on the first visit (`TabLayer` mounts
+ * it fresh, then crossfades it in), so that round-trip has never happened when
+ * the fade starts. HomeScreen's copy is mounted at cold start, before there is
+ * anything to compare it against, so the same gap is there and simply goes
+ * unnoticed.
+ *
+ * Both numbers below are safe to hardcode rather than derive:
+ *
+ *   `INITIAL_STRIP_WIDTH` — the strip has no horizontal margin of its own (see
+ *   `styles.tabs`) and neither screen pads its root, so the strip's true width
+ *   IS the window width. `Dimensions.get('window').width` reads it
+ *   synchronously, with no layout pass to wait for — the one case where reading
+ *   a window dimension outside `useWindowDimensions()` is correct instead of a
+ *   rotation bug, because this repo runs portrait-locked (RULE 1 §3) and the
+ *   value is a same-frame seed that `onTabStripLayout` immediately supersedes,
+ *   not a value anything keeps depending on.
+ *
+ *   `INITIAL_LABEL_WIDTHS` — measured off the Redmi at density 440 (2.75
+ *   px/dp): "Listeners" 204px = 74dp, "Astrologers" 259px = 94dp. A font-scale
+ *   setting other than 100% will measure differently, and `onTabLabelLayout`
+ *   corrects it on the very next frame either way — this is a seed for frame
+ *   one, not a value the indicator is stuck with.
+ */
+const INITIAL_STRIP_WIDTH = Dimensions.get('window').width;
+const INITIAL_LABEL_WIDTHS: Record<ProviderCategory, number> = {
+  listener: 74,
+  astrologer: 94,
+};
+
 interface Props {
   value: ProviderCategory;
   onChange: (category: ProviderCategory) => void;
@@ -40,8 +83,10 @@ export function ProviderTypeTabs({ value, onChange, testID = 'provider-type-tabs
   const styles = useStyles(makeStyles);
 
   const tabIndex = PROVIDER_CATEGORIES.indexOf(value);
-  const tabStripWidth = useSharedValue(0);
-  const tabLabelWidths = useSharedValue<number[]>(PROVIDER_CATEGORIES.map(() => 0));
+  const tabStripWidth = useSharedValue(INITIAL_STRIP_WIDTH);
+  const tabLabelWidths = useSharedValue<number[]>(
+    PROVIDER_CATEGORIES.map(c => INITIAL_LABEL_WIDTHS[c]),
+  );
   const tabOrigin = useSharedValue(tabIndex);
   const tabTarget = useSharedValue(tabIndex);
   const tabSlide = useSharedValue(tabIndex);
@@ -57,7 +102,15 @@ export function ProviderTypeTabs({ value, onChange, testID = 'provider-type-tabs
     },
     [tabStripWidth],
   );
-  const labelWidths = useRef<number[]>(PROVIDER_CATEGORIES.map(() => 0));
+  // Seeded to match `tabLabelWidths`'s own initial value, not zero — otherwise
+  // the very first real `onLayout` (measuring the same width the seed already
+  // guessed) would look like a change from 0 and write a redundant update. Not
+  // a correctness bug either way, but a ref that starts out disagreeing with
+  // the shared value it exists to mirror is the kind of thing that goes wrong
+  // when someone runs the diff test asymmetrically instead of top-to-bottom.
+  const labelWidths = useRef<number[]>(
+    PROVIDER_CATEGORIES.map(c => INITIAL_LABEL_WIDTHS[c]),
+  );
   const onTabLabelLayout = useCallback(
     (index: number, width: number) => {
       if (labelWidths.current[index] === width) {

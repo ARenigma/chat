@@ -2,7 +2,7 @@ import React, { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { Icon } from './Icon';
+import { Icon, ICON_SCALE } from './Icon';
 
 /**
  * The star glyph's box, and why the row is measured rather than laid out.
@@ -19,11 +19,38 @@ const STAR = TOKENS.icon.xs;
 const STAR_GAP = 1;
 const STAR_COUNT = 5;
 
-/** The whole row's width. Exported so a column can size itself to it. */
-export const STARS_WIDTH = STAR_COUNT * STAR + (STAR_COUNT - 1) * STAR_GAP;
+/**
+ * The box ONE star glyph actually occupies — NOT `STAR`.
+ *
+ * `Icon` sets its own Text node's `width`/`height` to `Math.round(size *
+ * ICON_SCALE)`, not to the `size` prop it was handed (see Icon.tsx). A caller
+ * that reserves `STAR` (12) dp of layout per glyph reserves twelve when the
+ * glyph's real box is fourteen, and this component did exactly that: the empty
+ * row of five Icons is not width-constrained (`row` has no explicit width), so
+ * it naturally laid out at 5 * 14 + 4 * 1 = 74dp while `host` — the thing
+ * everything ELSE centres against — was fixed at the wrong 5 * 12 + 4 * 1 =
+ * 64dp. The row was not clipped (only the FILLED overlay carries
+ * `overflow: 'hidden'`), so the last one or two stars silently rendered past
+ * the box a parent's `alignItems: 'center'` was centring, and the whole row
+ * read as shifted right of the avatar above it.
+ *
+ * Found on the device (Amit: "align the starts below centre of dp -- it seems
+ * a bit to the right as of now") and measured before being explained: the
+ * ring's true centre and the star row's true ink centre differed by ~4dp in a
+ * pixel scan of the Redmi screenshot, in the direction the report named.
+ *
+ * `STARS_HEIGHT` already used this arithmetic (`Math.round(STAR * 1.2)`, the
+ * same number spelled out rather than imported) and was correct by accident;
+ * `STARS_WIDTH` did not, and that asymmetry — one dimension scaled, the other
+ * not — is what made this bug hide as a horizontal-only offset.
+ */
+const STAR_BOX = Math.round(STAR * ICON_SCALE);
 
-/** The row's height — the glyph box, not the icon's nominal size. */
-export const STARS_HEIGHT = Math.round(STAR * 1.2);
+/** The whole row's width. Exported so a column can size itself to it. */
+export const STARS_WIDTH = STAR_COUNT * STAR_BOX + (STAR_COUNT - 1) * STAR_GAP;
+
+/** The row's height — the glyph's real box, not its nominal `size`. */
+export const STARS_HEIGHT = STAR_BOX;
 
 interface Props {
   /** 0–5. Fractions are drawn as a partially filled star. */
@@ -109,6 +136,14 @@ const makeStyles = (_t: Theme) =>
       width: STARS_WIDTH,
       height: STARS_HEIGHT,
       justifyContent: 'center',
+      // Belt and braces after the STAR_BOX defect: if `STARS_WIDTH` ever drifts
+      // from the row's true rendered width again, this clips the overflow
+      // instead of letting it silently paint past the box every centred parent
+      // is centring — a wrong number would then shrink the row rather than
+      // shift it off-centre, which is the failure this component's whole
+      // reason for existing (an exact-width clip) already assumes is not
+      // happening to ITSELF.
+      overflow: 'hidden',
     },
     row: {
       flexDirection: 'row',

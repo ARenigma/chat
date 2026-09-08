@@ -116,7 +116,16 @@ const DEFAULT_SIZE = 24;
  * glyphs, 24/19 ≈ 1.26 the heart's height. 1.2 is Amit's call — the icons were
  * reading too small — and it moves every icon in the app, so it stays his.
  */
-const ICON_SCALE = 1.2;
+/**
+ * Exported 2026-09-08 so a caller that needs to lay out several icons in a
+ * fixed-width row — `RatingStars` is the first — can compute the box the glyph
+ * ACTUALLY renders at, rather than the `size` prop it was given. `Icon` sets
+ * `width`/`height` on its own Text node to `px`, not to `size`: a caller who
+ * reserves `size` dp of layout per icon reserves the wrong number, and the
+ * glyph overflows that reservation by the same 1.2x this constant names. See
+ * RatingStars.tsx for the defect this caused.
+ */
+export const ICON_SCALE = 1.2;
 
 function IconView({ name, active = false, size = DEFAULT_SIZE, color, testID, accessibilityLabel }: Props) {
   const theme = useTheme();

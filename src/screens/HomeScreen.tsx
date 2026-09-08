@@ -1611,7 +1611,14 @@ const makeStyles = (t: Theme) =>
       marginHorizontal: TOKENS.space.md,
     },
     featured: {
-      height: 210,
+      // 178, not 210: on the Redmi's default (unscrolled) Home, the 210dp hero
+      // pushed the FIRST ProviderRow card's last line ("X reviews") underneath
+      // the fixed bottom tab bar (Amit: "at least first explore row card should
+      // be visible fully without getting cut off -- carousel size down?").
+      // Measured on-device with a screenshot at the app's default scroll
+      // position: the clipped line needed about 30dp of headroom back, so this
+      // gives up one `space['2xl']` (32dp) rather than an unmeasured guess.
+      height: 210 - TOKENS.space['2xl'],
       justifyContent: 'flex-end',
       // The photo is taller than this frame and anchored to its top; without
       // the clip it would spill over the card below. See `featuredPhoto`.
@@ -1670,10 +1677,15 @@ const makeStyles = (t: Theme) =>
      * text/onAccent measures 5.19:1 light / 6.13:1 dark.
      * https://developer.android.com/guide/topics/ui/accessibility/apps
      */
+    // Top-RIGHT, not top-left: swapped with the presence dot (Amit: "star and
+    // rating no on explore hero carousel -- interchange position") to match
+    // ProviderRow/ProviderCard, where the rating chip already sits on the
+    // right of its row and the presence dot marks the avatar's own left/top
+    // corner — the hero had them backwards relative to every other card.
     featuredBadge: {
       position: 'absolute',
       top: TOKENS.space.md,
-      left: TOKENS.space.md,
+      right: TOKENS.space.md,
       paddingHorizontal: TOKENS.space.sm,
       paddingVertical: TOKENS.space['2xs'],
       borderRadius: TOKENS.radius.pill,
@@ -1701,12 +1713,13 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.titleMediumEmphasized,
       color: 'rgba(255,255,255,0.82)',
     },
-    // Presence dot, top-right of the card: sage with a white ring so it stays
-    // legible over any photo.
+    // Presence dot, top-LEFT of the card (swapped with the rating badge, see
+    // its comment above): sage with a white ring so it stays legible over any
+    // photo.
     featuredOnline: {
       position: 'absolute',
       top: TOKENS.space.md,
-      right: TOKENS.space.md,
+      left: TOKENS.space.md,
       width: 14,
       height: 14,
       borderRadius: 7,

@@ -479,9 +479,21 @@ describe('every row is still the same height', () => {
 
     // The star row's height, as RatingStars computes it, read from source for
     // the same reason as everything else here.
+    /*
+     * 2026-09-08: `STARS_HEIGHT` (and `STARS_WIDTH`) moved from a hand-spelled
+     * `Math.round(STAR * 1.2)` to `Math.round(STAR * ICON_SCALE)` — see
+     * RatingStars.tsx's `STAR_BOX` comment for the defect this fixed (the width
+     * was NOT scaled while the height was, so the star row silently rendered
+     * wider than the box everything else centred against, reading as shifted
+     * right of the avatar above it). The value this test needs is unchanged
+     * (14); only the source line it greps for is.
+     */
     const starsHeight = Math.round(TOKENS.icon.xs * 1.2);
     expect(read('src/components/RatingStars.tsx')).toContain(
-      'export const STARS_HEIGHT = Math.round(STAR * 1.2)',
+      'const STAR_BOX = Math.round(STAR * ICON_SCALE)',
+    );
+    expect(read('src/components/RatingStars.tsx')).toContain(
+      'export const STARS_HEIGHT = STAR_BOX',
     );
     const ringSize = 76 + 2 * (2 + 2);
 
