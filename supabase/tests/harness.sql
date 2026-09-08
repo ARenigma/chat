@@ -22,12 +22,37 @@ grant usage on schema public to anon, authenticated, service_role;
 -- GoTrue's user table, reduced to the columns the schema references.
 create schema if not exists auth;
 
+-- The columns are the ones OUR code touches, not all of GoTrue's — but the set
+-- grew on 2026-09-08 and the reason is worth keeping.
+--
+-- Migration 085 seeds provider accounts and writes the columns Supabase's real
+-- auth.users has (`instance_id`, `aud`, `role`, `encrypted_password`,
+-- `email_confirmed_at`, `updated_at`), copying the shape `scripts/seed-dev.sql`
+-- already uses against a real project. This stub had five columns, so the
+-- migration failed here and passed in production — the worst direction for a
+-- harness to be wrong in, because it makes the test suite refuse code that
+-- works and would have pushed the migration to be written thinner than the
+-- database it runs on.
+--
+-- Nullable and defaulted throughout: nothing here is authenticating, and a NOT
+-- NULL the real table does not have would fail a migration prod would accept,
+-- which is the same mistake pointing the other way.
 create table if not exists auth.users (
   id uuid primary key default gen_random_uuid(),
   email text,
   phone text,
   is_anonymous boolean not null default true,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  instance_id uuid,
+  aud text,
+  role text,
+  encrypted_password text,
+  email_confirmed_at timestamptz,
+  phone_confirmed_at timestamptz,
+  last_sign_in_at timestamptz,
+  raw_app_meta_data jsonb,
+  raw_user_meta_data jsonb,
+  updated_at timestamptz
 );
 
 -- Same contract as Supabase's: read `sub` out of the request's JWT claims.

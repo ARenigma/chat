@@ -715,13 +715,33 @@ describe('pipeline wiring', () => {
     }
   });
 
-  it('applies every migration in the test harness', () => {
+  it('applies every migration in the test harness, or names why not', () => {
+    /*
+     * Every migration must appear in `scripts/db-test.mjs` — in MIGRATIONS,
+     * which the harness applies, or in SEED_MIGRATIONS, which it deliberately
+     * does not.
+     *
+     * The second list exists because 085 seeds six provider rows, and every
+     * pgTAP suite starts from an empty database and asserts absolute counts:
+     * `010` expects `count(*) from profiles` to be 2 after inserting two users.
+     * Six fixture people make it 8 and the failure reads as a wallet bug.
+     *
+     * Checking mere PRESENCE in the file is what keeps this from being a hole:
+     * a new migration cannot be forgotten, only categorised, and putting a
+     * schema change in the seed list would show up as an untested migration in
+     * review rather than as a silent pass.
+     */
     const migrations = readdirSync(join(ROOT, 'supabase/migrations')).filter(f =>
       f.endsWith('.sql'),
     );
     const runner = read('scripts/db-test.mjs');
     for (const file of migrations) {
       expect(runner).toContain(file);
+    }
+    // And the escape hatch is narrow: seed-only, and named one at a time.
+    const seeds = /export const SEED_MIGRATIONS = \[([\s\S]*?)\];/.exec(runner)?.[1] ?? '';
+    for (const named of seeds.match(/'[^']+'/g) ?? []) {
+      expect(named).toMatch(/_seed_/);
     }
   });
 
@@ -4666,6 +4686,12 @@ describe('the directory is grouped and filterable: Listeners, Astrologers, ages'
   it('filters search by type and age, and says which is which on the row', () => {
     const home = withoutComments(read('src/screens/HomeScreen.tsx'));
     expect(home).toContain('testID="search-filters"');
+    // Four groups now: what they offer, age, language, topic (Amit,
+    // 2026-09-08: "give language and expertise filer in search").
+    expect(home).toContain('toggleFilterLanguage');
+    expect(home).toContain('toggleFilterExpertise');
+    expect(home).toContain('OFFERED_LANGUAGES.map');
+    expect(home).toContain('searchTopics.map');
     // Search spans BOTH categories: the tab is an Explore idea.
     expect(home).toContain('const narrowed = filterProviders(allProviders, searchFilter)');
     // Chips alone are a search: no query required (Amit, 2026-09-06).
@@ -4674,12 +4700,25 @@ describe('the directory is grouped and filterable: Listeners, Astrologers, ages'
     // Filters are per search session, or the next search silently returns
     // fewer people for a reason that is off screen.
     expect(home).toMatch(/setSearching\(false\);[\s\S]{0,120}setSearchFilter\(NO_FILTER\)/);
-    // A mixed result list has to name the category; Explore's rows do not,
-    // because the tab above them already did.
-    expect(home).toContain('showCategory');
+    /*
+     * The category is on EVERY card now, not only in search, and `showCategory`
+     * is gone — Amit, 2026-09-08: "there should be tag of listener /
+     * astrologer on proile like truemittr shows - place this where price is".
+     *
+     * The old arrangement had a real argument (the Explore tab above the list
+     * already says which category you are in, so repeating it per row is
+     * noise), and it lost to a better one: the badge used to LEAD the pill row
+     * in search, competing with the topics for three slots and pushing a real
+     * one off — on the one screen where the topics matter most. Given a slot of
+     * its own it costs nothing and the topics get their three back.
+     */
     const row = withoutComments(read('src/components/ProviderRow.tsx'));
-    expect(row).toContain('showCategory = false');
+    expect(row).not.toContain('showCategory');
     expect(row).toContain('CATEGORY_BADGE[categoryOf(provider)]');
+    expect(row).toContain('testID="provider-category"');
+    // In the price line's slot, not the pill row's.
+    const priceLine = row.slice(row.indexOf('<View style={styles.priceLine}>'));
+    expect(priceLine.slice(0, priceLine.indexOf('</View>'))).toContain('label={category}');
   });
 
   it('asks the provider once, at onboarding', () => {
@@ -4857,6 +4896,12 @@ describe('search opens the way Telegram opens it, and the week has a carousel', 
     // One scrolling row put four of six chips off screen; the age bands were
     // something you had to discover by dragging (Amit, 2026-09-06).
     expect(home).toContain('testID="search-filters"');
+    // Four groups now: what they offer, age, language, topic (Amit,
+    // 2026-09-08: "give language and expertise filer in search").
+    expect(home).toContain('toggleFilterLanguage');
+    expect(home).toContain('toggleFilterExpertise');
+    expect(home).toContain('OFFERED_LANGUAGES.map');
+    expect(home).toContain('searchTopics.map');
     expect(home).toContain('style={styles.filters}');
     expect(home).not.toContain('styles.filterRowContent');
     const filters = home.slice(home.indexOf('    filters: {'), home.indexOf('    filterChips: {'));
