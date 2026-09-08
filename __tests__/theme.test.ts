@@ -1227,12 +1227,36 @@ describe('spacing lives in tokens', () => {
     'src/components/SpotlightCard.tsx': ['paddingVertical: 5'],
     'src/components/ThreadBubble.tsx': ['paddingVertical: 1', 'paddingHorizontal: 5'],
     'src/components/TokenCounter.tsx': ['paddingVertical: 5'],
+    /*
+     * The last four are the WhatsApp bubble box, read from the APK on
+     * 2026-09-08 (com.whatsapp 2.26.34.81, pulled off the Redmi over adb).
+     * 2, 5 and 10 are not on the 4dp scale and must not be rounded onto it:
+     * rounding a measurement discards the measurement, the same trade
+     * `SOURCE_METRICS` argues in src/lib/onboarding.ts.
+     *
+     * They are message_text's padding (8/2/8/3) PLUS 2dp on the right and
+     * bottom from a parent two elements up in the same layout — an adversarial
+     * verification pass caught that the first reading understated both by 2dp.
+     *
+     * NOT exempted, because someone will look for it here: the corner radius.
+     * It stays OURS at 22dp; WhatsApp's could not be sourced. See
+     * radius.$bubbleNote in design/tokens.json for why the 12dp that one pass
+     * reported as first-party was withdrawn.
+     *
+     * An earlier edit added these as a SECOND 'src/components/Turn.tsx' key in
+     * this object literal, which JS silently resolves in favour of the last
+     * one — so the allowlist looked correct and the gate still failed. Merged.
+     */
     'src/components/Turn.tsx': [
       'paddingBottom: 14',
       'paddingHorizontal: 5',
       'paddingVertical: 1',
       'gap: 3',
       'gap: 1',
+      'paddingLeft: 8',
+      'paddingTop: 2',
+      'paddingRight: 10',
+      'paddingBottom: 5',
     ],
     'src/components/VoiceNote.tsx': ['paddingVertical: 1'],
     'src/screens/HomeScreen.tsx': ['padding: 3'],

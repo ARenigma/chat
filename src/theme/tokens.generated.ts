@@ -128,6 +128,7 @@ export const LIGHT = {
     appBarSmall: 64,
     appBarMedium: 112,
     appBarMediumSubtitle: 128,
+    bubbleMinHeight: 30,
   },
   motion: {
     spring: {
@@ -717,6 +718,7 @@ export const DARK = {
     appBarSmall: 64,
     appBarMedium: 112,
     appBarMediumSubtitle: 128,
+    bubbleMinHeight: 30,
   },
   motion: {
     spring: {
