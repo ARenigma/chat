@@ -160,3 +160,79 @@ describe('what a row shows', () => {
     expect(rowExpertise(provider(['  Anxiety  ']))).toEqual(['Anxiety']);
   });
 });
+
+describe('the provider can actually set their tags', () => {
+  const api = read('src/api/provider.ts');
+  const form = read('src/screens/ProviderApplicationScreen.tsx');
+  const stripped = api
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+
+  it('writes tags AFTER the role flip, never before', () => {
+    /*
+     * THE ORDERING IS FORCED, not stylistic, and it is the kind of thing that
+     * works on the developer's account (already a provider) and fails for every
+     * real applicant.
+     *
+     * `set_provider_expertise` refuses anyone whose role is not 'provider', and
+     * `complete_provider_onboarding` is what sets it. Reversed, this fails every
+     * time with "only a provider has expertise" — the correct refusal for a
+     * member and the wrong one here.
+     */
+    const onboard = stripped.indexOf("rpc('complete_provider_onboarding'");
+    const tags = stripped.indexOf("rpc('set_provider_expertise'");
+    expect(onboard).toBeGreaterThan(-1);
+    expect(tags).toBeGreaterThan(-1);
+    expect(tags).toBeGreaterThan(onboard);
+  });
+
+  it('does not fail the whole onboarding when only the tags fail', () => {
+    /*
+     * By the time the second call runs the provider is LIVE — role flipped,
+     * directory row present, messageable. Throwing would show "Could not finish
+     * setup" to somebody whose setup finished, and invite a retry that re-runs
+     * the first call. The row already renders the no-tags case, which is why
+     * the seed deliberately includes a provider with none.
+     */
+    const second = stripped.slice(stripped.indexOf("rpc('set_provider_expertise'"));
+    const block = second.slice(0, second.indexOf('},\n    onSuccess'));
+    expect(block).toContain('console.warn');
+    expect(block).not.toMatch(/throw new Error/);
+  });
+
+  it('never blocks Go live on a tag, because the server does not', () => {
+    // 083 makes an empty list a legal provider, unlike languages under 075.
+    // A client-side requirement the server does not have is a requirement
+    // nobody decided on.
+    const ready = /const profileReady =([\s\S]*?);\n/.exec(form)?.[1] ?? '';
+    expect(ready).toContain('languages.length > 0');
+    expect(ready).not.toContain('expertise');
+  });
+
+  it('uses the filter chip, not the conversation-starter chip', () => {
+    /*
+     * `Chip`'s accessibility label is hard-coded to `Start with: ${label}` — it
+     * is the opener control. A TalkBack user picking a topic would be told
+     * "Start with: Anxiety". `FilterChip` is M3's control for choosing several
+     * from a set, and carries the 48dp target and the check.
+     */
+    const field = form.slice(form.indexOf('testID="provider-expertise"'));
+    const block = field.slice(0, field.indexOf('</Field>'));
+    expect(block).toContain('<FilterChip');
+    expect(block).not.toMatch(/<Chip\b/);
+    expect(read('src/components/Chip.tsx')).toContain('Start with: ${label}');
+  });
+
+  it('disables the unpicked chips at the ceiling rather than swallowing a tap', () => {
+    // `toggleExpertise` returns the selection unchanged at MAX_EXPERTISE, which
+    // is right — evicting an earlier choice to make room is worse — but a
+    // control that silently ignores a press reads as broken.
+    const field = form.slice(form.indexOf('testID="provider-expertise"'));
+    const block = field.slice(0, field.indexOf('</Field>'));
+    expect(block).toContain('disabled={!picked && expertise.length >= MAX_EXPERTISE}');
+  });
+
+  it('offers the topics that match the category the applicant picked', () => {
+    expect(form).toContain('expertiseFor(category)');
+  });
+});

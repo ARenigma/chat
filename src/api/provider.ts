@@ -167,6 +167,12 @@ export interface ProviderProfileDraft {
   about: string;
   /** listener | astrologer (migration 065); chosen once, on the profile step. */
   category: ProviderCategory;
+  /**
+   * Topic tags (migration 083). Written by a SECOND call, not by
+   * `complete_provider_onboarding` — see the mutation below for why the order
+   * of the two is forced rather than incidental.
+   */
+  expertise: string[];
 }
 
 /**
@@ -203,6 +209,37 @@ export function useCompleteProviderOnboarding() {
       });
       if (error) {
         throw new Error(error.message);
+      }
+
+      /*
+       * Tags go SECOND, and the order is forced rather than stylistic.
+       *
+       * `set_provider_expertise` refuses anyone whose role is not 'provider',
+       * and the call above is what flips it. Reversed, this would fail every
+       * time with "only a provider has expertise" — which is the correct
+       * refusal for a member and the wrong one here.
+       *
+       * Two calls, because 083 deliberately did not append a parameter to the
+       * 72-line onboarding function: appending would have made its existing
+       * 5-arg signature ambiguous (065's finding) and dropping-to-recreate
+       * would have meant reproducing a body that gates identity, DOB and 18+
+       * (054's failure). The migration header carries the full argument.
+       *
+       * NOT FATAL IF IT FAILS. The provider is already live at this point —
+       * role is flipped, the directory row exists, they can be messaged. Tags
+       * are discovery polish, and throwing here would show "Could not finish
+       * setup" to somebody whose setup finished, and invite a retry that
+       * re-runs the onboarding call. So it is logged and swallowed; the
+       * provider edits their tags later, and every row already renders the
+       * empty case (083 seeds a provider with none for exactly this reason).
+       */
+      if (draft.expertise.length > 0) {
+        const { error: tagError } = await supabase.rpc('set_provider_expertise', {
+          p_expertise: draft.expertise,
+        });
+        if (tagError !== null) {
+          console.warn(`provider: tags not saved during onboarding: ${tagError.message}`);
+        }
       }
     },
     onSuccess: () => {
@@ -283,6 +320,43 @@ export function useSetChannels() {
     onError: () => {
       errorTick();
       setNotice('Could not change what you offer.');
+    },
+  });
+}
+
+/**
+ * A provider replaces their own topic tags (migration 083).
+ *
+ * Through the RPC rather than a direct PATCH, unlike `useSetChannels` next
+ * door, and the difference is worth stating because the two look alike. RLS
+ * would permit the PATCH — `expertise` is provider-owned and deliberately
+ * absent from the 063 guard — but the CHECK behind it reports a constraint
+ * name, and "profiles_expertise_sane" is not something a caller can act on.
+ * The function restates the rule as a sentence and returns what it stored, so
+ * the client renders the server's answer instead of its own optimism.
+ */
+export function useSetProviderExpertise() {
+  const queryClient = useQueryClient();
+  const setNotice = useStore(s => s.setNotice);
+
+  return useMutation<string[], Error, string[]>({
+    mutationFn: async expertise => {
+      const { data, error } = await supabase.rpc('set_provider_expertise', {
+        p_expertise: expertise,
+      });
+      if (error) {
+        throw new Error(error.message);
+      }
+      return data ?? [];
+    },
+    onSuccess: () => {
+      tick();
+      void queryClient.invalidateQueries({ queryKey: keys.profile });
+      void queryClient.invalidateQueries({ queryKey: keys.providers });
+    },
+    onError: () => {
+      errorTick();
+      setNotice('Could not save what you help with.');
     },
   });
 }
