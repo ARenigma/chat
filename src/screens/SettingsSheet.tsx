@@ -10,6 +10,7 @@ import { Icon, type IconName } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { Sheet } from '../components/Sheet';
 import { TopAppBar } from '../components/TopAppBar';
+import { TabTopBar } from '../components/TabTopBar';
 import { ChatWallpaper } from '../components/ChatWallpaper';
 import { Divider } from '../components/Divider';
 import { useQueryClient } from '@tanstack/react-query';
@@ -148,6 +149,22 @@ export function SettingsSheet({
   const setNotice = useStore(s => s.setNotice);
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
+  /*
+   * The bar's magnifier filters THIS screen — WhatsApp's model, and Amit's
+   * answer when asked what search should do away from Home (2026-09-08). A
+   * settings search that jumped to a people directory would be a tab switch
+   * wearing a magnifier.
+   *
+   * `shows` is matched against the row's own visible title, so what a member
+   * types is what they can read. While a query is open the profile hero and
+   * the section subheader are hidden: they are chrome for browsing, and they
+   * push the one matching row off the top of a short list.
+   */
+  const [searching, setSearching] = useState(false);
+  const [query, setQuery] = useState('');
+  const needle = query.trim().toLowerCase();
+  const shows = (rowTitle: string) =>
+    needle === '' || rowTitle.toLowerCase().includes(needle);
   const [verifying, setVerifying] = useState(false);
   const [choiceSheet, setChoiceSheet] = useState<'presence' | 'theme' | null>(null);
   const [avatarSheet, setAvatarSheet] = useState(false);
@@ -265,6 +282,30 @@ export function SettingsSheet({
 
   return (
     <View style={styles.root} testID="settings-sheet">
+      {/*
+       * The tab's own chrome: the SAME bar Home and Favourites render, with
+       * "Settings" in the wordmark's slot at regular weight (Amit: "just chnage
+       * pappal to fav to settings but weight of fav and setting should be
+       * regular not bold like brand"). No type tabs — Settings has no
+       * Listener/Astrologer split — and no back arrow, because this is a tab's
+       * first screen. `showBack` is the PUSHED case (the provider tree), which
+       * keeps the cover's own back button below instead.
+       */}
+      {showBack ? null : (
+        <TabTopBar
+          title="Settings"
+          searching={searching}
+          onSearchOpen={() => setSearching(true)}
+          onSearchClose={() => {
+            setQuery('');
+            setSearching(false);
+          }}
+          query={query}
+          onQueryChange={setQuery}
+          searchPlaceholder="Search settings"
+          testID="settings"
+        />
+      )}
       <Animated.ScrollView
         showsVerticalScrollIndicator={false}
         {...SCROLL_PHYSICS}
@@ -283,10 +324,16 @@ export function SettingsSheet({
             cover. This back action is intentional even on the member tree: the
             user selected that variant after the first profile-first pass.
             https://developer.android.com/develop/ui/compose/components/app-bars */}
+        {needle !== '' ? null : (
         <View style={styles.profileHero}>
           <View style={styles.profileCover}>
             <ChatWallpaper />
+            {/* The cover's back arrow is the PUSHED case only: on the member
+                tree Settings is a tab, and a tab's first screen has nothing to
+                go back to (Amit, 2026-09-08). `TabTopBar` above carries that
+                case, so this whole bar would be a second, contradictory one. */}
             <View style={{ paddingTop: insets.top }}>
+              {showBack ? (
               <TopAppBar
                 title=""
                 transparent
@@ -315,6 +362,7 @@ export function SettingsSheet({
                   </Pressable>
                 }
               />
+              ) : null}
             </View>
           </View>
           <View style={styles.profileIdentity}>
@@ -350,12 +398,17 @@ export function SettingsSheet({
             ) : null}
           </View>
         </View>
+        )}
         {/* Root rows stay scannable like WhatsApp Settings. Multi-choice controls
             move into sheets, but retain radio semantics and one selection per row. */}
-        <Text allowFontScaling style={styles.subheader}>
-          Settings
-        </Text>
+        {needle === '' ? (
+          <Text allowFontScaling style={styles.subheader}>
+            Settings
+          </Text>
+        ) : null}
         <View style={styles.group}>
+          {shows('Presence') ? (
+          <>
           <Pressable
             onPress={() => setChoiceSheet('presence')}
             testID="settings-presence"
@@ -370,7 +423,9 @@ export function SettingsSheet({
             />
           </Pressable>
           <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
-          {onBlocked !== undefined ? (
+          </>
+          ) : null}
+          {onBlocked !== undefined && shows('Blocked people') ? (
             <>
               <Pressable
                 onPress={onBlocked}
@@ -391,6 +446,8 @@ export function SettingsSheet({
         </View>
 
         <View style={styles.group}>
+          {shows('Theme') ? (
+          <>
           <Pressable
             onPress={() => setChoiceSheet('theme')}
             testID="settings-theme"
@@ -401,11 +458,13 @@ export function SettingsSheet({
             <SettingsRowContent icon="settings" title="Theme" detail={themeLabel} />
           </Pressable>
           <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
+          </>
+          ) : null}
         </View>
 
         {showAccountSection ? (
           <View style={styles.group}>
-              {canVerifyPhone ? (
+              {canVerifyPhone && shows('Phone verification') ? (
                 <Pressable
                   onPress={() => requestAnimationFrame(() => setVerifying(true))}
                   testID="settings-verify-phone"
@@ -429,7 +488,7 @@ export function SettingsSheet({
 
         {/* Recharge history: top-ups and GST invoice downloads. Shown only on
             the member tree (provider tree has no onTransactions). */}
-        {onTransactions !== undefined ? (
+        {onTransactions !== undefined && shows('Recharge history') ? (
           <View style={styles.group}>
               <Pressable
                 onPress={onTransactions}
@@ -450,7 +509,8 @@ export function SettingsSheet({
 
         {/* Usage by session (goal item 2). On both trees, with the title the
             caller's own side of the row: a member spent, a provider earned. */}
-        {onUsage !== undefined ? (
+        {onUsage !== undefined &&
+        shows(isProvider ? 'Earnings by session' : 'Usage by session') ? (
           <View style={styles.group}>
             <Pressable
               onPress={onUsage}
@@ -480,6 +540,8 @@ export function SettingsSheet({
           * URLs are the same as the seeded policy_versions rows (migration 027).
           */}
         <View style={styles.group}>
+          {shows('Terms of service') ? (
+          <>
           <Pressable
             onPress={() => {
               void Linking.openURL(legalUrl('terms'));
@@ -492,6 +554,9 @@ export function SettingsSheet({
             <SettingsRowContent icon="report" title="Terms of service" />
           </Pressable>
           <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
+          </>
+          ) : null}
+          {shows('Privacy policy') ? (
           <Pressable
             onPress={() => {
               void Linking.openURL(legalUrl('privacy'));
@@ -503,9 +568,12 @@ export function SettingsSheet({
             style={styles.row}>
             <SettingsRowContent icon="block" title="Privacy policy" />
           </Pressable>
+          ) : null}
         </View>
 
         <View style={styles.groupSpaced}>
+          {shows('Sign out') ? (
+          <>
           <Divider />
           <Pressable
             onPress={() => {
@@ -520,9 +588,12 @@ export function SettingsSheet({
             <SettingsRowContent icon="logout" title="Sign out" chevron={false} />
           </Pressable>
           <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
+          </>
+          ) : null}
           {/* The destructive action in the error colour, its own separated row,
               which is how a destructive action is kept from sitting flush against
               a benign one. */}
+          {shows('Delete account') ? (
           <Pressable
             onPress={() => requestAnimationFrame(() => setConfirming(true))}
             testID="delete-account"
@@ -537,7 +608,11 @@ export function SettingsSheet({
               chevron={false}
             />
           </Pressable>
+          ) : null}
         </View>
+        {/* Chrome, like the hero above: a search result should be the row and
+            nothing else. */}
+        {needle === '' ? (
         <View style={styles.footer}>
           <Text allowFontScaling={false} style={styles.brandFooter}>
             Pappal
@@ -561,6 +636,7 @@ export function SettingsSheet({
             </Text>
           </Pressable>
         </View>
+        ) : null}
       </Animated.ScrollView>
 
       <Sheet
