@@ -129,6 +129,7 @@ const MIGRATIONS = [
   'supabase/migrations/088_unanswered_message_refund_is_pre_cutover.sql',
   'supabase/migrations/089_repair_call_media_assignment_kind_check.sql',
   'supabase/migrations/090_expire_stale_session_requests.sql',
+  'supabase/migrations/091_upgraded_to_call_is_an_end_reason.sql',
 ];
 
 /**
@@ -707,6 +708,10 @@ const suites = [
     file: join(ROOT, 'supabase/tests/400_stale_requests_do_not_suppress.sql'),
     label:
       'stale requests: an expired pending row stops blocking the next request',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/410_upgrade_handoff_is_writable.sql'),
+    label: 'upgrade handoff: start_call can end the session it is taking over',
   },
 ];
 

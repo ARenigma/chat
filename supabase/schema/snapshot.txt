@@ -655,7 +655,7 @@ CONSTRAINT moderation_cases.moderation_cases_status_check CHECK ((status = ANY (
 CONSTRAINT paid_sessions.paid_sessions_call_fk FOREIGN KEY (call_id) REFERENCES calls(id)
 CONSTRAINT paid_sessions.paid_sessions_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES conversations(id)
 CONSTRAINT paid_sessions.paid_sessions_economics_config_version_id_fkey FOREIGN KEY (economics_config_version_id) REFERENCES admin.config_versions(id)
-CONSTRAINT paid_sessions.paid_sessions_end_reason_check CHECK ((end_reason = ANY (ARRAY['manual'::text, 'inactivity'::text, 'background'::text, 'disconnect_grace'::text, 'balance_exhausted'::text, 'blocked'::text, 'suspended'::text, 'system'::text])))
+CONSTRAINT paid_sessions.paid_sessions_end_reason_check CHECK ((end_reason = ANY (ARRAY['manual'::text, 'inactivity'::text, 'background'::text, 'disconnect_grace'::text, 'balance_exhausted'::text, 'blocked'::text, 'suspended'::text, 'system'::text, 'upgraded_to_call'::text])))
 CONSTRAINT paid_sessions.paid_sessions_member_id_fkey FOREIGN KEY (member_id) REFERENCES profiles(id)
 CONSTRAINT paid_sessions.paid_sessions_member_not_provider CHECK ((member_id <> provider_id))
 CONSTRAINT paid_sessions.paid_sessions_minutes_billed_check CHECK ((minutes_billed >= 0))

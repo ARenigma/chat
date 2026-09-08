@@ -12,6 +12,7 @@
  * The client adapter is `src/api/callMedia`; CallScreen never imports an SDK.
  */
 import { useEffect, useRef } from 'react';
+import type { PostgrestError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { ENV } from '../lib/env';
 import type {
@@ -36,6 +37,42 @@ export const ICE_SERVERS = [
     : []),
 ];
 
+/**
+ * What a RAISED rpc becomes, so a server fault stops looking like a dead phone.
+ *
+ * THE DEFECT THIS REPLACES. All four call RPCs used to end
+ * `return error ? null : (data as CallResult)`. `start_call` and its siblings
+ * report their ordinary refusals STRUCTURALLY — `{success:false, error:'BUSY'}`
+ * and so on — so a non-null `error` never means "the member did something we
+ * refuse". It means the function RAISED, or the transport failed. Collapsing
+ * that to `null` threw away the only description of what went wrong, and
+ * CallScreen's no-code branch then told the member "Could not start just now.
+ * Check your connection." while telemetry recorded `reason: 'network'`.
+ *
+ * On 2026-09-08 that cost a day. `assign_call_media_backend` wrote a
+ * `media_assignment_kind` its check constraint had not been widened to accept
+ * (migration 089), every `start_call` raised 23514, and both the screen and the
+ * analytics asserted a network fault for a schema fault. The only way in was to
+ * patch a `console.warn` into this file and read logcat.
+ *
+ * So a raise now returns a RESULT rather than nothing: `SERVER_ERROR` plus the
+ * SQLSTATE. `sqlstate` is safe to carry — Postgres puts the constraint name in
+ * `message`/`code` and the offending ROW in `details`, and `details` is
+ * deliberately dropped here rather than logged, because for `messages` it would
+ * be the body of somebody's message.
+ *
+ * NO `track()` here, deliberately. The events table has a trigger that raises
+ * `unknown event name` (22023) for any name outside its allowlist
+ * (033:80-93), so inventing an `rpc_raised` event without a migration would be
+ * the SAME defect this function exists to surface — a writer emitting a value
+ * its constraint forbids. The existing, allowlisted `call_rejected` carries it
+ * instead, from CallScreen, where `props.reason` is already the field for
+ * "why did this call never ring".
+ */
+function raised(error: PostgrestError): CallResult {
+  return { success: false, error: 'SERVER_ERROR', sqlstate: error.code };
+}
+
 /** Ring someone. Returns the call id, or the reason it was refused. */
 export async function startCall(
   conversationId: string,
@@ -45,19 +82,19 @@ export async function startCall(
     p_conversation_id: conversationId,
     p_medium: medium,
   });
-  return error ? null : (data as CallResult);
+  return error ? raised(error) : (data as CallResult);
 }
 
 /** Pick up. Moves the call to active and bills minute one. */
 export async function answerCall(callId: string): Promise<CallResult | null> {
   const { data, error } = await supabase.rpc('answer_call', { p_call_id: callId });
-  return error ? null : (data as CallResult);
+  return error ? raised(error) : (data as CallResult);
 }
 
 /** Keep-alive + settle while a call is up; the ticker reads `last_seen_at`. */
 export async function heartbeatCall(callId: string): Promise<CallResult | null> {
   const { data, error } = await supabase.rpc('heartbeat_call', { p_call_id: callId });
-  return error ? null : (data as CallResult);
+  return error ? raised(error) : (data as CallResult);
 }
 
 /** Hang up or decline. `media_failed` is the one reason the server cannot infer. */
@@ -69,7 +106,7 @@ export async function endCall(
     p_call_id: callId,
     p_reason: reason,
   });
-  return error ? null : (data as CallResult);
+  return error ? raised(error) : (data as CallResult);
 }
 
 /** How a call finished, as the server recorded it. See `end_call` (037:1111). */

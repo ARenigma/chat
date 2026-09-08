@@ -641,7 +641,15 @@ export type SendError =
  * no meaning on a message, and putting them there would force two nonsense
  * entries into the composer's notice map.
  */
-export type CallError = SendError | 'BUSY' | 'GONE';
+/**
+ * `SERVER_ERROR` is not a code any RPC returns. It is synthesised by
+ * src/api/calls.ts when the RPC RAISES rather than answering — a schema
+ * violation, a revoked grant, a signature change — so that the screen can say
+ * something true instead of blaming the network. See the note there; the
+ * 2026-09-08 call outage spent a day looking like bad wifi because there was no
+ * such code and every raise collapsed to `null`.
+ */
+export type CallError = SendError | 'BUSY' | 'GONE' | 'SERVER_ERROR';
 
 export type SendResult = {
   success: boolean;
@@ -681,6 +689,14 @@ export type CallResult = {
   /** What `start_call` wanted in the member's wallet, on INSUFFICIENT_BALANCE. */
   minimum?: number;
   error?: CallError;
+  /**
+   * The Postgres SQLSTATE, present only on a synthesised `SERVER_ERROR`. It is
+   * the five characters that identify the fault class (23514 a check
+   * constraint, 42501 a grant, 42883 a signature) and it is safe to log:
+   * Postgres puts the constraint NAME here, never row values — those live in
+   * `error.details`, which is deliberately not carried.
+   */
+  sqlstate?: string;
 };
 
 export type ClaimResult = {
