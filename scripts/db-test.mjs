@@ -147,7 +147,10 @@ const MIGRATIONS = [
  * `contract.test.ts` knows about this list by name, so a new migration still
  * cannot be forgotten — it has to be put in one list or the other, on purpose.
  */
-export const SEED_MIGRATIONS = ['supabase/migrations/085_seed_astrologers.sql'];
+export const SEED_MIGRATIONS = [
+  'supabase/migrations/085_seed_astrologers.sql',
+  'supabase/migrations/087_seed_astrologer_photos.sql',
+];
 
 const docker = (args, options = {}) =>
   execFileSync('docker', args, { encoding: 'utf8', stdio: 'pipe', ...options });

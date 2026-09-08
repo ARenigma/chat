@@ -496,10 +496,20 @@ function ProviderRowView({
 
                 `accessible={false}`: the card's label would otherwise gain a
                 stop that says nothing a member can act on. */}
+            {/* `icon.xs`, not `icon.md`. Amit, on the device: "verified badge
+                -- reduce size to be in line with name height".
+
+                The badge was `icon.md` (20), and `Icon` draws a Lucide glyph at
+                `Math.round(size * ICON_SCALE)` — 1.2 — so it inked 24dp beside
+                a name whose FONT is 16dp. It was matching the name's LINE BOX
+                (24dp) rather than its letters, which is why it read as
+                oversized: a line box is mostly the space above and below the
+                text. `icon.xs` inks 14dp, which sits with 16dp type the way a
+                trailing mark should. */}
             <View accessible={false} testID="provider-verified">
               <Icon
                 name="badgeCheck"
-                size={TOKENS.icon.md}
+                size={TOKENS.icon.xs}
                 color={theme.color.bg.accent}
               />
             </View>

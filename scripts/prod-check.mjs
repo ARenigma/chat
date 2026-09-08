@@ -50,14 +50,29 @@ const CHECKS = [
      * (`responded_at` set) but which is still `pending` with no `paid_sessions`
      * row for the conversation.
      *
-     * The member's consent sheet is the only thing that advances this, so a row
-     * sitting here means the member never saw it, or saw it and the confirm
-     * failed. Neither is recoverable by waiting.
+     * The member's consent sheet is the only thing that advances this.
      *
-     * Grace: 10 minutes. The state is legitimate for as long as the member
-     * takes to answer the sheet, and it is a sheet in front of a person, so
-     * seconds-to-minutes is normal. Ten minutes is past any plausible human
-     * pause and well inside the request's own 24h expiry.
+     * NARROWED 2026-09-08, because migration 086 made the broad version cry
+     * wolf. This used to fire on any request answered more than ten minutes
+     * ago with no session — and that WAS the signature of the bug it was
+     * written for. It no longer is: before 086 a provider's Accept sometimes
+     * created the session outright, and now it never does, so "answered, waiting
+     * on the member" is the normal intermediate state of every single chat
+     * request. A member who simply has not opened the app yet would fail this
+     * check, and a check that fails on healthy data is a check people stop
+     * reading.
+     *
+     * So it now requires the conversation to have CARRIED ON — a message from
+     * either side after the provider answered — with still no session. That is
+     * the defect and not the pause: the two of them are talking, the consent
+     * sheet did not convert, and nobody is being billed for it. It is the
+     * revenue leak the 2026-09-07 report described ("continuous prompt on every
+     * send gating msg off") seen from the server, and it cannot be produced by
+     * a member who is merely slow to answer, because a member who has not
+     * answered cannot send.
+     *
+     * Grace stays 10 minutes on top of that, so a message crossing the sheet in
+     * flight does not trip it.
      */
     sql: `
       select r.id::text as request_id,
@@ -74,6 +89,14 @@ const CHECKS = [
           select 1 from paid_sessions s
           where s.conversation_id = r.conversation_id
             and s.started_at > r.created_at
+        )
+        -- ...and the conversation carried on regardless. See the note above:
+        -- without this the check fires on every member who has not yet opened
+        -- the app, which after 086 is most of them.
+        and exists (
+          select 1 from messages m
+          where m.conversation_id = r.conversation_id
+            and m.created_at > r.responded_at
         )
       order by r.responded_at`,
   },

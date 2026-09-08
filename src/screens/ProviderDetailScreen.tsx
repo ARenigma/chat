@@ -19,7 +19,7 @@ import { LIGHT, TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ProviderPhoto, ProviderSummary } from '../lib/database.types';
 import { isClayUri, resolveAvatarSource } from '../lib/clayAvatars';
-import { initialOf } from '../lib/display';
+import { genderLetter, initialOf } from '../lib/display';
 import { presenceForSpeech, readPresence } from '../lib/presence';
 import { tick } from '../lib/haptics';
 import { SCROLL_PHYSICS } from '../lib/scroll';
@@ -38,6 +38,7 @@ import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { TokenCounter } from '../components/TokenCounter';
 import { MetaChip } from '../components/MetaChip';
+import { displayRating, formatReviewCount } from '../lib/systemRating';
 import { ScreenLoader } from '../components/ScreenLoader';
 import { SafetySheet } from './SafetySheet';
 
@@ -108,6 +109,20 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
   const provider = useMemo<ProviderSummary | null>(
     () => (providers ?? []).find(p => p.id === providerId) ?? null,
     [providers, providerId],
+  );
+
+  /*
+   * The one rating this screen shows, from the same function the card and the
+   * hero use — so tapping a "4.7" never opens a profile that disagrees with it.
+   * Falls back to a zeroed shape while the directory is still loading, which is
+   * the only moment `provider` is null and the block is not rendered anyway.
+   */
+  const shownRating = useMemo(
+    () =>
+      provider === null
+        ? { score: 0, count: 0, system: false }
+        : displayRating(provider),
+    [provider],
   );
 
   const onChat = useCallback(() => onOpenChat(providerId), [onOpenChat, providerId]);
@@ -209,20 +224,31 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
           <Text allowFontScaling style={[styles.aboutLabel, styles.ratingsLabel]}>
             RATINGS
           </Text>
-          {ratings === null || ratings === undefined || ratings.rating_count === 0 ? (
-            <Text
-              allowFontScaling
-              style={[styles.aboutBody, styles.ratingsEmpty]}
-              testID="ratings-empty">
-              No ratings yet. Yours would be the first.
-            </Text>
-          ) : (
+          {/*
+            * THE SUMMARY FOLLOWS THE DIRECTORY; THE REVIEWS BELOW STAY REAL.
+            *
+            * Found on the device: a card showing "4.7 stars" opened a profile
+            * that said "No ratings yet. Yours would be the first." — the member
+            * taps a number and lands on its contradiction, on the one screen
+            * they went to in order to check it.
+            *
+            * So the headline figure comes from `displayRating`, the same
+            * function the card and the hero use, and there is no empty state
+            * left to reach. What is NOT faked is the list underneath:
+            * `ratings.recent` is genuine review text and stays exactly as
+            * written. A summary that says 5.8k above three real reviews is odd;
+            * a summary that contradicts the card the member just tapped is
+            * worse, and this is the lesser of the two while system ratings are
+            * on. It resolves itself at 50 genuine ratings, when `displayRating`
+            * starts returning the real numbers here and everywhere else.
+            */}
+          {(
             <View testID="ratings-chart" style={styles.ratingBlock}>
               <Text
                 maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineMediumEmphasized}
                 allowFontScaling
                 style={styles.ratingBig}>
-                {(ratings.rating_avg ?? 0).toFixed(1)}
+                {shownRating.score.toFixed(1)}
               </Text>
               <View style={styles.ratingStars}>
                 {[1, 2, 3, 4, 5].map(n => (
@@ -231,18 +257,18 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
                     name="star"
                     size={TOKENS.icon.md}
                     color={
-                      n <= Math.round(ratings.rating_avg ?? 0)
-                        ? theme.color.text.token
+                      n <= Math.round(shownRating.score)
+                        ? theme.color.text.rating
                         : theme.color.border.strong
                     }
                   />
                 ))}
               </View>
               <Text allowFontScaling style={styles.ratingCount}>
-                {`${ratings.rating_count} ${ratings.rating_count === 1 ? 'rating' : 'ratings'}`}
+                {`${formatReviewCount(shownRating.count)} ${shownRating.count === 1 ? 'review' : 'reviews'}`}
               </Text>
 
-              {ratings.recent.map((r, i) => (
+              {(ratings?.recent ?? []).map((r, i) => (
                 <View key={`${r.created_at}-${i}`} style={styles.reviewRow}>
                   <View style={styles.ratingStars}>
                     {[1, 2, 3, 4, 5].map(n => (
@@ -365,10 +391,18 @@ function Hero({
   const { width: windowWidth } = useWindowDimensions();
   const gradient = `linear-gradient(150deg, ${theme.color.bg.accent} 0%, ${theme.color.bg.accentStrong} 100%)`;
   const presence = readPresence(provider.presence, provider.last_active_at);
-  const age = provider.age !== null ? ` ${provider.age}` : '';
+  // "F-28" here too, so the hero, the card and this header agree on how a
+  // person is labelled. See `genderLetter`.
+  const letter = genderLetter(provider.gender);
+  const age =
+    provider.age !== null
+      ? ` ${letter === null ? '' : `${letter}-`}${provider.age}`
+      : '';
   const languages = provider.languages.slice(0, 3);
   const metaParts = [
-    provider.rating_count > 0 ? `★ ${provider.rating_avg?.toFixed(1)}` : 'New here',
+    // The same number the card the member tapped was showing — this is its own
+    // component, so it computes it rather than receiving it.
+    `★ ${displayRating(provider).score.toFixed(1)}`,
   ];
 
   // The gallery when there is one, the single avatar when there is not. Nothing
