@@ -132,6 +132,7 @@ const MIGRATIONS = [
   'supabase/migrations/091_upgraded_to_call_is_an_end_reason.sql',
   'supabase/migrations/092_messages_push_immediately.sql',
   'supabase/migrations/093_repair_storage_purge_functions.sql',
+  'supabase/migrations/094_storage_purge_uses_allow_delete_guc.sql',
 ];
 
 /**
