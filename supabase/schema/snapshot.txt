@@ -1,0 +1,2165 @@
+COLUMN app_flags.enabled boolean null=NO default=false
+COLUMN app_flags.key text null=NO default=-
+COLUMN blocks.blocked_id uuid null=NO default=-
+COLUMN blocks.blocker_id uuid null=NO default=-
+COLUMN blocks.created_at timestamp with time zone null=NO default=now()
+COLUMN call_media_overrides.backend USER-DEFINED null=NO default=-
+COLUMN call_media_overrides.conversation_id uuid null=NO default=-
+COLUMN call_media_overrides.created_at timestamp with time zone null=NO default=now()
+COLUMN call_media_overrides.experiment_id text null=NO default=-
+COLUMN call_media_overrides.expires_at timestamp with time zone null=NO default=-
+COLUMN call_media_overrides.requested_by uuid null=NO default=-
+COLUMN call_media_overrides.run_id uuid null=NO default=-
+COLUMN call_media_test_allowlist.added_at timestamp with time zone null=NO default=now()
+COLUMN call_media_test_allowlist.expires_at timestamp with time zone null=NO default=-
+COLUMN call_media_test_allowlist.user_id uuid null=NO default=-
+COLUMN call_quality_runs.android_api integer null=YES default=-
+COLUMN call_quality_runs.anr boolean null=NO default=false
+COLUMN call_quality_runs.app_version text null=YES default=-
+COLUMN call_quality_runs.backend USER-DEFINED null=NO default=-
+COLUMN call_quality_runs.battery_end_percent numeric null=YES default=-
+COLUMN call_quality_runs.battery_start_percent numeric null=YES default=-
+COLUMN call_quality_runs.call_id uuid null=NO default=-
+COLUMN call_quality_runs.carrier text null=YES default=-
+COLUMN call_quality_runs.codec text null=YES default=-
+COLUMN call_quality_runs.crashed boolean null=NO default=false
+COLUMN call_quality_runs.device_model text null=YES default=-
+COLUMN call_quality_runs.ended_at timestamp with time zone null=YES default=-
+COLUMN call_quality_runs.experiment_id text null=YES default=-
+COLUMN call_quality_runs.harness_run_id uuid null=YES default=-
+COLUMN call_quality_runs.id uuid null=NO default=gen_random_uuid()
+COLUMN call_quality_runs.role text null=YES default=-
+COLUMN call_quality_runs.scenario text null=YES default=-
+COLUMN call_quality_runs.sdk_version text null=YES default=-
+COLUMN call_quality_runs.started_at timestamp with time zone null=NO default=now()
+COLUMN call_quality_runs.target_bitrate_kbps integer null=YES default=-
+COLUMN call_quality_runs.target_fps integer null=YES default=-
+COLUMN call_quality_runs.target_height integer null=YES default=-
+COLUMN call_quality_runs.target_width integer null=YES default=-
+COLUMN call_quality_runs.termination_reason text null=YES default=-
+COLUMN call_quality_runs.transport text null=YES default=-
+COLUMN call_quality_runs.user_id uuid null=NO default=-
+COLUMN call_quality_samples.audio_concealed_samples bigint null=YES default=-
+COLUMN call_quality_samples.bitrate_kbps numeric null=YES default=-
+COLUMN call_quality_samples.bytes_received bigint null=YES default=-
+COLUMN call_quality_samples.bytes_sent bigint null=YES default=-
+COLUMN call_quality_samples.captured_at timestamp with time zone null=NO default=-
+COLUMN call_quality_samples.connection_state text null=YES default=-
+COLUMN call_quality_samples.cpu_percent numeric null=YES default=-
+COLUMN call_quality_samples.frame_height integer null=YES default=-
+COLUMN call_quality_samples.frame_width integer null=YES default=-
+COLUMN call_quality_samples.frames_dropped bigint null=YES default=-
+COLUMN call_quality_samples.frames_per_second numeric null=YES default=-
+COLUMN call_quality_samples.freeze_duration_ms numeric null=YES default=-
+COLUMN call_quality_samples.id bigint null=NO default=-
+COLUMN call_quality_samples.jitter_ms numeric null=YES default=-
+COLUMN call_quality_samples.nack_count bigint null=YES default=-
+COLUMN call_quality_samples.network_transport text null=YES default=-
+COLUMN call_quality_samples.packets_lost bigint null=YES default=-
+COLUMN call_quality_samples.packets_received bigint null=YES default=-
+COLUMN call_quality_samples.pli_count bigint null=YES default=-
+COLUMN call_quality_samples.quality integer null=YES default=-
+COLUMN call_quality_samples.relay boolean null=YES default=-
+COLUMN call_quality_samples.rss_bytes bigint null=YES default=-
+COLUMN call_quality_samples.rtt_ms numeric null=YES default=-
+COLUMN call_quality_samples.run_id uuid null=NO default=-
+COLUMN call_quality_samples.selected_route text null=YES default=-
+COLUMN call_quality_samples.thermal_status integer null=YES default=-
+COLUMN calls.callee_id uuid null=NO default=-
+COLUMN calls.caller_id uuid null=NO default=-
+COLUMN calls.conversation_id uuid null=NO default=-
+COLUMN calls.created_at timestamp with time zone null=NO default=now()
+COLUMN calls.end_reason text null=YES default=-
+COLUMN calls.ended_at timestamp with time zone null=YES default=-
+COLUMN calls.id uuid null=NO default=gen_random_uuid()
+COLUMN calls.last_seen_at timestamp with time zone null=NO default=now()
+COLUMN calls.media_assignment_kind text null=NO default='default'::text
+COLUMN calls.media_backend USER-DEFINED null=NO default='agora'::call_media_backend
+COLUMN calls.media_experiment_id text null=YES default=-
+COLUMN calls.media_run_id uuid null=YES default=-
+COLUMN calls.medium USER-DEFINED null=NO default=-
+COLUMN calls.minutes_billed integer null=NO default=0
+COLUMN calls.notified_at timestamp with time zone null=YES default=-
+COLUMN calls.session_request_id uuid null=YES default=-
+COLUMN calls.started_at timestamp with time zone null=YES default=-
+COLUMN calls.status USER-DEFINED null=NO default='ringing'::call_status
+COLUMN calls.tokens_debited integer null=NO default=0
+COLUMN conversation_opener_templates.body text null=NO default=-
+COLUMN conversation_opener_templates.created_at timestamp with time zone null=NO default=now()
+COLUMN conversation_opener_templates.is_approved boolean null=NO default=true
+COLUMN conversation_opener_templates.step smallint null=NO default=-
+COLUMN conversation_peers.conversation_id uuid null=YES default=-
+COLUMN conversation_peers.peer_available boolean null=YES default=-
+COLUMN conversation_peers.peer_avatar_url text null=YES default=-
+COLUMN conversation_peers.peer_display_name text null=YES default=-
+COLUMN conversation_peers.peer_id uuid null=YES default=-
+COLUMN conversation_peers.peer_is_provider boolean null=YES default=-
+COLUMN conversation_peers.peer_last_active_at timestamp with time zone null=YES default=-
+COLUMN conversation_peers.peer_presence USER-DEFINED null=YES default=-
+COLUMN conversation_summaries.conversation_id uuid null=YES default=-
+COLUMN conversation_summaries.i_am_member boolean null=YES default=-
+COLUMN conversation_summaries.last_preview_kind text null=YES default=-
+COLUMN conversation_summaries.last_session_at timestamp with time zone null=YES default=-
+COLUMN conversation_summaries.last_session_channel USER-DEFINED null=YES default=-
+COLUMN conversation_summaries.last_session_duration_seconds integer null=YES default=-
+COLUMN conversation_summaries.last_session_status USER-DEFINED null=YES default=-
+COLUMN conversation_summaries.peer_avatar_url text null=YES default=-
+COLUMN conversation_summaries.peer_display_name text null=YES default=-
+COLUMN conversation_summaries.peer_id uuid null=YES default=-
+COLUMN conversation_summaries.peer_last_active_at timestamp with time zone null=YES default=-
+COLUMN conversation_summaries.peer_presence USER-DEFINED null=YES default=-
+COLUMN conversation_summaries.unread_count_member integer null=YES default=-
+COLUMN conversation_summaries.unread_count_provider integer null=YES default=-
+COLUMN conversation_thread_meta.conversation_id uuid null=NO default=-
+COLUMN conversation_thread_meta.last_preview_kind text null=YES default=-
+COLUMN conversation_thread_meta.last_session_at timestamp with time zone null=YES default=-
+COLUMN conversation_thread_meta.last_session_channel USER-DEFINED null=YES default=-
+COLUMN conversation_thread_meta.last_session_duration_seconds integer null=YES default=-
+COLUMN conversation_thread_meta.member_alerted_at timestamp with time zone null=YES default=-
+COLUMN conversation_thread_meta.provider_alerted_at timestamp with time zone null=YES default=-
+COLUMN conversation_thread_meta.unread_count_member integer null=NO default=0
+COLUMN conversation_thread_meta.unread_count_provider integer null=NO default=0
+COLUMN conversation_thread_meta.updated_at timestamp with time zone null=NO default=now()
+COLUMN conversations.chat_consent_declined_at timestamp with time zone null=YES default=-
+COLUMN conversations.created_at timestamp with time zone null=NO default=now()
+COLUMN conversations.id uuid null=NO default=gen_random_uuid()
+COLUMN conversations.last_message_at timestamp with time zone null=NO default=now()
+COLUMN conversations.member_id uuid null=NO default=-
+COLUMN conversations.provider_id uuid null=NO default=-
+COLUMN engagement_candidates.member_id uuid null=YES default=-
+COLUMN engagement_candidates.platform text null=YES default=-
+COLUMN engagement_candidates.provider_avatar_url text null=YES default=-
+COLUMN engagement_candidates.provider_display_name text null=YES default=-
+COLUMN engagement_candidates.provider_id uuid null=YES default=-
+COLUMN engagement_candidates.token text null=YES default=-
+COLUMN events.created_at timestamp with time zone null=NO default=now()
+COLUMN events.id uuid null=NO default=gen_random_uuid()
+COLUMN events.name text null=NO default=-
+COLUMN events.props jsonb null=NO default='{}'::jsonb
+COLUMN events.user_id uuid null=YES default=-
+COLUMN invoice_counters.fy text null=NO default=-
+COLUMN invoice_counters.last_seq bigint null=NO default=0
+COLUMN invoices.buyer jsonb null=NO default=-
+COLUMN invoices.cgst_paise integer null=NO default=0
+COLUMN invoices.created_at timestamp with time zone null=NO default=now()
+COLUMN invoices.document_type text null=NO default=-
+COLUMN invoices.fy text null=NO default=-
+COLUMN invoices.gst_rate_bps integer null=NO default=0
+COLUMN invoices.id uuid null=NO default=gen_random_uuid()
+COLUMN invoices.igst_paise integer null=NO default=0
+COLUMN invoices.invoice_number text null=NO default=-
+COLUMN invoices.issued_at timestamp with time zone null=NO default=now()
+COLUMN invoices.pdf_path text null=YES default=-
+COLUMN invoices.place_of_supply text null=YES default=-
+COLUMN invoices.seller jsonb null=NO default=-
+COLUMN invoices.sgst_paise integer null=NO default=0
+COLUMN invoices.taxable_paise integer null=NO default=-
+COLUMN invoices.total_paise integer null=NO default=-
+COLUMN invoices.transaction_id uuid null=NO default=-
+COLUMN media_channel_usage.backend USER-DEFINED null=NO default=-
+COLUMN media_channel_usage.call_id uuid null=NO default=-
+COLUMN media_channel_usage.conversation_minutes integer null=NO default=-
+COLUMN media_channel_usage.cost_paise_est integer null=NO default=-
+COLUMN media_channel_usage.medium text null=NO default=-
+COLUMN media_channel_usage.raw jsonb null=YES default=-
+COLUMN media_channel_usage.refreshed_at timestamp with time zone null=NO default=now()
+COLUMN media_channel_usage.source text null=NO default=-
+COLUMN media_channel_usage.std_minutes_est numeric null=NO default=-
+COLUMN media_cogs_recon_alerts.acknowledged_at timestamp with time zone null=YES default=-
+COLUMN media_cogs_recon_alerts.call_id uuid null=YES default=-
+COLUMN media_cogs_recon_alerts.created_at timestamp with time zone null=NO default=now()
+COLUMN media_cogs_recon_alerts.detail jsonb null=NO default='{}'::jsonb
+COLUMN media_cogs_recon_alerts.id uuid null=NO default=gen_random_uuid()
+COLUMN media_cogs_recon_alerts.kind text null=NO default=-
+COLUMN media_cogs_recon_alerts.usage_date date null=NO default=-
+COLUMN media_cogs_recon_alerts.variance_pct numeric null=YES default=-
+COLUMN media_vendor_usage_daily.backend USER-DEFINED null=NO default='agora'::call_media_backend
+COLUMN media_vendor_usage_daily.cost_paise_est integer null=NO default=0
+COLUMN media_vendor_usage_daily.duration_audio_seconds bigint null=NO default=0
+COLUMN media_vendor_usage_daily.duration_video_1080p_seconds bigint null=NO default=0
+COLUMN media_vendor_usage_daily.duration_video_2k_seconds bigint null=NO default=0
+COLUMN media_vendor_usage_daily.duration_video_4k_seconds bigint null=NO default=0
+COLUMN media_vendor_usage_daily.duration_video_hd_seconds bigint null=NO default=0
+COLUMN media_vendor_usage_daily.duration_video_hdp_seconds bigint null=NO default=0
+COLUMN media_vendor_usage_daily.id uuid null=NO default=gen_random_uuid()
+COLUMN media_vendor_usage_daily.ingested_at timestamp with time zone null=NO default=now()
+COLUMN media_vendor_usage_daily.project_id text null=NO default=-
+COLUMN media_vendor_usage_daily.raw jsonb null=YES default=-
+COLUMN media_vendor_usage_daily.source text null=NO default=-
+COLUMN media_vendor_usage_daily.std_minutes_est numeric null=NO default=0
+COLUMN media_vendor_usage_daily.usage_date date null=NO default=-
+COLUMN message_reactions.created_at timestamp with time zone null=NO default=now()
+COLUMN message_reactions.emoji text null=NO default=-
+COLUMN message_reactions.message_id uuid null=NO default=-
+COLUMN message_reactions.user_id uuid null=NO default=-
+COLUMN messages.attachment_height integer null=YES default=-
+COLUMN messages.attachment_path text null=YES default=-
+COLUMN messages.attachment_type text null=YES default=-
+COLUMN messages.attachment_width integer null=YES default=-
+COLUMN messages.body text null=YES default=-
+COLUMN messages.client_nonce uuid null=YES default=-
+COLUMN messages.conversation_id uuid null=NO default=-
+COLUMN messages.created_at timestamp with time zone null=NO default=now()
+COLUMN messages.hidden_at timestamp with time zone null=YES default=-
+COLUMN messages.id uuid null=NO default=gen_random_uuid()
+COLUMN messages.notified_at timestamp with time zone null=YES default=-
+COLUMN messages.origin USER-DEFINED null=NO default='live'::message_origin
+COLUMN messages.purge_after timestamp with time zone null=YES default=-
+COLUMN messages.read_at timestamp with time zone null=YES default=-
+COLUMN messages.refunded_at timestamp with time zone null=YES default=-
+COLUMN messages.reply_to_id uuid null=YES default=-
+COLUMN messages.sender_id uuid null=NO default=-
+COLUMN messages.session_id uuid null=YES default=-
+COLUMN messages.voice_duration_ms integer null=YES default=-
+COLUMN messages.voice_path text null=YES default=-
+COLUMN messages.voice_peaks ARRAY null=YES default=-
+COLUMN moderation_actions.action text null=NO default=-
+COLUMN moderation_actions.actor text null=NO default=-
+COLUMN moderation_actions.created_at timestamp with time zone null=NO default=now()
+COLUMN moderation_actions.id uuid null=NO default=gen_random_uuid()
+COLUMN moderation_actions.note text null=YES default=-
+COLUMN moderation_actions.report_id uuid null=YES default=-
+COLUMN moderation_actions.subject_user_id uuid null=YES default=-
+COLUMN moderation_cases.closed_at timestamp with time zone null=YES default=-
+COLUMN moderation_cases.closed_by text null=YES default=-
+COLUMN moderation_cases.created_at timestamp with time zone null=NO default=now()
+COLUMN moderation_cases.id uuid null=NO default=gen_random_uuid()
+COLUMN moderation_cases.report_id uuid null=NO default=-
+COLUMN moderation_cases.status text null=NO default='open'::text
+COLUMN moderation_queue.conversation_id uuid null=YES default=-
+COLUMN moderation_queue.created_at timestamp with time zone null=YES default=-
+COLUMN moderation_queue.detail text null=YES default=-
+COLUMN moderation_queue.evidence_body text null=YES default=-
+COLUMN moderation_queue.evidence_voice_path text null=YES default=-
+COLUMN moderation_queue.id uuid null=YES default=-
+COLUMN moderation_queue.reason USER-DEFINED null=YES default=-
+COLUMN moderation_queue.reports_against_subject bigint null=YES default=-
+COLUMN moderation_queue.status USER-DEFINED null=YES default=-
+COLUMN moderation_queue.subject_role USER-DEFINED null=YES default=-
+COLUMN moderation_queue.subject_user_id uuid null=YES default=-
+COLUMN moderation_queue.suspended_until timestamp with time zone null=YES default=-
+COLUMN my_application.created_at timestamp with time zone null=YES default=-
+COLUMN my_application.missing_fields ARRAY null=YES default=-
+COLUMN my_application.reviewed_at timestamp with time zone null=YES default=-
+COLUMN my_application.reviewer_note text null=YES default=-
+COLUMN my_application.status USER-DEFINED null=YES default=-
+COLUMN my_application.submitted_at timestamp with time zone null=YES default=-
+COLUMN my_payout_readiness.can_go_live boolean null=YES default=-
+COLUMN my_payout_readiness.pan_verified boolean null=YES default=-
+COLUMN my_payout_readiness.payout_account_verified boolean null=YES default=-
+COLUMN my_payout_readiness.provider_id uuid null=YES default=-
+COLUMN my_reports.created_at timestamp with time zone null=YES default=-
+COLUMN my_reports.id uuid null=YES default=-
+COLUMN my_reports.reason USER-DEFINED null=YES default=-
+COLUMN my_reports.resolved_at timestamp with time zone null=YES default=-
+COLUMN my_reports.status USER-DEFINED null=YES default=-
+COLUMN my_verification.id uuid null=YES default=-
+COLUMN my_verification.phone_verified boolean null=YES default=-
+COLUMN my_verification.phone_verified_at timestamp with time zone null=YES default=-
+COLUMN paid_sessions.accepted_at timestamp with time zone null=YES default=-
+COLUMN paid_sessions.call_id uuid null=YES default=-
+COLUMN paid_sessions.channel USER-DEFINED null=NO default=-
+COLUMN paid_sessions.conversation_id uuid null=NO default=-
+COLUMN paid_sessions.created_at timestamp with time zone null=NO default=now()
+COLUMN paid_sessions.economics_config_version_id uuid null=YES default=-
+COLUMN paid_sessions.end_reason text null=YES default=-
+COLUMN paid_sessions.ended_at timestamp with time zone null=YES default=-
+COLUMN paid_sessions.id uuid null=NO default=gen_random_uuid()
+COLUMN paid_sessions.last_activity_at timestamp with time zone null=YES default=-
+COLUMN paid_sessions.member_id uuid null=NO default=-
+COLUMN paid_sessions.minutes_billed integer null=NO default=0
+COLUMN paid_sessions.next_bill_at timestamp with time zone null=YES default=-
+COLUMN paid_sessions.payout_hold_days integer null=YES default=-
+COLUMN paid_sessions.provider_id uuid null=NO default=-
+COLUMN paid_sessions.provider_share_percent integer null=YES default=-
+COLUMN paid_sessions.rate_tokens_per_min integer null=YES default=-
+COLUMN paid_sessions.request_id uuid null=YES default=-
+COLUMN paid_sessions.started_at timestamp with time zone null=YES default=-
+COLUMN paid_sessions.status USER-DEFINED null=NO default='pending_leases'::paid_session_status
+COLUMN paid_sessions.tokens_debited integer null=NO default=0
+COLUMN paid_sessions.warning_at timestamp with time zone null=YES default=-
+COLUMN pending_call_pushes.call_id uuid null=YES default=-
+COLUMN pending_call_pushes.caller_avatar_url text null=YES default=-
+COLUMN pending_call_pushes.caller_display_name text null=YES default=-
+COLUMN pending_call_pushes.conversation_id uuid null=YES default=-
+COLUMN pending_call_pushes.created_at timestamp with time zone null=YES default=-
+COLUMN pending_call_pushes.media_backend USER-DEFINED null=YES default=-
+COLUMN pending_call_pushes.media_experiment_id text null=YES default=-
+COLUMN pending_call_pushes.medium USER-DEFINED null=YES default=-
+COLUMN pending_call_pushes.peer_id uuid null=YES default=-
+COLUMN pending_call_pushes.platform text null=YES default=-
+COLUMN pending_call_pushes.token text null=YES default=-
+COLUMN pending_pushes.conversation_id uuid null=YES default=-
+COLUMN pending_pushes.created_at timestamp with time zone null=YES default=-
+COLUMN pending_pushes.message_id uuid null=YES default=-
+COLUMN pending_pushes.peer_id uuid null=YES default=-
+COLUMN pending_pushes.platform text null=YES default=-
+COLUMN pending_pushes.sender_avatar_url text null=YES default=-
+COLUMN pending_pushes.sender_display_name text null=YES default=-
+COLUMN pending_pushes.token text null=YES default=-
+COLUMN pg_all_foreign_keys.fk_columns ARRAY null=YES default=-
+COLUMN pg_all_foreign_keys.fk_constraint_name name null=YES default=-
+COLUMN pg_all_foreign_keys.fk_schema_name name null=YES default=-
+COLUMN pg_all_foreign_keys.fk_table_name name null=YES default=-
+COLUMN pg_all_foreign_keys.fk_table_oid oid null=YES default=-
+COLUMN pg_all_foreign_keys.is_deferrable boolean null=YES default=-
+COLUMN pg_all_foreign_keys.is_deferred boolean null=YES default=-
+COLUMN pg_all_foreign_keys.match_type text null=YES default=-
+COLUMN pg_all_foreign_keys.on_delete text null=YES default=-
+COLUMN pg_all_foreign_keys.on_update text null=YES default=-
+COLUMN pg_all_foreign_keys.pk_columns ARRAY null=YES default=-
+COLUMN pg_all_foreign_keys.pk_constraint_name name null=YES default=-
+COLUMN pg_all_foreign_keys.pk_index_name name null=YES default=-
+COLUMN pg_all_foreign_keys.pk_schema_name name null=YES default=-
+COLUMN pg_all_foreign_keys.pk_table_name name null=YES default=-
+COLUMN pg_all_foreign_keys.pk_table_oid oid null=YES default=-
+COLUMN policy_acceptances.accepted_at timestamp with time zone null=NO default=now()
+COLUMN policy_acceptances.device_info text null=YES default=-
+COLUMN policy_acceptances.id uuid null=NO default=gen_random_uuid()
+COLUMN policy_acceptances.policy_kind text null=NO default=-
+COLUMN policy_acceptances.user_id uuid null=NO default=-
+COLUMN policy_acceptances.version_id uuid null=NO default=-
+COLUMN policy_versions.created_at timestamp with time zone null=NO default=now()
+COLUMN policy_versions.effective_at timestamp with time zone null=NO default=now()
+COLUMN policy_versions.id uuid null=NO default=gen_random_uuid()
+COLUMN policy_versions.is_material boolean null=NO default=true
+COLUMN policy_versions.kind text null=NO default=-
+COLUMN policy_versions.summary text null=NO default=''::text
+COLUMN policy_versions.url text null=NO default=-
+COLUMN policy_versions.version integer null=NO default=-
+COLUMN profiles.about text null=YES default=-
+COLUMN profiles.age_bracket text null=YES default=-
+COLUMN profiles.audio_enabled boolean null=NO default=true
+COLUMN profiles.avatar_url text null=YES default=-
+COLUMN profiles.chat_enabled boolean null=NO default=true
+COLUMN profiles.created_at timestamp with time zone null=NO default=now()
+COLUMN profiles.date_of_birth date null=YES default=-
+COLUMN profiles.display_name text null=YES default=-
+COLUMN profiles.engagement_nudged_at timestamp with time zone null=YES default=-
+COLUMN profiles.gender text null=YES default=-
+COLUMN profiles.headline text null=YES default=-
+COLUMN profiles.id uuid null=NO default=-
+COLUMN profiles.identity_state text null=NO default='none'::text
+COLUMN profiles.identity_verified_at timestamp with time zone null=YES default=-
+COLUMN profiles.is_available boolean null=NO default=false
+COLUMN profiles.languages ARRAY null=NO default='{}'::text[]
+COLUMN profiles.last_active_at timestamp with time zone null=YES default=-
+COLUMN profiles.last_refill_at timestamp with time zone null=YES default=-
+COLUMN profiles.median_reply_seconds integer null=YES default=-
+COLUMN profiles.phone_e164 text null=YES default=-
+COLUMN profiles.phone_verified_at timestamp with time zone null=YES default=-
+COLUMN profiles.preferred_languages ARRAY null=NO default='{}'::text[]
+COLUMN profiles.presence USER-DEFINED null=NO default='hidden'::presence_choice
+COLUMN profiles.presence_visible boolean null=NO default=false
+COLUMN profiles.profile_completed_at timestamp with time zone null=YES default=-
+COLUMN profiles.promo_balance integer null=NO default=0
+COLUMN profiles.provider_category text null=NO default='listener'::text
+COLUMN profiles.purchased_balance integer null=NO default=0
+COLUMN profiles.rating_avg numeric null=YES default=-
+COLUMN profiles.rating_count integer null=NO default=0
+COLUMN profiles.role USER-DEFINED null=NO default='member'::user_role
+COLUMN profiles.suspended_until timestamp with time zone null=YES default=-
+COLUMN profiles.token_balance integer null=NO default=0
+COLUMN profiles.username text null=YES default='Friend'::text
+COLUMN profiles.video_enabled boolean null=NO default=true
+COLUMN provider_applications.about text null=YES default=-
+COLUMN provider_applications.created_at timestamp with time zone null=NO default=now()
+COLUMN provider_applications.date_of_birth date null=YES default=-
+COLUMN provider_applications.display_name text null=YES default=-
+COLUMN provider_applications.gender text null=YES default=-
+COLUMN provider_applications.headline text null=YES default=-
+COLUMN provider_applications.id uuid null=NO default=gen_random_uuid()
+COLUMN provider_applications.languages ARRAY null=NO default='{}'::text[]
+COLUMN provider_applications.missing_fields ARRAY null=NO default='{}'::text[]
+COLUMN provider_applications.reviewed_at timestamp with time zone null=YES default=-
+COLUMN provider_applications.reviewer_note text null=YES default=-
+COLUMN provider_applications.status USER-DEFINED null=NO default='draft'::application_status
+COLUMN provider_applications.submitted_at timestamp with time zone null=YES default=-
+COLUMN provider_applications.user_id uuid null=NO default=-
+COLUMN provider_directory.about text null=YES default=-
+COLUMN provider_directory.age integer null=YES default=-
+COLUMN provider_directory.audio_enabled boolean null=YES default=-
+COLUMN provider_directory.avatar_url text null=YES default=-
+COLUMN provider_directory.chat_enabled boolean null=YES default=-
+COLUMN provider_directory.created_at timestamp with time zone null=YES default=-
+COLUMN provider_directory.display_name text null=YES default=-
+COLUMN provider_directory.gender text null=YES default=-
+COLUMN provider_directory.headline text null=YES default=-
+COLUMN provider_directory.id uuid null=YES default=-
+COLUMN provider_directory.is_available boolean null=YES default=-
+COLUMN provider_directory.languages ARRAY null=YES default=-
+COLUMN provider_directory.last_active_at timestamp with time zone null=YES default=-
+COLUMN provider_directory.median_reply_seconds integer null=YES default=-
+COLUMN provider_directory.presence USER-DEFINED null=YES default=-
+COLUMN provider_directory.provider_category text null=YES default=-
+COLUMN provider_directory.rating_avg numeric null=YES default=-
+COLUMN provider_directory.rating_count integer null=YES default=-
+COLUMN provider_directory.video_enabled boolean null=YES default=-
+COLUMN provider_earnings.first_earned_at timestamp with time zone null=YES default=-
+COLUMN provider_earnings.gross_tokens bigint null=YES default=-
+COLUMN provider_earnings.members_served bigint null=YES default=-
+COLUMN provider_earnings.minutes_billed bigint null=YES default=-
+COLUMN provider_earnings.provider_tokens bigint null=YES default=-
+COLUMN provider_earnings.sessions bigint null=YES default=-
+COLUMN provider_earnings_ledger.created_at timestamp with time zone null=NO default=now()
+COLUMN provider_earnings_ledger.gross_tokens integer null=NO default=-
+COLUMN provider_earnings_ledger.hold_until timestamp with time zone null=NO default=-
+COLUMN provider_earnings_ledger.id uuid null=NO default=gen_random_uuid()
+COLUMN provider_earnings_ledger.minutes_billed integer null=NO default=-
+COLUMN provider_earnings_ledger.payout_batch_id uuid null=YES default=-
+COLUMN provider_earnings_ledger.provider_id uuid null=NO default=-
+COLUMN provider_earnings_ledger.provider_tokens integer null=NO default=-
+COLUMN provider_earnings_ledger.rate_per_min integer null=NO default=-
+COLUMN provider_earnings_ledger.session_id uuid null=NO default=-
+COLUMN provider_earnings_ledger.status text null=NO default='pending'::text
+COLUMN provider_earnings_ledger.transaction_id uuid null=YES default=-
+COLUMN provider_payout_accounts.account_holder_name text null=YES default=-
+COLUMN provider_payout_accounts.account_number text null=YES default=-
+COLUMN provider_payout_accounts.cashfree_beneficiary_id text null=YES default=-
+COLUMN provider_payout_accounts.created_at timestamp with time zone null=NO default=now()
+COLUMN provider_payout_accounts.id uuid null=NO default=gen_random_uuid()
+COLUMN provider_payout_accounts.ifsc text null=YES default=-
+COLUMN provider_payout_accounts.is_default boolean null=NO default=true
+COLUMN provider_payout_accounts.method text null=NO default=-
+COLUMN provider_payout_accounts.name_at_bank text null=YES default=-
+COLUMN provider_payout_accounts.name_match_score numeric null=YES default=-
+COLUMN provider_payout_accounts.provider_id uuid null=NO default=-
+COLUMN provider_payout_accounts.updated_at timestamp with time zone null=NO default=now()
+COLUMN provider_payout_accounts.upi_vpa text null=YES default=-
+COLUMN provider_payout_accounts.verification_error text null=YES default=-
+COLUMN provider_payout_accounts.verification_ref text null=YES default=-
+COLUMN provider_payout_accounts.verification_status text null=NO default='unverified'::text
+COLUMN provider_payout_accounts.verified_at timestamp with time zone null=YES default=-
+COLUMN provider_payout_batches.cashfree_batch_id text null=YES default=-
+COLUMN provider_payout_batches.completed_at timestamp with time zone null=YES default=-
+COLUMN provider_payout_batches.created_at timestamp with time zone null=NO default=now()
+COLUMN provider_payout_batches.id uuid null=NO default=gen_random_uuid()
+COLUMN provider_payout_batches.initiated_at timestamp with time zone null=YES default=-
+COLUMN provider_payout_batches.provider_id uuid null=NO default=-
+COLUMN provider_payout_batches.status text null=NO default='pending'::text
+COLUMN provider_payout_batches.total_paise integer null=NO default=-
+COLUMN provider_payout_batches.total_tokens integer null=NO default=-
+COLUMN provider_photos.created_at timestamp with time zone null=NO default=clock_timestamp()
+COLUMN provider_photos.id uuid null=NO default=gen_random_uuid()
+COLUMN provider_photos.is_primary boolean null=NO default=false
+COLUMN provider_photos.provider_id uuid null=NO default=-
+COLUMN provider_photos.url text null=NO default=-
+COLUMN provider_review_queue.about text null=YES default=-
+COLUMN provider_review_queue.created_at timestamp with time zone null=YES default=-
+COLUMN provider_review_queue.date_of_birth date null=YES default=-
+COLUMN provider_review_queue.display_name text null=YES default=-
+COLUMN provider_review_queue.gender text null=YES default=-
+COLUMN provider_review_queue.headline text null=YES default=-
+COLUMN provider_review_queue.id uuid null=YES default=-
+COLUMN provider_review_queue.languages ARRAY null=YES default=-
+COLUMN provider_review_queue.missing_fields ARRAY null=YES default=-
+COLUMN provider_review_queue.reviewed_at timestamp with time zone null=YES default=-
+COLUMN provider_review_queue.reviewer_note text null=YES default=-
+COLUMN provider_review_queue.status USER-DEFINED null=YES default=-
+COLUMN provider_review_queue.submitted_at timestamp with time zone null=YES default=-
+COLUMN provider_review_queue.user_id uuid null=YES default=-
+COLUMN provider_tax_profile.created_at timestamp with time zone null=NO default=now()
+COLUMN provider_tax_profile.failure_reason text null=YES default=-
+COLUMN provider_tax_profile.pan text null=YES default=-
+COLUMN provider_tax_profile.pan_name text null=YES default=-
+COLUMN provider_tax_profile.provider_id uuid null=NO default=-
+COLUMN provider_tax_profile.status text null=NO default='not_provided'::text
+COLUMN provider_tax_profile.updated_at timestamp with time zone null=NO default=now()
+COLUMN provider_tax_profile.verification_ref text null=YES default=-
+COLUMN provider_tax_profile.verified_at timestamp with time zone null=YES default=-
+COLUMN provider_tax_profile.verified_dob date null=YES default=-
+COLUMN push_tokens.created_at timestamp with time zone null=NO default=now()
+COLUMN push_tokens.last_seen_at timestamp with time zone null=NO default=now()
+COLUMN push_tokens.platform text null=NO default='android'::text
+COLUMN push_tokens.token text null=NO default=-
+COLUMN push_tokens.user_id uuid null=NO default=-
+COLUMN refund_reviews.amount_paise integer null=NO default=-
+COLUMN refund_reviews.created_at timestamp with time zone null=NO default=now()
+COLUMN refund_reviews.id uuid null=NO default=gen_random_uuid()
+COLUMN refund_reviews.notes text null=YES default=-
+COLUMN refund_reviews.purchased_tokens integer null=NO default=-
+COLUMN refund_reviews.resolved_at timestamp with time zone null=YES default=-
+COLUMN refund_reviews.resolved_by text null=YES default=-
+COLUMN refund_reviews.status text null=NO default='pending'::text
+COLUMN refund_reviews.transaction_id uuid null=NO default=-
+COLUMN refund_reviews.user_id uuid null=NO default=-
+COLUMN report_evidence.body text null=YES default=-
+COLUMN report_evidence.captured_at timestamp with time zone null=NO default=-
+COLUMN report_evidence.case_id uuid null=NO default=-
+COLUMN report_evidence.created_at timestamp with time zone null=NO default=now()
+COLUMN report_evidence.id uuid null=NO default=gen_random_uuid()
+COLUMN report_evidence.kind text null=NO default=-
+COLUMN report_evidence.retain_until timestamp with time zone null=NO default=-
+COLUMN report_evidence.storage_path text null=YES default=-
+COLUMN reports.conversation_id uuid null=YES default=-
+COLUMN reports.created_at timestamp with time zone null=NO default=now()
+COLUMN reports.detail text null=YES default=-
+COLUMN reports.evidence_at timestamp with time zone null=YES default=-
+COLUMN reports.evidence_body text null=YES default=-
+COLUMN reports.evidence_voice_path text null=YES default=-
+COLUMN reports.id uuid null=NO default=gen_random_uuid()
+COLUMN reports.message_id uuid null=YES default=-
+COLUMN reports.reason USER-DEFINED null=NO default=-
+COLUMN reports.reporter_id uuid null=YES default=-
+COLUMN reports.resolved_at timestamp with time zone null=YES default=-
+COLUMN reports.resolver_note text null=YES default=-
+COLUMN reports.status USER-DEFINED null=NO default='open'::report_status
+COLUMN reports.subject_user_id uuid null=YES default=-
+COLUMN reviews.comment text null=YES default=-
+COLUMN reviews.conversation_id uuid null=NO default=-
+COLUMN reviews.created_at timestamp with time zone null=NO default=now()
+COLUMN reviews.id uuid null=NO default=gen_random_uuid()
+COLUMN reviews.member_id uuid null=NO default=-
+COLUMN reviews.provider_id uuid null=NO default=-
+COLUMN reviews.rating smallint null=NO default=-
+COLUMN reviews.session_id uuid null=YES default=-
+COLUMN safety_metrics.active_users bigint null=YES default=-
+COLUMN safety_metrics.blocks_created bigint null=YES default=-
+COLUMN safety_metrics.calls_rejected bigint null=YES default=-
+COLUMN safety_metrics.calls_started bigint null=YES default=-
+COLUMN safety_metrics.day timestamp with time zone null=YES default=-
+COLUMN safety_metrics.messages_sent bigint null=YES default=-
+COLUMN safety_metrics.reports_submitted bigint null=YES default=-
+COLUMN safety_metrics.sends_rejected bigint null=YES default=-
+COLUMN safety_metrics.voice_notes_sent bigint null=YES default=-
+COLUMN session_leases.kind USER-DEFINED null=NO default='foreground'::lease_kind
+COLUMN session_leases.last_heartbeat_at timestamp with time zone null=NO default=now()
+COLUMN session_leases.session_id uuid null=NO default=-
+COLUMN session_leases.user_id uuid null=NO default=-
+COLUMN session_requests.channel USER-DEFINED null=NO default=-
+COLUMN session_requests.conversation_id uuid null=NO default=-
+COLUMN session_requests.created_at timestamp with time zone null=NO default=now()
+COLUMN session_requests.expires_at timestamp with time zone null=NO default=-
+COLUMN session_requests.id uuid null=NO default=gen_random_uuid()
+COLUMN session_requests.initiator_id uuid null=NO default=-
+COLUMN session_requests.recipient_id uuid null=NO default=-
+COLUMN session_requests.responded_at timestamp with time zone null=YES default=-
+COLUMN session_requests.status USER-DEFINED null=NO default='pending'::session_request_status
+COLUMN tap_funky.args text null=YES default=-
+COLUMN tap_funky.is_definer boolean null=YES default=-
+COLUMN tap_funky.is_strict boolean null=YES default=-
+COLUMN tap_funky.is_visible boolean null=YES default=-
+COLUMN tap_funky.kind "char" null=YES default=-
+COLUMN tap_funky.langoid oid null=YES default=-
+COLUMN tap_funky.name name null=YES default=-
+COLUMN tap_funky.oid oid null=YES default=-
+COLUMN tap_funky.owner name null=YES default=-
+COLUMN tap_funky.returns text null=YES default=-
+COLUMN tap_funky.returns_set boolean null=YES default=-
+COLUMN tap_funky.schema name null=YES default=-
+COLUMN tap_funky.volatility character(1) null=YES default=-
+COLUMN token_transactions.amount_paise integer null=NO default=-
+COLUMN token_transactions.config_version_id uuid null=YES default=-
+COLUMN token_transactions.created_at timestamp with time zone null=NO default=now()
+COLUMN token_transactions.gateway text null=YES default=-
+COLUMN token_transactions.gateway_order_id text null=YES default=-
+COLUMN token_transactions.gateway_ref text null=YES default=-
+COLUMN token_transactions.id uuid null=NO default=gen_random_uuid()
+COLUMN token_transactions.kind text null=NO default=-
+COLUMN token_transactions.provider_id uuid null=YES default=-
+COLUMN token_transactions.session_id uuid null=YES default=-
+COLUMN token_transactions.status text null=NO default='succeeded'::text
+COLUMN token_transactions.tokens_delta integer null=NO default=-
+COLUMN token_transactions.updated_at timestamp with time zone null=NO default=now()
+COLUMN token_transactions.user_id uuid null=NO default=-
+CONSTRAINT app_flags.app_flags_pkey PRIMARY KEY (key)
+CONSTRAINT blocks.blocks_blocked_id_fkey FOREIGN KEY (blocked_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT blocks.blocks_blocker_id_fkey FOREIGN KEY (blocker_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT blocks.blocks_pkey PRIMARY KEY (blocker_id, blocked_id)
+CONSTRAINT blocks.no_self_block CHECK ((blocker_id <> blocked_id))
+CONSTRAINT call_media_overrides.call_media_overrides_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+CONSTRAINT call_media_overrides.call_media_overrides_experiment_id_check CHECK (((length(experiment_id) >= 1) AND (length(experiment_id) <= 80)))
+CONSTRAINT call_media_overrides.call_media_overrides_pkey PRIMARY KEY (conversation_id)
+CONSTRAINT call_media_overrides.call_media_overrides_requested_by_fkey FOREIGN KEY (requested_by) REFERENCES auth.users(id) ON DELETE CASCADE
+CONSTRAINT call_media_test_allowlist.call_media_test_allowlist_pkey PRIMARY KEY (user_id)
+CONSTRAINT call_media_test_allowlist.call_media_test_allowlist_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+CONSTRAINT call_quality_runs.call_quality_runs_call_id_fkey FOREIGN KEY (call_id) REFERENCES calls(id) ON DELETE CASCADE
+CONSTRAINT call_quality_runs.call_quality_runs_call_id_user_id_key UNIQUE (call_id, user_id)
+CONSTRAINT call_quality_runs.call_quality_runs_pkey PRIMARY KEY (id)
+CONSTRAINT call_quality_runs.call_quality_runs_role_check CHECK ((role = ANY (ARRAY['caller'::text, 'callee'::text])))
+CONSTRAINT call_quality_runs.call_quality_runs_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+CONSTRAINT call_quality_samples.call_quality_samples_pkey PRIMARY KEY (id)
+CONSTRAINT call_quality_samples.call_quality_samples_quality_check CHECK (((quality >= 0) AND (quality <= 6)))
+CONSTRAINT call_quality_samples.call_quality_samples_run_id_fkey FOREIGN KEY (run_id) REFERENCES call_quality_runs(id) ON DELETE CASCADE
+CONSTRAINT calls.billing_implies_an_answer CHECK (((started_at IS NOT NULL) OR ((minutes_billed = 0) AND (tokens_debited = 0))))
+CONSTRAINT calls.call_ends_after_it_starts CHECK (((ended_at IS NULL) OR (started_at IS NULL) OR (ended_at >= started_at)))
+CONSTRAINT calls.call_parties_distinct CHECK ((caller_id <> callee_id))
+CONSTRAINT calls.calls_callee_id_fkey FOREIGN KEY (callee_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT calls.calls_caller_id_fkey FOREIGN KEY (caller_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT calls.calls_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+CONSTRAINT calls.calls_end_reason_check CHECK (((end_reason IS NULL) OR (end_reason = ANY (ARRAY['hangup'::text, 'declined'::text, 'unanswered'::text, 'dropped'::text, 'out_of_tokens'::text, 'blocked'::text, 'suspended'::text, 'media_failed'::text]))))
+CONSTRAINT calls.calls_media_assignment_kind_check CHECK ((media_assignment_kind = ANY (ARRAY['sticky'::text, 'harness'::text, 'default'::text])))
+CONSTRAINT calls.calls_minutes_billed_check CHECK ((minutes_billed >= 0))
+CONSTRAINT calls.calls_pkey PRIMARY KEY (id)
+CONSTRAINT calls.calls_session_request_id_fkey FOREIGN KEY (session_request_id) REFERENCES session_requests(id)
+CONSTRAINT calls.calls_tokens_debited_check CHECK ((tokens_debited >= 0))
+CONSTRAINT conversation_opener_templates.conversation_opener_templates_body_check CHECK (((length(btrim(body)) > 0) AND (length(body) <= 4000)))
+CONSTRAINT conversation_opener_templates.conversation_opener_templates_pkey PRIMARY KEY (step)
+CONSTRAINT conversation_opener_templates.conversation_opener_templates_step_check CHECK ((step > 0))
+CONSTRAINT conversation_thread_meta.conversation_thread_meta_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+CONSTRAINT conversation_thread_meta.conversation_thread_meta_last_preview_kind_check CHECK ((last_preview_kind = ANY (ARRAY['text'::text, 'voice'::text, 'image'::text, 'call'::text, 'session'::text])))
+CONSTRAINT conversation_thread_meta.conversation_thread_meta_pkey PRIMARY KEY (conversation_id)
+CONSTRAINT conversations.conversations_member_id_fkey FOREIGN KEY (member_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT conversations.conversations_member_id_provider_id_key UNIQUE (member_id, provider_id)
+CONSTRAINT conversations.conversations_pkey PRIMARY KEY (id)
+CONSTRAINT conversations.conversations_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT conversations.participants_distinct CHECK ((member_id <> provider_id))
+CONSTRAINT events.events_pkey PRIMARY KEY (id)
+CONSTRAINT events.events_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE SET NULL
+CONSTRAINT invoice_counters.invoice_counters_pkey PRIMARY KEY (fy)
+CONSTRAINT invoices.invoices_document_type_check CHECK ((document_type = ANY (ARRAY['tax_invoice'::text, 'bill_of_supply'::text])))
+CONSTRAINT invoices.invoices_invoice_number_key UNIQUE (invoice_number)
+CONSTRAINT invoices.invoices_pkey PRIMARY KEY (id)
+CONSTRAINT invoices.invoices_transaction_id_fkey FOREIGN KEY (transaction_id) REFERENCES token_transactions(id) ON DELETE RESTRICT
+CONSTRAINT invoices.invoices_transaction_id_key UNIQUE (transaction_id)
+CONSTRAINT media_channel_usage.media_channel_usage_call_id_fkey FOREIGN KEY (call_id) REFERENCES calls(id) ON DELETE CASCADE
+CONSTRAINT media_channel_usage.media_channel_usage_conversation_minutes_check CHECK ((conversation_minutes >= 0))
+CONSTRAINT media_channel_usage.media_channel_usage_medium_check CHECK ((medium = ANY (ARRAY['voice'::text, 'video'::text])))
+CONSTRAINT media_channel_usage.media_channel_usage_pkey PRIMARY KEY (call_id, source)
+CONSTRAINT media_channel_usage.media_channel_usage_source_check CHECK ((source = ANY (ARRAY['product_estimate'::text, 'agora_analytics'::text, 'manual'::text])))
+CONSTRAINT media_cogs_recon_alerts.media_cogs_recon_alerts_call_id_fkey FOREIGN KEY (call_id) REFERENCES calls(id) ON DELETE CASCADE
+CONSTRAINT media_cogs_recon_alerts.media_cogs_recon_alerts_kind_check CHECK ((kind = ANY (ARRAY['day_std_min_variance'::text, 'call_product_vs_analytics'::text])))
+CONSTRAINT media_cogs_recon_alerts.media_cogs_recon_alerts_pkey PRIMARY KEY (id)
+CONSTRAINT media_vendor_usage_daily.media_vendor_usage_daily_backend_project_id_usage_date_sour_key UNIQUE (backend, project_id, usage_date, source)
+CONSTRAINT media_vendor_usage_daily.media_vendor_usage_daily_duration_audio_seconds_check CHECK ((duration_audio_seconds >= 0))
+CONSTRAINT media_vendor_usage_daily.media_vendor_usage_daily_duration_video_1080p_seconds_check CHECK ((duration_video_1080p_seconds >= 0))
+CONSTRAINT media_vendor_usage_daily.media_vendor_usage_daily_duration_video_2k_seconds_check CHECK ((duration_video_2k_seconds >= 0))
+CONSTRAINT media_vendor_usage_daily.media_vendor_usage_daily_duration_video_4k_seconds_check CHECK ((duration_video_4k_seconds >= 0))
+CONSTRAINT media_vendor_usage_daily.media_vendor_usage_daily_duration_video_hd_seconds_check CHECK ((duration_video_hd_seconds >= 0))
+CONSTRAINT media_vendor_usage_daily.media_vendor_usage_daily_duration_video_hdp_seconds_check CHECK ((duration_video_hdp_seconds >= 0))
+CONSTRAINT media_vendor_usage_daily.media_vendor_usage_daily_pkey PRIMARY KEY (id)
+CONSTRAINT media_vendor_usage_daily.media_vendor_usage_daily_source_check CHECK ((source = ANY (ARRAY['agora_console_api'::text, 'invoice_csv'::text, 'manual'::text])))
+CONSTRAINT message_reactions.message_reactions_emoji_check CHECK ((emoji = ANY (ARRAY['❤️'::text, '👍'::text, '😂'::text, '😮'::text, '😢'::text, '🙏'::text])))
+CONSTRAINT message_reactions.message_reactions_message_id_fkey FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+CONSTRAINT message_reactions.message_reactions_pkey PRIMARY KEY (message_id, user_id)
+CONSTRAINT message_reactions.message_reactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT messages.attachment_path_is_scoped CHECK (((attachment_path IS NULL) OR (attachment_path ~ '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}/[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}\.(jpg|jpeg|png|webp)$'::text)))
+CONSTRAINT messages.message_carries_one_payload CHECK ((((body IS NOT NULL) AND (length(btrim(body)) > 0) AND (length(body) <= 4000) AND (voice_path IS NULL) AND (voice_duration_ms IS NULL) AND (attachment_path IS NULL) AND (voice_peaks IS NULL)) OR ((body IS NULL) AND (voice_path IS NOT NULL) AND ((voice_duration_ms >= 1000) AND (voice_duration_ms <= 180000)) AND (attachment_path IS NULL) AND voice_peaks_ok(voice_peaks)) OR ((body IS NULL) AND (voice_path IS NULL) AND (voice_duration_ms IS NULL) AND (attachment_path IS NOT NULL) AND (attachment_type = 'image'::text) AND (attachment_width > 0) AND (attachment_height > 0) AND (voice_peaks IS NULL))))
+CONSTRAINT messages.messages_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+CONSTRAINT messages.messages_pkey PRIMARY KEY (id)
+CONSTRAINT messages.messages_reply_to_id_fkey FOREIGN KEY (reply_to_id) REFERENCES messages(id) ON DELETE SET NULL
+CONSTRAINT messages.messages_sender_id_fkey FOREIGN KEY (sender_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT messages.messages_session_id_fkey FOREIGN KEY (session_id) REFERENCES paid_sessions(id)
+CONSTRAINT messages.voice_path_is_scoped CHECK (((voice_path IS NULL) OR (voice_path ~ '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}/[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}\.m4a$'::text)))
+CONSTRAINT moderation_actions.moderation_actions_action_check CHECK ((action = ANY (ARRAY['none'::text, 'warned'::text, 'suspended'::text, 'banned'::text, 'conversation_closed'::text])))
+CONSTRAINT moderation_actions.moderation_actions_pkey PRIMARY KEY (id)
+CONSTRAINT moderation_actions.moderation_actions_report_id_fkey FOREIGN KEY (report_id) REFERENCES reports(id) ON DELETE SET NULL
+CONSTRAINT moderation_actions.moderation_actions_subject_user_id_fkey FOREIGN KEY (subject_user_id) REFERENCES profiles(id) ON DELETE SET NULL
+CONSTRAINT moderation_cases.moderation_cases_pkey PRIMARY KEY (id)
+CONSTRAINT moderation_cases.moderation_cases_report_id_fkey FOREIGN KEY (report_id) REFERENCES reports(id)
+CONSTRAINT moderation_cases.moderation_cases_status_check CHECK ((status = ANY (ARRAY['open'::text, 'closed'::text])))
+CONSTRAINT paid_sessions.paid_sessions_call_fk FOREIGN KEY (call_id) REFERENCES calls(id)
+CONSTRAINT paid_sessions.paid_sessions_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES conversations(id)
+CONSTRAINT paid_sessions.paid_sessions_economics_config_version_id_fkey FOREIGN KEY (economics_config_version_id) REFERENCES admin.config_versions(id)
+CONSTRAINT paid_sessions.paid_sessions_end_reason_check CHECK ((end_reason = ANY (ARRAY['manual'::text, 'inactivity'::text, 'background'::text, 'disconnect_grace'::text, 'balance_exhausted'::text, 'blocked'::text, 'suspended'::text, 'system'::text])))
+CONSTRAINT paid_sessions.paid_sessions_member_id_fkey FOREIGN KEY (member_id) REFERENCES profiles(id)
+CONSTRAINT paid_sessions.paid_sessions_member_not_provider CHECK ((member_id <> provider_id))
+CONSTRAINT paid_sessions.paid_sessions_minutes_billed_check CHECK ((minutes_billed >= 0))
+CONSTRAINT paid_sessions.paid_sessions_pkey PRIMARY KEY (id)
+CONSTRAINT paid_sessions.paid_sessions_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES profiles(id)
+CONSTRAINT paid_sessions.paid_sessions_request_id_fkey FOREIGN KEY (request_id) REFERENCES session_requests(id)
+CONSTRAINT paid_sessions.paid_sessions_tokens_debited_check CHECK ((tokens_debited >= 0))
+CONSTRAINT policy_acceptances.policy_acceptances_pkey PRIMARY KEY (id)
+CONSTRAINT policy_acceptances.policy_acceptances_policy_kind_check CHECK ((policy_kind = ANY (ARRAY['terms'::text, 'privacy'::text])))
+CONSTRAINT policy_acceptances.policy_acceptances_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT policy_acceptances.policy_acceptances_user_id_policy_kind_version_id_key UNIQUE (user_id, policy_kind, version_id)
+CONSTRAINT policy_acceptances.policy_acceptances_version_id_fkey FOREIGN KEY (version_id) REFERENCES policy_versions(id)
+CONSTRAINT policy_versions.policy_versions_kind_check CHECK ((kind = ANY (ARRAY['terms'::text, 'privacy'::text])))
+CONSTRAINT policy_versions.policy_versions_kind_version_key UNIQUE (kind, version)
+CONSTRAINT policy_versions.policy_versions_pkey PRIMARY KEY (id)
+CONSTRAINT profiles.member_is_pseudonymous CHECK (((role = 'provider'::user_role) OR ((date_of_birth IS NULL) AND (gender IS NULL) AND (headline IS NULL))))
+CONSTRAINT profiles.profiles_about_check CHECK (((about IS NULL) OR (length(about) <= 2000)))
+CONSTRAINT profiles.profiles_age_bracket_values CHECK (((age_bracket IS NULL) OR (age_bracket = ANY (ARRAY['18-24'::text, '25-34'::text, '35-44'::text, '45+'::text]))))
+CONSTRAINT profiles.profiles_at_least_one_channel CHECK ((chat_enabled OR audio_enabled OR video_enabled))
+CONSTRAINT profiles.profiles_gender_check CHECK (((gender IS NULL) OR (gender = ANY (ARRAY['female'::text, 'male'::text, 'other'::text]))))
+CONSTRAINT profiles.profiles_headline_check CHECK (((headline IS NULL) OR ((length(btrim(headline)) >= 1) AND (length(btrim(headline)) <= 140))))
+CONSTRAINT profiles.profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE
+CONSTRAINT profiles.profiles_identity_state_check CHECK ((identity_state = ANY (ARRAY['none'::text, 'pending'::text, 'verified'::text])))
+CONSTRAINT profiles.profiles_identity_verified_consistent CHECK (((identity_state <> 'verified'::text) OR (identity_verified_at IS NOT NULL)))
+CONSTRAINT profiles.profiles_languages_sane CHECK (language_list_is_sane(languages))
+CONSTRAINT profiles.profiles_pkey PRIMARY KEY (id)
+CONSTRAINT profiles.profiles_preferred_languages_sane CHECK (language_list_is_sane(preferred_languages))
+CONSTRAINT profiles.profiles_promo_balance_check CHECK ((promo_balance >= 0))
+CONSTRAINT profiles.profiles_provider_category_values CHECK ((provider_category = ANY (ARRAY['listener'::text, 'astrologer'::text])))
+CONSTRAINT profiles.profiles_provider_has_a_language CHECK (((role <> 'provider'::user_role) OR (COALESCE(cardinality(languages), 0) > 0)))
+CONSTRAINT profiles.profiles_purchased_balance_check CHECK ((purchased_balance >= 0))
+CONSTRAINT profiles.profiles_token_balance_check CHECK ((token_balance >= 0))
+CONSTRAINT profiles.provider_has_display_name CHECK (((role <> 'provider'::user_role) OR (btrim(COALESCE(display_name, ''::text)) <> ''::text)))
+CONSTRAINT profiles.provider_is_adult CHECK (((role <> 'provider'::user_role) OR ((date_of_birth IS NOT NULL) AND (date_of_birth <= (CURRENT_DATE - '18 years'::interval)))))
+CONSTRAINT provider_applications.provider_applications_about_check CHECK (((about IS NULL) OR (length(about) <= 2000)))
+CONSTRAINT provider_applications.provider_applications_gender_check CHECK (((gender IS NULL) OR (gender = ANY (ARRAY['female'::text, 'male'::text, 'other'::text]))))
+CONSTRAINT provider_applications.provider_applications_pkey PRIMARY KEY (id)
+CONSTRAINT provider_applications.provider_applications_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT provider_applications.provider_applications_user_id_key UNIQUE (user_id)
+CONSTRAINT provider_earnings_ledger.provider_earnings_ledger_minutes_billed_check CHECK ((minutes_billed > 0))
+CONSTRAINT provider_earnings_ledger.provider_earnings_ledger_payout_batch_id_fkey FOREIGN KEY (payout_batch_id) REFERENCES provider_payout_batches(id)
+CONSTRAINT provider_earnings_ledger.provider_earnings_ledger_pkey PRIMARY KEY (id)
+CONSTRAINT provider_earnings_ledger.provider_earnings_ledger_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES profiles(id)
+CONSTRAINT provider_earnings_ledger.provider_earnings_ledger_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'cleared'::text, 'paid'::text, 'refunded'::text])))
+CONSTRAINT provider_earnings_ledger.provider_earnings_ledger_transaction_id_fkey FOREIGN KEY (transaction_id) REFERENCES token_transactions(id)
+CONSTRAINT provider_payout_accounts.payout_method_fields CHECK ((((method = 'upi'::text) AND (upi_vpa IS NOT NULL) AND (account_number IS NULL) AND (ifsc IS NULL)) OR ((method = 'bank'::text) AND (account_number IS NOT NULL) AND (ifsc IS NOT NULL) AND (upi_vpa IS NULL))))
+CONSTRAINT provider_payout_accounts.provider_payout_accounts_method_check CHECK ((method = ANY (ARRAY['upi'::text, 'bank'::text])))
+CONSTRAINT provider_payout_accounts.provider_payout_accounts_pkey PRIMARY KEY (id)
+CONSTRAINT provider_payout_accounts.provider_payout_accounts_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT provider_payout_accounts.provider_payout_accounts_verification_status_check CHECK ((verification_status = ANY (ARRAY['unverified'::text, 'pending'::text, 'verified'::text, 'failed'::text])))
+CONSTRAINT provider_payout_batches.provider_payout_batches_pkey PRIMARY KEY (id)
+CONSTRAINT provider_payout_batches.provider_payout_batches_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES profiles(id)
+CONSTRAINT provider_payout_batches.provider_payout_batches_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'processing'::text, 'completed'::text, 'failed'::text])))
+CONSTRAINT provider_payout_batches.provider_payout_batches_total_paise_check CHECK ((total_paise > 0))
+CONSTRAINT provider_payout_batches.provider_payout_batches_total_tokens_check CHECK ((total_tokens > 0))
+CONSTRAINT provider_photos.provider_photo_url_is_an_avatar CHECK ((url ~ '^https://[^/]+/storage/v1/object/public/avatars/.+'::text))
+CONSTRAINT provider_photos.provider_photos_pkey PRIMARY KEY (id)
+CONSTRAINT provider_photos.provider_photos_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT provider_tax_profile.provider_tax_profile_pkey PRIMARY KEY (provider_id)
+CONSTRAINT provider_tax_profile.provider_tax_profile_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT provider_tax_profile.provider_tax_profile_status_check CHECK ((status = ANY (ARRAY['not_provided'::text, 'pending'::text, 'verified'::text, 'failed'::text])))
+CONSTRAINT push_tokens.push_tokens_pkey PRIMARY KEY (token)
+CONSTRAINT push_tokens.push_tokens_platform_check CHECK ((platform = ANY (ARRAY['android'::text, 'ios'::text])))
+CONSTRAINT push_tokens.push_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+CONSTRAINT refund_reviews.refund_reviews_amount_paise_check CHECK ((amount_paise > 0))
+CONSTRAINT refund_reviews.refund_reviews_pkey PRIMARY KEY (id)
+CONSTRAINT refund_reviews.refund_reviews_purchased_tokens_check CHECK ((purchased_tokens > 0))
+CONSTRAINT refund_reviews.refund_reviews_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'denied'::text, 'processed'::text])))
+CONSTRAINT refund_reviews.refund_reviews_transaction_id_fkey FOREIGN KEY (transaction_id) REFERENCES token_transactions(id) ON DELETE CASCADE
+CONSTRAINT refund_reviews.refund_reviews_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id)
+CONSTRAINT report_evidence.report_evidence_case_id_fkey FOREIGN KEY (case_id) REFERENCES moderation_cases(id)
+CONSTRAINT report_evidence.report_evidence_kind_check CHECK ((kind = ANY (ARRAY['text'::text, 'voice'::text, 'image'::text, 'call_metadata'::text, 'statement'::text])))
+CONSTRAINT report_evidence.report_evidence_pkey PRIMARY KEY (id)
+CONSTRAINT reports.reports_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE SET NULL
+CONSTRAINT reports.reports_detail_check CHECK (((detail IS NULL) OR (length(detail) <= 2000)))
+CONSTRAINT reports.reports_message_id_fkey FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE SET NULL
+CONSTRAINT reports.reports_pkey PRIMARY KEY (id)
+CONSTRAINT reports.reports_reporter_id_fkey FOREIGN KEY (reporter_id) REFERENCES profiles(id) ON DELETE SET NULL
+CONSTRAINT reports.reports_subject_user_id_fkey FOREIGN KEY (subject_user_id) REFERENCES profiles(id) ON DELETE SET NULL
+CONSTRAINT reviews.reviews_comment_check CHECK (((comment IS NULL) OR (length(comment) <= 1000)))
+CONSTRAINT reviews.reviews_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+CONSTRAINT reviews.reviews_member_id_fkey FOREIGN KEY (member_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT reviews.reviews_pkey PRIMARY KEY (id)
+CONSTRAINT reviews.reviews_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT reviews.reviews_rating_check CHECK (((rating >= 1) AND (rating <= 5)))
+CONSTRAINT reviews.reviews_session_id_fkey FOREIGN KEY (session_id) REFERENCES paid_sessions(id) ON DELETE SET NULL
+CONSTRAINT session_leases.session_leases_pkey PRIMARY KEY (session_id, user_id)
+CONSTRAINT session_leases.session_leases_session_id_fkey FOREIGN KEY (session_id) REFERENCES paid_sessions(id) ON DELETE CASCADE
+CONSTRAINT session_leases.session_leases_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id)
+CONSTRAINT session_requests.session_requests_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+CONSTRAINT session_requests.session_requests_initiator_id_fkey FOREIGN KEY (initiator_id) REFERENCES profiles(id)
+CONSTRAINT session_requests.session_requests_no_self CHECK ((initiator_id <> recipient_id))
+CONSTRAINT session_requests.session_requests_pkey PRIMARY KEY (id)
+CONSTRAINT session_requests.session_requests_recipient_id_fkey FOREIGN KEY (recipient_id) REFERENCES profiles(id)
+CONSTRAINT token_transactions.token_transactions_amount_paise_check CHECK ((amount_paise >= 0))
+CONSTRAINT token_transactions.token_transactions_config_version_id_fkey FOREIGN KEY (config_version_id) REFERENCES admin.config_versions(id)
+CONSTRAINT token_transactions.token_transactions_kind_check CHECK ((kind = ANY (ARRAY['recharge'::text, 'refund'::text, 'adjustment'::text, 'promo_grant'::text, 'usage_debit'::text, 'provider_accrual'::text, 'payout'::text, 'account_close_hold'::text, 'refund_review'::text])))
+CONSTRAINT token_transactions.token_transactions_pkey PRIMARY KEY (id)
+CONSTRAINT token_transactions.token_transactions_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES profiles(id)
+CONSTRAINT token_transactions.token_transactions_status_check CHECK ((status = ANY (ARRAY['created'::text, 'succeeded'::text, 'failed'::text, 'refunded'::text])))
+CONSTRAINT token_transactions.token_transactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
+ENUM application_status = draft,submitted,under_review,needs_info,approved,rejected
+ENUM call_media_backend = current,livekit,agora
+ENUM call_medium = voice,video
+ENUM call_status = ringing,active,ended,missed,declined,failed
+ENUM lease_kind = foreground,connected
+ENUM message_origin = live,automated_opener
+ENUM paid_session_status = pending_leases,active,warning,grace,ended,reported_hold
+ENUM presence_choice = here,away,hidden
+ENUM report_reason = harassment,sexual_content,minor_safety,solicitation,self_harm,spam,impersonation,other,child_safety,threats_violence,hate_speech,privacy,illegal_activity,scam_spam
+ENUM report_status = open,actioned,dismissed
+ENUM session_channel = chat,audio,video
+ENUM session_request_status = pending,accepted,declined,expired,cancelled
+ENUM user_role = member,provider
+FUNCTION _add(text, integer) returns integer security=invoker
+FUNCTION _add(text, integer, text) returns integer security=invoker
+FUNCTION _alike(boolean, anyelement, text, text) returns text security=invoker
+FUNCTION _ancestor_of(name, name, integer) returns boolean security=invoker
+FUNCTION _ancestor_of(name, name, name, name, integer) returns boolean security=invoker
+FUNCTION _are(text, name[], name[], text) returns text security=invoker
+FUNCTION _areni(text, text[], text[], text) returns text security=invoker
+FUNCTION _array_to_sorted_string(name[], text) returns text security=invoker
+FUNCTION _assets_are(text, text[], text[], text) returns text security=invoker
+FUNCTION _cast_exists(name, name) returns boolean security=invoker
+FUNCTION _cast_exists(name, name, name) returns boolean security=invoker
+FUNCTION _cast_exists(name, name, name, name) returns boolean security=invoker
+FUNCTION _cdi(name, name, anyelement) returns text security=invoker
+FUNCTION _cdi(name, name, anyelement, text) returns text security=invoker
+FUNCTION _cdi(name, name, name, anyelement, text) returns text security=invoker
+FUNCTION _cexists(name, name) returns boolean security=invoker
+FUNCTION _cexists(name, name, name) returns boolean security=invoker
+FUNCTION _ckeys(name, character) returns name[] security=invoker
+FUNCTION _ckeys(name, name, character) returns name[] security=invoker
+FUNCTION _cleanup() returns boolean security=invoker
+FUNCTION _cmp_types(oid, name) returns boolean security=invoker
+FUNCTION _col_is_null(name, name, name, text, boolean) returns text security=invoker
+FUNCTION _col_is_null(name, name, text, boolean) returns text security=invoker
+FUNCTION _constraint(name, character, name[], text, text) returns text security=invoker
+FUNCTION _constraint(name, name, character, name[], text, text) returns text security=invoker
+FUNCTION _contract_on(text) returns "char" security=invoker
+FUNCTION _currtest() returns integer security=invoker
+FUNCTION _db_privs() returns name[] security=invoker
+FUNCTION _def_is(text, text, anyelement, text) returns text security=invoker
+FUNCTION _definer(name) returns boolean security=invoker
+FUNCTION _definer(name, name) returns boolean security=invoker
+FUNCTION _definer(name, name, name[]) returns boolean security=invoker
+FUNCTION _definer(name, name[]) returns boolean security=invoker
+FUNCTION _dexists(name) returns boolean security=invoker
+FUNCTION _dexists(name, name) returns boolean security=invoker
+FUNCTION _do_ne(text, text, text, text) returns text security=invoker
+FUNCTION _docomp(text, text, text, text) returns text security=invoker
+FUNCTION _error_diag(text, text, text, text, text, text, text, text, text, text) returns text security=invoker
+FUNCTION _expand_context(character) returns text security=invoker
+FUNCTION _expand_on(character) returns text security=invoker
+FUNCTION _expand_vol(character) returns text security=invoker
+FUNCTION _ext_exists(name) returns boolean security=invoker
+FUNCTION _ext_exists(name, name) returns boolean security=invoker
+FUNCTION _extensions() returns SETOF name security=invoker
+FUNCTION _extensions(name) returns SETOF name security=invoker
+FUNCTION _extras(character, name, name[]) returns name[] security=invoker
+FUNCTION _extras(character, name[]) returns name[] security=invoker
+FUNCTION _extras(character[], name, name[]) returns name[] security=invoker
+FUNCTION _extras(character[], name[]) returns name[] security=invoker
+FUNCTION _finish(integer, integer, integer, boolean) returns SETOF text security=invoker
+FUNCTION _fkexists(name, name, name[]) returns boolean security=invoker
+FUNCTION _fkexists(name, name[]) returns boolean security=invoker
+FUNCTION _fprivs_are(text, name, name[], text) returns text security=invoker
+FUNCTION _func_compare(name, name, anyelement, anyelement, text) returns text security=invoker
+FUNCTION _func_compare(name, name, boolean, text) returns text security=invoker
+FUNCTION _func_compare(name, name, name[], anyelement, anyelement, text) returns text security=invoker
+FUNCTION _func_compare(name, name, name[], boolean, text) returns text security=invoker
+FUNCTION _funkargs(name[]) returns text security=invoker
+FUNCTION _get(text) returns integer security=invoker
+FUNCTION _get_ac_privs(name, text) returns text[] security=invoker
+FUNCTION _get_col_ns_type(name, name, name) returns text security=invoker
+FUNCTION _get_col_privs(name, text, name) returns text[] security=invoker
+FUNCTION _get_col_type(name, name) returns text security=invoker
+FUNCTION _get_col_type(name, name, name) returns text security=invoker
+FUNCTION _get_context(name, name) returns "char" security=invoker
+FUNCTION _get_db_owner(name) returns name security=invoker
+FUNCTION _get_db_privs(name, text) returns text[] security=invoker
+FUNCTION _get_dtype(name) returns text security=invoker
+FUNCTION _get_dtype(name, text, boolean) returns text security=invoker
+FUNCTION _get_fdw_privs(name, text) returns text[] security=invoker
+FUNCTION _get_func_owner(name, name, name[]) returns name security=invoker
+FUNCTION _get_func_owner(name, name[]) returns name security=invoker
+FUNCTION _get_func_privs(text, text) returns text[] security=invoker
+FUNCTION _get_index_owner(name, name) returns name security=invoker
+FUNCTION _get_index_owner(name, name, name) returns name security=invoker
+FUNCTION _get_lang_privs(name, text) returns text[] security=invoker
+FUNCTION _get_language_owner(name) returns name security=invoker
+FUNCTION _get_latest(text) returns integer[] security=invoker
+FUNCTION _get_latest(text, integer) returns integer security=invoker
+FUNCTION _get_note(integer) returns text security=invoker
+FUNCTION _get_note(text) returns text security=invoker
+FUNCTION _get_opclass_owner(name) returns name security=invoker
+FUNCTION _get_opclass_owner(name, name) returns name security=invoker
+FUNCTION _get_rel_owner(character, name) returns name security=invoker
+FUNCTION _get_rel_owner(character, name, name) returns name security=invoker
+FUNCTION _get_rel_owner(character[], name) returns name security=invoker
+FUNCTION _get_rel_owner(character[], name, name) returns name security=invoker
+FUNCTION _get_rel_owner(name) returns name security=invoker
+FUNCTION _get_rel_owner(name, name) returns name security=invoker
+FUNCTION _get_schema_owner(name) returns name security=invoker
+FUNCTION _get_schema_privs(name, text) returns text[] security=invoker
+FUNCTION _get_sequence_privs(name, text) returns text[] security=invoker
+FUNCTION _get_server_privs(name, text) returns text[] security=invoker
+FUNCTION _get_table_privs(name, text) returns text[] security=invoker
+FUNCTION _get_tablespace_owner(name) returns name security=invoker
+FUNCTION _get_tablespaceprivs(name, text) returns text[] security=invoker
+FUNCTION _get_type_owner(name) returns name security=invoker
+FUNCTION _get_type_owner(name, name) returns name security=invoker
+FUNCTION _got_func(name) returns boolean security=invoker
+FUNCTION _got_func(name, name) returns boolean security=invoker
+FUNCTION _got_func(name, name, name[]) returns boolean security=invoker
+FUNCTION _got_func(name, name[]) returns boolean security=invoker
+FUNCTION _grolist(name) returns oid[] security=invoker
+FUNCTION _has_def(name, name) returns boolean security=invoker
+FUNCTION _has_def(name, name, name) returns boolean security=invoker
+FUNCTION _has_group(name) returns boolean security=invoker
+FUNCTION _has_role(name) returns boolean security=invoker
+FUNCTION _has_type(name, character[]) returns boolean security=invoker
+FUNCTION _has_type(name, name, character[]) returns boolean security=invoker
+FUNCTION _has_user(name) returns boolean security=invoker
+FUNCTION _hasc(name, character) returns boolean security=invoker
+FUNCTION _hasc(name, name, character) returns boolean security=invoker
+FUNCTION _have_index(name, name) returns boolean security=invoker
+FUNCTION _have_index(name, name, name) returns boolean security=invoker
+FUNCTION _ident_array_to_sorted_string(name[], text) returns text security=invoker
+FUNCTION _ident_array_to_string(name[], text) returns text security=invoker
+FUNCTION _ikeys(name, name) returns text[] security=invoker
+FUNCTION _ikeys(name, name, name) returns text[] security=invoker
+FUNCTION _inherited(name) returns boolean security=invoker
+FUNCTION _inherited(name, name) returns boolean security=invoker
+FUNCTION _is_indexed(name, name, text[]) returns boolean security=invoker
+FUNCTION _is_instead(name, name) returns boolean security=invoker
+FUNCTION _is_instead(name, name, name) returns boolean security=invoker
+FUNCTION _is_schema(name) returns boolean security=invoker
+FUNCTION _is_super(name) returns boolean security=invoker
+FUNCTION _is_trusted(name) returns boolean security=invoker
+FUNCTION _is_verbose() returns boolean security=invoker
+FUNCTION _keys(name, character) returns SETOF name[] security=invoker
+FUNCTION _keys(name, name, character) returns SETOF name[] security=invoker
+FUNCTION _lang(name) returns name security=invoker
+FUNCTION _lang(name, name) returns name security=invoker
+FUNCTION _lang(name, name, name[]) returns name security=invoker
+FUNCTION _lang(name, name[]) returns name security=invoker
+FUNCTION _missing(character, name, name[]) returns name[] security=invoker
+FUNCTION _missing(character, name[]) returns name[] security=invoker
+FUNCTION _missing(character[], name, name[]) returns name[] security=invoker
+FUNCTION _missing(character[], name[]) returns name[] security=invoker
+FUNCTION _nosuch(name, name, name[]) returns text security=invoker
+FUNCTION _op_exists(name, name, name) returns boolean security=invoker
+FUNCTION _op_exists(name, name, name, name) returns boolean security=invoker
+FUNCTION _op_exists(name, name, name, name, name) returns boolean security=invoker
+FUNCTION _opc_exists(name) returns boolean security=invoker
+FUNCTION _opc_exists(name, name) returns boolean security=invoker
+FUNCTION _partof(name, name) returns boolean security=invoker
+FUNCTION _partof(name, name, name, name) returns boolean security=invoker
+FUNCTION _parts(name) returns SETOF name security=invoker
+FUNCTION _parts(name, name) returns SETOF name security=invoker
+FUNCTION _pg_sv_column_array(oid, smallint[]) returns name[] security=invoker
+FUNCTION _pg_sv_table_accessible(oid, oid) returns boolean security=invoker
+FUNCTION _pg_sv_type_array(oid[]) returns name[] security=invoker
+FUNCTION _prokind(p_oid oid) returns "char" security=invoker
+FUNCTION _query(text) returns text security=invoker
+FUNCTION _refine_vol(text) returns text security=invoker
+FUNCTION _relcomp(text, anyarray, text, text) returns text security=invoker
+FUNCTION _relcomp(text, text, text, text) returns text security=invoker
+FUNCTION _relcomp(text, text, text, text, text) returns text security=invoker
+FUNCTION _relexists(name) returns boolean security=invoker
+FUNCTION _relexists(name, name) returns boolean security=invoker
+FUNCTION _relne(text, anyarray, text, text) returns text security=invoker
+FUNCTION _relne(text, text, text, text) returns text security=invoker
+FUNCTION _returns(name) returns text security=invoker
+FUNCTION _returns(name, name) returns text security=invoker
+FUNCTION _returns(name, name, name[]) returns text security=invoker
+FUNCTION _returns(name, name[]) returns text security=invoker
+FUNCTION _retval(text) returns text security=invoker
+FUNCTION _rexists(character, name) returns boolean security=invoker
+FUNCTION _rexists(character, name, name) returns boolean security=invoker
+FUNCTION _rexists(character[], name) returns boolean security=invoker
+FUNCTION _rexists(character[], name, name) returns boolean security=invoker
+FUNCTION _rule_on(name, name) returns "char" security=invoker
+FUNCTION _rule_on(name, name, name) returns "char" security=invoker
+FUNCTION _runem(text[], boolean) returns SETOF text security=invoker
+FUNCTION _runner(text[], text[], text[], text[], text[]) returns SETOF text security=invoker
+FUNCTION _set(integer, integer) returns integer security=invoker
+FUNCTION _set(text, integer) returns integer security=invoker
+FUNCTION _set(text, integer, text) returns integer security=invoker
+FUNCTION _strict(name) returns boolean security=invoker
+FUNCTION _strict(name, name) returns boolean security=invoker
+FUNCTION _strict(name, name, name[]) returns boolean security=invoker
+FUNCTION _strict(name, name[]) returns boolean security=invoker
+FUNCTION _table_privs() returns name[] security=invoker
+FUNCTION _temptable(anyarray, text) returns text security=invoker
+FUNCTION _temptable(text, text) returns text security=invoker
+FUNCTION _temptypes(text) returns text security=invoker
+FUNCTION _time_trials(text, integer, numeric) returns SETOF _time_trial_type security=invoker
+FUNCTION _tlike(boolean, text, text, text) returns text security=invoker
+FUNCTION _todo() returns text security=invoker
+FUNCTION _trig(name, name) returns boolean security=invoker
+FUNCTION _trig(name, name, name) returns boolean security=invoker
+FUNCTION _type_func("char", name) returns boolean security=invoker
+FUNCTION _type_func("char", name, name) returns boolean security=invoker
+FUNCTION _type_func("char", name, name, name[]) returns boolean security=invoker
+FUNCTION _type_func("char", name, name[]) returns boolean security=invoker
+FUNCTION _typename(name) returns text security=invoker
+FUNCTION _types_are(name, name[], text, character[]) returns text security=invoker
+FUNCTION _types_are(name[], text, character[]) returns text security=invoker
+FUNCTION _unalike(boolean, anyelement, text, text) returns text security=invoker
+FUNCTION _vol(name) returns text security=invoker
+FUNCTION _vol(name, name) returns text security=invoker
+FUNCTION _vol(name, name, name[]) returns text security=invoker
+FUNCTION _vol(name, name[]) returns text security=invoker
+FUNCTION accept_policy(p_version_id uuid, p_device_info text) returns void security=definer
+FUNCTION accept_session_request(p_request_id uuid) returns uuid security=definer
+FUNCTION accrue_ended_paid_session() returns trigger security=definer
+FUNCTION add_result(boolean, boolean, text, text, text) returns integer security=invoker
+FUNCTION alike(anyelement, text) returns text security=invoker
+FUNCTION alike(anyelement, text, text) returns text security=invoker
+FUNCTION announce_chat_open(p_conversation_id uuid) returns jsonb security=definer
+FUNCTION answer_call(p_call_id uuid) returns json security=definer
+FUNCTION any_column_privs_are(name, name, name, name[]) returns text security=invoker
+FUNCTION any_column_privs_are(name, name, name, name[], text) returns text security=invoker
+FUNCTION any_column_privs_are(name, name, name[]) returns text security=invoker
+FUNCTION any_column_privs_are(name, name, name[], text) returns text security=invoker
+FUNCTION approve_provider_application(p_user_id uuid, p_note text) returns void security=definer
+FUNCTION assert_call_inr_sync(p_call_id uuid) returns jsonb security=definer
+FUNCTION assign_call_media_backend() returns trigger security=definer
+FUNCTION bag_eq(text, anyarray) returns text security=invoker
+FUNCTION bag_eq(text, anyarray, text) returns text security=invoker
+FUNCTION bag_eq(text, text) returns text security=invoker
+FUNCTION bag_eq(text, text, text) returns text security=invoker
+FUNCTION bag_has(text, text) returns text security=invoker
+FUNCTION bag_has(text, text, text) returns text security=invoker
+FUNCTION bag_hasnt(text, text) returns text security=invoker
+FUNCTION bag_hasnt(text, text, text) returns text security=invoker
+FUNCTION bag_ne(text, anyarray) returns text security=invoker
+FUNCTION bag_ne(text, anyarray, text) returns text security=invoker
+FUNCTION bag_ne(text, text) returns text security=invoker
+FUNCTION bag_ne(text, text, text) returns text security=invoker
+FUNCTION call_minimum_minutes() returns integer security=invoker
+FUNCTION call_tokens_per_minute() returns integer security=invoker
+FUNCTION can(name, name[]) returns text security=invoker
+FUNCTION can(name, name[], text) returns text security=invoker
+FUNCTION can(name[]) returns text security=invoker
+FUNCTION can(name[], text) returns text security=invoker
+FUNCTION cast_context_is(name, name, text) returns text security=invoker
+FUNCTION cast_context_is(name, name, text, text) returns text security=invoker
+FUNCTION casts_are(text[]) returns text security=invoker
+FUNCTION casts_are(text[], text) returns text security=invoker
+FUNCTION check_display_name(p_name text) returns jsonb security=definer
+FUNCTION check_media_cogs_variance(p_since date) returns integer security=definer
+FUNCTION check_test(text, boolean) returns SETOF text security=invoker
+FUNCTION check_test(text, boolean, text) returns SETOF text security=invoker
+FUNCTION check_test(text, boolean, text, text) returns SETOF text security=invoker
+FUNCTION check_test(text, boolean, text, text, text) returns SETOF text security=invoker
+FUNCTION check_test(text, boolean, text, text, text, boolean) returns SETOF text security=invoker
+FUNCTION claim_daily_tokens() returns integer security=definer
+FUNCTION claim_member_profile(p_display_name text, p_avatar_seed text) returns jsonb security=definer
+FUNCTION claim_provider_application_review(p_user_id uuid) returns void security=definer
+FUNCTION claim_session_lease(p_session_id uuid, p_kind lease_kind) returns text security=definer
+FUNCTION clear_pending_earnings() returns integer security=definer
+FUNCTION cmp_ok(anyelement, text, anyelement) returns text security=invoker
+FUNCTION cmp_ok(anyelement, text, anyelement, text) returns text security=invoker
+FUNCTION col_default_is(name, name, anyelement) returns text security=invoker
+FUNCTION col_default_is(name, name, anyelement, text) returns text security=invoker
+FUNCTION col_default_is(name, name, name, anyelement, text) returns text security=invoker
+FUNCTION col_default_is(name, name, name, text, text) returns text security=invoker
+FUNCTION col_default_is(name, name, text) returns text security=invoker
+FUNCTION col_default_is(name, name, text, text) returns text security=invoker
+FUNCTION col_has_check(name, name) returns text security=invoker
+FUNCTION col_has_check(name, name, name, text) returns text security=invoker
+FUNCTION col_has_check(name, name, name[], text) returns text security=invoker
+FUNCTION col_has_check(name, name, text) returns text security=invoker
+FUNCTION col_has_check(name, name[]) returns text security=invoker
+FUNCTION col_has_check(name, name[], text) returns text security=invoker
+FUNCTION col_has_default(name, name) returns text security=invoker
+FUNCTION col_has_default(name, name, name, text) returns text security=invoker
+FUNCTION col_has_default(name, name, text) returns text security=invoker
+FUNCTION col_hasnt_default(name, name) returns text security=invoker
+FUNCTION col_hasnt_default(name, name, name, text) returns text security=invoker
+FUNCTION col_hasnt_default(name, name, text) returns text security=invoker
+FUNCTION col_is_fk(name, name) returns text security=invoker
+FUNCTION col_is_fk(name, name, name, text) returns text security=invoker
+FUNCTION col_is_fk(name, name, name[], text) returns text security=invoker
+FUNCTION col_is_fk(name, name, text) returns text security=invoker
+FUNCTION col_is_fk(name, name[]) returns text security=invoker
+FUNCTION col_is_fk(name, name[], text) returns text security=invoker
+FUNCTION col_is_null(schema_name name, table_name name, column_name name, description text) returns text security=invoker
+FUNCTION col_is_null(table_name name, column_name name, description text) returns text security=invoker
+FUNCTION col_is_pk(name, name) returns text security=invoker
+FUNCTION col_is_pk(name, name, name) returns text security=invoker
+FUNCTION col_is_pk(name, name, name, text) returns text security=invoker
+FUNCTION col_is_pk(name, name, name[]) returns text security=invoker
+FUNCTION col_is_pk(name, name, name[], text) returns text security=invoker
+FUNCTION col_is_pk(name, name, text) returns text security=invoker
+FUNCTION col_is_pk(name, name[]) returns text security=invoker
+FUNCTION col_is_pk(name, name[], text) returns text security=invoker
+FUNCTION col_is_unique(name, name) returns text security=invoker
+FUNCTION col_is_unique(name, name, name) returns text security=invoker
+FUNCTION col_is_unique(name, name, name, text) returns text security=invoker
+FUNCTION col_is_unique(name, name, name[]) returns text security=invoker
+FUNCTION col_is_unique(name, name, name[], text) returns text security=invoker
+FUNCTION col_is_unique(name, name, text) returns text security=invoker
+FUNCTION col_is_unique(name, name[]) returns text security=invoker
+FUNCTION col_is_unique(name, name[], text) returns text security=invoker
+FUNCTION col_isnt_fk(name, name) returns text security=invoker
+FUNCTION col_isnt_fk(name, name, name, text) returns text security=invoker
+FUNCTION col_isnt_fk(name, name, name[], text) returns text security=invoker
+FUNCTION col_isnt_fk(name, name, text) returns text security=invoker
+FUNCTION col_isnt_fk(name, name[]) returns text security=invoker
+FUNCTION col_isnt_fk(name, name[], text) returns text security=invoker
+FUNCTION col_isnt_pk(name, name) returns text security=invoker
+FUNCTION col_isnt_pk(name, name, name, text) returns text security=invoker
+FUNCTION col_isnt_pk(name, name, name[], text) returns text security=invoker
+FUNCTION col_isnt_pk(name, name, text) returns text security=invoker
+FUNCTION col_isnt_pk(name, name[]) returns text security=invoker
+FUNCTION col_isnt_pk(name, name[], text) returns text security=invoker
+FUNCTION col_not_null(schema_name name, table_name name, column_name name, description text) returns text security=invoker
+FUNCTION col_not_null(table_name name, column_name name, description text) returns text security=invoker
+FUNCTION col_type_is(name, name, name, name, text) returns text security=invoker
+FUNCTION col_type_is(name, name, name, name, text, text) returns text security=invoker
+FUNCTION col_type_is(name, name, name, text) returns text security=invoker
+FUNCTION col_type_is(name, name, name, text, text) returns text security=invoker
+FUNCTION col_type_is(name, name, text) returns text security=invoker
+FUNCTION col_type_is(name, name, text, text) returns text security=invoker
+FUNCTION collect_tap(VARIADIC text[]) returns text security=invoker
+FUNCTION collect_tap(character varying[]) returns text security=invoker
+FUNCTION column_privs_are(name, name, name, name, name[]) returns text security=invoker
+FUNCTION column_privs_are(name, name, name, name, name[], text) returns text security=invoker
+FUNCTION column_privs_are(name, name, name, name[]) returns text security=invoker
+FUNCTION column_privs_are(name, name, name, name[], text) returns text security=invoker
+FUNCTION columns_are(name, name, name[]) returns text security=invoker
+FUNCTION columns_are(name, name, name[], text) returns text security=invoker
+FUNCTION columns_are(name, name[]) returns text security=invoker
+FUNCTION columns_are(name, name[], text) returns text security=invoker
+FUNCTION complete_provider_onboarding(p_display_name text, p_headline text, p_languages text[], p_about text, p_provider_category text) returns void security=definer
+FUNCTION complete_recharge(p_user_id uuid, p_amount_paise integer, p_tokens integer, p_gateway text, p_gateway_ref text, p_gateway_order_id text) returns uuid security=definer
+FUNCTION composite_owner_is(name, name) returns text security=invoker
+FUNCTION composite_owner_is(name, name, name) returns text security=invoker
+FUNCTION composite_owner_is(name, name, name, text) returns text security=invoker
+FUNCTION composite_owner_is(name, name, text) returns text security=invoker
+FUNCTION confirm_chat_session(p_request_id uuid) returns uuid security=definer
+FUNCTION create_provider_payout_batch(p_provider_id uuid, p_ignore_minimum boolean) returns TABLE(batch_id uuid, total_tokens integer, total_paise integer, method text, beneficiary_id text) security=definer
+FUNCTION create_session_request(p_conversation_id uuid, p_channel session_channel) returns uuid security=definer
+FUNCTION credit_promo_tokens(p_user_id uuid, p_amount integer, p_reason text) returns integer security=definer
+FUNCTION credit_purchased_recharge(p_user_id uuid, p_amount integer, p_transaction_id uuid) returns void security=definer
+FUNCTION credit_user_token(p_user_id uuid, p_amount integer) returns json security=definer
+FUNCTION database_privs_are(name, name, name[]) returns text security=invoker
+FUNCTION database_privs_are(name, name, name[], text) returns text security=invoker
+FUNCTION db_owner_is(name, name) returns text security=invoker
+FUNCTION db_owner_is(name, name, text) returns text security=invoker
+FUNCTION decline_session_request(p_request_id uuid) returns jsonb security=definer
+FUNCTION deduct_tokens(p_user_id uuid, p_amount integer, p_session_id uuid, p_config_version_id uuid) returns integer security=definer
+FUNCTION deduct_user_token(p_user_id uuid, p_cost integer) returns json security=definer
+FUNCTION delete_user_account() returns void security=definer
+FUNCTION diag(VARIADIC anyarray) returns text security=invoker
+FUNCTION diag(VARIADIC text[]) returns text security=invoker
+FUNCTION diag(msg anyelement) returns text security=invoker
+FUNCTION diag(msg text) returns text security=invoker
+FUNCTION diag_test_name(text) returns text security=invoker
+FUNCTION dispatch_agora_usage_ingest() returns void security=definer
+FUNCTION dispatch_call_push() returns trigger security=definer
+FUNCTION dispatch_engagement_nudges() returns void security=definer
+FUNCTION dispatch_pending_pushes() returns void security=definer
+FUNCTION display_oper(name, oid) returns text security=invoker
+FUNCTION do_tap() returns SETOF text security=invoker
+FUNCTION do_tap(name) returns SETOF text security=invoker
+FUNCTION do_tap(name, text) returns SETOF text security=invoker
+FUNCTION do_tap(text) returns SETOF text security=invoker
+FUNCTION doesnt_imatch(anyelement, text) returns text security=invoker
+FUNCTION doesnt_imatch(anyelement, text, text) returns text security=invoker
+FUNCTION doesnt_match(anyelement, text) returns text security=invoker
+FUNCTION doesnt_match(anyelement, text, text) returns text security=invoker
+FUNCTION domain_type_is(name, text, name, text) returns text security=invoker
+FUNCTION domain_type_is(name, text, name, text, text) returns text security=invoker
+FUNCTION domain_type_is(name, text, text) returns text security=invoker
+FUNCTION domain_type_is(name, text, text, text) returns text security=invoker
+FUNCTION domain_type_is(text, text) returns text security=invoker
+FUNCTION domain_type_is(text, text, text) returns text security=invoker
+FUNCTION domain_type_isnt(name, text, name, text) returns text security=invoker
+FUNCTION domain_type_isnt(name, text, name, text, text) returns text security=invoker
+FUNCTION domain_type_isnt(name, text, text) returns text security=invoker
+FUNCTION domain_type_isnt(name, text, text, text) returns text security=invoker
+FUNCTION domain_type_isnt(text, text) returns text security=invoker
+FUNCTION domain_type_isnt(text, text, text) returns text security=invoker
+FUNCTION domains_are(name, name[]) returns text security=invoker
+FUNCTION domains_are(name, name[], text) returns text security=invoker
+FUNCTION domains_are(name[]) returns text security=invoker
+FUNCTION domains_are(name[], text) returns text security=invoker
+FUNCTION end_call(p_call_id uuid, p_reason text) returns json security=definer
+FUNCTION end_session(p_session_id uuid, p_end_reason text, p_report_reason report_reason, p_report_message_ids uuid[], p_report_statement text) returns void security=definer
+FUNCTION enforce_provider_channel() returns trigger security=definer
+FUNCTION enum_has_labels(name, name, name[]) returns text security=invoker
+FUNCTION enum_has_labels(name, name, name[], text) returns text security=invoker
+FUNCTION enum_has_labels(name, name[]) returns text security=invoker
+FUNCTION enum_has_labels(name, name[], text) returns text security=invoker
+FUNCTION enums_are(name, name[]) returns text security=invoker
+FUNCTION enums_are(name, name[], text) returns text security=invoker
+FUNCTION enums_are(name[]) returns text security=invoker
+FUNCTION enums_are(name[], text) returns text security=invoker
+FUNCTION extensions_are(name, name[]) returns text security=invoker
+FUNCTION extensions_are(name, name[], text) returns text security=invoker
+FUNCTION extensions_are(name[]) returns text security=invoker
+FUNCTION extensions_are(name[], text) returns text security=invoker
+FUNCTION fail() returns text security=invoker
+FUNCTION fail(text) returns text security=invoker
+FUNCTION fdw_privs_are(name, name, name[]) returns text security=invoker
+FUNCTION fdw_privs_are(name, name, name[], text) returns text security=invoker
+FUNCTION findfuncs(name, text) returns text[] security=invoker
+FUNCTION findfuncs(name, text, text) returns text[] security=invoker
+FUNCTION findfuncs(text) returns text[] security=invoker
+FUNCTION findfuncs(text, text) returns text[] security=invoker
+FUNCTION finish(exception_on_failure boolean) returns SETOF text security=invoker
+FUNCTION fk_ok(name, name, name, name) returns text security=invoker
+FUNCTION fk_ok(name, name, name, name, name, name, text) returns text security=invoker
+FUNCTION fk_ok(name, name, name, name, name, text) returns text security=invoker
+FUNCTION fk_ok(name, name, name, name, text) returns text security=invoker
+FUNCTION fk_ok(name, name, name[], name, name, name[]) returns text security=invoker
+FUNCTION fk_ok(name, name, name[], name, name, name[], text) returns text security=invoker
+FUNCTION fk_ok(name, name[], name, name[]) returns text security=invoker
+FUNCTION fk_ok(name, name[], name, name[], text) returns text security=invoker
+FUNCTION foreign_table_owner_is(name, name) returns text security=invoker
+FUNCTION foreign_table_owner_is(name, name, name) returns text security=invoker
+FUNCTION foreign_table_owner_is(name, name, name, text) returns text security=invoker
+FUNCTION foreign_table_owner_is(name, name, text) returns text security=invoker
+FUNCTION foreign_tables_are(name, name[]) returns text security=invoker
+FUNCTION foreign_tables_are(name, name[], text) returns text security=invoker
+FUNCTION foreign_tables_are(name[]) returns text security=invoker
+FUNCTION foreign_tables_are(name[], text) returns text security=invoker
+FUNCTION forget_push_tokens(p_tokens text[]) returns integer security=definer
+FUNCTION format_type_string(text) returns text security=invoker
+FUNCTION function_lang_is(name, name) returns text security=invoker
+FUNCTION function_lang_is(name, name, name) returns text security=invoker
+FUNCTION function_lang_is(name, name, name, text) returns text security=invoker
+FUNCTION function_lang_is(name, name, name[], name) returns text security=invoker
+FUNCTION function_lang_is(name, name, name[], name, text) returns text security=invoker
+FUNCTION function_lang_is(name, name, text) returns text security=invoker
+FUNCTION function_lang_is(name, name[], name) returns text security=invoker
+FUNCTION function_lang_is(name, name[], name, text) returns text security=invoker
+FUNCTION function_owner_is(name, name, name[], name) returns text security=invoker
+FUNCTION function_owner_is(name, name, name[], name, text) returns text security=invoker
+FUNCTION function_owner_is(name, name[], name) returns text security=invoker
+FUNCTION function_owner_is(name, name[], name, text) returns text security=invoker
+FUNCTION function_privs_are(name, name, name[], name, name[]) returns text security=invoker
+FUNCTION function_privs_are(name, name, name[], name, name[], text) returns text security=invoker
+FUNCTION function_privs_are(name, name[], name, name[]) returns text security=invoker
+FUNCTION function_privs_are(name, name[], name, name[], text) returns text security=invoker
+FUNCTION function_returns(name, name, name[], text) returns text security=invoker
+FUNCTION function_returns(name, name, name[], text, text) returns text security=invoker
+FUNCTION function_returns(name, name, text) returns text security=invoker
+FUNCTION function_returns(name, name, text, text) returns text security=invoker
+FUNCTION function_returns(name, name[], text) returns text security=invoker
+FUNCTION function_returns(name, name[], text, text) returns text security=invoker
+FUNCTION function_returns(name, text) returns text security=invoker
+FUNCTION function_returns(name, text, text) returns text security=invoker
+FUNCTION functions_are(name, name[]) returns text security=invoker
+FUNCTION functions_are(name, name[], text) returns text security=invoker
+FUNCTION functions_are(name[]) returns text security=invoker
+FUNCTION functions_are(name[], text) returns text security=invoker
+FUNCTION get_active_config(p_domain text) returns jsonb security=definer
+FUNCTION get_active_session(p_conversation_id uuid) returns jsonb security=definer
+FUNCTION get_chat_consent(p_conversation_id uuid) returns jsonb security=definer
+FUNCTION get_pending_session_request(p_conversation_id uuid) returns jsonb security=definer
+FUNCTION get_provider_ratings(p_provider_id uuid, p_recent_limit integer) returns jsonb security=definer
+FUNCTION get_public_config(p_domain text) returns jsonb security=definer
+FUNCTION get_session_billing_snapshot(p_channel text) returns TABLE(rate_tokens_per_min integer, provider_share_percent integer, payout_hold_days integer, economics_version_id uuid) security=definer
+FUNCTION get_usage_ledger(p_limit integer, p_before timestamp with time zone) returns jsonb security=definer
+FUNCTION get_user_id_by_phone(p_phone text) returns uuid security=definer
+FUNCTION groups_are(name[]) returns text security=invoker
+FUNCTION groups_are(name[], text) returns text security=invoker
+FUNCTION guard_application_transitions() returns trigger security=invoker
+FUNCTION guard_event_shape() returns trigger security=invoker
+FUNCTION guard_message_columns() returns trigger security=invoker
+FUNCTION guard_message_reply_and_voice() returns trigger security=invoker
+FUNCTION guard_message_retention_columns() returns trigger security=invoker
+FUNCTION guard_phone_columns() returns trigger security=invoker
+FUNCTION guard_pii_columns() returns trigger security=invoker
+FUNCTION guard_presence_columns() returns trigger security=invoker
+FUNCTION guard_privileged_profile_columns() returns trigger security=invoker
+FUNCTION guard_provider_photo_columns() returns trigger security=invoker
+FUNCTION handle_new_user() returns trigger security=definer
+FUNCTION has_cast(name, name) returns text security=invoker
+FUNCTION has_cast(name, name, name) returns text security=invoker
+FUNCTION has_cast(name, name, name, name) returns text security=invoker
+FUNCTION has_cast(name, name, name, name, text) returns text security=invoker
+FUNCTION has_cast(name, name, name, text) returns text security=invoker
+FUNCTION has_cast(name, name, text) returns text security=invoker
+FUNCTION has_check(name) returns text security=invoker
+FUNCTION has_check(name, name, text) returns text security=invoker
+FUNCTION has_check(name, text) returns text security=invoker
+FUNCTION has_column(name, name) returns text security=invoker
+FUNCTION has_column(name, name, name, text) returns text security=invoker
+FUNCTION has_column(name, name, text) returns text security=invoker
+FUNCTION has_composite(name) returns text security=invoker
+FUNCTION has_composite(name, name, text) returns text security=invoker
+FUNCTION has_composite(name, text) returns text security=invoker
+FUNCTION has_domain(name) returns text security=invoker
+FUNCTION has_domain(name, name) returns text security=invoker
+FUNCTION has_domain(name, name, text) returns text security=invoker
+FUNCTION has_domain(name, text) returns text security=invoker
+FUNCTION has_enum(name) returns text security=invoker
+FUNCTION has_enum(name, name) returns text security=invoker
+FUNCTION has_enum(name, name, text) returns text security=invoker
+FUNCTION has_enum(name, text) returns text security=invoker
+FUNCTION has_extension(name) returns text security=invoker
+FUNCTION has_extension(name, name) returns text security=invoker
+FUNCTION has_extension(name, name, text) returns text security=invoker
+FUNCTION has_extension(name, text) returns text security=invoker
+FUNCTION has_fk(name) returns text security=invoker
+FUNCTION has_fk(name, name, text) returns text security=invoker
+FUNCTION has_fk(name, text) returns text security=invoker
+FUNCTION has_foreign_table(name) returns text security=invoker
+FUNCTION has_foreign_table(name, name) returns text security=invoker
+FUNCTION has_foreign_table(name, name, text) returns text security=invoker
+FUNCTION has_foreign_table(name, text) returns text security=invoker
+FUNCTION has_function(name) returns text security=invoker
+FUNCTION has_function(name, name) returns text security=invoker
+FUNCTION has_function(name, name, name[]) returns text security=invoker
+FUNCTION has_function(name, name, name[], text) returns text security=invoker
+FUNCTION has_function(name, name, text) returns text security=invoker
+FUNCTION has_function(name, name[]) returns text security=invoker
+FUNCTION has_function(name, name[], text) returns text security=invoker
+FUNCTION has_function(name, text) returns text security=invoker
+FUNCTION has_group(name) returns text security=invoker
+FUNCTION has_group(name, text) returns text security=invoker
+FUNCTION has_index(name, name) returns text security=invoker
+FUNCTION has_index(name, name, name) returns text security=invoker
+FUNCTION has_index(name, name, name, name) returns text security=invoker
+FUNCTION has_index(name, name, name, name, text) returns text security=invoker
+FUNCTION has_index(name, name, name, name[]) returns text security=invoker
+FUNCTION has_index(name, name, name, name[], text) returns text security=invoker
+FUNCTION has_index(name, name, name, text) returns text security=invoker
+FUNCTION has_index(name, name, name[]) returns text security=invoker
+FUNCTION has_index(name, name, name[], text) returns text security=invoker
+FUNCTION has_index(name, name, text) returns text security=invoker
+FUNCTION has_inherited_tables(name) returns text security=invoker
+FUNCTION has_inherited_tables(name, name) returns text security=invoker
+FUNCTION has_inherited_tables(name, name, text) returns text security=invoker
+FUNCTION has_inherited_tables(name, text) returns text security=invoker
+FUNCTION has_language(name) returns text security=invoker
+FUNCTION has_language(name, text) returns text security=invoker
+FUNCTION has_leftop(name, name) returns text security=invoker
+FUNCTION has_leftop(name, name, name) returns text security=invoker
+FUNCTION has_leftop(name, name, name, name) returns text security=invoker
+FUNCTION has_leftop(name, name, name, name, text) returns text security=invoker
+FUNCTION has_leftop(name, name, name, text) returns text security=invoker
+FUNCTION has_leftop(name, name, text) returns text security=invoker
+FUNCTION has_materialized_view(name) returns text security=invoker
+FUNCTION has_materialized_view(name, name, text) returns text security=invoker
+FUNCTION has_materialized_view(name, text) returns text security=invoker
+FUNCTION has_opclass(name) returns text security=invoker
+FUNCTION has_opclass(name, name) returns text security=invoker
+FUNCTION has_opclass(name, name, text) returns text security=invoker
+FUNCTION has_opclass(name, text) returns text security=invoker
+FUNCTION has_operator(name, name, name) returns text security=invoker
+FUNCTION has_operator(name, name, name, name) returns text security=invoker
+FUNCTION has_operator(name, name, name, name, name) returns text security=invoker
+FUNCTION has_operator(name, name, name, name, name, text) returns text security=invoker
+FUNCTION has_operator(name, name, name, name, text) returns text security=invoker
+FUNCTION has_operator(name, name, name, text) returns text security=invoker
+FUNCTION has_pk(name) returns text security=invoker
+FUNCTION has_pk(name, name) returns text security=invoker
+FUNCTION has_pk(name, name, text) returns text security=invoker
+FUNCTION has_pk(name, text) returns text security=invoker
+FUNCTION has_relation(name) returns text security=invoker
+FUNCTION has_relation(name, name, text) returns text security=invoker
+FUNCTION has_relation(name, text) returns text security=invoker
+FUNCTION has_rightop(name, name) returns text security=invoker
+FUNCTION has_rightop(name, name, name) returns text security=invoker
+FUNCTION has_rightop(name, name, name, name) returns text security=invoker
+FUNCTION has_rightop(name, name, name, name, text) returns text security=invoker
+FUNCTION has_rightop(name, name, name, text) returns text security=invoker
+FUNCTION has_rightop(name, name, text) returns text security=invoker
+FUNCTION has_role(name) returns text security=invoker
+FUNCTION has_role(name, text) returns text security=invoker
+FUNCTION has_rule(name, name) returns text security=invoker
+FUNCTION has_rule(name, name, name) returns text security=invoker
+FUNCTION has_rule(name, name, name, text) returns text security=invoker
+FUNCTION has_rule(name, name, text) returns text security=invoker
+FUNCTION has_schema(name) returns text security=invoker
+FUNCTION has_schema(name, text) returns text security=invoker
+FUNCTION has_sequence(name) returns text security=invoker
+FUNCTION has_sequence(name, name) returns text security=invoker
+FUNCTION has_sequence(name, name, text) returns text security=invoker
+FUNCTION has_sequence(name, text) returns text security=invoker
+FUNCTION has_table(name) returns text security=invoker
+FUNCTION has_table(name, name) returns text security=invoker
+FUNCTION has_table(name, name, text) returns text security=invoker
+FUNCTION has_table(name, text) returns text security=invoker
+FUNCTION has_tablespace(name) returns text security=invoker
+FUNCTION has_tablespace(name, text) returns text security=invoker
+FUNCTION has_tablespace(name, text, text) returns text security=invoker
+FUNCTION has_trigger(name, name) returns text security=invoker
+FUNCTION has_trigger(name, name, name) returns text security=invoker
+FUNCTION has_trigger(name, name, name, text) returns text security=invoker
+FUNCTION has_trigger(name, name, text) returns text security=invoker
+FUNCTION has_type(name) returns text security=invoker
+FUNCTION has_type(name, name) returns text security=invoker
+FUNCTION has_type(name, name, text) returns text security=invoker
+FUNCTION has_type(name, text) returns text security=invoker
+FUNCTION has_unique(text) returns text security=invoker
+FUNCTION has_unique(text, text) returns text security=invoker
+FUNCTION has_unique(text, text, text) returns text security=invoker
+FUNCTION has_user(name) returns text security=invoker
+FUNCTION has_user(name, text) returns text security=invoker
+FUNCTION has_view(name) returns text security=invoker
+FUNCTION has_view(name, name) returns text security=invoker
+FUNCTION has_view(name, name, text) returns text security=invoker
+FUNCTION has_view(name, text) returns text security=invoker
+FUNCTION hasnt_cast(name, name) returns text security=invoker
+FUNCTION hasnt_cast(name, name, name) returns text security=invoker
+FUNCTION hasnt_cast(name, name, name, name) returns text security=invoker
+FUNCTION hasnt_cast(name, name, name, name, text) returns text security=invoker
+FUNCTION hasnt_cast(name, name, name, text) returns text security=invoker
+FUNCTION hasnt_cast(name, name, text) returns text security=invoker
+FUNCTION hasnt_column(name, name) returns text security=invoker
+FUNCTION hasnt_column(name, name, name, text) returns text security=invoker
+FUNCTION hasnt_column(name, name, text) returns text security=invoker
+FUNCTION hasnt_composite(name) returns text security=invoker
+FUNCTION hasnt_composite(name, name, text) returns text security=invoker
+FUNCTION hasnt_composite(name, text) returns text security=invoker
+FUNCTION hasnt_domain(name) returns text security=invoker
+FUNCTION hasnt_domain(name, name) returns text security=invoker
+FUNCTION hasnt_domain(name, name, text) returns text security=invoker
+FUNCTION hasnt_domain(name, text) returns text security=invoker
+FUNCTION hasnt_enum(name) returns text security=invoker
+FUNCTION hasnt_enum(name, name) returns text security=invoker
+FUNCTION hasnt_enum(name, name, text) returns text security=invoker
+FUNCTION hasnt_enum(name, text) returns text security=invoker
+FUNCTION hasnt_extension(name) returns text security=invoker
+FUNCTION hasnt_extension(name, name) returns text security=invoker
+FUNCTION hasnt_extension(name, name, text) returns text security=invoker
+FUNCTION hasnt_extension(name, text) returns text security=invoker
+FUNCTION hasnt_fk(name) returns text security=invoker
+FUNCTION hasnt_fk(name, name, text) returns text security=invoker
+FUNCTION hasnt_fk(name, text) returns text security=invoker
+FUNCTION hasnt_foreign_table(name) returns text security=invoker
+FUNCTION hasnt_foreign_table(name, name) returns text security=invoker
+FUNCTION hasnt_foreign_table(name, name, text) returns text security=invoker
+FUNCTION hasnt_foreign_table(name, text) returns text security=invoker
+FUNCTION hasnt_function(name) returns text security=invoker
+FUNCTION hasnt_function(name, name) returns text security=invoker
+FUNCTION hasnt_function(name, name, name[]) returns text security=invoker
+FUNCTION hasnt_function(name, name, name[], text) returns text security=invoker
+FUNCTION hasnt_function(name, name, text) returns text security=invoker
+FUNCTION hasnt_function(name, name[]) returns text security=invoker
+FUNCTION hasnt_function(name, name[], text) returns text security=invoker
+FUNCTION hasnt_function(name, text) returns text security=invoker
+FUNCTION hasnt_group(name) returns text security=invoker
+FUNCTION hasnt_group(name, text) returns text security=invoker
+FUNCTION hasnt_index(name, name) returns text security=invoker
+FUNCTION hasnt_index(name, name, name) returns text security=invoker
+FUNCTION hasnt_index(name, name, name, text) returns text security=invoker
+FUNCTION hasnt_index(name, name, text) returns text security=invoker
+FUNCTION hasnt_inherited_tables(name) returns text security=invoker
+FUNCTION hasnt_inherited_tables(name, name) returns text security=invoker
+FUNCTION hasnt_inherited_tables(name, name, text) returns text security=invoker
+FUNCTION hasnt_inherited_tables(name, text) returns text security=invoker
+FUNCTION hasnt_language(name) returns text security=invoker
+FUNCTION hasnt_language(name, text) returns text security=invoker
+FUNCTION hasnt_leftop(name, name) returns text security=invoker
+FUNCTION hasnt_leftop(name, name, name) returns text security=invoker
+FUNCTION hasnt_leftop(name, name, name, name) returns text security=invoker
+FUNCTION hasnt_leftop(name, name, name, name, text) returns text security=invoker
+FUNCTION hasnt_leftop(name, name, name, text) returns text security=invoker
+FUNCTION hasnt_leftop(name, name, text) returns text security=invoker
+FUNCTION hasnt_materialized_view(name) returns text security=invoker
+FUNCTION hasnt_materialized_view(name, name, text) returns text security=invoker
+FUNCTION hasnt_materialized_view(name, text) returns text security=invoker
+FUNCTION hasnt_opclass(name) returns text security=invoker
+FUNCTION hasnt_opclass(name, name) returns text security=invoker
+FUNCTION hasnt_opclass(name, name, text) returns text security=invoker
+FUNCTION hasnt_opclass(name, text) returns text security=invoker
+FUNCTION hasnt_operator(name, name, name) returns text security=invoker
+FUNCTION hasnt_operator(name, name, name, name) returns text security=invoker
+FUNCTION hasnt_operator(name, name, name, name, name) returns text security=invoker
+FUNCTION hasnt_operator(name, name, name, name, name, text) returns text security=invoker
+FUNCTION hasnt_operator(name, name, name, name, text) returns text security=invoker
+FUNCTION hasnt_operator(name, name, name, text) returns text security=invoker
+FUNCTION hasnt_pk(name) returns text security=invoker
+FUNCTION hasnt_pk(name, name, text) returns text security=invoker
+FUNCTION hasnt_pk(name, text) returns text security=invoker
+FUNCTION hasnt_relation(name) returns text security=invoker
+FUNCTION hasnt_relation(name, name, text) returns text security=invoker
+FUNCTION hasnt_relation(name, text) returns text security=invoker
+FUNCTION hasnt_rightop(name, name) returns text security=invoker
+FUNCTION hasnt_rightop(name, name, name) returns text security=invoker
+FUNCTION hasnt_rightop(name, name, name, name) returns text security=invoker
+FUNCTION hasnt_rightop(name, name, name, name, text) returns text security=invoker
+FUNCTION hasnt_rightop(name, name, name, text) returns text security=invoker
+FUNCTION hasnt_rightop(name, name, text) returns text security=invoker
+FUNCTION hasnt_role(name) returns text security=invoker
+FUNCTION hasnt_role(name, text) returns text security=invoker
+FUNCTION hasnt_rule(name, name) returns text security=invoker
+FUNCTION hasnt_rule(name, name, name) returns text security=invoker
+FUNCTION hasnt_rule(name, name, name, text) returns text security=invoker
+FUNCTION hasnt_rule(name, name, text) returns text security=invoker
+FUNCTION hasnt_schema(name) returns text security=invoker
+FUNCTION hasnt_schema(name, text) returns text security=invoker
+FUNCTION hasnt_sequence(name) returns text security=invoker
+FUNCTION hasnt_sequence(name, name, text) returns text security=invoker
+FUNCTION hasnt_sequence(name, text) returns text security=invoker
+FUNCTION hasnt_table(name) returns text security=invoker
+FUNCTION hasnt_table(name, name) returns text security=invoker
+FUNCTION hasnt_table(name, name, text) returns text security=invoker
+FUNCTION hasnt_table(name, text) returns text security=invoker
+FUNCTION hasnt_tablespace(name) returns text security=invoker
+FUNCTION hasnt_tablespace(name, text) returns text security=invoker
+FUNCTION hasnt_trigger(name, name) returns text security=invoker
+FUNCTION hasnt_trigger(name, name, name) returns text security=invoker
+FUNCTION hasnt_trigger(name, name, name, text) returns text security=invoker
+FUNCTION hasnt_trigger(name, name, text) returns text security=invoker
+FUNCTION hasnt_type(name) returns text security=invoker
+FUNCTION hasnt_type(name, name) returns text security=invoker
+FUNCTION hasnt_type(name, name, text) returns text security=invoker
+FUNCTION hasnt_type(name, text) returns text security=invoker
+FUNCTION hasnt_user(name) returns text security=invoker
+FUNCTION hasnt_user(name, text) returns text security=invoker
+FUNCTION hasnt_view(name) returns text security=invoker
+FUNCTION hasnt_view(name, name) returns text security=invoker
+FUNCTION hasnt_view(name, name, text) returns text security=invoker
+FUNCTION hasnt_view(name, text) returns text security=invoker
+FUNCTION heartbeat_call(p_call_id uuid) returns json security=definer
+FUNCTION ialike(anyelement, text) returns text security=invoker
+FUNCTION ialike(anyelement, text, text) returns text security=invoker
+FUNCTION imatches(anyelement, text) returns text security=invoker
+FUNCTION imatches(anyelement, text, text) returns text security=invoker
+FUNCTION import_media_invoice_days(p_rows jsonb) returns integer security=definer
+FUNCTION in_todo() returns boolean security=invoker
+FUNCTION index_is_primary(name) returns text security=invoker
+FUNCTION index_is_primary(name, name) returns text security=invoker
+FUNCTION index_is_primary(name, name, name) returns text security=invoker
+FUNCTION index_is_primary(name, name, name, text) returns text security=invoker
+FUNCTION index_is_type(name, name) returns text security=invoker
+FUNCTION index_is_type(name, name, name) returns text security=invoker
+FUNCTION index_is_type(name, name, name, name) returns text security=invoker
+FUNCTION index_is_type(name, name, name, name, text) returns text security=invoker
+FUNCTION index_is_unique(name) returns text security=invoker
+FUNCTION index_is_unique(name, name) returns text security=invoker
+FUNCTION index_is_unique(name, name, name) returns text security=invoker
+FUNCTION index_is_unique(name, name, name, text) returns text security=invoker
+FUNCTION index_owner_is(name, name, name) returns text security=invoker
+FUNCTION index_owner_is(name, name, name, name) returns text security=invoker
+FUNCTION index_owner_is(name, name, name, name, text) returns text security=invoker
+FUNCTION index_owner_is(name, name, name, text) returns text security=invoker
+FUNCTION indexes_are(name, name, name[]) returns text security=invoker
+FUNCTION indexes_are(name, name, name[], text) returns text security=invoker
+FUNCTION indexes_are(name, name[]) returns text security=invoker
+FUNCTION indexes_are(name, name[], text) returns text security=invoker
+FUNCTION insert_next_opener(p_provider_id uuid) returns jsonb security=definer
+FUNCTION is(anyelement, anyelement) returns text security=invoker
+FUNCTION is(anyelement, anyelement, text) returns text security=invoker
+FUNCTION is_aggregate(name) returns text security=invoker
+FUNCTION is_aggregate(name, name) returns text security=invoker
+FUNCTION is_aggregate(name, name, name[]) returns text security=invoker
+FUNCTION is_aggregate(name, name, name[], text) returns text security=invoker
+FUNCTION is_aggregate(name, name, text) returns text security=invoker
+FUNCTION is_aggregate(name, name[]) returns text security=invoker
+FUNCTION is_aggregate(name, name[], text) returns text security=invoker
+FUNCTION is_aggregate(name, text) returns text security=invoker
+FUNCTION is_ancestor_of(name, name) returns text security=invoker
+FUNCTION is_ancestor_of(name, name, integer) returns text security=invoker
+FUNCTION is_ancestor_of(name, name, integer, text) returns text security=invoker
+FUNCTION is_ancestor_of(name, name, name, name) returns text security=invoker
+FUNCTION is_ancestor_of(name, name, name, name, integer) returns text security=invoker
+FUNCTION is_ancestor_of(name, name, name, name, integer, text) returns text security=invoker
+FUNCTION is_ancestor_of(name, name, name, name, text) returns text security=invoker
+FUNCTION is_ancestor_of(name, name, text) returns text security=invoker
+FUNCTION is_blocked_pair(p_a uuid, p_b uuid) returns boolean security=definer
+FUNCTION is_clustered(name) returns text security=invoker
+FUNCTION is_clustered(name, name) returns text security=invoker
+FUNCTION is_clustered(name, name, name) returns text security=invoker
+FUNCTION is_clustered(name, name, name, text) returns text security=invoker
+FUNCTION is_definer(name) returns text security=invoker
+FUNCTION is_definer(name, name) returns text security=invoker
+FUNCTION is_definer(name, name, name[]) returns text security=invoker
+FUNCTION is_definer(name, name, name[], text) returns text security=invoker
+FUNCTION is_definer(name, name, text) returns text security=invoker
+FUNCTION is_definer(name, name[]) returns text security=invoker
+FUNCTION is_definer(name, name[], text) returns text security=invoker
+FUNCTION is_definer(name, text) returns text security=invoker
+FUNCTION is_descendent_of(name, name) returns text security=invoker
+FUNCTION is_descendent_of(name, name, integer) returns text security=invoker
+FUNCTION is_descendent_of(name, name, integer, text) returns text security=invoker
+FUNCTION is_descendent_of(name, name, name, name) returns text security=invoker
+FUNCTION is_descendent_of(name, name, name, name, integer) returns text security=invoker
+FUNCTION is_descendent_of(name, name, name, name, integer, text) returns text security=invoker
+FUNCTION is_descendent_of(name, name, name, name, text) returns text security=invoker
+FUNCTION is_descendent_of(name, name, text) returns text security=invoker
+FUNCTION is_empty(text) returns text security=invoker
+FUNCTION is_empty(text, text) returns text security=invoker
+FUNCTION is_indexed(name, name) returns text security=invoker
+FUNCTION is_indexed(name, name, name) returns text security=invoker
+FUNCTION is_indexed(name, name, name, text) returns text security=invoker
+FUNCTION is_indexed(name, name, name[]) returns text security=invoker
+FUNCTION is_indexed(name, name, name[], text) returns text security=invoker
+FUNCTION is_indexed(name, name[]) returns text security=invoker
+FUNCTION is_indexed(name, name[], text) returns text security=invoker
+FUNCTION is_member_of(name, name) returns text security=invoker
+FUNCTION is_member_of(name, name, text) returns text security=invoker
+FUNCTION is_member_of(name, name[]) returns text security=invoker
+FUNCTION is_member_of(name, name[], text) returns text security=invoker
+FUNCTION is_normal_function(name) returns text security=invoker
+FUNCTION is_normal_function(name, name) returns text security=invoker
+FUNCTION is_normal_function(name, name, name[]) returns text security=invoker
+FUNCTION is_normal_function(name, name, name[], text) returns text security=invoker
+FUNCTION is_normal_function(name, name, text) returns text security=invoker
+FUNCTION is_normal_function(name, name[]) returns text security=invoker
+FUNCTION is_normal_function(name, name[], text) returns text security=invoker
+FUNCTION is_normal_function(name, text) returns text security=invoker
+FUNCTION is_partition_of(name, name) returns text security=invoker
+FUNCTION is_partition_of(name, name, name, name) returns text security=invoker
+FUNCTION is_partition_of(name, name, name, name, text) returns text security=invoker
+FUNCTION is_partition_of(name, name, text) returns text security=invoker
+FUNCTION is_partitioned(name) returns text security=invoker
+FUNCTION is_partitioned(name, name) returns text security=invoker
+FUNCTION is_partitioned(name, name, text) returns text security=invoker
+FUNCTION is_partitioned(name, text) returns text security=invoker
+FUNCTION is_procedure(name) returns text security=invoker
+FUNCTION is_procedure(name, name) returns text security=invoker
+FUNCTION is_procedure(name, name, name[]) returns text security=invoker
+FUNCTION is_procedure(name, name, name[], text) returns text security=invoker
+FUNCTION is_procedure(name, name, text) returns text security=invoker
+FUNCTION is_procedure(name, name[]) returns text security=invoker
+FUNCTION is_procedure(name, name[], text) returns text security=invoker
+FUNCTION is_procedure(name, text) returns text security=invoker
+FUNCTION is_strict(name) returns text security=invoker
+FUNCTION is_strict(name, name) returns text security=invoker
+FUNCTION is_strict(name, name, name[]) returns text security=invoker
+FUNCTION is_strict(name, name, name[], text) returns text security=invoker
+FUNCTION is_strict(name, name, text) returns text security=invoker
+FUNCTION is_strict(name, name[]) returns text security=invoker
+FUNCTION is_strict(name, name[], text) returns text security=invoker
+FUNCTION is_strict(name, text) returns text security=invoker
+FUNCTION is_superuser(name) returns text security=invoker
+FUNCTION is_superuser(name, text) returns text security=invoker
+FUNCTION is_valid_report_reason(p_reason text) returns boolean security=definer
+FUNCTION is_window(name) returns text security=invoker
+FUNCTION is_window(name, name) returns text security=invoker
+FUNCTION is_window(name, name, name[]) returns text security=invoker
+FUNCTION is_window(name, name, name[], text) returns text security=invoker
+FUNCTION is_window(name, name, text) returns text security=invoker
+FUNCTION is_window(name, name[]) returns text security=invoker
+FUNCTION is_window(name, name[], text) returns text security=invoker
+FUNCTION is_window(name, text) returns text security=invoker
+FUNCTION isa_ok(anyelement, regtype) returns text security=invoker
+FUNCTION isa_ok(anyelement, regtype, text) returns text security=invoker
+FUNCTION isnt(anyelement, anyelement) returns text security=invoker
+FUNCTION isnt(anyelement, anyelement, text) returns text security=invoker
+FUNCTION isnt_aggregate(name) returns text security=invoker
+FUNCTION isnt_aggregate(name, name) returns text security=invoker
+FUNCTION isnt_aggregate(name, name, name[]) returns text security=invoker
+FUNCTION isnt_aggregate(name, name, name[], text) returns text security=invoker
+FUNCTION isnt_aggregate(name, name, text) returns text security=invoker
+FUNCTION isnt_aggregate(name, name[]) returns text security=invoker
+FUNCTION isnt_aggregate(name, name[], text) returns text security=invoker
+FUNCTION isnt_aggregate(name, text) returns text security=invoker
+FUNCTION isnt_ancestor_of(name, name) returns text security=invoker
+FUNCTION isnt_ancestor_of(name, name, integer) returns text security=invoker
+FUNCTION isnt_ancestor_of(name, name, integer, text) returns text security=invoker
+FUNCTION isnt_ancestor_of(name, name, name, name) returns text security=invoker
+FUNCTION isnt_ancestor_of(name, name, name, name, integer) returns text security=invoker
+FUNCTION isnt_ancestor_of(name, name, name, name, integer, text) returns text security=invoker
+FUNCTION isnt_ancestor_of(name, name, name, name, text) returns text security=invoker
+FUNCTION isnt_ancestor_of(name, name, text) returns text security=invoker
+FUNCTION isnt_definer(name) returns text security=invoker
+FUNCTION isnt_definer(name, name) returns text security=invoker
+FUNCTION isnt_definer(name, name, name[]) returns text security=invoker
+FUNCTION isnt_definer(name, name, name[], text) returns text security=invoker
+FUNCTION isnt_definer(name, name, text) returns text security=invoker
+FUNCTION isnt_definer(name, name[]) returns text security=invoker
+FUNCTION isnt_definer(name, name[], text) returns text security=invoker
+FUNCTION isnt_definer(name, text) returns text security=invoker
+FUNCTION isnt_descendent_of(name, name) returns text security=invoker
+FUNCTION isnt_descendent_of(name, name, integer) returns text security=invoker
+FUNCTION isnt_descendent_of(name, name, integer, text) returns text security=invoker
+FUNCTION isnt_descendent_of(name, name, name, name) returns text security=invoker
+FUNCTION isnt_descendent_of(name, name, name, name, integer) returns text security=invoker
+FUNCTION isnt_descendent_of(name, name, name, name, integer, text) returns text security=invoker
+FUNCTION isnt_descendent_of(name, name, name, name, text) returns text security=invoker
+FUNCTION isnt_descendent_of(name, name, text) returns text security=invoker
+FUNCTION isnt_empty(text) returns text security=invoker
+FUNCTION isnt_empty(text, text) returns text security=invoker
+FUNCTION isnt_member_of(name, name) returns text security=invoker
+FUNCTION isnt_member_of(name, name, text) returns text security=invoker
+FUNCTION isnt_member_of(name, name[]) returns text security=invoker
+FUNCTION isnt_member_of(name, name[], text) returns text security=invoker
+FUNCTION isnt_normal_function(name) returns text security=invoker
+FUNCTION isnt_normal_function(name, name) returns text security=invoker
+FUNCTION isnt_normal_function(name, name, name[]) returns text security=invoker
+FUNCTION isnt_normal_function(name, name, name[], text) returns text security=invoker
+FUNCTION isnt_normal_function(name, name, text) returns text security=invoker
+FUNCTION isnt_normal_function(name, name[]) returns text security=invoker
+FUNCTION isnt_normal_function(name, name[], text) returns text security=invoker
+FUNCTION isnt_normal_function(name, text) returns text security=invoker
+FUNCTION isnt_partitioned(name) returns text security=invoker
+FUNCTION isnt_partitioned(name, name) returns text security=invoker
+FUNCTION isnt_partitioned(name, name, text) returns text security=invoker
+FUNCTION isnt_partitioned(name, text) returns text security=invoker
+FUNCTION isnt_procedure(name) returns text security=invoker
+FUNCTION isnt_procedure(name, name) returns text security=invoker
+FUNCTION isnt_procedure(name, name, name[]) returns text security=invoker
+FUNCTION isnt_procedure(name, name, name[], text) returns text security=invoker
+FUNCTION isnt_procedure(name, name, text) returns text security=invoker
+FUNCTION isnt_procedure(name, name[]) returns text security=invoker
+FUNCTION isnt_procedure(name, name[], text) returns text security=invoker
+FUNCTION isnt_procedure(name, text) returns text security=invoker
+FUNCTION isnt_strict(name) returns text security=invoker
+FUNCTION isnt_strict(name, name) returns text security=invoker
+FUNCTION isnt_strict(name, name, name[]) returns text security=invoker
+FUNCTION isnt_strict(name, name, name[], text) returns text security=invoker
+FUNCTION isnt_strict(name, name, text) returns text security=invoker
+FUNCTION isnt_strict(name, name[]) returns text security=invoker
+FUNCTION isnt_strict(name, name[], text) returns text security=invoker
+FUNCTION isnt_strict(name, text) returns text security=invoker
+FUNCTION isnt_superuser(name) returns text security=invoker
+FUNCTION isnt_superuser(name, text) returns text security=invoker
+FUNCTION isnt_window(name) returns text security=invoker
+FUNCTION isnt_window(name, name) returns text security=invoker
+FUNCTION isnt_window(name, name, name[]) returns text security=invoker
+FUNCTION isnt_window(name, name, name[], text) returns text security=invoker
+FUNCTION isnt_window(name, name, text) returns text security=invoker
+FUNCTION isnt_window(name, name[]) returns text security=invoker
+FUNCTION isnt_window(name, name[], text) returns text security=invoker
+FUNCTION isnt_window(name, text) returns text security=invoker
+FUNCTION language_is_trusted(name) returns text security=invoker
+FUNCTION language_is_trusted(name, text) returns text security=invoker
+FUNCTION language_list_is_sane(p text[]) returns boolean security=invoker
+FUNCTION language_owner_is(name, name) returns text security=invoker
+FUNCTION language_owner_is(name, name, text) returns text security=invoker
+FUNCTION language_privs_are(name, name, name[]) returns text security=invoker
+FUNCTION language_privs_are(name, name, name[], text) returns text security=invoker
+FUNCTION languages_are(name[]) returns text security=invoker
+FUNCTION languages_are(name[], text) returns text security=invoker
+FUNCTION list_agora_calls_for_analytics_ingest(p_from date, p_to date) returns TABLE(call_id uuid, started_at timestamp with time zone, ended_at timestamp with time zone) security=definer
+FUNCTION lives_ok(text) returns text security=invoker
+FUNCTION lives_ok(text, text) returns text security=invoker
+FUNCTION mark_calls_notified(p_call_ids uuid[]) returns integer security=definer
+FUNCTION mark_engagement_nudged(p_member_ids uuid[]) returns void security=definer
+FUNCTION mark_notified(p_message_ids uuid[]) returns integer security=definer
+FUNCTION mark_provider_payout_submitted(p_batch_id uuid, p_cashfree_id text) returns void security=definer
+FUNCTION matches(anyelement, text) returns text security=invoker
+FUNCTION matches(anyelement, text, text) returns text security=invoker
+FUNCTION materialized_view_owner_is(name, name) returns text security=invoker
+FUNCTION materialized_view_owner_is(name, name, name) returns text security=invoker
+FUNCTION materialized_view_owner_is(name, name, name, text) returns text security=invoker
+FUNCTION materialized_view_owner_is(name, name, text) returns text security=invoker
+FUNCTION materialized_views_are(name, name[]) returns text security=invoker
+FUNCTION materialized_views_are(name, name[], text) returns text security=invoker
+FUNCTION materialized_views_are(name[]) returns text security=invoker
+FUNCTION materialized_views_are(name[], text) returns text security=invoker
+FUNCTION member_handle(p_id uuid) returns text security=invoker
+FUNCTION meter_active_calls() returns integer security=definer
+FUNCTION meter_active_sessions() returns void security=definer
+FUNCTION mirror_user_phone() returns trigger security=definer
+FUNCTION mock_recharge(p_amount_paise integer, p_tokens integer) returns json security=definer
+FUNCTION moderation_actions_are_immutable() returns trigger security=invoker
+FUNCTION next_invoice_seq(p_fy text) returns bigint security=definer
+FUNCTION no_plan() returns SETOF boolean security=invoker
+FUNCTION notify_generate_invoice() returns trigger security=definer
+FUNCTION num_failed() returns integer security=invoker
+FUNCTION ok(boolean) returns text security=invoker
+FUNCTION ok(boolean, text) returns text security=invoker
+FUNCTION opclass_owner_is(name, name) returns text security=invoker
+FUNCTION opclass_owner_is(name, name, name) returns text security=invoker
+FUNCTION opclass_owner_is(name, name, name, text) returns text security=invoker
+FUNCTION opclass_owner_is(name, name, text) returns text security=invoker
+FUNCTION opclasses_are(name, name[]) returns text security=invoker
+FUNCTION opclasses_are(name, name[], text) returns text security=invoker
+FUNCTION opclasses_are(name[]) returns text security=invoker
+FUNCTION opclasses_are(name[], text) returns text security=invoker
+FUNCTION open_conversation(p_provider_id uuid) returns uuid security=definer
+FUNCTION operators_are(name, text[]) returns text security=invoker
+FUNCTION operators_are(name, text[], text) returns text security=invoker
+FUNCTION operators_are(text[]) returns text security=invoker
+FUNCTION operators_are(text[], text) returns text security=invoker
+FUNCTION os_name() returns text security=invoker
+FUNCTION partitions_are(name, name, name[]) returns text security=invoker
+FUNCTION partitions_are(name, name, name[], text) returns text security=invoker
+FUNCTION partitions_are(name, name[]) returns text security=invoker
+FUNCTION partitions_are(name, name[], text) returns text security=invoker
+FUNCTION pass() returns text security=invoker
+FUNCTION pass(text) returns text security=invoker
+FUNCTION pending_policy_acceptances() returns TABLE(version_id uuid, kind text, url text, summary text, is_material boolean) security=definer
+FUNCTION performs_ok(text, numeric) returns text security=invoker
+FUNCTION performs_ok(text, numeric, text) returns text security=invoker
+FUNCTION performs_within(text, numeric, numeric) returns text security=invoker
+FUNCTION performs_within(text, numeric, numeric, integer) returns text security=invoker
+FUNCTION performs_within(text, numeric, numeric, integer, text) returns text security=invoker
+FUNCTION performs_within(text, numeric, numeric, text) returns text security=invoker
+FUNCTION pg_version() returns text security=invoker
+FUNCTION pg_version_num() returns integer security=invoker
+FUNCTION pgtap_version() returns numeric security=invoker
+FUNCTION plan(integer) returns text security=invoker
+FUNCTION policies_are(name, name, name[]) returns text security=invoker
+FUNCTION policies_are(name, name, name[], text) returns text security=invoker
+FUNCTION policies_are(name, name[]) returns text security=invoker
+FUNCTION policies_are(name, name[], text) returns text security=invoker
+FUNCTION policy_cmd_is(name, name, name, text) returns text security=invoker
+FUNCTION policy_cmd_is(name, name, name, text, text) returns text security=invoker
+FUNCTION policy_cmd_is(name, name, text) returns text security=invoker
+FUNCTION policy_cmd_is(name, name, text, text) returns text security=invoker
+FUNCTION policy_roles_are(name, name, name, name[]) returns text security=invoker
+FUNCTION policy_roles_are(name, name, name, name[], text) returns text security=invoker
+FUNCTION policy_roles_are(name, name, name[]) returns text security=invoker
+FUNCTION policy_roles_are(name, name, name[], text) returns text security=invoker
+FUNCTION provider_is_listed(p_provider_id uuid) returns boolean security=definer
+FUNCTION provider_offers_channel(p_provider_id uuid, p_channel session_channel) returns boolean security=definer
+FUNCTION provider_photos_single_primary() returns trigger security=definer
+FUNCTION provider_photos_sync_avatar() returns trigger security=definer
+FUNCTION purge_expired_evidence() returns integer security=definer
+FUNCTION purge_expired_hidden_content() returns integer security=definer
+FUNCTION purge_expired_reports() returns integer security=definer
+FUNCTION purge_orphaned_attachments() returns integer security=definer
+FUNCTION purge_orphaned_voice_notes() returns integer security=definer
+FUNCTION purge_session_content(p_session_id uuid) returns integer security=definer
+FUNCTION record_call_quality_samples(p_call_id uuid, p_samples jsonb) returns integer security=definer
+FUNCTION record_invoice(p_transaction_id uuid, p_document_type text, p_fy text, p_seller jsonb, p_buyer jsonb, p_place_of_supply text, p_taxable_paise integer, p_cgst_paise integer, p_sgst_paise integer, p_igst_paise integer, p_total_paise integer, p_gst_rate_bps integer) returns jsonb security=definer
+FUNCTION record_provider_accrual(p_provider_id uuid, p_session_id uuid, p_minutes_billed integer, p_rate_per_min integer, p_provider_share_percent integer, p_payout_hold_days integer, p_config_version_id uuid) returns void security=definer
+FUNCTION refresh_media_channel_usage_estimates(p_since timestamp with time zone) returns integer security=definer
+FUNCTION refresh_provider_rating() returns trigger security=definer
+FUNCTION refresh_reply_latencies() returns integer security=definer
+FUNCTION refund_unanswered_messages(p_after interval) returns integer security=definer
+FUNCTION register_push_token(p_token text, p_platform text) returns void security=definer
+FUNCTION reject_provider_application(p_user_id uuid, p_note text) returns void security=definer
+FUNCTION relation_owner_is(name, name) returns text security=invoker
+FUNCTION relation_owner_is(name, name, name) returns text security=invoker
+FUNCTION relation_owner_is(name, name, name, text) returns text security=invoker
+FUNCTION relation_owner_is(name, name, text) returns text security=invoker
+FUNCTION request_application_info(p_user_id uuid, p_missing text[], p_note text) returns void security=definer
+FUNCTION results_eq(refcursor, anyarray) returns text security=invoker
+FUNCTION results_eq(refcursor, anyarray, text) returns text security=invoker
+FUNCTION results_eq(refcursor, refcursor) returns text security=invoker
+FUNCTION results_eq(refcursor, refcursor, text) returns text security=invoker
+FUNCTION results_eq(refcursor, text) returns text security=invoker
+FUNCTION results_eq(refcursor, text, text) returns text security=invoker
+FUNCTION results_eq(text, anyarray) returns text security=invoker
+FUNCTION results_eq(text, anyarray, text) returns text security=invoker
+FUNCTION results_eq(text, refcursor) returns text security=invoker
+FUNCTION results_eq(text, refcursor, text) returns text security=invoker
+FUNCTION results_eq(text, text) returns text security=invoker
+FUNCTION results_eq(text, text, text) returns text security=invoker
+FUNCTION results_ne(refcursor, anyarray) returns text security=invoker
+FUNCTION results_ne(refcursor, anyarray, text) returns text security=invoker
+FUNCTION results_ne(refcursor, refcursor) returns text security=invoker
+FUNCTION results_ne(refcursor, refcursor, text) returns text security=invoker
+FUNCTION results_ne(refcursor, text) returns text security=invoker
+FUNCTION results_ne(refcursor, text, text) returns text security=invoker
+FUNCTION results_ne(text, anyarray) returns text security=invoker
+FUNCTION results_ne(text, anyarray, text) returns text security=invoker
+FUNCTION results_ne(text, refcursor) returns text security=invoker
+FUNCTION results_ne(text, refcursor, text) returns text security=invoker
+FUNCTION results_ne(text, text) returns text security=invoker
+FUNCTION results_ne(text, text, text) returns text security=invoker
+FUNCTION resume_chat_consent(p_conversation_id uuid) returns jsonb security=definer
+FUNCTION roles_are(name[]) returns text security=invoker
+FUNCTION roles_are(name[], text) returns text security=invoker
+FUNCTION row_eq(text, anyelement) returns text security=invoker
+FUNCTION row_eq(text, anyelement, text) returns text security=invoker
+FUNCTION rule_is_instead(name, name) returns text security=invoker
+FUNCTION rule_is_instead(name, name, name) returns text security=invoker
+FUNCTION rule_is_instead(name, name, name, text) returns text security=invoker
+FUNCTION rule_is_instead(name, name, text) returns text security=invoker
+FUNCTION rule_is_on(name, name, name, text) returns text security=invoker
+FUNCTION rule_is_on(name, name, name, text, text) returns text security=invoker
+FUNCTION rule_is_on(name, name, text) returns text security=invoker
+FUNCTION rule_is_on(name, name, text, text) returns text security=invoker
+FUNCTION rules_are(name, name, name[]) returns text security=invoker
+FUNCTION rules_are(name, name, name[], text) returns text security=invoker
+FUNCTION rules_are(name, name[]) returns text security=invoker
+FUNCTION rules_are(name, name[], text) returns text security=invoker
+FUNCTION runtests() returns SETOF text security=invoker
+FUNCTION runtests(name) returns SETOF text security=invoker
+FUNCTION runtests(name, text) returns SETOF text security=invoker
+FUNCTION runtests(text) returns SETOF text security=invoker
+FUNCTION schema_owner_is(name, name) returns text security=invoker
+FUNCTION schema_owner_is(name, name, text) returns text security=invoker
+FUNCTION schema_privs_are(name, name, name[]) returns text security=invoker
+FUNCTION schema_privs_are(name, name, name[], text) returns text security=invoker
+FUNCTION schemas_are(name[]) returns text security=invoker
+FUNCTION schemas_are(name[], text) returns text security=invoker
+FUNCTION seed_conversation_openers(p_provider_id uuid) returns jsonb security=definer
+FUNCTION send_message(p_conversation_id uuid, p_body text, p_reply_to_id uuid, p_voice_path text, p_voice_duration_ms integer, p_attachment_path text, p_attachment_width integer, p_attachment_height integer, p_voice_peaks real[]) returns json security=definer
+FUNCTION send_message_idempotent(p_client_nonce uuid, p_conversation_id uuid, p_body text, p_reply_to_id uuid, p_voice_path text, p_voice_duration_ms integer, p_attachment_path text, p_attachment_width integer, p_attachment_height integer, p_voice_peaks real[]) returns jsonb security=definer
+FUNCTION sequence_owner_is(name, name) returns text security=invoker
+FUNCTION sequence_owner_is(name, name, name) returns text security=invoker
+FUNCTION sequence_owner_is(name, name, name, text) returns text security=invoker
+FUNCTION sequence_owner_is(name, name, text) returns text security=invoker
+FUNCTION sequence_privs_are(name, name, name, name[]) returns text security=invoker
+FUNCTION sequence_privs_are(name, name, name, name[], text) returns text security=invoker
+FUNCTION sequence_privs_are(name, name, name[]) returns text security=invoker
+FUNCTION sequence_privs_are(name, name, name[], text) returns text security=invoker
+FUNCTION sequences_are(name, name[]) returns text security=invoker
+FUNCTION sequences_are(name, name[], text) returns text security=invoker
+FUNCTION sequences_are(name[]) returns text security=invoker
+FUNCTION sequences_are(name[], text) returns text security=invoker
+FUNCTION server_privs_are(name, name, name[]) returns text security=invoker
+FUNCTION server_privs_are(name, name, name[], text) returns text security=invoker
+FUNCTION set_eq(text, anyarray) returns text security=invoker
+FUNCTION set_eq(text, anyarray, text) returns text security=invoker
+FUNCTION set_eq(text, text) returns text security=invoker
+FUNCTION set_eq(text, text, text) returns text security=invoker
+FUNCTION set_has(text, text) returns text security=invoker
+FUNCTION set_has(text, text, text) returns text security=invoker
+FUNCTION set_hasnt(text, text) returns text security=invoker
+FUNCTION set_hasnt(text, text, text) returns text security=invoker
+FUNCTION set_invoice_pdf(p_invoice_id uuid, p_pdf_path text) returns void security=definer
+FUNCTION set_member_age_bracket(p_bracket text) returns void security=definer
+FUNCTION set_my_pan(p_pan text) returns void security=definer
+FUNCTION set_ne(text, anyarray) returns text security=invoker
+FUNCTION set_ne(text, anyarray, text) returns text security=invoker
+FUNCTION set_ne(text, text) returns text security=invoker
+FUNCTION set_ne(text, text, text) returns text security=invoker
+FUNCTION set_next_call_media_backend(p_conversation_id uuid, p_backend call_media_backend, p_experiment_id text, p_run_id uuid) returns void security=definer
+FUNCTION settle_call(p_call_id uuid) returns calls security=definer
+FUNCTION settle_provider_payout_batch(p_batch_id uuid, p_cashfree_id text, p_ok boolean) returns void security=definer
+FUNCTION skip(integer) returns text security=invoker
+FUNCTION skip(integer, text) returns text security=invoker
+FUNCTION skip(text) returns text security=invoker
+FUNCTION skip(why text, how_many integer) returns text security=invoker
+FUNCTION spend_chat_minute() returns json security=definer
+FUNCTION start_call(p_conversation_id uuid, p_medium call_medium) returns json security=definer
+FUNCTION submit_provider_application(p_display_name text, p_gender text, p_date_of_birth date, p_headline text, p_languages text[], p_about text) returns text[] security=definer
+FUNCTION submit_report(p_conversation_id uuid, p_message_id uuid, p_reason report_reason, p_detail text) returns uuid security=definer
+FUNCTION submit_review(p_conversation_id uuid, p_rating smallint, p_comment text) returns void security=definer
+FUNCTION submit_session_review(p_session_id uuid, p_rating smallint, p_comment text) returns void security=definer
+FUNCTION sync_token_balance() returns trigger security=invoker
+FUNCTION table_owner_is(name, name) returns text security=invoker
+FUNCTION table_owner_is(name, name, name) returns text security=invoker
+FUNCTION table_owner_is(name, name, name, text) returns text security=invoker
+FUNCTION table_owner_is(name, name, text) returns text security=invoker
+FUNCTION table_privs_are(name, name, name, name[]) returns text security=invoker
+FUNCTION table_privs_are(name, name, name, name[], text) returns text security=invoker
+FUNCTION table_privs_are(name, name, name[]) returns text security=invoker
+FUNCTION table_privs_are(name, name, name[], text) returns text security=invoker
+FUNCTION tables_are(name, name[]) returns text security=invoker
+FUNCTION tables_are(name, name[], text) returns text security=invoker
+FUNCTION tables_are(name[]) returns text security=invoker
+FUNCTION tables_are(name[], text) returns text security=invoker
+FUNCTION tablespace_owner_is(name, name) returns text security=invoker
+FUNCTION tablespace_owner_is(name, name, text) returns text security=invoker
+FUNCTION tablespace_privs_are(name, name, name[]) returns text security=invoker
+FUNCTION tablespace_privs_are(name, name, name[], text) returns text security=invoker
+FUNCTION tablespaces_are(name[]) returns text security=invoker
+FUNCTION tablespaces_are(name[], text) returns text security=invoker
+FUNCTION throws_ilike(text, text) returns text security=invoker
+FUNCTION throws_ilike(text, text, text) returns text security=invoker
+FUNCTION throws_imatching(text, text) returns text security=invoker
+FUNCTION throws_imatching(text, text, text) returns text security=invoker
+FUNCTION throws_like(text, text) returns text security=invoker
+FUNCTION throws_like(text, text, text) returns text security=invoker
+FUNCTION throws_matching(text, text) returns text security=invoker
+FUNCTION throws_matching(text, text, text) returns text security=invoker
+FUNCTION throws_ok(text) returns text security=invoker
+FUNCTION throws_ok(text, character, text, text) returns text security=invoker
+FUNCTION throws_ok(text, integer) returns text security=invoker
+FUNCTION throws_ok(text, integer, text) returns text security=invoker
+FUNCTION throws_ok(text, integer, text, text) returns text security=invoker
+FUNCTION throws_ok(text, text) returns text security=invoker
+FUNCTION throws_ok(text, text, text) returns text security=invoker
+FUNCTION todo(how_many integer) returns SETOF boolean security=invoker
+FUNCTION todo(how_many integer, why text) returns SETOF boolean security=invoker
+FUNCTION todo(why text) returns SETOF boolean security=invoker
+FUNCTION todo(why text, how_many integer) returns SETOF boolean security=invoker
+FUNCTION todo_end() returns SETOF boolean security=invoker
+FUNCTION todo_start() returns SETOF boolean security=invoker
+FUNCTION todo_start(text) returns SETOF boolean security=invoker
+FUNCTION toggle_reaction(p_message_id uuid, p_emoji text) returns json security=definer
+FUNCTION touch_chat() returns trigger security=definer
+FUNCTION touch_presence() returns void security=definer
+FUNCTION touch_session_activity() returns trigger security=definer
+FUNCTION touch_transaction_updated_at() returns trigger security=invoker
+FUNCTION trigger_is(name, name, name) returns text security=invoker
+FUNCTION trigger_is(name, name, name, name, name) returns text security=invoker
+FUNCTION trigger_is(name, name, name, name, name, text) returns text security=invoker
+FUNCTION trigger_is(name, name, name, text) returns text security=invoker
+FUNCTION triggers_are(name, name, name[]) returns text security=invoker
+FUNCTION triggers_are(name, name, name[], text) returns text security=invoker
+FUNCTION triggers_are(name, name[]) returns text security=invoker
+FUNCTION triggers_are(name, name[], text) returns text security=invoker
+FUNCTION type_owner_is(name, name) returns text security=invoker
+FUNCTION type_owner_is(name, name, name) returns text security=invoker
+FUNCTION type_owner_is(name, name, name, text) returns text security=invoker
+FUNCTION type_owner_is(name, name, text) returns text security=invoker
+FUNCTION types_are(name, name[]) returns text security=invoker
+FUNCTION types_are(name, name[], text) returns text security=invoker
+FUNCTION types_are(name[]) returns text security=invoker
+FUNCTION types_are(name[], text) returns text security=invoker
+FUNCTION unalike(anyelement, text) returns text security=invoker
+FUNCTION unalike(anyelement, text, text) returns text security=invoker
+FUNCTION unialike(anyelement, text) returns text security=invoker
+FUNCTION unialike(anyelement, text, text) returns text security=invoker
+FUNCTION upsert_media_channel_usage_analytics(p_call_id uuid, p_duration_seconds integer, p_participant_acu numeric, p_raw jsonb) returns uuid security=definer
+FUNCTION upsert_media_vendor_usage_daily(p_backend call_media_backend, p_project_id text, p_usage_date date, p_duration_audio_seconds bigint, p_duration_video_hd_seconds bigint, p_duration_video_hdp_seconds bigint, p_duration_video_1080p_seconds bigint, p_duration_video_2k_seconds bigint, p_duration_video_4k_seconds bigint, p_source text, p_raw jsonb, p_cost_paise_override integer) returns uuid security=definer
+FUNCTION upsert_my_payout_account(p_method text, p_upi_vpa text, p_account_number text, p_ifsc text, p_account_holder_name text) returns uuid security=definer
+FUNCTION user_has_accepted_current_policies(p_user_id uuid) returns boolean security=definer
+FUNCTION users_are(name[]) returns text security=invoker
+FUNCTION users_are(name[], text) returns text security=invoker
+FUNCTION verify_phone(p_user_id uuid, p_phone_e164 text) returns void security=definer
+FUNCTION view_owner_is(name, name) returns text security=invoker
+FUNCTION view_owner_is(name, name, name) returns text security=invoker
+FUNCTION view_owner_is(name, name, name, text) returns text security=invoker
+FUNCTION view_owner_is(name, name, text) returns text security=invoker
+FUNCTION views_are(name, name[]) returns text security=invoker
+FUNCTION views_are(name, name[], text) returns text security=invoker
+FUNCTION views_are(name[]) returns text security=invoker
+FUNCTION views_are(name[], text) returns text security=invoker
+FUNCTION voice_peaks_ok(p real[]) returns boolean security=invoker
+FUNCTION volatility_is(name, name, name[], text) returns text security=invoker
+FUNCTION volatility_is(name, name, name[], text, text) returns text security=invoker
+FUNCTION volatility_is(name, name, text) returns text security=invoker
+FUNCTION volatility_is(name, name, text, text) returns text security=invoker
+FUNCTION volatility_is(name, name[], text) returns text security=invoker
+FUNCTION volatility_is(name, name[], text, text) returns text security=invoker
+FUNCTION volatility_is(name, text) returns text security=invoker
+FUNCTION volatility_is(name, text, text) returns text security=invoker
+INDEX app_flags_pkey CREATE UNIQUE INDEX app_flags_pkey ON public.app_flags USING btree (key)
+INDEX blocks_pkey CREATE UNIQUE INDEX blocks_pkey ON public.blocks USING btree (blocker_id, blocked_id)
+INDEX call_media_overrides_pkey CREATE UNIQUE INDEX call_media_overrides_pkey ON public.call_media_overrides USING btree (conversation_id)
+INDEX call_media_test_allowlist_pkey CREATE UNIQUE INDEX call_media_test_allowlist_pkey ON public.call_media_test_allowlist USING btree (user_id)
+INDEX call_quality_runs_call_id_user_id_key CREATE UNIQUE INDEX call_quality_runs_call_id_user_id_key ON public.call_quality_runs USING btree (call_id, user_id)
+INDEX call_quality_runs_pkey CREATE UNIQUE INDEX call_quality_runs_pkey ON public.call_quality_runs USING btree (id)
+INDEX call_quality_samples_pkey CREATE UNIQUE INDEX call_quality_samples_pkey ON public.call_quality_samples USING btree (id)
+INDEX call_quality_samples_run_time_idx CREATE INDEX call_quality_samples_run_time_idx ON public.call_quality_samples USING btree (run_id, captured_at)
+INDEX calls_conversation_idx CREATE INDEX calls_conversation_idx ON public.calls USING btree (conversation_id, created_at DESC)
+INDEX calls_live_idx CREATE INDEX calls_live_idx ON public.calls USING btree (status) WHERE (status = ANY (ARRAY['ringing'::call_status, 'active'::call_status]))
+INDEX calls_one_live_per_callee_idx CREATE UNIQUE INDEX calls_one_live_per_callee_idx ON public.calls USING btree (callee_id) WHERE (status = ANY (ARRAY['ringing'::call_status, 'active'::call_status]))
+INDEX calls_one_live_per_caller_idx CREATE UNIQUE INDEX calls_one_live_per_caller_idx ON public.calls USING btree (caller_id) WHERE (status = ANY (ARRAY['ringing'::call_status, 'active'::call_status]))
+INDEX calls_one_live_per_conversation_idx CREATE UNIQUE INDEX calls_one_live_per_conversation_idx ON public.calls USING btree (conversation_id) WHERE (status = ANY (ARRAY['ringing'::call_status, 'active'::call_status]))
+INDEX calls_pkey CREATE UNIQUE INDEX calls_pkey ON public.calls USING btree (id)
+INDEX calls_session_request_unique CREATE UNIQUE INDEX calls_session_request_unique ON public.calls USING btree (session_request_id) WHERE (session_request_id IS NOT NULL)
+INDEX conversation_opener_templates_pkey CREATE UNIQUE INDEX conversation_opener_templates_pkey ON public.conversation_opener_templates USING btree (step)
+INDEX conversation_thread_meta_pkey CREATE UNIQUE INDEX conversation_thread_meta_pkey ON public.conversation_thread_meta USING btree (conversation_id)
+INDEX conversations_member_id_provider_id_key CREATE UNIQUE INDEX conversations_member_id_provider_id_key ON public.conversations USING btree (member_id, provider_id)
+INDEX conversations_member_idx CREATE INDEX conversations_member_idx ON public.conversations USING btree (member_id, last_message_at DESC)
+INDEX conversations_pkey CREATE UNIQUE INDEX conversations_pkey ON public.conversations USING btree (id)
+INDEX conversations_provider_idx CREATE INDEX conversations_provider_idx ON public.conversations USING btree (provider_id, last_message_at DESC)
+INDEX events_name_time_idx CREATE INDEX events_name_time_idx ON public.events USING btree (name, created_at DESC)
+INDEX events_pkey CREATE UNIQUE INDEX events_pkey ON public.events USING btree (id)
+INDEX events_time_idx CREATE INDEX events_time_idx ON public.events USING btree (created_at DESC)
+INDEX invoice_counters_pkey CREATE UNIQUE INDEX invoice_counters_pkey ON public.invoice_counters USING btree (fy)
+INDEX invoices_invoice_number_key CREATE UNIQUE INDEX invoices_invoice_number_key ON public.invoices USING btree (invoice_number)
+INDEX invoices_pkey CREATE UNIQUE INDEX invoices_pkey ON public.invoices USING btree (id)
+INDEX invoices_transaction_id_key CREATE UNIQUE INDEX invoices_transaction_id_key ON public.invoices USING btree (transaction_id)
+INDEX media_channel_usage_pkey CREATE UNIQUE INDEX media_channel_usage_pkey ON public.media_channel_usage USING btree (call_id, source)
+INDEX media_channel_usage_refreshed CREATE INDEX media_channel_usage_refreshed ON public.media_channel_usage USING btree (refreshed_at DESC)
+INDEX media_cogs_recon_alerts_call_kind CREATE UNIQUE INDEX media_cogs_recon_alerts_call_kind ON public.media_cogs_recon_alerts USING btree (usage_date, kind, call_id) WHERE ((kind = 'call_product_vs_analytics'::text) AND (call_id IS NOT NULL))
+INDEX media_cogs_recon_alerts_day_kind CREATE UNIQUE INDEX media_cogs_recon_alerts_day_kind ON public.media_cogs_recon_alerts USING btree (usage_date, kind) WHERE (kind = 'day_std_min_variance'::text)
+INDEX media_cogs_recon_alerts_pkey CREATE UNIQUE INDEX media_cogs_recon_alerts_pkey ON public.media_cogs_recon_alerts USING btree (id)
+INDEX media_vendor_usage_daily_backend_project_id_usage_date_sour_key CREATE UNIQUE INDEX media_vendor_usage_daily_backend_project_id_usage_date_sour_key ON public.media_vendor_usage_daily USING btree (backend, project_id, usage_date, source)
+INDEX media_vendor_usage_daily_pkey CREATE UNIQUE INDEX media_vendor_usage_daily_pkey ON public.media_vendor_usage_daily USING btree (id)
+INDEX message_reactions_pkey CREATE UNIQUE INDEX message_reactions_pkey ON public.message_reactions USING btree (message_id, user_id)
+INDEX messages_conversation_created_idx CREATE INDEX messages_conversation_created_idx ON public.messages USING btree (conversation_id, created_at DESC)
+INDEX messages_hidden_at CREATE INDEX messages_hidden_at ON public.messages USING btree (hidden_at) WHERE (hidden_at IS NOT NULL)
+INDEX messages_pkey CREATE UNIQUE INDEX messages_pkey ON public.messages USING btree (id)
+INDEX messages_purge_after CREATE INDEX messages_purge_after ON public.messages USING btree (purge_after) WHERE (purge_after IS NOT NULL)
+INDEX messages_sender_client_nonce_key CREATE UNIQUE INDEX messages_sender_client_nonce_key ON public.messages USING btree (sender_id, client_nonce) WHERE (client_nonce IS NOT NULL)
+INDEX messages_session_id CREATE INDEX messages_session_id ON public.messages USING btree (session_id)
+INDEX moderation_actions_pkey CREATE UNIQUE INDEX moderation_actions_pkey ON public.moderation_actions USING btree (id)
+INDEX moderation_cases_pkey CREATE UNIQUE INDEX moderation_cases_pkey ON public.moderation_cases USING btree (id)
+INDEX paid_sessions_member CREATE INDEX paid_sessions_member ON public.paid_sessions USING btree (member_id, created_at DESC)
+INDEX paid_sessions_one_live CREATE UNIQUE INDEX paid_sessions_one_live ON public.paid_sessions USING btree (conversation_id) WHERE (status <> ALL (ARRAY['ended'::paid_session_status, 'reported_hold'::paid_session_status]))
+INDEX paid_sessions_pkey CREATE UNIQUE INDEX paid_sessions_pkey ON public.paid_sessions USING btree (id)
+INDEX paid_sessions_provider CREATE INDEX paid_sessions_provider ON public.paid_sessions USING btree (provider_id, created_at DESC)
+INDEX paid_sessions_status CREATE INDEX paid_sessions_status ON public.paid_sessions USING btree (status) WHERE (status <> ALL (ARRAY['ended'::paid_session_status, 'reported_hold'::paid_session_status]))
+INDEX policy_acceptances_pkey CREATE UNIQUE INDEX policy_acceptances_pkey ON public.policy_acceptances USING btree (id)
+INDEX policy_acceptances_user_id_policy_kind_accepted_at_idx CREATE INDEX policy_acceptances_user_id_policy_kind_accepted_at_idx ON public.policy_acceptances USING btree (user_id, policy_kind, accepted_at DESC)
+INDEX policy_acceptances_user_id_policy_kind_version_id_key CREATE UNIQUE INDEX policy_acceptances_user_id_policy_kind_version_id_key ON public.policy_acceptances USING btree (user_id, policy_kind, version_id)
+INDEX policy_versions_kind_version_key CREATE UNIQUE INDEX policy_versions_kind_version_key ON public.policy_versions USING btree (kind, version)
+INDEX policy_versions_pkey CREATE UNIQUE INDEX policy_versions_pkey ON public.policy_versions USING btree (id)
+INDEX profiles_directory_idx CREATE INDEX profiles_directory_idx ON public.profiles USING btree (role, is_available) WHERE (role = 'provider'::user_role)
+INDEX profiles_directory_sort_idx CREATE INDEX profiles_directory_sort_idx ON public.profiles USING btree (is_available DESC, rating_avg DESC NULLS LAST) WHERE (role = 'provider'::user_role)
+INDEX profiles_display_name_lower_unique CREATE UNIQUE INDEX profiles_display_name_lower_unique ON public.profiles USING btree (lower(display_name)) WHERE ((display_name IS NOT NULL) AND (btrim(display_name) <> ''::text))
+INDEX profiles_phone_unique CREATE UNIQUE INDEX profiles_phone_unique ON public.profiles USING btree (phone_e164) WHERE (phone_e164 IS NOT NULL)
+INDEX profiles_pkey CREATE UNIQUE INDEX profiles_pkey ON public.profiles USING btree (id)
+INDEX provider_applications_pkey CREATE UNIQUE INDEX provider_applications_pkey ON public.provider_applications USING btree (id)
+INDEX provider_applications_user_id_key CREATE UNIQUE INDEX provider_applications_user_id_key ON public.provider_applications USING btree (user_id)
+INDEX provider_earnings_ledger_batch CREATE INDEX provider_earnings_ledger_batch ON public.provider_earnings_ledger USING btree (payout_batch_id)
+INDEX provider_earnings_ledger_pkey CREATE UNIQUE INDEX provider_earnings_ledger_pkey ON public.provider_earnings_ledger USING btree (id)
+INDEX provider_earnings_ledger_provider_id_created_at_idx CREATE INDEX provider_earnings_ledger_provider_id_created_at_idx ON public.provider_earnings_ledger USING btree (provider_id, created_at DESC)
+INDEX provider_earnings_ledger_status_hold_until_idx CREATE INDEX provider_earnings_ledger_status_hold_until_idx ON public.provider_earnings_ledger USING btree (status, hold_until) WHERE (status = 'pending'::text)
+INDEX provider_earnings_one_per_session CREATE UNIQUE INDEX provider_earnings_one_per_session ON public.provider_earnings_ledger USING btree (session_id)
+INDEX provider_payout_accounts_one_default CREATE UNIQUE INDEX provider_payout_accounts_one_default ON public.provider_payout_accounts USING btree (provider_id) WHERE is_default
+INDEX provider_payout_accounts_pkey CREATE UNIQUE INDEX provider_payout_accounts_pkey ON public.provider_payout_accounts USING btree (id)
+INDEX provider_payout_accounts_provider CREATE INDEX provider_payout_accounts_provider ON public.provider_payout_accounts USING btree (provider_id)
+INDEX provider_payout_batches_pkey CREATE UNIQUE INDEX provider_payout_batches_pkey ON public.provider_payout_batches USING btree (id)
+INDEX provider_photos_one_primary CREATE UNIQUE INDEX provider_photos_one_primary ON public.provider_photos USING btree (provider_id) WHERE is_primary
+INDEX provider_photos_pkey CREATE UNIQUE INDEX provider_photos_pkey ON public.provider_photos USING btree (id)
+INDEX provider_photos_provider CREATE INDEX provider_photos_provider ON public.provider_photos USING btree (provider_id, is_primary DESC, created_at)
+INDEX provider_tax_profile_pkey CREATE UNIQUE INDEX provider_tax_profile_pkey ON public.provider_tax_profile USING btree (provider_id)
+INDEX push_tokens_pkey CREATE UNIQUE INDEX push_tokens_pkey ON public.push_tokens USING btree (token)
+INDEX push_tokens_user_idx CREATE INDEX push_tokens_user_idx ON public.push_tokens USING btree (user_id)
+INDEX refund_reviews_pkey CREATE UNIQUE INDEX refund_reviews_pkey ON public.refund_reviews USING btree (id)
+INDEX report_evidence_case CREATE INDEX report_evidence_case ON public.report_evidence USING btree (case_id)
+INDEX report_evidence_pkey CREATE UNIQUE INDEX report_evidence_pkey ON public.report_evidence USING btree (id)
+INDEX report_evidence_retain CREATE INDEX report_evidence_retain ON public.report_evidence USING btree (retain_until)
+INDEX reports_pkey CREATE UNIQUE INDEX reports_pkey ON public.reports USING btree (id)
+INDEX reports_subject_idx CREATE INDEX reports_subject_idx ON public.reports USING btree (subject_user_id, created_at DESC)
+INDEX reports_triage_idx CREATE INDEX reports_triage_idx ON public.reports USING btree (status, reason, created_at DESC)
+INDEX reviews_one_per_legacy_conversation CREATE UNIQUE INDEX reviews_one_per_legacy_conversation ON public.reviews USING btree (conversation_id) WHERE (session_id IS NULL)
+INDEX reviews_one_per_session CREATE UNIQUE INDEX reviews_one_per_session ON public.reviews USING btree (session_id) WHERE (session_id IS NOT NULL)
+INDEX reviews_pkey CREATE UNIQUE INDEX reviews_pkey ON public.reviews USING btree (id)
+INDEX reviews_provider_idx CREATE INDEX reviews_provider_idx ON public.reviews USING btree (provider_id, created_at DESC)
+INDEX reviews_provider_rating_idx CREATE INDEX reviews_provider_rating_idx ON public.reviews USING btree (provider_id, rating)
+INDEX session_leases_pkey CREATE UNIQUE INDEX session_leases_pkey ON public.session_leases USING btree (session_id, user_id)
+INDEX session_requests_one_pending CREATE UNIQUE INDEX session_requests_one_pending ON public.session_requests USING btree (conversation_id, channel) WHERE (status = 'pending'::session_request_status)
+INDEX session_requests_pkey CREATE UNIQUE INDEX session_requests_pkey ON public.session_requests USING btree (id)
+INDEX session_requests_recipient_status CREATE INDEX session_requests_recipient_status ON public.session_requests USING btree (recipient_id, status, created_at DESC)
+INDEX token_transactions_pkey CREATE UNIQUE INDEX token_transactions_pkey ON public.token_transactions USING btree (id)
+INDEX token_transactions_user_id_created_at_idx CREATE INDEX token_transactions_user_id_created_at_idx ON public.token_transactions USING btree (user_id, created_at DESC)
+POLICY public.blocks.Owner creates own blocks cmd=INSERT roles=public
+POLICY public.blocks.Owner reads own blocks cmd=SELECT roles=public
+POLICY public.blocks.Owner removes own blocks cmd=DELETE roles=public
+POLICY public.calls.Participants read their calls cmd=SELECT roles=public
+POLICY public.conversation_thread_meta.Participants read thread meta cmd=SELECT roles=authenticated
+POLICY public.conversations.Participants read their conversation cmd=SELECT roles=public
+POLICY public.events.Own events insertable cmd=INSERT roles=public
+POLICY public.invoices.Members read own invoices cmd=SELECT roles=authenticated
+POLICY public.message_reactions.Participants read reactions cmd=SELECT roles=public
+POLICY public.messages.Participants read messages cmd=SELECT roles=public
+POLICY public.messages.Recipient marks messages read cmd=UPDATE roles=public
+POLICY public.paid_sessions.Participants read own sessions cmd=SELECT roles=authenticated
+POLICY public.policy_acceptances.Users insert own acceptances cmd=INSERT roles=authenticated
+POLICY public.policy_acceptances.Users read own acceptances cmd=SELECT roles=authenticated
+POLICY public.policy_versions.Authenticated read policy versions cmd=SELECT roles=authenticated
+POLICY public.profiles.Profile deletable by owner cmd=DELETE roles=public
+POLICY public.profiles.Profile insertable by owner cmd=INSERT roles=public
+POLICY public.profiles.Profile readable by owner cmd=SELECT roles=public
+POLICY public.profiles.Profile updatable by owner cmd=UPDATE roles=public
+POLICY public.provider_applications.Applicant creates own draft cmd=INSERT roles=public
+POLICY public.provider_applications.Applicant edits own application cmd=UPDATE roles=public
+POLICY public.provider_applications.Applicant reads own application cmd=SELECT roles=public
+POLICY public.provider_earnings_ledger.Providers read own earnings cmd=SELECT roles=authenticated
+POLICY public.provider_payout_accounts.provider_payout_accounts_select_own cmd=SELECT roles=authenticated
+POLICY public.provider_payout_batches.Providers read own batches cmd=SELECT roles=authenticated
+POLICY public.provider_photos.provider_photos_delete_own cmd=DELETE roles=authenticated
+POLICY public.provider_photos.provider_photos_insert_own cmd=INSERT roles=authenticated
+POLICY public.provider_photos.provider_photos_select cmd=SELECT roles=authenticated
+POLICY public.provider_photos.provider_photos_update_own cmd=UPDATE roles=authenticated
+POLICY public.provider_tax_profile.provider_tax_profile_select_own cmd=SELECT roles=authenticated
+POLICY public.push_tokens.Own tokens are removable cmd=DELETE roles=public
+POLICY public.reports.Reporter reads own reports cmd=SELECT roles=public
+POLICY public.reviews.Participants read reviews cmd=SELECT roles=public
+POLICY public.session_leases.Participants read own leases cmd=SELECT roles=authenticated
+POLICY public.session_leases.Participants upsert own lease cmd=ALL roles=authenticated
+POLICY public.session_requests.Participants read session requests cmd=SELECT roles=authenticated
+POLICY public.token_transactions.Members read own transactions cmd=SELECT roles=authenticated
+RLS app_flags enabled=true
+RLS blocks enabled=true
+RLS call_media_overrides enabled=true
+RLS call_media_test_allowlist enabled=true
+RLS call_quality_runs enabled=true
+RLS call_quality_samples enabled=true
+RLS calls enabled=true
+RLS conversation_opener_templates enabled=true
+RLS conversation_thread_meta enabled=true
+RLS conversations enabled=true
+RLS events enabled=true
+RLS invoice_counters enabled=true
+RLS invoices enabled=true
+RLS media_channel_usage enabled=true
+RLS media_cogs_recon_alerts enabled=true
+RLS media_vendor_usage_daily enabled=true
+RLS message_reactions enabled=true
+RLS messages enabled=true
+RLS moderation_actions enabled=true
+RLS moderation_cases enabled=true
+RLS paid_sessions enabled=true
+RLS policy_acceptances enabled=true
+RLS policy_versions enabled=true
+RLS profiles enabled=true
+RLS provider_applications enabled=true
+RLS provider_earnings_ledger enabled=true
+RLS provider_payout_accounts enabled=true
+RLS provider_payout_batches enabled=true
+RLS provider_photos enabled=true
+RLS provider_tax_profile enabled=true
+RLS push_tokens enabled=true
+RLS refund_reviews enabled=true
+RLS report_evidence enabled=true
+RLS reports enabled=true
+RLS reviews enabled=true
+RLS session_leases enabled=true
+RLS session_requests enabled=true
+RLS token_transactions enabled=true
+TRIGGER calls.call_push_on_insert
+TRIGGER calls.calls_assign_media_backend
+TRIGGER events.guard_event_shape
+TRIGGER messages.guard_message_columns
+TRIGGER messages.guard_message_reply_and_voice
+TRIGGER messages.guard_message_retention_columns
+TRIGGER messages.messages_touch_session_activity
+TRIGGER moderation_actions.moderation_actions_no_update
+TRIGGER paid_sessions.paid_sessions_accrue_on_end
+TRIGGER profiles.guard_profile_phone_columns
+TRIGGER profiles.guard_profile_pii_columns
+TRIGGER profiles.guard_profile_presence_columns
+TRIGGER profiles.guard_profile_privileged_columns
+TRIGGER profiles.sync_token_balance
+TRIGGER provider_applications.guard_application_transitions
+TRIGGER provider_photos.guard_provider_photo_columns
+TRIGGER provider_photos.provider_photos_single_primary
+TRIGGER provider_photos.provider_photos_sync_avatar
+TRIGGER reviews.refresh_provider_rating
+TRIGGER session_requests.enforce_provider_channel
+TRIGGER token_transactions.on_recharge_credited
+TRIGGER token_transactions.on_recharge_inserted
+TRIGGER token_transactions.touch_transaction_updated_at

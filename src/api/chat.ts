@@ -15,7 +15,9 @@ import { errorTick, tick } from '../lib/haptics';
 import {
   PENDING_PREFIX,
   insertOptimistic,
+  isPending,
   markFailed,
+  mergeIncoming,
   settleOptimistic,
   type TranscriptMessage,
 } from '../lib/transcript';
@@ -581,4 +583,134 @@ export function useOutboxReplay(
       sub.remove();
     };
   }, [conversationId]);
+}
+
+/**
+ * How many rows one gap page asks for.
+ *
+ * 50, which is Telegram's own subsequent-page size — they open a chat with 30
+ * and page with 50 (ChatActivity.java:3264 and :13811). Deliberately smaller
+ * than `PAGE_SIZE`: a gap page is fetched while the member is already looking
+ * at the thread, so latency matters more than round trips.
+ */
+const GAP_PAGE = 50;
+
+/**
+ * How many gap pages one recovery will walk before giving up.
+ *
+ * A bound, not a policy. 20 pages is 1000 messages, past which the honest move
+ * is a full refetch rather than an unbounded loop holding the JS thread. It
+ * exists because the loop's exit condition depends on the SERVER agreeing that
+ * it has run out of rows, and a loop whose termination is somebody else's
+ * decision needs a backstop of its own.
+ */
+const GAP_MAX_PAGES = 20;
+
+/**
+ * Fetch everything that arrived after `sinceIso`, oldest-first, one page.
+ *
+ * Ascending on purpose, unlike `useMessages`: a gap is walked FORWARD from what
+ * we already have towards the present, so the cursor advances monotonically and
+ * a page boundary cannot skip a row.
+ */
+async function fetchMessagesSince(
+  conversationId: string,
+  sinceIso: string,
+): Promise<Message[]> {
+  const { data, error } = await supabase
+    .from('messages')
+    .select('*')
+    .eq('conversation_id', conversationId)
+    .gt('created_at', sinceIso)
+    .order('created_at', { ascending: true })
+    .limit(GAP_PAGE);
+  if (error) {
+    throw new Error(error.message);
+  }
+  return data ?? [];
+}
+
+/**
+ * Catch up on everything missed while the socket was down.
+ *
+ * ---------------------------------------------------------------------------
+ * What this replaces, and why the old thing was not enough
+ * ---------------------------------------------------------------------------
+ * Reconnect used to `invalidateQueries`, which refetches the newest
+ * `PAGE_SIZE` (100) rows. That is correct only while fewer than 100 messages
+ * arrived during the outage. Past that the OLDEST of the missed messages fall
+ * off the end of the page and are never fetched — there is no pagination in the
+ * transcript to reach back for them — so they are silently absent. No error, no
+ * spinner, just a hole in the conversation.
+ *
+ * Telegram's answer is a cursor: it pages against `maxMessageId` / `minDate`
+ * rather than re-reading a fixed window (ChatActivity.java:13811), and its
+ * update layer walks `pts` forward until the server says there is no more
+ * (`getDifference`, MessagesController.java:16869). This is the same shape at
+ * a much smaller scale: walk forward from the newest row we hold until a page
+ * comes back short.
+ *
+ * ---------------------------------------------------------------------------
+ * Why it merges rather than replaces
+ * ---------------------------------------------------------------------------
+ * `mergeIncoming` is order-independent and idempotent, and it is what settles
+ * an optimistic row against its confirmed twin. Replacing the cache wholesale
+ * would discard any send still in flight — the exact rows the outbox exists to
+ * protect.
+ *
+ * Falls back to a plain invalidate when the cache is COLD (nothing to page
+ * from). A cursor needs a starting point, and "no messages yet" has none.
+ */
+export async function recoverMessageGap(
+  queryClient: QueryClient,
+  conversationId: string,
+  /*
+   * Needed by `mergeIncoming` for the self-send reconciliation: a gap page can
+   * legitimately contain a message of MINE that is still sitting in the cache
+   * as an optimistic row, and without `selfId` it would be merged as a second
+   * bubble beside its own pending twin.
+   */
+  selfId: string | undefined,
+): Promise<void> {
+  const key = keys.messages(conversationId);
+  const cached = queryClient.getQueryData<TranscriptMessage[]>(key);
+  const newest = (cached ?? [])
+    .filter(m => !isPending(m))
+    .reduce<string | null>(
+      (max, m) => (max === null || m.created_at > max ? m.created_at : max),
+      null,
+    );
+
+  if (newest === null) {
+    // Cold cache: no cursor to page from, so the ordinary fetch IS the recovery.
+    await queryClient.invalidateQueries({ queryKey: key });
+    return;
+  }
+
+  let cursor = newest;
+  for (let page = 0; page < GAP_MAX_PAGES; page += 1) {
+    const rows = await fetchMessagesSince(conversationId, cursor);
+    if (rows.length === 0) {
+      return;
+    }
+    queryClient.setQueryData<TranscriptMessage[]>(key, prev => {
+      let next = prev ?? [];
+      for (const row of rows) {
+        next = mergeIncoming(next, row, selfId);
+      }
+      return next;
+    });
+    const last = rows[rows.length - 1];
+    if (last === undefined || rows.length < GAP_PAGE) {
+      return;
+    }
+    cursor = last.created_at;
+  }
+  /*
+   * Twenty pages and still more: the device was away long enough that walking
+   * is no longer the cheap option. Fall back to the fixed window, which is what
+   * the old code always did — the difference is that this is now the LAST
+   * resort rather than the only strategy.
+   */
+  await queryClient.invalidateQueries({ queryKey: key });
 }

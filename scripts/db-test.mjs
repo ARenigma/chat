@@ -194,6 +194,117 @@ function generateParitySql() {
   return fixture.cases.length;
 }
 
+/**
+ * The schema-equivalence check, and the one test in this file that is not pgTAP.
+ *
+ * Lifted from Telegram, whose single most valuable hand-written test is not a
+ * behaviour test at all: `TestDatabaseMigration` builds its SQLite schema TWICE
+ * — once fresh via createTables() and once by replaying every migration from
+ * v120 — and asserts the two are identical
+ * (TMessagesProj_AppTests/.../TestDatabaseMigration.kt:12-27). 682 lines, and it
+ * catches the class of bug where "what a new environment gets" and "what a
+ * migrated environment gets" have quietly diverged.
+ *
+ * Ours is the same idea against a committed snapshot: apply all migrations to a
+ * fresh Postgres, render the schema as sorted text, and diff it against
+ * `supabase/schema/snapshot.txt`. The value is not the pass — it is that any
+ * migration which changes the schema must also change the snapshot, so the
+ * change arrives as a REVIEWABLE diff instead of as a surprise in production.
+ * That is the shape of every environment-drift incident this project has had:
+ * a function deployed from a different commit, a client one migration behind.
+ *
+ * Catalog queries rather than pg_dump: pg_dump emits version banners, SET
+ * statements and an ordering that shift between server builds, so a snapshot of
+ * it produces diffs about the dumper rather than about the schema.
+ *
+ * Regenerate deliberately with `node scripts/db-test.mjs --update-schema`.
+ */
+function schemaSnapshot() {
+  const sql = readFileSync(join(ROOT, 'supabase/schema/dump.sql'), 'utf8');
+  const common = ['-v', 'ON_ERROR_STOP=1', '-q'];
+  const result = MANAGED
+    ? spawnSync(
+        'docker',
+        [
+          'exec',
+          '-i',
+          CONTAINER,
+          'psql',
+          ...common,
+          '-U',
+          'postgres',
+          '-d',
+          'postgres',
+        ],
+        { input: sql, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
+      )
+    : spawnSync('psql', [DATABASE_URL, ...common], {
+        input: sql,
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+      });
+  if (result.status !== 0) {
+    console.error(`${result.stdout ?? ''}${result.stderr ?? ''}`);
+    quit('schema dump failed');
+  }
+  return `${result.stdout ?? ''}`
+    .split('\n')
+    .map(l => l.trimEnd())
+    .filter(l => l.length > 0)
+    .sort()
+    .join('\n');
+}
+
+function checkSchemaSnapshot() {
+  const path = join(ROOT, 'supabase/schema/snapshot.txt');
+  const actual = schemaSnapshot();
+
+  if (process.argv.includes('--update-schema')) {
+    writeFileSync(path, `${actual}\n`);
+    console.log(
+      `\nschema snapshot UPDATED (${
+        actual.split('\n').length
+      } facts) -> supabase/schema/snapshot.txt`,
+    );
+    return;
+  }
+
+  let expected;
+  try {
+    expected = readFileSync(path, 'utf8').trimEnd();
+  } catch {
+    writeFileSync(path, `${actual}\n`);
+    console.log(
+      `\nschema snapshot CREATED (${actual.split('\n').length} facts)`,
+    );
+    return;
+  }
+
+  if (expected === actual) {
+    console.log(
+      `\nschema snapshot OK, ${actual.split('\n').length} facts match`,
+    );
+    return;
+  }
+
+  const exp = new Set(expected.split('\n'));
+  const act = new Set(actual.split('\n'));
+  const added = [...act].filter(l => !exp.has(l));
+  const removed = [...exp].filter(l => !act.has(l));
+  console.error('\nschema snapshot MISMATCH');
+  for (const l of removed.slice(0, 40)) console.error(`  - ${l}`);
+  for (const l of added.slice(0, 40)) console.error(`  + ${l}`);
+  if (removed.length + added.length > 80) {
+    console.error(`  ... ${removed.length + added.length - 80} more`);
+  }
+  console.error(
+    '\nIf these changes are intended, regenerate with:\n' +
+      '  node scripts/db-test.mjs --update-schema\n' +
+      'and commit the diff, so the schema change is reviewed rather than assumed.',
+  );
+  quit(`schema drifted: ${removed.length} removed, ${added.length} added`);
+}
+
 function psql(file, { tap = false } = {}) {
   const sql = readFileSync(file, 'utf8');
   const common = ['-v', 'ON_ERROR_STOP=1', '-q', '-t', '-A'];
@@ -585,6 +696,19 @@ for (const suite of suites) {
       console.log(`  ${line}`);
     }
   }
+}
+
+/*
+ * The schema snapshot runs BEFORE cleanup, because it needs the container the
+ * migrations were applied to. An earlier draft put it after the final log line
+ * and it failed with "No such container" — the teardown here is what owns the
+ * ordering, not the position of the console.log.
+ *
+ * Skipped under --tap: that mode's stdout is consumed by an external TAP
+ * reporter, and a human-readable schema diff in the middle of it is not TAP.
+ */
+if (!RAW_TAP) {
+  checkSchemaSnapshot();
 }
 
 cleanup();

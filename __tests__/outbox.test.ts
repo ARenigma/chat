@@ -243,3 +243,70 @@ describe('the bubble tail, ported from WhatsApp', () => {
     expect(turn.slice(at - 200, at)).toContain('pointerEvents="none"');
   });
 });
+
+describe('gap recovery walks a cursor instead of re-reading a window', () => {
+  /*
+   * The defect: reconnect called `invalidateQueries`, which refetches the
+   * newest PAGE_SIZE (100) rows. Correct only while fewer than 100 messages
+   * arrived during the outage — past that the OLDEST missed messages fall off
+   * the end of the window and are never fetched, because the transcript has no
+   * pagination to reach back for them. Silent hole, no error.
+   *
+   * Telegram pages against maxMessageId/minDate rather than a fixed window
+   * (ChatActivity.java:13811) and walks pts forward until the server says it is
+   * out of rows (MessagesController.java:16869). Same shape, smaller scale.
+   */
+  const chat = read('src/api/chat.ts');
+  const realtime = read('src/api/realtime.ts');
+  const code = chat.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  it('pages FORWARD from the newest row held, not backward from now', () => {
+    // Ascending, unlike useMessages: the cursor must advance monotonically or a
+    // page boundary can skip a row.
+    expect(code).toContain("gt('created_at', sinceIso)");
+    expect(code).toMatch(/order\('created_at',\s*\{\s*ascending:\s*true\s*\}\)/);
+  });
+
+  it('advances the cursor to the last row of each page', () => {
+    expect(code).toMatch(/cursor = last\.created_at/);
+  });
+
+  it('stops when a page comes back short', () => {
+    // The only correct termination: a full page means there may be more, a
+    // short page means the server has run out.
+    expect(code).toMatch(/rows\.length < GAP_PAGE/);
+  });
+
+  it('bounds the walk, because its exit condition belongs to the server', () => {
+    expect(code).toContain('GAP_MAX_PAGES');
+    // And the bound falls back to the old fixed window rather than giving up.
+    const at = code.indexOf('GAP_MAX_PAGES');
+    expect(code.slice(at).includes('invalidateQueries')).toBe(true);
+  });
+
+  it('falls back to a plain refetch on a COLD cache', () => {
+    // A cursor needs a starting point and "no messages yet" has none.
+    expect(code).toMatch(/newest === null/);
+  });
+
+  it('merges rather than replacing, so an in-flight send survives', () => {
+    // Replacing the cache wholesale would discard the optimistic rows the
+    // outbox exists to protect.
+    expect(code).toContain('mergeIncoming(next, row, selfId)');
+    expect(code).not.toMatch(/setQueryData[^;]*\brows\b\s*\)/);
+  });
+
+  it('ignores pending rows when picking the cursor', () => {
+    // A pending row's created_at is local clock time and can sit AHEAD of the
+    // server's newest row, which would make the walk skip real messages.
+    const at = code.indexOf('const newest');
+    expect(code.slice(at, at + 200)).toContain('!isPending(m)');
+  });
+
+  it('is what reconnect actually calls, on success AND on failure', () => {
+    const rt = realtime.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(rt).toContain('recoverMessageGap(queryClient, conversationId, selfId)');
+    // Both branches: SUBSCRIBED and the failure states.
+    expect(rt.match(/recoverMessageGap\(/g)?.length).toBeGreaterThanOrEqual(2);
+  });
+});
