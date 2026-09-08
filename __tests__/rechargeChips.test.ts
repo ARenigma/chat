@@ -291,10 +291,18 @@ describe('a money chip shows the price it charges', () => {
    * ₹4,237.29, a number no invoice ever totals. GST "exclusive on the chips" means
    * naming the base and the tax IN ADDITION to the price, not INSTEAD of it.
    *
-   * Under the exclusive model (ADR-0029): price is the base (what you get in
-   * tokens), the GST line is one string ("+ ₹54 GST"), and the Pay bar shows the
-   * total. Order matters as much as presence: price first, then tokens, then the
-   * GST note.
+   * Under the exclusive model (ADR-0029): price is the base, the GST line is one
+   * string ("+ ₹54 GST"), and the Pay bar shows the total.
+   *
+   * REWRITTEN 2026-09-08. The card used to carry THREE lines — price, then the
+   * token count the price bought, then the GST note — and this asserted that
+   * order. With rupees everywhere the middle line rendered "₹300" beneath a
+   * "₹300" headline: the same fact twice, not a supporting line. It is gone,
+   * and what the card still owes the reader — what the money BUYS — is answered
+   * by the minutes tag, which was always the more useful answer.
+   *
+   * So the order asserted is now price then GST note, and the removed line is
+   * asserted ABSENT so it cannot quietly return.
    */
   it.each([
     ['the compact sheet chip', 'compact' as const],
@@ -302,16 +310,16 @@ describe('a money chip shows the price it charges', () => {
   ])('renders price, then tokens, then the gst note on %s', (_name, key) => {
     const host = renderOf(HOSTS[key]);
     const price = host.indexOf('{formatRupees(pack)}');
-    const tokens = host.indexOf('${formatTokens(pack)} tokens`');
     // Under the exclusive model the GST line is a single Text with {gst}.
     const gstNote = host.indexOf('{gst}');
-    expect({ price: price > -1, tokens: tokens > -1, gstNote: gstNote > -1 }).toEqual({
+    expect({ price: price > -1, gstNote: gstNote > -1 }).toEqual({
       price: true,
-      tokens: true,
       gstNote: true,
     });
-    expect(price).toBeLessThan(tokens);
-    expect(tokens).toBeLessThan(gstNote);
+    expect(price).toBeLessThan(gstNote);
+    // The duplicate second price line must not come back.
+    expect(host).not.toContain('formatTokens(pack)');
+    expect(host).not.toMatch(/\}\s*tokens`/);
     // The old two-Text pattern ({gst.base} / {gst.tax}) must be gone.
     expect(host).not.toContain('{gst.base}');
     expect(host).not.toContain('{gst.tax}');
@@ -330,16 +338,19 @@ describe('a money chip shows the price it charges', () => {
     for (const key of ['compact', 'wallet'] as const) {
       const label = labelLine(HOSTS[key]);
       const price = label.indexOf('formatRupees(pack)');
-      const tokens = label.indexOf('formatTokens(pack)');
       const split = label.indexOf('gstSpoken');
-      expect({ host: key, price: price > -1, tokens: tokens > -1, split: split > -1 }).toEqual({
+      expect({ host: key, price: price > -1, split: split > -1 }).toEqual({
         host: key,
         price: true,
-        tokens: true,
         split: true,
       });
-      expect(price).toBeLessThan(tokens);
-      expect(tokens).toBeLessThan(split);
+      expect(price).toBeLessThan(split);
+      /*
+       * The label spoke the price TWICE — "₹300, ₹300, about 13 minutes" — once
+       * the token count became a rupee figure. Same-figures-same-order still
+       * holds; there is simply one figure now, not two.
+       */
+      expect(label.match(/formatRupees\(pack\)/g)?.length).toBe(1);
     }
     // The wallet card also speaks its talk-time pill, and in the pill's place:
     // between the token count and the tax split.

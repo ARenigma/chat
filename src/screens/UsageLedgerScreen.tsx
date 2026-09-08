@@ -33,7 +33,7 @@ import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { listStamp } from '../lib/datetime';
-import { formatTokens } from '../lib/rates';
+import { formatCount, formatRupees } from '../lib/rates';
 import { useUsageLedger, type UsageRow } from '../api/usage';
 import { BackButton } from '../components/BackButton';
 import { Icon, type IconName } from '../components/Icon';
@@ -109,13 +109,13 @@ export function usageKpis(rows: readonly UsageRow[]): UsageKpis | null {
   const sessions = rows.length;
   // Both totals are the caller's own: a member's spend, a provider's share.
   const tokens = rows.reduce((sum, r) => sum + r.tokens, 0);
-  const amount = formatTokens(tokens);
+  const amount = formatRupees(tokens);
   const singular = sessions === 1;
   return {
     sessions,
     // "1 sessions" is the tell that nobody looked at a one-row ledger.
     sessionsLabel: singular ? 'Session' : 'Sessions',
-    sessionsSpoken: `${formatTokens(sessions)} ${
+    sessionsSpoken: `${formatCount(sessions)} ${
       singular ? 'session' : 'sessions'
     } in this ledger`,
     tokens,
@@ -125,10 +125,15 @@ export function usageKpis(rows: readonly UsageRow[]): UsageKpis | null {
      * same reason the title above already says "Earnings by session". Neither
      * wording exposes the other side's figure: it renames the caller's own.
      */
-    tokensLabel: earning ? 'Tokens earned' : 'Tokens spent',
+    /*
+     * "Earned" / "Spent", with no unit word: the figure beneath already carries
+     * ₹ (2026-09-08). Saying "₹1,20,000 tokens spent" names two units for one
+     * number, which is the exact redundancy removing tokens was meant to end.
+     */
+    tokensLabel: earning ? 'Earned' : 'Spent',
     tokensSpoken: earning
-      ? `${amount} tokens earned across these sessions`
-      : `${amount} tokens spent across these sessions`,
+      ? `${amount} earned across these sessions`
+      : `${amount} spent across these sessions`,
     earning,
   };
 }
@@ -228,13 +233,13 @@ export function UsageLedgerScreen({ onBack }: Props) {
               already gapped by — one rhythm down the screen, not two. */}
           <View style={styles.kpiRow}>
             <Kpi
-              value={formatTokens(kpis.sessions)}
+              value={formatCount(kpis.sessions)}
               label={kpis.sessionsLabel}
               spoken={kpis.sessionsSpoken}
               testID="usage-sessions"
             />
             <Kpi
-              value={formatTokens(kpis.tokens)}
+              value={formatRupees(kpis.tokens)}
               label={kpis.tokensLabel}
               spoken={kpis.tokensSpoken}
               testID="usage-total"
@@ -262,7 +267,7 @@ export function UsageLedgerScreen({ onBack }: Props) {
               </View>
               <View style={styles.amount}>
                 <Text allowFontScaling style={styles.amountValue}>
-                  {`${row.i_am_member ? '-' : '+'}${formatTokens(row.tokens)}`}
+                  {`${row.i_am_member ? '-' : '+'}${formatRupees(row.tokens)}`}
                 </Text>
                 {/* Provider only: their share is accrued before it is paid, and
                     saying so here is cheaper than a support conversation. */}

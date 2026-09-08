@@ -3,7 +3,7 @@ import { StyleSheet, Text } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence } from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { formatTokens, walletTone, type WalletTone } from '../lib/rates';
+import { formatRupees, walletTone, type WalletTone } from '../lib/rates';
 import { springTo } from '../theme/motion';
 import { Icon } from './Icon';
 import { Pressable } from './Pressable';
@@ -51,7 +51,7 @@ function TokenCounterView({ balance, onPress, variant = 'balance' }: Props) {
 
   const ink = inkForTone(tone, theme);
   const label =
-    balance === null ? '' : earnings ? `₹${formatTokens(balance)}` : formatTokens(balance);
+    balance === null ? '' : earnings ? `₹${formatRupees(balance)}` : formatRupees(balance);
 
   return (
     <Pressable
@@ -64,8 +64,8 @@ function TokenCounterView({ balance, onPress, variant = 'balance' }: Props) {
             ? 'Earnings loading'
             : 'Balance loading'
           : earnings
-            ? `${formatTokens(balance)} rupees earned. Opens your earnings by session.`
-            : `${formatTokens(balance)} tokens. Talk time is charged by the minute.`
+            ? `${formatRupees(balance)} rupees earned. Opens your earnings by session.`
+            : `${formatRupees(balance)}. Talk time is charged by the minute.`
       }
       accessibilityHint={
         earnings

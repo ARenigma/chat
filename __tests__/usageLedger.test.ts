@@ -163,8 +163,14 @@ describe('usageKpis: two figures, and what each one means', () => {
     expect(member?.earning).toBe(false);
     expect(provider?.earning).toBe(true);
 
-    expect(member?.tokensLabel).toBe('Tokens spent');
-    expect(provider?.tokensLabel).toBe('Tokens earned');
+    /*
+     * "Spent" / "Earned", not "Tokens spent" / "Tokens earned" (2026-09-08).
+     * The figure beneath already carries ₹, so the unit word was the second
+     * naming of one unit. What this test actually guards is unchanged and is
+     * the line below: the two sides must not read the same.
+     */
+    expect(member?.tokensLabel).toBe('Spent');
+    expect(provider?.tokensLabel).toBe('Earned');
     expect(provider?.tokensLabel).not.toBe(member?.tokensLabel);
 
     expect(member?.tokensSpoken).toContain('spent');
@@ -192,7 +198,12 @@ describe('usageKpis: two figures, and what each one means', () => {
     const big = usageKpis(spent(50, 2400));
     expect(big?.sessions).toBe(50);
     expect(big?.tokens).toBe(120000);
-    expect(big?.tokensSpoken).toBe('1,20,000 tokens spent across these sessions');
+    /*
+     * No unit word beside the figure: `amount` already renders ₹1,20,000, and
+     * "₹1,20,000 tokens spent" would name two units for one number. Amit,
+     * 2026-09-08: "remove tokens and replace with rs everywhere".
+     */
+    expect(big?.tokensSpoken).toBe('₹1,20,000 spent across these sessions');
   });
 
   it('spells out what each number means, not just the number', () => {
@@ -210,7 +221,12 @@ describe('usageKpis: two figures, and what each one means', () => {
       expect((spoken ?? '').split(' ').length).toBeGreaterThan(2);
     }
     expect(kpis?.sessionsSpoken).toContain('sessions');
-    expect(kpis?.tokensSpoken).toContain('tokens');
+    /*
+     * The spoken figure must say what it IS, not just how much. It used to
+     * assert the word "tokens"; with the unit in the ₹ symbol, the meaning-
+     * bearing word is the verb.
+     */
+    expect(kpis?.tokensSpoken).toMatch(/spent|earned/);
   });
 });
 
@@ -221,8 +237,14 @@ describe('the KPIs are wired above the rows', () => {
     expect(SCREEN).toContain('testID="usage-total"');
     // Fed from the pure helper, so the card cannot compute a second, different
     // answer from the one the tests above pin.
-    expect(SCREEN).toContain('value={formatTokens(kpis.sessions)}');
-    expect(SCREEN).toContain('value={formatTokens(kpis.tokens)}');
+    /*
+     * TWO formatters, and the split matters. A session COUNT is not money —
+     * renaming every formatTokens call site to formatRupees rendered "₹5
+     * sessions", which this suite caught. formatCount is the old plain-digits
+     * behaviour under an honest name.
+     */
+    expect(SCREEN).toContain('value={formatCount(kpis.sessions)}');
+    expect(SCREEN).toContain('value={formatRupees(kpis.tokens)}');
     expect(SCREEN).toContain('label={kpis.sessionsLabel}');
     expect(SCREEN).toContain('label={kpis.tokensLabel}');
   });

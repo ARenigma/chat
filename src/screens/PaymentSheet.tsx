@@ -9,7 +9,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { formatRupees, formatTokens, gstAddedLabel, packTotalInr, MOCK_PAYMENTS, PAYMENTS_ENABLED } from '../lib/rates';
+import { formatRupees, gstAddedLabel, packTotalInr, MOCK_PAYMENTS, PAYMENTS_ENABLED } from '../lib/rates';
 import { FALLBACK_ECONOMICS, useEconomicsConfig } from '../api/appConfig';
 import { supabase } from '../lib/supabase';
 import { Button } from '../components/Button';
@@ -158,7 +158,7 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
    * Sheet's `body` is bodyLarge — 16dp Geist-REGULAR (ADR-0024 § 1: weight is a
    * bundled static face, and bodyLarge's face is Regular). So the rupee figure
    * the member is about to be charged was being stated in the same regular
-   * supporting line as "Add 300 tokens", while the identical figure one surface
+   * supporting line as "Add ₹300", while the identical figure one surface
    * behind it — RechargeScreen's `amount` / `cardAmount` / `balanceValue` — is
    * titleLargeEmphasized, 22dp Geist-BOLD. Same number, two weights, depending
    * on whether a sheet happened to be over the screen (Amit, 2026-09-07: "the
@@ -178,8 +178,8 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
       : mockPhase === 'processing'
         ? `Paying via ${isCashfree ? 'Cashfree' : method}`
         : isCashfree
-          ? `Add ${formatTokens(amount)} tokens  ·  Sandbox checkout`
-          : `Add ${formatTokens(amount)} tokens`;
+          ? `Add ${formatRupees(amount)}  ·  Sandbox checkout`
+          : `Add ${formatRupees(amount)}`;
 
   if (mockPhase === 'success') {
     return (
@@ -206,11 +206,11 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
             <Icon name="check" size={TOKENS.icon.lg} color={theme.color.text.positive} />
           </View>
           <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized} allowFontScaling style={styles.successDetail}>
-            {formatTokens(amount)} tokens added
+            {formatRupees(amount)} tokens added
           </Text>
           {successBalance !== null ? (
             <Text allowFontScaling style={styles.successBalance}>
-              Balance {formatTokens(successBalance)} tokens
+              Balance {formatRupees(successBalance)} tokens
             </Text>
           ) : null}
         </View>
@@ -539,7 +539,7 @@ const makeStyles = (t: Theme) =>
       backgroundColor: t.color.bg.base,
       marginBottom: TOKENS.space.xs,
     },
-    // The terminal figure of the whole flow — "5,000 tokens added" — so it takes
+    // The terminal figure of the whole flow — "₹5,000 added" — so it takes
     // the money/balance role, titleLargeEmphasized, the one RechargeScreen's
     // `balanceValue` uses for the same quantity on the surface behind. It was
     // titleMediumEmphasized, which is the FILLED-BUTTON role (Button.tsx line

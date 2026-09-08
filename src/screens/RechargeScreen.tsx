@@ -4,17 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import {
-  DEFAULT_RATES,
-  formatRupees,
-  formatTokens,
-  gstAddedLabel,
-  gstAddedSpoken,
-  packTotalInr,
-  PAYMENTS_ENABLED,
-  RECHARGE_PACKS,
-  talkMinutesLeft,
-} from '../lib/rates';
+import { DEFAULT_RATES, formatRupees, gstAddedLabel, gstAddedSpoken, packTotalInr, PAYMENTS_ENABLED, RECHARGE_PACKS, talkMinutesLeft } from '../lib/rates';
 import {
   useRechargeConfig,
   useKillSwitches,
@@ -65,7 +55,7 @@ export function RechargeScreen() {
         visible={visible}
         testID="refill-sheet"
         title="Recharge"
-        body="Add tokens to keep talking."
+        body="Add money to keep talking."
         // The 72% `auto` cap was already too low for this content on a 774dp
         // window (Redmi Note 7 Pro): the body shrank and the rate row painted
         // INSIDE the bottom pair of cards — unnoticed while the cards' lower
@@ -134,7 +124,7 @@ function RechargeSheetForm({
             used to sit here named titleLargeEmphasized, the role this style no
             longer uses. */}
         <Text allowFontScaling style={styles.balanceValue}>
-          {`${formatTokens(balance)} tokens`}
+          {`${formatRupees(balance)}`}
         </Text>
       </View>
 
@@ -157,7 +147,7 @@ function RechargeSheetForm({
                 testID={`pack-${pack}`}
                 accessibilityRole="radio"
                 checked={selected}
-                accessibilityLabel={`${formatRupees(pack)}, ${formatTokens(pack)} tokens${gstSpoken ? `, ${gstSpoken}` : ''}${popular ? ', popular' : ''}`}
+                accessibilityLabel={`${formatRupees(pack)}${gstSpoken ? `, ${gstSpoken}` : ''}${popular ? ', popular' : ''}`}
                 press="card"
                 // The M3 pressed state layer is the container's ON colour at 10%
                 // (androidx StateTokens.kt `PressedStateLayerOpacity = 0.1f`,
@@ -177,9 +167,15 @@ function RechargeSheetForm({
                 <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized} allowFontScaling style={[styles.amount, selected && styles.amountOn]}>
                   {formatRupees(pack)}
                 </Text>
-                <Text allowFontScaling style={[styles.tokens, selected && styles.tokensOn]}>
-                  {`${formatTokens(pack)} tokens`}
-                </Text>
+                {/*
+                  * The second line is GONE (2026-09-08). It read "300 tokens"
+                  * under a "₹300" headline — the price and what the price
+                  * BOUGHT, which was informative while those were two different
+                  * units. With rupees everywhere it renders "₹300" under "₹300",
+                  * which is not a supporting line, it is the same fact twice.
+                  * The card still answers "what does this buy" through the
+                  * minutes tag, which is the answer that was always more useful.
+                  */}
                 {/* The SUPPORTING line under the price: what the ₹300 above is
                     made of. The price stays the headline — a store card that
                     shows only a base and a tax names a number nobody is charged
@@ -366,17 +362,17 @@ function RechargeForm({
         </Text>
         {/* Uncapped, same reason as the sheet's balance figure above. */}
         <Text allowFontScaling style={styles.balanceValue}>
-          {`${formatTokens(balance)} tokens`}
+          {`${formatRupees(balance)}`}
         </Text>
         <Text allowFontScaling style={styles.balanceHint}>
           {balance === null || balance === 0
-            ? 'Add tokens to start talking.'
+            ? 'Add money to start talking.'
             : `≈ ${balanceMinutes} min of talk time`}
         </Text>
       </View>
 
       <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.section}>
-        Add tokens
+        Add money
       </Text>
 
       <View style={styles.grid}>
@@ -397,7 +393,7 @@ function RechargeForm({
                 testID={`pack-${pack}`}
                 // The label is the card read aloud, in the card's own order:
                 // price, then tokens, then talk time, then the base and the tax.
-                // It used to lead with "Add 5,000 tokens" and then speak a
+                // It used to lead with "Add ₹5,000" and then speak a
                 // ₹5,000 that was nowhere on the card, so TalkBack and a sighted
                 // user were told different prices — the defect
                 // developer.android.com/guide/topics/ui/accessibility/apps
@@ -416,7 +412,7 @@ function RechargeForm({
                 // instead of an English word baked into our string.
                 accessibilityRole="radio"
                 checked={on}
-                accessibilityLabel={`${formatRupees(pack)}, ${formatTokens(pack)} tokens, about ${minutes} minutes of talk${gstSpoken ? `, ${gstSpoken}` : ''}${badge ? `, ${badge}` : ''}`}
+                accessibilityLabel={`${formatRupees(pack)}, about ${minutes} minutes of talk${gstSpoken ? `, ${gstSpoken}` : ''}${badge ? `, ${badge}` : ''}`}
                 press="card"
                 // Same M3 state-layer reason as the compact chip above:
                 // StateTokens.kt `PressedStateLayerOpacity = 0.1f` over the
@@ -455,7 +451,7 @@ function RechargeForm({
                     {formatRupees(pack)}
                   </Text>
                   <Text allowFontScaling style={[styles.cardUnit, on && styles.cardUnitOn]}>
-                    {`${formatTokens(pack)} tokens`}
+                    {`${formatRupees(pack)}`}
                   </Text>
                 </View>
                 {/* Talk-time pill: page colour + accent ink whether the card is
@@ -588,7 +584,7 @@ const makeStyles = (t: Theme) =>
     // It is a NUMERAL role and not the titleLargeEmphasized MONEY_FIGURE that
     // `amount` / `cardAmount` / PaymentSheet's `totalValue` take, because this
     // figure is not money: it is a token count, and the app already draws that
-    // distinction — PaymentSheet's `successBalance`, the other "N tokens" line in
+    // distinction — PaymentSheet's `successBalance`, the other "₹N" line in
     // the flow, is a supporting line rather than a money figure. What the balance
     // shares with the numerals is that it is a FIGURE, so it wants the tabular
     // digits the bespoke block it replaces was hand-rolling and the text roles do
@@ -598,7 +594,7 @@ const makeStyles = (t: Theme) =>
     // hero numeral": that role is 32dp and the sheet's balance ROW cannot seat
     // it. On a 360dp window that row has 224dp for its label and its value (312dp
     // of Sheet content, less md a side, less the 32dp ₹ mark and two 12dp gaps),
-    // and "12,345 tokens" measures 237.6dp of it at 32dp Geist-Bold — the label
+    // and "₹12,345" measures 237.6dp of it at 32dp Geist-Bold — the label
     // would have negative room. At 24dp it is 178.2dp and the label keeps 45.8dp,
     // which wraps "Your balance" to two 24dp lines inside a 70dp row. A role only
     // one host can render cannot be the role for a figure both hosts show.
@@ -739,7 +735,7 @@ const makeStyles = (t: Theme) =>
     cardAmountOn: {
       color: t.color.text.onAccent,
     },
-    // What the price buys, under it. One line ("5,000 tokens", 77.6dp of the
+    // What the price buys, under it. One line ("₹5,000", 77.6dp of the
     // card's 115.8dp) rather than the number-over-noun pair the coin row held,
     // because the number is now the price above and repeating it at 24px made
     // two headline figures out of one fact.
@@ -849,7 +845,7 @@ const makeCompactStyles = (t: Theme) =>
     // titleMediumEmphasized, matching the wallet page's `section`. Both were
     // already 16dp, so this changes the FACE and not the size: bodyLarge is
     // Geist-Regular, so "Choose a pack" sat at body weight and did not read as a
-    // heading, while "Add tokens" one host over did. Bold-16-with-primary-ink is
+    // heading, while "Add money" one host over did. Bold-16-with-primary-ink is
     // the app's settled in-flow section heading (ProfileSetupScreen `section`);
     // labelMediumEmphasized on secondary ink is the other, quieter pattern and it
     // belongs to list-group overlines (SettingsSheet `subheader`,
