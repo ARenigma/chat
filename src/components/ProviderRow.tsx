@@ -4,7 +4,7 @@ import Animated from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ProviderSummary } from '../lib/database.types';
-import { initialOf } from '../lib/display';
+import { genderLetter, initialOf } from '../lib/display';
 import { presenceForSpeech, readPresence } from '../lib/presence';
 import { rowIn } from '../theme/motion';
 import { Avatar } from './Avatar';
@@ -14,29 +14,35 @@ import { Pressable } from './Pressable';
 import { CATEGORY_BADGE, categoryOf } from '../lib/providerFilters';
 import { ROW_EXPERTISE_LIMIT, rowExpertise } from '../lib/expertise';
 import { formatRupees } from '../lib/rates';
+import { displayRating, formatReviewCount } from '../lib/systemRating';
+import { RatingStars, STARS_HEIGHT } from './RatingStars';
 
 interface Props {
   provider: ProviderSummary;
   index: number;
   /**
-   * Suppresses the separator. An iOS plain list draws a divider *between* cells
-   * and never after the last one; a trailing hairline under the final row reads as
-   * a list that has been cut off rather than one that has ended.
+   * Suppresses the trailing gap under the last card, so the list does not end
+   * with a strip of page colour that reads as a cut-off rather than an end.
    */
   isLast: boolean;
   /**
-   * Row body tap: receives the provider id rather than the full summary.
-   *
-   * Changed from `(provider: ProviderSummary) => void` so call sites can pass a
-   * stable `useCallback((id: string) => ...)` without re-wrapping the full object
-   * — which was the reason memo never held across balance ticks.
+   * Card body tap: opens the conversation. Receives the provider id rather than
+   * the full summary, so call sites can pass a stable
+   * `useCallback((id: string) => ...)` without re-wrapping the object — which
+   * was the reason memo never held across balance ticks.
    */
   onPress: (id: string) => void;
-  /**
-   * Avatar tap: open the profile card. Same id-only contract as `onPress` so both
-   * can be hoisted as stable callbacks in the parent.
-   */
+  /** Avatar tap: open the profile card. Same id-only contract as `onPress`. */
   onPressAvatar?: (id: string) => void;
+  /**
+   * The CTA. Rings the provider — a DIFFERENT action from the card body, which
+   * is why it is a second touch target where the old chevron was rightly not.
+   *
+   * Optional: a surface with nowhere to put a call passes nothing, and the
+   * button falls back to opening the conversation, so the control is never
+   * inert and never lies about what it will do.
+   */
+  onCall?: (id: string) => void;
   /**
    * Whether to name the provider's category on the row (migration 065).
    *
@@ -46,13 +52,7 @@ interface Props {
    * astrologer from a listener.
    */
   showCategory?: boolean;
-  /**
-   * Whether to run the entrance animation. Defaults to true.
-   *
-   * Set to false for cells that FlashList has already shown once (tracked by the
-   * parent via a useRef Set) so that scroll-recycling a cell does not re-fire the
-   * stagger animation on every appearance.
-   */
+  /** Whether to run the entrance animation. Defaults to true. */
   animateEntrance?: boolean;
   /**
    * ₹ per minute, passed IN rather than read from `useEconomicsConfig()` here.
@@ -68,12 +68,18 @@ interface Props {
 }
 
 /**
- * A seeded years-of-experience, 2 to 8, stable per provider.
+ * A seeded years-of-experience, 1 to 10, stable per provider.
  *
- * A placeholder (Amit's "seeded for now"): the directory has no experience
- * column, so this derives a deterministic number from the id rather than
- * inventing one per render. Swap for a real `experience_years` field when the
- * schema carries it; this is the one number in the row that is not yet true.
+ * A placeholder (Amit, 2026-09-08: "give experience also from 1-10 years"): the
+ * directory has no experience column, so this derives a deterministic number
+ * from the id rather than inventing one per render. It is the same class of
+ * manufactured fact as `systemRating` — that module's header argues the case at
+ * length and applies here too — and stable for the same reason: a number that
+ * changed as the list recycled would be a visible bug rather than a plausible
+ * figure.
+ *
+ * Was 2..8; widened to 1..10 on request. Swap for a real `experience_years`
+ * column when the schema carries one.
  */
 export function seededExperienceYears(id: string): number {
   let h = 0;
@@ -82,7 +88,7 @@ export function seededExperienceYears(id: string): number {
     // op, which the lint config forbids.
     h = (h * 31 + id.charCodeAt(i)) % 100000;
   }
-  return 2 + (h % 7);
+  return 1 + (h % 10);
 }
 
 /** "replies in ~4m". Rounded hard, because precision here would be false. */
@@ -103,77 +109,80 @@ export function replyLatency(seconds: number | null): string | null {
 }
 
 /**
- * Avatar diameter. Exported because the separator inset is derived from it.
- *
- * 76, measured. It was 40 — an iOS Messages/Contacts list-row size, and the
- * right answer while this row was a two-line inbox-shaped cell. The row is now
- * built on Astrotalk's anatomy (Amit, 2026-09-08: "astrotalk layout with
- * clarity tags"), read off the Redmi with `uiautomator dump` at density 440,
- * 2.75 px/dp, rather than from a screenshot.
- *
- * 76 and not 72, and the difference is which of Astrotalk's two circles to
- * match. Its `user_pic` is 72.0dp sitting inside a 76.4dp
- * `background_user_pic`, the yellow ring. The ring is NOT reproduced — a halo
- * on every row of a directory of strangers reads as a badge that has been
- * awarded rather than a frame, the same argument that keeps our avatars off
- * `warm` — so our visible circle is the OUTER one, and 76 is what lands in the
- * same footprint.
- *
- * It is also already in `Avatar`'s size union, which is closed on purpose
- * ("a new size is a decision someone makes") and carries hand-tuned FONT and
- * DOT entries per value. Adding 72 would have meant inventing both for a
- * measurement that 76 already satisfies to within 0.4dp.
+ * The photo itself. Astrotalk's `user_pic` is 72.0dp; ours is 76 because that
+ * is what `Avatar`'s deliberately-closed size union carries, and 76 already has
+ * the hand-tuned FONT and DOT entries a new value would have to invent.
  */
 export const ROW_AVATAR = 76;
 
-export const ROW_SEPARATOR_INSET = ROW_AVATAR + TOKENS.space.sm;
-
 /**
- * The disclosure chevron's own slot, so it stops sharing the row's flex.
+ * The ring, which Astrotalk has and this row did not.
  *
- * Amit's report: "we have full pane occupied for arrow button on sp profile row
- * in homescreen which chuts the language chip -- make the icon individual per
- * row". The chevron was a bare `Icon` sitting as the row's last flex child, so
- * what it took from the text column was whatever its glyph happened to measure,
- * and nothing in the row said "this much and no more".
+ * Amit, 2026-09-08: "token color of ring around dp always" — the accent, so it
+ * is the same green as the CTA and the wallet pill rather than a colour with no
+ * other job. Astrotalk's is their brand yellow; this is the same move in our
+ * palette.
  *
- * `icon.md` (20) rather than `icon.sm` (16), which is the chevron's own `size`:
- * `Icon` renders a Lucide glyph at `Math.round(size * ICON_SCALE)` — 1.2, see
- * Icon.tsx — so a 16 chevron occupies a 19dp box and a 16dp slot would clip it.
- * 20 is the smallest token that cannot, and `__tests__/providerRow.test.ts`
- * checks that arithmetic against Icon.tsx rather than trusting this sentence.
+ * The earlier argument for having NO ring was that a halo on a stranger's face
+ * reads as a badge that has been awarded. That argument fails on a ring that is
+ * on EVERY row: uniform decoration endorses nobody, which is the same reasoning
+ * that lets the accent CTA past the directory's monochrome rule.
  *
- * A slot and not a second Pressable. "Individual per row" is about the width the
- * glyph owns, not about a second touch target: the row already opens the
- * conversation, so a chevron button would be a duplicate action and — like the
- * avatar, which is folded in with `accessible={false}` below — a second TalkBack
- * node overlapping the row for no gain.
+ * A 2dp stroke with a 2dp inset, giving 84 overall against Astrotalk's 85.1dp
+ * `ll_old_image_holder`. RN borders draw inside the box, so an 84 box with a
+ * 2dp border has an 80 content area and `padding: 2` leaves exactly 76.
  */
-export const ROW_CHEVRON_SLOT = TOKENS.icon.md;
+const RING_STROKE = 2;
+const RING_INSET = 2;
+export const ROW_AVATAR_RING = ROW_AVATAR + 2 * (RING_STROKE + RING_INSET);
 
 /**
- * The tag pill line, the languages line and the price line, named so the height
- * arithmetic below reads as the row rather than as a sum of tokens.
+ * The gap between the ring and the star row.
+ *
+ * `space.xs` (8) and not `space['2xs']` (4). Amit, on the device: "ratings too
+ * close to dp circle.. allow some more spacing" — and the 4dp that looked right
+ * in the arithmetic reads as crowding on hardware, because the ring's stroke is
+ * a hard edge and the stars have their own optical padding inside the glyph
+ * box, so the measured gap and the perceived gap are not the same number.
+ *
+ * It costs the card nothing: the left column goes 120 → 124, still under the
+ * right column's 136, so `PROVIDER_CARD_HEIGHT` is unchanged.
+ */
+const RING_TO_STARS = TOKENS.space.xs;
+
+/**
+ * The expertise pill line, directly under the name.
+ *
+ * Amit: "astrotalk also has expertise just below the name" — and it does:
+ * `skillET` sits at y323.3 with the name at y295.3, 17.1dp tall, reading
+ * "Vedic,  AI Astrologer". Ours is pills rather than a comma list, which is the
+ * one thing taken from Clarity instead ("jsut add expertise from clarity").
  */
 const ROW_TAG_LINE = META_CHIP_HEIGHT_SM;
 
 /**
- * The CTA's height, and the one number in this row that is NOT the reference.
+ * The CTA's height, and the one number in this card that is NOT the reference.
  *
  * Astrotalk's `call_rl` measures 36.0dp on the Redmi. Amit: "48dp". He is right
  * and the platform agrees — "we recommend that each interactive UI element have
  * a focusable area, or touch target size, of at least 48dp x 48dp"
- * (https://developer.android.com/guide/topics/ui/accessibility/apps) — and
- * unlike the chip pills above, this one really is tappable, so the 48 applies
- * with full force. A 36dp button is the reference being wrong.
+ * (https://developer.android.com/guide/topics/ui/accessibility/apps) — and this
+ * one really is tappable, so the 48 applies with full force. A 36dp button is
+ * the reference being wrong.
  */
 export const ROW_CTA_HEIGHT = TOKENS.interaction.minTarget;
 
 /** The CTA's width. Astrotalk's is 95.3dp; 96 is the same number on our grid. */
 export const ROW_CTA_WIDTH = 96;
 
+/** The card's inner padding. Astrotalk insets its avatar 12dp from the card. */
+const CARD_PAD = TOKENS.space.sm;
+
+/** Card-to-card gap. Astrotalk's is 9.1dp between one card and the next. */
+export const ROW_CARD_GAP = TOKENS.space.xs;
+
 /**
- * The row's laid-out height, DERIVED rather than written down, so the list's
+ * The card's laid-out height, DERIVED rather than written down, so the list's
  * `overrideItemLayout` hint cannot drift away from the row it describes.
  *
  * It drifted already: HomeScreen told FlashList `size = 97` in both of its
@@ -183,30 +192,37 @@ export const ROW_CTA_WIDTH = 96;
  * and scroll-to-index accuracy, not correctness, which is exactly why nobody
  * noticed for as long as nobody did.
  *
- * TWO COLUMNS NOW, and the row is the taller of them plus its padding. That is
- * the shape Astrotalk uses and the reason the avatar grew: the left column is
- * the avatar with the rating stacked under it, the right column is four lines,
- * and neither is a fixed multiple of the other.
+ * TWO COLUMNS, and the card is the taller of them plus its padding — the shape
+ * Astrotalk uses, and the reason the avatar grew:
  *
- *   left   avatar 76 · 4 · rating 16 · count 16                = 112
- *   right  name 24 · 2 · tags 24 · 2 · languages 16 · 2 · CTA 48 = 118
+ *   left   ring 84 · 4 · stars 14 · 2 · count 16                          = 120
+ *   right  name 24 · 2 · tags 24 · 2 · langs 16 · 2 · exp 16 · 2 · CTA 48 = 136
  *
  * The last line is a ROW — price on the left, CTA on the right — so it costs
  * the CTA's 48 rather than 48 plus the price's own 20. That is where Astrotalk
  * puts its button too: `call_rl` spans y361.5–397.5, straddling the experience
  * and price lines rather than sitting under them.
  *
- * 142dp against Astrotalk's 146.2dp `row_content_holder`, which is as close as
- * two different type scales get without copying one.
+ * 160dp of card against Astrotalk's 146.2dp `row_content_holder`, and 168 of
+ * pitch against their 180.4 — taller than the first build, which is what was
+ * asked for ("increase row height for comfortable view"), and inside the
+ * reference's own bracket.
  *
  * `__tests__/providerRow.test.ts` pins the arithmetic from the tokens, so a
  * change to the type scale or a chip height fails there rather than silently
  * mis-hinting the list.
  */
+/**
+ * What the left column actually contains, top to bottom.
+ *
+ * It is no longer what sizes the card — see below — but it still has to FIT,
+ * and the assertion that it does is what keeps the two columns honest.
+ */
 export const PROVIDER_ROW_LEFT_COLUMN =
-  ROW_AVATAR +
-  TOKENS.space['2xs'] +
-  TOKENS.typography.labelMedium.lineHeight +
+  ROW_AVATAR_RING +
+  RING_TO_STARS +
+  STARS_HEIGHT +
+  TOKENS.space.hair +
   TOKENS.typography.bodySmall.lineHeight;
 
 export const PROVIDER_ROW_RIGHT_COLUMN =
@@ -216,55 +232,82 @@ export const PROVIDER_ROW_RIGHT_COLUMN =
   TOKENS.space.hair +
   TOKENS.typography.bodySmall.lineHeight +
   TOKENS.space.hair +
+  TOKENS.typography.bodySmall.lineHeight +
+  TOKENS.space.hair +
   ROW_CTA_HEIGHT;
 
-export const PROVIDER_ROW_HEIGHT =
-  TOKENS.space.sm * 2 +
-  Math.max(PROVIDER_ROW_LEFT_COLUMN, PROVIDER_ROW_RIGHT_COLUMN);
+/**
+ * The card itself, without the gap under it — the RIGHT column plus padding.
+ *
+ * It used to be `Math.max` of the two columns, which was correct arithmetic and
+ * the wrong shape. Amit, on the device: "strats should align with rate.. pls
+ * see how astrotalsk proved space and alignment" — and the reference does align
+ * them, exactly: its `average_ratingbar` sits at y384.4 and its `price` at
+ * y386.5, two points apart, so the stars and the rate read as one line across
+ * the card.
+ *
+ * Top-aligning two columns of different heights cannot produce that. The left
+ * column is shorter, so its stars landed 13dp above the price and the card had
+ * two unrelated horizons.
+ *
+ * The fix is to give the left column the RIGHT column's height and push its
+ * contents apart (`justifyContent: 'space-between'`): the ring stays at the
+ * top, the stars-and-count block falls to the bottom, and the star row's centre
+ * lands within a point of the price row's. That is Astrotalk's arrangement
+ * rather than an approximation of it, and it stays true on its own — if a line
+ * is added to the right column, both sides grow together.
+ *
+ * `PROVIDER_ROW_LEFT_COLUMN` therefore no longer sizes anything, and the test
+ * asserts it FITS instead.
+ */
+export const PROVIDER_CARD_HEIGHT = CARD_PAD * 2 + PROVIDER_ROW_RIGHT_COLUMN;
+
+/** What the list must reserve per item: the card plus the gap beneath it. */
+export const PROVIDER_ROW_HEIGHT = PROVIDER_CARD_HEIGHT + ROW_CARD_GAP;
 
 
 /**
- * A row in the directory, rebuilt on Astrotalk's anatomy with Clarity's tags.
+ * A directory card, copied from Astrotalk with Clarity's expertise pills.
  *
- * Amit, 2026-09-08: "explore rows first — astrotalk layout with clarity tags",
- * after "they dont look nice.. or catchy". The reference was read off the
- * Redmi with `uiautomator dump` rather than from a screenshot, so every number
- * below is a measurement: 72dp avatar, the rating stacked beneath it, four text
- * lines beside it, an outlined CTA on the price line.
+ * Amit, 2026-09-08: "exactly copy the astrotalk -- why to deviate.. jsut add
+ * expertise from clarity.. astrotalk also has expertise just below the name",
+ * and "take all line items as is".
  *
- * WHAT CAME FROM WHERE, and it matters because the two references disagree:
+ * MEASURED, NOT EYEBALLED. Astrotalk is installed on the Redmi, so the
+ * reference was read with `adb exec-out uiautomator dump` at density 440
+ * (2.75 px/dp), not from a screenshot. Its line items, in order, with the
+ * measurements this card is built to:
  *
- *   Astrotalk  the anatomy. Big avatar, rating + count under it, name / detail
- *              lines / price stacked to its right, outlined CTA on the price
- *              line. Its detail lines are plain comma-joined text.
- *   Clarity    the tags themselves, as pills rather than a comma list, which is
- *              the half of "best of both" that Astrotalk does not have.
+ *   nameET     y295.3 h25.5   "Ritu Ji"
+ *   skillET    y323.3 h17.1   "Vedic,  AI Astrologer"    → our expertise pills
+ *   language   y344.4 h17.1   "English, Hindi"
+ *   expET      y365.5 h17.1   "Exp- 14 Years"
+ *   price      y386.5 h21.8   "₹ 24 ₹ 5" + "/min"
+ *   ratingbar  y384.4 80×16   under the avatar
+ *   orders     y402.5 h16.7   "10k+ orders"              → our review count
+ *   call_rl    y361.5 95.3×36 the CTA
+ *   card       h171.3, pitch 180.4, avatar 72 in a 76.4 ring
  *
- * FIVE DELIBERATE DEPARTURES, stated because RULE 1 asks for them:
+ * IT IS A CARD, which is the deviation that got reversed. This list was on
+ * hairline-divided rows, on the argument that a member moves between it and the
+ * inbox constantly and two list idioms read as two apps. Amit overruled it —
+ * "why to deviate" — and the reference is unambiguous: cards, not rows.
  *
- *   1. **48dp CTA, not Astrotalk's 36.** See ROW_CTA_HEIGHT — this one is
- *      genuinely tappable, so the 48dp minimum applies and the reference is
- *      simply wrong.
- *   2. **No struck-through price.** Astrotalk renders "₹ 24 ₹ 5/min" with the
- *      first crossed out. Amit: "no struck price". We have one rate and it is
- *      not discounted, so a struck price would be an invented anchor.
- *   3. **No yellow ring on the avatar.** See ROW_AVATAR.
- *   4. **No photographs.** Unchanged from the previous row and for the same
- *      reason: we publish initials, and the avatar is never `warm`.
- *   5. **The seeded experience line is gone.** Astrotalk's "Exp- 14 Years" is a
- *      real column; ours came from `seededExperienceYears`, a hash of the id.
- *      It survived as one chip among several, where it read as one fact among
- *      many. Given its own line in the reference's anatomy it would be a
- *      fabricated number with a line of its own, which is a different and worse
- *      thing. The function stays exported and tested — the profile still uses
- *      it — but the browse surface no longer states it.
+ * FOUR DEPARTURES SURVIVE, each of them Amit's own instruction rather than my
+ * judgement:
  *
- * The row is still a ROW: hairline-divided, on the page, no card. That is the
- * one place the anatomy is followed and the styling is not, and it is a real
- * choice rather than an omission — Astrotalk's rows are cards on grey. The
- * argument that put this list on hairlines still holds: a member moves between
- * this list and the inbox constantly, and two list idioms in one app reads as
- * two apps. Reversing it is one style block if Amit wants the cards.
+ *   1. 48dp CTA, not 36. See ROW_CTA_HEIGHT.
+ *   2. No struck-through price. Astrotalk shows "₹ 24 ₹ 5/min" with the first
+ *      crossed out; we have one undiscounted rate, so an anchor would be
+ *      invented.
+ *   3. No glyph before the price ("remove call icon before 22/min").
+ *   4. Expertise as pills rather than a comma list — the Clarity half.
+ *
+ * THE RATING IS MANUFACTURED for a provider with fewer than 50 genuine ones.
+ * That is a product decision, taken deliberately; `src/lib/systemRating.ts`
+ * holds the numbers, the switch and the argument, and this card reads it
+ * through one function so the decision cannot leak into a second
+ * implementation.
  */
 function ProviderRowView({
   provider,
@@ -272,6 +315,7 @@ function ProviderRowView({
   isLast,
   onPress,
   onPressAvatar,
+  onCall,
   ratePerMin,
   animateEntrance = true,
   showCategory = false,
@@ -281,10 +325,9 @@ function ProviderRowView({
   const initial = initialOf(provider.display_name);
 
   /*
-   * The tag line. Category leads when there are no tabs above the list to say
-   * it (search), which is the same rule the old chip strip used — it is a fact
-   * about this person of exactly the tag kind, so it belongs in the same line
-   * rather than in a second one.
+   * The expertise line. Category leads when there are no tabs above the list to
+   * say it (search), because it is a fact about this person of exactly the tag
+   * kind and belongs in the same line rather than in a second one.
    *
    * `rowExpertise` caps and dedupes; the slice after it keeps the total at
    * three so a categorised search row does not run four pills wide.
@@ -295,48 +338,23 @@ function ProviderRowView({
   ].slice(0, ROW_EXPERTISE_LIMIT);
 
   /*
-   * WHAT GOES ON THE TAG LINE WHEN THERE ARE NO TAGS, which the first build on
-   * the Redmi answered as "a 24dp hole" — and it looked like a rendering bug on
-   * every row, because 083 is not on prod yet so no provider has any.
+   * What sits on the expertise line when a provider has no tags.
    *
-   * The line cannot collapse: its height is part of the promise
-   * `PROVIDER_ROW_HEIGHT` makes to FlashList, and a row that keeps that promise
-   * only for providers with tags does not keep it. So it needs content.
-   *
-   * The headline is the right content, and noticing that fixed a second defect
-   * this rebuild had introduced without anyone saying so: the previous row
-   * showed the headline on its second line — "No advice unless you ask for it",
-   * "Tell me about your week" — and the rebuild dropped it for the tags. That
-   * is the most human sentence on the row, written by the provider about
-   * themselves, and it had quietly become the price of the redesign.
-   *
-   * So the line degrades instead of emptying: pills when there are tags, the
-   * headline when there are not. Both are "what this person is about", one in
-   * their words and one in the product's vocabulary, and the tags win when
-   * present because they are scannable down a column in a way prose is not.
+   * The line cannot collapse — its height is part of the promise
+   * `PROVIDER_ROW_HEIGHT` makes to FlashList, and a card that keeps that
+   * promise only for tagged providers does not keep it — so it needs content.
+   * The headline is the right content: the provider's own sentence about
+   * themselves, which is what this row showed before the pills took the slot.
    */
   const headline =
     provider.headline !== null && provider.headline.trim() !== ''
       ? provider.headline
       : 'Here to listen';
 
-  /*
-   * Languages as plain text, not pills, which is a reversal of the strip this
-   * row used to carry and the reason the horizontally-scrolling ScrollView is
-   * gone with it.
-   *
-   * That scroller existed to stop a second language being clipped, and it cost
-   * a three-way gesture negotiation between the strip, the row's Pressable and
-   * the vertical FlashList — documented at length in the version this replaces,
-   * and the source of "schip scroll is not working correctly". With the tags
-   * taking the pill line, languages have a line of their own at the full text
-   * width, where two of them fit in plain text with room to spare. Astrotalk
-   * renders its `language` line exactly this way, at 17.1dp.
-   *
-   * Removing the scroller removes the gesture conflict rather than tuning it,
-   * which is the only fix for that class that stays fixed.
-   */
   const languages = provider.languages.slice(0, 3).join(', ');
+  const years = seededExperienceYears(provider.id);
+  const rating = displayRating(provider);
+  const letter = genderLetter(provider.gender);
 
   /**
    * The dot and the trailing line both come from `presence` now. They used to
@@ -349,33 +367,27 @@ function ProviderRowView({
   const presence = readPresence(provider.presence, provider.last_active_at);
 
   /*
-   * WHICH GLYPH SITS ON THE PRICE, and why it is conditional.
+   * The CTA calls, unless this provider does not take calls.
    *
-   * Amit asked for "call icon and rs 15/min just like how clarity shows". A
-   * phone beside a rate is a claim that the rate buys a call, and
-   * `audio_enabled` (migration 064) is a provider's own answer to whether they
-   * take them. Showing a phone next to a provider who has switched calls off
-   * would quote a price for something that cannot be bought — the same defect
-   * class as the composer hints removed in 75ced47, arrived at from the other
-   * direction. So a chat glyph when they only type.
-   *
-   * The RATE is the same either way today (chat and audio are both ₹22/min in
-   * `appConfig`), so this changes the picture and not the number. If the two
-   * rates ever diverge, this is the site that has to choose, and the comment is
-   * here so it gets chosen rather than defaulted.
+   * `audio_enabled` is migration 064's provider-owned switch. A Call button on
+   * somebody who has switched calls off would fail at `start_call` after the
+   * tap, which is the false-affordance class this codebase has now removed
+   * twice — the composer's "costs one token" hints and the price line's phone
+   * glyph. So the label follows the capability, and the action follows the
+   * label.
    */
-  const canCall = provider.audio_enabled;
+  const canCall = provider.audio_enabled && onCall !== undefined;
+  const ctaLabel = canCall ? 'Call' : 'Chat';
 
   const accessibility = [
-    `Message ${provider.display_name}`,
+    `${provider.display_name}${provider.age !== null ? `, ${provider.age}` : ''}`,
     presenceForSpeech(presence),
-    provider.rating_count > 0
-      ? `rated ${provider.rating_avg?.toFixed(1)} from ${provider.rating_count} reviews`
-      : 'no reviews yet',
     tags.length > 0 ? tags.join(', ') : headline,
     languages === '' ? null : `speaks ${languages}`,
-    // Spoken as a sentence, because "₹22/min" is read out as a string of
-    // symbols by TalkBack and the rate is the one number here that costs money.
+    `${years} ${years === 1 ? 'year' : 'years'} experience`,
+    // Spoken as a sentence: "4.3 stars" beats five unlabelled glyphs, and
+    // "₹22/min" is read out as a string of symbols.
+    `rated ${rating.score.toFixed(1)} out of 5 from ${rating.count} reviews`,
     `${formatRupees(ratePerMin)} per minute`,
   ]
     .filter(Boolean)
@@ -387,30 +399,28 @@ function ProviderRowView({
         onPress={() => onPress(provider.id)}
         testID={`provider-${provider.id}`}
         accessibilityLabel={accessibility}
+        accessibilityHint="Opens the conversation"
         press="none"
         highlight="dim"
-        style={styles.row}>
-        {/* LEFT COLUMN: the avatar with its rating stacked underneath, which is
-            the arrangement that makes the 72dp avatar pay for itself — at 40dp
-            the rating had to live in the text column as a chip, competing with
-            the facts. Astrotalk stacks a 5-star RatingBar (80×16dp) and
-            "10k+ orders" (16.7dp) here; we have one number and a count, so it
-            is a figure and a label rather than five glyphs. */}
+        style={[styles.card, isLast && styles.cardLast]}>
+        {/* LEFT COLUMN: the ringed avatar, with the stars and the review count
+            stacked under it. That is the arrangement that pays for a 76dp
+            avatar — at 40dp the rating had to live in the text column as a
+            chip, competing with the facts. */}
         <View style={styles.leftColumn}>
           {/* The avatar is its own target: it opens the profile card, while the
-              rest of the row opens the conversation. Nested inside the row
+              rest of the card opens the conversation. Nested inside the card
               Pressable, the inner one captures taps that land on the photo. */}
           <Pressable
             onPress={() => (onPressAvatar ?? onPress)(provider.id)}
             testID={`provider-avatar-${provider.id}`}
             accessibilityLabel={`${provider.display_name}'s profile`}
-            // Folded into the row for TalkBack: the avatar is a sighted-tap
-            // shortcut to the profile, not a second focus target overlapping the
-            // row. The row's own label already carries who this is; screen-reader
-            // users open the conversation (the row's action) and lose nothing.
+            // Folded into the card for TalkBack: the avatar is a sighted-tap
+            // shortcut to the profile, not a second focus target overlapping
+            // the card. The card's own label already carries who this is.
             accessible={false}
             press="none"
-            style={styles.avatarTap}>
+            style={styles.ring}>
             <Avatar
               initial={initial}
               uri={provider.avatar_url}
@@ -418,53 +428,74 @@ function ProviderRowView({
               online={presence.here}
             />
           </Pressable>
-          <Text
-            allowFontScaling
-            numberOfLines={1}
-            testID={`provider-rating-${provider.id}`}
-            style={styles.rating}>
-            {provider.rating_count > 0 ? `★ ${provider.rating_avg?.toFixed(1)}` : '★ New'}
-          </Text>
-          {/* The count is its own line even at zero, so the left column
-              measures the same on a provider with no reviews as on one with a
-              thousand. A column that changes height by 16dp between rows is the
-              invariant this list is built on, broken.
-
-              "0 ratings" and not "no ratings yet", which is what the first
-              device build showed — TRUNCATED, as "no ratings …", because the
-              column is `ROW_AVATAR` wide (76dp) and fourteen characters of
-              bodySmall are not. An ellipsis on a fixed-width label is the label
-              being wrong, not the width. The numeric form is also exactly
-              parallel to the rated case above it, so the two states read as one
-              line with a changing number rather than as two different
-              sentences, and the star already carries "New". */}
-          <Text allowFontScaling numberOfLines={1} style={styles.ratingCount}>
-            {`${provider.rating_count} ${provider.rating_count === 1 ? 'rating' : 'ratings'}`}
-          </Text>
+          {/* Stars and count as ONE block, so the column has exactly two
+              children for `space-between` to push apart: the ring to the top,
+              this to the bottom, level with the price. */}
+          <View style={styles.ratingBlock}>
+            <RatingStars score={rating.score} testID={`provider-stars-${provider.id}`} />
+            {/* The count is unconditional, so a provider with no reviews
+                occupies the same 16dp as one with ten thousand. A column that
+                changes height between rows is the invariant this list is built
+                on, broken. */}
+            <Text allowFontScaling numberOfLines={1} style={styles.reviews}>
+              {`${formatReviewCount(rating.count)} reviews`}
+            </Text>
+          </View>
         </View>
 
-        {/* RIGHT COLUMN: name, tags, languages, then price-and-CTA on one line. */}
+        {/* RIGHT COLUMN: Astrotalk's five line items, in Astrotalk's order. */}
         <View style={styles.label}>
-          <Text
-            maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
-            allowFontScaling
-            numberOfLines={1}
-            style={styles.name}>
-            {provider.display_name}
-            {provider.age !== null ? (
-              <Text style={styles.nameAge}> {provider.age}</Text>
-            ) : null}
-          </Text>
+          <View style={styles.nameLine}>
+            <Text
+              maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
+              allowFontScaling
+              numberOfLines={1}
+              style={styles.name}>
+              {provider.display_name}
+              {provider.age !== null ? (
+                /* "F-24", Astrotalk's shorthand. The letter is dropped for
+                   'other' and for null rather than guessed — see
+                   `genderLetter`. */
+                <Text style={styles.nameAge}>
+                  {` ${letter === null ? '' : `${letter}-`}${provider.age}`}
+                </Text>
+              ) : null}
+            </Text>
+            {/* The certified badge, Clarity's.
+                ONE GLYPH. It was first built as our own `check` inside a filled
+                accent disc — two shapes stacked to approximate a shape the icon
+                set already had. Amit: "certified icon should be like clarity..
+                lucide deosnthav eit or what?" It does: `badge-check` is the
+                scalloped rosette with the check inside, which is the mark both
+                references draw. Added to design/icons.json and regenerated
+                rather than hand-edited (RULE 4).
 
-          {/* The tag line. A plain non-scrolling row: three pills at 24dp fit
-              the text column at every offered value, which is what
+                Outline rather than the references' solid fill, because every
+                other mark in this app is Lucide outline and one filled badge
+                would read as a different system.
+
+                Every card has one, and that is correct rather than lazy:
+                `provider_directory` filters on `identity_verified_at is not
+                null`, so a provider a member can see has passed the PAN and
+                identity check by construction. It is a statement about the
+                marketplace, not a ranking within it.
+
+                `accessible={false}`: the card's label would otherwise gain a
+                stop that says nothing a member can act on. */}
+            <View accessible={false} testID="provider-verified">
+              <Icon
+                name="badgeCheck"
+                size={TOKENS.icon.md}
+                color={theme.color.bg.accent}
+              />
+            </View>
+          </View>
+
+          {/* Expertise, directly under the name — Astrotalk's `skillET` slot,
+              with Clarity's pills in it. A plain non-scrolling row: three pills
+              at 24dp fit the text column at every offered value, which is what
               ROW_EXPERTISE_LIMIT is chosen to guarantee, so there is nothing to
-              scroll and no gesture to negotiate.
-
-              Rendered as a fixed-height View even when there are no tags, so
-              that a provider who has not set any is the same height as one who
-              has. `PROVIDER_ROW_HEIGHT` is a promise to FlashList, and a row
-              that keeps it only for populated providers does not keep it. */}
+              scroll and no gesture to negotiate. */}
           <View style={styles.tagLine} testID={`provider-tags-${provider.id}`}>
             {tags.length > 0 ? (
               tags.map(tag => <MetaChip key={tag} size="sm" label={tag} />)
@@ -479,33 +510,37 @@ function ProviderRowView({
             {languages === '' ? ' ' : languages}
           </Text>
 
+          <Text allowFontScaling numberOfLines={1} style={styles.secondary}>
+            {`Exp · ${years} ${years === 1 ? 'year' : 'years'}`}
+          </Text>
+
           <View style={styles.priceLine}>
-            <Icon
-              name={canCall ? 'call' : 'chat'}
-              size={TOKENS.icon.sm}
-              color={theme.color.text.secondary}
-            />
+            {/* No glyph. Amit: "remove call icon before 22/min" — and it was
+                doing less than it looked: the phone said "this rate buys a
+                call", which the CTA beside it now says in a word. */}
             <Text allowFontScaling numberOfLines={1} style={styles.price}>
               {formatRupees(ratePerMin)}
               <Text style={styles.perMin}>/min</Text>
             </Text>
             <View style={styles.priceSpacer} />
-            {/* The CTA. Not a Pressable: it performs the row's own action, so a
-                second touch target on top of the row would be a duplicate — the
-                same argument the chevron lost. What it adds is a place for the
-                eye to land and a statement of what the row DOES, which is the
-                thing the chevron never said. `accessible={false}` keeps it out
-                of TalkBack for the same reason: the row's label already names
-                the action. */}
-            <View style={styles.cta} accessible={false} testID={`provider-cta-${provider.id}`}>
+            <Pressable
+              onPress={() =>
+                canCall && onCall !== undefined ? onCall(provider.id) : onPress(provider.id)
+              }
+              testID={`provider-cta-${provider.id}`}
+              accessibilityLabel={
+                canCall ? `Call ${provider.display_name}` : `Message ${provider.display_name}`
+              }
+              press="none"
+              highlight="dim"
+              style={styles.cta}>
               <Text allowFontScaling numberOfLines={1} style={styles.ctaLabel}>
-                Chat
+                {ctaLabel}
               </Text>
-            </View>
+            </Pressable>
           </View>
         </View>
       </Pressable>
-      {isLast ? null : <View style={styles.separator} />}
     </Animated.View>
   );
 }
@@ -513,26 +548,36 @@ function ProviderRowView({
 export const ProviderRow = memo(ProviderRowView);
 
 const makeStyles = (t: Theme) => StyleSheet.create({
-  row: {
+  /*
+   * A CARD, on a grouped page. Reversed from hairline rows on 2026-09-08 — see
+   * the component header.
+   *
+   * The separation is a hairline border rather than a drop shadow: an Android
+   * elevation on a recycled FlashList cell costs an overdraw pass per frame,
+   * and the reference's own separation comes from the fill standing against the
+   * page, not from a shadow.
+   */
+  card: {
     flexDirection: 'row',
     // `flex-start`, not `center`: the two columns are different heights by
-    // design (112 and 118), and centring would float the avatar 5dp down from
-    // the name it belongs to. Astrotalk top-aligns them too.
+    // design (120 and 136), and centring would float the avatar down from the
+    // name it belongs to. Astrotalk top-aligns them too.
     alignItems: 'flex-start',
     gap: TOKENS.space.sm,
-    paddingVertical: TOKENS.space.sm,
-    // The row owns its horizontal margin now, rather than inheriting it from the
-    // list's contentContainerStyle. That is what lets the separator below run to
-    // the screen's trailing edge with only a leading inset, which is how an iOS
-    // plain-list divider is drawn, the old arrangement stopped it 20pt short at
-    // both ends and made it read as an underline on the row.
-    paddingHorizontal: TOKENS.space.md,
-    // No radius, no border, no elevation. The page is the surface now.
-    backgroundColor: t.color.bg.base,
+    padding: CARD_PAD,
+    marginHorizontal: TOKENS.space.sm,
+    marginBottom: ROW_CARD_GAP,
+    borderRadius: TOKENS.radius.sm,
+    borderCurve: 'continuous',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: t.color.border.hairline,
+    backgroundColor: t.color.bg.raised,
   },
-  // Fixed width, so every row's text column starts on the same x and the
-  // separator inset below stays true. Without it the column would be as wide as
-  // the widest of the avatar and the two labels, which varies by rating count.
+  // The last card keeps the height contract but drops the gap, so the list ends
+  // on a card rather than on a strip of page colour.
+  cardLast: {
+    marginBottom: 0,
+  },
   /*
    * BOTH DIMENSIONS STATED, and the height is not decoration — without it the
    * rating and the count did not render at all, which is what the first build
@@ -540,69 +585,75 @@ const makeStyles = (t: Theme) => StyleSheet.create({
    *
    * `Pressable` splits a caller's style: only the BOX keys (width, height,
    * flex*, aspectRatio) reach the touchable root, and everything else moves to
-   * an inner view that is given `flexGrow: 1`. `avatarTap` set none of them —
-   * only a radius, an overflow and a margin — so the root had no size of its
-   * own and took it from an inner view that grows. In a column with no stated
-   * height that resolved to the whole column: `uiautomator` reported the
-   * avatar's touch node 130.5dp tall inside a 112dp column, and the two Text
-   * siblings underneath were laid out past the clip and painted nothing.
+   * an inner view that is given `flexGrow: 1`. The ring set none of them — only
+   * a radius, a border and a padding — so the root had no size of its own and
+   * took it from an inner view that grows. In a column with no stated height
+   * that resolved to the whole column: `uiautomator` reported the avatar's
+   * touch node 130.5dp tall inside a 112dp column, and the Text siblings
+   * underneath were laid out past the clip and painted nothing.
    *
    * Nothing was wrong with the Texts, which is why this cost a device build to
-   * find — the dump listed both of them, with inverted bounds, while the screen
-   * showed neither.
-   *
-   * Stating the avatar's box is also just correct on its own terms: a touch
-   * target whose size is inferred from its content is a touch target nobody
-   * decided the size of.
+   * find — the dump listed them, with inverted bounds, while the screen showed
+   * neither.
    */
   leftColumn: {
-    width: ROW_AVATAR,
-    height: PROVIDER_ROW_LEFT_COLUMN,
+    width: ROW_AVATAR_RING,
+    // The RIGHT column's height, so the two share a bottom edge and the
+    // space-between below can land the stars on the price line.
+    height: PROVIDER_ROW_RIGHT_COLUMN,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  /*
+   * The ring. `borderWidth` draws inside the box in RN, so an 84 box with a 2dp
+   * border has an 80 content area, and `padding: 2` leaves exactly the avatar's
+   * 76 — the inset that makes it read as a ring rather than as an outline.
+   *
+   * `overflow: 'visible'` because the Avatar's presence dot sits just past the
+   * circle at the bottom-right, and a rounded box would clip it in half.
+   */
+  ring: {
+    width: ROW_AVATAR_RING,
+    height: ROW_AVATAR_RING,
+    borderRadius: ROW_AVATAR_RING / 2,
+    borderWidth: RING_STROKE,
+    borderColor: t.color.bg.accent,
+    padding: RING_INSET,
+    overflow: 'visible',
+  },
+  ratingBlock: {
     alignItems: 'center',
   },
-  avatarTap: {
-    width: ROW_AVATAR,
-    height: ROW_AVATAR,
-    borderRadius: ROW_AVATAR / 2,
-    // The Avatar's presence dot sits just past the circle at the bottom-right;
-    // without this the rounded tap target clips it in half on Android.
-    overflow: 'visible',
-    marginBottom: TOKENS.space['2xs'],
-  },
-  rating: {
-    ...TOKENS.typography.labelMedium,
-    color: t.color.text.primary,
-  },
-  ratingCount: {
+  reviews: {
     ...TOKENS.typography.bodySmall,
     color: t.color.text.tertiary,
-  },
-  // Inset to the text edge, iMessage style. A separator that runs under the
-  // avatar cuts the person in half instead of dividing two of them.
-  separator: {
-    height: StyleSheet.hairlineWidth,
-    marginLeft: TOKENS.space.md + ROW_SEPARATOR_INSET,
-    backgroundColor: t.color.border.hairline,
+    marginTop: TOKENS.space.hair,
   },
   label: {
     flex: 1,
     gap: TOKENS.space.hair,
   },
-  // 17/15, which is what an iOS Messages cell is. It was 15/14, one step down the
-  // ladder on both lines.
+  nameLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    // `space.xs` (8), not `space['2xs']` (4). Amit, on the device: "certofied
+    // icon spacing also increase a bit like clarity" — Clarity sets its badge
+    // well clear of the name, and at 4dp ours read as part of the word.
+    gap: TOKENS.space.xs,
+    height: TOKENS.typography.titleMediumEmphasized.lineHeight,
+  },
   name: {
     ...TOKENS.typography.titleMediumEmphasized,
     color: t.color.text.primary,
     flexShrink: 1,
   },
   // Age beside the name, subscript — the detail/hero card idiom. Quieter weight
-  // and colour so it reads as a modifier of the name, not a second word. A step
-  // smaller than the name's neighbours (#11, Amit: "age a little smaller").
+  // and colour so it reads as a modifier of the name, not a second word.
   nameAge: {
     ...TOKENS.typography.bodySmall,
     color: t.color.text.tertiary,
   },
-  // Fixed height and `overflow: hidden`. The height is the row's promise to
+  // Fixed height and `overflow: hidden`. The height is the card's promise to
   // FlashList; the clip is what makes a fourth pill impossible rather than
   // merely unlikely, since a category badge plus three tags would otherwise
   // wrap and push the price line down.
@@ -613,10 +664,11 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     gap: TOKENS.space['2xs'],
     overflow: 'hidden',
   },
-  // The headline, on the tag line, when there are no tags. `bodyMedium` rather
-  // than the languages line's `bodySmall`: it is the provider's own sentence and
-  // stands in for three pills, so it should not read as the quietest thing in
-  // the row. It fits — the line is 24dp and bodyMedium's box is 20.
+  // The headline, on the expertise line, when there are no tags. `bodyMedium`
+  // rather than the languages line's `bodySmall`: it is the provider's own
+  // sentence and stands in for three pills, so it should not read as the
+  // quietest thing on the card. It fits — the line is 24dp and bodyMedium's box
+  // is 20.
   headline: {
     ...TOKENS.typography.bodyMedium,
     color: t.color.text.secondary,
@@ -629,28 +681,27 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     height: ROW_CTA_HEIGHT,
-    gap: TOKENS.space['2xs'],
   },
   price: {
     ...TOKENS.typography.labelLarge,
     color: t.color.text.primary,
   },
   // "/min" quieter and smaller than the figure, so the rate reads as one price
-  // rather than as two words. Astrotalk splits these into two TextViews at
-  // 21.8dp and 17.1dp for the same reason; nested Text is how RN does it.
+  // rather than two words. Astrotalk splits these into two TextViews at 21.8dp
+  // and 17.1dp for the same reason; nested Text is how RN does it.
   perMin: {
     ...TOKENS.typography.bodySmall,
     color: t.color.text.tertiary,
   },
-  // A spacer rather than `justifyContent: 'space-between'`, because the glyph
-  // and the price must stay adjacent to each other while the CTA goes to the
-  // far edge — three children and one gap cannot express that.
+  // A spacer rather than `justifyContent: 'space-between'`, because the price
+  // must stay left while the CTA goes to the far edge, and the row may later
+  // gain a third child.
   priceSpacer: {
     flex: 1,
   },
   /*
    * The CTA. Outlined, not filled, which is the reference and also the right
-   * call here: every row has one, and a list of filled accent buttons is a
+   * call here: every card has one, and a list of filled accent buttons is a
    * screen with no primary action at all. Astrotalk's is outlined green on
    * white for the same reason.
    */
@@ -663,21 +714,20 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     borderCurve: 'continuous',
     borderWidth: 1,
     borderColor: t.color.bg.accent,
-    backgroundColor: t.color.bg.base,
+    backgroundColor: t.color.bg.raised,
   },
   /*
    * `text/accent`, NOT `bg/accent`, and the two are different greens on
    * purpose: #15603E against #1DAA61 in light mode. `bg/accent` is a FILL
-   * colour — it is what a button is painted, with `text/onAccent` on top of it
-   * — and setting it as a label colour on a white card gives 2.9:1, under the
-   * 4.5:1 AA floor for text. `text/accent` exists for exactly this and is
-   * already checked against bg/base by scripts/check-contrast.mjs.
+   * colour — what a button is painted, with `text/onAccent` on top — and as a
+   * label on a light card it gives 2.9:1, under the 4.5:1 AA floor for text.
+   * `text/accent` exists for exactly this and is already checked against
+   * bg/base by scripts/check-contrast.mjs.
    *
-   * The BORDER keeps `bg/accent`, which is the lighter green and matches the
-   * reference. A border is a non-text boundary, so 3:1 is its target rather
-   * than 4.5 — and it is not the only signal either way, since the label it
-   * surrounds says "Chat". The pair is added to check-contrast rather than
-   * argued for here, so the claim is verified on every run.
+   * The BORDER keeps `bg/accent`, the lighter green that matches the reference.
+   * A border is a non-text boundary, so 3:1 is its target rather than 4.5 — and
+   * it is not the only signal either way, since the label it surrounds says
+   * "Call".
    */
   ctaLabel: {
     ...TOKENS.typography.labelLarge,

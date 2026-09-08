@@ -1450,6 +1450,23 @@ function SignedIn({
         <HomeScreen
           onOpenConversation={openChat}
           onOpenProvider={openProvider}
+          /*
+           * The directory card's CTA rings straight from the list.
+           *
+           * `medium: 'voice'` and `callId: null` is the same shape the provider
+           * detail screen pushes for its Call button — CallScreen owns
+           * `start_call` and the ringing, so this is a route change and not a
+           * second implementation of placing a call.
+           */
+          onCallProvider={id =>
+            pushRoute({
+              name: 'call',
+              providerId: id,
+              direction: 'out',
+              callId: null,
+              medium: 'voice',
+            })
+          }
           onSeeAllChats={() => pushRoute({ name: 'chatsList' })}
         />
       </Animated.View>

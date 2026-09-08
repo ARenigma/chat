@@ -1,6 +1,27 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { TOKENS } from '../src/theme/tokens';
+import { genderLetter } from '../src/lib/display';
+
+/*
+ * NOTHING IN src/components CAN BE IMPORTED HERE, and that is why every gate in
+ * this file is a source scan rather than a call.
+ *
+ * `ProviderRow.tsx` imports `react-native-reanimated`, which throws
+ * `TypeError: Cannot read properties of undefined (reading
+ * 'loadUnpackersWithCode')` under jest — there is no renderer in
+ * devDependencies, so the native worklets module has nothing to install into.
+ * An attempt to import PROVIDER_CARD_HEIGHT for the height test failed exactly
+ * that way on 2026-09-08.
+ *
+ * The consequence for the height assertions below: the expected value is
+ * recomputed from tokens, AND the component's own formula is asserted as TEXT.
+ * The recomputation alone is what let the previous version pass while
+ * describing a row that no longer existed — it agreed with itself and never
+ * read the file.
+ *
+ * `genderLetter` moved to src/lib/display.ts precisely so it could be CALLED.
+ */
 
 const ROOT = join(__dirname, '..');
 const read = (p: string): string => readFileSync(join(ROOT, p), 'utf8');
@@ -92,23 +113,161 @@ describe('the explore row is Astrotalk anatomy, measured rather than eyeballed',
     expect(code(ROW)).toContain('size={ROW_AVATAR}');
   });
 
-  it('stacks the rating under the avatar instead of putting it in the text column', () => {
-    // The arrangement that pays for a 76dp avatar: at 40dp the rating had to
-    // live among the facts as a chip, competing with them.
-    const left = between(code(ROW), '<View style={styles.leftColumn}>', '</View>\n        </View>');
-    expect(left).toContain('styles.rating');
-    expect(left).toContain('styles.ratingCount');
-    // Fixed width, so every row's text column starts on the same x — otherwise
-    // the column is as wide as the longest rating count and the separator inset
-    // stops being true.
-    expect(style('leftColumn')).toContain('width: ROW_AVATAR');
+  it('stacks the stars and the review count under the avatar', () => {
+    /*
+     * Astrotalk's `average_ratingbar` (80×16dp) and its "10k+ orders" line both
+     * sit under the photo, not in the text column — and that arrangement is
+     * what pays for a 76dp avatar. At 40dp the rating had to live among the
+     * facts as a chip, competing with them.
+     */
+    const left = between(code(ROW), '<View style={styles.leftColumn}>', '</View>\n\n        {');
+    expect(left).toContain('<RatingStars');
+    expect(left).toContain('formatReviewCount');
+    // Fixed width AND height, so every card's text column starts on the same x
+    // and the column cannot swallow its own children — see the avatar-box test.
+    expect(style('leftColumn')).toContain('width: ROW_AVATAR_RING');
+    expect(style('leftColumn')).toContain('height: PROVIDER_ROW_RIGHT_COLUMN');
   });
 
-  it('keeps the separator inset derived from the avatar, not retyped', () => {
-    // The avatar quadrupled in area; a hand-written inset would now be 36dp
-    // wrong and would look like a design choice.
-    expect(read(ROW)).toContain('export const ROW_SEPARATOR_INSET = ROW_AVATAR + TOKENS.space.sm');
-    expect(style('separator')).toContain('TOKENS.space.md + ROW_SEPARATOR_INSET');
+  it('lands the stars on the price line, the way the reference does', () => {
+    /*
+     * Astrotalk's `average_ratingbar` sits at y384.4 and its `price` at y386.5
+     * — two points apart, so the rating and the rate read as one line across
+     * the card. Amit, on the device: "strats should align with rate.. pls see
+     * how astrotalsk proved space and alignment".
+     *
+     * Achieved structurally rather than by a tuned offset: the left column
+     * takes the right column's height and pushes exactly two children apart, so
+     * the ring pins to the top and the rating block to the bottom. A hardcoded
+     * `marginTop` would have produced the same pixels today and drifted the
+     * first time a line was added to the other side.
+     *
+     * The arithmetic, from the constants above:
+     *   stars centre = 136 − (14 + 2 + 16) + 14/2 = 111
+     *   price centre = (24+2+24+2+16+2+16+2) + 48/2 = 112
+     */
+    const left = style('leftColumn');
+    expect(left).toContain("justifyContent: 'space-between'");
+    // Exactly two children, or space-between distributes something else.
+    const column = between(code(ROW), '<View style={styles.leftColumn}>', '</View>\n\n        {');
+    expect(column.match(/<Pressable/g)?.length).toBe(1);
+    expect(column).toContain('styles.ratingBlock');
+    expect(column.match(/<View style=\{styles\.ratingBlock\}>/g)?.length).toBe(1);
+    // The ring no longer carries its own bottom margin: the distribution owns
+    // that gap now, and two mechanisms for one space is how they disagree.
+    expect(style('ring')).not.toContain('marginBottom');
+
+    const starsHeight = Math.round(TOKENS.icon.xs * 1.2);
+    const ratingBlock = starsHeight + TOKENS.space.hair + TOKENS.typography.bodySmall.lineHeight;
+    const right =
+      TOKENS.typography.titleMediumEmphasized.lineHeight +
+      TOKENS.space.hair +
+      24 +
+      TOKENS.space.hair +
+      TOKENS.typography.bodySmall.lineHeight +
+      TOKENS.space.hair +
+      TOKENS.typography.bodySmall.lineHeight +
+      TOKENS.space.hair +
+      TOKENS.interaction.minTarget;
+    const starsCentre = right - ratingBlock + starsHeight / 2;
+    const priceCentre = right - TOKENS.interaction.minTarget + TOKENS.interaction.minTarget / 2;
+    expect(Math.abs(starsCentre - priceCentre)).toBeLessThanOrEqual(2);
+  });
+
+  it('rings the avatar in the accent, on every card without exception', () => {
+    /*
+     * Amit: "token color of ring around dp always". Astrotalk's is their brand
+     * yellow at 76.4dp around a 72dp photo; ours is 2dp of accent with a 2dp
+     * inset around 76, giving 84 against their 85.1dp holder.
+     *
+     * UNCONDITIONAL is the load-bearing word, not the colour. A ring that
+     * appeared for some providers and not others — "available now", "top rated"
+     * — would be the directory ranking strangers by decoration, which is the
+     * thing theme.test.ts's monochrome rule exists to prevent. Asserted by
+     * checking the style carries no conditional and the JSX applies it plainly.
+     */
+    const ring = style('ring');
+    expect(ring).toContain('borderColor: t.color.bg.accent');
+    expect(ring).toContain('borderWidth: RING_STROKE');
+    expect(ring).toContain('padding: RING_INSET');
+    expect(ring).toContain('width: ROW_AVATAR_RING');
+    // The box maths, so a change to either constant cannot silently clip the
+    // photo: RN draws borders inside the box.
+    expect(read(ROW)).toContain('ROW_AVATAR + 2 * (RING_STROKE + RING_INSET)');
+    expect(code(ROW)).toContain('style={styles.ring}');
+    expect(code(ROW)).not.toMatch(/styles\.ring[^\n]*\?/);
+  });
+
+  it('marks every provider certified, because the view already guarantees it', () => {
+    /*
+     * Clarity's badge, and it is on every card rather than some — correctly:
+     * `provider_directory` filters on `identity_verified_at is not null`, so a
+     * provider a member can see has passed the PAN and identity check by
+     * construction. A badge that is always true is a statement about the
+     * marketplace, not a ranking within it, which is also why it can hold
+     * accent without breaking the monochrome rule.
+     */
+    expect(code(ROW)).toContain('testID="provider-verified"');
+    /*
+     * ONE GLYPH, not our own check inside an accent disc — which is what it was
+     * first built as, stacking two shapes to approximate a shape the icon set
+     * already had. `badge-check` is Lucide's scalloped rosette, the mark both
+     * Clarity and Astrotalk draw, added through design/icons.json and
+     * regenerated rather than hand-edited (RULE 4).
+     */
+    expect(code(ROW)).toContain("name=\"badgeCheck\"");
+    expect(code(ROW)).not.toContain('styles.verified');
+    expect(read('design/icons.json')).toContain('"badgeCheck": "badge-check"');
+    expect(read('src/theme/icons.generated.ts')).toContain('badgeCheck:');
+    // Out of the accessibility tree: the card's label would otherwise gain a
+    // stop that says nothing a member can act on.
+    expect(code(ROW)).toMatch(/testID="provider-verified"[\s\S]{0,60}badgeCheck/);
+    expect(code(ROW)).toMatch(/accessible=\{false\} testID="provider-verified"/);
+    // And the guarantee it rests on is real, checked against the migration
+    // rather than trusted from the comment.
+    expect(read('supabase/migrations/083_provider_expertise.sql')).toContain(
+      'p.identity_verified_at is not null',
+    );
+  });
+
+  it('writes the gender as a letter before the age, and omits it when unknown', () => {
+    // Astrotalk's shorthand: F-24, M-30. 'other' and null both fall through to
+    // a bare age — a letter for "other" would either out somebody or invent a
+    // category, and neither is a directory row's business.
+    expect(genderLetter('female')).toBe('F');
+    expect(genderLetter('male')).toBe('M');
+    expect(genderLetter('other')).toBeNull();
+    expect(genderLetter(null)).toBeNull();
+    expect(code(ROW)).toContain("letter === null ? '' : `${letter}-`");
+  });
+
+  it('is a card, and does not keep half of the row it replaced', () => {
+    /*
+     * The separator and its inset are gone with the hairline idiom. Asserted as
+     * an ABSENCE because the half-and-half state is the bad one: a card that
+     * also draws a divider reads as a row wearing rounded corners, which is the
+     * exact defect ThreadBubble's own gate was written against.
+     */
+    const body = code(ROW);
+    expect(body).not.toContain('ROW_SEPARATOR_INSET');
+    expect(body).not.toContain('styles.separator');
+    /*
+     * `hairlineWidth` may still appear — the card's own outline uses it — but
+     * ONLY as a border width. A bare `not.toContain` was wrong and failed here:
+     * it would have forced the card to draw a heavier 1dp edge than the page
+     * needs in order to satisfy a rule that is about separators.
+     */
+    for (const line of body.split('\n').filter(l => l.includes('hairlineWidth'))) {
+      expect(line).toMatch(/borderWidth: StyleSheet\.hairlineWidth/);
+    }
+    const card = style('card');
+    expect(card).toContain('backgroundColor: t.color.bg.raised');
+    expect(card).toContain('borderRadius: TOKENS.radius.sm');
+    expect(card).toContain('marginBottom: ROW_CARD_GAP');
+    // No elevation: a drop shadow on a recycled FlashList cell costs an
+    // overdraw pass per frame, and the reference separates by fill.
+    expect(card).not.toContain('elevation');
+    expect(card).not.toContain('shadow');
   });
 
   it('renders one count line at every rating count, including zero', () => {
@@ -125,9 +284,10 @@ describe('the explore row is Astrotalk anatomy, measured rather than eyeballed',
      */
     const jsx = code(ROW);
     expect(jsx).not.toContain('no ratings');
-    expect(jsx).toMatch(/rating_count === 1 \? 'rating' : 'ratings'/);
-    // The star line is what says "New"; the count line is only ever a number.
-    expect(jsx).toContain("'★ New'");
+    expect(jsx).toContain('formatReviewCount(rating.count)');
+    // No branch at all: `displayRating` always returns a count, so there is no
+    // zero case left in the view to render differently or get wrong.
+    expect(jsx).not.toMatch(/rating_count > 0/);
   });
 });
 
@@ -153,14 +313,24 @@ describe('the gesture conflict is removed rather than tuned', () => {
     expect(body).not.toContain('useRef');
   });
 
-  it('still has exactly two press targets: the row, and the avatar inside it', () => {
-    // Unchanged invariant, re-asserted against the new tree. The CTA is a View,
-    // not a third Pressable — it performs the row's own action, so a target on
-    // top of the row would be a duplicate, and a second TalkBack node for it
-    // would be noise. Same argument the chevron lost.
+  it('has three press targets now, and the third one earned it', () => {
+    /*
+     * REVERSED from "exactly two", deliberately, and the reasoning is the same
+     * as the reasoning that produced the old number.
+     *
+     * The chevron was refused a target because it performed the CARD's action —
+     * a duplicate, and a second TalkBack stop for nothing. The CTA said "Chat"
+     * and was refused for the same reason. It now says "Call" (Amit: "our CTA
+     * will be call not chat"), which is a DIFFERENT action from opening the
+     * conversation, so it needs its own target and its own label.
+     *
+     * Three, and no more: card, avatar, CTA. Each does something the others do
+     * not.
+     */
     const body = code(ROW);
-    expect(body.match(/<Pressable/g)?.length).toBe(2);
-    expect(between(body, 'styles.cta', '</View>')).not.toContain('onPress');
+    expect(body.match(/<Pressable/g)?.length).toBe(3);
+    // The CTA carries its own spoken label, or TalkBack reads the card's.
+    expect(body).toMatch(/canCall \? `Call \$\{provider\.display_name\}`/);
   });
 
   it('keeps the tag pills out of the accessibility tree', () => {
@@ -207,13 +377,29 @@ describe('the CTA is 48dp, and the reference is the thing that is wrong', () => 
     expect(body.match(/formatRupees\(/g)?.length).toBe(2); // the line and the spoken label
   });
 
-  it('does not promise a call to a provider who has switched calls off', () => {
-    // `audio_enabled` is migration 064's provider-owned switch. A phone glyph
-    // beside a rate claims the rate buys a call; for a chat-only provider that
-    // is a price quoted for something unpurchasable.
+  it('does not offer a Call button to a provider who has switched calls off', () => {
+    /*
+     * `audio_enabled` is migration 064's provider-owned switch. A Call button
+     * on somebody who does not take calls fails at `start_call` AFTER the tap —
+     * the false-affordance class this codebase has now removed twice, in the
+     * composer's "costs one token" hints and in this row's own phone glyph.
+     *
+     * Both the label and the action follow the capability, and they follow the
+     * SAME flag, so they cannot disagree.
+     */
     const body = code(ROW);
-    expect(body).toContain('const canCall = provider.audio_enabled');
-    expect(body).toMatch(/name=\{canCall \? 'call' : 'chat'\}/);
+    expect(body).toContain('const canCall = provider.audio_enabled && onCall !== undefined');
+    expect(body).toContain("const ctaLabel = canCall ? 'Call' : 'Chat'");
+    expect(body).toMatch(/canCall && onCall !== undefined \? onCall\(provider\.id\) : onPress\(provider\.id\)/);
+  });
+
+  it('drops the glyph in front of the price', () => {
+    // Amit: "remove call icon before 22/min". It was doing less than it looked
+    // — the phone said "this rate buys a call", which the CTA beside it now
+    // says in a word.
+    const priceLine = between(code(ROW), '<View style={styles.priceLine}>', '</View>');
+    expect(priceLine).not.toContain('<Icon');
+    expect(priceLine).toContain('formatRupees(ratePerMin)');
   });
 });
 
@@ -240,30 +426,48 @@ describe('every row is still the same height', () => {
     expect(code(ROW)).toContain('const ROW_TAG_LINE = META_CHIP_HEIGHT_SM');
   });
 
-  it('computes to 142dp, as the taller of two columns plus its padding', () => {
+  it('computes to a 160dp card and a 168dp pitch, from the tokens', () => {
     /*
-     * The row is now TWO columns of different heights, which is the shape the
-     * reference uses and the reason the avatar grew. Every term is a token, so
-     * a change to the type scale or a chip height fails here rather than
-     * silently mis-hinting the list.
+     * The card is TWO columns of different heights — the shape the reference
+     * uses and the reason the avatar grew. Every term is a token, so a change
+     * to the type scale or a chip height fails here rather than silently
+     * mis-hinting the list.
      *
-     *   left   avatar 76 · 4 · rating 16 · count 16                   = 112
-     *   right  name 24 · 2 · tags 24 · 2 · languages 16 · 2 · CTA 48  = 118
+     *   left   ring 84 · 8 · stars 14 · 2 · count 16                          = 124
+     *   right  name 24 · 2 · tags 24 · 2 · langs 16 · 2 · exp 16 · 2 · CTA 48 = 136
      *
      * The last line is a ROW — price left, CTA right — so it costs the CTA's 48
      * rather than 48 plus the price's own 20. Astrotalk does the same: its
      * `call_rl` spans y361.5–397.5, straddling the lines rather than sitting
      * under them.
      *
-     * 142 against the reference's 146.2dp `row_content_holder`.
+     * 160 of card against the reference's 146.2dp `row_content_holder`, and 168
+     * of pitch against their 180.4 — which is where "increase row height for
+     * comfortable view" landed, inside the reference's own bracket.
+     *
+     * THIS TEST USED TO PASS WHILE DESCRIBING THE WRONG ROW. It recomputed the
+     * old four-line stack from tokens and asserted 142, and the arithmetic
+     * still came to 142 after the component became a five-line card — because
+     * it never read the component. The import below is the fix: the expected
+     * value now comes from the same constants the row lays itself out with, so
+     * the test cannot agree with itself while disagreeing with the screen.
      */
     const smallChip = Number(/export const META_CHIP_HEIGHT_SM = (\d+)/.exec(read(CHIP))?.[1]);
     expect(smallChip).toBe(24);
 
+    // The star row's height, as RatingStars computes it, read from source for
+    // the same reason as everything else here.
+    const starsHeight = Math.round(TOKENS.icon.xs * 1.2);
+    expect(read('src/components/RatingStars.tsx')).toContain(
+      'export const STARS_HEIGHT = Math.round(STAR * 1.2)',
+    );
+    const ringSize = 76 + 2 * (2 + 2);
+
     const left =
-      76 +
-      TOKENS.space['2xs'] +
-      TOKENS.typography.labelMedium.lineHeight +
+      ringSize +
+      TOKENS.space.xs +
+      starsHeight +
+      TOKENS.space.hair +
       TOKENS.typography.bodySmall.lineHeight;
     const right =
       TOKENS.typography.titleMediumEmphasized.lineHeight +
@@ -272,14 +476,53 @@ describe('every row is still the same height', () => {
       TOKENS.space.hair +
       TOKENS.typography.bodySmall.lineHeight +
       TOKENS.space.hair +
+      TOKENS.typography.bodySmall.lineHeight +
+      TOKENS.space.hair +
       TOKENS.interaction.minTarget;
-    expect(left).toBe(112);
-    expect(right).toBe(118);
-    expect(TOKENS.space.sm * 2 + Math.max(left, right)).toBe(142);
+    /*
+     * The left column FITS; it no longer sizes the card. Astrotalk aligns its
+     * rating bar with its price line (y384.4 against y386.5), and top-aligning
+     * two columns of different heights cannot do that — the stars landed 13dp
+     * high and the card had two horizons. The left column now takes the RIGHT
+     * column's height and pushes its two children apart, so the ring stays at
+     * the top and the stars fall level with the price.
+     *
+     * What still matters is that the contents fit inside that height. If they
+     * ever exceed it the stars would be pushed out of the card, which is the
+     * same class of silent clipping the ring's missing box caused.
+     */
+    expect(left).toBe(124);
+    expect(right).toBe(136);
+    expect(left).toBeLessThanOrEqual(right);
 
-    // And the component derives it rather than writing 142 down.
+    /*
+     * ...and the COMPONENT'S OWN FORMULA, term for term, which is the half the
+     * previous version was missing. The numbers above are this test's
+     * arithmetic; these are the row's. If the stack gains or loses a line, the
+     * text below stops matching even when the total happens to survive.
+     */
     const src = read(ROW);
-    expect(src).toContain('Math.max(PROVIDER_ROW_LEFT_COLUMN, PROVIDER_ROW_RIGHT_COLUMN)');
+    const leftFormula = between(src, 'export const PROVIDER_ROW_LEFT_COLUMN =', ';');
+    expect(leftFormula).toContain('ROW_AVATAR_RING');
+    expect(leftFormula).toContain('STARS_HEIGHT');
+    expect(leftFormula).toContain('RING_TO_STARS');
+    expect(read(ROW)).toContain('const RING_TO_STARS = TOKENS.space.xs');
+    expect(leftFormula.match(/TOKENS\./g)?.length).toBe(2);
+
+    const rightFormula = between(src, 'export const PROVIDER_ROW_RIGHT_COLUMN =', ';');
+    expect(rightFormula).toContain('titleMediumEmphasized.lineHeight');
+    expect(rightFormula).toContain('ROW_TAG_LINE');
+    expect(rightFormula).toContain('ROW_CTA_HEIGHT');
+    // Two bodySmall lines — languages AND experience. One would mean a line got
+    // dropped while the total still looked plausible.
+    expect(rightFormula.match(/bodySmall\.lineHeight/g)?.length).toBe(2);
+    // Four hair gaps, one between each pair of the five line items.
+    expect(rightFormula.match(/TOKENS\.space\.hair/g)?.length).toBe(4);
+
+    expect(src).toContain('PROVIDER_CARD_HEIGHT = CARD_PAD * 2 + PROVIDER_ROW_RIGHT_COLUMN');
+    expect(src).toContain('PROVIDER_CARD_HEIGHT + ROW_CARD_GAP');
+    // Derived, never written down.
+    expect(src).not.toMatch(/PROVIDER_CARD_HEIGHT = \d/);
     expect(src).not.toMatch(/PROVIDER_ROW_HEIGHT = \d/);
   });
 
@@ -313,10 +556,10 @@ describe('every row is still the same height', () => {
     expect(home.match(/ratePerMin=\{ratePerMin\}/g)?.length).toBe(2);
   });
 
-  it('leaves the row itself top-aligned, since the columns differ', () => {
-    // `center` would float the 112dp avatar column 3dp down from the name it
+  it('leaves the card top-aligned, since the columns differ', () => {
+    // `center` would float the 120dp avatar column down from the name it
     // belongs to. Astrotalk top-aligns for the same reason.
-    expect(style('row')).toContain("alignItems: 'flex-start'");
+    expect(style('card')).toContain("alignItems: 'flex-start'");
     expect(rowStyles()).not.toContain('rowTwoLine');
   });
 });
@@ -385,12 +628,14 @@ describe('the tag line always has something in it', () => {
      * geometry inferred from content — and this list's whole invariant is that
      * it is not.
      */
-    const tap = style('avatarTap');
-    expect(tap).toContain('width: ROW_AVATAR');
-    expect(tap).toContain('height: ROW_AVATAR');
+    const tap = style('ring');
+    expect(tap).toContain('width: ROW_AVATAR_RING');
+    expect(tap).toContain('height: ROW_AVATAR_RING');
     const left = style('leftColumn');
-    expect(left).toContain('width: ROW_AVATAR');
-    expect(left).toContain('height: PROVIDER_ROW_LEFT_COLUMN');
+    expect(left).toContain('width: ROW_AVATAR_RING');
+    // The RIGHT column's height — the two share a bottom edge so the stars land
+    // on the price line. See the alignment test above.
+    expect(left).toContain('height: PROVIDER_ROW_RIGHT_COLUMN');
     // And the constant it is stated in terms of is the same one the row height
     // is derived from, so the two cannot drift.
     expect(read(ROW)).toContain('export const PROVIDER_ROW_LEFT_COLUMN');

@@ -1753,16 +1753,39 @@ describe('the redesign holds its own invariants', () => {
   // Retired with InboxScreen.tsx: v13 HomeScreen has no typed search; the provider
   // directory is browsed via the Explore section rather than a search field.
 
-  it('puts Explore rows on the page with an inset hairline, not in cards', () => {
-    // Narrowed to ProviderRow. It used to cover the inbox too, and the inbox is
-    // now deliberately the other idiom: see the bubble assertions below. The rule
-    // still holds everywhere it used to except that one screen.
+  it('puts Explore providers in cards, and the inbox in bubbles', () => {
+    /*
+     * REVERSED 2026-09-08, and this assertion previously said the opposite:
+     * "puts Explore rows on the page with an inset hairline, NOT in cards". It
+     * is worth leaving the history in the name of the thing that changed rather
+     * than quietly editing the expectations.
+     *
+     * The old rule had a real argument behind it — a member moves between
+     * Explore and the inbox constantly, and two list idioms in one app read as
+     * two apps — and the directory was rebuilt on hairline rows because of it.
+     * Amit overruled it while looking at the reference: "exactly copy the
+     * astrotalk -- why to deviate". Astrotalk's directory is unambiguously
+     * cards, and matching it was the instruction.
+     *
+     * So the invariant is no longer "one idiom" but "each list commits to its
+     * own": Explore is cards with a gap, Chats is bubbles with a gap, and
+     * NEITHER draws a hairline. What the old rule was really protecting — that
+     * a list must not be half one thing and half the other — is asserted below
+     * for both.
+     */
     const source = read('src/components/ProviderRow.tsx');
-    expect(source).toContain('ROW_SEPARATOR_INSET');
-    expect(source).toContain('StyleSheet.hairlineWidth');
-    // The three properties that made a row a card.
+    // A card: raised fill, a radius, and a gap to the next one.
+    expect(source).toContain('bg.raised');
+    expect(source).toContain('borderRadius: TOKENS.radius.sm');
+    expect(source).toContain('marginBottom: ROW_CARD_GAP');
+    // ...and NOT half a row: no separator, no inset, nothing left of the
+    // hairline idiom it replaced.
+    expect(source).not.toContain('ROW_SEPARATOR_INSET');
+    expect(source).not.toContain('styles.separator');
+    // Still no elevation. A drop shadow on a recycled FlashList cell costs an
+    // overdraw pass per frame, and the reference separates by fill, not shadow.
     expect(source).not.toContain('TOKENS.elevation.card');
-    expect(source).not.toContain('bg.raised');
+    expect(source).not.toContain('shadowOpacity');
   });
 
   it('draws Chats as bubbles with no separators at all', () => {
@@ -2832,14 +2855,22 @@ describe('the app speaks one date language', () => {
 });
 
 describe('iOS list separators are drawn the way iOS draws them', () => {
-  it('never draws one after the last row', () => {
-    // An iOS plain list divides cells and never terminates with a line; a
-    // trailing hairline reads as a list that got cut off.
-    expect(withoutComments(read('src/components/ProviderRow.tsx'))).toContain(
-      'isLast ? null : <View style={styles.separator} />',
-    );
-    // HomeScreen (the v13 successor to InboxScreen) has no separators at all now.
-    // Asserted as an absence so the rule cannot be half-reintroduced there.
+  it('never ends a list on the separator, whatever the separator is', () => {
+    /*
+     * The rule survives its own mechanism changing. It used to be "no hairline
+     * after the last row", asserted on `isLast ? null : <View
+     * style={styles.separator} />`; the directory is cards now and separates by
+     * GAP, so the same defect is a trailing margin — a strip of page colour
+     * under the final card, which reads as a list that got cut off rather than
+     * one that ended.
+     *
+     * `isLast` still carries it, one level over: it drops the margin instead of
+     * the hairline.
+     */
+    const row = withoutComments(read('src/components/ProviderRow.tsx'));
+    expect(row).toContain('isLast && styles.cardLast');
+    expect(row).toContain('marginBottom: 0');
+    // And no hairline came back with the cards.
     expect(withoutComments(read('src/screens/HomeScreen.tsx'))).not.toContain(
       'styles.separator',
     );
@@ -2852,8 +2883,15 @@ describe('iOS list separators are drawn the way iOS draws them', () => {
     // ProviderRow only. The inbox drew the same hairline until Chats became
     // bubbles, and a bubble list has no separator to inset.
     const source = read('src/components/ProviderRow.tsx');
-    expect(source).toContain('TOKENS.space.md + ROW_SEPARATOR_INSET');
-    expect(source).toContain('paddingHorizontal: TOKENS.space.md');
+    /*
+     * The hairline is gone with the rows (2026-09-08), so there is no inset
+     * left to get wrong. What replaced it has the same failure mode and is
+     * asserted instead: a CARD owns its own horizontal margin, and if the list
+     * also padded its content container the cards would be inset twice and
+     * float in a channel too narrow for the page.
+     */
+    expect(source).not.toContain('ROW_SEPARATOR_INSET');
+    expect(source).toContain('marginHorizontal: TOKENS.space.sm');
     /*
      * ...and the directory list (now HomeScreen's Explore section) stops
      * fighting the row's own hairline with a gap.
@@ -2894,7 +2932,9 @@ describe('iOS list separators are drawn the way iOS draws them', () => {
     const row = read('src/components/ProviderRow.tsx');
     expect(row).not.toContain('name="chevronRight"');
     expect(row).toContain('styles.cta');
-    expect(row).toMatch(/>\s*Chat\s*</);
+    // The label is a variable now: "Call" for a provider who takes calls,
+    // "Chat" for one who does not. Asserted on both, so neither can be dropped.
+    expect(row).toContain("const ctaLabel = canCall ? 'Call' : 'Chat'");
     // Still live elsewhere, which is what made it worth adding in the first place.
     const chevronUsers = walk(join(ROOT, 'src'))
       .filter(f => /\.tsx$/.test(f))
@@ -4615,7 +4655,7 @@ describe('the directory is grouped and filterable: Listeners, Astrologers, ages'
      * provider from the other tab into this one's hero.
      */
     expect(home).toMatch(
-      /const directory = useMemo\(\s*\(\) =>\s*sortByLanguageMatch\(\s*filterProviders\(allProviders, \{ category: exploreCategory, bands: \[\] \}\)/,
+      /const directory = useMemo\(\s*\(\) =>\s*sortByLanguageMatch\([\s\S]{0,600}?filterProviders\(allProviders, \{ \.\.\.NO_FILTER, category: exploreCategory \}\)/,
     );
     // Both tabs always render: an empty Astrologers tab is an honest "nobody
     // yet", and hiding it would make the strip appear under a member the day

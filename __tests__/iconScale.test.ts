@@ -247,6 +247,19 @@ const EXEMPT: Record<string, string> = {
    * source of truth (matched ink), not a different opinion about the scale.
    */
   CALL_GLYPH_SIZE: 'ChatScreen header: matched to the video glyph ink, 19.3dp',
+  /*
+   * A DIFFERENT KIND OF EXEMPTION from the two above, and the difference is the
+   * point: `STAR` is not off-scale at all. It IS `TOKENS.icon.xs`, aliased in
+   * RatingStars.tsx because the component's clip arithmetic needs the same
+   * number three times (STARS_WIDTH, the empty row, the filled row) and a
+   * five-star row whose total width drifted from its glyph size would mis-fill
+   * every rating in the directory.
+   *
+   * Inlining `TOKENS.icon.xs` at the JSX call site would satisfy this gate and
+   * break that guarantee, which would be the gate winning an argument it should
+   * lose. Named here so the alias is a decision on record rather than a hole.
+   */
+  STAR: 'RatingStars: an alias of TOKENS.icon.xs, shared with the clip width',
   CLEAR_GLYPH_SIZE: 'SearchBar: matched to the reference clear mark, 11-12dp',
   /*
    * Sizes translated from the measured Fuse onboarding source (RULE 3), which

@@ -52,6 +52,7 @@ export const LIGHT = {
       onInverse: '#FFFFFF',
       positive: '#1F4A3F',
       token: '#4A4708',
+      rating: '#B7791F',
       onTokenStrong: '#FFFFFF',
     },
     border: {
@@ -643,6 +644,7 @@ export const DARK = {
       onInverse: '#151E27',
       positive: '#A8D8C8',
       token: '#E4E26A',
+      rating: '#F6C453',
       onTokenStrong: '#FFFFFF',
     },
     border: {

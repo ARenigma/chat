@@ -73,13 +73,38 @@ export interface DirectoryFilter {
   category: ProviderCategory | null;
   /** Empty means every age, including providers with no age at all. */
   bands: readonly AgeBand[];
+  /**
+   * Empty means every language (Amit, 2026-09-08: "give language and expertise
+   * filer in search").
+   *
+   * A FILTER here and a SORT on Home, which looks like an inconsistency and is
+   * the product decision. `languagePrefs.ts` opens with it: "sort not filter for
+   * language", because on a roster this size a language filter can empty the
+   * browse screen, and an empty screen is a worse answer than a well-ordered
+   * one. Search is the opposite case — the member has typed a question and
+   * asked to narrow, so an empty result is a real answer to it, and a search
+   * that quietly widened what was asked for would be worse.
+   */
+  languages: readonly string[];
+  /** Empty means every topic. Same reasoning as `languages` above. */
+  expertise: readonly string[];
 }
 
-export const NO_FILTER: DirectoryFilter = { category: null, bands: [] };
+export const NO_FILTER: DirectoryFilter = {
+  category: null,
+  bands: [],
+  languages: [],
+  expertise: [],
+};
 
 /** Whether any filter is actually narrowing the list (drives the "clear" affordance). */
 export function isFiltering(filter: DirectoryFilter): boolean {
-  return filter.category !== null || filter.bands.length > 0;
+  return (
+    filter.category !== null ||
+    filter.bands.length > 0 ||
+    filter.languages.length > 0 ||
+    filter.expertise.length > 0
+  );
 }
 
 /**
@@ -98,12 +123,54 @@ export function filterProviders(
     if (filter.category !== null && categoryOf(p) !== filter.category) {
       return false;
     }
+    if (!matchesAny(p.languages, filter.languages)) {
+      return false;
+    }
+    // `expertise` can be undefined on a row from a server older than 083 —
+    // exactly the skew window the 2026-09-07 incident lived in. Treated as "no
+    // topics", so such a provider drops out of a topic search rather than
+    // crashing it or being silently included in every one.
+    if (!matchesAny(p.expertise, filter.expertise)) {
+      return false;
+    }
     if (filter.bands.length === 0) {
       return true;
     }
     const band = ageBand(p.age);
     return band !== null && filter.bands.includes(band);
   });
+}
+
+/**
+ * Case- and whitespace-insensitive matching, for the reason
+ * `languagePrefs.fold` gives: the two sides are written by different people.
+ * `profiles.languages` and `profiles.expertise` are both shape-checked and not
+ * value-checked (072, 083), and both are writable by the admin console and the
+ * seed, so ' hindi ' and 'Hindi' are both reachable. A filter that silently
+ * failed to match them would look like the feature doing nothing.
+ */
+function fold(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+/**
+ * ANY, not ALL, for both lists.
+ *
+ * Picking Hindi and Tamil means "someone I can talk to", not "someone
+ * bilingual" — the second reading empties the screen and is not what a row of
+ * chips looks like it means. `filterProviders` already reads the age bands as a
+ * union for exactly the same reason, so this is the list's existing grammar
+ * rather than a new one.
+ *
+ * ACROSS the two, though, it is AND: Hindi + Anxiety means somebody who speaks
+ * Hindi and helps with anxiety. Two separate questions, each narrowing.
+ */
+function matchesAny(have: readonly string[] | null, want: readonly string[]): boolean {
+  if (want.length === 0) {
+    return true;
+  }
+  const held = new Set((have ?? []).map(fold));
+  return want.some(w => held.has(fold(w)));
 }
 
 /** Toggle one band in a filter, keeping AGE_BANDS order so chips never reorder. */
@@ -113,4 +180,53 @@ export function toggleBand(filter: DirectoryFilter, band: AgeBand): DirectoryFil
     ? filter.bands.filter(b => b !== band)
     : AGE_BANDS.filter(b => b === band || filter.bands.includes(b));
   return { ...filter, bands: next };
+}
+
+/**
+ * Toggle one language in a filter, keeping OFFERED_LANGUAGES order so the chips
+ * never reorder under the finger — the same rule as `toggleBand` above and
+ * `toggleLanguage` in languagePrefs.ts.
+ */
+export function toggleFilterLanguage(
+  filter: DirectoryFilter,
+  language: string,
+  offered: readonly string[],
+): DirectoryFilter {
+  return { ...filter, languages: toggleIn(filter.languages, language, offered) };
+}
+
+/** Toggle one topic in a filter. Same rule, same reason. */
+export function toggleFilterExpertise(
+  filter: DirectoryFilter,
+  topic: string,
+  offered: readonly string[],
+): DirectoryFilter {
+  return { ...filter, expertise: toggleIn(filter.expertise, topic, offered) };
+}
+
+/**
+ * Shared by both toggles above, and NOT shared with `toggleLanguage` in
+ * languagePrefs.ts even though the body is nearly identical.
+ *
+ * That one enforces MAX_PREFERRED_LANGUAGES, because it writes a column the
+ * database bounds. This one bounds nothing: a search filter is not stored, so a
+ * member ticking every chip is asking a wide question rather than building an
+ * invalid row. Sharing the function would have quietly imposed a ceiling on the
+ * filter that no rule anywhere justifies.
+ */
+function toggleIn(
+  selected: readonly string[],
+  value: string,
+  offered: readonly string[],
+): string[] {
+  const key = fold(value);
+  if (selected.some(v => fold(v) === key)) {
+    return selected.filter(v => fold(v) !== key);
+  }
+  const rank = new Map(offered.map((v, i) => [fold(v), i]));
+  const unknown = offered.length;
+  return [...selected, value]
+    .map((v, i) => ({ v, i, r: rank.get(fold(v)) ?? unknown + i }))
+    .sort((a, b) => a.r - b.r || a.i - b.i)
+    .map(x => x.v);
 }

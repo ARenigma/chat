@@ -19,10 +19,17 @@
 -- 10. approval carries the applicant's tags across
 -- 11. ...and an EMPTY application does not erase tags set after applying
 -- 12. an empty list is a legal provider — this is not 075
+-- 13. 084 backfills a provider who has none
+-- 14. ...with exactly what the card shows, three tags
+-- 15. ...drawn from the vocabulary their CATEGORY offers
+-- 16. ...deterministically, so a re-run cannot reshuffle the directory
+-- 17. 084 never overwrites a provider who chose their own
+-- 18. the seeded marker says which is which
+-- 19. ...and the provider answering clears it
 
 \set ON_ERROR_STOP on
 begin;
-select plan(13);
+select plan(21);
 
 insert into auth.users (id) values
   ('cc083000-0000-4083-8000-000000000001'),  -- provider
@@ -223,6 +230,113 @@ select is(
   public.set_provider_expertise('{}'::text[]),
   '{}'::text[],
   '12. clearing every tag is allowed — this is not the 075 rule'
+);
+
+-- ---------------------------------------------------------------------------
+-- 084: the backfill, and the two properties that make it safe to have run
+-- ---------------------------------------------------------------------------
+reset role;
+
+insert into auth.users (id) values
+  ('cc084000-0000-4084-8000-000000000001'),   -- listener, no tags
+  ('cc084000-0000-4084-8000-000000000002');  -- astrologer, no tags
+
+update public.profiles
+set    role = 'provider', display_name = 'Seeded084', headline = 'Here to listen',
+       about = 'A backfill fixture.', languages = array['English'],
+       date_of_birth = (current_date - interval '30 years')::date,
+       identity_verified_at = now(), provider_category = 'listener',
+       expertise = '{}'::text[]
+where  id = 'cc084000-0000-4084-8000-000000000001';
+
+update public.profiles
+set    role = 'provider', display_name = 'Astro084', headline = 'Here to read',
+       about = 'A backfill fixture.', languages = array['Hindi'],
+       date_of_birth = (current_date - interval '30 years')::date,
+       identity_verified_at = now(), provider_category = 'astrologer',
+       expertise = '{}'::text[]
+where  id = 'cc084000-0000-4084-8000-000000000002';
+
+-- The migration's own statement, replayed. It is written to be idempotent, so
+-- running it here is the same operation production got.
+update public.profiles
+set    expertise           = public.seed_expertise_for(id, provider_category),
+       seeded_expertise_at = now()
+where  role = 'provider'
+  and  coalesce(cardinality(expertise), 0) = 0;
+
+select isnt(
+  (select expertise from public.profiles
+   where id = 'cc084000-0000-4084-8000-000000000001'),
+  '{}'::text[],
+  '13. a provider with no tags is given some'
+);
+
+select is(
+  cardinality((select expertise from public.profiles
+               where id = 'cc084000-0000-4084-8000-000000000001')),
+  3,
+  '14. exactly three — what the card shows, so nothing is seeded unseen'
+);
+
+-- 15. The vocabularies are split by category (065/083); seeding Tarot onto a
+-- listener would describe them as something they are not.
+select ok(
+  (select bool_and(e = any (array['Anxiety','Stress','Relationships','Breakup',
+                                  'Loneliness','Family','Career','Self-esteem',
+                                  'Sleep','Grief']))
+   from unnest((select expertise from public.profiles
+                where id = 'cc084000-0000-4084-8000-000000000001')) as e),
+  '15a. a listener gets listener topics'
+);
+
+select ok(
+  (select bool_and(e = any (array['Vedic','Tarot','Numerology','Palmistry',
+                                  'Vastu','Love','Marriage','Career']))
+   from unnest((select expertise from public.profiles
+                where id = 'cc084000-0000-4084-8000-000000000002')) as e),
+  '15. an astrologer gets astrologer disciplines'
+);
+
+select is(
+  public.seed_expertise_for('cc084000-0000-4084-8000-000000000001', 'listener'),
+  public.seed_expertise_for('cc084000-0000-4084-8000-000000000001', 'listener'),
+  '16. deterministic: a re-run cannot reshuffle the directory'
+);
+
+-- 17. THE SAFETY PROPERTY. A provider who answered for themselves is never
+-- overwritten, which is also what makes the migration idempotent.
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub":"cc084000-0000-4084-8000-000000000001","role":"authenticated"}';
+select public.set_provider_expertise(array['Grief']);
+
+reset role;
+update public.profiles
+set    expertise           = public.seed_expertise_for(id, provider_category),
+       seeded_expertise_at = now()
+where  role = 'provider'
+  and  coalesce(cardinality(expertise), 0) = 0;
+
+select is(
+  (select expertise from public.profiles
+   where id = 'cc084000-0000-4084-8000-000000000001'),
+  array['Grief'],
+  '17. a provider''s own answer survives a second run of the backfill'
+);
+
+select is(
+  (select seeded_expertise_at from public.profiles
+   where id = 'cc084000-0000-4084-8000-000000000001'),
+  null,
+  '19. ...and answering cleared the seeded marker, so no row is both'
+);
+
+select isnt(
+  (select seeded_expertise_at from public.profiles
+   where id = 'cc084000-0000-4084-8000-000000000002'),
+  null,
+  '18. while a still-unclaimed row stays marked as placeholder'
 );
 
 select * from finish();
