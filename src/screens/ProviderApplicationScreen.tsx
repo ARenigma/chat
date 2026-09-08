@@ -40,7 +40,7 @@ import {
 } from '../lib/stageName';
 import { useStore } from '../store/useStore';
 import { Button } from '../components/Button';
-import { Chip } from '../components/Chip';
+import { Chip, FilterChip } from '../components/Chip';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { LoadingIndicator } from '../components/LoadingIndicator';
@@ -55,6 +55,12 @@ import { M3Field } from '../components/TextField';
  * and the provider's answer cannot disagree at all.
  */
 import { OFFERED_LANGUAGES } from '../lib/languagePrefs';
+import {
+  MAX_EXPERTISE,
+  expertiseFor,
+  isExpertiseSelected,
+  toggleExpertise,
+} from '../lib/expertise';
 
 interface Props {
   onBack: () => void;
@@ -181,6 +187,13 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
   const [displayName, setDisplayName] = useState('');
   const [headline, setHeadline] = useState('');
   const [languages, setLanguages] = useState<string[]>([]);
+  /**
+   * Topic tags (migration 083). NOT part of `profileReady` below: 083 makes an
+   * empty list a legal provider, unlike languages, because somebody with no
+   * tags is harder to find rather than unusable. Holding the Go live button on
+   * it would be the client inventing a requirement the server does not have.
+   */
+  const [expertise, setExpertise] = useState<string[]>([]);
   const [about, setAbout] = useState('');
   const [avatarSeed, setAvatarSeed] = useState<ClaySeed | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
@@ -223,6 +236,30 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
       prev.includes(language) ? prev.filter(l => l !== language) : [...prev, language],
     );
   }, []);
+
+  /**
+   * The offered topics follow the category, so switching from Listener to
+   * Astrologer changes the chips under the finger.
+   *
+   * WHAT IT DOES NOT DO IS CLEAR THE SELECTION, which was the first instinct
+   * and is wrong. `toggleExpertise` preserves anything already chosen that is
+   * no longer offered — the same rule that protects a retired topic — so an
+   * applicant who ticks Anxiety, then looks at the Astrologer tab, then comes
+   * back, still has Anxiety. Wiping on a category tap would silently discard
+   * work in response to a look.
+   *
+   * The consequence, stated: a provider CAN end up carrying a tag from the
+   * other column if they switch after choosing. That is a claim they made and
+   * did not withdraw, the server's shape floor permits it (083 is deliberately
+   * not a value allowlist), and the row renders it fine.
+   */
+  const offeredTopics = expertiseFor(category);
+  const toggleTopic = useCallback(
+    (topic: string) => {
+      setExpertise(prev => toggleExpertise(prev, topic, offeredTopics));
+    },
+    [offeredTopics],
+  );
 
   /**
    * PAN, and only PAN.
@@ -438,6 +475,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
           languages,
           about: about.trim(),
           category,
+          expertise,
         });
         setPhase('done');
       } catch (err) {
@@ -457,7 +495,21 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
         // Everything else is surfaced by useCompleteProviderOnboarding's notice.
       }
     })();
-  }, [avatarSeed, setClay, complete, displayName, headline, languages, about, category]);
+  }, [
+    avatarSeed,
+    setClay,
+    complete,
+    displayName,
+    headline,
+    languages,
+    about,
+    category,
+    // Added with the field, and eslint caught its absence rather than a
+    // reviewer: without it `onGoLive` closes over the selection as it was on
+    // first render — empty — so every applicant would have submitted no tags
+    // while the chips on screen showed the ones they picked.
+    expertise,
+  ]);
 
   // ── Phase: verify — identity AND payout, in one pass ────────────────────
   if (phase === 'verify') {
@@ -874,6 +926,50 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
                 onPress={() => toggleLanguage(l)}
               />
             ))}
+          </View>
+        </Field>
+
+        {/* What they help with (083).
+
+            `FilterChip`, not the `Chip` used for Languages directly above, and
+            the difference is not cosmetic: `Chip` is the conversation STARTER,
+            whose accessibility label is hard-coded to `Start with: …`. A
+            TalkBack user picking "Anxiety" here would be told "Start with:
+            Anxiety". `FilterChip` is M3's actual control for choosing several
+            things out of a set, which is exactly what this is, and it carries
+            the 32dp container, the 48dp touch target, the check and a real
+            disabled state.
+
+            (The Languages field above has the same `Start with:` problem and is
+            left alone here — it is a pre-existing a11y defect on a field this
+            change does not touch, and fixing it silently inside an unrelated
+            commit is how a regression gets attributed to the wrong change.)
+
+            The label says "optional" because it is,
+            and saying so is what stops it reading as a blocked step — the Go
+            live button does not wait for it.
+
+            The ceiling disables the unpicked chips rather than letting a tap do
+            nothing invisibly. `toggleExpertise` returns the selection unchanged
+            at MAX_EXPERTISE, which is the right behaviour (evicting somebody's
+            earlier choice to make room is worse), but a control that silently
+            ignores a press is a control that reads as broken. */}
+        <Field label={`What you help with (optional, up to ${MAX_EXPERTISE})`}>
+          <View style={styles.chips} testID="provider-expertise">
+            {offeredTopics.map(topic => {
+              const picked = isExpertiseSelected(expertise, topic);
+              return (
+                <FilterChip
+                  key={topic}
+                  label={topic}
+                  selected={picked}
+                  onToggle={toggleTopic}
+                  disabled={!picked && expertise.length >= MAX_EXPERTISE}
+                  accessibilityLabel={`${topic}${picked ? ', selected' : ''}`}
+                  testID={`provider-topic-${topic}`}
+                />
+              );
+            })}
           </View>
         </Field>
 

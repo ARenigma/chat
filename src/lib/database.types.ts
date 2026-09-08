@@ -1368,6 +1368,18 @@ export type Database = {
        * Returns the most recent non-expired pending session request for a
        * conversation visible to the caller, or null if none. Migration 037.
        */
+      /**
+       * 083: a provider replaces their own topic tags, and is told what was
+       * stored rather than trusting what it sent.
+       *
+       * Refuses a non-provider with 42501 and an over-long list with 22023 and
+       * a sentence — the CHECK behind it would report a constraint name, which
+       * is not something a caller can act on.
+       */
+      set_provider_expertise: {
+        Args: { p_expertise: string[] };
+        Returns: string[];
+      };
       /** 082: has the member declined a paid session in this conversation? */
       get_chat_consent: {
         Args: { p_conversation_id: string };
