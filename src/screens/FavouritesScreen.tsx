@@ -1,19 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlashList, type FlashListProps } from '@shopify/flash-list';
+import { FlashList } from '@shopify/flash-list';
 import { StyleSheet, Text, View } from 'react-native';
-import Animated, {
-  useAnimatedScrollHandler,
-  useSharedValue,
-} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { useProfile, useProviders } from '../api/chat';
 import { useFavorites } from '../store/useFavorites';
-import type { ProviderSummary } from '../lib/database.types';
 import { NAV_BAR_HEIGHT } from '../components/FloatingToolbar';
-import { TopAppBar } from '../components/TopAppBar';
+import { TabTopBar } from '../components/TabTopBar';
 import { Icon } from '../components/Icon';
 import { SquareProviderCard, SQUARE_CARD_ESTIMATE } from '../components/ProviderCard';
 import { ProviderTypeTabs } from '../components/ProviderTypeTabs';
@@ -26,12 +21,6 @@ import {
 interface Props {
   onOpenProvider: (id: string) => void;
 }
-
-// Reanimated wrapper so the grid's scroll offset drives the medium app bar's
-// collapse on the UI thread (see ChatsListScreen for the same pattern).
-const AnimatedFlashList = Animated.createAnimatedComponent(
-  FlashList as React.ComponentType<FlashListProps<ProviderSummary>>,
-);
 
 /**
  * The Favourites tab — the people a member has hearted.
@@ -70,10 +59,25 @@ export function FavouritesScreen({ onOpenProvider }: Props) {
    */
   const [category, setCategory] = useState<ProviderCategory>(DEFAULT_CATEGORY);
   const initialCategorySet = useRef(false);
-  const favourites = useMemo(
-    () => allFavourites.filter(p => categoryOf(p) === category),
-    [allFavourites, category],
-  );
+  /*
+   * The bar's magnifier filters THIS screen, which is what WhatsApp's does on
+   * every tab (Amit named it as the reference, 2026-09-08). So the query is
+   * local state here rather than a route into Home's people search: a member
+   * searching from Favourites is looking for someone they already hearted.
+   *
+   * Name only. Home's search also matches languages, because it is searching a
+   * directory of strangers; a favourites list is short and personal, and the
+   * fact the member knows is the name.
+   */
+  const [searching, setSearching] = useState(false);
+  const [query, setQuery] = useState('');
+  const favourites = useMemo(() => {
+    const inCategory = allFavourites.filter(p => categoryOf(p) === category);
+    const needle = query.trim().toLowerCase();
+    return needle === ''
+      ? inCategory
+      : inCategory.filter(p => p.display_name.toLowerCase().includes(needle));
+  }, [allFavourites, category, query]);
   useEffect(() => {
     if (initialCategorySet.current || providers === undefined) {
       return;
@@ -97,11 +101,6 @@ export function FavouritesScreen({ onOpenProvider }: Props) {
   // unwanted flash on every scroll-back.
   const seenIds = useRef(new Set<string>());
 
-  const scrollY = useSharedValue(0);
-  const onScroll = useAnimatedScrollHandler(e => {
-    scrollY.value = e.contentOffset.y;
-  });
-
   const renderFavouriteCard = useCallback(
     ({ item, index }: { item: (typeof favourites)[number]; index: number }) => {
       const animate = !seenIds.current.has(item.id);
@@ -121,28 +120,41 @@ export function FavouritesScreen({ onOpenProvider }: Props) {
   );
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <TopAppBar
-        variant="medium"
+    <View style={styles.root}>
+      {/*
+       * The SAME bar Home renders, with "Favourites" in the wordmark's slot at
+       * regular weight (Amit: "home to fovourties o setting the top app bar
+       * remians constant -- just chnage pappal to fav to settings"). It owns
+       * the safe-area padding, which is why `root` no longer applies it.
+       *
+       * What this replaced: a medium TopAppBar with a large "Favourites"
+       * headline and a "1 person" subtitle. It was 128dp against Home's 48dp
+       * row, so every switch between the two tabs moved the tabs and the
+       * content under them — the shift Amit called out ("the viewport must not
+       * shift when hopping beteen ... screens (home to favourite)"). No back
+       * arrow either: this is a tab's first screen.
+       */}
+      <TabTopBar
         title="Favourites"
-        subtitle={
-          favourites.length > 0
-            ? `${favourites.length} ${favourites.length === 1 ? 'person' : 'people'}`
-            : undefined
-        }
-        scrollY={scrollY}
-        testID="favourites-app-bar"
+        searching={searching}
+        onSearchOpen={() => setSearching(true)}
+        onSearchClose={() => {
+          setQuery('');
+          setSearching(false);
+        }}
+        query={query}
+        onQueryChange={setQuery}
+        searchPlaceholder="Search your favourites"
+        testID="favourites"
       />
       <ProviderTypeTabs value={category} onChange={setCategory} testID="favourites-tabs" />
       {favourites.length > 0 ? (
-        <AnimatedFlashList
+        <FlashList
           data={favourites}
           keyExtractor={p => p.id}
           renderItem={renderFavouriteCard}
           numColumns={2}
           showsVerticalScrollIndicator={false}
-          onScroll={onScroll}
-          scrollEventThrottle={16}
           {...SCROLL_PHYSICS}
           contentContainerStyle={{
             paddingHorizontal: TOKENS.space.md,
@@ -158,19 +170,31 @@ export function FavouritesScreen({ onOpenProvider }: Props) {
         />
       ) : (
         <View style={styles.empty}>
-          <Icon name="heart" size={TOKENS.icon['2xl']} color={theme.color.text.tertiary} />
+          <Icon
+            /* The magnifier, not the heart, when a QUERY is what emptied the
+               grid: the heart's message ("tap the heart to save someone") is
+               advice for a member with no favourites, and reads as if the ones
+               they have were lost. */
+            name={query.trim() === '' ? 'heart' : 'search'}
+            size={TOKENS.icon['2xl']}
+            color={theme.color.text.tertiary}
+          />
           <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.emptyTitle}>
-            {allFavourites.length === 0
-              ? 'No favourites yet'
-              : `No ${category === 'listener' ? 'listeners' : 'astrologers'} favourited`}
+            {query.trim() !== ''
+              ? 'No match'
+              : allFavourites.length === 0
+                ? 'No favourites yet'
+                : `No ${category === 'listener' ? 'listeners' : 'astrologers'} favourited`}
           </Text>
           <Text allowFontScaling style={styles.emptyBody}>
-            {allFavourites.length === 0
-              ? "Tap the heart on someone's profile to save them here."
-              : // A real favourite exists, just not in this tab — distinct from
-                // "you have never favourited anyone", which is what the message
-                // above this one is for.
-                `Your ${category === 'listener' ? 'astrologer' : 'listener'} favourites are on the other tab.`}
+            {query.trim() !== ''
+              ? `Nobody in your ${category === 'listener' ? 'listener' : 'astrologer'} favourites matches ${JSON.stringify(query.trim())}.`
+              : allFavourites.length === 0
+                ? "Tap the heart on someone's profile to save them here."
+                : // A real favourite exists, just not in this tab — distinct from
+                  // "you have never favourited anyone", which is what the message
+                  // above this one is for.
+                  `Your ${category === 'listener' ? 'astrologer' : 'listener'} favourites are on the other tab.`}
           </Text>
         </View>
       )}

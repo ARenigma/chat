@@ -58,10 +58,9 @@ import { displayRating, formatReviewCount } from '../lib/systemRating';
 import { DirectorySkeleton } from '../components/DirectorySkeleton';
 import { Chip } from '../components/Chip';
 import { HeroCarousel } from '../components/HeroCarousel';
-import { SearchBar } from '../components/SearchBar';
 import { Badge } from '../components/Badge';
 import { Card } from '../components/Card';
-import { TokenCounter } from '../components/TokenCounter';
+import { TabTopBar } from '../components/TabTopBar';
 import { SpotlightCard } from '../components/SpotlightCard';
 import { ChatStartHint } from '../components/ChatStartHint';
 import { ConversationMenu } from '../components/ConversationMenu';
@@ -73,8 +72,6 @@ import { useHomeTour } from '../store/useHomeTour';
 import {
   directoryIn,
   directoryOut,
-  searchIn,
-  searchOut,
   searchResultsIn,
   searchResultsOut,
 } from '../theme/motion';
@@ -88,23 +85,6 @@ const POTD_DISMISSED_KEY = 'companion.potd.dismissed';
  */
 const TOP_PICKS = 3;
 
-/**
- * The search field's side margin, in dp, and it is 7 rather than a token
- * because the reference measures 7.
- *
- * `contentView.addView(fragmentSearchField, LayoutHelper.createFrame(
- *    LayoutHelper.MATCH_PARENT, 48, Gravity.TOP, 7, -2, 7, 0))`
- * — DialogsActivity.java:5344 in the 12.10.1 tree. MATCH_PARENT width, 48dp
- * tall, 7dp either side.
- *
- * Named and commented rather than inlined because 7 looks like a mistake next
- * to a spacing scale of 4/8/12/16: the app's `space.xs` is 8 and `space.md` is
- * 16, and someone tidying this to either would move the magnifier off the mark.
- * The field's own 12dp glyph inset is what supplies the optical margin, so the
- * outer one is deliberately smaller than anything else on the screen — the two
- * together are the reference's 23dp from screen edge to glyph box.
- */
-const SEARCH_ROW_SIDE_MARGIN = 7;
 
 interface Props {
   onOpenConversation: (peerId: string) => void;
@@ -151,7 +131,6 @@ export function HomeScreen({
   const { width: windowWidth } = useWindowDimensions();
   const columnWidth = contentColumnWidth(windowWidth);
   const balance = useStore(s => s.balance);
-  const openWallet = useStore(s => s.openWallet);
   // Read rather than called for its side effect: the directory's ORDER now
   // depends on the member's language preference, so this screen needs the row
   // and not just the balance sync it used to be here for.
@@ -715,112 +694,26 @@ export function HomeScreen({
 
   return (
     <View style={[styles.root, { width: columnWidth }]}>
-      {/* Nav Row — wordmark, search, ₹ balance. Not the collapsing LargeTitleBar:
-          v13 Home has a fixed nav row, and the large title belongs to the Explore
-          section header below it. */}
-      {/* One row, two states, crossfaded in place. Nothing slides, because the
-          field arrives in the row the icons were in.
-
-          350ms on EASE_OUT_QUINT, symmetric — `BoolAnimator
-          animatorSearchVisible` at DialogsActivity.java:307-308, the animator
-          that carries the field and the chrome around it. `searchIn` /
-          `searchOut` in src/theme/motion.ts hold the citation and the
-          correction history (they ran 150ms with no easing at all until
-          2026-09-07, read off ActionBarMenuItem.java, which is the LEGACY
-          action-bar search the dialogs list stopped using several versions
-          ago).
-
-          The exit affordance is a BACK ARROW, not a second cross: with a cross
-          here and the field's own clear inside it, a member with text typed saw
-          two ✗ and could not tell which one lost their query (Amit,
-          2026-09-06). Note that Telegram itself has NO back arrow here —
-          `checkUi_itemBackButtonVisibility` hides it while search is open
-          (DialogsActivity.java:14083-14087) and one X, forced visible for the
-          whole session (:3365), both clears the query and closes search
-          (:3306-3316). Keeping the arrow is Amit's decision of 2026-09-06 and
-          the reason he gave (never two crosses) still holds; it is not an
-          oversight. */}
-      <View style={[styles.nav, { paddingTop: insets.top + TOKENS.space['2xs'] }]}>
-        {searching ? (
-          <Animated.View
-            key="search-row"
-            entering={searchIn}
-            exiting={searchOut}
-            style={styles.searchRow}>
-            {/* NO arrow beside the field, and the field takes the whole row.
-                Amit, 2026-09-07: "telegram search icon is on left edge of the
-                bar and one cross to the right edge on the bar with full width
-                bar -- see clearly". He is right, and the source is unambiguous:
-                  contentView.addView(fragmentSearchField,
-                    LayoutHelper.createFrame(MATCH_PARENT, 48, Gravity.TOP,
-                                             7, -2, 7, 0));
-                (DialogsActivity.java:5344) — MATCH_PARENT with 7dp side
-                margins, no sibling. The magnifier is a 24dp box at 12dp from
-                the field's own left edge and the cross the mirror of it at 12dp
-                from the right (FragmentSearchField.java:132 and :159), which is
-                what puts each mark AT its end of the bar.
-                Ours had a 48dp arrow as a row sibling, so the pill started
-                ~70dp in and the magnifier another 16dp inside that. That is the
-                whole of the difference he was pointing at.
-                Leaving search is the hardware back button, which is wired and
-                device-verified as of today (HomeScreen's `searchBackGuard`), and
-                the cross clears the query — the two jobs the reference splits
-                the same way. */}
-            <SearchBar
-              testID="home-search-input"
-              value={query}
-              onChangeText={setQuery}
-              placeholder="Search by name or language"
-              onClear={() => { setQuery(''); }}
-              /* The trailing mark is the exit as well as the clear, which is
-                 what the reference's is: its handler clears what is clearable
-                 and otherwise runs `onCloseSearch`
-                 (FragmentSearchField.java:142-155). Same `closeSearch` the
-                 hardware back button uses, so the two ways out cannot diverge. */
-              onExit={closeSearch}
-            />
-          </Animated.View>
-        ) : (
-          <Animated.View
-            key="nav-row"
-            entering={searchIn}
-            exiting={searchOut}
-            style={styles.navRow}>
-            <Text allowFontScaling={false} style={styles.wordmark}>
-              Pappal
-            </Text>
-            <View style={styles.navTrailing}>
-              <Pressable
-                onPress={() => setSearching(true)}
-                testID="home-search"
-                accessibilityLabel="Search people"
-                press="none"
-                size={TOKENS.interaction.minTarget}
-                /* Circle, for the same reason as the leave-search arrow above. */
-                shape="circle"
-                style={styles.navIcon}>
-                {/* 20, not 24 (Amit, 2026-09-07: "our search icon is too big"
-                    — and he meant this one, in the Home nav row, not the one
-                    inside the field).
-                    Measured on the Redmi before changing it: at size 24 the
-                    magnifier inked 66px at density 2.75 = exactly 24.00dp,
-                    against the wallet glyph beside it at ~18dp. A third larger
-                    than its own neighbour, in the same row, which is what makes
-                    it look wrong rather than any absolute value.
-                    `size` is NOT the rendered size: Icon.tsx multiplies by
-                    ICON_SCALE (1.2) and Lucide inks 19.97 of its 24-unit grid,
-                    so 20 -> em round(24) -> ink 24 * 19.97/24 = 19.97dp. That
-                    lands it on the chat header's video glyph, which is the
-                    nearest comparable control in the app. */}
-                <Icon name="search" size={TOKENS.icon.md} color={theme.color.text.secondary} />
-              </Pressable>
-              <TourAnchor id="wallet">
-                <TokenCounter balance={balance} onPress={openWallet} />
-              </TourAnchor>
-            </View>
-          </Animated.View>
-        )}
-      </View>
+      {/* The bar every tab wears — see TabTopBar for the geometry and for why
+          Favourites and Settings render the SAME component rather than a copy
+          of it. Home is the one that carries the wordmark and the wallet's
+          tour anchor. Not a collapsing LargeTitleBar: v13 Home has a fixed nav
+          row, and the large title belongs to the Explore section header below
+          it. */}
+      <TabTopBar
+        title="Pappal"
+        brand
+        searching={searching}
+        onSearchOpen={() => setSearching(true)}
+        /* The hardware back button runs this too (`searchBackGuard`), so the
+           two ways out cannot diverge. */
+        onSearchClose={closeSearch}
+        query={query}
+        onQueryChange={setQuery}
+        searchPlaceholder="Search by name or language"
+        testID="home"
+        walletTourId="wallet"
+      />
 
       {searching ? null : (
         <ProviderTypeTabs
@@ -1231,14 +1124,17 @@ function FeaturedCard({
           <Image
             source={{
               /*
-               * The full 3:4 frame, not a 210dp band: the crop happens in the
-               * layout above (`featuredPhoto`), so asking the server for a
-               * short image would centre-crop the head off before it arrived.
+               * A tall crop, not a 178dp band: the window into it happens in
+               * the layout above (`featuredPhoto`), so asking the server for a
+               * frame-height image would centre-crop the head off before it
+               * arrived. `HERO_PHOTO_HEIGHT_RATIO` is 4/3 scaled to this
+               * card's height — see its note for why that is a trim and not
+               * that band.
                */
               uri: sizedStorageImageUri(
                 provider.avatar_url,
                 imageWidth,
-                Math.round((imageWidth * 4) / 3),
+                Math.round(imageWidth * HERO_PHOTO_HEIGHT_RATIO),
                 PixelRatio.get(),
               ),
             }}
@@ -1268,8 +1164,12 @@ function FeaturedCard({
           than the peers' `?.` because on the hero a null average would print the
           literal "★ undefined". */}
       <View accessible={false} style={styles.featuredBadge}>
+        {/* Number first, star last (Amit: "interchange position" of the two,
+            2026-09-08) — the opposite order from ProviderRow/ProviderCard's
+            "★ 4.8" chip. Kept local to the hero rather than flipped
+            everywhere: only the hero pill was asked to change. */}
         <Text allowFontScaling style={styles.featuredBadgeText}>
-          {`★ ${rating.score.toFixed(1)}`}
+          {`${rating.score.toFixed(1)} ★`}
         </Text>
       </View>
       {presence.here ? <View style={styles.featuredOnline} /> : null}
@@ -1297,6 +1197,50 @@ function FeaturedCard({
 
 const RAIL_AVATAR = 56;
 
+/**
+ * The Chats rail's content height when it has a row of avatars to show:
+ * the ring box (`RAIL_AVATAR` plus its 3dp pad and 2dp border on each side,
+ * see `railRing`) plus the `2xs` gap plus the name label's line height (see
+ * `railItem`/`railName`).
+ *
+ * Exported to `railEmpty` so the EMPTY state (a lone 56dp dashed plus, no
+ * label) reserves the same height rather than a shorter one. Without this,
+ * Listeners (which always has chats in the seed data) and Astrologers
+ * (which starts with none) laid out the Chats rail at two different
+ * heights, so the Explore heading below it sat at two different Y
+ * positions — Amit, on the device: "astrologers dont have chats thats why
+ * viewport shifts when you switch between these two tabs".
+ */
+const RAIL_ITEM_HEIGHT =
+  RAIL_AVATAR + 2 * (3 + 2) + TOKENS.space['2xs'] + TOKENS.typography.bodySmall.lineHeight;
+
+/** How much shorter the hero card is than the 210dp it shipped at. */
+const HERO_HEIGHT_REDUCTION = TOKENS.space['2xl'];
+
+/** The hero card's frame height. */
+const HERO_HEIGHT = 210 - HERO_HEIGHT_REDUCTION;
+
+/**
+ * The photo's height as a multiple of the card's width — 4/3 scaled by the
+ * SAME factor the frame shrank by.
+ *
+ * The magnification a face renders at is `frameHeight / photoHeight`: how much
+ * of the photo the window shows. Shrinking the frame to 178dp while the photo
+ * stayed pinned at `width * 4/3` cut that fraction from 43% to 36%, so the
+ * same face filled more of a smaller box — Amit: "zoom out the photo to be in
+ * perfect view in hero cards.. (too zoomed in for smaller carousel)".
+ *
+ * Scaling the photo's height by `HERO_HEIGHT / 210` restores the fraction the
+ * 210dp card was tuned at, which is the zoom that was already right. The
+ * shorter crop comes from the server (`sizedStorageImageUri` asks for this
+ * height too), and it is a ~15% trim of a stored 3:4 image rather than a
+ * short band cut from a tall one — the failure mode the `featuredPhoto` note
+ * warns about needs the latter. 087 puts the face 34% down the stored crop; a
+ * centred 15% trim moves it to ~31% of the shorter one, still well inside the
+ * top 43% this frame shows.
+ */
+const HERO_PHOTO_HEIGHT_RATIO = (4 / 3) * (HERO_HEIGHT / 210);
+
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
     root: {
@@ -1304,61 +1248,6 @@ const makeStyles = (t: Theme) =>
       backgroundColor: t.color.bg.base,
       alignSelf: 'center',
     },
-    nav: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingHorizontal: TOKENS.space.md,
-      paddingBottom: TOKENS.space.xs,
-    },
-    // The one place TitanOne appears outside a logo file. Lowercase coral, per
-    // v13. `numeralMedium` is unrelated — the wordmark carries its own size.
-    wordmark: {
-      fontFamily: TOKENS.face.wordmark,
-      fontSize: 28,
-      lineHeight: 34,
-      color: t.color.bg.accent,
-    },
-    navTrailing: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: TOKENS.space.xs,
-    },
-    /*
-     * A real 48dp box with the glyph centred in it, not a 28x40 box with slop.
-     *
-     * Both nav controls wear this style — the button that OPENS search and the
-     * back arrow that leaves it — and both passed `size={28}`, which asks
-     * Pressable for `max(8, ceil((48 - 28) / 2)) = 10` of `hitSlop`
-     * (Pressable.tsx:231-234). Almost none of it survived: "The touch area never
-     * extends past the parent view bounds"
-     * (https://reactnative.dev/docs/view#hitslop), and the search glyph is the
-     * FIRST child of a content-sized `navTrailing` row whose left edge is the
-     * glyph box's own left edge, so the 10dp on that side is clipped to nothing
-     * and the remaining 10dp on the other side falls in the 8dp gap the token
-     * counter's own slop is already claiming. Effective box ~28-36 x 40 against
-     * Android's floor: "we recommend that each interactive UI element have a
-     * focusable area, or touch target size, of at least 48dp x 48dp"
-     * (https://developer.android.com/guide/topics/ui/accessibility/apps).
-     *
-     * This is the same defect the search field's clear control had until
-     * 2026-09-07 and it takes the same fix: one laid-out `interaction.minTarget`
-     * box that no ancestor can shrink, with the glyph centred inside it. See the
-     * GLYPH_SLOT header in src/components/SearchBar.tsx for the long version.
-     * `size` is still passed, now as the same 48, so the Pressable and the style
-     * agree rather than one of them silently deciding.
-     *
-     * It also makes the nav row 48dp tall in BOTH states — this box, or the
-     * search field's own 48dp row — which the content swap below relies on; see
-     * the note on `styles.swap`.
-     */
-    navIcon: {
-      width: TOKENS.interaction.minTarget,
-      height: TOKENS.interaction.minTarget,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    // SearchBar takes the full nav row while searching; no custom field needed.
     scroll: {
       paddingTop: TOKENS.space['2xs'],
     },
@@ -1430,10 +1319,13 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: TOKENS.space.md,
       paddingBottom: TOKENS.space.xs,
     },
+    // Same height as a populated rail (`RAIL_ITEM_HEIGHT`), the plus centred
+    // inside it, rather than its own shorter padding — see the constant's
+    // comment for the viewport-shift bug this fixes.
     railEmpty: {
+      height: RAIL_ITEM_HEIGHT,
       paddingHorizontal: TOKENS.space.md,
-      paddingTop: TOKENS.space.xs,
-      paddingBottom: TOKENS.space.sm,
+      justifyContent: 'center',
     },
     // Chats is a peer section heading to Explore, not a quiet caption (#14,
     // Amit: "bold, looks too shallow in front of Explore"). Same display weight
@@ -1503,54 +1395,6 @@ const makeStyles = (t: Theme) =>
       paddingTop: TOKENS.space.xs,
       paddingBottom: TOKENS.space.sm,
     },
-    // Both nav states occupy the same row so the crossfade has nothing to
-    // reflow: the search field lands where the icons were.
-    navRow: {
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: TOKENS.space.xs,
-    },
-    /*
-     * The search row is NOT `navRow`, and the difference is the point.
-     *
-     * `navRow` is `space-between` with a gap, which is right for the resting
-     * chrome (wordmark, search, wallet) and wrong for search: it would hold the
-     * field to its content width and centre it in the leftovers. The field has
-     * to be the row.
-     *
-     * `SEARCH_ROW_SIDE_MARGIN` is the reference's own 7dp
-     * (DialogsActivity.java:5344 `createFrame(MATCH_PARENT, 48, ..., 7, -2, 7,
-     * 0)`) rather than the app's usual `space.md`. It is deliberately narrower
-     * than every other margin on this screen, because the field's 12dp internal
-     * glyph inset already supplies the optical inset — stacking 16dp on top of
-     * that is exactly how the magnifier ended up 28dp from the screen edge
-     * instead of 23.
-     */
-    searchRow: {
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'center',
-      /*
-       * NEGATIVE, and that is the point: this has to CANCEL the parent.
-       *
-       * `nav` above carries `paddingHorizontal: TOKENS.space.md` (16dp), which
-       * is right for the resting chrome and wrong for search — it is a padding,
-       * so a child cannot opt out of it, only pull back through it. Measured on
-       * the Redmi before this line existed: the pill sat 26.9dp from each screen
-       * edge, which is exactly 16 (nav) + 7 (this margin) + 4 (the pill's own
-       * inset) and 16dp further in than the reference on both sides.
-       *
-       * The reference is 7dp of row margin over a 4dp pill inset — 11dp from
-       * screen edge to pill (DialogsActivity.java:5344 `createFrame(
-       * MATCH_PARENT, 48, Gravity.TOP, 7, -2, 7, 0)` and :3294
-       * `setPadding(dp(4) x4)`). So the margin is `7 - 16 = -9`, written as the
-       * subtraction rather than as `-9` so that changing either the nav padding
-       * or the reference's 7 keeps this correct instead of silently drifting.
-       */
-      marginHorizontal: SEARCH_ROW_SIDE_MARGIN - TOKENS.space.md,
-    },
     /*
      * "Top profiles this week" over the hero carousel. A heading, because a row
      * of three cards with no label is three unexplained adverts — but a QUIET
@@ -1618,7 +1462,7 @@ const makeStyles = (t: Theme) =>
       // Measured on-device with a screenshot at the app's default scroll
       // position: the clipped line needed about 30dp of headroom back, so this
       // gives up one `space['2xl']` (32dp) rather than an unmeasured guess.
-      height: 210 - TOKENS.space['2xl'],
+      height: HERO_HEIGHT,
       justifyContent: 'flex-end',
       // The photo is taller than this frame and anchored to its top; without
       // the clip it would spill over the card below. See `featuredPhoto`.
@@ -1642,15 +1486,16 @@ const makeStyles = (t: Theme) =>
      * above the frame. The listeners never showed it because their crops happen
      * to put the face near the middle.
      *
-     * So the crop is done here rather than asked for: the image keeps its 3:4
-     * ratio (roughly 341dp tall at this card's width), sits at top: 0, and the
-     * parent's overflow does the cutting. The face is 34% down a 3:4 frame by
-     * construction — 087 crops it there — so it lands around 116dp, comfortably
-     * inside the 210dp window, for every photo rather than by luck.
+     * So the window is cut here rather than asked for: the photo keeps a tall
+     * ratio and the parent's overflow does the cutting. The height is
+     * `HERO_PHOTO_HEIGHT_RATIO` — 4/3 scaled by how much the frame shrank, so
+     * the fraction of the photo this window shows (and therefore the zoom the
+     * face renders at) is the one the 210dp card was tuned at, not a tighter
+     * one. See that constant for the arithmetic and for where the face lands.
      */
     featuredPhoto: {
       position: 'absolute', top: 0, left: 0, right: 0,
-      aspectRatio: 3 / 4,
+      aspectRatio: 1 / HERO_PHOTO_HEIGHT_RATIO,
     },
     featuredScrim: {
       position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
@@ -1677,15 +1522,10 @@ const makeStyles = (t: Theme) =>
      * text/onAccent measures 5.19:1 light / 6.13:1 dark.
      * https://developer.android.com/guide/topics/ui/accessibility/apps
      */
-    // Top-RIGHT, not top-left: swapped with the presence dot (Amit: "star and
-    // rating no on explore hero carousel -- interchange position") to match
-    // ProviderRow/ProviderCard, where the rating chip already sits on the
-    // right of its row and the presence dot marks the avatar's own left/top
-    // corner — the hero had them backwards relative to every other card.
     featuredBadge: {
       position: 'absolute',
       top: TOKENS.space.md,
-      right: TOKENS.space.md,
+      left: TOKENS.space.md,
       paddingHorizontal: TOKENS.space.sm,
       paddingVertical: TOKENS.space['2xs'],
       borderRadius: TOKENS.radius.pill,
@@ -1713,13 +1553,12 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.titleMediumEmphasized,
       color: 'rgba(255,255,255,0.82)',
     },
-    // Presence dot, top-LEFT of the card (swapped with the rating badge, see
-    // its comment above): sage with a white ring so it stays legible over any
-    // photo.
+    // Presence dot, top-right of the card: sage with a white ring so it stays
+    // legible over any photo.
     featuredOnline: {
       position: 'absolute',
       top: TOKENS.space.md,
-      left: TOKENS.space.md,
+      right: TOKENS.space.md,
       width: 14,
       height: 14,
       borderRadius: 7,
