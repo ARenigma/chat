@@ -90,6 +90,21 @@ export function useSessionRealtime(conversationId: string | undefined): void {
         queryKey: sessionKeys.pendingRequest(conversationId),
       });
       void queryClient.invalidateQueries({ queryKey: ['conversation-list'] });
+      /*
+       * THE WALLET. `meter_active_sessions` debits a minute and writes
+       * `minutes_billed` / `next_bill_at` back to `paid_sessions` in the same
+       * transaction, so this channel already fires once per billed minute — and
+       * again on settlement. Invalidating the profile here is therefore the
+       * balance following the money that actually moved, with no extra polling.
+       *
+       * Without it the number never moved. `useProfile` has a 15s staleTime, no
+       * refetchInterval, and `refetchOnWindowFocus` is off globally, and NO
+       * channel subscribed to `profiles` — so a mounted screen showed the
+       * balance from the moment it mounted until the app was restarted or a
+       * top-up invalidated it. Amit, from a device 2026-09-08: "Wallet not
+       * updating not after session".
+       */
+      void queryClient.invalidateQueries({ queryKey: ['profile'] });
       // Settlement hides all session content server-side (migration 045). The
       // party that did not call end_session only learns via this session-state
       // channel, so refetch the transcript here too: RLS now returns nothing for

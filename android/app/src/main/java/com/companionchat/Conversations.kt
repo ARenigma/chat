@@ -320,8 +320,8 @@ object Conversations {
             .apply { if (avatarIcon != null) setIcon(avatarIcon) }
             .build()
 
-        val answer = callActionIntent(context, peerId, callId, "answer")
-        val decline = callActionIntent(context, peerId, callId, "decline")
+        val answer = callActionIntent(context, peerId, callId, "answer", medium)
+        val decline = callActionIntent(context, peerId, callId, "decline", medium)
 
         val notification = NotificationCompat.Builder(context, CALL_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
@@ -365,10 +365,24 @@ object Conversations {
         peerId: String,
         callId: String,
         action: String,
+        medium: String,
     ): android.app.PendingIntent {
+        /*
+         * `medium` is part of the link, not just the notification's subtext.
+         *
+         * App.tsx parses `medium=` and defaults to 'voice' when it is absent, so
+         * omitting it here opened a VOICE CallScreen for an incoming VIDEO call
+         * — every video call answered from the notification lost its camera,
+         * silently, because the fallback is a legitimate value. Reported from a
+         * device 2026-09-08.
+         */
         val intent = Intent(context, MainActivity::class.java)
             .setAction(Intent.ACTION_VIEW)
-            .setData(Uri.parse("companionchat://call/$peerId?callId=$callId&action=$action"))
+            .setData(
+                Uri.parse(
+                    "companionchat://call/$peerId?callId=$callId&action=$action&medium=$medium",
+                ),
+            )
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         return android.app.PendingIntent.getActivity(
             context,

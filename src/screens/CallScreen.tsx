@@ -9,6 +9,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useQueryClient } from '@tanstack/react-query';
 import { LIGHT, TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { CallResult, ProviderSummary } from '../lib/database.types';
@@ -190,8 +191,6 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     return true;
   }, []);
   useBackGuard(backGuard);
-  /** Visual speaker pill; audio-route wiring is a follow-up (no InCallManager yet). */
-  const [speakerOn, setSpeakerOn] = useState(false);
 
   // Outgoing needs the conversation the call belongs to; a member calling a
   // provider resolves it exactly as opening a chat does.
@@ -377,6 +376,8 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     mediaReady,
     muted,
     toggleMute,
+    speakerOn,
+    setSpeaker,
     localVideo,
     remoteVideo,
     videoEnabled,
@@ -384,8 +385,13 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     enableVideo,
     disableVideo,
     switchCamera,
-  } = useCallSession(callId, direction === 'out', enabled);
+    // A video call starts on the speaker, a voice call on the earpiece.
+  } = useCallSession(callId, direction === 'out', enabled, medium === 'video');
+  const queryClient = useQueryClient();
   const connectedTrackedRef = useRef(false);
+  // Assigned once `accept` exists, below. Read by the notification 'answer'
+  // handler, which is registered above `accept`'s declaration.
+  const acceptRef = useRef<() => void>(() => undefined);
   const backendRef = useRef(backend);
   const phaseRef = useRef(phase);
   backendRef.current = backend;
@@ -474,10 +480,18 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
         return;
       }
       endedRef.current = true;
+      /*
+       * A call is the one paid session with no `useSessionRealtime` subscription
+       * (that hook is keyed by conversation and lives in ChatScreen), so the
+       * per-minute profile invalidation there never reaches this screen. Without
+       * this the member walked out of a ten-minute call with the balance they
+       * walked in with, until something else happened to refetch it.
+       */
+      void queryClient.invalidateQueries({ queryKey: ['profile'] });
       setNotice(notice);
       onEnd();
     },
-    [onEnd, setNotice],
+    [onEnd, setNotice, queryClient],
   );
 
   // Media connected → active; failed → tell the user and leave. When the call
@@ -597,14 +611,29 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
    *                    (CallAudioFocusManager.kt). Telegram's OFFHOOK hang-up,
    *                    reached through audio focus so it costs no permission —
    *                    the reasoning is on the native side.
+   *   'decline'        the Decline action while ringing (CallActionReceiver.kt:22).
+   *   'answer'         the Answer action while ringing (CallActionReceiver.kt:19).
+   *
+   * The last two were emitted by the receiver and handled by NOBODY — the same
+   * defect as 'hangUp' above, one screen further back: the notification's two
+   * most prominent buttons did nothing when the app was already running, and the
+   * caller went on ringing until the 30s sweep. Found on a device 2026-09-08.
+   *
+   * `answer` goes through a ref rather than the dep array because `accept` is
+   * declared further down this component; naming it here would read a `const`
+   * in its own temporal dead zone during render.
    *
    * Registered for every phase, not just `active`: a ring interrupted by a
    * cellular call should also stop.
    */
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener('callAction', (action: string) => {
-      if (action === 'hangUp' || action === 'audioFocusLost') {
+      if (action === 'hangUp' || action === 'audioFocusLost' || action === 'decline') {
         onEnd();
+      } else if (action === 'answer' && phaseRef.current === 'ringing') {
+        // Only while ringing: answering an already-connected call would fire a
+        // second answer_call and claim a lease the screen already holds.
+        acceptRef.current();
       }
     });
     return () => sub.remove();
@@ -661,6 +690,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
       setSessionId(result.session_id ?? null);
     });
   }, [callId, onEnd, setNotice]);
+  acceptRef.current = accept;
 
   const timer = `${Math.floor(elapsed / 60)}:${(elapsed % 60).toString().padStart(2, '0')}`;
   const gradient = `linear-gradient(160deg, ${theme.color.bg.accent} 0%, ${theme.color.bg.accentStrong} 100%)`;
@@ -799,7 +829,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
               testID="call-speaker"
               glyph="speaker"
               active={speakerOn}
-              onPress={() => setSpeakerOn(v => !v)}
+              onPress={() => setSpeaker(!speakerOn)}
               label="Speaker"
             />
             <BarButton

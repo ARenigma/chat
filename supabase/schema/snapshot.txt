@@ -1724,6 +1724,7 @@ FUNCTION moderation_actions_are_immutable() returns trigger security=invoker
 FUNCTION next_invoice_seq(p_fy text) returns bigint security=definer
 FUNCTION no_plan() returns SETOF boolean security=invoker
 FUNCTION notify_generate_invoice() returns trigger security=definer
+FUNCTION notify_message_push() returns trigger security=definer
 FUNCTION num_failed() returns integer security=invoker
 FUNCTION ok(boolean) returns text security=invoker
 FUNCTION ok(boolean, text) returns text security=invoker
@@ -2157,6 +2158,7 @@ TRIGGER events.guard_event_shape
 TRIGGER messages.guard_message_columns
 TRIGGER messages.guard_message_reply_and_voice
 TRIGGER messages.guard_message_retention_columns
+TRIGGER messages.message_push_on_insert
 TRIGGER messages.messages_touch_session_activity
 TRIGGER moderation_actions.moderation_actions_no_update
 TRIGGER paid_sessions.paid_sessions_accrue_on_end

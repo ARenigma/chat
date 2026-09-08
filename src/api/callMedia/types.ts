@@ -46,6 +46,16 @@ export interface CallMediaSession {
   mediaReady: boolean;
   muted: boolean;
   toggleMute: () => void;
+  /**
+   * Audio route. `true` = built-in speaker, `false` = earpiece.
+   *
+   * Part of the media session rather than CallScreen state because the route is
+   * the SDK's to own: an external device (wired or Bluetooth) overrides it, so a
+   * local boolean in the screen would claim a route the user is not hearing.
+   * https://docs.agora.io/en/video-calling/get-started/get-started-sdk
+   */
+  speakerOn: boolean;
+  setSpeaker: (on: boolean) => void;
   localVideo: CallVideoSource | null;
   remoteVideo: CallVideoSource | null;
   videoEnabled: boolean;
