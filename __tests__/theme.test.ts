@@ -120,18 +120,36 @@ describe('generated theme', () => {
   /**
    * The exception, stated so it is a decision rather than an oversight.
    *
-   * `bg/accentTint` is the only light token that still reads warm, and it has to
-   * be: it is the coral at low saturation, the wash an avatar initial sits on.
-   * Neutralising it would mean the avatars stop belonging to the accent family,
-   * which is the one thing carrying identity in a product with no photographs.
-   * It is a pink, not a cream, and impeccable's rule only ever inspects the page
-   * background, so it cannot fire on this token in practice.
+   * `bg/accentTint` is the wash an avatar initial sits on, and it must belong to
+   * the accent FAMILY — that family is the one thing carrying identity in a
+   * product with no photographs. Neutralising it to a cream would cut the
+   * avatars loose from the brand.
+   *
+   * The test used to assert warmth (red channel more than 20 above blue),
+   * because the accent was coral and the tint was a pink. With the accent moved
+   * to WhatsApp green (2026-09-08) the invariant is the same sentence and the
+   * arithmetic is the opposite: the tint must now be GREEN-dominant. Asserting
+   * the family rather than a specific hue is what makes this survive the next
+   * brand change too — so it is written against the accent, not against a
+   * hardcoded channel order.
    */
   it('keeps the avatar wash in the accent family', () => {
     const tint = LIGHT.color.bg.accentTint;
-    const r = parseInt(tint.slice(1, 3), 16);
-    const b = parseInt(tint.slice(5, 7), 16);
-    expect(r - b).toBeGreaterThan(20);
+    const channels = (h: string) => ({
+      r: parseInt(h.slice(1, 3), 16),
+      g: parseInt(h.slice(3, 5), 16),
+      b: parseInt(h.slice(5, 7), 16),
+    });
+    const t = channels(tint);
+    const accent = channels(LIGHT.color.bg.accent);
+    // The tint's dominant channel is the accent's dominant channel. Derived
+    // from the accent so a future rebrand does not need this line rewritten.
+    const dominant = (c: { r: number; g: number; b: number }) =>
+      c.g >= c.r && c.g >= c.b ? 'g' : c.r >= c.b ? 'r' : 'b';
+    expect(dominant(t)).toBe(dominant(accent));
+    // And it is a tint, not a neutral: the dominant channel leads by a margin.
+    const lead = t[dominant(t)] - Math.min(t.r, t.g, t.b);
+    expect(lead).toBeGreaterThan(15);
     expect(tint).not.toBe(LIGHT.color.bg.sunken);
   });
 
@@ -2553,14 +2571,40 @@ describe('dark theme: Telegram midnight-blue palette, and it still passes contra
   });
 
   it('dark bubbles are Telegram chat_inBubble / chat_outBubble', () => {
+    /*
+     * MOVED, not changed (2026-09-08). The bubble fills now have tokens of
+     * their own — `bubble/mine` and `bubble/theirs` — because light went to
+     * WhatsApp and the bubbles could no longer borrow the accent and the sunken
+     * surface. The DARK values are byte-identical to what those two tokens
+     * resolved to before, on Amit's instruction: "dark mode looks okay right
+     * now.. so dont change that token.. just branding colors". So dark did not
+     * move a pixel; only its name did.
+     *
+     * bg/sunken is still asserted, because it still surfaces search fields and
+     * disabled fills — it simply is not the peer bubble any more.
+     */
+    expect(DARK.color.bubble.theirs).toBe('#232E3B');
+    expect(DARK.color.bubble.mine).toBe('#3E618A');
     expect(DARK.color.bg.sunken).toBe('#232E3B');
-    expect(DARK.color.bg.accentStrong).toBe('#3E618A');
   });
 
-  it('dark accent is Telegram blue, not the light theme coral', () => {
-    // A deliberate mode split, and one token to revert: chats_actionBackground.
-    expect(DARK.color.bg.accent).toBe('#5FA3DE');
-    expect(DARK.color.text.accent).toBe('#64B5EF');
+  it('dark accent is WhatsApp green, and that is the one thing dark DID change', () => {
+    /*
+     * Amit, 2026-09-08: change the primary colour to WhatsApp, and keep dark's
+     * surfaces as they are. Branding is exactly the part that crosses both
+     * modes, so this is the deliberate exception to "do not change dark".
+     *
+     * --WDS-green-450 #21C063 is WhatsApp's dark interactive accent.
+     * #25D366 is NOT it — WhatsApp's own design system consumes that only for
+     * the brand mark and the activity indicator, so using it here would repeat
+     * the mistake every stale third-party palette makes.
+     *
+     * Was Telegram blue #5FA3DE / #64B5EF.
+     */
+    expect(DARK.color.bg.accent).toBe('#21C063');
+    expect(DARK.color.text.accent).toBe('#71EB85');
+    // The retired brand green must not creep back in as the accent.
+    expect(DARK.color.bg.accent).not.toBe('#25D366');
   });
 
   it('dark primary text is Telegram white, passes AAA on dark base', () => {

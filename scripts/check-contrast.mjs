@@ -116,7 +116,14 @@ const PAIRS = [
     fg: 'text/onAccent',
     bg: 'bg/accentStrong',
     target: 4.5,
-    what: 'the label on your own bubble',
+    /*
+     * NOT the bubble any more (2026-09-08). The outgoing bubble moved to
+     * `bubble/mine`, which is WhatsApp's PALE green and takes dark text; this
+     * pair now measures what it always actually measured — a filled accent
+     * control under its label. Light is 4.52:1, which clears 4.5 by 0.02, so
+     * treat any further tune of bg/accentStrong as load-bearing.
+     */
+    what: 'the label on a filled accent control',
   },
   /*
    * The bright accent, registered because it must NEVER carry a label.
@@ -150,9 +157,45 @@ const PAIRS = [
     fg: 'text/onAccent',
     bg: 'bg/accent',
     target: 2.5,
-    what: 'NOT A PERMITTED PAIR — the bright accent under a white label',
+    what: 'NOT PERMITTED IN LIGHT — the bright accent under its label',
     exempt:
-      'registered at its measured floor rather than at a legibility target, because no text may sit on bg/accent at any size in either mode — bg/accentStrong (5.19:1 / 6.13:1) is the step that carries a label, and this row exists so the number is printed and a palette tune cannot move it unnoticed',
+      'registered at its measured floor rather than a legibility target. UPDATED 2026-09-08 and the update matters: this row used to say no text may sit on bg/accent in EITHER mode, which was true when the dark accent was a light blue under a white label (2.59:1). With WhatsApp green, dark mode flipped text/onAccent to near-black ink and this pair now measures 7.21:1 — genuinely legible, so the dark prohibition is withdrawn rather than left standing as a false claim. LIGHT is still prohibited at 3.01:1: white on #1DAA61 clears neither 4.5 nor the 3:1 large-text step by any useful margin, and bg/accentStrong (4.52:1) is the step that carries a label there. The floor stays 2.5 because one target covers both modes and light is the binding one',
+  },
+  /*
+   * The WhatsApp bubbles (2026-09-08).
+   *
+   * Registered because the bubble fills are the one place in this palette where
+   * light and dark are not the same colour dimmed: light outgoing is a PALE
+   * green (#D9FDD3) taking near-black text, dark outgoing is a deep teal
+   * (#144D37) taking near-white. A single `bubble/text` token serves both, so
+   * these four rows are what prove that one value works against all four fills.
+   *
+   * `bubble/meta` — the timestamp and the sent/delivered tick — is deliberately
+   * NOT registered: it is rgba, and this file's parser reads six-digit hex
+   * only. It falls under the same exemption the existing timestamps row states
+   * (glanceable metadata, never the only carrier of meaning). Compositing it
+   * here would mean hard-coding a blend result that the token itself does not
+   * contain, which is worse than naming the gap.
+   */
+  {
+    fg: 'bubble/text',
+    bg: 'bubble/mine',
+    target: 4.5,
+    what: 'your own message',
+  },
+  {
+    fg: 'bubble/text',
+    bg: 'bubble/theirs',
+    target: 4.5,
+    what: 'their message',
+  },
+  {
+    fg: 'bubble/tickRead',
+    bg: 'bubble/mine',
+    target: 3,
+    what: 'the blue read tick on your own bubble',
+    exempt:
+      'a non-text indicator, and never the only signal that a message was read — the tick doubles from one to two glyphs, so its MEANING survives even where its colour does not; 3:1 is the non-text target from developer.android.com/guide/topics/ui/accessibility/apps',
   },
   {
     fg: 'text/onInverse',
