@@ -101,6 +101,46 @@ const CHECKS = [
       order by r.responded_at`,
   },
   {
+    name: 'a scheduled job whose last run failed',
+    /*
+     * pg_cron records every run in `cron.job_run_details`, and NOTHING in this
+     * repo has ever read it. The schema-drift snapshot cannot: it queries eight
+     * catalogs (columns, indexes, constraints, functions, policies, RLS,
+     * triggers, enums) and `cron.job` is not one of them, and it could not be —
+     * the pgTAP harness has no pg_cron, which is why every schedule in every
+     * migration sits inside `if to_regclass('cron.job') is null then return`.
+     *
+     * So a job that fails every night fails silently forever. That is not
+     * hypothetical: this check was written on 2026-09-08 because the query
+     * behind it found `purge-orphaned-attachments` and
+     * `purge-orphaned-voice-notes` failing EVERY night since at least the 5th
+     * with "Direct deletion from storage tables is not allowed. Use the Storage
+     * API instead" — a platform-side rule that arrived after migration 011
+     * wrote those functions. Orphaned voice notes and images have not been
+     * purged since, and migration 011's own comment says what that costs: "the
+     * deletion promise in web/privacy.html is false for voice notes".
+     *
+     * Only the LAST run per job is considered. A single transient failure — the
+     * deadlock `dispatch-pending-pushes` hit once — is noise; a job whose most
+     * recent attempt failed is a job that is not doing its work right now.
+     */
+    sql: `
+      select j.jobname,
+             j.schedule,
+             to_char(d.start_time, 'YYYY-MM-DD HH24:MI') as last_run,
+             replace(left(d.return_message, 120), chr(10), ' ') as error
+      from cron.job j
+      join lateral (
+        select status, start_time, return_message
+        from cron.job_run_details r
+        where r.jobid = j.jobid
+        order by r.start_time desc
+        limit 1
+      ) d on true
+      where d.status <> 'succeeded'
+      order by j.jobname`,
+  },
+  {
     name: 'request pending past its own expiry',
     /*
      * A `pending` request whose `expires_at` has passed. Both readers of a
