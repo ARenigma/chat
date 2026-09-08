@@ -1353,9 +1353,32 @@ const makeStyles = (t: Theme) =>
     },
     peerBubble: {
       maxWidth: '100%',
-      paddingHorizontal: TOKENS.space.md,
-      paddingTop: TOKENS.space.xs,
-      paddingBottom: TOKENS.space.xs,
+      /*
+       * From the WhatsApp APK, and only the parts that survived verification.
+       *
+       * message_text carries paddingLeft 8 / paddingTop 2 / paddingRight 8 /
+       * paddingBottom 3, and a parent two elements up adds a further 2dp on the
+       * right and bottom — which the first research pass missed and attributed
+       * to a programmatic background. So the effective inset is 8/2/10/5, and
+       * implementing the un-corrected 8/3 would put the text 2dp too close to
+       * the right and bottom edges.
+       *
+       * Deliberately NOT space tokens: 2, 5 and 10 are not on the 4dp scale,
+       * and rounding them to it would silently discard the measurement. The
+       * `$bubbleNote` in design/tokens.json argues the same for the radius,
+       * which is why the radius here is still OURS (22) and not a guess at
+       * WhatsApp's.
+       *
+       * min-height 30dp is the one clean token: layout.bubbleMinHeight, read
+       * from eleven of thirteen conversation-row layouts and reproduced by an
+       * adversarial second pull of the APK.
+       */
+      minHeight: TOKENS.layout.bubbleMinHeight,
+      justifyContent: 'center',
+      paddingLeft: 8,
+      paddingTop: 2,
+      paddingRight: 10,
+      paddingBottom: 5,
       backgroundColor: t.color.bubble.theirs,
       borderRadius: BUBBLE_RADIUS,
       borderCurve: 'continuous',
