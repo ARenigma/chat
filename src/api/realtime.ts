@@ -33,6 +33,7 @@ import {
   unreadFromPeer,
   type TranscriptMessage,
 } from '../lib/transcript';
+import { recoverMessageGap } from './chat';
 import { useStore } from '../store/useStore';
 
 /** How long a typing broadcast keeps the indicator up without a refresh. */
@@ -152,9 +153,22 @@ export function useLiveConversation(
           // for a presence signal nothing reads, which is a fact about somebody
           // leaving their phone unlocked that we have no business broadcasting.
           //
-          // A socket that was down may have missed inserts. Refetching on
-          // (re)subscribe is what makes a dropped connection self-healing.
-          void queryClient.invalidateQueries({ queryKey: key });
+          /*
+           * A socket that was down may have missed inserts, so (re)subscribe is
+           * where a dropped connection heals itself.
+           *
+           * It used to `invalidateQueries`, which refetches the newest 100 rows
+           * — correct only while fewer than 100 arrived during the outage. Past
+           * that the OLDEST missed messages fell off the end of the window and
+           * were never fetched, because the transcript has no pagination to
+           * reach back for them. A silent hole in the conversation.
+           *
+           * `recoverMessageGap` walks a CURSOR forward from the newest row we
+           * hold until a page comes back short, which is Telegram's shape at a
+           * smaller scale, and falls back to the fixed window only when the
+           * cache is cold or the gap is enormous.
+           */
+          void recoverMessageGap(queryClient, conversationId, selfId);
           return;
         }
         /*
@@ -177,7 +191,9 @@ export function useLiveConversation(
          * (MessagesController.java:8206). Same instinct, much smaller hammer.
          */
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          void queryClient.invalidateQueries({ queryKey: key });
+          // Same cursor walk on failure as on resubscribe: the member sees the
+          // current transcript even if this channel never comes back.
+          void recoverMessageGap(queryClient, conversationId, selfId);
         }
       });
       channelRef.current = channel;
