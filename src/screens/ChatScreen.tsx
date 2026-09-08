@@ -87,7 +87,9 @@ import {
   useConfirmChatSession,
   useDeclineSessionRequest,
   useEndSession,
+  useChatConsent,
   usePendingSessionRequest,
+  useResumeChatConsent,
   useSessionLease,
   useSessionRealtime,
 } from '../api/sessions';
@@ -100,6 +102,7 @@ import { Composer } from '../components/Composer';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { DayDivider } from '../components/DayDivider';
 import { Frost } from '../components/Frost';
+import { Button } from '../components/Button';
 import { Icon } from '../components/Icon';
 import { NoticeBar } from '../components/NoticeBar';
 import { HeaderSubtitle } from '../components/HeaderSubtitle';
@@ -233,7 +236,6 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   // Explicit ref so we can force scrollToOffset(0) on every new message.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const listRef = useRef<FlashListRef<any>>(null);
-  const balance = useStore(s => s.balance);
   const openRefill = useStore(s => s.openRefill);
   const openWallet = useStore(s => s.openWallet);
   // Providers see their earnings in the header instead of the member wallet.
@@ -420,6 +422,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   // moment `seconds_remaining` was exactly right, and what it is aged from.
   const { data: activeSession, dataUpdatedAt: sessionSyncedAt } = useActiveSession(conversationId);
   const { data: pendingRequest } = usePendingSessionRequest(conversationId);
+  const { data: chatConsent } = useChatConsent(conversationId);
+  const resumeConsent = useResumeChatConsent();
   const { mutate: endSessionMutate, isPending: endingSession } = useEndSession();
   const confirmChat = useConfirmChatSession();
   const declineChatRequest = useDeclineSessionRequest();
@@ -473,12 +477,28 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
    */
   const peerThread = knownThread;
   const isMemberSide = peerThread?.i_am_member ?? true;
+  /*
+   * 082. `consentDeclined` suppresses the prompt entirely.
+   *
+   * Without it the member was re-asked on every exchange: a decline marked one
+   * REQUEST refused, their next message created a fresh one, and the provider's
+   * next reply re-armed it. The member meant "no session in this conversation",
+   * which is a fact about the conversation, so that is where it now lives.
+   */
+  const consentDeclined = chatConsent?.declined === true;
   const awaitingMemberConsent =
     isMemberSide &&
+    !consentDeclined &&
     pendingRequest != null &&
     pendingRequest.channel === 'chat' &&
     pendingRequest.responded_at != null &&
     activeSession == null;
+  /*
+   * Declined, and no session running: the composer closes and an explicit
+   * "Start session" takes its place. Not a prompt — a control the member
+   * reaches for when they want it.
+   */
+  const offerExplicitStart = isMemberSide && consentDeclined && activeSession == null;
   const theyOpenedTheChat =
     pendingRequest != null &&
     selfId != null &&
@@ -1447,14 +1467,37 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
             size={28}
             shape="circle"
             style={styles.navButton}>
-            <Icon name="stop" size={TOKENS.icon.md} color={theme.color.state.danger} />
+            {/*
+              * `logout` (a door with an arrow out), not `stop`.
+              *
+              * Amit, 2026-09-08: an exit icon, not a stop icon. They say
+              * different things — a stop square reads as halting a process, a
+              * recording or a playback, while what this control does is LEAVE a
+              * session. The door is what the member is actually doing. Danger
+              * red is kept: it is still the one destructive control in the
+              * header.
+              */}
+            <Icon name="logout" size={TOKENS.icon.md} color={theme.color.state.danger} />
           </Pressable>
         ) : null}
+        {/*
+          * The wallet pill is GONE from the chat header (Amit, 2026-09-08).
+          *
+          * It was competing with the countdown for the same glance: during a
+          * session the member needs to know how long they have, and a raw token
+          * balance beside it is a second number answering a question they did
+          * not ask. Balance lives on Home and in Recharge.
+          *
+          * The provider's earnings pill stays, because a provider has no
+          * countdown — the number IS their reason to look at the header.
+          */}
+        {isMemberSide ? null : (
         <TokenCounter
-          variant={isMemberSide ? 'balance' : 'earnings'}
-          balance={isMemberSide ? balance : (earnings?.provider_tokens ?? 0)}
-          onPress={isMemberSide ? openWallet : (onOpenEarnings ?? openWallet)}
+          variant="earnings"
+          balance={earnings?.provider_tokens ?? 0}
+          onPress={onOpenEarnings ?? openWallet}
         />
+        )}
       </View>
 
       {/* Recharge talk-bar: hidden while the extend card owns the top band;
@@ -1703,18 +1746,49 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
             </View>
           ) : null}
 
+          {/*
+            * 082: the way back in after a decline.
+            *
+            * A control the member reaches for, deliberately NOT a prompt. The
+            * whole defect was being asked repeatedly; replacing the prompt with
+            * a quieter prompt would have kept the shape of the problem. So the
+            * composer is closed and this sits where the composer was — one
+            * button, no dialog, nothing that appears by itself.
+            */}
+          {offerExplicitStart ? (
+            <View style={styles.startSessionRow}>
+              <Button
+                label="Start session"
+                onPress={() => {
+                  if (conversationId === undefined) {
+                    return;
+                  }
+                  resumeConsent.mutate({ conversationId });
+                }}
+                busy={resumeConsent.isPending}
+                busyLabel="Starting"
+                testID="chat-start-session"
+              />
+            </View>
+          ) : null}
+
           <Composer
             onSend={onSend}
             onSendVoice={onSendVoice}
             onSendImage={onSendImage}
             onTyping={notifyTyping}
             disabled={
-              conversationId === undefined || chatClosed || awaitingMemberConsent
+              conversationId === undefined ||
+              chatClosed ||
+              awaitingMemberConsent ||
+              offerExplicitStart
             }
             placeholder={
               chatClosed
                 ? `${name} is not taking chats right now`
-                : awaitingMemberConsent
+                : offerExplicitStart
+                  ? 'Start a session to keep talking'
+                  : awaitingMemberConsent
                   ? 'Say yes above when you are ready'
                   : spJoining
                     ? `${name} is on their way`
@@ -2258,6 +2332,14 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   extendCardButtonLabel: {
     ...TOKENS.typography.labelMediumEmphasized,
     color: t.color.text.onInverse,
+  },
+  /*
+   * The declined-state Start control sits where the composer's text row would,
+   * so the dock does not change height when it swaps in.
+   */
+  startSessionRow: {
+    paddingHorizontal: TOKENS.space.md,
+    paddingVertical: TOKENS.space.xs,
   },
   extendCardClose: {
     width: 28,

@@ -65,6 +65,9 @@ export interface PendingSessionRequest {
 const sessionKeys = {
   active: (conversationId: string) =>
     ['session', 'active', conversationId] as const,
+  /** 082: has the member declined a session here? */
+  consent: (conversationId: string) =>
+    ['session', 'consent', conversationId] as const,
   pendingRequest: (conversationId: string) =>
     ['session', 'pending-request', conversationId] as const,
 };
@@ -334,6 +337,11 @@ export function useDeclineSessionRequest() {
     onSuccess: (_void, { conversationId }) => {
       void queryClient.invalidateQueries({
         queryKey: sessionKeys.pendingRequest(conversationId),
+      });
+      // 082 sets the conversation-level flag in the same RPC, so the flag's
+      // query has to be refetched or the screen keeps its stale "not declined".
+      void queryClient.invalidateQueries({
+        queryKey: sessionKeys.consent(conversationId),
       });
       void queryClient.invalidateQueries({ queryKey: ['conversation-list'] });
     },
@@ -628,4 +636,72 @@ export function useSessionLease(
       subscription?.remove();
     };
   }, [sessionId, channel, sendHeartbeat]);
+}
+
+/**
+ * Whether the member has declined a paid session in this conversation (082).
+ *
+ * A separate query from `usePendingSessionRequest` because it answers the
+ * question that one CANNOT: after a decline nothing is pending, so that hook
+ * returns null and the screen cannot tell "declined" from "never asked". That
+ * ambiguity was the bug — the prompt came back on every exchange.
+ */
+export function useChatConsent(conversationId: string | undefined) {
+  return useQuery<{ declined: boolean }>({
+    queryKey: sessionKeys.consent(conversationId ?? ''),
+    enabled: conversationId !== undefined,
+    staleTime: 10_000,
+    queryFn: async () => {
+      if (!conversationId) return { declined: false };
+      const { data, error } = await supabase.rpc('get_chat_consent', {
+        p_conversation_id: conversationId,
+      });
+      if (error) throw error;
+      const row = data as { declined?: boolean } | null;
+      return { declined: row?.declined === true };
+    },
+  });
+}
+
+/**
+ * The member reverses their own decline, and starts the session if the provider
+ * is already waiting.
+ *
+ * Two RPCs rather than one, deliberately: `resume_chat_consent` reports whether
+ * a joined request exists, and only then is `confirm_chat_session` called. The
+ * alternative — one server function that clears and confirms — would mean the
+ * member tapping "Start session" could be billed in the same call that cleared
+ * a flag, with no chance for the client to surface the balance check that
+ * `confirm_chat_session` performs.
+ */
+export function useResumeChatConsent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ conversationId }: { conversationId: string }) => {
+      const { data, error } = await supabase.rpc('resume_chat_consent', {
+        p_conversation_id: conversationId,
+      });
+      if (error) throw error;
+      const row = data as { request_id?: string | null } | null;
+      const requestId = row?.request_id ?? null;
+      if (requestId !== null) {
+        // The provider already joined while we were declined, so there is a
+        // request to confirm rather than a conversation to restart.
+        const { error: confirmError } = await supabase.rpc('confirm_chat_session', {
+          p_request_id: requestId,
+        });
+        if (confirmError) throw confirmError;
+      }
+      return { started: requestId !== null };
+    },
+    onSuccess: (_r, { conversationId }) => {
+      void queryClient.invalidateQueries({
+        queryKey: sessionKeys.consent(conversationId),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: sessionKeys.pendingRequest(conversationId),
+      });
+      void queryClient.invalidateQueries({ queryKey: sessionKeys.active(conversationId) });
+    },
+  });
 }

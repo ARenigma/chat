@@ -122,6 +122,7 @@ const MIGRATIONS = [
   'supabase/migrations/079_start_call_status_cast.sql',
   'supabase/migrations/080_client_support_floor.sql',
   'supabase/migrations/081_message_idempotency.sql',
+  'supabase/migrations/082_decline_means_no_session.sql',
 ];
 
 const docker = (args, options = {}) =>
@@ -535,6 +536,11 @@ const suites = [
     file: join(ROOT, 'supabase/tests/350_message_idempotency.sql'),
     label:
       'message idempotency: the same nonce twice is one message, a different nonce is two',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/360_decline_means_no_session.sql'),
+    label:
+      'decline means no session: the flag outlives the request, so the prompt stops returning',
   },
   {
     file: join(ROOT, 'supabase/tests/340_sp_initiate_member_consent.sql'),

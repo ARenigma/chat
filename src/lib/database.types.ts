@@ -1352,6 +1352,24 @@ export type Database = {
        * Returns the most recent non-expired pending session request for a
        * conversation visible to the caller, or null if none. Migration 037.
        */
+      /** 082: has the member declined a paid session in this conversation? */
+      get_chat_consent: {
+        Args: { p_conversation_id: string };
+        Returns: { declined: boolean; declined_at: string | null };
+      };
+      /**
+       * 082: member reverses their own decline. `request_id` is non-null only
+       * when a joined request is already waiting, so the caller can confirm it.
+       */
+      resume_chat_consent: {
+        Args: { p_conversation_id: string };
+        Returns: {
+          success: boolean;
+          request_id: string | null;
+          provider_joined: boolean;
+          error?: string;
+        };
+      };
       get_pending_session_request: {
         Args: { p_conversation_id: string };
         Returns: {
