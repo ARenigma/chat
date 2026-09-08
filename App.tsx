@@ -471,7 +471,12 @@ async function bootPhaseAfterAuth(profile: Profile | null): Promise<PostAuthBoot
     return { phase: 'profileSetup', needsAge, needsUsername, needsLanguages };
   }
 
-  const { data: pending } = await supabase.rpc('pending_policy_acceptances');
+  // ADR-0020: a failed check must not pass the gate. If the RPC errors (network,
+  // DB fault), throw so the boot machine shows its error/retry screen rather than
+  // silently advancing to `ready` — failing open would let a member through without
+  // ever seeing the policy documents.
+  const { data: pending, error: policyError } = await supabase.rpc('pending_policy_acceptances');
+  if (policyError) throw policyError;
   if (Array.isArray(pending) && pending.length > 0) {
     return { phase: 'policyGate' };
   }
