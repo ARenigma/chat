@@ -2990,7 +2990,20 @@ describe('chat chrome occludes what is behind it', () => {
        */
       expect(bar).toContain('borderRadius: TOKENS.radius.composer');
       // Same family: within 2dp of each other in either direction.
-      expect(Math.abs(TOKENS.radius.composer - TOKENS.radius.bubble)).toBeLessThanOrEqual(2);
+      /*
+       * CORRECTED 2026-09-08. This asserted the two radii were within 2dp of
+       * each other, on a measurement of WhatsApp's composer that was wrong:
+       * I had read "the row where the corner ramp reaches the edge" as the
+       * radius and got 10.5dp. Refitting the whole ramp gives 17.93dp, i.e.
+       * 18dp — the composer is TWICE as round as the 9dp bubble, not a
+       * near-match to it.
+       *
+       * So the invariant is the shape of the relationship, not a tolerance:
+       * the composer is clearly rounder, and it is still not a pill.
+       */
+      expect(TOKENS.radius.composer).toBeGreaterThan(TOKENS.radius.bubble);
+      // Not a pill: WhatsApp's capsule is 46.2dp tall against an 18dp corner.
+      expect(TOKENS.radius.composer).toBeLessThan(TOKENS.interaction.minTarget / 2);
     expect(bar).toContain('backgroundColor: t.color.bg.raised');
     expect(bar).toContain("overflow: 'hidden'");
     // And `field` must NOT also carry a fill, or it is a pill inside a pill.
@@ -5479,7 +5492,20 @@ describe('composer capsule and bubbles share one horizontal grid and radius', ()
      * WhatsApp against the bubble's 9dp. Same family, not one value.
      */
     expect(withoutComments(composer)).toContain('borderRadius: TOKENS.radius.composer');
-    expect(Math.abs(TOKENS.radius.composer - TOKENS.radius.bubble)).toBeLessThanOrEqual(2);
+      /*
+     * CORRECTED 2026-09-08. This asserted the two radii were within 2dp of
+     * each other, on a measurement of WhatsApp's composer that was wrong:
+     * I had read "the row where the corner ramp reaches the edge" as the
+     * radius and got 10.5dp. Refitting the whole ramp gives 17.93dp, i.e.
+     * 18dp — the composer is TWICE as round as the 9dp bubble, not a
+     * near-match to it.
+     *
+     * So the invariant is the shape of the relationship, not a tolerance:
+     * the composer is clearly rounder, and it is still not a pill.
+     */
+    expect(TOKENS.radius.composer).toBeGreaterThan(TOKENS.radius.bubble);
+    // Not a pill: WhatsApp's capsule is 46.2dp tall against an 18dp corner.
+    expect(TOKENS.radius.composer).toBeLessThan(TOKENS.interaction.minTarget / 2);
     // Turn uses BUBBLE_RADIUS which is assigned TOKENS.radius.bubble.
     expect(turn).toContain('TOKENS.radius.bubble');
   });
