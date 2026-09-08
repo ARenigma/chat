@@ -350,7 +350,7 @@ export function SettingsSheet({
             <View style={showBack ? { paddingTop: insets.top } : null}>
               {showBack ? (
               <TopAppBar
-                title="Settings"
+                title=""
                 transparent
                 testID="settings-app-bar"
                 leading={
