@@ -95,7 +95,21 @@ export const MAX_INPUT_H = 132;
  * Derived from the same token `Turn.tsx`'s BUBBLE_RADIUS reads, so the corner
  * and the height that lets it be drawn cannot drift apart.
  */
-export const CAPSULE_MIN_H = TOKENS.radius.bubble * 2;
+/*
+ * The composer capsule's height, no longer derived from the bubble.
+ *
+ * It was `TOKENS.radius.bubble * 2`, which is the height at which a pill's two
+ * corner arcs exactly meet — sound while the bubble radius WAS a pill radius
+ * (22dp -> 44dp tall). WhatsApp's bubble is 9dp (measured on the Redmi), and
+ * that derivation would give an 18dp-tall text input.
+ *
+ * So it is now the platform's minimum touch target. WhatsApp's own capsule
+ * measures 46.2dp, which is BELOW Android's 48dp minimum — the same corner they
+ * cut on their 38dp Call button — so this is a deliberate 1.8dp departure from
+ * "exactly WhatsApp" in favour of the accessibility floor.
+ * https://support.google.com/accessibility/android/answer/7101858
+ */
+export const CAPSULE_MIN_H = TOKENS.interaction.minTarget;
 
 /**
  * The line geometry MIN/MAX are built from, named so the growth handler can
@@ -1472,7 +1486,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
      * token, two components, zero drift — and paired with `minHeight` above,
      * because a box shorter than twice its corner cannot draw that corner.
      */
-    borderRadius: TOKENS.radius.bubble,
+    borderRadius: TOKENS.radius.composer,
     borderCurve: 'continuous',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: t.color.border.hairline,
@@ -1603,7 +1617,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
      * CAPSULE_MIN_H) and read as a stadium beside a 22dp bubble. 50 > 44, so
      * this corner paints unscaled.
      */
-    borderRadius: TOKENS.radius.bubble,
+    borderRadius: TOKENS.radius.composer,
     borderCurve: 'continuous',
     backgroundColor: t.color.bg.sunken,
   },

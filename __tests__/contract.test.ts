@@ -1811,8 +1811,15 @@ describe('the redesign holds its own invariants', () => {
     const turn = read('src/components/Turn.tsx');
     expect(turn).toContain('TOKENS.radius.bubble');
     expect(turn).not.toMatch(/BUBBLE_RADIUS = \d/);
-    expect(TOKENS.radius.bubble).toBe(22);
-    expect(TOKENS.radius.bubble - 3).toBe(19);
+    /*
+     * 9dp, MEASURED off WhatsApp on the Redmi (2026-09-08): outgoing fill
+     * isolated by exact #D9FDD3 match, ten corners least-squares fitted,
+     * median 25.0px at 2.75px/dp. Was 22. See radius.$bubbleNote for the
+     * caveats — the curve is a squircle, so 8dp is within a dp of the data.
+     */
+    expect(TOKENS.radius.bubble).toBe(9);
+    // Concentric inner radius: outer minus the 3dp media inset.
+    expect(TOKENS.radius.bubble - 3).toBe(6);
     // The consumer exists now: the media bubble reads the attachment at the
     // concentric inner radius.
     expect(turn).toContain('mediaInnerRadius');
@@ -2974,7 +2981,16 @@ describe('chat chrome occludes what is behind it', () => {
     // bubbles share a continuous grid edge. At single-line height (~40dp) a
     // 22dp radius is a perfect pill (2×22=44≈height), so the visual is unchanged
     // from the old radius.pill at that size. Changed 2026-09-06.
-    expect(bar).toContain('borderRadius: TOKENS.radius.bubble');
+          /*
+       * The composer no longer shares the bubble's radius token, and that is a
+       * measurement rather than a drift. WhatsApp on the Redmi: bubble corner
+       * 9dp, composer capsule corner 10.5dp. They are the same FAMILY — close
+       * enough to read as one system — but not one value, and asserting
+       * identity would be asserting something WhatsApp does not do.
+       */
+      expect(bar).toContain('borderRadius: TOKENS.radius.composer');
+      // Same family: within 2dp of each other in either direction.
+      expect(Math.abs(TOKENS.radius.composer - TOKENS.radius.bubble)).toBeLessThanOrEqual(2);
     expect(bar).toContain('backgroundColor: t.color.bg.raised');
     expect(bar).toContain("overflow: 'hidden'");
     // And `field` must NOT also carry a fill, or it is a pill inside a pill.
@@ -5458,7 +5474,12 @@ describe('composer capsule and bubbles share one horizontal grid and radius', ()
     // the bubble corner are provably the same number. radius.pill (999) on the
     // capsule produced a different visual at multi-line height, where the stadium
     // shape diverged from the rounded-rect bubble corner.
-    expect(withoutComments(composer)).toContain('borderRadius: TOKENS.radius.bubble');
+    /*
+     * The composer reads `radius.composer` now, measured at 10.5dp off
+     * WhatsApp against the bubble's 9dp. Same family, not one value.
+     */
+    expect(withoutComments(composer)).toContain('borderRadius: TOKENS.radius.composer');
+    expect(Math.abs(TOKENS.radius.composer - TOKENS.radius.bubble)).toBeLessThanOrEqual(2);
     // Turn uses BUBBLE_RADIUS which is assigned TOKENS.radius.bubble.
     expect(turn).toContain('TOKENS.radius.bubble');
   });
