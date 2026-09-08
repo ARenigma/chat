@@ -127,6 +127,27 @@ const MIGRATIONS = [
   'supabase/migrations/084_seed_provider_expertise.sql',
 ];
 
+/**
+ * Migrations that insert FIXTURE ROWS rather than change the schema, and are
+ * therefore applied by `supabase db push` but NOT by this harness.
+ *
+ * 085 seeds six astrologer profiles so the Astrologers tab is not empty. Adding
+ * it to the list above broke four unrelated suites at once, and the reason is
+ * worth stating: every pgTAP file here starts from an empty database and
+ * asserts absolute counts — `010` checks `count(*) from profiles` is 2 after
+ * inserting two users. A migration that ships six people makes that 8, and the
+ * failure looks like a bug in the wallet.
+ *
+ * The distinction is real and not a dodge. 084 IS in the list, because it is a
+ * backfill over whatever rows exist — a no-op on an empty database — and suite
+ * 370 replays its statement against its own fixtures to test it. 085 is data.
+ * Schema migrations belong in a schema harness; fixtures do not.
+ *
+ * `contract.test.ts` knows about this list by name, so a new migration still
+ * cannot be forgotten — it has to be put in one list or the other, on purpose.
+ */
+export const SEED_MIGRATIONS = ['supabase/migrations/085_seed_astrologers.sql'];
+
 const docker = (args, options = {}) =>
   execFileSync('docker', args, { encoding: 'utf8', stdio: 'pipe', ...options });
 

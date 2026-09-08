@@ -12,7 +12,7 @@ import { Icon } from './Icon';
 import { META_CHIP_HEIGHT_SM, MetaChip } from './MetaChip';
 import { Pressable } from './Pressable';
 import { CATEGORY_BADGE, categoryOf } from '../lib/providerFilters';
-import { ROW_EXPERTISE_LIMIT, rowExpertise } from '../lib/expertise';
+import { rowExpertise } from '../lib/expertise';
 import { formatRupees } from '../lib/rates';
 import { displayRating, formatReviewCount } from '../lib/systemRating';
 import { RatingStars, STARS_HEIGHT } from './RatingStars';
@@ -43,15 +43,6 @@ interface Props {
    * inert and never lies about what it will do.
    */
   onCall?: (id: string) => void;
-  /**
-   * Whether to name the provider's category on the row (migration 065).
-   *
-   * On Explore the tab above the list already says which category you are
-   * looking at, so repeating it on every row is noise. In SEARCH there are no
-   * tabs and the results span both, so without this a member cannot tell an
-   * astrologer from a listener.
-   */
-  showCategory?: boolean;
   /** Whether to run the entrance animation. Defaults to true. */
   animateEntrance?: boolean;
   /**
@@ -172,8 +163,21 @@ const ROW_TAG_LINE = META_CHIP_HEIGHT_SM;
  */
 export const ROW_CTA_HEIGHT = TOKENS.interaction.minTarget;
 
-/** The CTA's width. Astrotalk's is 95.3dp; 96 is the same number on our grid. */
-export const ROW_CTA_WIDTH = 96;
+/**
+ * The CTA's width. Astrotalk's is 95.3dp and ours was 96 to match — it is 136
+ * because the button now carries the rate as well as the verb.
+ *
+ * Amit, 2026-09-08: "move rate into cta after call text". TrueMitr does this,
+ * and it is the stronger arrangement: the price stops being a fact floating on
+ * the card and becomes part of what the button is offering, which is what a
+ * member is actually deciding about. It also frees the line the price was on
+ * for the category tag.
+ *
+ * 136 leaves the text column 112dp for that tag, at a card width of 368.7dp on
+ * the Redmi (392.7 minus two 12dp margins) less 24 of padding, 84 of avatar and
+ * a 12dp gap.
+ */
+export const ROW_CTA_WIDTH = 136;
 
 /** The card's inner padding. Astrotalk insets its avatar 12dp from the card. */
 const CARD_PAD = TOKENS.space.sm;
@@ -318,7 +322,6 @@ function ProviderRowView({
   onCall,
   ratePerMin,
   animateEntrance = true,
-  showCategory = false,
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -332,10 +335,19 @@ function ProviderRowView({
    * `rowExpertise` caps and dedupes; the slice after it keeps the total at
    * three so a categorised search row does not run four pills wide.
    */
-  const tags = [
-    ...(showCategory ? [CATEGORY_BADGE[categoryOf(provider)]] : []),
-    ...rowExpertise(provider),
-  ].slice(0, ROW_EXPERTISE_LIMIT);
+  /*
+   * The expertise pills. The CATEGORY used to lead this line in search, and no
+   * longer does: Amit, 2026-09-08, "there should be tag of listener /
+   * astrologer on proile like truemittr shows - place this where price is". It
+   * has its own slot now, on every card rather than only in search, so the
+   * `showCategory` prop is gone with it.
+   *
+   * That is a better place for it than the head of the pill row, where it
+   * competed with the topics for the three slots and pushed a real one off in
+   * search — the one screen where the topics matter most.
+   */
+  const tags = rowExpertise(provider);
+  const category = CATEGORY_BADGE[categoryOf(provider)];
 
   /*
    * What sits on the expertise line when a provider has no tags.
@@ -382,6 +394,7 @@ function ProviderRowView({
   const accessibility = [
     `${provider.display_name}${provider.age !== null ? `, ${provider.age}` : ''}`,
     presenceForSpeech(presence),
+    category,
     tags.length > 0 ? tags.join(', ') : headline,
     languages === '' ? null : `speaks ${languages}`,
     `${years} ${years === 1 ? 'year' : 'years'} experience`,
@@ -515,13 +528,11 @@ function ProviderRowView({
           </Text>
 
           <View style={styles.priceLine}>
-            {/* No glyph. Amit: "remove call icon before 22/min" — and it was
-                doing less than it looked: the phone said "this rate buys a
-                call", which the CTA beside it now says in a word. */}
-            <Text allowFontScaling numberOfLines={1} style={styles.price}>
-              {formatRupees(ratePerMin)}
-              <Text style={styles.perMin}>/min</Text>
-            </Text>
+            {/* Listener / Astrologer, where the price used to be. On EVERY card
+                — the tab above Explore already says which you are looking at,
+                but search spans both and a member should not have to remember
+                which list they are in to know what they are buying. */}
+            <MetaChip size="sm" tone="emphasis" label={category} testID="provider-category" />
             <View style={styles.priceSpacer} />
             <Pressable
               onPress={() =>
@@ -534,8 +545,17 @@ function ProviderRowView({
               press="none"
               highlight="dim"
               style={styles.cta}>
+              {/* The verb and the price, in one control. The rate is the
+                  quieter of the two because the decision is "call or not" and
+                  the price is the condition on it, not the other way round.
+
+                  No glyph in front of either. Amit: "remove call icon before
+                  22/min" — and it was doing less than it looked: the phone said
+                  "this rate buys a call", which the word "Call" now says
+                  outright. */}
               <Text allowFontScaling numberOfLines={1} style={styles.ctaLabel}>
                 {ctaLabel}
+                <Text style={styles.ctaRate}>{`  ${formatRupees(ratePerMin)}/min`}</Text>
               </Text>
             </Pressable>
           </View>
@@ -682,16 +702,17 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     alignItems: 'center',
     height: ROW_CTA_HEIGHT,
   },
-  price: {
-    ...TOKENS.typography.labelLarge,
-    color: t.color.text.primary,
-  },
-  // "/min" quieter and smaller than the figure, so the rate reads as one price
-  // rather than two words. Astrotalk splits these into two TextViews at 21.8dp
-  // and 17.1dp for the same reason; nested Text is how RN does it.
-  perMin: {
+  /*
+   * The rate, inside the button and quieter than the verb. Astrotalk splits its
+   * own price into two TextViews at 21.8dp and 17.1dp for the same reason;
+   * nested Text is how RN does it.
+   *
+   * `text/accent` like the label rather than a grey: it sits inside an accent
+   * outline, and a grey half would read as a disabled fragment of the control.
+   */
+  ctaRate: {
     ...TOKENS.typography.bodySmall,
-    color: t.color.text.tertiary,
+    color: t.color.text.accent,
   },
   // A spacer rather than `justifyContent: 'space-between'`, because the price
   // must stay left while the CTA goes to the far edge, and the row may later

@@ -2057,8 +2057,6 @@ describe('accent budget is enforced in code, not just documented', () => {
       'headline',
       'secondary',
       'priceLine',
-      'price',
-      'perMin',
     ];
     for (const key of PERSON_STYLES) {
       const rule = styleBlock.match(new RegExp(`\\b${key}: \\{[^}]*\\}`));
@@ -2075,7 +2073,11 @@ describe('accent budget is enforced in code, not just documented', () => {
       .split('\n')
       .filter(line => /[Cc]olor: t\.color\.(bg|text)\.accent/.test(line));
     expect(accentLines).toEqual([
-      '    borderColor: t.color.bg.accent,', // the ring, on every avatar
+      // In source order, which is asserted rather than sorted: the ORDER is
+      // itself a check that these are the four styles named below and not four
+      // others that happen to number the same.
+      '    borderColor: t.color.bg.accent,', // ring, on every avatar
+      '    color: t.color.text.accent,', // the rate inside the CTA
       '    borderColor: t.color.bg.accent,', // the CTA outline
       '    color: t.color.text.accent,', // the CTA label
     ]);

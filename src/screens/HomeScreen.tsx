@@ -726,7 +726,6 @@ export function HomeScreen({
           onCall={onCallProvider}
           ratePerMin={ratePerMin}
           animateEntrance={animate}
-          showCategory
         />
       );
     },

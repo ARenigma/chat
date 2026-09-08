@@ -355,8 +355,16 @@ describe('the CTA is 48dp, and the reference is the thing that is wrong', () => 
      */
     expect(read(ROW)).toContain('export const ROW_CTA_HEIGHT = TOKENS.interaction.minTarget');
     expect(TOKENS.interaction.minTarget).toBe(48);
-    // Width follows the reference, since nothing about a width is unsafe.
-    expect(read(ROW)).toContain('export const ROW_CTA_WIDTH = 96');
+    /*
+     * The WIDTH left the reference on 2026-09-08: 136, not Astrotalk's 95.3,
+     * because the button now carries the rate as well as the verb ("move rate
+     * into cta after call text"). A width is safe to change — nothing about it
+     * is a platform minimum — and the room is needed.
+     */
+    expect(read(ROW)).toContain('export const ROW_CTA_WIDTH = 136');
+    // The rate is INSIDE the control, and there is no longer a price line.
+    expect(code(ROW)).toContain('styles.ctaRate');
+    expect(code(ROW)).not.toContain('styles.price,');
     const cta = style('cta');
     expect(cta).toContain('height: ROW_CTA_HEIGHT');
     expect(cta).toContain('width: ROW_CTA_WIDTH');
@@ -412,8 +420,16 @@ describe('every row is still the same height', () => {
      * longer set cannot wrap and push the price line down even if the cap were
      * ever raised without looking here.
      */
+    /*
+     * The cap now lives entirely in `rowExpertise`, where the row used to
+     * re-apply it after prepending the category badge. The badge moved to its
+     * own slot on the price line, so there is nothing to prepend and nothing to
+     * re-slice — and the topics got back the slot the badge was taking in
+     * search.
+     */
     expect(code('src/lib/expertise.ts')).toContain('export const ROW_EXPERTISE_LIMIT = 3');
-    expect(code(ROW)).toContain('.slice(0, ROW_EXPERTISE_LIMIT)');
+    expect(code(ROW)).toContain('const tags = rowExpertise(provider)');
+    expect(code(ROW)).not.toContain('.slice(0, ROW_EXPERTISE_LIMIT)');
     const line = style('tagLine');
     expect(line).toContain('height: ROW_TAG_LINE');
     expect(line).toContain("overflow: 'hidden'");
