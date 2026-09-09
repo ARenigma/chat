@@ -988,10 +988,10 @@ describe('a kind of text reads at one role, screen or sheet', () => {
   it('states a tax or caption disclosure at the same role, chip or sheet', () => {
     // The base + tax line is the same disclosure whether it is under a pack chip
     // or under the checkout total (ADR-0029: the pack is the base, the charge is
-    // base + tax). On the sheet it used to ride the bodyLarge subhead, i.e. the
-    // DISCLOSURE was louder in the modal than on the screen while the TOTAL was
-    // quieter — the inversion, both directions at once.
-    expect(roleOf(RECHARGE, 'tokensGst')).toBe(DISCLOSURE);
+    // base + tax). The compact chat-refill chip no longer carries a GST caption
+    // (2026-09-10: removed from the highest-intent buy; the total discloses it),
+    // so only the wallet-page chip (cardGst), the pay total (totalGst) and the
+    // settings row (rowDetail) state it, all at the same DISCLOSURE role.
     expect(roleOf(RECHARGE, 'cardGst')).toBe(DISCLOSURE);
     expect(roleOf(PAYMENT, 'totalGst')).toBe(DISCLOSURE);
     expect(roleOf('src/screens/SettingsSheet.tsx', 'rowDetail')).toBe(DISCLOSURE);

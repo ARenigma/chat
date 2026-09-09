@@ -98,8 +98,10 @@ describe('recharge chips present GST exclusive — charged on top of the base (A
     expect(recharge).not.toMatch(/incl\./);
     expect(payment).not.toMatch(/incl\./);
 
-    // Four chip/label call sites (two per host) plus the pay step.
-    expect(recharge.match(/gstAdded(Label|Spoken)\(/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
+    // The wallet page still itemises GST on its chips (label + spoken = two call
+    // sites); the compact chat-refill sheet no longer does (2026-09-10), so the
+    // count dropped from four. The pay step still names the total.
+    expect(recharge.match(/gstAdded(Label|Spoken)\(/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
     expect(payment).toContain('gstAddedLabel(');
   });
 
@@ -156,7 +158,7 @@ describe('a selected money chip is a filled container', () => {
   });
 
   it('pairs the fill with the on-colour M3 guarantees, on every label that sits on it', () => {
-    for (const style of ['amountOn', 'tokensOn', 'tokensGstOn', 'cardAmountOn', 'cardUnitOn']) {
+    for (const style of ['amountOn', 'tokensOn', 'cardAmountOn', 'cardUnitOn']) {
       expect(styleBlock(recharge, style)).toContain('color: t.color.text.onAccent');
     }
     // developer.android.com/guide/topics/ui/accessibility/apps: 4.5:1 below
@@ -304,30 +306,19 @@ describe('a money chip shows the price it charges', () => {
    * So the order asserted is now price then GST note, and the removed line is
    * asserted ABSENT so it cannot quietly return.
    */
-  it.each([
-    ['the compact sheet chip', 'compact' as const],
-    ['the wallet-page pack card', 'wallet' as const],
-  ])('renders price, then tokens, then the gst note on %s', (_name, key) => {
-    const host = renderOf(HOSTS[key]);
-    /*
-     * The price moved to `<RupeeAmount value={pack} .../>` on 2026-09-08 (the ₹
-     * glyph weight sweep), which no longer contains the literal
-     * `{formatRupees(pack)}` this assertion originally scanned for. Matched on
-     * either form so a future rewrite of one card and not the other still
-     * satisfies "price appears before the GST note" rather than silently
-     * finding neither.
-     */
-    const price = (() => {
-      const asText = host.indexOf('{formatRupees(pack)}');
-      if (asText > -1) return asText;
-      return host.search(/<RupeeAmount\s+value=\{pack\}/);
-    })();
-    // Under the exclusive model the GST line is a single Text with {gst}.
+  // The price moved to `<RupeeAmount value={pack} .../>` on 2026-09-08 (the ₹
+  // glyph weight sweep), so match either form.
+  const priceIndex = (host: string): number => {
+    const asText = host.indexOf('{formatRupees(pack)}');
+    if (asText > -1) return asText;
+    return host.search(/<RupeeAmount\s+value=\{pack\}/);
+  };
+
+  it('the wallet-page pack card renders the price, then the gst note', () => {
+    const host = renderOf(HOSTS.wallet);
+    const price = priceIndex(host);
     const gstNote = host.indexOf('{gst}');
-    expect({ price: price > -1, gstNote: gstNote > -1 }).toEqual({
-      price: true,
-      gstNote: true,
-    });
+    expect({ price: price > -1, gstNote: gstNote > -1 }).toEqual({ price: true, gstNote: true });
     expect(price).toBeLessThan(gstNote);
     // The duplicate second price line must not come back.
     expect(host).not.toContain('formatTokens(pack)');
@@ -335,6 +326,20 @@ describe('a money chip shows the price it charges', () => {
     // The old two-Text pattern ({gst.base} / {gst.tax}) must be gone.
     expect(host).not.toContain('{gst.base}');
     expect(host).not.toContain('{gst.tax}');
+  });
+
+  it('the compact chat-sheet chip shows the price but NO per-chip GST — the highest-intent buy', () => {
+    /*
+     * The GST breakout moved OFF the chat refill chip (Amit, 2026-09-10): it is
+     * the highest-intent buying moment and a "+ ₹54 GST" line on every card
+     * discourages the recharge. The tax is not hidden — the Pay bar shows the
+     * GST-inclusive total (packTotalInr) and Cashfree charges it, so the all-in
+     * price is disclosed at the point of payment. The wallet page keeps its
+     * itemisation (asserted above).
+     */
+    const host = renderOf(HOSTS.compact);
+    expect(priceIndex(host)).toBeGreaterThan(-1);
+    expect(host).not.toContain('{gst}');
   });
 
   /*
@@ -347,28 +352,22 @@ describe('a money chip shows the price it charges', () => {
    * against it: same figures, same order.
    */
   it('announces the figures the card shows, in the order the card shows them', () => {
-    for (const key of ['compact', 'wallet'] as const) {
-      const label = labelLine(HOSTS[key]);
-      const price = label.indexOf('formatRupees(pack)');
-      const split = label.indexOf('gstSpoken');
-      expect({ host: key, price: price > -1, split: split > -1 }).toEqual({
-        host: key,
-        price: true,
-        split: true,
-      });
-      expect(price).toBeLessThan(split);
-      /*
-       * The label spoke the price TWICE — "₹300, ₹300, about 13 minutes" — once
-       * the token count became a rupee figure. Same-figures-same-order still
-       * holds; there is simply one figure now, not two.
-       */
-      expect(label.match(/formatRupees\(pack\)/g)?.length).toBe(1);
-    }
-    // The wallet card also speaks its talk-time pill, and in the pill's place:
-    // between the token count and the tax split.
+    // The wallet card speaks the price, then its talk-time pill, then the GST split.
     const wallet = labelLine(HOSTS.wallet);
+    const walletPrice = wallet.indexOf('formatRupees(pack)');
+    const walletSplit = wallet.indexOf('gstSpoken');
+    expect({ price: walletPrice > -1, split: walletSplit > -1 }).toEqual({ price: true, split: true });
+    expect(walletPrice).toBeLessThan(walletSplit);
+    expect(wallet.match(/formatRupees\(pack\)/g)?.length).toBe(1);
     expect(wallet.indexOf('minutes of talk')).toBeGreaterThan(wallet.indexOf('formatTokens(pack)'));
-    expect(wallet.indexOf('minutes of talk')).toBeLessThan(wallet.indexOf('gstSpoken'));
+    expect(wallet.indexOf('minutes of talk')).toBeLessThan(walletSplit);
+
+    // The compact chat-sheet chip speaks only the price — no GST split, matching
+    // its rendered card (the GST breakout moved off it, 2026-09-10).
+    const compact = labelLine(HOSTS.compact);
+    expect(compact.indexOf('formatRupees(pack)')).toBeGreaterThan(-1);
+    expect(compact).not.toContain('gstSpoken');
+    expect(compact.match(/formatRupees\(pack\)/g)?.length).toBe(1);
   });
 
   /*

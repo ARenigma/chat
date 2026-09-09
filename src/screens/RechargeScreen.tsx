@@ -76,7 +76,6 @@ export function RechargeScreen() {
           amount={amount}
           setAmount={setAmount}
           livePacks={livePacks}
-          gstRateBps={gstRateBps}
         />
       </Sheet>
       <PaymentSheet visible={payOpen} amount={amount} onClose={() => setPayOpen(false)} />
@@ -95,12 +94,10 @@ function RechargeSheetForm({
   amount,
   setAmount,
   livePacks,
-  gstRateBps,
 }: {
   amount: number;
   setAmount: (n: number) => void;
   livePacks: readonly number[];
-  gstRateBps: number;
 }) {
   const styles = useStyles(makeCompactStyles);
   const theme = useTheme();
@@ -134,8 +131,12 @@ function RechargeSheetForm({
         {livePacks.slice(0, 4).map(pack => {
           const selected = pack === amount;
           const popular = pack === popularAmount;
-          const gst = gstAddedLabel(pack, gstRateBps);
-          const gstSpoken = gstAddedSpoken(pack, gstRateBps);
+          // No per-chip GST breakout in the CHAT refill sheet: it is the highest-
+          // intent buying moment and a "+ ₹54 GST" line on every card discourages
+          // the recharge (Amit, 2026-09-10). The tax is not hidden — the pay
+          // button shows the GST-inclusive total (packTotalInr) and Cashfree
+          // charges it, so the all-in price is disclosed at the point of payment.
+          // The full wallet page (RechargeWalletPage) still itemises it.
           return (
             <View key={pack} style={styles.cardSlot}>
               <Pressable
@@ -146,7 +147,7 @@ function RechargeSheetForm({
                 testID={`pack-${pack}`}
                 accessibilityRole="radio"
                 checked={selected}
-                accessibilityLabel={`${formatRupees(pack)}${gstSpoken ? `, ${gstSpoken}` : ''}${popular ? ', popular' : ''}`}
+                accessibilityLabel={`${formatRupees(pack)}${popular ? ', popular' : ''}`}
                 press="card"
                 // The M3 pressed state layer is the container's ON colour at 10%
                 // (androidx StateTokens.kt `PressedStateLayerOpacity = 0.1f`,
@@ -196,13 +197,6 @@ function RechargeSheetForm({
                     developer.android.com/about/versions/14/features
                     #non-linear-font-scaling asks for testing to 200%, where
                     truncating a tax figure is worse than two lines. */}
-                {gst ? (
-                  <Text
-                    allowFontScaling
-                    style={[styles.tokensGst, selected && styles.tokensGstOn]}>
-                    {gst}
-                  </Text>
-                ) : null}
               </Pressable>
             </View>
           );
@@ -961,17 +955,6 @@ const makeCompactStyles = (t: Theme) =>
       paddingTop: TOKENS.space.xs,
     },
     tokensOn: {
-      color: t.color.text.onAccent,
-    },
-    tokensGst: {
-      ...TOKENS.typography.bodySmall,
-      color: t.color.text.tertiary,
-    },
-    // The step above the pair, not above each line — see `cardGstBlock`.
-    tokensGstBlock: {
-      paddingTop: TOKENS.space['2xs'],
-    },
-    tokensGstOn: {
       color: t.color.text.onAccent,
     },
     rate: {
