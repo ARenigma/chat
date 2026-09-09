@@ -2,6 +2,7 @@ import {
   PENDING_PREFIX,
   applyReadReceipt,
   insertOptimistic,
+  sessionEndedLabel,
   isPending,
   lastOwnMessageId,
   mergeIncoming,
@@ -128,6 +129,18 @@ describe('mergeIncoming', () => {
     const merged = mergeIncoming(list, theirs, ME);
     expect(merged).toHaveLength(2);
     expect(merged.some(isPending)).toBe(true);
+  });
+});
+
+describe('sessionEndedLabel — the "Session ended" system-message text', () => {
+  it('appends the billed minutes when there are any', () => {
+    expect(sessionEndedLabel(5)).toBe('Session ended · 5 min');
+    expect(sessionEndedLabel(1)).toBe('Session ended · 1 min');
+  });
+  it('drops the duration for a session that never billed', () => {
+    expect(sessionEndedLabel(0)).toBe('Session ended');
+    expect(sessionEndedLabel(Number.NaN)).toBe('Session ended');
+    expect(sessionEndedLabel(-3)).toBe('Session ended');
   });
 });
 

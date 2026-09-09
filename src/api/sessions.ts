@@ -66,6 +66,9 @@ export interface PendingSessionRequest {
 const sessionKeys = {
   active: (conversationId: string) =>
     ['session', 'active', conversationId] as const,
+  /** Ended chat sessions, for the "Session ended" transcript system rows. */
+  events: (conversationId: string) =>
+    ['session', 'events', conversationId] as const,
   /** 082: has the member declined a session here? */
   consent: (conversationId: string) =>
     ['session', 'consent', conversationId] as const,
@@ -482,6 +485,46 @@ export function useActiveSession(conversationId: string | undefined) {
       if (!data) return null;
       // The RPC returns JSONB; cast to the known shape.
       return data as unknown as PaidSession;
+    },
+  });
+}
+
+/** One ended chat session, rendered as a "Session ended" system row. */
+export interface SessionEvent {
+  id: string;
+  started_at: string | null;
+  ended_at: string;
+  minutes_billed: number;
+}
+
+/**
+ * Ended CHAT sessions in a conversation, for the "Session ended · N min" system
+ * rows the transcript interleaves like call logs. Call (audio/video) sessions are
+ * excluded — those already render as CallLogRow, and emitting a system row too
+ * would double the same event. Scoped by the "Participants read own sessions"
+ * RLS policy (migration 030).
+ */
+export function useSessionEvents(conversationId: string | undefined) {
+  return useQuery<SessionEvent[]>({
+    queryKey: sessionKeys.events(conversationId ?? ''),
+    enabled: conversationId !== undefined,
+    staleTime: 15_000,
+    queryFn: async () => {
+      if (!conversationId) return [];
+      // paid_sessions is not in the generated types (queried via RPC elsewhere);
+      // cast the table read like the other untyped queries here.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = (await (supabase as any)
+        .from('paid_sessions')
+        .select('id, started_at, ended_at, minutes_billed')
+        .eq('conversation_id', conversationId)
+        .eq('channel', 'chat')
+        .eq('status', 'ended')
+        .not('ended_at', 'is', null)
+        .order('ended_at', { ascending: false })
+        .limit(50)) as { data: SessionEvent[] | null; error: { message: string } | null };
+      if (error) throw new Error(error.message);
+      return data ?? [];
     },
   });
 }

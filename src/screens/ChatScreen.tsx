@@ -37,7 +37,7 @@ import {
 } from '../lib/imeGeometry';
 import { readKeyboardHeight } from '../lib/keyboardPanel';
 import { initialOf } from '../lib/display';
-import { isPending, PENDING_PREFIX } from '../lib/transcript';
+import { isPending, PENDING_PREFIX, sessionEndedLabel } from '../lib/transcript';
 import {
   useConversationId,
   useConversations,
@@ -83,6 +83,7 @@ import type { ReactionEmoji } from '../lib/database.types';
 import { useStore } from '../store/useStore';
 import {
   useActiveSession,
+  useSessionEvents,
   useAnnounceChatOpen,
   useConfirmChatSession,
   useDeclineSessionRequest,
@@ -103,7 +104,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import { DayDivider } from '../components/DayDivider';
 import { Frost } from '../components/Frost';
 import { Button } from '../components/Button';
-import { Icon } from '../components/Icon';
+import { Icon, type IconName } from '../components/Icon';
 import { NoticeBar } from '../components/NoticeBar';
 import { HeaderSubtitle } from '../components/HeaderSubtitle';
 import { MediaViewer } from '../components/MediaViewer';
@@ -111,6 +112,7 @@ import { PeerTyping } from '../components/PeerTyping';
 import { Pressable } from '../components/Pressable';
 import { TokenCounter } from '../components/TokenCounter';
 import { CallLogRow } from '../components/CallLogRow';
+import { SystemMessageRow } from '../components/SystemMessageRow';
 import { MyTurn, PeerTurn, type ActionTarget, type ImageBody, type Quote, type VoiceBody } from '../components/Turn';
 import { SafetySheet } from './SafetySheet';
 import { RenameChatSheet } from '../components/RenameChatSheet';
@@ -145,7 +147,17 @@ type CallRow = {
   opensDay: boolean;
 };
 
-export type TranscriptRow = MessageRow | CallRow;
+/** A centered "system message" — a session boundary or notice, not a bubble. */
+type SystemRow = {
+  kind: 'system';
+  localKey: string;
+  sortAt: string;
+  text: string;
+  icon?: IconName;
+  opensDay: boolean;
+};
+
+export type TranscriptRow = MessageRow | CallRow | SystemRow;
 
 /** A hold that was never taken, so the release is a no-op. */
 const NO_HOLD = (): void => undefined;
@@ -439,6 +451,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   // `dataUpdatedAt` is the instant the server's snapshot was taken — the only
   // moment `seconds_remaining` was exactly right, and what it is aged from.
   const { data: activeSession, dataUpdatedAt: sessionSyncedAt } = useActiveSession(conversationId);
+  const { data: sessionEvents } = useSessionEvents(conversationId);
   const { data: pendingRequest } = usePendingSessionRequest(conversationId);
   const { data: chatConsent } = useChatConsent(conversationId);
   const resumeConsent = useResumeChatConsent();
@@ -816,8 +829,18 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
       opensDay: false,
     }));
 
+    // "Session ended" system rows, sorted into the transcript at their end time
+    // like call logs. Chat sessions only (call sessions render as CallLogRow).
+    const systemRows: SystemRow[] = (sessionEvents ?? []).map(e => ({
+      kind: 'system' as const,
+      localKey: `session-${e.id}`,
+      sortAt: e.ended_at,
+      text: sessionEndedLabel(e.minutes_billed),
+      opensDay: false,
+    }));
+
     // Merge and sort newest-first (matches the inverted FlatList).
-    const sorted = [...messageRows, ...callRows].sort(
+    const sorted = [...messageRows, ...callRows, ...systemRows].sort(
       (a, b) => new Date(b.sortAt).getTime() - new Date(a.sortAt).getTime(),
     );
 
@@ -839,7 +862,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
     }
 
     return sorted;
-  }, [messages, selfId, callRecords]);
+  }, [messages, selfId, callRecords, sessionEvents]);
 
   /**
    * Force offset 0 whenever a new row appears — local optimistic or remote
@@ -1156,6 +1179,16 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
           <View style={styles.turn}>
             {item.opensDay ? <DayDivider iso={item.call.created_at} /> : null}
             <CallLogRow call={item.call} />
+          </View>
+        );
+      }
+
+      // System message: a centered, non-interactive session boundary / notice.
+      if (item.kind === 'system') {
+        return (
+          <View style={styles.turn}>
+            {item.opensDay ? <DayDivider iso={item.sortAt} /> : null}
+            <SystemMessageRow text={item.text} icon={item.icon} />
           </View>
         );
       }

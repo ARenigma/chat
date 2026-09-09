@@ -5897,3 +5897,36 @@ describe('rename chat — private per-user conversation labels', () => {
     }
   });
 });
+
+describe('system messages — centered session/notice rows in the transcript', () => {
+  it('the SystemMessageRow is a muted centered pill, not a bubble', () => {
+    const src = read('src/components/SystemMessageRow.tsx');
+    // Centered pill on the sunken surface with muted caption text — the spec's
+    // visual weight, matching CallLogRow and DayDivider.
+    expect(src).toContain("alignItems: 'center'");
+    expect(src).toContain('radius.pill');
+    expect(src).toContain('bg.sunken');
+    expect(src).toContain('typography.bodySmall');
+    expect(src).toContain('text.tertiary');
+    // Not a bubble: never the sender/bubble colours, no accent.
+    expect(src).not.toMatch(/bubble\.(mine|theirs)|bg\.accent/);
+  });
+
+  it('ChatScreen interleaves session-ended system rows like call logs, no messages-table change', () => {
+    const chat = read('src/screens/ChatScreen.tsx');
+    expect(chat).toContain('useSessionEvents');
+    expect(chat).toContain('SystemMessageRow');
+    expect(chat).toContain("kind: 'system'");
+    expect(chat).toContain('sessionEndedLabel');
+    // Rendered through the same discriminated-union renderItem as calls/messages.
+    expect(chat).toMatch(/item\.kind === 'system'/);
+  });
+
+  it('session events derive from paid_sessions (chat only) — call sessions stay CallLogRow', () => {
+    const api = read('src/api/sessions.ts');
+    expect(api).toContain('export function useSessionEvents');
+    expect(api).toContain("from('paid_sessions')");
+    expect(api).toMatch(/\.eq\('channel', 'chat'\)/);
+    expect(api).toMatch(/\.eq\('status', 'ended'\)/);
+  });
+});
