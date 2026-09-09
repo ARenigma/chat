@@ -22,7 +22,9 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 
 // ---------------------------------------------------------------------------
 // GST — mirrors gstOnTop in src/lib/rates.ts (ADR-0029: exclusive model).
-// Rate is 18% (1800 bps) until the function reads economics config from DB.
+// The live rate is read from admin economics config at request time (see the
+// call site below); 1800 bps (18%) is only the fallback when that config has
+// no published version.
 // ---------------------------------------------------------------------------
 const DEFAULT_GST_RATE_BPS = 1800;
 
@@ -164,8 +166,28 @@ Deno.serve(async (request: Request) => {
 
     // Create Cashfree order first; don't insert the transaction row until
     // we have a valid paymentSessionId.
+    //
     // Exclusive GST: member pays base + tax, receives base tokens (ADR-0029).
-    const totalPaise = packTotalPaise(pack.amountInr);
+    // The rate is read LIVE from admin economics config — the same source the
+    // client (useEconomicsConfig) and generate-invoice already read — so an
+    // operator changing economics.gst_rate_bps flows through to the amount
+    // actually charged, instead of this function alone staying pinned at 18%
+    // and charging a total that no longer matches the price on screen. A failed
+    // config read falls back to the GST_RATE_BPS env var, then 1800 bps, so it
+    // can never turn into a failed order. (2026-09-09 audit)
+    const gstRateBpsFallback = parseInt(
+      Deno.env.get('GST_RATE_BPS') ?? String(DEFAULT_GST_RATE_BPS),
+      10,
+    );
+    const { data: economics } = await admin.rpc('get_active_config', {
+      p_domain: 'economics',
+    });
+    const configuredRate = (economics as { gst_rate_bps?: number } | null)?.gst_rate_bps;
+    const gstRateBps =
+      typeof configuredRate === 'number' && Number.isInteger(configuredRate) && configuredRate >= 0
+        ? configuredRate
+        : gstRateBpsFallback;
+    const totalPaise = packTotalPaise(pack.amountInr, gstRateBps);
 
     const cashfreeOrder = await createCashfreeOrder({
       orderId,
