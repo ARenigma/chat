@@ -26,7 +26,7 @@ import { SCROLL_PHYSICS } from '../lib/scroll';
 import { sizedStorageImageUri } from '../lib/storageImage';
 import { contentColumnWidth } from '../lib/windowSize';
 import { rateLabel, type Channel } from '../lib/rates';
-import { useConversations, useProfile, useProviders } from '../api/chat';
+import { useProfile, useProviders } from '../api/chat';
 import { useProviderPhotos, useProviderRatings } from '../api/provider';
 import { CALLS_ENABLED } from '../api/calls';
 import { useEconomicsConfig, useKillSwitches, FALLBACK_ECONOMICS } from '../api/appConfig';
@@ -40,7 +40,6 @@ import { TokenCounter } from '../components/TokenCounter';
 import { MetaChip } from '../components/MetaChip';
 import { displayRating, formatReviewCount } from '../lib/systemRating';
 import { ScreenLoader } from '../components/ScreenLoader';
-import { SafetySheet } from './SafetySheet';
 
 /**
  * The hero card's height, named because three things now depend on it agreeing:
@@ -90,21 +89,16 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
   const { data: providers, isPending } = useProviders();
   const { data: ratings } = useProviderRatings(providerId);
   const { data: photos } = useProviderPhotos(providerId);
-  const { data: conversations } = useConversations();
   // Favourites are persisted now (#10), not throwaway local state — the heart
   // reads and writes the saved-favourites store, which the Favourites tab lists.
   const favorite = useFavorites(s => s.ids.includes(providerId));
   const toggleFavorite = useFavorites(s => s.toggle);
-  const [safetyOpen, setSafetyOpen] = useState(false);
 
-  // Block/report is offered ONLY when there is an existing conversation with this
-  // provider (#3): you cannot block someone you have never talked to. Reaching the
-  // profile from Explore (no thread) shows no block; reaching it from an active
-  // chat's header (a thread exists) does.
-  const thread = useMemo(
-    () => (conversations ?? []).find(c => c.peer_id === providerId),
-    [conversations, providerId],
-  );
+  // No block/report on the profile card. A member can only block a provider they
+  // have actually had a session with, and that action lives in the chat itself
+  // (ChatScreen's header + message long-press open the SafetySheet). The profile
+  // card is discovery — offering block here let a member block a provider they
+  // had never interacted with (Amit, 2026-09-10).
 
   const provider = useMemo<ProviderSummary | null>(
     () => (providers ?? []).find(p => p.id === providerId) ?? null,
@@ -289,35 +283,8 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
           )}
 
 
-          {/* Block / report — only once a conversation exists (#3). Quiet and last,
-              the way iOS puts a destructive contact action at the foot of a card. */}
-          {thread !== undefined ? (
-            <Pressable
-              onPress={() => setSafetyOpen(true)}
-              testID="detail-safety"
-              accessibilityLabel={`Block or report ${provider.display_name}`}
-              accessibilityHint="Opens safety options"
-              press="row"
-              style={styles.safetyRow}>
-              <Icon name="block" size={TOKENS.icon.md} color={theme.color.text.secondary} />
-              <Text allowFontScaling style={styles.safetyLabel}>
-                Block or report {provider.display_name}
-              </Text>
-            </Pressable>
-          ) : null}
         </ScrollView>
       )}
-
-      {provider !== null && thread !== undefined ? (
-        <SafetySheet
-          visible={safetyOpen}
-          onClose={() => setSafetyOpen(false)}
-          conversationId={thread.conversation_id}
-          peerId={providerId}
-          peerName={provider.display_name}
-          messageId={null}
-        />
-      ) : null}
     </View>
   );
 }
@@ -971,16 +938,5 @@ const makeStyles = (t: Theme) =>
     aboutBody: {
       ...TOKENS.typography.bodyLarge,
       color: t.color.text.primary,
-    },
-    safetyRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: TOKENS.space.sm,
-      marginTop: TOKENS.space['2xl'],
-      paddingVertical: TOKENS.space.sm,
-    },
-    safetyLabel: {
-      ...TOKENS.typography.bodyLarge,
-      color: t.color.text.secondary,
     },
   });
