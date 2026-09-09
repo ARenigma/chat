@@ -133,6 +133,8 @@ const MIGRATIONS = [
   'supabase/migrations/092_messages_push_immediately.sql',
   'supabase/migrations/093_repair_storage_purge_functions.sql',
   'supabase/migrations/094_storage_purge_uses_allow_delete_guc.sql',
+  'supabase/migrations/095_session_duration_equals_billed_minutes.sql',
+  'supabase/migrations/096_block_requires_prior_conversation.sql',
 ];
 
 /**
