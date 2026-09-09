@@ -330,9 +330,13 @@ describe('GST is disclosed where money moves and nowhere else', () => {
     // total. What this gate cares about is unchanged: every surface where rupees
     // move names the tax. Matching the family rather than one name so a future
     // rename cannot silently empty the assertion.
+    // The compact chat-refill sheet no longer names GST on its chips — it is the
+    // highest-intent buy and the total (Pay bar + Cashfree) discloses the tax
+    // instead (Amit, 2026-09-10). The wallet-page chips still itemise it (label +
+    // spoken), so RechargeScreen still names GST, just fewer times.
     const NAMES_GST = /gstAdded(Label|Spoken)\(/g;
     const recharge = withoutComments(read('src/screens/RechargeScreen.tsx'));
-    expect(recharge.match(NAMES_GST)?.length ?? 0).toBeGreaterThanOrEqual(4);
+    expect(recharge.match(NAMES_GST)?.length ?? 0).toBeGreaterThanOrEqual(2);
     expect(withoutComments(read('src/screens/PaymentSheet.tsx'))).toMatch(NAMES_GST);
 
     // Negative: tokens are prepaid, tax was settled when the rupees were paid.
