@@ -8,6 +8,7 @@ import { BackButton } from '../components/BackButton';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { formatPaise, useFetchInvoiceUrl, useTransactions, type TokenTransaction } from '../api/transactions';
+import { formatRupees } from '../lib/rates';
 
 interface Props {
   onBack: () => void;
@@ -138,9 +139,12 @@ function TransactionRow({ tx, onDownload }: RowProps) {
         <Text allowFontScaling style={styles.rowAmount}>
           {formatPaise(tx.amountPaise)}
         </Text>
+        {/* Rupee-first, one unit: the credited amount reads in ₹ like the amount
+            paid above it (1 token = ₹1), not as a bare "tokens" count. The paid
+            line and this credited line differ by GST. (2026-09-09 audit) */}
         <Text allowFontScaling style={styles.rowTokens}>
-          {tx.tokensDelta > 0 ? '+' : ''}
-          {tx.tokensDelta.toLocaleString('en-IN')} tokens
+          {tx.tokensDelta >= 0 ? '+' : '−'}
+          {formatRupees(Math.abs(tx.tokensDelta))}
         </Text>
       </View>
 

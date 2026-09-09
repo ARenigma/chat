@@ -224,6 +224,33 @@ export function sanitizeSentryEvent(event: ScrubbableEvent | null): ScrubbableEv
   return event;
 }
 
+/**
+ * Report a swallowed, non-fatal error with a context tag so a persistent
+ * failure on a best-effort path (ring/request recovery, session heartbeat) is
+ * visible in Sentry instead of vanishing.
+ *
+ * Only the error's message and its SQLSTATE `code` are forwarded. A Supabase
+ * PostgrestError's `details` can carry row values — a message body, a phone
+ * number — and must never leave the device (CLAUDE.md security note), so the
+ * raw error object is never handed to Sentry; a fresh Error is. The beforeSend
+ * scrubber is a second line of defence, not the first. (2026-09-10 audit)
+ */
+export function reportSwallowed(context: string, error: unknown): void {
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error
+      ? String((error as { code: unknown }).code)
+      : undefined;
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'object' && error !== null && 'message' in error
+        ? String((error as { message: unknown }).message)
+        : String(error);
+  Sentry.captureException(new Error(`[${context}] ${message}`), {
+    tags: code !== undefined ? { context, sqlstate: code } : { context },
+  });
+}
+
 export function initSentry(): void {
   Sentry.init({
     dsn: ENV.sentryDsn,

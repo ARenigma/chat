@@ -17,6 +17,7 @@ import {
   withAttempt,
   withEntry,
   withoutEntry,
+  withoutExpired,
   type OutboxEntry,
 } from './outbox';
 
@@ -51,4 +52,17 @@ export function recordAttempt(nonce: string): void {
 
 export function pendingFor(conversationId: string): OutboxEntry[] {
   return forConversation(readOutbox(), conversationId);
+}
+
+/**
+ * Drop entries older than the TTL. Called once at boot: replay is per-conversation
+ * (on ChatScreen mount), so an entry for a conversation never reopened would
+ * otherwise never be collected. Writes only when something was actually removed.
+ */
+export function sweepExpiredOutbox(): void {
+  const list = readOutbox();
+  const kept = withoutExpired(list, Date.now());
+  if (kept.length !== list.length) {
+    writeOutbox(kept);
+  }
 }

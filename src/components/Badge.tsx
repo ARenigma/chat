@@ -43,7 +43,10 @@ function BadgeView({ count, max = 9, testID }: Props) {
 
   return (
     <View testID={testID} accessibilityLabel={`${count} unread`} style={styles.pill}>
-      <Text style={styles.label}>{label}</Text>
+      {/* The pill is a fixed 16dp height with a fixed lineHeight; unbounded font
+          scaling clips the count. The geometry is deliberate, so the count does
+          not scale with it. (2026-09-09 audit) */}
+      <Text allowFontScaling={false} style={styles.label}>{label}</Text>
     </View>
   );
 }

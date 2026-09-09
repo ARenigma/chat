@@ -1,6 +1,7 @@
 import { Linking } from 'react-native';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { reportSwallowed } from '../lib/sentry';
 import {
   GoogleCredentialError,
   credentialSheetAvailable,
@@ -279,7 +280,14 @@ function describeOtpError(message: string): string {
 }
 
 export async function currentSession(): Promise<Session | null> {
-  const { data } = await supabase.auth.getSession();
+  const { data, error } = await supabase.auth.getSession();
+  // A read error (corrupt storage, unreachable auth) is not the same as "no
+  // session", but both land the boot on the sign-in screen. Surface the error so
+  // a persistent failure is not indistinguishable from a clean sign-out. The
+  // session (possibly null) is still returned; the caller routes on it. (audit)
+  if (error) {
+    reportSwallowed('currentSession', error);
+  }
   return data.session;
 }
 

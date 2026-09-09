@@ -2,11 +2,13 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   OUTBOX_LIMIT,
+  OUTBOX_TTL_MS,
   decode,
   forConversation,
   withAttempt,
   withEntry,
   withoutEntry,
+  withoutExpired,
   type OutboxEntry,
 } from '../src/lib/outbox';
 
@@ -61,6 +63,16 @@ describe('the outbox list operations', () => {
     expect(list).toHaveLength(OUTBOX_LIMIT);
     expect(list[0]?.nonce).toBe('n0');
     expect(list.at(-1)?.nonce).toBe(`n${OUTBOX_LIMIT - 1}`);
+  });
+
+  it('drops entries older than the TTL, keeps fresh ones, and drops unparseable dates', () => {
+    const now = Date.parse('2026-09-15T00:00:00.000Z');
+    const fresh = entry('fresh', { createdAt: new Date(now - 60_000).toISOString() });
+    const stale = entry('stale', { createdAt: new Date(now - OUTBOX_TTL_MS - 60_000).toISOString() });
+    const edge = entry('edge', { createdAt: new Date(now - OUTBOX_TTL_MS + 60_000).toISOString() });
+    const broken = entry('broken', { createdAt: 'not-a-date' });
+    const kept = withoutExpired([fresh, stale, edge, broken], now).map(e => e.nonce);
+    expect(kept).toEqual(['fresh', 'edge']);
   });
 
   it('removes by nonce', () => {

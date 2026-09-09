@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { reportSwallowed } from '../lib/sentry';
 import { track } from '../lib/telemetry';
 
 type SessionChannel = 'chat' | 'audio' | 'video';
@@ -283,7 +284,14 @@ export function useIncomingChatRequests(
         .limit(1)
         .maybeSingle()) as {
         data: { id: string; conversation_id: string; initiator_id: string; expires_at: string } | null;
+        error: unknown;
       };
+      // Best-effort recovery of a request that arrived while the socket was down;
+      // a persistent failure means silently missed chat requests. (2026-09-10 audit)
+      if (result.error) {
+        reportSwallowed('recoverPending', result.error);
+        return;
+      }
       if (result.data) {
         onIncoming({
           requestId: result.data.id,
@@ -536,6 +544,10 @@ export function useSessionLease(
    * the grace window.
    */
   const backgroundTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Consecutive heartbeat failures. One miss is nothing (the server has a 30s
+  // grace); a run of them means the client may be showing a session the server
+  // already ended, so we force a re-sync once it crosses the threshold.
+  const heartbeatFailuresRef = useRef(0);
   const queryClient = useQueryClient();
   const sessionId = session?.id ?? null;
   const channel = session?.channel ?? null;
@@ -548,14 +560,24 @@ export function useSessionLease(
         p_kind: kind,
       });
       if (error) throw error;
+      heartbeatFailuresRef.current = 0;
       // If the server signals the session has ended (e.g. balance exhausted),
       // invalidate so the chat screen picks up the new status.
       if (data === 'ended') {
         void queryClient.invalidateQueries({ queryKey: ['session'] });
       }
-    } catch {
-      // Heartbeat failure is non-fatal: the server will expire the lease after
-      // the 30 s grace period if heartbeats stop arriving.
+    } catch (err) {
+      // A single miss is non-fatal: the server expires the lease after the 30 s
+      // grace if heartbeats stop. But a SUSTAINED failure would leave the client
+      // showing a session the server has already ended, so after three
+      // consecutive misses force a re-sync of the session status rather than
+      // trusting the local "active" state indefinitely. (2026-09-10 audit)
+      heartbeatFailuresRef.current += 1;
+      if (heartbeatFailuresRef.current >= 3) {
+        heartbeatFailuresRef.current = 0;
+        reportSwallowed('sessionHeartbeat', err);
+        void queryClient.invalidateQueries({ queryKey: ['session'] });
+      }
     }
   }, [sessionId, kind, queryClient]);
 
@@ -616,13 +638,21 @@ export function useSessionLease(
               if (backgroundTimerRef.current === null) {
                 backgroundTimerRef.current = setTimeout(() => {
                   backgroundTimerRef.current = null;
-                  void supabase.rpc('end_session', {
-                    p_session_id: sessionId,
-                    p_end_reason: 'background',
-                    p_report_reason: null,
-                    p_report_message_ids: null,
-                    p_report_statement: null,
-                  });
+                  void supabase
+                    .rpc('end_session', {
+                      p_session_id: sessionId,
+                      p_end_reason: 'background',
+                      p_report_reason: null,
+                      p_report_message_ids: null,
+                      p_report_statement: null,
+                    })
+                    .then(({ error }) => {
+                      // The server's own lease expiry ends the session on the
+                      // same schedule if this call fails, so it is safe to let it
+                      // go — but a persistent failure here is worth seeing rather
+                      // than swallowing. (2026-09-10 audit)
+                      if (error) reportSwallowed('endSessionBackground', error);
+                    });
                 }, BACKGROUND_GRACE_MS);
               }
             } else {
