@@ -113,6 +113,8 @@ import { TokenCounter } from '../components/TokenCounter';
 import { CallLogRow } from '../components/CallLogRow';
 import { MyTurn, PeerTurn, type ActionTarget, type ImageBody, type Quote, type VoiceBody } from '../components/Turn';
 import { SafetySheet } from './SafetySheet';
+import { RenameChatSheet } from '../components/RenameChatSheet';
+import { useConversationLabels } from '../api/conversationLabels';
 
 /*
  * The transcript's two row shapes, at module scope rather than inside the
@@ -237,6 +239,9 @@ const IDENTITY_LINES =
  * one reply per turn; against a person, sending two messages in a row is normal
  * conversation and the UI should not fight it.
  */
+/** Stable empty default for the labels map, so an unlabelled chat never re-renders. */
+const EMPTY_LABELS: ReadonlyMap<string, string> = new Map();
+
 export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onOpenEarnings }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -554,10 +559,18 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
    */
   const openAlert = useAnnounceChatOpen(conversationId, conversationId !== undefined);
 
+  const { data: conversationLabels = EMPTY_LABELS } = useConversationLabels();
+  const [renaming, setRenaming] = useState(false);
+
   const chatClosed =
     isMemberSide && !peerOffersChat && activeSession === null && pendingRequest === null;
-  const peerName = peerThread?.peer_display_name ?? provider?.display_name;
-  const name = peerName ?? 'Conversation';
+  const peerName = peerThread?.peer_display_name ?? provider?.display_name ?? 'Conversation';
+  // A private custom label (migration 098) overrides the peer's name in this
+  // person's own header, but only theirs — resolved client-side so the shared
+  // conversation view is untouched. Long-pressing the header renames it.
+  const customLabel =
+    conversationId !== undefined ? conversationLabels.get(conversationId) : undefined;
+  const name = customLabel ?? peerName;
 
   /*
    * When a session this member was in ends, ask how it went (goal item 14).
@@ -1373,12 +1386,22 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
               ? onOpenProfile(providerId)
               : setSafety({ open: true, messageId: null })
           }
+          // Long-press to rename the chat with a private label (migration 098).
+          // Only offered once the conversation exists — there is nothing to label
+          // before then.
+          onLongPress={
+            conversationId !== undefined ? () => setRenaming(true) : undefined
+          }
           testID="open-safety"
           accessibilityLabel={
             onOpenProfile !== undefined ? `${name}. View profile` : `${name}. Block or report`
           }
           accessibilityHint={
-            onOpenProfile !== undefined ? 'Opens their profile' : 'Opens safety options'
+            conversationId !== undefined
+              ? 'Long press to rename this chat'
+              : onOpenProfile !== undefined
+                ? 'Opens their profile'
+                : 'Opens safety options'
           }
           press="none"
           highlight="dim"
@@ -1845,6 +1868,14 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
         peerId={providerId}
         peerName={name}
         messageId={safety.messageId}
+      />
+
+      <RenameChatSheet
+        visible={renaming}
+        onClose={() => setRenaming(false)}
+        conversationId={conversationId}
+        currentLabel={customLabel}
+        peerName={peerName}
       />
 
       <ConfirmDialog
