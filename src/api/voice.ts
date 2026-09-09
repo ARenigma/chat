@@ -117,6 +117,11 @@ async function uploadRecording(
     xhr.onload = () => resolve(xhr.status >= 200 && xhr.status < 300);
     xhr.onerror = () => resolve(false);
     xhr.onabort = () => resolve(false);
+    // A stalled upload otherwise never settles this promise, hanging the send
+    // spinner forever (2026-09-09 audit). Settle to the same failure path as
+    // onerror so the composer can offer a retry.
+    xhr.timeout = 30000;
+    xhr.ontimeout = () => resolve(false);
     xhr.send(form);
   });
 }
