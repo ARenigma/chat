@@ -143,6 +143,19 @@ export function mergeIncoming(
 }
 
 /** Optimistic rows always go to the head, they are, by definition, newest. */
+/**
+ * The "Session ended" system-message text for an ended chat session. Sentence
+ * case, with the billed minutes when there are any (a session that never
+ * activated billed zero, so it reads without a duration). "min", not "minutes",
+ * to match the transcript's compact call-log style.
+ */
+export function sessionEndedLabel(minutesBilled: number): string {
+  if (!Number.isFinite(minutesBilled) || minutesBilled <= 0) {
+    return 'Session ended';
+  }
+  return `Session ended · ${minutesBilled} min`;
+}
+
 export function insertOptimistic(
   list: readonly TranscriptMessage[],
   optimistic: Message,
