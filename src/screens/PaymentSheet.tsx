@@ -207,11 +207,11 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
             <Icon name="check" size={TOKENS.icon.lg} color={theme.color.text.positive} />
           </View>
           <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized} allowFontScaling style={styles.successDetail}>
-            {formatRupees(amount)} tokens added
+            {formatRupees(amount)} added
           </Text>
           {successBalance !== null ? (
             <Text allowFontScaling style={styles.successBalance}>
-              Balance {formatRupees(successBalance)} tokens
+              Balance {formatRupees(successBalance)}
             </Text>
           ) : null}
         </View>

@@ -131,6 +131,27 @@ describe('mergeIncoming', () => {
   });
 });
 
+describe('insertOptimistic replaces a retried row instead of duplicating it', () => {
+  it('reviving a failed send (same pending id) keeps one row, in place', () => {
+    // A tap-to-retry or an outbox replay rebuilds the optimistic row with the
+    // SAME pending-<nonce> id. A blind prepend left the failed row beside the
+    // retried one (duplicate FlashList keys) and stranded it as a phantom
+    // "failed" bubble after the resend confirmed by a different id. (2026-09-09)
+    const earlier = message({ id: 'earlier', body: 'earlier' });
+    let list = insertOptimistic([earlier], optimistic('flaky', 1_000));
+    expect(list).toHaveLength(2);
+
+    // Retry: identical id, fresh row.
+    list = insertOptimistic(list, optimistic('flaky', 1_000));
+
+    expect(list.filter(m => m.id === `${PENDING_PREFIX}1000`)).toHaveLength(1);
+    expect(list).toHaveLength(2);
+    // Replaced in place: the revived row stays where the first send prepended it
+    // (index 0), which the preserved created_at is meant to guarantee.
+    expect(list[0]?.id).toBe(`${PENDING_PREFIX}1000`);
+  });
+});
+
 describe('settleOptimistic', () => {
   it('swaps the pending row for the confirmed one', () => {
     const pending = optimistic('hello', 1_000);

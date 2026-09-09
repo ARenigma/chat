@@ -987,12 +987,18 @@ function BarButton({
         ? LIGHT.color.text.primary
         : LIGHT.color.text.onAccent;
   return (
-    <View style={[styles.barSlot, disabled && styles.barSlotDisabled]}>
+    <View style={styles.barSlot}>
       <Pressable
-        onPress={disabled ? () => {} : onPress}
-        onLongPress={disabled ? undefined : onLongPress}
+        onPress={onPress}
+        onLongPress={onLongPress}
         testID={testID}
         accessibilityLabel={label}
+        // The Pressable owns the disabled state: it dims to 0.45, blocks the
+        // press, AND sets accessibilityState.disabled so a screen reader stops
+        // announcing an inert control as actionable. Previously `disabled` only
+        // dimmed the outer View and no-op'd onPress, leaving the a11y state
+        // false. (2026-09-09 audit)
+        disabled={disabled}
         press="none"
         highlight="dim"
         size={BTN}
@@ -1005,7 +1011,7 @@ function BarButton({
         ]}>
         <Icon name={glyph} size={TOKENS.icon.lg} color={fg} />
       </Pressable>
-      <Text allowFontScaling style={styles.barLabel}>
+      <Text allowFontScaling style={[styles.barLabel, disabled && styles.barSlotDisabled]}>
         {label}
       </Text>
     </View>

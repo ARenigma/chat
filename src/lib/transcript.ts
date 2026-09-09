@@ -147,6 +147,19 @@ export function insertOptimistic(
   list: readonly TranscriptMessage[],
   optimistic: Message,
 ): TranscriptMessage[] {
+  // A retry (tap-to-retry) or an outbox replay rebuilds the optimistic row with
+  // the SAME pending-<nonce> id. Replace the existing row in place rather than
+  // prepend a second one: a blind prepend leaves the failed row beside the
+  // retried one (duplicate FlashList keys) and, after the resend confirms by a
+  // different id, strands the original as a phantom "failed" bubble. Replacing
+  // in place also keeps the replayed row at its original position, which the
+  // preserved created_at is meant to guarantee. (2026-09-09 audit)
+  const existing = list.findIndex(m => m.id === optimistic.id);
+  if (existing !== -1) {
+    const next = [...list];
+    next[existing] = optimistic;
+    return next;
+  }
   return [optimistic, ...list];
 }
 

@@ -417,6 +417,20 @@ type PostAuthBoot =
   | { phase: 'ready' };
 
 async function bootPhaseAfterAuth(profile: Profile | null): Promise<PostAuthBoot> {
+  /*
+   * A null profile is a FAILED read, not "no profile": a signed-in user always
+   * has a profile row (created on signup). Before this guard, a null profile
+   * evaluated every needsUsername/needsAge/needsLanguages below as false (the
+   * needsX helpers treat undefined as "not needed"), so a transient failure of
+   * the profiles query — while the policy RPC happened to succeed — could
+   * advance a member straight to `ready`, skipping the age, username and
+   * language gates. The age gate is a legal/safety gate (ADR-0043), so this must
+   * fail closed. Throwing routes the main boot to its retryable error screen
+   * rather than silently bypassing a gate. (2026-09-09 audit)
+   */
+  if (profile === null) {
+    throw new Error('Could not load your profile. Check your connection and try again.');
+  }
   const p = profile ?? undefined;
   /*
    * Product identity rule: a new member is defined by an empty wallet, not by

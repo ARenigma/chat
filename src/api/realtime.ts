@@ -147,6 +147,12 @@ export function useLiveConversation(
       if (data.session?.access_token !== undefined) {
         await supabase.realtime.setAuth(data.session.access_token);
       }
+      // Re-check after the setAuth await too: a fast conversation switch during
+      // it would otherwise subscribe (and orphan) this channel, since the
+      // cleanup already ran before subscribe was ever called. Found 2026-09-09.
+      if (cancelled) {
+        return;
+      }
       channel.subscribe(status => {
         if (status === 'SUBSCRIBED') {
           // No `channel.track()` any more. It published this device's connection
