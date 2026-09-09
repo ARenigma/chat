@@ -173,7 +173,7 @@ Deno.serve(async (request: Request) => {
   if (eventType === 'PAYMENT_SUCCESS_WEBHOOK') {
     const { data: txRow, error: txErr } = await admin
       .from('token_transactions')
-      .select('id, user_id, tokens_delta, status')
+      .select('id, user_id, tokens_delta, amount_paise, status')
       .eq('id', orderId)
       .single();
 
@@ -182,7 +182,32 @@ Deno.serve(async (request: Request) => {
       return new Response('ok', { status: 200 });
     }
 
-    const tx = txRow as { id: string; user_id: string; tokens_delta: number; status: string };
+    const tx = txRow as {
+      id: string;
+      user_id: string;
+      tokens_delta: number;
+      amount_paise: number;
+      status: string;
+    };
+
+    // Defense in depth (2026-09-10 audit): the credit comes from OUR stored
+    // tokens_delta, never the payload, so the webhook cannot inflate it. But
+    // confirm the amount the webhook reports matches the amount we recorded when
+    // we created the order before crediting at all — a mismatch means the order
+    // is not the one we think it is, and we must not credit it. Cashfree reports
+    // order_amount in rupees; our amount_paise is paise.
+    const reportedRupees =
+      typeof order?.order_amount === 'number'
+        ? order.order_amount
+        : Number(order?.order_amount);
+    const reportedPaise = Math.round(reportedRupees * 100);
+    if (!Number.isFinite(reportedPaise) || reportedPaise !== tx.amount_paise) {
+      console.error(
+        `cashfree-webhook: order ${orderId} amount mismatch — reported ${reportedPaise}p vs recorded ${tx.amount_paise}p; not crediting`,
+      );
+      return new Response('ok', { status: 200 });
+    }
+
     const { error: creditErr } = await admin.rpc('credit_purchased_recharge', {
       p_user_id: tx.user_id,
       p_amount: tx.tokens_delta,

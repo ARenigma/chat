@@ -999,6 +999,10 @@ function BarButton({
         // dimmed the outer View and no-op'd onPress, leaving the a11y state
         // false. (2026-09-09 audit)
         disabled={disabled}
+        // Toggle state (Mute/Speaker/Camera) reaches accessibilityState.selected,
+        // so TalkBack announces on/off instead of only the static label. Undefined
+        // for non-toggles like End Call, which the primitive then omits. (audit)
+        selected={active}
         press="none"
         highlight="dim"
         size={BTN}

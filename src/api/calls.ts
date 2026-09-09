@@ -14,6 +14,7 @@
 import { useEffect, useRef } from 'react';
 import type { PostgrestError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { reportSwallowed } from '../lib/sentry';
 import { ENV } from '../lib/env';
 import type {
   CallMediaBackend,
@@ -204,7 +205,7 @@ export function useIncomingCalls(
       return;
     }
     async function recoverRinging() {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('calls')
         .select(
           'id, conversation_id, caller_id, medium, status, media_backend, media_experiment_id',
@@ -214,6 +215,13 @@ export function useIncomingCalls(
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
+      // Best-effort recovery of a ring that arrived while the socket was down, so
+      // it does not throw — but a persistent failure here means silently missed
+      // calls, which must not be invisible. (2026-09-10 audit)
+      if (error) {
+        reportSwallowed('recoverRinging', error);
+        return;
+      }
       if (data && data.status === 'ringing') {
         onIncoming({
           callId: data.id,

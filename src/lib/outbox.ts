@@ -117,6 +117,30 @@ export function forConversation(
 }
 
 /**
+ * The age past which a queued entry is abandoned.
+ *
+ * Replay runs on ChatScreen mount for that entry's conversation, so an entry
+ * whose conversation is never reopened (deleted, or simply never revisited)
+ * would otherwise sit in MMKV forever. A week is well past any plausible offline
+ * window; a text this stale is better dropped than resurrected into a thread
+ * nobody is looking at.
+ */
+export const OUTBOX_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Drop entries older than `ttlMs`, measured from `createdAt`. */
+export function withoutExpired(
+  list: readonly OutboxEntry[],
+  nowMs: number,
+  ttlMs: number = OUTBOX_TTL_MS,
+): OutboxEntry[] {
+  return list.filter(e => {
+    const t = Date.parse(e.createdAt);
+    // An unparseable timestamp is itself reason enough to drop the entry.
+    return Number.isFinite(t) && nowMs - t < ttlMs;
+  });
+}
+
+/**
  * Validate one decoded entry.
  *
  * Storage is not a trusted input: it survives upgrades, and a shape written by

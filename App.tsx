@@ -49,6 +49,7 @@ import {
   type ProviderRoute,
 } from './src/lib/routes';
 import { initSentry } from './src/lib/sentry';
+import { sweepExpiredOutbox } from './src/lib/outboxStore';
 import { isUuid } from './src/lib/ids';
 import { track } from './src/lib/telemetry';
 import {
@@ -546,10 +547,9 @@ function Root() {
   providerRouteRef.current = providerRoute;
   const resetConversation = useStore(s => s.resetConversation);
   const setNotice = useStore(s => s.setNotice);
-  const refillVisible = useStore(s => s.refillVisible);
-  const closeRefill = useStore(s => s.closeRefill);
-  const walletVisible = useStore(s => s.walletVisible);
-  const closeWallet = useStore(s => s.closeWallet);
+  // walletVisible/refillVisible and their close actions are read live via
+  // useStore.getState() inside the hardware-back handler (so it never
+  // re-subscribes); they are intentionally not selected here.
   const pendingProviderApply = useStore(s => s.pendingProviderApply);
 
 
@@ -691,6 +691,25 @@ function Root() {
         message: err instanceof Error ? err.message : 'Could not continue. Please try again.',
       });
     }
+  }, []);
+
+  /*
+   * A `signedOut` boot message (the rare browser-redirect auth failure) surfaces
+   * as a toast. Done in an effect, not inside the render branch below: a store
+   * write during render is a side effect that React StrictMode double-fires and
+   * that can warn about updating another component while rendering. (2026-09-10)
+   */
+  useEffect(() => {
+    if (boot.phase === 'signedOut' && boot.message !== undefined) {
+      setNotice(boot.message);
+    }
+  }, [boot, setNotice]);
+
+  // Prune outbox entries too old to replay — their conversation was never
+  // reopened, so per-conversation replay would never collect them. Once per
+  // launch. (2026-09-10 audit)
+  useEffect(() => {
+    sweepExpiredOutbox();
   }, []);
 
 
@@ -982,13 +1001,19 @@ function Root() {
         useHomeTour.getState().skip();
         return true;
       }
-      if (walletVisible) {
+      // Overlay state and its close actions are read from the store HERE, not
+      // from the effect's deps, for the same reason the route is read via a ref:
+      // otherwise toggling the wallet/refill overlay tore down and re-subscribed
+      // this listener, the very re-subscription jank the ref pattern avoids, and
+      // it let a chat's own back guard be outranked mid-session. (2026-09-10)
+      const store = useStore.getState();
+      if (store.walletVisible) {
         setNavDirection('back');
-        closeWallet();
+        store.closeWallet();
         return true;
       }
-      if (refillVisible) {
-        closeRefill();
+      if (store.refillVisible) {
+        store.closeRefill();
         return true;
       }
       // Below the overlays, above any route pop: a screen with something to
@@ -1013,7 +1038,7 @@ function Root() {
       const parent = memberParent(route);
       if (parent !== null) {
         if (route.name === 'chat') {
-          resetConversation();
+          store.resetConversation();
         }
         // A hardware/gesture back is always a pop, so the leaving screen slides
         // off to the right and its parent enters from the left. Home's slide is
@@ -1044,9 +1069,10 @@ function Root() {
     };
     const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
     return () => sub.remove();
-  // route and providerRoute are intentionally omitted: they are read via refs
-  // inside onBack so the listener is stable across navigations.
-  }, [walletVisible, closeWallet, refillVisible, closeRefill, resetConversation]);
+  // Empty deps: the listener is registered ONCE for Root's lifetime. Route,
+  // overlay state and store actions are all read live inside onBack (refs and
+  // useStore.getState()), so nothing here forces a re-subscription.
+  }, []);
 
   /*
    * The client-support gate, ahead of EVERY other phase including sign-out.
@@ -1141,11 +1167,9 @@ function Root() {
      *
      * A `boot.message` (the rare browser-redirect auth failure) has nowhere
      * dedicated to show anymore, so it surfaces as the ordinary toast notice
-     * instead of a bespoke error screen.
+     * instead of a bespoke error screen — see the effect above that shows it, so
+     * this render stays free of side effects.
      */
-    if (boot.message !== undefined) {
-      setNotice(boot.message);
-    }
     return (
       <OnboardingScreen
         onDone={() => {

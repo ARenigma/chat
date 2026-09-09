@@ -101,8 +101,11 @@ describe('the gate is actually wired, not just written', () => {
 
   it('renders ahead of every boot phase, including signed-out', () => {
     const gate = app.indexOf('support.state === ');
-    const loading = app.indexOf("boot.phase === 'loading'");
-    const signedOut = app.indexOf("boot.phase === 'signedOut'");
+    // Match the RENDER branches specifically (`) {`), not an effect that merely
+    // reads the phase — e.g. the signedOut boot-message toast effect also
+    // contains `boot.phase === 'signedOut'`, and it sits above the gate.
+    const loading = app.indexOf("boot.phase === 'loading') {");
+    const signedOut = app.indexOf("boot.phase === 'signedOut') {");
     expect(gate).toBeGreaterThan(0);
     expect(loading).toBeGreaterThan(0);
     // An unsupported build must not reach sign-in: the one thing it cannot do
