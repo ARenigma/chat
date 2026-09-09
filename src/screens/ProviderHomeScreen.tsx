@@ -22,6 +22,7 @@ import { sizedStorageImageUri } from '../lib/storageImage';
 import { listStamp } from '../lib/datetime';
 import { track } from '../lib/telemetry';
 import { useConversations, useProfile } from '../api/chat';
+import { useConversationLabels } from '../api/conversationLabels';
 import {
   useAddProviderPhotos,
   useEarnings,
@@ -120,6 +121,7 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
   const insets = useSafeAreaInsets();
   const { data: profile } = useProfile();
   const { data: allThreads, isPending } = useConversations();
+  const { data: conversationLabels } = useConversationLabels();
   const { data: earnings } = useEarnings();
   const setAvailability = useSetAvailability();
   const setChannels = useSetChannels();
@@ -228,9 +230,12 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
         ? Number(item.unread_count_member)
         : Number(item.unread_count_provider);
       const unread = unreadCount > 0;
-      // Members are not in the directory and have no published name — numbered,
-      // not "Member" over and over.
-      const label = item.peer_display_name ?? `Member ${item.peer_id.slice(0, 4)}`;
+      // A private custom label (migration 098) wins; else the member's published
+      // name; else a number — members are not in the directory and share no name.
+      const label =
+        conversationLabels?.get(item.conversation_id) ??
+        item.peer_display_name ??
+        `Member ${item.peer_id.slice(0, 4)}`;
       return (
         <Pressable
           onPress={() => onOpenConversation(item.peer_id)}
@@ -276,7 +281,7 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
         </Pressable>
       );
     },
-    [onOpenConversation, styles],
+    [onOpenConversation, styles, conversationLabels],
   );
 
   const separator = useCallback(() => <View style={styles.separator} />, [styles]);

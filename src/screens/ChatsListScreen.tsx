@@ -13,6 +13,7 @@ import { timeOfDay } from '../lib/datetime';
 import { readPresence } from '../lib/presence';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { useConversations, useProfile } from '../api/chat';
+import { useConversationLabels } from '../api/conversationLabels';
 import { useBlockedPeerIds } from '../api/safety';
 import type { ConversationSummary } from '../lib/database.types';
 import { Avatar } from '../components/Avatar';
@@ -157,7 +158,10 @@ function ChatListRow({
 }) {
   const styles = useStyles(makeStyles);
   const hostRef = useRef<View>(null);
-  const name = c.peer_display_name ?? 'Conversation';
+  // A private custom label (migration 098) overrides the peer name in this
+  // person's own inbox. The query is shared/deduped across rows by React Query.
+  const { data: labels } = useConversationLabels();
+  const name = labels?.get(c.conversation_id) ?? c.peer_display_name ?? 'Conversation';
   const unreadCount = c.i_am_member
     ? Number(c.unread_count_member)
     : Number(c.unread_count_provider);

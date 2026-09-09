@@ -5853,3 +5853,47 @@ describe('the member reads rupees; "token" is a storage word, never a shown one'
     }
   });
 });
+
+describe('rename chat — private per-user conversation labels', () => {
+  it('migration 098 creates a per-user labels table, RLS, and a participant-guarded setter', () => {
+    const m = read('supabase/migrations/098_conversation_labels.sql');
+    expect(m).toContain('create table if not exists public.conversation_labels');
+    expect(m).toContain('primary key (user_id, conversation_id)');
+    expect(m).toContain('enable row level security');
+    // Read is owner-scoped; there is no direct write policy — writes go through
+    // the setter, which checks participation.
+    expect(m).toContain('for select');
+    expect(m).toContain('auth.uid() = user_id');
+    expect(m).toContain('create or replace function public.set_conversation_name');
+    expect(m).toMatch(/c\.member_id = v_uid or c\.provider_id = v_uid/);
+    // A blank name clears the label rather than storing an empty string.
+    expect(m).toContain('delete from public.conversation_labels');
+    expect(m).toContain('grant execute on function public.set_conversation_name(uuid, text) to authenticated');
+  });
+
+  it('the setter is client-callable but the table is not directly writable', () => {
+    const api = read('src/api/conversationLabels.ts');
+    expect(api).toContain("rpc('set_conversation_name'");
+    // The client only SELECTs the labels; it never inserts/updates the table.
+    expect(api).toContain("from('conversation_labels')");
+    expect(api).not.toMatch(/from\('conversation_labels'\)[\s\S]{0,80}\.(insert|update|delete|upsert)\(/);
+  });
+
+  it('ChatScreen long-presses the header to rename and resolves the private label', () => {
+    const chat = read('src/screens/ChatScreen.tsx');
+    expect(chat).toContain('useConversationLabels');
+    expect(chat).toContain('RenameChatSheet');
+    expect(chat).toContain('setRenaming(true)');
+    expect(chat).toContain('onLongPress');
+    // The label overrides the peer name in this person's own header.
+    expect(chat).toMatch(/customLabel\s*\?\?\s*peerName/);
+  });
+
+  it('both inboxes show the private label over the peer name', () => {
+    for (const file of ['src/screens/ChatsListScreen.tsx', 'src/screens/ProviderHomeScreen.tsx']) {
+      const src = read(file);
+      expect(src).toContain('useConversationLabels');
+      expect(src).toMatch(/labels\??\.get\(|conversationLabels\??\.get\(/);
+    }
+  });
+});

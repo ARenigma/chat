@@ -136,6 +136,7 @@ const MIGRATIONS = [
   'supabase/migrations/095_session_duration_equals_billed_minutes.sql',
   'supabase/migrations/096_block_requires_prior_conversation.sql',
   'supabase/migrations/097_recharge_helpers_credit_the_bucket.sql',
+  'supabase/migrations/098_conversation_labels.sql',
 ];
 
 /**
