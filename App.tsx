@@ -431,7 +431,8 @@ async function bootPhaseAfterAuth(profile: Profile | null): Promise<PostAuthBoot
   if (profile === null) {
     throw new Error('Could not load your profile. Check your connection and try again.');
   }
-  const p = profile ?? undefined;
+  // Non-null past the guard; the optional chaining below is defensive, not for null.
+  const p = profile;
   /*
    * Product identity rule: a new member is defined by an empty wallet, not by
    * nullable profile-migration fields. Existing funded accounts can predate
@@ -661,6 +662,36 @@ function Root() {
       cancelled = true;
     };
   }, [attempt]);
+
+  /*
+   * Re-read the profile and advance the boot machine, one decision point for
+   * every gate-transition callback below.
+   *
+   * bootPhaseAfterAuth now THROWS on a failed profile read (a null profile is a
+   * read failure, not "no profile" — see its guard, which closes a gate-bypass).
+   * The four transition callbacks used to inline this three-line block with no
+   * catch, so a thrown read would become an uncaught rejection. That is
+   * especially dangerous for `welcomePappal`, whose onDone fires AUTOMATICALLY
+   * after the animation with no button to retry — a transient failure there
+   * would strand the user on a finished animation. Routing a throw to the
+   * retryable error screen (the same place the boot effect's own catch goes)
+   * keeps every path recoverable. (2026-09-09 audit)
+   */
+  const advanceBootAfterProfile = useCallback(async () => {
+    try {
+      const profile = await getSignedInProfile();
+      const nextBoot = await bootPhaseAfterAuth(profile);
+      setBoot(nextBoot);
+      if (nextBoot.phase === 'ready') {
+        track('app_open');
+      }
+    } catch (err) {
+      setBoot({
+        phase: 'error',
+        message: err instanceof Error ? err.message : 'Could not continue. Please try again.',
+      });
+    }
+  }, []);
 
 
   /**
@@ -1147,12 +1178,7 @@ function Root() {
              * re-run the boot check so policy gate / ready follows correctly.
              * No welcome animation — they have already seen it.
              */
-            const profile = await getSignedInProfile();
-            const nextBoot = await bootPhaseAfterAuth(profile);
-            setBoot(nextBoot);
-            if (nextBoot.phase === 'ready') {
-              track('app_open');
-            }
+            await advanceBootAfterProfile();
           }
         }}
       />
@@ -1162,14 +1188,7 @@ function Root() {
   if (boot.phase === 'welcomePappal') {
     return (
       <WelcomePappalScreen
-        onDone={async () => {
-          const profile = await getSignedInProfile();
-          const nextBoot = await bootPhaseAfterAuth(profile);
-          setBoot(nextBoot);
-          if (nextBoot.phase === 'ready') {
-            track('app_open');
-          }
-        }}
+        onDone={advanceBootAfterProfile}
       />
     );
   }
@@ -1182,12 +1201,7 @@ function Root() {
         onAccepted={async () => {
           // Not straight to ready: the boot machine decides what comes after
           // policies (ADR-0026 puts the permissions gate there).
-          const profile = await getSignedInProfile();
-          const nextBoot = await bootPhaseAfterAuth(profile);
-          setBoot(nextBoot);
-          if (nextBoot.phase === 'ready') {
-            track('app_open');
-          }
+          await advanceBootAfterProfile();
         }}
       />
     );
@@ -1198,14 +1212,7 @@ function Root() {
   if (boot.phase === 'permissions') {
     return (
       <PermissionsScreen
-        onGranted={async () => {
-          const profile = await getSignedInProfile();
-          const nextBoot = await bootPhaseAfterAuth(profile);
-          setBoot(nextBoot);
-          if (nextBoot.phase === 'ready') {
-            track('app_open');
-          }
-        }}
+        onGranted={advanceBootAfterProfile}
         onSignOut={() => {
           void signOut();
         }}

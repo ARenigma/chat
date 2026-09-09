@@ -1128,7 +1128,9 @@ const makeStyles = (t: Theme) =>
       width: 76,
     },
     barSlotDisabled: {
-      opacity: 0.4,
+      // Matches the Pressable's own disabled dim (0.45) so the icon and its
+      // label fade to the same level. (2026-09-09 review)
+      opacity: 0.45,
     },
     barButton: {
       width: BTN,
