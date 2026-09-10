@@ -84,6 +84,10 @@ COLUMN calls.session_request_id uuid null=YES default=-
 COLUMN calls.started_at timestamp with time zone null=YES default=-
 COLUMN calls.status USER-DEFINED null=NO default='ringing'::call_status
 COLUMN calls.tokens_debited integer null=NO default=0
+COLUMN conversation_labels.conversation_id uuid null=NO default=-
+COLUMN conversation_labels.custom_name text null=NO default=-
+COLUMN conversation_labels.updated_at timestamp with time zone null=NO default=now()
+COLUMN conversation_labels.user_id uuid null=NO default=-
 COLUMN conversation_opener_templates.body text null=NO default=-
 COLUMN conversation_opener_templates.created_at timestamp with time zone null=NO default=now()
 COLUMN conversation_opener_templates.is_approved boolean null=NO default=true
@@ -597,6 +601,10 @@ CONSTRAINT calls.calls_minutes_billed_check CHECK ((minutes_billed >= 0))
 CONSTRAINT calls.calls_pkey PRIMARY KEY (id)
 CONSTRAINT calls.calls_session_request_id_fkey FOREIGN KEY (session_request_id) REFERENCES session_requests(id)
 CONSTRAINT calls.calls_tokens_debited_check CHECK ((tokens_debited >= 0))
+CONSTRAINT conversation_labels.conversation_labels_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+CONSTRAINT conversation_labels.conversation_labels_custom_name_check CHECK (((char_length(btrim(custom_name)) >= 1) AND (char_length(btrim(custom_name)) <= 40)))
+CONSTRAINT conversation_labels.conversation_labels_pkey PRIMARY KEY (user_id, conversation_id)
+CONSTRAINT conversation_labels.conversation_labels_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
 CONSTRAINT conversation_opener_templates.conversation_opener_templates_body_check CHECK (((length(btrim(body)) > 0) AND (length(body) <= 4000)))
 CONSTRAINT conversation_opener_templates.conversation_opener_templates_pkey PRIMARY KEY (step)
 CONSTRAINT conversation_opener_templates.conversation_opener_templates_step_check CHECK ((step > 0))
@@ -1864,6 +1872,7 @@ FUNCTION sequences_are(name[]) returns text security=invoker
 FUNCTION sequences_are(name[], text) returns text security=invoker
 FUNCTION server_privs_are(name, name, name[]) returns text security=invoker
 FUNCTION server_privs_are(name, name, name[], text) returns text security=invoker
+FUNCTION set_conversation_name(p_conversation_id uuid, p_name text) returns void security=definer
 FUNCTION set_eq(text, anyarray) returns text security=invoker
 FUNCTION set_eq(text, anyarray, text) returns text security=invoker
 FUNCTION set_eq(text, text) returns text security=invoker
@@ -1883,6 +1892,7 @@ FUNCTION set_next_call_media_backend(p_conversation_id uuid, p_backend call_medi
 FUNCTION set_provider_expertise(p_expertise text[]) returns text[] security=definer
 FUNCTION settle_call(p_call_id uuid) returns calls security=definer
 FUNCTION settle_provider_payout_batch(p_batch_id uuid, p_cashfree_id text, p_ok boolean) returns void security=definer
+FUNCTION share_conversation(p_a uuid, p_b uuid) returns boolean security=definer
 FUNCTION skip(integer) returns text security=invoker
 FUNCTION skip(integer, text) returns text security=invoker
 FUNCTION skip(text) returns text security=invoker
@@ -1998,6 +2008,7 @@ INDEX calls_one_live_per_caller_idx CREATE UNIQUE INDEX calls_one_live_per_calle
 INDEX calls_one_live_per_conversation_idx CREATE UNIQUE INDEX calls_one_live_per_conversation_idx ON public.calls USING btree (conversation_id) WHERE (status = ANY (ARRAY['ringing'::call_status, 'active'::call_status]))
 INDEX calls_pkey CREATE UNIQUE INDEX calls_pkey ON public.calls USING btree (id)
 INDEX calls_session_request_unique CREATE UNIQUE INDEX calls_session_request_unique ON public.calls USING btree (session_request_id) WHERE (session_request_id IS NOT NULL)
+INDEX conversation_labels_pkey CREATE UNIQUE INDEX conversation_labels_pkey ON public.conversation_labels USING btree (user_id, conversation_id)
 INDEX conversation_opener_templates_pkey CREATE UNIQUE INDEX conversation_opener_templates_pkey ON public.conversation_opener_templates USING btree (step)
 INDEX conversation_thread_meta_pkey CREATE UNIQUE INDEX conversation_thread_meta_pkey ON public.conversation_thread_meta USING btree (conversation_id)
 INDEX conversations_member_id_provider_id_key CREATE UNIQUE INDEX conversations_member_id_provider_id_key ON public.conversations USING btree (member_id, provider_id)
@@ -2081,6 +2092,7 @@ POLICY public.blocks.Owner creates own blocks cmd=INSERT roles=public
 POLICY public.blocks.Owner reads own blocks cmd=SELECT roles=public
 POLICY public.blocks.Owner removes own blocks cmd=DELETE roles=public
 POLICY public.calls.Participants read their calls cmd=SELECT roles=public
+POLICY public.conversation_labels.Owner reads own conversation labels cmd=SELECT roles=public
 POLICY public.conversation_thread_meta.Participants read thread meta cmd=SELECT roles=authenticated
 POLICY public.conversations.Participants read their conversation cmd=SELECT roles=public
 POLICY public.events.Own events insertable cmd=INSERT roles=public
@@ -2121,6 +2133,7 @@ RLS call_media_test_allowlist enabled=true
 RLS call_quality_runs enabled=true
 RLS call_quality_samples enabled=true
 RLS calls enabled=true
+RLS conversation_labels enabled=true
 RLS conversation_opener_templates enabled=true
 RLS conversation_thread_meta enabled=true
 RLS conversations enabled=true
