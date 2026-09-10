@@ -1,7 +1,8 @@
-Calling, wallet, and notification fixes.
+A fresh coral look, and privacy and polish fixes.
 
-• Speaker and video toggles now work in every call
-• Wallet updates during and right after a session
-• Message notifications arrive instantly
-• Permissions are re-checked when you return to the app
-• Provider app polish: wallet, unread badges, and branding
+• New coral brand colour across the app, including your chat bubbles
+• Screenshots and recordings are now blocked in chats, photos and sheets
+• Your provider profile is one clean screen — availability, photos, earnings and settings together
+• Providers can review and unblock people they've blocked
+• Chat headers open with the right name instead of a brief placeholder
+• Faster, smaller app download
