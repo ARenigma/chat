@@ -35,6 +35,7 @@ import {
 } from 'react-native-cashfree-pg-sdk';
 import { supabase } from '../lib/supabase';
 import { track } from '../lib/telemetry';
+import { currentVersionCode } from '../lib/appUpdate';
 import { CASHFREE_SANDBOX_CHECKOUT } from '../config';
 
 // ---------------------------------------------------------------------------
@@ -88,8 +89,12 @@ export function productIdForPack(amountInr: number): string {
 
 /** Step 1: create a pending Cashfree order on the server. Secrets stay server-side. */
 async function createOrder(productId: string): Promise<RechargeResult> {
+  // Send this build's versionCode so the server can refuse to charge a client
+  // that predates the GST-inclusive recharge UI (it would show ₹300 but be
+  // billed ₹354). Old builds send nothing and are rejected with 426; this build
+  // sends a real code and proceeds. See the guard in supabase/functions/create-order.
   const { data, error } = await supabase.functions.invoke<RechargeResult>('create-order', {
-    body: { productId },
+    body: { productId, appVersionCode: currentVersionCode() },
   });
   if (error || !data) throw error ?? new Error('create-order returned no data');
   return data;
