@@ -879,3 +879,18 @@ cannot be signed off from the repo.
   coordinated build+deploy, not a standalone edge-function push, and it changes real
   billing — it is deliberately NOT done unilaterally here. See
   docs/runbooks/create-order-deploy.md.
+
+### Update — FLAG_SECURE on modals: implemented (2026-09-10)
+
+Fixed, pending only device verification. RN's `ReactModalHostView.dialog` is a
+PUBLIC field, so no reflection and no Fabric custom component are needed: a new
+`WindowChromeModule.secureModal(tag, secure)` resolves the modal from its JS node
+handle (`findNodeHandle`) and sets `FLAG_SECURE` on `dialog.window`. Wired via the
+modal `onShow` in `MediaViewer` (full-screen media) and `Sheet` (all bottom
+sheets — recharge/session/message content) through `secureModal()` in
+`src/lib/windowChrome.ts`. Gated on `BuildConfig.BLOCK_SCREENSHOTS`, exactly like
+MainActivity, so debug and named-tester builds stay capturable. Worst case (a
+wrong tag / cast miss) is a no-op — never worse than today's exposure — so it
+ships without regression risk. STILL REQUIRED before it counts as closed:
+`adb exec-out screencap -p` must return black over an open MediaViewer and an open
+Sheet on a release/closedTest build. A screenshot block cannot be unit-tested.
