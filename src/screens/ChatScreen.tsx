@@ -577,7 +577,20 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
 
   const chatClosed =
     isMemberSide && !peerOffersChat && activeSession === null && pendingRequest === null;
-  const peerName = peerThread?.peer_display_name ?? provider?.display_name ?? 'Conversation';
+  /*
+   * Cold open: `threads` and `providers` are both undefined for the first frames
+   * after launch or a deep link, so the name has no source yet. Falling straight
+   * to the literal 'Conversation' made the header flash that wrong word before
+   * the real name arrived. Assert it ONLY once the sources have actually resolved
+   * — while either is still loading the title is blank (the bar reserves its
+   * height regardless, so nothing shifts), and the real name fades in the moment
+   * `peer_display_name` or the directory row lands. 'Conversation' is then the
+   * genuine dead-end (no summary row and no directory entry), which effectively
+   * never happens because every thread has a peer.
+   */
+  const nameFromData = peerThread?.peer_display_name ?? provider?.display_name;
+  const identityLoading = threads === undefined || providers === undefined;
+  const peerName = nameFromData ?? (identityLoading ? '' : 'Conversation');
   // A private custom label (migration 098) overrides the peer's name in this
   // person's own header, but only theirs — resolved client-side so the shared
   // conversation view is untouched. Long-pressing the header renames it.
