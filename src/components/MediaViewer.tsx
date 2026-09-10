@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useEffect } from 'react';
+import React, { memo, useCallback, useEffect, useRef } from 'react';
 import {
   Image,
   Modal,
@@ -28,6 +28,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import { GESTURE, sheetIn, sheetOut } from '../theme/motion';
+import { secureModal } from '../lib/windowChrome';
 import { useAttachmentUrl } from '../api/attachments';
 import { sizedStorageImageUri } from '../lib/storageImage';
 import { Icon } from './Icon';
@@ -280,6 +281,11 @@ function MediaViewerView({
   const styles = useStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const { width: winW, height: winH } = useWindowDimensions();
+  // The viewer is a separate Dialog window, so the activity's FLAG_SECURE does
+  // not reach it — a photo opened full-screen would be screenshot-capturable.
+  // Secure the dialog window on show (see src/lib/windowChrome.ts). No-op except
+  // on a screenshot-blocking build.
+  const modalRef = useRef<Modal>(null);
   const density = PixelRatio.get();
 
   /*
@@ -533,6 +539,8 @@ function MediaViewerView({
 
   return (
     <Modal
+      ref={modalRef}
+      onShow={() => secureModal(modalRef)}
       visible={image !== null}
       transparent
       animationType="fade"

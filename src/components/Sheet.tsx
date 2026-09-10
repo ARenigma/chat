@@ -23,7 +23,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import { GESTURE, INTERACTION, sheetIn, sheetOut } from '../theme/motion';
-import { setSheetBackdropBlur } from '../lib/windowChrome';
+import { secureModal, setSheetBackdropBlur } from '../lib/windowChrome';
 import { trackSheetClosed } from '../lib/perfTelemetry';
 import { Pressable } from './Pressable';
 
@@ -108,6 +108,11 @@ function SheetView({
   const styles = useStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
+  // The sheet is a separate Dialog window, so the activity's FLAG_SECURE does
+  // not reach it. Secure the dialog window on show — sheets carry recharge,
+  // session and message content. No-op except on a screenshot-blocking build
+  // (see src/lib/windowChrome.ts).
+  const modalRef = useRef<Modal>(null);
   // Always cap so a tall form cannot become a full-page sheet. `large` is the
   // 90% Material expanded detent; `auto` wraps content and only uses the cap
   // when the stack would otherwise overflow.
@@ -240,6 +245,8 @@ function SheetView({
 
   return (
     <Modal
+      ref={modalRef}
+      onShow={() => secureModal(modalRef)}
       visible={visible}
       transparent
       // Fade, not slide: the sheet itself slides via Reanimated (see the entry

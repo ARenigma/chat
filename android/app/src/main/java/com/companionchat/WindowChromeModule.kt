@@ -11,6 +11,9 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.UiThreadUtil
+import com.facebook.react.uimanager.UIManagerHelper
+import com.facebook.react.uimanager.common.ViewUtil
+import com.facebook.react.views.modal.ReactModalHostView
 
 /**
  * Window-level chrome the JS sheets cannot reach: activity backdrop blur and
@@ -119,6 +122,43 @@ class WindowChromeModule(private val reactContext: ReactApplicationContext) :
                 win.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
             } else {
                 win.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            }
+        }
+    }
+
+    /**
+     * Apply FLAG_SECURE to an RN Modal's OWN Dialog window.
+     *
+     * MainActivity secures the ACTIVITY window, but a React Native [Modal] is a
+     * separate [android.app.Dialog] with its own window that does not inherit the
+     * activity's flags — so a screenshot or recording over an open sheet or the
+     * full-screen media viewer is otherwise NOT blocked, which is exactly the
+     * sensitive content the flag exists to protect. This reaches the modal's
+     * public `dialog` field ([ReactModalHostView.dialog], resolved from the JS
+     * node handle — no reflection) and sets the flag on its window.
+     *
+     * `tag` is `findNodeHandle(modalRef)` from JS; the caller invokes this from
+     * the modal's `onShow`, by which point the dialog exists. Gated on
+     * `BuildConfig.BLOCK_SCREENSHOTS` exactly like MainActivity, so debug and the
+     * named-tester variants keep their modals capturable for defect reports; in
+     * those builds this is an unconditional no-op.
+     *
+     * https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE
+     */
+    @ReactMethod
+    fun secureModal(tag: Double, secure: Boolean) {
+        if (!BuildConfig.BLOCK_SCREENSHOTS) return
+        val viewTag = tag.toInt()
+        UiThreadUtil.runOnUiThread {
+            val uiManager =
+                UIManagerHelper.getUIManager(reactContext, ViewUtil.getUIManagerType(viewTag))
+                    ?: return@runOnUiThread
+            val host = uiManager.resolveView(viewTag) as? ReactModalHostView ?: return@runOnUiThread
+            val win = host.dialog?.window ?: return@runOnUiThread
+            if (secure) {
+                win.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            } else {
+                win.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
             }
         }
     }

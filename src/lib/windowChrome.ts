@@ -1,4 +1,5 @@
-import { NativeModules, Platform } from 'react-native';
+import { findNodeHandle, NativeModules, Platform } from 'react-native';
+import type { Component, RefObject } from 'react';
 
 /**
  * Activity backdrop blur while an M3 Paper sheet is up.
@@ -11,9 +12,31 @@ const native = (
     WindowChrome?: {
       setActivityBlur: (enabled: boolean) => void;
       getRefreshRate: () => Promise<number | null>;
+      secureModal: (tag: number, secure: boolean) => void;
     };
   }
 ).WindowChrome;
+
+/**
+ * Apply FLAG_SECURE to an RN Modal's OWN Dialog window.
+ *
+ * MainActivity secures the activity window, but each RN `Modal` is a separate
+ * Dialog window that does NOT inherit it, so a screenshot over an open sheet or
+ * the full-screen media viewer is otherwise not blocked. Call from the modal's
+ * `onShow` (the native dialog exists by then), passing the modal's ref; this
+ * resolves its node handle and hands it to the native side, which sets the flag
+ * on the dialog window. No-op off Android, in Jest, or on any build that does
+ * not block screenshots (the native side gates on BuildConfig.BLOCK_SCREENSHOTS,
+ * matching the activity — debug and named-tester builds stay capturable).
+ *
+ * MUST be verified with `adb exec-out screencap` returning black over the open
+ * modal on a release/closedTest build; a screenshot block cannot be unit-tested.
+ */
+export function secureModal(ref: RefObject<Component | null>): void {
+  if (Platform.OS !== 'android' || native?.secureModal === undefined) return;
+  const tag = findNodeHandle(ref.current);
+  if (tag != null) native.secureModal(tag, true);
+}
 
 let holders = 0;
 
