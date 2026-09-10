@@ -172,7 +172,7 @@ describe('a call asks for feedback too', () => {
     expect(call).toContain("const isMemberSide = peerThread?.i_am_member ?? true");
     expect(reviewEffect).toContain('isMemberSideRef.current');
     // The chat half keeps its own gate.
-    expect(chat).toMatch(/if \(isMemberSide\) \{\s*requestReview\(previous, name\);/);
+    expect(chat).toMatch(/if \(isMemberSide && name !== ''\) \{\s*requestReview\(previous, name\);/);
   });
 });
 

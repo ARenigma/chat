@@ -621,7 +621,11 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
     }
     if (previous !== null) {
       liveSessionRef.current = null;
-      if (isMemberSide) {
+      // `name` is blank only in the cold-open loading window (identity not
+      // resolved). A session cannot end before its own thread has loaded, so
+      // this is theoretical — but a blank name in the review sheet is worse than
+      // deferring, and the review is re-driven off the same edge if it recurs.
+      if (isMemberSide && name !== '') {
         requestReview(previous, name);
       }
     }

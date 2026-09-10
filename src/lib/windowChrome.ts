@@ -31,6 +31,14 @@ const native = (
  *
  * MUST be verified with `adb exec-out screencap` returning black over the open
  * modal on a release/closedTest build; a screenshot block cannot be unit-tested.
+ *
+ * FABRIC CAVEAT (newArchEnabled=true): `findNodeHandle` is legacy and can return
+ * null for Fabric-managed views. RN's `Modal` still renders through the legacy
+ * `ReactModalHostView` even under Fabric in the current version, so the tag
+ * resolves today — but this is an implementation detail. If an RN upgrade moves
+ * Modal onto a pure-Fabric host, `tag` goes null and this degrades to a NO-OP
+ * (protection silently lost, no crash). The `adb screencap` check above is the
+ * only thing that catches that regression; run it after any RN bump.
  */
 export function secureModal(ref: RefObject<Component | null>): void {
   if (Platform.OS !== 'android' || native?.secureModal === undefined) return;
