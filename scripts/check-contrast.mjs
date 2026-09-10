@@ -117,11 +117,12 @@ const PAIRS = [
     bg: 'bg/accentStrong',
     target: 4.5,
     /*
-     * NOT the bubble any more (2026-09-08). The outgoing bubble moved to
-     * `bubble/mine`, which is WhatsApp's PALE green and takes dark text; this
-     * pair now measures what it always actually measured — a filled accent
-     * control under its label. Light is 4.52:1, which clears 4.5 by 0.02, so
-     * treat any further tune of bg/accentStrong as load-bearing.
+     * NOT the bubble. The outgoing bubble is `bubble/mine` (pale coral light /
+     * deep coral dark, takes bubble/text); this pair measures a filled accent
+     * control under its label. With Sunset Coral, light accentStrong #C0492F
+     * carries white at 4.96:1 — more headroom than the WhatsApp green's razor
+     * 4.52:1, but still treat any further tune of bg/accentStrong as
+     * load-bearing.
      */
     what: 'the label on a filled accent control',
   },
@@ -159,15 +160,15 @@ const PAIRS = [
     target: 2.5,
     what: 'NOT PERMITTED IN LIGHT — the bright accent under its label',
     exempt:
-      'registered at its measured floor rather than a legibility target. UPDATED 2026-09-08 and the update matters: this row used to say no text may sit on bg/accent in EITHER mode, which was true when the dark accent was a light blue under a white label (2.59:1). With WhatsApp green, dark mode flipped text/onAccent to near-black ink and this pair now measures 7.21:1 — genuinely legible, so the dark prohibition is withdrawn rather than left standing as a false claim. LIGHT is still prohibited at 3.01:1: white on #1DAA61 clears neither 4.5 nor the 3:1 large-text step by any useful margin, and bg/accentStrong (4.52:1) is the step that carries a label there. The floor stays 2.5 because one target covers both modes and light is the binding one',
+      'registered at its measured floor rather than a legibility target. With Sunset Coral (2026-09-10): dark mode flips text/onAccent to near-black ink on the bright coral #FF8272, and this pair measures 7.13:1 — genuinely legible, so no dark prohibition. LIGHT is still prohibited at 3.28:1: white on #F15D48 clears neither 4.5 nor the 3:1 large-text step by any useful margin (bg/accentStrong #C0492F, 4.96:1, is the step that carries a label there). The floor stays 2.5 because one target covers both modes and light is the binding one',
   },
   /*
-   * The WhatsApp bubbles (2026-09-08).
+   * The chat bubbles (outgoing recoloured to coral 2026-09-10).
    *
    * Registered because the bubble fills are the one place in this palette where
    * light and dark are not the same colour dimmed: light outgoing is a PALE
-   * green (#D9FDD3) taking near-black text, dark outgoing is a deep teal
-   * (#144D37) taking near-white. A single `bubble/text` token serves both, so
+   * coral (#FBDAD0) taking near-black text, dark outgoing is a DEEP coral
+   * (#6E3A2E) taking near-white. A single `bubble/text` token serves both, so
    * these four rows are what prove that one value works against all four fills.
    *
    * `bubble/meta` — the timestamp and the sent/delivered tick — is deliberately
