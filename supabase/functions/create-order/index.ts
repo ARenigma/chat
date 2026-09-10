@@ -129,11 +129,34 @@ Deno.serve(async (request: Request) => {
   const userId = userData.user.id;
 
   try {
-    const body = (await request.json()) as { productId?: string };
+    const body = (await request.json()) as { productId?: string; appVersionCode?: number };
     const { productId } = body;
 
     if (!productId) {
       return Response.json({ error: 'productId is required' }, { status: 400 });
+    }
+
+    // GST version guard (2026-09-10). This function bills base + GST — a ₹300
+    // pack charges ₹354 (packTotalPaise). A client that predates the
+    // GST-inclusive recharge UI shows the bare base and would surprise the buyer
+    // with a higher charge at the gateway. Those builds do not send
+    // appVersionCode, so a missing or below-floor version is refused with 426
+    // "please update" BEFORE any Cashfree order exists — an old client can never
+    // be charged the surprise amount, it is told to update. The floor is the
+    // versionCode of the first build that displays the GST-inclusive total,
+    // overridable via the CREATE_ORDER_MIN_VERSION secret for later bumps.
+    const minGstClient = parseInt(Deno.env.get('CREATE_ORDER_MIN_VERSION') ?? '10117', 10);
+    const appVersionCode =
+      typeof body.appVersionCode === 'number' ? body.appVersionCode : 0;
+    if (appVersionCode < minGstClient) {
+      return Response.json(
+        {
+          error: 'upgrade_required',
+          message: 'Please update Pappal to the latest version to add tokens.',
+          minVersionCode: minGstClient,
+        },
+        { status: 426 },
+      );
     }
 
     const pack = RECHARGE_PACKS[productId];
