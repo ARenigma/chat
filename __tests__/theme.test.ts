@@ -2813,22 +2813,21 @@ describe('dark theme: Telegram midnight-blue palette, and it still passes contra
     expect(DARK.color.bg.sunken).toBe('#232E3B');
   });
 
-  it('dark accent is WhatsApp green, and that is the one thing dark DID change', () => {
+  it('dark accent is Sunset Coral, and branding crosses both modes', () => {
     /*
-     * Amit, 2026-09-08: change the primary colour to WhatsApp, and keep dark's
-     * surfaces as they are. Branding is exactly the part that crosses both
-     * modes, so this is the deliberate exception to "do not change dark".
+     * Amit, 2026-09-10: revert the brand colour to coral (Option 1, Sunset),
+     * and keep dark's non-brand surfaces as they are. Branding is exactly the
+     * part that crosses both modes, so it is the deliberate exception to "do not
+     * change dark". Was WhatsApp green #21C063 / #71EB85; before that Telegram
+     * blue #5FA3DE / #64B5EF.
      *
-     * --WDS-green-450 #21C063 is WhatsApp's dark interactive accent.
-     * #25D366 is NOT it — WhatsApp's own design system consumes that only for
-     * the brand mark and the activity indicator, so using it here would repeat
-     * the mistake every stale third-party palette makes.
-     *
-     * Was Telegram blue #5FA3DE / #64B5EF.
+     * #FF8272 is the bright dark-page coral (mark/fill); text/accent is the
+     * lighter coral that accent-coloured TEXT needs to clear AA on the dark base.
      */
-    expect(DARK.color.bg.accent).toBe('#21C063');
-    expect(DARK.color.text.accent).toBe('#71EB85');
-    // The retired brand green must not creep back in as the accent.
+    expect(DARK.color.bg.accent).toBe('#FF8272');
+    expect(DARK.color.text.accent).toBe('#FFA599');
+    // The retired brand greens must not creep back in as the accent.
+    expect(DARK.color.bg.accent).not.toBe('#21C063');
     expect(DARK.color.bg.accent).not.toBe('#25D366');
   });
 

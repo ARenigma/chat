@@ -10,9 +10,10 @@
 
   notification_accent is bg/accentStrong (Light): the coral. It tints the small
   icon and the app name in the notification shade, which is the one place the
-  brand has to be recognisable before a single word is read.
+  brand has to be recognisable before a single word is read. 2026-09-10: tracked
+  the brand revert to Sunset Coral, C2401F -> C0492F (the new accentStrong Light).
 -->
 <resources>
     <color name="ic_launcher_background">#1C1C1E</color>
-    <color name="notification_accent">#C2401F</color>
+    <color name="notification_accent">#C0492F</color>
 </resources>

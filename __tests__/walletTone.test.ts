@@ -397,16 +397,16 @@ describe('the bright accent carries no label', () => {
      * What still holds in BOTH modes: `bg/accentStrong` carries a label at AA.
      * That is the whole point of having a second step.
      *
-     * What changed: `bg/accent` in DARK now carries a label too, at 7.21:1. The
-     * old assertion said it could not, and that was correct while the dark
-     * accent was a light blue under a WHITE label (2.59:1). WhatsApp's dark
-     * accent is a bright green and `text/onAccent` in dark is now near-black
-     * ink, so the pair is legible. The two steps therefore still exist in dark,
-     * but for HIERARCHY rather than for legibility — and saying so is the
-     * honest version.
+     * What changed: `bg/accent` in DARK now carries a label too. The old
+     * assertion said it could not, and that was correct while the dark accent
+     * was a light blue under a WHITE label (2.59:1). The dark accent is now a
+     * bright coral (#FF8272) and `text/onAccent` in dark is near-black ink, so
+     * the pair is legible (7.13:1). The two steps therefore still exist in dark,
+     * but for HIERARCHY rather than for legibility — and saying so is the honest
+     * version.
      *
-     * LIGHT is unchanged in kind: white on #1DAA61 is 3.01:1, which clears
-     * neither 4.5 nor the 3:1 large-text step by a useful margin, so light
+     * LIGHT is unchanged in kind: white on the light coral #F15D48 is 3.28:1,
+     * which clears the 3:1 large-text step (the wordmark) but NOT 4.5, so light
      * still has a genuine one-step-only-carries-a-label rule.
      */
     for (const mode of ['Light', 'Dark'] as const) {
