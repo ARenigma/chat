@@ -2795,21 +2795,20 @@ describe('dark theme: Telegram midnight-blue palette, and it still passes contra
     expect(DARK.color.bg.raised).toBe('#1D2733');
   });
 
-  it('dark bubbles are Telegram chat_inBubble / chat_outBubble', () => {
+  it('dark incoming bubble is neutral; outgoing bubble is deep coral', () => {
     /*
-     * MOVED, not changed (2026-09-08). The bubble fills now have tokens of
-     * their own — `bubble/mine` and `bubble/theirs` — because light went to
-     * WhatsApp and the bubbles could no longer borrow the accent and the sunken
-     * surface. The DARK values are byte-identical to what those two tokens
-     * resolved to before, on Amit's instruction: "dark mode looks okay right
-     * now.. so dont change that token.. just branding colors". So dark did not
-     * move a pixel; only its name did.
+     * 2026-09-10: the outgoing bubble follows the brand revert to coral. Amit:
+     * a colour change swaps every brand-green surface to coral, bubbles too, so
+     * bubble/mine dark moved from the WhatsApp-green-era Telegram blue #3E618A to
+     * a deep coral (#6E3A2E) carrying white text — this supersedes the earlier
+     * "dark mode looks okay.. dont change that token", which scoped only the
+     * accent. The INCOMING bubble is neutral (not brand), so it does not move.
      *
      * bg/sunken is still asserted, because it still surfaces search fields and
      * disabled fills — it simply is not the peer bubble any more.
      */
     expect(DARK.color.bubble.theirs).toBe('#232E3B');
-    expect(DARK.color.bubble.mine).toBe('#3E618A');
+    expect(DARK.color.bubble.mine).toBe('#6E3A2E');
     expect(DARK.color.bg.sunken).toBe('#232E3B');
   });
 

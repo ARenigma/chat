@@ -76,7 +76,7 @@ export const LIGHT = {
       unwind: '#0F7F62',
     },
     bubble: {
-      mine: '#D9FDD3',
+      mine: '#FBDAD0',
       theirs: '#FFFFFF',
       text: '#0A0A0A',
       meta: 'rgba(0,0,0,0.6)',
@@ -672,7 +672,7 @@ export const DARK = {
       unwind: '#0F7F62',
     },
     bubble: {
-      mine: '#3E618A',
+      mine: '#6E3A2E',
       theirs: '#232E3B',
       text: '#FAFAFA',
       meta: 'rgba(255,255,255,0.6)',
