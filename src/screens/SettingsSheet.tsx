@@ -54,6 +54,21 @@ interface Props {
    * and it is the same rows read from two sides.
    */
   onUsage?: () => void;
+  /**
+   * Provider-only controls (availability, what they offer, photos, earnings,
+   * stats) rendered between the profile hero and the settings list. This is how
+   * the provider's "You" tab is the SAME single settings surface as the member's
+   * — one screen, not a dashboard plus a second settings behind a gear. Hidden
+   * while a search is open, exactly like the hero. Member tree passes nothing.
+   */
+  topSection?: React.ReactNode;
+  /**
+   * Docked inside another screen's own bottom nav (the provider "You" tab) rather
+   * than the member tree's overlay toolbar. The host nav already reserves the
+   * bottom safe-area inset, so the scroll clears itself with plain breathing room
+   * instead of the toolbar's height. Ignored when `showBack` is true.
+   */
+  embedded?: boolean;
 }
 
 /**
@@ -141,6 +156,8 @@ export function SettingsSheet({
   onBlocked,
   onTransactions,
   onUsage,
+  topSection,
+  embedded = false,
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -315,9 +332,14 @@ export function SettingsSheet({
           // content scrolls under the glass and clears it), or just the safe inset
           // on the provider tree, which has no nav.
           {
-            paddingBottom:
-              insets.bottom +
-              (showBack ? TOKENS.space['3xl'] : NAV_BAR_HEIGHT + TOKENS.space.md),
+            // Three cases: pushed (its own screen, just clear the gesture nav),
+            // embedded in a host tab whose bottom nav already owns the inset
+            // (plain breathing room), or the member's overlay toolbar (clear its
+            // exact height so content scrolls under the glass).
+            paddingBottom: embedded
+              ? TOKENS.space['3xl']
+              : insets.bottom +
+                (showBack ? TOKENS.space['3xl'] : NAV_BAR_HEIGHT + TOKENS.space.md),
           },
         ]}>
         {/* WhatsApp's profile-shortcut variant puts a compact app bar over the
@@ -414,6 +436,11 @@ export function SettingsSheet({
           </View>
         </View>
         )}
+        {/* Provider controls sit between the hero and the list — the same place a
+            member has nothing — so a provider's "You" tab is one settings surface,
+            not a dashboard with a second settings behind a gear. Chrome for
+            browsing, so hidden while searching, like the hero above. */}
+        {needle === '' && topSection !== undefined ? topSection : null}
         {/* Root rows stay scannable like WhatsApp Settings. Multi-choice controls
             move into sheets, but retain radio semantics and one selection per row. */}
         {needle === '' ? (

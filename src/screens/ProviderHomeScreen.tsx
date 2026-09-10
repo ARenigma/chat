@@ -55,6 +55,7 @@ const THREAD_SEPARATOR_INSET = THREAD_AVATAR + TOKENS.space.sm;
 import { Icon, type IconName } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { Toggle } from '../components/Toggle';
+import { SettingsSheet } from './SettingsSheet';
 import { notificationsGranted } from '../lib/push';
 
 /**
@@ -77,8 +78,12 @@ const REMOVE_BADGE = 24;
 
 interface Props {
   onOpenConversation: (peerId: string) => void;
-  onOpenSettings: () => void;
   onOpenPayout: () => void;
+  /** Per-session earnings ledger, opened from the settings list on the You tab. */
+  onOpenUsage: () => void;
+  /** Sign-out and account deletion, forwarded into the embedded SettingsSheet. */
+  onSignedOut: () => void;
+  onDeleted: () => void;
 }
 
 type Tab = 'chats' | 'you';
@@ -115,7 +120,13 @@ function threadLabel(thread: ConversationSummary): string {
  * Earnings show with a payout-pending note because the transfer is manual for now
  * (docs/provider-payouts.md); the figure is a correct accrual, not yet paid.
  */
-export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenPayout }: Props) {
+export function ProviderHomeScreen({
+  onOpenConversation,
+  onOpenPayout,
+  onOpenUsage,
+  onSignedOut,
+  onDeleted,
+}: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -302,7 +313,9 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
   }, []);
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
+    // No top inset here: the Chats head takes it, and the You tab's embedded
+    // SettingsSheet owns its own status-bar inset via its top app bar.
+    <View style={styles.root}>
       {!pushOk ? (
         <View style={styles.pushGate} testID="provider-push-gate">
           <Text allowFontScaling style={styles.emptyTitle}>
@@ -326,7 +339,7 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
       ) : null}
       {tab === 'chats' ? (
         <>
-          <View style={styles.head}>
+          <View style={[styles.head, { paddingTop: insets.top + TOKENS.space.xs }]}>
             <Text
               allowFontScaling={false}
               style={styles.headWordmark}>
@@ -376,107 +389,96 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
           )}
         </>
       ) : (
-        <SectionList
-          {...SCROLL_PHYSICS}
-          sections={[{ key: 'you', data: [0] }]}
-          keyExtractor={i => String(i)}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={[styles.youScroll, { paddingBottom: TOKENS.space['2xl'] }]}
-          renderItem={() => (
-            <View style={styles.you}>
-              <View style={styles.head}>
-                <Text
-                  maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized}
-                  allowFontScaling
-                  style={styles.headTitle}>
-                  You
-                </Text>
-                <View style={styles.spacer} />
-                <Pressable
-                  onPress={onOpenSettings}
-                  testID="open-settings"
-                  accessibilityLabel="Account and Privacy"
-                  press="none"
-                  highlight="dim"
-                  size={40}
-                  // `iconButton` sets no radius, so the `dim` fill painted a solid
-                  // 40dp square behind a 20pt gear. Square box, so the pill
-                  // resolves to a true 40dp circle — the M3 icon-button state
-                  // layer size exactly.
-                  // https://developer.android.com/training/material/animations
-                  shape="circle"
-                  style={styles.iconButton}>
-                  <Icon name="settings" size={TOKENS.icon.md} color={theme.color.text.secondary} />
-                </Pressable>
-              </View>
-
-              {/* Availability — the one control with an immediate effect on whether
-                  anyone new can reach them. */}
-              <View style={styles.availability}>
-                <View style={styles.availabilityText}>
-                  <Text
-                    maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
-                    allowFontScaling
-                    style={styles.availabilityTitle}>
-                    {available ? 'Open to New Conversations' : 'Not Taking New Conversations'}
-                  </Text>
-                  <Text allowFontScaling style={styles.availabilitySub}>
-                    {available
-                      ? 'You are listed and can be messaged.'
-                      : 'You are not listed. Existing chats still work.'}
-                  </Text>
+        /* The "You" tab IS the settings surface, exactly like the member tree —
+           one screen, not a dashboard with a second Settings behind a gear. The
+           provider-only controls ride in as SettingsSheet's `topSection`, above
+           the shared account/privacy list, and the header/search/profile hero
+           come from the sheet itself. `embedded` because THIS screen owns the
+           bottom nav below, so the sheet clears itself with breathing room, not
+           the member toolbar's height. */
+        <SettingsSheet
+          showBack={false}
+          embedded
+          onBack={() => setTab('chats')}
+          onSignedOut={onSignedOut}
+          onDeleted={onDeleted}
+          onUsage={onOpenUsage}
+          topSection={
+            <View style={styles.controls}>
+              {/* Availability and what they offer are ONE inset card, two
+                  related questions — a provider reasoning about "can anyone
+                  reach me" is reasoning about both at once (goal item 7). Kept
+                  as a single card (not two edge-bleeding siblings) so its
+                  controls line up with the photos, earnings and stats blocks
+                  below rather than running to the screen edge. */}
+              <View style={styles.availabilityCard}>
+                {/* Availability — the one control with an immediate effect on
+                    whether anyone new can reach them. */}
+                <View style={styles.availabilityRow}>
+                  <View style={styles.availabilityText}>
+                    <Text
+                      maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
+                      allowFontScaling
+                      style={styles.availabilityTitle}>
+                      {available ? 'Open to New Conversations' : 'Not Taking New Conversations'}
+                    </Text>
+                    <Text allowFontScaling style={styles.availabilitySub}>
+                      {available
+                        ? 'You are listed and can be messaged.'
+                        : 'You are not listed. Existing chats still work.'}
+                    </Text>
+                  </View>
+                  <Toggle
+                    testID="availability-toggle"
+                    value={available}
+                    onValueChange={toggle}
+                    disabled={setAvailability.isPending}
+                    accessibilityLabel="Open to new conversations"
+                    tone="presence"
+                  />
                 </View>
-                <Toggle
-                  testID="availability-toggle"
-                  value={available}
-                  onValueChange={toggle}
-                  disabled={setAvailability.isPending}
-                  accessibilityLabel="Open to new conversations"
-                  tone="presence"
-                />
-              </View>
 
-              {/* What they offer, directly under what they are open to: the
-                  same card, because a provider reasoning about "can anyone
-                  reach me" is reasoning about both at once (goal item 7). The
-                  last one on is held rather than hidden — a disabled switch
-                  says the rule, a missing one would just look broken. The
-                  database refuses it too (profiles_at_least_one_channel). */}
-              <View style={styles.channels} testID="provider-channels">
-                <Text allowFontScaling style={styles.channelsLabel}>
-                  What you offer
-                </Text>
-                {CHANNEL_ROWS.map(row => {
-                  const on = channels[row.key];
-                  const last = on && enabledCount === 1;
-                  return (
-                    <View key={row.key} style={styles.channelRow}>
-                      <Icon
-                        name={row.glyph}
-                        size={TOKENS.icon.sm}
-                        color={on ? theme.color.text.primary : theme.color.text.tertiary}
-                      />
-                      <View style={styles.channelText}>
-                        <Text allowFontScaling style={styles.channelTitle}>
-                          {row.title}
-                        </Text>
-                        {last ? (
-                          <Text allowFontScaling style={styles.channelHint}>
-                            Keep at least one on so members can reach you.
+                {/* What they offer, directly under what they are open to,
+                    separated by a hairline rather than a gap. The last one on is
+                    held rather than hidden — a disabled switch says the rule, a
+                    missing one would just look broken. The database refuses it
+                    too (profiles_at_least_one_channel). */}
+                <View style={styles.channels} testID="provider-channels">
+                  <Text allowFontScaling style={styles.channelsLabel}>
+                    What you offer
+                  </Text>
+                  {CHANNEL_ROWS.map(row => {
+                    const on = channels[row.key];
+                    const last = on && enabledCount === 1;
+                    return (
+                      <View key={row.key} style={styles.channelRow}>
+                        <Icon
+                          name={row.glyph}
+                          size={TOKENS.icon.sm}
+                          color={on ? theme.color.text.primary : theme.color.text.tertiary}
+                        />
+                        <View style={styles.channelText}>
+                          <Text allowFontScaling style={styles.channelTitle}>
+                            {row.title}
                           </Text>
-                        ) : null}
+                          {last ? (
+                            <Text allowFontScaling style={styles.channelHint}>
+                              Keep at least one on so members can reach you.
+                            </Text>
+                          ) : null}
+                        </View>
+                        <Toggle
+                          testID={`channel-toggle-${row.key}`}
+                          value={on}
+                          onValueChange={next => toggleChannel(row.key, next)}
+                          disabled={setChannels.isPending || last}
+                          accessibilityLabel={`Offer ${row.title}`}
+                          tone="presence"
+                        />
                       </View>
-                      <Toggle
-                        testID={`channel-toggle-${row.key}`}
-                        value={on}
-                        onValueChange={next => toggleChannel(row.key, next)}
-                        disabled={setChannels.isPending || last}
-                        accessibilityLabel={`Offer ${row.title}`}
-                        tone="presence"
-                      />
-                    </View>
-                  );
-                })}
+                    );
+                  })}
+                </View>
               </View>
 
               {/* The gallery (migration 070). It lives HERE and not in the
@@ -665,7 +667,7 @@ export function ProviderHomeScreen({ onOpenConversation, onOpenSettings, onOpenP
                 />
               </View>
             </View>
-          )}
+          }
         />
       )}
 
@@ -788,15 +790,17 @@ const makeStyles = (t: Theme) =>
       paddingTop: TOKENS.space.xs,
       paddingBottom: TOKENS.space.md,
     },
-    headTitle: { ...TOKENS.typography.headlineSmallEmphasized, color: t.color.text.primary },
     headWordmark: {
       fontFamily: TOKENS.face.wordmark,
       fontSize: 28,
       lineHeight: 34,
       color: t.color.bg.accent,
     },
-    spacer: { flex: 1 },
-    iconButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+    // The provider-only block SettingsSheet renders as its `topSection`, between
+    // the profile hero and the settings list. No horizontal inset of its own —
+    // the sheet's scroll already pads the content — so the cards line up with the
+    // settings rows below rather than sitting further in.
+    controls: { gap: TOKENS.space.md, paddingTop: TOKENS.space.md },
     centre: { flex: 1, alignItems: 'center', justifyContent: 'center' },
     empty: {
       flex: 1,
@@ -845,35 +849,38 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.labelLarge,
       color: t.color.text.onAccent,
     },
-    youScroll: { flexGrow: 1 },
-    you: { gap: TOKENS.space.md, paddingBottom: TOKENS.space.md },
-    availability: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: TOKENS.space.md,
-      marginHorizontal: TOKENS.space.md,
+    // The card itself: the inset frame the availability row and the channel
+    // switches share, so both read as one card, two related questions.
+    availabilityCard: {
       padding: TOKENS.space.md,
       borderRadius: TOKENS.radius.field,
       borderCurve: 'continuous',
       backgroundColor: t.color.bg.sunken,
     },
-    // Channels sit inside the availability card, separated by a hairline rather
-    // than a gap: one card, two related questions.
+    availabilityRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.md,
+    },
+    // Channels sit inside the availability card, separated from the row above by
+    // a hairline rather than a gap: one card, two related questions. The
+    // hairline spans the card's inner width (padding to padding), which is why
+    // this block carries no horizontal inset of its own.
     channels: {
       gap: TOKENS.space.sm,
+      marginTop: TOKENS.space.sm,
       paddingTop: TOKENS.space.sm,
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: t.color.border.hairline,
     },
     channelsLabel: { ...TOKENS.typography.labelMedium, color: t.color.text.secondary },
     /*
-     * The gallery block. Hairline-topped like `channels`, but with the same
-     * horizontal margin as `availability` and `earnCard` so its label and tiles
-     * line up with the rest of the tab rather than running to the screen edge.
+     * The gallery block. Hairline-topped like `channels`; the sheet's own scroll
+     * padding insets it, so its label and tiles line up with the settings rows
+     * rather than running to the screen edge.
      */
     photos: {
       gap: TOKENS.space.sm,
-      marginHorizontal: TOKENS.space.md,
       paddingTop: TOKENS.space.sm,
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: t.color.border.hairline,
@@ -992,7 +999,6 @@ const makeStyles = (t: Theme) =>
      * 4.5:1 while still being the accent, so the alpha was the only lever left.
      */
     earnCard: {
-      marginHorizontal: TOKENS.space.md,
       padding: TOKENS.space.lg,
       borderRadius: TOKENS.radius.lg,
       borderCurve: 'continuous',
@@ -1052,7 +1058,6 @@ const makeStyles = (t: Theme) =>
     },
     stats: {
       flexDirection: 'row',
-      paddingHorizontal: TOKENS.space.md,
       gap: TOKENS.space.xl,
     },
     stat: { gap: TOKENS.space.hair },
