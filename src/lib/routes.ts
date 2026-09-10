@@ -92,6 +92,12 @@ export type ProviderRoute =
   | { readonly name: 'chat'; readonly peerId: string }
   /** Bank/UPI + PAN payout setup. */
   | { readonly name: 'payout' }
+  /**
+   * The people this provider has blocked, reached from the settings list on the
+   * You tab. Providers can block members they have had a conversation with
+   * (migration 096), so the provider tree needs this screen too.
+   */
+  | { readonly name: 'blocked' }
   /** Per-session earnings: which conversation paid what. Migration 069. */
   | {
       readonly name: 'usage';
@@ -184,7 +190,7 @@ export function providerParent(route: ProviderRoute): ProviderRoute | null {
   if (route.name === 'usage' && route.from === 'settings') {
     return { name: 'home' };
   }
-  if (route.name === 'payout') {
+  if (route.name === 'payout' || route.name === 'blocked') {
     return { name: 'home' };
   }
   if (route.name === 'chat' || route.name === 'call') {

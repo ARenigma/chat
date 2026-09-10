@@ -1543,6 +1543,8 @@ function SignedIn({
             />
           ) : providerRoute.name === 'payout' ? (
             <ProviderBankScreen onBack={() => popProvider({ name: 'home' })} />
+          ) : providerRoute.name === 'blocked' ? (
+            <BlockedUsersScreen onBack={() => popProvider({ name: 'home' })} />
           ) : providerRoute.name === 'usage' ? (
             <UsageLedgerScreen
               onBack={() => {
@@ -1563,6 +1565,7 @@ function SignedIn({
               onOpenConversation={peerId => pushProvider({ name: 'chat', peerId })}
               onOpenPayout={() => pushProvider({ name: 'payout' })}
               onOpenUsage={() => pushProvider({ name: 'usage', from: 'settings' })}
+              onOpenBlocked={() => pushProvider({ name: 'blocked' })}
               onSignedOut={onSignedOut}
               onDeleted={onSignedOut}
             />

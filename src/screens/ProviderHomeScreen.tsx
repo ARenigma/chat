@@ -81,6 +81,8 @@ interface Props {
   onOpenPayout: () => void;
   /** Per-session earnings ledger, opened from the settings list on the You tab. */
   onOpenUsage: () => void;
+  /** The provider's blocked-members list, opened from the settings list. */
+  onOpenBlocked: () => void;
   /** Sign-out and account deletion, forwarded into the embedded SettingsSheet. */
   onSignedOut: () => void;
   onDeleted: () => void;
@@ -124,6 +126,7 @@ export function ProviderHomeScreen({
   onOpenConversation,
   onOpenPayout,
   onOpenUsage,
+  onOpenBlocked,
   onSignedOut,
   onDeleted,
 }: Props) {
@@ -403,6 +406,7 @@ export function ProviderHomeScreen({
           onSignedOut={onSignedOut}
           onDeleted={onDeleted}
           onUsage={onOpenUsage}
+          onBlocked={onOpenBlocked}
           topSection={
             <View style={styles.controls}>
               {/* Availability and what they offer are ONE inset card, two
