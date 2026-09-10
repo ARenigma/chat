@@ -75,18 +75,19 @@ describe('memberParent', () => {
 });
 
 describe('providerParent', () => {
-  it('returns home from chat and settings', () => {
+  it('returns home from chat and payout', () => {
     expect(providerParent({ name: 'home' })).toBeNull();
     expect(providerParent({ name: 'chat', peerId: 'm1' })).toEqual({ name: 'home' });
-    expect(providerParent({ name: 'settings' })).toEqual({ name: 'home' });
+    // No pushed provider settings any more: the You tab (home) IS the settings.
+    expect(providerParent({ name: 'payout' })).toEqual({ name: 'home' });
   });
 
-  it('returns the chat that opened earnings, otherwise settings', () => {
+  it('returns the chat that opened earnings, otherwise the You tab (home)', () => {
     expect(
       providerParent({ name: 'usage', from: 'chat', peerId: 'm1' }),
     ).toEqual({ name: 'chat', peerId: 'm1' });
     expect(providerParent({ name: 'usage', from: 'settings' })).toEqual({
-      name: 'settings',
+      name: 'home',
     });
   });
 });

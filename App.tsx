@@ -1541,16 +1541,6 @@ function SignedIn({
                 })
               }
             />
-          ) : providerRoute.name === 'settings' ? (
-            <SettingsSheet
-              onBack={() => popProvider({ name: 'home' })}
-              onDeleted={() => {
-                popProvider({ name: 'home' });
-                onSignedOut();
-              }}
-              onSignedOut={onSignedOut}
-              onUsage={() => pushProvider({ name: 'usage', from: 'settings' })}
-            />
           ) : providerRoute.name === 'payout' ? (
             <ProviderBankScreen onBack={() => popProvider({ name: 'home' })} />
           ) : providerRoute.name === 'usage' ? (
@@ -1563,14 +1553,18 @@ function SignedIn({
                   popProvider({ name: 'chat', peerId: providerRoute.peerId });
                   return;
                 }
-                popProvider({ name: 'settings' });
+                // The settings list now lives on the You tab (home), not a
+                // pushed screen, so usage opened from it returns there.
+                popProvider({ name: 'home' });
               }}
             />
           ) : (
             <ProviderHomeScreen
               onOpenConversation={peerId => pushProvider({ name: 'chat', peerId })}
-              onOpenSettings={() => pushProvider({ name: 'settings' })}
               onOpenPayout={() => pushProvider({ name: 'payout' })}
+              onOpenUsage={() => pushProvider({ name: 'usage', from: 'settings' })}
+              onSignedOut={onSignedOut}
+              onDeleted={onSignedOut}
             />
           )}
         </PushedLayer>
