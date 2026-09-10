@@ -5055,7 +5055,10 @@ describe('a session is rated when it ends, and the ratings are readable', () => 
     // session exists too, and asking then would prompt for a conversation that
     // never happened.
     expect(chat).toContain('const liveSessionRef = useRef<string | null>(null)');
-    expect(chat).toMatch(/if \(isMemberSide\) \{\s*requestReview\(previous, name\);/);
+    // Member-only, and never with a blank name (the cold-open loading window,
+    // where identity has not resolved) — a blank name in the review sheet is
+    // worse than deferring.
+    expect(chat).toMatch(/if \(isMemberSide && name !== ''\) \{\s*requestReview\(previous, name\);/);
     // One sheet for the whole app, because a session can end in a call too.
     expect(withoutComments(read('App.tsx'))).toContain('<SessionFeedbackSheet />');
     const store = withoutComments(read('src/store/useStore.ts'));

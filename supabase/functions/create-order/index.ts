@@ -146,6 +146,16 @@ Deno.serve(async (request: Request) => {
     // versionCode of the first build that displays the GST-inclusive total,
     // overridable via the CREATE_ORDER_MIN_VERSION secret for later bumps.
     const minGstClient = parseInt(Deno.env.get('CREATE_ORDER_MIN_VERSION') ?? '10117', 10);
+    // Fail CLOSED on a misconfigured floor. parseInt of a non-numeric env value
+    // is NaN, and `x < NaN` is false for EVERY x — which would silently pass
+    // every old client through to the base+GST charge, defeating the whole guard.
+    // A bad floor must refuse the order, not disable the protection.
+    if (!Number.isFinite(minGstClient) || minGstClient <= 0) {
+      return Response.json(
+        { error: 'server misconfiguration', message: 'Recharge is temporarily unavailable.' },
+        { status: 500 },
+      );
+    }
     const appVersionCode =
       typeof body.appVersionCode === 'number' ? body.appVersionCode : 0;
     if (appVersionCode < minGstClient) {
