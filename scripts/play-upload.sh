@@ -28,7 +28,11 @@ TRACK=alpha
 AAB="${1:-android/app/build/outputs/bundle/closedTest/app-closedTest.aab}"
 NOTES_FILE=play-upload/05-release/whatsnew-en-IN.txt
 
-[ -f "$AAB" ] || { echo "No AAB at $AAB — build it first:"; echo "  ./gradlew -p android bundleClosedTest -PversionCode=<n>"; exit 1; }
+# arm-only for the shipped bundle: real phones are all arm64-v8a (armeabi-v7a for
+# older 32-bit); x86/x86_64 are emulator/ChromeOS ABIs the India market does not
+# use, and dropping them from the release bundle cuts build time and AAB size with
+# zero delivered-download impact (Play splits per ABI). Debug keeps all four.
+[ -f "$AAB" ] || { echo "No AAB at $AAB — build it first:"; echo "  ./gradlew -p android bundleClosedTest -PversionCode=<n> -PreactNativeArchitectures=arm64-v8a,armeabi-v7a"; exit 1; }
 
 API=https://androidpublisher.googleapis.com/androidpublisher/v3/applications/$PKG
 UPLOAD=https://androidpublisher.googleapis.com/upload/androidpublisher/v3/applications/$PKG
