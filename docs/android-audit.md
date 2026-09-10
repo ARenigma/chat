@@ -814,3 +814,68 @@ a **404** — a citation that had gone dead survived every green build, and the
 wording it carried ("Priority is decided through the order of gestures") is not
 the wording on the page that governs today. `chatSurface.test.ts` now bans that
 path alongside `docs/legacy-gestures/`.
+
+---
+
+## 2026-09-10 — Launch-verification remediation pass
+
+Closing out the remaining gaps from the launch-verification pass. What was fixed
+in code, and what is genuinely gated on a device / a deploy / infra and therefore
+cannot be signed off from the repo.
+
+### Fixed in this pass (code, verified in-repo)
+
+- **Cold-open header flash.** `ChatScreen` asserted the literal "Conversation" as
+  the title whenever `threads`/`providers` were still `undefined` — every cold
+  open (launch, deep link) flashed that wrong word before the real name arrived.
+  Now the fallback fires only once the sources have RESOLVED; while either is
+  loading the title is blank (the bar reserves its height, so nothing shifts) and
+  the name fades in the moment `peer_display_name` or the directory row lands.
+  The header's layout-stability across presence states was already handled
+  (`ChatScreen.tsx` reserves a constant bar height); this closes the last residual.
+
+- **arm-only release bundles (build-speed / AAB-size lever).** `android:release`,
+  `android:bundle`, `android:bundle:closed` and the `play-upload.sh` build hint now
+  pass `-PreactNativeArchitectures=arm64-v8a,armeabi-v7a`. Real phones are all arm;
+  x86/x86_64 are emulator/ChromeOS ABIs the India market does not use. Play splits
+  the AAB per ABI, so DELIVERED download size is unchanged — the win is build time
+  (two native ABIs instead of four) and AAB/upload size. DEBUG keeps all four via
+  the `gradle.properties` default, so the x86_64 emulator still builds and runs.
+  https://developer.android.com/guide/app-bundle
+  NOTE: the resulting AAB has not been built+installed on a device in this pass;
+  the config is release-scoped and reversible, but confirm ABIs on the next build
+  (`aapt2 dump badging` / bundletool) before shipping.
+
+- **JS bundle size-regression gate (§32).** New `scripts/size-gate.mjs`, wired into
+  `npm run verify` after `bundle:android`. The native size is Agora-dominated and
+  fixed; the one size vector a code change can move silently is the JS bundle. Gate
+  ceiling 6.0 MB against the 2026-09-10 baseline of 5.26 MiB (~9% headroom).
+
+### Device-gated — implemented finding, NOT closed (RULE 2)
+
+- **FLAG_SECURE does not cover RN `Modal` windows.** `MainActivity` sets
+  `FLAG_SECURE` on the activity window for the production `release` variant, which
+  covers every in-tree screen. But the app renders `Modal` (React Native, separate
+  Dialog window) in 8 components — `MediaViewer` (full-screen intimate photo/video),
+  `Sheet` (all bottom sheets), `PaperMenu`, `Turn`, `SpotlightCard`, `HomeTour`,
+  `ChatStartHint`, and one in `ChatScreen`. A Dialog has its OWN window and does not
+  inherit the activity's flags, so a screenshot/recording over an open MediaViewer
+  or Sheet is NOT blocked — exactly the sensitive content the flag exists to protect.
+  Recommended fix: apply `FLAG_SECURE` to each sensitive modal's Dialog window (or
+  render MediaViewer as an in-activity overlay rather than an RN `Modal`). Either way
+  the ONLY valid verification is `adb screencap` returning black over an open modal —
+  a screenshot-blocking feature cannot be unit-tested, and shipping it unverified is
+  the Credential-Manager failure mode. Left for the device phase, which is out of
+  scope for this pass by instruction.
+
+### Blocked on infra / a coordinated release (not device verification)
+
+- **Migrations 097/098 not db-tested.** `scripts/db-test.mjs` needs Docker; Docker is
+  unresponsive on this host ("needs a system restart"). Both were syntax-validated and
+  pushed; run `npm run test:db` once Docker is back.
+- **create-order / cashfree-webhook still undeployed — the GST landmine.** Deploying
+  `create-order` (charges base + GST = ₹354 for a ₹300 pack) WITHOUT the matching
+  build live (which shows the ₹354 total) charges testers a surprise amount. This is a
+  coordinated build+deploy, not a standalone edge-function push, and it changes real
+  billing — it is deliberately NOT done unilaterally here. See
+  docs/runbooks/create-order-deploy.md.
