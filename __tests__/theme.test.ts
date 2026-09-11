@@ -2106,7 +2106,6 @@ describe('accent budget is enforced in code, not just documented', () => {
       'name',
       'nameAge',
       'tagLine',
-      'headline',
       'secondary',
       'priceLine',
     ];

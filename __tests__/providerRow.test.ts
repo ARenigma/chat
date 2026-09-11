@@ -644,8 +644,10 @@ describe('the tag line always has something in it', () => {
      * and the tags took that slot.
      */
     const body = code(ROW);
-    expect(body).toContain('tags.length > 0 ? (');
-    expect(body).toContain('styles.headline');
+    // Expertise is plain comma text now (Astrotalk parity), so tags OR the
+    // headline fill the same fixed-height slot — an untagged provider still gets
+    // the headline rather than a 24dp hole.
+    expect(body).toMatch(/tags\.length > 0 \? tags\.join\(', '\) : headline/);
     expect(body).toContain("'Here to listen'");
     // Still one fixed-height line either way, which is the constraint that made
     // collapsing it impossible.
