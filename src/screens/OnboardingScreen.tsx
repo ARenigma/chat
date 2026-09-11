@@ -1045,13 +1045,11 @@ export function OnboardingScreen({ onDone }: Props) {
                   exiting={FadeOutUp.duration(STEP_EXIT_MS)}
                   style={styles.choices}>
                   {/*
-                   * PRIMARY: white-pill Google button.
-                   *
-                   * White fill on the dark bloom keeps contrast without borrowing
-                   * the brand coral. The Google "G" sits directly on white (its
-                   * own brand rule: the mark must sit on a light surface), so the
-                   * chip wrapper is gone. A 1px rgba hairline gives definition
-                   * against a lighter bloom without reading as a border.
+                   * PRIMARY: the Google button, themed to the surface (see the
+                   * `primary` style). White pill with dark text in light; midnight
+                   * pill with white text in dark, so it belongs to the dark theme
+                   * rather than being a white slab on it. The Google "G" is not
+                   * wrapped in a chip — the colour mark reads on both surfaces.
                    */}
                   <Pressable
                     onPress={onGoogle}
@@ -1638,6 +1636,14 @@ const makeStyles = (t: Theme) =>
     },
     // PRIMARY: white pill. Label is ink, loading spinner is ink.
     // 1px rgba hairline gives shape definition against the dark bloom.
+    // THEME-AWARE, not a fixed white pill. `bg/raised` is #FFFFFF in light and
+    // Telegram-midnight #1D2733 in dark; `text/primary` is dark-in-light /
+    // white-in-dark. The two track together, so the button is a white pill with
+    // dark text in light and a midnight pill with white text in dark — no longer
+    // white text on a white fill (Amit, on the S22 in dark mode), and it now sits
+    // in the app's own dark surface instead of a jarring white slab. The colour
+    // Google "G" reads on both surfaces (Google's dark button places the same
+    // colour mark on #131314), so a light-only surface was never required.
     primary: {
       flexDirection: 'row',
       gap: TOKENS.space.xs,
@@ -1646,9 +1652,9 @@ const makeStyles = (t: Theme) =>
       borderCurve: 'continuous',
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: '#FFFFFF',
+      backgroundColor: t.color.bg.raised,
       borderWidth: 1,
-      borderColor: 'rgba(0,0,0,0.08)',
+      borderColor: t.color.border.hairline,
     },
     primaryLabel: {
       ...TOKENS.typography.titleMediumEmphasized,
