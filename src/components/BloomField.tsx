@@ -193,12 +193,30 @@ function BloomFieldView({ elapsed, stage, hidden = false }: Props) {
    * which is every stage change.
    */
   const hide = useSharedValue(0);
+  /*
+   * `height` read from a ref, not a dependency, and that is the fix for a real
+   * jank (Amit: "jank frames while transitioning across screens"). The
+   * manifest sets `windowSoftInputMode="adjustResize"`, so opening the phone
+   * keyboard genuinely shrinks the window `useWindowDimensions` reports — and
+   * that resize event does not land in the same frame as the `hidden` prop
+   * flipping true, because they come from two separate native channels (the
+   * RN Keyboard listener vs. the OS layout pass). With `height` in the effect
+   * deps, THAT arrived first, so the withTiming(-height) call fired twice in
+   * quick succession for one logical hide: once against the old height, then
+   * again against the just-resized one, restarting the slide's timing curve
+   * mid-flight — a visible stutter at exactly the moment a step transition
+   * raises the keyboard (choose -> number). The ref keeps the current height
+   * available without making a live resize retrigger this effect; the slide
+   * still targets a correct offset either way; only spurious replays are cut.
+   */
+  const heightRef = useRef(height);
+  heightRef.current = height;
   useEffect(() => {
-    hide.value = withTiming(hidden ? -height : 0, {
+    hide.value = withTiming(hidden ? -heightRef.current : 0, {
       duration: BLOOM_SWAP_MS / 2,
       easing: Easing.inOut(Easing.quad),
     });
-  }, [hidden, height, hide]);
+  }, [hidden, hide]);
   const host = useAnimatedStyle(() => ({
     transform: [{ translateY: hide.value }],
   }));
