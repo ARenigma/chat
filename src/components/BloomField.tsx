@@ -8,7 +8,6 @@ import Animated, {
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
-import { useTheme } from '../theme/ThemeProvider';
 import {
   BLOOM_LAYERS,
   BLOOM_SWAP_MS,
@@ -105,7 +104,6 @@ function sameStage(x: BloomStage, y: BloomStage): boolean {
  * so the field celebrates a confirmed result without delaying or hiding state.
  */
 function BloomFieldView({ elapsed, stage, hidden = false }: Props) {
-  const theme = useTheme();
   const { width, height } = useWindowDimensions();
 
   /*
@@ -209,13 +207,18 @@ function BloomFieldView({ elapsed, stage, hidden = false }: Props) {
     <Animated.View
       pointerEvents="none"
       /*
-       * `bg/raised`, matching OnboardingScreen's root — see the long note
-       * there. The two MUST move together: this view is the same surface, and
-       * one on base under the other on raised would draw a seam across the
-       * screen exactly where the bloom's transparent edge is least able to hide
-       * it.
+       * TRANSPARENT, not `bg/raised` (2026-09-12). The flat base fill moved to
+       * `NightSky`, which now mounts BEHIND this field and paints it — so the
+       * field's own coral layers composite over the night sky instead of over
+       * an opaque wall that would hide it. This is the one wiring change that
+       * came with the night-sky backdrop; BLOOM_LAYERS, the stage cross-fade
+       * and the collapse geometry below are untouched (Amit: "i hope we are
+       * not touching the fuse bloom system animation mechanics itself" — we
+       * are not). `OnboardingScreen`'s own root still paints `bg/raised`
+       * itself, so there is no seam: NightSky, this field, and the root are
+       * all the same surface, just layered instead of one view owning it.
        */
-      style={[styles.host, { backgroundColor: theme.color.bg.raised }, host]}>
+      style={[styles.host, host]}>
       {BLOOM_LAYERS.map(layer => (
         <BloomLayer
           key={layer.name}
