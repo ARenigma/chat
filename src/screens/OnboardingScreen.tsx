@@ -189,6 +189,22 @@ export function OnboardingScreen({ onDone }: Props) {
    */
   const [phone, setPhone] = useState('');
   /**
+   * Mirrors `phone`, updated SYNCHRONOUSLY inside the change handlers rather
+   * than read back from React state.
+   *
+   * Bug this fixes: typing fast (reported as digits dropping "around the 8th
+   * or 9th digit" — i.e. right as the number gets long enough to type quickly
+   * and confidently) let Android's TextInput fire a second `onChangeText`
+   * before React had re-rendered and rebuilt `onChangePhone` with the new
+   * `phone` closure. The second call then diffed the new native string against
+   * the STALE previous-render `phone`, so `formatPhoneEdit`'s prefix/suffix
+   * diff mis-measured the edit and a digit vanished. A ref sidesteps this
+   * entirely: it is written in the same tick as `setPhone` and read at the top
+   * of the very next call, so two rapid native events in a row always diff
+   * against the true prior value, never a render-stale one.
+   */
+  const phoneRef = useRef('');
+  /**
    * The caret, owned here because the field's text is rewritten under it.
    *
    * React Native's `TextInput` is controlled — "the native value will be forced
@@ -542,18 +558,25 @@ export function OnboardingScreen({ onDone }: Props) {
    * rather than by reading the native caret, so it does not depend on the order
    * `onChangeText` and `onSelectionChange` fire in. Everything it decides —
    * digits, display, caret — is unit-tested in `__tests__/phone.test.ts`.
+   *
+   * "Before it" is read from `phoneRef`, NOT the `phone` closed over by this
+   * callback — see the note on `phoneRef` for why: two native events can land
+   * before a re-render, and only the ref is guaranteed current for the second
+   * one. `phone` is not in the dependency array for the same reason; reading it
+   * here would reintroduce the exact staleness the ref exists to avoid.
    */
   const onChangePhone = useCallback(
     (next: string) => {
       const edit = formatPhoneEdit(
         next,
-        formatNationalDigits(phone, country),
+        formatNationalDigits(phoneRef.current, country),
         country,
       );
+      phoneRef.current = edit.digits;
       setPhone(edit.digits);
       setCaret(edit.caret);
     },
-    [phone, country],
+    [country],
   );
 
   /**
@@ -571,12 +594,13 @@ export function OnboardingScreen({ onDone }: Props) {
       // Not a functional `setPhone` updater: it would have to call `setCaret`
       // from inside itself, and an updater has to be pure — React is free to
       // run it twice.
-      const edit = retargetPhone(phone, countryForDialCode(next));
+      const edit = retargetPhone(phoneRef.current, countryForDialCode(next));
+      phoneRef.current = edit.digits;
       setDialCode(next);
       setPhone(edit.digits);
       setCaret(edit.caret);
     },
-    [phone],
+    [],
   );
 
   /*
