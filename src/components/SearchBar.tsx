@@ -453,6 +453,11 @@ function SearchBarView({
         placeholderTextColor={theme.color.text.tertiary}
         onFocus={onFocus}
         onBlur={onBlur}
+        // Raise the keyboard the moment the field appears. The bar is mounted
+        // only when search is entered (TabTopBar renders it on `searching`), so
+        // autoFocus fires on that fresh mount and the IME comes up without a
+        // second tap. https://reactnative.dev/docs/textinput#autofocus
+        autoFocus
         style={styles.input}
         returnKeyType="search"
         clearButtonMode="never"

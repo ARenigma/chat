@@ -637,8 +637,12 @@ export function HomeScreen({
           </>
         ) : null}
         {/* Spacing that separates the featured card (or explore heading) from
-            the first provider row — matches the original styles.rows paddingTop. */}
-        <View style={{ height: TOKENS.space.sm }} />
+            the first provider row. Widened from `sm` (12) to `2xl` (32) so the
+            first card sits lower and the top edge of the SECOND card no longer
+            peeks above the fold on the default Home viewport (Amit, on device).
+            The exact value is viewport-dependent; confirm on the S22/Redmi and
+            nudge if the second card still shows a sliver. */}
+        <View style={{ height: TOKENS.space['2xl'] }} />
       </>
     ),
     [
