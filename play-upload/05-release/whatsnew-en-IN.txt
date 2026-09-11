@@ -1,8 +1,11 @@
-A fresh coral look, and privacy and polish fixes.
+Sign-in and onboarding fixes, and a smoother feel throughout.
 
-• New coral brand colour across the app, including your chat bubbles
-• Screenshots and recordings are now blocked in chats, photos and sheets
-• Your provider profile is one clean screen — availability, photos, earnings and settings together
-• Providers can review and unblock people they've blocked
-• Chat headers open with the right name instead of a brief placeholder
-• Faster, smaller app download
+• Fixed the phone number field dropping digits while typing quickly
+• Phone number groups are easier to read
+• Fixed the Google sign-in button being unreadable in dark mode
+• A calmer night sky now sits behind onboarding
+• Smoother transitions between onboarding screens
+• Settings header is simpler, without the old cover photo
+• Cleaner Explore cards, spacing tuned throughout Home
+• Smaller call button on provider cards
+• Search now opens the keyboard automatically
