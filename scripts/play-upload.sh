@@ -77,7 +77,18 @@ curl -sS -X PUT "${auth[@]}" -H "Content-Type: application/json" \
   "$API/edits/$ED/tracks/$TRACK" | python3 -m json.tool
 
 say "Committing the edit"
-curl -sS -X POST "${auth[@]}" -H "Content-Length: 0" "$API/edits/$ED:commit" | python3 -m json.tool
-
-say "Done — $VERSION_NAME ($VC) is live on $TRACK for opted-in testers."
-echo "Committing does NOT send anything for review, and production is untouched."
+# Checked explicitly, not assumed: a 500-char release-notes overflow returns
+# HTTP 403 with an `error` key here while every earlier step in this script
+# still prints its own success banner, so a prior run of this script reported
+# "Done — live" after the commit had actually failed (caught 2026-09-12).
+COMMIT=$(curl -sS -X POST "${auth[@]}" -H "Content-Length: 0" "$API/edits/$ED:commit")
+echo "$COMMIT" | python3 -m json.tool
+if echo "$COMMIT" | python3 -c "import sys,json; sys.exit(1 if 'error' in json.load(sys.stdin) else 0)"; then
+  say "Done — $VERSION_NAME ($VC) is live on $TRACK for opted-in testers."
+  echo "Committing does NOT send anything for review, and production is untouched."
+else
+  say "COMMIT FAILED — the edit above was NOT applied. $VERSION_NAME ($VC) is NOT live."
+  echo "Fix the reported error (e.g. shorten $NOTES_FILE) and re-run — the edit id" \
+       "above may still be open, or open a fresh one if it has expired."
+  exit 1
+fi
