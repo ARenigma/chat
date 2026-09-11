@@ -292,16 +292,23 @@ function dialDigits(country: PhoneCountry): string {
 export const IN_MOBILE_DIGITS = INDIA.nationalLength;
 
 /**
- * `$1 $2` in the metadata — one ASCII space, not a hyphen or a NBSP.
+ * Two ASCII spaces, not one — widened 2026-09-12 (Amit, on the S22: "no
+ * visible separators"). At 16dp Bold with the field's 0.15 letterSpacing, a
+ * single space between two five-digit groups read as continuous digits, not
+ * a break. Still ASCII, still a character `normalisePhone` already discards —
+ * the `[^\d]` strip below removes any run of non-digit characters identically
+ * regardless of length, and so does every caret-math helper in this file
+ * (`isDigitAt`/`offsetAfterDigit`/`digitsBefore`), which only ever counts
+ * DIGITS and treats everything else as one opaque gap. Widening it is
+ * therefore a rendering-only change: no digit-extraction or caret logic
+ * needed to move, only `nationalDisplayLength` below, which sizes the gap
+ * into its arithmetic rather than assuming 1.
  *
- * It has to be a character `normalisePhone` already discards, and it is: the
- * `[^\d]` strip below removes it. See the test that pins that.
- *
- * One separator for all six countries. Five of the six declare a plain
+ * One separator width for all six countries. Five of the six declare a plain
  * `$1 $2`-style space join; only `US` differs, and the note on that entry
  * explains why its `($1) $2-$3` template is recorded but not rendered.
  */
-const GROUP_SEPARATOR = ' ';
+const GROUP_SEPARATOR = '  ';
 
 /**
  * Longest string the field can display for `country`: its digits plus its
@@ -322,9 +329,15 @@ const GROUP_SEPARATOR = ' ';
  * "set/UPDATE" is the operative word once there is a country picker: the cap
  * moves when the selection moves, from 12 for the United States down to 9 for
  * Singapore, and the prop has to move with it.
+ *
+ * Each separator is `GROUP_SEPARATOR.length` wide, not 1 — the reservation has
+ * to grow with the separator or a two-space gap gets truncated by the same
+ * `maxLength` that exists to prevent truncation elsewhere.
  */
 export function nationalDisplayLength(country: PhoneCountry = INDIA): number {
-  return country.nationalLength + country.groups.length - 1;
+  return (
+    country.nationalLength + (country.groups.length - 1) * GROUP_SEPARATOR.length
+  );
 }
 
 /** India's display length, 11. `PhoneVerifySheet` and its gate both use this. */
