@@ -860,15 +860,15 @@ describe('device coverage matrix', () => {
     expect(settings).not.toContain('Private member account');
     expect(settings).toContain('profileMetaText');
 
-    // The approved follow-up uses WhatsApp's profile-shortcut variant: a compact
-    // transparent M3 bar over the cover, with a real 48dp Back action even though
-    // the member route also keeps the bottom navigation.
+    // Coverless centred-avatar header (Amit, on device: the WhatsApp half-doodle
+    // cover was dated). No ChatWallpaper band; the identity sits on the page. The
+    // pushed case still gets a compact transparent M3 bar with a real 48dp Back.
     expect(settings).toContain('<TopAppBar');
     expect(settings).toContain('title=""');
     expect(settings).toContain('transparent');
     expect(settings).toContain('testID="settings-back"');
     expect(settings).toContain('size={48}');
-    expect(settings).toContain('<ChatWallpaper />');
+    expect(settings).not.toContain('<ChatWallpaper />');
   });
 
   it('keeps each settings item a single 48dp+ icon/content/trailing target', () => {

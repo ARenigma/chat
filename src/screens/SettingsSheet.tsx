@@ -9,9 +9,8 @@ import { Button } from '../components/Button';
 import { Icon, type IconName } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { Sheet } from '../components/Sheet';
-import { TopAppBar, TOP_APP_BAR_HEIGHT } from '../components/TopAppBar';
+import { TopAppBar } from '../components/TopAppBar';
 import { TabTopBar } from '../components/TabTopBar';
-import { ChatWallpaper } from '../components/ChatWallpaper';
 import { Divider } from '../components/Divider';
 import { useQueryClient } from '@tanstack/react-query';
 import { deleteAccount, signOut } from '../api/auth';
@@ -348,29 +347,14 @@ export function SettingsSheet({
             https://developer.android.com/develop/ui/compose/components/app-bars */}
         {needle !== '' ? null : (
         <View style={styles.profileHero}>
-          {/*
-            * On the TAB the cover is shorter by exactly the app bar it no
-            * longer holds. Its 168 was sized around a bar sitting INSIDE it
-            * (see the style's own note); with `TabTopBar` above the scroll
-            * view instead, that 64dp became dead space over the avatar. The
-            * subtraction is written out rather than replaced with 104 so the
-            * two numbers cannot drift apart.
-            */}
-          <View
-            style={[
-              styles.profileCover,
-              showBack ? null : { height: 168 - TOP_APP_BAR_HEIGHT },
-            ]}>
-            <ChatWallpaper />
-            {/* The cover's back arrow is the PUSHED case only: on the member
-                tree Settings is a tab, and a tab's first screen has nothing to
-                go back to (Amit, 2026-09-08). `TabTopBar` above carries that
-                case, so this whole bar would be a second, contradictory one. */}
-            {/* The status-bar inset belongs to whichever bar is topmost. On the
-                tab that is `TabTopBar`, which pads itself, so reserving it here
-                too would put the gap back. */}
-            <View style={showBack ? { paddingTop: insets.top } : null}>
-              {showBack ? (
+          {/* No cover image any more (Amit, on device: the WhatsApp half-doodle
+              cover was dated). A calm centred-avatar header instead — the pattern
+              Telegram / iOS Settings / Notion use: the identity sits on the page
+              itself, not on a wallpaper band. The back action, on the PUSHED case
+              only, is a plain top app bar above it rather than an arrow floating
+              on a cover. */}
+          {showBack ? (
+            <View style={{ paddingTop: insets.top }}>
               <TopAppBar
                 title=""
                 transparent
@@ -383,25 +367,14 @@ export function SettingsSheet({
                     press="none"
                     highlight="dim"
                     size={48}
-                    // `backButton` sets no radius, so the `dim` fill painted a
-                    // solid 48dp square behind a 20pt glyph. Icon-only controls
-                    // take borderless (circular) ink.
-                    // https://developer.android.com/training/material/animations
-                    //
-                    // Deviation, stated per rule 1.6: the box IS the 48dp touch
-                    // target, so the circle is 48dp where M3 draws a 40dp layer
-                    // inside a 48dp target. Shrinking it would need a nested view;
-                    // a 48dp circle already reads as the button rather than as a
-                    // box, which is the defect being fixed.
                     shape="circle"
                     style={styles.backButton}>
                     <Icon name="back" size={TOKENS.icon.md} />
                   </Pressable>
                 }
               />
-              ) : null}
             </View>
-          </View>
+          ) : null}
           <View style={styles.profileIdentity}>
             {/* Both roles can now change their photo (Amit, 2026-09-02): tap the
                 avatar to open the photo sheet rather than launching the picker
@@ -875,24 +848,18 @@ const makeStyles = (t: Theme) =>
     scroll: {
       paddingHorizontal: TOKENS.space.xl,
     },
+    // No cover band any more, so no full-bleed negative margin and nothing to
+    // clip: the hero is plain page content that centres the identity.
     profileHero: {
-      marginHorizontal: -TOKENS.space.xl,
-      overflow: 'hidden',
       alignItems: 'center',
       backgroundColor: t.color.bg.base,
     },
-    profileCover: {
-      position: 'relative',
-      width: '100%',
-      // 168, down from 240 (Amit, 2026-09-02: too much dead space up top). The
-      // app bar sits inside this cover, so its height IS the top space before
-      // the identity block; the avatar still overlaps its lower edge by 44.
-      height: 168,
-      overflow: 'hidden',
-    },
+    // Centred avatar + name + balance on the page itself. `paddingTop` gives the
+    // avatar air below the top app bar / TabTopBar instead of the old -44 overlap
+    // onto a cover.
     profileIdentity: {
       alignItems: 'center',
-      marginTop: -44,
+      paddingTop: TOKENS.space.xl,
       paddingBottom: TOKENS.space.xl,
       paddingHorizontal: TOKENS.space.md,
     },

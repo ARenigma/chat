@@ -1276,10 +1276,6 @@ describe('spacing lives in tokens', () => {
     'src/screens/PolicyGateScreen.tsx': ['gap: 6'],
     'src/screens/ProviderHomeScreen.tsx': ['gap: 3', 'paddingHorizontal: 5'],
     'src/screens/RechargeScreen.tsx': ['paddingVertical: 3'],
-    // The profile avatar is pulled up over the header by half its 88dp size. A
-    // documented departure; becomes a named constant when SettingsSheet is next
-    // touched.
-    'src/screens/SettingsSheet.tsx': ['marginTop: -44'],
   };
 
   it('never writes a raw padding, margin or gap outside the theme', () => {
