@@ -165,6 +165,19 @@ const ROW_TAG_LINE = META_CHIP_HEIGHT_SM;
 export const ROW_CTA_HEIGHT = TOKENS.interaction.minTarget;
 
 /**
+ * The CTA's DRAWN height (Amit, on the S22: "make the call cta smaller"). 36 is
+ * Astrotalk's own `call_rl` height, so the button now matches the reference
+ * visually. The 48dp TARGET is preserved two ways so this is not an a11y
+ * regression: the price row it sits in stays `ROW_CTA_HEIGHT` (48) tall and the
+ * button is centred in it, and the Pressable carries `hitSlop` of the 6dp
+ * difference top and bottom — "we recommend that each interactive UI element
+ * have a focusable area of at least 48dp x 48dp"
+ * (https://developer.android.com/guide/topics/ui/accessibility/apps). The card
+ * height is unchanged: PROVIDER_ROW_RIGHT_COLUMN still reserves ROW_CTA_HEIGHT.
+ */
+export const ROW_CTA_VISUAL_HEIGHT = 36;
+
+/**
  * The CTA's width. Astrotalk's is 95.3dp and ours was 96 to match — it is 136
  * because the button now carries the rate as well as the verb.
  *
@@ -575,6 +588,10 @@ function ProviderRowView({
               }
               press="none"
               highlight="dim"
+              // `size` is how this Pressable meets the 48dp target — it turns the
+              // 36dp drawn button into a 48dp focusable area via hitSlop, without
+              // inflating the visual (Pressable.tsx:171).
+              size={ROW_CTA_VISUAL_HEIGHT}
               style={styles.cta}>
               {/* The verb and the price, in one control. The rate is the
                   quieter of the two because the decision is "call or not" and
@@ -752,7 +769,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
    */
   cta: {
     width: ROW_CTA_WIDTH,
-    height: ROW_CTA_HEIGHT,
+    height: ROW_CTA_VISUAL_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: TOKENS.radius.xs,

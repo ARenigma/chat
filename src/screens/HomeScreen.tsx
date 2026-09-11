@@ -1397,7 +1397,13 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'space-between',
       paddingHorizontal: TOKENS.space.md,
       paddingTop: TOKENS.space.xs,
-      paddingBottom: TOKENS.space.sm,
+      // 'Explore' and its caption 'Top profiles this week' are a title + its
+      // supporting line, so they read as ONE unit: stacked vertically with a
+      // tight gap, not the 12dp that made them two separate things (Amit, on
+      // device). M3's proximity principle and iOS large-title-plus-subtitle both
+      // sit the caption ~4dp under the title.
+      // https://m3.material.io/foundations/layout/understanding-layout/spacing
+      paddingBottom: TOKENS.space['2xs'],
     },
     /*
      * "Top profiles this week" over the hero carousel. A heading, because a row
