@@ -346,14 +346,19 @@ describe('the gesture conflict is removed rather than tuned', () => {
 });
 
 describe('the CTA is 48dp, and the reference is the thing that is wrong', () => {
-  it('states the departure from the measured 36dp', () => {
+  it('draws the CTA at Astrotalk 36dp but keeps the 48dp target', () => {
     /*
-     * Astrotalk's `call_rl` is 36.0×95.3dp on the Redmi. Amit: "48dp". The
-     * platform agrees — 48dp is the documented minimum touch target — and
-     * unlike the 24dp tag pills, this one really is inside the row's tappable
-     * area, so the minimum applies with full force.
+     * Astrotalk's `call_rl` is 36.0×95.3dp on the Redmi. The button is DRAWN at
+     * 36 to match (Amit, on the S22: "make the call cta smaller"), but the 48dp
+     * touch minimum still applies with full force — this really is inside the
+     * row's tappable area. So the target stays 48 two ways: the price ROW it
+     * sits in is ROW_CTA_HEIGHT (48) and the button is centred in it, and the
+     * Pressable's `size={ROW_CTA_VISUAL_HEIGHT}` inflates the focusable area back
+     * to 48 via hitSlop without inflating the visual.
      */
     expect(read(ROW)).toContain('export const ROW_CTA_HEIGHT = TOKENS.interaction.minTarget');
+    expect(read(ROW)).toContain('export const ROW_CTA_VISUAL_HEIGHT = 36');
+    expect(code(ROW)).toContain('size={ROW_CTA_VISUAL_HEIGHT}');
     expect(TOKENS.interaction.minTarget).toBe(48);
     /*
      * The WIDTH left the reference on 2026-09-08: 136, not Astrotalk's 95.3,
@@ -366,7 +371,7 @@ describe('the CTA is 48dp, and the reference is the thing that is wrong', () => 
     expect(code(ROW)).toContain('styles.ctaRate');
     expect(code(ROW)).not.toContain('styles.price,');
     const cta = style('cta');
-    expect(cta).toContain('height: ROW_CTA_HEIGHT');
+    expect(cta).toContain('height: ROW_CTA_VISUAL_HEIGHT');
     expect(cta).toContain('width: ROW_CTA_WIDTH');
   });
 
