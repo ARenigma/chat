@@ -736,7 +736,11 @@ describe('the sign-in number field is country-aware', () => {
     // under the new dial code.
     expect(field).toContain('onChange={onChangeCountry}');
     expect(field).not.toContain('onChange={setDialCode}');
-    expect(screen).toContain('retargetPhone(phone, countryForDialCode(next))');
+    // Reads phoneRef.current, not the closed-over `phone` state — see the
+    // stale-closure fix on onChangePhone (2026-09-11): two rapid native
+    // events can land before a re-render, and only the ref is guaranteed
+    // current for the second one.
+    expect(screen).toContain('retargetPhone(phoneRef.current, countryForDialCode(next))');
     // Not a useEffect on dialCode: that renders one frame of the old digits
     // under the new dial code.
     expect(screen).not.toMatch(/useEffect\([^)]*\)[\s\S]{0,400}retargetPhone/);
