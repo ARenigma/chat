@@ -1069,11 +1069,14 @@ export function OnboardingScreen({ onDone }: Props) {
                   exiting={FadeOutUp.duration(STEP_EXIT_MS)}
                   style={styles.choices}>
                   {/*
-                   * PRIMARY: the Google button, themed to the surface (see the
-                   * `primary` style). White pill with dark text in light; midnight
-                   * pill with white text in dark, so it belongs to the dark theme
-                   * rather than being a white slab on it. The Google "G" is not
-                   * wrapped in a chip — the colour mark reads on both surfaces.
+                   * PRIMARY: white-pill Google button in EVERY mode (see the
+                   * `primary` style note) — the surface it sits on is a variable
+                   * coral bloom, not a flat page, so a theme-flipping fill can't
+                   * promise contrast the way a fixed white one can. The label is
+                   * forced to `LIGHT.color.text.primary`, not the theme token,
+                   * which is what caused the original white-on-white bug. The
+                   * Google "G" is not wrapped in a chip — it reads directly on
+                   * white, its own brand rule.
                    */}
                   <Pressable
                     onPress={onGoogle}
@@ -1660,14 +1663,17 @@ const makeStyles = (t: Theme) =>
     },
     // PRIMARY: white pill. Label is ink, loading spinner is ink.
     // 1px rgba hairline gives shape definition against the dark bloom.
-    // THEME-AWARE, not a fixed white pill. `bg/raised` is #FFFFFF in light and
-    // Telegram-midnight #1D2733 in dark; `text/primary` is dark-in-light /
-    // white-in-dark. The two track together, so the button is a white pill with
-    // dark text in light and a midnight pill with white text in dark — no longer
-    // white text on a white fill (Amit, on the S22 in dark mode), and it now sits
-    // in the app's own dark surface instead of a jarring white slab. The colour
-    // Google "G" reads on both surfaces (Google's dark button places the same
-    // colour mark on #131314), so a light-only surface was never required.
+    // CORRECTION: `bg/raised` was the wrong lever. The onboarding ROOT and the
+    // BloomField's own base are ALSO `bg/raised` (#1D2733 in dark) — so a pill
+    // painted in that same token is the same colour as the page behind it,
+    // reading as near-invisible (just a hairline) anywhere outside the coral
+    // glow. Fixed the way `ageChipSelected` below already solves the identical
+    // problem on this screen: DELIBERATELY white in both modes — for contrast
+    // against a variable, colourful bloom background a flipping theme token can
+    // never guarantee — with the label forced to `LIGHT.color.text.primary`
+    // rather than `theme.color.text.primary`, which is what turned white in dark
+    // and caused the original white-on-white bug. The Google "G" reads on white
+    // in every mode, which is its own brand rule.
     primary: {
       flexDirection: 'row',
       gap: TOKENS.space.xs,
@@ -1676,13 +1682,13 @@ const makeStyles = (t: Theme) =>
       borderCurve: 'continuous',
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: t.color.bg.raised,
+      backgroundColor: '#FFFFFF',
       borderWidth: 1,
-      borderColor: t.color.border.hairline,
+      borderColor: 'rgba(0,0,0,0.08)',
     },
     primaryLabel: {
       ...TOKENS.typography.titleMediumEmphasized,
-      color: t.color.text.primary,
+      color: LIGHT.color.text.primary,
     },
     googleMark: {
       width: 20,
