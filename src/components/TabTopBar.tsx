@@ -247,15 +247,16 @@ const makeStyles = (t: Theme) =>
       color: t.color.bg.accent,
     },
     /*
-     * Favourites and Settings: the SAME 28dp size in the regular face and the
-     * page's own ink, so the bar's height and the title's baseline do not move
-     * between tabs while the weight plainly does ("weight of fav and setting
-     * should be regular not bold like brand"). `headlineMedium` is Geist
-     * Regular at exactly 28dp, so this is a token role and not a second
-     * hand-set size beside the wordmark's.
+     * Favourites and Settings: Geist Regular at 24dp (Amit, on device: 28dp
+     * read as odd for a regular-weight title — large text wants bold, so the
+     * regular cut sits better a notch smaller). `headlineSmall` is the token
+     * role for Geist Regular 24/32, matching the tightened 'Explore' heading
+     * scale. The brand face is NOT an option here: Titan One has a single heavy
+     * weight, so "brand font + regular weight" cannot exist — it would be a
+     * mini-wordmark on every tab, the "bold like brand" look already rejected.
      */
     title: {
-      ...TOKENS.typography.headlineMedium,
+      ...TOKENS.typography.headlineSmall,
       color: t.color.text.primary,
     },
     navTrailing: {
