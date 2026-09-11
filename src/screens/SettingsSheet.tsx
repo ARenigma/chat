@@ -975,6 +975,15 @@ const makeStyles = (t: Theme) =>
       minHeight: 64,
       paddingVertical: TOKENS.space.sm,
       backgroundColor: t.color.bg.base,
+      // FULL-BLEED press highlight (Amit, on the S22: the tap read as an inset
+      // box, not a full row). The scroll pads content by `xl`; the row cancels
+      // that on its own box (negative margin) and re-adds it as padding, so the
+      // touchable — and the `dim` state layer painted on it — spans screen edge
+      // to edge while the icon/text stay inset. `borderRadius: 0` squares the
+      // layer so it is a full row strip, not Pressable's default pill.
+      marginHorizontal: -TOKENS.space.xl,
+      paddingHorizontal: TOKENS.space.xl,
+      borderRadius: 0,
     },
     iconBox: {
       width: 32,
