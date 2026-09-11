@@ -522,19 +522,22 @@ function ProviderRowView({
             </View>
           </View>
 
-          {/* Expertise, directly under the name — Astrotalk's `skillET` slot,
-              with Clarity's pills in it. A plain non-scrolling row: three pills
-              at 24dp fit the text column at every offered value, which is what
-              ROW_EXPERTISE_LIMIT is chosen to guarantee, so there is nothing to
-              scroll and no gesture to negotiate. */}
+          {/* Expertise, directly under the name — Astrotalk's `skillET` slot.
+              PLAIN COMMA TEXT, not pills (Amit, on the S22 with Astrotalk open:
+              "exactly the same as astrotalk.. looks crowded and not relaxed",
+              then confirmed plain text). Measured the reference on the device:
+              its skill/language/exp rows are all plain grey text, and that is
+              what makes the card breathe — boxed pills read as busy against it.
+              Expertise now matches the language and exp lines: the same
+              `secondary` grey text, in the same 24dp slot (no height change, so
+              PROVIDER_CARD_HEIGHT is untouched). `rowExpertise` still caps and
+              dedupes the tag set (ROW_EXPERTISE_LIMIT); only the rendering
+              changed from chips to a comma join. The category chip on the price
+              line stays filled per its own instruction. */}
           <View style={styles.tagLine} testID={`provider-tags-${provider.id}`}>
-            {tags.length > 0 ? (
-              tags.map(tag => <MetaChip key={tag} size="sm" label={tag} />)
-            ) : (
-              <Text allowFontScaling numberOfLines={1} style={styles.headline}>
-                {headline}
-              </Text>
-            )}
+            <Text allowFontScaling numberOfLines={1} style={styles.secondary}>
+              {tags.length > 0 ? tags.join(', ') : headline}
+            </Text>
           </View>
 
           <Text allowFontScaling numberOfLines={1} style={styles.secondary}>
@@ -713,15 +716,6 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     height: ROW_TAG_LINE,
     gap: TOKENS.space['2xs'],
     overflow: 'hidden',
-  },
-  // The headline, on the expertise line, when there are no tags. `bodyMedium`
-  // rather than the languages line's `bodySmall`: it is the provider's own
-  // sentence and stands in for three pills, so it should not read as the
-  // quietest thing on the card. It fits — the line is 24dp and bodyMedium's box
-  // is 20.
-  headline: {
-    ...TOKENS.typography.bodyMedium,
-    color: t.color.text.secondary,
   },
   secondary: {
     ...TOKENS.typography.bodySmall,
