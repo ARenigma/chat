@@ -1,11 +1,11 @@
 Sign-in and onboarding fixes, and a smoother feel throughout.
 
-• Fixed the phone number field dropping digits while typing quickly
+• Fixed the phone field dropping digits while typing fast
 • Phone number groups are easier to read
 • Fixed the Google sign-in button being unreadable in dark mode
 • A calmer night sky now sits behind onboarding
-• Smoother transitions between onboarding screens
-• Settings header is simpler, without the old cover photo
-• Cleaner Explore cards, spacing tuned throughout Home
+• Smoother onboarding transitions
+• Simpler settings header
+• Cleaner Explore cards and spacing on Home
 • Smaller call button on provider cards
-• Search now opens the keyboard automatically
+• Search opens the keyboard automatically
