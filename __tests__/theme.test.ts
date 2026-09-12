@@ -1989,10 +1989,63 @@ describe('accent budget is enforced in code, not just documented', () => {
        * colour derived from text/onAccent). They now read the `bubble/*` group,
        * so the single largest consumer of the accent in the app no longer
        * consumes it at all. The budget this test enforces got cheaper.
+       *
+       * It REJOINED on 2026-09-12, for exactly one line, and the narrowness is
+       * the argument. The reply-quote rule — the 2dp vertical bar beside a
+       * quoted message — was `border/strong`, which measures 1.29:1 on the
+       * outgoing bubble in light and 1.00:1 in dark. Invisible: the fill and the
+       * rule were the same colour. Every other candidate in the neutral ramp has
+       * the same problem, because the ramp is authored against bg/base, not
+       * against a coral fill. `bg/accentStrong` is 3.79:1 / 4.18:1 on that fill
+       * and 4.96:1 / 6.32:1 on the peer's, all four registered in
+       * check-contrast.mjs.
+       *
+       * And it is the budget being spent on what the budget is FOR. A reply
+       * quote is a pointer to one specific earlier message — the most pointed
+       * "this one thing" in the transcript — and it is what both WhatsApp and
+       * Telegram tint with their brand colour. The bubble FILLS are still
+       * bubble/*; this is a hairline, not a surface.
        */
+      'Turn.tsx',
       'TypingIndicator.tsx',
       'WordColumn.tsx',
     ]);
+  });
+
+  /*
+   * The transcript components hold NO colour literals. Absolute, with no
+   * allowlist, because an allowlist of two is how the last one survived.
+   *
+   * The hole this closes, precisely: on 2026-09-08 the outgoing bubble moved
+   * from the accent fill to the `bubble/*` group and every colour in Turn.tsx
+   * was reasoned through — except the media overlay, whose values were written
+   * as literals and so matched no search for a token name. `#85D4A0`, the green
+   * read tick that `bubble/tickRead`'s own note records as RETIRED that same
+   * day, sat there until 2026-09-12. For four days one conversation showed a
+   * green read tick on a photo and a blue one in a bubble, and nothing failed,
+   * because no test can see a decision that was never named.
+   *
+   * Scoped to these four files rather than all of src/components on purpose:
+   * this is the surface that took the migration, and a rule that is absolute
+   * over a small area is worth more than one that is negotiable over a large
+   * one. `shadowColor` is excluded because a shadow is a compositing parameter,
+   * not a surface colour — RN requires a literal there and no theme varies it.
+   */
+  it('keeps every colour in the transcript surface in a token', () => {
+    const TRANSCRIPT = [
+      'Turn.tsx',
+      'BubbleTime.tsx',
+      'Composer.tsx',
+      'ThreadBubble.tsx',
+    ];
+    const literal = /'(#[0-9A-Fa-f]{3,8}|rgba?\([^')]*\))'/g;
+    for (const s of componentSources.filter(c => TRANSCRIPT.includes(c.file))) {
+      const found = s.body
+        .split('\n')
+        .filter(line => !line.includes('shadowColor'))
+        .flatMap(line => line.match(literal) ?? []);
+      expect({ file: s.file, found }).toEqual({ file: s.file, found: [] });
+    }
   });
 
   it('never uses the accent for a page background', () => {

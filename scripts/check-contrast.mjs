@@ -198,6 +198,32 @@ const PAIRS = [
     exempt:
       'a non-text indicator, and never the only signal that a message was read — the tick doubles from one to two glyphs, so its MEANING survives even where its colour does not; 3:1 is the non-text target from developer.android.com/guide/topics/ui/accessibility/apps',
   },
+  /*
+   * The reply quote inside a bubble. Registered on 2026-09-12 because it was
+   * the one surface in the transcript that nothing measured, and it had been
+   * illegible in both modes since the outgoing bubble stopped being the accent
+   * fill: the rule and both lines were `text/onAccent`, which measured 1.31:1
+   * light and 1.89:1 dark on `bubble/mine`. Only two rows are needed rather
+   * than four, because dropping the fork means the quote takes the same
+   * `bubble/text` the body does, and those two pairs are already registered
+   * above — what is NOT covered there is the left rule, so that is what these
+   * measure, against both fills.
+   */
+  {
+    fg: 'bg/accentStrong',
+    bg: 'bubble/mine',
+    target: 3,
+    what: 'the reply-quote rule inside your own bubble (non-text)',
+    exempt:
+      'a 2dp rule, not text: 3:1 is the non-text target from developer.android.com/guide/topics/ui/accessibility/apps. It is also never the only signal — the quoted author and body sit beside it in bubble/text',
+  },
+  {
+    fg: 'bg/accentStrong',
+    bg: 'bubble/theirs',
+    target: 3,
+    what: 'the reply-quote rule inside their bubble (non-text)',
+    exempt: 'same rule, other fill — see the row above',
+  },
   {
     fg: 'text/onInverse',
     bg: 'bg/inverse',

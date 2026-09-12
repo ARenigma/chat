@@ -83,6 +83,12 @@ export const LIGHT = {
       tickRead: '#007BFC',
       wallpaper: '#F5F1EB',
     },
+    media: {
+      scrim: 'rgba(0,0,0,0.55)',
+      meta: 'rgba(255,255,255,0.72)',
+      uploading: 'rgba(0,0,0,0.28)',
+      tickRead: '#FFFFFF',
+    },
   },
   space: {
     hair: 2,
@@ -678,6 +684,12 @@ export const DARK = {
       meta: 'rgba(255,255,255,0.6)',
       tickRead: '#53BDEB',
       wallpaper: '#151E27',
+    },
+    media: {
+      scrim: 'rgba(0,0,0,0.55)',
+      meta: 'rgba(255,255,255,0.72)',
+      uploading: 'rgba(0,0,0,0.28)',
+      tickRead: '#FFFFFF',
     },
   },
   space: {
