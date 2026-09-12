@@ -2,6 +2,7 @@ package com.companionchat
 
 import android.util.Log
 import android.view.View
+import android.view.ViewGroup
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -49,6 +50,56 @@ class CameraTilePackage : ReactPackage {
 }
 
 private const val TAG = "PappalCameraPreview"
+
+/**
+ * Force a measure+layout pass over a PreviewView's own subtree.
+ *
+ * THE BUG THIS EXISTS FOR, measured on an S22 on 2026-09-12. The tile rendered
+ * black and logcat showed the camera opening cleanly and then, five seconds
+ * later, `Unable to configure camera ... TimeoutException: Future[ListFuture]
+ * is not done within 5000 ms`. That message is CameraX saying the preview
+ * surface never arrived. Instrumenting the view said why:
+ *
+ *     DIAG t=0    size=351x922 children=0
+ *     DIAG t=1500 size=351x922 children=2 child=TextureView:0x0
+ *     DIAG t=6500 size=351x922 children=2 child=TextureView:0x0
+ *
+ * PreviewView is 351x922 and correct. The TextureView it creates for itself is
+ * 0x0 and stays 0x0. A zero-size TextureView is never given a SurfaceTexture,
+ * so the surface CameraX waits on is never produced and the capture session
+ * times out. The camera had therefore never worked in this app — the black tile
+ * was not a slow start, it was a permanent failure.
+ *
+ * WHY IT HAPPENS. React Native lays out the views Yoga knows about by calling
+ * `view.layout(...)` on them directly, and it deliberately does not honour
+ * `requestLayout()` from inside the native hierarchy — propagating it is what
+ * causes layout thrash in an RN app, so it is swallowed. PreviewView adds its
+ * TextureView *after* that layout pass, asynchronously, when the SurfaceRequest
+ * arrives. The child asks for a layout, nothing answers, and it keeps the 0x0
+ * bounds it was born with.
+ *
+ * THE FIX is the one every native-view library in this ecosystem carries
+ * (react-native-video, react-native-maps and friends all have a version of it):
+ * re-run measure and layout on the subtree ourselves. It is applied from a
+ * hierarchy-change listener rather than by overriding `requestLayout()` in a
+ * subclass, because `PreviewView` is final and cannot be extended.
+ *
+ * `post` defers the work to after the current traversal so this never re-enters
+ * a layout pass that is already running.
+ *
+ * https://github.com/facebook/react-native/issues/17968
+ */
+private fun relayoutSubtree(view: View) {
+    view.post {
+        if (view.width > 0 && view.height > 0) {
+            view.measure(
+                View.MeasureSpec.makeMeasureSpec(view.width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(view.height, View.MeasureSpec.EXACTLY),
+            )
+            view.layout(view.left, view.top, view.right, view.bottom)
+        }
+    }
+}
 
 class CameraPreviewManager : SimpleViewManager<PreviewView>() {
 
@@ -107,6 +158,21 @@ class CameraPreviewManager : SimpleViewManager<PreviewView>() {
              */
             setBackgroundColor(android.graphics.Color.TRANSPARENT)
         }
+        /*
+         * The TextureView PreviewView creates for itself arrives after React
+         * Native's layout pass and is born 0x0 — see `relayoutSubtree`. This is
+         * the exact moment it appears, so it is the right place to give it real
+         * bounds.
+         */
+        view.setOnHierarchyChangeListener(
+            object : ViewGroup.OnHierarchyChangeListener {
+                override fun onChildViewAdded(parent: View, child: View) {
+                    relayoutSubtree(parent)
+                }
+
+                override fun onChildViewRemoved(parent: View, child: View) = Unit
+            },
+        )
         contextMap[view] = context
         return view
     }
