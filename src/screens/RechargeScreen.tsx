@@ -156,6 +156,33 @@ function RechargeSheetForm({
                 // filled coral chip would flash DARKER on press instead of
                 // lighter, reading as a different component.
                 onColor={selected ? theme.color.text.onAccent : undefined}
+                /*
+                 * THE SELECTED FILL IS DELIBERATELY INSTANT, and it was looked
+                 * at properly (2026-09-12) rather than left alone by default.
+                 *
+                 * The motion audit raised it as a seam: the card spring-scales
+                 * under the finger and then the coral fill appears with no
+                 * interpolation, so the press resolves in two phases. True, and
+                 * the obvious fix — fade the fill in — ships a worse bug in both
+                 * themes, because the LABEL flips colour on the same frame:
+                 *
+                 *   light  bg/raised #FFFFFF, text/onAccent #FFFFFF
+                 *   dark   bg/raised #1D2733, text/onAccent #0A1F14
+                 *
+                 * Either way the label is the same colour as the unfilled card,
+                 * so any fill that takes time to arrive leaves the amount
+                 * invisible for that time — on the screen where somebody is
+                 * about to spend money. Doing it safely means driving fill and
+                 * label from one shared value (interpolateColor on both) or
+                 * cross-fading two complete card layers, which is real machinery
+                 * on the highest-stakes surface in the app.
+                 *
+                 * And the instant swap is defensible on its own terms: this is
+                 * an accessibilityRole="radio", and a selection that fades reads
+                 * as uncertain where a selection that lands reads as chosen. The
+                 * press already has its feedback — the scale, and the state
+                 * layer `onColor` above.
+                 */
                 style={[styles.card, selected && styles.cardSelected]}>
                 {popular ? (
                   <View style={[styles.popular, selected && styles.popularOn]}>

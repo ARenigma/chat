@@ -3113,7 +3113,20 @@ describe('art direction', () => {
 
   it('never lets a layout animation take the default easing', () => {
     const offenders: string[] = [];
-    for (const { file, body } of sources) {
+    /*
+     * `motion.ts` is scanned TOO, and that is not belt-and-braces — the first
+     * version of this test looked only at components and screens, and the
+     * shared builders had the identical bug sitting in the module that is
+     * supposed to be authoritative: `fadeSwap`, `fadeSwapFast`, `barIn` and
+     * `barOut` all took the default curve, while `searchIn`/`searchOut` beside
+     * them were clean because they had been fixed by hand on 2026-09-07. A gate
+     * that cannot see the shared builder is a gate that blesses the worst case.
+     */
+    const scanned = [
+      ...sources,
+      { file: 'src/theme/motion.ts', body: stripComments(read('src/theme/motion.ts')) },
+    ];
+    for (const { file, body } of scanned) {
       if (DEFAULT_EASING_ALLOWED.has(file)) {
         continue;
       }

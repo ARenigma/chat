@@ -20,6 +20,7 @@ import {
   barOut,
   holdScreenEnter,
   onTransitionSettled,
+  rowIn,
   transitioning,
 } from '../theme/motion';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -1728,7 +1729,22 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
             <LoadingIndicator size={48} />
           </View>
         ) : empty ? (
-          <View style={styles.empty}>
+          /*
+           * An entrance, because this is the moment the member learns a real
+           * person is on the other end.
+           *
+           * The branch replaces a spinner, so without one the avatar, the name
+           * and the typing indicator all hard-cut into place the instant
+           * loading resolves — the product's defining spatial event delivered
+           * as a jump cut. `rowIn(0)` is the same arrival every provider row in
+           * the app already uses (opacity on effects timing, 12dp of travel on
+           * `spatialSlow`), so the person arrives the way people arrive
+           * everywhere else here rather than in a bespoke way.
+           *
+           * Occasional tier: a first visit to any conversation, or any return
+           * while the thread is still empty.
+           */
+          <Animated.View entering={rowIn(0)} style={styles.empty}>
             <View style={styles.emptyMark}>
               <Avatar initial={initial} uri={avatarUrl} size={56} tone="warm" breathing />
             </View>
@@ -1742,7 +1758,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
             <View style={styles.starters}>
               <PeerTyping name={name} />
             </View>
-          </View>
+          </Animated.View>
         ) : (
           <Transcript
             listRef={listRef}

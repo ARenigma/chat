@@ -506,14 +506,14 @@ export function fadeTo(to: number, ms: number = DURATION.fast): number {
  * Hoisted, like every other builder here: they allocate on construction, so one
  * built inside a render is a new object per render.
  */
-export const fadeSwap = FadeIn.duration(DURATION.base).reduceMotion(
-  ReduceMotion.System,
-);
+export const fadeSwap = FadeIn.duration(DURATION.base)
+  .easing(EASE_OUT)
+  .reduceMotion(ReduceMotion.System);
 
 /** The same swap at the speed of a tap, for a button label that just narrated itself. */
-export const fadeSwapFast = FadeIn.duration(DURATION.fast).reduceMotion(
-  ReduceMotion.System,
-);
+export const fadeSwapFast = FadeIn.duration(DURATION.fast)
+  .easing(EASE_OUT)
+  .reduceMotion(ReduceMotion.System);
 
 /**
  * Opening and closing search: a CROSSFADE in place, both directions, 350ms on
@@ -754,12 +754,12 @@ export const directoryOut = contentLeave(
  * ~150ms out, `ChatActivityEnterView.java:8217, 10302-10319`). Arriving is an
  * announcement and wants to be seen; leaving should get out of the way.
  */
-export const barIn = FadeInDown.duration(DURATION.base).reduceMotion(
-  ReduceMotion.System,
-);
-export const barOut = FadeOutUp.duration(DURATION.fast).reduceMotion(
-  ReduceMotion.System,
-);
+export const barIn = FadeInDown.duration(DURATION.base)
+  .easing(EASE_OUT)
+  .reduceMotion(ReduceMotion.System);
+export const barOut = FadeOutUp.duration(DURATION.fast)
+  .easing(EASE_OUT)
+  .reduceMotion(ReduceMotion.System);
 
 /* -------------------------------------------------------------------------
  * The tab strip's ACTIVE INDICATOR, which is a Material component's motion and
