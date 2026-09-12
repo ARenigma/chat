@@ -21,6 +21,7 @@ import {
   DOCK_DELAY_MS,
   EASE_OUT,
   KEYBOARD_CUBIC,
+  fadeSwapFast,
   dockTo,
   useCrossfade,
   M3,
@@ -1235,11 +1236,34 @@ function ComposerView({
               is visible at this size — the second half of "the elements are not
               aligned" (Amit, 2026-09-12); the first half was the 36dp button in
               a row of 40s. Three controls in one capsule, one glyph size. */}
-          <Icon
-            name={emojiOpen ? 'keyboard' : 'smile'}
-            size={TOKENS.icon.md}
-            color={theme.color.text.secondary}
-          />
+          {/*
+            * The glyph CROSS-FADES rather than cutting (2026-09-12).
+            *
+            * It was `name={emojiOpen ? 'keyboard' : 'smile'}` on a bare Icon —
+            * a hard swap, which is the one thing a toggle should not do,
+            * because the whole job of a toggle's feedback is to say "your tap
+            * landed and this is now the other state". An instant substitution
+            * is indistinguishable from a re-render.
+            *
+            * `key` is what makes it work: changing the key remounts the view,
+            * which is what gives Reanimated an entering animation to run.
+            * Without it the same node just takes a new prop and nothing
+            * animates.
+            *
+            * `fadeSwapFast` (DURATION.fast, 170ms, EASE_OUT) rather than
+            * `fadeSwap`, by the frequency rule in DESIGN.md: this button is
+            * pressed many times per conversation, and the budget for something
+            * at that frequency is ~200ms. It is also the builder the app
+            * already uses for exactly this — a control that has just changed
+            * what it says about itself.
+            */}
+          <Animated.View key={emojiOpen ? 'keyboard' : 'smile'} entering={fadeSwapFast}>
+            <Icon
+              name={emojiOpen ? 'keyboard' : 'smile'}
+              size={TOKENS.icon.md}
+              color={theme.color.text.secondary}
+            />
+          </Animated.View>
         </Pressable>
         {/*
           * The wrapper's height is the animated value; the field inside fills
