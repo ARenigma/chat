@@ -3808,6 +3808,41 @@ describe('the motion adoption is wired, not just drawn', () => {
     expect(picker).toContain('press="row"');
   });
 
+  /*
+   * One list component, and it is FlashList.
+   *
+   * Added 2026-09-12 after `FlatList` was found still driving the emoji grid —
+   * the app's LONGEST list, ~1,800 items — long after every other surface had
+   * moved. It survived precisely because nothing failed when it did not move:
+   * the migration was done screen by screen, the emoji panel was missed, and
+   * the only trace was a set of comments elsewhere still naming a component
+   * that was no longer there. It was then hand-tuned with FlatList's windowing
+   * props, which is worse than leaving it alone, because effort spent on the
+   * wrong API reads as the surface having been looked at.
+   *
+   * `SectionList` is banned by the same argument: it is FlatList underneath.
+   *
+   * Scoped to imports rather than to the word, so the stale prose comments this
+   * catches do not have to be hunted down to keep the build green — though they
+   * were, in the same commit.
+   */
+  it('uses FlashList for every list, never FlatList or SectionList', () => {
+    const listSources = ['src/components', 'src/screens'].flatMap(dir =>
+      readdirSync(join(ROOT, dir))
+        .filter(f => f.endsWith('.tsx'))
+        .map(f => ({ file: `${dir}/${f}`, body: withoutComments(read(`${dir}/${f}`)) })),
+    );
+    const offenders = listSources
+      .filter(s =>
+        /import \{[^}]*\b(FlatList|SectionList)\b[^}]*\} from 'react-native'/.test(
+          s.body,
+        ),
+      )
+      .map(s => s.file)
+      .sort();
+    expect(offenders).toEqual([]);
+  });
+
   it('confines every raw Pressable import from react-native to an exact allowlist', () => {
     /**
      * Allowlisted files and the reason each is exempt:
@@ -3855,7 +3890,7 @@ describe('the motion adoption is wired, not just drawn', () => {
        *
        * `Pressable` costs two `useSharedValue`s, two `useAnimatedStyle` worklets
        * and three nested native views per instance. The grid has ~1,800 cells
-       * and FlatList keeps several hundred mounted, so the app's own component
+       * and the list keeps many of them alive at once, so the app's own component
        * is the wrong primitive here by two orders of magnitude — this is what
        * "the emoji is very slow" was. The cell asked for `press="none"` anyway,
        * so the only feedback being given up is `highlight="dim"`, and

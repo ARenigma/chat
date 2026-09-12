@@ -2,7 +2,7 @@
  * Transcript reconciliation, pure, so it can be tested without a socket.
  *
  * Every list here is **newest-first**, because the transcript renders into an
- * inverted FlatList.
+ * inverted FlashList.
  *
  * The hard part is not receiving messages, it is receiving your own. A send
  * takes two independent paths back to the client: the `send_message` RPC
@@ -29,7 +29,7 @@ import type { Message } from './database.types';
  * pending bubble is the *same* element that renders the confirmed one.
  *
  * Without it, settlement changes the row's id from `pending-…` to a uuid, the
- * key changes, and FlatList unmounts one component and mounts another. Seen on a
+ * key changes, and the list unmounts one component and mounts another. Seen on a
  * 30fps screen recording of a real send: the bubble appeared, vanished for two
  * frames, and then replayed the whole squash-and-stretch launch. The animation
  * was correct both times, it simply ran twice, with a hole in the middle,

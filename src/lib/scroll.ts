@@ -18,7 +18,7 @@ import type { ScrollViewProps } from 'react-native';
  *
  * `overScrollMode: 'auto'` keeps the Android 12+ rubber-band STRETCH at the list
  * ends, which is the stock-Android feel; 'never' would strip it. Spread onto every
- * FlatList/ScrollView via `{...SCROLL_PHYSICS}`.
+ * FlashList/ScrollView via `{...SCROLL_PHYSICS}`.
  */
 export const SCROLL_PHYSICS = {
   decelerationRate: 'normal',
