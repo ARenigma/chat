@@ -142,7 +142,37 @@ function AttachPanelView({
           accessibilityLabel="Take a photo"
           press="card"
           highlight="material"
-          style={[styles.cell, { width: cellSize, height: cellSize }]}>
+          style={[styles.cell, styles.cameraCell, { width: cellSize }]}>
+          {/*
+            * The placeholder is ALWAYS mounted, and the preview is layered over
+            * it — not an either/or.
+            *
+            * It used to be a ternary: live preview, or the glyph. That looked
+            * correct and was not, because there is a third state the ternary
+            * cannot express — mounted but not yet streaming. CameraX takes
+            * 300ms–2s to negotiate a capture session, and when negotiation
+            * fails it never streams at all (seen on an S22, 2026-09-12). In
+            * both cases `live` is true, so the glyph branch is skipped and the
+            * member is looking at an empty tile with a "Camera" label on it.
+            *
+            * Keeping the glyph underneath means the tile always has something
+            * in it, and the camera simply covers it when frames start. That
+            * needs PreviewView's own background to be transparent, which is a
+            * one-line change on the native side — see CameraTilePackage.kt,
+            * which also records why the explicit StreamState signal was not
+            * used for a proper cross-fade.
+            */}
+          {/* Icon and label together, centred — the same composition as the
+              Photos tile beside it, so the two read as a matched pair of large
+              actions rather than one labelled box and one unlabelled one. The
+              live preview covers this entirely once frames arrive, which is
+              when the bottom-pinned label below takes over. */}
+          <View style={styles.placeholder} pointerEvents="none">
+            <Icon name="camera" size={TOKENS.icon.xl} color={theme.color.text.secondary} />
+            <Text allowFontScaling={false} style={styles.galleryLabel}>
+              Camera
+            </Text>
+          </View>
           {live ? (
             /*
              * Sized in absolute px, never a percentage or `absoluteFill`.
@@ -158,22 +188,36 @@ function AttachPanelView({
              */
             <CameraPreview
               facing="back"
-              style={{ width: cellSize, height: cellSize }}
+              style={styles.preview}
             />
-          ) : (
-            <View style={styles.placeholder}>
-              <Icon name="camera" size={TOKENS.icon.xl} color={theme.color.text.secondary} />
-            </View>
-          )}
-          {/* The label stays over the live preview: without it a viewfinder in a
-              chat composer reads as "you are being recorded" rather than as a
-              button. Telegram carries a shutter affordance over its cell for the
-              same reason. */}
-          <View style={styles.labelWrap} pointerEvents="none">
-            <Text allowFontScaling={false} style={styles.label}>
-              Camera
-            </Text>
-          </View>
+          ) : null}
+          {/*
+            * THE BOTTOM-PINNED LABEL IS GONE, and it is worth saying why rather
+            * than leaving a reader to wonder.
+            *
+            * It existed so a viewfinder in a chat composer reads as a button
+            * rather than as "you are being recorded" — a good reason. But it was
+            * pinned to the cell, not to the preview, so it rendered in the one
+            * state neither layer can see: `live` true and frames not arriving.
+            * On the S22 that state is permanent (the capture session fails to
+            * negotiate), and the tile showed "Camera" centred on the placeholder
+            * AND "Camera" again at the bottom edge — one control, two labels,
+            * and TalkBack reading both.
+            *
+            * The label now lives in the placeholder, so it is present exactly
+            * when there is no picture and is covered by the picture when there
+            * is one. That matches Telegram, whose viewfinder cell carries a
+            * shutter affordance rather than standing text, and the control keeps
+            * its `accessibilityLabel="Take a photo"` either way.
+            *
+            * Restoring a label OVER the live preview needs the thing this file
+            * does not have: `PreviewView.StreamState` (IDLE/STREAMING) observed
+            * natively and emitted to JS, which would also allow the cross-fade
+            * from placeholder to first frame instead of the current cut. That is
+            * the right follow-up, and it is a deliberate piece of work rather
+            * than something to bolt onto a layout fix.
+            * https://developer.android.com/reference/androidx/camera/view/PreviewView.StreamState
+            */}
         </Pressable>
 
         {/* The Photos tile takes the rest of the row. It is one tile rather than
@@ -185,7 +229,7 @@ function AttachPanelView({
           accessibilityLabel="Choose a photo"
           press="card"
           highlight="material"
-          style={[styles.cell, styles.galleryCell, { height: cellSize }]}>
+          style={[styles.cell, styles.galleryCell]}>
           <Icon name="image" size={TOKENS.icon.xl} color={theme.color.text.secondary} />
           <Text allowFontScaling={false} style={styles.galleryLabel}>
             Photos
@@ -210,7 +254,26 @@ const makeStyles = (t: Theme) =>
     },
     // Out of layout entirely while hidden — a zero height still costs a measure.
     hidden: { display: 'none' },
+    /*
+     * The grid FILLS the panel, rather than sitting as one short row at the top
+     * of it.
+     *
+     * The panel is keyboard-height by design — it stands in the emoji panel's
+     * slot so swapping between the two never moves the viewport (see this
+     * component's header). But the row inside it was `cellSize` tall, a third of
+     * that, so roughly 600px of bare surface sat underneath two small tiles and
+     * the sheet read as broken rather than as deliberate (Amit, 2026-09-12: "it
+     * looks very bad").
+     *
+     * Telegram can afford a short first row because a scrolling photo grid fills
+     * the rest; we have no grid to put there and cannot read the gallery (see
+     * departure 2 above). With exactly two actions, the honest answer is to let
+     * the two actions have the room: a tall portrait viewfinder — which is the
+     * natural aspect for a phone camera anyway — beside a full-height Photos
+     * target. Nothing is invented, nothing is left empty.
+     */
     grid: {
+      flex: 1,
       flexDirection: 'row',
       padding: PADDING,
       gap: GAP,
@@ -222,29 +285,28 @@ const makeStyles = (t: Theme) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
-    // Fills whatever the camera cell leaves, so the row has no dead edge.
+    // Keeps the reference's column width (so the tile still reads as cell 0 of
+    // Telegram's grid) while taking the panel's full height.
+    cameraCell: {
+      alignSelf: 'stretch',
+    },
+    // Fills whatever the camera cell leaves, in both axes, so the row has no
+    // dead edge and the panel has no dead floor.
     galleryCell: {
       flex: 1,
+      alignSelf: 'stretch',
       gap: TOKENS.space['2xs'],
     },
     placeholder: {
+      ...StyleSheet.absoluteFill,
       alignItems: 'center',
       justifyContent: 'center',
+      gap: TOKENS.space['2xs'],
     },
-    labelWrap: {
-      position: 'absolute',
-      left: 0,
-      right: 0,
-      bottom: TOKENS.space['2xs'],
-      alignItems: 'center',
-    },
-    label: {
-      ...TOKENS.typography.labelSmall,
-      // On its own over a live preview of unknown brightness, so it carries a
-      // shadow rather than trusting the frame behind it.
-      color: '#FFFFFF',
-      textShadowColor: 'rgba(0, 0, 0, 0.6)',
-      textShadowRadius: 3,
+    // Layered over the placeholder rather than replacing it, so the glyph shows
+    // through until the TextureView actually has frames to paint.
+    preview: {
+      ...StyleSheet.absoluteFill,
     },
     galleryLabel: {
       ...TOKENS.typography.labelSmall,

@@ -77,6 +77,35 @@ class CameraPreviewManager : SimpleViewManager<PreviewView>() {
             // a rounded, animatable tile.
             // https://developer.android.com/reference/androidx/camera/view/PreviewView.ImplementationMode
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+
+            /*
+             * TRANSPARENT, because PreviewView paints itself BLACK otherwise and
+             * that black is what a member actually saw.
+             *
+             * CameraX gives PreviewView an opaque black background of its own, so
+             * from the moment this view mounts until the first frame arrives —
+             * typically 300ms to 2s, and FOREVER when the capture session fails
+             * to negotiate (`Camera2-FrameProcessorBase: Error waiting for new
+             * frames: Connection timed out (-110)`, observed on an S22 on
+             * 2026-09-12) — the tile is a pure black rectangle with a "Camera"
+             * label on it. No placeholder behind it can help, because the black
+             * is painted on top of whatever is behind.
+             *
+             * With the background transparent, the TextureView underneath is
+             * itself transparent until it receives buffers, so the tile shows
+             * whatever JS renders behind this view (AttachPanel's camera-glyph
+             * placeholder) and the live frames simply cover it once they arrive.
+             * A failed session now degrades to the placeholder instead of a void.
+             *
+             * PreviewView.StreamState (IDLE/STREAMING) is the API for observing
+             * that moment explicitly, and would be the way to cross-fade rather
+             * than cut. Not used here: it needs a LiveData observer and an event
+             * back to JS, and this app has no native view that emits events yet
+             * — a first one is worth adding deliberately, not as a side effect of
+             * a bug fix. See the note in AttachPanel.tsx.
+             * https://developer.android.com/reference/androidx/camera/view/PreviewView.StreamState
+             */
+            setBackgroundColor(android.graphics.Color.TRANSPARENT)
         }
         contextMap[view] = context
         return view
