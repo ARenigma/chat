@@ -33,8 +33,8 @@ export const LIGHT = {
       selected: '#D1D1D6',
       inverse: '#1C1C1E',
       scrim: '#000000',
-      accent: '#F15D48',
-      accentStrong: '#C0492F',
+      accent: '#EE4027',
+      accentStrong: '#A74029',
       accentTint: '#FCE7E2',
       listener: '#D8E8FF',
       astrologer: '#EBE0FF',
@@ -62,7 +62,7 @@ export const LIGHT = {
     border: {
       hairline: '#C6C6C8',
       strong: '#C7C7CC',
-      accent: '#F15D48',
+      accent: '#EE4027',
     },
     state: {
       available: '#12946A',
@@ -635,8 +635,8 @@ export const DARK = {
       selected: '#26303D',
       inverse: '#E9EEF4',
       scrim: '#000000',
-      accent: '#FF8272',
-      accentStrong: '#FF9184',
+      accent: '#FF6B58',
+      accentStrong: '#FF7A6A',
       accentTint: '#3A211D',
       listener: '#20507F',
       astrologer: '#452F70',
@@ -664,7 +664,7 @@ export const DARK = {
     border: {
       hairline: '#303C4A',
       strong: '#3A4A5C',
-      accent: '#FF8272',
+      accent: '#FF6B58',
     },
     state: {
       available: '#3FD69B',
