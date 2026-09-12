@@ -349,4 +349,10 @@ a fail, which is why the accent is two tokens, `bg.accent` for marks and
 
 Everything above is enforced by tests rather than described: contrast per pair,
 warmth per neutral, faces bundled, no raw duration or damping outside the theme,
-`bounce` used in exactly one place, and reduce-motion honoured on every entrance.
+`bounce` confined to the allowlist in `__tests__/theme.test.ts`, and
+reduce-motion honoured on every entrance.
+
+(That line said "`bounce` used in exactly one place" until 2026-09-12. It had
+been wrong for a while: the spring is now on seven surfaces, each argued in the
+test's own comment block. The count is deliberately no longer written here —
+one authority, which is the test.)

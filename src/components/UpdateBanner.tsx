@@ -1,9 +1,25 @@
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text } from 'react-native';
-import Animated, { FadeInUp, FadeOut } from 'react-native-reanimated';
+import Animated, { FadeInUp, FadeOut, ReduceMotion } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
+import { DURATION, EASE_OUT } from '../theme/motion';
+
+/**
+ * Hoisted at module scope so Reanimated allocates the builder once, not once
+ * per render. See NoticeBar.tsx for the same fix and reasoning.
+ *
+ * In is slower than out (base vs fast), matching `barIn`/`barOut`'s documented
+ * asymmetry: arriving is an announcement; leaving gets out of the way.
+ * EASE_OUT on both: decelerate curve, no ease-in phase on entry or exit.
+ */
+const bannerIn = FadeInUp.duration(DURATION.base)
+  .easing(EASE_OUT)
+  .reduceMotion(ReduceMotion.System);
+const bannerOut = FadeOut.duration(DURATION.fast)
+  .easing(EASE_OUT)
+  .reduceMotion(ReduceMotion.System);
 import { Pressable } from './Pressable';
 import { completeUpdate, watchForUpdates } from '../lib/appUpdate';
 import { updateNotice, type UpdateAction } from '../lib/updatePolicy';
@@ -42,8 +58,8 @@ export function UpdateBanner() {
 
   return (
     <Animated.View
-      entering={FadeInUp.duration(TOKENS.motion.duration.base)}
-      exiting={FadeOut}
+      entering={bannerIn}
+      exiting={bannerOut}
       style={[styles.host, { bottom: insets.bottom + TOKENS.space.md }]}>
       <Text allowFontScaling style={styles.text}>
         {message}

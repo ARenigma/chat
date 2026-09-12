@@ -376,14 +376,20 @@ describe('the search field is the one Telegram actually ships', () => {
      * `alpha = f; scale = lerp(0.4, 1, f)` (FragmentFloatingButton.java:250-258)
      * and `setRotation((1 - factor) * 90)` (FragmentSearchField.java:333).
      *
-     * The duration is a token, so "make search calmer" stays one edit; only the
-     * bezier is rebuilt locally, from motion.m3.easing.easeOutQuint, because
-     * src/theme/motion.ts keeps its own copy module-private.
+     * The duration is a token, so "make search calmer" stays one edit. The
+     * bezier used to be rebuilt locally from motion.m3.easing.easeOutQuint,
+     * "because src/theme/motion.ts keeps its own copy module-private" — that
+     * reason expired on 2026-09-12, when the audit behind DESIGN.md's
+     * art-direction rule 2 ("a curve is never defaulted and never hand-typed")
+     * exported `EASE_OUT_QUINT` from motion.ts. Two identical curves derived
+     * from the same four numbers is the drift that rule exists to stop, so the
+     * local copy is gone and this asserts the import instead.
      */
     expect(TOKENS.motion.duration.clearReveal).toBe(380);
     expect(TOKENS.motion.m3.easing.easeOutQuint).toEqual([0.23, 1, 0.32, 1]);
     expect(bar).toContain('TOKENS.motion.duration.clearReveal');
-    expect(bar).toContain('TOKENS.motion.m3.easing.easeOutQuint');
+    expect(bar).toContain('EASE_OUT_QUINT');
+    expect(bar).toMatch(/import\s*\{[^}]*EASE_OUT_QUINT[^}]*\}\s*from\s*'\.\.\/theme\/motion'/);
     expect(bar).toContain('const CLEAR_HIDDEN_SCALE = 0.4');
     expect(bar).toContain('const CLEAR_HIDDEN_ROTATION_DEG = 90');
     // The glyph it animates is the clear cross, at the size the ink-parity gate

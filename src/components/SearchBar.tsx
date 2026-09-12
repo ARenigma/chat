@@ -164,13 +164,13 @@ import {
   type TextInputProps,
 } from 'react-native';
 import Animated, {
-  Easing,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
+import { EASE_OUT_QUINT } from '../theme/motion';
 import { Icon } from './Icon';
 import { Pressable } from './Pressable';
 
@@ -322,12 +322,12 @@ const CLEAR_GLYPH_SIZE = 17;
  * number. Precedent for a component holding a bezier read from the token map is
  * `Composer.tsx:101` (KEYBOARD_EASING).
  */
-const EASE_OUT_QUINT = Easing.bezier(
-  TOKENS.motion.m3.easing.easeOutQuint[0],
-  TOKENS.motion.m3.easing.easeOutQuint[1],
-  TOKENS.motion.m3.easing.easeOutQuint[2],
-  TOKENS.motion.m3.easing.easeOutQuint[3],
-);
+/*
+ * `EASE_OUT_QUINT` comes from motion.ts rather than being rebuilt here. This
+ * file used to derive its own from the same four token numbers — the identical
+ * curve, computed twice, which is exactly the drift the "one module knows how
+ * motion behaves" rule exists to prevent (art-direction rule 2, DESIGN.md).
+ */
 const CLEAR_REVEAL = {
   duration: TOKENS.motion.duration.clearReveal,
   easing: EASE_OUT_QUINT,

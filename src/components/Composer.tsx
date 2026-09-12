@@ -13,12 +13,18 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
-  Easing,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { DOCK_DELAY_MS, dockTo, useCrossfade, M3 } from '../theme/motion';
+import {
+  DOCK_DELAY_MS,
+  EASE_OUT,
+  KEYBOARD_CUBIC,
+  dockTo,
+  useCrossfade,
+  M3,
+} from '../theme/motion';
 import { requestAndroidPermission } from '../lib/permissions';
 import {
   launchCamera,
@@ -136,8 +142,13 @@ export const MAX_INPUT_LINES = 6;
  *   → `M3.duration.medium1`.  Used at the call-site, not here, so it is visible
  *   in the withTiming call without hunting.
  */
-const [kbX1, kbY1, kbX2, kbY2] = M3.easing.keyboard as [number, number, number, number];
-const KEYBOARD_EASING = Easing.bezier(kbX1, kbY1, kbX2, kbY2);
+/*
+ * `KEYBOARD_CUBIC` comes from motion.ts rather than being rebuilt here. This
+ * file used to destructure `M3.easing.keyboard` and call `Easing.bezier` on it
+ * — the identical curve motion.ts already exports under that name, derived
+ * from the identical four token numbers (art-direction rule 2, DESIGN.md).
+ */
+const KEYBOARD_EASING = KEYBOARD_CUBIC;
 
 interface Props {
   onSend: (text: string) => void;
@@ -459,6 +470,15 @@ function ComposerView({
   const inputH = useSharedValue(MIN_INPUT_H);
   /** Last settled line count, so an identical remeasure starts no animation. */
   const lineCountRef = useRef(1);
+  // RULE 1 §6 STATED DEPARTURE — animates `height` on the in-flow input
+  // wrapper, a real Yoga cost every frame of the 250ms grow. The rule says
+  // animate transform/opacity only. The departure is correct here: a
+  // multi-line TextInput cannot be height-constrained via transform without
+  // breaking text layout — the text node must actually reflow inside a taller
+  // container. Bounded at M3.duration.medium1 = 250ms, and guarded by
+  // `lineCountRef` so only an actual line-count change starts the animation
+  // (identical remeasures do nothing). Unproven on low-end hardware — a frame
+  // trace on the Redmi is the open question before calling this solved.
   const inputHStyle = useAnimatedStyle(() => ({ height: inputH.value }));
   const animateNext = useRef(true);
   const dockStyle = useAnimatedStyle(() => ({
@@ -614,8 +634,22 @@ function ComposerView({
       // the mic↔send reveal timing — a different action on a different path.
       // Using the token via the M3 export from motion.ts, not a raw literal.
       duration: M3.duration.short2,
+      // EASE_OUT: a collapse is an exit, and an exit must not have an ease-in
+      // phase. Without an explicit easing, Reanimated defaults to
+      // Easing.inOut(Easing.quad), which starts with an ease-in — the one
+      // curve that is always wrong for something disappearing.
+      easing: EASE_OUT,
     });
   }, [ready, cameraOpen]);
+  // RULE 1 §6 STATED DEPARTURE — this style animates `width` and `marginLeft`,
+  // which are layout properties that trigger Yoga on every frame. The rule
+  // says animate transform/opacity only. The departure is load-bearing: an
+  // absolutely-positioned slot would leave a hole in the capsule instead of
+  // reclaiming the space as the camera collapses, and the whole point of the
+  // animation is that the text-input capsule grows into the freed space. Width
+  // is what does that; there is no transform equivalent. Bounded at
+  // M3.duration.short2 = 100ms. Unproven on a low-end device — a frame trace
+  // on the Redmi is the open question before calling this solved.
   const cameraStyle = useAnimatedStyle(() => ({
     opacity: cameraOpen.value,
     width: CAMERA_SLOT * cameraOpen.value,

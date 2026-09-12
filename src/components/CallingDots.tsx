@@ -1,14 +1,13 @@
 import React, { memo, useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, {
-  Easing,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
-import { DURATION } from '../theme/motion';
+import { DURATION, EASE_CONSTANT } from '../theme/motion';
 
 /**
  * The animated ellipsis after a call's status word ("Ringing", "Calling").
@@ -65,7 +64,9 @@ function CallingDotsView({ color = 'rgba(255,255,255,0.85)' }: { color?: string 
     // 250ms measured; DURATION.base is 240ms, which is the token that means
     // "this speed" and is within one frame of the reference over a full cycle.
     x.value = withRepeat(
-      withTiming(PITCH, { duration: DURATION.base, easing: Easing.linear }),
+      // EASE_CONSTANT (linear): a marquee conveyor never starts or stops from
+      // the user's perspective — constant motion → linear (AUDIT rule).
+      withTiming(PITCH, { duration: DURATION.base, easing: EASE_CONSTANT }),
       -1,
     );
   }, [reduce, x]);
@@ -149,7 +150,7 @@ export function ConveyorDots({
       return;
     }
     x.value = withRepeat(
-      withTiming(pitch, { duration, easing: Easing.linear }),
+      withTiming(pitch, { duration, easing: EASE_CONSTANT }),
       -1,
     );
   }, [reduce, x, pitch, duration]);

@@ -7,10 +7,27 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import Animated from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOut, ReduceMotion } from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
-import { INTERACTION, menuIn } from '../theme/motion';
+import { EASE_OUT, INTERACTION, M3, menuIn, menuOut } from '../theme/motion';
+
+/**
+ * The scrim's own entrance and exit, hoisted so the builder allocates once.
+ *
+ * `animationType="none"` on the Modal means the card's `entering={menuIn}`
+ * owns the entering animation. Without an explicit entering on the scrim,
+ * it would hard-cut in while the card animates. These match the card's opacity
+ * timing (M3.duration.short2) so scrim and card arrive and leave together.
+ * `ReduceMotion.Never`: the scrim is what communicates "a layer is open" —
+ * it must always appear, even under the OS reduce-motion setting.
+ */
+const scrimIn = FadeIn.duration(M3.duration.short2)
+  .easing(EASE_OUT)
+  .reduceMotion(ReduceMotion.Never);
+const scrimOut = FadeOut.duration(M3.duration.short2)
+  .easing(EASE_OUT)
+  .reduceMotion(ReduceMotion.Never);
 import { Pressable } from './Pressable';
 
 export interface PaperMenuItem {
@@ -97,11 +114,23 @@ export function PaperMenu({ visible, items, onClose, anchor, testID }: Props) {
     <Modal
       visible={visible}
       transparent
-      animationType="fade"
+      // `animationType="none"`: the entering animation is owned by the card's
+      // `entering={menuIn}` and the scrim's `scrimIn`. A Modal fade here would
+      // compound with menuIn's own opacity ramp — two curves multiplying into
+      // one nobody specified. The scrim has its own explicit FadeIn (scrimIn)
+      // so it does not hard-cut in when the Modal's own fade is removed.
+      animationType="none"
       hardwareAccelerated
       statusBarTranslucent
       onRequestClose={onClose}>
       <View style={styles.host} pointerEvents="box-none">
+        {/* Scrim wrapped in its own Animated.View so it fades with the card
+            rather than hard-cutting when animationType="none". */}
+        <Animated.View
+          entering={scrimIn}
+          exiting={scrimOut}
+          style={styles.scrimWrapper}
+          pointerEvents="box-none">
         {hole === null ? (
           <RNPressable
             style={styles.scrimFull}
@@ -125,9 +154,11 @@ export function PaperMenu({ visible, items, onClose, anchor, testID }: Props) {
             <RNPressable style={[styles.dim, styles.fill]} onPress={onClose} />
           </>
         )}
+        </Animated.View>
 
         <Animated.View
           entering={menuIn}
+          exiting={menuOut}
           style={[
             styles.card,
             {
@@ -170,6 +201,9 @@ const makeStyles = (t: Theme) =>
   StyleSheet.create({
     host: {
       flex: 1,
+    },
+    scrimWrapper: {
+      ...StyleSheet.absoluteFill,
     },
     scrimFull: {
       ...StyleSheet.absoluteFill,

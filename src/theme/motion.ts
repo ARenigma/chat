@@ -88,7 +88,7 @@ const SCREEN_DECEL = Easing.bezier(
  * button on (`ChatActivityEnterView.java:8217`). A hard, early ease-out that
  * makes a scale-from-nothing feel like it snaps into being rather than grows.
  */
-const EASE_OUT_QUINT = Easing.bezier(
+export const EASE_OUT_QUINT = Easing.bezier(
   M3.easing.easeOutQuint[0],
   M3.easing.easeOutQuint[1],
   M3.easing.easeOutQuint[2],
@@ -121,6 +121,29 @@ export const EASE = Easing.bezier(
   M3.easing.ease[2],
   M3.easing.ease[3],
 );
+/**
+ * A genuine sinusoidal breathe, for slow looping pulse animations.
+ *
+ * `Easing.inOut(Easing.sin)` is the mathematically correct breath curve: sine
+ * is smooth at both turning points (velocity is zero at peak and trough) and
+ * `inOut` pumps it symmetrically. The result is one uninterrupted sinusoid per
+ * cycle — no tick at the reversal. Use this for any loop whose purpose is
+ * "present and alive" rather than "loading" or "progress".
+ */
+export const EASE_BREATHE = Easing.inOut(Easing.sin);
+
+/**
+ * Constant-velocity motion only: marquee, indeterminate progress, a conveyor.
+ *
+ * LINEAR IS BANNED FOR ENTRANCES AND EXITS. A linear curve on something that
+ * starts or stops reads as mechanical because real objects accelerate. Use this
+ * only where the motion never starts or stops from the user's perspective — a
+ * sweep that wraps, a ticker that runs forever, an indeterminate bar that has
+ * no meaningful end point. AUDIT rule: "Constant motion (marquee, progress) →
+ * linear". For anything entering or exiting, reach for EASE_OUT instead.
+ */
+export const EASE_CONSTANT = Easing.linear;
+
 /**
  * The keyboard's own curve, for a panel that stands in for the keyboard.
  *

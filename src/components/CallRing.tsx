@@ -1,7 +1,6 @@
 import React, { useEffect } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
-  Easing,
   ReduceMotion,
   useAnimatedStyle,
   useSharedValue,
@@ -9,7 +8,7 @@ import Animated, {
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
-import { DURATION } from '../theme/motion';
+import { DURATION, EASE_OUT } from '../theme/motion';
 
 /**
  * Telegram outgoing-call halo: a soft glow that breathes out from the avatar.
@@ -40,7 +39,10 @@ function PulseRing({ delayMs, size }: { delayMs: number; size: number }) {
       withRepeat(
         withTiming(1, {
           duration: RING_CYCLE,
-          easing: Easing.out(Easing.quad),
+          // EASE_OUT from motion.ts, not a hand-typed `Easing.out(Easing.quad)`:
+          // same shape (ring expands fast, then slows), but the curve lives in
+          // the one module allowed to know how motion behaves.
+          easing: EASE_OUT,
           reduceMotion: ReduceMotion.System,
         }),
         -1,

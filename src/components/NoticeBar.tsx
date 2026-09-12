@@ -16,10 +16,27 @@
  */
 import React, { useEffect } from 'react';
 import { StyleSheet, Text } from 'react-native';
-import Animated, { FadeInUp, FadeOut } from 'react-native-reanimated';
+import Animated, { FadeInUp, FadeOut, ReduceMotion } from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import { useStore } from '../store/useStore';
+import { DURATION, EASE_OUT } from '../theme/motion';
+
+/**
+ * Hoisted at module scope so Reanimated allocates the builder once, not once
+ * per render. Inline builders in JSX are a new object per frame — motion.ts's
+ * own `barIn`/`barOut` comments state this, and `NoticeBar` had the same bug.
+ *
+ * In is slower than out: arriving is an announcement; leaving gets out of the
+ * way. Matches `barIn`/`barOut`'s documented asymmetry in motion.ts.
+ * EASE_OUT on both: a decelerate curve, no ease-in phase on entry or exit.
+ */
+const noticeIn = FadeInUp.duration(DURATION.fast)
+  .easing(EASE_OUT)
+  .reduceMotion(ReduceMotion.System);
+const noticeOut = FadeOut.duration(DURATION.fast)
+  .easing(EASE_OUT)
+  .reduceMotion(ReduceMotion.System);
 
 const DISMISS_AFTER_MS = 4200;
 
@@ -43,8 +60,8 @@ export function NoticeBar() {
 
   return (
     <Animated.View
-      entering={FadeInUp.duration(TOKENS.motion.duration.fast)}
-      exiting={FadeOut.duration(TOKENS.motion.duration.fast)}
+      entering={noticeIn}
+      exiting={noticeOut}
       style={styles.bar}
       testID="notice-bar"
       accessibilityLiveRegion="polite"

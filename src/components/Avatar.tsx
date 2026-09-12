@@ -1,7 +1,8 @@
 import React, { memo, useEffect } from 'react';
 import { Image, PixelRatio, StyleSheet, Text, View } from 'react-native';
 import Animated, {
-  Easing,
+  ReduceMotion,
+  cancelAnimation,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -9,7 +10,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { DURATION } from '../theme/motion';
+import { DURATION, EASE_BREATHE } from '../theme/motion';
 import { sizedStorageImageUri } from '../lib/storageImage';
 import { isClayUri, resolveAvatarSource } from '../lib/clayAvatars';
 
@@ -132,16 +133,29 @@ function AvatarView({
 
   useEffect(() => {
     if (!breathing) {
+      // Cancel explicitly so the loop stops when the prop flips false, not just
+      // when the effect re-runs and hits the early return without a cleanup.
+      cancelAnimation(breath);
       return;
     }
     breath.value = withRepeat(
       withTiming(1, {
         duration: DURATION.breath / 2,
-        easing: Easing.inOut(Easing.sin),
+        // Curve from EASE_BREATHE (motion.ts) — Easing.inOut(Easing.sin) — the
+        // same curve, now named so the module stays the single source of truth.
+        easing: EASE_BREATHE,
       }),
       -1,
       true,
+      undefined,
+      // ReduceMotion.System: a scale transform must collapse under the OS
+      // "reduce motion" flag. The signal (the avatar is live) is carried by the
+      // presence dot; the breathing is the decorative layer. Pattern from
+      // Skeleton.tsx:43 — withRepeat's 5th positional arg is reduceMotion.
+      ReduceMotion.System,
     );
+    // Cancel on unmount so the loop cannot outlive the component.
+    return () => cancelAnimation(breath);
   }, [breathing, breath]);
 
   const animated = useAnimatedStyle(() => ({

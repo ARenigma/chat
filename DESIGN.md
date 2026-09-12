@@ -41,8 +41,50 @@ Applied globally; verified via the token drift gate.
   live in a `layout` block, not as module constants. Measured source values keep
   a named constant (`SOURCE_METRICS`, `RIPPLE`) rather than rounding to a token.
 - **Motion:** every duration/spring is a token in `motion.ts`; a test fails on a
-  raw millisecond. `bounce` is used in exactly two places.
+  raw millisecond. `bounce` — the one spring that overshoots — is reserved for
+  celebratory and signature beats, and the authoritative list of who may use it
+  is the allowlist in `__tests__/theme.test.ts` ("uses bounce nowhere except…"),
+  where every entry carries the argument that admitted it. Do not repeat the
+  count here; it drifted twice by being written down in two places.
 - **Controls:** M3, hand-rolled (ADR-0010) so tokens stay the single source.
+
+## Art direction
+
+The token system says what the values are. These three say which way a decision
+goes when the values allow either. They came out of an audit against Emil
+Kowalski's motion framework (2026-09-12), and each one exists for the same
+reason: the codebase had already worked out the right answer somewhere and then
+not applied it elsewhere. `Sheet.tsx` handed the gesture its velocity and
+`Turn.tsx` did not. `CallRing` honoured reduce-motion and `Avatar` did not.
+`motion.ts` documented the defaulted-easing trap, fixed it for search, and left
+it in two banners. So each rule ships with a test — a rule that lives only in
+prose is a rule that gets skipped under deadline.
+
+1. **Frequency sets the budget, and the budget is a ceiling, not a target.**
+   The more often somebody sees it, the less it may move. 100+/day (the
+   composer, the send, the keyboard) gets no animation at all, or under 160ms
+   with no movement; tens/day under 200ms; occasional under 300ms. Only the
+   rare/first-run tier — onboarding, completion, a first message — draws on the
+   delight budget, and it is the only tier where an overshoot is allowed.
+   Enforced by `theme.test.ts` (`DURATION.slow` is barred from screens and
+   components) and by the `bounce` allowlist.
+
+2. **A curve is never defaulted and never hand-typed.** Reanimated's silent
+   default is `Easing.inOut(Easing.quad)` — an ease-in phase on something
+   arriving, which is the one shape that is always wrong for an entrance.
+   Every timed animation names a curve exported from `theme/motion.ts`; a curve
+   typed at a call site is a curve nobody can retune. Enforced by
+   `theme.test.ts`: `entering`/`exiting` builders that set a duration must set
+   an easing, and a bare `Easing.` expression outside `motion.ts` fails.
+
+3. **If a finger touched it, the spring inherits its velocity; if the OS asked
+   for less motion, the movement goes and the signal stays.** The seam between
+   a drag and the animation that follows it is where motion stops feeling like
+   playback and starts feeling like an object — so a gesture's release velocity
+   is handed to the spring, never dropped. Transforms carry
+   `ReduceMotion.System`; opacity that carries meaning (which control is live,
+   which state you are in) carries `ReduceMotion.Never`, because that fade is
+   the accessible signal and must always run. Enforced by `theme.test.ts`.
 
 ## Navigation shape (v13)
 
