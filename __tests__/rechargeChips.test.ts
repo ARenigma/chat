@@ -114,25 +114,49 @@ describe('recharge chips present GST exclusive — charged on top of the base (A
    * is correct; the assertion is that the INFORMATIONAL copy in the ⓘ row and the
    * wallet note contains no GST wording.
    */
-  it('takes GST copy off both footers and leaves the rate and the unit behind', () => {
+  it('takes GST copy off both footers, and the rate line survives only on the page', () => {
     const recharge = withoutComments(read('src/screens/RechargeScreen.tsx'));
 
     expect(recharge).not.toContain('gstPercentLabel');
     expect(recharge).not.toContain('gstSplit');
 
+    /*
+     * The SHEET's rate line was removed on 2026-09-12 (Amit: "recharge modal
+     * should just Pay without amount and remove 1 token = 1 rs"), so this
+     * asserts its absence there and its presence on the full page.
+     *
+     * Not a dropped disclosure, which is what this test exists to protect:
+     * ADR-0021 requires the tax to be derivable and INVOICED. Every pack chip
+     * still names its own base and its own tax, and PaymentSheet names the
+     * total again before money moves. What went was a third statement of a rate
+     * that is 1:1, on the one surface with no room for it.
+     */
     const footer = recharge.slice(
       recharge.indexOf('function RechargeSheetFooter'),
       recharge.indexOf('export function RechargeWalletPage'),
     );
-    expect(footer).toContain('1 token = ₹1 · you are charged in rupees at checkout');
+    expect(footer).not.toContain('1 token = ₹1');
     expect(recharge).toContain('1 token = ₹1. You are charged in rupees at checkout.');
   });
 
   it('the pay bar shows what Cashfree will actually capture, not just the base', () => {
     const recharge = withoutComments(read('src/screens/RechargeScreen.tsx'));
-    // Both pay buttons must be driven by packTotalInr, not by amount directly.
+    /*
+     * Both pay buttons are still driven by packTotalInr, not by `amount`.
+     *
+     * The sheet's button now READS just "Pay" — but its accessibilityLabel
+     * still carries the total, so a screen-reader user is told the figure a
+     * sighted user reads off the chip. That is why this count is unchanged at
+     * two: dropping packTotalInr from the sheet entirely would mean the amount
+     * is nowhere in that control, which is the actual thing worth forbidding.
+     */
     const payMatches = (recharge.match(/packTotalInr\(/g) ?? []).length;
     expect(payMatches).toBeGreaterThanOrEqual(2);
+    const footer = recharge.slice(
+      recharge.indexOf('function RechargeSheetFooter'),
+      recharge.indexOf('export function RechargeWalletPage'),
+    );
+    expect(footer).toContain('accessibilityLabel={`Pay ${formatRupees(packTotalInr(');
   });
 });
 

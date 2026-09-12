@@ -235,6 +235,27 @@ function FilterChipView({
         >
           {label}
         </Text>
+        {/*
+          * A MIRROR of the leading icon slot, and it is what makes the label
+          * read as centred (Amit, 2026-09-12: "language selection chips are
+          * dont have text aligned correctly").
+          *
+          * The leading slot is 18dp plus a 6dp gap and is reserved even when no
+          * check is drawn, so an unselected chip had 32dp of space before its
+          * label (8dp chipStartPadding + 24) against 10dp after it. The label
+          * was not mis-styled; it was sitting in a box padded more than three
+          * times as much on one side as the other, which is exactly what "not
+          * aligned" looks like across a wrapped row of them.
+          *
+          * Mirroring rather than removing the reserve, because the reserve is
+          * load-bearing: it is what stops the chip growing 24dp when the check
+          * appears and reflowing the whole wrapped row under the member's
+          * finger. Material's own chip has no reserve and does reflow; this app
+          * chose not to, and that choice is unchanged here. The cost is 24dp of
+          * width per chip, which a wrapping row absorbs into more rows rather
+          * than into a horizontal scroll.
+          */}
+        {showSlot ? <View style={styles.filterIconSlotMirror} /> : null}
       </View>
     </Pressable>
   );
@@ -351,6 +372,16 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     marginEnd: 6,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  /*
+   * The trailing counterweight. Same width and gap as the leading slot, never
+   * drawn into — its only job is to make the label's two margins equal. Height
+   * is deliberately absent: an empty 18dp-tall view would set the row's height
+   * on a chip whose height should come from its label.
+   */
+  filterIconSlotMirror: {
+    width: FILTER_CHIP_ICON,
+    marginStart: 6,
   },
   /*
    * `labelLarge` is 14/20/0.1 — `textAppearanceLabelLarge` exactly, so the

@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { useStore } from '../store/useStore';
+import { NoticeBar } from '../components/NoticeBar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -216,6 +217,15 @@ export function ProfileSetupScreen({
   const [displayName, setDisplayName] = useState('');
   const [avatarSeed, setAvatarSeed] = useState<ClaySeed | null>(null);
   const [termsChecked, setTermsChecked] = useState(false);
+  /**
+   * Whether Continue has been refused for the unticked box.
+   *
+   * The checkbox is the thing that is wrong, so the checkbox is where the cue
+   * belongs. NoticeBar below covers the generic failures, but a transient strip
+   * at the top of a screen is a weak answer to "tick this box down here" — and
+   * on a short screen the member is already looking at the button, not the top.
+   */
+  const [termsRefused, setTermsRefused] = useState(false);
 
   const localOk = isUsernameLocallyValid(displayName);
   const { data: nameCheck, isFetching: checkingName } = useCheckDisplayName(
@@ -269,6 +279,7 @@ export function ProfileSetupScreen({
       return;
     }
     if (!termsChecked) {
+      setTermsRefused(true);
       setNotice('Please accept the terms & conditions to continue.');
       return;
     }
@@ -525,9 +536,36 @@ export function ProfileSetupScreen({
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
+        {/*
+          * THIRD instance of the same bug, so it is written down rather than
+          * just fixed.
+          *
+          * This screen called `setNotice` in five places — the age bracket, the
+          * username, the avatar, the terms, and a failed claim — and NoticeBar
+          * was mounted in ChatScreen and ProviderApplicationScreen only. Every
+          * one of those messages was written to the store and never rendered.
+          * The comment on Continue's `disabled` even said the checks were
+          * "enforced in onContinue with alerts so a missed checkbox tap never
+          * leaves a dead button"; there were no alerts, and it was exactly a
+          * dead button (Amit, 2026-09-12: the username page "doesnt show visual
+          * cue"). ProviderApplicationScreen's own note records the identical
+          * finding, one screen earlier.
+          *
+          * In the footer rather than under the header: this screen scrolls, the
+          * blocked action is down here, and a strip at the top can be off
+          * screen at the moment it appears.
+          */}
+        <NoticeBar />
         <View style={styles.termsRow}>
           <Pressable
-            onPress={() => setTermsChecked(v => !v)}
+            onPress={() => {
+              setTermsChecked(v => !v);
+              // Clear the refusal on ANY interaction with the box, including
+              // unticking it again — the cue answers the last Continue press,
+              // not the current state, and leaving it up after a deliberate
+              // tap would read as the tap not having registered.
+              setTermsRefused(false);
+            }}
             press="none"
             highlight="dim"
             accessibilityRole="checkbox"
@@ -536,7 +574,12 @@ export function ProfileSetupScreen({
             testID="profile-setup-terms"
             size={22}
             style={styles.checkboxHit}>
-            <View style={[styles.checkbox, termsChecked && styles.checkboxOn]}>
+            <View
+              style={[
+                styles.checkbox,
+                termsChecked && styles.checkboxOn,
+                termsRefused && !termsChecked && styles.checkboxRefused,
+              ]}>
               {termsChecked ? (
                 <Icon name="check" size={TOKENS.icon.xs} color={theme.color.text.onAccent} />
               ) : null}
@@ -559,6 +602,21 @@ export function ProfileSetupScreen({
             </Text>
           </Text>
         </View>
+        {/*
+          * The inline cue. `accessibilityLiveRegion` so TalkBack announces it
+          * when it appears rather than only on next focus — the member has just
+          * pressed a button and heard nothing, which is the same dead-end in
+          * audio that the missing NoticeBar was on screen.
+          */}
+        {termsRefused && !termsChecked ? (
+          <Text
+            allowFontScaling
+            accessibilityLiveRegion="polite"
+            testID="profile-setup-terms-required"
+            style={styles.termsRequired}>
+            Accept the terms to continue.
+          </Text>
+        ) : null}
         <Button
           label="Continue"
           onPress={() => {
@@ -730,6 +788,21 @@ const makeStyles = (t: Theme) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: TOKENS.space.sm,
+      marginBottom: TOKENS.space.sm,
+    },
+    /*
+     * The refused state: `state/danger` on the border, and colour is not the
+     * only carrier — the inline line below says it in words, and TalkBack
+     * announces that line. A border that merely changes hue would fail anyone
+     * who cannot see the difference.
+     */
+    checkboxRefused: {
+      borderColor: t.color.state.danger,
+      borderWidth: 1.5,
+    },
+    termsRequired: {
+      ...TOKENS.typography.bodySmall,
+      color: t.color.state.danger,
       marginBottom: TOKENS.space.sm,
     },
     checkboxHit: {

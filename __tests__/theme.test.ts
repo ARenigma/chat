@@ -1231,6 +1231,15 @@ describe('spacing lives in tokens', () => {
       'paddingVertical: 6',
       'paddingEnd: 10',
       'marginEnd: 6',
+      /*
+       * `marginStart: 6` is `marginEnd: 6` mirrored on the trailing counterweight
+       * that centres a filter chip's label — added 2026-09-12. It is the SAME
+       * measured value for the same reason, so it takes the same exemption:
+       * making one of the two a token and leaving the other a literal would be
+       * worse than either, because the pair only means anything while they are
+       * equal.
+       */
+      'marginStart: 6',
     ],
     'src/components/CallingDots.tsx': ['marginLeft: 6'],
     'src/components/NoticeBar.tsx': ['paddingVertical: 10'],
@@ -2734,9 +2743,18 @@ describe('recharge-theme: RechargeScreen is a compact non-scrolling M3 sheet', (
   it('preserves RechargeWalletPage as a full-page route', () => {
     expect(recharge).toContain('export function RechargeWalletPage');
     expect(recharge).toContain('testID="recharge-wallet"');
-    // #6 (user 2026-09-02): pick an amount, one Pay button, then the Cashfree
-    // sheet owns payment-method choice. The "Pay with" method block is gone.
-    expect(recharge).not.toContain('Pay with');
+    /*
+     * #6 (user 2026-09-02): pick an amount, one Pay button, then the Cashfree
+     * sheet owns payment-method choice. The "Pay with" method block is gone.
+     *
+     * Checked against COMMENT-STRIPPED source since 2026-09-12. It read the raw
+     * file, and a comment quoting the request that removed the amount from the
+     * sheet's button — "should just Pay without amount" — contains "Pay with"
+     * as a substring and failed it. The ban is on a UI string, so prose should
+     * never have been in scope; a rule that forbids describing the thing it
+     * forbids makes the code harder to explain than to write.
+     */
+    expect(stripComments(recharge)).not.toContain('Pay with');
 
     // The body scrolls UNDER a pinned Pay bar — not the page as a whole. "The
     // grid and the note fit a single screen" was true of one screen height; on

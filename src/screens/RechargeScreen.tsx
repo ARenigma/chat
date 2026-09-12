@@ -238,41 +238,42 @@ function RechargeSheetFooter({ amount, gstRateBps, onPay }: { amount: number; gs
   const theme = useTheme();
   return (
     <>
-      <View style={styles.rate}>
-        <Text
-          allowFontScaling={false}
-          accessibilityElementsHidden
-          importantForAccessibility="no"
-          style={[styles.rateIcon, { color: theme.color.text.tertiary }]}>
-          ⓘ
-        </Text>
-        <Text allowFontScaling style={styles.rateText}>
-          {/* NO GST in this row, of any wording (Amit, 2026-09-06: "remove inc
-              xxx gst from footer"). The tax moved onto the chips, where each
-              pack names its own base and its own tax — so the footer is back to
-              the two facts it is the only place for: what a token costs, and
-              that the charge is in rupees.
-
-              This is not a dropped disclosure. ADR-0021 ("Recharge pack pricing
-              (GST-inclusive)") requires the tax to be derivable and INVOICED —
-              "Axionix Technologies issues the GST invoice for Cashfree-path
-              purchases" — and the screen still names the base and the tax on
-              every chip and again on the pay step before money moves. What is
-              gone is a second, weaker statement of the same fact in a footer,
-              which is what was asked for. `gstRateBps` is no longer read here
-              at all, so this row cannot drift from the chips. */}
-          1 token = ₹1 · you are charged in rupees at checkout
-        </Text>
-      </View>
+      {/*
+        * THE RATE ROW IS GONE from the sheet (Amit, 2026-09-12: "recharge modal
+        * should just Pay without amount and remove 1 token = 1 rs").
+        *
+        * It read "1 token = ₹1 · you are charged in rupees at checkout". Not a
+        * dropped disclosure: ADR-0021 requires the tax to be derivable and
+        * INVOICED, and it still is — every pack chip above names its own base
+        * and its own tax, and PaymentSheet names the total again before money
+        * moves. What is gone is a third statement of a rate that is 1:1, which
+        * on a compact sheet was spending two lines to say a token is a rupee.
+        *
+        * The full-page RechargeWalletPage KEEPS its version. That screen is
+        * reached deliberately from the wallet rather than thrown up mid-chat,
+        * has the room, and is where somebody who wants the arithmetic goes.
+        */}
       <Pressable
         onPress={onPay}
         testID="recharge-pay"
+        /*
+         * The VISIBLE label is bare "Pay"; the accessible name keeps the amount.
+         *
+         * That asymmetry is deliberate and is the documented direction, not a
+         * slip. WCAG 2.5.3 "Label in Name" requires the visible label to be
+         * CONTAINED in the accessible name — "Pay ₹354" contains "Pay" — so
+         * adding context is compliant while replacing it would not be. A member
+         * reading the screen has the amount on the chip they just selected and
+         * again on the next sheet; a member hearing it has neither in reach, so
+         * the spoken name carries it.
+         * https://www.w3.org/WAI/WCAG21/Understanding/label-in-name.html
+         */
         accessibilityLabel={`Pay ${formatRupees(packTotalInr(amount, gstRateBps))}`}
         press="button"
         onColor={theme.color.text.onAccent}
         style={styles.payButton}>
         <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.payButtonLabel}>
-          {`Pay ${formatRupees(packTotalInr(amount, gstRateBps))}`}
+          Pay
         </Text>
       </Pressable>
     </>
