@@ -6,7 +6,7 @@ import { selectPeerTyping, useStore } from '../store/useStore';
 import { TypingIndicator } from './TypingIndicator';
 
 /**
- * The typing indicator, deliberately rendered outside the FlatList.
+ * The typing indicator, deliberately rendered outside the FlashList.
  *
  * This inherits the role the streaming bubble used to play: it is the only
  * subscriber to the live-activity state, so the transcript's `data` prop never

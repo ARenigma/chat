@@ -857,7 +857,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
       opensDay: false,
     }));
 
-    // Merge and sort newest-first (matches the inverted FlatList).
+    // Merge and sort newest-first (matches the inverted FlashList).
     const sorted = [...messageRows, ...callRows, ...systemRows].sort(
       (a, b) => new Date(b.sortAt).getTime() - new Date(a.sortAt).getTime(),
     );
@@ -1794,7 +1794,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
               {name}
             </Text>
             {/* Also here, not only inside the list. The empty branch *replaces*
-                the FlatList, so PeerTyping was unmounted in exactly the case it
+                the FlashList, so PeerTyping was unmounted in exactly the case it
                 is most wanted: a new peer typing the first message in a thread
                 showed nothing at all. */}
             <View style={styles.starters}>

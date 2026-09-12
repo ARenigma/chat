@@ -4,11 +4,11 @@ import {
   Image,
   Linking,
   PixelRatio,
-  SectionList,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
@@ -99,6 +99,19 @@ const CHANNEL_ROWS: readonly { key: ChannelKey; title: string; glyph: IconName }
   { key: 'video_enabled', title: 'Video calls', glyph: 'video' },
 ];
 
+/**
+ * One row of the provider's inbox: a conversation, or a section header.
+ *
+ * A bare `string` IS the header, rather than a tagged object, because there is
+ * exactly one header and `typeof row === 'string'` is a narrowing every reader
+ * already knows. A `{ kind: 'header' }` wrapper would buy nothing here and cost
+ * a discriminant on every conversation row.
+ */
+type ProviderRow = ConversationSummary | string;
+
+/** The only section header the inbox has. */
+const SECTION_MINE = 'Your own conversations';
+
 function threadLabel(thread: ConversationSummary): string {
   if (thread.last_session_status === 'active') return 'Active session';
   if (thread.last_session_status === 'pending_leases') return 'Connecting session';
@@ -170,17 +183,43 @@ export function ProviderHomeScreen({
    */
   const work = useMemo(() => (allThreads ?? []).filter(t => !t.i_am_member), [allThreads]);
 
-  const sections = useMemo(
+  /*
+   * ONE FLAT ARRAY, not sections — this was a `SectionList` until 2026-09-12.
+   *
+   * FlashList has no `sections` prop, by design: sections are expressed as a
+   * flat list with header ROWS in it, plus `stickyHeaderIndices` for the ones
+   * that should pin. That is the same shape a SectionList builds internally,
+   * with the nesting made explicit.
+   *
+   * `getItemType` below is the part that is easy to miss and is the whole point
+   * of doing it this way: FlashList RECYCLES row views, and a header and a
+   * conversation row have nothing in common, so without a type hint it would
+   * recycle one into the other and pay a full re-layout each time. Telling it
+   * they are different types keeps two separate recycle pools.
+   */
+  const rows = useMemo<readonly ProviderRow[]>(() => {
+    const mine = (allThreads ?? []).filter(t => t.i_am_member);
+    const out: ProviderRow[] = [...work];
+    if (mine.length > 0) {
+      out.push(SECTION_MINE, ...mine);
+    }
+    return out;
+  }, [allThreads, work]);
+
+  /*
+   * Which rows pin. Derived rather than hardcoded: the header only exists when
+   * the member-side group is non-empty, so its index depends on how many work
+   * threads are above it.
+   */
+  const stickyHeaderIndices = useMemo(
     () =>
-      [
-        { key: 'work', title: null, data: work },
-        {
-          key: 'mine',
-          title: 'Your own conversations',
-          data: (allThreads ?? []).filter(t => t.i_am_member),
-        },
-      ].filter(s => s.data.length > 0),
-    [allThreads, work],
+      rows.reduce<number[]>((acc, row, i) => {
+        if (typeof row === 'string') {
+          acc.push(i);
+        }
+        return acc;
+      }, []),
+    [rows],
   );
 
   const toggle = useCallback(
@@ -238,8 +277,20 @@ export function ProviderHomeScreen({
   // Only work counts as waiting. Their own thread is not a person waiting on them.
   const waiting = work.filter(t => Number(t.unread_count_provider) > 0).length;
 
+  const getItemType = useCallback(
+    (item: ProviderRow) => (typeof item === 'string' ? 'header' : 'thread'),
+    [],
+  );
+
   const renderItem = useCallback(
-    ({ item }: { item: ConversationSummary }) => {
+    ({ item }: { item: ProviderRow }) => {
+      if (typeof item === 'string') {
+        return (
+          <Text allowFontScaling style={styles.sectionTitle}>
+            {item}
+          </Text>
+        );
+      }
       const unreadCount = item.i_am_member
         ? Number(item.unread_count_member)
         : Number(item.unread_count_provider);
@@ -353,7 +404,7 @@ export function ProviderHomeScreen({
             <View style={styles.centre}>
               <LoadingIndicator size={48} />
             </View>
-          ) : sections.length === 0 ? (
+          ) : rows.length === 0 ? (
             // The watermark a brand-new provider sees. Clean and calm, not "0".
             <View style={styles.empty}>
               <View style={styles.emptyMark}>
@@ -372,20 +423,14 @@ export function ProviderHomeScreen({
               </Text>
             </View>
           ) : (
-            <SectionList
+            <FlashList
               {...SCROLL_PHYSICS}
-              sections={sections}
-              keyExtractor={t => t.conversation_id}
+              data={rows as ProviderRow[]}
+              keyExtractor={r => (typeof r === 'string' ? r : r.conversation_id)}
               renderItem={renderItem}
-              renderSectionHeader={({ section }) =>
-                section.title === null ? null : (
-                  <Text allowFontScaling style={styles.sectionTitle}>
-                    {section.title}
-                  </Text>
-                )
-              }
+              getItemType={getItemType}
+              stickyHeaderIndices={stickyHeaderIndices}
               ItemSeparatorComponent={separator}
-              stickySectionHeadersEnabled
               contentContainerStyle={[styles.list, { paddingBottom: TOKENS.space['2xl'] }]}
               showsVerticalScrollIndicator={false}
             />

@@ -1,7 +1,7 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { onTransitionSettled } from '../theme/motion';
+import { FlashList } from '@shopify/flash-list';
 import {
-  FlatList,
   Keyboard,
   Pressable as RNPressable,
   ScrollView,
@@ -79,7 +79,7 @@ interface Props {
  * instance, two `useSharedValue`s, two `useAnimatedStyle` worklets and three
  * nested native views inside an `RNPressable`. That is the right trade for a
  * button you can count on one hand. Here it is multiplied by the grid: the
- * comment on `settled` below already notes "~1,800 cells", and with FlatList's
+ * comment on `settled` below already notes "~1,800 cells", and with a list
  * default `windowSize` of 21 several hundred of them are mounted at once. The
  * panel was not slow because its animations were wrong; it was slow because
  * opening it built a few hundred Reanimated nodes on the JS thread.
@@ -191,7 +191,7 @@ function EmojiPickerView({
   /** Whether the search field holds the focus, so the X can mean "close it". */
   const [searchOpen, setSearchOpen] = useState(false);
 
-  // W5#6: defer the heavy FlatList/tabs/search mount until after the push
+  // W5#6: defer the heavy list/tabs/search mount until after the push
   // transition settles. EmojiPicker is kept mounted-but-hidden (display:none)
   // from first open; without this gate its ~1,800 cells would mount on the same
   // frame as the entering screen, competing for frame budget. Once `visible`
@@ -350,15 +350,6 @@ function EmojiPickerView({
     [cellStyle, pick, hold],
   );
 
-  const itemLayout = useCallback(
-    (_: ArrayLike<string> | null | undefined, index: number) => ({
-      length: cellSize,
-      offset: cellSize * index,
-      index,
-    }),
-    [cellSize],
-  );
-
   const chooseTone = useCallback(
     (next: string) => {
       setTone(next);
@@ -375,7 +366,7 @@ function EmojiPickerView({
      * Telegram creates its `emojiView` once (`createEmojiView()`) and thereafter
      * only flips `setVisibility(VISIBLE/GONE)` (`ChatActivityEnterView.java:12622`
      * and `:12746`). Unmounting meant every single keyboard-to-emoji tap rebuilt
-     * the search field, ten tabs and a fresh FlatList on the JS thread inside one
+     * the search field, ten tabs and a fresh list on the JS thread inside one
      * frame — which is the artefact frame visible on every swap. The parent still
      * defers the FIRST mount until the panel is first opened, so a user who never
      * taps emoji never pays for it.
@@ -479,43 +470,41 @@ function EmojiPickerView({
         </ScrollView>
       )}
 
-      <FlatList
+      {/*
+        * FlashList, like every other list in this app.
+        *
+        * One of two stragglers found on 2026-09-12, long after every other
+        * surface had moved: this grid, and a `SectionList` in
+        * ProviderHomeScreen. Both survived because nothing failed when they did
+        * not move — the only trace was a scatter of comments elsewhere naming a
+        * component that was no longer there, which is what made a grep for the
+        * word look clean. The guard in contract.test.ts is the fix for that
+        * half of the problem, and it is what found the second one.
+        *
+        * It matters most HERE, of all places. FlashList RECYCLES cell views
+        * instead of mounting and unmounting them, and this is the app's longest
+        * list by an order of magnitude — ~1,800 items where the next longest is
+        * a conversation. Recycling is also why the hand-tuned FlatList
+        * windowing this replaces is gone rather than translated: `windowSize`,
+        * `initialNumToRender`, `maxToRenderPerBatch` and `removeClippedSubviews`
+        * are FlatList's mount-budget knobs and FlashList has no mount budget to
+        * tune. `getItemLayout` is gone for the same reason — v2 measures and
+        * caches layouts itself, and the prop does not exist.
+        *
+        * `drawDistance` is the one knob that carries over in spirit: how far
+        * beyond the viewport to prepare, in dp. One panel height means a full
+        * screen of cells is ready before a flick reaches them, without
+        * preparing the several screens FlatList's default kept mounted.
+        */}
+      <FlashList
         data={data as string[]}
         keyExtractor={keyOf}
         numColumns={COLUMNS}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.grid}
         renderItem={renderCell}
-        /*
-         * Every cell in this grid is the same square, so its position is
-         * arithmetic and FlatList never needs to measure one.
-         * reactnative.dev/docs/optimizing-flatlist-configuration names
-         * getItemLayout as the single biggest win available to a fixed-size
-         * list: without it every row round-trips an onLayout from native to JS
-         * before the list can place the next, which for a grid this long is
-         * hundreds of layout events during a flick.
-         *
-         * `index` is the ROW here, not the cell: with numColumns > 1 FlatList
-         * stores one row per index, so the stride is one cell edge.
-         */
-        getItemLayout={itemLayout}
-        /*
-         * The windowing defaults are tuned for a list of rich rows, not ~1,800
-         * glyphs. windowSize 21 means "keep ten screens above and below
-         * mounted" — several hundred cells that nobody can see. Five keeps two
-         * either side, which is still ahead of any flick, and initialNumToRender
-         * 40 is five rows: enough to fill the panel on the first frame and
-         * nothing more, since the first frame is the one the user is waiting on.
-         */
-        initialNumToRender={COLUMNS * 5}
-        maxToRenderPerBatch={COLUMNS * 4}
-        windowSize={5}
-        /*
-         * Detaches off-screen rows from the native hierarchy. The RN docs flag
-         * this as having caused bugs (content going blank) on iOS; this app is
-         * Android-only, where it is the documented recommendation.
-         */
-        removeClippedSubviews
+        drawDistance={height}
+        extraData={cellStyle}
         style={styles.gridBox}
         ListEmptyComponent={
           <Text allowFontScaling style={styles.empty}>
