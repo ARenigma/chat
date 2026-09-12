@@ -238,10 +238,13 @@ interface Shared {
  * outgoing message, not only the newest — the same WhatsApp pattern the rest of
  * the transcript layout already follows.
  *
- * Receipt colours on the accent fill: green would clash and dark tokens drop
- * below AA. `rgba(255,255,255,0.65)` for sent reads as "muted confirmation";
- * a brighter white-green tint (#85D4A0) for read mirrors a positive state
- * without competing with the bubble's coral.
+ * Receipt colours: `bubble/tickRead` and `bubble/meta`, with no `onAccent`
+ * fork, because a single value per mode covers both bubbles. See the comment
+ * inside MetaRow for why. The paragraph that used to sit here described a
+ * white-on-coral / green split that stopped being true when the outgoing
+ * bubble stopped being the accent fill; the media overlay below is the same
+ * decision again, against a photograph instead of a themed surface, and takes
+ * the `media/*` group for it.
  */
 function MetaRow({
   timestamp,
@@ -541,12 +544,16 @@ function MediaBubble({
          */}
         {timestamp !== undefined ? (
           <View style={styles.mediaTime} pointerEvents="none">
-            <BubbleTime stamp={timestamp} onAccent />
+            <BubbleTime stamp={timestamp} onMedia />
             {receipt !== undefined && !pending ? (
               <Icon
                 name={receipt === 'read' ? 'checkCheck' : 'check'}
                 size={TOKENS.icon.xs}
-                color={receipt === 'read' ? '#85D4A0' : 'rgba(255,255,255,0.65)'}
+                color={
+                  receipt === 'read'
+                    ? theme.color.media.tickRead
+                    : theme.color.media.meta
+                }
               />
             ) : null}
           </View>
@@ -695,7 +702,7 @@ function PeerTurnView({
             />
           ) : (
             <>
-              {quote ? <QuoteBlock quote={quote} onAccent={false} /> : null}
+              {quote ? <QuoteBlock quote={quote} /> : null}
               <Body
                 message={message}
                 voice={voice}
@@ -873,7 +880,7 @@ function MyTurnView({
             />
           ) : (
             <>
-              {quote ? <QuoteBlock quote={quote} onAccent /> : null}
+              {quote ? <QuoteBlock quote={quote} /> : null}
               <Body
                 message={message}
                 voice={voice}
@@ -1294,27 +1301,31 @@ function InteractiveBubble({
  * unmeasured index without `getItemLayout`, and the parent is frequently not in
  * the loaded page at all.
  */
-function QuoteBlock({ quote, onAccent }: { quote: Quote; onAccent: boolean }) {
+/*
+ * No `onAccent` fork here any more, for the reason MetaRow states and with the
+ * same arithmetic behind it. The fork existed only while the outgoing bubble
+ * WAS the accent fill: it painted the rule and both lines in `text/onAccent`,
+ * which is white in light and near-black in dark. Against the bubble the app
+ * actually ships — `bubble/mine`, pale coral #FBDAD0 light and deep coral
+ * #6E3A2E dark — that measured 1.31:1 and 1.89:1 on 2026-09-12. Not "low
+ * contrast": a reply preview nobody could read, in BOTH modes, on every quoted
+ * message. One decision replaces it, and it is the one the bubble body already
+ * makes — `bubble/text`, which the contrast gate registers at 15.12:1 and
+ * 8.72:1 on this fill and 19.80:1 / 13.19:1 on the peer's. The left rule takes
+ * `bg/accentStrong` rather than `border/strong`, which measured 1.29:1 / 1.00:1
+ * on the outgoing fill and so was invisible there too; accentStrong is
+ * 3.79/4.18 on mine and 4.96/6.32 on theirs, clearing the 3:1 non-text step of
+ * developer.android.com/guide/topics/ui/accessibility/apps in all four. It also
+ * makes the quote rule the brand mark it is in WhatsApp and Telegram.
+ */
+function QuoteBlock({ quote }: { quote: Quote }) {
   const styles = useStyles(makeStyles);
   return (
-    <View
-      style={[
-        styles.quote,
-        onAccent ? styles.quoteOnAccent : styles.quoteNeutral,
-      ]}
-    >
-      <Text
-        allowFontScaling
-        numberOfLines={1}
-        style={[styles.quoteAuthor, onAccent && styles.quoteTextOnAccent]}
-      >
+    <View style={styles.quote}>
+      <Text allowFontScaling numberOfLines={1} style={styles.quoteAuthor}>
         {quote.author}
       </Text>
-      <Text
-        allowFontScaling
-        numberOfLines={2}
-        style={[styles.quoteBody, onAccent && styles.quoteTextOnAccent]}
-      >
+      <Text allowFontScaling numberOfLines={2} style={styles.quoteBody}>
         {quote.body ?? 'Voice note'}
       </Text>
     </View>
@@ -1491,7 +1502,7 @@ const makeStyles = (t: Theme) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: 3,
-      backgroundColor: 'rgba(0,0,0,0.35)',
+      backgroundColor: t.color.media.scrim,
       borderRadius: TOKENS.radius.xs,
       paddingHorizontal: 5,
       paddingVertical: 1,
@@ -1613,7 +1624,7 @@ const makeStyles = (t: Theme) =>
       left: 0,
       right: 0,
       bottom: 0,
-      backgroundColor: 'rgba(0,0,0,0.28)',
+      backgroundColor: t.color.media.uploading,
     },
     // M3 linear determinate bar anchored to the bottom of the scrim.
     // Height 4dp (ProgressBar default). Sits above the scrim so it is always
@@ -1669,23 +1680,15 @@ const makeStyles = (t: Theme) =>
       paddingLeft: TOKENS.space.xs,
       marginBottom: TOKENS.space['2xs'],
       gap: 1,
-    },
-    quoteNeutral: {
-      borderLeftColor: t.color.border.strong,
-    },
-    quoteOnAccent: {
-      borderLeftColor: t.color.text.onAccent,
+      borderLeftColor: t.color.bg.accentStrong,
     },
     quoteAuthor: {
       ...TOKENS.typography.labelMediumEmphasized,
-      color: t.color.text.secondary,
+      color: t.color.bubble.text,
     },
     quoteBody: {
       ...TOKENS.typography.bodySmall,
-      color: t.color.text.secondary,
-    },
-    quoteTextOnAccent: {
-      color: t.color.text.onAccent,
+      color: t.color.bubble.text,
     },
     reactionRow: {
       flexDirection: 'row',

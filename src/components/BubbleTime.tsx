@@ -12,16 +12,23 @@ import { useStyles } from '../theme/ThemeProvider';
  */
 function BubbleTimeView({
   stamp,
-  onAccent,
+  onMedia,
 }: {
   stamp: string;
-  onAccent: boolean;
+  /*
+   * Named `onMedia`, not `onAccent`, and the rename is the fix rather than
+   * tidying: the only caller is the overlay pinned to a photo, so the flag
+   * never meant "on the accent fill" even before the outgoing bubble stopped
+   * being the accent. The old name is what kept a second, staler copy of the
+   * timestamp decision alive next to the tokenised one in Turn's MetaRow.
+   */
+  onMedia: boolean;
 }) {
   const styles = useStyles(makeStyles);
   return (
     <Text
       allowFontScaling={false}
-      style={[styles.time, onAccent ? styles.timeOnAccent : styles.timePeer]}>
+      style={[styles.time, onMedia ? styles.timeOnMedia : styles.timePeer]}>
       {stamp}
     </Text>
   );
@@ -39,7 +46,7 @@ const makeStyles = (t: Theme) =>
     timePeer: {
       color: t.color.text.tertiary,
     },
-    timeOnAccent: {
-      color: 'rgba(255,255,255,0.72)',
+    timeOnMedia: {
+      color: t.color.media.meta,
     },
   });
