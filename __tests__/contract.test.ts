@@ -616,6 +616,14 @@ describe('Android manifest', () => {
       'android.permission.MANAGE_OWN_CALLS',
       'android.permission.MODIFY_AUDIO_SETTINGS',
       'android.permission.POST_NOTIFICATIONS',
+      /*
+       * Android 14+ partial photo access, for the attach panel's recent-photo
+       * strip. NOT Play-restricted — see 'never declares a restricted
+       * media-read permission' below, which also asserts that
+       * READ_MEDIA_IMAGES stays removed, since it is that pairing and not this
+       * line on its own that would pull in a declaration form.
+       */
+      'android.permission.READ_MEDIA_VISUAL_USER_SELECTED',
       'android.permission.RECORD_AUDIO',
       'android.permission.VIBRATE',
     ]);
@@ -4314,12 +4322,42 @@ describe('attach panel', () => {
     for (const restricted of [
       'READ_MEDIA_IMAGES',
       'READ_MEDIA_VIDEO',
-      'READ_MEDIA_VISUAL_USER_SELECTED',
       'READ_EXTERNAL_STORAGE',
       'WRITE_EXTERNAL_STORAGE',
     ]) {
       expect(declared(restricted)).toBe(false);
     }
+
+    /*
+     * READ_MEDIA_VISUAL_USER_SELECTED LEFT that list on 2026-09-12, and the
+     * correction is factual rather than a relaxation.
+     *
+     * It was listed as restricted. It is not. Play's Photo and Video Permissions
+     * policy (support.google.com/googleplay/android-developer/answer/14115180)
+     * names READ_MEDIA_IMAGES and READ_MEDIA_VIDEO as the permissions requiring
+     * a Permissions Declaration Form, and does not list this one — because it
+     * grants access only to a subset of photos the user selected by hand, which
+     * is the privacy-preserving case the policy is steering apps toward.
+     *
+     * So it is now REQUIRED to be present: the attach panel's recent-photo strip
+     * does not work without it, and a silent removal would degrade the panel back
+     * to a bare tile with nothing failing.
+     */
+    expect(declared('READ_MEDIA_VISUAL_USER_SELECTED')).toBe(true);
+
+    /*
+     * THE PAIRING IS THE WHOLE POINT, so it is asserted as one fact.
+     *
+     * developer.android.com/about/versions/14/changes/partial-photo-video-access
+     * shows READ_MEDIA_VISUAL_USER_SELECTED being requested TOGETHER with
+     * READ_MEDIA_IMAGES, and that combination is what puts "Allow all" in the
+     * system dialog — and what drags the restricted permission, and its
+     * declaration form, back into this app. Declaring the partial permission is
+     * safe only for exactly as long as READ_MEDIA_IMAGES stays removed above.
+     * Someone following the docs literally would add it and reintroduce the
+     * rejection risk without noticing; this is the line that stops them.
+     */
+    expect(declared('READ_MEDIA_IMAGES')).toBe(false);
     // And the two image-picker brings in are actively removed, not just absent.
     expect(manifest).toMatch(
       /READ_MEDIA_IMAGES"[^>]*tools:node="remove"/,

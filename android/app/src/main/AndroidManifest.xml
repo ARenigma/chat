@@ -93,7 +93,38 @@
     -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove" />
+    <!--
+      READ_MEDIA_IMAGES STAYS REMOVED, and that is a decision, not an oversight.
+
+      The attach panel shows a strip of real recent photos (RecentMediaModule),
+      which needs MediaStore access. The documented pattern at
+      developer.android.com/about/versions/14/changes/partial-photo-video-access
+      requests READ_MEDIA_IMAGES, READ_MEDIA_VIDEO and
+      READ_MEDIA_VISUAL_USER_SELECTED together. We take only the third.
+
+      READ_MEDIA_IMAGES is a Play RESTRICTED permission
+      (support.google.com/googleplay/android-developer/answer/14115180). It may
+      be requested only where "system pickers... are not sufficient for your app
+      to provide core functionality", and it needs a Permissions Declaration
+      Form. This app ships the system photo picker as its Photos tile, so the
+      form would be arguing against our own UI, and a rejected declaration blocks
+      releases.
+
+      The cost of leaving it out is real and accepted: without it the system
+      dialog offers no "Allow all", so the strip only ever shows photos the user
+      has explicitly selected. The Photos tile remains the full-library route.
+    -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" tools:node="remove" />
+    <!--
+      Android 14+ partial photo access. API 34 only — it does not exist below,
+      and RecentMediaModule reports "unsupported" there rather than falling back
+      to a broader permission.
+
+      NOT Play-restricted: the policy page above lists READ_MEDIA_IMAGES and
+      READ_MEDIA_VIDEO as the permissions requiring a declaration, and does not
+      list this one. It grants access to a user-chosen subset, which is why.
+    -->
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" tools:node="remove" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" tools:node="remove" />
     <uses-permission android:name="android.permission.READ_CONTACTS" tools:node="remove" />

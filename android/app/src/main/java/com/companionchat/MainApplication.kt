@@ -27,6 +27,9 @@ class MainApplication : Application(), ReactApplication {
           add(BlurPackage())
           // Device performance class (low / average / high) for blur quality.
           add(DeviceClassPackage())
+          // Recent photos for the attach panel, under Android 14 PARTIAL access
+          // only — never the Play-restricted READ_MEDIA_IMAGES. See the module.
+          add(RecentMediaPackage())
         },
     )
   }
