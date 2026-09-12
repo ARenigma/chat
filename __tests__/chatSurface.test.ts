@@ -265,10 +265,28 @@ describe('chat media offers no way to save it (a standing ban, not change covera
 
   it('the attach panel offers exactly camera and gallery, both inbound', () => {
     const panel = withoutComments(read('src/components/AttachPanel.tsx'));
+    /*
+     * Grew on 2026-09-12 with the recent-photo strip, and every new control is
+     * still INBOUND, which is the only thing this closed set exists to protect.
+     * The ban is on a route that takes media OUT of the app — save, download,
+     * export, share. Nothing here does that:
+     *
+     *   attach-more   opens the system photo-selection dialog so the user can
+     *                 share MORE of their photos with the strip.
+     *   attach-grant  the same call the first time, from the no-access tile.
+     *
+     * `attach-gallery` appears twice because the strip and the bare tile each
+     * carry one, and they are the same action — the system picker — in the two
+     * layouts. Listed twice rather than deduped so that a THIRD one would still
+     * fail here.
+     */
     expect(panel.match(/testID="attach-[a-z]+"/g)).toEqual([
       'testID="attach-panel"',
       'testID="attach-camera"',
+      'testID="attach-more"',
       'testID="attach-gallery"',
+      'testID="attach-gallery"',
+      'testID="attach-grant"',
     ]);
   });
 
