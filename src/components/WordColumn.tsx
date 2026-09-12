@@ -1,7 +1,6 @@
 import React, { memo, useEffect, useLayoutEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, {
-  Easing,
   ZoomInLeft,
   cancelAnimation,
   useAnimatedStyle,
@@ -11,6 +10,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
+import { EASE_OUT } from '../theme/motion';
 import { Icon, type IconName } from './Icon';
 import {
   CAROUSEL_ENTER_OFFSET,
@@ -150,7 +150,7 @@ function WordColumnView({ words, paused = false, testID }: Props) {
     shift.value = CAROUSEL_ENTER_OFFSET;
     shift.value = withTiming(0, {
       duration: CAROUSEL_SLIDE_MS,
-      easing: Easing.out(Easing.quad),
+      easing: EASE_OUT,
     });
     return () => cancelAnimation(shift);
   }, [tick, paused, reduced, words.length, shift]);

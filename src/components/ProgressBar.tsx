@@ -17,7 +17,6 @@
 import React, { memo, useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, {
-  Easing,
   ReduceMotion,
   cancelAnimation,
   useAnimatedStyle,
@@ -25,7 +24,7 @@ import Animated, {
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
-import { DURATION } from '../theme/motion';
+import { DURATION, EASE_CONSTANT } from '../theme/motion';
 import { type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 
@@ -79,7 +78,12 @@ function ProgressBarView({
     if (indeterminate && trackWidth > 0) {
       sweep.value = 0;
       sweep.value = withRepeat(
-        withTiming(1, { duration: DURATION.spinnerCycle, easing: Easing.inOut(Easing.ease) }),
+        // EASE_CONSTANT (linear): indeterminate progress is constant motion —
+        // it never starts or stops from the user's perspective, so a linear
+        // curve is correct. inOut(ease) made each cycle visibly pump (ease-in
+        // at the start of every loop iteration). AUDIT rule: "Constant motion
+        // (marquee, progress) → linear".
+        withTiming(1, { duration: DURATION.spinnerCycle, easing: EASE_CONSTANT }),
         -1,
         false,
         undefined,

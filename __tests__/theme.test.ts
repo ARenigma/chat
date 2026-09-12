@@ -3031,3 +3031,249 @@ describe('a primary action is the brand colour, not black and white', () => {
     expect(rule(detail, 'actionPrimary')).toContain('t.color.bg.accentStrong');
   });
 });
+
+/**
+ * The three art-direction rules from DESIGN.md, as gates.
+ *
+ * They came out of an audit against Emil Kowalski's motion framework
+ * (2026-09-12), and every one of them exists because the codebase had already
+ * worked out the right answer somewhere and then not applied it elsewhere:
+ * `Sheet.tsx` handed its gesture the release velocity and `Turn.tsx` did not;
+ * `CallRing` honoured reduce-motion on its loop and `Avatar` did not;
+ * `motion.ts` documented the defaulted-easing trap, fixed it for search, and
+ * left it in two banners. Prose did not stop any of that. These do.
+ */
+describe('art direction', () => {
+  const sources = ['src/components', 'src/screens'].flatMap(dir =>
+    readdirSync(join(ROOT, dir))
+      .filter(f => f.endsWith('.tsx'))
+      .map(f => ({ file: `${dir}/${f}`, body: stripComments(read(`${dir}/${f}`)) })),
+  );
+
+  /*
+   * RULE 1 — frequency sets the budget, and the budget is a CEILING.
+   *
+   * `DURATION.slow` is 420ms, well past the 300ms ceiling for UI motion. It is
+   * not banned outright, because two legitimate shapes use a long number for
+   * something that is not a UI transition at all:
+   *
+   *   - a RARE-tier flourish, where the delight budget is allowed to spend, and
+   *   - AMBIENT looping motion, which has no start or stop for a user to wait on.
+   *
+   * Everything else — anything a finger is waiting on — stays under the
+   * ceiling. `SendButton` is deliberately NOT on this list: its confirmation
+   * halo ran 420ms on a 100+/day action until this rule was written.
+   */
+  const SLOW_ALLOWED = new Set([
+    // Rare tier: the ripple bloom on an invitational CTA (first-move pills, the
+    // first-visit spotlight hero). Fires once, on a surface built to be noticed.
+    'src/components/TactileCTA.tsx',
+    // Ambient: RING_CYCLE is `DURATION.slow * 6`, the period of a call-screen
+    // halo that breathes for as long as the call is ringing. Never "finishes".
+    'src/components/CallRing.tsx',
+    // Ambient: the typing-dots conveyor, which runs while the peer is typing.
+    'src/components/TypingIndicator.tsx',
+  ]);
+
+  it('keeps DURATION.slow off anything a finger is waiting on', () => {
+    const offenders = sources
+      .filter(s => /DURATION\.slow|duration\.slow/.test(s.body))
+      .map(s => s.file)
+      .filter(f => !SLOW_ALLOWED.has(f));
+    expect(offenders).toEqual([]);
+  });
+
+  /*
+   * RULE 2a — a curve is never DEFAULTED.
+   *
+   * Reanimated's silent default when `.easing()` is omitted is
+   * `Easing.inOut(Easing.quad)` — which puts an ease-in phase on the front of
+   * something that is arriving, the one shape that is always wrong for an
+   * entrance. `motion.ts` caught exactly this bug once (see the `searchIn` /
+   * `searchOut` docblock, corrected 2026-09-07) and it then sat unnoticed in
+   * NoticeBar and UpdateBanner until the 2026-09-12 audit.
+   *
+   * So: a layout-animation builder that bothers to set a duration must also
+   * state its curve.
+   */
+  /*
+   * The onboarding flow is exempt, and this is a KNOWN GAP rather than a clean
+   * exception. Its transitions are translated from `OnboardingFlow.swift`,
+   * whose own curve is SwiftUI's `.smooth` — a critically damped spring, NOT
+   * `inOut(quad)`. So the defaults here are a drift from the source rather than
+   * fidelity to it, and naming a curve would be closer to the reference, not
+   * further from it. Left alone on 2026-09-12 because onboarding had just been
+   * reverted and re-pinned to light mode that same day and did not need a third
+   * motion change on top; this is the record that it is outstanding.
+   */
+  const DEFAULT_EASING_ALLOWED = new Set([
+    'src/components/OnboardingStep.tsx',
+    'src/screens/OnboardingScreen.tsx',
+  ]);
+
+  it('never lets a layout animation take the default easing', () => {
+    const offenders: string[] = [];
+    for (const { file, body } of sources) {
+      if (DEFAULT_EASING_ALLOWED.has(file)) {
+        continue;
+      }
+      // Each `.duration(...)` that belongs to a Fade*/Slide*/Zoom* builder
+      // chain, with the rest of that chain up to the statement end.
+      for (const m of body.matchAll(
+        /\b(FadeIn|FadeOut|FadeInUp|FadeInDown|FadeOutUp|FadeOutDown|SlideIn\w*|SlideOut\w*|ZoomIn\w*|ZoomOut\w*)\b([\s\S]{0,240}?);/g,
+      )) {
+        const chain = m[2] ?? '';
+        if (chain.includes('.duration(') && !chain.includes('.easing(')) {
+          offenders.push(`${file}: ${m[1]}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  /*
+   * RULE 2b — a curve is never HAND-TYPED.
+   *
+   * `motion.ts` opens by saying it is "the only place in the app allowed to
+   * know how motion behaves". A bezier rebuilt at a call site is a curve nobody
+   * can retune: on 2026-09-12 `SearchBar` and `Composer` were each deriving a
+   * curve from the very same token numbers motion.ts already exported, and
+   * three components had hand-typed `Easing.out(Easing.quad)` between them.
+   *
+   * The allowlist is the onboarding bloom clock, which is a faithful
+   * translation of a SwiftUI reference (`OnboardingFlow.swift`) and keeps the
+   * source's own curves rather than the app's — a documented departure, see
+   * `src/lib/bloom.ts`.
+   */
+  const RAW_EASING_ALLOWED = new Set([
+    'src/screens/OnboardingScreen.tsx',
+    'src/components/BloomField.tsx',
+    'src/components/OnboardingStep.tsx',
+  ]);
+
+  it('takes every curve from motion.ts, never from a local Easing call', () => {
+    const offenders = sources
+      .filter(s => /\bEasing\./.test(s.body))
+      .map(s => s.file)
+      .filter(f => !RAW_EASING_ALLOWED.has(f));
+    expect(offenders).toEqual([]);
+  });
+
+  /*
+   * RULE 3a — the spring inherits the finger's velocity.
+   *
+   * The seam between a drag and the animation that follows it is where motion
+   * stops feeling like playback and starts feeling like an object. `springTo`
+   * takes the release velocity as its third argument precisely so a flicked
+   * thing keeps going at the speed it was thrown; dropping it makes a fast
+   * flick and a slow drag settle identically. Sheet, MediaViewer and
+   * SpotlightCard all passed it. Turn's swipe-to-reply did not, until this.
+   */
+  const GESTURE_FILES = [
+    'src/components/MediaViewer.tsx',
+    'src/components/Turn.tsx',
+    'src/components/Sheet.tsx',
+    'src/components/SpotlightCard.tsx',
+  ];
+
+  it('hands the release velocity to every spring that ends a gesture', () => {
+    const offenders: string[] = [];
+    let checked = 0;
+    for (const file of GESTURE_FILES) {
+      const body = stripComments(read(file));
+      // The body of each onEnd/onDeactivate handler, up to the next handler key
+      // or the end of the gesture object.
+      for (const h of body.matchAll(
+        /\b(onEnd|onDeactivate)\s*:\s*\(([^)]*)\)\s*=>\s*\{([\s\S]*?)\n {4}\}/g,
+      )) {
+        const args = h[2] ?? '';
+        const handler = h[3] ?? '';
+        for (const call of handler.matchAll(/\b(springTo|sheetIn|sheetOut)\(([^;]*?)\)[,;]/g)) {
+          const fn = call[1] ?? '';
+          const params = call[2] ?? '';
+          /*
+           * A spring that CLAMPS rather than CONTINUES is exempt, and the
+           * distinction is the whole point of the rule. Velocity handoff is for
+           * motion the finger was already making — a drag released, a sheet
+           * thrown. MediaViewer's pinch-end springs the photo back inside its
+           * own bounds after a zoom-out: there is no translation velocity to
+           * inherit (the finger was pinching, not flinging), and the motion is
+           * a correction to a boundary, not a continuation of anything.
+           */
+          if (params.includes('clamp(')) {
+            continue;
+          }
+          checked += 1;
+          // A velocity must be passed, which means the handler has to have
+          // taken the event in the first place.
+          const passesVelocity = /velocity/i.test(params);
+          if (!passesVelocity || args.trim() === '') {
+            offenders.push(`${file}: ${fn}(${params.slice(0, 40)})`);
+          }
+        }
+      }
+    }
+    // Guard the guard: a rename that made the pattern match nothing would let
+    // this pass vacuously.
+    expect(checked).toBeGreaterThan(0);
+    expect(offenders).toEqual([]);
+  });
+
+  /*
+   * RULE 3b — reduced motion drops the MOVEMENT, never the SIGNAL.
+   *
+   * An infinite `withRepeat` driving a transform is exactly what somebody who
+   * asked the OS for less movement asked to be rid of. `Avatar`'s presence
+   * breathe ran forever under that setting until 2026-09-12 — and, separately,
+   * kept running after its own `breathing` prop went false, because the effect
+   * returned early without cancelling.
+   *
+   * Either form satisfies this: a `reduceMotion` on the animation itself, or a
+   * `useReducedMotion()` branch that declines to start the loop at all (which
+   * is what CallingDots does).
+   */
+  it('lets the OS stop every looping animation', () => {
+    /*
+     * Checked PER CALL, not per file, and that is not pedantry — the first cut
+     * of this test looked for `ReduceMotion` anywhere in the source, and a
+     * leftover *import* of that symbol was enough to satisfy it while the loop
+     * itself went unguarded. A file with one guarded loop and one bare one
+     * would have passed too. Each `withRepeat(` is scanned over its own
+     * balanced parens instead.
+     */
+    const offenders: string[] = [];
+    let checked = 0;
+    for (const { file, body } of sources) {
+      // A `useReducedMotion()` branch that declines to start the loop at all is
+      // the other valid form (CallingDots does this), and it is file-level by
+      // nature — an early return above the animation.
+      const gatedByHook = body.includes('useReducedMotion');
+      let from = body.indexOf('withRepeat(');
+      while (from !== -1) {
+        const open = body.indexOf('(', from);
+        let depth = 0;
+        let end = open;
+        for (let i = open; i < body.length; i += 1) {
+          const ch = body[i];
+          if (ch === '(') depth += 1;
+          else if (ch === ')') {
+            depth -= 1;
+            if (depth === 0) {
+              end = i;
+              break;
+            }
+          }
+        }
+        const call = body.slice(open, end + 1);
+        checked += 1;
+        if (!/ReduceMotion/.test(call) && !gatedByHook) {
+          offenders.push(file);
+        }
+        from = body.indexOf('withRepeat(', end);
+      }
+    }
+    // Guard the guard: a rename would otherwise make this pass vacuously.
+    expect(checked).toBeGreaterThan(0);
+    expect(offenders).toEqual([]);
+  });
+});

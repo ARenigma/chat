@@ -53,7 +53,10 @@ function SendButtonView({ onPress, disabled, sendHaloKey }: Props) {
       return;
     }
     haloOpacity.value = 1;
-    haloOpacity.value = fadeTo(0, DURATION.slow);
+    // Press-feedback tier: under 160ms ceiling for a 100+/day action.
+    // DURATION.fast = 170ms is the nearest token to that ceiling; DURATION.slow
+    // (420ms) exceeds the 300ms UI motion budget for any non-rare interaction.
+    haloOpacity.value = fadeTo(0, DURATION.fast);
     // The ring's *size* is a spring while its opacity is a fade. That split is
     // deliberate: a ring that expands on a curve looks like a loading state,
     // and one that fades on a spring flickers at the tail.

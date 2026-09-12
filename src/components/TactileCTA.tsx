@@ -7,14 +7,13 @@ import {
   type ViewStyle,
 } from 'react-native';
 import Animated, {
-  Easing,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-import { DURATION, PRESS, springTo } from '../theme/motion';
+import { DURATION, EASE_OUT, PRESS, springTo } from '../theme/motion';
 
 interface Props {
   onPress: () => void;
@@ -103,7 +102,7 @@ function TactileCTAView({
     rippleAlive.value = 1;
     ripple.value = withTiming(
       1,
-      { duration: DURATION.slow, easing: Easing.out(Easing.quad) },
+      { duration: DURATION.slow, easing: EASE_OUT },
       (finished) => {
         if (finished) rippleAlive.value = 0;
       },

@@ -1,7 +1,6 @@
 import React, { memo, useEffect } from 'react';
 import { StyleSheet, type ViewStyle } from 'react-native';
 import Animated, {
-  Easing,
   ReduceMotion,
   cancelAnimation,
   useAnimatedStyle,
@@ -10,7 +9,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
-import { DURATION } from '../theme/motion';
+import { DURATION, EASE_BREATHE } from '../theme/motion';
 import { useStyles } from '../theme/ThemeProvider';
 
 interface Props {
@@ -36,7 +35,11 @@ function SkeletonView({ width = '100%', height = 12, radius, style }: Props) {
 
   useEffect(() => {
     pulse.value = withRepeat(
-      withTiming(1, { duration: DURATION.spinnerCycle, easing: Easing.inOut(Easing.ease) }),
+      // EASE_BREATHE (a true sinusoid) rather than the weaker
+      // `Easing.inOut(Easing.ease)` this used to hand-type: a shimmer is a
+      // breathe, and sine has zero velocity at both turning points so the pulse
+      // has no tick at the reversal. Same curve Avatar's presence breathe uses.
+      withTiming(1, { duration: DURATION.spinnerCycle, easing: EASE_BREATHE }),
       -1,
       true,
       undefined,

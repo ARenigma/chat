@@ -1036,11 +1036,15 @@ function InteractiveBubble({
         crossed.value = false;
       }
     },
-    onDeactivate: () => {
+    onDeactivate: (e) => {
       if (Math.abs(tx.value) >= REPLY_TRIGGER) {
         runOnJS(triggerReply)();
       }
-      tx.value = springTo(0, 'smooth');
+      // Pass the finger's horizontal release velocity so the spring continues
+      // from where the drag left off rather than starting cold. Sheet.tsx,
+      // MediaViewer.tsx and SpotlightCard.tsx all hand the velocity over on
+      // their onDeactivate — this was the one gesture that did not.
+      tx.value = springTo(0, 'smooth', e.velocityX);
       crossed.value = false;
     },
   });
