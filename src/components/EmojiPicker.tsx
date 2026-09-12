@@ -3,12 +3,15 @@ import { onTransitionSettled } from '../theme/motion';
 import {
   FlatList,
   Keyboard,
+  Pressable as RNPressable,
   ScrollView,
   StyleSheet,
+  type StyleProp,
   Text,
   type TextInput,
   useWindowDimensions,
   View,
+  type ViewStyle,
 } from 'react-native';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -68,33 +71,87 @@ interface Props {
   onPick: (emoji: string) => void;
 }
 
-/** One grid cell. Memoised because the grid re-renders on every tone change. */
+/**
+ * One grid cell — and deliberately NOT the app's `Pressable`.
+ *
+ * This is the emoji panel's whole performance story, found by reading the
+ * component rather than the animation (2026-09-12). `Pressable` allocates, per
+ * instance, two `useSharedValue`s, two `useAnimatedStyle` worklets and three
+ * nested native views inside an `RNPressable`. That is the right trade for a
+ * button you can count on one hand. Here it is multiplied by the grid: the
+ * comment on `settled` below already notes "~1,800 cells", and with FlatList's
+ * default `windowSize` of 21 several hundred of them are mounted at once. The
+ * panel was not slow because its animations were wrong; it was slow because
+ * opening it built a few hundred Reanimated nodes on the JS thread.
+ *
+ * The deferral gate below was the previous answer, and it only moved the cost
+ * off the transition frame — the cost still had to be paid, which is what "the
+ * emoji is very slow" was describing.
+ *
+ * So the cell drops to the platform's own primitives. `press="none"` was
+ * already asking for no spring, and the feedback it did want — `highlight="dim"`
+ * — is what `android_ripple` IS, computed on the render thread by the OS with
+ * no JS, no worklet and no extra view.
+ * developer.android.com/develop/ui/views/touch-and-input/ripple: the ripple is
+ * the platform's standard touch feedback, and `borderless` is the variant for a
+ * target with no drawn background, which is exactly this.
+ *
+ * `RNPressable` also needs no `useStyles`, so a cell now mounts one native view
+ * and one Text where it used to mount four views and two worklets.
+ */
 const Cell = memo(function CellView({
   char,
-  size,
+  style,
   onPick,
   onHold,
 }: {
   char: string;
-  size: number;
+  /*
+   * The square is passed in, already memoised by the parent, rather than built
+   * here as `[styles.cell, {width: size, height: size}]`. That array and that
+   * object were fresh objects on every cell on every render, so every cell
+   * shipped a brand-new style prop across to native even when nothing about it
+   * had changed. One shared object for all ~1,800 is correct because every cell
+   * IS the same square.
+   */
+  style: StyleProp<ViewStyle>;
   onPick: (char: string) => void;
   onHold?: (char: string) => void;
 }) {
-  const styles = useStyles(makeStyles);
   return (
-    <Pressable
+    <RNPressable
       onPress={() => onPick(char)}
       onLongPress={onHold === undefined ? undefined : () => onHold(char)}
       accessibilityLabel={char}
-      press="none"
-      highlight="dim"
-      style={[styles.cell, { width: size, height: size }]}>
-      <Text allowFontScaling={false} style={styles.glyph}>
+      android_ripple={RIPPLE}
+      style={style}>
+      <Text allowFontScaling={false} style={GLYPH}>
         {char}
       </Text>
-    </Pressable>
+    </RNPressable>
   );
 });
+
+/**
+ * Borderless, radius half the 44dp target so it reads as a disc under the
+ * glyph. A plain object rather than a themed one because the ripple colour is
+ * the platform default, which already adapts to the system's light/dark.
+ */
+const RIPPLE = { borderless: true, radius: 22 } as const;
+
+/**
+ * Hoisted out of `makeStyles` because it is theme-independent — an emoji is its
+ * own colour — and a module constant costs one allocation for the whole grid
+ * instead of one lookup per cell.
+ */
+const GLYPH = StyleSheet.create({ g: { fontSize: 28, lineHeight: 34 } }).g;
+
+/**
+ * Module-level so it is one identity for the life of the app. An emoji's key is
+ * its character; the index disambiguates the rare duplicate across a search
+ * result and a recent.
+ */
+const keyOf = (item: string, i: number) => `${item}-${i}`;
 
 /**
  * The in-app emoji picker.
@@ -270,6 +327,38 @@ function EmojiPickerView({
     }
   }, []);
 
+  /*
+   * The square every cell wears, and the three list callbacks, all hoisted into
+   * stable identities.
+   *
+   * These were inline before — `renderItem={({item}) => <Cell .../>}`,
+   * `keyExtractor={(item, i) => ...}` and a fresh `[styles.cell, {width, height}]`
+   * inside each cell. Each one is a new object on every parent render, and the
+   * parent re-renders on every keystroke in the search field, so typing rebuilt
+   * the render path for the whole visible grid per character. `Cell` was already
+   * `memo`, which is exactly the optimisation an unstable prop silently defeats.
+   */
+  const cellStyle = useMemo(
+    () => [styles.cell, { width: cellSize, height: cellSize }],
+    [styles.cell, cellSize],
+  );
+
+  const renderCell = useCallback(
+    ({ item }: { item: string }) => (
+      <Cell char={item} style={cellStyle} onPick={pick} onHold={hold} />
+    ),
+    [cellStyle, pick, hold],
+  );
+
+  const itemLayout = useCallback(
+    (_: ArrayLike<string> | null | undefined, index: number) => ({
+      length: cellSize,
+      offset: cellSize * index,
+      index,
+    }),
+    [cellSize],
+  );
+
   const chooseTone = useCallback(
     (next: string) => {
       setTone(next);
@@ -392,13 +481,41 @@ function EmojiPickerView({
 
       <FlatList
         data={data as string[]}
-        keyExtractor={(item, i) => `${item}-${i}`}
+        keyExtractor={keyOf}
         numColumns={COLUMNS}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.grid}
-        renderItem={({ item }) => (
-          <Cell char={item} size={cellSize} onPick={pick} onHold={hold} />
-        )}
+        renderItem={renderCell}
+        /*
+         * Every cell in this grid is the same square, so its position is
+         * arithmetic and FlatList never needs to measure one.
+         * reactnative.dev/docs/optimizing-flatlist-configuration names
+         * getItemLayout as the single biggest win available to a fixed-size
+         * list: without it every row round-trips an onLayout from native to JS
+         * before the list can place the next, which for a grid this long is
+         * hundreds of layout events during a flick.
+         *
+         * `index` is the ROW here, not the cell: with numColumns > 1 FlatList
+         * stores one row per index, so the stride is one cell edge.
+         */
+        getItemLayout={itemLayout}
+        /*
+         * The windowing defaults are tuned for a list of rich rows, not ~1,800
+         * glyphs. windowSize 21 means "keep ten screens above and below
+         * mounted" — several hundred cells that nobody can see. Five keeps two
+         * either side, which is still ahead of any flick, and initialNumToRender
+         * 40 is five rows: enough to fill the panel on the first frame and
+         * nothing more, since the first frame is the one the user is waiting on.
+         */
+        initialNumToRender={COLUMNS * 5}
+        maxToRenderPerBatch={COLUMNS * 4}
+        windowSize={5}
+        /*
+         * Detaches off-screen rows from the native hierarchy. The RN docs flag
+         * this as having caused bugs (content going blank) on iOS; this app is
+         * Android-only, where it is the documented recommendation.
+         */
+        removeClippedSubviews
         style={styles.gridBox}
         ListEmptyComponent={
           <Text allowFontScaling style={styles.empty}>

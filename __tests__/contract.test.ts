@@ -3841,6 +3841,24 @@ describe('the motion adoption is wired, not just drawn', () => {
     expect(rawUsers).toEqual([
       'src/components/ChatStartHint.tsx',
       'src/components/CodeField.tsx',
+      /*
+       * The emoji grid, added 2026-09-12, and the only entry here justified by
+       * COUNT rather than by needing something `Pressable` cannot do.
+       *
+       * `Pressable` costs two `useSharedValue`s, two `useAnimatedStyle` worklets
+       * and three nested native views per instance. The grid has ~1,800 cells
+       * and FlatList keeps several hundred mounted, so the app's own component
+       * is the wrong primitive here by two orders of magnitude — this is what
+       * "the emoji is very slow" was. The cell asked for `press="none"` anyway,
+       * so the only feedback being given up is `highlight="dim"`, and
+       * `android_ripple` is the platform's own version of exactly that,
+       * computed by the OS on the render thread with no JS at all.
+       *
+       * The rule this allowlist enforces is still right: one motion system, one
+       * press component. A list long enough to be a performance surface in its
+       * own right is the documented exception, and it is the only one.
+       */
+      'src/components/EmojiPicker.tsx',
       'src/components/PaperMenu.tsx',
       'src/components/Pressable.tsx',
       'src/components/Sheet.tsx',
