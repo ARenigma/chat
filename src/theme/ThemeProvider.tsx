@@ -178,6 +178,30 @@ export function useTheme(): Theme {
   return useContext(ThemeContext).theme;
 }
 
+/**
+ * Pin a subtree to light, regardless of the app-wide mode.
+ *
+ * Onboarding is the one screen that must never read as the member's chosen
+ * dark mode (Amit, 2026-09-12: "keep it always light mode even if user
+ * selects dark mode inside app") — the bloom is tuned against a light ground
+ * and chasing a dark-mode variant of it (NightSky, a forced-white Google
+ * button, all built and then reverted the same night) was the wrong fight.
+ * `setMode` is a no-op here on purpose: nothing under this provider should be
+ * able to change the app's real preference, which lives one provider up.
+ */
+const LIGHT_THEME_STATE: ThemeState = {
+  theme: LIGHT,
+  mode: 'light',
+  isDark: false,
+  setMode: () => undefined,
+};
+
+export function ForceLightTheme({ children }: { children: ReactNode }) {
+  return (
+    <ThemeContext.Provider value={LIGHT_THEME_STATE}>{children}</ThemeContext.Provider>
+  );
+}
+
 export function useThemeMode(): Omit<ThemeState, 'theme'> {
   const { mode, isDark, setMode } = useContext(ThemeContext);
   return { mode, isDark, setMode };

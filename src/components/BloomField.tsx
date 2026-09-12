@@ -225,16 +225,14 @@ function BloomFieldView({ elapsed, stage, hidden = false }: Props) {
     <Animated.View
       pointerEvents="none"
       /*
-       * TRANSPARENT, not `bg/raised` (2026-09-12). The flat base fill moved to
-       * `NightSky`, which now mounts BEHIND this field and paints it — so the
-       * field's own coral layers composite over the night sky instead of over
-       * an opaque wall that would hide it. This is the one wiring change that
-       * came with the night-sky backdrop; BLOOM_LAYERS, the stage cross-fade
-       * and the collapse geometry below are untouched (Amit: "i hope we are
-       * not touching the fuse bloom system animation mechanics itself" — we
-       * are not). `OnboardingScreen`'s own root still paints `bg/raised`
-       * itself, so there is no seam: NightSky, this field, and the root are
-       * all the same surface, just layered instead of one view owning it.
+       * TRANSPARENT, not `bg/raised`. A night-sky backdrop briefly mounted
+       * behind this field on 2026-09-12 and was reverted the same night —
+       * onboarding is now pinned to light mode unconditionally (see
+       * `ForceLightTheme` in `theme/ThemeProvider.tsx`), which makes a dark
+       * starfield meaningless. `OnboardingScreen`'s own root paints
+       * `bg/raised` (light, always) directly behind this field, so there is
+       * still no seam — just one layer instead of two. BLOOM_LAYERS, the
+       * stage cross-fade and the collapse geometry below are untouched.
        */
       style={[styles.host, host]}>
       {BLOOM_LAYERS.map(layer => (

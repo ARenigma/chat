@@ -2042,12 +2042,6 @@ describe('accent budget is enforced in code, not just documented', () => {
       // copy over any photo, and the no-photo fallback is a warm field — same
       // atmospheric-surface exemption class as the hero surfaces above.
       'SpotlightCard.tsx',
-      // The onboarding night sky (2026-09-12): a corner vignette + a comet
-      // trail, both radial/linear gradients, mounted behind BloomField as an
-      // independent atmospheric layer over the same entry surface — same
-      // exemption class as BloomField itself, not a decorative sheen on a
-      // list row or bubble.
-      'NightSky.tsx',
     ]);
     /*
      * COMMENTS STRIPPED, added 2026-09-08 after this failed on RatingStars.tsx
