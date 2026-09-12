@@ -59,6 +59,7 @@ import {
   countryForDialCode,
   formatNationalDigits,
   formatPhoneEdit,
+  placeholderShape,
   isCompleteNationalNumber,
   nationalDisplayLength,
   retargetPhone,
@@ -683,6 +684,25 @@ export function OnboardingScreen({ onDone }: Props) {
    */
   const fullPhone = `${dialCode} ${phone}`;
 
+  /** The dashed shape for the field's placeholder — see the TextInput's note. */
+  const placeholderNumber = placeholderShape(country);
+
+  /**
+   * The number as it will be texted, for the code step to show back.
+   *
+   * The OTP step used to display NOTHING about the number — just six boxes, a
+   * resend and a "Change number" link. That is the gap behind a report of a
+   * number being "registered as" a transposed one (Amit, 2026-09-12): a single
+   * mistyped digit is invisible from the moment the field scrolls away, and the
+   * member's only chance to catch it is a screen that never mentions it.
+   *
+   * Every OTP flow worth copying echoes the destination here, and it costs
+   * nothing: the value is already in hand. `formatNationalDigits` so the gap is
+   * where the member typed it — an unbroken `+918826671228` is precisely the
+   * format in which a transposed pair is hardest to spot.
+   */
+  const sentTo = `${dialCode} ${formatNationalDigits(phone, country)}`;
+
   /** Send directly; OTP verification is the confirmation, so no second prompt. */
   const onSendCode = useCallback(() => {
     if (!canSend || !canSubmit(state)) {
@@ -1259,7 +1279,42 @@ export function OnboardingScreen({ onDone }: Props) {
                       // so a saved number is never offered at all.
                       importantForAutofill="yes"
                       autoFocus
-                      placeholder="Your number"
+                      /*
+                       * A correctly-grouped EXAMPLE, not the words "Your
+                       * number" (2026-09-12).
+                       *
+                       * The registration field is the one place a mistyped
+                       * digit is unrecoverable, and it was the only phone field
+                       * in the app giving no hint of its own shape —
+                       * PhoneVerifySheet, which nobody registers through,
+                       * already had this and recorded why. A placeholder that
+                       * says "Your number" tells the member something they
+                       * already know; one that says `98765 43210` tells them
+                       * how many digits are expected and where the gap falls,
+                       * which is the only question the field can actually
+                       * answer for them.
+                       *
+                       * It is a SHAPE (`----- -----`), not an example number,
+                       * and that is the deliberate half of the choice.
+                       *
+                       * An example like `98765 43210` — which PhoneVerifySheet
+                       * uses, India-only — reads better, but it needs a real,
+                       * sourced example number PER COUNTRY, and the picker
+                       * offers six. Inventing five of them, in a file whose
+                       * every other number is quoted from libphonenumber
+                       * metadata, would be exactly the kind of unsourced claim
+                       * the rest of `phone.ts` avoids. A shape needs no source:
+                       * it is derived from the country's own `groups`, so it is
+                       * correct for all six by construction and cannot drift.
+                       *
+                       * It also cannot be mistaken for a number to copy, which
+                       * a greyed-out example occasionally is.
+                       *
+                       * Built by `placeholderShape` from the real grouping and
+                       * the real GROUP_SEPARATOR, so the gap sits exactly where
+                       * the member's own digits will split it.
+                       */
+                      placeholder={placeholderNumber}
                       placeholderTextColor={theme.color.text.tertiary}
                       style={styles.input}
                       testID="onboard-phone"
@@ -1489,6 +1544,22 @@ export function OnboardingScreen({ onDone }: Props) {
                   entering={stepIn}
                   exiting={stepOut}
                   style={styles.codeBlock}>
+                  {/*
+                    * The destination, shown back before the code is entered.
+                    * See `sentTo` for why this was the actual defect behind a
+                    * wrong number reaching registration: there was no screen on
+                    * which a member could see what they had typed.
+                    *
+                    * Above the boxes, not below: it has to be readable BEFORE
+                    * the code is entered to be worth anything, and "Change
+                    * number" sits underneath as the action it implies.
+                    */}
+                  <Text
+                    allowFontScaling
+                    accessibilityLabel={`Code sent to ${sentTo}`}
+                    style={styles.sentTo}>
+                    Code sent to {sentTo}
+                  </Text>
                   <CodeField
                     value={code}
                     onChange={setCode}
@@ -1842,6 +1913,19 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.bodySmall,
       color: t.color.text.secondary,
       paddingHorizontal: TOKENS.space.xs,
+    },
+    /*
+     * The destination echo above the code boxes. `text.primary`, not the
+     * `secondary` the hint below it uses: this is the one line on the screen a
+     * member has to actually READ and check against the number they meant, so
+     * it is not styled as an aside.
+     */
+    sentTo: {
+      ...TOKENS.typography.bodyMedium,
+      color: t.color.text.primary,
+      paddingHorizontal: TOKENS.space.xs,
+      marginBottom: TOKENS.space.xs,
+      textAlign: 'center',
     },
     // 20pt, from `.font(.system(size: 20, weight: .medium))`. The headline token
     // is 17 and reads small next to a 42pt step title.

@@ -71,6 +71,23 @@ export function PhoneVerifySheet({ visible, onClose }: Props) {
    * is what keeps the field editable rather than append-only.
    */
   const [caret, setCaret] = useState(0);
+  /**
+   * Mirrors `phone`, written SYNCHRONOUSLY so a second native event can never
+   * diff against a render-stale value.
+   *
+   * OnboardingScreen already had this and records the bug it fixes: Android's
+   * TextInput can fire a second `onChangeText` before React has re-rendered and
+   * rebuilt this callback, so the second call diffed the new native string
+   * against the PREVIOUS RENDER's `phone` — `formatPhoneEdit` then mis-measured
+   * the edit by prefix/suffix and a digit vanished. It was reported as digits
+   * dropping around the 8th or 9th, i.e. once the number is long enough to type
+   * quickly.
+   *
+   * This sheet was left on the state closure when onboarding was fixed (found
+   * 2026-09-12 while investigating a mistyped registration). Same defect, one
+   * file behind — which is the usual way a fixed bug survives.
+   */
+  const phoneRef = useRef('');
   const [code, setCode] = useState('');
   const [errorNonce, setErrorNonce] = useState(0);
   const [cooldown, setCooldown] = useState(0);
@@ -131,11 +148,15 @@ export function PhoneVerifySheet({ visible, onClose }: Props) {
    */
   const onChangePhone = useCallback(
     (next: string) => {
-      const edit = formatPhoneEdit(next, formatNationalDigits(phone));
+      const edit = formatPhoneEdit(
+        next,
+        formatNationalDigits(phoneRef.current),
+      );
+      phoneRef.current = edit.digits;
       setPhone(edit.digits);
       setCaret(edit.caret);
     },
-    [phone],
+    [],
   );
 
   const display = formatNationalDigits(phone);

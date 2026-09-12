@@ -18,6 +18,7 @@ import {
   countryForDialCode,
   formatNationalDigits,
   formatPhoneEdit,
+  placeholderShape,
   isCompleteNationalNumber,
   nationalDisplayLength,
   normalisePhone,
@@ -769,6 +770,78 @@ describe('bare digits are what reach the sign-in call', () => {
       expect(
         isCompleteNationalNumber(digits.slice(0, -1), country),
       ).toBe(false);
+    }
+  });
+});
+
+/*
+ * The number from the closed-testing report, typed key by key.
+ *
+ * Reported 2026-09-12: "8826671228 is registered as 8826617228". The two
+ * strings differ only by a transposition of digits 6 and 7 — the pair that
+ * straddles the 5-and-5 group boundary — which is exactly where a caret bug at
+ * the separator would show up, so the formatter was the first suspect.
+ *
+ * It is not the formatter. This types the reported number one key at a time,
+ * feeding each keystroke in at the caret the previous call returned, which is
+ * what the screen does. The digits come out in order. Kept as a regression so
+ * that the specific number in the report is permanently covered by name rather
+ * than only by the generic boundary case above.
+ */
+describe('formatPhoneEdit — the reported registration number', () => {
+  function typeOut(digits: string): { digits: string; display: string } {
+    let display = '';
+    let caret = 0;
+    for (const d of digits) {
+      const edit = formatPhoneEdit(
+        display.slice(0, caret) + d + display.slice(caret),
+        display,
+      );
+      display = edit.display;
+      caret = edit.caret;
+    }
+    return { digits: display.replace(/\D/g, ''), display };
+  }
+
+  it('types 8826671228 without transposing the pair at the group boundary', () => {
+    expect(typeOut('8826671228').digits).toBe('8826671228');
+  });
+
+  it('never lets the caret land inside the separator gap', () => {
+    let display = '';
+    let caret = 0;
+    for (const d of '8826671228') {
+      const edit = formatPhoneEdit(
+        display.slice(0, caret) + d + display.slice(caret),
+        display,
+      );
+      display = edit.display;
+      caret = edit.caret;
+      // A caret inside the gap is the state that would insert the NEXT digit
+      // before the one just typed — the shape of the reported bug.
+      const inGap =
+        caret > 0 && caret < display.length && !/\d/.test(display[caret - 1]!);
+      expect({ display, caret, inGap }).toEqual({ display, caret, inGap: false });
+    }
+  });
+});
+
+describe('placeholderShape — the field says how many digits and where the gap is', () => {
+  it('is five, a gap, and five for India', () => {
+    expect(placeholderShape(INDIA)).toBe('-----  -----');
+  });
+
+  it('follows the selected country rather than hardcoding India', () => {
+    const us = PHONE_COUNTRIES.find(c => c.iso === 'US')!;
+    expect(placeholderShape(us)).toBe('---  ---  ----');
+  });
+
+  it('uses the same separator the formatter uses, so the gaps line up', () => {
+    const shape = placeholderShape(INDIA);
+    const real = formatNationalDigits('8826671228', INDIA);
+    expect(shape.length).toBe(real.length);
+    for (let i = 0; i < shape.length; i += 1) {
+      expect(/\d/.test(real[i]!)).toBe(shape[i] === '-');
     }
   });
 });

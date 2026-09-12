@@ -771,11 +771,34 @@ describe('the sign-in number field is country-aware', () => {
      * it is how a country-code guess gets a chance to fire on the wrong length.
      */
     expect(screen).toContain('const fullPhone = `${dialCode} ${phone}`;');
-    expect(screen).not.toContain('formatNationalDigits(phone, country)}`');
     // Exactly one place builds it, and all three auth calls read that one.
     expect(screen.match(/const fullPhone =/g) ?? []).toHaveLength(1);
     expect(screen).toContain('sendPhoneOtp(fullPhone)');
     expect(screen).toContain('verifyPhoneOtp(fullPhone, entered)');
+
+    /*
+     * NARROWED on 2026-09-12, from "the formatted string appears nowhere in the
+     * file" to "the formatted string is not what auth is handed".
+     *
+     * The old line was `expect(screen).not.toContain('formatNationalDigits(phone,
+     * country)}`')` — a ban on the formatter appearing in ANY template literal.
+     * That over-reached: the code step now echoes the number back to the member
+     * ("Code sent to +91 88266 71228"), which is display and MUST be formatted,
+     * and which exists precisely because a member had no way to notice a
+     * mistyped digit before registering.
+     *
+     * The rule being protected is unchanged and is asserted directly instead:
+     * AUTH gets the bare value. `fullPhone` is built from `phone`, the three
+     * auth calls take `fullPhone`, and nothing formatted is passed to either
+     * entry point. A formatted value reaching `normalisePhone` is how a
+     * country-code guess gets a chance to fire on the wrong length.
+     */
+    expect(screen).not.toMatch(/sendPhoneOtp\((?!fullPhone\))/);
+    expect(screen).not.toMatch(/verifyPhoneOtp\((?!fullPhone,)/);
+    // And the one formatted copy that does exist is display-only.
+    expect(screen).toContain(
+      'const sentTo = `${dialCode} ${formatNationalDigits(phone, country)}`;',
+    );
   });
 });
 
