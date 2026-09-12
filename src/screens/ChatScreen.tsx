@@ -879,6 +879,48 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
       );
     }
 
+    /*
+     * A RUN BREAKS ON ANYTHING THAT VISUALLY SEPARATES TWO BUBBLES, not just on
+     * a change of speaker.
+     *
+     * `first`/`last` were computed up in messageRows.map() against adjacent
+     * MESSAGES only — `older.sender_id !== m.sender_id` and nothing else. So a
+     * message could be the start of a visual run and not be marked as one:
+     * send something today after sending something last week and the two are
+     * "the same run", because the sender never changed. A day divider and a
+     * "Session ended" row sat between them on screen and counted for nothing.
+     *
+     * What that looked like (Amit, 2026-09-12: "why does the hi bubble not have
+     * a tail when its first msg of that session?"): the tail is drawn on the
+     * oldest bubble of a run, so today's first message had no tail, while a
+     * message from thirteen days earlier kept one. WhatsApp, which this grouping
+     * is taken from, restarts the tail after a date separator — a new day is a
+     * new run, and so is a session boundary.
+     *
+     * Recomputed HERE rather than up there because only this pass — after the
+     * merge and sort — knows a row's true older neighbour regardless of kind.
+     * That is the same reason `opensDay` moved down here.
+     */
+    for (let i = 0; i < sorted.length; i++) {
+      const row = sorted[i];
+      if (row === undefined || row.kind !== 'message') continue;
+      const older = sorted[i + 1];
+      const newer = sorted[i - 1];
+      row.first =
+        older === undefined ||
+        older.kind !== 'message' ||
+        older.message.sender_id !== row.message.sender_id ||
+        // The divider belongs to the row it opens, so a row that opens a day is
+        // always the start of a run.
+        row.opensDay;
+      row.last =
+        newer === undefined ||
+        newer.kind !== 'message' ||
+        newer.message.sender_id !== row.message.sender_id ||
+        // ...and the row below a divider closes the run it was in.
+        newer.opensDay;
+    }
+
     return sorted;
   }, [messages, selfId, callRecords, sessionEvents]);
 

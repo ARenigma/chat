@@ -61,8 +61,23 @@ const CAMERA_SLOT = 40;
  * The emoji button's square. Telegram's is 44 and sits outside the field; ours is
  * inside the capsule, so it matches the capsule's own height instead — a 44 here
  * would make the capsule taller than the 40 measured on device.
+ *
+ * 40, NOT 36, and the two dp matter because the row is bottom-aligned. Measured
+ * on the S22 (Amit, 2026-09-12: "message input box elements are not aligned"):
+ *
+ *     Emoji   [58,2132][160,2234]   102px tall, centre 2183
+ *     Field   [181,2132][691,2234]  102px tall, centre 2183
+ *     Camera  [781,2121][893,2234]  113px tall, centre 2177.5
+ *     Mic     [916,2121][1028,2234] 113px tall, centre 2177.5
+ *
+ * The camera and the mic are `CAMERA_SLOT`/40; this was 36. Under the capsule's
+ * `alignItems: 'flex-end'` every child sits on the same floor, so a shorter one
+ * has a higher centre — 2dp higher, 5.6px at this density, which is what reads
+ * as the row being out of line. 40 is also what the paragraph above is really
+ * asking for: the capsule's usable height is `CAPSULE_MIN_H` (44) minus its
+ * `space.hair` padding top and bottom, which is exactly 40.
  */
-const EMOJI_BUTTON = 36;
+const EMOJI_BUTTON = 40;
 
 /**
  * Input field height bounds (dp).
@@ -1203,9 +1218,15 @@ function ComposerView({
           highlight="material"
           size={EMOJI_BUTTON}
           style={styles.emoji}>
+          {/* `icon.md` (20), the same as the camera and the mic across the
+              capsule. This was `icon.lg` (24) with nothing recording why, and a
+              4dp difference between the leading glyph and the two trailing ones
+              is visible at this size — the second half of "the elements are not
+              aligned" (Amit, 2026-09-12); the first half was the 36dp button in
+              a row of 40s. Three controls in one capsule, one glyph size. */}
           <Icon
             name={emojiOpen ? 'keyboard' : 'smile'}
-            size={TOKENS.icon.lg}
+            size={TOKENS.icon.md}
             color={theme.color.text.secondary}
           />
         </Pressable>
