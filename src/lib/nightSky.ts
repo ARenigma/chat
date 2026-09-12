@@ -101,6 +101,16 @@ export function makeCometPath(seed: number, width: number, height: number): Come
  * edges rather than an abrupt cut (Amit: "motion should be smooth").
  */
 export function cometFade(t: number): number {
+  /*
+   * NOT decoration. This runs inside `Comet`'s `useAnimatedStyle` on the UI
+   * runtime; without the directive Worklets throws "Tried to synchronously
+   * call a Remote Function" on the first frame and the process dies —
+   * `Pappal keeps stopping`, S22, 2026-09-12, on the 10121/10122 builds. The
+   * jest suite passes straight through it, which is why `bloom.ts`'s
+   * `layerProgress` carries the same warning and why
+   * `__tests__/platform.test.ts` now asserts the directive mechanically.
+   */
+  'worklet';
   const fade = t < 0.15 ? t / 0.15 : t > 0.85 ? (1 - t) / 0.15 : 1;
   return Math.max(0, Math.min(1, fade));
 }

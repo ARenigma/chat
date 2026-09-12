@@ -1255,6 +1255,110 @@ describe('gesture callbacks are workletized by the worklets plugin', () => {
 });
 
 /**
+ * A `src/lib` helper called from inside a UI-runtime worklet carries `'worklet'`.
+ *
+ * The failure this guards is a hard native crash that jest cannot see: a plain
+ * function referenced inside `useAnimatedStyle` / `useDerivedValue` /
+ * `useAnimatedReaction` is shipped to the UI runtime as a "remote function"
+ * stub, and calling it throws `[Worklets] Tried to synchronously call a Remote
+ * Function` on the first frame — the whole process dies. `bloom.ts`'s
+ * `layerProgress` has warned about this in prose since 2026-08; the prose did
+ * not stop `nightSky.ts`'s `cometFade` shipping without the directive on
+ * 2026-09-12, which put "Pappal keeps stopping" on every onboarding launch of
+ * the 10121/10122 builds. Hence a mechanical check.
+ *
+ * Method: for every component/screen, take each worklet-hook callback body
+ * (balanced-brace scan from the hook call), collect the identifiers it CALLS
+ * that were imported from `../lib/*`, and require the exporting function to
+ * open with the directive. Regex on source, like the rest of this file — the
+ * babel route above proves the plugin marks a function; this proves the author
+ * asked it to.
+ * https://docs.swmansion.com/react-native-worklets/docs/guides/troubleshooting#tried-to-synchronously-call-a-remote-function
+ * https://docs.swmansion.com/react-native-reanimated/docs/fundamentals/glossary#worklet
+ */
+describe('lib helpers called inside UI-thread worklets carry the directive', () => {
+  const HOOKS = /\b(useAnimatedStyle|useDerivedValue|useAnimatedReaction|useAnimatedProps)\s*\(/g;
+  const uiFiles = ['src/components', 'src/screens'].flatMap(dir =>
+    readdirSync(join(ROOT, dir))
+      .filter(f => f.endsWith('.tsx'))
+      .map(f => `${dir}/${f}`),
+  );
+
+  /** The text of the balanced `( ... )` starting at `open` (index of the paren). */
+  const balanced = (src: string, open: number): string => {
+    let depth = 0;
+    for (let i = open; i < src.length; i += 1) {
+      const ch = src[i];
+      if (ch === '(' || ch === '{' || ch === '[') {
+        depth += 1;
+      } else if (ch === ')' || ch === '}' || ch === ']') {
+        depth -= 1;
+        if (depth === 0) {
+          return src.slice(open, i + 1);
+        }
+      }
+    }
+    return src.slice(open);
+  };
+
+  /** `name -> lib module path` for every `import { ... } from '../lib/x'`. */
+  const libImports = (src: string): Map<string, string> => {
+    const map = new Map<string, string>();
+    const IMPORT = /import\s*\{([^}]*)\}\s*from\s*'(\.\.\/lib\/[^']+)'/g;
+    for (const m of src.matchAll(IMPORT)) {
+      const names = m[1] ?? '';
+      const from = m[2] ?? '';
+      for (const raw of names.split(',')) {
+        const spec = raw.trim();
+        if (spec === '' || spec.startsWith('type ')) {
+          continue;
+        }
+        const local = (spec.split(/\s+as\s+/)[1] ?? spec).trim();
+        map.set(local, from);
+      }
+    }
+    return map;
+  };
+
+  /** Whether the exported function `name` in `libPath` opens with `'worklet'`. */
+  const hasDirective = (libPath: string, name: string): boolean => {
+    const lib = code(`src/lib/${libPath.replace('../lib/', '')}.ts`);
+    const fn = new RegExp(
+      `export\\s+function\\s+${name}\\s*\\([^)]*\\)[^{]*\\{\\s*'worklet';`,
+    );
+    const arrow = new RegExp(
+      `export\\s+const\\s+${name}\\s*=\\s*\\([^)]*\\)[^=]*=>\\s*\\{\\s*'worklet';`,
+    );
+    return fn.test(lib) || arrow.test(lib);
+  };
+
+  it('finds at least one worklet call site to check', () => {
+    // Guard the guard: a hook rename that made the pattern match nothing
+    // would let every case below pass vacuously.
+    const total = uiFiles.reduce(
+      (n, f) => n + [...code(f).matchAll(HOOKS)].length,
+      0,
+    );
+    expect(total).toBeGreaterThan(0);
+  });
+
+  it.each(uiFiles)('%s', file => {
+    const src = code(file);
+    const imports = libImports(src);
+    const offenders: string[] = [];
+    for (const m of src.matchAll(HOOKS)) {
+      const body = balanced(src, (m.index ?? 0) + m[0].length - 1);
+      for (const [name, from] of imports) {
+        if (new RegExp(`\\b${name}\\s*\\(`).test(body) && !hasDirective(from, name)) {
+          offenders.push(`${name} from ${from}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
+/**
  * CameraX live-preview native view — wiring and safety assertions.
  *
  * The requirements that follow are structural (RULE 1: take them from the
