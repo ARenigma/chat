@@ -1394,6 +1394,63 @@ describe('CameraX live-preview tile', () => {
     expect(gradle).toContain('androidx.camera:camera-view:1.4.0');
   });
 
+  /*
+   * The cross-fade's precondition, asserted because it is invisible in the code
+   * that depends on it.
+   *
+   * AttachPanel fades its placeholder out when the native view reports
+   * STREAMING. PreviewView's docs say that state "guarantees the preview is
+   * visible only when the ImplementationMode is COMPATIBLE" and that in
+   * PERFORMANCE mode "it is possible the preview becomes visible slightly after
+   * the state changes". So the signal means what the fade assumes ONLY while
+   * this view is COMPATIBLE.
+   *
+   * COMPATIBLE is currently set for an unrelated reason — a SurfaceView cannot
+   * be clipped to a rounded outline or animated — which is exactly why this
+   * needs a test: someone could switch to PERFORMANCE for a sound performance
+   * reason and silently break a cross-fade in a different file, with the
+   * symptom being an occasional flash of empty tile that nobody can reproduce.
+   * https://developer.android.com/reference/androidx/camera/view/PreviewView#getPreviewStreamState()
+   */
+  it('keeps the COMPATIBLE mode that makes STREAMING mean "visible"', () => {
+    const kt = read(PACKAGE_KT);
+    expect(kt).toContain(
+      'implementationMode = PreviewView.ImplementationMode.COMPATIBLE',
+    );
+    expect(kt).not.toContain('ImplementationMode.PERFORMANCE');
+    // And the signal the fade rides on is actually emitted.
+    expect(kt).toContain('view.previewStreamState.observeForever(observer)');
+    expect(kt).toContain('PreviewView.StreamState.STREAMING');
+    expect(kt).toContain('"registrationName" to "onStreamStateChange"');
+  });
+
+  it('removes the StreamState observer when the view is dropped', () => {
+    /*
+     * `observeForever` has no lifecycle to unregister it — unlike
+     * `observe(owner)` — so the only thing standing between it and a leak is
+     * this line in onDropViewInstance.
+     */
+    const kt = read(PACKAGE_KT);
+    expect(kt).toContain(
+      'streamObservers.remove(view)?.let { view.previewStreamState.removeObserver(it) }',
+    );
+  });
+
+  it('never hides the camera placeholder on a timer', () => {
+    /*
+     * A capture session that fails to negotiate never reports STREAMING, and
+     * the correct behaviour then is for the glyph to stay up indefinitely.
+     * Hiding it after a fixed delay would restore the black tile this component
+     * has already shipped once.
+     */
+    const panel = read('src/components/AttachPanel.tsx').replace(
+      /\/\*[\s\S]*?\*\//g,
+      '',
+    );
+    expect(panel).not.toMatch(/setTimeout[\s\S]{0,120}placeholderOpacity/);
+    expect(panel).toContain('placeholderOpacity.value = fadeTo(');
+  });
+
   it('registers CameraTilePackage in MainApplication', () => {
     // The package must be registered next to the other non-autolinkable
     // packages so the JS bridge can resolve PappalCameraPreview at runtime.

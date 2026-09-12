@@ -9,6 +9,11 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.Observer
+import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.WritableMap
+import com.facebook.react.uimanager.UIManagerHelper
+import com.facebook.react.uimanager.events.Event
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.NativeModule
 import com.facebook.react.bridge.ReactApplicationContext
@@ -117,6 +122,19 @@ class CameraPreviewManager : SimpleViewManager<PreviewView>() {
     private val bindScheduled: MutableSet<PreviewView> =
         Collections.newSetFromMap(WeakHashMap())
 
+    /*
+     * The StreamState observer per view, held so it can be removed again.
+     *
+     * `observeForever` rather than `observe(lifecycleOwner)`: the natural
+     * lifecycle here is the VIEW's, not the Activity's, and React Native can
+     * drop this view long before the Activity goes. Tying it to the Activity
+     * would keep firing at a view React has finished with. observeForever has
+     * no lifecycle to unregister it, so `onDropViewInstance` must — hence the
+     * map.
+     */
+    private val streamObservers =
+        WeakHashMap<PreviewView, Observer<PreviewView.StreamState>>()
+
     override fun getName(): String = "PappalCameraPreview"
 
     override fun createViewInstance(context: ThemedReactContext): PreviewView {
@@ -148,12 +166,17 @@ class CameraPreviewManager : SimpleViewManager<PreviewView>() {
              * placeholder) and the live frames simply cover it once they arrive.
              * A failed session now degrades to the placeholder instead of a void.
              *
-             * PreviewView.StreamState (IDLE/STREAMING) is the API for observing
-             * that moment explicitly, and would be the way to cross-fade rather
-             * than cut. Not used here: it needs a LiveData observer and an event
-             * back to JS, and this app has no native view that emits events yet
-             * — a first one is worth adding deliberately, not as a side effect of
-             * a bug fix. See the note in AttachPanel.tsx.
+             * PreviewView.StreamState (IDLE/STREAMING) is now observed and
+             * emitted to JS as `onStreamStateChange`, so the placeholder
+             * CROSS-FADES out on the first frame instead of being covered by it.
+             * See `streamObserver` below. That note used to say this was
+             * deferred because the app had no event-emitting native view; this
+             * is that first one, added deliberately.
+             *
+             * The transparent background still matters and is not replaced by
+             * the event: it is what makes a FAILED session degrade to the
+             * placeholder rather than to a black void, and a session that never
+             * streams never fires the event at all.
              * https://developer.android.com/reference/androidx/camera/view/PreviewView.StreamState
              */
             setBackgroundColor(android.graphics.Color.TRANSPARENT)
@@ -174,8 +197,61 @@ class CameraPreviewManager : SimpleViewManager<PreviewView>() {
             },
         )
         contextMap[view] = context
+
+        /*
+         * The first-frame signal, and the reason it is trustworthy HERE
+         * specifically.
+         *
+         * PreviewView's own docs: STREAMING "guarantees the preview is visible
+         * only when the ImplementationMode is COMPATIBLE. When in PERFORMANCE
+         * mode, it is possible the preview becomes visible slightly after the
+         * state changes" — and "apps that require a precise signal for when the
+         * preview starts should set the implementation mode to COMPATIBLE".
+         * This view sets COMPATIBLE above, for unrelated reasons (a SurfaceView
+         * cannot be clipped or animated), so the guarantee holds and a cross-fade
+         * started on STREAMING cannot reveal an empty surface.
+         *
+         * IDLE is emitted too, not just STREAMING. Flipping the camera unbinds
+         * and rebinds, so the tile genuinely has no frames for a moment in the
+         * middle — the placeholder should come back for it rather than holding a
+         * stale last frame.
+         *
+         * observeForever must be called on the main thread; createViewInstance
+         * is on it.
+         * https://developer.android.com/reference/androidx/camera/view/PreviewView#getPreviewStreamState()
+         */
+        val observer = Observer<PreviewView.StreamState> { state ->
+            emitStreamState(view, state == PreviewView.StreamState.STREAMING)
+        }
+        view.previewStreamState.observeForever(observer)
+        streamObservers[view] = observer
+
         return view
     }
+
+    /**
+     * Tell JS whether frames are on screen.
+     *
+     * Dispatched through the EventDispatcher rather than the legacy
+     * RCTEventEmitter so it works under the New Architecture, which this app
+     * runs (`newArchEnabled=true`). The event name is registered as a DIRECT
+     * event in `getExportedCustomDirectEventTypeConstants` below, which is what
+     * maps `topStreamStateChange` to the `onStreamStateChange` prop JS sets.
+     */
+    private fun emitStreamState(view: PreviewView, streaming: Boolean) {
+        val reactContext = contextMap[view] ?: return
+        val dispatcher =
+            UIManagerHelper.getEventDispatcherForReactTag(reactContext, view.id) ?: return
+        dispatcher.dispatchEvent(
+            StreamStateEvent(UIManagerHelper.getSurfaceId(view), view.id, streaming),
+        )
+    }
+
+    override fun getExportedCustomDirectEventTypeConstants(): MutableMap<String, Any> =
+        mutableMapOf(
+            StreamStateEvent.EVENT_NAME to
+                mapOf("registrationName" to "onStreamStateChange"),
+        )
 
     /**
      * Facing prop: "front" → front camera, anything else → back camera.
@@ -220,6 +296,8 @@ class CameraPreviewManager : SimpleViewManager<PreviewView>() {
      */
     override fun onDropViewInstance(view: PreviewView) {
         unbindCamera(view)
+        // observeForever has no lifecycle to clean it up; this is that cleanup.
+        streamObservers.remove(view)?.let { view.previewStreamState.removeObserver(it) }
         contextMap.remove(view)
         bindScheduled.remove(view)
         super.onDropViewInstance(view)
@@ -302,5 +380,38 @@ class CameraPreviewManager : SimpleViewManager<PreviewView>() {
         // Remove first so a concurrent bind does not double-unbind the same
         // provider. unbindAll stops all use cases on this provider.
         providerMap.remove(view)?.unbindAll()
+    }
+}
+
+/**
+ * `onStreamStateChange` — whether CameraX is putting frames on this tile.
+ *
+ * The app's first native view event, so the shape is worth stating: a DIRECT
+ * event (registered in `getExportedCustomDirectEventTypeConstants`), because it
+ * is about one specific view and has no reason to bubble. `surfaceId` and the
+ * view tag identify the target under the New Architecture; the legacy
+ * `RCTEventEmitter.receiveEvent` path does not exist there.
+ *
+ * `streaming` is a boolean rather than the StreamState name because IDLE and
+ * STREAMING are the only two states the enum has, and a string would invite a
+ * JS-side comparison against a value that could be misspelled silently.
+ */
+private class StreamStateEvent(
+    surfaceId: Int,
+    viewTag: Int,
+    private val streaming: Boolean,
+) : Event<StreamStateEvent>(surfaceId, viewTag) {
+
+    override fun getEventName(): String = EVENT_NAME
+
+    override fun getEventData(): WritableMap =
+        Arguments.createMap().apply { putBoolean("streaming", streaming) }
+
+    companion object {
+        /*
+         * The `top` prefix is React Native's convention for the raw event name
+         * that `registrationName` maps to a prop.
+         */
+        const val EVENT_NAME = "topStreamStateChange"
     }
 }

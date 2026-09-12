@@ -13,7 +13,24 @@
  * degradation as a substitute for a proper permission check.
  */
 import { UIManager, requireNativeComponent } from 'react-native';
-import type { StyleProp, ViewStyle } from 'react-native';
+import type { NativeSyntheticEvent, StyleProp, ViewStyle } from 'react-native';
+
+/** Payload of `onStreamStateChange`. */
+export interface CameraStreamState {
+  /**
+   * Whether CameraX currently has frames on this surface.
+   *
+   * Trustworthy as a "the picture is visible now" signal ONLY because the
+   * native view sets `ImplementationMode.COMPATIBLE`. PreviewView's docs are
+   * explicit that `STREAMING` guarantees visibility in COMPATIBLE mode and does
+   * NOT in PERFORMANCE mode, where the preview "becomes visible slightly after
+   * the state changes". If that mode ever changes, this flag stops meaning what
+   * its consumers assume and a cross-fade started on it would reveal an empty
+   * surface.
+   * https://developer.android.com/reference/androidx/camera/view/PreviewView#getPreviewStreamState()
+   */
+  streaming: boolean;
+}
 
 /**
  * Props accepted by the PappalCameraPreview native view manager.
@@ -31,6 +48,19 @@ export interface CameraPreviewProps {
    * "front" → CameraSelector.DEFAULT_FRONT_CAMERA
    */
   facing?: 'back' | 'front';
+  /**
+   * Fires when frames start, and again when they stop.
+   *
+   * It goes false as well as true: flipping the camera unbinds and rebinds, so
+   * there is a real gap with no frames in the middle of a flip, and a consumer
+   * holding a placeholder should bring it back for that gap rather than leave a
+   * stale last frame on screen.
+   *
+   * A session that FAILS to negotiate never fires at all. Consumers must treat
+   * "no event" as "still not streaming" and keep their placeholder up
+   * indefinitely — never start a timer that hides it optimistically.
+   */
+  onStreamStateChange?: (e: NativeSyntheticEvent<CameraStreamState>) => void;
 }
 
 /**
