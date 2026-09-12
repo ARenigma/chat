@@ -11,9 +11,11 @@
  * the one thing this product cannot afford is making the exit feel expensive.
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
+import { fadeSwapFast } from '../theme/motion';
 import { useSubmitSessionReview } from '../api/provider';
 import { useStore } from '../store/useStore';
 import { Button } from './Button';
@@ -165,9 +167,29 @@ export function SessionFeedbackSheet() {
           );
         })}
       </View>
-      <Text allowFontScaling style={styles.word} testID="session-feedback-word">
+      {/*
+        * Keyed on the rating so React remounts the node and Reanimated runs the
+        * entrance — the word used to hard-cut between "Tap a star", "Not what I
+        * needed" and "Exactly what I needed" as the stars were tapped.
+        *
+        * This is the sharpest unjustified teleport in the product: it is the
+        * line that names what somebody felt about a conversation that may have
+        * mattered a great deal to them, and it changed with no bridge at all.
+        * Rare tier (once per session end), so the budget is there to spend.
+        *
+        * `fadeSwapFast` rather than a slower swap because the word is chasing
+        * the finger — a tap on the fourth star should read as the word already
+        * agreeing, not as the word catching up. `styles.word` reserves the line
+        * (minHeight), so a remount cannot reflow the sheet.
+        */}
+      <Animated.Text
+        key={rating}
+        entering={fadeSwapFast}
+        allowFontScaling
+        style={styles.word}
+        testID="session-feedback-word">
         {rating === 0 ? 'Tap a star' : RATING_WORD[rating]}
-      </Text>
+      </Animated.Text>
       <TextField
         testID="session-feedback-comment"
         style={styles.input}
