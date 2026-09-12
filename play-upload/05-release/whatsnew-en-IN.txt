@@ -1,5 +1,6 @@
-Sign-in and onboarding fixes, and a smoother feel throughout.
+Fixes a crash on the sign-in screen in 1.1.18. Please update.
 
+• Fixed "Pappal keeps stopping" when opening the app signed out
 • Fixed the phone field dropping digits while typing fast
 • Phone number groups are easier to read
 • Fixed the Google sign-in button being unreadable in dark mode
@@ -7,5 +8,4 @@ Sign-in and onboarding fixes, and a smoother feel throughout.
 • Smoother onboarding transitions
 • Simpler settings header
 • Cleaner Explore cards and spacing on Home
-• Smaller call button on provider cards
 • Search opens the keyboard automatically
