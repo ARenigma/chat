@@ -340,7 +340,26 @@ export function nationalDisplayLength(country: PhoneCountry = INDIA): number {
   );
 }
 
-/** India's display length, 11. `PhoneVerifySheet` and its gate both use this. */
+/**
+ * A dashed shape showing how many digits the country takes and where the gaps
+ * fall — `----- -----` for India, `--- --- ----` for the US.
+ *
+ * For a field placeholder. Derived from `groups` and the real GROUP_SEPARATOR
+ * rather than written out per country, so it is correct for every entry in
+ * PHONE_COUNTRIES by construction and moves with the separator if that ever
+ * widens again.
+ *
+ * A dash, not a digit example: an example number would read better but needs a
+ * sourced, valid number for each of the six countries, and every other number in
+ * this file is quoted from libphonenumber metadata. A shape needs no source.
+ * (`PhoneVerifySheet` does use a real example, and can, because it is India-only
+ * by design — see the note on IN_MOBILE_DIGITS.)
+ */
+export function placeholderShape(country: PhoneCountry = INDIA): string {
+  return country.groups.map(n => '-'.repeat(n)).join(GROUP_SEPARATOR);
+}
+
+/** India's display length: 10 digits + one 2-wide separator = 12. */
 export const IN_MOBILE_DISPLAY_LENGTH = nationalDisplayLength(INDIA);
 
 /**
