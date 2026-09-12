@@ -19,7 +19,6 @@ import { SCROLL_PHYSICS } from '../lib/scroll';
 import Animated from 'react-native-reanimated';
 import { contentColumnWidth } from '../lib/windowSize';
 import { sizedStorageImageUri } from '../lib/storageImage';
-import { storage } from '../lib/storage';
 import { useConversations, useProfile, useProviders } from '../api/chat';
 import {
   AGE_BANDS,
@@ -76,7 +75,30 @@ import {
   searchResultsOut,
 } from '../theme/motion';
 
-const POTD_DISMISSED_KEY = 'companion.potd.dismissed';
+/**
+ * Whether the spotlight has been dismissed IN THIS APP RUN.
+ *
+ * Module-level rather than component state so it survives HomeScreen
+ * unmounting and remounting as the member navigates away and back, and
+ * deliberately NOT persisted.
+ *
+ * It replaced an MMKV key (`companion.potd.dismissed`) on 2026-09-12, and the
+ * persistence was the bug. Amit: "users should always be greeted with sheet
+ * modal on homescreen if balance is 0 right but i just cancelled payment and
+ * reopned app and nothing fired?" — and they would not have. A member at zero
+ * balance who dismissed the sheet once never saw it again on any later launch,
+ * because the flag outlived the condition it was gating.
+ *
+ * docs/FEATURES.md already described the intended rule — "shown only for
+ * first-user (`token_balance === 0`) after the tour" — which is a condition on
+ * BALANCE, not a once-per-install event. A run-scoped flag is what makes the
+ * sheet stop nagging within a session while still greeting a member who is
+ * still at zero the next time they open the app.
+ *
+ * It stops for good the moment the balance is non-zero, which is the `firstUser`
+ * gate below, not this.
+ */
+let potdDismissedThisRun = false;
 
 
 /**
@@ -433,12 +455,25 @@ export function HomeScreen({
     if (!tourComplete) {
       return;
     }
-    if (storage.get(POTD_DISMISSED_KEY) === '1') {
+    /*
+     * The BALANCE gate, which was missing entirely.
+     *
+     * `tourComplete` is `tourSeen || !firstUser`, so it is true for a FUNDED
+     * member — meaning this sheet was reaching everyone, not the zero-balance
+     * member docs/FEATURES.md scopes it to ("shown only for first-user
+     * (token_balance === 0) after the tour"). The tour gate was doing duty as a
+     * balance gate and does not fit: it exists to stop the sheet interrupting
+     * the tutorial, which is a different question from who should see it.
+     */
+    if (!firstUser) {
+      return;
+    }
+    if (potdDismissedThisRun) {
       return;
     }
     const timer = setTimeout(() => setPotdVisible(true), 2000);
     return () => clearTimeout(timer);
-  }, [loading, balance, featured, searching, tourComplete]);
+  }, [loading, balance, featured, searching, tourComplete, firstUser]);
 
   useEffect(() => {
     // Product identity rule: first-user UI is balance-only. A stale local
@@ -451,7 +486,7 @@ export function HomeScreen({
   }, [loading, balance, searching, tourSeen, firstUser, startTour]);
 
   const dismissPotd = useCallback(() => {
-    storage.set(POTD_DISMISSED_KEY, '1');
+    potdDismissedThisRun = true;
     setPotdVisible(false);
   }, []);
 
@@ -459,7 +494,7 @@ export function HomeScreen({
     if (!featured) {
       return;
     }
-    storage.set(POTD_DISMISSED_KEY, '1');
+    potdDismissedThisRun = true;
     setPotdVisible(false);
     onOpenConversation(featured.id);
   }, [featured, onOpenConversation]);
