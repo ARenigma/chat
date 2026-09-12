@@ -100,7 +100,7 @@ import { Avatar } from '../components/Avatar';
 import { ChatWallpaper } from '../components/ChatWallpaper';
 import { FirstMovePills } from '../components/FirstMovePills';
 import { LoadingIndicator } from '../components/LoadingIndicator';
-import { Composer } from '../components/Composer';
+import { Composer, TELEGRAM_ISLAND_INSET } from '../components/Composer';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { DayDivider } from '../components/DayDivider';
 import { Frost } from '../components/Frost';
@@ -2384,12 +2384,21 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: TOKENS.space.xs,
-    // `md`, the same inset `list.paddingHorizontal` and Composer's
-    // `row.paddingHorizontal` use. It was `xs` (8), so while a reply was being
-    // composed the dock showed TWO gutters at once — the strip 8dp from the
-    // edge, the capsule directly under it 16dp — which is the one-grid read
-    // failing in the most visible place there is.
-    marginHorizontal: TOKENS.space.md,
+    /*
+     * FOLLOWS THE CAPSULE, not the transcript — `TELEGRAM_ISLAND_INSET` (7).
+     *
+     * This used to be `space.md` (16) to match both `list.paddingHorizontal`
+     * and Composer's `row.paddingHorizontal`, because it had once been `xs` (8)
+     * and the dock showed TWO gutters at once — the strip 8dp from the edge and
+     * the capsule directly under it 16dp.
+     *
+     * The capsule moved to Telegram's 7dp island inset on 2026-09-12, so
+     * holding this at 16 would recreate that exact defect with the numbers
+     * swapped. The strip and the capsule are one floating island and share one
+     * inset; the transcript keeps its own 16dp content grid, which is what
+     * Telegram does too (its input island is wider than its bubbles).
+     */
+    marginHorizontal: TELEGRAM_ISLAND_INSET,
     marginBottom: TOKENS.space['2xs'],
     paddingVertical: TOKENS.space.xs,
     paddingHorizontal: TOKENS.space.sm,

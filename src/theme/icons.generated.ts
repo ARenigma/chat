@@ -11,7 +11,7 @@ export const ICON_FAMILY = 'Lucide' as const;
 export const ICON_FAMILY_FILLED = 'Lucide' as const;
 export const ICON_FILL_ON_ACTIVE = false as const;
 
-export type IconName = 'arrowUp' | 'back' | 'badgeCheck' | 'block' | 'call' | 'callEnd' | 'camera' | 'chat' | 'check' | 'checkCheck' | 'chevronLeft' | 'chevronRight' | 'close' | 'code' | 'delete' | 'dot' | 'download' | 'forward' | 'globe' | 'heart' | 'home' | 'image' | 'keyboard' | 'listen' | 'logout' | 'mic' | 'micOff' | 'more' | 'pause' | 'people' | 'person' | 'play' | 'plus' | 'reply' | 'report' | 'search' | 'send' | 'settings' | 'share' | 'smile' | 'speaker' | 'star' | 'sticker' | 'stop' | 'unwind' | 'vent' | 'video' | 'videoOff' | 'wallet';
+export type IconName = 'arrowUp' | 'back' | 'badgeCheck' | 'block' | 'call' | 'callEnd' | 'camera' | 'cameraFlip' | 'chat' | 'check' | 'checkCheck' | 'chevronLeft' | 'chevronRight' | 'close' | 'code' | 'delete' | 'dot' | 'download' | 'forward' | 'globe' | 'heart' | 'home' | 'image' | 'keyboard' | 'listen' | 'logout' | 'mic' | 'micOff' | 'more' | 'pause' | 'people' | 'person' | 'play' | 'plus' | 'reply' | 'report' | 'search' | 'send' | 'settings' | 'share' | 'smile' | 'speaker' | 'star' | 'sticker' | 'stop' | 'unwind' | 'vent' | 'video' | 'videoOff' | 'wallet';
 
 export const ICON_GLYPH: Record<IconName, string> = {
   arrowUp: "",
@@ -21,6 +21,7 @@ export const ICON_GLYPH: Record<IconName, string> = {
   call: "",
   callEnd: "",
   camera: "",
+  cameraFlip: "",
   chat: "",
   check: "",
   checkCheck: "",

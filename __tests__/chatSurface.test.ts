@@ -711,23 +711,36 @@ describe('the composer and the bubbles share one grid and one corner', () => {
 
   it('gives the reply strip the same gutter as the transcript and the capsule', () => {
     /*
-     * HONEST LABEL: one coupled assertion and two guards.
+     * TWO GRIDS NOW, deliberately, and the pairing is what this protects.
      *
-     * `replyBar` is the one that was actually wrong — it read `space.xs`, so
-     * while a reply was being composed the dock showed TWO gutters at once, the
-     * strip 8dp from the edge and the capsule directly under it 16dp. The
-     * `list` and `row` assertions grade state that was already correct and are
-     * kept because contract.test.ts pins them from the Composer/Turn side only
-     * and never opens ChatScreen; they are a regression guard on the pair, not
-     * coverage of this change.
+     * It used to be one: transcript, reply strip and capsule all on `space.md`
+     * (16). The capsule moved to Telegram's own island inset on 2026-09-12 —
+     * `createFrame(..., 7, 0, 7, 0)`, ChatActivity.java:8078 — because the owner
+     * asked for the input box's width to match Telegram exactly, and Telegram's
+     * input island is deliberately wider than its bubbles.
      *
-     * The arithmetic all three stand for: transcript inset (16) + bubble margin
-     * (0) on one side, composer inset (16) + bar margin (0) on the other.
+     * So the assertion is no longer "everything shares one number". It is:
+     *   - the floating island (reply strip + capsule) shares ONE inset, and
+     *   - the transcript keeps its own content grid.
+     *
+     * The first half is the one with history. `replyBar` was once `space.xs`
+     * while the capsule under it was 16, and the dock showed TWO gutters at
+     * once. Holding `replyBar` at 16 now that the capsule is 7 would be the
+     * identical defect with the numbers swapped, which is exactly the mistake
+     * this test exists to catch.
      */
     expect(TOKENS.space.md).toBe(16);
-    expect(styleBlock(chat, 'replyBar')).toContain('marginHorizontal: TOKENS.space.md');
+    expect(styleBlock(chat, 'replyBar')).toContain(
+      'marginHorizontal: TELEGRAM_ISLAND_INSET',
+    );
+    expect(styleBlock(composer, 'row')).toContain(
+      'paddingHorizontal: TELEGRAM_ISLAND_INSET',
+    );
+    // The transcript is unchanged and keeps the bubbles' own grid.
     expect(styleBlock(chat, 'list')).toContain('paddingHorizontal: TOKENS.space.md');
-    expect(styleBlock(composer, 'row')).toContain('paddingHorizontal: TOKENS.space.md');
+    // One source for the island number, so the strip and the capsule cannot drift.
+    expect(composer).toContain('export const TELEGRAM_ISLAND_INSET = 7');
+    expect(chat).toContain('TELEGRAM_ISLAND_INSET');
   });
 
   it('lands an INCOMING bubble on the content edge, with no avatar column', () => {
