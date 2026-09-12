@@ -101,6 +101,25 @@ function AttachPanelView({
   const cellSize = Math.floor((width - PADDING * 2 - GAP * 2) / cols);
 
   /**
+   * The camera cell's height in REAL PIXELS, because the TextureView must be
+   * given one.
+   *
+   * The tile stretches to the panel's full height now, and the obvious way to
+   * express that — `StyleSheet.absoluteFill` on the preview — is the one thing
+   * the note on `CameraPreview` below forbids, for a reason that is easy to
+   * rediscover the hard way: a percentage resolves against a box that is itself
+   * a percentage, the native view lands 0x0, a zero-size TextureView never gets
+   * a surface, and CameraX opens the camera and then times out configuring the
+   * capture session five seconds later with `TimeoutException: Future[...] is
+   * not done within 5000 ms`. Which is precisely what this shipped as, briefly,
+   * on 2026-09-12.
+   *
+   * So the height is computed the same way the width is: from the panel's own
+   * measurements, in dp, handed to the native view as a number.
+   */
+  const cellHeight = Math.max(0, height - PADDING * 2);
+
+  /**
    * The camera is bound only while the panel is actually up AND the app is in
    * the foreground.
    *
@@ -188,7 +207,7 @@ function AttachPanelView({
              */
             <CameraPreview
               facing="back"
-              style={styles.preview}
+              style={[styles.preview, { width: cellSize, height: cellHeight }]}
             />
           ) : null}
           {/*
