@@ -1,22 +1,20 @@
 import React, { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, {
-  Easing,
   FadeInUp,
   FadeOutUp,
   interpolate,
   interpolateColor,
   useAnimatedStyle,
   useDerivedValue,
-  withTiming,
   ReduceMotion,
 } from 'react-native-reanimated';
+import { EASE_OUT, springTo } from '../theme/motion';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { Icon } from './Icon';
 import {
   SOURCE_METRICS,
-  STEP_ADVANCE_MS,
   STEP_DESCRIPTION_DELAY_MS,
   STEP_EXIT_MS,
   type StepSpec,
@@ -76,10 +74,11 @@ interface Props {
  */
 const descriptionIn = FadeInUp.duration(STEP_EXIT_MS)
   .delay(STEP_DESCRIPTION_DELAY_MS)
+  .easing(EASE_OUT)
   .reduceMotion(ReduceMotion.System);
-const descriptionOut = FadeOutUp.duration(STEP_EXIT_MS).reduceMotion(
-  ReduceMotion.System,
-);
+const descriptionOut = FadeOutUp.duration(STEP_EXIT_MS)
+  .easing(EASE_OUT)
+  .reduceMotion(ReduceMotion.System);
 
 function OnboardingStepView({ step, expanded, accent, hideIcon, testID }: Props) {
   const styles = useStyles(makeStyles);
@@ -93,12 +92,30 @@ function OnboardingStepView({ step, expanded, accent, hideIcon, testID }: Props)
    * inside one frame, which is exactly what happens when a step both completes
    * and advances in the same tick.
    */
+  /*
+   * `springTo(..., 'smooth')`, and the change closes two findings with one
+   * edit (2026-09-12).
+   *
+   * It was `withTiming(..., Easing.inOut(Easing.quad))`. That is an ease-IN
+   * phase on a row the user is actively waiting to open — the one thing the
+   * art-direction rule in DESIGN.md forbids outright, because an ease-in delays
+   * the only part of the motion that answers the tap. It was allowlisted in
+   * theme.test.ts as a KNOWN GAP rather than fixed, on the grounds that
+   * onboarding had just been reverted that day. That was a reason, not a fix.
+   *
+   * And the allowlist's own note said what the right answer was: the source,
+   * `OnboardingFlow.swift`, animates this with SwiftUI's `.smooth` — a
+   * critically damped SPRING, not a cubic. `SPRING.smooth` is this app's
+   * critically damped spring (ratio 1.01, per its token note). So the spring is
+   * simultaneously the correct translation of the reference AND ease-out by
+   * construction, because a spring has no ease-in phase to have.
+   *
+   * STEP_ADVANCE_MS is gone with the timing call rather than preserved as a
+   * spring duration; a spring is specified by its physics, and pinning one to a
+   * duration is how you get a spring that is secretly a curve.
+   */
   const open = useDerivedValue(
-    () =>
-      withTiming(expanded ? 1 : 0, {
-        duration: STEP_ADVANCE_MS,
-        easing: Easing.inOut(Easing.quad),
-      }),
+    () => springTo(expanded ? 1 : 0, 'smooth'),
     [expanded],
   );
 

@@ -17,11 +17,12 @@ import {
   View,
 } from 'react-native';
 import { SCROLL_PHYSICS } from '../lib/scroll';
+import { EASE_CONSTANT, EASE_OUT, springTo } from '../theme/motion';
 import Animated, {
-  Easing,
   FadeIn,
   FadeInDown,
   FadeOutUp,
+  ReduceMotion,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -162,6 +163,44 @@ interface Props {
  * because a wallet needs all three keys. Ours are alternatives, so the checklist
  * grows a second row only on the phone route. See `visibleSteps`.
  */
+
+/*
+ * The screen's layout animations, hoisted and with their curves NAMED.
+ *
+ * Two findings closed here, both allowlisted as KNOWN GAPs in theme.test.ts on
+ * 2026-09-12 and fixed on the same day rather than left standing.
+ *
+ * 1. THE CURVE. `FadeInDown.duration(n)` with no `.easing()` does not mean "no
+ *    easing" — Reanimated's silent default is `Easing.inOut(Easing.quad)`, so
+ *    every one of these entrances had an ease-IN front half. That is the one
+ *    curve DESIGN.md's art-direction rule bans outright: a thing arriving on
+ *    screen should be fastest at the moment it appears and settle, never creep
+ *    in and then rush. Five step rows, the completion row and the route fade
+ *    were all doing it. `EASE_OUT` is M3's `easeOut`, which is what the rest of
+ *    the app's builders in motion.ts already take.
+ *
+ * 2. THE ALLOCATION. Written inline in JSX, each of these was a fresh builder
+ *    object on every render of a screen that re-renders on every keystroke of a
+ *    phone number. OnboardingStep's own comment already spelled this out for
+ *    its two builders; the screen that renders it never followed suit.
+ *
+ * `ReduceMotion.System` on each, so the OS setting turns these into plain fades
+ * rather than being ignored — fewer and gentler, not zero.
+ */
+const stepIn = FadeInDown.duration(STEP_ADVANCE_MS)
+  .easing(EASE_OUT)
+  .reduceMotion(ReduceMotion.System);
+const stepOut = FadeOutUp.duration(STEP_EXIT_MS)
+  .easing(EASE_OUT)
+  .reduceMotion(ReduceMotion.System);
+const completionIn = FadeInDown.duration(STEP_ADVANCE_MS)
+  .delay(COMPLETION_DELAY_MS)
+  .easing(EASE_OUT)
+  .reduceMotion(ReduceMotion.System);
+const plainIn = FadeIn.duration(STEP_ADVANCE_MS)
+  .easing(EASE_OUT)
+  .reduceMotion(ReduceMotion.System);
+
 export function OnboardingScreen({ onDone }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -379,23 +418,41 @@ export function OnboardingScreen({ onDone }: Props) {
       return;
     }
     setPhase('leaving');
+    /*
+     * `EASE_CONSTANT`, not a local `Easing.linear`, and linear is RIGHT here
+     * rather than an oversight: this is a CLOCK. It drives the bloom field's
+     * elapsed time, and the field's own shader-ish maths does the easing. A
+     * curve on the clock would double-ease every gradient it feeds. That is
+     * precisely the case motion.ts documents EASE_CONSTANT for — motion with no
+     * start or stop from the viewer's point of view.
+     */
     elapsed.value = withTiming(BLOOM_FIELD_MS, {
       duration: BLOOM_FIELD_MS,
-      easing: Easing.linear,
+      easing: EASE_CONSTANT,
     });
+    /*
+     * The welcome content leaving. Was `Easing.inOut(Easing.quad)`; an ease-IN
+     * on an exit holds the content still for the first half of its own
+     * departure, right after the press that dismissed it. Ease-out is the rule
+     * and there is no argument for an exception here.
+     */
     welcomeOut.value = withTiming(1, {
       duration: BLOOM_CONTENT_MS,
-      easing: Easing.inOut(Easing.quad),
+      easing: EASE_OUT,
     });
     // The source hands off at `now + 1.2`, measured from the press rather than
     // from the end of the content transition. The form then arrives with
     // `withAnimation(.smooth)` — 0.5s — as `.opacity.combined(with: .offset(y: 20))`.
     after(BLOOM_HOLD_MS, () => {
       setPhase('form');
-      formIn.value = withTiming(1, {
-        duration: STEP_ADVANCE_MS,
-        easing: Easing.inOut(Easing.quad),
-      });
+      /*
+       * `.smooth` in the comment directly above is SwiftUI's critically damped
+       * spring, and this line was translating it as a cubic with an ease-in
+       * front half — further from the source, not closer. `SPRING.smooth` is
+       * this app's critically damped spring. Same correction as OnboardingStep's
+       * `open`, same two findings closed at once.
+       */
+      formIn.value = springTo(1, 'smooth');
     });
   }, [phase, elapsed, welcomeOut, formIn, after]);
 
@@ -1050,9 +1107,7 @@ export function OnboardingScreen({ onDone }: Props) {
 
                 {phase === 'done' ? (
                   <Animated.View
-                    entering={FadeInDown.duration(STEP_ADVANCE_MS).delay(
-                      COMPLETION_DELAY_MS,
-                    )}>
+                    entering={completionIn}>
                     <CompletionRow onDone={onDone} testID="onboard-complete" />
                   </Animated.View>
                 ) : null}
@@ -1065,8 +1120,8 @@ export function OnboardingScreen({ onDone }: Props) {
                */}
               {phase !== 'done' && !authDone && identify === 'choose' ? (
                 <Animated.View
-                  entering={FadeInDown.duration(STEP_ADVANCE_MS)}
-                  exiting={FadeOutUp.duration(STEP_EXIT_MS)}
+                  entering={stepIn}
+                  exiting={stepOut}
                   style={styles.choices}>
                   {/*
                    * PRIMARY: white-pill Google button in EVERY mode (see the
@@ -1140,8 +1195,8 @@ export function OnboardingScreen({ onDone }: Props) {
 
               {phase !== 'done' && !authDone && identify === 'number' ? (
                 <Animated.View
-                  entering={FadeInDown.duration(STEP_ADVANCE_MS)}
-                  exiting={FadeOutUp.duration(STEP_EXIT_MS)}
+                  entering={stepIn}
+                  exiting={stepOut}
                   style={styles.numberBlock}>
                   <View style={styles.field}>
                     {/* Country-code selector leading the national number field. */}
@@ -1262,8 +1317,8 @@ export function OnboardingScreen({ onDone }: Props) {
                  * kept as an accessible fallback and for the loading/error state.
                  */
                 <Animated.View
-                  entering={FadeInDown.duration(STEP_ADVANCE_MS)}
-                  exiting={FadeOutUp.duration(STEP_EXIT_MS)}
+                  entering={stepIn}
+                  exiting={stepOut}
                   style={styles.ageBlock}>
                   <View style={styles.ageChips}>
                     {AGE_BRACKETS.map(bracket => {
@@ -1370,8 +1425,8 @@ export function OnboardingScreen({ onDone }: Props) {
                  * unreachable.
                  */
                 <Animated.View
-                  entering={FadeInDown.duration(STEP_ADVANCE_MS)}
-                  exiting={FadeOutUp.duration(STEP_EXIT_MS)}
+                  entering={stepIn}
+                  exiting={stepOut}
                   style={styles.ageBlock}>
                   <View style={styles.languageChips}>
                     {OFFERED_LANGUAGES.map(language => (
@@ -1431,8 +1486,8 @@ export function OnboardingScreen({ onDone }: Props) {
 
               {phase !== 'done' && !authDone && identify === 'code' ? (
                 <Animated.View
-                  entering={FadeInDown.duration(STEP_ADVANCE_MS)}
-                  exiting={FadeOutUp.duration(STEP_EXIT_MS)}
+                  entering={stepIn}
+                  exiting={stepOut}
                   style={styles.codeBlock}>
                   <CodeField
                     value={code}
@@ -1493,7 +1548,7 @@ export function OnboardingScreen({ onDone }: Props) {
 
               {failure !== null ? (
                 <Animated.Text
-                  entering={FadeIn.duration(STEP_ADVANCE_MS)}
+                  entering={plainIn}
                   allowFontScaling
                   accessibilityLiveRegion="polite"
                   style={styles.failure}

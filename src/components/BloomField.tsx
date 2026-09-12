@@ -1,13 +1,13 @@
 import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, useWindowDimensions } from 'react-native';
 import Animated, {
-  Easing,
   cancelAnimation,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
+import { EASE_CONSTANT, EASE_OUT } from '../theme/motion';
 import {
   BLOOM_LAYERS,
   BLOOM_SWAP_MS,
@@ -167,10 +167,16 @@ function BloomFieldView({ elapsed, stage, hidden = false }: Props) {
       return;
     }
     inFlight.current = true;
-    // Linear, because the easing belongs to each layer. See `layerProgress`.
+    /*
+     * Linear, because the easing belongs to each layer. See `layerProgress`.
+     * This is a cross-fade DRIVER, not a movement: each layer applies its own
+     * curve to this value, so a curve here would be applied twice. Taken from
+     * `EASE_CONSTANT` rather than hand-typed, which is the token motion.ts
+     * authors for exactly this "no start, no stop from the viewer's side" case.
+     */
     arrivingSV.value = withTiming(
       1,
-      { duration: BLOOM_SWAP_MS, easing: Easing.linear },
+      { duration: BLOOM_SWAP_MS, easing: EASE_CONSTANT },
       finished => {
         if (finished) {
           baseSV.value = 0;
@@ -212,9 +218,21 @@ function BloomFieldView({ elapsed, stage, hidden = false }: Props) {
   const heightRef = useRef(height);
   heightRef.current = height;
   useEffect(() => {
+    /*
+     * `EASE_OUT`. This was `Easing.inOut(Easing.quad)` — the last real ease-in
+     * left in the app (2026-09-12), and on the worst possible thing: the field
+     * getting out of the keyboard's way. The keyboard itself is already moving
+     * when this fires, so an ease-in held the field still for the first half of
+     * a slide the IME had already started, and the two surfaces visibly came
+     * apart before catching up.
+     *
+     * DESIGN.md's art-direction rule states it without an exception: a curve is
+     * never defaulted and never hand-typed, and UI motion decelerates into
+     * place rather than accelerating out of it.
+     */
     hide.value = withTiming(hidden ? -heightRef.current : 0, {
       duration: BLOOM_SWAP_MS / 2,
-      easing: Easing.inOut(Easing.quad),
+      easing: EASE_OUT,
     });
   }, [hidden, hide]);
   const host = useAnimatedStyle(() => ({

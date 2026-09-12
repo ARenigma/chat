@@ -240,9 +240,20 @@ describe('the field follows the flow', () => {
     const screen = read('src/screens/OnboardingScreen.tsx');
     expect(screen).toContain("const showForm = phase !== 'welcome';");
     expect(screen).toContain("pointerEvents={formReady ? 'auto' : 'none'}");
-    expect(screen).toContain('formIn.value = withTiming(1, {');
-    // Arrival is the source's `.smooth` (0.5s), not the 0.7s content exit.
-    expect(screen).toMatch(/formIn\.value = withTiming\(1, \{\s*duration: STEP_ADVANCE_MS/);
+    /*
+     * Arrival is the source's `.smooth`, and as of 2026-09-12 it IS a spring
+     * rather than a cubic pretending to be one.
+     *
+     * This assertion used to pin `withTiming(1, { duration: STEP_ADVANCE_MS,
+     * easing: Easing.inOut(Easing.quad) })` while the comment beside it said
+     * "the source's `.smooth`". Both cannot be true: SwiftUI's `.smooth` is a
+     * critically damped spring, and `inOut(quad)` is a symmetric cubic with an
+     * ease-IN front half. The test was pinning the drift in place. `SPRING.smooth`
+     * is this app's critically damped spring, so `springTo(1, 'smooth')` is both
+     * the faithful translation and the only form with no ease-in.
+     */
+    expect(screen).toContain("formIn.value = springTo(1, 'smooth');");
+    expect(screen).not.toMatch(/formIn\.value = withTiming/);
     expect(screen).not.toContain('entering={FadeInDown.duration(BLOOM_CONTENT_MS)}');
   });
 

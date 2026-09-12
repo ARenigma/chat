@@ -3150,19 +3150,18 @@ describe('art direction', () => {
    * state its curve.
    */
   /*
-   * The onboarding flow is exempt, and this is a KNOWN GAP rather than a clean
-   * exception. Its transitions are translated from `OnboardingFlow.swift`,
-   * whose own curve is SwiftUI's `.smooth` — a critically damped spring, NOT
-   * `inOut(quad)`. So the defaults here are a drift from the source rather than
-   * fidelity to it, and naming a curve would be closer to the reference, not
-   * further from it. Left alone on 2026-09-12 because onboarding had just been
-   * reverted and re-pinned to light mode that same day and did not need a third
-   * motion change on top; this is the record that it is outstanding.
+   * EMPTY, and kept as an empty set rather than deleted so the next person who
+   * wants to add a file has to add it here and say why.
+   *
+   * It held OnboardingStep and OnboardingScreen as a KNOWN GAP. The note said
+   * the right answer out loud — the source animates with SwiftUI's `.smooth`, a
+   * critically damped spring, so `inOut(quad)` was drift from the reference, not
+   * fidelity to it — and then did not act on it. Closed 2026-09-12: both
+   * `withTiming(inOut(quad))` calls became `springTo(..., 'smooth')`, and the
+   * seven inline `FadeInDown`/`FadeOutUp`/`FadeIn` builders were hoisted with
+   * `.easing(EASE_OUT)` named on each.
    */
-  const DEFAULT_EASING_ALLOWED = new Set([
-    'src/components/OnboardingStep.tsx',
-    'src/screens/OnboardingScreen.tsx',
-  ]);
+  const DEFAULT_EASING_ALLOWED = new Set<string>([]);
 
   it('never lets a layout animation take the default easing', () => {
     const offenders: string[] = [];
@@ -3211,11 +3210,25 @@ describe('art direction', () => {
    * source's own curves rather than the app's — a documented departure, see
    * `src/lib/bloom.ts`.
    */
-  const RAW_EASING_ALLOWED = new Set([
-    'src/screens/OnboardingScreen.tsx',
-    'src/components/BloomField.tsx',
-    'src/components/OnboardingStep.tsx',
-  ]);
+  /*
+   * EMPTY as of 2026-09-12 — every curve in the app now comes from motion.ts.
+   *
+   * All three original entries were the onboarding/bloom surface, and every one
+   * turned out to be a real finding rather than a legitimate exception:
+   *   - OnboardingScreen: `Easing.linear` on the field's elapsed CLOCK (correct
+   *     motion, hand-typed) -> EASE_CONSTANT; `inOut(quad)` on the welcome exit
+   *     -> EASE_OUT.
+   *   - OnboardingStep: `inOut(quad)` on the step advance -> springTo('smooth').
+   *   - BloomField: `Easing.linear` on the cross-fade DRIVER -> EASE_CONSTANT,
+   *     and `inOut(quad)` on the slide that gets the field out of the
+   *     keyboard's way -> EASE_OUT. That last one was the app's final ease-in,
+   *     and the worst-placed: it held the field still for the first half of a
+   *     move the IME had already begun.
+   *
+   * Kept as an empty set rather than deleted so that adding a file back is a
+   * deliberate edit here with a reason attached, not a silent exemption.
+   */
+  const RAW_EASING_ALLOWED = new Set<string>([]);
 
   it('takes every curve from motion.ts, never from a local Easing call', () => {
     const offenders = sources
