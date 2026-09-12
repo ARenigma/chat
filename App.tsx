@@ -23,7 +23,12 @@ import Animated, {
 } from 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from './src/theme/tokens';
-import { ThemeProvider, useStyles, useThemeMode } from './src/theme/ThemeProvider';
+import {
+  ForceLightTheme,
+  ThemeProvider,
+  useStyles,
+  useThemeMode,
+} from './src/theme/ThemeProvider';
 import {
   revealHome,
   screenOut,
@@ -1171,15 +1176,25 @@ function Root() {
      * this render stays free of side effects.
      */
     return (
-      <OnboardingScreen
-        onDone={() => {
-          // Splash over the re-read, same reason AuthScreen used to give:
-          // keep the welcome from replaying under a live session between
-          // "session set" and "boot resolved".
-          setBoot({ phase: 'loading' });
-          setAttempt(a => a + 1);
-        }}
-      />
+      <ForceLightTheme>
+        {/*
+         * Pinned dark-content regardless of the member's real preference —
+         * ForceLightTheme only reaches components that read theme through
+         * context, and the status bar icon colour does not. Mounted deeper
+         * than Shell's own <StatusBar>, so it wins for as long as onboarding
+         * is on screen; unmounting hands control back automatically.
+         */}
+        <StatusBar barStyle="dark-content" translucent />
+        <OnboardingScreen
+          onDone={() => {
+            // Splash over the re-read, same reason AuthScreen used to give:
+            // keep the welcome from replaying under a live session between
+            // "session set" and "boot resolved".
+            setBoot({ phase: 'loading' });
+            setAttempt(a => a + 1);
+          }}
+        />
+      </ForceLightTheme>
     );
   }
 

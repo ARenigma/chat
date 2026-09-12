@@ -45,7 +45,6 @@ import {
   type Route,
 } from '../lib/onboarding';
 import { BloomField } from '../components/BloomField';
-import { NightSky } from '../components/NightSky';
 import { OnboardingStep } from '../components/OnboardingStep';
 import { WordColumn, type Word } from '../components/WordColumn';
 import { Icon } from '../components/Icon';
@@ -863,14 +862,6 @@ export function OnboardingScreen({ onDone }: Props) {
 
   return (
     <View style={styles.root}>
-      {/* Night sky BEHIND the bloom: a twinkling starfield + comet + corner
-          vignette for the flat negative space the coral gradients don't
-          reach (Amit, on the S22: "grey and unpolished"). Independent
-          component, independent animation loop — BloomField's own mechanics
-          (BLOOM_LAYERS, the stage cross-fade, the collapse geometry) are
-          unchanged; see the note on BloomField's now-transparent host for
-          the one bit of wiring this needed. */}
-      <NightSky />
       <BloomField elapsed={elapsed} stage={stage} hidden={keyboardUp} />
 
       {showWelcome ? (
