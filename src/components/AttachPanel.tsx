@@ -1,6 +1,6 @@
 import React, { memo, useCallback, useEffect, useState } from 'react';
 import { AppState, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { TOKENS, type Theme } from '../theme/tokens';
+import { LIGHT, TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { CAMERA_PREVIEW_AVAILABLE, CameraPreview } from './CameraPreview';
 import { Icon } from './Icon';
@@ -139,6 +139,19 @@ function AttachPanelView({
     return () => sub.remove();
   }, []);
 
+  /**
+   * Which camera the tile is showing. The native view has supported this since
+   * it was written — `facing` unbinds the running session and opens the other
+   * camera — but nothing ever changed it, so the capability sat unused behind a
+   * hardcoded "back". It only became worth surfacing once the preview actually
+   * streamed (see CameraTilePackage.kt, 2026-09-12).
+   */
+  const [facing, setFacing] = useState<'back' | 'front'>('back');
+  const flip = useCallback(
+    () => setFacing(f => (f === 'back' ? 'front' : 'back')),
+    [],
+  );
+
   const live = visible && slotSettled && foreground && cameraGranted && CAMERA_PREVIEW_AVAILABLE;
 
   const camera = useCallback(() => onCamera(), [onCamera]);
@@ -206,7 +219,7 @@ function AttachPanelView({
              * 36 emulator, 2026-09-04. Same trap as the emoji grid's cells.
              */
             <CameraPreview
-              facing="back"
+              facing={facing}
               style={[styles.preview, { width: cellSize, height: cellHeight }]}
             />
           ) : null}
@@ -237,6 +250,39 @@ function AttachPanelView({
             * than something to bolt onto a layout fix.
             * https://developer.android.com/reference/androidx/camera/view/PreviewView.StreamState
             */}
+          {/*
+            * The flip, only while there is a picture to flip.
+            *
+            * Offered as its own control rather than a long-press or a gesture:
+            * this tile is already a button (it opens the full camera), so a
+            * second hidden affordance on the same surface would be guesswork.
+            * It sits top-right, away from the centred glyph and clear of the
+            * thumb arc that reaches the Photos tile.
+            *
+            * Nested pressables: the outer cell opens the camera, this one does
+            * not bubble up to it — `Pressable` stops the press at the inner
+            * control, which is why the flip does not also fire a capture.
+            */}
+          {live ? (
+            <Pressable
+              onPress={flip}
+              testID="attach-camera-flip"
+              accessibilityLabel={
+                facing === 'back'
+                  ? 'Switch to the front camera'
+                  : 'Switch to the back camera'
+              }
+              press="chip"
+              highlight="dim"
+              size={TOKENS.interaction.minTarget}
+              style={styles.flip}>
+              <Icon
+                name="cameraFlip"
+                size={TOKENS.icon.md}
+                color={LIGHT.color.bg.base}
+              />
+            </Pressable>
+          ) : null}
         </Pressable>
 
         {/* The Photos tile takes the rest of the row. It is one tile rather than
@@ -321,6 +367,23 @@ const makeStyles = (t: Theme) =>
       alignItems: 'center',
       justifyContent: 'center',
       gap: TOKENS.space['2xs'],
+    },
+    /*
+     * The flip control. A dark disc so the glyph survives whatever the camera
+     * happens to be pointed at — a bare white glyph disappears against a bright
+     * frame, and this tile's content is by definition unknown. Same reason the
+     * old viewfinder label carried a shadow.
+     */
+    flip: {
+      position: 'absolute',
+      top: TOKENS.space['2xs'],
+      right: TOKENS.space['2xs'],
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(0,0,0,0.45)',
     },
     // Layered over the placeholder rather than replacing it, so the glyph shows
     // through until the TextureView actually has frames to paint.

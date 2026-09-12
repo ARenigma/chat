@@ -5713,12 +5713,30 @@ describe('composer capsule and bubbles share one horizontal grid and radius', ()
   const composer = read('src/components/Composer.tsx');
   const turn = read('src/components/Turn.tsx');
 
-  it('composer row uses the same horizontal-inset token as the chat list', () => {
-    // ChatScreen list.paddingHorizontal = TOKENS.space.md (16dp).
-    // Composer row.paddingHorizontal must match so capsule edges land on the same
-    // column as the bubble edges. A raw number here or a different token means
-    // the alignment is coincidental and will break the first time either changes.
-    expect(withoutComments(composer)).toContain('paddingHorizontal: TOKENS.space.md');
+  it('composer row uses Telegram own island inset, from one named source', () => {
+    /*
+     * This asserted `TOKENS.space.md` (16) until 2026-09-12, so that the capsule
+     * edges landed on the same column as the bubble edges.
+     *
+     * That alignment was given up knowingly. The owner asked for the input box
+     * to match Telegram's width exactly, and Telegram insets its input island
+     * 7dp from each screen edge — `createFrame(MATCH_PARENT, WRAP_CONTENT,
+     * Gravity.LEFT | Gravity.BOTTOM, 7, 0, 7, 0)`, ChatActivity.java:8078, with
+     * `setPadding(dp(7))` on the blurred background agreeing — which is
+     * deliberately WIDER than its bubbles. So the capsule and the transcript are
+     * now two grids on purpose.
+     *
+     * What still has to hold is that the number has ONE source: the strip above
+     * the capsule reads the same constant, so the dock cannot show two gutters
+     * at once (see chatSurface.test.ts, which has the history of that defect).
+     * A raw 7 in either file is the thing to catch.
+     */
+    expect(withoutComments(composer)).toContain(
+      'paddingHorizontal: TELEGRAM_ISLAND_INSET',
+    );
+    expect(withoutComments(composer)).toContain(
+      'export const TELEGRAM_ISLAND_INSET = 7',
+    );
   });
 
   it('composer inputBar and Turn bubbles use the same radius token', () => {

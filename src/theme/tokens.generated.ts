@@ -65,7 +65,7 @@ export const LIGHT = {
       accent: '#F15D48',
     },
     state: {
-      available: '#4E8B7C',
+      available: '#12946A',
       danger: '#733635',
     },
     mark: {
@@ -115,7 +115,7 @@ export const LIGHT = {
     bubble: 9,
     thread: 24,
     sheet: 28,
-    composer: 18,
+    composer: 22,
   },
   icon: {
     xs: 12,
@@ -661,7 +661,7 @@ export const DARK = {
       accent: '#FF8272',
     },
     state: {
-      available: '#6BA697',
+      available: '#3FD69B',
       danger: '#E39B92',
     },
     mark: {
@@ -711,7 +711,7 @@ export const DARK = {
     bubble: 9,
     thread: 24,
     sheet: 28,
-    composer: 18,
+    composer: 22,
   },
   icon: {
     xs: 12,

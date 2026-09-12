@@ -58,6 +58,17 @@ import { TextField } from './TextField';
 const CAMERA_SLOT = 40;
 
 /**
+ * How far Telegram insets its input island from each screen edge, in dp.
+ *
+ * `createFrame(MATCH_PARENT, WRAP_CONTENT, Gravity.LEFT | Gravity.BOTTOM,
+ * 7, 0, 7, 0)` — ChatActivity.java:8078 — with no further margin on the
+ * container (ChatInputViewsContainer.java:42-43) and `setPadding(dp(7))` on its
+ * blurred background at :81 agreeing. See the note on `row.paddingHorizontal`
+ * for why this is a named constant rather than the nearest space token.
+ */
+export const TELEGRAM_ISLAND_INSET = 7;
+
+/**
  * The emoji button's square. Telegram's is 44 and sits outside the field; ours is
  * inside the capsule, so it matches the capsule's own height instead — a 44 here
  * would make the capsule taller than the 40 measured on device.
@@ -1496,12 +1507,31 @@ const makeStyles = (t: Theme) => StyleSheet.create({
      * closely enough that changing it would move the pill for no visible gain.
      */
     /*
-     * md (16dp) matches ChatScreen's `list.paddingHorizontal: TOKENS.space.md`,
-     * so the capsule's outer edges land on the same vertical column as the bubble
-     * edges — both read the same token and cannot drift independently.
-     * (Was `xs` (8dp); changed to align with the chat-list content inset.)
+     * TELEGRAM'S OWN 7dp, read from source rather than approximated.
+     *
+     * `chatInputBubbleContainer.addView(chatActivityEnterView,
+     * LayoutHelper.createFrame(MATCH_PARENT, WRAP_CONTENT,
+     * Gravity.LEFT | Gravity.BOTTOM, 7, 0, 7, 0))` — ChatActivity.java:8078 —
+     * and the container it goes into adds no horizontal margin of its own
+     * (`createFrame(MATCH_PARENT, WRAP_CONTENT, Gravity.BOTTOM)`,
+     * ChatInputViewsContainer.java:42-43). `blurredBackgroundDrawable
+     * .setPadding(dp(7))` at :81 corroborates it. Clone at
+     * ~/references/telegram; measured facts only (ADR-0025).
+     *
+     * WAS `space.md` (16), chosen so the capsule's outer edges lined up with the
+     * message bubbles' edges — both reading `list.paddingHorizontal`. That was a
+     * real property and it is knowingly given up here: Amit asked for the input
+     * box's width to match Telegram exactly (2026-09-12), and Telegram's input
+     * island is deliberately WIDER than its bubbles. Two references in one
+     * control is the thing to avoid, so the corner (radius.composer, now 22)
+     * and the inset (7) both come from Telegram now.
+     *
+     * 7 is not on the space scale and must not be rounded onto it — 8 would be
+     * "close enough" in exactly the way this file has been burned by before. It
+     * is a measured source value, which this repo keeps as a named constant
+     * (the `SOURCE_METRICS` / `RIPPLE` precedent).
      */
-    paddingHorizontal: TOKENS.space.md,
+    paddingHorizontal: TELEGRAM_ISLAND_INSET,
     paddingTop: TOKENS.space['2xs'],
     paddingBottom: TOKENS.space.xs,
     backgroundColor: 'transparent',
