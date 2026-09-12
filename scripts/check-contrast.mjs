@@ -119,10 +119,11 @@ const PAIRS = [
     /*
      * NOT the bubble. The outgoing bubble is `bubble/mine` (pale coral light /
      * deep coral dark, takes bubble/text); this pair measures a filled accent
-     * control under its label. With Sunset Coral, light accentStrong #C0492F
-     * carries white at 4.96:1 — more headroom than the WhatsApp green's razor
-     * 4.52:1, but still treat any further tune of bg/accentStrong as
-     * load-bearing.
+     * control under its label. Light accentStrong is #A74029 and carries white
+     * at 6.16:1 — it was #C0492F at 4.96:1 until the coral was darkened a step
+     * on 2026-09-12 (Amit: "our token is too light.. make it little darker
+     * coral"), which moved this pair further clear rather than closer. Still
+     * treat any tune of bg/accentStrong as load-bearing: it was on 4.96 once.
      */
     what: 'the label on a filled accent control',
   },
@@ -160,7 +161,7 @@ const PAIRS = [
     target: 2.5,
     what: 'NOT PERMITTED IN LIGHT — the bright accent under its label',
     exempt:
-      'registered at its measured floor rather than a legibility target. With Sunset Coral (2026-09-10): dark mode flips text/onAccent to near-black ink on the bright coral #FF8272, and this pair measures 7.13:1 — genuinely legible, so no dark prohibition. LIGHT is still prohibited at 3.28:1: white on #F15D48 clears neither 4.5 nor the 3:1 large-text step by any useful margin (bg/accentStrong #C0492F, 4.96:1, is the step that carries a label there). The floor stays 2.5 because one target covers both modes and light is the binding one',
+      'registered at its measured floor rather than a legibility target. Dark mode flips text/onAccent to near-black ink on the coral, and that pair measures 6.15:1 — genuinely legible, so no dark prohibition. LIGHT is still prohibited at 3.89:1: white on #EE4027 clears neither 4.5 nor the 3:1 large-text step by a useful margin (bg/accentStrong #A74029, 6.16:1, is the step that carries a label there). Both figures moved on 2026-09-12 when the coral was darkened a step (light 3.28 -> 3.89, dark 7.13 -> 6.15); the light prohibition is unchanged in kind, and the floor stays 2.5 because one target covers both modes and light is the binding one',
   },
   /*
    * The chat bubbles (outgoing recoloured to coral 2026-09-10).

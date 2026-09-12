@@ -2886,10 +2886,10 @@ describe('dark theme: Telegram midnight-blue palette, and it still passes contra
      * change dark". Was WhatsApp green #21C063 / #71EB85; before that Telegram
      * blue #5FA3DE / #64B5EF.
      *
-     * #FF8272 is the bright dark-page coral (mark/fill); text/accent is the
+     * #FF6B58 is the dark-page coral (mark/fill); text/accent is the
      * lighter coral that accent-coloured TEXT needs to clear AA on the dark base.
      */
-    expect(DARK.color.bg.accent).toBe('#FF8272');
+    expect(DARK.color.bg.accent).toBe('#FF6B58');
     expect(DARK.color.text.accent).toBe('#FFA599');
     // The retired brand greens must not creep back in as the accent.
     expect(DARK.color.bg.accent).not.toBe('#21C063');

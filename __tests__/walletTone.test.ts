@@ -280,22 +280,33 @@ describe('the bright accent carries no label', () => {
       expect(block).toMatch(/text\.onAccent/);
       expect(block).not.toMatch(/opacity:/);
     }
-    for (const [alpha, floor] of [
-      [0.8, 4.5],
-      [0.85, 4.5],
-    ] as const) {
-      const faded = composite(
-        hex('text/onAccent', 'Light'),
-        hex('bg/accentStrong', 'Light'),
-        alpha,
-      );
-      expect(contrast(faded, hex('bg/accentStrong', 'Light'))).toBeLessThan(floor);
+    /*
+     * REWRITTEN 2026-09-12, because the coral was darkened a step (Amit: "our
+     * token is too light.. make it little darker coral") and this assertion had
+     * outlived its premise.
+     *
+     * It used to pin "even at the corrected fill, 80% and 85% white are under
+     * 4.5" — true on the old #C0492F (3.75 and 4.04) and FALSE on the new
+     * #A74029 (4.54 and 4.91). The change made the alphas survivable, so the
+     * test began failing for a good reason, which is the failure mode a quoted
+     * number has: it pins a fact about one palette and reads like a rule.
+     *
+     * What is asserted now is the part that does not depend on the palette:
+     * full strength is strictly better than any alpha, and it clears 4.5. The
+     * structural rule — these labels carry `text/onAccent` and NO `opacity` —
+     * is asserted above and is the thing actually being protected. `opacity` on
+     * a Text composites the whole view, so the colour a contrast rule applies
+     * to is not the token the style names, and no token-pair gate can see it;
+     * that is why the rule is structural rather than numeric.
+     */
+    const ink = hex('text/onAccent', 'Light');
+    const fill = hex('bg/accentStrong', 'Light');
+    const full = contrast(ink, fill);
+    expect(full).toBeGreaterThanOrEqual(4.5);
+    for (const alpha of [0.8, 0.85] as const) {
+      const faded = contrast(composite(ink, fill, alpha), fill);
+      expect(faded).toBeLessThan(full);
     }
-    // And at full strength it clears, which is what makes removing the alpha the
-    // fix rather than a step towards one.
-    expect(
-      contrast(hex('text/onAccent', 'Light'), hex('bg/accentStrong', 'Light')),
-    ).toBeGreaterThanOrEqual(4.5);
   });
 
   it('keeps the payout row visible now the card is the fill the row used to be', () => {
@@ -400,12 +411,12 @@ describe('the bright accent carries no label', () => {
      * What changed: `bg/accent` in DARK now carries a label too. The old
      * assertion said it could not, and that was correct while the dark accent
      * was a light blue under a WHITE label (2.59:1). The dark accent is now a
-     * bright coral (#FF8272) and `text/onAccent` in dark is near-black ink, so
+     * coral (#FF6B58) and `text/onAccent` in dark is near-black ink, so
      * the pair is legible (7.13:1). The two steps therefore still exist in dark,
      * but for HIERARCHY rather than for legibility — and saying so is the honest
      * version.
      *
-     * LIGHT is unchanged in kind: white on the light coral #F15D48 is 3.28:1,
+     * LIGHT is unchanged in kind: white on the light coral #EE4027 is 3.89:1,
      * which clears the 3:1 large-text step (the wordmark) but NOT 4.5, so light
      * still has a genuine one-step-only-carries-a-label rule.
      */
