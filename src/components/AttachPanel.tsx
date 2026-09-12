@@ -7,10 +7,17 @@ import {
   Text,
   useWindowDimensions,
   View,
+  type NativeSyntheticEvent,
 } from 'react-native';
 import { LIGHT, TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { CAMERA_PREVIEW_AVAILABLE, CameraPreview } from './CameraPreview';
+import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import { DURATION, fadeTo } from '../theme/motion';
+import {
+  CAMERA_PREVIEW_AVAILABLE,
+  CameraPreview,
+  type CameraStreamState,
+} from './CameraPreview';
 import { Icon } from './Icon';
 import { Pressable } from './Pressable';
 import {
@@ -204,6 +211,65 @@ function AttachPanelView({
 
   const live = visible && slotSettled && foreground && cameraGranted && CAMERA_PREVIEW_AVAILABLE;
 
+  /*
+   * The placeholder's opacity, and the cross-fade that hides it.
+   *
+   * MOTION, per DESIGN.md's art direction:
+   *
+   *   Frequency. Opening the attach panel is an occasional action, not a
+   *   hundred-times-a-day one, and this fade runs once per open. That is the
+   *   tier with the largest budget, so `DURATION.base` rather than `fast` — a
+   *   170ms fade on a picture appearing reads as a flicker, because the thing
+   *   underneath and the thing on top are both substantial.
+   *
+   *   Ease-out, never ease-in, via `fadeTo`, which carries M3's
+   *   emphasized-decelerate curve. The picture is ARRIVING; it should be at its
+   *   most committed the instant it starts.
+   *
+   *   Opacity only. The obvious flourish — scaling the glyph down as it goes —
+   *   is the `scale(0)` case the rules ban outright, and here it would also
+   *   fight the live image, which does not scale.
+   *
+   * REVERSIBLE, and that is the reason this is a shared value driven by an
+   * event rather than a one-shot `exiting` animation. Flipping the camera
+   * unbinds and rebinds, so `streaming` goes false and true again; the
+   * placeholder has to come back for the gap and leave again afterwards. An
+   * exiting animation only knows how to leave once.
+   *
+   * NOT started on a timer. A capture session that fails to negotiate never
+   * fires the event, and the correct behaviour then is for the glyph to stay
+   * up forever. Hiding it optimistically after N milliseconds would put the
+   * black tile back, which is the whole bug this tile has already had once.
+   */
+  const placeholderOpacity = useSharedValue(1);
+  const onStreamStateChange = useCallback(
+    (e: NativeSyntheticEvent<CameraStreamState>) => {
+      placeholderOpacity.value = fadeTo(
+        e.nativeEvent.streaming ? 0 : 1,
+        DURATION.base,
+      );
+    },
+    [placeholderOpacity],
+  );
+  const placeholderStyle = useAnimatedStyle(() => ({
+    opacity: placeholderOpacity.value,
+  }));
+
+  /*
+   * Back to the glyph whenever the preview is unmounted.
+   *
+   * `live` goes false when the panel closes or the app backgrounds, which
+   * unmounts CameraPreview — and an unmounted view emits no IDLE on its way
+   * out. Without this the opacity would still be 0 from the last session and
+   * the next open would show an empty tile until frames arrived, which is the
+   * original bug wearing a different hat.
+   */
+  useEffect(() => {
+    if (!live) {
+      placeholderOpacity.value = 1;
+    }
+  }, [live, placeholderOpacity]);
+
   const camera = useCallback(() => onCamera(), [onCamera]);
   const gallery = useCallback(() => onGallery(), [onGallery]);
 
@@ -295,21 +361,33 @@ function AttachPanelView({
             * Keeping the glyph underneath means the tile always has something
             * in it, and the camera simply covers it when frames start. That
             * needs PreviewView's own background to be transparent, which is a
-            * one-line change on the native side — see CameraTilePackage.kt,
-            * which also records why the explicit StreamState signal was not
-            * used for a proper cross-fade.
+            * one-line change on the native side — see CameraTilePackage.kt.
+            *
+            * It now CROSS-FADES rather than being covered. The native view
+            * observes PreviewView.StreamState and emits `onStreamStateChange`,
+            * so the exact frame the picture becomes visible is known instead of
+            * guessed. That signal is only trustworthy because the native view
+            * is in COMPATIBLE mode — see the note on `CameraStreamState`.
+            *
+            * The placeholder is still ALWAYS MOUNTED and still underneath. The
+            * event is an improvement on the reveal, not a replacement for the
+            * fallback: a session that fails to negotiate never fires the event,
+            * and in that case the fade never starts and the glyph stays put,
+            * which is exactly right.
             */}
           {/* Icon and label together, centred — the same composition as the
               Photos tile beside it, so the two read as a matched pair of large
               actions rather than one labelled box and one unlabelled one. The
               live preview covers this entirely once frames arrive, which is
               when the bottom-pinned label below takes over. */}
-          <View style={styles.placeholder} pointerEvents="none">
+          <Animated.View
+            style={[styles.placeholder, placeholderStyle]}
+            pointerEvents="none">
             <Icon name="camera" size={TOKENS.icon.xl} color={theme.color.text.secondary} />
             <Text allowFontScaling={false} style={styles.galleryLabel}>
               Camera
             </Text>
-          </View>
+          </Animated.View>
           {live ? (
             /*
              * Sized in absolute px, never a percentage or `absoluteFill`.
@@ -325,6 +403,7 @@ function AttachPanelView({
              */
             <CameraPreview
               facing={facing}
+              onStreamStateChange={onStreamStateChange}
               style={[styles.preview, { width: cellSize, height: cellHeight }]}
             />
           ) : null}
