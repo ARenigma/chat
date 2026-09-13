@@ -5,7 +5,7 @@ import {
   Pressable as RNPressable,
   StyleSheet,
   Text,
-  useWindowDimensions,
+  Dimensions,
   View,
   type StyleProp,
   type TextStyle,
@@ -970,15 +970,40 @@ function InteractiveBubble({
 }) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
-  const { width: winW, height: winH } = useWindowDimensions();
   const [stripOpen, setStripOpen] = useState(false);
-  // Window-space rect of the bubble, measured when the strip opens, so the
-  // Modal-hosted strip can anchor to it.
+  /*
+   * Window-space rect of the bubble, measured when the strip opens, so the
+   * Modal-hosted strip can anchor to it — AND the window size at that moment.
+   *
+   * THE WINDOW SIZE IS CAPTURED HERE RATHER THAN SUBSCRIBED TO, and that is a
+   * performance fix rather than a tidy-up (Amit, 2026-09-13: "Tapping emoji
+   * reloads the whole viewport? why?").
+   *
+   * This component wraps EVERY message bubble, and it used to call
+   * `useWindowDimensions()`. That hook subscribes its component to window
+   * resize events — and the manifest sets `windowSoftInputMode="adjustResize"`,
+   * so showing or hiding the IME genuinely resizes the window. Opening the
+   * emoji panel hides the keyboard and then shows a panel, which is two
+   * resizes, so every mounted bubble in the transcript re-rendered twice. That
+   * is the "reload".
+   *
+   * The two numbers were used in exactly one place: the `useMemo` below that
+   * positions the strip, which produces nothing at all until `anchor` is set.
+   * So every bubble was paying a live subscription, for the whole life of the
+   * screen, for a value only ever read during a long-press. `Dimensions.get`
+   * reads the same value once, at the moment the strip opens, with no
+   * subscription — and a window that resizes WHILE a reaction strip is open is
+   * not a case that exists, because the strip is modal and takes the keyboard
+   * down with it.
+   * https://reactnative.dev/docs/usewindowdimensions
+   */
   const [anchor, setAnchor] = useState<{
     x: number;
     y: number;
     width: number;
     height: number;
+    winW: number;
+    winH: number;
   } | null>(null);
   const bubbleRef = useRef<RNView>(null);
   const tx = useSharedValue(0);
@@ -1000,7 +1025,8 @@ function InteractiveBubble({
     const node = bubbleRef.current;
     if (node !== null) {
       node.measureInWindow((x, y, width, height) => {
-        setAnchor({ x, y, width, height });
+        const win = Dimensions.get('window');
+        setAnchor({ x, y, width, height, winW: win.width, winH: win.height });
         setStripOpen(true);
       });
     } else {
@@ -1202,15 +1228,15 @@ function InteractiveBubble({
     }
     const above = anchor.y - STRIP_GAP - STRIP_H_EST >= STRIP_EDGE;
     const p: { left?: number; right?: number; top?: number; bottom?: number } = above
-      ? { bottom: winH - anchor.y + STRIP_GAP }
+      ? { bottom: anchor.winH - anchor.y + STRIP_GAP }
       : { top: anchor.y + anchor.height + STRIP_GAP };
     if (mine) {
-      p.right = Math.max(STRIP_EDGE, winW - (anchor.x + anchor.width));
+      p.right = Math.max(STRIP_EDGE, anchor.winW - (anchor.x + anchor.width));
     } else {
       p.left = Math.max(STRIP_EDGE, anchor.x);
     }
     return p;
-  }, [anchor, mine, winW, winH]);
+  }, [anchor, mine]);
 
   return (
     <View style={alignEnd ? styles.interactiveEnd : styles.interactiveStart}>
