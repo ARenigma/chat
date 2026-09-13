@@ -1886,6 +1886,29 @@ describe('accent budget is enforced in code, not just documented', () => {
        * grey. That is precisely the job the budget exists to reserve the accent
        * for — one meaning, one place, at a moment where it is the whole signal.
        */
+      /*
+       * `OnboardingScreen.tsx` JOINED on 2026-09-13, and it is the budget being
+       * spent on precisely what the budget is for.
+       *
+       * Its CTAs were white pills and one black disc, and the white pill was
+       * not even a choice — `styles.primary` WAS the Google button's style,
+       * shared, so the appearance Google's branding guidelines MANDATE for
+       * their own button had become this app's primary-button style and was
+       * being applied to controls that are entirely ours (the age Continue, the
+       * languages Continue). Measured on device: that white fill against the
+       * near-white sign-in page is 1.00:1 — invisible as a fill, and identical
+       * to the "secondary" beside it, so the screen had no hierarchy either.
+       *
+       * Amit: "Our CTAs are black? why? we have to have one consistent
+       * design/color language" — the second time this call has been made; the
+       * first (2026-09-08) fixed `Button.tsx` and never reached this screen,
+       * because this screen does not use it.
+       *
+       * The Google button keeps Google's white and is now on Google's own
+       * `#747775` stroke rather than our too-faint `rgba(0,0,0,0.08)`. It is
+       * the one CTA in the app that may not take the accent, by their rule.
+       */
+      'OnboardingScreen.tsx',
       'OnboardingStep.tsx',
       /*
        * UPI chooser processing spinner uses text.accent; the success card is

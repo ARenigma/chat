@@ -1213,7 +1213,7 @@ export function OnboardingScreen({ onDone }: Props) {
                     testID="onboard-google"
                     accessibilityLabel="Continue with Google"
                     press="button"
-                    style={styles.primary}
+                    style={styles.googleButton}
                   >
                     {state === 'loading' ? (
                       <LoadingIndicator size={20} containerColor="transparent" />
@@ -1225,7 +1225,7 @@ export function OnboardingScreen({ onDone }: Props) {
                           resizeMode="contain"
                           accessibilityIgnoresInvertColors
                         />
-                        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.primaryLabel}>
+                        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.googleLabel}>
                           Continue with Google
                         </Text>
                       </>
@@ -1869,7 +1869,25 @@ const makeStyles = (t: Theme) =>
     // rather than `theme.color.text.primary`, which is what turned white in dark
     // and caused the original white-on-white bug. The Google "G" reads on white
     // in every mode, which is its own brand rule.
-    primary: {
+    /*
+     * THE GOOGLE BUTTON, and it is Google's design, not ours.
+     *
+     * developers.google.com/identity/branding-guidelines permits exactly three
+     * fills — Light #FFFFFF with a #747775 1px inside stroke, Dark #131314 with
+     * #8E918F, Neutral #F2F2F2 with none — and states that a developer "cannot
+     * use custom brand colors". The "G" must be the standard colour gradient on
+     * a white background. So this one button cannot take the app's accent, and
+     * the hardcoded hexes here are correct BECAUSE they are Google's, not ours.
+     *
+     * The stroke was `rgba(0,0,0,0.08)` and is now Google's `#747775`. That was
+     * a spec violation AND the visible defect: measured on an S22 2026-09-13,
+     * the white fill against the near-white sign-in page was 1.00:1 — literally
+     * invisible as a fill, leaving a hairline so faint the control barely read
+     * as a button. This repo already has that exact standard written down, on
+     * the Listener tag FILL pair in check-contrast.mjs: "anything at or under
+     * 1.1 is not a filled chip, it is an unfilled one."
+     */
+    googleButton: {
       flexDirection: 'row',
       gap: TOKENS.space.xs,
       minHeight: SOURCE_METRICS.buttonHeight,
@@ -1879,9 +1897,44 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
       backgroundColor: '#FFFFFF',
       borderWidth: 1,
-      borderColor: 'rgba(0,0,0,0.08)',
+      borderColor: '#747775',
+    },
+    /*
+     * THE APP'S OWN PRIMARY CTA — accent, like every other primary in the app.
+     *
+     * THE BUG THIS FIXES, and it is a good one (Amit, 2026-09-13: "Our CTAs are
+     * black? why? we have to have one consistent design/color language"):
+     * this style WAS the Google button's style, shared. So the appearance
+     * Google MANDATES for its own button had quietly become this app's
+     * primary-button style, and was then applied to controls that are entirely
+     * ours — the age Continue and the languages Continue. Every CTA in the
+     * entry flow was wearing a third party's brand rules.
+     *
+     * `bg/accentStrong` + `text/onAccent` is what `Button.tsx` already uses,
+     * settled on 2026-09-08 when Amit said "all prompts CTAs should also follow
+     * our token system not black and white -- understood? real inconsistency
+     * here". That fix landed on the shared Button and never reached this screen,
+     * because this screen does not use it.
+     *
+     * accentSTRONG, never the bright step: check-contrast prohibits a label on
+     * `bg/accent` in light. This pair measures 6.16:1.
+     */
+    primary: {
+      flexDirection: 'row',
+      gap: TOKENS.space.xs,
+      minHeight: SOURCE_METRICS.buttonHeight,
+      borderRadius: TOKENS.radius.pill,
+      borderCurve: 'continuous',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: t.color.bg.accentStrong,
     },
     primaryLabel: {
+      ...TOKENS.typography.titleMediumEmphasized,
+      color: t.color.text.onAccent,
+    },
+    /* Google's own label ink: near-black on its white fill, never the theme's. */
+    googleLabel: {
       ...TOKENS.typography.titleMediumEmphasized,
       color: LIGHT.color.text.primary,
     },
@@ -2034,9 +2087,16 @@ const makeStyles = (t: Theme) =>
       borderCurve: 'continuous',
       alignItems: 'center',
       justifyContent: 'center',
-      // Near-black, matching Fuse's primary action (its "Create … Key" pill is
-      // black). Coral is reserved for the active step's icon, not the submit.
-      backgroundColor: t.color.text.primary,
+      /*
+       * ACCENT, not near-black. It was `text.primary` on the reasoning that it
+       * matched Fuse's black primary and that "coral is reserved for the active
+       * step's icon, not the submit" — fidelity to the reference winning over
+       * the app's own brand. Amit has now called that twice, and the app's own
+       * rule is settled: a primary action is the brand colour (see Button.tsx
+       * and the suite "a primary action is the brand colour, not black and
+       * white"). accentSTRONG carries `text/onAccent` at 6.16:1.
+       */
+      backgroundColor: t.color.bg.accentStrong,
     },
     // Age bracket picker: chip row + continue button.
     ageBlock: {
