@@ -91,6 +91,25 @@ const ALLOWED = new Set([
   // (non-dangerous) permission: no runtime prompt, no Play Data Safety row.
   // developer.android.com/training/basics/network-ops/managing
   'android.permission.ACCESS_NETWORK_STATE',
+  // Added with the attach sheet's recent-photo strip: the "+" panel shows real
+  // thumbnails of the user's latest photos instead of a blank grid.
+  //
+  // This is the SELECTED-photos permission and deliberately not its two
+  // neighbours. READ_MEDIA_IMAGES and READ_MEDIA_VIDEO stay in FORBIDDEN below:
+  // they are Play "restricted permissions" requiring a Photo and Video
+  // Permissions declaration form, which an app that only needs to attach a
+  // picture to a message would have to argue for and would likely lose.
+  // VISUAL_USER_SELECTED needs no such form — the user picks which photos the
+  // app may see, in the system picker, and the app sees nothing else.
+  //
+  // Android's own docs pair it WITH READ_MEDIA_IMAGES for the partial-access
+  // flow. We depart from that deliberately: the pairing is what pulls in the
+  // declaration form, and on API 34+ the selected-photos grant alone is enough
+  // for what the strip shows. Asserted in __tests__/contract.test.ts so the
+  // pairing cannot be "helpfully" restored.
+  // developer.android.com/training/data-storage/shared/photopicker
+  // developer.android.com/training/data-storage/shared/media#selected-photos-access
+  'android.permission.READ_MEDIA_VISUAL_USER_SELECTED',
 ]);
 
 /**
