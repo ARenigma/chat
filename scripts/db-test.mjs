@@ -138,6 +138,7 @@ const MIGRATIONS = [
   'supabase/migrations/097_recharge_helpers_credit_the_bucket.sql',
   'supabase/migrations/098_conversation_labels.sql',
   'supabase/migrations/099_chat_session_survives_a_ringing_call.sql',
+  'supabase/migrations/100_account_deletion_cascades.sql',
 ];
 
 /**
@@ -729,28 +730,26 @@ const suites = [
     label:
       'writers vs constraints: no function writes a literal its CHECK forbids',
   },
-  /*
-   * 440_delete_account_survives_a_paid_session.sql is DELIBERATELY NOT
-   * REGISTERED yet, and that is a decision rather than an oversight.
-   *
-   * It PROVES a live bug: `delete_user_account()` raises 23503 for any user who
-   * has ever had a paid session, because paid_sessions.member_id/provider_id/
-   * conversation_id are NO ACTION (verified against the production database on
-   * 2026-09-13, not just the migrations). That is every real user.
-   *
-   * It is written, it runs, and it fails for the right reason. Registering it
-   * now would turn main red for a bug whose FIX needs an owner decision that
-   * cannot be read off the code: cascading paid_sessions, provider_earnings_
-   * ledger and token_transactions away destroys billing and GST records, and
-   * SET NULL is unavailable until those NOT NULL columns are relaxed. Arm this
-   * line in the same commit as the fix.
-   */
   {
     file: join(
       ROOT,
       'supabase/tests/430_chat_session_survives_a_ringing_call.sql',
     ),
     label: 'chat survives a ringing call, and dies only when the call connects',
+  },
+  /*
+   * ARMED by migration 100. This suite was written first and left unregistered
+   * on purpose, because it proved a live 23503 whose fix needed an owner
+   * decision — anonymise the billing rows or destroy them — that could not be
+   * read off the code. The decision is in 100's header; this is now a gate.
+   */
+  {
+    file: join(
+      ROOT,
+      'supabase/tests/440_delete_account_survives_a_paid_session.sql',
+    ),
+    label:
+      'delete account: a member or provider with paid sessions can leave, and the billing rows stay',
   },
 ];
 

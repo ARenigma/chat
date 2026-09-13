@@ -263,18 +263,18 @@ COLUMN my_verification.phone_verified_at timestamp with time zone null=YES defau
 COLUMN paid_sessions.accepted_at timestamp with time zone null=YES default=-
 COLUMN paid_sessions.call_id uuid null=YES default=-
 COLUMN paid_sessions.channel USER-DEFINED null=NO default=-
-COLUMN paid_sessions.conversation_id uuid null=NO default=-
+COLUMN paid_sessions.conversation_id uuid null=YES default=-
 COLUMN paid_sessions.created_at timestamp with time zone null=NO default=now()
 COLUMN paid_sessions.economics_config_version_id uuid null=YES default=-
 COLUMN paid_sessions.end_reason text null=YES default=-
 COLUMN paid_sessions.ended_at timestamp with time zone null=YES default=-
 COLUMN paid_sessions.id uuid null=NO default=gen_random_uuid()
 COLUMN paid_sessions.last_activity_at timestamp with time zone null=YES default=-
-COLUMN paid_sessions.member_id uuid null=NO default=-
+COLUMN paid_sessions.member_id uuid null=YES default=-
 COLUMN paid_sessions.minutes_billed integer null=NO default=0
 COLUMN paid_sessions.next_bill_at timestamp with time zone null=YES default=-
 COLUMN paid_sessions.payout_hold_days integer null=YES default=-
-COLUMN paid_sessions.provider_id uuid null=NO default=-
+COLUMN paid_sessions.provider_id uuid null=YES default=-
 COLUMN paid_sessions.provider_share_percent integer null=YES default=-
 COLUMN paid_sessions.rate_tokens_per_min integer null=YES default=-
 COLUMN paid_sessions.request_id uuid null=YES default=-
@@ -415,7 +415,7 @@ COLUMN provider_earnings_ledger.hold_until timestamp with time zone null=NO defa
 COLUMN provider_earnings_ledger.id uuid null=NO default=gen_random_uuid()
 COLUMN provider_earnings_ledger.minutes_billed integer null=NO default=-
 COLUMN provider_earnings_ledger.payout_batch_id uuid null=YES default=-
-COLUMN provider_earnings_ledger.provider_id uuid null=NO default=-
+COLUMN provider_earnings_ledger.provider_id uuid null=YES default=-
 COLUMN provider_earnings_ledger.provider_tokens integer null=NO default=-
 COLUMN provider_earnings_ledger.rate_per_min integer null=NO default=-
 COLUMN provider_earnings_ledger.session_id uuid null=NO default=-
@@ -443,7 +443,7 @@ COLUMN provider_payout_batches.completed_at timestamp with time zone null=YES de
 COLUMN provider_payout_batches.created_at timestamp with time zone null=NO default=now()
 COLUMN provider_payout_batches.id uuid null=NO default=gen_random_uuid()
 COLUMN provider_payout_batches.initiated_at timestamp with time zone null=YES default=-
-COLUMN provider_payout_batches.provider_id uuid null=NO default=-
+COLUMN provider_payout_batches.provider_id uuid null=YES default=-
 COLUMN provider_payout_batches.status text null=NO default='pending'::text
 COLUMN provider_payout_batches.total_paise integer null=NO default=-
 COLUMN provider_payout_batches.total_tokens integer null=NO default=-
@@ -660,16 +660,17 @@ CONSTRAINT moderation_actions.moderation_actions_subject_user_id_fkey FOREIGN KE
 CONSTRAINT moderation_cases.moderation_cases_pkey PRIMARY KEY (id)
 CONSTRAINT moderation_cases.moderation_cases_report_id_fkey FOREIGN KEY (report_id) REFERENCES reports(id)
 CONSTRAINT moderation_cases.moderation_cases_status_check CHECK ((status = ANY (ARRAY['open'::text, 'closed'::text])))
-CONSTRAINT paid_sessions.paid_sessions_call_fk FOREIGN KEY (call_id) REFERENCES calls(id)
-CONSTRAINT paid_sessions.paid_sessions_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES conversations(id)
+CONSTRAINT paid_sessions.paid_sessions_call_fk FOREIGN KEY (call_id) REFERENCES calls(id) ON DELETE SET NULL
+CONSTRAINT paid_sessions.paid_sessions_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE SET NULL
 CONSTRAINT paid_sessions.paid_sessions_economics_config_version_id_fkey FOREIGN KEY (economics_config_version_id) REFERENCES admin.config_versions(id)
 CONSTRAINT paid_sessions.paid_sessions_end_reason_check CHECK ((end_reason = ANY (ARRAY['manual'::text, 'inactivity'::text, 'background'::text, 'disconnect_grace'::text, 'balance_exhausted'::text, 'blocked'::text, 'suspended'::text, 'system'::text, 'upgraded_to_call'::text])))
-CONSTRAINT paid_sessions.paid_sessions_member_id_fkey FOREIGN KEY (member_id) REFERENCES profiles(id)
+CONSTRAINT paid_sessions.paid_sessions_live_rows_are_identified CHECK (((status = ANY (ARRAY['ended'::paid_session_status, 'reported_hold'::paid_session_status])) OR ((member_id IS NOT NULL) AND (provider_id IS NOT NULL) AND (conversation_id IS NOT NULL))))
+CONSTRAINT paid_sessions.paid_sessions_member_id_fkey FOREIGN KEY (member_id) REFERENCES profiles(id) ON DELETE SET NULL
 CONSTRAINT paid_sessions.paid_sessions_member_not_provider CHECK ((member_id <> provider_id))
 CONSTRAINT paid_sessions.paid_sessions_minutes_billed_check CHECK ((minutes_billed >= 0))
 CONSTRAINT paid_sessions.paid_sessions_pkey PRIMARY KEY (id)
-CONSTRAINT paid_sessions.paid_sessions_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES profiles(id)
-CONSTRAINT paid_sessions.paid_sessions_request_id_fkey FOREIGN KEY (request_id) REFERENCES session_requests(id)
+CONSTRAINT paid_sessions.paid_sessions_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES profiles(id) ON DELETE SET NULL
+CONSTRAINT paid_sessions.paid_sessions_request_id_fkey FOREIGN KEY (request_id) REFERENCES session_requests(id) ON DELETE SET NULL
 CONSTRAINT paid_sessions.paid_sessions_tokens_debited_check CHECK ((tokens_debited >= 0))
 CONSTRAINT policy_acceptances.policy_acceptances_pkey PRIMARY KEY (id)
 CONSTRAINT policy_acceptances.policy_acceptances_policy_kind_check CHECK ((policy_kind = ANY (ARRAY['terms'::text, 'privacy'::text])))
@@ -708,16 +709,16 @@ CONSTRAINT provider_applications.provider_applications_user_id_key UNIQUE (user_
 CONSTRAINT provider_earnings_ledger.provider_earnings_ledger_minutes_billed_check CHECK ((minutes_billed > 0))
 CONSTRAINT provider_earnings_ledger.provider_earnings_ledger_payout_batch_id_fkey FOREIGN KEY (payout_batch_id) REFERENCES provider_payout_batches(id)
 CONSTRAINT provider_earnings_ledger.provider_earnings_ledger_pkey PRIMARY KEY (id)
-CONSTRAINT provider_earnings_ledger.provider_earnings_ledger_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES profiles(id)
+CONSTRAINT provider_earnings_ledger.provider_earnings_ledger_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES profiles(id) ON DELETE SET NULL
 CONSTRAINT provider_earnings_ledger.provider_earnings_ledger_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'cleared'::text, 'paid'::text, 'refunded'::text])))
-CONSTRAINT provider_earnings_ledger.provider_earnings_ledger_transaction_id_fkey FOREIGN KEY (transaction_id) REFERENCES token_transactions(id)
+CONSTRAINT provider_earnings_ledger.provider_earnings_ledger_transaction_id_fkey FOREIGN KEY (transaction_id) REFERENCES token_transactions(id) ON DELETE SET NULL
 CONSTRAINT provider_payout_accounts.payout_method_fields CHECK ((((method = 'upi'::text) AND (upi_vpa IS NOT NULL) AND (account_number IS NULL) AND (ifsc IS NULL)) OR ((method = 'bank'::text) AND (account_number IS NOT NULL) AND (ifsc IS NOT NULL) AND (upi_vpa IS NULL))))
 CONSTRAINT provider_payout_accounts.provider_payout_accounts_method_check CHECK ((method = ANY (ARRAY['upi'::text, 'bank'::text])))
 CONSTRAINT provider_payout_accounts.provider_payout_accounts_pkey PRIMARY KEY (id)
 CONSTRAINT provider_payout_accounts.provider_payout_accounts_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES profiles(id) ON DELETE CASCADE
 CONSTRAINT provider_payout_accounts.provider_payout_accounts_verification_status_check CHECK ((verification_status = ANY (ARRAY['unverified'::text, 'pending'::text, 'verified'::text, 'failed'::text])))
 CONSTRAINT provider_payout_batches.provider_payout_batches_pkey PRIMARY KEY (id)
-CONSTRAINT provider_payout_batches.provider_payout_batches_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES profiles(id)
+CONSTRAINT provider_payout_batches.provider_payout_batches_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES profiles(id) ON DELETE SET NULL
 CONSTRAINT provider_payout_batches.provider_payout_batches_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'processing'::text, 'completed'::text, 'failed'::text])))
 CONSTRAINT provider_payout_batches.provider_payout_batches_total_paise_check CHECK ((total_paise > 0))
 CONSTRAINT provider_payout_batches.provider_payout_batches_total_tokens_check CHECK ((total_tokens > 0))
@@ -754,17 +755,17 @@ CONSTRAINT reviews.reviews_rating_check CHECK (((rating >= 1) AND (rating <= 5))
 CONSTRAINT reviews.reviews_session_id_fkey FOREIGN KEY (session_id) REFERENCES paid_sessions(id) ON DELETE SET NULL
 CONSTRAINT session_leases.session_leases_pkey PRIMARY KEY (session_id, user_id)
 CONSTRAINT session_leases.session_leases_session_id_fkey FOREIGN KEY (session_id) REFERENCES paid_sessions(id) ON DELETE CASCADE
-CONSTRAINT session_leases.session_leases_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id)
+CONSTRAINT session_leases.session_leases_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
 CONSTRAINT session_requests.session_requests_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
-CONSTRAINT session_requests.session_requests_initiator_id_fkey FOREIGN KEY (initiator_id) REFERENCES profiles(id)
+CONSTRAINT session_requests.session_requests_initiator_id_fkey FOREIGN KEY (initiator_id) REFERENCES profiles(id) ON DELETE CASCADE
 CONSTRAINT session_requests.session_requests_no_self CHECK ((initiator_id <> recipient_id))
 CONSTRAINT session_requests.session_requests_pkey PRIMARY KEY (id)
-CONSTRAINT session_requests.session_requests_recipient_id_fkey FOREIGN KEY (recipient_id) REFERENCES profiles(id)
+CONSTRAINT session_requests.session_requests_recipient_id_fkey FOREIGN KEY (recipient_id) REFERENCES profiles(id) ON DELETE CASCADE
 CONSTRAINT token_transactions.token_transactions_amount_paise_check CHECK ((amount_paise >= 0))
 CONSTRAINT token_transactions.token_transactions_config_version_id_fkey FOREIGN KEY (config_version_id) REFERENCES admin.config_versions(id)
 CONSTRAINT token_transactions.token_transactions_kind_check CHECK ((kind = ANY (ARRAY['recharge'::text, 'refund'::text, 'adjustment'::text, 'promo_grant'::text, 'usage_debit'::text, 'provider_accrual'::text, 'payout'::text, 'account_close_hold'::text, 'refund_review'::text])))
 CONSTRAINT token_transactions.token_transactions_pkey PRIMARY KEY (id)
-CONSTRAINT token_transactions.token_transactions_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES profiles(id)
+CONSTRAINT token_transactions.token_transactions_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES profiles(id) ON DELETE SET NULL
 CONSTRAINT token_transactions.token_transactions_status_check CHECK ((status = ANY (ARRAY['created'::text, 'succeeded'::text, 'failed'::text, 'refunded'::text])))
 CONSTRAINT token_transactions.token_transactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
 ENUM application_status = draft,submitted,under_review,needs_info,approved,rejected
