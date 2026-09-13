@@ -64,6 +64,10 @@ describe('memberParent', () => {
     expect(memberParent({ name: 'applicationStatus' })).toEqual({ name: 'settings' });
     expect(memberParent({ name: 'blocked' })).toEqual({ name: 'settings' });
     expect(memberParent({ name: 'transactions' })).toEqual({ name: 'settings' });
+    // Bills & invoices has exactly one door — the Settings row — so back is
+    // Settings and not Home. Landing on Home would strand a member who came
+    // for a document mid-list.
+    expect(memberParent({ name: 'invoices' })).toEqual({ name: 'settings' });
   });
 
   it('sends top-level tabs back to Home', () => {
@@ -109,6 +113,7 @@ describe('transitionFor', () => {
     favourites: { name: 'favourites' },
     settings: { name: 'settings' },
     transactions: { name: 'transactions' },
+    invoices: { name: 'invoices' },
     usage: { name: 'usage' },
   };
 
@@ -132,6 +137,10 @@ describe('transitionFor', () => {
       'blocked',
       'chatsList',
       'transactions',
+      // A document list opened from Settings is a push, not a tab: it is deeper
+      // than the screen that opened it, so it slides in and the bottom nav goes
+      // away with it (`transitionFor(route) !== 'push'` drives the toolbar).
+      'invoices',
     ] as const) {
       expect(transitionFor(samples[name])).toBe('push');
     }

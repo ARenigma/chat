@@ -91,6 +91,16 @@ const ALLOWED = new Set([
   // (non-dangerous) permission: no runtime prompt, no Play Data Safety row.
   // developer.android.com/training/basics/network-ops/managing
   'android.permission.ACCESS_NETWORK_STATE',
+  // CashfreeWebCheckoutActivity.onResume() calls NfcCardManager.enableDispatch()
+  // UNCONDITIONALLY, so this is a load-bearing prerequisite of the SDK's web
+  // checkout activity — not a feature the app itself uses. Stripping it (which
+  // the manifest carried as tools:node="remove") threw SecurityException and
+  // killed the activity on resume, crashing the whole app process and making
+  // the "Card, Net Banking & Wallets" path completely unreachable. Restored
+  // 2026-09-13 once the crash was reproduced and diagnosed via logcat.
+  // Normal permission: no runtime prompt, no Play Data Safety row.
+  // developer.android.com/reference/android/nfc/NfcAdapter#enableForegroundDispatch
+  'android.permission.NFC',
   // Added with the attach sheet's recent-photo strip: the "+" panel shows real
   // thumbnails of the user's latest photos instead of a blank grid.
   //

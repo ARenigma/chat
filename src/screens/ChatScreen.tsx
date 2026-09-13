@@ -40,8 +40,15 @@ import { readKeyboardHeight } from '../lib/keyboardPanel';
 import { initialOf } from '../lib/display';
 import { isPending, PENDING_PREFIX, sessionEndedLabel } from '../lib/transcript';
 import {
+  canDeleteMessage,
+  canEditMessage,
+  editedAt,
+  isDeleted,
   useConversationId,
   useConversations,
+  useDeleteMessage,
+  useEditMessage,
+  useLiveMessageEdits,
   useMessages,
   useCalls,
   useProfile,
@@ -115,6 +122,8 @@ import { TokenCounter } from '../components/TokenCounter';
 import { CallLogRow } from '../components/CallLogRow';
 import { SystemMessageRow } from '../components/SystemMessageRow';
 import { MyTurn, PeerTurn, type ActionTarget, type ImageBody, type Quote, type VoiceBody } from '../components/Turn';
+import { Sheet } from '../components/Sheet';
+import { M3Field } from '../components/TextField';
 import { SafetySheet } from './SafetySheet';
 import { RenameChatSheet } from '../components/RenameChatSheet';
 import { useConversationLabels } from '../api/conversationLabels';
@@ -255,6 +264,23 @@ const IDENTITY_LINES =
 /** Stable empty default for the labels map, so an unlabelled chat never re-renders. */
 const EMPTY_LABELS: ReadonlyMap<string, string> = new Map();
 
+/**
+ * What a deleted message says, to each side of it.
+ *
+ * WhatsApp's two sentences verbatim, because the split is the point rather than
+ * the wording: the author is told what THEY did, and the other person is told
+ * that something was taken back without being told who by — which is already
+ * obvious from the side the bubble is on, and is not obvious at all if the app
+ * writes "they deleted this" into a thread somebody is scrolling back through.
+ *
+ * Both are statements, not blanks. A row that simply disappeared from the other
+ * person's scrollback is the failure mode migration 103's tombstone exists to
+ * prevent.
+ */
+function tombstoneText(mine: boolean): string {
+  return mine ? 'You deleted this message' : 'This message was deleted';
+}
+
 export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onOpenEarnings }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -320,6 +346,23 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   // The message the next send replies to. Cleared on send and on cancel, and
   // never persisted: a half-composed reply is not worth surviving a screen.
   const [replyTo, setReplyTo] = useState<ActionTarget | null>(null);
+  /*
+   * The message being edited, and the draft of its new text (migration 103).
+   *
+   * A SHEET rather than the composer, and that is a constraint rather than a
+   * preference: `Composer` owns its draft in local state with no way in
+   * ("Composition state is local, lifting the draft into the store would
+   * re-render every subscriber on each keystroke"), so there is no prop that
+   * seeds it with the text being edited. WhatsApp edits inline; doing that here
+   * means giving the composer a controlled value, which is a change to a
+   * component this one does not own.
+   */
+  const [editing, setEditing] = useState<ActionTarget | null>(null);
+  const [editDraft, setEditDraft] = useState('');
+  const [editBusy, setEditBusy] = useState(false);
+  /** The message a confirmed tap on Delete would remove. Null when closed. */
+  const [deleting, setDeleting] = useState<ActionTarget | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   // The photo the full-screen viewer is showing, or null when it is closed.
   // Held by the screen and not by the bubble: a Modal inside a FlashList cell
   // unmounts when the list recycles that cell, which happens while messages
@@ -491,6 +534,15 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
    * screen stops the audio.
    */
   const voicePlayer = useVoicePlayer();
+  const editMessage = useEditMessage(conversationId);
+  const deleteMessage = useDeleteMessage(conversationId);
+  /*
+   * An edit or a delete made on the OTHER device lands here. `useLiveConversation`
+   * above already receives the UPDATE and reads only `read_at` off it; this is
+   * the rest of that event, on its own channel — see the hook's own note for why
+   * it is not one line in `src/api/realtime.ts`.
+   */
+  useLiveMessageEdits(conversationId, selfId);
 
   /**
    * Identity comes from the thread first, and the directory only as a fallback.
@@ -1008,7 +1060,11 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
     for (const m of messages ?? []) {
       map.set(m.id, {
         author: m.sender_id === selfId ? 'You' : name,
-        body: m.body,
+        // A reply outlives its parent's deletion — `reply_to_id` is not touched
+        // by delete_message — so the quote has to say what became of it rather
+        // than render the blank line a null body would give. Same sentence the
+        // tombstone itself uses, so the two read as one fact.
+        body: isDeleted(m) ? tombstoneText(m.sender_id === selfId) : m.body,
       });
     }
     return map;
@@ -1293,6 +1349,47 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
     setSafety({ open: true, messageId });
   }, []);
 
+  /*
+   * Edit and delete (migration 103). Both open something rather than acting:
+   * an edit needs the new text, and a delete is irreversible for the other
+   * person too, which is the case M3 says a confirmation dialog is for.
+   * https://m3.material.io/components/dialogs/guidelines
+   */
+  const beginEdit = useCallback((target: ActionTarget) => {
+    setEditing(target);
+    setEditDraft(target.body ?? '');
+  }, []);
+  const beginDelete = useCallback((target: ActionTarget) => {
+    setDeleting(target);
+  }, []);
+
+  const commitEdit = useCallback(async () => {
+    if (editing === null) {
+      return;
+    }
+    setEditBusy(true);
+    const ok = await editMessage(editing.id, editDraft);
+    setEditBusy(false);
+    // Stays open on failure, with the text still in the field: the notice says
+    // why, and closing would throw away what they typed to no purpose.
+    if (ok) {
+      setEditing(null);
+      setEditDraft('');
+    }
+  }, [editing, editDraft, editMessage]);
+
+  const commitDelete = useCallback(async () => {
+    if (deleting === null) {
+      return;
+    }
+    setDeleteBusy(true);
+    await deleteMessage(deleting.id);
+    setDeleteBusy(false);
+    // Closed either way. A refusal has already surfaced a notice, and leaving a
+    // destructive dialog up invites a second tap at the same refusal.
+    setDeleting(null);
+  }, [deleting, deleteMessage]);
+
   /** Tapping a photo bubble opens it full screen; see `<MediaViewer />` below. */
   const openImage = useCallback((image: ImageBody) => setViewerImage(image), []);
   const closeImage = useCallback(() => setViewerImage(null), []);
@@ -1327,10 +1424,20 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
         message.id,
         selfId,
       );
+      /*
+       * A tombstone is checked FIRST, because migration 103 nulls every payload
+       * column together: a deleted voice note has no `voice_path`, so it would
+       * otherwise fall through to the "Voice note" fallback below and claim a
+       * recording that is gone.
+       */
+      const deleted = isDeleted(message);
       // Only reached when `voice` and `image` are unset, which the payload
       // constraint guarantees means the row has a body. The fallback covers a row
       // that somehow has none rather than rendering an empty bubble.
-      const text = message.body ?? (image !== undefined ? 'Photo' : 'Voice note');
+      const text = deleted
+        ? tombstoneText(mine)
+        : (message.body ?? (image !== undefined ? 'Photo' : 'Voice note'));
+      const edited = editedAt(message) !== null;
       const quote =
         message.reply_to_id !== null ? parents.get(message.reply_to_id) : undefined;
       const reactions = tallies.get(message.id);
@@ -1363,6 +1470,24 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
               onSwipeReply={swipeReply}
               onReact={reactOnMessage}
               onReportMessage={reportMessage}
+              edited={edited}
+              deleted={deleted}
+              /*
+               * The two owner actions are passed ONLY when the server would
+               * accept them. `canEditMessage` mirrors every clause of migration
+               * 103's `edit_message` — same sender, still visible, text (not
+               * voice or photo), a live send rather than an automated opener,
+               * and inside the fifteen-minute window — so the Edit row is absent
+               * rather than offered-and-refused once the window has closed. The
+               * server re-decides all of it regardless; this only controls what
+               * the menu draws.
+               */
+              onEditMessage={
+                canEditMessage(message, selfId) ? beginEdit : undefined
+              }
+              onDeleteMessage={
+                canDeleteMessage(message, selfId) ? beginDelete : undefined
+              }
               chosenReaction={chosen}
               onOpenImage={openImage}
               /*
@@ -1411,6 +1536,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
               onSwipeReply={swipeReply}
               onReact={reactOnMessage}
               onReportMessage={reportMessage}
+              edited={edited}
+              deleted={deleted}
               chosenReaction={chosen}
               onOpenImage={openImage}
             />
@@ -1423,6 +1550,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
       // Turn.tsx's PeerTurnView): they are still read by the header identity
       // block and by PeerTyping, but no longer by a row, so keeping them here
       // would re-render every bubble whenever the peer changed their photo.
+      beginDelete,
+      beginEdit,
       name,
       openImage,
       parents,
@@ -2065,6 +2194,80 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
         peerName={peerName}
       />
 
+      {/*
+        * Editing a message (migration 103).
+        *
+        * The body names the fifteen-minute window and says the other person
+        * will be told, because both are true and neither is discoverable from
+        * the UI otherwise: the server refuses a late edit, and `edited_at` puts
+        * "Edited" on the bubble on both devices. An app that quietly rewrote
+        * somebody's transcript would be the version of this feature worth
+        * refusing to build.
+        */}
+      <Sheet
+        visible={editing !== null}
+        testID="edit-message"
+        title="Edit message"
+        body="You can edit for 15 minutes after sending. They will see that it was edited."
+        onClose={() => setEditing(null)}
+        onCancel={() => setEditing(null)}>
+        {/* `M3Field`, not the bare `TextField`: "Every labelled text and numeric
+            input goes through this", and it already owns the outlined container,
+            the focus stroke and the multiline padding. No `label` — the sheet's
+            own title says what this field is, and a second "Message" above it
+            would be the same word twice. */}
+        <M3Field
+          testID="edit-message-input"
+          containerStyle={styles.editInput}
+          style={styles.editInputBox}
+          accessibilityLabel="Message text"
+          value={editDraft}
+          onChangeText={setEditDraft}
+          // The same ceiling `messages.body`'s CHECK enforces, so the field
+          // stops where the database would rather than failing after a tap.
+          maxLength={4000}
+          multiline
+          autoFocus
+        />
+        <Button
+          label="Done"
+          busy={editBusy}
+          // "Updating", not the obvious word for it: `chatSurface.test.ts` bans
+          // the whole save/download/export/share family from every chat-media
+          // surface, and this screen is one. The ban is about a route that takes
+          // media OUT of the app and this button is nothing of the kind — but a
+          // closed word list only works if it stays closed.
+          busyLabel="Updating"
+          disabled={editDraft.trim() === ''}
+          onPress={() => {
+            void commitEdit();
+          }}
+          testID="edit-message-done"
+        />
+      </Sheet>
+
+      {/*
+        * Deleting. Destructive and visible to the other person, which is the
+        * pair of facts the body has to carry — "Delete for everyone" without
+        * saying what is left behind would be a promise the tombstone does not
+        * keep.
+        */}
+      <ConfirmDialog
+        visible={deleting !== null}
+        testID="delete-message"
+        title="Delete this message?"
+        body="It will be removed from the chat. They will see that a message was deleted."
+        cancelLabel="Keep"
+        confirmLabel="Delete"
+        destructive
+        busy={deleteBusy}
+        busyLabel="Deleting"
+        onCancel={() => setDeleting(null)}
+        onConfirm={() => {
+          void commitDelete();
+        }}
+      />
+
       <ConfirmDialog
         visible={awaitingMemberConsent}
         testID="chat-session-consent"
@@ -2459,6 +2662,21 @@ const makeStyles = (t: Theme) => StyleSheet.create({
    * takes the same capsule treatment: same fill, same hairline, same radius. It
    * occludes what is behind it, which is the whole job.
    */
+  /** Gap between the edit field and the sheet's Done button. */
+  editInput: {
+    marginBottom: TOKENS.space.md,
+  },
+  /*
+   * Taller than `M3Field`'s multiline minimum (56, the M3 container height) for
+   * one reason: the field opens holding a message that already exists, so it is
+   * being READ before it is edited, and a three-line box is what stops a
+   * paragraph arriving as a scrolling slot. Capped so a long message still
+   * leaves the Done button on screen above the keyboard.
+   */
+  editInputBox: {
+    minHeight: 88,
+    maxHeight: 200,
+  },
   replyBar: {
     flexDirection: 'row',
     alignItems: 'center',

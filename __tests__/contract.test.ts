@@ -616,6 +616,11 @@ describe('Android manifest', () => {
       'android.permission.INTERNET',
       'android.permission.MANAGE_OWN_CALLS',
       'android.permission.MODIFY_AUDIO_SETTINGS',
+      // CashfreeWebCheckoutActivity.onResume() calls NfcCardManager.enableDispatch()
+      // unconditionally. Stripping this crashed the card/net-banking path since
+      // launch (SecurityException, whole app process killed). Normal permission:
+      // no runtime prompt, no Play Data Safety row. Restored 2026-09-13.
+      'android.permission.NFC',
       'android.permission.POST_NOTIFICATIONS',
       /*
        * Android 14+ partial photo access, for the attach panel's recent-photo

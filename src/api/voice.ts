@@ -203,6 +203,8 @@ export function useSendVoiceNote(
         origin: 'live',
         created_at: new Date().toISOString(),
         read_at: null,
+        edited_at: null,
+        deleted_at: null,
       };
 
       queryClient.setQueryData<TranscriptMessage[]>(key, prev =>

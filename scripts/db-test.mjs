@@ -139,6 +139,11 @@ const MIGRATIONS = [
   'supabase/migrations/098_conversation_labels.sql',
   'supabase/migrations/099_chat_session_survives_a_ringing_call.sql',
   'supabase/migrations/100_account_deletion_cascades.sql',
+  'supabase/migrations/101_account_deletion_keeps_the_invoice.sql',
+  'supabase/migrations/102_first_recharge_discount.sql',
+  'supabase/migrations/103_edit_and_delete_messages.sql',
+  'supabase/migrations/104_provider_photo_management.sql',
+  'supabase/migrations/105_provider_initiated_contact.sql',
 ];
 
 /**
@@ -750,6 +755,26 @@ const suites = [
     ),
     label:
       'delete account: a member or provider with paid sessions can leave, and the billing rows stay',
+  },
+  /*
+   * The other half of the same button, and a different set of tables: 440 is
+   * about paid SESSIONS, this is about MONEY IN. Neither of its two blockers
+   * — invoices.transaction_id RESTRICT over a CASCADEd token_transactions row,
+   * and refund_reviews.user_id NO ACTION — needs a session to exist, which is
+   * why 440 stayed green through both. Armed by migration 101.
+   */
+  {
+    file: join(
+      ROOT,
+      'supabase/tests/450_delete_account_survives_an_invoice.sql',
+    ),
+    label:
+      'delete account: a member who recharged can leave, and the GST invoice stays intact',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/460_edit_and_delete_messages.sql'),
+    label:
+      'edit and delete a message, and a provider who can see who they are talking to',
   },
 ];
 

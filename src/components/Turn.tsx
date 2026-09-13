@@ -42,6 +42,7 @@ import { useAttachmentUrl } from '../api/attachments';
 import { useStore } from '../store/useStore';
 import { BubbleTime } from './BubbleTime';
 import { Icon } from './Icon';
+import { Pressable } from './Pressable';
 import { ProgressBar } from './ProgressBar';
 import { ReactionStrip } from './ReactionStrip';
 import { VoiceNote } from './VoiceNote';
@@ -218,6 +219,24 @@ interface Shared {
   onReact?: (messageId: string, emoji: ReactionEmoji) => void;
   /** Report from the strip (peer messages only). */
   onReportMessage?: (messageId: string) => void;
+  /**
+   * Edit / delete from the owner pill under the strip (own messages only, and
+   * only while the server would accept it — `canEditMessage` in api/chat.ts).
+   * Undefined means the action is not on offer for THIS row, which is how the
+   * fifteen-minute edit window disappears from the menu rather than being
+   * offered and then refused.
+   */
+  onEditMessage?: (target: ActionTarget) => void;
+  onDeleteMessage?: (target: ActionTarget) => void;
+  /** Migration 103's `edited_at`: the bubble says so, beside the timestamp. */
+  edited?: boolean;
+  /**
+   * Migration 103's `deleted_at`. The row STAYS and renders a tombstone — the
+   * whole point of a delete leaving one is that the other person can see that
+   * something was taken back rather than quietly losing it from their
+   * scrollback.
+   */
+  deleted?: boolean;
   /** Which emoji the caller already has on this message. */
   chosenReaction?: ReactionEmoji | null;
   /**
@@ -250,11 +269,14 @@ function MetaRow({
   timestamp,
   receipt,
   failed,
+  edited,
   onAccent,
 }: {
   timestamp: string;
   receipt?: 'sent' | 'read';
   failed?: boolean;
+  /** Prefixes the clock with "Edited ·", which is where WhatsApp puts it. */
+  edited?: boolean;
   onAccent: boolean;
 }) {
   const styles = useStyles(makeStyles);
@@ -284,11 +306,20 @@ function MetaRow({
   const failColor = theme.color.state.danger;
   return (
     <View style={styles.metaRow}>
+      {/*
+        * "Edited" rides IN the timestamp string rather than as a sibling Text.
+        * Two adjacent Texts in this row is the layout that already clipped and
+        * wrapped here twice (see Body's note on what did not work); one string
+        * measures once and breaks nowhere. WhatsApp's placement: inside the
+        * bubble, before the clock, in the same deemphasized colour — it is a
+        * disclosure, not a badge.
+        */}
       <Text
+        testID={edited === true ? 'bubble-edited' : undefined}
         allowFontScaling={false}
         numberOfLines={1}
         style={onAccent ? styles.inlineTimeOnAccent : styles.inlineTimePeer}>
-        {timestamp}
+        {edited === true ? `Edited · ${timestamp}` : timestamp}
       </Text>
       {/*
         * A failed send shows a warning mark INSTEAD of a tick, never both. A
@@ -336,6 +367,8 @@ function Body({
   timestamp,
   receipt,
   failed,
+  edited,
+  deleted,
 }: {
   message: string;
   voice: VoiceBody | undefined;
@@ -347,10 +380,49 @@ function Body({
   timestamp?: string;
   receipt?: 'sent' | 'read';
   failed?: boolean;
+  edited?: boolean;
+  deleted?: boolean;
 }) {
   // Must precede the voice-branch early return: a hook cannot be called
   // conditionally (react-hooks/rules-of-hooks).
   const stamp = useStyles(makeStyles);
+  const theme = useTheme();
+  /*
+   * The tombstone, and it comes FIRST because a deleted row has no payload left
+   * to fall through to: migration 103 nulls `body`, `voice_path` and the
+   * attachment columns together, so every other branch below would render an
+   * empty bubble or the "Voice note" fallback for a note that is gone.
+   *
+   * `block` is WhatsApp's own mark for this — a circle with a bar through it,
+   * ahead of italic text in the deemphasized colour — and it is one of the 52
+   * glyphs already in `design/icons.json`, so it needs no regeneration (RULE 4).
+   *
+   * The timestamp stays: WHEN something was said is still true and is what keeps
+   * the row in its place in the thread. The receipt goes, because a read tick on
+   * a message that no longer exists is a claim about nothing.
+   */
+  if (deleted === true) {
+    return (
+      <View style={stamp.textBody}>
+        <View style={stamp.tombstoneRow}>
+          <Icon
+            name="block"
+            size={TOKENS.icon.xs}
+            color={onAccent ? theme.color.bubble.meta : theme.color.text.tertiary}
+          />
+          <Text
+            testID={`${testID}-deleted`}
+            allowFontScaling
+            style={[textStyle, stamp.messageText, stamp.tombstoneText]}>
+            {message}
+          </Text>
+        </View>
+        {timestamp ? (
+          <MetaRow timestamp={timestamp} onAccent={onAccent} />
+        ) : null}
+      </View>
+    );
+  }
   if (voice !== undefined && voicePlayer !== undefined) {
     return (
       <View style={stamp.textBody}>
@@ -366,7 +438,7 @@ function Body({
           speed={voicePlayer.speed}
         />
         {timestamp ? (
-          <MetaRow timestamp={timestamp} receipt={receipt} failed={failed} onAccent={onAccent} />
+          <MetaRow timestamp={timestamp} receipt={receipt} failed={failed} edited={edited} onAccent={onAccent} />
         ) : null}
       </View>
     );
@@ -389,7 +461,7 @@ function Body({
         {message}
       </Text>
       {timestamp ? (
-        <MetaRow timestamp={timestamp} receipt={receipt} failed={failed} onAccent={onAccent} />
+        <MetaRow timestamp={timestamp} receipt={receipt} failed={failed} edited={edited} onAccent={onAccent} />
       ) : null}
     </View>
   );
@@ -646,14 +718,24 @@ function PeerTurnView({
   onReportMessage,
   chosenReaction,
   onOpenImage,
+  edited,
+  deleted,
 }: PeerProps) {
   const styles = useStyles(makeStyles);
+  /*
+   * A tombstone has NO action target, which switches off the swipe-reply, the
+   * reaction strip and the report control in one move. That is WhatsApp's
+   * behaviour and it is the honest one: quoting, reacting to or reporting a
+   * message whose text no longer exists anywhere would all produce a reference
+   * to nothing. Reporting specifically: `reports.evidence_body` snapshots at
+   * report time (005), and there is nothing left to snapshot.
+   */
   const target = useMemo<ActionTarget | null>(
     () =>
-      messageId !== undefined
+      messageId !== undefined && deleted !== true
         ? { id: messageId, mine: false, author: author ?? '', body: rawBody ?? null }
         : null,
-    [messageId, author, rawBody],
+    [messageId, author, rawBody, deleted],
   );
   // Built here rather than inline in the JSX so the bubble's `memo` still holds:
   // `image` has a stable identity from ChatScreen's `rows` memo and
@@ -715,6 +797,8 @@ function PeerTurnView({
                 textStyle={styles.peerText}
                 testID="bubble-peer"
                 timestamp={timestamp}
+                edited={edited}
+                deleted={deleted}
               />
             </>
           )}
@@ -806,13 +890,19 @@ function MyTurnView({
   onSwipeReply,
   onReact,
   onReportMessage,
+  onEditMessage,
+  onDeleteMessage,
   chosenReaction,
   onOpenImage,
+  edited,
+  deleted,
 }: MineProps) {
   const styles = useStyles(makeStyles);
+  // Same as the peer side: a tombstone offers no actions at all, including its
+  // own author's — there is nothing left to edit or to take back twice.
   const target = useMemo<ActionTarget | null>(
     () =>
-      !pending && messageId !== undefined
+      !pending && messageId !== undefined && deleted !== true
         ? {
             id: messageId,
             mine: true,
@@ -820,7 +910,7 @@ function MyTurnView({
             body: rawBody ?? null,
           }
         : null,
-    [pending, messageId, author, rawBody],
+    [pending, messageId, author, rawBody, deleted],
   );
   // See the twin in PeerTurnView: stable identity, so `memo` still holds.
   const openImage = useCallback(() => {
@@ -870,6 +960,8 @@ function MyTurnView({
           onSwipeReply={onSwipeReply}
           onReact={onReact}
           onReportMessage={onReportMessage}
+          onEditMessage={onEditMessage}
+          onDeleteMessage={onDeleteMessage}
           chosenReaction={chosenReaction}
           alignEnd>
           {image !== undefined ? (
@@ -895,6 +987,8 @@ function MyTurnView({
                 timestamp={timestamp}
                 receipt={pending ? undefined : receipt}
                 failed={failed}
+                edited={edited}
+                deleted={deleted}
               />
             </>
           )}
@@ -932,6 +1026,79 @@ const STRIP_GAP = 8;
 const STRIP_EDGE = 12;
 /** Strip-height estimate, used only to decide above-vs-below placement. */
 const STRIP_H_EST = 56;
+/**
+ * The owner pill's height estimate, added to the one above when it renders.
+ *
+ * 64: a 48dp menu row plus the pill's own padding. It is an estimate for the
+ * same reason `STRIP_H_EST` is: the decision is made before the Modal has laid
+ * anything out, so the only alternative is measuring twice and showing the strip
+ * in the wrong place for a frame. Leaving it out would put a two-pill column
+ * half off the top of the screen on a bubble near the status bar, which is the
+ * case this number exists for.
+ */
+const OWNER_PILL_H_EST = 64;
+
+/**
+ * Edit and Delete for your own message, under the reaction strip.
+ *
+ * TWO PILLS, NOT ONE, and this is Telegram's arrangement rather than an
+ * afterthought: it anchors the reaction bar above the message and a context
+ * menu directly beneath it (ReactionsContainerLayout sits above
+ * ChatActivity's popup menu), so the two are visibly a bar of quick reactions
+ * and a list of actions. Folding Edit and Delete into `ReactionStrip` would
+ * also mean editing that component, which is a peer-message surface too and
+ * whose closed action set `chatSurface.test.ts` pins.
+ *
+ * TEXT LABELS, NOT ICONS, and that is a stop rather than a preference. The
+ * icon set is 52 Lucide glyphs generated from `design/icons.json`; it has
+ * `delete` and has no pencil. Adding one means regenerating the font (RULE 4)
+ * AND choosing which pencil the brand uses, which is Amit's call, not one to
+ * make silently mid-feature (CLAUDE.md, structural vs creative). Two words is
+ * also what Telegram's and WhatsApp's own menus render.
+ */
+function OwnerActions({
+  onEdit,
+  onDelete,
+}: {
+  /** Undefined once the fifteen-minute window has closed — the row is omitted. */
+  onEdit?: () => void;
+  onDelete?: () => void;
+}) {
+  const styles = useStyles(makeStyles);
+  return (
+    <View testID="owner-actions" style={styles.ownerActions}>
+      {onEdit !== undefined ? (
+        <Pressable
+          testID="own-edit"
+          accessibilityLabel="Edit message"
+          press="chip"
+          onPress={onEdit}
+          style={styles.ownerAction}>
+          <Text allowFontScaling style={styles.ownerActionLabel}>
+            Edit
+          </Text>
+        </Pressable>
+      ) : null}
+      {onEdit !== undefined && onDelete !== undefined ? (
+        <View style={styles.ownerDivider} />
+      ) : null}
+      {onDelete !== undefined ? (
+        <Pressable
+          testID="own-delete"
+          accessibilityLabel="Delete message"
+          press="chip"
+          onPress={onDelete}
+          style={styles.ownerAction}>
+          <Text
+            allowFontScaling
+            style={[styles.ownerActionLabel, styles.ownerActionDanger]}>
+            Delete
+          </Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
 
 /**
  * Swipe-to-reply + long-press reaction strip around a bubble.
@@ -948,6 +1115,8 @@ function InteractiveBubble({
   onSwipeReply,
   onReact,
   onReportMessage,
+  onEditMessage,
+  onDeleteMessage,
   chosenReaction,
   alignEnd,
   media,
@@ -960,6 +1129,8 @@ function InteractiveBubble({
   onSwipeReply?: (target: ActionTarget) => void;
   onReact?: (messageId: string, emoji: ReactionEmoji) => void;
   onReportMessage?: (messageId: string) => void;
+  onEditMessage?: (target: ActionTarget) => void;
+  onDeleteMessage?: (target: ActionTarget) => void;
   chosenReaction?: ReactionEmoji | null;
   alignEnd?: boolean;
   /** When true, MediaBubble owns the frame — do not wrap in bubbleStyle. */
@@ -1220,13 +1391,27 @@ function InteractiveBubble({
     };
   });
 
+  /*
+   * Whether the owner pill is on offer for this row at all. `mine` is necessary
+   * and not sufficient: ChatScreen passes the two handlers only when the SERVER
+   * would accept the action (`canEditMessage` / `canDeleteMessage`), so a
+   * message past its fifteen-minute edit window simply has no Edit row rather
+   * than one that gets refused.
+   */
+  const ownerEdit = mine && target !== null ? onEditMessage : undefined;
+  const ownerDelete = mine && target !== null ? onDeleteMessage : undefined;
+  const showsOwnerActions = ownerEdit !== undefined || ownerDelete !== undefined;
+
   // Where the Modal-hosted strip sits: above the bubble when there is room,
   // below it otherwise; aligned to the speaker's side and clamped to the edges.
   const placement = useMemo(() => {
     if (anchor === null) {
       return null;
     }
-    const above = anchor.y - STRIP_GAP - STRIP_H_EST >= STRIP_EDGE;
+    // The owner pill is part of the column, so it is part of the height the
+    // above-or-below decision is made on.
+    const stackHeight = STRIP_H_EST + (showsOwnerActions ? OWNER_PILL_H_EST : 0);
+    const above = anchor.y - STRIP_GAP - stackHeight >= STRIP_EDGE;
     const p: { left?: number; right?: number; top?: number; bottom?: number } = above
       ? { bottom: anchor.winH - anchor.y + STRIP_GAP }
       : { top: anchor.y + anchor.height + STRIP_GAP };
@@ -1236,7 +1421,7 @@ function InteractiveBubble({
       p.left = Math.max(STRIP_EDGE, anchor.x);
     }
     return p;
-  }, [anchor, mine]);
+  }, [anchor, mine, showsOwnerActions]);
 
   return (
     <View style={alignEnd ? styles.interactiveEnd : styles.interactiveStart}>
@@ -1276,26 +1461,53 @@ function InteractiveBubble({
             />
             {placement !== null ? (
               <View style={[styles.stripAnchor, placement]} pointerEvents="box-none">
-                <ReactionStrip
-                  chosen={chosenReaction ?? null}
-                  mine={mine}
-                  onReact={emoji => {
-                    setStripOpen(false);
-                    onReact?.(target.id, emoji);
-                  }}
-                  onReply={() => {
-                    setStripOpen(false);
-                    onSwipeReply?.(target);
-                  }}
-                  onReport={
-                    !mine && onReportMessage
-                      ? () => {
-                          setStripOpen(false);
-                          onReportMessage(target.id);
-                        }
-                      : undefined
-                  }
-                />
+                {/* A column, so the owner pill sits under the reaction bar and
+                    the pair anchors as one block. Aligned to the speaker's side
+                    so both pills grow out of the bubble they belong to. */}
+                <View
+                  style={mine ? styles.stripColumnMine : styles.stripColumnPeer}
+                  pointerEvents="box-none">
+                  <ReactionStrip
+                    chosen={chosenReaction ?? null}
+                    mine={mine}
+                    onReact={emoji => {
+                      setStripOpen(false);
+                      onReact?.(target.id, emoji);
+                    }}
+                    onReply={() => {
+                      setStripOpen(false);
+                      onSwipeReply?.(target);
+                    }}
+                    onReport={
+                      !mine && onReportMessage
+                        ? () => {
+                            setStripOpen(false);
+                            onReportMessage(target.id);
+                          }
+                        : undefined
+                    }
+                  />
+                  {showsOwnerActions ? (
+                    <OwnerActions
+                      onEdit={
+                        ownerEdit === undefined
+                          ? undefined
+                          : () => {
+                              setStripOpen(false);
+                              ownerEdit(target);
+                            }
+                      }
+                      onDelete={
+                        ownerDelete === undefined
+                          ? undefined
+                          : () => {
+                              setStripOpen(false);
+                              ownerDelete(target);
+                            }
+                      }
+                    />
+                  ) : null}
+                </View>
               </View>
             ) : null}
           </GestureHandlerRootView>
@@ -1516,6 +1728,67 @@ const makeStyles = (t: Theme) =>
     stripAnchor: {
       position: 'absolute',
     },
+    // The reaction bar and (on your own message) the owner pill, stacked.
+    stripColumnMine: {
+      alignItems: 'flex-end',
+    },
+    stripColumnPeer: {
+      alignItems: 'flex-start',
+    },
+    /*
+     * Same material as `ReactionStrip` — raised surface, hairline border, pill
+     * corner, soft lift — because the two read as one menu anchored to one
+     * bubble. Deliberately NOT imported from there: that component owns its own
+     * closed set of actions and this one is a second, different set.
+     */
+    ownerActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      alignSelf: 'flex-start',
+      paddingHorizontal: TOKENS.space.xs,
+      paddingVertical: TOKENS.space['2xs'],
+      borderRadius: TOKENS.radius.pill,
+      borderCurve: 'continuous',
+      backgroundColor: t.color.bg.grouped,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: t.color.border.hairline,
+      shadowColor: '#000',
+      shadowOpacity: 0.12,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 2 },
+      elevation: 3,
+    },
+    /*
+     * 48, not the 34 the emoji buttons in the strip beside this use.
+     *
+     * "Ensure that your app's touch targets are at least 48dp x 48dp" — and
+     * this is a MENU ITEM with a destructive option in it, not a row of emoji
+     * where a mis-tap costs a tap to undo. `PaperMenu`, this app's own M3 menu,
+     * already uses `ROW_H = 48` for the same reason, so the two menus agree.
+     * https://developer.android.com/develop/ui/views/touch-and-input/accessibility-touch-target
+     * https://m3.material.io/components/menus/specs
+     */
+    ownerAction: {
+      minHeight: 48,
+      minWidth: 72,
+      paddingHorizontal: TOKENS.space.md,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: TOKENS.radius.pill,
+    },
+    ownerActionLabel: {
+      ...TOKENS.typography.labelLarge,
+      color: t.color.text.primary,
+    },
+    ownerActionDanger: {
+      color: t.color.state.danger,
+    },
+    ownerDivider: {
+      width: StyleSheet.hairlineWidth,
+      height: 22,
+      backgroundColor: t.color.border.hairline,
+      marginHorizontal: TOKENS.space.hair,
+    },
     fill: {
       flex: 1,
     },
@@ -1667,6 +1940,28 @@ const makeStyles = (t: Theme) =>
     /* Shrinks so it wraps INSIDE the row; the meta beside it never does. */
     messageText: {
       flexShrink: 1,
+    },
+    /*
+     * The tombstone: mark and label on one line, so the pair wraps as a unit
+     * rather than leaving the glyph stranded at the end of a line above its
+     * sentence. `textBody` is already a wrapping row, and this is one of its
+     * items.
+     */
+    tombstoneRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space['2xs'],
+      flexShrink: 1,
+    },
+    /*
+     * Italic and deemphasized, which is WhatsApp's treatment and is doing real
+     * work here rather than decorating: this line is the app speaking about a
+     * message, not the message. `text/tertiary` on either bubble — both fills
+     * are pale in light and deep in dark, and the token is authored per mode.
+     */
+    tombstoneText: {
+      fontStyle: 'italic',
+      color: t.color.text.tertiary,
     },
     myText: {
       ...TOKENS.typography.bodyLarge,

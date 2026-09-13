@@ -195,6 +195,8 @@ export function useSendImage(
         origin: 'live',
         created_at: new Date().toISOString(),
         read_at: null,
+        edited_at: null,
+        deleted_at: null,
       };
 
       // The local uri, kept off the row type so the transcript can show the pick

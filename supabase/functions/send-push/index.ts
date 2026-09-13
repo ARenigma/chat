@@ -11,6 +11,11 @@
  *
  *   - It never sends a message body. `pending_pushes` does not expose one, and
  *     that is the point: a lock screen is read by whoever is holding the phone.
+ *   - It drains ONE queue with two sources (migration 105): an undelivered
+ *     message, and a provider-initiated chat request. The second is here rather
+ *     than in a sender of its own because a provider reaching a member is a 1:1
+ *     message event, and the only notification this app builds that Android
+ *     treats as a conversation is the one a `pending_pushes` row produces.
  *   - It marks a message notified on success *and* on permanent failure, but not
  *     on a transient one, so a 503 from FCM retries next minute and a dead token
  *     does not retry forever.
@@ -28,7 +33,27 @@ interface ServiceAccount {
   project_id: string;
 }
 
+/**
+ * What the two branches of `pending_pushes` mean (migration 105).
+ *
+ *   'message'  someone sent a message and the recipient has not been told.
+ *   'contact'  a PROVIDER started a chat with a member — a pending chat request
+ *              the provider raised, carrying no message of its own. Before 105
+ *              provider-initiated contact reached the member only when it
+ *              happened to ride along with a message, so a provider who started
+ *              a thread through `create_session_request` rather than
+ *              `send_message` reached them nowhere at all.
+ *
+ * Both are 1:1 message events and both get the same payload, which is what lets
+ * the app build one conversation notification for either. See the data map in
+ * `send` for why that shape is the shape.
+ */
+type PushKind = 'message' | 'contact';
+
 interface Pending {
+  // A message id, or a session_request id on a 'contact' row. The view keeps the
+  // old column name because ids from the two tables cannot collide and renaming
+  // it would break nothing and fix nothing.
   message_id: string;
   conversation_id: string;
   peer_id: string;
@@ -39,6 +64,8 @@ interface Pending {
   // member sender. Rendered as the notification's BigPicture (the SP-photo hero).
   sender_avatar_url: string | null;
   created_at: string;
+  // Absent when this function runs against a database from before 105.
+  kind?: PushKind;
 }
 
 const base64url = (bytes: Uint8Array): string => {
@@ -187,6 +214,40 @@ async function send(
            * milliseconds because `MessagingStyle.addMessage` takes a timestamp
            * and orders the transcript by it. `senderAvatar` is omitted (not sent
            * as null, which FCM rejects) when the sender has no public photo.
+           *
+           * EVERY FIELD HERE IS LOAD-BEARING FOR THE CONVERSATION REQUIREMENT.
+           * https://developer.android.com/develop/ui/views/notifications/conversations
+           *   "A notification is considered as a conversation notification if
+           *   the following are true: The notification uses MessagingStyle. […]
+           *   (Only if the app targets Android 11 or higher) The notification is
+           *   associated with a valid long-lived dynamic or cached sharing
+           *   shortcut."
+           * and the shortcut must "have Person data attached for one or more
+           * persons, identifying the other participants in the conversation."
+           *
+           * `Conversations.kt:146-231` assembles all of it, and it can only do
+           * so from these four facts:
+           *   conversationId → the shortcut id, and the notification id, so a
+           *                    second push extends one transcript instead of
+           *                    replacing it (setShortcutId + pushDynamicShortcut
+           *                    with setLongLived(true)).
+           *   peerId         → Person.setKey. Without it Android matches Persons
+           *                    by NAME, and display names here are user-chosen
+           *                    and not unique, so two providers who picked the
+           *                    same name would merge into one conversation.
+           *   senderName     → Person.setName, and the shortcut's labels.
+           *   sentAt         → MessagingStyle.addMessage's timestamp, which is
+           *                    what orders the transcript.
+           *
+           * `kind` is new with migration 105 and is deliberately a value neither
+           * of the other two readers claims: `readCallPush` returns null unless
+           * kind === 'call' and `readEngagementPush` unless kind === 'engagement'
+           * (src/lib/conversations.ts), while `readConversationPush` ignores kind
+           * entirely. So both values fall through to the conversation branch on
+           * every client already shipped, and a later release can tell a first
+           * contact from a reply without a second payload shape. It carries no
+           * new information about the conversation — it names which of the two
+           * queue branches this row came from.
            */
           data: {
             // The client validates this with isUuid before routing on it.
@@ -194,6 +255,7 @@ async function send(
             conversationId: row.conversation_id,
             senderName: who,
             sentAt: String(Date.parse(row.created_at)),
+            kind: row.kind ?? 'message',
             ...(image ? { senderAvatar: image } : {}),
           },
         },
@@ -273,7 +335,7 @@ Deno.serve(async request => {
   }
   const pending = (data ?? []) as Pending[];
   if (pending.length === 0) {
-    return Response.json({ pending: 0, sent: 0, dead: 0, retry: 0 });
+    return Response.json({ pending: 0, sent: 0, contacts: 0, dead: 0, retry: 0 });
   }
 
   const bearer = await accessToken(sa);
@@ -284,11 +346,19 @@ Deno.serve(async request => {
   const outcomes = new Map<string, Set<string>>();
   const deadTokens = new Set<string>();
   let sent = 0;
+  // Counted separately so the logs answer "did the provider-initiated path
+  // actually fire?" without a query. It is the one branch with no second
+  // symptom — a message that fails to notify still shows up in the thread, a
+  // provider's outreach that fails to notify is invisible to everyone.
+  let contacts = 0;
 
   for (const row of pending) {
     const result = await send(bearer, sa.project_id, row);
     if (result === 'sent') {
       sent += 1;
+      if (row.kind === 'contact') {
+        contacts += 1;
+      }
     }
     if (result === 'dead') {
       deadTokens.add(row.token);
@@ -324,6 +394,7 @@ Deno.serve(async request => {
   return Response.json({
     pending: pending.length,
     sent,
+    contacts,
     dead: deadTokens.size,
     settled: settled.length,
   });

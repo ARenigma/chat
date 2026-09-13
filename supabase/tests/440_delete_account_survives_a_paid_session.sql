@@ -210,7 +210,13 @@ select is(
     from public.provider_earnings_ledger
     where id = 'dddddddd-0000-0000-0000-0000000005b1'
   ),
-  '66/null/null',
+  -- 101 changed this from '66/null/null': 100 made transaction_id SET NULL only
+  -- because token_transactions.user_id was CASCADE and the accrual row was
+  -- destroyed with the provider. Now user_id is SET NULL too (101), so the
+  -- accrual transaction is anonymised rather than deleted and the ledger keeps
+  -- its accounting cross-reference. provider_id (the identity column) is still
+  -- null — the PII is still erased.
+  '66/null/bbbbbbbb-0000-0000-0000-0000000005b1',
   'the earnings row survives with its amount, carrying no provider identity'
 );
 

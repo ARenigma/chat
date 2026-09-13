@@ -44,6 +44,8 @@ function message(overrides: Partial<Message> = {}): Message {
     // Fixed base so ordering is deterministic and unrelated to test runtime.
     created_at: new Date(1_700_000_000_000 + seq * 1000).toISOString(),
     read_at: null,
+    edited_at: null,
+    deleted_at: null,
     ...overrides,
   };
 }
@@ -432,6 +434,8 @@ describe('optimistic rows keep their identity through settlement', () => {
     origin: 'live',
     created_at: '2026-01-01T00:00:00.000Z',
     read_at: null,
+    edited_at: null,
+    deleted_at: null,
   };
 
   const pending = (id: string): Message => ({ ...CONFIRMED, id, created_at: CONFIRMED.created_at });
