@@ -286,7 +286,9 @@ Deno.serve(async (request: Request) => {
       .select('id')
       .eq('id', tx.user_id)
       .single();
-    const buyerName = profileRow ? `User ${tx.user_id.slice(0, 8)}` : 'Valued Customer';
+    // tx.user_id is nullable since migration 101 (SET NULL on account delete);
+    // .slice() on null throws TypeError, so guard both branches.
+    const buyerName = profileRow && tx.user_id ? `User ${tx.user_id.slice(0, 8)}` : 'Valued Customer';
 
     // 2. Seller config from env --------------------------------------------
     const sellerLegalName = Deno.env.get('SELLER_LEGAL_NAME') ?? 'Axionix Technologies';
