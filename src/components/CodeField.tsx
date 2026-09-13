@@ -477,7 +477,17 @@ const makeStyles = (t: Theme) =>
       color: t.color.text.secondary,
     },
     digit: {
-      ...TOKENS.typography.headlineSmallEmphasized,
+      /*
+       * `numeralLarge`, not `headlineSmallEmphasized`, and the swap is FREE:
+       * both are Geist-Bold 24/32. The only difference is that this one carries
+       * `fontVariant: ['tabular-nums']`.
+       *
+       * Six digits in six fixed boxes is the textbook case for tabular figures.
+       * With proportional ones a `1` is narrow and an `8` is wide, so each digit
+       * sits at a different offset inside its box and the row reads as ragged —
+       * and it re-rags on every keystroke as the code fills in.
+       */
+      ...TOKENS.typography.numeralLarge,
       color: t.color.text.primary,
     },
     input: {

@@ -3054,6 +3054,46 @@ describe('the transition lock has a write side', () => {
  * check alone would have passed #6E3A2E (H11 S41) — the bubble fill that was
  * the actual complaint.
  */
+/**
+ * Digits that CHANGE get tabular figures.
+ *
+ * Amit, 2026-09-13: "what font are we using for digits and numbers? geist
+ * regular? or mono space?" The answer is Geist, and it needs no mono companion
+ * — the family ships the `tnum` OpenType feature (verified in its GSUB table),
+ * which React Native exposes as `fontVariant: ['tabular-nums']`. A monospace
+ * face here would read as a terminal; tabular figures give the same fixed
+ * advance for digits only, leaving the text proportional.
+ *
+ * The app already had `numeral*` tokens carrying it, and already used them for
+ * the wallet pill and the voice-note duration. What it did NOT do was use them
+ * where a number RETICKS: the call timer, the OTP boxes and the phone field
+ * were all on proportional figures. That is where it shows — a `1` is narrower
+ * than an `8`, so a mm:ss timer shifts sideways once a second for the length of
+ * a paid call.
+ *
+ * Asserted by surface rather than by a blanket rule, because most numbers in
+ * the app are set once and never change, and tabular figures on those would be
+ * a typographic cost with no benefit.
+ */
+describe('a number that changes is set in tabular figures', () => {
+  const RETICKING = [
+    ['src/screens/CallScreen.tsx', 'timer', 'the call duration, once a second'],
+    ['src/components/CodeField.tsx', 'digit', 'six OTP digits in fixed boxes'],
+    ['src/screens/OnboardingScreen.tsx', 'input', 'the phone field, digit by digit'],
+  ] as const;
+
+  it.each(RETICKING)('%s: %s carries tabular figures (%s)', (file, style) => {
+    const block = stripComments(read(file));
+    const m = new RegExp(`\\b${style}: \\{[^}]*\\}`).exec(block);
+    expect(m).not.toBeNull();
+    const rule = m?.[0] ?? '';
+    const tabular =
+      rule.includes("fontVariant: ['tabular-nums']") ||
+      /typography\.numeral\w+/.test(rule);
+    expect({ file, style, tabular }).toEqual({ file, style, tabular: true });
+  });
+});
+
 describe('the brand stays coral, and coral is a hue', () => {
   const hsl = (hex: string): { h: number; s: number; l: number } => {
     const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255) as [number, number, number];
