@@ -329,8 +329,13 @@ describe('the gesture conflict is removed rather than tuned', () => {
      */
     const body = code(ROW);
     expect(body.match(/<Pressable/g)?.length).toBe(3);
-    // The CTA carries its own spoken label, or TalkBack reads the card's.
-    expect(body).toMatch(/canCall \? `Call \$\{provider\.display_name\}`/);
+    /*
+     * The CTA carries its own spoken label, or TalkBack reads the card's — and
+     * since 2026-09-13 the away state has its own, because "Call <name>" would
+     * be a lie on a row whose button no longer calls.
+     */
+    expect(body).toMatch(/`Notify \$\{provider\.display_name\} that you want to chat`/);
+    expect(body).toMatch(/`Call \$\{provider\.display_name\}`/);
   });
 
   it('keeps the tag pills out of the accessibility tree', () => {
@@ -405,19 +410,44 @@ describe('the CTA is 48dp, and the reference is the thing that is wrong', () => 
      *
      * Both the label and the action follow the capability, and they follow the
      * SAME flag, so they cannot disagree.
+     *
+     * AWAY joined the flag on 2026-09-13, and it belongs to the same rule
+     * rather than sitting beside it: a provider who is not there cannot take a
+     * call either, so offering one is the identical false affordance. The label
+     * gains a third state — "Notify", with a bell — and the action still falls
+     * through to opening the conversation, which is what actually notifies
+     * them (announce_chat_open, migration 068).
      */
     const body = code(ROW);
-    expect(body).toContain('const canCall = provider.audio_enabled && onCall !== undefined');
-    expect(body).toContain("const ctaLabel = canCall ? 'Call' : 'Chat'");
+    expect(body).toContain(
+      'const canCall = provider.audio_enabled && onCall !== undefined && !away',
+    );
+    expect(body).toContain("const away = !presence.here");
+    expect(body).toContain(
+      "const ctaLabel = away ? 'Notify' : canCall ? 'Call' : 'Chat'",
+    );
     expect(body).toMatch(/canCall && onCall !== undefined \? onCall\(provider\.id\) : onPress\(provider\.id\)/);
   });
 
-  it('drops the glyph in front of the price', () => {
-    // Amit: "remove call icon before 22/min". It was doing less than it looked
-    // — the phone said "this rate buys a call", which the CTA beside it now
-    // says in a word.
+  it('drops the glyph in front of the price, except the away bell', () => {
+    /*
+     * Amit: "remove call icon before 22/min". It was doing less than it looked
+     * — the phone said "this rate buys a call", which the CTA beside it now
+     * says in a word.
+     *
+     * NARROWED 2026-09-13 for the away state, and the distinction is the reason
+     * the original rule exists rather than an exception to it. The banned phone
+     * glyph was REDUNDANT: it said the same thing as the word "Call" beside it.
+     * The bell is not redundant — it says something the word cannot, that this
+     * row offers a different KIND of action from every other row in the list.
+     * The test asserts that difference rather than just allowing an Icon back:
+     * the only glyph permitted here is the bell, and only in the away branch.
+     */
     const priceLine = between(code(ROW), '<View style={styles.priceLine}>', '</View>');
-    expect(priceLine).not.toContain('<Icon');
+    const icons = priceLine.match(/<Icon\s+name="(\w+)"/g) ?? [];
+    expect(icons).toEqual(['<Icon\n                  name="bell"']);
+    // ...and it is gated on away, never drawn for a provider who is here.
+    expect(priceLine).toContain('{away ? (');
     expect(priceLine).toContain('<RupeeAmount value={ratePerMin}');
   });
 });
