@@ -938,3 +938,176 @@ describe('the chat header identity block is block-centred and fixed-height', () 
     expect(TOKENS.layout.appBarSmall).toBe(64);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Editing and deleting a message (migration 103)
+// ---------------------------------------------------------------------------
+
+/** One SQL function's body, with `--` comments stripped so prose is not matched. */
+function sqlFunctionBody(source: string, name: string): string {
+  const start = source.indexOf(`create or replace function public.${name}(`);
+  expect(start).toBeGreaterThan(-1);
+  const end = source.indexOf('$$;', start);
+  expect(end).toBeGreaterThan(start);
+  return source
+    .slice(start, end)
+    .split('\n')
+    .map(line => line.replace(/--.*$/, ''))
+    .join('\n');
+}
+
+describe('a message can be edited and deleted, and both facts are visible', () => {
+  const migration = read('supabase/migrations/103_edit_and_delete_messages.sql');
+  const api = withoutComments(read('src/api/chat.ts'));
+  const turn = withoutComments(read('src/components/Turn.tsx'));
+  const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+
+  it('offers exactly edit and delete on your own message', () => {
+    /*
+     * A closed set, for the reason the reaction strip's twin above states: a
+     * new action must be a decision somebody made here, not something that
+     * arrives under a name no ban knows. `ReactionStrip`'s own set is asserted
+     * separately and is deliberately untouched — these two live in `Turn.tsx`
+     * because the strip is a peer surface too.
+     */
+    expect(turn.match(/testID="own-[a-z]+"/g)).toEqual([
+      'testID="own-edit"',
+      'testID="own-delete"',
+    ]);
+  });
+
+  it('gives the client the SAME edit window the server enforces', () => {
+    /*
+     * The one assertion here that could not be made by reading either side
+     * alone, and the reason `message_edit_window()` is a function rather than a
+     * literal in the RPC. The client hides the Edit action past the window; the
+     * server refuses past the window. If the two numbers drift, the symptom is
+     * an Edit button that comes back EDIT_WINDOW_CLOSED — the app offering
+     * something it cannot do, which is the failure mode this pins.
+     */
+    expect(migration).toMatch(
+      /create or replace function public\.message_edit_window\(\)[\s\S]*?select interval '15 minutes'/,
+    );
+    expect(api).toMatch(/EDIT_WINDOW_MS = 15 \* 60_000/);
+  });
+
+  it('deletes by tombstone, never by reusing the session purge', () => {
+    /*
+     * `hidden_at` is the SESSION purge (045): both participants lose the row at
+     * once, nobody chose it, and it is destroyed 30 days later. A delete is one
+     * participant's choice about one row, and the other person must still see
+     * that it happened. Collapsing the two is the regression this file is
+     * mostly here for, and it is also the cheapest mistake to make.
+     */
+    const body = sqlFunctionBody(migration, 'delete_message');
+    expect(body).toMatch(/set\s+deleted_at\s+= now\(\)/);
+    expect(body).not.toMatch(/hidden_at\s*=/);
+    // Every payload column goes with it, or the "tombstone" still carries text.
+    for (const column of [
+      'body',
+      'voice_path',
+      'voice_duration_ms',
+      'voice_peaks',
+      'attachment_path',
+      'attachment_type',
+      'attachment_width',
+      'attachment_height',
+    ]) {
+      expect(body).toMatch(new RegExp(`${column}\\s+= null`));
+    }
+    // And the row itself stays, so the other device has something to render.
+    expect(body).not.toMatch(/delete from public\.messages/);
+  });
+
+  it('decides ownership on the server, on both paths', () => {
+    // The RPCs scope to the sender; a client-side check is decoration.
+    for (const fn of ['edit_message', 'delete_message']) {
+      expect(sqlFunctionBody(migration, fn)).toMatch(/sender_id = v_uid/);
+    }
+    // And the two new columns stay as unwritable from a device as origin and
+    // hidden_at already are.
+    expect(migration).toMatch(
+      /create or replace function public\.guard_message_edit_columns\(\)[\s\S]*?current_user in \('authenticated', 'anon'\)/,
+    );
+  });
+
+  it('renders a deleted row rather than letting it fall through to a payload', () => {
+    /*
+     * A deleted voice note has no `voice_path` — 103 nulls every payload column
+     * together — so a tombstone checked AFTER the media branches renders the
+     * "Voice note" fallback for a recording that is gone. Both the screen's
+     * label and the bubble's body check it first.
+     */
+    expect(chat).toMatch(/const deleted = isDeleted\(message\);[\s\S]{0,400}'Voice note'/);
+    expect(chat).toMatch(/mine \? 'You deleted this message' : 'This message was deleted'/);
+    // The bubble's tombstone branch precedes the voice branch, not the reverse.
+    const tombstone = turn.indexOf('if (deleted === true)');
+    const voiceBranch = turn.indexOf('if (voice !== undefined && voicePlayer !== undefined)');
+    expect(tombstone).toBeGreaterThan(-1);
+    expect(voiceBranch).toBeGreaterThan(tombstone);
+  });
+
+  it('offers nothing on a tombstone — not reply, react, report, edit or delete', () => {
+    // One switch for all five: every action hangs off `target`, so a deleted row
+    // having none is what turns the whole menu and the swipe off at once.
+    expect(turn.match(/deleted !== true/g)).toHaveLength(2);
+  });
+
+  it('says an edit happened, on both devices', () => {
+    // `edited_at` is stamped by the server and is not client-writable, so the
+    // marker cannot be suppressed by the device that made the edit.
+    expect(sqlFunctionBody(migration, 'edit_message')).toMatch(/edited_at = now\(\)/);
+    expect(turn).toMatch(/Edited · \$\{timestamp\}/);
+  });
+});
+
+describe('the provider sees who they are talking to, and nothing more', () => {
+  const migration = read('supabase/migrations/103_edit_and_delete_messages.sql');
+  const view = migration.slice(
+    migration.indexOf('create or replace view public.conversation_peers'),
+  );
+  const columns = view.slice(0, view.indexOf('from public.conversations'));
+
+  it('publishes the two fields a member chose as their identity', () => {
+    /*
+     * 012 resolved a member peer to `member_handle()` because a member then had
+     * no name of their own — anything in `display_name` had come from a provider
+     * application. 040's first-run setup changed that fact: the member picks a
+     * username and one of twelve clay avatars, on a screen whose own copy is
+     * "Shown to people you chat with".
+     */
+    expect(columns).toMatch(
+      /coalesce\(peer\.display_name, public\.member_handle\(peer\.id\)\)/,
+    );
+    expect(columns).toMatch(/peer\.avatar_url as peer_avatar_url/);
+    // Not re-gated on role, which is the whole change on the avatar side.
+    expect(columns).not.toMatch(/case when peer\.role = 'provider' then peer\.avatar_url/);
+  });
+
+  it('leaves every field the member did not offer off the column list', () => {
+    /*
+     * 004's rule, and the reason this is a definer view with an explicit select:
+     * "the column list here IS the privacy boundary". Exactly two fields moved.
+     */
+    for (const column of [
+      'date_of_birth',
+      'phone_e164',
+      'gender',
+      'headline',
+      'age_bracket',
+      'token_balance',
+      'suspended_until',
+    ]) {
+      expect(columns).not.toMatch(new RegExp(`peer\\.${column}`));
+    }
+  });
+
+  it('keeps the auth.uid() predicate that IS the access control', () => {
+    // SECURITY DEFINER, so the WHERE is not a convenience — dropping it would
+    // publish every member's name to every authenticated caller.
+    expect(view).toMatch(/with \(security_invoker = false\)/);
+    expect(view).toMatch(
+      /where c\.member_id = auth\.uid\(\) or c\.provider_id = auth\.uid\(\)/,
+    );
+  });
+});

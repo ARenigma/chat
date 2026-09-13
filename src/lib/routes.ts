@@ -79,6 +79,16 @@ export type MemberRoute =
   | { readonly name: 'settings' }
   /** Recharge history and invoice downloads. */
   | { readonly name: 'transactions' }
+  /**
+   * The billing documents themselves — one row per issued invoice or bill of
+   * supply (migration 019's `public.invoices`), with the stored PDF behind it.
+   *
+   * Separate from `transactions`, which is the money: a member asked for a
+   * receipt is being asked for the DOCUMENT, by its number, and that list is
+   * ordered and filtered differently (a failed payment is a row in the ledger
+   * and is not a document at all).
+   */
+  | { readonly name: 'invoices' }
   /** Per-session usage: what each conversation cost. Migration 069. */
   | { readonly name: 'usage' };
 
@@ -172,6 +182,8 @@ export function memberParent(route: MemberRoute): MemberRoute | null {
     case 'favourites':
     case 'settings':
       return { name: 'home' };
+    // Reached only from the Settings list, like its two neighbours below.
+    case 'invoices':
     case 'transactions':
     case 'usage':
       return { name: 'settings' };
@@ -233,6 +245,7 @@ export function transitionFor(route: MemberRoute): TransitionKind {
     case 'blocked':
     case 'chatsList':
     case 'transactions':
+    case 'invoices':
     case 'usage':
       return 'push';
   }

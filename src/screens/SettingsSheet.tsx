@@ -45,8 +45,14 @@ interface Props {
   onSignedOut: () => void;
   /** Absent on the provider tree, a provider does not apply again. */
   onBlocked?: () => void;
-  /** Opens the recharge history + invoice download screen. Member tree only. */
+  /** Opens the recharge history — the money ledger. Member tree only. */
   onTransactions?: () => void;
+  /**
+   * Opens the billing documents (`public.invoices`) and their PDFs. Member tree
+   * only, for the same reason as `onTransactions`: a provider is paid out, not
+   * billed, and has no invoices of their own.
+   */
+  onInvoices?: () => void;
   /**
    * Opens the per-session usage ledger. On BOTH trees (goal item 2): a member
    * asks where the tokens went, a provider asks which conversation paid what,
@@ -154,6 +160,7 @@ export function SettingsSheet({
   onSignedOut,
   onBlocked,
   onTransactions,
+  onInvoices,
   onUsage,
   topSection,
   embedded = false,
@@ -501,8 +508,12 @@ export function SettingsSheet({
           </View>
         ) : null}
 
-        {/* Recharge history: top-ups and GST invoice downloads. Shown only on
-            the member tree (provider tree has no onTransactions). */}
+        {/* Recharge history: the money ledger. Shown only on the member tree
+            (provider tree has no onTransactions).
+
+            Its detail line no longer claims invoices. The documents moved to
+            their own row below, and two rows promising the same thing is how a
+            member ends up on the one that does not have it. */}
         {onTransactions !== undefined && shows('Recharge history') ? (
           <View style={styles.group}>
               <Pressable
@@ -515,7 +526,30 @@ export function SettingsSheet({
                 <SettingsRowContent
                   icon="wallet"
                   title="Recharge history"
-                  detail="Receipts and GST invoices"
+                  detail="Your top-ups, and what each one cost"
+                />
+              </Pressable>
+              <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
+          </View>
+        ) : null}
+
+        {/* The billing documents themselves — `public.invoices` and the stored
+            PDF of each (migration 019). The whole chain existed and nothing in
+            the app reached it, so a member who paid could not obtain the
+            document that says so. Member tree only: a provider is paid out. */}
+        {onInvoices !== undefined && shows('Bills & invoices') ? (
+          <View style={styles.group}>
+              <Pressable
+                onPress={onInvoices}
+                testID="settings-invoices"
+                accessibilityLabel="Bills and invoices"
+                press="none"
+                highlight="dim"
+                style={styles.row}>
+                <SettingsRowContent
+                  icon="download"
+                  title="Bills & invoices"
+                  detail="Open or save the bill for any top-up"
                 />
               </Pressable>
               <Divider variant="inset" insetStart={ROW_TEXT_INSET} />

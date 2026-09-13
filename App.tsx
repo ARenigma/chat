@@ -114,6 +114,7 @@ import { BlockedUsersScreen } from './src/screens/BlockedUsersScreen';
 import { CallsScreen } from './src/screens/CallsScreen';
 import { FavouritesScreen } from './src/screens/FavouritesScreen';
 import { ChatsListScreen } from './src/screens/ChatsListScreen';
+import { InvoicesScreen } from './src/screens/InvoicesScreen';
 import { SettingsSheet } from './src/screens/SettingsSheet';
 import { SplashScreen } from './src/screens/SplashScreen';
 import { TransactionHistoryScreen } from './src/screens/TransactionHistoryScreen';
@@ -1655,6 +1656,7 @@ function SignedIn({
           onSignedOut={onSignedOut}
           onBlocked={() => pushRoute({ name: 'blocked' })}
           onTransactions={() => pushRoute({ name: 'transactions' })}
+          onInvoices={() => pushRoute({ name: 'invoices' })}
           onUsage={() => pushRoute({ name: 'usage' })}
         />
       </TabLayer>
@@ -1712,6 +1714,7 @@ function SignedIn({
         route.name === 'applicationStatus' ||
         route.name === 'blocked' ||
         route.name === 'transactions' ||
+        route.name === 'invoices' ||
         route.name === 'usage' ? (
         // Same shape as the chat overlay: content first, then the entrance.
         <AfterPaint>
@@ -1783,6 +1786,10 @@ function SignedIn({
             <BlockedUsersScreen onBack={backToHome} />
           ) : route.name === 'usage' ? (
             <UsageLedgerScreen onBack={() => popRoute({ name: 'settings' })} />
+          ) : route.name === 'invoices' ? (
+            // Back to Settings, the door it was opened from — the same pop as
+            // its two neighbours, and the parent `memberParent` returns.
+            <InvoicesScreen onBack={() => popRoute({ name: 'settings' })} />
           ) : (
             <TransactionHistoryScreen onBack={() => popRoute({ name: 'settings' })} />
           )}

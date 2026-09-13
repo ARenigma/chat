@@ -12,6 +12,7 @@
  * is a real enum rather than a vibe, and `needs_info` is resolvable by the
  * applicant alone.
  */
+import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { ENV } from '../lib/env';
@@ -879,13 +880,168 @@ export function avatarObjectKey(url: string): string | null {
 }
 
 /**
+ * The gallery, live (migration 104).
+ *
+ * WHERE THIS LIVES, AND WHY IT IS NOT A HOOK A SCREEN CALLS. The socket is
+ * mounted by `useProviderPhotos` itself, below, rather than exported for each
+ * reader to remember. Two screens read a gallery today — the member's
+ * ProviderDetailScreen and the provider's own ProviderHomeScreen — and the one
+ * that must not miss a change is the one whose author is not thinking about
+ * sockets. A third reader gets it by construction; a `useLiveProviderPhotos`
+ * they forget to call is a face that silently stops updating, which is the
+ * defect this exists to remove rather than relocate.
+ *
+ * THREE BINDINGS, NOT ONE `event: '*'`, and the asymmetry is the whole design.
+ * Migration 104's header carries the reasoning; the short version is that
+ * Postgres Changes applies RLS to INSERT and UPDATE but not to DELETE ("RLS
+ * policies are not applied to DELETE statements, because there is no way for
+ * Postgres to verify that a user has access to a deleted record"), and a
+ * `filter` on a DELETE only works when the table's replica identity is `full`
+ * — which 104 deliberately does not set, because with deletes skipping RLS a
+ * full old row is a broadcast of every gallery's deletions to every subscriber.
+ * So INSERT and UPDATE are filtered to this provider server-side, and DELETE
+ * arrives unfiltered carrying its primary key alone and is matched against the
+ * gallery this client is already holding. A uuid we do not hold is not our
+ * provider's, and is dropped.
+ * https://supabase.com/docs/guides/realtime/postgres-changes
+ *
+ * WHAT IS INVALIDATED, AND THE CACHE THAT WOULD OTHERWISE SWALLOW THE EVENT.
+ * A correct event landing behind a stale read is the same bug as no event, so
+ * all three holders of this fact are invalidated together: the gallery itself,
+ * the directory (`provider_directory` carries the mirrored scalar the 070
+ * trigger writes, and it is the Hero's fallback and the rail's face), and the
+ * conversation list (`conversation_summaries.peer_avatar_url` is the same
+ * scalar again, in the inbox row). Their staleTimes — 60s, 30s and 10s — are
+ * exactly what an event has to override, and `invalidateQueries` refetches an
+ * active query regardless of them.
+ *
+ * THE IMAGE CACHE NEEDS NOTHING, which was checked rather than assumed. A
+ * promotion does not rewrite a URL: every object is uploaded to
+ * `{uid}/{Date.now()}-{index}.{ext}` and the row's `url` is frozen by 070's
+ * column guard, so the new face is a DIFFERENT uri and Fresco has never seen
+ * it. Appending a cache-buster would defeat both the CDN and the bitmap cache
+ * for every avatar in the app to solve a problem that does not exist.
+ *
+ * A refresh on SUBSCRIBED as well as on failure, for the same reason
+ * sessions.ts does it: the query may have been served from a cache up to its
+ * staleTime old, and the socket only covers what happened after it came up. A
+ * channel that fails without recovering would otherwise sit on that gap
+ * forever.
+ */
+function useLiveProviderPhotos(providerId: string | null): void {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (providerId === null) {
+      return;
+    }
+    let cancelled = false;
+
+    const refresh = (): void => {
+      void queryClient.invalidateQueries({ queryKey: providerKeys.photos(providerId) });
+      void queryClient.invalidateQueries({ queryKey: keys.providers });
+      void queryClient.invalidateQueries({ queryKey: keys.conversationList });
+    };
+
+    const channel = supabase
+      .channel(`provider-photos:${providerId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'provider_photos',
+          filter: `provider_id=eq.${providerId}`,
+        },
+        refresh,
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'provider_photos',
+          filter: `provider_id=eq.${providerId}`,
+        },
+        // Both halves of a swap arrive here: 070's BEFORE trigger demotes the
+        // old primary and the client's own statement promotes the new one, and
+        // deleting the primary arrives as the AFTER trigger promoting a
+        // survivor — an UPDATE on a row that still exists, so the face changing
+        // never depends on the unfiltered DELETE binding below.
+        refresh,
+      )
+      .on<ProviderPhoto>(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'provider_photos' },
+        payload => {
+          // Unfiltered by necessity (a delete filter needs replica identity
+          // full), so this is the filter, applied to a payload that is nothing
+          // but a primary key. An id we are not holding is somebody else's
+          // provider and tells us nothing we did not already know.
+          const goneId = payload.old.id;
+          if (goneId === undefined) {
+            return;
+          }
+          const held = queryClient.getQueryData<ProviderPhoto[]>(
+            providerKeys.photos(providerId),
+          );
+          if ((held ?? []).some(p => p.id === goneId)) {
+            refresh();
+          }
+        },
+      );
+
+    void (async () => {
+      // Realtime authorises `postgres_changes` against the caller's JWT, so the
+      // socket has to be holding the current one before we subscribe — without
+      // this a token refresh can leave the channel authenticated as the previous
+      // session and silently deliver nothing, which is the note src/api/realtime.ts
+      // carries from having been bitten by it. Silent delivery of nothing is
+      // indistinguishable from a provider who has not changed their photo.
+      const { data } = await supabase.auth.getSession();
+      if (cancelled) {
+        return;
+      }
+      if (data.session?.access_token !== undefined) {
+        await supabase.realtime.setAuth(data.session.access_token);
+      }
+      // Re-checked after the await as well: a fast swipe between two providers
+      // during it would otherwise subscribe (and orphan) this channel, because
+      // the cleanup below already ran before `subscribe` was ever called. Same
+      // trap, same fix, as realtime.ts.
+      if (cancelled) {
+        return;
+      }
+      channel.subscribe(status => {
+        if (
+          status === 'SUBSCRIBED' ||
+          status === 'CHANNEL_ERROR' ||
+          status === 'TIMED_OUT'
+        ) {
+          refresh();
+        }
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+      void supabase.removeChannel(channel);
+    };
+  }, [providerId, queryClient]);
+}
+
+/**
  * A provider's published photos, primary first and then oldest.
  *
  * That order is the same order the detail hero pages in, so page 1 is always
  * the face and always matches the avatar the member has already seen in the
  * directory, the rail and the push notification.
+ *
+ * Live since 104: the socket is part of the query rather than a second thing a
+ * screen has to remember — see `useLiveProviderPhotos` above.
  */
 export function useProviderPhotos(providerId: string | null) {
+  useLiveProviderPhotos(providerId);
   return useQuery<ProviderPhoto[]>({
     queryKey: providerKeys.photos(providerId ?? ''),
     enabled: providerId !== null,

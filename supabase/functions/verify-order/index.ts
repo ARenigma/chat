@@ -17,7 +17,9 @@
  *   2. Fetch order status from Cashfree S2S (GET /orders/{orderId}).
  *   3. Look up the pending token_transactions row; confirm user_id matches.
  *   4. If order status is PAID: call credit_purchased_recharge (idempotent).
- *   5. Return { status, credited, balance? }.
+ *   5. If it is terminal and NOT paid: mark the row 'failed', which also hands
+ *      back any first-recharge discount claim it was holding (migration 102).
+ *   6. Return { status, credited, balance? }.
  *
  * Idempotent: credit_purchased_recharge's status='created' guard means a
  * duplicate verify-order call (network retry, etc.) will not double-credit.
@@ -126,6 +128,33 @@ Deno.serve(async (request: Request) => {
     const cfStatus = cashfreeOrder.order_status;
 
     if (cfStatus !== 'PAID') {
+      // Record a terminal non-payment as a terminal non-payment.
+      //
+      // Cashfree's order_status enum (api-reference/payments/latest/orders/get)
+      // has exactly one non-terminal value: ACTIVE, "Order does not have a
+      // successful transaction yet". EXPIRED, TERMINATED and
+      // TERMINATION_REQUESTED are terminal — "No transaction can be initiated
+      // for an EXPIRED order" — so the row can never become succeeded and
+      // leaving it at 'created' is simply wrong.
+      //
+      // It also matters to pricing: an order marked 'failed' releases the
+      // member's first-recharge claim immediately (migration 102), so a
+      // member whose first attempt died does not have to wait out the
+      // 20-minute backstop before the offer is available again. ACTIVE is
+      // deliberately left alone — that order is still payable, and marking it
+      // failed would hand out a second discounted session against a live one.
+      if (cfStatus === 'EXPIRED' || cfStatus === 'TERMINATED' || cfStatus === 'TERMINATION_REQUESTED') {
+        const { error: failErr } = await admin
+          .from('token_transactions')
+          .update({ status: 'failed' })
+          .eq('id', orderId)
+          .eq('status', 'created');
+        if (failErr) {
+          // Non-fatal: the member's answer is the same either way, and the
+          // 20-minute backstop still frees the claim.
+          console.error('verify-order: could not mark order failed:', failErr.message);
+        }
+      }
       return Response.json({ status: cfStatus, credited: false });
     }
 

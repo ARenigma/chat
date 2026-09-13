@@ -538,6 +538,10 @@ export type Message = {
   origin: MessageOrigin;
   created_at: string;
   read_at: string | null;
+  /** Set when the sender edits their message within the edit window (103). */
+  edited_at: string | null;
+  /** Set when the sender soft-deletes their message; body becomes null (103). */
+  deleted_at: string | null;
   // hidden_at / purge_after are deliberately absent: they are the server-only
   // 30-day retention columns (migration 045). A client can never SELECT a
   // hidden row (RLS filters hidden_at is not null), so these never reach the
@@ -1316,6 +1320,16 @@ export type Database = {
       };
       get_usage_ledger: {
         Args: { p_limit?: number; p_before?: string | null };
+        Returns: unknown;
+      };
+      /** Edit the body of a message within the edit window. Migration 103. */
+      edit_message: {
+        Args: { p_message_id: string; p_body: string };
+        Returns: unknown;
+      };
+      /** Soft-delete a message (sets deleted_at, clears body). Migration 103. */
+      delete_message: {
+        Args: { p_message_id: string };
         Returns: unknown;
       };
       /** End an active session with an optional content report. Migration 030. */

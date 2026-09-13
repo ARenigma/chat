@@ -342,6 +342,7 @@ export function ProviderHomeScreen({
           highlight="dim"
           style={styles.row}>
           <Avatar
+            uri={item.peer_avatar_url ?? undefined}
             initial={initialOf(label)}
             size={THREAD_AVATAR}
             online={readPresence(item.peer_presence, item.peer_last_active_at).here}
@@ -791,14 +792,25 @@ export function ProviderHomeScreen({
 
       {/* Removing a photo is not undoable — the object goes with the row — so it
           takes M3's basic confirmation dialog, with the consequence named rather
-          than a vague "are you sure". */}
+          than a vague "are you sure".
+
+          THREE BRANCHES, NOT TWO. "The next one becomes your main photo" is
+          what 070's AFTER trigger does — it promotes the oldest survivor — but
+          only while there IS a survivor. On the last photo the same trigger
+          nulls the mirrored scalar instead (pgTAP 320, case 13: "emptying the
+          gallery nulls avatar_url"), and ProviderDetailScreen's hero then draws
+          the coral gradient with the provider's initial over it. The two-branch
+          version promised a successor that does not exist, on the one removal
+          that changes what members see most. */}
       <ConfirmDialog
         visible={pendingDelete !== null}
         title="Remove this photo?"
         body={
-          pendingDelete?.is_primary === true
-            ? 'It is your main photo. The next one becomes your main photo.'
-            : 'Members will no longer see it on your profile.'
+          pendingDelete?.is_primary !== true
+            ? 'Members will no longer see it on your profile.'
+            : gallery.length > 1
+              ? 'It is your main photo. The next one becomes your main photo.'
+              : 'It is your only photo. Members will see your initial until you add another.'
         }
         cancelLabel="Keep"
         confirmLabel="Remove"

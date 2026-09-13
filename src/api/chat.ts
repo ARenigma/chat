@@ -210,6 +210,316 @@ export function useMessages(conversationId: string | undefined) {
   });
 }
 
+/* ---------------------------------------------------------------------------
+ * Editing and deleting a message (migration 103)
+ * ------------------------------------------------------------------------- */
+
+export function editedAt(message: Message): string | null {
+  return message.edited_at ?? null;
+}
+
+export function deletedAt(message: Message): string | null {
+  return message.deleted_at ?? null;
+}
+
+/** A tombstone: the sender took it back and both people can see that. */
+export function isDeleted(message: Message): boolean {
+  return deletedAt(message) !== null;
+}
+
+/**
+ * How long a message stays editable, in milliseconds.
+ *
+ * WhatsApp's fifteen minutes, and the SAME fifteen minutes the server enforces —
+ * `public.message_edit_window()` in migration 103 is the one definition and this
+ * is its client mirror. Both numbers exist because the server has to refuse a
+ * late edit and the client has to stop OFFERING one: an Edit button that is
+ * going to come back EDIT_WINDOW_CLOSED is the app lying about what it can do.
+ * `__tests__/chatSurface.test.ts` asserts the two agree.
+ */
+export const EDIT_WINDOW_MS = 15 * 60_000;
+
+/**
+ * Whether to draw the Edit action on a bubble at all.
+ *
+ * Every clause here is one the server also checks, and it is a mirror rather
+ * than the enforcement — `edit_message` re-decides all of it against the row it
+ * holds, which is where "own messages only" actually lives. A device that lies
+ * to itself here gets NOT_FOUND.
+ */
+export function canEditMessage(
+  message: Message,
+  selfId: string | undefined,
+  now: number = Date.now(),
+): boolean {
+  return (
+    selfId !== undefined &&
+    message.sender_id === selfId &&
+    !isPending(message) &&
+    !isDeleted(message) &&
+    // Voice and photo carry no text; re-recording is a new send, not an edit.
+    message.body !== null &&
+    // An automated opener was written by the server from an approved template
+    // and merely attributed to the provider (migration 045).
+    message.origin === 'live' &&
+    now - Date.parse(message.created_at) <= EDIT_WINDOW_MS
+  );
+}
+
+/** Whether to draw the Delete action. No time limit — see migration 103. */
+export function canDeleteMessage(
+  message: Message,
+  selfId: string | undefined,
+): boolean {
+  return (
+    selfId !== undefined &&
+    message.sender_id === selfId &&
+    !isPending(message) &&
+    !isDeleted(message) &&
+    message.origin === 'live'
+  );
+}
+
+/** What each server refusal says to the person who tried it. */
+const EDIT_NOTICE: Record<string, string> = {
+  EDIT_WINDOW_CLOSED: 'That message is too old to edit.',
+  NOT_EDITABLE: 'That message cannot be edited.',
+  NOT_DELETABLE: 'That message cannot be deleted.',
+  NOT_FOUND: 'That message is no longer there.',
+  BAD_REQUEST: 'That message could not be changed.',
+  UNAUTHORIZED: NOTICE.UNAUTHORIZED,
+  SUSPENDED: NOTICE.SUSPENDED,
+};
+
+interface MutateResult {
+  success?: boolean;
+  error?: string;
+}
+
+/**
+ * The one place the two new RPCs cross the generated types.
+ *
+ * `supabase.rpc` is keyed on the `Functions` map in
+ * `src/lib/database.types.ts`, and `edit_message` / `delete_message` are not on
+ * it yet — that file is the hand-kept schema mirror and is owned by another
+ * change in this batch. Confining the cast to one four-line function means
+ * adding the two entries later deletes this and touches nothing else, rather
+ * than leaving an `as never` at each call site for somebody to find.
+ */
+async function callMessageRpc(
+  name: 'edit_message' | 'delete_message',
+  args: Readonly<Record<string, string>>,
+): Promise<{ result: MutateResult | null; failed: boolean }> {
+  const untyped = supabase as unknown as {
+    rpc: (
+      fn: string,
+      params: Readonly<Record<string, string>>,
+    ) => Promise<{ data: unknown; error: unknown }>;
+  };
+  const { data, error } = await untyped.rpc(name, args);
+  const result = (data ?? null) as MutateResult | null;
+  return { result, failed: error !== null || result === null || result.success !== true };
+}
+
+/**
+ * Edit one of your own messages.
+ *
+ * The cache is patched on success rather than optimistically: an edit has no
+ * bubble to put on screen (the row is already there), so there is nothing for a
+ * pre-emptive write to buy, and patching afterwards means a refusal never has to
+ * be rolled back. The Realtime UPDATE arrives independently and folds to the
+ * same row — `mergeIncoming` replaces by id, so the two cannot double up.
+ */
+export function useEditMessage(conversationId: string | undefined) {
+  const queryClient = useQueryClient();
+  const setNotice = useStore(s => s.setNotice);
+
+  return useCallback(
+    async (messageId: string, raw: string): Promise<boolean> => {
+      const body = raw.trim();
+      if (body === '' || conversationId === undefined) {
+        return false;
+      }
+      const { result, failed } = await callMessageRpc('edit_message', {
+        p_message_id: messageId,
+        p_body: body,
+      });
+      if (failed) {
+        const code = result?.error;
+        setNotice(
+          (code !== undefined ? EDIT_NOTICE[code] : undefined) ??
+            'Could not edit. Check your connection.',
+        );
+        errorTick();
+        return false;
+      }
+      tick();
+      queryClient.setQueryData<TranscriptMessage[]>(
+        keys.messages(conversationId),
+        prev =>
+          (prev ?? []).map(row =>
+            row.id === messageId
+              ? // Cast for the same reason the accessors above exist: the two
+                // columns are not on `Message` yet. It goes when they are.
+                ({ ...row, body, edited_at: new Date().toISOString() } as TranscriptMessage)
+              : row,
+          ),
+      );
+      return true;
+    },
+    [conversationId, queryClient, setNotice],
+  );
+}
+
+/**
+ * Delete one of your own messages, leaving a tombstone both people can see.
+ *
+ * The cached row is rewritten into that tombstone rather than spliced out, which
+ * is the client half of the decision migration 103's header argues: a message
+ * that silently vanishes from a scrollback is how somebody is made to doubt what
+ * they read. Every payload field is cleared to match exactly what the server
+ * wrote, so a later refetch cannot disagree with what is already on screen.
+ *
+ * The inbox is invalidated because `last_preview_kind` and the unread counts are
+ * read from a view, and this is the cheapest way to be sure the row on the CHATS
+ * rail agrees with the thread.
+ */
+export function useDeleteMessage(conversationId: string | undefined) {
+  const queryClient = useQueryClient();
+  const setNotice = useStore(s => s.setNotice);
+
+  return useCallback(
+    async (messageId: string): Promise<boolean> => {
+      if (conversationId === undefined) {
+        return false;
+      }
+      const { result, failed } = await callMessageRpc('delete_message', {
+        p_message_id: messageId,
+      });
+      if (failed) {
+        const code = result?.error;
+        setNotice(
+          (code !== undefined ? EDIT_NOTICE[code] : undefined) ??
+            'Could not delete. Check your connection.',
+        );
+        errorTick();
+        return false;
+      }
+      tick();
+      queryClient.setQueryData<TranscriptMessage[]>(
+        keys.messages(conversationId),
+        prev =>
+          (prev ?? []).map(row =>
+            row.id === messageId
+              ? ({
+                  ...row,
+                  deleted_at: new Date().toISOString(),
+                  edited_at: null,
+                  body: null,
+                  voice_path: null,
+                  voice_duration_ms: null,
+                  voice_peaks: null,
+                  attachment_path: null,
+                  attachment_type: null,
+                  attachment_width: null,
+                  attachment_height: null,
+                  localImageUri: undefined,
+                } as TranscriptMessage)
+              : row,
+          ),
+      );
+      /*
+       * No `track()` on either path, and that is a gap rather than a decision:
+       * `TelemetryEvent` is a closed union in `src/lib/database.types.ts`, which
+       * this change does not own. `message_edited`, `message_deleted` and a
+       * shared `message_change_rejected` (with the server's code in
+       * `props.reason`, the shape `send_rejected` already uses) belong there —
+       * a spike in refusals is the signal worth watching.
+       */
+      void queryClient.invalidateQueries({ queryKey: keys.conversationList });
+      return true;
+    },
+    [conversationId, queryClient, setNotice],
+  );
+}
+
+/**
+ * Fold a peer's edit or delete into the open transcript.
+ *
+ * WHY THIS IS A SECOND CHANNEL and not a line in `useLiveConversation`. That
+ * hook already subscribes to UPDATE on `messages` and already receives this
+ * event — it reads `read_at` off the row and discards everything else, which was
+ * correct while a read receipt was the only UPDATE that existed. Generalising it
+ * is a one-line change in `src/api/realtime.ts`, and that file belongs to
+ * another change in flight; a second channel on the same multiplexed socket is
+ * the version of this that cannot collide with it. Collapsing the two is worth
+ * doing once both have landed.
+ *
+ * `mergeIncoming` is what does the work, for the reason it exists: it replaces
+ * by id and preserves `localKey`, so an edited bubble keeps its identity and
+ * does not remount (and therefore does not replay its send animation).
+ */
+export function useLiveMessageEdits(
+  conversationId: string | undefined,
+  selfId: string | undefined,
+): void {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (conversationId === undefined || selfId === undefined) {
+      return;
+    }
+    let cancelled = false;
+    const key = keys.messages(conversationId);
+    const channel = supabase.channel(`conversation-edits:${conversationId}`);
+
+    channel.on<Message>(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'messages',
+        filter: `conversation_id=eq.${conversationId}`,
+      },
+      payload => {
+        const row = payload.new;
+        // A read receipt is already folded by `useLiveConversation`, and
+        // re-merging it here would write the same fact twice and re-render the
+        // transcript for nothing.
+        if (editedAt(row) === null && !isDeleted(row)) {
+          return;
+        }
+        queryClient.setQueryData<TranscriptMessage[]>(key, prev =>
+          mergeIncoming(prev ?? [], row, selfId),
+        );
+      },
+    );
+
+    void (async () => {
+      // Same reason `useLiveConversation` does this: Realtime authorises
+      // postgres_changes against the JWT the socket is holding, so the token has
+      // to be current before subscribing or the channel silently delivers
+      // nothing. Whichever of the two hooks subscribes first pays for it.
+      const { data } = await supabase.auth.getSession();
+      if (cancelled) {
+        return;
+      }
+      if (data.session?.access_token !== undefined) {
+        await supabase.realtime.setAuth(data.session.access_token);
+      }
+      if (cancelled) {
+        return;
+      }
+      channel.subscribe();
+    })();
+
+    return () => {
+      cancelled = true;
+      void supabase.removeChannel(channel);
+    };
+  }, [conversationId, selfId, queryClient]);
+}
+
 /**
  * Prefetch messages for a conversation into the React Query cache.
  *
@@ -326,6 +636,8 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
         // the thread when it finally lands.
         created_at: resume?.createdAt ?? new Date().toISOString(),
         read_at: null,
+        edited_at: null,
+        deleted_at: null,
       };
 
       queryClient.setQueryData<TranscriptMessage[]>(key, prev =>
@@ -419,6 +731,8 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
               origin: 'live',
               created_at: result.created_at,
               read_at: null,
+              edited_at: null,
+              deleted_at: null,
             }
           : null;
 

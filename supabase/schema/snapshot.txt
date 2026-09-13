@@ -141,6 +141,10 @@ COLUMN events.id uuid null=NO default=gen_random_uuid()
 COLUMN events.name text null=NO default=-
 COLUMN events.props jsonb null=NO default='{}'::jsonb
 COLUMN events.user_id uuid null=YES default=-
+COLUMN first_recharge_discounts.claimed_at timestamp with time zone null=NO default=now()
+COLUMN first_recharge_discounts.discount_bps integer null=NO default=-
+COLUMN first_recharge_discounts.order_id uuid null=NO default=-
+COLUMN first_recharge_discounts.user_id uuid null=NO default=-
 COLUMN invoice_counters.fy text null=NO default=-
 COLUMN invoice_counters.last_seq bigint null=NO default=0
 COLUMN invoices.buyer jsonb null=NO default=-
@@ -204,6 +208,8 @@ COLUMN messages.body text null=YES default=-
 COLUMN messages.client_nonce uuid null=YES default=-
 COLUMN messages.conversation_id uuid null=NO default=-
 COLUMN messages.created_at timestamp with time zone null=NO default=now()
+COLUMN messages.deleted_at timestamp with time zone null=YES default=-
+COLUMN messages.edited_at timestamp with time zone null=YES default=-
 COLUMN messages.hidden_at timestamp with time zone null=YES default=-
 COLUMN messages.id uuid null=NO default=gen_random_uuid()
 COLUMN messages.notified_at timestamp with time zone null=YES default=-
@@ -295,6 +301,7 @@ COLUMN pending_call_pushes.platform text null=YES default=-
 COLUMN pending_call_pushes.token text null=YES default=-
 COLUMN pending_pushes.conversation_id uuid null=YES default=-
 COLUMN pending_pushes.created_at timestamp with time zone null=YES default=-
+COLUMN pending_pushes.kind text null=YES default=-
 COLUMN pending_pushes.message_id uuid null=YES default=-
 COLUMN pending_pushes.peer_id uuid null=YES default=-
 COLUMN pending_pushes.platform text null=YES default=-
@@ -490,7 +497,7 @@ COLUMN refund_reviews.resolved_at timestamp with time zone null=YES default=-
 COLUMN refund_reviews.resolved_by text null=YES default=-
 COLUMN refund_reviews.status text null=NO default='pending'::text
 COLUMN refund_reviews.transaction_id uuid null=NO default=-
-COLUMN refund_reviews.user_id uuid null=NO default=-
+COLUMN refund_reviews.user_id uuid null=YES default=-
 COLUMN report_evidence.body text null=YES default=-
 COLUMN report_evidence.captured_at timestamp with time zone null=NO default=-
 COLUMN report_evidence.case_id uuid null=NO default=-
@@ -540,6 +547,7 @@ COLUMN session_requests.created_at timestamp with time zone null=NO default=now(
 COLUMN session_requests.expires_at timestamp with time zone null=NO default=-
 COLUMN session_requests.id uuid null=NO default=gen_random_uuid()
 COLUMN session_requests.initiator_id uuid null=NO default=-
+COLUMN session_requests.notified_at timestamp with time zone null=YES default=-
 COLUMN session_requests.recipient_id uuid null=NO default=-
 COLUMN session_requests.responded_at timestamp with time zone null=YES default=-
 COLUMN session_requests.status USER-DEFINED null=NO default='pending'::session_request_status
@@ -559,6 +567,7 @@ COLUMN tap_funky.volatility character(1) null=YES default=-
 COLUMN token_transactions.amount_paise integer null=NO default=-
 COLUMN token_transactions.config_version_id uuid null=YES default=-
 COLUMN token_transactions.created_at timestamp with time zone null=NO default=now()
+COLUMN token_transactions.discount_bps integer null=NO default=0
 COLUMN token_transactions.gateway text null=YES default=-
 COLUMN token_transactions.gateway_order_id text null=YES default=-
 COLUMN token_transactions.gateway_ref text null=YES default=-
@@ -569,7 +578,7 @@ COLUMN token_transactions.session_id uuid null=YES default=-
 COLUMN token_transactions.status text null=NO default='succeeded'::text
 COLUMN token_transactions.tokens_delta integer null=NO default=-
 COLUMN token_transactions.updated_at timestamp with time zone null=NO default=now()
-COLUMN token_transactions.user_id uuid null=NO default=-
+COLUMN token_transactions.user_id uuid null=YES default=-
 CONSTRAINT app_flags.app_flags_pkey PRIMARY KEY (key)
 CONSTRAINT blocks.blocks_blocked_id_fkey FOREIGN KEY (blocked_id) REFERENCES profiles(id) ON DELETE CASCADE
 CONSTRAINT blocks.blocks_blocker_id_fkey FOREIGN KEY (blocker_id) REFERENCES profiles(id) ON DELETE CASCADE
@@ -618,6 +627,9 @@ CONSTRAINT conversations.conversations_provider_id_fkey FOREIGN KEY (provider_id
 CONSTRAINT conversations.participants_distinct CHECK ((member_id <> provider_id))
 CONSTRAINT events.events_pkey PRIMARY KEY (id)
 CONSTRAINT events.events_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE SET NULL
+CONSTRAINT first_recharge_discounts.first_recharge_discounts_discount_bps_check CHECK (((discount_bps > 0) AND (discount_bps < 10000)))
+CONSTRAINT first_recharge_discounts.first_recharge_discounts_pkey PRIMARY KEY (user_id)
+CONSTRAINT first_recharge_discounts.first_recharge_discounts_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
 CONSTRAINT invoice_counters.invoice_counters_pkey PRIMARY KEY (fy)
 CONSTRAINT invoices.invoices_document_type_check CHECK ((document_type = ANY (ARRAY['tax_invoice'::text, 'bill_of_supply'::text])))
 CONSTRAINT invoices.invoices_invoice_number_key UNIQUE (invoice_number)
@@ -646,7 +658,7 @@ CONSTRAINT message_reactions.message_reactions_message_id_fkey FOREIGN KEY (mess
 CONSTRAINT message_reactions.message_reactions_pkey PRIMARY KEY (message_id, user_id)
 CONSTRAINT message_reactions.message_reactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
 CONSTRAINT messages.attachment_path_is_scoped CHECK (((attachment_path IS NULL) OR (attachment_path ~ '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}/[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}\.(jpg|jpeg|png|webp)$'::text)))
-CONSTRAINT messages.message_carries_one_payload CHECK ((((body IS NOT NULL) AND (length(btrim(body)) > 0) AND (length(body) <= 4000) AND (voice_path IS NULL) AND (voice_duration_ms IS NULL) AND (attachment_path IS NULL) AND (voice_peaks IS NULL)) OR ((body IS NULL) AND (voice_path IS NOT NULL) AND ((voice_duration_ms >= 1000) AND (voice_duration_ms <= 180000)) AND (attachment_path IS NULL) AND voice_peaks_ok(voice_peaks)) OR ((body IS NULL) AND (voice_path IS NULL) AND (voice_duration_ms IS NULL) AND (attachment_path IS NOT NULL) AND (attachment_type = 'image'::text) AND (attachment_width > 0) AND (attachment_height > 0) AND (voice_peaks IS NULL))))
+CONSTRAINT messages.message_carries_one_payload CHECK ((((deleted_at IS NOT NULL) AND (body IS NULL) AND (voice_path IS NULL) AND (voice_duration_ms IS NULL) AND (voice_peaks IS NULL) AND (attachment_path IS NULL) AND (attachment_type IS NULL) AND (attachment_width IS NULL) AND (attachment_height IS NULL)) OR ((deleted_at IS NULL) AND (body IS NOT NULL) AND (length(btrim(body)) > 0) AND (length(body) <= 4000) AND (voice_path IS NULL) AND (voice_duration_ms IS NULL) AND (attachment_path IS NULL) AND (voice_peaks IS NULL)) OR ((deleted_at IS NULL) AND (body IS NULL) AND (voice_path IS NOT NULL) AND ((voice_duration_ms >= 1000) AND (voice_duration_ms <= 180000)) AND (attachment_path IS NULL) AND voice_peaks_ok(voice_peaks)) OR ((deleted_at IS NULL) AND (body IS NULL) AND (voice_path IS NULL) AND (voice_duration_ms IS NULL) AND (attachment_path IS NOT NULL) AND (attachment_type = 'image'::text) AND (attachment_width > 0) AND (attachment_height > 0) AND (voice_peaks IS NULL))))
 CONSTRAINT messages.messages_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 CONSTRAINT messages.messages_pkey PRIMARY KEY (id)
 CONSTRAINT messages.messages_reply_to_id_fkey FOREIGN KEY (reply_to_id) REFERENCES messages(id) ON DELETE SET NULL
@@ -736,7 +748,7 @@ CONSTRAINT refund_reviews.refund_reviews_pkey PRIMARY KEY (id)
 CONSTRAINT refund_reviews.refund_reviews_purchased_tokens_check CHECK ((purchased_tokens > 0))
 CONSTRAINT refund_reviews.refund_reviews_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'denied'::text, 'processed'::text])))
 CONSTRAINT refund_reviews.refund_reviews_transaction_id_fkey FOREIGN KEY (transaction_id) REFERENCES token_transactions(id) ON DELETE CASCADE
-CONSTRAINT refund_reviews.refund_reviews_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id)
+CONSTRAINT refund_reviews.refund_reviews_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE SET NULL
 CONSTRAINT report_evidence.report_evidence_case_id_fkey FOREIGN KEY (case_id) REFERENCES moderation_cases(id)
 CONSTRAINT report_evidence.report_evidence_kind_check CHECK ((kind = ANY (ARRAY['text'::text, 'voice'::text, 'image'::text, 'call_metadata'::text, 'statement'::text])))
 CONSTRAINT report_evidence.report_evidence_pkey PRIMARY KEY (id)
@@ -763,11 +775,12 @@ CONSTRAINT session_requests.session_requests_pkey PRIMARY KEY (id)
 CONSTRAINT session_requests.session_requests_recipient_id_fkey FOREIGN KEY (recipient_id) REFERENCES profiles(id) ON DELETE CASCADE
 CONSTRAINT token_transactions.token_transactions_amount_paise_check CHECK ((amount_paise >= 0))
 CONSTRAINT token_transactions.token_transactions_config_version_id_fkey FOREIGN KEY (config_version_id) REFERENCES admin.config_versions(id)
+CONSTRAINT token_transactions.token_transactions_discount_bps_check CHECK (((discount_bps >= 0) AND (discount_bps < 10000)))
 CONSTRAINT token_transactions.token_transactions_kind_check CHECK ((kind = ANY (ARRAY['recharge'::text, 'refund'::text, 'adjustment'::text, 'promo_grant'::text, 'usage_debit'::text, 'provider_accrual'::text, 'payout'::text, 'account_close_hold'::text, 'refund_review'::text])))
 CONSTRAINT token_transactions.token_transactions_pkey PRIMARY KEY (id)
 CONSTRAINT token_transactions.token_transactions_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES profiles(id) ON DELETE SET NULL
 CONSTRAINT token_transactions.token_transactions_status_check CHECK ((status = ANY (ARRAY['created'::text, 'succeeded'::text, 'failed'::text, 'refunded'::text])))
-CONSTRAINT token_transactions.token_transactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT token_transactions.token_transactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE SET NULL
 ENUM application_status = draft,submitted,under_review,needs_info,approved,rejected
 ENUM call_media_backend = current,livekit,agora
 ENUM call_medium = voice,video
@@ -1027,6 +1040,7 @@ FUNCTION check_test(text, boolean, text, text) returns SETOF text security=invok
 FUNCTION check_test(text, boolean, text, text, text) returns SETOF text security=invoker
 FUNCTION check_test(text, boolean, text, text, text, boolean) returns SETOF text security=invoker
 FUNCTION claim_daily_tokens() returns integer security=definer
+FUNCTION claim_first_recharge_discount(p_user_id uuid, p_order_id uuid) returns integer security=definer
 FUNCTION claim_member_profile(p_display_name text, p_avatar_seed text) returns jsonb security=definer
 FUNCTION claim_provider_application_review(p_user_id uuid) returns void security=definer
 FUNCTION claim_session_lease(p_session_id uuid, p_kind lease_kind) returns text security=definer
@@ -1125,6 +1139,7 @@ FUNCTION db_owner_is(name, name, text) returns text security=invoker
 FUNCTION decline_session_request(p_request_id uuid) returns jsonb security=definer
 FUNCTION deduct_tokens(p_user_id uuid, p_amount integer, p_session_id uuid, p_config_version_id uuid) returns integer security=definer
 FUNCTION deduct_user_token(p_user_id uuid, p_cost integer) returns json security=definer
+FUNCTION delete_message(p_message_id uuid) returns jsonb security=definer
 FUNCTION delete_user_account() returns void security=definer
 FUNCTION diag(VARIADIC anyarray) returns text security=invoker
 FUNCTION diag(VARIADIC text[]) returns text security=invoker
@@ -1160,6 +1175,7 @@ FUNCTION domains_are(name, name[]) returns text security=invoker
 FUNCTION domains_are(name, name[], text) returns text security=invoker
 FUNCTION domains_are(name[]) returns text security=invoker
 FUNCTION domains_are(name[], text) returns text security=invoker
+FUNCTION edit_message(p_message_id uuid, p_body text) returns jsonb security=definer
 FUNCTION end_call(p_call_id uuid, p_reason text) returns json security=definer
 FUNCTION end_session(p_session_id uuid, p_end_reason text, p_report_reason report_reason, p_report_message_ids uuid[], p_report_statement text) returns void security=definer
 FUNCTION enforce_provider_channel() returns trigger security=definer
@@ -1186,6 +1202,7 @@ FUNCTION findfuncs(name, text, text) returns text[] security=invoker
 FUNCTION findfuncs(text) returns text[] security=invoker
 FUNCTION findfuncs(text, text) returns text[] security=invoker
 FUNCTION finish(exception_on_failure boolean) returns SETOF text security=invoker
+FUNCTION first_recharge_discount_bps() returns integer security=definer
 FUNCTION fk_ok(name, name, name, name) returns text security=invoker
 FUNCTION fk_ok(name, name, name, name, name, name, text) returns text security=invoker
 FUNCTION fk_ok(name, name, name, name, name, text) returns text security=invoker
@@ -1246,6 +1263,7 @@ FUNCTION groups_are(name[], text) returns text security=invoker
 FUNCTION guard_application_transitions() returns trigger security=invoker
 FUNCTION guard_event_shape() returns trigger security=invoker
 FUNCTION guard_message_columns() returns trigger security=invoker
+FUNCTION guard_message_edit_columns() returns trigger security=invoker
 FUNCTION guard_message_reply_and_voice() returns trigger security=invoker
 FUNCTION guard_message_retention_columns() returns trigger security=invoker
 FUNCTION guard_phone_columns() returns trigger security=invoker
@@ -1277,6 +1295,7 @@ FUNCTION has_enum(name) returns text security=invoker
 FUNCTION has_enum(name, name) returns text security=invoker
 FUNCTION has_enum(name, name, text) returns text security=invoker
 FUNCTION has_enum(name, text) returns text security=invoker
+FUNCTION has_ever_recharged(p_user_id uuid) returns boolean security=definer
 FUNCTION has_extension(name) returns text security=invoker
 FUNCTION has_extension(name, name) returns text security=invoker
 FUNCTION has_extension(name, name, text) returns text security=invoker
@@ -1725,11 +1744,13 @@ FUNCTION materialized_views_are(name, name[], text) returns text security=invoke
 FUNCTION materialized_views_are(name[]) returns text security=invoker
 FUNCTION materialized_views_are(name[], text) returns text security=invoker
 FUNCTION member_handle(p_id uuid) returns text security=invoker
+FUNCTION message_edit_window() returns interval security=invoker
 FUNCTION meter_active_calls() returns integer security=definer
 FUNCTION meter_active_sessions() returns void security=definer
 FUNCTION mirror_user_phone() returns trigger security=definer
 FUNCTION mock_recharge(p_amount_paise integer, p_tokens integer) returns json security=definer
 FUNCTION moderation_actions_are_immutable() returns trigger security=invoker
+FUNCTION my_first_recharge_discount_bps() returns integer security=definer
 FUNCTION next_invoice_seq(p_fy text) returns bigint security=definer
 FUNCTION no_plan() returns SETOF boolean security=invoker
 FUNCTION notify_generate_invoice() returns trigger security=definer
@@ -2019,6 +2040,7 @@ INDEX conversations_provider_idx CREATE INDEX conversations_provider_idx ON publ
 INDEX events_name_time_idx CREATE INDEX events_name_time_idx ON public.events USING btree (name, created_at DESC)
 INDEX events_pkey CREATE UNIQUE INDEX events_pkey ON public.events USING btree (id)
 INDEX events_time_idx CREATE INDEX events_time_idx ON public.events USING btree (created_at DESC)
+INDEX first_recharge_discounts_pkey CREATE UNIQUE INDEX first_recharge_discounts_pkey ON public.first_recharge_discounts USING btree (user_id)
 INDEX invoice_counters_pkey CREATE UNIQUE INDEX invoice_counters_pkey ON public.invoice_counters USING btree (fy)
 INDEX invoices_invoice_number_key CREATE UNIQUE INDEX invoices_invoice_number_key ON public.invoices USING btree (invoice_number)
 INDEX invoices_pkey CREATE UNIQUE INDEX invoices_pkey ON public.invoices USING btree (id)
@@ -2085,6 +2107,7 @@ INDEX reviews_provider_idx CREATE INDEX reviews_provider_idx ON public.reviews U
 INDEX reviews_provider_rating_idx CREATE INDEX reviews_provider_rating_idx ON public.reviews USING btree (provider_id, rating)
 INDEX session_leases_pkey CREATE UNIQUE INDEX session_leases_pkey ON public.session_leases USING btree (session_id, user_id)
 INDEX session_requests_one_pending CREATE UNIQUE INDEX session_requests_one_pending ON public.session_requests USING btree (conversation_id, channel) WHERE (status = 'pending'::session_request_status)
+INDEX session_requests_pending_push_idx CREATE INDEX session_requests_pending_push_idx ON public.session_requests USING btree (created_at) WHERE ((notified_at IS NULL) AND (status = 'pending'::session_request_status))
 INDEX session_requests_pkey CREATE UNIQUE INDEX session_requests_pkey ON public.session_requests USING btree (id)
 INDEX session_requests_recipient_status CREATE INDEX session_requests_recipient_status ON public.session_requests USING btree (recipient_id, status, created_at DESC)
 INDEX token_transactions_pkey CREATE UNIQUE INDEX token_transactions_pkey ON public.token_transactions USING btree (id)
@@ -2139,6 +2162,7 @@ RLS conversation_opener_templates enabled=true
 RLS conversation_thread_meta enabled=true
 RLS conversations enabled=true
 RLS events enabled=true
+RLS first_recharge_discounts enabled=true
 RLS invoice_counters enabled=true
 RLS invoices enabled=true
 RLS media_channel_usage enabled=true
@@ -2170,6 +2194,7 @@ TRIGGER calls.call_push_on_insert
 TRIGGER calls.calls_assign_media_backend
 TRIGGER events.guard_event_shape
 TRIGGER messages.guard_message_columns
+TRIGGER messages.guard_message_edit_columns
 TRIGGER messages.guard_message_reply_and_voice
 TRIGGER messages.guard_message_retention_columns
 TRIGGER messages.message_push_on_insert
@@ -2188,6 +2213,7 @@ TRIGGER provider_photos.provider_photos_single_primary
 TRIGGER provider_photos.provider_photos_sync_avatar
 TRIGGER reviews.refresh_provider_rating
 TRIGGER session_requests.enforce_provider_channel
+TRIGGER session_requests.session_request_push_on_insert
 TRIGGER token_transactions.on_recharge_credited
 TRIGGER token_transactions.on_recharge_inserted
 TRIGGER token_transactions.touch_transaction_updated_at

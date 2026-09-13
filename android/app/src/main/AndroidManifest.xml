@@ -129,12 +129,17 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" tools:node="remove" />
     <uses-permission android:name="android.permission.READ_CONTACTS" tools:node="remove" />
     <!--
-      Also from the Cashfree PG SDK, for tap-to-pay card reads. This app takes
-      UPI and web checkout only and never reads a card at the device, so the
-      capability is dead weight — and a payments-adjacent permission on the Play
-      listing that we would have to justify without using.
+      From the Cashfree PG SDK. CashfreeWebCheckoutActivity.onResume() calls
+      NfcCardManager.enableDispatch() UNCONDITIONALLY — not conditionally on any
+      feature flag or payment method. Stripping this throws SecurityException and
+      kills the activity the instant it resumes, taking the whole app process with
+      it. Root cause of the card/net-banking path crashing since launch.
+      The UPI intent path (doUPIPayment) never opens CashfreeWebCheckoutActivity,
+      which is exactly why UPI worked while "Card, Net Banking & Wallets" killed
+      the app. This is a normal permission: no runtime prompt, no Data Safety row.
+      developer.android.com/reference/android/nfc/NfcAdapter#enableForegroundDispatch
     -->
-    <uses-permission android:name="android.permission.NFC" tools:node="remove" />
+    <uses-permission android:name="android.permission.NFC" />
 
     <!-- Core-Telecom self-managed calling (developer.android.com/develop/connectivity/telecom/self-managed) -->
     <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />

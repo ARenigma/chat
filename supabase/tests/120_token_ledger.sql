@@ -21,7 +21,12 @@ select has_table('public', 'invoices', 'invoices exists');
 select has_table('public', 'invoice_counters', 'invoice_counters exists');
 
 -- Key NOT NULL columns
-select col_not_null('public', 'token_transactions', 'user_id',      'token_transactions.user_id not null');
+-- Nullable since migration 101: the ledger row is the GST-bearing record and
+-- outlives the account. invoices.transaction_id is RESTRICT, so destroying the
+-- transaction with the user would destroy a statutory invoice — assert nullable
+-- rather than dropping the assertion, so re-tightening fails here instead of as
+-- a 23503 inside delete_user_account.
+select col_is_null('public', 'token_transactions', 'user_id',      'token_transactions.user_id is nullable (101: GST record outlives the account)');
 select col_not_null('public', 'token_transactions', 'kind',         'token_transactions.kind not null');
 select col_not_null('public', 'token_transactions', 'status',       'token_transactions.status not null');
 select col_not_null('public', 'token_transactions', 'amount_paise', 'token_transactions.amount_paise not null');
