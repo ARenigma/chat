@@ -1,3 +1,4 @@
+import { parseSync, types as t } from '@babel/core';
 import { createHash } from 'crypto';
 import { spawnSync } from 'child_process';
 import { existsSync, readFileSync, readdirSync } from 'fs';
@@ -3910,6 +3911,331 @@ describe('the motion adoption is wired, not just drawn', () => {
       'src/components/Toggle.tsx',
       'src/components/Turn.tsx',
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The splitBox trap
+// ---------------------------------------------------------------------------
+/**
+ * `Pressable` MOVES the box keys — `flex*`, `width`, `height`, `min/max`,
+ * `aspectRatio` — onto the touchable root and leaves everything else on an inner
+ * `Animated.View` that is given `flexGrow: 1` (Pressable.tsx, `splitBox`, and the
+ * long comment at its call site for why they must move rather than be copied).
+ *
+ * So a style of padding, a radius and a fill declares NOTHING about the box. The
+ * root's height stays `auto`, and it is measured from an inner view that grows —
+ * which, inside a column that HAS a definite height, means the inner view eats
+ * the column's whole free space and the root reports it as its own size. The
+ * Pressable then occupies the column and lays its siblings out past the clip.
+ *
+ * Three times now:
+ *
+ *   2026-09-08  ProviderRow's avatar `ring`. `uiautomator` put the touch node at
+ *               130.5dp inside a 112dp column; the stars and the review count
+ *               under it were laid out past the clip and painted nothing. Nothing
+ *               errored — the dump listed the Texts, with inverted bounds, while
+ *               the screen showed neither. Cost a device build to find.
+ *   2026-09-13  AttachPanel's `grant` chip: a 246x792 pill down the whole gallery
+ *               tile with its label clipped.
+ *   2026-09-13  ProviderHomeScreen's `pushGateButton`, found by this test before
+ *               anyone saw it — the same pill, in an `absoluteFill` column, so the
+ *               whole screen.
+ *
+ * WHAT THIS TEST IS CAREFUL ABOUT, because a regex over `style={styles.X}` is not
+ * good enough and produces a list mostly of things that are fine:
+ *
+ *   1. **The full style expression at the call site, not the named rule.** Half
+ *      the naive hits get their box from an inline style beside the rule —
+ *      `style={[styles.thumb, { width: thumbW, height: thumbW }]}`. The rule
+ *      alone says unsized; the call site says otherwise, and the call site is
+ *      what renders.
+ *   2. **Only a column with a definite height is dangerous.** The growth is in
+ *      the parent's MAIN axis. In a `flexDirection: 'row'` parent the vertical
+ *      axis is the cross axis, where the child is stretched or content-sized and
+ *      nothing is stolen — which is why ProviderCard's `avatarTap`, ChatScreen's
+ *      `talkRecharge` and `extendCardButton`, UpdateBanner's `action` and the
+ *      rest of the full-width rows are all safe and are NOT flagged. In a column
+ *      with no stated height there is no free space to eat, so a content-sized
+ *      column (ChatScreen's `identitySlot`: `flex: 1` inside a ROW, so the flex is
+ *      its width and its height is its content) is safe too.
+ *   3. **Siblings.** A lone child filling its column is usually the intent. It is
+ *      the siblings that get pushed out, and it is siblings that the project rule
+ *      names: "always give a Pressable an explicit width/height when it has
+ *      siblings in a column".
+ *   4. **A vertical extent, not merely "a box key".** `width` does not stop a
+ *      vertical grow, and neither does `minHeight` — it is a floor, not a cap
+ *      (Button.tsx's `minHeight: 52` guarantees at least 52 and nothing more; it
+ *      is safe because it sits in rows, not because of the min). Both real fixes
+ *      stated a `height`. So that is what is required here.
+ *
+ * Parsed rather than grepped: the questions are "what is this element's parent",
+ * "does it have siblings" and "what does the whole style expression resolve to",
+ * and none of the three survives a regex.
+ *
+ * The stated limit: a Pressable that is a COMPONENT'S ROOT (Chip, ThreadBubble,
+ * ProviderRow's card) has no parent in its own file, and whoever renders it
+ * decides the column it lands in — so it cannot be judged here and is skipped.
+ * All three real defects were nested Pressables, visible with their parent, which
+ * is the shape this catches.
+ */
+describe('a Pressable with siblings in a tall column states its own height', () => {
+  /** Box keys that pin the VERTICAL extent, so the inner view cannot grow past it. */
+  const VERTICAL_EXTENT = ['height', 'maxHeight', 'aspectRatio'];
+
+  type StyleProp = readonly [key: string, value: string | number | null];
+
+  const isNode = (value: unknown): value is t.Node =>
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { type?: unknown }).type === 'string';
+
+  /** Every AST node directly under this one, without babel's traverse machinery. */
+  const childNodes = (node: t.Node): t.Node[] => {
+    const out: t.Node[] = [];
+    for (const value of Object.values(node as unknown as Record<string, unknown>)) {
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          if (isNode(item)) out.push(item);
+        }
+      } else if (isNode(value)) {
+        out.push(value);
+      }
+    }
+    return out;
+  };
+
+  const walkAst = (node: t.Node, visit: (n: t.Node) => void): void => {
+    visit(node);
+    for (const child of childNodes(node)) walkAst(child, visit);
+  };
+
+  const literal = (node: t.Node): string | number | null =>
+    t.isStringLiteral(node) ? node.value : t.isNumericLiteral(node) ? node.value : null;
+
+  /**
+   * An object literal's properties. A spread is kept as `...<source text>` so
+   * `...StyleSheet.absoluteFill` — which DOES define a height — is not silently
+   * read as an empty style.
+   */
+  const objectProps = (obj: t.ObjectExpression, code: string): StyleProp[] => {
+    const out: StyleProp[] = [];
+    for (const prop of obj.properties) {
+      if (t.isObjectProperty(prop)) {
+        const key = t.isIdentifier(prop.key)
+          ? prop.key.name
+          : t.isStringLiteral(prop.key)
+            ? prop.key.value
+            : null;
+        if (key !== null) {
+          out.push([key, t.isExpression(prop.value) ? literal(prop.value) : null]);
+        }
+      } else if (t.isSpreadElement(prop)) {
+        out.push([`...${code.slice(prop.argument.start ?? 0, prop.argument.end ?? 0)}`, null]);
+      }
+    }
+    return out;
+  };
+
+  /** Every `StyleSheet.create` rule in the file, including inside `makeStyles`. */
+  const styleTable = (ast: t.Node, code: string): Map<string, StyleProp[]> => {
+    const table = new Map<string, StyleProp[]>();
+    walkAst(ast, node => {
+      if (!t.isCallExpression(node)) return;
+      const callee = node.callee;
+      if (
+        !t.isMemberExpression(callee) ||
+        !t.isIdentifier(callee.object, { name: 'StyleSheet' }) ||
+        !t.isIdentifier(callee.property, { name: 'create' })
+      ) {
+        return;
+      }
+      const arg = node.arguments[0];
+      if (!t.isObjectExpression(arg)) return;
+      for (const prop of arg.properties) {
+        if (!t.isObjectProperty(prop) || !t.isObjectExpression(prop.value)) continue;
+        const name = t.isIdentifier(prop.key)
+          ? prop.key.name
+          : t.isStringLiteral(prop.key)
+            ? prop.key.value
+            : null;
+        if (name !== null) table.set(name, objectProps(prop.value, code));
+      }
+    });
+    return table;
+  };
+
+  /**
+   * Everything a style expression can contribute, flattened.
+   *
+   * Both branches of a conditional and the right side of an `&&` count: a style
+   * that is only sometimes applied cannot be relied on for the box, but it is
+   * exactly how a conditional inline `{ width }` is written, so both are read.
+   */
+  const resolveStyle = (
+    node: t.Node | null | undefined,
+    table: Map<string, StyleProp[]>,
+    code: string,
+    into: StyleProp[],
+  ): void => {
+    if (node === null || node === undefined) return;
+    if (t.isArrayExpression(node)) {
+      for (const element of node.elements) resolveStyle(element, table, code, into);
+      return;
+    }
+    if (t.isLogicalExpression(node)) {
+      resolveStyle(node.right, table, code, into);
+      return;
+    }
+    if (t.isConditionalExpression(node)) {
+      resolveStyle(node.consequent, table, code, into);
+      resolveStyle(node.alternate, table, code, into);
+      return;
+    }
+    if (t.isObjectExpression(node)) {
+      into.push(...objectProps(node, code));
+      return;
+    }
+    if (
+      t.isMemberExpression(node) &&
+      t.isIdentifier(node.object, { name: 'styles' }) &&
+      t.isIdentifier(node.property)
+    ) {
+      into.push(...(table.get(node.property.name) ?? []));
+    }
+  };
+
+  const styleOf = (
+    element: t.JSXElement | null,
+    table: Map<string, StyleProp[]>,
+    code: string,
+  ): StyleProp[] => {
+    if (element === null) return [];
+    const attribute = element.openingElement.attributes.find(
+      (a): a is t.JSXAttribute => t.isJSXAttribute(a) && a.name.name === 'style',
+    );
+    if (attribute === undefined || !t.isJSXExpressionContainer(attribute.value)) return [];
+    const resolved: StyleProp[] = [];
+    resolveStyle(attribute.value.expression, table, code, resolved);
+    return resolved;
+  };
+
+  const has = (style: StyleProp[], key: string): boolean => style.some(([k]) => k === key);
+  /** Last writer wins, the way `StyleSheet.flatten` merges an array. */
+  const valueOf = (style: StyleProp[], key: string): string | number | null | undefined =>
+    [...style].reverse().find(([k]) => k === key)?.[1];
+  const isRow = (style: StyleProp[]): boolean => valueOf(style, 'flexDirection') === 'row';
+
+  const elementName = (element: t.JSXElement, code: string): string =>
+    code.slice(
+      element.openingElement.name.start ?? 0,
+      element.openingElement.name.end ?? 0,
+    );
+
+  it('no painted Pressable relies on the inner view for its height', () => {
+    const files = ['src/components', 'src/screens'].flatMap(dir =>
+      readdirSync(join(ROOT, dir))
+        .filter(f => f.endsWith('.tsx'))
+        .map(f => `${dir}/${f}`),
+    );
+    expect(files.length).toBeGreaterThan(20);
+
+    const offenders: string[] = [];
+
+    for (const file of files) {
+      const code = read(file);
+      const ast = parseSync(code, {
+        filename: file,
+        configFile: false,
+        babelrc: false,
+        sourceType: 'module',
+        // Parse only — no preset, no transform. `jsx` alongside `typescript` is
+        // what makes this TSX; the plugin's `isTSX` option only disambiguates
+        // `<T>x` casts, which these files do not use.
+        parserOpts: { plugins: ['jsx', 'typescript'] },
+      });
+      expect(ast).not.toBeNull();
+      if (ast === null) continue;
+      const table = styleTable(ast, code);
+
+      // The enclosing JSX element of every JSX element in the file, so a
+      // Pressable can be asked about its parent and its siblings.
+      const parentOf = new Map<t.JSXElement, t.JSXElement | null>();
+      const descend = (node: t.Node, enclosing: t.JSXElement | null): void => {
+        const inner = t.isJSXElement(node) ? node : enclosing;
+        if (t.isJSXElement(node)) parentOf.set(node, enclosing);
+        for (const child of childNodes(node)) descend(child, inner);
+      };
+      descend(ast, null);
+
+      /**
+       * A column whose height is DEFINITE, which is the only place the inner
+       * view has free space to grow into.
+       *
+       * `flex` counts only when this element is itself in a column — in a row it
+       * is the width. `alignSelf: 'stretch'` counts only in a row, where stretch
+       * is the vertical axis; that is the attach panel's gallery tile, which
+       * takes its height from the grid and hands it to the chip inside it.
+       */
+      const isTallColumn = (element: t.JSXElement): boolean => {
+        const style = styleOf(element, table, code);
+        if (isRow(style)) return false;
+        if (has(style, 'height') || has(style, 'minHeight')) return true;
+        if (style.some(([key]) => key.startsWith('...') && key.includes('absoluteFill'))) {
+          return true;
+        }
+        const parentStyle = styleOf(parentOf.get(element) ?? null, table, code);
+        if (
+          (has(style, 'flex') || has(style, 'flexGrow') || has(style, 'flexBasis')) &&
+          !isRow(parentStyle)
+        ) {
+          return true;
+        }
+        return valueOf(style, 'alignSelf') === 'stretch' && isRow(parentStyle);
+      };
+
+      /** Child slots of `parent` that do not contain `self`. */
+      const siblingCount = (parent: t.JSXElement, self: t.JSXElement): number => {
+        let count = 0;
+        for (const child of parent.children) {
+          const slot = t.isJSXExpressionContainer(child)
+            ? t.isJSXEmptyExpression(child.expression)
+              ? null // a `{/* comment */}`, which lays nothing out
+              : child.expression
+            : t.isJSXElement(child)
+              ? child
+              : null;
+          if (slot === null) continue;
+          let containsSelf = false;
+          walkAst(slot, node => {
+            if (node === self) containsSelf = true;
+          });
+          if (!containsSelf) count += 1;
+        }
+        return count;
+      };
+
+      for (const [element, parent] of parentOf) {
+        if (elementName(element, code) !== 'Pressable') continue;
+        if (parent === null) continue;
+        const style = styleOf(element, table, code);
+        // Out of flow: it cannot take space from anything, whatever it measures.
+        if (valueOf(style, 'position') === 'absolute') continue;
+        if (style.some(([key]) => VERTICAL_EXTENT.includes(key))) continue;
+        if (!isTallColumn(parent)) continue;
+        if (siblingCount(parent, element) === 0) continue;
+        offenders.push(
+          `${file}:${element.loc?.start.line ?? 0} inside <${elementName(parent, code)}>`,
+        );
+      }
+    }
+
+    /*
+     * Empty, and it has to stay that way by giving the Pressable a height — not
+     * by adding an entry here. There is no legitimate version of this: a control
+     * in a column with siblings either knows how tall it is or takes the column.
+     */
+    expect(offenders).toEqual([]);
   });
 });
 
