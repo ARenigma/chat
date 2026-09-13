@@ -887,10 +887,29 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: TOKENS.space['2xl'],
       gap: TOKENS.space.md,
     },
+    /*
+     * THE HEIGHT IS STATED, and it is not decoration.
+     *
+     * `Pressable` splits a caller's style: only the box keys reach the touchable
+     * root, everything else moves to an inner view that gets `flexGrow: 1`. This
+     * pill had padding and a radius and no box key at all, so its root had no
+     * size of its own and the growing inner view took the whole of `pushGate` —
+     * which is `absoluteFill`, so the whole screen. The same shape as the attach
+     * panel's grant chip (AttachPanel.tsx, `grant`) and the provider row's avatar
+     * ring (ProviderRow.tsx, `ring`), both of which shipped before being caught.
+     * `__tests__/contract.test.ts` now fails the build on it.
+     *
+     * 48, so the button is exactly Android's minimum touch target rather than the
+     * 44 the old vertical padding came to — "each interactive UI element [should]
+     * have a focusable area of at least 48dp x 48dp".
+     * https://developer.android.com/guide/topics/ui/accessibility/apps
+     */
     pushGateButton: {
+      height: TOKENS.interaction.minTarget,
       marginTop: TOKENS.space.sm,
       paddingHorizontal: TOKENS.space.lg,
-      paddingVertical: TOKENS.space.sm,
+      alignItems: 'center',
+      justifyContent: 'center',
       borderRadius: TOKENS.radius.pill,
       backgroundColor: t.color.bg.accent,
     },
