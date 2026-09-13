@@ -1,7 +1,10 @@
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { timeOfDay } from '../src/lib/datetime';
 import {
   PENDING_PREFIX,
   applyReadReceipt,
+  durationWords,
   insertOptimistic,
   sessionEndedLabel,
   isPending,
@@ -133,6 +136,75 @@ describe('mergeIncoming', () => {
   });
 });
 
+/**
+ * The transcript's one duration formatter, behind both history rows.
+ *
+ * Amit, 2026-09-13, asked for durations that read "1 min", "2 min", "2 min 30
+ * secs" — which retired this row's "12 min"-only form AND the call log's
+ * "4:32". The reason the words won is what they sit beside: "Voice call · 4:32
+ * · 3:55 pm" is two colon-separated numbers on one line, one a duration and one
+ * a time of day, told apart only by position.
+ */
+describe('durationWords — a finished duration, in words', () => {
+  it('reads the way Amit asked for, at the sizes a session actually runs', () => {
+    expect(durationWords(60)).toBe('1 min');
+    expect(durationWords(120)).toBe('2 min');
+    expect(durationWords(150)).toBe('2 min 30 secs');
+  });
+
+  it('shows seconds alone under a minute, which "0 min 45 secs" would bury', () => {
+    expect(durationWords(45)).toBe('45 secs');
+    expect(durationWords(59)).toBe('59 secs');
+    // "1 secs" is a typo on sight. "min" is the one unit that does not
+    // pluralise, because it is the shipped form and the brief writes it that way.
+    expect(durationWords(1)).toBe('1 sec');
+  });
+
+  it('is empty below a second, so a connection blip prints no duration at all', () => {
+    // The `ms <= 0` guard this replaced returned '' for a call whose ends are
+    // the same instant, and CallLogRow still drops the separator when it does —
+    // "Voice call · · 3:55 pm" would be the alternative.
+    expect(durationWords(0)).toBe('');
+    expect(durationWords(0.4)).toBe('');
+    expect(durationWords(-30)).toBe('');
+    expect(durationWords(Number.NaN)).toBe('');
+    expect(durationWords(Number.POSITIVE_INFINITY)).toBe('');
+  });
+
+  it('drops the seconds once there is an hour on the line', () => {
+    // Past an hour the seconds inform nobody reading a history row, and the
+    // pill is already the longest line in the transcript.
+    expect(durationWords(3600)).toBe('1 hr');
+    expect(durationWords(3660)).toBe('1 hr 1 min');
+    expect(durationWords(3903)).toBe('1 hr 5 min');
+    expect(durationWords(7200)).toBe('2 hrs');
+    expect(durationWords(7325)).toBe('2 hrs 2 min');
+  });
+
+  it('never prints a zero component', () => {
+    // The join is conditional in both directions; a stray "1 hr 0 min" or
+    // "2 min 0 secs" is the failure mode a naive template has.
+    for (const seconds of [1, 59, 60, 61, 119, 3599, 3600, 3601, 86_399]) {
+      expect(durationWords(seconds)).not.toMatch(/\b0 (secs?|min|hrs?)\b/);
+    }
+  });
+});
+
+describe('the call log and the session row are formatted by the same function', () => {
+  /*
+   * They are two rows of ONE history, sitting next to each other in one
+   * transcript, so a second wording of a duration is a visible defect rather
+   * than a duplication smell. Asserted at the source because the rows render in
+   * different files and nothing else would notice them drifting apart.
+   */
+  it('CallLogRow words its duration through durationWords, not its own mm:ss', () => {
+    const src = readFileSync(join(__dirname, '..', 'src/components/CallLogRow.tsx'), 'utf8');
+    expect(src).toContain("import { durationWords } from '../lib/transcript'");
+    // The old hand-rolled `${minutes}:${String(seconds).padStart(2, '0')}`.
+    expect(src).not.toContain('padStart(2');
+  });
+});
+
 describe('sessionEndedLabel — a chat session in the history list', () => {
   /*
    * The text became "Chat · 12 min · 3:55 pm" on 2026-09-13 (Amit: "Session
@@ -144,13 +216,36 @@ describe('sessionEndedLabel — a chat session in the history list', () => {
    * the words "Session ended" — every row in this list is an ended session, so
    * the phrase did no work while the channel it did not name did.
    *
-   * The shape matches CallLogRow's "Voice call · 4:32 · 3:55 pm" on purpose:
-   * the two sit next to each other and are the whole of a member's history
-   * across sessions, so they must read as one list.
+   * The shape matches CallLogRow's "Voice call · 4 min 32 secs · 3:55 pm" on
+   * purpose: the two sit next to each other and are the whole of a member's
+   * history across sessions, so they must read as one list.
    */
   it('names the channel and the billed minutes', () => {
     expect(sessionEndedLabel(5)).toBe('Chat · 5 min');
     expect(sessionEndedLabel(1)).toBe('Chat · 1 min');
+  });
+
+  /**
+   * The row shows BILLED minutes, so it has no seconds to show — and that is a
+   * property of the number, not an oversight in the formatter.
+   *
+   * `useSessionEvents` already selects `started_at` and `ended_at`, so
+   * wall-clock seconds are one argument away and this assertion is what says
+   * they are deliberately not used. Migration 095 re-created `end_session` for
+   * exactly this reason, moving the displayed duration off wall-clock time and
+   * onto `minutes_billed` — the number the wallet debited and the provider
+   * accrued against — under "Display / usage / wallet / billing must be one
+   * coherent chain — no two may ever disagree." And wall clock would understate
+   * the charge: 037 bills the first minute the instant the session activates,
+   * so a 30-second session was charged a minute and would read "30 secs".
+   */
+  it('renders whole billed minutes, never wall-clock seconds', () => {
+    expect(sessionEndedLabel(2)).toBe('Chat · 2 min');
+    expect(sessionEndedLabel(2)).not.toContain('sec');
+    // Long sessions fold into hours like the call row does, same formatter.
+    expect(sessionEndedLabel(60)).toBe('Chat · 1 hr');
+    expect(sessionEndedLabel(65)).toBe('Chat · 1 hr 5 min');
+    expect(sessionEndedLabel(120)).toBe('Chat · 2 hrs');
   });
 
   it('appends the time when the session end is known', () => {

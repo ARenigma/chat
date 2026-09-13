@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useBackBarrier } from '../lib/backGuard';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
@@ -39,6 +40,16 @@ const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
  * only PII is name/phone/email (already on the profile) + bank + PAN.
  */
 export function ProviderBankScreen({ onBack }: Props) {
+  /*
+   * This screen covers Home, and Home stays mounted underneath it (App.tsx
+   * renders pushed screens as overlays so returning never remounts Home's
+   * lists). Without this barrier Home's search guard — live whenever its search
+   * field is open — still hears the hardware back press from up here, closes a
+   * field nobody can see, and reports the press handled, so this screen never
+   * pops. See src/lib/backGuard.ts.
+   */
+  useBackBarrier();
+
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();

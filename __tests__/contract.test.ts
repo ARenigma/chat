@@ -2708,11 +2708,40 @@ describe('paid chat sessions expose their live lifecycle', () => {
     // The screen does NOT subscribe to BackHandler itself: RN fires
     // subscriptions last-registered-first, and App re-subscribes whenever the
     // Recharge overlay toggles, so the chat's listener could be outranked and
-    // the chat popped mid-session. It holds a guard instead, only while a
-    // session exists, and App consults the guard stack before any pop.
+    // the chat popped mid-session. It holds a guard instead, and App consults
+    // the guard stack before any pop.
     const code = withoutComments(chat);
     expect(code).not.toContain('BackHandler');
-    expect(code).toContain('useBackGuard(activeSession ? backGuard : null)');
+    /*
+     * This used to pin `useBackGuard(activeSession ? backGuard : null)`, and
+     * the widened condition is the NEW intent, not a loosened assertion.
+     *
+     * Two things changed on 2026-09-13. The guard now runs a ladder — reply bar
+     * first, then the paid session, then DECLINE — because ordering has to live
+     * in the ladder rather than in the stack: a reply bar and a session can
+     * appear in either order, and two separate guards would have made what back
+     * does depend on which happened first. And the last rung declining is what
+     * makes hardware back land exactly where the app-bar arrow does, through
+     * App.tsx's route handler, instead of the screen re-implementing the pop.
+     * So the guard is held whenever EITHER state is up, and only then — the
+     * "intercept only in the state that needs a decision" rule is intact.
+     */
+    expect(code).toContain(
+      'useBackGuard(activeSession || replyTo !== null ? backGuard : null)',
+    );
+    expect(code).toMatch(
+      /const backGuard = useCallback\(\(\) => \{\s*if \(replyTo !== null\) \{[\s\S]*?if \(activeSession\) \{\s*requestLeave\(\);\s*return true;\s*\}\s*return false;/,
+    );
+    /*
+     * And the barrier, which is the defect the ladder alone would not have
+     * fixed. App.tsx keeps HomeScreen mounted under this overlay, so Home's
+     * search guard was still on the stack while the chat covered it: hardware
+     * back closed an invisible search field and reported the press handled, and
+     * the chat never popped. The app-bar arrow calls `requestLeave` directly,
+     * never touches the stack, and so kept working and hid it.
+     */
+    expect(code).toContain('useBackBarrier()');
+    expect(code).toContain("import { useBackBarrier, useBackGuard } from '../lib/backGuard'");
     const app = withoutComments(read('App.tsx'));
     const consumeAt = app.indexOf('if (consumeBack())');
     const popAt = app.indexOf('const parent = memberParent(route)');
@@ -3493,6 +3522,84 @@ describe('no screen reads a listing switch as a presence dot', () => {
     for (const file of sites) {
       expect(withoutComments(read(file))).not.toContain('peer_available');
     }
+  });
+
+  /*
+   * THE OTHER HALF OF THE SAME READING, 2026-09-13.
+   *
+   * A dot derived from `readPresence` is only half of what the reading is for.
+   * The surfaces that offer an ACTION have to follow it too, because a Call on
+   * somebody who is not there is the false affordance `audio_enabled` already
+   * guards against: the tap rings a phone nobody is holding, and `start_call`
+   * refuses it after the fact rather than before.
+   *
+   * ProviderRow landed this first and keeps its own guards in
+   * providerRow.test.ts. These are the surfaces it did not cover — the profile,
+   * the card and Home's hero — and the profile is the one that was actually
+   * wrong: it offered an away provider Call, Message AND Video, which made the
+   * row's own "Notify" a promise broken by the screen it opened.
+   *
+   * The action is the same everywhere and it is not a new endpoint: opening the
+   * conversation is what notifies them (`announce_chat_open`, migration 068).
+   * So these assert the bell is GATED on away — a bell drawn for everyone would
+   * be decoration — and that the call and video actions live only in the other
+   * branch.
+   */
+  it('offers an away provider a bell and nothing that rings', () => {
+    const detail = withoutComments(read('src/screens/ProviderDetailScreen.tsx'));
+    expect(detail).toMatch(
+      /const away =\s*provider !== null && !readPresence\(provider\.presence, provider\.last_active_at\)\.here/,
+    );
+    const actions = detail.slice(
+      detail.indexOf('<View style={styles.actions}>'),
+      detail.indexOf('<View style={styles.hairline} />'),
+    );
+    expect(actions).toContain('{away ? (');
+    const split = actions.indexOf(') : (');
+    expect(split).toBeGreaterThan(-1);
+    const awayBranch = actions.slice(0, split);
+    const hereBranch = actions.slice(split);
+    // One action, the bell, and it opens the conversation.
+    expect(awayBranch).toContain('glyph="bell"');
+    expect(awayBranch).toContain('word="Notify"');
+    expect(awayBranch).toContain('onPress={onChat}');
+    expect(awayBranch).not.toMatch(/glyph="(call|video)"/);
+    expect(awayBranch).not.toMatch(/onPress=\{on(Audio|Video)\}/);
+    // The three-up row is intact for a provider who IS here — this is a branch,
+    // not a deletion, and the kill switches still gate their own channels.
+    expect(hereBranch).toContain('onPress={onAudio}');
+    expect(hereBranch).toContain('onPress={onVideo}');
+    expect(hereBranch).toContain('enabled={voiceCallsEnabled && provider.audio_enabled}');
+    expect(hereBranch).toContain('enabled={videoCallsEnabled && provider.video_enabled}');
+  });
+
+  it('says the same thing on the card and on Home, from the same test', () => {
+    for (const file of ['src/components/ProviderCard.tsx', 'src/screens/HomeScreen.tsx']) {
+      const body = withoutComments(read(file));
+      // The identical expression ProviderRow uses, so "away" cannot come to mean
+      // something else on a surface that renders the same person.
+      expect(body).toContain('const away = !presence.here');
+      // Gated, and on the away side of the gate.
+      expect(body).toMatch(/away \?[\s\S]{0,600}name="bell"/);
+    }
+    // Neither card has ever had a call or a video on it, and neither may grow
+    // one: these are the surfaces where the rule is kept by absence.
+    expect(withoutComments(read('src/components/ProviderCard.tsx'))).not.toMatch(
+      /name="(call|video)"/,
+    );
+    const home = withoutComments(read('src/screens/HomeScreen.tsx'));
+    const featured = home.slice(
+      home.indexOf('function FeaturedCard('),
+      home.indexOf('const RAIL_AVATAR'),
+    );
+    expect(featured).not.toMatch(/name="(call|video)"/);
+    /*
+     * Home's ROWS still hand `onCall` to every provider, away or not, and that
+     * is correct rather than a hole: the row owns the decision and drops the
+     * call itself. Asserted so nobody "fixes" it here and splits the rule
+     * across two files.
+     */
+    expect(home).toContain('onCall={onCallProvider}');
   });
 
   it('no longer derives presence from a socket at all', () => {

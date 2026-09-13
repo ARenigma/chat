@@ -17,6 +17,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withSequence } from 'react-
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LIGHT, TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
+import { useBackBarrier } from '../lib/backGuard';
 import type { ProviderPhoto, ProviderSummary } from '../lib/database.types';
 import { isClayUri, resolveAvatarSource } from '../lib/clayAvatars';
 import { genderLetter, initialOf } from '../lib/display';
@@ -71,6 +72,16 @@ interface Props {
  * person's mark — the same honest fallback as the featured card on Home.
  */
 export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCall }: Props) {
+  /*
+   * This screen covers Home, and Home stays mounted underneath it (App.tsx
+   * renders pushed screens as overlays so returning never remounts Home's
+   * lists). Without this barrier Home's search guard — live whenever its search
+   * field is open — still hears the hardware back press from up here, closes a
+   * field nobody can see, and reports the press handled, so this screen never
+   * pops. See src/lib/backGuard.ts.
+   */
+  useBackBarrier();
+
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -123,6 +134,29 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
   const onAudio = useCallback(() => onStartCall(providerId, 'audio'), [onStartCall, providerId]);
   const onVideo = useCallback(() => onStartCall(providerId, 'video'), [onStartCall, providerId]);
 
+  /*
+   * AWAY OFFERS ONE ACTION, AND IT IS NOT A CALL.
+   *
+   * The same rule the directory row got on 2026-09-13 (ProviderRow.tsx:413),
+   * from the same reading: `readPresence` is the one interpretation of the
+   * `presence` / `last_active_at` pair, so this screen and the card the member
+   * tapped to reach it cannot disagree about who is here. A row that said
+   * "Notify" must not open a profile offering Call and Video — that is the
+   * false-affordance class twice over, since the tap would ring a phone nobody
+   * is holding and `start_call` would refuse it anyway.
+   *
+   * `hidden` lands in this branch too, by `readPresence`'s own fail-closed
+   * rule: an unknown is never rendered as present, so it is never offered a
+   * call either.
+   *
+   * The Notify action needs no new endpoint. It opens the conversation, and
+   * opening it is what notifies them: `announce_chat_open` (migration 068)
+   * pushes to the peer precisely when they are away, the member has a minute,
+   * and no session is running.
+   */
+  const away =
+    provider !== null && !readPresence(provider.presence, provider.last_active_at).here;
+
   return (
     <View style={styles.root}>
       <View style={[styles.bar, { paddingTop: insets.top + TOKENS.space['2xs'] }]}>
@@ -154,36 +188,58 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
           />
 
           <View style={styles.actions}>
-            <ActionButton
-              channel="audio"
-              kind="primary"
-              glyph="call"
-              rate={audioRate}
-              enabled={voiceCallsEnabled && provider.audio_enabled}
-              offered={provider.audio_enabled}
-              onPress={onAudio}
-              label={`Call ${provider.display_name}`}
-            />
-            <ActionButton
-              channel="chat"
-              kind="outline"
-              glyph="chat"
-              rate={chatRate}
-              enabled={provider.chat_enabled}
-              offered={provider.chat_enabled}
-              onPress={onChat}
-              label={`Message ${provider.display_name}`}
-            />
-            <ActionButton
-              channel="video"
-              kind="dark"
-              glyph="video"
-              rate={videoRate}
-              enabled={videoCallsEnabled && provider.video_enabled}
-              offered={provider.video_enabled}
-              onPress={onVideo}
-              label={`Video call ${provider.display_name}`}
-            />
+            {away ? (
+              /* One action, full width — the row's three slots collapse to one
+                 because there is only one honest thing to offer. The bell and
+                 the word together, as on the directory row: the glyph says this
+                 is a different KIND of action from the Call this button is
+                 standing in for, and the word says which. Priced at the CHAT
+                 rate because that is what it opens and what it will bill. */
+              <ActionButton
+                channel="chat"
+                kind="primary"
+                glyph="bell"
+                word="Notify"
+                rate={chatRate}
+                enabled={provider.chat_enabled}
+                offered={provider.chat_enabled}
+                onPress={onChat}
+                label={`Notify ${provider.display_name} that you want to chat`}
+              />
+            ) : (
+              <>
+                <ActionButton
+                  channel="audio"
+                  kind="primary"
+                  glyph="call"
+                  rate={audioRate}
+                  enabled={voiceCallsEnabled && provider.audio_enabled}
+                  offered={provider.audio_enabled}
+                  onPress={onAudio}
+                  label={`Call ${provider.display_name}`}
+                />
+                <ActionButton
+                  channel="chat"
+                  kind="outline"
+                  glyph="chat"
+                  rate={chatRate}
+                  enabled={provider.chat_enabled}
+                  offered={provider.chat_enabled}
+                  onPress={onChat}
+                  label={`Message ${provider.display_name}`}
+                />
+                <ActionButton
+                  channel="video"
+                  kind="dark"
+                  glyph="video"
+                  rate={videoRate}
+                  enabled={videoCallsEnabled && provider.video_enabled}
+                  offered={provider.video_enabled}
+                  onPress={onVideo}
+                  label={`Video call ${provider.display_name}`}
+                />
+              </>
+            )}
           </View>
 
           <View style={styles.hairline} />
@@ -580,6 +636,7 @@ function ActionButton({
   channel,
   kind,
   glyph,
+  word,
   rate,
   enabled,
   offered = true,
@@ -601,7 +658,18 @@ function ActionButton({
    * chat.
    */
   kind: 'primary' | 'outline' | 'dark';
-  glyph: 'call' | 'chat' | 'video';
+  glyph: 'call' | 'chat' | 'video' | 'bell';
+  /**
+   * A word beside the glyph, for the button that is alone in the row.
+   *
+   * The three-up row says what it does with a glyph and nothing else, which
+   * works because the three are a SET — phone, bubble, camera read against each
+   * other. The away state has no set to read against: one bell over a rate
+   * would be a guess. So the button that replaces the row carries the verb, and
+   * carrying it turns the layout on its side (`actionWide`) rather than adding
+   * a third stacked line to a 64dp box.
+   */
+  word?: string;
   /** Live admin rate (tokens/min). Falls back to DEFAULT_RATES[channel] at the call site. */
   rate: number;
   enabled: boolean;
@@ -646,12 +714,18 @@ function ActionButton({
         highlight="dim"
         style={[
           styles.actionButton,
+          word !== undefined && styles.actionWide,
           kind === 'primary' && styles.actionPrimary,
           kind === 'outline' && styles.actionOutline,
           kind === 'dark' && styles.actionDark,
           !enabled && styles.actionDisabled,
         ]}>
         <Icon name={glyph} size={TOKENS.icon.lg} color={fg} />
+        {word !== undefined ? (
+          <Text allowFontScaling numberOfLines={1} style={[styles.actionWord, { color: fg }]}>
+            {word}
+          </Text>
+        ) : null}
         <Text allowFontScaling numberOfLines={1} style={[styles.actionRate, { color: fg }]}>
           {rateLabel(rate)}
         </Text>
@@ -887,6 +961,21 @@ const makeStyles = (t: Theme) =>
     },
     actionDisabled: {
       opacity: 0.5,
+    },
+    /*
+     * The single-action layout: a ROW, so the bell sits beside its verb.
+     *
+     * Found on the directory row on 2026-09-13 (ProviderRow.tsx:805) — with the
+     * default column direction the bell stacked on top of "Notify" and grew the
+     * control by a line. Here the box is a fixed 64dp, so a third stacked line
+     * would not grow it, it would crop it.
+     */
+    actionWide: {
+      flexDirection: 'row',
+      gap: TOKENS.space.xs,
+    },
+    actionWord: {
+      ...TOKENS.typography.labelLargeEmphasized,
     },
     actionRate: {
       ...TOKENS.typography.labelMediumEmphasized,

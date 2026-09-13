@@ -6,6 +6,10 @@
  * store holds `pendingReview` for exactly that reason — the sheet outlives the
  * screen that noticed.
  *
+ * Members only, and this file is where that is settled rather than trusted:
+ * `useWasTheMember` below checks the session row before the sheet can open, so
+ * a provider is never asked no matter which screen raised the notice.
+ *
  * Skipping is a first-class answer. A rating prompt with no way past it is a
  * toll gate on leaving a conversation somebody may have found difficult, and
  * the one thing this product cannot afford is making the exit feel expensive.
@@ -13,10 +17,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated from 'react-native-reanimated';
+import { useQuery } from '@tanstack/react-query';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { fadeSwapFast } from '../theme/motion';
 import { useSubmitSessionReview } from '../api/provider';
+import { supabase } from '../lib/supabase';
 import { useStore } from '../store/useStore';
 import { Button } from './Button';
 import { Icon } from './Icon';
@@ -49,6 +55,82 @@ const STARS = [1, 2, 3, 4, 5] as const;
  */
 const ASKED = new Set<string>();
 
+/**
+ * "Was I the MEMBER of that session?" — asked of the session row itself.
+ *
+ * Both screens that notice a session ending decide this from
+ * `peerThread?.i_am_member ?? true` (CallScreen.tsx:177, ChatScreen.tsx:511),
+ * and the `?? true` is a hole: a conversation summary row that has not reached
+ * this device yet reads as "I am the member". So a PROVIDER whose conversation
+ * list is still loading — or whose list query failed, which is forever — is
+ * handed a sheet inviting them to rate a member. Rating in this product runs one
+ * way only (006's rule, restated in 066), so that sheet is not a Send button
+ * that fails, it is a question the app must never have asked.
+ *
+ * The screens' optimism cannot simply be inverted: a member calling straight
+ * from the directory may genuinely have no summary row yet, and defaulting the
+ * other way would swallow the review after every first call — which is exactly
+ * the call whose rating matters most. So the guess stays where the screens make
+ * it, and the truth is read here, once, for whoever set `pendingReview`. Any
+ * future caller inherits the gate without having to remember it.
+ *
+ * Race-free against the end it is asking about: `member_id` is written when the
+ * row is inserted (`answer_call` 037:1008, `accept_session_request` 086:174) and
+ * never changes, so it reads the same before and after `end_call` lands. SELECT
+ * on paid_sessions is granted to BOTH participants ("Participants read own
+ * sessions", 030:183), so the provider's client gets a real `false` rather than
+ * an empty result it would have to interpret.
+ *
+ * Fails closed, and fails CLEARED. A row that cannot be read (offline, RLS)
+ * yields no sheet — the member has lost one prompt about a session whose rating
+ * could not have been submitted over that same dead connection anyway, where the
+ * other direction puts the wrong question to the wrong person. The notice is
+ * then dropped rather than left hanging, because the store keeps the FIRST
+ * writer (useStore.ts:175): a `pendingReview` parked behind a read that will
+ * never answer would swallow every session that ends after it, for the rest of
+ * the app run.
+ *
+ * `staleTime: Infinity` — who the member of a finished session was is a fact
+ * about the past, and the sheet may ask twice for one id (see `ASKED`).
+ *
+ * Nothing here runs until a session has actually ended. This sheet is mounted
+ * for the whole life of the signed-in tree (App.tsx:1825), so a `useSelfId()`
+ * beside the query — the obvious way to get the id to compare against — would
+ * put an `auth.getUser()` round trip into every launch to serve a question
+ * asked a few times a day. `getSession()` reads the stored session locally
+ * instead, inside the queryFn, so the whole gate costs nothing until it is
+ * needed. Local is enough for a client-side gate: the server still refuses a
+ * review from anyone but the member (066:109), so this only decides what to
+ * put on screen.
+ */
+function useWasTheMember(sessionId: string | null) {
+  return useQuery<boolean>({
+    queryKey: ['session', 'was-member', sessionId ?? ''],
+    enabled: sessionId !== null,
+    staleTime: Infinity,
+    queryFn: async () => {
+      const { data: auth } = await supabase.auth.getSession();
+      const selfId = auth.session?.user.id;
+      if (selfId === undefined) {
+        return false;
+      }
+      // paid_sessions is not in the generated types (read via RPC elsewhere);
+      // cast the table read as `useSessionEvents` does (api/sessions.ts:515).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = (await (supabase as any)
+        .from('paid_sessions')
+        .select('member_id')
+        .eq('id', sessionId)
+        .maybeSingle()) as {
+        data: { member_id: string } | null;
+        error: { message: string } | null;
+      };
+      if (error) throw new Error(error.message);
+      return data !== null && data.member_id === selfId;
+    },
+  });
+}
+
 /** Names the number, so a tap has a meaning and not just a count. */
 const RATING_WORD: Record<number, string> = {
   1: 'Not what I needed',
@@ -75,6 +157,9 @@ export function SessionFeedbackSheet() {
    * `askedFor === null`, falls to the `ASKED` branch, and is dropped.
    */
   const [askedFor, setAskedFor] = useState<string | null>(null);
+  const { data: wasTheMember, isError: memberUnknown } = useWasTheMember(
+    pending?.sessionId ?? null,
+  );
 
   const close = useCallback(() => {
     setRating(0);
@@ -87,6 +172,25 @@ export function SessionFeedbackSheet() {
     if (pending === null || askedFor === pending.sessionId) {
       return;
     }
+    if (memberUnknown) {
+      // The read gave up (it retries once). Drop the notice instead of parking
+      // it: first-writer-wins would make a stuck `pendingReview` eat every
+      // session that ends later in this run.
+      clearReview();
+      return;
+    }
+    if (wasTheMember === undefined) {
+      // The row has not answered yet. Hold the notice — it is still pending, so
+      // this effect runs again the moment the answer lands.
+      return;
+    }
+    if (!wasTheMember) {
+      // The provider's side of the session, or a session this account is not in
+      // at all. Drop it silently: there is no member-rates-provider sheet to
+      // show them and no second question to offer instead.
+      clearReview();
+      return;
+    }
     if (ASKED.has(pending.sessionId)) {
       // Somebody already put this session to the member. Drop the notice rather
       // than leave it pending, or it would re-open on the next render.
@@ -95,7 +199,7 @@ export function SessionFeedbackSheet() {
     }
     ASKED.add(pending.sessionId);
     setAskedFor(pending.sessionId);
-  }, [pending, askedFor, clearReview]);
+  }, [pending, askedFor, wasTheMember, memberUnknown, clearReview]);
 
   const send = useCallback(() => {
     if (pending === null || rating === 0) {

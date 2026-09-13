@@ -1,8 +1,9 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
+import { useBackBarrier } from '../lib/backGuard';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { BackButton } from '../components/BackButton';
 import { Icon } from '../components/Icon';
@@ -26,6 +27,48 @@ function kindLabel(kind: TokenTransaction['kind']): string {
   }
 }
 
+/**
+ * The statuses under which a transaction is money that actually moved.
+ *
+ * `token_transactions.status` is the payment lifecycle (migration 019):
+ * a row is inserted `created` when create-order mints the Cashfree order, and
+ * only `credit_purchased_recharge` flips it to `succeeded` — see migration 033,
+ * whose `and status = 'created'` guard is what makes the webhook idempotent. The
+ * two dead ends are written by cashfree-webhook/index.ts, which sets `failed` on
+ * PAYMENT_FAILED_WEBHOOK and PAYMENT_USER_DROPPED_WEBHOOK.
+ *
+ * So `created` is a payment still in flight or abandoned at the gateway, and
+ * `failed` is one that was declined. Neither took the member's money and neither
+ * credited a token, and a row on this screen reads as "you were charged this" —
+ * it carries an amount in ₹ and a credited line. Listing them is the screen
+ * telling a member they paid for something they did not.
+ *
+ * `refunded` stays IN. It is a recharge that succeeded and was later reversed —
+ * real money that moved, and the only status besides `succeeded` that has a GST
+ * tax invoice attached (migration 046 raises the invoice on
+ * `new.status = 'succeeded' and new.kind = 'recharge'`, and 019's invoice
+ * numbering is gapless because a gap invites a GST scrutiny notice). Hiding it
+ * would hide a document the member is entitled to download, which is the
+ * opposite of the fix.
+ */
+const SETTLED_STATUSES: ReadonlySet<TokenTransaction['status']> = new Set([
+  'succeeded',
+  'refunded',
+]);
+
+/**
+ * The rows this screen is allowed to show: settled money only.
+ *
+ * Pure and exported so the rule is executed by a test rather than inferred from
+ * the JSX — the screen itself cannot be rendered here (no renderer in
+ * devDependencies), so this is the only part of it that can be proven.
+ */
+export function settledTransactions(
+  data: readonly TokenTransaction[] | undefined,
+): TokenTransaction[] {
+  return (data ?? []).filter(tx => SETTLED_STATUSES.has(tx.status));
+}
+
 /** Short date: "27 Aug 2026" */
 function shortDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-IN', {
@@ -38,19 +81,36 @@ function shortDate(iso: string): string {
 /**
  * Recharge history and invoice downloads.
  *
- * Shows every token_transaction the member has, newest first. When a row has
- * an associated invoice PDF the member gets a 'Download invoice' action that
+ * Shows the member's SETTLED top-ups, newest first — see SETTLED_STATUSES for
+ * why an in-flight or declined payment is not history. When a row has an
+ * associated invoice PDF the member gets a 'Download invoice' action that
  * mints a short-lived signed URL and opens it in the system browser.
  *
  * Expected state today: empty list, because PAYMENTS_ENABLED=false means no
  * recharge has ever completed. The empty state is the common path.
  */
 export function TransactionHistoryScreen({ onBack }: Props) {
+  /*
+   * This screen covers Home, and Home stays mounted underneath it (App.tsx
+   * renders pushed screens as overlays so returning never remounts Home's
+   * lists). Without this barrier Home's search guard — live whenever its search
+   * field is open — still hears the hardware back press from up here, closes a
+   * field nobody can see, and reports the press handled, so this screen never
+   * pops. See src/lib/backGuard.ts.
+   */
+  useBackBarrier();
+
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { data, isLoading } = useTransactions();
   const fetchInvoiceUrl = useFetchInvoiceUrl();
+
+  // Filtered BEFORE the empty-state branch, not inside the list. A member whose
+  // only recharge was declined has `data.length === 1` and zero rows to draw —
+  // branching on `data` would give them a hairline and a blank gap instead of
+  // "No recharges yet".
+  const rows = useMemo(() => settledTransactions(data), [data]);
 
   const handleDownload = useCallback(
     async (pdfPath: string) => {
@@ -78,7 +138,7 @@ export function TransactionHistoryScreen({ onBack }: Props) {
             Loading…
           </Text>
         </View>
-      ) : !data || data.length === 0 ? (
+      ) : rows.length === 0 ? (
         /* Empty state — expected today with PAYMENTS_ENABLED=false */
         <View style={styles.center}>
           <Icon name="wallet" size={TOKENS.icon['2xl']} color={theme.color.text.tertiary} />
@@ -99,7 +159,7 @@ export function TransactionHistoryScreen({ onBack }: Props) {
           ]}>
           {/* Inset-grouped style: one hairline at top of section, separator between rows */}
           <View style={styles.group}>
-            {data.map((tx, index) => (
+            {rows.map((tx, index) => (
               <React.Fragment key={tx.id}>
                 {index === 0 ? null : <View style={styles.separator} />}
                 <TransactionRow tx={tx} onDownload={handleDownload} />

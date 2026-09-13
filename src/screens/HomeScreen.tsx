@@ -14,7 +14,7 @@ import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ConversationSummary, ProviderSummary } from '../lib/database.types';
 import { initialOf } from '../lib/display';
-import { readPresence } from '../lib/presence';
+import { presenceForSpeech, readPresence } from '../lib/presence';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import Animated from 'react-native-reanimated';
 import { contentColumnWidth } from '../lib/windowSize';
@@ -528,6 +528,22 @@ export function HomeScreen({
   const ratePerMin =
     economics?.chat_rate_tokens_per_min ?? FALLBACK_ECONOMICS.chat_rate_tokens_per_min;
 
+  /*
+   * `onCall` is passed for EVERY row, including a row for somebody who is away,
+   * and that is correct rather than an oversight: the row decides. Since
+   * 2026-09-13 `ProviderRow` computes `away` from the same `readPresence` and
+   * drops its Call for a bell (ProviderRow.tsx:413), so no away row on this
+   * screen can ring anyone — the CTA falls through to `onPress`.
+   *
+   * Where that lands is this screen's choice and it is deliberate: `onPress` is
+   * `handleOpenProvider`, the PROFILE, whose only action for an away provider
+   * is now Notify (ProviderDetailScreen.tsx:146) and where Notify opens the
+   * conversation — the thing that actually pushes to them
+   * (`announce_chat_open`, migration 068). Home's card body has opened the
+   * profile since v13 and the CTA shares that press, so routing the bell
+   * straight into a conversation would need a third callback on the row rather
+   * than a change here.
+   */
   const renderExploreRow = useCallback(
     ({ item, index }: { item: ProviderSummary; index: number }) => {
       const animate = !seenIds.current.has(item.id);
@@ -967,6 +983,11 @@ export function HomeScreen({
           </Animated.View>
         )}
       </View>
+      {/* The spotlight sheet needs no away branch and this is the check, not an
+          omission: its only action is `onChat` → `chatFromPotd` → the
+          conversation, which IS the notify action (`announce_chat_open`,
+          migration 068). There is no call on it to withdraw, and `online` is
+          the same `readPresence` reading as everywhere else. */}
       <SpotlightCard
         visible={potdVisible && featured !== null}
         name={featured?.display_name ?? 'Someone for you'}
@@ -1133,6 +1154,24 @@ function FeaturedCard({
     .filter(x => x !== '')
     .join('  ·  ');
   /*
+   * AWAY, AND WHAT THE CARD OFFERS BECAUSE OF IT.
+   *
+   * The same `!presence.here` reading the directory row uses (ProviderRow.tsx:431)
+   * — `hidden` included, because `readPresence` never renders an unknown as
+   * present. This hero has never carried a Call, so there is nothing to take
+   * away; what it was missing is the other half of the rule, which is that an
+   * away provider should be OFFERED the one action that works. The dot slot
+   * says "here now" when they are; when they are not, it names what a tap leads
+   * to instead — the profile, whose only action for an away provider is Notify
+   * (and where Notify opens the conversation, which is what pushes to them:
+   * `announce_chat_open`, migration 068).
+   *
+   * A marker, not a second press target: the whole card is one Pressable and
+   * this is `accessible={false}` inside it, exactly as the presence dot it
+   * replaces and the rating pill beside it are.
+   */
+  const away = !presence.here;
+  /*
    * The rating has to be spoken in WORDS from here, because the chip below is
    * `accessible={false}` like every other meta chip and its visible text is now
    * only "★ 4.8" — a glyph and a bare number, which announces nothing about what
@@ -1145,6 +1184,9 @@ function FeaturedCard({
    */
   const accessibility = [
     `Featured: ${provider.display_name}`,
+    // "away" / "last seen Tuesday" in the same words every other surface
+    // speaks, so the pill is not the only place the state exists.
+    presenceForSpeech(presence),
     tagline,
     `rated ${rating.score.toFixed(1)} from ${rating.count} reviews`,
     `${years} ${years === 1 ? 'year' : 'years'} experience`,
@@ -1211,7 +1253,16 @@ function FeaturedCard({
           {`${rating.score.toFixed(1)} ★`}
         </Text>
       </View>
-      {presence.here ? <View style={styles.featuredOnline} /> : null}
+      {away ? (
+        <View accessible={false} style={styles.featuredNotify}>
+          <Icon name="bell" size={TOKENS.icon.xs} color={theme.color.text.onAccent} />
+          <Text allowFontScaling style={styles.featuredBadgeText}>
+            Notify
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.featuredOnline} />
+      )}
       <View style={styles.featuredBody}>
         <View style={styles.featuredNameRow}>
           <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized} allowFontScaling numberOfLines={1} style={styles.featuredName}>
@@ -1596,6 +1647,30 @@ const makeStyles = (t: Theme) =>
     featuredAge: {
       ...TOKENS.typography.titleMediumEmphasized,
       color: 'rgba(255,255,255,0.82)',
+    },
+    /*
+     * The away state's pill, in the presence dot's slot.
+     *
+     * Same fill and ink as `featuredBadge` above, and for the same reason: this
+     * sits at the TOP of the card, which the scrim does not reach (it fades out
+     * by 50% height), so white-on-photo is unreadable on a light photo and any
+     * translucent black is at best 3.2:1 against a bright one — under the 4.5:1
+     * that 12dp Bold takes (developer.android.com/guide/topics/ui/accessibility/apps).
+     * `bg/accentStrong` under `text/onAccent` is the measured pair this app
+     * already uses for exactly this job (5.19:1 light, 6.13:1 dark).
+     */
+    featuredNotify: {
+      position: 'absolute',
+      top: TOKENS.space.md,
+      right: TOKENS.space.md,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.hair,
+      paddingHorizontal: TOKENS.space.xs,
+      paddingVertical: TOKENS.space['2xs'],
+      borderRadius: TOKENS.radius.pill,
+      borderCurve: 'continuous',
+      backgroundColor: t.color.bg.accentStrong,
     },
     // Presence dot, top-right of the card: sage with a white ring so it stays
     // legible over any photo.

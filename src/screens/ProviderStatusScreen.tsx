@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import { fadeSwap } from '../theme/motion';
+import { useBackBarrier } from '../lib/backGuard';
 import type { ApplicationStatus } from '../lib/database.types';
 import { useMyApplication } from '../api/provider';
 import { longDate } from '../lib/datetime';
@@ -64,6 +65,16 @@ const COPY: Record<ApplicationStatus, { title: string; body: string }> = {
 };
 
 export function ProviderStatusScreen({ onBack, onEdit }: Props) {
+  /*
+   * This screen covers Home, and Home stays mounted underneath it (App.tsx
+   * renders pushed screens as overlays so returning never remounts Home's
+   * lists). Without this barrier Home's search guard — live whenever its search
+   * field is open — still hears the hardware back press from up here, closes a
+   * field nobody can see, and reports the press handled, so this screen never
+   * pops. See src/lib/backGuard.ts.
+   */
+  useBackBarrier();
+
   const styles = useStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const { data, isPending } = useMyApplication();

@@ -17,6 +17,7 @@ import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { legalUrl } from '../lib/legal';
 import { isUsernameLocallyValid, usernameLocalStatus } from '../lib/username';
+import { USERNAME_SUGGESTION_HINT, suggestUsernames } from '../lib/stageName';
 import { CLAY_SEEDS, CLAY_IMAGES, type ClaySeed } from '../lib/clayAvatars';
 import { useAcceptAllPendingPolicies, usePendingPolicies } from '../api/policy';
 import {
@@ -262,6 +263,48 @@ export function ProfileSetupScreen({
     }
     return null;
   }, [displayName, checkingName, nameCheck]);
+
+  /**
+   * Three handles to tap, and a re-roll — the provider screen's interaction,
+   * with one deliberate difference.
+   *
+   * `ProviderApplicationScreen` opens its field FILLED with a suggestion,
+   * because a provider is being asked to invent a persona at the end of a long
+   * form and the blank field is where they stall (stageName.ts). A member is
+   * asked for a username on a short screen headed "Claim your username", and
+   * claiming is the point — so the field stays empty and their own idea gets
+   * the first move. The suggestions sit under it for the member who has none.
+   *
+   * Lazy initial state, not `useState(suggestUsernames())`: the argument form
+   * re-runs the generator on every render and throws the result away, so the
+   * chips would be recomputed behind an unchanging set of labels.
+   */
+  const [suggestions, setSuggestions] = useState<string[]>(() => suggestUsernames());
+
+  // Re-roll replaces the OFFER and never the field. The provider's re-roll
+  // overwrites its input because there the input is the suggestion; here the
+  // field may already hold something the member typed, and a control labelled
+  // "Try another" has no business deleting it.
+  const rerollSuggestions = useCallback(() => {
+    setSuggestions(suggestUsernames());
+  }, []);
+
+  /**
+   * The suggestion the member has in the field that came back bad.
+   *
+   * Availability is reported on TAP rather than before the chips are offered.
+   * `useCheckDisplayName` is one debounced query over one name — pre-checking
+   * three would mean three hook instances firing three RPCs on every re-roll,
+   * a second mechanism beside the one the field already uses, and two sources
+   * that can disagree about the same name. Tapping fills the field, the live
+   * check runs exactly as it does for a typed name, and the chip is marked from
+   * THE SAME derived value as the status line under the field — so the two
+   * cannot say different things about one name.
+   *
+   * `tone === 'bad'` and not `nameCheck.status`: the status line is the thing
+   * the member reads, and this is it.
+   */
+  const rejectedName = statusLine?.tone === 'bad' ? displayName.trim() : null;
 
   const nameReady = localOk && nameCheck?.status === 'available';
   const saving = claim.isPending || acceptAll.isPending;
@@ -511,6 +554,57 @@ export function ProfileSetupScreen({
           </Text>
         ) : null}
 
+        {/*
+          * Suggestions. One row that wraps, with the re-roll last so it reads as
+          * "…or try another three" rather than as a fourth name.
+          *
+          * The chips are local Pressables rather than `Chip`/`FilterChip`: Chip
+          * hard-codes `Start with: ${label}` as its accessibility label and a
+          * `starter-*` testID (it is the conversation opener), and FilterChip is
+          * M3's multi-select control, which these are not — tapping one REPLACES
+          * the field's contents. The re-roll's own pill is the provider screen's
+          * `nameReroll`, token for token, because it is the same control.
+          */}
+        <Text allowFontScaling style={styles.suggestHint}>
+          {USERNAME_SUGGESTION_HINT}
+        </Text>
+        <View style={styles.suggestRow}>
+          {suggestions.map((name, i) => {
+            const chosen = name === displayName.trim();
+            const taken = name === rejectedName;
+            return (
+              <Pressable
+                key={name}
+                onPress={() => setDisplayName(name)}
+                press="chip"
+                accessibilityRole="button"
+                // The a11y label carries the "taken" that the strikethrough
+                // carries visually — TalkBack reads neither a line through text
+                // nor the colour it is drawn in.
+                accessibilityLabel={taken ? `${name}, already taken` : `Use ${name}`}
+                testID={`profile-setup-suggestion-${i}`}
+                style={[styles.suggestChip, chosen && styles.suggestChipChosen]}>
+                <Text
+                  allowFontScaling
+                  style={[styles.suggestLabel, taken && styles.suggestLabelTaken]}>
+                  {name}
+                </Text>
+              </Pressable>
+            );
+          })}
+          <Pressable
+            onPress={rerollSuggestions}
+            press="chip"
+            accessibilityRole="button"
+            accessibilityLabel="Suggest three more usernames"
+            testID="profile-setup-suggestion-reroll"
+            style={styles.suggestReroll}>
+            <Text allowFontScaling style={styles.suggestRerollLabel}>
+              Try another
+            </Text>
+          </Pressable>
+        </View>
+
         <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.section}>
           Pick a look
         </Text>
@@ -757,6 +851,74 @@ const makeStyles = (t: Theme) =>
     },
     statusMuted: {
       color: t.color.text.tertiary,
+    },
+    suggestHint: {
+      ...TOKENS.typography.bodySmall,
+      color: t.color.text.tertiary,
+      marginTop: TOKENS.space.xs,
+    },
+    suggestRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      alignItems: 'center',
+      gap: TOKENS.space.xs,
+    },
+    /*
+     * 48dp tall, where the provider screen's twin of this pill is ~24dp and
+     * leans on Pressable's hitSlop. Stated because it is a deliberate departure
+     * from the control being mirrored.
+     *
+     * developer.android.com/guide/topics/ui/accessibility/apps ("Use large,
+     * simple controls") sets the 48dp minimum, and hitSlop does not satisfy it
+     * here: it grows the touch region but not the accessibility node, so
+     * TalkBack's and Switch Access's target stays the visible pill (measured on
+     * device, 2026-09-09). The age chips six lines down this same file already
+     * take `interaction.minTarget` for that reason, and a row of four pills that
+     * disagreed with them about height on one screen would read as two systems.
+     */
+    suggestChip: {
+      minHeight: TOKENS.interaction.minTarget,
+      justifyContent: 'center',
+      paddingHorizontal: TOKENS.space.sm,
+      borderRadius: TOKENS.radius.pill,
+      borderCurve: 'continuous',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: t.color.border.hairline,
+      backgroundColor: t.color.bg.sunken,
+    },
+    /* The one in the field. A ring, not a fill: the chip is not a selection
+       that persists — it is a shortcut to a value the member can then edit, and
+       filling it would claim more than that. */
+    suggestChipChosen: {
+      borderColor: t.color.border.accent,
+    },
+    suggestLabel: {
+      ...TOKENS.typography.labelMedium,
+      color: t.color.text.primary,
+    },
+    /*
+     * Struck through as well as dimmed, so the "taken" does not rest on colour
+     * alone (WCAG 1.4.1, the same requirement the refused checkbox answers
+     * above). The status line under the field says it in words at the same
+     * moment, and the chip's accessibility label carries it for TalkBack.
+     */
+    suggestLabelTaken: {
+      color: t.color.text.tertiary,
+      textDecorationLine: 'line-through',
+    },
+    /* Token for token the provider screen's `nameReroll`, with this screen's
+       48dp target: the same control, so it wears the same pill. */
+    suggestReroll: {
+      minHeight: TOKENS.interaction.minTarget,
+      justifyContent: 'center',
+      paddingHorizontal: TOKENS.space.md,
+      borderRadius: TOKENS.radius.pill,
+      borderCurve: 'continuous',
+      backgroundColor: t.color.bg.accentTint,
+    },
+    suggestRerollLabel: {
+      ...TOKENS.typography.labelMedium,
+      color: t.color.text.accent,
     },
     section: {
       ...TOKENS.typography.titleMediumEmphasized,

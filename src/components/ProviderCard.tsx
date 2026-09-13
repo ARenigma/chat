@@ -11,7 +11,8 @@ import { sizedStorageImageUri } from '../lib/storageImage';
 import { isClayUri, resolveAvatarSource } from '../lib/clayAvatars';
 import { Avatar } from './Avatar';
 import { Card } from './Card';
-import { MetaChip } from './MetaChip';
+import { Icon } from './Icon';
+import { META_CHIP_HEIGHT, MetaChip } from './MetaChip';
 import { Pressable } from './Pressable';
 import { replyLatency, seededExperienceYears } from './ProviderRow';
 
@@ -88,6 +89,23 @@ function ProviderCardView({
   // of the two-field pair, so the dot and the availability label cannot disagree.
   const presence = readPresence(provider.presence, provider.last_active_at);
 
+  /*
+   * AWAY, AND THE ONE THING THIS CARD OFFERS.
+   *
+   * `!presence.here`, the same test the directory row applies
+   * (ProviderRow.tsx:431) — `hidden` included, since `readPresence` never
+   * renders an unknown as present.
+   *
+   * This card has never had a Call or a Video on it, so there is nothing here
+   * to withdraw; what it was missing is the other half of the rule. Its body
+   * opens the conversation, and opening a conversation with somebody who is
+   * away is precisely what notifies them (`announce_chat_open`, migration 068),
+   * so the card already DOES the notify — it just never said so. The marker
+   * below says it, in the same bell + verb the row uses, and the spoken label
+   * stops promising a message to someone who is not there to read it.
+   */
+  const away = !presence.here;
+
   // Fact chips: experience (seeded placeholder), top languages, reply latency.
   // Cards have more horizontal room than rows; latency earns a chip here.
   const chips = [
@@ -100,7 +118,9 @@ function ProviderCardView({
   const bodyText = provider.about?.trim() || provider.headline?.trim() || null;
 
   const accessibility = [
-    `Message ${provider.display_name}`,
+    away
+      ? `Notify ${provider.display_name} that you want to chat`
+      : `Message ${provider.display_name}`,
     presenceForSpeech(presence),
     provider.rating_count > 0
       ? `rated ${provider.rating_avg?.toFixed(1)} from ${provider.rating_count} reviews`
@@ -161,6 +181,25 @@ function ProviderCardView({
               many chips does not hide data. Chips drive the height estimate above.
               https://m3.material.io/components/chips/specs */}
           <View style={styles.chips}>
+            {/* The away marker LEADS the strip, because it is the one item in
+                it that is about what happens next rather than about who they
+                are. Chip geometry and `emphasis` colours so it sits in the row
+                as a peer of the rating rather than as a loose label, and
+                neutral ink rather than the coral: ProviderCard is not on the
+                accent budget (theme.test.ts:1713) and a "they are out" state is
+                not what that budget is reserved for. */}
+            {away ? (
+              <View accessible={false} testID="provider-notify" style={styles.notify}>
+                <Icon
+                  name="bell"
+                  size={TOKENS.icon.xs}
+                  color={styles.notifyLabel.color as string}
+                />
+                <Text allowFontScaling numberOfLines={1} style={styles.notifyLabel}>
+                  Notify
+                </Text>
+              </View>
+            ) : null}
             <MetaChip
               testID="provider-rating"
               tone="emphasis"
@@ -227,6 +266,33 @@ const makeStyles = (t: Theme) =>
       flexWrap: 'wrap',
       gap: TOKENS.space['2xs'],
     },
+    /*
+     * MetaChip's own geometry, repeated rather than imported, because MetaChip
+     * takes a `label` string and this needs a glyph beside the word — and the
+     * glyph is the point (ProviderRow.tsx:427: a bell says something the word
+     * cannot, that this is a different KIND of thing from the tags around it).
+     * The numbers come from META_CHIP_HEIGHT and the chip's own style block so a
+     * row of mixed items stays one height. The label keeps
+     * `labelMediumEmphasized`'s own weight rather than MetaChip's step down to
+     * SemiBold: this item leads the strip, the facts beside it do not.
+     */
+    notify: {
+      height: META_CHIP_HEIGHT,
+      minHeight: META_CHIP_HEIGHT,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.hair,
+      paddingHorizontal: TOKENS.space.sm,
+      borderRadius: TOKENS.radius.xs,
+      borderCurve: 'continuous',
+      borderWidth: 1,
+      borderColor: t.color.border.strong,
+      backgroundColor: t.color.bg.raised,
+    },
+    notifyLabel: {
+      ...TOKENS.typography.labelMediumEmphasized,
+      color: t.color.text.primary,
+    },
   });
 
 // ── Square 2-column grid card ─────────────────────────────────────────────────
@@ -272,6 +338,12 @@ function SquareProviderCardView({
 
   const initial = initialOf(provider.display_name);
   const presence = readPresence(provider.presence, provider.last_active_at);
+  // Same reading, same test as the portrait card above and as ProviderRow: the
+  // badge slot on the cover carries "here now" one way and the one action that
+  // works the other. This card opens the PROFILE, where an away provider's only
+  // action is Notify — so the marker names where the tap goes rather than
+  // promising a call the profile no longer offers either.
+  const away = !presence.here;
 
   // Prefer headline for the secondary line; fall back to spoken presence label.
   const secondaryLine = provider.headline?.trim() || presenceForSpeech(presence);
@@ -319,12 +391,29 @@ function SquareProviderCardView({
                 <Avatar initial={initial} size={56} />
               </View>
             )}
-            {/* Presence dot: top-right badge, ring matches card background */}
-            {presence.here ? (
+            {/* Presence dot: top-right badge, ring matches card background —
+                or, when they are not here, the action that replaces it. The
+                pill is OPAQUE `bg/base` with `text/primary` on it for the same
+                reason the dot's ring is: this corner of the cover is a photo
+                with no scrim over it, so white or translucent ink is unreadable
+                over a light one, and cutting the badge out of the image is what
+                this card already does to stay legible. */}
+            {away ? (
+              <View accessible={false} testID="provider-sq-notify" style={styles.notify}>
+                <Icon
+                  name="bell"
+                  size={TOKENS.icon.xs}
+                  color={styles.notifyLabel.color as string}
+                />
+                <Text allowFontScaling numberOfLines={1} style={styles.notifyLabel}>
+                  Notify
+                </Text>
+              </View>
+            ) : (
               <View style={styles.presenceRing}>
                 <View style={styles.presenceDot} />
               </View>
-            ) : null}
+            )}
           </View>
           {/* Footer */}
           <View style={styles.footer}>
@@ -398,6 +487,27 @@ const makeSquareStyles = (t: Theme) =>
       height: 10,
       borderRadius: 5,
       backgroundColor: t.color.state.available,
+    },
+    // The away state's marker, in the dot's slot. `labelSmall` rather than the
+    // portrait card's 12dp: this pill sits on a ~165dp card and has to leave the
+    // face under it visible, which is the same budget argument the card's own
+    // footer makes.
+    notify: {
+      position: 'absolute',
+      top: TOKENS.space.xs,
+      right: TOKENS.space.xs,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.hair,
+      paddingHorizontal: TOKENS.space['2xs'],
+      paddingVertical: TOKENS.space.hair,
+      borderRadius: TOKENS.radius.pill,
+      borderCurve: 'continuous',
+      backgroundColor: t.color.bg.base,
+    },
+    notifyLabel: {
+      ...TOKENS.typography.labelSmall,
+      color: t.color.text.primary,
     },
     footer: {
       paddingHorizontal: TOKENS.space.sm,
