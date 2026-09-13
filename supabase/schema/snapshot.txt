@@ -2039,7 +2039,7 @@ INDEX messages_session_id CREATE INDEX messages_session_id ON public.messages US
 INDEX moderation_actions_pkey CREATE UNIQUE INDEX moderation_actions_pkey ON public.moderation_actions USING btree (id)
 INDEX moderation_cases_pkey CREATE UNIQUE INDEX moderation_cases_pkey ON public.moderation_cases USING btree (id)
 INDEX paid_sessions_member CREATE INDEX paid_sessions_member ON public.paid_sessions USING btree (member_id, created_at DESC)
-INDEX paid_sessions_one_live CREATE UNIQUE INDEX paid_sessions_one_live ON public.paid_sessions USING btree (conversation_id) WHERE (status <> ALL (ARRAY['ended'::paid_session_status, 'reported_hold'::paid_session_status]))
+INDEX paid_sessions_one_live CREATE UNIQUE INDEX paid_sessions_one_live ON public.paid_sessions USING btree (conversation_id, channel) WHERE (status <> ALL (ARRAY['ended'::paid_session_status, 'reported_hold'::paid_session_status]))
 INDEX paid_sessions_pkey CREATE UNIQUE INDEX paid_sessions_pkey ON public.paid_sessions USING btree (id)
 INDEX paid_sessions_provider CREATE INDEX paid_sessions_provider ON public.paid_sessions USING btree (provider_id, created_at DESC)
 INDEX paid_sessions_status CREATE INDEX paid_sessions_status ON public.paid_sessions USING btree (status) WHERE (status <> ALL (ARRAY['ended'::paid_session_status, 'reported_hold'::paid_session_status]))

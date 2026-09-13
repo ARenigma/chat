@@ -137,6 +137,7 @@ const MIGRATIONS = [
   'supabase/migrations/096_block_requires_prior_conversation.sql',
   'supabase/migrations/097_recharge_helpers_credit_the_bucket.sql',
   'supabase/migrations/098_conversation_labels.sql',
+  'supabase/migrations/099_chat_session_survives_a_ringing_call.sql',
 ];
 
 /**
@@ -727,6 +728,13 @@ const suites = [
     ),
     label:
       'writers vs constraints: no function writes a literal its CHECK forbids',
+  },
+  {
+    file: join(
+      ROOT,
+      'supabase/tests/430_chat_session_survives_a_ringing_call.sql',
+    ),
+    label: 'chat survives a ringing call, and dies only when the call connects',
   },
 ];
 
