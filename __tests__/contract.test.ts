@@ -2967,9 +2967,17 @@ describe('iOS list separators are drawn the way iOS draws them', () => {
     const row = read('src/components/ProviderRow.tsx');
     expect(row).not.toContain('name="chevronRight"');
     expect(row).toContain('styles.cta');
-    // The label is a variable now: "Call" for a provider who takes calls,
-    // "Chat" for one who does not. Asserted on both, so neither can be dropped.
-    expect(row).toContain("const ctaLabel = canCall ? 'Call' : 'Chat'");
+    /*
+     * The label is a variable, and as of 2026-09-13 it has THREE states, each
+     * naming a different action: "Notify" when the provider is away (a bell —
+     * opening the conversation pushes to them, migration 068), "Call" when they
+     * take calls, "Chat" when they do not. Asserted on all three, so none can
+     * be dropped, and the invariant this test protects — that the row says in
+     * words where it goes — holds in every state.
+     */
+    expect(row).toContain(
+      "const ctaLabel = away ? 'Notify' : canCall ? 'Call' : 'Chat'",
+    );
     // Still live elsewhere, which is what made it worth adding in the first place.
     const chevronUsers = walk(join(ROOT, 'src'))
       .filter(f => /\.tsx$/.test(f))

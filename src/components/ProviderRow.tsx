@@ -409,8 +409,28 @@ function ProviderRowView({
    * glyph. So the label follows the capability, and the action follows the
    * label.
    */
-  const canCall = provider.audio_enabled && onCall !== undefined;
-  const ctaLabel = canCall ? 'Call' : 'Chat';
+  /*
+   * AWAY REPLACES THE CTA WITH A BELL (Amit, 2026-09-13: "For offline girls
+   * there should be CTA to notify replacing call with bell glyph").
+   *
+   * A Call button on somebody who is not there is the same false affordance the
+   * `audio_enabled` check below already removes — the tap would ring a phone
+   * nobody is holding. "Notify" is the honest action, and it is one the server
+   * already performs: opening the conversation calls `announce_chat_open`
+   * (migration 068), which pushes to the peer precisely when they are away, the
+   * member has a minute, and no session is running. So the bell does not need a
+   * new endpoint; it names what already happens and stops the row promising a
+   * call instead.
+   *
+   * The glyph is the exception to this row's own "no glyph in front of the
+   * label" rule, recorded below. That rule exists because a phone icon beside
+   * the word "Call" was saying the same thing twice. A bell says something the
+   * word cannot: that this is a different KIND of action from the one the other
+   * rows offer, which is the whole point of the state.
+   */
+  const away = !presence.here;
+  const canCall = provider.audio_enabled && onCall !== undefined && !away;
+  const ctaLabel = away ? 'Notify' : canCall ? 'Call' : 'Chat';
 
   const accessibility = [
     `${provider.display_name}${provider.age !== null ? `, ${provider.age}` : ''}`,
@@ -584,7 +604,11 @@ function ProviderRowView({
               }
               testID={`provider-cta-${provider.id}`}
               accessibilityLabel={
-                canCall ? `Call ${provider.display_name}` : `Message ${provider.display_name}`
+                away
+                  ? `Notify ${provider.display_name} that you want to chat`
+                  : canCall
+                    ? `Call ${provider.display_name}`
+                    : `Message ${provider.display_name}`
               }
               press="none"
               highlight="dim"
@@ -601,6 +625,13 @@ function ProviderRowView({
                   22/min" — and it was doing less than it looked: the phone said
                   "this rate buys a call", which the word "Call" now says
                   outright. */}
+              {away ? (
+                <Icon
+                  name="bell"
+                  size={TOKENS.icon.sm}
+                  color={styles.ctaLabel.color as string}
+                />
+              ) : null}
               <Text allowFontScaling numberOfLines={1} style={styles.ctaLabel}>
                 {ctaLabel}
                 <Text style={styles.ctaRate}>{'  '}</Text>

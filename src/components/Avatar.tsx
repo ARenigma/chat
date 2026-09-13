@@ -244,7 +244,17 @@ function AvatarView({
           />
         ) : null}
       </View>
-      {online ? <PresenceDot size={dot} surface={surface} /> : null}
+      {/*
+        * The dot is ALWAYS drawn now — filled green when here, a grey ring when
+        * not (Amit, 2026-09-13: "grey unfilled dot instead of green dot in DP").
+        *
+        * Absence used to carry the "away" meaning, which is the weakest signal
+        * a UI has: nothing looks identical to not-loaded-yet, and on a grid of
+        * faces a member cannot tell "nobody is here" from "presence is still
+        * arriving". An unfilled dot says the same thing out loud, in the same
+        * place, at the same size.
+        */}
+      <PresenceDot size={dot} surface={surface} here={online} />
     </Animated.View>
   );
 }
@@ -271,9 +281,11 @@ function AvatarView({
 function PresenceDot({
   size,
   surface,
+  here,
 }: {
   size: number;
   surface: 'base' | 'sunken';
+  here: boolean;
 }) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -290,7 +302,12 @@ function PresenceDot({
             surface === 'sunken' ? theme.color.bg.sunken : theme.color.bg.base,
         },
       ]}>
-      <View style={[{ width: inner, height: inner, borderRadius: inner / 2 }, styles.dot]} />
+      <View
+        style={[
+          { width: inner, height: inner, borderRadius: inner / 2 },
+          here ? styles.dot : styles.dotAway,
+        ]}
+      />
     </View>
   );
 }
@@ -331,5 +348,19 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   },
   dot: {
     backgroundColor: t.color.state.available,
+  },
+  /*
+   * Away: an UNFILLED ring, not a grey disc.
+   *
+   * A grey disc reads as a third presence state — "here", "busy", "away" — and
+   * we only have two. Hollow says "the same indicator, not lit", which is the
+   * relationship the two states actually have. It is also why the border is
+   * `border/strong` rather than a tint of the green: nothing about away is
+   * green, and a desaturated green reads as a weak yes.
+   */
+  dotAway: {
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: t.color.border.strong,
   },
 });
