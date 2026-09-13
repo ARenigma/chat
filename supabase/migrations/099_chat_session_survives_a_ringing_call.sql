@@ -49,7 +49,11 @@
 --    moment a non-chat session takes its first billed minute. For a call that
 --    already requires `v_both_media`, i.e. media connected on both sides.
 
-begin;
+-- No explicit BEGIN/COMMIT here, matching the other 98 migrations: the Supabase
+-- CLI wraps each file in its own transaction, and a COMMIT inside that closes
+-- it early — which would let the schema change land while the version record
+-- that tracks it does not. That is the "deployed DB holds half a migration"
+-- failure this project has already been bitten by.
 
 -- ── 1. One live session per conversation PER CHANNEL ────────────────────────
 drop index if exists public.paid_sessions_one_live;
@@ -398,4 +402,3 @@ begin
 end;
 $$;
 
-commit;
