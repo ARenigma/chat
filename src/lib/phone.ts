@@ -308,7 +308,7 @@ export const IN_MOBILE_DIGITS = INDIA.nationalLength;
  * `$1 $2`-style space join; only `US` differs, and the note on that entry
  * explains why its `($1) $2-$3` template is recorded but not rendered.
  */
-const GROUP_SEPARATOR = '   ';
+const GROUP_SEPARATOR = '  ';
 
 /**
  * Longest string the field can display for `country`: its digits plus its
@@ -355,8 +355,23 @@ export function nationalDisplayLength(country: PhoneCountry = INDIA): number {
  * (`PhoneVerifySheet` does use a real example, and can, because it is India-only
  * by design — see the note on IN_MOBILE_DIGITS.)
  */
+/**
+ * The gap BETWEEN the dashes of one group, so the shape reads as a row of digit
+ * slots rather than a rule.
+ *
+ * Separate from GROUP_SEPARATOR on purpose, and the two were briefly confused
+ * (Amit, 2026-09-13: "space between two halves of number input is too much.. i
+ * meant to increase space between each - and not two halves"). Widening the
+ * GROUP separator pushed the two halves of the number apart, which is a change
+ * to the real formatted number every member sees. This one is placeholder-only:
+ * it never touches `formatNationalDigits`, so no typed number moves.
+ */
+const DASH_GAP = ' ';
+
 export function placeholderShape(country: PhoneCountry = INDIA): string {
-  return country.groups.map(n => '-'.repeat(n)).join(GROUP_SEPARATOR);
+  return country.groups
+    .map(n => Array.from({ length: n }, () => '-').join(DASH_GAP))
+    .join(GROUP_SEPARATOR);
 }
 
 /** India's display length: 10 digits + one 2-wide separator = 12. */

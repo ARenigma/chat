@@ -2913,7 +2913,7 @@ describe('dark theme: Telegram midnight-blue palette, and it still passes contra
      * lighter coral that accent-coloured TEXT needs to clear AA on the dark base.
      */
     expect(DARK.color.bg.accent).toBe('#FF8457');
-    expect(DARK.color.text.accent).toBe('#FFA599');
+    expect(DARK.color.text.accent).toBe('#FFAD8F');
     // The retired brand greens must not creep back in as the accent.
     expect(DARK.color.bg.accent).not.toBe('#21C063');
     expect(DARK.color.bg.accent).not.toBe('#25D366');
@@ -3074,17 +3074,48 @@ describe('the brand stays coral, and coral is a hue', () => {
    */
   const CORAL_HUE = [10, 26] as const;
   /*
-   * The anti-brown floor. Brown is a dark orange with its saturation removed,
-   * so anything in the hue band under this is brown by construction. 0.5 is
-   * below every value the family currently holds and above #6E3A2E's 0.41,
-   * which is the fill that prompted this.
+   * The anti-brown floor, take one: saturation. Necessary and NOT sufficient,
+   * which is the lesson. #6E3A2E (S41) was caught by this. #A53A12 was S80 and
+   * sailed through it and still read brown, because brown is DARK-plus-orange
+   * and this says nothing about lightness.
    */
   const MIN_SAT = 0.5;
 
+  /*
+   * The anti-brown floor, take two: LIGHTNESS, and it applies to `bg/accent`
+   * ALONE. That token is the one a member points at and calls "our coral", so
+   * it is the one that has to actually be coral.
+   *
+   * It cannot be applied to the other three, and the reason is arithmetic
+   * rather than reluctance:
+   *   bg/accentStrong  carries white LABELS at 4.5:1, which caps it near L46.
+   *   text/accent      is small-text ink on white at 4.5:1, capped at L40.
+   *   bubble/mine      carries near-white text in dark mode, so it must be dark.
+   * All three are deep BY REQUIREMENT. Demanding brightness of them would be
+   * demanding an illegible app. What stops them going muddy is MIN_SAT, and
+   * what stops the identity colour going muddy is this.
+   *
+   * 0.5 sits above #A53A12's L36 and #C14B1F's L44, and below the L58 that
+   * bg/accent holds.
+   */
+  const MIN_LIGHT_IDENTITY = 0.5;
+
+  /*
+   * `text/accent` JOINED on 2026-09-13, and its absence was this gate's first
+   * miss. When the family was warmed from H8 to H16 the ink step was not in the
+   * substitution list, so it sat at H9 S61 — the old red, desaturated, i.e.
+   * brown — and every test here passed because this list did not name it. A
+   * gate is only as wide as its list, which is the same failure the gate itself
+   * was written to stop.
+   *
+   * Anything that resolves to a coral belongs here. If a new accent token is
+   * added and not listed, this comment is the reason it should be.
+   */
   const FAMILY = [
     'bg/accent',
     'bg/accentStrong',
     'border/accent',
+    'text/accent',
     'bubble/mine',
   ] as const;
 
@@ -3095,10 +3126,10 @@ describe('the brand stays coral, and coral is a hue', () => {
       };
       const value = spec.color.tokens[name]?.[mode];
       expect(value).toMatch(/^#[0-9A-Fa-f]{6}$/);
-      const { h, s } = hsl(value!);
+      const { h, s, l } = hsl(value!);
       // Reported as one object so a failure names the token, the mode AND the
       // measured numbers, rather than just "expected 8 to be >= 10".
-      const measured = { name, mode, h: Math.round(h), s: Math.round(s * 100) };
+      const measured = { name, mode, h: Math.round(h), s: Math.round(s * 100), l: Math.round(l * 100) };
       expect({ ...measured, coralHue: h >= CORAL_HUE[0] && h <= CORAL_HUE[1] }).toEqual({
         ...measured,
         coralHue: true,
@@ -3107,6 +3138,12 @@ describe('the brand stays coral, and coral is a hue', () => {
         ...measured,
         saturated: true,
       });
+      if (name === 'bg/accent') {
+        expect({ ...measured, brightEnoughToReadAsCoral: l >= MIN_LIGHT_IDENTITY }).toEqual({
+          ...measured,
+          brightEnoughToReadAsCoral: true,
+        });
+      }
     }
   });
 });
