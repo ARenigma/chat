@@ -382,7 +382,10 @@ function Body({
   // block child, right-aligned, measures cleanly and never clips or duplicates.
   return (
     <View style={stamp.textBody}>
-      <Text testID={testID} allowFontScaling style={textStyle}>
+      <Text
+        testID={testID}
+        allowFontScaling
+        style={[textStyle, stamp.messageText]}>
         {message}
       </Text>
       {timestamp ? (
@@ -1635,14 +1638,68 @@ const makeStyles = (t: Theme) =>
       right: 0,
       bottom: 0,
     },
+    /* Shrinks so it wraps INSIDE the row; the meta beside it never does. */
+    messageText: {
+      flexShrink: 1,
+    },
     myText: {
       ...TOKENS.typography.bodyLarge,
       color: t.color.bubble.text,
       flexShrink: 1,
     },
+    /*
+     * WhatsApp's rule, and it is a rule rather than a look: "when the message
+     * and stamp both fit on one line they share it with the stamp
+     * right-aligned; when they can't, the text takes full width across possibly
+     * multiple lines."
+     *
+     * A wrapping ROW gives exactly that with no measurement tricks. A short
+     * message is one flex item narrow enough to leave room, so the clock sits
+     * beside it and the bubble is ONE line — which is the thickening Amit
+     * reported: every "Hi" was paying for a second line to say 3:55 pm. A long
+     * message fills the row, so the clock wraps beneath it, right-aligned.
+     *
+     * WHY NOT THE WEB TECHNIQUE. Every WhatsApp Web recreation floats the stamp
+     * and reserves space with an invisible clone at the end of the text. That is
+     * documented in `Body` as the FIRST of three things tried here and broken on
+     * Android: `color: 'transparent'` did not suppress the reserve, so the time
+     * rendered twice. The other two failures are avoided by construction —
+     * the meta is a sibling block rather than nested in the message `<Text>` (so
+     * it cannot be under-measured and clipped), and it is `flexShrink: 0` with a
+     * single-line label (so it cannot wrap mid-word, which is what a plain flex
+     * row did).
+     *
+     * TWO DEPARTURES FROM WHATSAPP REMAIN, both measured on device rather than
+     * assumed, and both stated because the next person will otherwise retry
+     * them:
+     *
+     * 1. A message whose text is NARROWER than the clock — "Hi" — still puts
+     *    the clock on its own line. Yoga sizes a wrapping row to its WIDEST
+     *    SINGLE ITEM, not to the sum of the items the way CSS does, so the
+     *    bubble comes out clock-wide and text + clock then no longer fit on one
+     *    line. Removing `flexShrink` here was tried on device to let the row
+     *    take its max-content width; it changed nothing, for that reason.
+     *    Fixing it needs the text measured before layout, which is the same
+     *    measurement the three failed attempts in `Body` were each trying to
+     *    avoid.
+     *
+     * 2. A multi-line message with a SHORT last line wraps the clock beneath
+     *    rather than tucking it onto that line. Flexbox treats the whole
+     *    `<Text>` as one opaque item, so the last line's width is not knowable
+     *    here.
+     *
+     * What DID change is the common case: any message wider than its clock —
+     * which is most real messages — now shares its line, where before every
+     * bubble in the app paid for a second one.
+     */
     textBody: {
       minWidth: 0,
       flexShrink: 1,
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      alignItems: 'flex-end',
+      justifyContent: 'flex-end',
+      columnGap: TOKENS.space.xs,
     },
     // Inline metadata row at the bottom-right of every text/voice bubble.
     // Both timestamp and (for outgoing) delivery tick sit here so they read as
@@ -1652,7 +1709,17 @@ const makeStyles = (t: Theme) =>
       alignItems: 'center',
       alignSelf: 'flex-end',
       gap: TOKENS.space.hair,
-      marginTop: -TOKENS.space.hair,
+      /*
+       * `flexShrink: 0` is load-bearing: it is what stops the clock breaking
+       * mid-word ("8:10 p" / "m"), which is the third failure recorded in
+       * `Body`. A plain flex row let the meta shrink and wrap; refusing to
+       * shrink means it either fits beside the text or moves to its own line
+       * whole, which are the only two states WhatsApp has.
+       *
+       * The negative marginTop is gone with the vertical stack it was
+       * correcting for.
+       */
+      flexShrink: 0,
     },
     // The per-bubble clock inside metaRow. Same metrics as BubbleTime; peer sits
     // in tertiary, mine in muted white.

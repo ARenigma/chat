@@ -1684,12 +1684,32 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: TOKENS.space.xs,
-    // The emoji button is now the capsule's first child, so the LEADING inset
-    // only has to clear the button's own press disc and the trailing one is the
-    // text's breathing room. (These two were the other way round while the emoji
-    // sat on the trailing edge.)
+    /*
+     * The trailing inset is `space.xs`, matching `gap` above, so every gap in
+     * the row is the same 8dp (Amit, 2026-09-13: "the input box padding around
+     * buttons is unequal").
+     *
+     * It was `space.md`. Measured on an S22: emoji-to-text 8dp, clip-to-mic
+     * 8dp, and text-to-clip THIRTY-TWO — the 16 here plus the camera slot's own
+     * 8dp margin plus the capsule edge. The comment justified it as "the text's
+     * breathing room", which is a real need, but 16 was twice what any other
+     * gap in the capsule got and it read as the field stopping early.
+     *
+     * The LEADING inset stays `space.hair`: the emoji button is the capsule's
+     * first child and carries its own 40dp press disc, so the visible gap there
+     * is the disc's own edge, not this number. The two are asymmetric in the
+     * style precisely so the rendered gaps come out equal.
+     *
+     * ZERO in the end, not 8, and that is the point: the clip slot already
+     * carries `marginLeft: space.xs` in `cameraStyle` (it animates, which is
+     * why the gap has to live there and not here). Any padding on this side
+     * STACKS on top of it. 16 gave 32dp, 8 gave 24dp, and 0 gives the single
+     * 8dp gap every other control in the capsule gets. Measured on device each
+     * time rather than reasoned about, because the two owners of this gap are
+     * in different files.
+     */
     paddingLeft: TOKENS.space.hair,
-    paddingRight: TOKENS.space.md,
+    paddingRight: 0,
     // Zero. The 40dp of children is the capsule's CONTENT height; the capsule
     // itself is CAPSULE_MIN_H (44) because a 40dp box cannot paint a 22dp
     // corner. That 4dp lives on `inputBar`'s own paddingVertical, where it is
