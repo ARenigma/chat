@@ -2889,7 +2889,7 @@ describe('dark theme: Telegram midnight-blue palette, and it still passes contra
      * 2026-09-10: the outgoing bubble follows the brand revert to coral. Amit:
      * a colour change swaps every brand-green surface to coral, bubbles too, so
      * bubble/mine dark moved from the WhatsApp-green-era Telegram blue #3E618A to
-     * a deep coral (#6E3A2E) carrying white text — this supersedes the earlier
+     * a deep coral (#93361A) carrying white text — this supersedes the earlier
      * "dark mode looks okay.. dont change that token", which scoped only the
      * accent. The INCOMING bubble is neutral (not brand), so it does not move.
      *
@@ -2897,7 +2897,7 @@ describe('dark theme: Telegram midnight-blue palette, and it still passes contra
      * disabled fills — it simply is not the peer bubble any more.
      */
     expect(DARK.color.bubble.theirs).toBe('#232E3B');
-    expect(DARK.color.bubble.mine).toBe('#6E3A2E');
+    expect(DARK.color.bubble.mine).toBe('#93361A');
     expect(DARK.color.bg.sunken).toBe('#232E3B');
   });
 
@@ -2909,10 +2909,10 @@ describe('dark theme: Telegram midnight-blue palette, and it still passes contra
      * change dark". Was WhatsApp green #21C063 / #71EB85; before that Telegram
      * blue #5FA3DE / #64B5EF.
      *
-     * #FF6B58 is the dark-page coral (mark/fill); text/accent is the
+     * #FF8457 is the dark-page coral (mark/fill); text/accent is the
      * lighter coral that accent-coloured TEXT needs to clear AA on the dark base.
      */
-    expect(DARK.color.bg.accent).toBe('#FF6B58');
+    expect(DARK.color.bg.accent).toBe('#FF8457');
     expect(DARK.color.text.accent).toBe('#FFA599');
     // The retired brand greens must not creep back in as the accent.
     expect(DARK.color.bg.accent).not.toBe('#21C063');
@@ -3034,6 +3034,82 @@ describe('the transition lock has a write side', () => {
   });
 });
 
+
+/**
+ * THE HUE BAND — the gate that could see "brown".
+ *
+ * Added 2026-09-13 after Amit asked, fairly: "why do i have to tell you these
+ * things when so many skills are there to use, verify, fix?" The honest answer
+ * was that nothing here could see it. `contrast:check` proves LEGIBILITY and
+ * the token suites prove nothing is HARDCODED — neither has any opinion about
+ * whether a colour still looks like the brand. So darkening the coral by
+ * lightness alone walked it into terracotta with every gate green, twice.
+ *
+ * Coral is a HUE, not a name. #FF7F50 (the CSS colour actually called coral) is
+ * H16; peach is H28; our family had drifted to H8, which is vermilion — and a
+ * dark, desaturated H8 is brown. That is a mechanical fact, so it can be a test.
+ *
+ * Two bounds, and the saturation floor is the one that catches brown
+ * specifically: brown IS a dark orange with the saturation taken out, so a hue
+ * check alone would have passed #6E3A2E (H11 S41) — the bubble fill that was
+ * the actual complaint.
+ */
+describe('the brand stays coral, and coral is a hue', () => {
+  const hsl = (hex: string): { h: number; s: number; l: number } => {
+    const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255) as [number, number, number];
+    const mx = Math.max(r, g, b);
+    const mn = Math.min(r, g, b);
+    const l = (mx + mn) / 2;
+    if (mx === mn) return { h: 0, s: 0, l };
+    const d = mx - mn;
+    const s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+    const h =
+      (mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4) * 60;
+    return { h, s, l };
+  };
+
+  /*
+   * 10-26. Wide enough for a deep step and a bright one to differ, narrow
+   * enough to exclude both red (<10, where dark reads brown) and orange (>26).
+   */
+  const CORAL_HUE = [10, 26] as const;
+  /*
+   * The anti-brown floor. Brown is a dark orange with its saturation removed,
+   * so anything in the hue band under this is brown by construction. 0.5 is
+   * below every value the family currently holds and above #6E3A2E's 0.41,
+   * which is the fill that prompted this.
+   */
+  const MIN_SAT = 0.5;
+
+  const FAMILY = [
+    'bg/accent',
+    'bg/accentStrong',
+    'border/accent',
+    'bubble/mine',
+  ] as const;
+
+  it.each(FAMILY)('keeps %s in the coral hue band, in both modes', name => {
+    for (const mode of ['Light', 'Dark'] as const) {
+      const spec = JSON.parse(read('design/tokens.json')) as {
+        color: { tokens: Record<string, Record<string, string>> };
+      };
+      const value = spec.color.tokens[name]?.[mode];
+      expect(value).toMatch(/^#[0-9A-Fa-f]{6}$/);
+      const { h, s } = hsl(value!);
+      // Reported as one object so a failure names the token, the mode AND the
+      // measured numbers, rather than just "expected 8 to be >= 10".
+      const measured = { name, mode, h: Math.round(h), s: Math.round(s * 100) };
+      expect({ ...measured, coralHue: h >= CORAL_HUE[0] && h <= CORAL_HUE[1] }).toEqual({
+        ...measured,
+        coralHue: true,
+      });
+      expect({ ...measured, saturated: s >= MIN_SAT }).toEqual({
+        ...measured,
+        saturated: true,
+      });
+    }
+  });
+});
 
 describe('a primary action is the brand colour, not black and white', () => {
   /*

@@ -1414,7 +1414,8 @@ export function OnboardingScreen({ onDone }: Props) {
                           <Icon
                             name="chevronRight"
                             size={TOKENS.icon.md}
-                            color={theme.color.text.onAccent}
+                            /* Dark ink on the peach disc — see `goDisc`. */
+                            color={theme.color.text.primary}
                           />
                         )}
                       </View>
@@ -2088,15 +2089,24 @@ const makeStyles = (t: Theme) =>
       alignItems: 'center',
       justifyContent: 'center',
       /*
-       * ACCENT, not near-black. It was `text.primary` on the reasoning that it
-       * matched Fuse's black primary and that "coral is reserved for the active
-       * step's icon, not the submit" — fidelity to the reference winning over
-       * the app's own brand. Amit has now called that twice, and the app's own
-       * rule is settled: a primary action is the brand colour (see Button.tsx
-       * and the suite "a primary action is the brand colour, not black and
-       * white"). accentSTRONG carries `text/onAccent` at 6.16:1.
+       * THE BRAND PEACH, and the glyph on it is DARK (Amit, 2026-09-13:
+       * "buttons like arrow should have brand peach").
+       *
+       * It was near-black `text.primary`, on the reasoning that it matched
+       * Fuse's black primary — fidelity to the reference beating the app's own
+       * brand. Then briefly `accentStrong`, which is the label-carrying deep
+       * step and reads terracotta at disc size.
+       *
+       * This is `bg/accent`, the bright peachy step, and it can be BECAUSE the
+       * chevron is not text. A glyph is non-text UI at the 3:1 floor
+       * (developer.android.com/guide/topics/ui/accessibility/apps), not the
+       * 4.5:1 a label takes — which is exactly why the CTAs above cannot be
+       * this colour and this one can. White on it is 3.08:1, technically over
+       * the line and visibly weak, so the chevron takes `text/primary` instead
+       * at 5.52:1. That is the whole trick to a peachy button: peach is light,
+       * so the ink goes dark.
        */
-      backgroundColor: t.color.bg.accentStrong,
+      backgroundColor: t.color.bg.accent,
     },
     // Age bracket picker: chip row + continue button.
     ageBlock: {

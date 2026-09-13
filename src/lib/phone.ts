@@ -308,7 +308,7 @@ export const IN_MOBILE_DIGITS = INDIA.nationalLength;
  * `$1 $2`-style space join; only `US` differs, and the note on that entry
  * explains why its `($1) $2-$3` template is recorded but not rendered.
  */
-const GROUP_SEPARATOR = '  ';
+const GROUP_SEPARATOR = '   ';
 
 /**
  * Longest string the field can display for `country`: its digits plus its
