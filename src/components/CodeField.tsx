@@ -488,6 +488,20 @@ const makeStyles = (t: Theme) =>
        * and it re-rags on every keystroke as the code fills in.
        */
       ...TOKENS.typography.numeralLarge,
+      /*
+       * Geist REGULAR, not the token's Bold (Amit, 2026-09-13: "use geist
+       * regular for phone-otp"). Six 24px digits in boxes read as heavy at
+       * Bold; Regular lets the boxes do the emphasis instead of the strokes.
+       *
+       * The token is still the source of the SIZE (24/32) and of
+       * `fontVariant: ['tabular-nums']`, which is the part that must not be
+       * lost — and it is not, because Geist-Regular ships `tnum` too (checked
+       * in its GSUB table, not assumed). Worth knowing why that matters here:
+       * Geist's PROPORTIONAL digits run 384 to 663 units, so a `1` is about
+       * 42% narrower than a `0`, and without the feature each digit would sit
+       * at a different offset inside its fixed box.
+       */
+      fontFamily: TOKENS.face.regular,
       color: t.color.text.primary,
     },
     input: {

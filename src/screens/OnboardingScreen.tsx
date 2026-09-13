@@ -2064,6 +2064,14 @@ const makeStyles = (t: Theme) =>
        * this adds the feature rather than taking a `numeral*` token.
        */
       fontVariant: ['tabular-nums'],
+      /*
+       * Geist REGULAR, not the token's Bold. A phone number is data being
+       * entered, not a heading — Bold at this size made the field shout over
+       * the step title above it, which is the thing actually being emphasised.
+       * Geist-Regular ships `tnum`, so the tabular figures above survive the
+       * swap.
+       */
+      fontFamily: TOKENS.face.regular,
       fontSize: SOURCE_METRICS.inputText,
       lineHeight: SOURCE_METRICS.inputText * 1.3,
       color: t.color.text.primary,

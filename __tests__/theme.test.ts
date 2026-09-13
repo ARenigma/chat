@@ -3076,6 +3076,15 @@ describe('the transition lock has a write side', () => {
  * a typographic cost with no benefit.
  */
 describe('a number that changes is set in tabular figures', () => {
+  /** `TOKENS.face` resolved to the file names on disk. */
+  const FACE_FILES = {
+    regular: 'Geist-Regular',
+    medium: 'Geist-SemiBold',
+    semibold: 'Geist-SemiBold',
+    bold: 'Geist-Bold',
+    wordmark: 'TitanOne',
+  } as const;
+
   const RETICKING = [
     ['src/screens/CallScreen.tsx', 'timer', 'the call duration, once a second'],
     ['src/components/CodeField.tsx', 'digit', 'six OTP digits in fixed boxes'],
@@ -3091,6 +3100,31 @@ describe('a number that changes is set in tabular figures', () => {
       rule.includes("fontVariant: ['tabular-nums']") ||
       /typography\.numeral\w+/.test(rule);
     expect({ file, style, tabular }).toEqual({ file, style, tabular: true });
+
+    /*
+     * And if the call site OVERRIDES the face, the new one must actually be
+     * able to do tabular figures.
+     *
+     * This is the hole the check above leaves. The `numeral*` tokens are
+     * Geist-Bold and the sibling test proves THAT face ships `tnum` — but
+     * these two styles then set `fontFamily: TOKENS.face.regular` on top
+     * (Amit wanted Regular for the phone and OTP fields), which silently moves
+     * the text to a different binary. Geist-Regular does ship `tnum`, checked
+     * here against the file rather than the family name, so the swap is safe —
+     * and a future swap to a face without it fails instead of quietly
+     * un-tabularising a timer nobody is looking at.
+     */
+    const override = /fontFamily: TOKENS\.face\.(\w+)/.exec(rule);
+    if (override !== null) {
+      const face = FACE_FILES[override[1] as keyof typeof FACE_FILES];
+      expect({ style, face }).toEqual({ style, face: expect.any(String) });
+      const binary = readFileSync(join(ROOT, 'assets/fonts', `${face}.ttf`));
+      expect({ style, face, tabularCapable: binary.includes('tnum') }).toEqual({
+        style,
+        face,
+        tabularCapable: true,
+      });
+    }
   });
 });
 
