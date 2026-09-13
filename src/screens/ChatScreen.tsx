@@ -535,12 +535,12 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
     pendingRequest != null &&
     selfId != null &&
     pendingRequest.initiator_id !== selfId;
-  const spJoining =
-    isMemberSide &&
-    pendingRequest != null &&
-    pendingRequest.channel === 'chat' &&
-    pendingRequest.responded_at == null &&
-    activeSession == null;
+  /*
+   * `spJoining` was deleted on 2026-09-13 with the placeholder ladder that was
+   * its only reader. The state it described — a chat request sent and not yet
+   * answered — is still shown, by the header's presence line and the pending
+   * request row; it just no longer also retitles the text field.
+   */
   const provider = providers?.find(p => p.id === providerId);
   /*
    * What this provider offers (migration 064), folded into the operator's own
@@ -1945,20 +1945,33 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
               awaitingMemberConsent ||
               offerExplicitStart
             }
+            /*
+             * "Message", full stop, whenever the field can actually be typed in
+             * (Amit, 2026-09-13: "composer placeholder text should be just
+             * Message").
+             *
+             * It was a five-way ladder: "Say hello" before the first message,
+             * "<name> is on their way" while the provider joined, "Reply" when
+             * a quote was armed, "Message" otherwise. Each was a small piece of
+             * narration in the one place a member is about to type, and the
+             * field changing its own label under them is noise rather than
+             * help — the reply state is already shown by the reply bar above
+             * the field, and "on their way" by the header's presence line.
+             *
+             * The three DISABLED states keep their text, and that is not a
+             * hedge against the instruction: a greyed-out field saying
+             * "Message" would be the app declining to say why it will not take
+             * one. Those strings are the reason the field is off, not a prompt
+             * to write.
+             */
             placeholder={
               chatClosed
                 ? `${name} is not taking chats right now`
                 : offerExplicitStart
                   ? 'Start a session to keep talking'
                   : awaitingMemberConsent
-                  ? 'Say yes above when you are ready'
-                  : spJoining
-                    ? `${name} is on their way`
-                    : memberHasSent
-                      ? replyTo !== null
-                        ? 'Reply'
-                        : 'Message'
-                      : 'Say hello'
+                    ? 'Say yes above when you are ready'
+                    : 'Message'
             }
             sendHaloKey={sendHaloKey}
             onFocusChange={onComposerFocus}
