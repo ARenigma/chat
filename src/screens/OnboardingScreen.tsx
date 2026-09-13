@@ -15,6 +15,8 @@ import {
   StyleSheet,
   Text,
   View,
+  type NativeSyntheticEvent,
+  type TextInputSelectionChangeEventData,
 } from 'react-native';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { EASE_CONSTANT, EASE_OUT, springTo } from '../theme/motion';
@@ -623,6 +625,58 @@ export function OnboardingScreen({ onDone }: Props) {
    * one. `phone` is not in the dependency array for the same reason; reading it
    * here would reintroduce the exact staleness the ref exists to avoid.
    */
+  /**
+   * The caret the LAST edit computed, held so a stale native echo cannot win.
+   *
+   * THE BUG THIS FIXES, measured on an S22 (Android 16) on 2026-09-13. Typing
+   * 8826671228 one key at a time produced 8826622817 — the same digits,
+   * reordered, and deterministically: a one-second pause between keystrokes
+   * changed nothing, so it was never a race.
+   *
+   *   typed 7 -> "88266  7"    correct
+   *   typed 1 -> "88266  17"   should be "88266  71"
+   *   typed 2 -> "88266  217"  should be "88266  712"
+   *
+   * Every digit after the separator appears lands BEFORE the one already there.
+   * `formatPhoneEdit` is not at fault — it is unit-tested against this exact
+   * number and returns the right caret. What happens is that `onSelectionChange`
+   * fires after the controlled reformat and reports the caret the native view
+   * had BEFORE it (6, from the unformatted "882667"), and the handler wrote that
+   * straight into state. The next keystroke then inserted at 6, which is one
+   * digit-position too early, and the error repeated for every remaining digit.
+   *
+   * This is the defect behind the closed-testing report "8826671228 is
+   * registered as 8826617228" — same signature, a transposition that begins at
+   * the group boundary.
+   *
+   * THE GUARD: after an edit, exactly one selection event is expected to be the
+   * echo of our own reformat. If the first event after an edit disagrees with
+   * the caret we just computed, it is that echo — it is discarded and ours is
+   * re-asserted. Anything after that is the member moving the caret themselves
+   * and is honoured, so tapping mid-number still works, which is the reason
+   * `onSelectionChange` is wired at all.
+   */
+  const pendingCaret = useRef<number | null>(null);
+
+  /**
+   * A selection change from the native view — a tap, a drag, or the echo of our
+   * own reformat. See `pendingCaret` for how the two are told apart and why it
+   * matters.
+   */
+  const onSelectPhone = useCallback(
+    (e: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
+      const next = e.nativeEvent.selection.start;
+      const pending = pendingCaret.current;
+      pendingCaret.current = null;
+      if (pending !== null && next !== pending) {
+        setCaret(pending);
+        return;
+      }
+      setCaret(next);
+    },
+    [],
+  );
+
   const onChangePhone = useCallback(
     (next: string) => {
       const edit = formatPhoneEdit(
@@ -631,6 +685,7 @@ export function OnboardingScreen({ onDone }: Props) {
         country,
       );
       phoneRef.current = edit.digits;
+      pendingCaret.current = edit.caret;
       setPhone(edit.digits);
       setCaret(edit.caret);
     },
@@ -1231,9 +1286,7 @@ export function OnboardingScreen({ onDone }: Props) {
                       value={formatNationalDigits(phone, country)}
                       onChangeText={onChangePhone}
                       selection={{ start: caret, end: caret }}
-                      onSelectionChange={e =>
-                        setCaret(e.nativeEvent.selection.start)
-                      }
+                      onSelectionChange={onSelectPhone}
                       /* The country's digits plus its separators — 11 for
                          India, 12 for the United States, 9 for Singapore. This
                          is not belt-and-braces on top of the JS cap: the RN
@@ -1338,17 +1391,33 @@ export function OnboardingScreen({ onDone }: Props) {
                       testID="onboard-send-code"
                       accessibilityLabel="Send code"
                       press="button"
-                      style={[styles.go, canSend ? null : styles.goIdle]}
+                      style={styles.go}
                     >
-                      {state === 'loading' ? (
-                        <LoadingIndicator size={20} color={theme.color.text.onAccent} containerColor="transparent" />
-                      ) : (
-                        <Icon
-                          name="chevronRight"
-                          size={TOKENS.icon.md}
-                          color={theme.color.text.onAccent}
-                        />
-                      )}
+                      {/*
+                        * The painted disc is a CHILD, not the Pressable itself.
+                        *
+                        * `splitBox` moves only width/height to the touchable
+                        * root and leaves the fill and radius on an inner view
+                        * with `flexGrow: 1`, so putting the background on
+                        * `styles.go` would stretch the circle to the full 48dp
+                        * target. hitSlop cannot solve it the other way either —
+                        * it extends touch dispatch but not the accessibility
+                        * node, so a 40dp Pressable reads as a 40dp target to
+                        * TalkBack. A 40dp child inside a real 48dp box is the
+                        * one arrangement that gives both. See SOURCE_METRICS.
+                        */}
+                      <View
+                        style={[styles.goDisc, canSend ? null : styles.goIdle]}>
+                        {state === 'loading' ? (
+                          <LoadingIndicator size={20} color={theme.color.text.onAccent} containerColor="transparent" />
+                        ) : (
+                          <Icon
+                            name="chevronRight"
+                            size={TOKENS.icon.md}
+                            color={theme.color.text.onAccent}
+                          />
+                        )}
+                      </View>
                     </Pressable>
                   </View>
                   <Text allowFontScaling style={styles.numberHint}>
@@ -1942,9 +2011,25 @@ const makeStyles = (t: Theme) =>
     goIdle: {
       backgroundColor: t.color.bg.hover,
     },
+    /*
+     * The TARGET: a real 48dp box, unpainted. Its only job is to be the
+     * accessibility node and the touch area.
+     *
+     * `borderRadius` is here as well as on the disc so the M3 state layer —
+     * which Pressable clips to whatever radius this style sets — is a circle
+     * rather than a 48dp square flashing behind a round button.
+     */
     go: {
       width: SOURCE_METRICS.submitTarget,
       height: SOURCE_METRICS.submitTarget,
+      borderRadius: TOKENS.radius.pill,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    /* The VISUAL: 40dp, the reference's own size. */
+    goDisc: {
+      width: SOURCE_METRICS.submitDisc,
+      height: SOURCE_METRICS.submitDisc,
       borderRadius: TOKENS.radius.pill,
       borderCurve: 'continuous',
       alignItems: 'center',

@@ -438,10 +438,29 @@ export const SOURCE_METRICS = {
    * A DEPARTURE, and the only one in this table. The source's input submit is
    * `padding(.vertical, 8).padding(.horizontal, 16)` around a 24pt glyph, which
    * lands near 40pt. Android's own guidance puts the minimum touch target at
-   * 48dp (`TOKENS.interaction.minTarget`), and the app now standardises on that
-   * everywhere, so the larger of the two wins. A control that matches the
-   * reference and is harder to hit is not a win. A test asserts this equals
-   * `minTarget` so it cannot drift back below the floor.
+   * 48dp (`TOKENS.interaction.minTarget`), and the app standardises on that
+   * everywhere, so the larger of the two wins for the TARGET. A test asserts
+   * this equals `minTarget` so it cannot drift back below the floor.
    */
   submitTarget: 48,
+
+  /**
+   * The PAINTED disc inside that target — 40dp, the reference's own size.
+   *
+   * Split out on 2026-09-13 (Amit: "the go button arrow is too big -- fix this
+   * immediately and use our standard button size"). The target and the disc had
+   * been one number, so raising the target to Android's 48dp floor also
+   * inflated the circle, and a 48dp filled disc beside a 56dp field is what
+   * "too big" was. The app's own interaction token already states the rule:
+   * "M3's own icon buttons are a 40dp visual inside a 48dp target."
+   *
+   * WHY NOT hitSlop, which is the usual way to say that: `hitSlop` extends
+   * touch DISPATCH but not `AccessibilityNodeInfo` bounds, measured on device
+   * (see the hitSlop note in project memory). A 40dp Pressable with slop reads
+   * as a 40dp target to TalkBack and Accessibility Scanner — an accessibility
+   * regression traded for a visual one. So the Pressable stays a real 48dp box
+   * and the fill moved to a 40dp CHILD, which is the one arrangement that gives
+   * a 48dp node and a 40dp circle at the same time.
+   */
+  submitDisc: 40,
 } as const;

@@ -1,5 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text } from 'react-native';
+import {
+  StyleSheet,
+  Text,
+  type NativeSyntheticEvent,
+  type TextInputSelectionChangeEventData,
+} from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
@@ -146,6 +151,58 @@ export function PhoneVerifySheet({ visible, onClose }: Props) {
    * `onChangeText` and `onSelectionChange` fire in. Everything it decides —
    * digits, display, caret — is unit-tested in `__tests__/phone.test.ts`.
    */
+  /**
+   * The caret the LAST edit computed, held so a stale native echo cannot win.
+   *
+   * THE BUG THIS FIXES, measured on an S22 (Android 16) on 2026-09-13. Typing
+   * 8826671228 one key at a time produced 8826622817 — the same digits,
+   * reordered, and deterministically: a one-second pause between keystrokes
+   * changed nothing, so it was never a race.
+   *
+   *   typed 7 -> "88266  7"    correct
+   *   typed 1 -> "88266  17"   should be "88266  71"
+   *   typed 2 -> "88266  217"  should be "88266  712"
+   *
+   * Every digit after the separator appears lands BEFORE the one already there.
+   * `formatPhoneEdit` is not at fault — it is unit-tested against this exact
+   * number and returns the right caret. What happens is that `onSelectionChange`
+   * fires after the controlled reformat and reports the caret the native view
+   * had BEFORE it (6, from the unformatted "882667"), and the handler wrote that
+   * straight into state. The next keystroke then inserted at 6, which is one
+   * digit-position too early, and the error repeated for every remaining digit.
+   *
+   * This is the defect behind the closed-testing report "8826671228 is
+   * registered as 8826617228" — same signature, a transposition that begins at
+   * the group boundary.
+   *
+   * THE GUARD: after an edit, exactly one selection event is expected to be the
+   * echo of our own reformat. If the first event after an edit disagrees with
+   * the caret we just computed, it is that echo — it is discarded and ours is
+   * re-asserted. Anything after that is the member moving the caret themselves
+   * and is honoured, so tapping mid-number still works, which is the reason
+   * `onSelectionChange` is wired at all.
+   */
+  const pendingCaret = useRef<number | null>(null);
+
+  /**
+   * A selection change from the native view — a tap, a drag, or the echo of our
+   * own reformat. See `pendingCaret` for how the two are told apart and why it
+   * matters.
+   */
+  const onSelectPhone = useCallback(
+    (e: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
+      const next = e.nativeEvent.selection.start;
+      const pending = pendingCaret.current;
+      pendingCaret.current = null;
+      if (pending !== null && next !== pending) {
+        setCaret(pending);
+        return;
+      }
+      setCaret(next);
+    },
+    [],
+  );
+
   const onChangePhone = useCallback(
     (next: string) => {
       const edit = formatPhoneEdit(
@@ -153,6 +210,7 @@ export function PhoneVerifySheet({ visible, onClose }: Props) {
         formatNationalDigits(phoneRef.current),
       );
       phoneRef.current = edit.digits;
+      pendingCaret.current = edit.caret;
       setPhone(edit.digits);
       setCaret(edit.caret);
     },
@@ -198,7 +256,7 @@ export function PhoneVerifySheet({ visible, onClose }: Props) {
           value={display}
           onChangeText={onChangePhone}
           selection={{ start: caret, end: caret }}
-          onSelectionChange={e => setCaret(e.nativeEvent.selection.start)}
+          onSelectionChange={onSelectPhone}
           /* Eleven characters: ten digits and the one separator. This is not
              belt-and-braces on top of the JS cap — the RN docs name it as the
              fix for exactly the flicker a JS-only cap causes, because a

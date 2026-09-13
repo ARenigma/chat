@@ -739,7 +739,28 @@ describe('the sign-in number field is country-aware', () => {
     // reposition; without one at all it lands wrong every time a separator is
     // inserted. https://reactnative.dev/docs/textinput#selection
     expect(field).toContain('selection={{ start: caret, end: caret }}');
-    expect(field).toContain('setCaret(e.nativeEvent.selection.start)');
+    /*
+     * The handler is now `onSelectPhone` rather than an inline
+     * `setCaret(e.nativeEvent.selection.start)`, and the indirection IS the fix.
+     *
+     * Writing the native selection straight into state is what corrupted the
+     * number: after a controlled reformat the native view echoes the caret it
+     * had BEFORE it, so the next keystroke inserted one digit-position early.
+     * Measured on an S22 2026-09-13 — typing 8826671228 produced 8826622817,
+     * deterministically. `onSelectPhone` discards that one echo and re-asserts
+     * the caret the formatter computed, while still honouring a real tap, which
+     * is what this test's own first line exists to protect.
+     */
+    expect(field).toContain('onSelectionChange={onSelectPhone}');
+    const onboardSrc = read('src/screens/OnboardingScreen.tsx');
+    expect(onboardSrc).toContain(
+      'const pendingCaret = useRef<number | null>(null);',
+    );
+    expect(onboardSrc).toContain('pendingCaret.current = edit.caret;');
+    // The echo is discarded and OURS re-asserted, not the other way round.
+    expect(onboardSrc).toMatch(
+      /if \(pending !== null && next !== pending\) \{\s*setCaret\(pending\);/,
+    );
   });
 
   it('reformats and re-caps when the country changes', () => {
