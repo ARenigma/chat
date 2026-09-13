@@ -149,6 +149,41 @@ function AttachPanelView({
    */
   const cellSize = Math.floor((width - PADDING * 2 - GAP * 2) / cols);
 
+  /*
+   * THE CAMERA TAKES THE WIDE SLOT, Photos the narrow one (Amit, 2026-09-13:
+   * "interchange the camera-photos viewfinder to give camera more space").
+   *
+   * It was the other way round: the camera was one 1x1 grid cell and the Photos
+   * tile took the remaining two thirds. That followed Telegram, where cell 0 is
+   * the camera — but Telegram's grid is FULL of photo cells, so its camera is
+   * one tile among many. Ours has two tiles, and the one that shows a live
+   * picture was getting a third of the room while the one showing a glyph got
+   * the rest.
+   *
+   * The camera keeps position 0, so only the proportions are interchanged, not
+   * the reading order.
+   *
+   * `cameraWidth` is arithmetic rather than `flex: 1` because the native
+   * preview must be handed a NUMBER — see the note on `cellHeight`: a
+   * percentage resolves against a percentage, the TextureView lands 0x0, and
+   * CameraX times out configuring a capture session it can never satisfy.
+   */
+  const cameraWidth = Math.max(0, width - PADDING * 2 - GAP - cellSize);
+
+  /*
+   * The grant chip's width, DERIVED from the cell it sits in rather than fixed.
+   *
+   * It was a flat 148, which fitted while the Photos tile was the wide one and
+   * was clipped at both edges the moment the two were interchanged — a magic
+   * number that was only ever correct for one layout. Deriving it means the
+   * chip cannot be broken again by a change to the row's proportions.
+   *
+   * An explicit number is still required, not `alignSelf` or padding: see the
+   * note on `grant` for why a Pressable with no box key grows to fill its
+   * column.
+   */
+  const grantWidth = Math.max(0, cellSize - TOKENS.space.md * 2);
+
   /**
    * The camera cell's height in REAL PIXELS, because the TextureView must be
    * given one.
@@ -332,7 +367,7 @@ function AttachPanelView({
           accessibilityLabel="Take a photo"
           press="card"
           highlight="material"
-          style={[styles.cell, styles.cameraCell, { width: cellSize }]}>
+          style={[styles.cell, styles.cameraCell, { width: cameraWidth }]}>
           {/*
             * The placeholder is ALWAYS mounted, and the preview is layered over
             * it — not an either/or.
@@ -390,7 +425,7 @@ function AttachPanelView({
              */
             <CameraPreview
               onStreamStateChange={onStreamStateChange}
-              style={[styles.preview, { width: cellSize, height: cellHeight }]}
+              style={[styles.preview, { width: cameraWidth, height: cellHeight }]}
             />
           ) : null}
           {/*
@@ -444,7 +479,13 @@ function AttachPanelView({
           before, so the no-access path is unchanged.
         */}
         {strip ? (
-          <View style={[styles.cell, styles.galleryCell, styles.stripCell]}>
+          <View
+            style={[
+              styles.cell,
+              styles.galleryCell,
+              styles.stripCell,
+              { width: cellSize },
+            ]}>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -498,7 +539,7 @@ function AttachPanelView({
             accessibilityLabel="Choose a photo"
             press="card"
             highlight="material"
-            style={[styles.cell, styles.galleryCell]}>
+            style={[styles.cell, styles.galleryCell, { width: cellSize }]}>
             <Icon name="image" size={TOKENS.icon.xl} color={theme.color.text.secondary} />
             <Text allowFontScaling={false} style={styles.galleryLabel}>
               Photos
@@ -516,7 +557,7 @@ function AttachPanelView({
                 accessibilityLabel="Show recent photos here"
                 press="chip"
                 highlight="dim"
-                style={styles.grant}>
+                style={[styles.grant, { width: grantWidth }]}>
                 <Text
                   allowFontScaling
                   numberOfLines={1}
@@ -585,8 +626,12 @@ const makeStyles = (t: Theme) =>
     },
     // Fills whatever the camera cell leaves, in both axes, so the row has no
     // dead edge and the panel has no dead floor.
+    /*
+     * `flex: 1` is GONE: this is the narrow cell now and its width is handed in
+     * explicitly at the call site, the same way the camera's is. Leaving the
+     * flex here would have it fight the stated width and win.
+     */
     galleryCell: {
-      flex: 1,
       alignSelf: 'stretch',
       gap: TOKENS.space['2xs'],
     },
@@ -636,13 +681,11 @@ const makeStyles = (t: Theme) =>
      * The project rule, from the hitSlop/splitBox note: always give a Pressable
      * an explicit width and height when it has siblings in a column.
      *
-     * The width is fixed rather than hugging because hugging needs no box key
-     * and is exactly what fails here; 148 fits "Show recent" at 1x with room,
-     * and the label is capped and single-line so a large font scale shrinks to
-     * fit instead of overflowing.
+     * The WIDTH is handed in at the call site (see `grantWidth`) because it has
+     * to track the cell; only the height is fixed here. The label is capped and
+     * single-line so a large font scale shrinks to fit instead of overflowing.
      */
     grant: {
-      width: 148,
       height: 30,
       marginTop: TOKENS.space['2xs'],
       borderRadius: TOKENS.radius.pill,

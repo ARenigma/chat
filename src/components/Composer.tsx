@@ -1374,7 +1374,20 @@ function ComposerView({
           highlight="material"
           size={40}
           style={styles.camera}>
-          <Icon name="camera" size={TOKENS.icon.md} color={theme.color.text.secondary} />
+          {/*
+            * A PAPERCLIP, not a camera (Amit, 2026-09-13: "replace camera with
+            * clip icon in text input box").
+            *
+            * The control opens the attach panel, which is a camera AND a photo
+            * library — so a camera glyph named only half of what is behind it,
+            * and named the half that is not the common case. A clip is the
+            * conventional mark for "attach something", which is what this is.
+            *
+            * The accessibility label already said "Add media" with the hint
+            * "Camera or photos", so the spoken name was right while the drawn
+            * one was narrower. They agree now.
+            */}
+          <Icon name="clip" size={TOKENS.icon.md} color={theme.color.text.secondary} />
         </Pressable>
       </Animated.View>
 
