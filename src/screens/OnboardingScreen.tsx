@@ -2055,6 +2055,15 @@ const makeStyles = (t: Theme) =>
     input: {
       flex: 1,
       ...TOKENS.typography.titleMediumEmphasized,
+      /*
+       * Tabular figures: this field holds nothing but digits, and they arrive
+       * one at a time. Proportional figures make the already-typed part of the
+       * number shuffle sideways as each new digit lands, which on a field the
+       * member is checking against a number in their head is exactly the wrong
+       * kind of movement. Geist ships `tnum`; the size override below is why
+       * this adds the feature rather than taking a `numeral*` token.
+       */
+      fontVariant: ['tabular-nums'],
       fontSize: SOURCE_METRICS.inputText,
       lineHeight: SOURCE_METRICS.inputText * 1.3,
       color: t.color.text.primary,

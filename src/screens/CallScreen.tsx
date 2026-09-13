@@ -1080,6 +1080,23 @@ const makeStyles = (t: Theme) =>
     },
     timer: {
       ...TOKENS.typography.titleLargeEmphasized,
+      /*
+       * TABULAR FIGURES, and this is the single place in the app that needs
+       * them most: a mm:ss timer that reticks every second.
+       *
+       * With proportional figures the digits have different widths, so the
+       * whole string shifts sideways as it counts — 1:11 is visibly narrower
+       * than 0:08 — and it does that once a second, on screen, for the length
+       * of a paid call. Tabular figures give every digit the same advance so
+       * only the glyphs change.
+       *
+       * Added rather than swapping to a `numeral*` token because those are
+       * 24/32 and this is 22/28; taking one would resize the timer to fix its
+       * jitter. Geist ships `tnum` (verified in its GSUB table), so the feature
+       * is available on the family already in use — no mono font needed, and a
+       * mono face here would look like a terminal rather than a call.
+       */
+      fontVariant: ['tabular-nums'],
       color: LIGHT.color.text.onAccent,
     },
     statusRow: {
