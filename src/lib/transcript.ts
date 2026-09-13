@@ -143,12 +143,61 @@ export function mergeIncoming(
   return next;
 }
 
-/** Optimistic rows always go to the head, they are, by definition, newest. */
+/**
+ * A finished duration in words: "45 secs", "1 min", "2 min 30 secs", "1 hr 5 min".
+ *
+ * The one formatter behind both history rows in the transcript — the chat
+ * session row below and `CallLogRow` — so the two read as one list. Amit,
+ * 2026-09-13, gave the shape: "1 min", "2 min", "2 min 30 secs".
+ *
+ * WORDS, not the `4:32` the call log used to print, because of what sits beside
+ * it. A call row reads "Voice call · 4:32 · 3:55 pm": two colon-separated
+ * numbers on one line, one a duration and one a time of day, told apart only by
+ * position — and `4:32` is itself readable as four hours thirty-two. "Voice
+ * call · 4 min 32 secs · 3:55 pm" has one clock on it and needs no decoding.
+ *
+ * This applies to durations that are OVER. The running clocks stay `mm:ss`
+ * (`sessionClock.ts`, `CallScreen`'s timer, `rates.ts`): a stopwatch is watched
+ * while it ticks, where the fixed-width digits are the point, and a log line is
+ * read once, where the words are.
+ *
+ * Past an hour the seconds are dropped — "1 hr 5 min", never "1 hr 5 min 3
+ * secs". At that length the seconds carry no information a reader of a history
+ * row wants, and the pill is already the longest line in the transcript.
+ *
+ * "min" does not pluralise (it is the shipped form, and Amit's own brief writes
+ * "2 min 30 secs"); "secs" and "hrs" do, because "1 secs" is a typo on sight.
+ *
+ * Under a second is empty rather than "0 secs": for the only caller that can
+ * produce it, a call whose ends are the same instant is a connection blip, and
+ * that was the behaviour of the `ms <= 0` guard this replaced.
+ */
+export function durationWords(totalSeconds: number): string {
+  if (!Number.isFinite(totalSeconds) || totalSeconds < 1) {
+    return '';
+  }
+  const whole = Math.floor(totalSeconds);
+  const hours = Math.floor(whole / 3600);
+  const minutes = Math.floor((whole % 3600) / 60);
+  const seconds = whole % 60;
+
+  if (hours > 0) {
+    const hrs = `${hours} ${hours === 1 ? 'hr' : 'hrs'}`;
+    return minutes > 0 ? `${hrs} ${minutes} min` : hrs;
+  }
+  if (minutes > 0) {
+    return seconds > 0
+      ? `${minutes} min ${seconds} ${seconds === 1 ? 'sec' : 'secs'}`
+      : `${minutes} min`;
+  }
+  return `${seconds} ${seconds === 1 ? 'sec' : 'secs'}`;
+}
+
 /**
  * The system-message text for an ended chat session: TYPE, duration, time.
  *
  * Reads "Chat · 12 min · 3:55 pm", deliberately the same three-part shape
- * `CallLogRow` already uses for a call ("Voice call · 4:32 · 3:55 pm"). Amit,
+ * `CallLogRow` uses for a call ("Voice call · 4 min 32 secs · 3:55 pm"). Amit,
  * 2026-09-13: "Session metadata history should show type of session with
  * duration and timestamp". Those two rows sit next to each other in one
  * transcript and are the whole of a member's history across sessions, so they
@@ -159,9 +208,25 @@ export function mergeIncoming(
  * "Session ended" also described the EVENT; every row here is an ended session,
  * so the word did no work. Naming the CHANNEL does.
  *
- * `min`, not `minutes`, matching the call log's compactness. A session that
- * never activated billed zero and reads without a duration rather than "0 min",
- * which would look like a fault rather than a session nobody used.
+ * A session that never activated billed zero and reads without a duration
+ * rather than "0 min", which would look like a fault rather than a session
+ * nobody used.
+ *
+ * WHY THIS ROW SHOWS NO SECONDS, unlike the call row beside it. It is not that
+ * they are unreachable: `useSessionEvents` already selects `started_at` and
+ * `ended_at`, so wall-clock seconds are one argument away. They are the wrong
+ * number. `minutes_billed` is what the wallet debited and what the provider
+ * accrued against (`accrue_ended_paid_session` reads `new.minutes_billed`), and
+ * migration 095 exists solely to make a displayed duration ride on it: it
+ * re-created `end_session` to write `minutes_billed * 60` into the inbox's
+ * duration where wall-clock time had been, under the rule "Display / usage /
+ * wallet / billing must be one coherent chain — no two may ever disagree."
+ * Worse than incoherent, wall clock would UNDERSTATE the charge: the first
+ * minute is billed the instant the session activates (037, `minutes_billed = 1`
+ * with `next_bill_at = now() + 1 minute`), so a session ended after 30 seconds
+ * was charged a minute and would read "30 secs". Showing billed minutes with no
+ * seconds is the truthful rendering of an integer number of minutes; giving
+ * this row real seconds is a server change, not a formatting one.
  */
 export function sessionEndedLabel(
   minutesBilled: number,
@@ -171,9 +236,15 @@ export function sessionEndedLabel(
   if (!Number.isFinite(minutesBilled) || minutesBilled <= 0) {
     return `Chat${stamp}`;
   }
-  return `Chat · ${minutesBilled} min${stamp}`;
+  return `Chat · ${durationWords(minutesBilled * 60)}${stamp}`;
 }
 
+/**
+ * Optimistic rows always go to the head, they are, by definition, newest.
+ *
+ * (This line had drifted above `sessionEndedLabel`, which is not what it
+ * describes; moved back onto the function it belongs to.)
+ */
 export function insertOptimistic(
   list: readonly TranscriptMessage[],
   optimistic: Message,

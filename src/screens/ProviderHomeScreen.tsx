@@ -100,6 +100,37 @@ const CHANNEL_ROWS: readonly { key: ChannelKey; title: string; glyph: IconName }
 ];
 
 /**
+ * The availability vocabulary, in one place, because availability is now said
+ * in TWO places: the switch in the Chats header and the card on the You tab.
+ *
+ * Co-located rather than left as two inline ternaries so a future edit to the
+ * card's wording cannot leave the header describing the same boolean in a
+ * vocabulary that has moved on. The state itself already cannot diverge — both
+ * controls read `profile.is_available` and call the same mutation — and this is
+ * the same argument applied to the words.
+ *
+ * `head` is deliberately NOT presence vocabulary: no "Away", "Offline" or
+ * "Hidden". Presence is a separate setting the provider sets in SettingsSheet
+ * (`useSetPresence`), and two controls saying "hidden" while meaning different
+ * things is how somebody ends up unreachable believing they are only invisible
+ * — the failure contract.test's "stops the availability card claiming presence
+ * or the word hidden" exists to keep out. Open/Closed is the shop metaphor the
+ * card's own title already uses.
+ */
+const AVAILABILITY = {
+  on: {
+    head: 'Open',
+    title: 'Open to New Conversations',
+    sub: 'You are listed and can be messaged.',
+  },
+  off: {
+    head: 'Closed',
+    title: 'Not Taking New Conversations',
+    sub: 'You are not listed. Existing chats still work.',
+  },
+} as const;
+
+/**
  * One row of the provider's inbox: a conversation, or a section header.
  *
  * A bare `string` IS the header, rather than a tagged object, because there is
@@ -163,6 +194,7 @@ export function ProviderHomeScreen({
   const gallery = photos ?? [];
   const remaining = MAX_PROVIDER_PHOTOS - gallery.length;
   const available = profile?.is_available ?? false;
+  const availabilityCopy = AVAILABILITY[available ? 'on' : 'off'];
   // What they are willing to do, which is a different question from whether
   // they are taking anyone new (migration 064). Default on, so a provider whose
   // profile has not loaded yet is never shown as offering nothing.
@@ -399,6 +431,40 @@ export function ProviderHomeScreen({
               style={styles.headWordmark}>
               Pappal
             </Text>
+            {/* THE SAME SWITCH AS THE ONE ON THE YOU TAB, not a second control.
+                The member's bar carries the wallet in this slot because the
+                number that decides whether they can act is their balance; the
+                provider's equivalent is whether work can reach them at all, and
+                burying it a tab away meant the empty state had to send them
+                looking for it.
+
+                It holds no state of its own: `available` is
+                `profile.is_available` straight off the shared query and
+                `toggle` is the one `setAvailability.mutate` call, so the two
+                switches are two views of one value and cannot disagree — the
+                card's switch moves the instant this one settles, and both
+                narrate the same `availability_changed` event.
+
+                Geometry is unchanged apart from `space-between`, which is what
+                TabTopBar's `nav` already uses to push its trailing controls
+                right. The head's paddings are untouched and the bar does not
+                grow: the M3 track is 32dp against the wordmark's 34dp line box,
+                so the wordmark still sets the height. The 48dp touch target is
+                Toggle's own hitSlop, ceil((48 - 32) / 2) = 8 a side —
+                https://developer.android.com/guide/topics/ui/accessibility/apps */}
+            <View style={styles.headAvailability}>
+              <Text allowFontScaling numberOfLines={1} style={styles.headAvailabilityLabel}>
+                {availabilityCopy.head}
+              </Text>
+              <Toggle
+                testID="availability-toggle-head"
+                value={available}
+                onValueChange={toggle}
+                disabled={setAvailability.isPending}
+                accessibilityLabel="Open to new conversations"
+                tone="presence"
+              />
+            </View>
           </View>
           {isPending ? (
             <View style={styles.centre}>
@@ -419,7 +485,9 @@ export function ProviderHomeScreen({
               <Text allowFontScaling style={styles.emptyBody}>
                 {available
                   ? 'When a member starts a conversation with you, it appears here.'
-                  : 'Turn on availability in the You tab so members can reach you.'}
+                  : // The switch is in the bar directly above this now, so
+                    // sending them to the You tab would point past the control.
+                    'Turn on availability above so members can reach you.'}
               </Text>
             </View>
           ) : (
@@ -462,19 +530,20 @@ export function ProviderHomeScreen({
                   below rather than running to the screen edge. */}
               <View style={styles.availabilityCard}>
                 {/* Availability — the one control with an immediate effect on
-                    whether anyone new can reach them. */}
+                    whether anyone new can reach them. The Chats header carries
+                    the same switch on the same value; this is the copy that
+                    explains what it does, which is why both survive rather than
+                    one moving. */}
                 <View style={styles.availabilityRow}>
                   <View style={styles.availabilityText}>
                     <Text
                       maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
                       allowFontScaling
                       style={styles.availabilityTitle}>
-                      {available ? 'Open to New Conversations' : 'Not Taking New Conversations'}
+                      {availabilityCopy.title}
                     </Text>
                     <Text allowFontScaling style={styles.availabilitySub}>
-                      {available
-                        ? 'You are listed and can be messaged.'
-                        : 'You are not listed. Existing chats still work.'}
+                      {availabilityCopy.sub}
                     </Text>
                   </View>
                   <Toggle
@@ -835,9 +904,29 @@ const makeStyles = (t: Theme) =>
     head: {
       flexDirection: 'row',
       alignItems: 'center',
+      // The wordmark leads, the availability switch trails — the same split
+      // TabTopBar's `nav` uses for the member's bar, so the two bars put their
+      // trailing control in the same place. Paddings are the ones this head
+      // already had; nothing about its box moved.
+      justifyContent: 'space-between',
       paddingHorizontal: TOKENS.space.lg,
       paddingTop: TOKENS.space.xs,
       paddingBottom: TOKENS.space.md,
+    },
+    headAvailability: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.xs,
+    },
+    // The state in a word, beside the switch that sets it. The switch already
+    // carries the state twice over — sage track, and M3's check inside the on
+    // thumb, so it is not colour alone (WCAG 2.2 SC 1.4.1) — but a switch alone
+    // in a bar has no subject: it says something is on without saying what. The
+    // word is what a provider glancing at the bar actually reads, and it is the
+    // card's own Open/Closed vocabulary rather than a second one.
+    headAvailabilityLabel: {
+      ...TOKENS.typography.labelMedium,
+      color: t.color.text.secondary,
     },
     headWordmark: {
       fontFamily: TOKENS.face.wordmark,

@@ -8,6 +8,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
+import { useBackBarrier } from '../lib/backGuard';
 import { initialOf } from '../lib/display';
 import { timeOfDay } from '../lib/datetime';
 import { readPresence } from '../lib/presence';
@@ -58,6 +59,16 @@ function summaryLabel(conversation: ConversationSummary): string {
  * data as Home, so nothing new is fetched.
  */
 export function ChatsListScreen({ onBack, onOpenConversation }: Props) {
+  /*
+   * This screen covers Home, and Home stays mounted underneath it (App.tsx
+   * renders pushed screens as overlays so returning never remounts Home's
+   * lists). Without this barrier Home's search guard — live whenever its search
+   * field is open — still hears the hardware back press from up here, closes a
+   * field nobody can see, and reports the press handled, so this screen never
+   * pops. See src/lib/backGuard.ts.
+   */
+  useBackBarrier();
+
   const styles = useStyles(makeStyles);
   const insets = useSafeAreaInsets();
   useProfile();

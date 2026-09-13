@@ -526,6 +526,39 @@ function RechargeForm({
       <Text allowFontScaling style={styles.rupeeNote}>
         1 token = ₹1. You are charged in rupees at checkout.
       </Text>
+      {/* The fact a member wants BEFORE paying that no surface in the app
+          stated: money put in here does not rot. docs/ARCHITECTURE.md
+          ("purchased tokens never expire") and ADR-0021 ("Purchased tokens
+          never expire") both settle it; until now it was only ever said in the
+          repo, never to the person spending.
+
+          "Money you add", in the screen's own noun. The section heading eight
+          lines up is "Add money" and the sheet's body is "Add money to keep
+          talking", so this names the same thing they do. Not "credits", which
+          appears nowhere a member can read, and not "tokens", which
+          contract.test.ts bans outright in member-facing prose (Amit,
+          2026-09-08: "remove tokens and replace with rs everywhere").
+
+          "You add" is load-bearing rather than hedging. ADR-0021 draws the line
+          in its very next sentence — "Promo tokens may carry an expiry
+          configured per-grant" — and the balance above this grid is the SUM of
+          the two (profiles.promo_balance + profiles.purchased_balance,
+          migration 028), so a flat "your balance never expires" is a promise
+          the promo half cannot keep. Scoping it to the purchase is also what
+          this screen is for: the reader is choosing a pack, not auditing a
+          balance.
+
+          It is SILENT ON REFUNDS on purpose, and the next person to read this
+          should not "complete" it. web/refund.html — the policy this app's own
+          legalUrl('refund') addresses — currently offers a refund on unused
+          purchased balance within 90 days, and ADR-0021 queues unused value for
+          refund review on account closure. A no-refund line here would
+          contradict the published policy at the point of sale, which is the one
+          place that contradiction is expensive. If the policy changes, this
+          line is where the new fact goes. */}
+      <Text allowFontScaling style={styles.neverExpiresNote}>
+        Money you add never expires.
+      </Text>
     </View>
   );
 }
@@ -815,6 +848,20 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.bodySmall,
       color: t.color.text.tertiary,
       paddingTop: TOKENS.space.xs,
+    },
+    // Same fine-print role as `rupeeNote` — bodySmall on tertiary ink — and
+    // deliberately no louder. It is a reassurance, not an offer, and a quiet
+    // line answers "does my unused balance rot?" as well as a loud one would.
+    //
+    // No paddingTop of its own, unlike `rupeeNote`: `form`'s 12dp gap already
+    // sits between the two notes, and `rupeeNote`'s own 8dp on top puts 20dp
+    // between the grid and the pair. 12 inside against 20 outside is what makes
+    // them read as one block of fine print rather than two unrelated asides —
+    // m3.material.io/foundations/layout/understanding-layout/spacing, where
+    // proximity is the grouping signal and spacing is not scaled with the text.
+    neverExpiresNote: {
+      ...TOKENS.typography.bodySmall,
+      color: t.color.text.tertiary,
     },
   });
 

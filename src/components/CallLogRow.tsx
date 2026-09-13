@@ -4,6 +4,7 @@ import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import type { CallRecord } from '../api/chat';
 import { timeOfDay } from '../lib/datetime';
+import { durationWords } from '../lib/transcript';
 import { Icon } from './Icon';
 
 /**
@@ -14,18 +15,25 @@ import { Icon } from './Icon';
  * Centered pill layout, caption text, muted — matches the DayDivider visual weight.
  */
 
+/**
+ * Talk time, worded by the transcript's one duration formatter.
+ *
+ * This row used to print its own `mm:ss` ("Voice call · 4:32 · 3:55 pm"), which
+ * put a duration and a clock time in the same shape on the same line; see
+ * `durationWords` for why the words won and why the running call timer keeps the
+ * digits. Sharing the formatter — rather than each row wording its own — is what
+ * keeps the call row and the chat-session row reading as one history.
+ *
+ * Still measured off `started_at`/`ended_at`, which for a call is the time the
+ * two were connected. (The chat-session row deliberately shows billed minutes
+ * instead; the reason is on `sessionEndedLabel`.)
+ */
 function formatDuration(startedAt: string | null, endedAt: string | null): string {
   if (startedAt === null || endedAt === null) {
     return '';
   }
   const ms = new Date(endedAt).getTime() - new Date(startedAt).getTime();
-  if (ms <= 0) {
-    return '';
-  }
-  const totalSeconds = Math.round(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return ` · ${minutes}:${String(seconds).padStart(2, '0')}`;
+  return durationWords(Math.round(ms / 1000));
 }
 
 function CallLogRowView({ call }: { call: CallRecord }) {
@@ -36,10 +44,14 @@ function CallLogRowView({ call }: { call: CallRecord }) {
   const mediumLabel = isVideo ? 'Video' : 'Voice';
 
   const stamp = timeOfDay(call.created_at);
+  // The separator is composed here, not inside the formatter, because a call
+  // with no measurable duration (never connected, or both ends on the same
+  // instant) must not leave a dangling " · " in the middle of the pill.
+  const duration = formatDuration(call.started_at, call.ended_at);
   let label: string;
   switch (call.status) {
     case 'ended':
-      label = `${mediumLabel} call${formatDuration(call.started_at, call.ended_at)} · ${stamp}`;
+      label = `${mediumLabel} call${duration === '' ? '' : ` · ${duration}`} · ${stamp}`;
       break;
     case 'missed':
       label = `Missed ${mediumLabel.toLowerCase()} call · ${stamp}`;

@@ -78,7 +78,7 @@ import {
   secondsRemainingNow,
   showsCountdown,
 } from '../lib/sessionClock';
-import { useBackGuard } from '../lib/backGuard';
+import { useBackBarrier, useBackGuard } from '../lib/backGuard';
 import { ownReaction, tallyByMessage } from '../lib/reactions';
 import type { ReactionEmoji } from '../lib/database.types';
 import { useStore } from '../store/useStore';
@@ -1205,6 +1205,15 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
       {
         onSuccess: () => {
           setLeaveDialogVisible(false);
+          // The edge-watcher above cannot see this end: onBack() unmounts this
+          // screen in the same tick, long before the invalidated
+          // get_active_session refetch can flip activeSession to null. So the
+          // leave-and-end path — the ordinary way out of a chat — ended every
+          // chat session without ever asking how it went. The End chip
+          // (confirmEnd) stays on screen, so the watcher still covers that one.
+          if (isMemberSide && name !== '') {
+            requestReview(activeSession.id, name);
+          }
           onBack();
         },
         onError: () => {
@@ -1213,19 +1222,57 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
         },
       },
     );
-  }, [activeSession, endSessionMutate, onBack, setNotice]);
+  }, [
+    activeSession,
+    endSessionMutate,
+    isMemberSide,
+    name,
+    onBack,
+    requestReview,
+    setNotice,
+  ]);
 
-  // Back must not silently leave a paid session. App owns the one hardware-back
-  // subscription and asks the guard stack first (src/lib/backGuard.ts); this
-  // screen holds a guard only while a session exists — Android's guidance for
-  // custom back is to intercept only in the state that needs a decision — so
-  // ordinary chat navigation stays immediate.
-  // https://developer.android.com/guide/navigation/custom-back/predictive-back-gesture
+  /*
+   * The chat covers Home, and Home stays mounted underneath it (App.tsx renders
+   * this screen as an overlay so returning to Home never remounts its lists).
+   * A guard held by a covered screen is therefore still on the stack: with
+   * Home's search field open behind it, the system back button went to HOME's
+   * search guard, which returned true, and the chat never popped — while the
+   * app-bar arrow, which calls `requestLeave` directly, left every time. The
+   * barrier is the floor: guards registered below it are covered and are not
+   * asked. See the incident note in src/lib/backGuard.ts. (2026-09-13.)
+   */
+  useBackBarrier();
+
+  /*
+   * One press per thing that is open, innermost first, and then the screen —
+   * which is what back means everywhere else in the app (the emoji/attach panel
+   * runs the same ladder inside Composer). Ordering lives in the LADDER and not
+   * in the stack on purpose: a reply bar and a paid session can appear in
+   * either order, and two separate guards would have made "what does back do"
+   * depend on which happened first.
+   *
+   * The last rung DECLINES rather than calling `requestLeave`, so a chat with
+   * nothing open and nothing to protect pops through App.tsx's route handler.
+   * That is the same landing as the app-bar arrow — both resolve
+   * `memberParent()` and both `resetConversation()` — and it keeps the screen
+   * honest about Android's guidance to intercept only in the state that needs a
+   * decision.
+   * https://developer.android.com/guide/navigation/custom-back/predictive-back-gesture
+   */
   const backGuard = useCallback(() => {
-    requestLeave();
-    return true;
-  }, [requestLeave]);
-  useBackGuard(activeSession ? backGuard : null);
+    if (replyTo !== null) {
+      setReplyTo(null);
+      return true;
+    }
+    if (activeSession) {
+      // Back must not silently leave a paid session: same dialog as the arrow.
+      requestLeave();
+      return true;
+    }
+    return false;
+  }, [activeSession, replyTo, requestLeave]);
+  useBackGuard(activeSession || replyTo !== null ? backGuard : null);
 
   /**
    * WhatsApp gestures: swipe quotes, long-press reacts on the bubble.

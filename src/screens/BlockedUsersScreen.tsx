@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
+import { useBackBarrier } from '../lib/backGuard';
 import type { ProviderSummary } from '../lib/database.types';
 import { initialOf } from '../lib/display';
 import { SCROLL_PHYSICS } from '../lib/scroll';
@@ -30,6 +31,16 @@ interface Props {
  * common marketplace case is a member unblocking a provider.
  */
 export function BlockedUsersScreen({ onBack }: Props) {
+  /*
+   * This screen covers Home, and Home stays mounted underneath it (App.tsx
+   * renders pushed screens as overlays so returning never remounts Home's
+   * lists). Without this barrier Home's search guard — live whenever its search
+   * field is open — still hears the hardware back press from up here, closes a
+   * field nobody can see, and reports the press handled, so this screen never
+   * pops. See src/lib/backGuard.ts.
+   */
+  useBackBarrier();
+
   const styles = useStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const { data: providers } = useProviders();

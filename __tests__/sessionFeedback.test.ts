@@ -15,10 +15,32 @@
  * their own explanatory prose, so a claim that can be satisfied by a comment is
  * not a claim.
  */
-import { readFileSync } from 'fs';
+import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 
 const read = (rel: string) => readFileSync(join(__dirname, '..', rel), 'utf8');
+
+/**
+ * The LAST migration that defines a function, which is the one that is live.
+ *
+ * Reading a named migration file is how this repo has repeatedly pinned a fact
+ * that a later migration had already superseded — `start_call` is live in 079,
+ * not 073; `answer_call` in 037, not 011. `submit_session_review` arrived in 066
+ * and was rewritten by 100 (NULL-safe comparison, once a deleted member's
+ * session can carry a NULL member_id), so an assertion against 066's text keeps
+ * passing while describing a function that no longer exists.
+ */
+const lastDefinitionOf = (fn: string): string => {
+  const dir = join(__dirname, '..', 'supabase', 'migrations');
+  const marker = `create or replace function public.${fn}`;
+  const file = readdirSync(dir)
+    .filter(name => name.endsWith('.sql'))
+    .sort()
+    .filter(name => readFileSync(join(dir, name), 'utf8').includes(marker))
+    .pop();
+  if (file === undefined) throw new Error(`no migration defines ${fn}`);
+  return readFileSync(join(dir, file), 'utf8');
+};
 
 /** Block comments and own-line line comments, so prose cannot satisfy a gate. */
 const withoutComments = (source: string): string =>
@@ -156,11 +178,15 @@ describe('a call asks for feedback too', () => {
      * Send button that cannot succeed. 006's rule, restated in 066, and it
      * decides the client.
      */
-    const fn = migration.slice(
-      migration.indexOf('create or replace function public.submit_session_review'),
-      migration.indexOf('comment on function public.submit_session_review'),
+    const live = lastDefinitionOf('submit_session_review');
+    const fn = live.slice(
+      live.indexOf('create or replace function public.submit_session_review'),
+      live.indexOf('comment on function public.submit_session_review'),
     );
-    expect(fn).toContain('if v_uid <> v_session.member_id then');
+    // `is distinct from`, not `<>`. 100 made a deleted member's session carry a
+    // NULL member_id, and `v_uid <> NULL` is NULL — `if NULL` does not raise, so
+    // the plain comparison failed OPEN on exactly that row.
+    expect(fn).toContain('if v_uid is distinct from v_session.member_id then');
     expect(fn).toContain("raise exception 'only the member may review'");
     // The lenient conversation-level path says the same thing, so there is no
     // second door for a provider-authored review.
@@ -173,6 +199,38 @@ describe('a call asks for feedback too', () => {
     expect(reviewEffect).toContain('isMemberSideRef.current');
     // The chat half keeps its own gate.
     expect(chat).toMatch(/if \(isMemberSide && name !== ''\) \{\s*requestReview\(previous, name\);/);
+
+    /*
+     * 2026-09-13: neither screen's gate is the guarantee. Both compute
+     * `peerThread?.i_am_member ?? true`, and `?? true` is also what a MISSING
+     * summary row looks like — so a provider whose row has not arrived reads as
+     * "member" and gets a sheet inviting them to rate a member. Inverting the
+     * default is not available either: a member calling straight from the
+     * directory legitimately has no summary row yet. So the guess stays in the
+     * screens for the optimistic UI, and the sheet reads the session row before
+     * it will open.
+     */
+    expect(sheet).toContain("from('paid_sessions')");
+    expect(sheet).toContain("select('member_id')");
+    expect(sheet).toMatch(/if \(!wasTheMember\) \{\s*clearReview\(\);\s*return;\s*\}/);
+    // Cleared, not parked: the store keeps the FIRST writer, so a pendingReview
+    // stuck behind a read that never answers would swallow every later session.
+    expect(sheet).toMatch(/if \(memberUnknown\) \{\s*clearReview\(\);\s*return;\s*\}/);
+  });
+
+  it('asks after the leave-and-end exit, which is the ordinary way out', () => {
+    /*
+     * The edge-watcher fires when `activeSession` crosses live -> null, which
+     * needs the invalidated `get_active_session` to refetch. `confirmEnd` (the
+     * End chip) leaves the member on screen, so it does. `confirmLeave` calls
+     * `onBack()` inside the same `onSuccess` and unmounts the screen in that
+     * tick — the edge is never observed. So the dominant exit from a chat ended
+     * the session and never asked how it went. It now asks for itself.
+     */
+    expect(chat).toContain('requestReview(activeSession.id, name)');
+    // Double-firing is already handled — the store keeps the first writer and
+    // the sheet's ASKED set drops a repeat for the same id — so the watcher and
+    // this call cannot produce two sheets when both do observe the same end.
   });
 });
 

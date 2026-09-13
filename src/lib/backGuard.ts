@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect } from 'react';
 
 /**
  * One seam for "back must not silently leave this screen".
@@ -22,27 +22,85 @@ import { useEffect } from 'react';
  */
 export type BackGuard = () => boolean;
 
-const guards: BackGuard[] = [];
+/**
+ * A stack entry is a screen's guard, or a BARRIER — the floor a covering screen
+ * drops so that the guards beneath it stop hearing back presses.
+ *
+ * The barrier exists because a guard belongs to a screen, and the screen it
+ * belongs to is not always the screen the user is looking at. App.tsx keeps
+ * Home mounted under every pushed screen on purpose ("Home stays mounted
+ * underneath, always" — returning to Home must not remount its lists), so
+ * HomeScreen's search guard, registered while its search field is open, was
+ * still on this stack while a chat covered Home. Open Home search, open a chat
+ * from the results, press the system back button: the press went to Home's
+ * guard, which closed a search field nobody could see and returned true, and
+ * the chat did not pop. The app-bar arrow worked the whole time, because it
+ * calls the screen's own handler and never touches this stack. (2026-09-13.)
+ *
+ * So `consumeBack` walks down from the top and STOPS at the first barrier:
+ * guards above it belong to the screen on top and are asked, guards below
+ * belong to screens that are currently covered and are not. That is the model
+ * Android already describes for its own back stack — a destination's back
+ * callbacks are enabled while it is the current destination, not while it
+ * happens to exist.
+ * https://developer.android.com/guide/navigation/custom-back/predictive-back-gesture
+ */
+type Entry =
+  | { readonly kind: 'guard'; readonly run: BackGuard }
+  | { readonly kind: 'barrier' };
 
-/** Push a guard; returns its own removal. Removal is by identity, so a guard may be re-registered safely. */
-export function registerBackGuard(guard: BackGuard): () => void {
-  guards.push(guard);
+const stack: Entry[] = [];
+
+/**
+ * Removal is by ENTRY identity, not by guard identity: every registration gets
+ * its own entry, so registering the same function twice and removing one of
+ * them takes out that registration and not an arbitrary other one. A second
+ * call is a no-op (`lastIndexOf` misses), which is what makes double-cleanup
+ * from React's effect teardown safe.
+ */
+function removeEntry(entry: Entry): () => void {
   return () => {
-    const at = guards.lastIndexOf(guard);
+    const at = stack.lastIndexOf(entry);
     if (at >= 0) {
-      guards.splice(at, 1);
+      stack.splice(at, 1);
     }
   };
 }
 
+/** Push a guard; returns its own removal. */
+export function registerBackGuard(guard: BackGuard): () => void {
+  const entry: Entry = { kind: 'guard', run: guard };
+  stack.push(entry);
+  return removeEntry(entry);
+}
+
 /**
- * Offer the press to the guards, innermost first. True when one of them took
- * it, in which case the caller must not navigate.
+ * Push a barrier; returns its own removal. Everything registered BEFORE this
+ * call is now covered and will not be offered a back press until the barrier
+ * is removed.
+ */
+export function registerBackBarrier(): () => void {
+  const entry: Entry = { kind: 'barrier' };
+  stack.push(entry);
+  return removeEntry(entry);
+}
+
+/**
+ * Offer the press to the guards, innermost first, down to the floor of the
+ * screen on top. True when one of them took it, in which case the caller must
+ * not navigate.
  */
 export function consumeBack(): boolean {
-  for (let i = guards.length - 1; i >= 0; i -= 1) {
-    const guard = guards[i];
-    if (guard !== undefined && guard()) {
+  for (let i = stack.length - 1; i >= 0; i -= 1) {
+    const entry = stack[i];
+    if (entry === undefined) {
+      continue;
+    }
+    if (entry.kind === 'barrier') {
+      // The floor of the covering screen. A covered screen does not answer back.
+      return false;
+    }
+    if (entry.run()) {
       return true;
     }
   }
@@ -51,7 +109,12 @@ export function consumeBack(): boolean {
 
 /** How many guards are registered — for tests and for asserting a clean unmount. */
 export function backGuardCount(): number {
-  return guards.length;
+  return stack.filter(entry => entry.kind === 'guard').length;
+}
+
+/** How many barriers are held — for tests and for asserting a clean unmount. */
+export function backBarrierCount(): number {
+  return stack.filter(entry => entry.kind === 'barrier').length;
 }
 
 /**
@@ -66,4 +129,19 @@ export function useBackGuard(guard: BackGuard | null): void {
     }
     return registerBackGuard(guard);
   }, [guard]);
+}
+
+/**
+ * Hold a barrier for the lifetime of a screen that covers the ones below it.
+ *
+ * `useLayoutEffect`, and that is the whole reliability of it: the barrier must
+ * sit BELOW this screen's own guards, or it would cut them off along with the
+ * covered ones. React runs every layout effect of a commit before any passive
+ * effect of the same commit, so the barrier is pushed ahead of every
+ * `useBackGuard` in this screen no matter where the calls sit in the component
+ * body — a guard added above this one later cannot silently break it.
+ * https://react.dev/reference/react/useLayoutEffect
+ */
+export function useBackBarrier(): void {
+  useLayoutEffect(() => registerBackBarrier(), []);
 }

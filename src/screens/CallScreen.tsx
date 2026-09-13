@@ -32,7 +32,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Icon, type IconName } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { track } from '../lib/telemetry';
-import { useBackGuard } from '../lib/backGuard';
+import { useBackBarrier, useBackGuard } from '../lib/backGuard';
 
 /** Which way the call goes. Outgoing dials; incoming rings and offers answer. */
 export type CallDirection = 'out' | 'in';
@@ -129,6 +129,16 @@ type Phase = 'starting' | 'ringing' | 'connecting' | 'active' | 'incoming';
  * call was started as `medium='video'`, the camera is auto-enabled on connect.
  */
 export function CallScreen({ providerId, direction, callId: incomingCallId, medium, onEnd, onUpgradeToVideo }: Props) {
+  /*
+   * This screen covers Home, and Home stays mounted underneath it (App.tsx
+   * renders pushed screens as overlays so returning never remounts Home's
+   * lists). Without this barrier Home's search guard — live whenever its search
+   * field is open — still hears the hardware back press from up here, closes a
+   * field nobody can see, and reports the press handled, so this screen never
+   * pops. See src/lib/backGuard.ts.
+   */
+  useBackBarrier();
+
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -155,10 +165,18 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
    *
    * Defaults to true for the one case the list cannot cover: a member calling
    * straight from the directory, before any summary row for that thread has
-   * reached this device. The server is the real gate — `submit_session_review`
-   * refuses anybody but the session's member (066:109) — so this default costs
-   * at worst one sheet whose Send fails, where defaulting the other way would
-   * silently swallow the review after every first call.
+   * reached this device. Defaulting the other way would silently swallow the
+   * review after every first call — the call whose rating matters most.
+   *
+   * That optimism used to be defended here as costing "at worst one sheet whose
+   * Send fails", on the grounds that `submit_session_review` refuses anybody but
+   * the session's member (066:109). It was the wrong trade: a provider being
+   * asked to rate a member is a question this product does not have, and a
+   * server error is not an answer to it. 2026-09-13 the sheet stopped taking
+   * either screen's word for it — `useWasTheMember`
+   * (SessionFeedbackSheet.tsx) reads `paid_sessions.member_id` before it can
+   * open — so the default below is free to stay optimistic for the UI without
+   * that optimism ever reaching a provider's screen.
    *
    * The last-resort name is ChatScreen's ('Conversation'), not a new string:
    * both paths fill the same sheet title, and a second word for the same hole
@@ -284,8 +302,16 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
    *
    * Member side only, and that is the schema's decision rather than a product
    * one: `submit_session_review` raises `only the member may review` whenever
-   * `auth.uid() <> paid_sessions.member_id` (066:109). Prompting the provider
-   * would be a sheet whose Send button cannot succeed.
+   * `auth.uid() <> paid_sessions.member_id` (066:109).
+   *
+   * `isMemberSideRef` is the first filter, not the guarantee. It reads the
+   * conversation summary row, which defaults to "member" when that row has not
+   * arrived (:177), so on its own it can put the sheet in front of a provider.
+   * The sheet asks the session row the same question before it opens, and
+   * declines to open on anything but a `member_id` that matches this account.
+   * Kept here as well because the cheap check spares the round trip on the
+   * overwhelmingly common path, and because a screen that knows it is the
+   * provider should not be raising the notice in the first place.
    */
   const requestReview = useStore(s => s.requestReview);
   // Refs for the same reason `callIdRef` has one: the cleanup must see the
