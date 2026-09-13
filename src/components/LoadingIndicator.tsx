@@ -135,7 +135,7 @@ function LoadingIndicatorView({
   return (
     <NativeLoadingIndicator
       {...common}
-      containerColor={containerColorProp ?? theme.color.bg.accentTint}
+      containerColor={containerColorProp ?? 'transparent'}
     />
   );
 }
