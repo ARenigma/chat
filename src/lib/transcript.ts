@@ -18,6 +18,7 @@
  * The alternative, a client-generated nonce column, would need a schema change
  * and would still need the id-based idempotency below, so it buys nothing.
  */
+import { timeOfDay } from './datetime';
 import type { Message } from './database.types';
 
 /**
@@ -144,16 +145,33 @@ export function mergeIncoming(
 
 /** Optimistic rows always go to the head, they are, by definition, newest. */
 /**
- * The "Session ended" system-message text for an ended chat session. Sentence
- * case, with the billed minutes when there are any (a session that never
- * activated billed zero, so it reads without a duration). "min", not "minutes",
- * to match the transcript's compact call-log style.
+ * The system-message text for an ended chat session: TYPE, duration, time.
+ *
+ * Reads "Chat · 12 min · 3:55 pm", deliberately the same three-part shape
+ * `CallLogRow` already uses for a call ("Voice call · 4:32 · 3:55 pm"). Amit,
+ * 2026-09-13: "Session metadata history should show type of session with
+ * duration and timestamp". Those two rows sit next to each other in one
+ * transcript and are the whole of a member's history across sessions, so they
+ * have to read as one list rather than as two features.
+ *
+ * It was "Session ended · 3 min" — no type (there is more than one kind of
+ * session now), and no time, which is the part that makes a history navigable.
+ * "Session ended" also described the EVENT; every row here is an ended session,
+ * so the word did no work. Naming the CHANNEL does.
+ *
+ * `min`, not `minutes`, matching the call log's compactness. A session that
+ * never activated billed zero and reads without a duration rather than "0 min",
+ * which would look like a fault rather than a session nobody used.
  */
-export function sessionEndedLabel(minutesBilled: number): string {
+export function sessionEndedLabel(
+  minutesBilled: number,
+  endedAt?: string,
+): string {
+  const stamp = endedAt === undefined ? '' : ` · ${timeOfDay(endedAt)}`;
   if (!Number.isFinite(minutesBilled) || minutesBilled <= 0) {
-    return 'Session ended';
+    return `Chat${stamp}`;
   }
-  return `Session ended · ${minutesBilled} min`;
+  return `Chat · ${minutesBilled} min${stamp}`;
 }
 
 export function insertOptimistic(

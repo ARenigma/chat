@@ -1,3 +1,4 @@
+import { timeOfDay } from '../src/lib/datetime';
 import {
   PENDING_PREFIX,
   applyReadReceipt,
@@ -132,15 +133,47 @@ describe('mergeIncoming', () => {
   });
 });
 
-describe('sessionEndedLabel — the "Session ended" system-message text', () => {
-  it('appends the billed minutes when there are any', () => {
-    expect(sessionEndedLabel(5)).toBe('Session ended · 5 min');
-    expect(sessionEndedLabel(1)).toBe('Session ended · 1 min');
+describe('sessionEndedLabel — a chat session in the history list', () => {
+  /*
+   * The text became "Chat · 12 min · 3:55 pm" on 2026-09-13 (Amit: "Session
+   * metadata history should show type of session with duration and timestamp").
+   *
+   * Three deliberate changes, each worth an assertion rather than one string
+   * compare: it names the CHANNEL (there is more than one kind of session now),
+   * it carries a TIME (the part that makes a history navigable), and it drops
+   * the words "Session ended" — every row in this list is an ended session, so
+   * the phrase did no work while the channel it did not name did.
+   *
+   * The shape matches CallLogRow's "Voice call · 4:32 · 3:55 pm" on purpose:
+   * the two sit next to each other and are the whole of a member's history
+   * across sessions, so they must read as one list.
+   */
+  it('names the channel and the billed minutes', () => {
+    expect(sessionEndedLabel(5)).toBe('Chat · 5 min');
+    expect(sessionEndedLabel(1)).toBe('Chat · 1 min');
   });
-  it('drops the duration for a session that never billed', () => {
-    expect(sessionEndedLabel(0)).toBe('Session ended');
-    expect(sessionEndedLabel(Number.NaN)).toBe('Session ended');
-    expect(sessionEndedLabel(-3)).toBe('Session ended');
+
+  it('appends the time when the session end is known', () => {
+    const at = '2026-09-13T10:25:00.000Z';
+    const label = sessionEndedLabel(12, at);
+    expect(label.startsWith('Chat · 12 min · ')).toBe(true);
+    // The clock itself is locale-formatted, so assert it came from the same
+    // formatter the call log uses rather than hard-coding a rendering.
+    expect(label.endsWith(timeOfDay(at))).toBe(true);
+  });
+
+  it('drops the duration for a session that never billed, keeping the time', () => {
+    const at = '2026-09-13T10:25:00.000Z';
+    expect(sessionEndedLabel(0)).toBe('Chat');
+    expect(sessionEndedLabel(Number.NaN)).toBe('Chat');
+    expect(sessionEndedLabel(-3)).toBe('Chat');
+    // A session nobody used still belongs in the history, and still at a time.
+    expect(sessionEndedLabel(0, at)).toBe(`Chat · ${timeOfDay(at)}`);
+  });
+
+  it('no longer says "Session ended", which every row in the list is', () => {
+    expect(sessionEndedLabel(5)).not.toContain('Session ended');
+    expect(sessionEndedLabel(0)).not.toContain('Session ended');
   });
 });
 

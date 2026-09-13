@@ -847,13 +847,32 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
       opensDay: false,
     }));
 
-    // "Session ended" system rows, sorted into the transcript at their end time
-    // like call logs. Chat sessions only (call sessions render as CallLogRow).
+    /*
+     * Ended-chat-session rows, sorted into the transcript at their end time
+     * like call logs.
+     *
+     * CHAT SESSIONS ONLY, and that is not an omission: a call already produces
+     * its own row from the `calls` table via `CallLogRow`, which carries the
+     * medium, the duration and the time — and the outcomes a session row cannot
+     * express, since a declined or missed call has no `paid_sessions` row at
+     * all. Feeding call sessions in here as well would print every connected
+     * call twice.
+     *
+     * So the two ARE separate line items, which is what Amit asked for
+     * (2026-09-13) — they just come from different tables, because the two
+     * things being recorded are different: a session that was billed, and a
+     * call that was attempted.
+     *
+     * `heart` is the mark. CallLogRow puts a call/video glyph in the same pill
+     * slot, so the chat row having none was the visible half of these reading
+     * as two features rather than one history.
+     */
     const systemRows: SystemRow[] = (sessionEvents ?? []).map(e => ({
       kind: 'system' as const,
       localKey: `session-${e.id}`,
       sortAt: e.ended_at,
-      text: sessionEndedLabel(e.minutes_billed),
+      text: sessionEndedLabel(e.minutes_billed, e.ended_at),
+      icon: 'heart' as const,
       opensDay: false,
     }));
 
