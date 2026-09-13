@@ -152,13 +152,43 @@ function OnboardingStepView({ step, expanded, accent, hideIcon, testID }: Props)
    * height switches at the same instant `flexDirection` already does; the other
    * is absolutely positioned over it and fades out.
    */
+  /*
+   * The ACTIVE row's title is the brand coral (Amit, 2026-09-13: "the active
+   * step in onboarding should also be in brand coral text to highlight it").
+   *
+   * It was near-black. That made the checklist read as one block of type in two
+   * greys, with nothing but size saying which row the member is actually being
+   * asked about — on a screen whose whole structure is "these rows stay visible
+   * and the live one is promoted".
+   *
+   * `bg/accent` — THE BRAND PEACH — and not `text/accent`, which is the small-
+   * text ink. The first version used the ink and Amit's answer was immediate:
+   * "again the highlighted color is more brown on active step than coral".
+   *
+   * He was right, and the arithmetic says why it could not have been otherwise.
+   * Brown is dark-plus-orange, so LIGHTNESS is the discriminator, not hue and
+   * not saturation — both of which were already correct. At this hue an ink
+   * that clears 4.5:1 on white cannot go brighter than L40, and L40 is rust.
+   * A 4.5:1 ink on white is structurally incapable of being a bright coral.
+   *
+   * The way out is that this title does not need 4.5:1. It is 42pt, which is
+   * "large text" by developer.android.com/guide/topics/ui/accessibility/apps
+   * ("If the text is smaller than 18sp... 4.5:1. For all other text... 3:1"),
+   * so the 3:1 step applies and the bright accent qualifies at 3.08:1. That is
+   * the whole reason this one piece of text may wear the fill colour when the
+   * links and row labels elsewhere may not.
+   *
+   * A completed or upcoming row stays Fuse's `.gray` (text/muted) — receding,
+   * rather than "secondary text you must still read". So the interpolation now
+   * runs muted -> accent, and the promotion is a colour change as well as a
+   * size change, which is what makes it read as highlighted rather than merely
+   * larger.
+   */
   const titleColor = useAnimatedStyle(() => ({
     color: interpolateColor(
       open.value,
       [0, 1],
-      // A completed/upcoming row is Fuse's `.gray` (text.muted), receding rather
-      // than "secondary text you must still read"; the active row is near-black.
-      [theme.color.text.muted, theme.color.text.primary],
+      [theme.color.text.muted, theme.color.bg.accent],
     ),
   }));
   const titleOpenFade = useAnimatedStyle(() => ({ opacity: open.value }));

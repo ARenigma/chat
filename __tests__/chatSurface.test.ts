@@ -765,7 +765,7 @@ describe('the composer and the bubbles share one grid and one corner', () => {
     /*
      * The arithmetic, on a 360dp window:
      *
-     *   content column      list.paddingHorizontal = space.md = 16   ->  [16, 344]
+     *   content column      list.paddingHorizontal = space.md = 16  ->  [16, 344]
      *   incoming left edge  16 + peerRow(0) + bubbleStack(0)        =   16
      *                       (was 16 + AVATAR_SLOT 26 + gap 8        =   50)
      *   outgoing right edge 344 - myColumn(0) - bubbleStackEnd(0)   =   344
