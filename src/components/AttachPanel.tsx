@@ -9,7 +9,7 @@ import {
   View,
   type NativeSyntheticEvent,
 } from 'react-native';
-import { LIGHT, TOKENS, type Theme } from '../theme/tokens';
+import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { DURATION, fadeTo } from '../theme/motion';
@@ -195,19 +195,6 @@ function AttachPanelView({
     );
     return () => sub.remove();
   }, []);
-
-  /**
-   * Which camera the tile is showing. The native view has supported this since
-   * it was written — `facing` unbinds the running session and opens the other
-   * camera — but nothing ever changed it, so the capability sat unused behind a
-   * hardcoded "back". It only became worth surfacing once the preview actually
-   * streamed (see CameraTilePackage.kt, 2026-09-12).
-   */
-  const [facing, setFacing] = useState<'back' | 'front'>('back');
-  const flip = useCallback(
-    () => setFacing(f => (f === 'back' ? 'front' : 'back')),
-    [],
-  );
 
   const live = visible && slotSettled && foreground && cameraGranted && CAMERA_PREVIEW_AVAILABLE;
 
@@ -402,7 +389,6 @@ function AttachPanelView({
              * 36 emulator, 2026-09-04. Same trap as the emoji grid's cells.
              */
             <CameraPreview
-              facing={facing}
               onStreamStateChange={onStreamStateChange}
               style={[styles.preview, { width: cellSize, height: cellHeight }]}
             />
@@ -435,38 +421,21 @@ function AttachPanelView({
             * https://developer.android.com/reference/androidx/camera/view/PreviewView.StreamState
             */}
           {/*
-            * The flip, only while there is a picture to flip.
+            * NO FLIP CONTROL HERE (Amit, 2026-09-13: "dont put camera flip
+            * button in viewfinder").
             *
-            * Offered as its own control rather than a long-press or a gesture:
-            * this tile is already a button (it opens the full camera), so a
-            * second hidden affordance on the same surface would be guesswork.
-            * It sits top-right, away from the centred glyph and clear of the
-            * thumb arc that reaches the Photos tile.
+            * There was one, top-right, added the same day the preview started
+            * streaming. It is out because this tile is already a button — it
+            * opens the full camera — and a second target inside it makes the
+            * primary action smaller and ambiguous for the secondary one. A
+            * 1x1 grid cell is a viewfinder standing in for a shutter, not a
+            * camera UI; the flip belongs where the camera actually is.
+            * Telegram's attach grid does not put one here either.
             *
-            * Nested pressables: the outer cell opens the camera, this one does
-            * not bubble up to it — `Pressable` stops the press at the inner
-            * control, which is why the flip does not also fire a capture.
+            * The native view keeps its `facing` prop — CameraTilePackage.kt
+            * unbinds and rebinds on change — so the capability is intact for
+            * the full camera screen. Nothing drives it from this panel.
             */}
-          {live ? (
-            <Pressable
-              onPress={flip}
-              testID="attach-camera-flip"
-              accessibilityLabel={
-                facing === 'back'
-                  ? 'Switch to the front camera'
-                  : 'Switch to the back camera'
-              }
-              press="chip"
-              highlight="dim"
-              size={TOKENS.interaction.minTarget}
-              style={styles.flip}>
-              <Icon
-                name="cameraFlip"
-                size={TOKENS.icon.md}
-                color={LIGHT.color.bg.base}
-              />
-            </Pressable>
-          ) : null}
         </Pressable>
 
         {/*
@@ -548,7 +517,11 @@ function AttachPanelView({
                 press="chip"
                 highlight="dim"
                 style={styles.grant}>
-                <Text allowFontScaling={false} style={styles.grantLabel}>
+                <Text
+                  allowFontScaling
+                  numberOfLines={1}
+                  maxFontSizeMultiplier={TOKENS.fontScaleCap.titleSmall}
+                  style={styles.grantLabel}>
                   Show recent
                 </Text>
               </Pressable>
@@ -648,11 +621,33 @@ const makeStyles = (t: Theme) =>
     thumbAction: {
       backgroundColor: t.color.bg.base,
     },
+    /*
+     * EXPLICIT width and height, and the reason is a trap this project has
+     * already documented and I walked into anyway (found on device 2026-09-13,
+     * the chip rendered as a 246x792 pill down the whole column).
+     *
+     * `Pressable` splits its style: box keys — width, height, flex*,
+     * aspectRatio — move to the touchable root, and everything else stays on an
+     * inner view that gets `flexGrow: 1`. A style with NO box key therefore
+     * leaves the root empty and the inner view grows to fill its parent, which
+     * in a centred column is the entire column. Padding and a pill radius are
+     * not box keys, so this had none.
+     *
+     * The project rule, from the hitSlop/splitBox note: always give a Pressable
+     * an explicit width and height when it has siblings in a column.
+     *
+     * The width is fixed rather than hugging because hugging needs no box key
+     * and is exactly what fails here; 148 fits "Show recent" at 1x with room,
+     * and the label is capped and single-line so a large font scale shrinks to
+     * fit instead of overflowing.
+     */
     grant: {
+      width: 148,
+      height: 30,
       marginTop: TOKENS.space['2xs'],
-      paddingHorizontal: TOKENS.space.xs,
-      paddingVertical: TOKENS.space.hair,
       borderRadius: TOKENS.radius.pill,
+      alignItems: 'center',
+      justifyContent: 'center',
       backgroundColor: t.color.bg.base,
     },
     grantLabel: {
@@ -664,23 +659,6 @@ const makeStyles = (t: Theme) =>
       alignItems: 'center',
       justifyContent: 'center',
       gap: TOKENS.space['2xs'],
-    },
-    /*
-     * The flip control. A dark disc so the glyph survives whatever the camera
-     * happens to be pointed at — a bare white glyph disappears against a bright
-     * frame, and this tile's content is by definition unknown. Same reason the
-     * old viewfinder label carried a shadow.
-     */
-    flip: {
-      position: 'absolute',
-      top: TOKENS.space['2xs'],
-      right: TOKENS.space['2xs'],
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: 'rgba(0,0,0,0.45)',
     },
     // Layered over the placeholder rather than replacing it, so the glyph shows
     // through until the TextureView actually has frames to paint.
