@@ -411,7 +411,7 @@ describe('the bright accent carries no label', () => {
      * What changed: `bg/accent` in DARK now carries a label too. The old
      * assertion said it could not, and that was correct while the dark accent
      * was a light blue under a WHITE label (2.59:1). The dark accent is now a
-     * coral (#FF6B58) and `text/onAccent` in dark is near-black ink, so
+     * coral (#FF8457) and `text/onAccent` in dark is near-black ink, so
      * the pair is legible (7.13:1). The two steps therefore still exist in dark,
      * but for HIERARCHY rather than for legibility — and saying so is the honest
      * version.

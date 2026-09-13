@@ -233,8 +233,8 @@ describe('the phone field is set up for Android', () => {
   const fieldAt = sheet.indexOf('<M3Field');
   const field = sheet.slice(fieldAt, sheet.indexOf('</Sheet>', fieldAt));
 
-  it('caps the display at ten digits plus one two-space separator', () => {
-    expect(IN_MOBILE_DISPLAY_LENGTH).toBe(12);
+  it('caps the display at ten digits plus one three-space separator', () => {
+    expect(IN_MOBILE_DISPLAY_LENGTH).toBe(13);
     // maxLength is on the FORMATTED length, and it is the RN-documented way to
     // cap without the flicker a JS-only cap causes.
     expect(field).toContain('maxLength={IN_MOBILE_DISPLAY_LENGTH}');

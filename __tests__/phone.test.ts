@@ -58,7 +58,7 @@ const IN = BY_ISO.IN;
 
 describe('formatNationalDigits — 5-5, per libphonenumber IN metadata', () => {
   it('groups a complete number as five and five', () => {
-    expect(formatNationalDigits('9876543210')).toBe('98765  43210');
+    expect(formatNationalDigits('9876543210')).toBe('98765   43210');
   });
 
   it('is NOT the US 3-3-4', () => {
@@ -71,7 +71,7 @@ describe('formatNationalDigits — 5-5, per libphonenumber IN metadata', () => {
     expect(formatNationalDigits('98765')).toBe('98765');
     // The separator appears with the sixth digit, not after the fifth: a
     // trailing space would put the caret past a character nobody typed.
-    expect(formatNationalDigits('987654')).toBe('98765  4');
+    expect(formatNationalDigits('987654')).toBe('98765   4');
   });
 
   it('uses two ASCII spaces, both of which normalisePhone discards', () => {
@@ -132,7 +132,7 @@ describe('toNationalDigits — ten digits out, whatever goes in', () => {
 describe('formatPhoneEdit — typing forward', () => {
   it('formats as you type and leaves the caret at the end', () => {
     const typed = typeAll('9876543210');
-    expect(typed.display).toBe('98765  43210');
+    expect(typed.display).toBe('98765   43210');
     expect(typed.digits).toBe('9876543210');
     expect(typed.caret).toBe(IN_MOBILE_DISPLAY_LENGTH);
   });
@@ -143,16 +143,16 @@ describe('formatPhoneEdit — typing forward', () => {
     expect(five.caret).toBe(5);
 
     const six = formatPhoneEdit('987654', '98765');
-    expect(six.display).toBe('98765  4');
+    expect(six.display).toBe('98765   4');
     // After the '4', i.e. at the end — not stranded before the space.
-    expect(six.caret).toBe(8);
+    expect(six.caret).toBe(9);
   });
 
   it('hard-caps at ten digits and does not grow the display', () => {
     const eleventh = formatPhoneEdit('98765 432107', '98765 43210');
     expect(eleventh.digits).toHaveLength(IN_MOBILE_DIGITS);
     expect(eleventh.digits).toBe('9876543210');
-    expect(eleventh.display).toBe('98765  43210');
+    expect(eleventh.display).toBe('98765   43210');
     expect(eleventh.caret).toBe(IN_MOBILE_DISPLAY_LENGTH);
   });
 
@@ -160,7 +160,7 @@ describe('formatPhoneEdit — typing forward', () => {
     // Twelve characters of display (ten digits + one two-space separator) is
     // a complete number, not an over-long one.
     const full = formatPhoneEdit('9876543210', '');
-    expect(full.display).toHaveLength(12);
+    expect(full.display).toHaveLength(13);
     expect(isCompleteNationalNumber(full.digits)).toBe(true);
   });
 });
@@ -169,20 +169,20 @@ describe('formatPhoneEdit — paste', () => {
   it('accepts a +91-prefixed paste into an empty field', () => {
     const edit = formatPhoneEdit('+91 98765 43210', '');
     expect(edit.digits).toBe('9876543210');
-    expect(edit.display).toBe('98765  43210');
+    expect(edit.display).toBe('98765   43210');
     expect(edit.caret).toBe(IN_MOBILE_DISPLAY_LENGTH);
   });
 
   it('accepts a space-laden paste', () => {
     const edit = formatPhoneEdit('  98765   43210  ', '');
     expect(edit.digits).toBe('9876543210');
-    expect(edit.display).toBe('98765  43210');
+    expect(edit.display).toBe('98765   43210');
   });
 
   it('accepts a paste that is too long, truncating to ten', () => {
     const edit = formatPhoneEdit('98765432101234', '');
     expect(edit.digits).toBe('9876543210');
-    expect(edit.display).toBe('98765  43210');
+    expect(edit.display).toBe('98765   43210');
     expect(edit.caret).toBe(IN_MOBILE_DISPLAY_LENGTH);
   });
 
@@ -190,7 +190,7 @@ describe('formatPhoneEdit — paste', () => {
     // "987" + paste "77" + "654321"  →  digits 98777654321, capped to ten.
     const edit = formatPhoneEdit('9877765 4321', '98765 4321');
     expect(edit.digits).toBe('9877765432');
-    expect(edit.display).toBe('98777  65432');
+    expect(edit.display).toBe('98777   65432');
     // Immediately after the pasted pair — the fifth digit — and so before the
     // separator that the reflow has just pushed to index 5.
     expect(edit.caret).toBe(5);
@@ -201,8 +201,8 @@ describe('formatPhoneEdit — deletion', () => {
   it('deletes a digit at the end and reflows', () => {
     const edit = formatPhoneEdit('98765 4321', '98765 43210');
     expect(edit.digits).toBe('987654321');
-    expect(edit.display).toBe('98765  4321');
-    expect(edit.caret).toBe(11);
+    expect(edit.display).toBe('98765   4321');
+    expect(edit.caret).toBe(12);
   });
 
   it('deletes through a separator rather than re-inserting it', () => {
@@ -211,7 +211,7 @@ describe('formatPhoneEdit — deletion', () => {
     // front of it goes instead — matching PhoneNumberFormattingTextWatcher.
     const edit = formatPhoneEdit('9876543210', '98765 43210');
     expect(edit.digits).toBe('987643210');
-    expect(edit.display).toBe('98764  3210');
+    expect(edit.display).toBe('98764   3210');
     expect(edit.caret).toBe(4);
   });
 
@@ -234,7 +234,7 @@ describe('formatPhoneEdit — mid-string editing keeps the caret on its digit', 
     // Insert '9' after the first digit of "98765 4321".
     const edit = formatPhoneEdit('998765 4321', '98765 4321');
     expect(edit.digits).toBe('9987654321');
-    expect(edit.display).toBe('99876  54321');
+    expect(edit.display).toBe('99876   54321');
     expect(edit.caret).toBe(2);
   });
 
@@ -397,12 +397,12 @@ describe('the country table matches the metadata it cites', () => {
 
 describe('grouping per country', () => {
   it('groups a complete number the way the metadata says', () => {
-    expect(formatNationalDigits(SAMPLE.IN, IN)).toBe('98765  43210');
-    expect(formatNationalDigits(SAMPLE.US, US)).toBe('415  555  0123');
-    expect(formatNationalDigits(SAMPLE.GB, GB)).toBe('7911  123456');
-    expect(formatNationalDigits(SAMPLE.AE, AE)).toBe('50  123  4567');
-    expect(formatNationalDigits(SAMPLE.SG, SG)).toBe('8123  4567');
-    expect(formatNationalDigits(SAMPLE.AU, AU)).toBe('412  345  678');
+    expect(formatNationalDigits(SAMPLE.IN, IN)).toBe('98765   43210');
+    expect(formatNationalDigits(SAMPLE.US, US)).toBe('415   555   0123');
+    expect(formatNationalDigits(SAMPLE.GB, GB)).toBe('7911   123456');
+    expect(formatNationalDigits(SAMPLE.AE, AE)).toBe('50   123   4567');
+    expect(formatNationalDigits(SAMPLE.SG, SG)).toBe('8123   4567');
+    expect(formatNationalDigits(SAMPLE.AU, AU)).toBe('412   345   678');
   });
 
   it('defaults to India when no country is passed, so PhoneVerifySheet is untouched', () => {
@@ -440,14 +440,14 @@ describe('grouping per country', () => {
   });
 
   it('declares a display length the field can put on maxLength', () => {
-    expect(nationalDisplayLength(IN)).toBe(12);
-    expect(nationalDisplayLength(US)).toBe(14);
-    expect(nationalDisplayLength(GB)).toBe(12);
-    expect(nationalDisplayLength(AE)).toBe(13);
-    expect(nationalDisplayLength(SG)).toBe(10);
-    expect(nationalDisplayLength(AU)).toBe(13);
+    expect(nationalDisplayLength(IN)).toBe(13);
+    expect(nationalDisplayLength(US)).toBe(16);
+    expect(nationalDisplayLength(GB)).toBe(13);
+    expect(nationalDisplayLength(AE)).toBe(15);
+    expect(nationalDisplayLength(SG)).toBe(11);
+    expect(nationalDisplayLength(AU)).toBe(15);
     // The one PhoneVerifySheet and __tests__/textFields.test.ts both read.
-    expect(IN_MOBILE_DISPLAY_LENGTH).toBe(12);
+    expect(IN_MOBILE_DISPLAY_LENGTH).toBe(13);
     expect(IN_MOBILE_DIGITS).toBe(10);
   });
 });
@@ -539,22 +539,22 @@ describe('backspace across a separator, in a country with more than one', () => 
   it('eats the digit before the first separator (US, 3-3-4)', () => {
     const edit = formatPhoneEdit('415 5550123', '415 555 0123', US);
     expect(edit.digits).toBe('415550123');
-    expect(edit.display).toBe('415  550  123');
-    expect(edit.caret).toBe(7);
+    expect(edit.display).toBe('415   550   123');
+    expect(edit.caret).toBe(8);
   });
 
   it('eats the digit before the first separator (AE, 2-3-4)', () => {
     const edit = formatPhoneEdit('50123 4567', '50 123 4567', AE);
     expect(edit.digits).toBe('51234567');
-    expect(edit.display).toBe('51  234  567');
+    expect(edit.display).toBe('51   234   567');
     expect(edit.caret).toBe(1);
   });
 
   it('eats the digit before the second separator (AU, 3-3-3)', () => {
     const edit = formatPhoneEdit('412 345678', '412 345 678', AU);
     expect(edit.digits).toBe('41234678');
-    expect(edit.display).toBe('412  346  78');
-    expect(edit.caret).toBe(7);
+    expect(edit.display).toBe('412   346   78');
+    expect(edit.caret).toBe(8);
   });
 
   it('does not eat a digit when a digit was the thing deleted, in any country', () => {
@@ -589,7 +589,7 @@ describe('switching country under a number already typed', () => {
     const edit = retargetPhone(SAMPLE.IN, SG);
     expect(edit.digits).toBe('98765432');
     expect(edit.digits).toHaveLength(SG.nationalLength);
-    expect(edit.display).toBe('9876  5432');
+    expect(edit.display).toBe('9876   5432');
     // Caret after the last surviving digit: the whole string was rewritten, so
     // no earlier offset still means what it meant.
     expect(edit.caret).toBe(edit.display.length);
@@ -599,16 +599,16 @@ describe('switching country under a number already typed', () => {
   it('re-groups without losing anything when the new country is long enough', () => {
     const edit = retargetPhone(SAMPLE.IN, US);
     expect(edit.digits).toBe(SAMPLE.IN);
-    expect(edit.display).toBe('987  654  3210');
-    expect(edit.caret).toBe(14);
+    expect(edit.display).toBe('987   654   3210');
+    expect(edit.caret).toBe(16);
   });
 
   it('re-groups a partial number too', () => {
     // Four digits typed for India, then the member picks Australia.
     const edit = retargetPhone('4123', AU);
     expect(edit.digits).toBe('4123');
-    expect(edit.display).toBe('412  3');
-    expect(edit.caret).toBe(6);
+    expect(edit.display).toBe('412   3');
+    expect(edit.caret).toBe(7);
   });
 
   it('leaves a number the new country can hold exactly alone', () => {
@@ -651,8 +651,8 @@ describe('switching country under a number already typed', () => {
       ({ digits, display, caret } = edit);
     }
     expect(digits).toBe(SAMPLE.AU);
-    expect(display).toBe('412  345  678');
-    expect(caret).toBe(13);
+    expect(display).toBe('412   345   678');
+    expect(caret).toBe(15);
   });
 });
 
@@ -685,7 +685,7 @@ describe('the caret stays on its digit in every country', () => {
     // immediately after the '9' that was typed rather than following a space.
     const edit = formatPhoneEdit('9415 555 0123', '415 555 0123', US);
     expect(edit.digits).toBe('9415555012');
-    expect(edit.display).toBe('941  555  5012');
+    expect(edit.display).toBe('941   555   5012');
     expect(edit.caret).toBe(1);
   });
 
@@ -694,10 +694,10 @@ describe('the caret stays on its digit in every country', () => {
     // separator moves and the last digit is pushed off the nine-digit cap.
     const edit = formatPhoneEdit('412 3459 678', '412 345 678', AU);
     expect(edit.digits).toBe('412345967');
-    expect(edit.display).toBe('412  345  967');
+    expect(edit.display).toBe('412   345   967');
     // Index 9 is immediately after the inserted '9', which the reflow has just
     // moved across the separator into the last group.
-    expect(edit.caret).toBe(11);
+    expect(edit.caret).toBe(13);
   });
 });
 
@@ -828,12 +828,12 @@ describe('formatPhoneEdit — the reported registration number', () => {
 
 describe('placeholderShape — the field says how many digits and where the gap is', () => {
   it('is five, a gap, and five for India', () => {
-    expect(placeholderShape(INDIA)).toBe('-----  -----');
+    expect(placeholderShape(INDIA)).toBe('-----   -----');
   });
 
   it('follows the selected country rather than hardcoding India', () => {
     const us = PHONE_COUNTRIES.find(c => c.iso === 'US')!;
-    expect(placeholderShape(us)).toBe('---  ---  ----');
+    expect(placeholderShape(us)).toBe('---   ---   ----');
   });
 
   it('uses the same separator the formatter uses, so the gaps line up', () => {
