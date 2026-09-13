@@ -801,6 +801,18 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   cta: {
     width: ROW_CTA_WIDTH,
     height: ROW_CTA_VISUAL_HEIGHT,
+    /*
+     * A ROW, so the away bell sits beside the word rather than above it.
+     *
+     * Found on device: with the default column direction the bell stacked on
+     * top of "Notify", which grew the control to two lines and broke the fixed
+     * row height this list is built on — every row the same height is the
+     * invariant, and a two-line CTA on away providers only is exactly the kind
+     * of drift it exists to stop. `height` is fixed, so the second line was
+     * also being squeezed.
+     */
+    flexDirection: 'row',
+    gap: TOKENS.space['2xs'],
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: TOKENS.radius.xs,
