@@ -20,7 +20,13 @@ import { RupeeAmount } from '../components/RupeeAmount';
 import { LoadingIndicator } from '../components/LoadingIndicator';
 import { useStore } from '../store/useStore';
 import { CASHFREE_SANDBOX_CHECKOUT } from '../config';
-import { productIdForPack, useCashfreeCheckout } from '../api/billing';
+import {
+  discountedBasePaise,
+  discountedTotalInr,
+  productIdForPack,
+  useCashfreeCheckout,
+  useFirstRechargeDiscount,
+} from '../api/billing';
 
 interface Props {
   visible: boolean;
@@ -65,8 +71,21 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
   // than in the sheet's supporting subhead, at the same roles the recharge chips
   // use for the same two facts (price, then its composition).
   const gstRateBps = economics?.gst_rate_bps ?? FALLBACK_ECONOMICS.gst_rate_bps;
-  const gst = gstAddedLabel(amount, gstRateBps);
-  const total = packTotalInr(amount, gstRateBps);
+  // The first-recharge discount the server is holding (migration 102). `total`
+  // is what Cashfree will actually capture, and it is passed to the checkout as
+  // `expectedTotalInr` so `assertQuotedAmount` (billing.ts) refuses to open the
+  // gateway unless the server's order matches this figure to the paise. Both
+  // helpers collapse to the undiscounted values when `discountBps` is 0, so a
+  // returning member's sheet is byte-for-byte what it was.
+  //
+  // The GST caption is computed on the DISCOUNTED base — the tax the member
+  // actually pays is on ₹150, not ₹300 — matching create-order, which discounts
+  // the taxable value and charges GST on top of that (ADR-0029).
+  const { data: discountBps = 0, isPending: discountPending } = useFirstRechargeDiscount();
+  const discountedBaseInr = discountedBasePaise(amount, discountBps) / 100;
+  const gst = gstAddedLabel(discountedBaseInr, gstRateBps);
+  const total = discountedTotalInr(amount, gstRateBps, discountBps);
+  const wasTotal = packTotalInr(amount, gstRateBps);
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const queryClient = useQueryClient();
@@ -96,10 +115,17 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
   };
 
   const handleCashfreePay = (payMethod: 'upi' | 'web') => {
+    // Never quote a price we have not confirmed. If the discount read is still
+    // in flight, `total` may be the full price while the server is about to
+    // grant the half — which would trip `assertQuotedAmount` and show the member
+    // a "price changed" error on a price that never changed. The query is fired
+    // on the RechargeScreen behind this sheet and is almost always resolved by
+    // now; this guards the cold-open edge.
+    if (discountPending) return;
     setMockPhase('processing');
     setErrorMsg(null);
     cashfreeCheckout.mutate(
-      { productId: productIdForPack(amount), method: payMethod },
+      { productId: productIdForPack(amount), method: payMethod, expectedTotalInr: total },
       {
         onSuccess: result => {
           setSuccessBalance(result.balance ?? null);
@@ -257,6 +283,15 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
         </Text>
         <View style={styles.totalFill} />
         <View style={styles.totalFigures}>
+          {/* The full total, struck through, above the discounted one — the same
+              first-recharge saving the chip behind this sheet showed, restated at
+              the moment money moves. First-timers only; `discountBps` is 0 for
+              everyone else and this renders nothing. */}
+          {discountBps > 0 ? (
+            <Text allowFontScaling style={styles.totalWas} testID="payment-total-was">
+              {formatRupees(wasTotal)}
+            </Text>
+          ) : null}
           <RupeeAmount
             value={total}
             maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized}
@@ -343,6 +378,7 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
               <Button
                 label={`Pay ${formatRupees(total)}  ·  UPI`}
                 onPress={() => handleCashfreePay('upi')}
+                disabled={discountPending}
                 testID="payment-confirm"
               />
               {/* Fallback for members with no UPI app: the hosted page carries
@@ -465,6 +501,16 @@ const makeStyles = (t: Theme) =>
     totalLabel: {
       ...TOKENS.typography.bodyLarge,
       color: t.color.text.secondary,
+    },
+    // The full total, struck through, sitting above the discounted `totalValue`
+    // for a first-recharge member. bodySmall / secondary (7.41:1 light / 5.00:1
+    // dark on the sheet's bg/raised): a 12sp struck figure still owes the 4.5:1
+    // floor, so it takes the same readable secondary ink the chip's struck price
+    // uses rather than the quieter tertiary.
+    totalWas: {
+      ...TOKENS.typography.bodySmall,
+      color: t.color.text.secondary,
+      textDecorationLine: 'line-through',
     },
     // 22dp Geist-Bold, byte-for-byte the role RechargeScreen's price chip uses.
     // This is the parity that __tests__/theme.test.ts now pins: if either side

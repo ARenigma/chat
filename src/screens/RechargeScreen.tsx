@@ -5,6 +5,7 @@ import Animated from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { DEFAULT_RATES, formatRupees, gstAddedLabel, gstAddedSpoken, packTotalInr, PAYMENTS_ENABLED, RECHARGE_PACKS } from '../lib/rates';
+import { discountedTotalInr, useFirstRechargeDiscount } from '../api/billing';
 import {
   useRechargeConfig,
   useKillSwitches,
@@ -33,6 +34,14 @@ function useRechargePacks() {
   const { data: rechargeConfig = FALLBACK_RECHARGE } = useRechargeConfig();
   const { data: killSwitches } = useKillSwitches();
   const { data: economics } = useEconomicsConfig();
+  // The first-recharge discount the SERVER is holding for this member (migration
+  // 102), in basis points — 5000 = half price, 0 for anyone who has recharged
+  // before or when the offer is off. Read-only preview: create-order makes the
+  // real decision and `assertQuotedAmount` (billing.ts) refuses to open the
+  // gateway unless the two agree, so a stale 0 here can only under-promise, never
+  // over-charge. The screen draws the discounted price from this; the guard is
+  // what keeps the drawing honest.
+  const { data: discountBps = 0 } = useFirstRechargeDiscount();
   const livePacks = rechargeConfig.packs_inr.length > 0 ? rechargeConfig.packs_inr : RECHARGE_PACKS;
   return {
     livePacks,
@@ -40,13 +49,77 @@ function useRechargePacks() {
     // Admin-set (ADR-0021). 0 for a seller without a GSTIN, and every GST line
     // on this screen goes with it — see `gstExclusiveParts`.
     gstRateBps: economics?.gst_rate_bps ?? FALLBACK_ECONOMICS.gst_rate_bps,
+    discountBps,
   };
+}
+
+/**
+ * The first-recharge offer, stated once above the pack grid.
+ *
+ * Shown only to a member the server says is owed it (`discountBps > 0`). The
+ * percent is derived from the granted basis points, so an admin who sets the
+ * offer to 4000 bps gets "40% off" with no code change. Text-only: the icon set
+ * (design/icons.json) carries no tag/percent glyph and RULE 4 makes adding one a
+ * generate step, not worth it for an accent. `text/accent` on `bg/accentTint`
+ * measures 4.58:1 light / 8.22:1 dark — clear of the 4.5:1 floor
+ * developer.android.com/guide/topics/ui/accessibility/apps sets for sub-18sp.
+ */
+function FirstRechargeBanner({ discountBps }: { discountBps: number }) {
+  const styles = useStyles(makeOfferStyles);
+  if (discountBps <= 0) return null;
+  return (
+    <View style={styles.banner}>
+      <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.bannerText}>
+        {Math.round(discountBps / 100)}% off your first recharge
+      </Text>
+    </View>
+  );
+}
+
+/**
+ * The discounted PRICE line under a pack's balance headline.
+ *
+ * The chip's big figure is the balance the member ADDS, and that does NOT change
+ * with the discount — create-order credits the full pack (`tokens_delta:
+ * pack.tokens`, "member pays base + tax, receives base tokens"). What halves is
+ * the PRICE, so the strikethrough lives here and nowhere near the balance: the
+ * full GST-inclusive total struck through, the discounted total beside it.
+ * Rendered only for a member who is owed the offer; every other member's chip is
+ * byte-identical to before. `on` recolours both figures to the chip's on-accent
+ * ink when the card is the selected coral fill — the same rule every inset
+ * element on these chips follows.
+ */
+function ChipDiscountPrice({
+  pack,
+  gstRateBps,
+  discountBps,
+  on,
+}: {
+  pack: number;
+  gstRateBps: number;
+  discountBps: number;
+  on: boolean;
+}) {
+  const styles = useStyles(makeOfferStyles);
+  if (discountBps <= 0) return null;
+  return (
+    <Text allowFontScaling numberOfLines={1} style={[styles.priceLine, on && styles.priceLineOn]}>
+      Pay{' '}
+      <Text style={[styles.priceWas, on && styles.priceWasOn]}>
+        {formatRupees(packTotalInr(pack, gstRateBps))}
+      </Text>
+      {'  '}
+      <Text style={[styles.priceNow, on && styles.priceLineOn]}>
+        {formatRupees(discountedTotalInr(pack, gstRateBps, discountBps))}
+      </Text>
+    </Text>
+  );
 }
 
 export function RechargeScreen() {
   const visible = useStore(s => s.refillVisible);
   const close = useStore(s => s.closeRefill);
-  const { livePacks, gstRateBps } = useRechargePacks();
+  const { livePacks, gstRateBps, discountBps } = useRechargePacks();
   const [amount, setAmount] = useState<number>(livePacks[1] ?? 300);
   const [payOpen, setPayOpen] = useState(false);
 
@@ -69,6 +142,7 @@ export function RechargeScreen() {
           <RechargeSheetFooter
             amount={amount}
             gstRateBps={gstRateBps}
+            discountBps={discountBps}
             onPay={() => requestAnimationFrame(() => setPayOpen(true))}
           />
         }>
@@ -76,6 +150,8 @@ export function RechargeScreen() {
           amount={amount}
           setAmount={setAmount}
           livePacks={livePacks}
+          gstRateBps={gstRateBps}
+          discountBps={discountBps}
         />
       </Sheet>
       <PaymentSheet visible={payOpen} amount={amount} onClose={() => setPayOpen(false)} />
@@ -94,10 +170,14 @@ function RechargeSheetForm({
   amount,
   setAmount,
   livePacks,
+  gstRateBps,
+  discountBps,
 }: {
   amount: number;
   setAmount: (n: number) => void;
   livePacks: readonly number[];
+  gstRateBps: number;
+  discountBps: number;
 }) {
   const styles = useStyles(makeCompactStyles);
   const theme = useTheme();
@@ -127,6 +207,9 @@ function RechargeSheetForm({
       <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.section}>
         Choose a pack
       </Text>
+      {/* Above the grid, attached to the packs it discounts. Renders nothing for
+          a member who is not owed the offer. */}
+      <FirstRechargeBanner discountBps={discountBps} />
       <View style={styles.grid}>
         {livePacks.slice(0, 4).map(pack => {
           const selected = pack === amount;
@@ -147,7 +230,7 @@ function RechargeSheetForm({
                 testID={`pack-${pack}`}
                 accessibilityRole="radio"
                 checked={selected}
-                accessibilityLabel={`${formatRupees(pack)}${popular ? ', popular' : ''}`}
+                accessibilityLabel={`${formatRupees(pack)}${discountBps > 0 ? `, ${Math.round(discountBps / 100)}% off first recharge, pay ${formatRupees(discountedTotalInr(pack, gstRateBps, discountBps))}` : ''}${popular ? ', popular' : ''}`}
                 press="card"
                 // The M3 pressed state layer is the container's ON colour at 10%
                 // (androidx StateTokens.kt `PressedStateLayerOpacity = 0.1f`,
@@ -197,6 +280,15 @@ function RechargeSheetForm({
                   allowFontScaling
                   style={[styles.amount, selected && styles.amountOn]}
                 />
+                {/* The halved PRICE, under the balance headline — first-recharge
+                    members only. The chip's ₹300 is what you ADD and does not
+                    move; this is what you PAY. */}
+                <ChipDiscountPrice
+                  pack={pack}
+                  gstRateBps={gstRateBps}
+                  discountBps={discountBps}
+                  on={selected}
+                />
                 {/*
                   * The second line is GONE (2026-09-08). It read "300 tokens"
                   * under a "₹300" headline — the price and what the price
@@ -233,7 +325,7 @@ function RechargeSheetForm({
   );
 }
 
-function RechargeSheetFooter({ amount, gstRateBps, onPay }: { amount: number; gstRateBps: number; onPay: () => void }) {
+function RechargeSheetFooter({ amount, gstRateBps, discountBps, onPay }: { amount: number; gstRateBps: number; discountBps: number; onPay: () => void }) {
   const styles = useStyles(makeCompactStyles);
   const theme = useTheme();
   return (
@@ -267,8 +359,13 @@ function RechargeSheetFooter({ amount, gstRateBps, onPay }: { amount: number; gs
          * again on the next sheet; a member hearing it has neither in reach, so
          * the spoken name carries it.
          * https://www.w3.org/WAI/WCAG21/Understanding/label-in-name.html
+         *
+         * The figure is the DISCOUNTED total — what Cashfree will actually
+         * capture — via `discountedTotalInr`, which collapses to the full total
+         * when `discountBps` is 0, so a returning member's spoken price is
+         * unchanged and a first-timer hears the half they will pay.
          */
-        accessibilityLabel={`Pay ${formatRupees(packTotalInr(amount, gstRateBps))}`}
+        accessibilityLabel={`Pay ${formatRupees(discountedTotalInr(amount, gstRateBps, discountBps))}`}
         press="button"
         onColor={theme.color.text.onAccent}
         style={styles.payButton}>
@@ -286,7 +383,7 @@ export function RechargeWalletPage() {
   const insets = useSafeAreaInsets();
   const visible = useStore(s => s.walletVisible);
   const close = useStore(s => s.closeWallet);
-  const { livePacks, gstRateBps } = useRechargePacks();
+  const { livePacks, gstRateBps, discountBps } = useRechargePacks();
   const [amount, setAmount] = useState<number>(livePacks[1] ?? 300);
   const [payOpen, setPayOpen] = useState(false);
 
@@ -331,11 +428,15 @@ export function RechargeWalletPage() {
           setAmount={setAmount}
           livePacks={livePacks}
           gstRateBps={gstRateBps}
+          discountBps={discountBps}
         />
       </ScrollView>
       <View style={[styles.payBar, { paddingBottom: Math.max(insets.bottom, TOKENS.space.md) }]}>
+        {/* The DISCOUNTED total — what Cashfree captures. `discountedTotalInr`
+            equals `packTotalInr` when discountBps is 0, so a returning member's
+            button is unchanged; a first-timer sees the half they pay. */}
         <Button
-          label={`Pay ${formatRupees(packTotalInr(amount, gstRateBps))}`}
+          label={`Pay ${formatRupees(discountedTotalInr(amount, gstRateBps, discountBps))}`}
           onPress={() => requestAnimationFrame(() => setPayOpen(true))}
           testID="recharge-wallet-pay"
         />
@@ -364,11 +465,13 @@ function RechargeForm({
   setAmount,
   livePacks,
   gstRateBps,
+  discountBps,
 }: {
   amount: number;
   setAmount: (n: number) => void;
   livePacks: readonly number[];
   gstRateBps: number;
+  discountBps: number;
 }) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -395,6 +498,10 @@ function RechargeForm({
       <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.section}>
         Add money
       </Text>
+
+      {/* Above the grid, attached to the packs it discounts. Renders nothing for
+          a member who is not owed the offer. */}
+      <FirstRechargeBanner discountBps={discountBps} />
 
       <View style={styles.grid}>
         {livePacks.map(pack => {
@@ -437,7 +544,7 @@ function RechargeForm({
                 // instead of an English word baked into our string.
                 accessibilityRole="radio"
                 checked={on}
-                accessibilityLabel={`${formatRupees(pack)}, about ${minutes} minutes of talk${gstSpoken ? `, ${gstSpoken}` : ''}${badge ? `, ${badge}` : ''}`}
+                accessibilityLabel={`${formatRupees(pack)}, about ${minutes} minutes of talk${gstSpoken ? `, ${gstSpoken}` : ''}${discountBps > 0 ? `, ${Math.round(discountBps / 100)}% off first recharge, pay ${formatRupees(discountedTotalInr(pack, gstRateBps, discountBps))}` : ''}${badge ? `, ${badge}` : ''}`}
                 press="card"
                 // Same M3 state-layer reason as the compact chip above:
                 // StateTokens.kt `PressedStateLayerOpacity = 0.1f` over the
@@ -498,7 +605,18 @@ function RechargeForm({
                     Last, and full width: it is a disclosure, so it reads after
                     the offer (price → tokens → talk time → tax). No
                     `numberOfLines`, for the reason given on the compact chip. */}
-                {gst ? (
+                {/* For a first-recharge member the halved PRICE replaces the
+                    GST caption: showing "Pay ₹̶354 ₹177" and "+ ₹54 GST" on the
+                    same card names the tax twice over. Everyone else keeps the
+                    itemised GST line unchanged (ADR-0029). */}
+                {discountBps > 0 ? (
+                  <ChipDiscountPrice
+                    pack={pack}
+                    gstRateBps={gstRateBps}
+                    discountBps={discountBps}
+                    on={on}
+                  />
+                ) : gst ? (
                   <Text allowFontScaling style={[styles.cardGst, on && styles.cardUnitOn]}>
                     {gst}
                   </Text>
@@ -1035,5 +1153,57 @@ const makeCompactStyles = (t: Theme) =>
     payButtonLabel: {
       ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.onAccent,
+    },
+  });
+
+// Shared by both hosts: the first-recharge banner and each chip's discounted
+// price line. One factory rather than a copy in each of makeStyles /
+// makeCompactStyles — the offer looks the same wherever recharge is reached.
+const makeOfferStyles = (t: Theme) =>
+  StyleSheet.create({
+    // The offer callout above the grid. bg/accentTint is the light coral surface
+    // the PaymentSheet's selected UPI row already uses; text/accent on it is
+    // 4.58:1 light / 8.22:1 dark, clear of the 4.5:1 sub-18sp floor.
+    banner: {
+      alignSelf: 'stretch',
+      paddingVertical: TOKENS.space.sm,
+      paddingHorizontal: TOKENS.space.md,
+      borderRadius: TOKENS.radius.sm,
+      borderCurve: 'continuous',
+      backgroundColor: t.color.bg.accentTint,
+    },
+    bannerText: {
+      ...TOKENS.typography.labelLargeEmphasized,
+      color: t.color.text.accent,
+    },
+    // The "Pay …" lead-in and the container ink. bodySmall, the chips' own
+    // supporting-line size, so the price sits a step under the balance headline.
+    priceLine: {
+      ...TOKENS.typography.bodySmall,
+      color: t.color.text.secondary,
+    },
+    // On a selected (coral) chip every figure takes the guaranteed on-accent ink,
+    // the same rule cardAmountOn / amountOn follow.
+    priceLineOn: {
+      color: t.color.text.onAccent,
+    },
+    // The original total, struck through. text/secondary (7.41:1 light / 5.00:1
+    // dark on bg/raised), not the quieter tertiary the GST caption used: a 12sp
+    // struck figure still owes the 4.5:1 floor
+    // (developer.android.com/guide/topics/ui/accessibility/apps), and tertiary is
+    // 4.39/3.30 — the line-through is not a licence to drop below it. The strike
+    // itself is what reads as "old price", not the ink.
+    priceWas: {
+      color: t.color.text.secondary,
+      textDecorationLine: 'line-through',
+    },
+    priceWasOn: {
+      color: t.color.text.onAccent,
+      opacity: 0.7,
+    },
+    // The discounted total, in accent coral so the eye lands on what is actually
+    // paid. Flips to on-accent ink via priceLineOn when the chip is selected.
+    priceNow: {
+      color: t.color.text.accent,
     },
   });
