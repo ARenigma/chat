@@ -68,7 +68,7 @@ Production stays empty until you explicitly publish there.
 
 Also fill in Console (not files):
 
-- Privacy policy: `https://chat-arenigmas-projects.vercel.app/privacy.html`
+- Privacy policy: `https://chat-arenigmas-projects.vercel.app/privacy`
 - Support email: `hello@pappal.live` (set on the live listing 2026-09-07; see `docs/play/listing.md`)
 - **Data safety** + **Content rating** questionnaires (`docs/play/listing.md` §§4–5)
 

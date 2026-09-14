@@ -1,0 +1,16 @@
+{
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "redirects": [
+    {
+      "source": "/index.html",
+      "destination": "/",
+      "permanent": true
+    },
+    {
+      "source": "/:page.html",
+      "destination": "/:page",
+      "permanent": true
+    }
+  ]
+}

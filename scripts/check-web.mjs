@@ -32,6 +32,19 @@ const REQUIRED = {
 
 const problems = [];
 const present = new Set(readdirSync(WEB));
+
+/** Map public path (no .html) to the static file Vercel serves via cleanUrls. */
+function resolveInternalHref(href) {
+  if (href === '') return 'index.html';
+  if (href.endsWith('.html')) {
+    return href;
+  }
+  // stylesheets and other assets keep their extension in href.
+  if (href.includes('.')) {
+    return href;
+  }
+  return `${href}.html`;
+}
 const DOWNLOAD_URL =
   'https://github.com/ARenigma/pappal-downloads/releases/latest/download/Pappal.apk';
 const CONTACT_EMAIL = 'hello@pappal.live';
@@ -54,7 +67,13 @@ for (const page of pages) {
   // Internal links only: an external 404 is not ours to police, and checking
   // them would make this gate depend on the network.
   for (const [, href] of body.matchAll(/href="\/([^"#]*)"/g)) {
-    const target = href === '' ? 'index.html' : href;
+    if (href.endsWith('.html')) {
+      problems.push(
+        `web/${page} links to /${href}; use clean paths (e.g. /privacy)`,
+      );
+      continue;
+    }
+    const target = resolveInternalHref(href);
     if (!present.has(target)) {
       problems.push(`web/${page} links to /${href}, which does not exist`);
     }
@@ -105,8 +124,20 @@ for (const page of pages) {
   }
 
   // A page with no way back is a dead end on a phone.
-  if (page !== 'index.html' && !/href="\/"|href="\/index\.html"/.test(body)) {
+  if (page !== 'index.html' && !/href="\/"/.test(body)) {
     problems.push(`web/${page} has no link home`);
+  }
+}
+
+const vercelConfigPath = join(WEB, 'vercel.json');
+if (!present.has('vercel.json')) {
+  problems.push(
+    'missing web/vercel.json (cleanUrls required for public paths)',
+  );
+} else {
+  const vercelConfig = readFileSync(vercelConfigPath, 'utf8');
+  if (!/"cleanUrls"\s*:\s*true/.test(vercelConfig)) {
+    problems.push('web/vercel.json must set cleanUrls: true');
   }
 }
 
