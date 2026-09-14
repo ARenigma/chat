@@ -588,9 +588,10 @@ describe('Android manifest', () => {
     // RECORD_AUDIO reaches a sensor (voice notes); CAMERA is a second sensor for
     // capturing a photo to send (#8). Both are declared by us rather than tolerated
     // from a dependency's manifest, because verify-manifest.mjs treats its allowlist
-    // as the required set. USE_FULL_SCREEN_INTENT was here for a ringing call that
-    // took over the screen; the call is a heads-up popup now, so the permission is
-    // gone.
+    // as the required set. USE_FULL_SCREEN_INTENT rings an incoming CALL over the
+    // lock screen (Amit, 2026-09-14, reversing the 2026-08-27 heads-up-only call):
+    // it is restricted to calling apps on API 34+, which this app qualifies for via
+    // MANAGE_OWN_CALLS. Calls only — messages stay heads-up.
     //
     // Call foreground service permissions (android-audit.md 2026-08-29):
     //   MANAGE_OWN_CALLS — prerequisite for FOREGROUND_SERVICE_TYPE_PHONE_CALL
@@ -631,7 +632,13 @@ describe('Android manifest', () => {
        */
       'android.permission.READ_MEDIA_VISUAL_USER_SELECTED',
       'android.permission.RECORD_AUDIO',
+      'android.permission.USE_FULL_SCREEN_INTENT',
       'android.permission.VIBRATE',
+      // CallForegroundService holds a PROXIMITY_SCREEN_OFF_WAKE_LOCK during a
+      // voice call so the screen darkens at the ear (Telegram's VoIPService does
+      // the same). Firebase/Agora also merge WAKE_LOCK, but the app now uses it
+      // first-party, so it is claimed here. Added 2026-09-14.
+      'android.permission.WAKE_LOCK',
     ]);
   });
 
@@ -2308,6 +2315,22 @@ describe('the chat restyle is wired, not just drawn', () => {
     expect(chatCode).not.toContain('showReceipt');
   });
 
+  it('reserves the inline-timestamp slot so a short bubble hugs the clock (WhatsApp #6)', () => {
+    // The "hi" bug (Amit, 2026-09-13): a wrapping flex row is sized by Yoga to
+    // its WIDEST single item, so a message narrower than the clock dropped the
+    // clock to a second, clock-wide line. The fix reserves the clock's width at
+    // the END of the message text with a zero-content spacer View, and overlays
+    // the real clock absolutely — so the text's own intrinsic width includes the
+    // clock and the bubble hugs to the WhatsApp width. Verified on device.
+    const turnSrc = read('src/components/Turn.tsx');
+    expect(turnSrc).toContain('setMetaWidth');
+    // The inline spacer sized to the measured meta plus the gap.
+    expect(turnSrc).toContain('width: metaWidth + TOKENS.space.xs');
+    // The real clock is absolutely positioned over the reserved slot, not a
+    // wrapping sibling that Yoga can push to its own line.
+    expect(turnSrc).toMatch(/metaOverlay:\s*\{[\s\S]*?position:\s*'absolute'/);
+  });
+
   it('renders the photo timestamp INSIDE the image, not over the bubble', () => {
     /*
      * A photo bubble shows its timestamp and tick with the same semantics as a
@@ -3700,6 +3723,24 @@ describe('one presence control, writing both columns', () => {
     expect(settings).toContain('legalUrl(');
     // Hard-coded host must not appear — the helper is the indirection point.
     expect(withoutComments(settings)).not.toContain("'https://bond-app.vercel.app/");
+    const legal = read('src/lib/legal.ts');
+    expect(legal).not.toMatch(/\$\{page\}\.html/);
+  });
+});
+
+describe('the website uses clean public URLs', () => {
+  it('internal links omit the .html suffix', () => {
+    const pages = readdirSync(join(ROOT, 'web')).filter(f => f.endsWith('.html'));
+    for (const page of pages) {
+      const html = read(join('web', page));
+      const bad = html.match(/href="\/[^"]*\.html"/g) ?? [];
+      expect({ page, bad }).toEqual({ page, bad: [] });
+    }
+  });
+
+  it('ships vercel.json with cleanUrls for the static deploy root', () => {
+    const vercel = read('web/vercel.json');
+    expect(vercel).toMatch(/"cleanUrls"\s*:\s*true/);
   });
 });
 

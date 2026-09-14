@@ -12,6 +12,22 @@
     <!-- Android 13+ made notifications a runtime permission. Without this the
          request in src/lib/push.ts resolves as denied and the token never rings. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- An incoming CALL rings full-screen over the lock screen (Conversations.
+         notifyCall's setFullScreenIntent), so the callee sees the ringing screen
+         without unlocking — the way a phone call behaves. Restricted to calling /
+         alarm apps on API 34+; this app qualifies as a calling app via
+         MANAGE_OWN_CALLS below, so the grant is not revoked. Calls ONLY: message
+         and engagement notifications stay ordinary heads-up, never full-screen.
+         Reverses the 2026-08-27 heads-up-only decision (Amit, 2026-09-14).
+         https://developer.android.com/develop/ui/views/notifications/build-notification#urgent-message -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- CallForegroundService holds a PROXIMITY_SCREEN_OFF_WAKE_LOCK during a
+         connected VOICE call, so the screen goes dark at the ear (the same lock
+         Telegram's VoIPService holds). Firebase/Agora also merge WAKE_LOCK in, but
+         it is claimed here because the app now uses it first-party — verify-manifest
+         treats its ALLOWED set as required so a use is never a surprise. Normal
+         permission: no runtime prompt, no Data Safety row. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!--
       Voice notes, for members and providers alike.
 

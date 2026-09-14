@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.content.ContextCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.Person
@@ -28,6 +29,14 @@ import androidx.core.app.ServiceCompat
 class CallForegroundService : Service() {
 
     private val audioFocusManager by lazy { CallAudioFocusManager(this) }
+
+    /**
+     * Turns the screen off while the phone is at the ear during a VOICE call, the
+     * same PROXIMITY_SCREEN_OFF_WAKE_LOCK Telegram's VoIPService holds. Held only
+     * for a connected voice call — never while ringing (no mic yet) and never for
+     * video, which needs the screen on. Agora routes the audio; the screen is ours.
+     */
+    private var proximityLock: PowerManager.WakeLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -91,12 +100,39 @@ class CallForegroundService : Service() {
             audioFocusManager.requestCallFocus()
         }
 
+        // Proximity screen-off for a connected VOICE call (mic, no camera).
+        updateProximity(includeMicrophone && !includeCamera)
+
         return START_NOT_STICKY
+    }
+
+    /**
+     * Hold or drop the proximity screen-off lock. `acquire` with a generous
+     * timeout so a service the OS forgets to stop cannot pin the sensor forever;
+     * `PROXIMITY_SCREEN_OFF_WAKE_LOCK` is not on every device, hence the support
+     * check. https://developer.android.com/reference/android/os/PowerManager
+     */
+    private fun updateProximity(hold: Boolean) {
+        val power = getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
+        if (hold) {
+            if (proximityLock == null &&
+                power.isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK)) {
+                proximityLock = power.newWakeLock(
+                    PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK,
+                    "companionchat:call:proximity",
+                )
+            }
+            proximityLock?.let { if (!it.isHeld) it.acquire(60 * 60 * 1000L) }
+        } else {
+            proximityLock?.let { if (it.isHeld) it.release() }
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
         audioFocusManager.abandonCallFocus()
+        proximityLock?.let { if (it.isHeld) it.release() }
+        proximityLock = null
     }
 
     companion object {
