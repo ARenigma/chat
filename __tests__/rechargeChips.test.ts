@@ -139,24 +139,28 @@ describe('recharge chips present GST exclusive — charged on top of the base (A
     expect(recharge).toContain('1 token = ₹1. You are charged in rupees at checkout.');
   });
 
-  it('the pay bar shows what Cashfree will actually capture, not just the base', () => {
+  it('the pay bar shows what Cashfree will actually capture — the discounted total', () => {
     const recharge = withoutComments(read('src/screens/RechargeScreen.tsx'));
     /*
-     * Both pay buttons are still driven by packTotalInr, not by `amount`.
+     * Both pay controls quote `discountedTotalInr`, not the bare base and not the
+     * undiscounted `packTotalInr` (2026-09-13, first-recharge discount made
+     * visible). It collapses to the full total when the member is owed no
+     * discount and to the half they pay when they are, and it is the same figure
+     * PaymentSheet passes to the checkout as `expectedTotalInr` — so the button,
+     * the sheet and the amount Cashfree captures cannot disagree.
      *
-     * The sheet's button now READS just "Pay" — but its accessibilityLabel
-     * still carries the total, so a screen-reader user is told the figure a
-     * sighted user reads off the chip. That is why this count is unchanged at
-     * two: dropping packTotalInr from the sheet entirely would mean the amount
-     * is nowhere in that control, which is the actual thing worth forbidding.
+     * The sheet's button READS just "Pay"; its accessibilityLabel carries the
+     * figure, so a screen-reader user is told the price a sighted user reads off
+     * the chip. `packTotalInr` still appears once — as the struck-through
+     * ORIGINAL in the chip's discount price line — so it is not asserted absent.
      */
-    const payMatches = (recharge.match(/packTotalInr\(/g) ?? []).length;
+    const payMatches = (recharge.match(/discountedTotalInr\(/g) ?? []).length;
     expect(payMatches).toBeGreaterThanOrEqual(2);
     const footer = recharge.slice(
       recharge.indexOf('function RechargeSheetFooter'),
       recharge.indexOf('export function RechargeWalletPage'),
     );
-    expect(footer).toContain('accessibilityLabel={`Pay ${formatRupees(packTotalInr(');
+    expect(footer).toContain('accessibilityLabel={`Pay ${formatRupees(discountedTotalInr(');
   });
 });
 
@@ -437,5 +441,65 @@ describe('a money chip shows the price it charges', () => {
       .space;
     expect(SPACE['2xl']! + TITLE_LARGE_CAP_OFFSET).toBeGreaterThan(BADGE_BOTTOM_DP);
     expect(SPACE.xl! + TITLE_LARGE_CAP_OFFSET).toBeLessThan(BADGE_BOTTOM_DP);
+  });
+});
+
+/**
+ * The first-recharge discount, made visible (2026-09-13).
+ *
+ * Before this, migration 102 discounted the CHARGE server-side while the screen
+ * drew the full price and PaymentSheet passed no `expectedTotalInr` — so the
+ * member was silently charged half, and `assertQuotedAmount` (the guard that
+ * exists because a tester was once shown ₹300 and charged ₹354) was switched off
+ * on the real pay path. These gates keep both halves fixed: the price is shown,
+ * and the guard is fed.
+ */
+describe('the first-recharge discount is shown, and the price guard is fed', () => {
+  const recharge = withoutComments(read('src/screens/RechargeScreen.tsx'));
+  const payment = withoutComments(read('src/screens/PaymentSheet.tsx'));
+
+  it('feeds PaymentSheet the discounted total to the checkout as expectedTotalInr', () => {
+    // The actual defect: the gateway was opened with no quoted amount, so
+    // assertQuotedAmount returned early and never compared. If this ever drops
+    // again the guard is dead and a server/client price disagreement becomes a
+    // surprise charge instead of an error.
+    expect(payment).toContain('expectedTotalInr: total');
+    // `total` is the discounted figure, not the bare pack total.
+    expect(payment).toContain('discountedTotalInr(amount, gstRateBps, discountBps)');
+    // And the pending read is guarded, so a cold open cannot quote the full
+    // price against a server about to grant the half.
+    expect(payment).toContain('if (discountPending) return;');
+  });
+
+  it('names GST on the DISCOUNTED base in the sheet, not the full base', () => {
+    // The tax the member pays is on ₹150, not ₹300 (create-order discounts the
+    // taxable value, ADR-0029). gstAddedLabel must read the discounted base.
+    expect(payment).toContain('gstAddedLabel(discountedBaseInr, gstRateBps)');
+  });
+
+  it('leaves the balance headline unstruck — only the price line carries the strike', () => {
+    // The chip's big figure is the balance the member ADDS and it does not halve
+    // (create-order credits the full pack). Striking it would misstate what the
+    // member receives. The strikethrough lives on priceWas / totalWas only.
+    for (const style of ['amount', 'cardAmount', 'balanceValue']) {
+      expect(styleBlock(recharge, style)).not.toContain('line-through');
+    }
+    expect(styleBlock(recharge, 'priceWas')).toContain("textDecorationLine: 'line-through'");
+    expect(styleBlock(payment, 'totalWas')).toContain("textDecorationLine: 'line-through'");
+  });
+
+  it('derives the banner percent from the granted bps, never a hardcoded 50', () => {
+    // An admin who sets the offer to 4000 bps must get "40% off" with no code
+    // change. A literal "50%" would lie the moment the grant changes.
+    expect(recharge).toContain('Math.round(discountBps / 100)');
+    expect(recharge).toContain('% off your first recharge');
+    expect(recharge).not.toMatch(/50% off/);
+  });
+
+  it('shows the discount price line on both grids, gated on the offer', () => {
+    // Both hosts render ChipDiscountPrice; it returns null when discountBps <= 0,
+    // so a member owed no discount sees the chip exactly as before.
+    expect((recharge.match(/<ChipDiscountPrice/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    expect(recharge).toContain('if (discountBps <= 0) return null;');
   });
 });
