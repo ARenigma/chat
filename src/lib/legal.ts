@@ -15,5 +15,5 @@ export const LEGAL_BASE_URL = 'https://chat-arenigmas-projects.vercel.app';
 type LegalPage = 'privacy' | 'terms' | 'delete' | 'refund';
 
 export function legalUrl(page: LegalPage): string {
-  return `${LEGAL_BASE_URL}/${page}.html`;
+  return `${LEGAL_BASE_URL}/${page}`;
 }

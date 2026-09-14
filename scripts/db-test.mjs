@@ -144,6 +144,7 @@ const MIGRATIONS = [
   'supabase/migrations/103_edit_and_delete_messages.sql',
   'supabase/migrations/104_provider_photo_management.sql',
   'supabase/migrations/105_provider_initiated_contact.sql',
+  'supabase/migrations/106_clean_public_policy_urls.sql',
 ];
 
 /**

@@ -122,7 +122,7 @@ required to use the app: every conversation works with text alone.
 
 - Data is encrypted in transit, yes (HTTPS/TLS to Supabase and FCM).
 - Users can request data deletion, **yes**, and it is in the app, not by email:
-  `https://chat-arenigmas-projects.vercel.app/delete.html` is the required URL.
+  `https://chat-arenigmas-projects.vercel.app/delete` is the required URL.
 - Committed to the Play Families policy, not applicable (18+, see §5).
 - Independent security review, no.
 
@@ -190,11 +190,11 @@ the initial approval.
 
 ## 7. Required URLs
 
-| Field          | Value                                                     |
-| -------------- | --------------------------------------------------------- |
-| Privacy policy | `https://chat-arenigmas-projects.vercel.app/privacy.html` |
-| Data deletion  | `https://chat-arenigmas-projects.vercel.app/delete.html`  |
-| Support email  | `hello@pappal.live`                                       |
+| Field          | Value                                                |
+| -------------- | ---------------------------------------------------- |
+| Privacy policy | `https://chat-arenigmas-projects.vercel.app/privacy` |
+| Data deletion  | `https://chat-arenigmas-projects.vercel.app/delete`  |
+| Support email  | `hello@pappal.live`                                  |
 
 Swap the host for the custom domain when it exists, the paths do not change.
 Play lets you edit these after submission, so a `.vercel.app` host is fine for
@@ -203,7 +203,7 @@ the first review.
 Both of these were blockers and both are now resolved:
 
 1. ~~The Vercel deployment was SSO-protected~~ **Resolved.** Deployment
-   Protection is off; `/`, `/privacy.html` and `/delete.html` all return 200
+   Protection is off; `/`, `/privacy` and `/delete` all return 200
    with no redirect. Verified with curl, not assumed.
 2. ~~`privacy@example.invalid` is a placeholder~~ **Resolved: `testrelay97@gmail.com`** in `web/privacy.html` and
    `web/delete.html`. Play requires a working address, and it is the one thing in
