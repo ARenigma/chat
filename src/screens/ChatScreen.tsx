@@ -1394,14 +1394,28 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   const openImage = useCallback((image: ImageBody) => setViewerImage(image), []);
   const closeImage = useCallback(() => setViewerImage(null), []);
 
+  /** Re-dial from a missed/declined call row. `medium` is the row's own. */
+  const callBack = useCallback(
+    (medium: 'voice' | 'video') => onStartCall?.(medium === 'video' ? 'video' : 'audio'),
+    [onStartCall],
+  );
+
   const renderItem = useCallback(
     ({ item }: ListRenderItemInfo<(typeof rows)[number]>) => {
-      // Call log row: non-interactive inline entry.
+      // Call log row. A connected call is a muted, non-interactive entry; a
+      // missed/declined/failed one is tappable to call back — but only when a
+      // call of that medium can actually start right now (calls enabled, and no
+      // non-chat session already live), otherwise the tap would dead-end.
       if (item.kind === 'call') {
+        const busy = activeSession != null && activeSession.channel !== 'chat';
+        const allowed = item.call.medium === 'video' ? canStartVideo : canStartAudio;
         return (
           <View style={styles.turn}>
             {item.opensDay ? <DayDivider iso={item.call.created_at} /> : null}
-            <CallLogRow call={item.call} />
+            <CallLogRow
+              call={item.call}
+              onCallBack={onStartCall && allowed && !busy ? callBack : undefined}
+            />
           </View>
         );
       }
@@ -1550,9 +1564,14 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
       // Turn.tsx's PeerTurnView): they are still read by the header identity
       // block and by PeerTyping, but no longer by a row, so keeping them here
       // would re-render every bubble whenever the peer changed their photo.
+      activeSession,
       beginDelete,
       beginEdit,
+      callBack,
+      canStartAudio,
+      canStartVideo,
       name,
+      onStartCall,
       openImage,
       parents,
       reactOnMessage,
