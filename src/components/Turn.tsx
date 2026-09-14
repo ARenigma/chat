@@ -387,6 +387,10 @@ function Body({
   // conditionally (react-hooks/rules-of-hooks).
   const stamp = useStyles(makeStyles);
   const theme = useTheme();
+  // The meta row's measured width, for the inline-timestamp reserve on the text
+  // bubble (see the text return below). Only that branch reads it; measured here
+  // because hooks cannot sit inside the conditional returns.
+  const [metaWidth, setMetaWidth] = useState(0);
   /*
    * The tombstone, and it comes FIRST because a deleted row has no payload left
    * to fall through to: migration 103 nulls `body`, `voice_path` and the
@@ -443,25 +447,56 @@ function Body({
       </View>
     );
   }
-  // ONE clock (+ optional tick) per bubble, right-aligned on its own line.
-  //
-  // History of what did NOT work, so it is not re-tried: (1) a transparent
-  // width-reserve on the last line plus an absolutely-pinned clock rendered BOTH
-  // on Android (`color:'transparent'` did not suppress the reserve), showing the
-  // time twice. (2) A clock nested inside the message <Text> is under-measured
-  // when it is a smaller font, so a short bubble clipped it ("Hi!  8:1"). (3) A
-  // flex row wrapped the clock mid-word in a narrow bubble ("8:10 p" / "m"). A
-  // block child, right-aligned, measures cleanly and never clips or duplicates.
+  /*
+   * WhatsApp's inline timestamp, done the way that gets the INTRINSIC WIDTH
+   * right — which is the whole of the "hi" bug (Amit, 2026-09-13: the timestamp
+   * misplaced on a short bubble).
+   *
+   * The prior approach was a wrapping flex row, and Yoga sizes a wrap row to its
+   * WIDEST SINGLE ITEM. So a message narrower than the clock ("hi") made the
+   * bubble clock-wide, and "hi" + clock then no longer fit on one line — the
+   * clock dropped below. A multi-line message with a short last line had the
+   * same fault from the other side.
+   *
+   * The fix is the technique every correct WhatsApp recreation uses: reserve the
+   * clock's width AT THE END OF THE TEXT with a transparent inline spacer, and
+   * overlay the real clock absolutely at the bottom-right. Now the text's own
+   * intrinsic width is max(widest line, lastLine + clock), so the bubble hugs to
+   * exactly the WhatsApp width and the clock sits in the reserved gap. If the
+   * last line plus the spacer do not fit, the spacer wraps — carrying the clock's
+   * slot to a new line — which is the "clock below" case, for free, from the
+   * text's own line-breaking rather than from a measurement branch.
+   *
+   * WHY THIS IS NOT THE ATTEMPT (1) THAT FAILED. That one reserved space with a
+   * transparent COPY OF THE TIMESTAMP TEXT (`color: 'transparent'`), which
+   * Android still painted — the time showed twice. This spacer is a zero-content
+   * <View> with a measured width: nothing to paint, so nothing double-paints.
+   * Attempt (2) clipped because the clock was nested in the message Text and
+   * under-measured at a smaller font; here the clock is a sibling, measured on
+   * its own. Attempt (3) wrapped mid-word because the meta could shrink; here it
+   * is absolutely positioned and never participates in line-breaking at all.
+   *
+   * `metaWidth` starts 0, so the first paint reserves nothing and the clock is
+   * measured via its onLayout; the reserve appears on the next frame. The clock
+   * is ~40dp, so that reflow is invisible.
+   */
   return (
-    <View style={stamp.textBody}>
+    <View style={stamp.textBubble}>
       <Text
         testID={testID}
         allowFontScaling
         style={[textStyle, stamp.messageText]}>
         {message}
+        {timestamp ? (
+          <View style={[stamp.metaSpacer, { width: metaWidth + TOKENS.space.xs }]} />
+        ) : null}
       </Text>
       {timestamp ? (
-        <MetaRow timestamp={timestamp} receipt={receipt} failed={failed} edited={edited} onAccent={onAccent} />
+        <View
+          style={stamp.metaOverlay}
+          onLayout={e => setMetaWidth(e.nativeEvent.layout.width)}>
+          <MetaRow timestamp={timestamp} receipt={receipt} failed={failed} edited={edited} onAccent={onAccent} />
+        </View>
       ) : null}
     </View>
   );
@@ -2021,6 +2056,33 @@ const makeStyles = (t: Theme) =>
       alignItems: 'flex-end',
       justifyContent: 'flex-end',
       columnGap: TOKENS.space.xs,
+    },
+    /*
+     * The text bubble that carries the inline timestamp (see the text return in
+     * `Body`). It hugs the message Text, whose intrinsic width now includes the
+     * clock's reserved slot, so the bubble is exactly WhatsApp-wide. Position is
+     * the View default (relative), which is what the absolute `metaOverlay`
+     * anchors to. `flexShrink` lets it give way to the bubble's maxWidth so a
+     * long line still wraps rather than overflowing.
+     */
+    textBubble: {
+      minWidth: 0,
+      flexShrink: 1,
+      alignItems: 'flex-start',
+    },
+    // The real clock, overlaid on the slot the spacer reserved on the last line.
+    // bottom/right 0 sits it in the bottom-right of the text block; because the
+    // reserve guarantees the last line ends before it, it never covers a glyph.
+    metaOverlay: {
+      position: 'absolute',
+      right: 0,
+      bottom: 0,
+    },
+    // The transparent inline reserve inside the message Text; its `width` is the
+    // runtime-measured meta width (set at the call site), so only `height` is
+    // static here. Zero content, so nothing paints — see the text return in Body.
+    metaSpacer: {
+      height: 1,
     },
     // Inline metadata row at the bottom-right of every text/voice bubble.
     // Both timestamp and (for outgoing) delivery tick sit here so they read as

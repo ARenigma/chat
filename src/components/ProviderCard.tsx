@@ -286,12 +286,18 @@ const makeStyles = (t: Theme) =>
       borderRadius: TOKENS.radius.xs,
       borderCurve: 'continuous',
       borderWidth: 1,
-      borderColor: t.color.border.strong,
+      // Grey border + grey ink (Amit, 2026-09-13): the away/Notify marker is a
+      // quiet status, not an action to draw the eye. border.hairline is the app's
+      // subtle grey rule (border.strong read as a hard dark outline), and the
+      // label + bell drop to text.tertiary — the same muted grey the card's
+      // nameAge and other captions use. The bell reads styles.notifyLabel.color,
+      // so this one change greys both the word and the glyph.
+      borderColor: t.color.border.hairline,
       backgroundColor: t.color.bg.raised,
     },
     notifyLabel: {
       ...TOKENS.typography.labelMediumEmphasized,
-      color: t.color.text.primary,
+      color: t.color.text.tertiary,
     },
   });
 
