@@ -25,6 +25,13 @@ const ALLOWED = new Set([
   // backgrounded app nowhere at all. It grants no access to data, only the
   // ability to draw a notification the user can turn off in Settings.
   'android.permission.POST_NOTIFICATIONS',
+  // An incoming CALL rings full-screen over the lock screen (Conversations.
+  // notifyCall's setFullScreenIntent), the way a phone call behaves. Restricted
+  // to calling / alarm apps on API 34+; this app qualifies as a calling app via
+  // MANAGE_OWN_CALLS, so the grant holds. Calls only — message and engagement
+  // notifications stay ordinary heads-up. No runtime prompt, no Data Safety row.
+  // Reverses the 2026-08-27 heads-up-only decision (Amit, 2026-09-14).
+  'android.permission.USE_FULL_SCREEN_INTENT',
   // Added with voice notes, and it is the most expensive entry on this list: it
   // is the first permission here that reaches a sensor, and it moved out of
   // FORBIDDEN below rather than being appended to a growing set.
@@ -120,6 +127,12 @@ const ALLOWED = new Set([
   // developer.android.com/training/data-storage/shared/photopicker
   // developer.android.com/training/data-storage/shared/media#selected-photos-access
   'android.permission.READ_MEDIA_VISUAL_USER_SELECTED',
+  // CallForegroundService holds a PROXIMITY_SCREEN_OFF_WAKE_LOCK during a voice
+  // call so the screen darkens at the ear (Telegram's VoIPService does the same).
+  // Firebase/Agora also merge it, but the app now uses it first-party, so it is
+  // claimed here rather than tolerated. Normal permission; no prompt, no Data
+  // Safety row.
+  'android.permission.WAKE_LOCK',
 ]);
 
 /**
@@ -129,18 +142,17 @@ const ALLOWED = new Set([
  * the case this script exists to surface, so they are named, with a reason,
  * rather than pattern-matched away.
  *
- * WAKE_LOCK is how a push wakes a sleeping device long enough to hand the
- * message to the app. c2dm RECEIVE is the transport permission FCM's own
- * receiver is protected by. Neither grants access to user data, neither is
- * user-visible on Play, and neither is optional if push exists at all, the
- * only way to drop them is to drop notifications.
+ * c2dm RECEIVE is the transport permission FCM's own receiver is protected by.
+ * It grants access to no user data, is not user-visible on Play, and is not
+ * optional if push exists at all — the only way to drop it is to drop
+ * notifications. (WAKE_LOCK moved to ALLOWED above once CallForegroundService
+ * began using it first-party for the call proximity lock.)
  *
  * The distinction from ALLOWED matters: ALLOWED is also the *required* set, so
  * anything listed there must appear in our source manifest. Declaring a
  * library's permission ourselves would be a claim we do not own.
  */
 const ALLOWED_FROM_LIBRARIES = new Set([
-  'android.permission.WAKE_LOCK',
   'com.google.android.c2dm.permission.RECEIVE',
   // Play Billing embeds this permission in its own manifest; the integration
   // guide explicitly says applications should not duplicate it.

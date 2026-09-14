@@ -1,5 +1,7 @@
 package com.companionchat
 
+import android.app.KeyguardManager
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -102,6 +104,39 @@ class MainActivity : ReactActivity() {
           WindowManager.LayoutParams.FLAG_SECURE,
       )
     }
+
+    // A cold-start launched by a call's full-screen intent arrives here with the
+    // call URI already on the intent.
+    applyCallWindowFlags(intent)
+  }
+
+  /**
+   * Show over the lock screen for an incoming CALL, and only a call.
+   *
+   * The call notification's full-screen intent (Conversations.notifyCall) launches
+   * this singleTask activity with a `companionchat://call/…` data URI when the
+   * screen is off or locked. `setShowWhenLocked` + `setTurnScreenOn` (API 27+)
+   * render the ringing screen over the keyguard and wake the display, the way a
+   * phone call does; `requestDismissKeyguard` lets a secure lock be dismissed as
+   * the user answers. For any OTHER launch the flags are cleared, so the app never
+   * sits over the lock screen outside a call — the narrow scope the reversed
+   * 2026-08-27 decision requires (calls only, never messages).
+   * https://developer.android.com/develop/ui/views/notifications/build-notification#urgent-message
+   */
+  private fun applyCallWindowFlags(intent: Intent?) {
+    val isCall = intent?.data?.toString()?.startsWith("companionchat://call/") == true
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+      setShowWhenLocked(isCall)
+      setTurnScreenOn(isCall)
+      if (isCall) {
+        (getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager)
+            ?.requestDismissKeyguard(this, null)
+      }
+    } else {
+      val flags = WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+          WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+      if (isCall) window.addFlags(flags) else window.clearFlags(flags)
+    }
   }
 
   /**
@@ -202,6 +237,8 @@ class MainActivity : ReactActivity() {
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     setIntent(intent)
+    // A warm app whose task survived gets the call's full-screen intent here.
+    applyCallWindowFlags(intent)
   }
 
   /**

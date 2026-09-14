@@ -98,12 +98,24 @@ async function accessToken(sa: ServiceAccount): Promise<string> {
   return body.access_token;
 }
 
+/** FCM error codes that mean "this token will never work again" — mirrors send-push. */
+const DEAD_TOKEN = new Set(['UNREGISTERED', 'INVALID_ARGUMENT', 'SENDER_ID_MISMATCH']);
+
 /**
  * Ring one device. `android.priority: high` + a data-only payload so the app wakes
- * and builds the CallStyle notification; a ttl of 45s so a call push that arrives
+ * and builds the CallStyle notification; a ttl of 30s so a call push that arrives
  * after the ring is over is dropped by FCM rather than shown late.
+ *
+ * Returns 'dead' for a token FCM will never accept again, so the caller can prune
+ * it — the same cleanup send-push does. Without this, a provider who reinstalled
+ * accumulates stale tokens (seen live: 3 providers holding 16 tokens) and every
+ * call fans out onto tokens that can never ring.
  */
-async function send(bearer: string, projectId: string, row: Pending): Promise<boolean> {
+async function send(
+  bearer: string,
+  projectId: string,
+  row: Pending,
+): Promise<'sent' | 'dead' | 'retry'> {
   const who = row.caller_display_name ?? 'Someone';
   const response = await fetch(
     `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
@@ -134,10 +146,23 @@ async function send(bearer: string, projectId: string, row: Pending): Promise<bo
       }),
     },
   );
-  if (!response.ok) {
-    console.error(`call fcm ${response.status} for call ${row.call_id}`);
+
+  if (response.ok) {
+    return 'sent';
   }
-  return response.ok;
+
+  const text = await response.text();
+  let status = '';
+  try {
+    status = (JSON.parse(text)?.error?.status ?? '') as string;
+  } catch {
+    status = '';
+  }
+  if (DEAD_TOKEN.has(status) || response.status === 404) {
+    return 'dead';
+  }
+  console.error(`call fcm ${response.status} ${status} for call ${row.call_id}`);
+  return 'retry';
 }
 
 Deno.serve(async request => {
@@ -182,12 +207,15 @@ Deno.serve(async request => {
 
   const bearer = await accessToken(sa);
   const notified = new Set<string>();
+  const deadTokens = new Set<string>();
   let sent = 0;
   for (const row of pending) {
-    const ok = await send(bearer, sa.project_id, row);
-    if (ok) {
+    const result = await send(bearer, sa.project_id, row);
+    if (result === 'sent') {
       sent += 1;
       notified.add(row.call_id);
+    } else if (result === 'dead') {
+      deadTokens.add(row.token);
     }
   }
 
@@ -200,5 +228,21 @@ Deno.serve(async request => {
     }
   }
 
-  return Response.json({ pending: pending.length, sent, notified: notified.size });
+  // Prune tokens FCM rejected as permanently dead, exactly as send-push does, so
+  // a reinstalled provider's stale tokens do not pile up and get rung forever.
+  if (deadTokens.size > 0) {
+    const { error: forgetError } = await db.rpc('forget_push_tokens', {
+      p_tokens: [...deadTokens],
+    });
+    if (forgetError) {
+      console.error('forget_push_tokens', forgetError.message);
+    }
+  }
+
+  return Response.json({
+    pending: pending.length,
+    sent,
+    notified: notified.size,
+    dead: deadTokens.size,
+  });
 });

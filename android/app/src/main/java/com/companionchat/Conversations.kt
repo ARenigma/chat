@@ -3,7 +3,9 @@ package com.companionchat
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
+import android.media.AudioAttributes
 import android.net.Uri
+import android.provider.Settings
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -56,7 +58,18 @@ object Conversations {
      * to is the definition of time-sensitive, and because conversation shortcuts
      * and bubbles both require at least DEFAULT to behave.
      */
-    private const val CHANNEL_ID = "conversations"
+    // Channel IDs carry a `_v2` version suffix (2026-09-14). A notification
+    // channel is WRITE-ONCE: once createNotificationChannel() has run, Android
+    // caches its importance, sound and AudioAttributes forever and ignores every
+    // later edit — the only resets are reinstall, clearing data, or a NEW id.
+    // The original channels ("conversations"/"engagement"/"calls") were created
+    // without an explicit .setSound(), so on devices that first saw an early
+    // build they are stuck silent no matter what importance we now request.
+    // Bumping the id (and deleting the old one, `migrateChannels` below) is how
+    // the sound settings here actually take effect — the same delete+recreate
+    // trick Telegram uses in NotificationsController.checkOtherNotificationsChannel.
+    // https://developer.android.com/develop/ui/views/notifications/channels
+    private const val CHANNEL_ID = "conversations_v2"
 
     /**
      * The engagement channel, separate from conversations so a re-engagement nudge
@@ -64,7 +77,7 @@ object Conversations {
      * — a marketing nudge in the same high-importance channel as real messages is
      * exactly the pattern Play discourages.
      */
-    private const val CHANNEL_ENGAGEMENT = "engagement"
+    private const val CHANNEL_ENGAGEMENT = "engagement_v2"
 
     /**
      * The incoming-call channel: IMPORTANCE_HIGH so it can heads-up and ring, and
@@ -72,7 +85,7 @@ object Conversations {
      * Public so CallForegroundService can build its ongoing notification on the same
      * channel — one channel entry in Settings, consistent sound settings.
      */
-    const val CALL_CHANNEL_ID = "calls"
+    const val CALL_CHANNEL_ID = "calls_v2"
 
     /**
      * The in-progress call channel, at IMPORTANCE_LOW.
@@ -84,48 +97,97 @@ object Conversations {
      * already in progress must not.
      * https://developer.android.com/develop/ui/views/notifications/channels
      */
-    const val CALL_ONGOING_CHANNEL_ID = "call_ongoing"
+    const val CALL_ONGOING_CHANNEL_ID = "call_ongoing_v2"
 
     // Pappal coral (#F2543D). Tints all three notification types so they read as
     // one brand (Amit, 2026-08-27) — the small icon and the CallStyle accent.
     private const val BRAND_COLOR = 0xFFF2543D.toInt()
 
+    /**
+     * AudioAttributes for a MESSAGE alert — a one-shot notification blip.
+     * USAGE_NOTIFICATION is what the system routes to the notification volume.
+     */
+    private fun notificationAttributes(): AudioAttributes =
+        AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+
+    /**
+     * AudioAttributes for an incoming CALL — USAGE_NOTIFICATION_RINGTONE routes to
+     * the ring volume and is what Android treats as a call ring, the same usage
+     * Telegram's VoIPService sets. https://developer.android.com/reference/android/media/AudioAttributes
+     */
+    private fun ringtoneAttributes(): AudioAttributes =
+        AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+
+    /**
+     * Delete the pre-`_v2` channels once. A channel's sound cannot be changed
+     * after creation, so the fix for the silent originals is to abandon their ids.
+     * Deleting a channel that never existed (fresh install) is a no-op, so this is
+     * safe to call on every ensure*. The user sees the old entries vanish from
+     * Settings; the `_v2` ones replace them with sound on.
+     */
+    private fun migrateSilentChannels(context: Context) {
+        val manager = NotificationManagerCompat.from(context)
+        for (old in listOf("conversations", "engagement", "calls", "call_ongoing")) {
+            manager.deleteNotificationChannel(old)
+        }
+    }
+
     fun ensureChannel(context: Context) {
+        migrateSilentChannels(context)
         val channel = NotificationChannelCompat
             .Builder(CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_HIGH)
             .setName(context.getString(R.string.channel_conversations))
             .setDescription(context.getString(R.string.channel_conversations_desc))
             .setShowBadge(true)
+            .setSound(Settings.System.DEFAULT_NOTIFICATION_URI, notificationAttributes())
             .build()
         NotificationManagerCompat.from(context).createNotificationChannel(channel)
     }
 
     fun ensureEngagementChannel(context: Context) {
+        migrateSilentChannels(context)
         val channel = NotificationChannelCompat
             .Builder(CHANNEL_ENGAGEMENT, NotificationManagerCompat.IMPORTANCE_HIGH)
             .setName(context.getString(R.string.channel_engagement))
             .setDescription(context.getString(R.string.channel_engagement_desc))
             .setShowBadge(true)
+            .setSound(Settings.System.DEFAULT_NOTIFICATION_URI, notificationAttributes())
             .build()
         NotificationManagerCompat.from(context).createNotificationChannel(channel)
     }
 
     fun ensureCallChannel(context: Context) {
+        migrateSilentChannels(context)
+        // The ring channel uses the device's RINGTONE at ringtone usage, so an
+        // incoming call sounds like a call, not a message blip. Continuous
+        // looping (a call rings until answered) is the CallForegroundService's
+        // job — a channel sound plays once — see CallForegroundService.
         val channel = NotificationChannelCompat
             .Builder(CALL_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_HIGH)
             .setName(context.getString(R.string.channel_calls))
             .setDescription(context.getString(R.string.channel_calls_desc))
             .setShowBadge(false)
+            .setSound(Settings.System.DEFAULT_RINGTONE_URI, ringtoneAttributes())
             .build()
         NotificationManagerCompat.from(context).createNotificationChannel(channel)
     }
 
     fun ensureCallOngoingChannel(context: Context) {
+        migrateSilentChannels(context)
+        // Deliberately silent: an in-progress call must not blip. LOW importance
+        // and no sound, unchanged except for the versioned id.
         val channel = NotificationChannelCompat
             .Builder(CALL_ONGOING_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_LOW)
             .setName(context.getString(R.string.channel_call_ongoing))
             .setDescription(context.getString(R.string.channel_call_ongoing_desc))
             .setShowBadge(false)
+            .setSound(null, null)
             .build()
         NotificationManagerCompat.from(context).createNotificationChannel(channel)
     }
@@ -336,10 +398,17 @@ object Conversations {
             // the call type. "Video call" vs "Voice call" tells the user what to expect
             // before they answer.
             .setSubText(if (medium == "video") "wants a video chat" else "wants a voice chat")
-            // No full-screen intent: the call rings as a heads-up popup, but must
-            // never take over the whole screen on top of whatever is running
-            // (Amit, 2026-08-27). CallStyle + IMPORTANCE_HIGH is the popup; the tap
-            // target is the content intent.
+            // Full-screen intent: an incoming call takes over the screen — over the
+            // lock screen — the way a phone call does (Amit, 2026-09-14, reversing
+            // the 2026-08-27 heads-up-only call). The system shows the heads-up when
+            // the device is in use and escalates to the full-screen `answer` intent
+            // when the screen is off or locked; MainActivity sets showWhenLocked /
+            // turnScreenOn for a call URI so it renders over the keyguard. `answer`
+            // opens the RINGING screen (App.tsx routes action=answer into the
+            // incoming CallScreen without auto-answering), not an accepted call.
+            // Gated by USE_FULL_SCREEN_INTENT + MANAGE_OWN_CALLS (calling-app grant).
+            // https://developer.android.com/develop/ui/views/notifications/call-style
+            .setFullScreenIntent(answer, true)
             .setContentIntent(answer)
             .build()
 

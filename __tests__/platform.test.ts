@@ -339,18 +339,34 @@ describe('message + engagement notifications', () => {
     expect(body).toContain('CHANNEL_ENGAGEMENT');
   });
 
-  it('builds an incoming call as a CallStyle heads-up, not a full-screen takeover', () => {
+  it('rings an incoming call full-screen over the lock screen (CallStyle + fullScreenIntent)', () => {
     const body = read(CONVERSATIONS);
     expect(body).toContain('fun notifyCall(');
     expect(body).toContain('CallStyle.forIncomingCall(');
-    // A heads-up popup, never full-screen: the call must not take over a running
-    // foreground app (Amit, 2026-08-27). So no full-screen intent.
-    expect(body).not.toContain('setFullScreenIntent');
+    // Full-screen over the lock screen, like a phone call (Amit, 2026-09-14,
+    // reversing the 2026-08-27 heads-up-only call). Gated by USE_FULL_SCREEN_INTENT
+    // + MANAGE_OWN_CALLS; MainActivity sets showWhenLocked/turnScreenOn for a call
+    // URI. Only the CALL notification gets it — messages/engagement do not.
+    expect(body).toContain('.setFullScreenIntent(answer, true)');
     expect(body).toContain('CATEGORY_CALL');
-    // Its own high-importance channel, separate from messages.
     expect(body).toContain('CALL_CHANNEL_ID');
-    // All three types are brand-coloured (#3, "with our brand token").
     expect(body).toContain('BRAND_COLOR');
+
+    // The activity must render over the keyguard and wake the screen for a call,
+    // and ONLY for a call.
+    const main = read('android/app/src/main/java/com/companionchat/MainActivity.kt');
+    expect(main).toContain('setShowWhenLocked(isCall)');
+    expect(main).toContain('setTurnScreenOn(isCall)');
+    expect(main).toContain('companionchat://call/');
+    expect(main).toContain('requestDismissKeyguard');
+
+    // The full-screen intent stays OFF messages/engagement: only notifyCall names
+    // it. Assert the other two builders don't.
+    const conversationBlock = body.slice(
+      body.indexOf('fun notify('),
+      body.indexOf('fun notifyCall('),
+    );
+    expect(conversationBlock).not.toContain('setFullScreenIntent');
   });
 
   it('never stops posting when a photo cannot be fetched', () => {
@@ -720,7 +736,10 @@ describe('call lifecycle — foreground service and permissions', () => {
     const conversations = read(
       'android/app/src/main/java/com/companionchat/Conversations.kt',
     );
-    expect(conversations).toContain('const val CALL_ONGOING_CHANNEL_ID = "call_ongoing"');
+    // `_v2` suffix (2026-09-14): the channels were bumped to escape Android's
+    // write-once channel cache and finally carry an explicit sound. See the
+    // "channels make a sound" test below.
+    expect(conversations).toContain('const val CALL_ONGOING_CHANNEL_ID = "call_ongoing_v2"');
     expect(conversations).toMatch(
       /Builder\(CALL_ONGOING_CHANNEL_ID, NotificationManagerCompat\.IMPORTANCE_LOW\)/,
     );
@@ -731,6 +750,52 @@ describe('call lifecycle — foreground service and permissions', () => {
 
     const fgs = read(FGS);
     expect(fgs).toContain('Conversations.CALL_ONGOING_CHANNEL_ID');
+  });
+
+  it('gives every alerting channel an explicit sound, and abandons the silent originals', () => {
+    /*
+     * "notifications dont have any sound" (Amit, 2026-09-14). A notification
+     * channel is write-once: Android caches its sound/importance on first
+     * createNotificationChannel() and ignores every later edit. The originals
+     * were created with no .setSound(), so they are stuck silent. The fix is a
+     * new id (the `_v2` bump) PLUS an explicit sound, and deleting the old ids so
+     * they stop showing in Settings — the delete+recreate pattern Telegram uses.
+     * https://developer.android.com/develop/ui/views/notifications/channels
+     */
+    const conversations = read(
+      'android/app/src/main/java/com/companionchat/Conversations.kt',
+    );
+    // Message + engagement alert on the notification sound; the ring uses the
+    // ringtone at ringtone usage.
+    expect(conversations).toContain(
+      '.setSound(Settings.System.DEFAULT_NOTIFICATION_URI, notificationAttributes())',
+    );
+    expect(conversations).toContain(
+      '.setSound(Settings.System.DEFAULT_RINGTONE_URI, ringtoneAttributes())',
+    );
+    expect(conversations).toContain('AudioAttributes.USAGE_NOTIFICATION_RINGTONE');
+    // The old silent channels are deleted so the sound settings take effect on
+    // existing installs, not just fresh ones.
+    expect(conversations).toContain('migrateSilentChannels(context)');
+    expect(conversations).toMatch(/deleteNotificationChannel\(old\)/);
+    expect(conversations).toContain('"conversations", "engagement", "calls", "call_ongoing"');
+  });
+
+  it('darkens the screen at the ear during a voice call, and only a voice call', () => {
+    /*
+     * PROXIMITY_SCREEN_OFF_WAKE_LOCK, the same lock Telegram's VoIPService holds,
+     * so a voice call turns the screen off when the phone is at the ear. Held only
+     * for a connected VOICE call (mic, no camera) — never while ringing and never
+     * for video, which needs the screen on — and released on destroy so a service
+     * the OS forgets to stop cannot pin the sensor.
+     * https://developer.android.com/reference/android/os/PowerManager
+     */
+    const fgs = read(FGS);
+    expect(fgs).toContain('PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK');
+    expect(fgs).toContain('updateProximity(includeMicrophone && !includeCamera)');
+    // Support-checked (not every device has it) and released on destroy.
+    expect(fgs).toContain('isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK)');
+    expect(fgs).toMatch(/onDestroy[\s\S]*proximityLock\?\.let \{ if \(it\.isHeld\) it\.release\(\) \}/);
   });
 
   it('picks the CallStyle from the real call direction, never a hardcoded true', () => {
