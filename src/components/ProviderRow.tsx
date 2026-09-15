@@ -616,7 +616,7 @@ function ProviderRowView({
               // 36dp drawn button into a 48dp focusable area via hitSlop, without
               // inflating the visual (Pressable.tsx:171).
               size={ROW_CTA_VISUAL_HEIGHT}
-              style={styles.cta}>
+              style={[styles.cta, away && styles.ctaAway]}>
               {/* The verb and the price, in one control. The rate is the
                   quieter of the two because the decision is "call or not" and
                   the price is the condition on it, not the other way round.
@@ -629,14 +629,14 @@ function ProviderRowView({
                 <Icon
                   name="bell"
                   size={TOKENS.icon.sm}
-                  color={styles.ctaLabel.color as string}
+                  color={styles.ctaInkAway.color as string}
                 />
               ) : null}
-              <Text allowFontScaling numberOfLines={1} style={styles.ctaLabel}>
+              <Text allowFontScaling numberOfLines={1} style={[styles.ctaLabel, away && styles.ctaInkAway]}>
                 {ctaLabel}
-                <Text style={styles.ctaRate}>{'  '}</Text>
-                <RupeeAmount value={ratePerMin} style={styles.ctaRate} />
-                <Text style={styles.ctaRate}>/min</Text>
+                <Text style={[styles.ctaRate, away && styles.ctaInkAway]}>{'  '}</Text>
+                <RupeeAmount value={ratePerMin} style={[styles.ctaRate, away && styles.ctaInkAway]} />
+                <Text style={[styles.ctaRate, away && styles.ctaInkAway]}>/min</Text>
               </Text>
             </Pressable>
           </View>
@@ -837,5 +837,19 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   ctaLabel: {
     ...TOKENS.typography.labelLarge,
     color: t.color.text.accent,
+  },
+  /*
+   * Away variant (Amit, 2026-09-16): when the provider is away the CTA is
+   * "Notify", which is a quiet status action — not the coral "Call". Greyed to
+   * the same hairline border + tertiary ink the ProviderCard away marker uses
+   * (ProviderCard.tsx), so the two surfaces agree that Notify does not draw the
+   * eye. On the solid card surface, so no over-photo contrast concern. `Call`
+   * keeps its coral; only the away state is quietened.
+   */
+  ctaAway: {
+    borderColor: t.color.border.hairline,
+  },
+  ctaInkAway: {
+    color: t.color.text.tertiary,
   },
 });
