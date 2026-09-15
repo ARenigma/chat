@@ -94,6 +94,37 @@ describe('Gradle configuration cache', () => {
       'org.gradle.configuration-cache.problems=warn',
     );
   });
+
+  it('keeps the Sentry Gradle plugin out of the config-cached (non-release) builds', () => {
+    /*
+     * @sentry/react-native's sentry.gradle is not configuration-cache compatible:
+     * applying it registers copy/cleanup tasks that hold Gradle script references,
+     * so with strict config cache (above) it fails EVERY build it is applied to —
+     * including assembleDebug, the dev loop. The `@sentry/wizard` installs it
+     * UNCONDITIONALLY and via `["node","--print",require.resolve(...)]`.execute()`,
+     * an external process at configuration time that is itself a violation. So the
+     * apply must stay guarded to release builds and use a static path — a wizard
+     * re-run silently reintroducing either form must fail here, not on a device.
+     */
+    const gradle = read('android/app/build.gradle');
+    expect(gradle).toContain(
+      'if (wantsRelease) {\n    apply from: new File(rootProject.projectDir, "../node_modules/@sentry/react-native/sentry.gradle")',
+    );
+    expect(gradle).not.toContain('require.resolve');
+    expect(gradle).not.toMatch(/\.execute\(\)/);
+
+    /*
+     * Release builds DO apply Sentry, so their invocation must opt out of the
+     * config cache (the only sanctioned escape hatch, since masking problems to
+     * `warn` is forbidden above). Assert the two release scripts pass the flag.
+     */
+    const pkg = read('package.json');
+    const scripts = (JSON.parse(pkg) as { scripts: Record<string, string> })
+      .scripts;
+    for (const name of ['android:release', 'android:bundle']) {
+      expect(scripts[name]).toContain('--no-configuration-cache');
+    }
+  });
 });
 
 describe('system bars and edge-to-edge', () => {
