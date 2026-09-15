@@ -12,9 +12,11 @@ import com.facebook.react.modules.core.DeviceEventManagerModule
 /**
  * Manages audio focus for an active call session.
  *
- * Uses AUDIOFOCUS_GAIN_TRANSIENT for VoIP: signals that prior audio (music) should
- * pause and resume when the call ends. Does not duck on LOSS_TRANSIENT_CAN_DUCK;
- * voice apps mute rather than duck.
+ * Uses AUDIOFOCUS_GAIN for VoIP (not _TRANSIENT): a call holds the audio for its
+ * whole duration — minutes, not a blip — so it takes durable focus, and prior
+ * audio (music) stays paused until the call ends rather than being invited to
+ * resume mid-call. Does not duck on LOSS_TRANSIENT_CAN_DUCK; voice apps mute
+ * rather than duck.
  *
  * API 26+ uses AudioFocusRequest (developer.android.com/media/optimize/audio-focus).
  * API 24–25 falls back to the deprecated listener-based overload.
@@ -95,7 +97,12 @@ class CallAudioFocusManager(private val context: Context) {
                 .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                 .build()
-            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+            // AUDIOFOCUS_GAIN, not _TRANSIENT: a call lasts minutes, not a blip.
+            // TRANSIENT tells the system this audio use is brief, which on some
+            // OEMs leaves the VoIP low-latency path un-provisioned and routing
+            // incomplete — part of the "no/laggy audio" class. Telegram's
+            // VoIPService requests GAIN for call audio for the same reason.
+            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                 .setAudioAttributes(attrs)
                 .setAcceptsDelayedFocusGain(true)
                 .setOnAudioFocusChangeListener(focusChangeListener)
@@ -107,7 +114,7 @@ class CallAudioFocusManager(private val context: Context) {
             val result = audioManager.requestAudioFocus(
                 focusChangeListener,
                 AudioManager.STREAM_VOICE_CALL,
-                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT,
+                AudioManager.AUDIOFOCUS_GAIN,
             )
             legacyFocusListener = focusChangeListener
             result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED

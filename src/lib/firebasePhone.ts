@@ -10,12 +10,12 @@ import {
  * interface so `src/api/auth.ts` never touches the Firebase SDK directly. Uses
  * the modular RNFB API (the same style index.js uses for messaging).
  *
- * WHY FIREBASE AT ALL. The app already carries Supabase-native phone OTP
- * (`signInWithOtp`/`verifyOtp` + the `send-sms` hook → MSG91/Fast2SMS), and that
- * path still exists behind `AUTH_PHONE_PROVIDER`. Firebase is the *active* path
- * while testing because its daily SMS quota is free and its console test numbers
- * need no carrier, no DLT template and no Play Integrity — the three things
- * blocking the Supabase/MSG91 path today (Amit, 2026-08-27).
+ * WHY FIREBASE AT ALL. The app also carries Supabase-native phone OTP
+ * (`signInWithOtp`/`verifyOtp` + the `send-sms` hook, now delivering over the
+ * WhatsApp Cloud API), behind `AUTH_PHONE_PROVIDER`. Firebase is the *active*
+ * login while the WhatsApp template/token are being set up, and is the planned
+ * "Get SMS" fallback once WhatsApp becomes primary: its daily SMS quota is free
+ * and its console test numbers need no carrier setup (Amit, 2026-08-27).
  *
  * WHY IT DOES NOT OWN THE SESSION. Firebase issues its own ID token; our RLS
  * rests on a Supabase `auth.uid()` UUID. So Firebase only *proves the number*:

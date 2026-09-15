@@ -197,7 +197,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
                  rate because that is what it opens and what it will bill. */
               <ActionButton
                 channel="chat"
-                kind="primary"
+                kind="quiet"
                 glyph="bell"
                 word="Notify"
                 rate={chatRate}
@@ -657,7 +657,7 @@ function ActionButton({
    * WHICH channel takes the lower rank is his call, not the spec's; he chose
    * chat.
    */
-  kind: 'primary' | 'outline' | 'dark';
+  kind: 'primary' | 'outline' | 'dark' | 'quiet';
   glyph: 'call' | 'chat' | 'video' | 'bell';
   /**
    * A word beside the glyph, for the button that is alone in the row.
@@ -695,7 +695,9 @@ function ActionButton({
       ? theme.color.text.primary
       : kind === 'dark'
         ? theme.color.text.onInverse
-        : theme.color.text.onAccent;
+        : kind === 'quiet'
+          ? theme.color.text.tertiary
+          : theme.color.text.onAccent;
   // The `flex: 1` lives on this wrapper View, not on the Pressable: a `flex: 1`
   // set on a Pressable never reaches its outer touchable (it styles an inner
   // view), so three flex Pressables collapse to content width. The View
@@ -718,6 +720,7 @@ function ActionButton({
           kind === 'primary' && styles.actionPrimary,
           kind === 'outline' && styles.actionOutline,
           kind === 'dark' && styles.actionDark,
+          kind === 'quiet' && styles.actionQuiet,
           !enabled && styles.actionDisabled,
         ]}>
         <Icon name={glyph} size={TOKENS.icon.lg} color={fg} />
@@ -933,6 +936,18 @@ const makeStyles = (t: Theme) =>
       backgroundColor: 'transparent',
       borderWidth: 1,
       borderColor: t.color.border.strong,
+    },
+    /*
+     * The away "Notify" fill (Amit, 2026-09-16). Notify is a quiet status
+     * action, not the coral Call, so this mirrors the ProviderRow away CTA and
+     * the ProviderCard away marker: transparent container, a hairline (not the
+     * heavier `border/strong`) stroke, and `text/tertiary` ink via `fg` above.
+     * The three away surfaces agree that Notify does not draw the eye.
+     */
+    actionQuiet: {
+      backgroundColor: 'transparent',
+      borderWidth: 1,
+      borderColor: t.color.border.hairline,
     },
     /*
      * `bg/inverse`, not `text/primary`. THE VIDEO BUTTON WAS INVISIBLE IN DARK

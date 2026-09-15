@@ -11,11 +11,16 @@ import {
   STARTING_BALANCE,
 } from '../src/lib/tokenLedger';
 import { MAX_VOICE_MS, MIN_VOICE_MS, isVoicePath } from '../src/lib/voice';
-import { DEFAULT_GST_RATE_BPS, formatRupeesPaise, gstSplit } from '../src/lib/rates';
+import {
+  DEFAULT_GST_RATE_BPS,
+  formatRupeesPaise,
+  gstSplit,
+} from '../src/lib/rates';
 import { TOKENS } from '../src/theme/tokens';
 
 const ROOT = join(__dirname, '..');
-const read = (relative: string): string => readFileSync(join(ROOT, relative), 'utf8');
+const read = (relative: string): string =>
+  readFileSync(join(ROOT, relative), 'utf8');
 
 /**
  * The body of one `create or replace function`, so per-function claims can be
@@ -173,7 +178,11 @@ describe('the AI path is gone, not dormant', () => {
       // provider's saved bank/UPI and writes the verification result. Service-role
       // writer of the payout-account verification columns (migration 048).
       'verify-payout-account',
-      'verify-phone',
+      // wa-webhook: Meta WhatsApp Cloud API status callback. Receives delivery
+      // status events (delivered, read, failed) for OTP messages sent by
+      // send-sms. No auth path; used for observability and Firebase fallback
+      // nudge.
+      'wa-webhook',
     ];
     const present = readdirSync(dir, { withFileTypes: true })
       .filter(entry => entry.isDirectory())
@@ -203,7 +212,9 @@ describe('the AI path is gone, not dormant', () => {
 
     for (const file of sources) {
       const text = readFileSync(file, 'utf8');
-      expect(text).not.toMatch(/openai|systemPrompt|getSystemPrompt|stream-chat/i);
+      expect(text).not.toMatch(
+        /openai|systemPrompt|getSystemPrompt|stream-chat/i,
+      );
       expect(text).not.toMatch(/react-native-sse/);
     }
   });
@@ -242,9 +253,21 @@ describe('GST is disclosed where money moves and nowhere else', () => {
   // Prices are INCLUSIVE: ₹300 buys 300 tokens and already contains the tax.
   // These are the figures generate-invoice prints for the same packs.
   it('backs the tax out of the pack price in exact integer paise', () => {
-    expect(gstSplit(300, 1800)).toEqual({ totalPaise: 30000, taxablePaise: 25424, gstPaise: 4576 });
-    expect(gstSplit(100, 1800)).toEqual({ totalPaise: 10000, taxablePaise: 8475, gstPaise: 1525 });
-    expect(gstSplit(5000, 1800)).toEqual({ totalPaise: 500000, taxablePaise: 423729, gstPaise: 76271 });
+    expect(gstSplit(300, 1800)).toEqual({
+      totalPaise: 30000,
+      taxablePaise: 25424,
+      gstPaise: 4576,
+    });
+    expect(gstSplit(100, 1800)).toEqual({
+      totalPaise: 10000,
+      taxablePaise: 8475,
+      gstPaise: 1525,
+    });
+    expect(gstSplit(5000, 1800)).toEqual({
+      totalPaise: 500000,
+      taxablePaise: 423729,
+      gstPaise: 76271,
+    });
     // taxable + gst is the price, always — no paisa appears or vanishes.
     for (const pack of [100, 300, 500, 1000, 2500, 5000]) {
       const split = gstSplit(pack, 1800);
@@ -252,7 +275,7 @@ describe('GST is disclosed where money moves and nowhere else', () => {
     }
   });
 
-  it('uses the invoice generator\'s own expression, so screen and PDF cannot disagree', () => {
+  it("uses the invoice generator's own expression, so screen and PDF cannot disagree", () => {
     const invoice = read('supabase/functions/generate-invoice/index.ts');
     const rates = read('src/lib/rates.ts');
     const expression = 'Math.round((totalPaise * 10000) / (10000 + ';
@@ -319,8 +342,12 @@ describe('GST is disclosed where money moves and nowhere else', () => {
     expect(DEFAULT_GST_RATE_BPS).toBe(1800);
     expect(read('src/api/appConfig.ts')).toMatch(/gst_rate_bps:\s*1800/);
     // Both hosts and the payment sheet read the admin value, not the constant.
-    expect(read('src/screens/RechargeScreen.tsx')).toContain('useEconomicsConfig');
-    expect(read('src/screens/PaymentSheet.tsx')).toContain('useEconomicsConfig');
+    expect(read('src/screens/RechargeScreen.tsx')).toContain(
+      'useEconomicsConfig',
+    );
+    expect(read('src/screens/PaymentSheet.tsx')).toContain(
+      'useEconomicsConfig',
+    );
   });
 
   it('names GST on every recharge surface and on no chat surface', () => {
@@ -338,7 +365,9 @@ describe('GST is disclosed where money moves and nowhere else', () => {
     const NAMES_GST = /gstAdded(Label|Spoken)\(/g;
     const recharge = withoutComments(read('src/screens/RechargeScreen.tsx'));
     expect(recharge.match(NAMES_GST)?.length ?? 0).toBeGreaterThanOrEqual(2);
-    expect(withoutComments(read('src/screens/PaymentSheet.tsx'))).toMatch(NAMES_GST);
+    expect(withoutComments(read('src/screens/PaymentSheet.tsx'))).toMatch(
+      NAMES_GST,
+    );
 
     // Negative: tokens are prepaid, tax was settled when the rupees were paid.
     // A per-minute rate, a balance, a timer or a bubble that mentioned GST would
@@ -346,14 +375,23 @@ describe('GST is disclosed where money moves and nowhere else', () => {
     // "GST on recharge chips, no GST in chat").
     // SettingsSheet earns its place only for the recharge-history row, "Receipts
     // and GST invoices" — the invoice is the document the tax legally lives on.
-    const allowed = new Set(['RechargeScreen.tsx', 'PaymentSheet.tsx', 'SettingsSheet.tsx']);
+    const allowed = new Set([
+      'RechargeScreen.tsx',
+      'PaymentSheet.tsx',
+      'SettingsSheet.tsx',
+    ]);
     for (const dir of ['src/screens', 'src/components']) {
       for (const file of readdirSync(join(ROOT, dir))) {
         if (!file.endsWith('.tsx') || allowed.has(file)) {
           continue;
         }
-        expect({ file, mentionsGst: /\bGST\b|gst(Split|IncludedLabel|ExclusiveLabel|ExclusiveParts|PercentLabel|AddedLabel|AddedSpoken|OnTop)/.test(withoutComments(read(`${dir}/${file}`))) })
-          .toEqual({ file, mentionsGst: false });
+        expect({
+          file,
+          mentionsGst:
+            /\bGST\b|gst(Split|IncludedLabel|ExclusiveLabel|ExclusiveParts|PercentLabel|AddedLabel|AddedSpoken|OnTop)/.test(
+              withoutComments(read(`${dir}/${file}`)),
+            ),
+        }).toEqual({ file, mentionsGst: false });
       }
     }
   });
@@ -410,7 +448,9 @@ describe('Cashfree billing invariants', () => {
 
   it('cashfree-webhook has verify_jwt disabled for vendor HMAC auth', () => {
     const cfg = read('supabase/config.toml');
-    expect(cfg).toMatch(/\[functions\.cashfree-webhook\][\s\S]*?verify_jwt\s*=\s*false/);
+    expect(cfg).toMatch(
+      /\[functions\.cashfree-webhook\][\s\S]*?verify_jwt\s*=\s*false/,
+    );
   });
 
   it('cashfree-payout leaves RECEIVED batches processing for the webhook', () => {
@@ -433,7 +473,9 @@ describe('Cashfree billing invariants', () => {
   });
 
   it('media COGS tighten migration keys product meter to paid_sessions', () => {
-    const sql = read('supabase/migrations/061_media_cogs_reconcile_tighten.sql');
+    const sql = read(
+      'supabase/migrations/061_media_cogs_reconcile_tighten.sql',
+    );
     expect(sql).toContain('paid_sessions.minutes_billed');
     expect(sql).toContain('primary key (call_id, source)');
     expect(sql).toContain('import_media_invoice_days');
@@ -456,11 +498,15 @@ describe('Cashfree billing invariants', () => {
   it('wallet pill opens the full page, not the refill sheet', () => {
     // The pill moved into `TabTopBar` on 2026-09-08, where Home, Favourites and
     // Settings all render it from one place. Same assertion, new file.
-    expect(read('src/components/TabTopBar.tsx')).toContain('onPress={openWallet}');
+    expect(read('src/components/TabTopBar.tsx')).toContain(
+      'onPress={openWallet}',
+    );
     // ChatScreen routes members to openWallet; providers route to onOpenEarnings
     // (with openWallet as fallback). Both paths reach openWallet.
     expect(read('src/screens/ChatScreen.tsx')).toContain('openWallet');
-    expect(read('src/screens/ProviderDetailScreen.tsx')).toContain('onPress={openWallet}');
+    expect(read('src/screens/ProviderDetailScreen.tsx')).toContain(
+      'onPress={openWallet}',
+    );
   });
 
   it('verify-order function exists and asserts server-to-server verification', () => {
@@ -493,7 +539,8 @@ function walk(dir: string): string[] {
  */
 describe('reference harvesting stays clean-room', () => {
   const FORBIDDEN = /org\.telegram|TMessagesProj|DrKLO/;
-  const TEXT = /\.(ts|tsx|js|jsx|kt|java|xml|gradle|pro|json|md|txt|h|m|swift)$/;
+  const TEXT =
+    /\.(ts|tsx|js|jsx|kt|java|xml|gradle|pro|json|md|txt|h|m|swift)$/;
   const ROOTS = ['src', 'assets', join('android', 'app', 'src')];
 
   it('carries no Telegram source, package or asset identifier', () => {
@@ -526,15 +573,23 @@ describe('conversation schema invariants', () => {
 
   it('keeps sending behind the RPC rather than a client insert', () => {
     expect(m003).toMatch(/revoke all on function public\.send_message/);
-    expect(m003).toMatch(/grant execute on function public\.send_message\(uuid, text\) to authenticated/);
+    expect(m003).toMatch(
+      /grant execute on function public\.send_message\(uuid, text\) to authenticated/,
+    );
     // An INSERT policy on messages would let a client write a message without
     // paying for it, which is the whole reason send_message exists.
-    expect(m003).not.toMatch(/create policy[^;]*on public\.messages for insert/i);
+    expect(m003).not.toMatch(
+      /create policy[^;]*on public\.messages for insert/i,
+    );
   });
 
   it('admits providers only through the service role', () => {
-    expect(m003).toMatch(/revoke all on function public\.approve_provider_application/);
-    expect(m003).toMatch(/grant execute on function public\.approve_provider_application[^;]*to service_role/);
+    expect(m003).toMatch(
+      /revoke all on function public\.approve_provider_application/,
+    );
+    expect(m003).toMatch(
+      /grant execute on function public\.approve_provider_application[^;]*to service_role/,
+    );
     expect(m003).not.toMatch(
       /grant execute on function public\.approve_provider_application[^;]*to authenticated/,
     );
@@ -550,19 +605,27 @@ describe('conversation schema invariants', () => {
     expect(plpgsqlBody(m003, 'guard_privileged_profile_columns')).not.toMatch(
       /security definer/i,
     );
-    expect(plpgsqlBody(m004, 'guard_message_columns')).not.toMatch(/security definer/i);
+    expect(plpgsqlBody(m004, 'guard_message_columns')).not.toMatch(
+      /security definer/i,
+    );
   });
 
   it('narrows the discovery surface to the directory view', () => {
-    expect(m004).toMatch(/drop policy if exists "Providers are discoverable" on public\.profiles/);
+    expect(m004).toMatch(
+      /drop policy if exists "Providers are discoverable" on public\.profiles/,
+    );
     expect(m004).toMatch(/security_invoker = false/);
-    expect(m004).toMatch(/grant select on public\.provider_directory to authenticated/);
+    expect(m004).toMatch(
+      /grant select on public\.provider_directory to authenticated/,
+    );
   });
 
   it('publishes what the Realtime client subscribes to', () => {
     // Without `replica identity full` an UPDATE payload carries only the primary
     // key, so read receipts would arrive with no read_at to apply.
-    expect(m003).toMatch(/alter publication supabase_realtime add table public\.messages/);
+    expect(m003).toMatch(
+      /alter publication supabase_realtime add table public\.messages/,
+    );
     expect(m003).toMatch(/alter table public\.messages replica identity full/);
   });
 });
@@ -672,17 +735,25 @@ describe('cross-runtime constants', () => {
 
   it('keeps the profiles column default in step with STARTING_BALANCE', () => {
     const migration = read('supabase/migrations/001_initial_schema.sql');
-    expect(migration).toContain(`token_balance integer default ${STARTING_BALANCE}`);
+    expect(migration).toContain(
+      `token_balance integer default ${STARTING_BALANCE}`,
+    );
   });
 
   it('revokes the wallet primitives from client roles', () => {
     const migration = read('supabase/migrations/002_bootstrap_and_grants.sql');
-    expect(migration).toMatch(/revoke all on function public\.deduct_user_token/);
-    expect(migration).toMatch(/revoke all on function public\.credit_user_token/);
+    expect(migration).toMatch(
+      /revoke all on function public\.deduct_user_token/,
+    );
+    expect(migration).toMatch(
+      /revoke all on function public\.credit_user_token/,
+    );
   });
 
   it('enforces the message ceiling in the composer and the column', () => {
-    expect(read('src/components/Composer.tsx')).toContain('maxLength={MAX_MESSAGE_CHARS}');
+    expect(read('src/components/Composer.tsx')).toContain(
+      'maxLength={MAX_MESSAGE_CHARS}',
+    );
     expect(read('supabase/migrations/003_human_conversations.sql')).toContain(
       `length(body) <= ${MAX_MESSAGE_CHARS}`,
     );
@@ -694,7 +765,9 @@ describe('cross-runtime constants', () => {
     // constraint at another, and the mismatch is discovered *after* the audio is
     // already uploaded, because the RPC rejects the row and the bytes stay in the
     // bucket until the purge job runs.
-    expect(read('supabase/migrations/011_reactions_replies_voice_calls.sql')).toContain(
+    expect(
+      read('supabase/migrations/011_reactions_replies_voice_calls.sql'),
+    ).toContain(
       `voice_duration_ms between ${MIN_VOICE_MS} and ${MAX_VOICE_MS}`,
     );
   });
@@ -709,7 +782,10 @@ describe('cross-runtime constants', () => {
  * asserting against YAML that can never run is worse than not asserting.
  */
 describe('pipeline wiring', () => {
-  const scripts = JSON.parse(read('package.json')).scripts as Record<string, string>;
+  const scripts = JSON.parse(read('package.json')).scripts as Record<
+    string,
+    string
+  >;
   const pipeline = read('.gitlab-ci.yml');
 
   it('declares every npm script the pipeline invokes', () => {
@@ -726,7 +802,9 @@ describe('pipeline wiring', () => {
   });
 
   it('points every `node scripts/...` call at a file that exists', () => {
-    const referenced = [...pipeline.matchAll(/node (scripts\/[\w-]+\.mjs)/g)].map(m => m[1] ?? '');
+    const referenced = [
+      ...pipeline.matchAll(/node (scripts\/[\w-]+\.mjs)/g),
+    ].map(m => m[1] ?? '');
     expect(referenced.length).toBeGreaterThan(0);
     for (const file of referenced) {
       expect(() => read(file)).not.toThrow();
@@ -734,8 +812,9 @@ describe('pipeline wiring', () => {
   });
 
   it('runs every pgTAP suite that exists', () => {
-    const declared = readdirSync(join(ROOT, 'supabase/tests'))
-      .filter(f => /^\d{3}_.*\.sql$/.test(f) && !f.includes('generated'));
+    const declared = readdirSync(join(ROOT, 'supabase/tests')).filter(
+      f => /^\d{3}_.*\.sql$/.test(f) && !f.includes('generated'),
+    );
     const runner = read('scripts/db-test.mjs');
     for (const file of declared) {
       expect(runner).toContain(file);
@@ -758,15 +837,16 @@ describe('pipeline wiring', () => {
      * schema change in the seed list would show up as an untested migration in
      * review rather than as a silent pass.
      */
-    const migrations = readdirSync(join(ROOT, 'supabase/migrations')).filter(f =>
-      f.endsWith('.sql'),
+    const migrations = readdirSync(join(ROOT, 'supabase/migrations')).filter(
+      f => f.endsWith('.sql'),
     );
     const runner = read('scripts/db-test.mjs');
     for (const file of migrations) {
       expect(runner).toContain(file);
     }
     // And the escape hatch is narrow: seed-only, and named one at a time.
-    const seeds = /export const SEED_MIGRATIONS = \[([\s\S]*?)\];/.exec(runner)?.[1] ?? '';
+    const seeds =
+      /export const SEED_MIGRATIONS = \[([\s\S]*?)\];/.exec(runner)?.[1] ?? '';
     for (const named of seeds.match(/'[^']+'/g) ?? []) {
       expect(named).toMatch(/_seed_/);
     }
@@ -799,7 +879,9 @@ describe('pipeline wiring', () => {
   });
 
   it('never lets the maestro flows drift from the app id', () => {
-    for (const flow of readdirSync(join(ROOT, '.maestro')).filter(f => /^\d/.test(f))) {
+    for (const flow of readdirSync(join(ROOT, '.maestro')).filter(f =>
+      /^\d/.test(f),
+    )) {
       expect(read(`.maestro/${flow}`)).toContain('appId: com.companionchat');
     }
   });
@@ -807,7 +889,9 @@ describe('pipeline wiring', () => {
   it('asserts the test IDs the flows select on still exist in the components', () => {
     const sources = ['src/components', 'src/screens'];
     const haystack = sources
-      .flatMap(dir => readdirSync(join(ROOT, dir)).map(f => read(`${dir}/${f}`)))
+      .flatMap(dir =>
+        readdirSync(join(ROOT, dir)).map(f => read(`${dir}/${f}`)),
+      )
       .join('\n');
 
     /**
@@ -817,7 +901,9 @@ describe('pipeline wiring', () => {
      * behind it, so every tap failed, and a flow that simply stopped mentioning
      * it would pass again the moment someone re-added it.
      */
-    const flows = readdirSync(join(ROOT, '.maestro')).filter(f => /^\d/.test(f));
+    const flows = readdirSync(join(ROOT, '.maestro')).filter(f =>
+      /^\d/.test(f),
+    );
     const selectors = new Set<string>();
     for (const file of flows) {
       const body = read(`.maestro/${file}`);
@@ -867,9 +953,12 @@ describe('pipeline wiring', () => {
  * that is correct.
  */
 describe('every screen is reachable', () => {
-  const mounters = ['App.tsx', ...walk(join(ROOT, 'src'))
-    .filter(f => f.endsWith('.tsx'))
-    .map(f => f.slice(ROOT.length + 1))]
+  const mounters = [
+    'App.tsx',
+    ...walk(join(ROOT, 'src'))
+      .filter(f => f.endsWith('.tsx'))
+      .map(f => f.slice(ROOT.length + 1)),
+  ]
     .map(read)
     .join('\n');
 
@@ -1045,10 +1134,14 @@ describe('launcher icon', () => {
   it('keeps the pre-26 bitmaps, because minSdk is 24', () => {
     // Adaptive icons start at API 26. Deleting these because the XML exists
     // would leave two Android versions with no icon at all.
-    const minSdk = read('android/build.gradle').match(/minSdkVersion\s*=\s*(\d+)/);
+    const minSdk = read('android/build.gradle').match(
+      /minSdkVersion\s*=\s*(\d+)/,
+    );
     expect(minSdk).not.toBeNull();
     expect(Number(minSdk?.[1])).toBeLessThan(26);
-    expect(existsSync(join(ROOT, RES, 'mipmap-mdpi/ic_launcher.png'))).toBe(true);
+    expect(existsSync(join(ROOT, RES, 'mipmap-mdpi/ic_launcher.png'))).toBe(
+      true,
+    );
   });
 
   it('declares a monochrome layer for themed icons', () => {
@@ -1066,7 +1159,9 @@ describe('launcher icon', () => {
     // this is the assertion that stops it coming back.
     for (const name of ['ic_launcher.xml', 'ic_launcher_round.xml']) {
       const xml = read(`${RES}/mipmap-anydpi-v26/${name}`);
-      const background = xml.match(/<background[^>]*android:drawable="([^"]+)"/)?.[1];
+      const background = xml.match(
+        /<background[^>]*android:drawable="([^"]+)"/,
+      )?.[1];
       expect(background).toBe('@drawable/ic_launcher_bg');
     }
     expect(read(`${RES}/drawable/ic_launcher_bg.xml`)).toContain(
@@ -1077,7 +1172,9 @@ describe('launcher icon', () => {
   it('resolves every resource the adaptive XML references', () => {
     const xml = read(`${RES}/mipmap-anydpi-v26/ic_launcher.xml`);
     for (const [, ref] of xml.matchAll(/@mipmap\/(\w+)/g)) {
-      expect(existsSync(join(ROOT, RES, 'mipmap-xxxhdpi', `${ref}.png`))).toBe(true);
+      expect(existsSync(join(ROOT, RES, 'mipmap-xxxhdpi', `${ref}.png`))).toBe(
+        true,
+      );
     }
     for (const [, ref] of xml.matchAll(/@drawable\/(\w+)/g)) {
       expect(existsSync(join(ROOT, RES, 'drawable', `${ref}.xml`))).toBe(true);
@@ -1102,7 +1199,9 @@ describe('launcher icon', () => {
   });
 
   it('has a Play listing icon and feature graphic', () => {
-    expect(existsSync(join(ROOT, 'docs/play/assets/play-icon-512.png'))).toBe(true);
+    expect(existsSync(join(ROOT, 'docs/play/assets/play-icon-512.png'))).toBe(
+      true,
+    );
     expect(
       existsSync(join(ROOT, 'docs/play/assets/feature-graphic-1024x500.png')),
     ).toBe(true);
@@ -1169,20 +1268,24 @@ describe('sign-in copy matches the sign-in that exists', () => {
  * caught the first time anyone runs the suite.
  */
 describe('secrets are untrackable', () => {
-  const SUSPICIOUS = /(\.keystore|\.jks|\.p12|\.pem|keystore\.properties|-key\.json|service.?account.*\.json|\.env$)/i;
+  const SUSPICIOUS =
+    /(\.keystore|\.jks|\.p12|\.pem|keystore\.properties|-key\.json|service.?account.*\.json|\.env$)/i;
 
   /** Files git would actually track, i.e. not ignored. `-c` keeps it quiet. */
   function trackable(paths: string[]): string[] {
     if (paths.length === 0) {
       return [];
     }
-    const result = spawnSync(
-      'git',
-      ['check-ignore', '--no-index', '--stdin'],
-      { cwd: ROOT, input: paths.join('\n'), encoding: 'utf8' },
-    );
+    const result = spawnSync('git', ['check-ignore', '--no-index', '--stdin'], {
+      cwd: ROOT,
+      input: paths.join('\n'),
+      encoding: 'utf8',
+    });
     const ignored = new Set(
-      (result.stdout ?? '').split('\n').map(l => l.trim()).filter(Boolean),
+      (result.stdout ?? '')
+        .split('\n')
+        .map(l => l.trim())
+        .filter(Boolean),
     );
     return paths.filter(p => !ignored.has(p));
   }
@@ -1248,7 +1351,9 @@ describe('phone sign-in stays off until it can deliver', () => {
   const auth = read('src/api/auth.ts');
   // PHONE_AUTH_ENABLED is now defined in src/config.ts; auth.ts re-exports it.
   const featureFlags = read('src/config.ts');
-  const enabled = /export const PHONE_AUTH_ENABLED = (true|false);/.exec(featureFlags)?.[1];
+  const enabled = /export const PHONE_AUTH_ENABLED = (true|false);/.exec(
+    featureFlags,
+  )?.[1];
 
   it('declares the flag explicitly', () => {
     expect(enabled).toBeDefined();
@@ -1306,7 +1411,7 @@ describe('phone sign-in stays off until it can deliver', () => {
     }
     const config = read('supabase/config.toml');
     // Every line of the hook block must still be commented out. An enabled hook
-    // with no MSG91 credentials makes Supabase fail the send rather than skip it.
+    // with no WhatsApp credentials makes Supabase fail the send rather than skip it.
     const live = config
       .split('\n')
       .filter(line => !line.trimStart().startsWith('#'))
@@ -1364,9 +1469,11 @@ describe('config.toml cannot silently disable a live provider', () => {
 
   it('enables every provider the sign-in screen offers', () => {
     const providers = [
-      ...(/export type SocialProvider =([^;]+);/
-        .exec(read('src/api/auth.ts'))?.[1] ?? '')
-        .matchAll(/'([a-z]+)'/g),
+      ...(
+        /export type SocialProvider =([^;]+);/.exec(
+          read('src/api/auth.ts'),
+        )?.[1] ?? ''
+      ).matchAll(/'([a-z]+)'/g),
     ].map(m => m[1] ?? '');
     expect(providers.length).toBeGreaterThan(0);
 
@@ -1380,7 +1487,9 @@ describe('config.toml cannot silently disable a live provider', () => {
     // it as env() is how the value ends up empty on a push from a machine that
     // happens not to have the variable set.
     const block = providerBlock('google');
-    expect(block).toMatch(/client_id = "\d+-[a-z0-9]+\.apps\.googleusercontent\.com"/);
+    expect(block).toMatch(
+      /client_id = "\d+-[a-z0-9]+\.apps\.googleusercontent\.com"/,
+    );
     expect(block).toMatch(/secret = "env\(/);
   });
 
@@ -1422,15 +1531,17 @@ describe('in-app updates are wired end to end', () => {
     // It is this app's own module rather than a node_modules package, so it must
     // be added by hand, and a missing registration fails silently: the JS side
     // simply sees an unsupported platform and never prompts.
-    expect(read('android/app/src/main/java/com/companionchat/MainApplication.kt')).toContain(
-      'add(InAppUpdatePackage())',
-    );
+    expect(
+      read('android/app/src/main/java/com/companionchat/MainApplication.kt'),
+    ).toContain('add(InAppUpdatePackage())');
   });
 
   it('keeps the decision out of the native module', () => {
     // The bridge cannot be tested without Play, so it must hold no judgement.
     // Anything resembling a threshold in Kotlin is a rule nothing can verify.
-    const kotlin = read('android/app/src/main/java/com/companionchat/InAppUpdateModule.kt');
+    const kotlin = read(
+      'android/app/src/main/java/com/companionchat/InAppUpdateModule.kt',
+    );
     expect(kotlin).not.toMatch(/updatePriority\(\)\s*>=/);
     expect(kotlin).not.toMatch(/clientVersionStalenessDays\(\)\s*>=/);
   });
@@ -1443,7 +1554,9 @@ describe('in-app updates are wired end to end', () => {
     // After <Root /> rather than adjacent to it: stripping the JSX comment that
     // explains why leaves braces behind, so an adjacency regex is checking the
     // comment's formatting rather than the mount point.
-    expect(app.indexOf('<UpdateBanner />')).toBeGreaterThan(app.indexOf('<Root />'));
+    expect(app.indexOf('<UpdateBanner />')).toBeGreaterThan(
+      app.indexOf('<Root />'),
+    );
     // And a sibling of <Root /> inside Shell, not nested in a screen. Scoped to
     // the Shell function body, because a whole-file regex with [\s\S]* only
     // proves one string appears before another, which was the first version of
@@ -1499,16 +1612,24 @@ describe('in-app updates are wired end to end', () => {
 
   it('limits cleartext to the debug emulator-host exception', () => {
     const manifest = read('android/app/src/main/AndroidManifest.xml');
-    const main = read('android/app/src/main/res/xml/network_security_config.xml');
-    const debug = read('android/app/src/debug/res/xml/network_security_config.xml');
+    const main = read(
+      'android/app/src/main/res/xml/network_security_config.xml',
+    );
+    const debug = read(
+      'android/app/src/debug/res/xml/network_security_config.xml',
+    );
 
     expect(manifest).toContain(
       'android:networkSecurityConfig="@xml/network_security_config"',
     );
     expect(manifest).not.toContain('usesCleartextTraffic');
     expect(main).toContain('<base-config cleartextTrafficPermitted="false"');
-    expect(debug).toContain('<domain includeSubdomains="false">10.0.2.2</domain>');
-    expect(debug).not.toContain('<base-config cleartextTrafficPermitted="true"');
+    expect(debug).toContain(
+      '<domain includeSubdomains="false">10.0.2.2</domain>',
+    );
+    expect(debug).not.toContain(
+      '<base-config cleartextTrafficPermitted="true"',
+    );
   });
 
   it('builds only the connected Android device ABI during local iteration', () => {
@@ -1532,7 +1653,9 @@ describe('in-app updates are wired end to end', () => {
     // Play rejects a duplicate versionCode. The old default of 1 meant the first
     // upload worked and every later local build collided.
     const gradle = read('android/app/build.gradle');
-    expect(gradle).toContain('(wantsRelease || wantsClosedTest) && explicitVersionCode == null');
+    expect(gradle).toContain(
+      '(wantsRelease || wantsClosedTest) && explicitVersionCode == null',
+    );
     expect(gradle).toMatch(/throw new GradleException/);
   });
 });
@@ -1554,7 +1677,9 @@ describe('a block is visible where it matters and reversible everywhere', () => 
     expect(home).toContain('(providers ?? []).filter(p => !blocked.has(p.id))');
     // CHATS rail surface (was InboxScreen.tsx; the typed-search strangers filter
     // has no v13 equivalent since HomeScreen has no search — retired with InboxScreen):
-    expect(home).toContain('!blocked.has(c.peer_id) && visibleOnRail(railPrefs, c.peer_id)');
+    expect(home).toContain(
+      '!blocked.has(c.peer_id) && visibleOnRail(railPrefs, c.peer_id)',
+    );
   });
 
   // Retired with InboxScreen.tsx: v13 HomeScreen hides blocked conversations from the
@@ -1565,7 +1690,9 @@ describe('a block is visible where it matters and reversible everywhere', () => 
     // The trap: a `where` clause here would null `peer_display_name` on the
     // blocked person's existing thread, because conversation_summaries LEFT
     // JOINs this view to resolve it.
-    const migration = read('supabase/migrations/006_phone_auth_and_provider_onboarding.sql');
+    const migration = read(
+      'supabase/migrations/006_phone_auth_and_provider_onboarding.sql',
+    );
     const view = migration.slice(
       migration.indexOf('create view public.provider_directory'),
       migration.indexOf('comment on view public.provider_directory'),
@@ -1576,7 +1703,9 @@ describe('a block is visible where it matters and reversible everywhere', () => 
 
   it('exposes the block set as a set, not as rows', () => {
     const safety = read('src/api/safety.ts');
-    expect(safety).toContain('export function useBlockedPeerIds(): ReadonlySet<string>');
+    expect(safety).toContain(
+      'export function useBlockedPeerIds(): ReadonlySet<string>',
+    );
     // `useBlocks` is the private implementation. Exporting `Block[]` invites a
     // caller to read `blocker_id` and assume the list is symmetric; RLS returns
     // only rows where the caller is the blocker, so it never has been.
@@ -1608,10 +1737,21 @@ describe('one contact address', () => {
     ];
     for (const file of surfaces) {
       const body = read(file);
-      expect({ file, has: body.includes(CONTACT) }).toEqual({ file, has: true });
+      expect({ file, has: body.includes(CONTACT) }).toEqual({
+        file,
+        has: true,
+      });
       // and no stale address alongside it
-      for (const stale of ['@axionix.tech', 'privacy@example.invalid', 'user@pappal.live']) {
-        expect({ file, stale, found: body.includes(stale) }).toEqual({ file, stale, found: false });
+      for (const stale of [
+        '@axionix.tech',
+        'privacy@example.invalid',
+        'user@pappal.live',
+      ]) {
+        expect({ file, stale, found: body.includes(stale) }).toEqual({
+          file,
+          stale,
+          found: false,
+        });
       }
     }
   });
@@ -1630,12 +1770,18 @@ describe('the website download link', () => {
      * every release must carry an asset named exactly `Pappal.apk`. A
      * version-stamped name may sit alongside it; it may not replace it.
      */
-    const STABLE = 'https://github.com/ARenigma/pappal-downloads/releases/latest/download/Pappal.apk';
-    const pages = readdirSync(join(ROOT, 'web')).filter(f => f.endsWith('.html'));
+    const STABLE =
+      'https://github.com/ARenigma/pappal-downloads/releases/latest/download/Pappal.apk';
+    const pages = readdirSync(join(ROOT, 'web')).filter(f =>
+      f.endsWith('.html'),
+    );
     expect(pages.length).toBeGreaterThan(0);
     for (const page of pages) {
       const html = read(join('web', page));
-      const links = html.match(/https:\/\/github\.com\/ARenigma\/pappal-downloads[^"']*/g) ?? [];
+      const links =
+        html.match(
+          /https:\/\/github\.com\/ARenigma\/pappal-downloads[^"']*/g,
+        ) ?? [];
       for (const link of links) {
         expect(link).toBe(STABLE);
       }
@@ -1691,17 +1837,29 @@ describe('the redesign holds its own invariants', () => {
   it('keeps closed-test builds capturable while production remains secure', () => {
     // FLAG_SECURE covers screenshots, screen recording and the app-switcher
     // thumbnail together. Blocking only screenshots bans nothing.
-    const activity = read('android/app/src/main/java/com/companionchat/MainActivity.kt');
+    const activity = read(
+      'android/app/src/main/java/com/companionchat/MainActivity.kt',
+    );
     expect(activity).toContain('WindowManager.LayoutParams.FLAG_SECURE');
     expect(activity).toContain('if (BuildConfig.BLOCK_SCREENSHOTS)');
     // Not gated on DEBUG: the build type expresses the distribution contract.
     expect(activity).not.toContain('if (!BuildConfig.DEBUG)');
 
     const gradle = read('android/app/build.gradle');
-    const release = gradle.slice(gradle.indexOf('release {'), gradle.indexOf('closedTest {'));
-    expect(release).toContain('buildConfigField "boolean", "BLOCK_SCREENSHOTS", "true"');
-    const closed = gradle.slice(gradle.indexOf('closedTest {'), gradle.indexOf('internal {'));
-    expect(closed).toContain('buildConfigField "boolean", "BLOCK_SCREENSHOTS", "false"');
+    const release = gradle.slice(
+      gradle.indexOf('release {'),
+      gradle.indexOf('closedTest {'),
+    );
+    expect(release).toContain(
+      'buildConfigField "boolean", "BLOCK_SCREENSHOTS", "true"',
+    );
+    const closed = gradle.slice(
+      gradle.indexOf('closedTest {'),
+      gradle.indexOf('internal {'),
+    );
+    expect(closed).toContain(
+      'buildConfigField "boolean", "BLOCK_SCREENSHOTS", "false"',
+    );
     /*
      * Internal stays CAPTURABLE, for product demos (Amit, 2026-09-06).
      *
@@ -1712,12 +1870,18 @@ describe('the redesign holds its own invariants', () => {
      * The lesson is in the gradle comment; the assertion is here.
      */
     const internal = gradle.slice(gradle.indexOf('internal {'));
-    expect(internal).toContain('buildConfigField "boolean", "BLOCK_SCREENSHOTS", "false"');
-    expect(internal).toContain('buildConfigField "boolean", "ALLOW_DEV_CAPTURE", "true"');
+    expect(internal).toContain(
+      'buildConfigField "boolean", "BLOCK_SCREENSHOTS", "false"',
+    );
+    expect(internal).toContain(
+      'buildConfigField "boolean", "ALLOW_DEV_CAPTURE", "true"',
+    );
     // The carve-out cannot exist in the shipping variant at all: with the field
     // false, R8 resolves the guard to an unconditional return and the
     // clearFlags branch is dead code, not merely unreachable at runtime.
-    expect(release).toContain('buildConfigField "boolean", "ALLOW_DEV_CAPTURE", "false"');
+    expect(release).toContain(
+      'buildConfigField "boolean", "ALLOW_DEV_CAPTURE", "false"',
+    );
   });
 
   it('draws no avatar in the transcript, so both bubble edges are the composer edges', () => {
@@ -1755,7 +1919,9 @@ describe('the redesign holds its own invariants', () => {
     expect(typing).not.toMatch(/width:\s*26/);
 
     // The header is where the avatar now lives, exclusively.
-    expect(chat).toContain('<Avatar initial={initial} uri={avatarUrl} size={42}');
+    expect(chat).toContain(
+      '<Avatar initial={initial} uri={avatarUrl} size={42}',
+    );
   });
 
   it('routes the back gesture through the parent map rather than branching inline', () => {
@@ -1767,19 +1933,30 @@ describe('the redesign holds its own invariants', () => {
     // (zIndex 20) and is what the user most recently opened. Settings used to be a
     // sheet that closed here too; it is a mounted route now and pops through the
     // parent map like every other screen.
-    const handler = app.slice(app.indexOf('const onBack ='), app.indexOf('BackHandler.addEventListener'));
-    expect(handler.indexOf('closeWallet()')).toBeLessThan(handler.indexOf('closeRefill()'));
-    expect(handler.indexOf('closeRefill()')).toBeLessThan(handler.indexOf('memberParent'));
+    const handler = app.slice(
+      app.indexOf('const onBack ='),
+      app.indexOf('BackHandler.addEventListener'),
+    );
+    expect(handler.indexOf('closeWallet()')).toBeLessThan(
+      handler.indexOf('closeRefill()'),
+    );
+    expect(handler.indexOf('closeRefill()')).toBeLessThan(
+      handler.indexOf('memberParent'),
+    );
     expect(app).toContain("openChat(id, 'chatsList')");
-    expect(app).toContain('from === \'chatsList\'');
+    expect(app).toContain("from === 'chatsList'");
   });
 
   it('opens a Paper menu from a long-press on a conversation', () => {
     expect(read('src/screens/HomeScreen.tsx')).toContain('measureInWindow');
     expect(read('src/components/PaperMenu.tsx')).toContain('anchor');
     expect(read('src/screens/ChatsListScreen.tsx')).toContain('surface="list"');
-    expect(read('src/components/ConversationMenu.tsx')).toContain('Remove from Home');
-    expect(read('src/components/PaperMenu.tsx')).toContain('m3.material.io/components/menus');
+    expect(read('src/components/ConversationMenu.tsx')).toContain(
+      'Remove from Home',
+    );
+    expect(read('src/components/PaperMenu.tsx')).toContain(
+      'm3.material.io/components/menus',
+    );
   });
 
   // Retired with InboxScreen.tsx: v13 HomeScreen has no typed search field and
@@ -1856,7 +2033,10 @@ describe('the redesign holds its own invariants', () => {
      * so a bubble filled with it vanishes into the page and is held together by
      * nothing. It has already shipped once, on the incoming message bubble.
      */
-    for (const file of ['src/components/ThreadBubble.tsx', 'src/components/Turn.tsx']) {
+    for (const file of [
+      'src/components/ThreadBubble.tsx',
+      'src/components/Turn.tsx',
+    ]) {
       expect(read(file)).not.toContain('bg.raised');
     }
     expect(read('src/components/ThreadBubble.tsx')).toContain('bg.sunken');
@@ -1906,7 +2086,9 @@ describe('the redesign holds its own invariants', () => {
      * what it is sitting on, and the avatar must branch on it. Either half missing
      * brings the bug back.
      */
-    expect(read('src/components/ThreadBubble.tsx')).toContain('surface="sunken"');
+    expect(read('src/components/ThreadBubble.tsx')).toContain(
+      'surface="sunken"',
+    );
     const avatar = read('src/components/Avatar.tsx');
     expect(avatar).toContain("surface === 'sunken'");
     expect(avatar).toContain('bg.base');
@@ -1932,9 +2114,13 @@ describe('the busy button does not move', () => {
 
   it('uses the shared native M3 LoadingIndicator', () => {
     const button = read('src/components/Button.tsx');
-    expect(button).toContain("import { LoadingIndicator } from './LoadingIndicator'");
+    expect(button).toContain(
+      "import { LoadingIndicator } from './LoadingIndicator'",
+    );
     // RN's ActivityIndicator is not MDC's Material 3 Views implementation.
-    expect(button).not.toMatch(/<ActivityIndicator|ActivityIndicator[,}]|ActivityIndicator\s*from/);
+    expect(button).not.toMatch(
+      /<ActivityIndicator|ActivityIndicator[,}]|ActivityIndicator\s*from/,
+    );
   });
 
   it('renders MDC native Views instead of hand-drawn React Native geometry', () => {
@@ -1942,10 +2128,18 @@ describe('the busy button does not move', () => {
     const android = read(
       'android/app/src/main/java/com/companionchat/MaterialIndicatorPackage.kt',
     );
-    expect(indicator).toContain("requireNativeComponent<NativeIndicatorProps>('PappalMaterialLoadingIndicator')");
-    expect(indicator).toContain("requireNativeComponent<NativeIndicatorProps>('PappalMaterialCircularProgress')");
-    expect(android).toContain('com.google.android.material.loadingindicator.LoadingIndicator');
-    expect(android).toContain('com.google.android.material.progressindicator.CircularProgressIndicator');
+    expect(indicator).toContain(
+      "requireNativeComponent<NativeIndicatorProps>('PappalMaterialLoadingIndicator')",
+    );
+    expect(indicator).toContain(
+      "requireNativeComponent<NativeIndicatorProps>('PappalMaterialCircularProgress')",
+    );
+    expect(android).toContain(
+      'com.google.android.material.loadingindicator.LoadingIndicator',
+    );
+    expect(android).toContain(
+      'com.google.android.material.progressindicator.CircularProgressIndicator',
+    );
     expect(android).toContain('isIndeterminate = true');
     // No border/SVG imitation remains in JavaScript.
     expect(indicator).not.toContain('borderTopColor');
@@ -1957,7 +2151,9 @@ describe('the busy button does not move', () => {
     const indicator = read('src/components/LoadingIndicator.tsx');
     expect(indicator).toContain('export const LONG_WAIT_MS = 5000');
     expect(indicator).toContain("variant = 'auto'");
-    expect(indicator).toContain('setTimeout(() => setLongWait(true), LONG_WAIT_MS)');
+    expect(indicator).toContain(
+      'setTimeout(() => setLongWait(true), LONG_WAIT_MS)',
+    );
     expect(indicator).toContain("variant === 'auto' && longWait");
   });
 
@@ -2004,18 +2200,23 @@ describe('the rename to Pappal', () => {
     // `name` is an internal registration key, not a name. If it drifts from
     // AppRegistry or getMainComponentName the app boots to a red screen saying
     // the component is not registered, which reads like a bundling failure.
-    const app = JSON.parse(read('app.json')) as { name: string; displayName: string };
+    const app = JSON.parse(read('app.json')) as {
+      name: string;
+      displayName: string;
+    };
     expect(app.displayName).toBe('Pappal');
     expect(app.name).toBe('CompanionChat');
-    expect(read('android/app/src/main/java/com/companionchat/MainActivity.kt')).toContain(
-      `getMainComponentName(): String = "${app.name}"`,
-    );
+    expect(
+      read('android/app/src/main/java/com/companionchat/MainActivity.kt'),
+    ).toContain(`getMainComponentName(): String = "${app.name}"`);
   });
 
   it('leaves the old name in the decision log', () => {
     // A decision log edited to look tidy afterwards is not a record. ADR-0008 and
     // ADR-0009 describe decisions taken when the product had the old name.
-    expect(read('docs/adr/0008-versioning-and-why-not-ota-yet.md')).toContain('CompanionChat');
+    expect(read('docs/adr/0008-versioning-and-why-not-ota-yet.md')).toContain(
+      'CompanionChat',
+    );
   });
 
   it('renames the public website', () => {
@@ -2025,80 +2226,27 @@ describe('the rename to Pappal', () => {
   });
 });
 
-describe('phone verification', () => {
-  it('never lets the client name the number it is verifying', () => {
-    // The whole security argument of verify-phone: it asks MSG91 which number
-    // the token belongs to. If the client sent the number, anyone could verify
-    // one they hold and submit somebody else's, and the unique index in
-    // migration 010 would let them squat on it.
-    const api = read('src/api/phone.ts');
-    const invoke = api.slice(api.indexOf("invoke('verify-phone'"));
-    // From `body:` onward, deliberately: the function is *named* verify-phone,
-    // so slicing from the call would match "phone" on the name itself.
-    const start = invoke.indexOf('body:');
-    const body = invoke.slice(start, invoke.indexOf('}', start));
-    expect(start).toBeGreaterThan(-1);
-    expect(body).toContain('accessToken');
-    expect(body).not.toContain('phone');
-    expect(body).not.toContain('identifier');
-    expect(body).not.toContain('e164');
-  });
-
-  it('does not disable the code field while it is checking', () => {
-    // Disabling a focused TextInput blurs it, which moves focus to the next
-    // control and closes the keyboard. That shipped on the sign-in screen once.
-    const sheet = read('src/screens/PhoneVerifySheet.tsx');
-    const start = sheet.indexOf('<CodeField');
-    const field = sheet.slice(start, sheet.indexOf('/>', start));
-    expect(field.length).toBeGreaterThan(0);
-    expect(field).not.toContain('editable');
-  });
-
-  it('keeps a rejected OTP visible for one-digit correction', () => {
-    const sheet = read('src/screens/PhoneVerifySheet.tsx');
-    const errorEffect = sheet.slice(
-      sheet.indexOf("if (error !== null && step === 'code')"),
-      sheet.indexOf('}, [error, step])'),
-    );
-    expect(errorEffect).toContain('setErrorNonce');
-    expect(errorEffect).not.toContain("setCode('')");
-  });
-
-  it('offers verification only in a build that can deliver it', () => {
-    const settings = read('src/screens/SettingsSheet.tsx');
-    expect(settings).toContain('PHONE_VERIFY_ENABLED');
-    expect(settings).toContain('widgetConfigured()');
-    expect(settings).toContain('phone_verified_at === null');
-  });
-
-  it('keeps the entry point off while the server hop is unproven', () => {
-    // The mirror of the PHONE_AUTH_ENABLED guard. verifyAccessToken has never
-    // returned success, so a user could enter a correct code and have nothing
-    // recorded. Flip the flag in the commit that fixes that, not before.
-    const api = read('src/api/phone.ts');
-    const flag = /export const PHONE_VERIFY_ENABLED = (true|false);/.exec(api)?.[1];
-    expect(flag).toBe('false');
-  });
-
-  it('posts the authkey where the widget docs say it goes', () => {
-    // MSG91's general API docs say header; the widget's own Server Side
-    // Integration page says body, on control.msg91.com. The widget page wins for
-    // this endpoint.
-    const fn = read('supabase/functions/verify-phone/index.ts');
-    expect(fn).toContain("'https://control.msg91.com/api/v5/widget/verifyAccessToken'");
-    expect(fn).toContain("JSON.stringify({ authkey, 'access-token': accessToken })");
-  });
-
+describe('phone verification (MSG91 widget removed)', () => {
   it('does not depend on the MSG91 React Native package', () => {
-    // Its OTP path is the same three fetches this repo makes directly; what it
-    // adds is an autolinked BiometricAuth module whose build.gradle pins
+    // Its OTP path is the same three fetches this repo used to make directly;
+    // what it adds is an autolinked BiometricAuth module whose build.gradle pins
     // compileSdk 34 and asks for an unversioned com.facebook.react:react-native.
+    // The widget and the verify-phone function are both deleted; this guard
+    // ensures the native package never comes back either.
     const pkg = JSON.parse(read('package.json')) as {
       dependencies?: Record<string, string>;
     };
     expect(Object.keys(pkg.dependencies ?? {})).not.toContain(
       '@msg91comm/sendotp-react-native',
     );
+  });
+
+  it('send-sms delivers via WhatsApp Cloud API, not Fast2SMS', () => {
+    const fn = read('supabase/functions/send-sms/index.ts');
+    expect(fn).toContain('graph.facebook.com');
+    expect(fn).toContain('messaging_product');
+    expect(fn).not.toContain('fast2sms');
+    expect(fn).not.toContain('FAST2SMS');
   });
 });
 
@@ -2139,13 +2287,15 @@ describe('the chat restyle is wired, not just drawn', () => {
     // A ListFooterComponent exists again, but ONLY as the frosted-bar spacer that
     // reserves the overlay header's height at the list's visual top. Guard the
     // actual anti-pattern — a DayDivider living in the footer — not the API.
-    expect(chatCode).not.toMatch(/ListFooterComponent=\{\s*\(\)\s*=>\s*<DayDivider/);
+    expect(chatCode).not.toMatch(
+      /ListFooterComponent=\{\s*\(\)\s*=>\s*<DayDivider/,
+    );
     expect(chatCode).not.toMatch(/DayDivider label=/);
     expect(chatCode).toContain('<DayDivider iso={message.created_at} />');
     // opensDay is now computed in a single post-sort pass over the merged
     // message+call list (so call rows also get dividers). The pass uses the
     // opensDay helper from datetime.ts, applied to each row's sortAt field.
-    expect(chatCode).toContain("row.opensDay = opensDay(");
+    expect(chatCode).toContain('row.opensDay = opensDay(');
     // The pass must run AFTER the sort so mixed message/call neighbours are
     // compared correctly (not just adjacent messages).
     expect(chatCode).toContain('sorted.length');
@@ -2221,7 +2371,9 @@ describe('the chat restyle is wired, not just drawn', () => {
     // (src/lib/imeGeometry.ts) so they come from one input set and cannot land
     // one commit apart; the gate followed them rather than being deleted.
     const imeCode = withoutComments(read('src/lib/imeGeometry.ts'));
-    expect(imeCode).toContain('const imeSpace = i.keyboardHeight + i.insetBottom');
+    expect(imeCode).toContain(
+      'const imeSpace = i.keyboardHeight + i.insetBottom',
+    );
     expect(chatCode).toContain('bodyInset');
     expect(withoutComments(read('src/components/Composer.tsx'))).toContain(
       'panelHeight + insets.bottom',
@@ -2239,7 +2391,10 @@ describe('the chat restyle is wired, not just drawn', () => {
     // re-rendering all 1858 lines on every keyboard show — with every other test
     // still green. So the body is checked directly: the four leaf components at
     // the foot of the file are allowed to call them, and nothing above is.
-    const body = chatCode.slice(0, chatCode.indexOf('const Transcript = memo('));
+    const body = chatCode.slice(
+      0,
+      chatCode.indexOf('const Transcript = memo('),
+    );
     expect(body).not.toMatch(
       /use(BodyInset|ListPad|ComposerInset|PanelCeiling|BarHeight|ComposerFocused)\(/,
     );
@@ -2310,7 +2465,7 @@ describe('the chat restyle is wired, not just drawn', () => {
     expect(turnSrc).toContain('metaRow');
     expect(turnSrc).not.toContain('receiptRow');
     // Pending rows suppress the tick; settled rows show it.
-    expect(turnSrc).toContain("pending ? undefined : receipt");
+    expect(turnSrc).toContain('pending ? undefined : receipt');
     // ChatScreen no longer uses showReceipt to gate the prop.
     expect(chatCode).not.toContain('showReceipt');
   });
@@ -2365,7 +2520,9 @@ describe('reactions and replies reach a real server call', () => {
     // is not callable by a client so an RLS policy cannot consult it.
     const api = read('src/api/reactions.ts');
     expect(api).toContain("supabase.rpc('toggle_reaction'");
-    expect(withoutComments(api)).not.toMatch(/from\('message_reactions'\)\s*\.\s*insert/);
+    expect(withoutComments(api)).not.toMatch(
+      /from\('message_reactions'\)\s*\.\s*insert/,
+    );
   });
 
   it('sends a reply through send_message rather than a second path', () => {
@@ -2380,7 +2537,9 @@ describe('reactions and replies reach a real server call', () => {
     // The one cross-language literal types cannot catch: a bare U+2764 instead of
     // U+2764 U+FE0F renders identically in most editors and comes back
     // BAD_REQUEST from every call.
-    const sql = read('supabase/migrations/011_reactions_replies_voice_calls.sql');
+    const sql = read(
+      'supabase/migrations/011_reactions_replies_voice_calls.sql',
+    );
     const types = read('src/lib/database.types.ts');
     const union = /export type ReactionEmoji =([^;]+);/.exec(types)?.[1] ?? '';
     const emoji = [...union.matchAll(/'([^']+)'/g)].map(m => m[1]);
@@ -2438,7 +2597,9 @@ describe('voice notes are recorded, uploaded and sent through the one send path'
     expect(api).toContain('p_client_nonce: nonce');
     expect(api).toContain('p_voice_path: path');
     expect(api).toContain('p_voice_duration_ms: draft.durationMs');
-    expect(withoutComments(api)).not.toMatch(/from\('messages'\)\s*\.\s*insert/);
+    expect(withoutComments(api)).not.toMatch(
+      /from\('messages'\)\s*\.\s*insert/,
+    );
   });
 
   it('uploads before it inserts, so the row can never point at nothing', () => {
@@ -2456,7 +2617,9 @@ describe('voice notes are recorded, uploaded and sent through the one send path'
     // FormData implements only append, getAll and getParts. Asserted over the
     // source with comments stripped, so the comment explaining the trap cannot
     // be what satisfies the test.
-    expect(withoutComments(api)).not.toMatch(/storage\s*\.\s*from\([^)]*\)\s*\.\s*upload\(/);
+    expect(withoutComments(api)).not.toMatch(
+      /storage\s*\.\s*from\([^)]*\)\s*\.\s*upload\(/,
+    );
     expect(api).toContain('/storage/v1/object/');
   });
 
@@ -2478,7 +2641,13 @@ describe('voice notes are recorded, uploaded and sent through the one send path'
     // The narrower protection that replaced RECORD_AUDIO being forbidden in
     // verify-manifest.mjs. If a second file starts recording, that gate no longer
     // has anything to say about it and this does.
-    const users = ['src/lib', 'src/api', 'src/components', 'src/screens', 'src/store']
+    const users = [
+      'src/lib',
+      'src/api',
+      'src/components',
+      'src/screens',
+      'src/store',
+    ]
       .flatMap(dir =>
         readdirSync(join(ROOT, dir))
           .filter(f => f.endsWith('.ts') || f.endsWith('.tsx'))
@@ -2565,9 +2734,9 @@ describe('voice notes are recorded, uploaded and sent through the one send path'
     // `submit_report` snapshots `voice_path` beside `evidence_body`, which is the
     // only reason "he sent me something vile" is actionable when it was spoken
     // rather than typed. The client half is that a voice bubble still long-presses.
-    expect(read('supabase/migrations/011_reactions_replies_voice_calls.sql')).toContain(
-      'evidence_voice_path',
-    );
+    expect(
+      read('supabase/migrations/011_reactions_replies_voice_calls.sql'),
+    ).toContain('evidence_voice_path');
     expect(read('src/components/Turn.tsx')).toContain('useLongPressGesture({');
     expect(read('src/components/Turn.tsx')).toContain('onReportMessage');
     expect(read('scripts/moderate.mjs')).toContain('evidence_voice_path');
@@ -2586,10 +2755,14 @@ describe('voice notes are recorded, uploaded and sent through the one send path'
     // declaring RECORD_AUDIO against a policy page that says no microphone is a
     // data-safety mismatch, not a cosmetic gap.
     const privacy = read('web/privacy.html');
-    expect(privacy).not.toContain('No contacts, location, photos, microphone or camera.');
+    expect(privacy).not.toContain(
+      'No contacts, location, photos, microphone or camera.',
+    );
     expect(privacy).toMatch(/voice note/i);
     const listing = read('docs/play/listing.md');
-    expect(listing).not.toContain('The app requests three Android permissions in total');
+    expect(listing).not.toContain(
+      'The app requests three Android permissions in total',
+    );
     expect(listing).toMatch(/\|\s*Audio \(voice notes\)\s*\|/);
     // And audio is no longer on the "not collected" line it used to sit on.
     expect(listing).not.toMatch(/photos or videos, audio, files/);
@@ -2607,7 +2780,9 @@ describe('calling ships visible and on, wired to a real media layer', () => {
     // CALLS_ENABLED is now defined in src/config.ts (the single flag home);
     // src/api/calls.ts re-exports it so all existing import sites are unchanged.
     const appConfig = read('src/config.ts');
-    const flag = /export const CALLS_ENABLED = (true|false);/.exec(appConfig)?.[1];
+    const flag = /export const CALLS_ENABLED = (true|false);/.exec(
+      appConfig,
+    )?.[1];
     expect(flag).toBe('true');
   });
 
@@ -2674,7 +2849,9 @@ describe('paid chat sessions expose their live lifecycle', () => {
     // The remainder is the server's one-snapshot figure, aged from the instant
     // it was taken — never recomputed from `balance`, which cannot tell whether
     // the current minute has been deducted yet (migration 062).
-    expect(code).toContain('secondsRemainingNow(activeSession?.seconds_remaining, sessionSyncedAt, sessionNow)');
+    expect(code).toContain(
+      'secondsRemainingNow(activeSession?.seconds_remaining, sessionSyncedAt, sessionNow)',
+    );
     expect(code).toContain('dataUpdatedAt: sessionSyncedAt');
     expect(code).not.toContain('talkTimeLeft(');
     // The repaint cadence follows the remainder: no unconditional 1 Hz clock.
@@ -2701,21 +2878,33 @@ describe('paid chat sessions expose their live lifecycle', () => {
     // The bar cannot come back above the window: its own visibility is the
     // countdown flag, so there is no state in which it shows without a clock.
     // Member-only: providers do not recharge (isMemberSide guard added 2026-09-07).
-    expect(code).toMatch(/showStickyRecharge\s*=\s*\n?\s*isMemberSide\s*&&\s*countingDown\s*&&/);
+    expect(code).toMatch(
+      /showStickyRecharge\s*=\s*\n?\s*isMemberSide\s*&&\s*countingDown\s*&&/,
+    );
     // The extend card and the numerals share one threshold and one figure.
     // Member-only guard added 2026-09-07.
-    expect(code).toMatch(/showExtendCard\s*=\s*\n?\s*isMemberSide\s*&&\s*sessionIsActive\s*&&\s*countingDown/);
+    expect(code).toMatch(
+      /showExtendCard\s*=\s*\n?\s*isMemberSide\s*&&\s*sessionIsActive\s*&&\s*countingDown/,
+    );
 
     // Server side: one snapshot, member only, registered and tested.
-    const migration = read('supabase/migrations/062_session_seconds_remaining.sql');
+    const migration = read(
+      'supabase/migrations/062_session_seconds_remaining.sql',
+    );
     expect(migration).toContain("'seconds_remaining'");
     expect(migration).toContain('v_uid = v_session.member_id');
-    expect(migration).toContain('extract(epoch from (v_session.next_bill_at - now()))');
+    expect(migration).toContain(
+      'extract(epoch from (v_session.next_bill_at - now()))',
+    );
     const dbTest = read('scripts/db-test.mjs');
     expect(dbTest).toContain('062_session_seconds_remaining.sql');
     expect(dbTest).toContain('240_session_seconds_remaining.sql');
-    expect(read('src/api/sessions.ts')).toContain('seconds_remaining: number | null');
-    expect(read('src/lib/database.types.ts')).toContain('seconds_remaining: number | null');
+    expect(read('src/api/sessions.ts')).toContain(
+      'seconds_remaining: number | null',
+    );
+    expect(read('src/lib/database.types.ts')).toContain(
+      'seconds_remaining: number | null',
+    );
   });
 
   it('confirms before back ends a live paid session', () => {
@@ -2769,7 +2958,9 @@ describe('paid chat sessions expose their live lifecycle', () => {
      * never touches the stack, and so kept working and hid it.
      */
     expect(code).toContain('useBackBarrier()');
-    expect(code).toContain("import { useBackBarrier, useBackGuard } from '../lib/backGuard'");
+    expect(code).toContain(
+      "import { useBackBarrier, useBackGuard } from '../lib/backGuard'",
+    );
     const app = withoutComments(read('App.tsx'));
     const consumeAt = app.indexOf('if (consumeBack())');
     const popAt = app.indexOf('const parent = memberParent(route)');
@@ -2785,7 +2976,9 @@ describe('paid chat sessions expose their live lifecycle', () => {
     const code = withoutComments(chat);
     expect(code).toContain('onPress={requestEnd}');
     expect(code).toContain("setLeaveIntent('end')");
-    expect(code).toContain("onConfirm={leaveIntent === 'end' ? confirmEnd : confirmLeave}");
+    expect(code).toContain(
+      "onConfirm={leaveIntent === 'end' ? confirmEnd : confirmLeave}",
+    );
     expect(code).not.toContain('endCurrentSession');
 
     // CallScreen unmount hangs up, so a bare back was a silent hang-up. The red
@@ -2793,7 +2986,9 @@ describe('paid chat sessions expose their live lifecycle', () => {
     const call = withoutComments(read('src/screens/CallScreen.tsx'));
     expect(call).toContain('useBackGuard(backGuard)');
     expect(call).toContain('testID="call-leave-dialog"');
-    expect(call).toContain('testID="call-end" glyph="callEnd" tone="danger" onPress={onEnd}');
+    expect(call).toContain(
+      'testID="call-end" glyph="callEnd" tone="danger" onPress={onEnd}',
+    );
     expect(call).not.toContain('BackHandler');
   });
 
@@ -2813,7 +3008,9 @@ describe('paid chat sessions expose their live lifecycle', () => {
     expect(stripped).toContain('m.sender_id === activeSession.provider_id');
     expect(stripped).toContain('m.session_id === activeSession.id');
     // The gate is ANDed into the timer's start-time selection.
-    expect(stripped).toMatch(/hasLiveProviderMessage\s*\n?\s*\?\s*activeSession\.started_at/);
+    expect(stripped).toMatch(
+      /hasLiveProviderMessage\s*\n?\s*\?\s*activeSession\.started_at/,
+    );
   });
 });
 
@@ -2924,9 +3121,7 @@ describe('the app speaks one date language', () => {
     // a month-old thread read as '31d'.
     // InboxScreen.tsx dropped: v13 HomeScreen renders no timestamps (avatar rail only),
     // so it is out of scope for the listStamp / ago() consolidation check.
-    for (const file of [
-      'src/screens/ProviderHomeScreen.tsx',
-    ]) {
+    for (const file of ['src/screens/ProviderHomeScreen.tsx']) {
       const source = withoutComments(read(file));
       expect(source).not.toMatch(/function ago\(/);
       expect(source).toContain('listStamp(');
@@ -2937,7 +3132,9 @@ describe('the app speaks one date language', () => {
     // Hermes ships one locale, so `toLocaleDateString()` with no options gives
     // '8/22/2026' whatever the device's region.
     for (const dir of ['src/screens', 'src/components']) {
-      for (const file of readdirSync(join(ROOT, dir)).filter(f => f.endsWith('.tsx'))) {
+      for (const file of readdirSync(join(ROOT, dir)).filter(f =>
+        f.endsWith('.tsx'),
+      )) {
         expect(withoutComments(read(`${dir}/${file}`))).not.toMatch(
           /toLocaleDateString\(\)/,
         );
@@ -2995,7 +3192,10 @@ describe('iOS list separators are drawn the way iOS draws them', () => {
      * (2026-09-06). The rule is about what separates provider ROWS.
      */
     const home = withoutComments(read('src/screens/HomeScreen.tsx'));
-    const listStyle = home.slice(home.indexOf('    scroll: {'), home.indexOf('    state: {'));
+    const listStyle = home.slice(
+      home.indexOf('    scroll: {'),
+      home.indexOf('    state: {'),
+    );
     expect(listStyle).not.toMatch(/\bgap:/);
     // And the rows themselves are not spaced apart by their container.
     expect(home).not.toContain('ItemSeparatorComponent');
@@ -3074,10 +3274,15 @@ describe('no user-facing em dash and no leftover persona pronoun', () => {
     const files = ['src/screens', 'src/components'].flatMap(dir =>
       readdirSync(join(ROOT, dir))
         .filter(f => f.endsWith('.tsx'))
-        .map(f => ({ file: `${dir}/${f}`, body: withoutComments(read(`${dir}/${f}`)) })),
+        .map(f => ({
+          file: `${dir}/${f}`,
+          body: withoutComments(read(`${dir}/${f}`)),
+        })),
     );
     for (const { file, body } of files) {
-      const literals = [...body.matchAll(/'[^'\n]*'|"[^"\n]*"|`[^`]*`/g)].map(m => m[0]);
+      const literals = [...body.matchAll(/'[^'\n]*'|"[^"\n]*"|`[^`]*`/g)].map(
+        m => m[0],
+      );
       for (const literal of literals) {
         if (APPROVED_EM_DASH.includes(literal)) {
           continue;
@@ -3145,29 +3350,31 @@ describe('chat chrome occludes what is behind it', () => {
     // bubbles share a continuous grid edge. At single-line height (~40dp) a
     // 22dp radius is a perfect pill (2×22=44≈height), so the visual is unchanged
     // from the old radius.pill at that size. Changed 2026-09-06.
-          /*
-       * The composer no longer shares the bubble's radius token, and that is a
-       * measurement rather than a drift. WhatsApp on the Redmi: bubble corner
-       * 9dp, composer capsule corner 10.5dp. They are the same FAMILY — close
-       * enough to read as one system — but not one value, and asserting
-       * identity would be asserting something WhatsApp does not do.
-       */
-      expect(bar).toContain('borderRadius: TOKENS.radius.composer');
-      // Same family: within 2dp of each other in either direction.
-      /*
-       * CORRECTED 2026-09-08. This asserted the two radii were within 2dp of
-       * each other, on a measurement of WhatsApp's composer that was wrong:
-       * I had read "the row where the corner ramp reaches the edge" as the
-       * radius and got 10.5dp. Refitting the whole ramp gives 17.93dp, i.e.
-       * 18dp — the composer is TWICE as round as the 9dp bubble, not a
-       * near-match to it.
-       *
-       * So the invariant is the shape of the relationship, not a tolerance:
-       * the composer is clearly rounder, and it is still not a pill.
-       */
-      expect(TOKENS.radius.composer).toBeGreaterThan(TOKENS.radius.bubble);
-      // Not a pill: WhatsApp's capsule is 46.2dp tall against an 18dp corner.
-      expect(TOKENS.radius.composer).toBeLessThan(TOKENS.interaction.minTarget / 2);
+    /*
+     * The composer no longer shares the bubble's radius token, and that is a
+     * measurement rather than a drift. WhatsApp on the Redmi: bubble corner
+     * 9dp, composer capsule corner 10.5dp. They are the same FAMILY — close
+     * enough to read as one system — but not one value, and asserting
+     * identity would be asserting something WhatsApp does not do.
+     */
+    expect(bar).toContain('borderRadius: TOKENS.radius.composer');
+    // Same family: within 2dp of each other in either direction.
+    /*
+     * CORRECTED 2026-09-08. This asserted the two radii were within 2dp of
+     * each other, on a measurement of WhatsApp's composer that was wrong:
+     * I had read "the row where the corner ramp reaches the edge" as the
+     * radius and got 10.5dp. Refitting the whole ramp gives 17.93dp, i.e.
+     * 18dp — the composer is TWICE as round as the 9dp bubble, not a
+     * near-match to it.
+     *
+     * So the invariant is the shape of the relationship, not a tolerance:
+     * the composer is clearly rounder, and it is still not a pill.
+     */
+    expect(TOKENS.radius.composer).toBeGreaterThan(TOKENS.radius.bubble);
+    // Not a pill: WhatsApp's capsule is 46.2dp tall against an 18dp corner.
+    expect(TOKENS.radius.composer).toBeLessThan(
+      TOKENS.interaction.minTarget / 2,
+    );
     expect(bar).toContain('backgroundColor: t.color.bg.raised');
     expect(bar).toContain("overflow: 'hidden'");
     // And `field` must NOT also carry a fill, or it is a pill inside a pill.
@@ -3181,7 +3388,10 @@ describe('chat chrome occludes what is behind it', () => {
 
   it('the reply strip has a surface of its own', () => {
     const chat = read('src/screens/ChatScreen.tsx');
-    const bar = chat.slice(chat.indexOf('  replyBar: {'), chat.indexOf('  replyRule: {'));
+    const bar = chat.slice(
+      chat.indexOf('  replyBar: {'),
+      chat.indexOf('  replyRule: {'),
+    );
     expect(bar).toContain('backgroundColor: t.color.bg.raised');
     expect(bar).toContain('borderRadius: TOKENS.radius.field');
   });
@@ -3249,7 +3459,9 @@ describe('every Cashfree Payouts caller sends the 2FA signature', () => {
 });
 
 describe('provider identity is verified, not typed', () => {
-  const screen = withoutComments(read('src/screens/ProviderApplicationScreen.tsx'));
+  const screen = withoutComments(
+    read('src/screens/ProviderApplicationScreen.tsx'),
+  );
 
   it('no longer asks a provider to type a date of birth', () => {
     // The DOB is READ from the identity check, never typed: PAN 360 returns it
@@ -3301,7 +3513,10 @@ describe('provider identity is verified, not typed', () => {
      * with no explanation, and two denials there are permanent.
      */
     const app = withoutComments(read('App.tsx'));
-    const fn = app.slice(app.indexOf('async function bootPhaseAfterAuth'), app.indexOf('function Root()'));
+    const fn = app.slice(
+      app.indexOf('async function bootPhaseAfterAuth'),
+      app.indexOf('function Root()'),
+    );
     const policiesAt = fn.indexOf("rpc('pending_policy_acceptances')");
     const gateAt = fn.indexOf('if (!gateSatisfied(await checkGate()))');
     expect(policiesAt).toBeGreaterThan(-1);
@@ -3316,20 +3531,32 @@ describe('provider identity is verified, not typed', () => {
     expect(app).not.toContain('PermissionsAndroid.PERMISSIONS.CAMERA');
     expect(app).not.toContain('async function requestAndroidPermission');
 
-    const gateScreen = withoutComments(read('src/screens/PermissionsScreen.tsx'));
+    const gateScreen = withoutComments(
+      read('src/screens/PermissionsScreen.tsx'),
+    );
     const gate = withoutComments(read('src/lib/permissionsGate.ts'));
     // One dialog at a time, and no second rationale on top of the screen.
-    expect(gate).toMatch(/for \(const p of outstanding\(current\)\) \{\s*const outcome = await requestAndroidPermission\(p\.permission\);/);
+    expect(gate).toMatch(
+      /for \(const p of outstanding\(current\)\) \{\s*const outcome = await requestAndroidPermission\(p\.permission\);/,
+    );
     expect(gate).not.toContain('buttonPositive');
     expect(gateScreen).not.toContain('buttonPositive');
     // A block is not a dead end, and the cancel is Sign out.
     expect(gateScreen).toContain('Linking.openSettings()');
     expect(gateScreen).toContain("AppState.addEventListener('change'");
-    for (const id of ['permissions-allow', 'permissions-sign-out', 'permissions-gate']) {
+    for (const id of [
+      'permissions-allow',
+      'permissions-sign-out',
+      'permissions-gate',
+    ]) {
       expect(gateScreen).toContain(`testID="${id}"`);
     }
-    expect(gateScreen).toContain('testID={`permissions-open-settings-${p.kind}`}');
-    expect(existsSync(join(ROOT, 'docs/adr/0026-permissions-gate-before-home.md'))).toBe(true);
+    expect(gateScreen).toContain(
+      'testID={`permissions-open-settings-${p.kind}`}',
+    );
+    expect(
+      existsSync(join(ROOT, 'docs/adr/0026-permissions-gate-before-home.md')),
+    ).toBe(true);
   });
 
   it('verifies identity before collecting the profile', () => {
@@ -3356,7 +3583,9 @@ describe('provider identity is verified, not typed', () => {
     expect(screen).toContain('provider-account-number');
     expect(screen).toContain('provider-ifsc');
     // Both halves gate the one button.
-    expect(screen).toMatch(/disabled=\{!PAN_SHAPE\.test\(pan\) \|\| !payoutReady\}/);
+    expect(screen).toMatch(
+      /disabled=\{!PAN_SHAPE\.test\(pan\) \|\| !payoutReady\}/,
+    );
   });
 
   it('sends the PAN-verified name as the beneficiary, never a typed one', () => {
@@ -3409,7 +3638,9 @@ describe('provider identity is verified, not typed', () => {
     // 056 supersedes 051's copy of the RPC: the DOB now comes from the identity
     // record and is copied onto the profile in the same statement that sets
     // role = provider, because a member row may not hold one (011).
-    const rpc = read('supabase/migrations/056_identity_dob_before_promotion.sql');
+    const rpc = read(
+      'supabase/migrations/056_identity_dob_before_promotion.sql',
+    );
     expect(rpc).toContain("interval '18 years'");
     expect(rpc).toContain('verified_dob');
     expect(screen).not.toContain('365.25');
@@ -3417,7 +3648,9 @@ describe('provider identity is verified, not typed', () => {
 });
 
 describe('presence is declared, and PII is not client-writable', () => {
-  const m012 = read('supabase/migrations/012_declared_presence_and_pii_guard.sql');
+  const m012 = read(
+    'supabase/migrations/012_declared_presence_and_pii_guard.sql',
+  );
 
   it('adds a fourth guard rather than editing one of the three', () => {
     // 010 is the record of the alternative: extending
@@ -3425,7 +3658,9 @@ describe('presence is declared, and PII is not client-writable', () => {
     // deleted the five checks 005 and 006 had added, with no diff to show for it.
     // Postgres runs BEFORE UPDATE triggers in name order and each raises
     // independently, so additive guards compose and cannot regress.
-    expect(m012).toContain('create or replace function public.guard_pii_columns()');
+    expect(m012).toContain(
+      'create or replace function public.guard_pii_columns()',
+    );
     expect(m012).toContain('create trigger guard_profile_pii_columns');
     for (const sibling of [
       'guard_privileged_profile_columns',
@@ -3459,7 +3694,9 @@ describe('presence is declared, and PII is not client-writable', () => {
     // The one column added here that a client is meant to write. A guard on it
     // would put a support ticket between somebody and the ability to stop being
     // contacted, which is the opposite of what this product owes them.
-    expect(plpgsqlBody(m012, 'guard_pii_columns')).not.toContain('new.presence');
+    expect(plpgsqlBody(m012, 'guard_pii_columns')).not.toContain(
+      'new.presence',
+    );
   });
 
   it('replaces the directory rather than dropping it', () => {
@@ -3481,7 +3718,9 @@ describe('presence is declared, and PII is not client-writable', () => {
       m012.indexOf('create or replace view public.provider_directory'),
       m012.indexOf('comment on view public.provider_directory'),
     );
-    expect(directory).toContain('extract(year from age(p.date_of_birth))::int as age');
+    expect(directory).toContain(
+      'extract(year from age(p.date_of_birth))::int as age',
+    );
     expect(directory).not.toContain('p.date_of_birth,');
     expect(directory).toContain('security_invoker = false');
   });
@@ -3490,17 +3729,27 @@ describe('presence is declared, and PII is not client-writable', () => {
     // A drop takes the grants with it, and `authenticated` losing SELECT here
     // empties every inbox in the product.
     expect(m012).toContain('drop view if exists public.conversation_summaries');
-    expect(m012).toContain('grant select on public.conversation_summaries to authenticated');
-    expect(m012).toContain('revoke all on public.conversation_summaries from anon');
+    expect(m012).toContain(
+      'grant select on public.conversation_summaries to authenticated',
+    );
+    expect(m012).toContain(
+      'revoke all on public.conversation_summaries from anon',
+    );
   });
 
   it('keeps the enum in step with the TypeScript union', () => {
     // Hand-maintained mirror, and the failure is silent in one direction: a value
     // the column accepts and the union does not is a state a user can hold and
     // the app cannot render.
-    const sql = /create type public\.presence_choice as enum \(([^)]+)\)/.exec(m012)?.[1] ?? '';
+    const sql =
+      /create type public\.presence_choice as enum \(([^)]+)\)/.exec(
+        m012,
+      )?.[1] ?? '';
     const inSql = [...sql.matchAll(/'([a-z]+)'/g)].map(m => m[1]).sort();
-    const union = /export type PresenceChoice =([^;]+);/.exec(read('src/lib/database.types.ts'))?.[1] ?? '';
+    const union =
+      /export type PresenceChoice =([^;]+);/.exec(
+        read('src/lib/database.types.ts'),
+      )?.[1] ?? '';
     const inTs = [...union.matchAll(/'([a-z]+)'/g)].map(m => m[1]).sort();
     expect(inSql).toEqual(['away', 'here', 'hidden']);
     expect(inTs).toEqual(inSql);
@@ -3574,7 +3823,9 @@ describe('no screen reads a listing switch as a presence dot', () => {
    * branch.
    */
   it('offers an away provider a bell and nothing that rings', () => {
-    const detail = withoutComments(read('src/screens/ProviderDetailScreen.tsx'));
+    const detail = withoutComments(
+      read('src/screens/ProviderDetailScreen.tsx'),
+    );
     expect(detail).toMatch(
       /const away =\s*provider !== null && !readPresence\(provider\.presence, provider\.last_active_at\)\.here/,
     );
@@ -3597,12 +3848,19 @@ describe('no screen reads a listing switch as a presence dot', () => {
     // not a deletion, and the kill switches still gate their own channels.
     expect(hereBranch).toContain('onPress={onAudio}');
     expect(hereBranch).toContain('onPress={onVideo}');
-    expect(hereBranch).toContain('enabled={voiceCallsEnabled && provider.audio_enabled}');
-    expect(hereBranch).toContain('enabled={videoCallsEnabled && provider.video_enabled}');
+    expect(hereBranch).toContain(
+      'enabled={voiceCallsEnabled && provider.audio_enabled}',
+    );
+    expect(hereBranch).toContain(
+      'enabled={videoCallsEnabled && provider.video_enabled}',
+    );
   });
 
   it('says the same thing on the card and on Home, from the same test', () => {
-    for (const file of ['src/components/ProviderCard.tsx', 'src/screens/HomeScreen.tsx']) {
+    for (const file of [
+      'src/components/ProviderCard.tsx',
+      'src/screens/HomeScreen.tsx',
+    ]) {
       const body = withoutComments(read(file));
       // The identical expression ProviderRow uses, so "away" cannot come to mean
       // something else on a surface that renders the same person.
@@ -3612,9 +3870,9 @@ describe('no screen reads a listing switch as a presence dot', () => {
     }
     // Neither card has ever had a call or a video on it, and neither may grow
     // one: these are the surfaces where the rule is kept by absence.
-    expect(withoutComments(read('src/components/ProviderCard.tsx'))).not.toMatch(
-      /name="(call|video)"/,
-    );
+    expect(
+      withoutComments(read('src/components/ProviderCard.tsx')),
+    ).not.toMatch(/name="(call|video)"/);
     const home = withoutComments(read('src/screens/HomeScreen.tsx'));
     const featured = home.slice(
       home.indexOf('function FeaturedCard('),
@@ -3641,10 +3899,12 @@ describe('no screen reads a listing switch as a presence dot', () => {
     expect(realtime).not.toContain('presence:');
     expect(realtime).not.toContain('.track(');
     expect(realtime).not.toContain('presenceState');
-    expect(withoutComments(read('src/store/useStore.ts'))).not.toContain('peerOnline');
+    expect(withoutComments(read('src/store/useStore.ts'))).not.toContain(
+      'peerOnline',
+    );
     // Typing survives, and the distinction is the whole argument: it animates
     // because somebody is doing something on purpose, right now.
-    expect(realtime).toContain("broadcast: { self: false }");
+    expect(realtime).toContain('broadcast: { self: false }');
   });
 
   it('has no rail left in the inbox to confuse the two questions', () => {
@@ -3686,10 +3946,12 @@ describe('one presence control, writing both columns', () => {
     // `guard_event_shape` rejects an unknown name outright and rejects any prop
     // key matching /(body|message|content|text|detail|email|phone|name|token)/i,
     // so the prop is `choice` and never `name`.
-    expect(provider).toContain("track('presence_changed', { choice: presence })");
-    expect(read('supabase/migrations/011_reactions_replies_voice_calls.sql')).toContain(
-      "'presence_changed'",
+    expect(provider).toContain(
+      "track('presence_changed', { choice: presence })",
     );
+    expect(
+      read('supabase/migrations/011_reactions_replies_voice_calls.sql'),
+    ).toContain("'presence_changed'");
   });
 
   it('offers the choice to both roles in the same place', () => {
@@ -3722,7 +3984,9 @@ describe('one presence control, writing both columns', () => {
     expect(settings).toContain("from '../lib/legal'");
     expect(settings).toContain('legalUrl(');
     // Hard-coded host must not appear — the helper is the indirection point.
-    expect(withoutComments(settings)).not.toContain("'https://bond-app.vercel.app/");
+    expect(withoutComments(settings)).not.toContain(
+      "'https://bond-app.vercel.app/",
+    );
     const legal = read('src/lib/legal.ts');
     expect(legal).not.toMatch(/\$\{page\}\.html/);
   });
@@ -3730,7 +3994,9 @@ describe('one presence control, writing both columns', () => {
 
 describe('the website uses clean public URLs', () => {
   it('internal links omit the .html suffix', () => {
-    const pages = readdirSync(join(ROOT, 'web')).filter(f => f.endsWith('.html'));
+    const pages = readdirSync(join(ROOT, 'web')).filter(f =>
+      f.endsWith('.html'),
+    );
     for (const page of pages) {
       const html = read(join('web', page));
       const bad = html.match(/href="\/[^"]*\.html"/g) ?? [];
@@ -3758,7 +4024,10 @@ describe('the motion adoption is wired, not just drawn', () => {
     .map(f => ({ file: f, body: withoutComments(read(`src/screens/${f}`)) }));
   const components = readdirSync(join(ROOT, 'src/components'))
     .filter(f => f.endsWith('.tsx'))
-    .map(f => ({ file: f, body: withoutComments(read(`src/components/${f}`)) }));
+    .map(f => ({
+      file: f,
+      body: withoutComments(read(`src/components/${f}`)),
+    }));
 
   it('separates busy from disabled in the primitive', () => {
     // The bug this whole rule exists to fix: every call site used to pass
@@ -3816,7 +4085,9 @@ describe('the motion adoption is wired, not just drawn', () => {
     // coexist at body size. The sign-in claims this used to sit behind
     // (AuthScreen) are gone with that screen (Amit, 2026-09-03), but the
     // component itself must still not come back anywhere.
-    expect(existsSync(join(ROOT, 'src/components/WordCarousel.tsx'))).toBe(false);
+    expect(existsSync(join(ROOT, 'src/components/WordCarousel.tsx'))).toBe(
+      false,
+    );
   });
 
   it('is one continuous provider flow, not a second bloom welcome', () => {
@@ -3853,19 +4124,31 @@ describe('the motion adoption is wired, not just drawn', () => {
     // step — only if empty, so coming back via "Something is wrong" keeps their
     // typing — checked live with the member flow's check_display_name, and
     // compared against the PAN-verified name from the confirm step.
-    const screen = withoutComments(read('src/screens/ProviderApplicationScreen.tsx'));
+    const screen = withoutComments(
+      read('src/screens/ProviderApplicationScreen.tsx'),
+    );
     expect(screen).toContain('onPress={enterProfile}');
-    expect(screen).toMatch(/if \(displayName\.trim\(\) === ''\) \{\s*const first = suggestStageName\(\)/);
+    expect(screen).toMatch(
+      /if \(displayName\.trim\(\) === ''\) \{\s*const first = suggestStageName\(\)/,
+    );
     expect(screen).toContain('testID="provider-name-reroll"');
-    expect(screen).toContain("useCheckDisplayName(\n    displayName,\n    phase === 'profile',\n  )");
-    expect(screen).toContain('stageNamePii(displayName, fetched?.name ?? null)');
+    expect(screen).toContain(
+      "useCheckDisplayName(\n    displayName,\n    phase === 'profile',\n  )",
+    );
+    expect(screen).toContain(
+      'stageNamePii(displayName, fetched?.name ?? null)',
+    );
     expect(screen).toContain('testID="provider-name-pii-warning"');
     expect(screen).toContain('testID="provider-name-taken"');
     // A phone number blocks Go live; a real-name match only warns (heuristic).
-    expect(screen).toMatch(/const profileReady =[\s\S]*namePii !== 'phone' &&[\s\S]*!nameTaken &&/);
+    expect(screen).toMatch(
+      /const profileReady =[\s\S]*namePii !== 'phone' &&[\s\S]*!nameTaken &&/,
+    );
     // Every suggestion must pass the server's rule — the unit test walks the
     // whole space; this pins that the rule it walks is the server's.
-    const sql = read('supabase/migrations/040_profile_setup_and_first_interaction.sql');
+    const sql = read(
+      'supabase/migrations/040_profile_setup_and_first_interaction.sql',
+    );
     expect(sql).toContain("v_trimmed !~ '^[a-zA-Z0-9_]+$'");
     expect(sql).toContain('length(v_trimmed) < 3 or length(v_trimmed) > 24');
   });
@@ -3945,8 +4228,8 @@ describe('the motion adoption is wired, not just drawn', () => {
     const sheet = read('src/components/Sheet.tsx');
     // Cancel and Done are visible tinted-text bar buttons; they must get spring
     // feedback and a state layer, which only the shared Pressable provides.
-    expect(sheet).toContain("testID=\"sheet-cancel\"");
-    expect(sheet).toContain("testID=\"sheet-done\"");
+    expect(sheet).toContain('testID="sheet-cancel"');
+    expect(sheet).toContain('testID="sheet-done"');
     // Both testIDs are on our Pressable, not on a raw RNPressable tag.
     expect(sheet).not.toMatch(/<RNPressable[^>]*testID="sheet-cancel"/);
     expect(sheet).not.toMatch(/<RNPressable[^>]*testID="sheet-done"/);
@@ -3964,7 +4247,9 @@ describe('the motion adoption is wired, not just drawn', () => {
     const picker = read('src/components/CountryPicker.tsx');
     // The trigger pill and every country row are visible interactive controls.
     // After migration no raw Pressable import from react-native is needed.
-    expect(picker).not.toMatch(/import \{[^}]*\bPressable\b[^}]*\} from 'react-native'/);
+    expect(picker).not.toMatch(
+      /import \{[^}]*\bPressable\b[^}]*\} from 'react-native'/,
+    );
     expect(picker).toContain("from './Pressable'");
     expect(picker).toContain('press="chip"');
     expect(picker).toContain('press="row"');
@@ -3992,7 +4277,10 @@ describe('the motion adoption is wired, not just drawn', () => {
     const listSources = ['src/components', 'src/screens'].flatMap(dir =>
       readdirSync(join(ROOT, dir))
         .filter(f => f.endsWith('.tsx'))
-        .map(f => ({ file: `${dir}/${f}`, body: withoutComments(read(`${dir}/${f}`)) })),
+        .map(f => ({
+          file: `${dir}/${f}`,
+          body: withoutComments(read(`${dir}/${f}`)),
+        })),
     );
     const offenders = listSources
       .filter(s =>
@@ -4030,14 +4318,21 @@ describe('the motion adoption is wired, not just drawn', () => {
      *                     that dismisses the Modal-hosted reaction strip on an
      *                     outside tap; an invisible capture surface, not a button.
      */
-    const RAW_PRESSABLE_IMPORT = /import \{[^}]*\bPressable\b[^}]*\} from 'react-native'/;
+    const RAW_PRESSABLE_IMPORT =
+      /import \{[^}]*\bPressable\b[^}]*\} from 'react-native'/;
     const allSources = [
       ...readdirSync(join(ROOT, 'src/components'))
         .filter(f => f.endsWith('.tsx'))
-        .map(f => ({ file: `src/components/${f}`, body: withoutComments(read(`src/components/${f}`)) })),
+        .map(f => ({
+          file: `src/components/${f}`,
+          body: withoutComments(read(`src/components/${f}`)),
+        })),
       ...readdirSync(join(ROOT, 'src/screens'))
         .filter(f => f.endsWith('.tsx'))
-        .map(f => ({ file: `src/screens/${f}`, body: withoutComments(read(`src/screens/${f}`)) })),
+        .map(f => ({
+          file: `src/screens/${f}`,
+          body: withoutComments(read(`src/screens/${f}`)),
+        })),
     ];
     const rawUsers = allSources
       .filter(s => RAW_PRESSABLE_IMPORT.test(s.body))
@@ -4154,7 +4449,9 @@ describe('a Pressable with siblings in a tall column states its own height', () 
   /** Every AST node directly under this one, without babel's traverse machinery. */
   const childNodes = (node: t.Node): t.Node[] => {
     const out: t.Node[] = [];
-    for (const value of Object.values(node as unknown as Record<string, unknown>)) {
+    for (const value of Object.values(
+      node as unknown as Record<string, unknown>,
+    )) {
       if (Array.isArray(value)) {
         for (const item of value) {
           if (isNode(item)) out.push(item);
@@ -4172,7 +4469,11 @@ describe('a Pressable with siblings in a tall column states its own height', () 
   };
 
   const literal = (node: t.Node): string | number | null =>
-    t.isStringLiteral(node) ? node.value : t.isNumericLiteral(node) ? node.value : null;
+    t.isStringLiteral(node)
+      ? node.value
+      : t.isNumericLiteral(node)
+      ? node.value
+      : null;
 
   /**
    * An object literal's properties. A spread is kept as `...<source text>` so
@@ -4186,13 +4487,19 @@ describe('a Pressable with siblings in a tall column states its own height', () 
         const key = t.isIdentifier(prop.key)
           ? prop.key.name
           : t.isStringLiteral(prop.key)
-            ? prop.key.value
-            : null;
+          ? prop.key.value
+          : null;
         if (key !== null) {
-          out.push([key, t.isExpression(prop.value) ? literal(prop.value) : null]);
+          out.push([
+            key,
+            t.isExpression(prop.value) ? literal(prop.value) : null,
+          ]);
         }
       } else if (t.isSpreadElement(prop)) {
-        out.push([`...${code.slice(prop.argument.start ?? 0, prop.argument.end ?? 0)}`, null]);
+        out.push([
+          `...${code.slice(prop.argument.start ?? 0, prop.argument.end ?? 0)}`,
+          null,
+        ]);
       }
     }
     return out;
@@ -4214,12 +4521,13 @@ describe('a Pressable with siblings in a tall column states its own height', () 
       const arg = node.arguments[0];
       if (!t.isObjectExpression(arg)) return;
       for (const prop of arg.properties) {
-        if (!t.isObjectProperty(prop) || !t.isObjectExpression(prop.value)) continue;
+        if (!t.isObjectProperty(prop) || !t.isObjectExpression(prop.value))
+          continue;
         const name = t.isIdentifier(prop.key)
           ? prop.key.name
           : t.isStringLiteral(prop.key)
-            ? prop.key.value
-            : null;
+          ? prop.key.value
+          : null;
         if (name !== null) table.set(name, objectProps(prop.value, code));
       }
     });
@@ -4241,7 +4549,8 @@ describe('a Pressable with siblings in a tall column states its own height', () 
   ): void => {
     if (node === null || node === undefined) return;
     if (t.isArrayExpression(node)) {
-      for (const element of node.elements) resolveStyle(element, table, code, into);
+      for (const element of node.elements)
+        resolveStyle(element, table, code, into);
       return;
     }
     if (t.isLogicalExpression(node)) {
@@ -4273,19 +4582,26 @@ describe('a Pressable with siblings in a tall column states its own height', () 
   ): StyleProp[] => {
     if (element === null) return [];
     const attribute = element.openingElement.attributes.find(
-      (a): a is t.JSXAttribute => t.isJSXAttribute(a) && a.name.name === 'style',
+      (a): a is t.JSXAttribute =>
+        t.isJSXAttribute(a) && a.name.name === 'style',
     );
-    if (attribute === undefined || !t.isJSXExpressionContainer(attribute.value)) return [];
+    if (attribute === undefined || !t.isJSXExpressionContainer(attribute.value))
+      return [];
     const resolved: StyleProp[] = [];
     resolveStyle(attribute.value.expression, table, code, resolved);
     return resolved;
   };
 
-  const has = (style: StyleProp[], key: string): boolean => style.some(([k]) => k === key);
+  const has = (style: StyleProp[], key: string): boolean =>
+    style.some(([k]) => k === key);
   /** Last writer wins, the way `StyleSheet.flatten` merges an array. */
-  const valueOf = (style: StyleProp[], key: string): string | number | null | undefined =>
+  const valueOf = (
+    style: StyleProp[],
+    key: string,
+  ): string | number | null | undefined =>
     [...style].reverse().find(([k]) => k === key)?.[1];
-  const isRow = (style: StyleProp[]): boolean => valueOf(style, 'flexDirection') === 'row';
+  const isRow = (style: StyleProp[]): boolean =>
+    valueOf(style, 'flexDirection') === 'row';
 
   const elementName = (element: t.JSXElement, code: string): string =>
     code.slice(
@@ -4342,12 +4658,18 @@ describe('a Pressable with siblings in a tall column states its own height', () 
         const style = styleOf(element, table, code);
         if (isRow(style)) return false;
         if (has(style, 'height') || has(style, 'minHeight')) return true;
-        if (style.some(([key]) => key.startsWith('...') && key.includes('absoluteFill'))) {
+        if (
+          style.some(
+            ([key]) => key.startsWith('...') && key.includes('absoluteFill'),
+          )
+        ) {
           return true;
         }
         const parentStyle = styleOf(parentOf.get(element) ?? null, table, code);
         if (
-          (has(style, 'flex') || has(style, 'flexGrow') || has(style, 'flexBasis')) &&
+          (has(style, 'flex') ||
+            has(style, 'flexGrow') ||
+            has(style, 'flexBasis')) &&
           !isRow(parentStyle)
         ) {
           return true;
@@ -4356,7 +4678,10 @@ describe('a Pressable with siblings in a tall column states its own height', () 
       };
 
       /** Child slots of `parent` that do not contain `self`. */
-      const siblingCount = (parent: t.JSXElement, self: t.JSXElement): number => {
+      const siblingCount = (
+        parent: t.JSXElement,
+        self: t.JSXElement,
+      ): number => {
         let count = 0;
         for (const child of parent.children) {
           const slot = t.isJSXExpressionContainer(child)
@@ -4364,8 +4689,8 @@ describe('a Pressable with siblings in a tall column states its own height', () 
               ? null // a `{/* comment */}`, which lays nothing out
               : child.expression
             : t.isJSXElement(child)
-              ? child
-              : null;
+            ? child
+            : null;
           if (slot === null) continue;
           let containsSelf = false;
           walkAst(slot, node => {
@@ -4386,7 +4711,10 @@ describe('a Pressable with siblings in a tall column states its own height', () 
         if (!isTallColumn(parent)) continue;
         if (siblingCount(parent, element) === 0) continue;
         offenders.push(
-          `${file}:${element.loc?.start.line ?? 0} inside <${elementName(parent, code)}>`,
+          `${file}:${element.loc?.start.line ?? 0} inside <${elementName(
+            parent,
+            code,
+          )}>`,
         );
       }
     }
@@ -4437,7 +4765,7 @@ describe('admin control plane key hygiene', () => {
     if (!adminExists) return;
     const apiDir = join(ADMIN_ROOT, 'app/api');
     if (!existsSync(apiDir)) return;
-    const routeFiles = walk(apiDir).filter((f) => f.endsWith('route.ts'));
+    const routeFiles = walk(apiDir).filter(f => f.endsWith('route.ts'));
     expect(routeFiles.length).toBeGreaterThan(0);
     for (const file of routeFiles) {
       const content = readFileSync(file, 'utf8');
@@ -4450,7 +4778,7 @@ describe('admin control plane key hygiene', () => {
     const appDir = join(ADMIN_ROOT, 'app/(authenticated)');
     if (!existsSync(appDir)) return;
     const pageFiles = walk(appDir).filter(
-      (f) => f.endsWith('page.tsx') || f.endsWith('layout.tsx'),
+      f => f.endsWith('page.tsx') || f.endsWith('layout.tsx'),
     );
     for (const file of pageFiles) {
       const content = withoutComments(readFileSync(file, 'utf8'));
@@ -4485,25 +4813,37 @@ describe('admin control plane key hygiene', () => {
 // M3 spec: https://m3.material.io/components/progress-indicators/guidelines
 
 describe('media upload uses M3 determinate progress, not ActivityIndicator', () => {
-  const SRC_DIRS = ['src/lib', 'src/api', 'src/components', 'src/screens', 'src/store'];
+  const SRC_DIRS = [
+    'src/lib',
+    'src/api',
+    'src/components',
+    'src/screens',
+    'src/store',
+  ];
 
   /** All .ts / .tsx files under the given directory (non-recursive, one level). */
   function srcFiles(dir: string): string[] {
     const abs = join(ROOT, dir);
     if (!existsSync(abs)) return [];
     return readdirSync(abs, { withFileTypes: false })
-      .filter(f => typeof f === 'string' && (f.endsWith('.ts') || f.endsWith('.tsx')))
+      .filter(
+        f => typeof f === 'string' && (f.endsWith('.ts') || f.endsWith('.tsx')),
+      )
       .map(f => join(dir, f as string));
   }
 
   it('uses no ActivityIndicator in src/ (stripped of comments)', () => {
     // Policy: RN's ActivityIndicator draws Android's Material sweep, not M3.
     // Use LoadingIndicator for indeterminate, ProgressBar for determinate.
-    const activityIndicatorPattern = /<ActivityIndicator|ActivityIndicator[,}]|ActivityIndicator\s*from/;
+    const activityIndicatorPattern =
+      /<ActivityIndicator|ActivityIndicator[,}]|ActivityIndicator\s*from/;
     for (const dir of SRC_DIRS) {
       for (const file of srcFiles(dir)) {
         const stripped = withoutComments(read(file));
-        expect({ file, match: activityIndicatorPattern.test(stripped) }).toEqual({
+        expect({
+          file,
+          match: activityIndicatorPattern.test(stripped),
+        }).toEqual({
           file,
           match: false,
         });
@@ -4543,7 +4883,7 @@ describe('media upload uses M3 determinate progress, not ActivityIndicator', () 
     const turn = read('src/components/Turn.tsx');
     // Must import ProgressBar, not LoadingIndicator (no new import).
     expect(turn).toContain("import { ProgressBar } from './ProgressBar'");
-    expect(turn).not.toContain("LoadingIndicator");
+    expect(turn).not.toContain('LoadingIndicator');
     // The bar receives a numeric progress value from the store.
     expect(turn).toContain('uploadProgress');
     expect(turn).toContain('progress={pending ? uploadFraction : undefined}');
@@ -4565,7 +4905,10 @@ describe('media upload uses M3 determinate progress, not ActivityIndicator', () 
     // the last indeterminate `translateX` and rendered as a short bar floating in
     // the middle of the track. Both branches must set BOTH properties.
     const bar = read('src/components/ProgressBar.tsx');
-    const style = bar.slice(bar.indexOf('const fillStyle'), bar.indexOf('return (\n    <View'));
+    const style = bar.slice(
+      bar.indexOf('const fillStyle'),
+      bar.indexOf('return (\n    <View'),
+    );
     // Determinate: explicit translateX 0 alongside the width.
     expect(style).toContain('transform: [{ translateX: 0 }]');
     // Indeterminate: a travelling segment, so it also sets width.
@@ -4614,10 +4957,18 @@ describe('independent call controls', () => {
     // Each live control still reaches its own action; since 064 it does so
     // ANDed with the provider's own switch for that channel, never replaced by
     // it. An operator stop and a provider's choice both have to hold.
-    expect(chat).toContain('voiceCallsEnabled && (provider?.audio_enabled ?? true)');
-    expect(chat).toContain('videoCallsEnabled && (provider?.video_enabled ?? true)');
-    expect(detail).toContain('enabled={voiceCallsEnabled && provider.audio_enabled}');
-    expect(detail).toContain('enabled={videoCallsEnabled && provider.video_enabled}');
+    expect(chat).toContain(
+      'voiceCallsEnabled && (provider?.audio_enabled ?? true)',
+    );
+    expect(chat).toContain(
+      'videoCallsEnabled && (provider?.video_enabled ?? true)',
+    );
+    expect(detail).toContain(
+      'enabled={voiceCallsEnabled && provider.audio_enabled}',
+    );
+    expect(detail).toContain(
+      'enabled={videoCallsEnabled && provider.video_enabled}',
+    );
   });
 
   it('enforces both controls inside start_call, not only in the UI', () => {
@@ -4637,7 +4988,9 @@ describe('post-release UI regressions', () => {
     const app = read('App.tsx');
     const profile = read('src/api/profileSetup.ts');
     const onboarding = read('src/screens/OnboardingScreen.tsx');
-    expect(profile).toContain("profile?.role === 'member' && profile.token_balance === 0");
+    expect(profile).toContain(
+      "profile?.role === 'member' && profile.token_balance === 0",
+    );
     expect(app).toContain('firstUser && needsProfileSetup(p)');
     expect(app).toContain('firstUser && needsAgeBracket(p)');
     expect(onboarding).toContain('isFirstUser(profile ?? undefined)');
@@ -4677,7 +5030,9 @@ describe('post-release UI regressions', () => {
     const setup = read('src/screens/ProfileSetupScreen.tsx');
     expect(setup).toContain('size={22}');
     expect(setup).toMatch(/termsRow:\s*\{[\s\S]*?alignItems:\s*'center'/);
-    expect(setup).toMatch(/checkboxHit:\s*\{[\s\S]*?width:\s*22[\s\S]*?height:\s*22/);
+    expect(setup).toMatch(
+      /checkboxHit:\s*\{[\s\S]*?width:\s*22[\s\S]*?height:\s*22/,
+    );
   });
 });
 
@@ -4711,9 +5066,13 @@ describe('first-send refill: all three send paths open recharge on first success
     // Server-side balance failures open the refill sheet immediately without
     // going through the first-send path (which only fires on success).
     expect(voice).toContain("code === 'INSUFFICIENT_BALANCE'");
-    expect(voice).toMatch(/code === 'INSUFFICIENT_BALANCE'[\s\S]{0,40}openRefill\(\)/);
+    expect(voice).toMatch(
+      /code === 'INSUFFICIENT_BALANCE'[\s\S]{0,40}openRefill\(\)/,
+    );
     expect(image).toContain("code === 'INSUFFICIENT_BALANCE'");
-    expect(image).toMatch(/code === 'INSUFFICIENT_BALANCE'[\s\S]{0,40}openRefill\(\)/);
+    expect(image).toMatch(
+      /code === 'INSUFFICIENT_BALANCE'[\s\S]{0,40}openRefill\(\)/,
+    );
   });
 });
 
@@ -4809,13 +5168,19 @@ describe('attach panel', () => {
   it('keeps the two docked surfaces exclusive', () => {
     // Opening either closes the other, so the dock is only ever one keyboard
     // tall. Asserted on both directions because one of them is easy to forget.
-    expect(composer).toMatch(/setAttachOpen\(false\);[\s\S]{0,80}setEmojiOpen\(true\)/);
-    expect(composer).toMatch(/setEmojiOpen\(false\);[\s\S]{0,120}setAttachOpen\(true\)/);
+    expect(composer).toMatch(
+      /setAttachOpen\(false\);[\s\S]{0,80}setEmojiOpen\(true\)/,
+    );
+    expect(composer).toMatch(
+      /setEmojiOpen\(false\);[\s\S]{0,120}setAttachOpen\(true\)/,
+    );
   });
 
   it('sizes both panels from the same expression', () => {
     // If these ever diverge the composer moves on the swap between them.
-    const heights = composer.match(/height=\{[^}]*panelHeight \+ insets\.bottom[^}]*\}/g);
+    const heights = composer.match(
+      /height=\{[^}]*panelHeight \+ insets\.bottom[^}]*\}/g,
+    );
     expect(heights?.length).toBeGreaterThanOrEqual(2);
   });
 
@@ -4823,8 +5188,12 @@ describe('attach panel', () => {
     // A permission dialog fired by opening a panel is a prompt the user never
     // asked for. `check` is silent; the request belongs on the capture tap.
     // https://developer.android.com/training/permissions/requesting
-    expect(composer).toContain('PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA)');
-    expect(composer).toMatch(/requestAndroidPermission\(\s*PermissionsAndroid\.PERMISSIONS\.CAMERA/);
+    expect(composer).toContain(
+      'PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA)',
+    );
+    expect(composer).toMatch(
+      /requestAndroidPermission\(\s*PermissionsAndroid\.PERMISSIONS\.CAMERA/,
+    );
   });
 
   it('never declares a restricted media-read permission', () => {
@@ -4881,9 +5250,7 @@ describe('attach panel', () => {
      */
     expect(declared('READ_MEDIA_IMAGES')).toBe(false);
     // And the two image-picker brings in are actively removed, not just absent.
-    expect(manifest).toMatch(
-      /READ_MEDIA_IMAGES"[^>]*tools:node="remove"/,
-    );
+    expect(manifest).toMatch(/READ_MEDIA_IMAGES"[^>]*tools:node="remove"/);
     // And no camera-roll library, which is the other way this arrives.
     const pkg = JSON.parse(read('package.json')) as {
       dependencies: Record<string, string>;
@@ -4909,7 +5276,9 @@ describe('attach panel', () => {
     // `slotSettled` is a second gate: CameraX must not bind to a TextureView
     // that is still mid-travel (zero-sized or clipped), verified on the API-36
     // emulator 2026-09-04.
-    expect(panel).toContain('visible && slotSettled && foreground && cameraGranted');
+    expect(panel).toContain(
+      'visible && slotSettled && foreground && cameraGranted',
+    );
     expect(panel).toContain("AppState.addEventListener('change'");
   });
 });
@@ -4959,7 +5328,9 @@ describe('docked panel travel', () => {
 
   it('never animates a panel-to-panel swap', () => {
     // Swapping emoji for attach changes no height, so there is nothing to move.
-    expect(composer).toMatch(/if \(shown === null\) \{\s*dockY\.value = slotHeight/);
+    expect(composer).toMatch(
+      /if \(shown === null\) \{\s*dockY\.value = slotHeight/,
+    );
   });
 });
 
@@ -4976,11 +5347,15 @@ describe('docked panel travel', () => {
  */
 describe('ambient beats (tab-select, emoji-pick, picker-open) are silent', () => {
   it('FloatingToolbar fires no tick on tab select', () => {
-    expect(withoutComments(read('src/components/FloatingToolbar.tsx'))).not.toContain('tick()');
+    expect(
+      withoutComments(read('src/components/FloatingToolbar.tsx')),
+    ).not.toContain('tick()');
   });
 
   it('EmojiPicker fires no tick on pick or tone-strip open', () => {
-    expect(withoutComments(read('src/components/EmojiPicker.tsx'))).not.toContain('tick()');
+    expect(
+      withoutComments(read('src/components/EmojiPicker.tsx')),
+    ).not.toContain('tick()');
   });
 
   it('Composer fires no tick when the gallery or camera picker opens', () => {
@@ -5003,7 +5378,8 @@ describe('profiles: every server-owned column is guarded against the owner', () 
    * time, so this pins the NEWEST definition: whoever redefines it next must
    * keep every column below, or say so here.
    */
-  const DEFINE = 'create or replace function public.guard_privileged_profile_columns';
+  const DEFINE =
+    'create or replace function public.guard_privileged_profile_columns';
   const files = readdirSync(join(ROOT, 'supabase/migrations'))
     .filter(f => f.endsWith('.sql'))
     .sort()
@@ -5039,23 +5415,38 @@ describe('profiles: every server-owned column is guarded against the owner', () 
     'median_reply_seconds',
     'engagement_nudged_at',
   ])('guards profiles.%s', column => {
-    expect(body).toMatch(new RegExp(`new\\.${column} is distinct from old\\.${column}`));
+    expect(body).toMatch(
+      new RegExp(`new\\.${column} is distinct from old\\.${column}`),
+    );
   });
 
-  it('leaves the client\'s real direct writes alone', () => {
+  it("leaves the client's real direct writes alone", () => {
     // src/api/provider.ts writes exactly these from the device.
-    for (const column of ['is_available', 'presence', 'presence_visible', 'avatar_url']) {
+    for (const column of [
+      'is_available',
+      'presence',
+      'presence_visible',
+      'avatar_url',
+    ]) {
       expect(body).not.toMatch(new RegExp(`new\\.${column} is distinct from`));
     }
     const provider = withoutComments(read('src/api/provider.ts'));
-    for (const column of ['promo_balance', 'purchased_balance', 'token_balance', 'rating_avg', 'suspended_until']) {
+    for (const column of [
+      'promo_balance',
+      'purchased_balance',
+      'token_balance',
+      'rating_avg',
+      'suspended_until',
+    ]) {
       expect(provider).not.toMatch(new RegExp(`\\.update\\(\\{[^}]*${column}`));
     }
   });
 
   it('is registered in the harness with its suite', () => {
     const dbTest = read('scripts/db-test.mjs');
-    expect(dbTest).toContain('063_profile_guard_covers_every_server_owned_column.sql');
+    expect(dbTest).toContain(
+      '063_profile_guard_covers_every_server_owned_column.sql',
+    );
     expect(dbTest).toContain('250_profile_guard_server_owned_columns.sql');
   });
 });
@@ -5068,7 +5459,9 @@ describe('a provider offers the channels they choose, and at least one', () => {
     // unreachable on every channel" is exactly what is_available = false
     // already says, and it says it honestly.
     expect(migration).toContain('profiles_at_least_one_channel');
-    expect(migration).toContain('check (chat_enabled or audio_enabled or video_enabled)');
+    expect(migration).toContain(
+      'check (chat_enabled or audio_enabled or video_enabled)',
+    );
   });
 
   it('enforces on the table every path inserts into, not in the callers', () => {
@@ -5080,7 +5473,9 @@ describe('a provider offers the channels they choose, and at least one', () => {
      * silently dropped four guards (063). So: one BEFORE INSERT trigger.
      */
     expect(migration).toContain('before insert on public.session_requests');
-    expect(migration).toContain('execute function public.enforce_provider_channel()');
+    expect(migration).toContain(
+      'execute function public.enforce_provider_channel()',
+    );
     expect(migration).toContain("errcode = 'P0009'");
     // The predicate must survive a missing row as "allowed", and must say so
     // by returning true rather than by leaning on NULL semantics in the caller.
@@ -5091,7 +5486,9 @@ describe('a provider offers the channels they choose, and at least one', () => {
     // The body is 053's verbatim plus the P0009 branch. Everything else that
     // gates a call — the kill switches, suspension, the cold-call rule — must
     // still be there, because a wholesale re-statement is where guards vanish.
-    const body = migration.slice(migration.indexOf('create or replace function public.start_call'));
+    const body = migration.slice(
+      migration.indexOf('create or replace function public.start_call'),
+    );
     expect(body).toContain("when sqlstate 'P0009' then");
     expect(body).toContain('CHANNEL_DISABLED_BY_PROVIDER');
     for (const kept of [
@@ -5107,47 +5504,79 @@ describe('a provider offers the channels they choose, and at least one', () => {
   });
 
   it('publishes the three columns to the member, appended to the directory', () => {
-    const view = migration.slice(migration.indexOf('create or replace view public.provider_directory'));
+    const view = migration.slice(
+      migration.indexOf('create or replace view public.provider_directory'),
+    );
     // Appended AFTER the 042 columns: create or replace cannot drop or reorder
     // what other objects select from.
-    expect(view.indexOf('p.about')).toBeLessThan(view.indexOf('p.chat_enabled'));
-    for (const column of ['p.chat_enabled', 'p.audio_enabled', 'p.video_enabled']) {
+    expect(view.indexOf('p.about')).toBeLessThan(
+      view.indexOf('p.chat_enabled'),
+    );
+    for (const column of [
+      'p.chat_enabled',
+      'p.audio_enabled',
+      'p.video_enabled',
+    ]) {
       expect(view).toContain(column);
     }
-    expect(read('src/lib/database.types.ts')).toMatch(/chat_enabled: boolean;\s*\n\s*audio_enabled: boolean;/);
+    expect(read('src/lib/database.types.ts')).toMatch(
+      /chat_enabled: boolean;\s*\n\s*audio_enabled: boolean;/,
+    );
   });
 
-  it('leaves the columns the provider\'s own, like availability', () => {
+  it("leaves the columns the provider's own, like availability", () => {
     // Deliberately NOT in the 063 guard: being reachable or not is the one
     // thing about themselves a person must be able to change instantly.
-    const guard = read('supabase/migrations/063_profile_guard_covers_every_server_owned_column.sql');
+    const guard = read(
+      'supabase/migrations/063_profile_guard_covers_every_server_owned_column.sql',
+    );
     for (const column of ['chat_enabled', 'audio_enabled', 'video_enabled']) {
       expect(guard).not.toContain(`new.${column} is distinct from`);
     }
-    expect(withoutComments(read('src/api/provider.ts'))).toContain('export function useSetChannels');
+    expect(withoutComments(read('src/api/provider.ts'))).toContain(
+      'export function useSetChannels',
+    );
   });
 
   it('says so on every member surface before the tap, and once after', () => {
-    const detail = withoutComments(read('src/screens/ProviderDetailScreen.tsx'));
+    const detail = withoutComments(
+      read('src/screens/ProviderDetailScreen.tsx'),
+    );
     expect(detail).toContain('enabled={provider.chat_enabled}');
-    expect(detail).toContain('enabled={voiceCallsEnabled && provider.audio_enabled}');
-    expect(detail).toContain('enabled={videoCallsEnabled && provider.video_enabled}');
+    expect(detail).toContain(
+      'enabled={voiceCallsEnabled && provider.audio_enabled}',
+    );
+    expect(detail).toContain(
+      'enabled={videoCallsEnabled && provider.video_enabled}',
+    );
     // A kill switch and a provider's choice are different refusals with
     // different remedies, so they read differently.
     expect(detail).toContain("', not offered'");
 
     const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
-    expect(chat).toContain('const canStartAudio = voiceCallsEnabled && (provider?.audio_enabled ?? true)');
-    expect(chat).toContain('const canStartVideo = videoCallsEnabled && (provider?.video_enabled ?? true)');
+    expect(chat).toContain(
+      'const canStartAudio = voiceCallsEnabled && (provider?.audio_enabled ?? true)',
+    );
+    expect(chat).toContain(
+      'const canStartVideo = videoCallsEnabled && (provider?.video_enabled ?? true)',
+    );
     // The composer closes only when a NEW session would be refused.
-    expect(chat).toMatch(/chatClosed =\s*isMemberSide && !peerOffersChat && activeSession === null && pendingRequest === null/);
+    expect(chat).toMatch(
+      /chatClosed =\s*isMemberSide && !peerOffersChat && activeSession === null && pendingRequest === null/,
+    );
 
     // And the refusal that still gets through is mapped once, for all three
     // send paths, rather than three times.
     const helper = withoutComments(read('src/lib/sendErrors.ts'));
     expect(helper).toContain("CHANNEL_DISABLED_SQLSTATE = 'P0009'");
-    for (const file of ['src/api/chat.ts', 'src/api/voice.ts', 'src/api/attachments.ts']) {
-      expect(withoutComments(read(file))).toContain('sendResultFrom(data, error)');
+    for (const file of [
+      'src/api/chat.ts',
+      'src/api/voice.ts',
+      'src/api/attachments.ts',
+    ]) {
+      expect(withoutComments(read(file))).toContain(
+        'sendResultFrom(data, error)',
+      );
       expect(read(file)).toContain('CHANNEL_DISABLED_BY_PROVIDER');
     }
   });
@@ -5177,8 +5606,12 @@ describe('the directory is grouped and filterable: Listeners, Astrologers, ages'
   it('is a tag on the same provider, not a second product', () => {
     // Decided 2026-09-06: same onboarding, same rates. A category-level rate
     // would be an amendment to ADR-0021, not a column here.
-    expect(migration).toContain("add column if not exists provider_category text not null default 'listener'");
-    expect(migration).toContain("check (provider_category in ('listener', 'astrologer'))");
+    expect(migration).toContain(
+      "add column if not exists provider_category text not null default 'listener'",
+    );
+    expect(migration).toContain(
+      "check (provider_category in ('listener', 'astrologer'))",
+    );
     // text + CHECK, not an enum: ALTER TYPE ADD VALUE cannot share a
     // transaction with other DDL and this set will grow (054:30-33).
     expect(migration).not.toMatch(/create type public\.provider_category/);
@@ -5188,7 +5621,9 @@ describe('the directory is grouped and filterable: Listeners, Astrologers, ages'
   });
 
   it('is set once at onboarding and not client-writable after', () => {
-    expect(migration).toContain('new.provider_category is distinct from old.provider_category');
+    expect(migration).toContain(
+      'new.provider_category is distinct from old.provider_category',
+    );
     expect(migration).toContain('p_provider_category text default');
     // Dropped, never overloaded: a 5th parameter with a default would leave
     // both signatures resolvable and every 4-arg call would fail as
@@ -5200,12 +5635,27 @@ describe('the directory is grouped and filterable: Listeners, Astrologers, ages'
 
   it('re-states the 063 guard without losing a column', () => {
     // 054 dropped four guards this way. Every column 063 named must survive.
-    const body = migration.slice(migration.indexOf('create or replace function public.guard_privileged_profile_columns'));
+    const body = migration.slice(
+      migration.indexOf(
+        'create or replace function public.guard_privileged_profile_columns',
+      ),
+    );
     for (const column of [
-      'role', 'identity_verified_at', 'identity_state', 'date_of_birth', 'age_bracket',
-      'suspended_until', 'profile_completed_at', 'promo_balance', 'purchased_balance',
-      'token_balance', 'last_refill_at', 'rating_avg', 'rating_count',
-      'median_reply_seconds', 'engagement_nudged_at',
+      'role',
+      'identity_verified_at',
+      'identity_state',
+      'date_of_birth',
+      'age_bracket',
+      'suspended_until',
+      'profile_completed_at',
+      'promo_balance',
+      'purchased_balance',
+      'token_balance',
+      'last_refill_at',
+      'rating_avg',
+      'rating_count',
+      'median_reply_seconds',
+      'engagement_nudged_at',
     ]) {
       expect(body).toContain(`new.${column} is distinct from old.${column}`);
     }
@@ -5219,14 +5669,21 @@ describe('the directory is grouped and filterable: Listeners, Astrologers, ages'
     // `provider_directory.age` is an integer and has been since 042. A second
     // definition of the band boundaries is a second place for them to drift.
     expect(migration).not.toContain('age_bracket text');
-    expect(migration).toContain('extract(year from age(p.date_of_birth))::int as age');
+    expect(migration).toContain(
+      'extract(year from age(p.date_of_birth))::int as age',
+    );
     const filters = withoutComments(read('src/lib/providerFilters.ts'));
     expect(filters).toContain('export function ageBand');
     expect(filters).toContain("'18-24'");
     expect(filters).toContain("'45+'");
     // Bands live only here — no screen re-derives them.
-    for (const file of ['src/screens/HomeScreen.tsx', 'src/screens/ProviderDetailScreen.tsx']) {
-      expect(withoutComments(read(file))).not.toMatch(/age\s*<\s*25|age\s*<\s*35|age\s*<\s*45/);
+    for (const file of [
+      'src/screens/HomeScreen.tsx',
+      'src/screens/ProviderDetailScreen.tsx',
+    ]) {
+      expect(withoutComments(read(file))).not.toMatch(
+        /age\s*<\s*25|age\s*<\s*35|age\s*<\s*45/,
+      );
     }
   });
 
@@ -5256,7 +5713,9 @@ describe('the directory is grouped and filterable: Listeners, Astrologers, ages'
     expect(home.indexOf('testID="explore-tabs"')).toBeLessThan(
       home.indexOf('ListHeaderComponent={ExploreHeader}'),
     );
-    expect(home).toContain('(categoryById.get(c.peer_id) ?? DEFAULT_CATEGORY) === exploreCategory');
+    expect(home).toContain(
+      '(categoryById.get(c.peer_id) ?? DEFAULT_CATEGORY) === exploreCategory',
+    );
     // A peer with no directory row keeps their thread under the default tab: a
     // conversation you have had is not something a filter may hide from you.
     expect(home).toContain('categoryById.get(c.peer_id) ?? DEFAULT_CATEGORY');
@@ -5289,13 +5748,19 @@ describe('the directory is grouped and filterable: Listeners, Astrologers, ages'
     expect(home).toContain('OFFERED_LANGUAGES.map');
     expect(home).toContain('searchTopics.map');
     // Search spans BOTH categories: the tab is an Explore idea.
-    expect(home).toContain('const narrowed = filterProviders(allProviders, searchFilter)');
+    expect(home).toContain(
+      'const narrowed = filterProviders(allProviders, searchFilter)',
+    );
     // Chips alone are a search: no query required (Amit, 2026-09-06).
     expect(home).toContain('return isFiltering(searchFilter) ? narrowed : []');
-    expect(home).toContain("const asking = trimmed !== '' || isFiltering(searchFilter)");
+    expect(home).toContain(
+      "const asking = trimmed !== '' || isFiltering(searchFilter)",
+    );
     // Filters are per search session, or the next search silently returns
     // fewer people for a reason that is off screen.
-    expect(home).toMatch(/setSearching\(false\);[\s\S]{0,120}setSearchFilter\(NO_FILTER\)/);
+    expect(home).toMatch(
+      /setSearching\(false\);[\s\S]{0,120}setSearchFilter\(NO_FILTER\)/,
+    );
     /*
      * The category is on EVERY card now, not only in search, and `showCategory`
      * is gone — Amit, 2026-09-08: "there should be tag of listener /
@@ -5320,15 +5785,21 @@ describe('the directory is grouped and filterable: Listeners, Astrologers, ages'
     expect(row).toContain('testID="provider-category"');
     // In the price line's slot, not the pill row's.
     const priceLine = row.slice(row.indexOf('<View style={styles.priceLine}>'));
-    expect(priceLine.slice(0, priceLine.indexOf('</View>'))).toContain('label={category}');
+    expect(priceLine.slice(0, priceLine.indexOf('</View>'))).toContain(
+      'label={category}',
+    );
   });
 
   it('asks the provider once, at onboarding', () => {
-    const screen = withoutComments(read('src/screens/ProviderApplicationScreen.tsx'));
+    const screen = withoutComments(
+      read('src/screens/ProviderApplicationScreen.tsx'),
+    );
     expect(screen).toContain('testID="provider-category"');
     expect(screen).toContain('useState<ProviderCategory>(DEFAULT_CATEGORY)');
     expect(screen).toContain('category,');
-    expect(withoutComments(read('src/api/provider.ts'))).toContain('p_provider_category: draft.category');
+    expect(withoutComments(read('src/api/provider.ts'))).toContain(
+      'p_provider_category: draft.category',
+    );
   });
 
   it('is registered in the harness with its suite', () => {
@@ -5341,7 +5812,7 @@ describe('the directory is grouped and filterable: Listeners, Astrologers, ages'
 describe('search opens the way Telegram opens it, and the week has a carousel', () => {
   const home = withoutComments(read('src/screens/HomeScreen.tsx'));
 
-  it('crossfades one row in place, on Telegram\'s own 350ms', () => {
+  it("crossfades one row in place, on Telegram's own 350ms", () => {
     /*
      * CORRECTED 2026-09-07, and this gate is the reason the correction had to
      * reach a test rather than only a comment: it pinned `searchToggle` = 150
@@ -5368,8 +5839,12 @@ describe('search opens the way Telegram opens it, and the week has a carousel', 
     expect(read('design/tokens.json')).toContain('"searchField": 350');
     expect(read('design/tokens.json')).not.toContain('"searchToggle"');
     const motion = read('src/theme/motion.ts');
-    expect(motion).toContain('export const searchIn = FadeIn.duration(DURATION.searchField)');
-    expect(motion).toContain('export const searchOut = FadeOut.duration(DURATION.searchField)');
+    expect(motion).toContain(
+      'export const searchIn = FadeIn.duration(DURATION.searchField)',
+    );
+    expect(motion).toContain(
+      'export const searchOut = FadeOut.duration(DURATION.searchField)',
+    );
     expect(motion).toContain('.easing(EASE_OUT_QUINT)');
     expect(motion).toContain('DialogsActivity.java:307-308');
     // Both states are Animated rows sharing one container, so the crossfade has
@@ -5388,8 +5863,12 @@ describe('search opens the way Telegram opens it, and the week has a carousel', 
      */
     expect(bar).toContain('entering={enter}');
     expect(bar).toContain('exiting={exit}');
-    expect(bar).toContain('const enter = mounted.current ? searchIn : undefined');
-    expect(bar).toContain('const exit = mounted.current ? searchOut : undefined');
+    expect(bar).toContain(
+      'const enter = mounted.current ? searchIn : undefined',
+    );
+    expect(bar).toContain(
+      'const exit = mounted.current ? searchOut : undefined',
+    );
     /*
      * ONE `navRow` now, not two. The search state has its own `searchRow`
      * (2026-09-07): the field is MATCH_PARENT with 7dp side margins in the
@@ -5476,7 +5955,9 @@ describe('search opens the way Telegram opens it, and the week has a carousel', 
     // `onSearchClose` is the prop each screen passes its own exit to — Home
     // still hands it `closeSearch`, gated just below.
     expect(searchRow).toContain('onExit={onSearchClose}');
-    expect(read('src/screens/HomeScreen.tsx')).toContain('onSearchClose={closeSearch}');
+    expect(read('src/screens/HomeScreen.tsx')).toContain(
+      'onSearchClose={closeSearch}',
+    );
     // The field IS the row: one child, on the reference's own 7dp margin.
     expect(searchRow).toContain('<SearchBar');
     expect(searchRow).toContain('style={styles.searchRow}');
@@ -5513,8 +5994,9 @@ describe('search opens the way Telegram opens it, and the week has a carousel', 
      * fixed string to the ternary when the control gained the exit.
      */
     expect(
-      bar.match(/accessibilityLabel=\{hasQuery \? 'Clear search' : 'Leave search'\}/g)
-        ?.length,
+      bar.match(
+        /accessibilityLabel=\{hasQuery \? 'Clear search' : 'Leave search'\}/g,
+      )?.length,
     ).toBe(1);
     expect(bar).not.toContain('accessibilityLabel="Clear search"');
   });
@@ -5531,7 +6013,10 @@ describe('search opens the way Telegram opens it, and the week has a carousel', 
     expect(home).toContain('searchTopics.map');
     expect(home).toContain('style={styles.filters}');
     expect(home).not.toContain('styles.filterRowContent');
-    const filters = home.slice(home.indexOf('    filters: {'), home.indexOf('    filterChips: {'));
+    const filters = home.slice(
+      home.indexOf('    filters: {'),
+      home.indexOf('    filterChips: {'),
+    );
     expect(filters).not.toContain("flexDirection: 'row'");
     expect(home).toContain('style={styles.filterChips}');
     // Both groups are labelled, so a chip row is never an unexplained pill.
@@ -5554,7 +6039,9 @@ describe('search opens the way Telegram opens it, and the week has a carousel', 
      * ran backwards through three green builds. This has no fading text and no
      * auto-advance.
      */
-    expect(existsSync(join(ROOT, 'src/components/WordCarousel.tsx'))).toBe(false);
+    expect(existsSync(join(ROOT, 'src/components/WordCarousel.tsx'))).toBe(
+      false,
+    );
     expect(home).toContain('const TOP_PICKS = 3');
     expect(home).toContain('testID="top-picks"');
     expect(home).toContain('Top profiles this week');
@@ -5578,14 +6065,20 @@ describe('search opens the way Telegram opens it, and the week has a carousel', 
     expect(carousel).toContain('onScrollEndDrag={onSettled}');
     // Endless is a swipe that never stops, NOT a timer. The banned component
     // advanced itself, which is how it ran backwards through three green builds.
-    expect(carousel).not.toMatch(/setInterval|setTimeout|withRepeat|carouselDwell/);
+    expect(carousel).not.toMatch(
+      /setInterval|setTimeout|withRepeat|carouselDwell/,
+    );
     // Three copies: one to swipe back into, one to sit in, one to swipe forward.
-    expect(read('src/lib/carousel.ts')).toContain('export const HERO_COPIES = 3');
+    expect(read('src/lib/carousel.ts')).toContain(
+      'export const HERO_COPIES = 3',
+    );
   });
 });
 
 describe('a session is rated when it ends, and the ratings are readable', () => {
-  const migration = read('supabase/migrations/066_session_reviews_and_ratings.sql');
+  const migration = read(
+    'supabase/migrations/066_session_reviews_and_ratings.sql',
+  );
 
   it('rates a SESSION, and every rating counts', () => {
     // Amit, 2026-09-06: per session, all count. A member who comes back five
@@ -5595,36 +6088,48 @@ describe('a session is rated when it ends, and the ratings are readable', () => 
     expect(migration).toContain('reviews_one_per_session');
     // The 006 trigger already averages every row, so "all count" needs no
     // change there — and must not have acquired a filter.
-    const trigger = read('supabase/migrations/006_phone_auth_and_provider_onboarding.sql');
-    expect(trigger).toContain('from public.reviews where provider_id = v_provider');
+    const trigger = read(
+      'supabase/migrations/006_phone_auth_and_provider_onboarding.sql',
+    );
+    expect(trigger).toContain(
+      'from public.reviews where provider_id = v_provider',
+    );
   });
 
-  it('keeps 006\'s conversation-level entry point working', () => {
+  it("keeps 006's conversation-level entry point working", () => {
     /*
      * `submit_review` is pinned by pgTAP 050 and 060, including its upsert, and
      * its `on conflict (conversation_id)` target no longer exists. It is
      * re-stated to rate the conversation's LATEST session, so both submissions
      * resolve to the same row and its old contract survives.
      */
-    expect(migration).toContain('create or replace function public.submit_review');
+    expect(migration).toContain(
+      'create or replace function public.submit_review',
+    );
     expect(migration).toContain('order  by accepted_at desc nulls last');
     expect(migration).toContain('reviews_one_per_legacy_conversation');
     // The strict path is the new one, and it is the one the UI calls.
     expect(migration).toContain("raise exception 'the session has not ended'");
-    expect(withoutComments(read('src/components/SessionFeedbackSheet.tsx'))).toContain(
-      'useSubmitSessionReview',
-    );
+    expect(
+      withoutComments(read('src/components/SessionFeedbackSheet.tsx')),
+    ).toContain('useSubmitSessionReview');
   });
 
   it('never publishes who wrote a review', () => {
-    const fn = migration.slice(migration.indexOf('create or replace function public.get_provider_ratings'));
+    const fn = migration.slice(
+      migration.indexOf(
+        'create or replace function public.get_provider_ratings',
+      ),
+    );
     expect(fn).not.toMatch(/'member_id'|r\.member_id/);
     // Five rows, always, zeros included: a chart that omits its empty bars
     // redraws itself every time somebody rates.
     expect(fn).toContain('generate_series(1, 5)');
-    expect(fn).toContain("order by s.stars desc");
+    expect(fn).toContain('order by s.stars desc');
     // And only for someone the directory publishes, so it is not a scraper.
-    expect(fn).toContain('from public.provider_directory d where d.id = p_provider_id');
+    expect(fn).toContain(
+      'from public.provider_directory d where d.id = p_provider_id',
+    );
   });
 
   it('asks once, on the edge, and only of the member', () => {
@@ -5632,13 +6137,19 @@ describe('a session is rated when it ends, and the ratings are readable', () => 
     // Watches the TRANSITION, not the absence: activeSession is null before a
     // session exists too, and asking then would prompt for a conversation that
     // never happened.
-    expect(chat).toContain('const liveSessionRef = useRef<string | null>(null)');
+    expect(chat).toContain(
+      'const liveSessionRef = useRef<string | null>(null)',
+    );
     // Member-only, and never with a blank name (the cold-open loading window,
     // where identity has not resolved) — a blank name in the review sheet is
     // worse than deferring.
-    expect(chat).toMatch(/if \(isMemberSide && name !== ''\) \{\s*requestReview\(previous, name\);/);
+    expect(chat).toMatch(
+      /if \(isMemberSide && name !== ''\) \{\s*requestReview\(previous, name\);/,
+    );
     // One sheet for the whole app, because a session can end in a call too.
-    expect(withoutComments(read('App.tsx'))).toContain('<SessionFeedbackSheet />');
+    expect(withoutComments(read('App.tsx'))).toContain(
+      '<SessionFeedbackSheet />',
+    );
     const store = withoutComments(read('src/store/useStore.ts'));
     expect(store).toContain('pendingReview');
     // First writer wins: a chat and a call noticing the same end must not
@@ -5647,14 +6158,18 @@ describe('a session is rated when it ends, and the ratings are readable', () => 
   });
 
   it('lets the member skip, and draws the chart without a new dependency', () => {
-    const sheet = withoutComments(read('src/components/SessionFeedbackSheet.tsx'));
+    const sheet = withoutComments(
+      read('src/components/SessionFeedbackSheet.tsx'),
+    );
     // A rating prompt with no way past it is a toll gate on leaving a
     // conversation somebody may have found difficult.
-    expect(sheet).toContain("cancelLabel=\"Skip\"");
+    expect(sheet).toContain('cancelLabel="Skip"');
     expect(sheet).toContain('testID={`session-feedback-star-${n}`}');
     expect(sheet).toContain('disabled={rating === 0}');
 
-    const detail = withoutComments(read('src/screens/ProviderDetailScreen.tsx'));
+    const detail = withoutComments(
+      read('src/screens/ProviderDetailScreen.tsx'),
+    );
     expect(detail).toContain('testID="ratings-chart"');
     /*
      * "ratings-empty" is GONE, 2026-09-08, and that is a fix rather than a
@@ -5676,12 +6191,19 @@ describe('a session is rated when it ends, and the ratings are readable', () => 
     // Amit, 2026-09-06: "no of stars at centre.. star icons below it and then
     // reviews below". The five-bar 5-4-3-2-1 chart is gone — on a profile with
     // three reviews it drew four empty tracks, which reads as absence.
-    const detail = withoutComments(read('src/screens/ProviderDetailScreen.tsx'));
+    const detail = withoutComments(
+      read('src/screens/ProviderDetailScreen.tsx'),
+    );
     expect(detail).not.toContain('ratings.distribution');
     expect(detail).not.toMatch(/ratingTrack|ratingFill|ratingRowLabel/);
     // Centred, in that order: number, stars, count, then the reviews.
     expect(detail).toContain('ratingBlock');
-    const order = ['styles.ratingBig', 'styles.ratingStars', 'styles.ratingCount', 'styles.reviewRow'];
+    const order = [
+      'styles.ratingBig',
+      'styles.ratingStars',
+      'styles.ratingCount',
+      'styles.reviewRow',
+    ];
     let at = detail.indexOf('testID="ratings-chart"');
     expect(at).toBeGreaterThan(-1);
     for (const marker of order) {
@@ -5693,9 +6215,9 @@ describe('a session is rated when it ends, and the ratings are readable', () => 
     expect(detail.indexOf('ABOUT')).toBeLessThan(detail.indexOf('RATINGS'));
     // The server contract is untouched: distribution is still returned, just
     // not drawn, so nothing else that reads it has to change.
-    expect(read('supabase/migrations/066_session_reviews_and_ratings.sql')).toContain(
-      'distribution',
-    );
+    expect(
+      read('supabase/migrations/066_session_reviews_and_ratings.sql'),
+    ).toContain('distribution');
   });
 
   it('gives the chat action M3 outlined emphasis, not a third fill colour', () => {
@@ -5709,7 +6231,9 @@ describe('a session is rated when it ends, and the ratings are readable', () => 
     const code = withoutComments(detail);
     expect(code).toMatch(/channel="chat"\s*\n\s*kind="outline"/);
     expect(code).not.toContain('actionTint');
-    expect(code).toMatch(/actionOutline: \{\s*backgroundColor: 'transparent',\s*borderWidth: 1,/);
+    expect(code).toMatch(
+      /actionOutline: \{\s*backgroundColor: 'transparent',\s*borderWidth: 1,/,
+    );
     // The label takes the on-surface colour, not on-accent — there is no accent
     // behind it any more.
     //
@@ -5719,11 +6243,15 @@ describe('a session is rated when it ends, and the ratings are readable', () => 
     // white on white) and Prettier then wrapped the expression, which turned a
     // still-true claim red on indentation alone. The claim is the mapping from
     // kind to ink; its formatting is Prettier's business.
-    expect(code).toMatch(/kind === 'outline'\s*\?\s*theme\.color\.text\.primary/);
+    expect(code).toMatch(
+      /kind === 'outline'\s*\?\s*theme\.color\.text\.primary/,
+    );
     // The other two are argued in walletTone.test.ts, where the accent-step
     // pairings live; asserted here too because this is the block that owns the
     // three-kind mapping and a kind added without an ink would land here first.
-    expect(code).toMatch(/kind === 'dark'\s*\?\s*theme\.color\.text\.onInverse/);
+    expect(code).toMatch(
+      /kind === 'dark'\s*\?\s*theme\.color\.text\.onInverse/,
+    );
   });
 
   it('shows the countdown in the window the countdown exists for', () => {
@@ -5740,9 +6268,13 @@ describe('a session is rated when it ends, and the ratings are readable', () => 
      * window the countdown exists for, which is what this test is named after
      * and could not previously assert.
      */
-    expect(chat).toMatch(/showStickyRecharge =\s*\n?\s*isMemberSide && countingDown && \(!showExtendCard/);
+    expect(chat).toMatch(
+      /showStickyRecharge =\s*\n?\s*isMemberSide && countingDown && \(!showExtendCard/,
+    );
     expect(chat).toContain('testID="chat-extend-timer"');
-    expect(chat).toMatch(/testID="chat-extend-timer"[\s\S]{0,80}formatClock\(sessionRemaining/);
+    expect(chat).toMatch(
+      /testID="chat-extend-timer"[\s\S]{0,80}formatClock\(sessionRemaining/,
+    );
     // Asking the question is not the same as answering it.
     expect(chat).not.toContain('Need more time?');
   });
@@ -5758,11 +6290,17 @@ describe('a chat request rings, and can be answered either way', () => {
   it('gives the ring a second answer, which the schema always had a word for', () => {
     // session_request_status has carried 'declined' since 030:51 and nothing
     // could ever write it. A ring with one button is not a ring, it is a summons.
-    const migration = read('supabase/migrations/067_decline_session_request.sql');
-    expect(migration).toContain('create or replace function public.decline_session_request');
-    expect(migration).toContain("v_req.recipient_id <> auth.uid()");
+    const migration = read(
+      'supabase/migrations/067_decline_session_request.sql',
+    );
+    expect(migration).toContain(
+      'create or replace function public.decline_session_request',
+    );
+    expect(migration).toContain('v_req.recipient_id <> auth.uid()');
     // Idempotent: a decline racing an expiry is not an error the provider sees.
-    expect(migration).toMatch(/if v_req\.status <> 'pending' then[\s\S]*?'success', true/);
+    expect(migration).toMatch(
+      /if v_req\.status <> 'pending' then[\s\S]*?'success', true/,
+    );
     // NOT a cancel: that is the initiator withdrawing, a different actor. The
     // comment explaining that necessarily says the word, so this asserts on the
     // WRITE rather than on the prose.
@@ -5804,7 +6342,9 @@ describe('a chat request rings, and can be answered either way', () => {
     );
     // Chat only: a call request already rings through the call path, and two
     // rings for one event is a bug the member cannot see.
-    expect(withoutComments(read('src/api/sessions.ts'))).toContain("row.channel === 'chat'");
+    expect(withoutComments(read('src/api/sessions.ts'))).toContain(
+      "row.channel === 'chat'",
+    );
   });
 
   it('is registered in the harness with its suite', () => {
@@ -5827,12 +6367,16 @@ describe('the member always starts the session, whoever wrote first', () => {
 
   it('lets the provider write first without creating a paid_session', () => {
     expect(sql077).toContain('initiator_id, recipient_id,');
-    expect(sql077).toContain('p_conversation_id, \'chat\', v_uid, v_member,');
-    expect(sql077).toContain('now() + interval \'24 hours\', now()');
+    expect(sql077).toContain("p_conversation_id, 'chat', v_uid, v_member,");
+    expect(sql077).toContain("now() + interval '24 hours', now()");
   });
 
   it('drops the cold-call block and checks the member wallet either way', () => {
-    const create = sql077.slice(sql077.indexOf('create or replace function public.create_session_request'));
+    const create = sql077.slice(
+      sql077.indexOf(
+        'create or replace function public.create_session_request',
+      ),
+    );
     expect(create).not.toContain('P0006');
     expect(create).toContain('from public.profiles where id = v_member_id');
     expect(create).toContain("errcode = 'P0003'");
@@ -5855,11 +6399,13 @@ describe('the member always starts the session, whoever wrote first', () => {
 
   it('keeps conversation push copy warm and text-free', () => {
     expect(withoutComments(read('index.js'))).toContain(
-      "wants to have a chat with you",
+      'wants to have a chat with you',
     );
-    expect(withoutComments(read('android/app/src/main/java/com/companionchat/Conversations.kt'))).toContain(
-      'wants a video chat',
-    );
+    expect(
+      withoutComments(
+        read('android/app/src/main/java/com/companionchat/Conversations.kt'),
+      ),
+    ).toContain('wants a video chat');
   });
 
   it('is registered in the harness with its suite', () => {
@@ -5874,15 +6420,19 @@ describe('the member always starts the session, whoever wrote first', () => {
 describe('opening a chat tells the other person, both ways', () => {
   const migration = read('supabase/migrations/068_chat_open_alerts.sql');
 
-  it('gates on the MEMBER\'s minute whoever opened', () => {
+  it("gates on the MEMBER's minute whoever opened", () => {
     /*
      * "if bal > 1 min" (goal item 3), and it holds in both directions: pinging
      * a member with an empty wallet pushes them at a paywall, and pinging a
      * provider about a member who cannot pay wastes the one person whose time
      * is the product.
      */
-    expect(migration).toContain('select token_balance into v_balance from public.profiles where id = v_member');
-    expect(migration).toMatch(/if coalesce\(v_balance, 0\) < v_rate then[\s\S]*?'no_balance'/);
+    expect(migration).toContain(
+      'select token_balance into v_balance from public.profiles where id = v_member',
+    );
+    expect(migration).toMatch(
+      /if coalesce\(v_balance, 0\) < v_rate then[\s\S]*?'no_balance'/,
+    );
   });
 
   it('does not ring a doorbell', () => {
@@ -5904,9 +6454,14 @@ describe('opening a chat tells the other person, both ways', () => {
      * the same quiet no-op dispatch_call_push uses (017:60).
      */
     expect(migration).toContain("'not_configured'");
-    const afterDispatch = migration.slice(migration.indexOf('perform net.http_post'));
+    const afterDispatch = migration.slice(
+      migration.indexOf('perform net.http_post'),
+    );
     expect(afterDispatch).toContain("'alerted', true");
-    const beforeDispatch = migration.slice(0, migration.indexOf('perform net.http_post'));
+    const beforeDispatch = migration.slice(
+      0,
+      migration.indexOf('perform net.http_post'),
+    );
     expect(beforeDispatch).not.toContain("'alerted', true");
 
     const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
@@ -5921,7 +6476,7 @@ describe('opening a chat tells the other person, both ways', () => {
     // differs because the copy is in the payload.
     const fn = read('supabase/functions/send-open-alert/index.ts');
     expect(fn).toContain("kind: 'engagement'");
-    expect(fn).toContain('Hey, ${opener ?? \'Someone\'} is here');
+    expect(fn).toContain("Hey, ${opener ?? 'Someone'} is here");
     // A member is never named: they have no directory row and get the handle.
     expect(fn).toContain("db.rpc('member_handle'");
     expect(fn).toContain("role !== 'service_role'");
@@ -5944,7 +6499,9 @@ describe('the usage ledger answers where the tokens went, from both sides', () =
      * share (ADR-0021's 60%) — and the branch is in SQL, so a client-side
      * mistake cannot hand a member the split or a provider the gross.
      */
-    expect(migration).toMatch(/when ps\.member_id = v_uid then ps\.tokens_debited/);
+    expect(migration).toMatch(
+      /when ps\.member_id = v_uid then ps\.tokens_debited/,
+    );
     expect(migration).toContain('coalesce(e.provider_tokens, 0)');
     const screen = withoutComments(read('src/screens/UsageLedgerScreen.tsx'));
     expect(screen).not.toContain('provider_tokens');
@@ -5969,7 +6526,9 @@ describe('the usage ledger answers where the tokens went, from both sides', () =
     const settings = withoutComments(read('src/screens/SettingsSheet.tsx'));
     expect(settings).toContain('testID="settings-usage"');
     // The title takes the caller's own side of the row.
-    expect(settings).toContain("isProvider ? 'Earnings by session' : 'Usage by session'");
+    expect(settings).toContain(
+      "isProvider ? 'Earnings by session' : 'Usage by session'",
+    );
     const app = withoutComments(read('App.tsx'));
     expect(app).toContain("pushRoute({ name: 'usage' })");
     expect(app).toContain("pushProvider({ name: 'usage', from: 'settings' })");
@@ -5977,7 +6536,9 @@ describe('the usage ledger answers where the tokens went, from both sides', () =
     // And the route exists in both unions, with a parent that is Settings.
     const routes = read('src/lib/routes.ts');
     expect(routes.match(/name: 'usage'/g)?.length).toBeGreaterThanOrEqual(2);
-    expect(routes).toMatch(/case 'transactions':\s*\n\s*case 'usage':\s*\n\s*return \{ name: 'settings' \}/);
+    expect(routes).toMatch(
+      /case 'transactions':\s*\n\s*case 'usage':\s*\n\s*return \{ name: 'settings' \}/,
+    );
   });
 
   it('is registered in the harness with its suite', () => {
@@ -6031,7 +6592,9 @@ describe('seed provider photos', () => {
     for (const photo of manifest.photos) {
       // Enough to find the original again and name who took it. A sha256 with
       // no source is a checksum of something unaccountable.
-      expect(photo.source_url).toMatch(/^https:\/\/www\.pexels\.com\/photo\/\d+\/$/);
+      expect(photo.source_url).toMatch(
+        /^https:\/\/www\.pexels\.com\/photo\/\d+\/$/,
+      );
       expect(photo.photographer.length).toBeGreaterThan(0);
       expect(photo.sha256).toMatch(/^[0-9a-f]{64}$/);
       expect(photo.bytes).toBeGreaterThan(0);
@@ -6052,7 +6615,9 @@ describe('seed provider photos', () => {
     // Indian names, 2026-09-07. Keying this on the name made the test the
     // reason a name could not change, and a spelling choice is not a contract.
     const ageById = new Map<string, number>();
-    for (const m of seed.matchAll(/\('([0-9a-f-]{36})'::uuid, '[A-Za-z0-9_]+', (\d+),/g)) {
+    for (const m of seed.matchAll(
+      /\('([0-9a-f-]{36})'::uuid, '[A-Za-z0-9_]+', (\d+),/g,
+    )) {
       ageById.set(String(m[1]), Number(m[2]));
     }
     expect(ageById.size).toBe(4);
@@ -6124,7 +6689,10 @@ describe('seed provider photos', () => {
       const name = String(photo.seeds);
       // 087 may override an age 085 set; the later file wins, as it does in the
       // database.
-      const override = /interval '(\d+) years'\)::date\s*\nwhere\s+id = '([0-9a-f-]+)'/.exec(photo087);
+      const override =
+        /interval '(\d+) years'\)::date\s*\nwhere\s+id = '([0-9a-f-]+)'/.exec(
+          photo087,
+        );
       const seeded = new RegExp(`'${name}', '\\w+', (\\d+),`).exec(astro);
       const declared = Number(
         photo.file.startsWith('devraj') && override ? override[1] : seeded?.[1],
@@ -6139,15 +6707,21 @@ describe('seed provider photos', () => {
     // than a note. Swap a file without updating its row and this fails, which
     // is the only way a licence record stays attached to what it licenses.
     for (const photo of manifest.photos) {
-      const bytes = readFileSync(join(ROOT, 'assets/seed/providers', photo.file));
+      const bytes = readFileSync(
+        join(ROOT, 'assets/seed/providers', photo.file),
+      );
       expect(bytes.length).toBe(photo.bytes);
-      expect(createHash('sha256').update(bytes).digest('hex')).toBe(photo.sha256);
+      expect(createHash('sha256').update(bytes).digest('hex')).toBe(
+        photo.sha256,
+      );
     }
   });
 
   it('names the licence and the terms that actually restrict us', () => {
     expect(manifest.licence.url).toBe('https://www.pexels.com/license/');
-    expect(manifest.licence.terms_that_bind_us.join(' ')).toContain('endorsement');
+    expect(manifest.licence.terms_that_bind_us.join(' ')).toContain(
+      'endorsement',
+    );
     // The one that decides where these may be used: a paid companionship
     // listing implies endorsement by the person in the photo, so the seed set
     // cannot become the production set by anyone forgetting to ask.
@@ -6163,13 +6737,17 @@ describe('seed provider photos', () => {
     // for a year. The name carries the hash, so a different photo is a
     // different URL and neither failure is representable.
     for (const photo of manifest.photos) {
-      expect(photo.file).toBe(`${photo.provider}-${photo.sha256.slice(0, 8)}.jpg`);
+      expect(photo.file).toBe(
+        `${photo.provider}-${photo.sha256.slice(0, 8)}.jpg`,
+      );
     }
   });
 
   it('points the seed at files the manifest covers', () => {
-    const declared = new Set(manifest.photos.map((p) => p.file));
-    const used = [...seed.matchAll(/'([a-z0-9]+-[0-9a-f]{8}\.jpg)'\)/g)].map((m) => m[1]);
+    const declared = new Set(manifest.photos.map(p => p.file));
+    const used = [...seed.matchAll(/'([a-z0-9]+-[0-9a-f]{8}\.jpg)'\)/g)].map(
+      m => m[1],
+    );
     expect(used.length).toBeGreaterThanOrEqual(4);
     for (const file of used) expect(declared).toContain(file);
     // And they are read from the bucket path the manifest documents, not from
@@ -6210,8 +6788,12 @@ describe('W5 #6 transition lock: deferred call sites read the primitive', () => 
     // Both must be named in the same import so a future refactor cannot pull one
     // without the other: `transitioning` is read for the scroll gate,
     // `onTransitionSettled` is the callback for both the wallpaper and the scroll.
-    expect(chat).toMatch(/import\s*\{[^}]*\bonTransitionSettled\b[^}]*\}\s*from\s*['"]\.\.\/theme\/motion['"]/);
-    expect(chat).toMatch(/import\s*\{[^}]*\btransitioning\b[^}]*\}\s*from\s*['"]\.\.\/theme\/motion['"]/);
+    expect(chat).toMatch(
+      /import\s*\{[^}]*\bonTransitionSettled\b[^}]*\}\s*from\s*['"]\.\.\/theme\/motion['"]/,
+    );
+    expect(chat).toMatch(
+      /import\s*\{[^}]*\btransitioning\b[^}]*\}\s*from\s*['"]\.\.\/theme\/motion['"]/,
+    );
   });
 
   it('ChatWallpaper mount uses onTransitionSettled with a requestIdleCallback fallback', () => {
@@ -6239,7 +6821,9 @@ describe('W5 #6 transition lock: deferred call sites read the primitive', () => 
     expect(scrollEffect).toContain('transitioning.value');
     expect(scrollEffect).toContain('onTransitionSettled(');
     // The scroll path is present in both branches.
-    expect(scrollEffect.match(/scrollToOffset\(\s*\{/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    expect(
+      scrollEffect.match(/scrollToOffset\(\s*\{/g)?.length ?? 0,
+    ).toBeGreaterThanOrEqual(2);
   });
 
   it('EmojiPicker imports onTransitionSettled and gates heavy content on settled', () => {
@@ -6326,8 +6910,10 @@ describe('composer capsule and bubbles share one horizontal grid and radius', ()
      * The composer reads `radius.composer` now, measured at 10.5dp off
      * WhatsApp against the bubble's 9dp. Same family, not one value.
      */
-    expect(withoutComments(composer)).toContain('borderRadius: TOKENS.radius.composer');
-      /*
+    expect(withoutComments(composer)).toContain(
+      'borderRadius: TOKENS.radius.composer',
+    );
+    /*
      * CORRECTED 2026-09-08. This asserted the two radii were within 2dp of
      * each other, on a measurement of WhatsApp's composer that was wrong:
      * I had read "the row where the corner ramp reaches the edge" as the
@@ -6340,7 +6926,9 @@ describe('composer capsule and bubbles share one horizontal grid and radius', ()
      */
     expect(TOKENS.radius.composer).toBeGreaterThan(TOKENS.radius.bubble);
     // Not a pill: WhatsApp's capsule is 46.2dp tall against an 18dp corner.
-    expect(TOKENS.radius.composer).toBeLessThan(TOKENS.interaction.minTarget / 2);
+    expect(TOKENS.radius.composer).toBeLessThan(
+      TOKENS.interaction.minTarget / 2,
+    );
     // Turn uses BUBBLE_RADIUS which is assigned TOKENS.radius.bubble.
     expect(turn).toContain('TOKENS.radius.bubble');
   });
@@ -6451,7 +7039,10 @@ describe('the member reads rupees; "token" is a storage word, never a shown one'
      * Renaming the unit would have kept the lie and made it read correctly,
      * which is why this is asserted on the CLAIM and not on the word.
      */
-    for (const file of ['src/components/Composer.tsx', 'src/components/SendButton.tsx']) {
+    for (const file of [
+      'src/components/Composer.tsx',
+      'src/components/SendButton.tsx',
+    ]) {
       expect(codeOnly(read(file))).not.toMatch(/costs? (one|a)\b/i);
     }
   });
@@ -6460,18 +7051,24 @@ describe('the member reads rupees; "token" is a storage word, never a shown one'
 describe('rename chat — private per-user conversation labels', () => {
   it('migration 098 creates a per-user labels table, RLS, and a participant-guarded setter', () => {
     const m = read('supabase/migrations/098_conversation_labels.sql');
-    expect(m).toContain('create table if not exists public.conversation_labels');
+    expect(m).toContain(
+      'create table if not exists public.conversation_labels',
+    );
     expect(m).toContain('primary key (user_id, conversation_id)');
     expect(m).toContain('enable row level security');
     // Read is owner-scoped; there is no direct write policy — writes go through
     // the setter, which checks participation.
     expect(m).toContain('for select');
     expect(m).toContain('auth.uid() = user_id');
-    expect(m).toContain('create or replace function public.set_conversation_name');
+    expect(m).toContain(
+      'create or replace function public.set_conversation_name',
+    );
     expect(m).toMatch(/c\.member_id = v_uid or c\.provider_id = v_uid/);
     // A blank name clears the label rather than storing an empty string.
     expect(m).toContain('delete from public.conversation_labels');
-    expect(m).toContain('grant execute on function public.set_conversation_name(uuid, text) to authenticated');
+    expect(m).toContain(
+      'grant execute on function public.set_conversation_name(uuid, text) to authenticated',
+    );
   });
 
   it('the setter is client-callable but the table is not directly writable', () => {
@@ -6479,7 +7076,9 @@ describe('rename chat — private per-user conversation labels', () => {
     expect(api).toContain("rpc('set_conversation_name'");
     // The client only SELECTs the labels; it never inserts/updates the table.
     expect(api).toContain("from('conversation_labels')");
-    expect(api).not.toMatch(/from\('conversation_labels'\)[\s\S]{0,80}\.(insert|update|delete|upsert)\(/);
+    expect(api).not.toMatch(
+      /from\('conversation_labels'\)[\s\S]{0,80}\.(insert|update|delete|upsert)\(/,
+    );
   });
 
   it('ChatScreen long-presses the header to rename and resolves the private label', () => {
@@ -6493,7 +7092,10 @@ describe('rename chat — private per-user conversation labels', () => {
   });
 
   it('both inboxes show the private label over the peer name', () => {
-    for (const file of ['src/screens/ChatsListScreen.tsx', 'src/screens/ProviderHomeScreen.tsx']) {
+    for (const file of [
+      'src/screens/ChatsListScreen.tsx',
+      'src/screens/ProviderHomeScreen.tsx',
+    ]) {
       const src = read(file);
       expect(src).toContain('useConversationLabels');
       expect(src).toMatch(/labels\??\.get\(|conversationLabels\??\.get\(/);

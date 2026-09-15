@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { PermissionsAndroid, Platform } from 'react-native';
 import {
+  AudioProfileType,
+  AudioScenarioType,
   ChannelProfileType,
   ClientRoleType,
   ConnectionStateType,
@@ -10,7 +12,10 @@ import {
   type IRtcEngine,
   type IRtcEngineEventHandler,
 } from 'react-native-agora';
-import { alertPermissionBlocked, requestAndroidPermission } from '../../lib/permissions';
+import {
+  alertPermissionBlocked,
+  requestAndroidPermission,
+} from '../../lib/permissions';
 import { getCallMediaCredentials } from './credentials';
 import { flushCallQualitySamples, queueCallQualitySample } from './quality';
 import { getVideoCaptureProfile } from './profile';
@@ -36,7 +41,8 @@ export function useAgoraCallSession(
   credentials?: CallMediaCredentials,
   defaultToSpeaker = false,
 ): CallMediaSession {
-  const [connState, setConnState] = useState<CallMediaSession['connState']>('connecting');
+  const [connState, setConnState] =
+    useState<CallMediaSession['connState']>('connecting');
   const [muted, setMuted] = useState(false);
   const [speakerOn, setSpeakerOn] = useState(defaultToSpeaker);
   const [videoEnabled, setVideoEnabled] = useState(false);
@@ -48,12 +54,18 @@ export function useAgoraCallSession(
   const defaultSpeakerRef = useRef(defaultToSpeaker);
   defaultSpeakerRef.current = defaultToSpeaker;
   const remotePresentRef = useRef(false);
-  const connectionStateRef = useRef<CallMediaSession['connState']>('connecting');
+  const connectionStateRef =
+    useRef<CallMediaSession['connState']>('connecting');
   const latestQualityRef = useRef<Partial<CallQualitySample>>({});
 
   useEffect(() => {
     if (!enabled || callId === null || credentials?.backend !== 'agora') return;
-    if (!credentials.appId || !credentials.token || !credentials.room || !credentials.uid) {
+    if (
+      !credentials.appId ||
+      !credentials.token ||
+      !credentials.room ||
+      !credentials.uid
+    ) {
       setConnState('failed');
       return;
     }
@@ -63,9 +75,7 @@ export function useAgoraCallSession(
     const localUid = credentials.uid;
     let cancelled = false;
     let eventHandler: IRtcEngineEventHandler | undefined;
-    const updateConnectionState = (
-      state: CallMediaSession['connState'],
-    ) => {
+    const updateConnectionState = (state: CallMediaSession['connState']) => {
       connectionStateRef.current = state;
       if (!cancelled) {
         setConnState(state);
@@ -89,10 +99,12 @@ export function useAgoraCallSession(
     const renewToken = async (engine: IRtcEngine, rejoin: boolean) => {
       try {
         const next = await getCallMediaCredentials(callId);
-        if (next.backend !== 'agora' || !next.token) throw new Error('Invalid Agora renewal');
+        if (next.backend !== 'agora' || !next.token)
+          throw new Error('Invalid Agora renewal');
         if (rejoin) {
           engine.leaveChannel();
-          if (join(engine, next.token) < 0) throw new Error('Agora rejoin failed');
+          if (join(engine, next.token) < 0)
+            throw new Error('Agora rejoin failed');
         } else if (engine.renewToken(next.token) < 0) {
           throw new Error('Agora token renewal failed');
         }
@@ -231,7 +243,24 @@ export function useAgoraCallSession(
 
       engine.initialize({ appId });
       engine.registerEventHandler(handler);
-      engine.setChannelProfile(ChannelProfileType.ChannelProfileCommunication1v1);
+      engine.setChannelProfile(
+        ChannelProfileType.ChannelProfileCommunication1v1,
+      );
+      /*
+       * Speech profile + low-latency scenario, set before joining. Without this,
+       * Communication1v1 defaults to AudioProfileDefault / AudioScenarioDefault,
+       * which routes VoIP through the MUSIC pipeline: wider codec, bigger buffers,
+       * and the "very laggy audio" reported on device. SpeechStandard is 16 kHz
+       * mono Opus tuned for voice; GameStreaming is Agora's low-latency scenario
+       * with hardware echo cancellation / noise suppression. The video encoder
+       * below is configured explicitly for the same reason — the audio encoder was
+       * the only leg left on defaults.
+       * https://docs.agora.io/en/video-calling/develop/audio-and-voice-effects
+       */
+      engine.setAudioProfile(
+        AudioProfileType.AudioProfileSpeechStandard,
+        AudioScenarioType.AudioScenarioGameStreaming,
+      );
       /*
        * The default audio route, set before joining so the first second of
        * audio already comes out of the right place: earpiece for a voice call
@@ -301,7 +330,9 @@ export function useAgoraCallSession(
   }, []);
 
   const enableVideo = useCallback(async () => {
-    const outcome = await requestAndroidPermission(PermissionsAndroid.PERMISSIONS.CAMERA);
+    const outcome = await requestAndroidPermission(
+      PermissionsAndroid.PERMISSIONS.CAMERA,
+    );
     if (outcome === 'never_ask_again') {
       alertPermissionBlocked('Camera (video calls)');
       return;
@@ -325,8 +356,9 @@ export function useAgoraCallSession(
     engineRef.current?.switchCamera();
   }, []);
 
-  const localVideo: CallVideoSource | null =
-    videoEnabled ? { backend: 'agora', uid: VIDEO_UID_LOCAL, local: true } : null;
+  const localVideo: CallVideoSource | null = videoEnabled
+    ? { backend: 'agora', uid: VIDEO_UID_LOCAL, local: true }
+    : null;
   const remoteVideo: CallVideoSource | null =
     remoteVideoEnabled && remoteUid !== null
       ? { backend: 'agora', uid: remoteUid, local: false }

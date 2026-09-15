@@ -150,9 +150,6 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     () => (providers ?? []).find(p => p.id === providerId) ?? null,
     [providers, providerId],
   );
-  const name = provider?.display_name ?? (direction === 'in' ? 'Incoming call' : 'Calling');
-  const initial = initialOf(provider?.display_name);
-
   /*
    * Which side of this thread we are on, and who the review sheet should name.
    *
@@ -187,6 +184,28 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   const isMemberSide = peerThread?.i_am_member ?? true;
   const reviewPeerName =
     peerThread?.peer_display_name ?? provider?.display_name ?? 'Conversation';
+
+  /*
+   * Who this call names and pictures — resolved from the summary row FIRST, the
+   * provider directory only as a fallback. `useProviders()` is the provider
+   * *directory* and holds no members, so on the provider's own screen the peer
+   * is a member the directory will never contain: reading `provider.*` there
+   * left the provider looking at "Incoming call" and a blank ring while the
+   * member saw a name and a face. `peerThread` (useConversations) carries
+   * `peer_display_name` and `peer_avatar_url` for BOTH directions, so it is the
+   * identity source and the directory is the pre-first-summary fallback the
+   * member side used to lean on.
+   */
+  const peerName =
+    peerThread?.peer_display_name ??
+    provider?.display_name ??
+    (direction === 'in' ? 'Incoming call' : 'Calling');
+  const name = peerName;
+  const peerAvatarUrl =
+    peerThread?.peer_avatar_url ?? provider?.avatar_url ?? null;
+  const initial = initialOf(
+    peerThread?.peer_display_name ?? provider?.display_name,
+  );
 
   const [callId, setCallId] = useState<string | null>(incomingCallId);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -391,7 +410,15 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
 
   useEffect(() => {
     if (callId === null) return;
-    startCallForegroundService(name, direction === 'in');
+    // Declare the MICROPHONE foreground-service type from the FIRST start, not
+    // only once media is ready (below). Android 14 (targetSdk 34+) SILENTLY
+    // drops microphone capture for a foreground service that started without
+    // FOREGROUND_SERVICE_TYPE_MICROPHONE — and Agora begins capturing the mic
+    // as it joins the channel, before `mediaReady` flips. Starting the type
+    // late meant the very first buffers were dropped, which on a real device
+    // is "the call connects but there is no audio."
+    // https://developer.android.com/about/versions/14/changes/fgs-types-required#microphone
+    startCallForegroundService(name, direction === 'in', true);
     return stopCallForegroundService;
   }, [callId, name, direction]);
 
@@ -538,6 +565,10 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
         void enableVideoRef.current();
       }
     } else if (connState === 'failed') {
+      // Telemetry (#3): a media failure the user would otherwise have to report.
+      // The events allowlist carries 'call_media_failed' (migration 108); the
+      // payload names only the backend and medium, never identity.
+      track('call_media_failed', { backend, medium });
       finish('The call could not connect.');
     } else if (connState === 'closed') {
       /*
@@ -719,7 +750,11 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   acceptRef.current = accept;
 
   const timer = `${Math.floor(elapsed / 60)}:${(elapsed % 60).toString().padStart(2, '0')}`;
-  const gradient = `linear-gradient(160deg, ${theme.color.bg.accent} 0%, ${theme.color.bg.accentStrong} 100%)`;
+  // #4: the coral gradient read as "very ugly" on a real call. A call wants a
+  // calm, dim surface — a near-black vertical fall, with the peer's own photo
+  // blurred behind it (below) when there is one. Raw dark hex, deliberately
+  // outside the accent palette (asserted EXEMPT in theme.test).
+  const calmGradient = 'linear-gradient(180deg, #1C1C24 0%, #0B0B10 100%)';
   // Status words carry NO trailing "…": the animated CallingDots supply the
   // ellipsis for every waiting phase (user 2026-08-31, copied from the reference
   // where the dots fill in sequence). The timer phase has no dots.
@@ -743,14 +778,18 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
 
   const showRemoteVideo = remoteVideoEnabled && remoteVideo !== null;
   const pulsing = phase === 'ringing' || phase === 'connecting' || phase === 'incoming' || phase === 'starting';
-  /** A photo is bleeding edge-to-edge behind everything, so no centred avatar. */
-  const hasBleedPhoto = !showRemoteVideo && typeof provider?.avatar_url === 'string';
 
   return (
     <View style={styles.root}>
-      <View style={[styles.fill, { experimental_backgroundImage: gradient }]} />
+      <View style={[styles.fill, { experimental_backgroundImage: calmGradient }]} />
 
-      {/* Full-bleed photo (or remote video). Name + status sit on top, above the face. */}
+      {/*
+        * Background (#4/#5): the live remote video (crisp) when there is one, else
+        * the peer's own photo blurred to a soft wash behind the dim — never the
+        * raw face bleeding edge to edge, which read as harsh. The crisp face
+        * lives in the centred ring below. `peerAvatarUrl` resolves the peer for
+        * BOTH sides (member and provider), so each finally sees the other.
+        */}
       {showRemoteVideo ? (
         <CallVideoView
           key={`agora-${remoteVideo.uid}-${remoteVideo.local ? 'local' : 'remote'}`}
@@ -759,22 +798,23 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
           zOrder={0}
           style={StyleSheet.absoluteFill}
         />
-      ) : provider?.avatar_url ? (
+      ) : peerAvatarUrl ? (
         <>
           <Image
             source={{
               uri: sizedStorageImageUri(
-                provider.avatar_url,
+                peerAvatarUrl,
                 windowWidth,
                 windowHeight,
                 PixelRatio.get(),
               ),
             }}
             resizeMode="cover"
+            blurRadius={CALL_BG_BLUR}
             style={StyleSheet.absoluteFill}
             accessibilityIgnoresInvertColors
           />
-          <View style={styles.bleedScrim} />
+          <View style={styles.bgDim} />
         </>
       ) : null}
 
@@ -802,21 +842,36 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
       </View>
 
       {/*
-        * The ringing halo is the fallback, not a second layer on top of the
-        * bleed. When a full-bleed photo is up, the face IS the subject — putting
-        * a circular crop of the same photo over it repeats the image and lands
-        * squarely on her eyes. WhatsApp does the same: photo OR ringed avatar,
-        * never both. The ring therefore only appears when there is no photo to
-        * bleed, where it gives the initial mark something to breathe.
+        * The centred, ringed avatar is now the ONE place the peer's face appears
+        * on a non-video call: a crisp circular crop of their photo (the blurred
+        * copy behind is only ambient wash), or the initial mark when there is no
+        * photo. CallRing clips the child to the circle. Shown for every
+        * non-video state — the halo pulses while ringing and settles once active.
         */}
-      {!showRemoteVideo && !hasBleedPhoto ? (
+      {!showRemoteVideo ? (
         <View style={styles.center} pointerEvents="none">
           <CallRing size={AVATAR} active={pulsing}>
-            <View style={[styles.avatarFill, { backgroundColor: theme.color.state.available }]}>
-              <Text allowFontScaling={false} style={styles.avatarInitial}>
-                {initial}
-              </Text>
-            </View>
+            {peerAvatarUrl ? (
+              <Image
+                source={{
+                  uri: sizedStorageImageUri(
+                    peerAvatarUrl,
+                    AVATAR,
+                    AVATAR,
+                    PixelRatio.get(),
+                  ),
+                }}
+                resizeMode="cover"
+                style={styles.avatarFill}
+                accessibilityIgnoresInvertColors
+              />
+            ) : (
+              <View style={[styles.avatarFill, { backgroundColor: theme.color.state.available }]}>
+                <Text allowFontScaling={false} style={styles.avatarInitial}>
+                  {initial}
+                </Text>
+              </View>
+            )}
           </CallRing>
         </View>
       ) : null}
@@ -1050,6 +1105,8 @@ function BarButton({
 
 /** Face diameter — WhatsApp capture ~140–160 logical on a tall phone. */
 const AVATAR = 148;
+/** How soft the peer photo blurs into the background wash (#4). */
+const CALL_BG_BLUR = 40;
 const BTN = 56;
 /** Clearance for the labelled control row + home indicator. */
 const CONTROLS_CLEARANCE = 120;
@@ -1057,8 +1114,10 @@ const CONTROLS_CLEARANCE = 120;
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
     root: {
+      // The calm dark base (#4). Raw hex, deliberately off the accent palette;
+      // the gradient fill and blurred photo sit on top of it.
       flex: 1,
-      backgroundColor: t.color.bg.accentStrong,
+      backgroundColor: '#0B0B10',
     },
     fill: {
       position: 'absolute',
@@ -1067,9 +1126,12 @@ const makeStyles = (t: Theme) =>
       right: 0,
       bottom: 0,
     },
-    bleedScrim: {
+    bgDim: {
+      // Dims the blurred peer photo so the white name/status and the crisp
+      // centred face read cleanly over it. Heavier than the old bleed scrim
+      // because the photo underneath is now a soft wash, not the subject.
       ...StyleSheet.absoluteFill,
-      backgroundColor: 'rgba(0,0,0,0.28)',
+      backgroundColor: 'rgba(0,0,0,0.45)',
     },
     topMeta: {
       position: 'absolute',
