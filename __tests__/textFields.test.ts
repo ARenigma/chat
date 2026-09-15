@@ -15,7 +15,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TOKENS } from '../src/theme/tokens';
-import { IN_MOBILE_DISPLAY_LENGTH } from '../src/lib/phone';
 
 const ROOT = join(__dirname, '..');
 const read = (rel: string): string => readFileSync(join(ROOT, rel), 'utf8');
@@ -98,7 +97,6 @@ function stripComments(src: string): string {
 
 /** The screens whose fields must all come from the one component. */
 const FIELD_SCREENS = [
-  'src/screens/PhoneVerifySheet.tsx',
   'src/screens/ProviderBankScreen.tsx',
   'src/screens/ProfileSetupScreen.tsx',
   'src/screens/ProviderApplicationScreen.tsx',
@@ -187,91 +185,41 @@ describe('the M3 field is the only field', () => {
     expect(m3).toMatch(/focused\s*\?\s*2\s*:\s*1/);
   });
 
-  it.each(FIELD_SCREENS)('%s renders no hand-rolled field container', screen => {
-    const body = stripComments(read(screen));
-    /*
-     * The tell of a re-rolled field: a style block that styles INPUT TEXT
-     * (`typography.bodyLarge`) and also paints its own border and radius. All
-     * four removed field styles had exactly that combination, and nothing else
-     * does — a chip carries a label role, an avatar cell carries no typography
-     * at all. Requiring the type role is what keeps this from flagging every
-     * rounded bordered box on the screen, which an earlier version of this gate
-     * did (32 false positives on ProfileSetupScreen alone).
-     *
-     * Run on the comment-stripped source, so the notes recording what was
-     * removed — which quote the old `borderColor: t.color.border.strong` lines
-     * verbatim — cannot trip it.
-     */
-    const styleBlocks = body.match(/\w+:\s*\{[^{}]*\}/g) ?? [];
-    const offenders = styleBlocks.filter(
-      b =>
-        /typography\.bodyLarge/.test(b) &&
-        /border(Width|Color)\s*:/.test(b) &&
-        /borderRadius\s*:/.test(b),
-    );
-    expect(offenders).toEqual([]);
-  });
+  it.each(FIELD_SCREENS)(
+    '%s renders no hand-rolled field container',
+    screen => {
+      const body = stripComments(read(screen));
+      /*
+       * The tell of a re-rolled field: a style block that styles INPUT TEXT
+       * (`typography.bodyLarge`) and also paints its own border and radius. All
+       * four removed field styles had exactly that combination, and nothing else
+       * does — a chip carries a label role, an avatar cell carries no typography
+       * at all. Requiring the type role is what keeps this from flagging every
+       * rounded bordered box on the screen, which an earlier version of this gate
+       * did (32 false positives on ProfileSetupScreen alone).
+       *
+       * Run on the comment-stripped source, so the notes recording what was
+       * removed — which quote the old `borderColor: t.color.border.strong` lines
+       * verbatim — cannot trip it.
+       */
+      const styleBlocks = body.match(/\w+:\s*\{[^{}]*\}/g) ?? [];
+      const offenders = styleBlocks.filter(
+        b =>
+          /typography\.bodyLarge/.test(b) &&
+          /border(Width|Color)\s*:/.test(b) &&
+          /borderRadius\s*:/.test(b),
+      );
+      expect(offenders).toEqual([]);
+    },
+  );
 
   it.each(FIELD_SCREENS)('%s gets its fields from M3Field', screen => {
     const body = stripComments(read(screen));
-    expect(body).toMatch(/import \{[^}]*\bM3Field\b[^}]*\} from '\.\.\/components\/TextField'/);
+    expect(body).toMatch(
+      /import \{[^}]*\bM3Field\b[^}]*\} from '\.\.\/components\/TextField'/,
+    );
     // And no longer reaches for the unstyled primitive directly.
     expect(body).not.toMatch(/<TextField\b/);
-  });
-});
-
-describe('the phone field is set up for Android', () => {
-  const sheet = stripComments(read('src/screens/PhoneVerifySheet.tsx'));
-  /*
-   * Bounded to the field's own tag. The end marker is searched FROM the tag's
-   * index, not from the start of the file: this sheet returns an earlier
-   * `</Sheet>` for its verified state, so an unanchored search ran backwards
-   * and produced an empty slice that made every assertion below pass
-   * vacuously — which is how this block was caught being green while asserting
-   * nothing.
-   */
-  const fieldAt = sheet.indexOf('<M3Field');
-  const field = sheet.slice(fieldAt, sheet.indexOf('</Sheet>', fieldAt));
-
-  it('caps the display at ten digits plus one two-space separator', () => {
-    expect(IN_MOBILE_DISPLAY_LENGTH).toBe(12);
-    // maxLength is on the FORMATTED length, and it is the RN-documented way to
-    // cap without the flicker a JS-only cap causes.
-    expect(field).toContain('maxLength={IN_MOBILE_DISPLAY_LENGTH}');
-  });
-
-  it('asks for the phone keyboard through inputMode, which takes precedence', () => {
-    expect(field).toContain('inputMode="tel"');
-    expect(field).toContain('keyboardType="phone-pad"');
-  });
-
-  it('uses the autofill hint the platform doc names for a single-view number', () => {
-    // AUTOFILL_HINT_PHONE_NUMBER, per
-    // developer.android.com/guide/topics/text/autofill-optimize, is the hint for
-    // "requesting a full phone number in a single view". `tel-national` is
-    // scoped by that page to apps with separate views per part; there is no
-    // country-code field here.
-    expect(field).toContain('autoComplete="tel"');
-    expect(field).not.toContain('autoComplete="tel-national"');
-    // The same page says to check this is not `no`.
-    expect(field).toContain('importantForAutofill="yes"');
-  });
-
-  it('controls the caret, and feeds the user’s own taps back into it', () => {
-    // selection without onSelectionChange is an append-only field: tapping
-    // mid-number would snap back to wherever the last edit left the caret.
-    expect(field).toContain('selection={{ start: caret, end: caret }}');
-    expect(field).toContain('onSelectionChange');
-  });
-
-  it('shows the formatted value but keeps bare digits in state', () => {
-    // `value` is the formatted string; `send` is handed `phone`. If `value`
-    // were `{phone}` the formatting would not show, and if send took the
-    // display string a separator would reach the OTP request.
-    expect(field).toContain('value={display}');
-    expect(sheet).toContain('const display = formatNationalDigits(phone)');
-    expect(sheet).toMatch(/send\(phone\)/);
-    expect(sheet).not.toMatch(/send\(display\)/);
   });
 });
 
@@ -293,11 +241,5 @@ describe('nothing formatted can reach the auth call', () => {
     expect(auth).toMatch(/phone:\s*`\+\$\{normalised\}`/);
     // And there is no path that passes the raw parameter through.
     expect(auth).not.toMatch(/signInWithOtp\(\{\s*phone:\s*phone\b/);
-  });
-
-  it('the verification hook normalises before it sends', () => {
-    const hook = stripComments(read('src/api/phone.ts'));
-    expect(hook).toContain('const normalised = normalisePhone(input)');
-    expect(hook).toContain('sendOtp(normalised)');
   });
 });

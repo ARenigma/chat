@@ -188,6 +188,22 @@ def derivedInternalCode = {
 
 def ciBuildNumber = (explicitVersionCode ?: (wantsInternal ? derivedInternalCode : "1")) as Integer
 
+// Sentry Gradle integration: release-only, static path. It uploads JS source
+// maps + Debug IDs so a production-release crash symbolicates; debug is served
+// readable JS by Metro and needs no upload. Guarded because @sentry/react-native's
+// sentry.gradle is not configuration-cache compatible (it registers copy/cleanup
+// tasks holding script references), so applying it in ANY variant poisons the
+// config-cache store and fails even assembleDebug. This project keeps config
+// cache STRICT (gradle.properties, enforced by platform.test — problems must
+// fail, never be masked to `warn`), so the ONLY builds that may apply Sentry are
+// the release-invocation npm scripts (android:release / android:bundle), which
+// pass `--no-configuration-cache`; every other build (debug, closedTest,
+// internal) skips Sentry and keeps the strict, measured config cache intact.
+// A static path is used because spawning node at configuration time is itself a
+// config-cache violation. Reuses `wantsRelease` from the versionCode block above.
+if (wantsRelease) {
+    apply from: new File(rootProject.projectDir, "../node_modules/@sentry/react-native/sentry.gradle")
+}
 android {
     /**
      * Mount `assets/` from the repo root instead of keeping a second copy of the

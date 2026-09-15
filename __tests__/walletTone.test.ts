@@ -187,7 +187,12 @@ describe('the bright accent carries no label', () => {
     {
       file: 'src/screens/ProviderDetailScreen.tsx',
       fill: 'actionPrimary',
-      label: /kind === 'outline'[\s\S]{0,160}theme\.color\.text\.onAccent/,
+      // The fg ternary walks outline → dark → quiet → (default) primary, and the
+      // default is the onAccent that pairs with the accentStrong fill. Anchored
+      // on the last named branch (`quiet`) so a new button kind inserted ahead of
+      // it cannot slide the pairing out of a fixed-width window, while still
+      // proving primary itself is the onAccent case.
+      label: /kind === 'quiet'[\s\S]{0,120}theme\.color\.text\.onAccent/,
       why: "the provider's primary call action, 12dp Bold beside a 22dp glyph",
     },
     {

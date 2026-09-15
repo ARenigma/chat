@@ -51,6 +51,9 @@ export type TelemetryEvent =
   // reason belongs in `props.reason`, which is why there is one name and not
   // four.
   | 'call_rejected'
+  // The media layer failed after the channel opened (Agora onError / a failed
+  // connection state) — the "no audio / won't connect" class. Migration 108.
+  | 'call_media_failed'
   | 'presence_changed'
   // Added by migration 032 (policy gate + paid sessions).
   | 'policy_accepted'
@@ -737,7 +740,11 @@ export type MockRechargeResult = {
 
 /** Added by migration 019. */
 export type TokenTransactionKind = 'recharge' | 'refund' | 'adjustment';
-export type TokenTransactionStatus = 'created' | 'succeeded' | 'failed' | 'refunded';
+export type TokenTransactionStatus =
+  | 'created'
+  | 'succeeded'
+  | 'failed'
+  | 'refunded';
 
 /**
  * One immutable ledger row per wallet event. Readable by the member who owns
@@ -816,7 +823,10 @@ export type Database = {
       };
       conversations: {
         Row: Conversation;
-        Insert: Partial<Conversation> & { member_id: string; provider_id: string };
+        Insert: Partial<Conversation> & {
+          member_id: string;
+          provider_id: string;
+        };
         Update: Partial<Conversation>;
         Relationships: [];
       };
@@ -859,7 +869,11 @@ export type Database = {
       };
       events: {
         Row: never;
-        Insert: { user_id: string; name: TelemetryEvent; props?: Record<string, string | number | boolean> };
+        Insert: {
+          user_id: string;
+          name: TelemetryEvent;
+          props?: Record<string, string | number | boolean>;
+        };
         Update: never;
         Relationships: [];
       };
@@ -914,7 +928,13 @@ export type Database = {
        * is allowed so a sign-out can revoke this device.
        */
       push_tokens: {
-        Row: { token: string; user_id: string; platform: string; created_at: string; last_seen_at: string };
+        Row: {
+          token: string;
+          user_id: string;
+          platform: string;
+          created_at: string;
+          last_seen_at: string;
+        };
         Insert: never;
         Update: never;
         Relationships: [];
@@ -1019,7 +1039,11 @@ export type Database = {
         Relationships: [];
       };
       my_payout_readiness: {
-        Row: { payout_account_verified: boolean; pan_verified: boolean; can_go_live: boolean };
+        Row: {
+          payout_account_verified: boolean;
+          pan_verified: boolean;
+          can_go_live: boolean;
+        };
         Relationships: [];
       };
     };
@@ -1184,11 +1208,19 @@ export type Database = {
         Returns: void;
       };
       submit_review: {
-        Args: { p_conversation_id: string; p_rating: number; p_comment?: string | null };
+        Args: {
+          p_conversation_id: string;
+          p_rating: number;
+          p_comment?: string | null;
+        };
         Returns: undefined;
       };
       submit_session_review: {
-        Args: { p_session_id: string; p_rating: number; p_comment?: string | null };
+        Args: {
+          p_session_id: string;
+          p_rating: number;
+          p_comment?: string | null;
+        };
         Returns: undefined;
       };
       get_provider_ratings: {
@@ -1316,7 +1348,11 @@ export type Database = {
       };
       announce_chat_open: {
         Args: { p_conversation_id: string };
-        Returns: { alerted: boolean; reason: string | null; peer_present?: boolean };
+        Returns: {
+          alerted: boolean;
+          reason: string | null;
+          peer_present?: boolean;
+        };
       };
       get_usage_ledger: {
         Args: { p_limit?: number; p_before?: string | null };

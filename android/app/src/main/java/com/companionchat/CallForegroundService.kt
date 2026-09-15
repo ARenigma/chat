@@ -7,6 +7,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.media.AudioAttributes
+import android.media.MediaPlayer
+import android.media.RingtoneManager
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.content.ContextCompat
@@ -37,6 +40,18 @@ class CallForegroundService : Service() {
      * video, which needs the screen on. Agora routes the audio; the screen is ours.
      */
     private var proximityLock: PowerManager.WakeLock? = null
+
+    /**
+     * The continuous incoming ring. A notification channel's sound plays ONCE
+     * when the notification is posted (Amit, 2026-09-15: "notification tone also
+     * not working for either call or video call") — a phone rings until answered.
+     * So while the call is ringing this service loops the device ringtone itself,
+     * at USAGE_NOTIFICATION_RINGTONE (the ring stream), and stops it the moment
+     * the call is answered (the service restarts with isIncoming=false) or ends.
+     * Telegram's VoIPService owns the ring the same way rather than leaning on the
+     * channel sound.
+     */
+    private var ringtone: MediaPlayer? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -103,7 +118,50 @@ class CallForegroundService : Service() {
         // Proximity screen-off for a connected VOICE call (mic, no camera).
         updateProximity(includeMicrophone && !includeCamera)
 
+        // Ring continuously while incoming; stop the instant the call is answered
+        // (the caller restarts this service with isIncoming=false) or ends.
+        if (isIncoming) startRinging() else stopRinging()
+
         return START_NOT_STICKY
+    }
+
+    /**
+     * Loop the device's default ringtone on the ring stream. A ringtone that will
+     * not load or play is swallowed — a missing ring is not worth crashing the
+     * call service, and the CallStyle notification is still up.
+     */
+    private fun startRinging() {
+        if (ringtone != null) return
+        val uri = RingtoneManager.getActualDefaultRingtoneUri(this, RingtoneManager.TYPE_RINGTONE)
+            ?: return
+        val player = MediaPlayer()
+        try {
+            player.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build(),
+            )
+            player.isLooping = true
+            player.setDataSource(this, uri)
+            player.prepare()
+            player.start()
+            ringtone = player
+        } catch (e: Exception) {
+            player.release()
+        }
+    }
+
+    private fun stopRinging() {
+        ringtone?.let { player ->
+            try {
+                if (player.isPlaying) player.stop()
+            } catch (e: IllegalStateException) {
+                // Already stopped/released — nothing to do.
+            }
+            player.release()
+        }
+        ringtone = null
     }
 
     /**
@@ -130,6 +188,7 @@ class CallForegroundService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        stopRinging()
         audioFocusManager.abandonCallFocus()
         proximityLock?.let { if (it.isHeld) it.release() }
         proximityLock = null

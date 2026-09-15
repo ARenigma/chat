@@ -30,7 +30,8 @@ const code = (p: string): string =>
 
 const MANIFEST = 'android/app/src/main/AndroidManifest.xml';
 const DEBUG_MANIFEST = 'android/app/src/debug/AndroidManifest.xml';
-const MAIN_ACTIVITY = 'android/app/src/main/java/com/companionchat/MainActivity.kt';
+const MAIN_ACTIVITY =
+  'android/app/src/main/java/com/companionchat/MainActivity.kt';
 
 describe('native Material wait indicators', () => {
   /**
@@ -78,7 +79,9 @@ describe('debug-only Maestro authentication', () => {
   it('rejects the session injector in every non-debug JavaScript bundle', () => {
     const auth = read('src/api/auth.ts');
     expect(auth).toContain("const e2eUrl = 'companionchat://e2e-auth'");
-    expect(auth).toMatch(/if \(!__DEV__\)[\s\S]*status: 'ignored'[\s\S]*setSession/);
+    expect(auth).toMatch(
+      /if \(!__DEV__\)[\s\S]*status: 'ignored'[\s\S]*setSession/,
+    );
   });
 });
 
@@ -87,7 +90,40 @@ describe('Gradle configuration cache', () => {
   it('reuses the configured task graph without masking compatibility problems', () => {
     const properties = read('android/gradle.properties');
     expect(properties).toContain('org.gradle.configuration-cache=true');
-    expect(properties).not.toContain('org.gradle.configuration-cache.problems=warn');
+    expect(properties).not.toContain(
+      'org.gradle.configuration-cache.problems=warn',
+    );
+  });
+
+  it('keeps the Sentry Gradle plugin out of the config-cached (non-release) builds', () => {
+    /*
+     * @sentry/react-native's sentry.gradle is not configuration-cache compatible:
+     * applying it registers copy/cleanup tasks that hold Gradle script references,
+     * so with strict config cache (above) it fails EVERY build it is applied to —
+     * including assembleDebug, the dev loop. The `@sentry/wizard` installs it
+     * UNCONDITIONALLY and via `["node","--print",require.resolve(...)]`.execute()`,
+     * an external process at configuration time that is itself a violation. So the
+     * apply must stay guarded to release builds and use a static path — a wizard
+     * re-run silently reintroducing either form must fail here, not on a device.
+     */
+    const gradle = read('android/app/build.gradle');
+    expect(gradle).toContain(
+      'if (wantsRelease) {\n    apply from: new File(rootProject.projectDir, "../node_modules/@sentry/react-native/sentry.gradle")',
+    );
+    expect(gradle).not.toContain('require.resolve');
+    expect(gradle).not.toMatch(/\.execute\(\)/);
+
+    /*
+     * Release builds DO apply Sentry, so their invocation must opt out of the
+     * config cache (the only sanctioned escape hatch, since masking problems to
+     * `warn` is forbidden above). Assert the two release scripts pass the flag.
+     */
+    const pkg = read('package.json');
+    const scripts = (JSON.parse(pkg) as { scripts: Record<string, string> })
+      .scripts;
+    for (const name of ['android:release', 'android:bundle']) {
+      expect(scripts[name]).toContain('--no-configuration-cache');
+    }
   });
 });
 
@@ -129,7 +165,9 @@ describe('system bars and edge-to-edge', () => {
      * A test that reads comments is a test that grades documentation.
      */
     const body = read(MAIN_ACTIVITY);
-    const contrastAt = body.indexOf('window.isNavigationBarContrastEnforced = false');
+    const contrastAt = body.indexOf(
+      'window.isNavigationBarContrastEnforced = false',
+    );
     const enableAt = body.indexOf('WindowCompat.enableEdgeToEdge(window)');
     expect(contrastAt).toBeGreaterThan(0);
     expect(enableAt).toBeGreaterThan(0);
@@ -169,9 +207,7 @@ describe('the manifest states its platform intent', () => {
   // This test verifies we are NOT accidentally declaring it (which would be
   // harmless but noisy and indicates someone read the wrong guide).
   test('manifest does not manually declare BILLING permission', () => {
-    expect(read(MANIFEST)).not.toContain(
-      'com.android.vending.BILLING'
-    );
+    expect(read(MANIFEST)).not.toContain('com.android.vending.BILLING');
   });
 
   test('manifest gate names the capabilities contributed by call, billing, and auth libraries', () => {
@@ -180,7 +216,7 @@ describe('the manifest states its platform intent', () => {
     expect(verifier).toContain('android.permission.BLUETOOTH_CONNECT');
     expect(verifier).toContain('android.permission.MODIFY_AUDIO_SETTINGS');
     expect(verifier).toContain(
-      'com.google.android.providers.gsf.permission.READ_GSERVICES'
+      'com.google.android.providers.gsf.permission.READ_GSERVICES',
     );
   });
 
@@ -188,10 +224,10 @@ describe('the manifest states its platform intent', () => {
     const build = read('android/app/build.gradle');
     expect(build).toContain("exclude '**/libagora_*_extension.so'");
     expect(build).toContain(
-      'exclude group: "io.agora.rtc", module: "full-screen-sharing"'
+      'exclude group: "io.agora.rtc", module: "full-screen-sharing"',
     );
     expect(build).toContain(
-      'docs.agora.io/en/realtime-media/video/build/optimize-and-operate/app-size-optimization/react-native'
+      'docs.agora.io/en/realtime-media/video/build/optimize-and-operate/app-size-optimization/react-native',
     );
   });
 });
@@ -213,7 +249,9 @@ describe('the input method is not allowed to take the window', () => {
      */
     const offenders: string[] = [];
     const walk = (dir: string): void => {
-      for (const entry of readdirSync(join(ROOT, dir), { withFileTypes: true })) {
+      for (const entry of readdirSync(join(ROOT, dir), {
+        withFileTypes: true,
+      })) {
         const rel = `${dir}/${entry.name}`;
         if (entry.isDirectory()) {
           walk(rel);
@@ -227,7 +265,11 @@ describe('the input method is not allowed to take the window', () => {
           const body = read(rel);
           // A VALUE import of TextInput. `import { type TextInput }` is fine:
           // CodeField needs it to type an imperative focus ref.
-          if (/import \{[^}]*(?<!type )\bTextInput\b[^}]*\} from 'react-native'/s.test(body)) {
+          if (
+            /import \{[^}]*(?<!type )\bTextInput\b[^}]*\} from 'react-native'/s.test(
+              body,
+            )
+          ) {
             offenders.push(rel);
           }
           /*
@@ -298,7 +340,12 @@ describe('large screens and orientation', () => {
      * state by decision, so that costs somebody's half-typed message.
      */
     const manifest = read(MANIFEST);
-    for (const required of ['orientation', 'screenSize', 'keyboardHidden', 'smallestScreenSize']) {
+    for (const required of [
+      'orientation',
+      'screenSize',
+      'keyboardHidden',
+      'smallestScreenSize',
+    ]) {
       expect(manifest).toMatch(new RegExp(`configChanges="[^"]*${required}`));
     }
   });
@@ -314,7 +361,8 @@ describe('large screens and orientation', () => {
  *     separate builders on separate channels.
  */
 describe('message + engagement notifications', () => {
-  const CONVERSATIONS = 'android/app/src/main/java/com/companionchat/Conversations.kt';
+  const CONVERSATIONS =
+    'android/app/src/main/java/com/companionchat/Conversations.kt';
 
   it('builds the message notification as a conversation MessagingStyle', () => {
     const body = read(CONVERSATIONS);
@@ -354,7 +402,9 @@ describe('message + engagement notifications', () => {
 
     // The activity must render over the keyguard and wake the screen for a call,
     // and ONLY for a call.
-    const main = read('android/app/src/main/java/com/companionchat/MainActivity.kt');
+    const main = read(
+      'android/app/src/main/java/com/companionchat/MainActivity.kt',
+    );
     expect(main).toContain('setShowWhenLocked(isCall)');
     expect(main).toContain('setTurnScreenOn(isCall)');
     expect(main).toContain('companionchat://call/');
@@ -498,9 +548,9 @@ describe('startup is profiled, not guessed', () => {
     );
     expect(native).toContain('activity.reportFullyDrawn()');
     expect(native).toContain('AtomicBoolean');
-    expect(read('android/app/src/main/java/com/companionchat/InAppUpdatePackage.kt')).toContain(
-      'StartupTimingModule(reactContext)',
-    );
+    expect(
+      read('android/app/src/main/java/com/companionchat/InAppUpdatePackage.kt'),
+    ).toContain('StartupTimingModule(reactContext)');
     const app = read('App.tsx');
     expect(app).toContain("boot.phase === 'loading'");
     expect(app).toContain('StartupTiming?.reportFullyDrawn()');
@@ -521,7 +571,9 @@ describe('startup is profiled, not guessed', () => {
     expect(benchmark).toContain('fun openChatFrames()');
     expect(benchmark).toContain('startupMode = null');
     expect(benchmark).toContain('setupBlock = {');
-    expect(read('src/screens/HomeScreen.tsx')).toContain('testID="home-scroll"');
+    expect(read('src/screens/HomeScreen.tsx')).toContain(
+      'testID="home-scroll"',
+    );
   });
 
   it('keeps the recording module out of the shipped app', () => {
@@ -646,7 +698,8 @@ describe('the chat transcript is readable by a screen reader', () => {
  * doc: developer.android.com/media/optimize/audio-focus
  */
 describe('call lifecycle — foreground service and permissions', () => {
-  const FGS = 'android/app/src/main/java/com/companionchat/CallForegroundService.kt';
+  const FGS =
+    'android/app/src/main/java/com/companionchat/CallForegroundService.kt';
   const AUDIO_FOCUS =
     'android/app/src/main/java/com/companionchat/CallAudioFocusManager.kt';
   const SEND_CALL = 'supabase/functions/send-call/index.ts';
@@ -663,8 +716,12 @@ describe('call lifecycle — foreground service and permissions', () => {
     const manifest = read(MANIFEST);
     expect(manifest).toContain('android.permission.MANAGE_OWN_CALLS');
     expect(manifest).toContain('android.permission.FOREGROUND_SERVICE');
-    expect(manifest).toContain('android.permission.FOREGROUND_SERVICE_PHONE_CALL');
-    expect(manifest).toContain('android.permission.FOREGROUND_SERVICE_MICROPHONE');
+    expect(manifest).toContain(
+      'android.permission.FOREGROUND_SERVICE_PHONE_CALL',
+    );
+    expect(manifest).toContain(
+      'android.permission.FOREGROUND_SERVICE_MICROPHONE',
+    );
     expect(manifest).toContain('android.permission.FOREGROUND_SERVICE_CAMERA');
   });
 
@@ -676,7 +733,9 @@ describe('call lifecycle — foreground service and permissions', () => {
      */
     const manifest = read(MANIFEST);
     expect(manifest).toContain('android:name=".CallForegroundService"');
-    expect(manifest).toMatch(/foregroundServiceType="phoneCall\|microphone\|camera"/);
+    expect(manifest).toMatch(
+      /foregroundServiceType="phoneCall\|microphone\|camera"/,
+    );
   });
 
   it('declares CallActionReceiver in the manifest', () => {
@@ -695,8 +754,9 @@ describe('call lifecycle — foreground service and permissions', () => {
     expect(diagnostics).toContain('onCapabilitiesChanged');
     expect(diagnostics).toContain('unregisterNetworkCallback');
     expect(diagnostics).not.toContain('linkProperties');
-    expect(read('android/app/src/main/java/com/companionchat/InAppUpdatePackage.kt'))
-      .toContain('CallDiagnosticsModule(reactContext)');
+    expect(
+      read('android/app/src/main/java/com/companionchat/InAppUpdatePackage.kt'),
+    ).toContain('CallDiagnosticsModule(reactContext)');
   });
 
   it('creates the calls channel before promoting the service', () => {
@@ -739,7 +799,9 @@ describe('call lifecycle — foreground service and permissions', () => {
     // `_v2` suffix (2026-09-14): the channels were bumped to escape Android's
     // write-once channel cache and finally carry an explicit sound. See the
     // "channels make a sound" test below.
-    expect(conversations).toContain('const val CALL_ONGOING_CHANNEL_ID = "call_ongoing_v2"');
+    expect(conversations).toContain(
+      'const val CALL_ONGOING_CHANNEL_ID = "call_ongoing_v2"',
+    );
     expect(conversations).toMatch(
       /Builder\(CALL_ONGOING_CHANNEL_ID, NotificationManagerCompat\.IMPORTANCE_LOW\)/,
     );
@@ -773,12 +835,16 @@ describe('call lifecycle — foreground service and permissions', () => {
     expect(conversations).toContain(
       '.setSound(Settings.System.DEFAULT_RINGTONE_URI, ringtoneAttributes())',
     );
-    expect(conversations).toContain('AudioAttributes.USAGE_NOTIFICATION_RINGTONE');
+    expect(conversations).toContain(
+      'AudioAttributes.USAGE_NOTIFICATION_RINGTONE',
+    );
     // The old silent channels are deleted so the sound settings take effect on
     // existing installs, not just fresh ones.
     expect(conversations).toContain('migrateSilentChannels(context)');
     expect(conversations).toMatch(/deleteNotificationChannel\(old\)/);
-    expect(conversations).toContain('"conversations", "engagement", "calls", "call_ongoing"');
+    expect(conversations).toContain(
+      '"conversations", "engagement", "calls", "call_ongoing"',
+    );
   });
 
   it('darkens the screen at the ear during a voice call, and only a voice call', () => {
@@ -792,10 +858,16 @@ describe('call lifecycle — foreground service and permissions', () => {
      */
     const fgs = read(FGS);
     expect(fgs).toContain('PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK');
-    expect(fgs).toContain('updateProximity(includeMicrophone && !includeCamera)');
+    expect(fgs).toContain(
+      'updateProximity(includeMicrophone && !includeCamera)',
+    );
     // Support-checked (not every device has it) and released on destroy.
-    expect(fgs).toContain('isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK)');
-    expect(fgs).toMatch(/onDestroy[\s\S]*proximityLock\?\.let \{ if \(it\.isHeld\) it\.release\(\) \}/);
+    expect(fgs).toContain(
+      'isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK)',
+    );
+    expect(fgs).toMatch(
+      /onDestroy[\s\S]*proximityLock\?\.let \{ if \(it\.isHeld\) it\.release\(\) \}/,
+    );
   });
 
   it('picks the CallStyle from the real call direction, never a hardcoded true', () => {
@@ -813,9 +885,14 @@ describe('call lifecycle — foreground service and permissions', () => {
     expect(fgs).not.toContain('putExtra(EXTRA_IS_INCOMING, true)');
     expect(fgs).toContain('CallStyle\n');
 
-    // JS passes the direction rather than defaulting it.
+    // JS passes the direction rather than defaulting it, and includes the
+    // microphone type from the FIRST start (the third arg `true`) so Agora does
+    // not publish a silent track before FOREGROUND_SERVICE_TYPE_MICROPHONE is
+    // active on Android 14+ (2026-09-15 audio fix).
     const screen = read('src/screens/CallScreen.tsx');
-    expect(screen).toContain("startCallForegroundService(name, direction === 'in')");
+    expect(screen).toContain(
+      "startCallForegroundService(name, direction === 'in', true)",
+    );
   });
 
   it('CallForegroundService exists and uses ServiceCompat.startForeground', () => {
@@ -828,11 +905,29 @@ describe('call lifecycle — foreground service and permissions', () => {
     const fgs = read(FGS);
     expect(fgs).toContain('ServiceCompat.startForeground(');
     // minSdk 24 cannot call Context.startForegroundService (API 26) directly.
-    expect(fgs).toContain('ContextCompat.startForegroundService(context, intent)');
+    expect(fgs).toContain(
+      'ContextCompat.startForegroundService(context, intent)',
+    );
     expect(fgs).not.toContain('context.startForegroundService(intent)');
     // The FGS must never use fullScreenIntent — the platform test for
     // Conversations.kt already asserts its absence from the ring notification.
     expect(fgs).not.toContain('setFullScreenIntent');
+  });
+
+  it('rings continuously while incoming, not a single channel blip', () => {
+    /*
+     * "notification tone also not working for either call or video call" (Amit,
+     * 2026-09-15). A channel's sound plays ONCE on post; a call rings until it is
+     * answered. So the service loops the device ringtone on the ring stream while
+     * incoming and stops it the instant the call connects or ends — the same way
+     * Telegram's VoIPService owns the ring rather than the channel.
+     */
+    const fgs = read(FGS);
+    expect(fgs).toContain('if (isIncoming) startRinging() else stopRinging()');
+    expect(fgs).toContain('AudioAttributes.USAGE_NOTIFICATION_RINGTONE');
+    expect(fgs).toContain('player.isLooping = true');
+    // Stopped on teardown so the ring never outlives the call.
+    expect(fgs).toMatch(/onDestroy[\s\S]*stopRinging\(\)/);
   });
 
   it('CallAudioFocusManager guards AudioFocusRequest on API 26+', () => {
@@ -843,7 +938,17 @@ describe('call lifecycle — foreground service and permissions', () => {
      */
     const af = read(AUDIO_FOCUS);
     expect(af).toMatch(/Build\.VERSION\.SDK_INT >= Build\.VERSION_CODES\.O/);
-    expect(af).toContain('AUDIOFOCUS_GAIN_TRANSIENT');
+    /*
+     * Durable AUDIOFOCUS_GAIN, NOT _TRANSIENT: a call holds the audio for its
+     * whole duration (minutes), so it takes and keeps focus rather than
+     * borrowing it briefly. Requesting transient focus let other audio treat
+     * the call as a blip to duck under and resume around, which on a real
+     * device surfaced as the far side fading in and out. The AudioFocusRequest
+     * builder must be seeded with AUDIOFOCUS_GAIN and never the transient form.
+     * (developer.android.com/media/optimize/audio-focus#audio_focus_gain)
+     */
+    expect(af).toContain('AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)');
+    expect(af).not.toContain('AUDIOFOCUS_GAIN_TRANSIENT');
     expect(af).toContain('USAGE_VOICE_COMMUNICATION');
     expect(af).toContain('MODE_IN_COMMUNICATION');
     // Audio focus is abandoned on call end (restore MODE_NORMAL).
@@ -881,7 +986,9 @@ describe('call lifecycle — foreground service and permissions', () => {
      * required. (developer.android.com/about/versions/12/behavior-changes-12#backup-restrictions)
      */
     const manifest = read(MANIFEST);
-    expect(manifest).toContain('android:dataExtractionRules="@xml/data_extraction_rules"');
+    expect(manifest).toContain(
+      'android:dataExtractionRules="@xml/data_extraction_rules"',
+    );
   });
 });
 
@@ -898,7 +1005,9 @@ describe('device coverage matrix', () => {
     const source = read('src/lib/windowSize.ts');
     expect(source).toContain('WIDTH_MEDIUM_MIN = 600');
     expect(source).toContain('WIDTH_EXPANDED_MIN = 840');
-    expect(source).toContain('developer.android.com/develop/ui/views/layout/use-window-size-classes');
+    expect(source).toContain(
+      'developer.android.com/develop/ui/views/layout/use-window-size-classes',
+    );
   });
 
   it('keeps the tab bar icon-only so 200% font scale cannot overflow it', () => {
@@ -907,7 +1016,9 @@ describe('device coverage matrix', () => {
     const bar = read('src/components/FloatingToolbar.tsx');
     expect(bar).not.toMatch(/<Text[\s\S]*tab\.label/);
     expect(bar).toContain('<Icon');
-    expect(read('src/components/Icon.tsx')).toContain('allowFontScaling={false}');
+    expect(read('src/components/Icon.tsx')).toContain(
+      'allowFontScaling={false}',
+    );
   });
 
   it('implements the approved profile-first You settings destination', () => {
@@ -946,15 +1057,19 @@ describe('device coverage matrix', () => {
     // The leading icon uses styles.iconBox (danger rows add a tinted disc via
     // an array style, so match the token rather than the exact expression).
     expect(settings).toContain('styles.iconBox');
-    expect(settings).toContain("import { Divider } from '../components/Divider'");
+    expect(settings).toContain(
+      "import { Divider } from '../components/Divider'",
+    );
     // Dividers separate rows, and align to where the title starts rather than
     // borrowing the avatar list's 72dp. https://m3.material.io/components/divider/specs
-    expect(settings).toContain('<Divider variant="inset" insetStart={ROW_TEXT_INSET} />');
+    expect(settings).toContain(
+      '<Divider variant="inset" insetStart={ROW_TEXT_INSET} />',
+    );
     expect(settings).toMatch(/const ROW_TEXT_INSET = 32 \+ TOKENS\.space\.sm/);
     expect(settings).not.toContain('<Divider variant="inset" />');
     expect(settings).toContain('icon="logout"');
-    expect(settings).toContain('choiceSheet === \'presence\'');
-    expect(settings).toContain('choiceSheet === \'theme\'');
+    expect(settings).toContain("choiceSheet === 'presence'");
+    expect(settings).toContain("choiceSheet === 'theme'");
   });
 
   /**
@@ -984,12 +1099,18 @@ describe('device coverage matrix', () => {
     // Rendered unconditionally now, with visibility derived from the exhaustive
     // route classifier rather than a hand-written list of names that a new
     // route can silently fall out of.
-    expect(app).toMatch(/<FloatingToolbar\n\s+active=\{activeTab\}\n\s+visible=\{transitionFor\(route\) !== 'push'\}/);
-    expect(app).not.toMatch(/route\.name === 'favourites' \? \(\s*<FloatingToolbar/);
+    expect(app).toMatch(
+      /<FloatingToolbar\n\s+active=\{activeTab\}\n\s+visible=\{transitionFor\(route\) !== 'push'\}/,
+    );
+    expect(app).not.toMatch(
+      /route\.name === 'favourites' \? \(\s*<FloatingToolbar/,
+    );
     // The highlighted tab sticks while hidden, so a hidden bar never animates
     // its indicator.
     expect(app).toContain('const lastTabRef = useRef<ToolbarKey>');
-    expect(app).toMatch(/if \(tabFor !== null\) \{\s*\n\s*lastTabRef\.current = tabFor;/);
+    expect(app).toMatch(
+      /if \(tabFor !== null\) \{\s*\n\s*lastTabRef\.current = tabFor;/,
+    );
   });
 
   it('ships the frame-timing tool MainActivity cites', () => {
@@ -1018,8 +1139,12 @@ describe('device coverage matrix', () => {
     // to 8.33ms — which would fail every frame on a 60Hz panel.
     expect(script).toContain("arg('budget', vsyncPeriod)");
 
-    const pkg = JSON.parse(read('package.json')) as { scripts: Record<string, string> };
-    expect(pkg.scripts['android:framestats']).toBe('node scripts/framestats.mjs');
+    const pkg = JSON.parse(read('package.json')) as {
+      scripts: Record<string, string>;
+    };
+    expect(pkg.scripts['android:framestats']).toBe(
+      'node scripts/framestats.mjs',
+    );
   });
 
   it('has an OAuth client for EVERY certificate the app can ship with', () => {
@@ -1052,18 +1177,25 @@ describe('device coverage matrix', () => {
      */
     const REQUIRED: Record<string, string> = {
       '5e8f16062ea3cd2c4a0d547876baa6f38cabf625': 'debug key (assembleDebug)',
-      '4910a1ff7ac9cb1ab11bb46386bf6a7ec4726553': 'upload key (internal, closedTest, sideload)',
-      '84b2e9bc7b777b02b010b4d32f0e38ead3b3da2d': 'PLAY APP SIGNING (every Play-delivered build)',
+      '4910a1ff7ac9cb1ab11bb46386bf6a7ec4726553':
+        'upload key (internal, closedTest, sideload)',
+      '84b2e9bc7b777b02b010b4d32f0e38ead3b3da2d':
+        'PLAY APP SIGNING (every Play-delivered build)',
     };
     const cfg = JSON.parse(read('android/app/google-services.json')) as {
       client: {
         client_info: { android_client_info: { package_name: string } };
-        oauth_client: { client_type: number; android_info?: { certificate_hash: string } }[];
+        oauth_client: {
+          client_type: number;
+          android_info?: { certificate_hash: string };
+        }[];
       }[];
     };
     const present = new Set<string>();
     for (const client of cfg.client) {
-      expect(client.client_info.android_client_info.package_name).toBe('com.companionchat');
+      expect(client.client_info.android_client_info.package_name).toBe(
+        'com.companionchat',
+      );
       for (const oauth of client.oauth_client) {
         if (oauth.client_type === 1 && oauth.android_info) {
           present.add(oauth.android_info.certificate_hash.toLowerCase());
@@ -1073,19 +1205,27 @@ describe('device coverage matrix', () => {
     for (const [sha, why] of Object.entries(REQUIRED)) {
       // If this fails, an OAuth client is missing for that certificate and every
       // build signed with it cannot do Google Sign-In.
-      expect({ sha, why, present: present.has(sha) }).toEqual({ sha, why, present: true });
+      expect({ sha, why, present: present.has(sha) }).toEqual({
+        sha,
+        why,
+        present: true,
+      });
     }
   });
 
   /** https://developer.android.com/guide/components/activities/testing */
   it('ships a hermetic ActivityScenario launch smoke test', () => {
     const gradle = read('android/app/build.gradle');
-    expect(gradle).toContain('testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"');
+    expect(gradle).toContain(
+      'testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"',
+    );
     expect(gradle).toContain('androidx.test:core');
     const smoke = read(
       'android/app/src/androidTest/java/com/companionchat/LaunchSmokeTest.kt',
     );
-    expect(smoke).toContain('ActivityScenario.launch(MainActivity::class.java)');
+    expect(smoke).toContain(
+      'ActivityScenario.launch(MainActivity::class.java)',
+    );
     expect(smoke).toContain('Lifecycle.State.RESUMED');
     expect(smoke).not.toContain('welcome-continue');
   });
@@ -1156,7 +1296,9 @@ describe('Cashfree WebCheckout — Android package visibility', () => {
     const pkg = JSON.parse(read('package.json')) as {
       dependencies: Record<string, string>;
     };
-    expect(Object.keys(pkg.dependencies)).toContain('react-native-cashfree-pg-sdk');
+    expect(Object.keys(pkg.dependencies)).toContain(
+      'react-native-cashfree-pg-sdk',
+    );
   });
 });
 
@@ -1169,7 +1311,9 @@ describe('Cashfree 1-Click Onboarding — native verification bridge', () => {
    * https://www.cashfree.com/docs/api-reference/vrs/v2/1-click-onboarding/1-click-onboarding-sdk#android-native
    */
   it('adds the Cashfree Maven repo (the VRS SDK 404s on Maven Central)', () => {
-    expect(read('android/build.gradle')).toContain('https://maven.cashfree.com/release');
+    expect(read('android/build.gradle')).toContain(
+      'https://maven.cashfree.com/release',
+    );
   });
 
   it('depends on the VRS SDK by its real coordinate', () => {
@@ -1194,8 +1338,12 @@ describe('Cashfree 1-Click Onboarding — native verification bridge', () => {
     expect(module).toContain('open1ClickOnboarding(sessionId, env)');
     // The stale README API is not IMPORTED or CALLED (it may be named in a
     // comment that warns against it, which is why this checks imports, not text).
-    expect(module).not.toContain('import com.cashfree.kyc_verification_core.services.CFKycVerificationService');
-    expect(module).not.toContain('CFVerificationService.Builder().setContext(activity).build().doVerification');
+    expect(module).not.toContain(
+      'import com.cashfree.kyc_verification_core.services.CFKycVerificationService',
+    );
+    expect(module).not.toContain(
+      'CFVerificationService.Builder().setContext(activity).build().doVerification',
+    );
   });
 });
 
@@ -1209,12 +1357,14 @@ describe('sheet motion and display refresh', () => {
   });
 
   it('blurs the activity behind a sheet via RenderEffect, not a screenshot', () => {
-    const chrome = read('android/app/src/main/java/com/companionchat/WindowChromeModule.kt');
+    const chrome = read(
+      'android/app/src/main/java/com/companionchat/WindowChromeModule.kt',
+    );
     expect(chrome).toContain('RenderEffect.createBlurEffect');
     expect(chrome).toContain('Build.VERSION_CODES.S');
-    expect(read('android/app/src/main/java/com/companionchat/InAppUpdatePackage.kt')).toContain(
-      'WindowChromeModule',
-    );
+    expect(
+      read('android/app/src/main/java/com/companionchat/InAppUpdatePackage.kt'),
+    ).toContain('WindowChromeModule');
     expect(read('src/components/Sheet.tsx')).toContain('setSheetBackdropBlur');
   });
 });
@@ -1342,7 +1492,8 @@ describe('gesture callbacks are workletized by the worklets plugin', () => {
  * https://docs.swmansion.com/react-native-reanimated/docs/fundamentals/glossary#worklet
  */
 describe('lib helpers called inside UI-thread worklets carry the directive', () => {
-  const HOOKS = /\b(useAnimatedStyle|useDerivedValue|useAnimatedReaction|useAnimatedProps)\s*\(/g;
+  const HOOKS =
+    /\b(useAnimatedStyle|useDerivedValue|useAnimatedReaction|useAnimatedProps)\s*\(/g;
   const uiFiles = ['src/components', 'src/screens'].flatMap(dir =>
     readdirSync(join(ROOT, dir))
       .filter(f => f.endsWith('.tsx'))
@@ -1414,7 +1565,10 @@ describe('lib helpers called inside UI-thread worklets carry the directive', () 
     for (const m of src.matchAll(HOOKS)) {
       const body = balanced(src, (m.index ?? 0) + m[0].length - 1);
       for (const [name, from] of imports) {
-        if (new RegExp(`\\b${name}\\s*\\(`).test(body) && !hasDirective(from, name)) {
+        if (
+          new RegExp(`\\b${name}\\s*\\(`).test(body) &&
+          !hasDirective(from, name)
+        ) {
           offenders.push(`${name} from ${from}`);
         }
       }
@@ -1604,8 +1758,12 @@ describe('CameraX live-preview tile', () => {
      */
     const component = read('src/components/CameraPreview.tsx');
     expect(component).toContain('CAMERA_PREVIEW_AVAILABLE');
-    expect(component).toContain("UIManager.hasViewManagerConfig('PappalCameraPreview')");
-    expect(component).toContain("requireNativeComponent<CameraPreviewProps>('PappalCameraPreview')");
+    expect(component).toContain(
+      "UIManager.hasViewManagerConfig('PappalCameraPreview')",
+    );
+    expect(component).toContain(
+      "requireNativeComponent<CameraPreviewProps>('PappalCameraPreview')",
+    );
   });
 
   it('JS wrapper has no implicit any — facing is typed as back | front', () => {
@@ -1629,7 +1787,8 @@ describe('CameraX live-preview tile', () => {
  * silently (RULE 1: if it can be checked mechanically, it goes here).
  */
 describe('UI haptics go through the platform feedback constants', () => {
-  const HAPTICS_KT = 'android/app/src/main/java/com/companionchat/HapticsModule.kt';
+  const HAPTICS_KT =
+    'android/app/src/main/java/com/companionchat/HapticsModule.kt';
 
   it('uses performHapticFeedback, not a raw Vibration duration', () => {
     /*
@@ -1670,12 +1829,16 @@ describe('UI haptics go through the platform feedback constants', () => {
       const at = kt.indexOf(`HapticFeedbackConstants.${constant}`);
       expect(at).toBeGreaterThan(-1);
       // A version gate appears above each of them.
-      expect(kt.slice(0, at)).toMatch(/Build\.VERSION\.SDK_INT >= Build\.VERSION_CODES\.R/);
+      expect(kt.slice(0, at)).toMatch(
+        /Build\.VERSION\.SDK_INT >= Build\.VERSION_CODES\.R/,
+      );
     }
   });
 
   it('registers the module so JS can reach it', () => {
-    const pkg = read('android/app/src/main/java/com/companionchat/InAppUpdatePackage.kt');
+    const pkg = read(
+      'android/app/src/main/java/com/companionchat/InAppUpdatePackage.kt',
+    );
     expect(pkg).toContain('HapticsModule(reactContext)');
     expect(read(HAPTICS_KT)).toContain('const val NAME = "PappalHaptics"');
     // And the JS side asks for that exact name.
@@ -1717,7 +1880,9 @@ describe('hardware GPU backdrop blur (PappalBlurRoot + PappalBlurSurface)', () =
     expect(tsx).toMatch(/Platform\.Version >= BLUR_MIN_API/);
     // And the native gate it mirrors is still there, so the two cannot drift.
     const kt = read(BLUR_PACKAGE);
-    expect(kt).toMatch(/Build\.VERSION\.SDK_INT >= 31 && canvas\.isHardwareAccelerated/);
+    expect(kt).toMatch(
+      /Build\.VERSION\.SDK_INT >= 31 && canvas\.isHardwareAccelerated/,
+    );
   });
 
   it('lets the palette decide how transparent glass is', () => {
@@ -1772,7 +1937,9 @@ describe('hardware GPU backdrop blur (PappalBlurRoot + PappalBlurSurface)', () =
      * framework do the conversion it already does for every other colour prop.
      */
     const frost = read('src/components/Frost.tsx');
-    expect(frost).toMatch(/tintColor=\{tint === 'none' \? 'transparent' : theme\.color\.bg\.glass\}/);
+    expect(frost).toMatch(
+      /tintColor=\{tint === 'none' \? 'transparent' : theme\.color\.bg\.glass\}/,
+    );
     // The hand-rolled converter is gone and must not come back.
     expect(frost).not.toContain('function argb');
     expect(frost).not.toMatch(/0x100000000|0x80000000/);
@@ -1915,14 +2082,20 @@ describe('hardware GPU backdrop blur (PappalBlurRoot + PappalBlurSurface)', () =
      */
     const tsx = read(BLUR_SURFACE_TSX);
     expect(tsx).toContain('BLUR_SURFACE_AVAILABLE');
-    expect(tsx).toContain("UIManager.hasViewManagerConfig('PappalBlurSurface')");
+    expect(tsx).toContain(
+      "UIManager.hasViewManagerConfig('PappalBlurSurface')",
+    );
     expect(tsx).toContain("UIManager.hasViewManagerConfig('PappalBlurRoot')");
   });
 
   it('JS wrapper exports typed requireNativeComponent wrappers for both views', () => {
     const tsx = read(BLUR_SURFACE_TSX);
-    expect(tsx).toContain("requireNativeComponent<BlurSurfaceProps>('PappalBlurSurface')");
-    expect(tsx).toContain("requireNativeComponent<BlurRootProps>('PappalBlurRoot')");
+    expect(tsx).toContain(
+      "requireNativeComponent<BlurSurfaceProps>('PappalBlurSurface')",
+    );
+    expect(tsx).toContain(
+      "requireNativeComponent<BlurRootProps>('PappalBlurRoot')",
+    );
   });
 
   it('BlurSurface props are fully typed — no implicit any', () => {
@@ -1955,7 +2128,9 @@ describe('hardware back reaches the app', () => {
     // into the predictive-back callback is the W6 item and must be done with
     // its own reading of the docs, not slipped in with a manifest edit.
     // https://developer.android.com/guide/navigation/custom-back/predictive-back-gesture
-    expect(read(MANIFEST)).not.toMatch(/enableOnBackInvokedCallback\s*=\s*"true"/);
+    expect(read(MANIFEST)).not.toMatch(
+      /enableOnBackInvokedCallback\s*=\s*"true"/,
+    );
   });
 });
 
@@ -1997,7 +2172,9 @@ describe('W5#5 — renderToHardwareTextureAndroid decision is recorded', () => {
     // exactly. So the texture is on for the animation and off the instant it
     // settles -- a permanent one is ~8MB of GPU memory held while nothing moves.
     const app = read('App.tsx');
-    expect(app).toContain('renderToHardwareTextureAndroid: transitioning.value');
+    expect(app).toContain(
+      'renderToHardwareTextureAndroid: transitioning.value',
+    );
     expect(app).toContain('animatedProps={textureWhileMoving}');
     // Driven on the UI thread, not through a JS round-trip behind the animation.
     expect(app).toContain('useAnimatedProps(() => ({');
@@ -2027,7 +2204,9 @@ describe('W5#5 — renderToHardwareTextureAndroid decision is recorded', () => {
 
     // Not holding is the DEFAULT. A screen nobody thought about must animate
     // immediately rather than silently paying the ceiling on every push.
-    expect(motion).toMatch(/if \(!isScreenEnterHeld\(\)\) \{\s*\n\s*begin\(\);/);
+    expect(motion).toMatch(
+      /if \(!isScreenEnterHeld\(\)\) \{\s*\n\s*begin\(\);/,
+    );
   });
 
   it('gives the mount its own frame, and guards against a second start', () => {
@@ -2056,7 +2235,9 @@ describe('W5#5 — renderToHardwareTextureAndroid decision is recorded', () => {
     expect(turn).toContain('uri !== undefined && afterTransition ?');
     // The loading overlay has to cover the held-back window too, or the bubble
     // reads as grey nothing rather than as a photo arriving.
-    expect(turn).toContain('pending || uri === undefined || !afterTransition ?');
+    expect(turn).toContain(
+      'pending || uri === undefined || !afterTransition ?',
+    );
 
     const avatar = read('src/components/Avatar.tsx');
     // Comments stripped: the file EXPLAINS why it does not use the hook, and a
@@ -2072,7 +2253,9 @@ describe('W5#5 — renderToHardwareTextureAndroid decision is recorded', () => {
     // And the shared hook cannot strand anything: the idle fallback is
     // unconditional, so a lock that never lowers still releases the photo.
     const motion = read('src/theme/motion.ts');
-    const hook = motion.slice(motion.indexOf('export function useAfterTransition'));
+    const hook = motion.slice(
+      motion.indexOf('export function useAfterTransition'),
+    );
     expect(hook).toContain('requestIdleCallback(go)');
     expect(hook).toContain('cancelIdleCallback(idle)');
   });
@@ -2084,14 +2267,18 @@ describe('W5#5 — renderToHardwareTextureAndroid decision is recorded', () => {
     expect(chat).toContain('useEffect(() => releaseEnter, [releaseEnter])');
     // Taken in RENDER, not an effect: a child renders before its parent's
     // onLayout fires, so an effect-taken hold would arrive too late to matter.
-    expect(chat).toMatch(/useState\(\(\) =>\s*\n?\s*messages === undefined \? holdScreenEnter\(\) : NO_HOLD/);
+    expect(chat).toMatch(
+      /useState\(\(\) =>\s*\n?\s*messages === undefined \? holdScreenEnter\(\) : NO_HOLD/,
+    );
     // And an empty conversation releases too -- no data is coming, so waiting
     // for it would burn the whole ceiling on every new chat.
     expect(chat).toContain('if (messages !== undefined || !messagesPending)');
   });
 
   it('Sheet.tsx documents the hardware-texture decision', () => {
-    expect(read('src/components/Sheet.tsx')).toContain('renderToHardwareTextureAndroid');
+    expect(read('src/components/Sheet.tsx')).toContain(
+      'renderToHardwareTextureAndroid',
+    );
   });
 });
 
@@ -2112,16 +2299,18 @@ describe('W5#8 — DeviceClassModule (low / average / high blur tiers)', () => {
     // Not autolinkable — must be added manually, like BlurPackage and
     // CameraTilePackage. Registration in MainApplication is the house pattern
     // for non-autolinkable packages (see BlurPackage, InAppUpdatePackage).
-    expect(read('android/app/src/main/java/com/companionchat/MainApplication.kt')).toContain(
-      'add(DeviceClassPackage())',
-    );
+    expect(
+      read('android/app/src/main/java/com/companionchat/MainApplication.kt'),
+    ).toContain('add(DeviceClassPackage())');
   });
 
   it('DeviceClassModule exports the canonical module name', () => {
     // NativeModules.DeviceClass is what the JS bridge resolves on. A rename
     // here without updating src/lib/deviceClass.ts silently breaks the call.
     expect(read(MODULE_KT)).toContain('const val NAME = "DeviceClass"');
-    expect(read('src/lib/deviceClass.ts')).toContain('NativeModules.DeviceClass');
+    expect(read('src/lib/deviceClass.ts')).toContain(
+      'NativeModules.DeviceClass',
+    );
   });
 
   it('uses isLowRamDevice() as the low-class signal', () => {
@@ -2134,7 +2323,9 @@ describe('W5#8 — DeviceClassModule (low / average / high blur tiers)', () => {
     const kt = read(MODULE_KT);
     expect(kt).toContain('am.isLowRamDevice');
     expect(kt).toContain('CLASS_LOW');
-    expect(kt).toContain('https://developer.android.com/reference/android/app/ActivityManager#isLowRamDevice()');
+    expect(kt).toContain(
+      'https://developer.android.com/reference/android/app/ActivityManager#isLowRamDevice()',
+    );
   });
 
   it('uses ActivityManager.MemoryInfo to split average from high', () => {
@@ -2160,7 +2351,7 @@ describe('W5#8 — DeviceClassModule (low / average / high blur tiers)', () => {
     // a silently-degraded one. OTA skew (JS bundle newer than APK) is the
     // window where the module can be genuinely missing on Android.
     const ts = read('src/lib/deviceClass.ts');
-    expect(ts).toContain("? _module.getDeviceClass()");
+    expect(ts).toContain('? _module.getDeviceClass()');
     expect(ts).toContain(": 'high'");
   });
 
@@ -2169,7 +2360,9 @@ describe('W5#8 — DeviceClassModule (low / average / high blur tiers)', () => {
     // DEVICE_CLASS themselves — a typo at the call site cannot silently be wrong.
     const ts = read('src/lib/deviceClass.ts');
     expect(ts).toContain("export const BLUR_DISABLED = DEVICE_CLASS === 'low'");
-    expect(ts).toContain("export const BLUR_REDUCED = DEVICE_CLASS === 'average'");
+    expect(ts).toContain(
+      "export const BLUR_REDUCED = DEVICE_CLASS === 'average'",
+    );
   });
 
   it('records that the API-31 guard and device class cover distinct cases', () => {
@@ -2206,15 +2399,23 @@ describe('W0 measurement scripts — Perfetto and Macrobenchmark gate', () => {
     expect(script).toContain('API 29');
 
     // The doc URLs must survive in the file — RULE 1 requires them.
-    expect(script).toContain('https://perfetto.dev/docs/data-sources/frametimeline');
-    expect(script).toContain('https://perfetto.dev/docs/quickstart/android-tracing');
+    expect(script).toContain(
+      'https://perfetto.dev/docs/data-sources/frametimeline',
+    );
+    expect(script).toContain(
+      'https://perfetto.dev/docs/quickstart/android-tracing',
+    );
 
     // How to open the trace — the reason the script exists is so someone can
     // actually measure; the open instruction completes that loop.
     expect(script).toContain('https://ui.perfetto.dev');
 
-    const pkg = JSON.parse(read('package.json')) as { scripts: Record<string, string> };
-    expect(pkg.scripts['android:perfetto']).toBe('bash scripts/perfetto-feel.sh');
+    const pkg = JSON.parse(read('package.json')) as {
+      scripts: Record<string, string>;
+    };
+    expect(pkg.scripts['android:perfetto']).toBe(
+      'bash scripts/perfetto-feel.sh',
+    );
   });
 
   it('ships benchmark-gate.mjs, wires it into package.json, and cites its docs', () => {
@@ -2244,11 +2445,19 @@ describe('W0 measurement scripts — Perfetto and Macrobenchmark gate', () => {
     expect(script).toContain('"benchmarks" array');
 
     // Doc URLs — RULE 1.
-    expect(script).toContain('https://developer.android.com/topic/performance/benchmarking/macrobenchmark-overview');
-    expect(script).toContain('https://developer.android.com/topic/performance/benchmarking/macrobenchmark-metrics');
+    expect(script).toContain(
+      'https://developer.android.com/topic/performance/benchmarking/macrobenchmark-overview',
+    );
+    expect(script).toContain(
+      'https://developer.android.com/topic/performance/benchmarking/macrobenchmark-metrics',
+    );
 
-    const pkg = JSON.parse(read('package.json')) as { scripts: Record<string, string> };
-    expect(pkg.scripts['android:benchmark:gate']).toBe('node scripts/benchmark-gate.mjs');
+    const pkg = JSON.parse(read('package.json')) as {
+      scripts: Record<string, string>;
+    };
+    expect(pkg.scripts['android:benchmark:gate']).toBe(
+      'node scripts/benchmark-gate.mjs',
+    );
   });
 });
 
@@ -2321,7 +2530,10 @@ describe('FLAG_SECURE demo-capture carve-out', () => {
      */
     const gradle = read('android/app/build.gradle');
     const internalAt = gradle.indexOf('internal {');
-    const internalSection = gradle.slice(internalAt, gradle.indexOf('\n        }', internalAt));
+    const internalSection = gradle.slice(
+      internalAt,
+      gradle.indexOf('\n        }', internalAt),
+    );
     expect(internalSection).toContain('"BLOCK_SCREENSHOTS", "false"');
     expect(internalSection).toContain('"ALLOW_DEV_CAPTURE", "true"');
   });
@@ -2336,7 +2548,9 @@ describe('FLAG_SECURE demo-capture carve-out', () => {
     const chrome = read(
       'android/app/src/main/java/com/companionchat/WindowChromeModule.kt',
     );
-    const earlyReturn = chrome.indexOf('if (!BuildConfig.ALLOW_DEV_CAPTURE) return');
+    const earlyReturn = chrome.indexOf(
+      'if (!BuildConfig.ALLOW_DEV_CAPTURE) return',
+    );
     // Match the actual code call, not the comment (comments name clearFlags too).
     const clearFlags = chrome.indexOf('win.clearFlags(');
     expect(earlyReturn).toBeGreaterThan(0);
