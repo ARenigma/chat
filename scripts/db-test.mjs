@@ -145,6 +145,8 @@ const MIGRATIONS = [
   'supabase/migrations/104_provider_photo_management.sql',
   'supabase/migrations/105_provider_initiated_contact.sql',
   'supabase/migrations/106_clean_public_policy_urls.sql',
+  'supabase/migrations/107_end_session_flushes_owed_minutes.sql',
+  'supabase/migrations/108_telemetry_call_and_perf_events.sql',
 ];
 
 /**

@@ -93,30 +93,26 @@ otp_length = 6
 # usable resend, which is not a recovery path.
 max_frequency = "30s"
 
-# --- The route chosen: Send SMS hook, FAST2SMS as carrier -------------------
+# --- The route chosen: Send SMS hook, WhatsApp Cloud API as carrier ---------
 #
-# **Carrier corrected 2026-08-26.** This block said MSG91 for months while
-# `supabase/functions/send-sms/index.ts` has only ever read `FAST2SMS_API_KEY`.
-# The distinction is the entire DLT story: Fast2SMS's OTP route sends on THEIR
-# registered template, so it needs no DLT entity, header or template of ours.
-# The "one to three weeks of TRAI registration" this file used to describe as the
-# gate was a gate for a carrier we are not using. MSG91 remains in the picture
-# only for `verify-phone`, which is the separate widget path for attaching a
-# number to an account that already has a session.
+# **Carrier updated 2026-09-14.** The send-sms Edge Function now delivers the
+# OTP via the Meta WhatsApp Cloud API (graph.facebook.com). WhatsApp does not
+# let us author OTP copy: the code rides an approved AUTHENTICATION template
+# with a copy-code button. Firebase phone auth is the SMS fallback when the
+# recipient has no WhatsApp.
 #
-# ADR-0009 decided this over the MSG91 OTP widget. The widget verifies the code
-# itself, which takes Supabase Auth out of the login path entirely, and since
-# Supabase has no admin endpoint that mints a session for a phone user, that
-# leaves either a fake email per number or self-signed Supabase JWTs. Both put
-# the RLS model behind our own token minting. The hook keeps Supabase Auth in
-# charge and reduces MSG91 to the carrier.
+# ADR-0009 decided the hook approach over the old MSG91 OTP widget. The widget
+# verified the code itself, taking Supabase Auth out of the login path entirely.
+# The hook keeps Supabase Auth in charge and makes WhatsApp the carrier only.
 #
-# `supabase/functions/send-sms/index.ts` is written and deployed. Both secrets it
-# needs now exist on the project (verified with `supabase secrets list`, which
-# returns names and digests rather than values):
+# `supabase/functions/send-sms/index.ts` is written and deployed. Secrets it
+# needs (verified with `supabase secrets list`):
 #
-#   SEND_SMS_HOOK_SECRET   generated and set 2026-08-26
-#   FAST2SMS_API_KEY       set 2026-08-21
+#   SEND_SMS_HOOK_SECRET       the `v1,whsec_...` value shown for the hook
+#   WHATSAPP_TOKEN             System User permanent token
+#   WHATSAPP_PHONE_NUMBER_ID   the sending number's id
+#   WHATSAPP_TEMPLATE_NAME     the approved AUTHENTICATION template name
+#   WHATSAPP_LANG              template language code (default 'en')
 #
 # Enabled below. `enable_signup` for this channel is set once at the top of
 # [auth.sms]; repeating it here is what made the whole file unparseable, because
@@ -127,18 +123,10 @@ enabled = true
 uri = "https://uvghvhcrovmuwivgijvl.supabase.co/functions/v1/send-sms"
 secrets = "env(SEND_SMS_HOOK_SECRET)"
 #
-# ON DLT, CORRECTED. The paragraph that stood here said every domestic Indian
-# SMS route needs our own TRAI/DLT registration and that no vendor shortcuts it.
-# That is true when you send on your OWN header and template, which is what the
-# MSG91 transactional route would have required. It is not true of Fast2SMS's OTP
-# route, which sends on Fast2SMS's registered template — the reason this is
-# enabled today rather than in three weeks.
-#
-# What we give up by riding their template: no custom sender ID, and no
-# app-signature suffix, so Android SMS Retriever autofill will not fire and the
-# code has to be typed. ADR-0009 section 1 is still right that the autofill hash
-# depends on Google's app-signing certificate and so cannot exist before the
-# first Play upload; that work simply is not on the critical path any more.
+# ON DLT: WhatsApp AUTHENTICATION templates are pre-approved by Meta and need
+# no TRAI/DLT registration of our own. Android SMS Retriever autofill does not
+# apply to WhatsApp delivery, so the code is typed; Firebase is the SMS fallback
+# for recipients with no WhatsApp.
 
 # ---------------------------------------------------------------------------
 # Social identity, the only way in

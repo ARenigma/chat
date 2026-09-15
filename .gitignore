@@ -133,3 +133,7 @@ keys-backup/
 # Local Play Console drop folder binaries (keep copy/text; skip AAB)
 play-upload/05-release/*.aab
 play-upload/03-phone-screenshots/screenshot-fresh-chat-debug.png
+
+# Sentry release/upload config (org, project, auth token) — never commit the token.
+sentry.properties
+android/sentry.properties

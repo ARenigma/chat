@@ -188,6 +188,7 @@ def derivedInternalCode = {
 
 def ciBuildNumber = (explicitVersionCode ?: (wantsInternal ? derivedInternalCode : "1")) as Integer
 
+apply from: new File(["node", "--print", "require.resolve('@sentry/react-native/package.json')"].execute().text.trim(), "../sentry.gradle")
 android {
     /**
      * Mount `assets/` from the repo root instead of keeping a second copy of the

@@ -57,8 +57,12 @@ describe('generated theme', () => {
     // cards on a grey page; on a white page #E5E5EA measured 1.30:1 and was the
     // same absent divider the dark value was already fixed for once.
     expect(LIGHT.color.border.hairline).toBe('#C6C6C8');
-    expect(contrast(LIGHT.color.border.hairline, LIGHT.color.bg.base)).toBeGreaterThan(1.5);
-    expect(contrast(DARK.color.border.hairline, DARK.color.bg.base)).toBeGreaterThan(1.5);
+    expect(
+      contrast(LIGHT.color.border.hairline, LIGHT.color.bg.base),
+    ).toBeGreaterThan(1.5);
+    expect(
+      contrast(DARK.color.border.hairline, DARK.color.bg.base),
+    ).toBeGreaterThan(1.5);
   });
 
   /**
@@ -175,7 +179,12 @@ describe('generated theme', () => {
     // in dark mode and previously washed sheets, menus and tours in white.
     expect(LIGHT.color.bg.scrim).toBe('#000000');
     expect(DARK.color.bg.scrim).toBe('#000000');
-    for (const file of ['Sheet.tsx', 'SpotlightCard.tsx', 'PaperMenu.tsx', 'HomeTour.tsx']) {
+    for (const file of [
+      'Sheet.tsx',
+      'SpotlightCard.tsx',
+      'PaperMenu.tsx',
+      'HomeTour.tsx',
+    ]) {
       expect(read(`src/components/${file}`)).toContain('t.color.bg.scrim');
     }
   });
@@ -296,7 +305,9 @@ function digitAdvances(file: string): number[] {
 }
 
 describe('typography is bound to real font files', () => {
-  const FACES = readdirSync(join(ROOT, 'assets/fonts')).filter(f => f.endsWith('.ttf'));
+  const FACES = readdirSync(join(ROOT, 'assets/fonts')).filter(f =>
+    f.endsWith('.ttf'),
+  );
 
   it('bundles the faces it references', () => {
     expect(FACES.length).toBeGreaterThan(0);
@@ -391,10 +402,12 @@ describe('typography is bound to real font files', () => {
       const uniform = new Set(widths).size === 1;
       // GSUB feature tags are stored as four ASCII bytes; a raw search for
       // 'tnum' is a sufficient proxy for "this face can do tabular figures".
-      const hasTnum = readFileSync(join(ROOT, 'assets/fonts', `${style.fontFamily}.ttf`)).includes(
-        'tnum',
+      const hasTnum = readFileSync(
+        join(ROOT, 'assets/fonts', `${style.fontFamily}.ttf`),
+      ).includes('tnum');
+      expect(`${name}: tabular-capable=${uniform || hasTnum}`).toBe(
+        `${name}: tabular-capable=true`,
       );
-      expect(`${name}: tabular-capable=${uniform || hasTnum}`).toBe(`${name}: tabular-capable=true`);
     }
   });
 
@@ -458,7 +471,9 @@ describe('typography is bound to real font files', () => {
     // the code has failed three times in this repo already.
     const sources = ['src/components', 'src/screens']
       .flatMap(dir =>
-        readdirSync(join(ROOT, dir)).map(f => stripComments(read(`${dir}/${f}`))),
+        readdirSync(join(ROOT, dir)).map(f =>
+          stripComments(read(`${dir}/${f}`)),
+        ),
       )
       .concat(stripComments(read('App.tsx')));
     for (const body of sources) {
@@ -469,13 +484,17 @@ describe('typography is bound to real font files', () => {
   it('mounts the fonts directory into the Android build', () => {
     // Without this the faces resolve to the system font at runtime and the app
     // simply looks slightly wrong, with nothing failing anywhere.
-    expect(read('android/app/build.gradle')).toContain("assets.srcDirs += ['../../assets']");
+    expect(read('android/app/build.gradle')).toContain(
+      "assets.srcDirs += ['../../assets']",
+    );
   });
 
   it('gives the token balance tabular numerals', () => {
     // A proportional 1 is narrower than a 9, so a non-tabular count makes the
     // pill twitch every time the balance passes a digit like 50 -> 49.
-    expect(LIGHT.typography.numeralMedium.fontVariant).toEqual(['tabular-nums']);
+    expect(LIGHT.typography.numeralMedium.fontVariant).toEqual([
+      'tabular-nums',
+    ]);
     expect(LIGHT.typography.numeralSmall.fontVariant).toEqual(['tabular-nums']);
   });
 });
@@ -490,16 +509,25 @@ describe('typography is bound to real font files', () => {
  * quietly starting to wobble.
  */
 describe('motion tokens', () => {
-  const { spring, springMeta, press, gesture, decay, duration, opacity } = LIGHT.motion;
+  const { spring, springMeta, press, gesture, decay, duration, opacity } =
+    LIGHT.motion;
 
   it('declares exactly the four named springs', () => {
-    expect(Object.keys(spring).sort()).toEqual(['bounce', 'gentle', 'smooth', 'snap']);
+    expect(Object.keys(spring).sort()).toEqual([
+      'bounce',
+      'gentle',
+      'smooth',
+      'snap',
+    ]);
   });
 
   it('derives the damping ratio from the physics', () => {
     for (const [name, s] of Object.entries(spring)) {
       const ratio = s.damping / (2 * Math.sqrt(s.stiffness * s.mass));
-      expect(springMeta[name as keyof typeof springMeta].ratio).toBeCloseTo(ratio, 3);
+      expect(springMeta[name as keyof typeof springMeta].ratio).toBeCloseTo(
+        ratio,
+        3,
+      );
     }
   });
 
@@ -635,27 +663,45 @@ describe('material 3 motion tokens', () => {
     ).motion.m3.spring;
     for (const [name, s] of Object.entries(m3.spring)) {
       const ratio = s.damping / (2 * Math.sqrt(s.stiffness * s.mass));
-      expect(m3.springMeta[name as keyof typeof m3.springMeta].ratio).toBeCloseTo(ratio, 3);
+      expect(
+        m3.springMeta[name as keyof typeof m3.springMeta].ratio,
+      ).toBeCloseTo(ratio, 3);
       expect(ratio).toBeCloseTo(authored[name].dampingRatio, 3);
       expect(s.stiffness).toBe(authored[name].stiffness);
     }
   });
 
   it('keeps spatial springs just shy of critical and effects exactly critical', () => {
-    for (const name of ['spatialFast', 'spatialDefault', 'spatialSlow'] as const) {
+    for (const name of [
+      'spatialFast',
+      'spatialDefault',
+      'spatialSlow',
+    ] as const) {
       expect(m3.springMeta[name].ratio).toBeCloseTo(0.9, 3);
     }
-    for (const name of ['effectsFast', 'effectsDefault', 'effectsSlow'] as const) {
+    for (const name of [
+      'effectsFast',
+      'effectsDefault',
+      'effectsSlow',
+    ] as const) {
       expect(m3.springMeta[name].ratio).toBeGreaterThanOrEqual(1);
       expect(m3.springMeta[name].overshoots).toBe(false);
     }
   });
 
   it('orders each family fast, default, slow by stiffness', () => {
-    expect(m3.spring.spatialFast.stiffness).toBeGreaterThan(m3.spring.spatialDefault.stiffness);
-    expect(m3.spring.spatialDefault.stiffness).toBeGreaterThan(m3.spring.spatialSlow.stiffness);
-    expect(m3.spring.effectsFast.stiffness).toBeGreaterThan(m3.spring.effectsDefault.stiffness);
-    expect(m3.spring.effectsDefault.stiffness).toBeGreaterThan(m3.spring.effectsSlow.stiffness);
+    expect(m3.spring.spatialFast.stiffness).toBeGreaterThan(
+      m3.spring.spatialDefault.stiffness,
+    );
+    expect(m3.spring.spatialDefault.stiffness).toBeGreaterThan(
+      m3.spring.spatialSlow.stiffness,
+    );
+    expect(m3.spring.effectsFast.stiffness).toBeGreaterThan(
+      m3.spring.effectsDefault.stiffness,
+    );
+    expect(m3.spring.effectsDefault.stiffness).toBeGreaterThan(
+      m3.spring.effectsSlow.stiffness,
+    );
   });
 
   it('holds the three easing curves as valid unit-x beziers', () => {
@@ -678,7 +724,8 @@ describe('material 3 motion tokens', () => {
   });
 
   it('keeps the M3 durations ascending', () => {
-    const { short2, short3, short4, medium2, medium3, medium4, long2 } = m3.duration;
+    const { short2, short3, short4, medium2, medium3, medium4, long2 } =
+      m3.duration;
     expect(short2).toBeLessThan(short3);
     expect(short3).toBeLessThan(short4);
     expect(short4).toBeLessThan(medium2);
@@ -745,11 +792,18 @@ describe('the app is wired to the M3 transitions', () => {
      * hidden one fade-duration after the tab goes inactive, which is the same
      * moment the worklet used to pick.
      */
-    const layer = app.slice(app.indexOf('function TabLayer'), app.indexOf('const { StartupTiming }'));
+    const layer = app.slice(
+      app.indexOf('function TabLayer'),
+      app.indexOf('const { StartupTiming }'),
+    );
     expect(layer).toContain('opacity: opacity.value');
-    expect(layer).toContain('const animated = useAnimatedStyle(() => ({ opacity: opacity.value }))');
+    expect(layer).toContain(
+      'const animated = useAnimatedStyle(() => ({ opacity: opacity.value }))',
+    );
     expect(layer).toContain('laidOut ? null : HIDDEN_LAYER.hidden');
-    expect(layer).toContain('setTimeout(() => setLaidOut(false), FADE.duration)');
+    expect(layer).toContain(
+      'setTimeout(() => setLaidOut(false), FADE.duration)',
+    );
     // Still no `display` computed on the UI thread — that is the defect above.
     expect(layer).not.toMatch(/useAnimatedStyle[\s\S]*display:/);
     expect(layer).not.toMatch(/translate[XY]/);
@@ -861,7 +915,10 @@ describe('large text roles carry a font-scale cap', () => {
   const sources = ['src/components', 'src/screens'].flatMap(dir =>
     readdirSync(join(ROOT, dir))
       .filter(f => f.endsWith('.tsx'))
-      .map(f => ({ file: `${dir}/${f}`, body: stripComments(read(`${dir}/${f}`)) })),
+      .map(f => ({
+        file: `${dir}/${f}`,
+        body: stripComments(read(`${dir}/${f}`)),
+      })),
   );
 
   it('wires maxFontSizeMultiplier wherever a capped role is used', () => {
@@ -928,7 +985,11 @@ describe('a kind of text reads at one role, screen or sheet', () => {
         if (depth === 0) break;
       }
     }
-    return /\.\.\.\s*TOKENS\.typography\.(\w+)/.exec(body.slice(start, end + 1))?.[1] ?? null;
+    return (
+      /\.\.\.\s*TOKENS\.typography\.(\w+)/.exec(
+        body.slice(start, end + 1),
+      )?.[1] ?? null
+    );
   };
 
   const RECHARGE = 'src/screens/RechargeScreen.tsx';
@@ -994,7 +1055,9 @@ describe('a kind of text reads at one role, screen or sheet', () => {
     // settings row (rowDetail) state it, all at the same DISCLOSURE role.
     expect(roleOf(RECHARGE, 'cardGst')).toBe(DISCLOSURE);
     expect(roleOf(PAYMENT, 'totalGst')).toBe(DISCLOSURE);
-    expect(roleOf('src/screens/SettingsSheet.tsx', 'rowDetail')).toBe(DISCLOSURE);
+    expect(roleOf('src/screens/SettingsSheet.tsx', 'rowDetail')).toBe(
+      DISCLOSURE,
+    );
   });
 
   it('sets every text button in the bold label face', () => {
@@ -1032,7 +1095,9 @@ describe('a kind of text reads at one role, screen or sheet', () => {
       'src/screens/SafetySheet.tsx',
       'src/screens/SettingsSheet.tsx',
     ]) {
-      expect(stripComments(read(file))).not.toMatch(/TOKENS\.typography\.bodyMedium/);
+      expect(stripComments(read(file))).not.toMatch(
+        /TOKENS\.typography\.bodyMedium/,
+      );
     }
   });
 
@@ -1074,7 +1139,11 @@ describe('a kind of text reads at one role, screen or sheet', () => {
         if (depth === 0) break;
       }
     }
-    return /\.\.\.\s*TOKENS\.typography\.(\w+)/.exec(body.slice(start, end + 1))?.[1] ?? null;
+    return (
+      /\.\.\.\s*TOKENS\.typography\.(\w+)/.exec(
+        body.slice(start, end + 1),
+      )?.[1] ?? null
+    );
   };
 
   /** In-flow section heading over content: bold 16 on primary ink. */
@@ -1123,7 +1192,9 @@ describe('a kind of text reads at one role, screen or sheet', () => {
   it('keeps the balance figure tabular, and distinct from the money figure', () => {
     // The whole reason it is a numeral role: a figure that changes wants digits
     // of equal width. No text role in the scale carries fontVariant.
-    expect(LIGHT.typography[BALANCE_FIGURE].fontVariant).toEqual(['tabular-nums']);
+    expect(LIGHT.typography[BALANCE_FIGURE].fontVariant).toEqual([
+      'tabular-nums',
+    ]);
     expect(LIGHT.typography[BALANCE_FIGURE].fontFamily).toBe('Geist-Bold');
     expect(LIGHT.typography[MONEY_FIGURE]).not.toHaveProperty('fontVariant');
     // And the split is intentional, not two names for one thing.
@@ -1188,12 +1259,16 @@ describe('a kind of text reads at one role, screen or sheet', () => {
 });
 
 describe('spacing lives in tokens', () => {
-  const SPACING = /\b(padding|margin|gap|rowGap|columnGap)(Top|Bottom|Left|Right|Horizontal|Vertical|Start|End)?\s*:\s*(-?[1-9]\d*)\b/g;
+  const SPACING =
+    /\b(padding|margin|gap|rowGap|columnGap)(Top|Bottom|Left|Right|Horizontal|Vertical|Start|End)?\s*:\s*(-?[1-9]\d*)\b/g;
   const sources = ['src/components', 'src/screens']
     .flatMap(dir =>
       readdirSync(join(ROOT, dir))
         .filter(f => f.endsWith('.tsx'))
-        .map(f => ({ file: `${dir}/${f}`, body: stripComments(read(`${dir}/${f}`)) })),
+        .map(f => ({
+          file: `${dir}/${f}`,
+          body: stripComments(read(`${dir}/${f}`)),
+        })),
     )
     .concat({ file: 'App.tsx', body: stripComments(read('App.tsx')) });
 
@@ -1247,7 +1322,10 @@ describe('spacing lives in tokens', () => {
     'src/components/ReactionStrip.tsx': ['paddingHorizontal: 6'],
     'src/components/Sheet.tsx': ['paddingTop: 5'],
     'src/components/SpotlightCard.tsx': ['paddingVertical: 5'],
-    'src/components/ThreadBubble.tsx': ['paddingVertical: 1', 'paddingHorizontal: 5'],
+    'src/components/ThreadBubble.tsx': [
+      'paddingVertical: 1',
+      'paddingHorizontal: 5',
+    ],
     'src/components/TokenCounter.tsx': ['paddingVertical: 5'],
     /*
      * The last four are the WhatsApp bubble box, read from the APK on
@@ -1305,9 +1383,9 @@ describe('spacing lives in tokens', () => {
     for (const [file, entries] of Object.entries(ALLOW)) {
       const body = sources.find(s => s.file === file)?.body ?? '';
       for (const entry of entries) {
-        expect(body.includes(entry) ? `${file} ${entry}` : `${file} ${entry} STALE`).toBe(
-          `${file} ${entry}`,
-        );
+        expect(
+          body.includes(entry) ? `${file} ${entry}` : `${file} ${entry} STALE`,
+        ).toBe(`${file} ${entry}`);
       }
     }
   });
@@ -1329,10 +1407,14 @@ describe('component heights come from tokens', () => {
     .flatMap(dir =>
       readdirSync(join(ROOT, dir))
         .filter(f => f.endsWith('.tsx'))
-        .map(f => ({ file: `${dir}/${f}`, body: stripComments(read(`${dir}/${f}`)) })),
+        .map(f => ({
+          file: `${dir}/${f}`,
+          body: stripComments(read(`${dir}/${f}`)),
+        })),
     )
     .concat({ file: 'App.tsx', body: stripComments(read('App.tsx')) });
-  const ROW_LIKE = /(\w*(?:row|Row|bar|Bar|cell|Cell|slot|Slot|item|Item))\s*:\s*\{([^}]*)\}/g;
+  const ROW_LIKE =
+    /(\w*(?:row|Row|bar|Bar|cell|Cell|slot|Slot|item|Item))\s*:\s*\{([^}]*)\}/g;
   const RAW_HEIGHT = /\b(height|minHeight)\s*:\s*[1-9]/;
   // Rows/bars still holding a raw container height, migrated to layout tokens in
   // the component-heights pass. Grandfathered by style-block name per file.
@@ -1363,7 +1445,9 @@ describe('component heights come from tokens', () => {
   it('never uses 44 as a touch target', () => {
     // iOS's 44 satisfied nothing here: minTarget is 48 and one number serves both.
     for (const s of sources) {
-      expect(s.body).not.toMatch(/\b(minHeight|minWidth|width|height)\s*:\s*44\b/);
+      expect(s.body).not.toMatch(
+        /\b(minHeight|minWidth|width|height)\s*:\s*44\b/,
+      );
     }
   });
 });
@@ -1441,13 +1525,16 @@ describe('motion lives in one module', () => {
         continue;
       }
       const body = read(join('src/screens', name));
-      const scrollers = body.match(/<(ScrollView|FlatList|SectionList|FlashList)\b/g) ?? [];
+      const scrollers =
+        body.match(/<(ScrollView|FlatList|SectionList|FlashList)\b/g) ?? [];
       if (scrollers.length === 0) {
         continue;
       }
       const spreads = body.match(/\{\.\.\.SCROLL_PHYSICS\}/g) ?? [];
       if (spreads.length < scrollers.length) {
-        offenders.push(`${name}: ${scrollers.length} scroller(s), ${spreads.length} spread(s)`);
+        offenders.push(
+          `${name}: ${scrollers.length} scroller(s), ${spreads.length} spread(s)`,
+        );
       }
     }
     expect(offenders).toEqual([]);
@@ -1455,7 +1542,7 @@ describe('motion lives in one module', () => {
 
   it('routes the signature moment through the shared builder', () => {
     expect(read('src/components/Turn.tsx')).toContain('bubbleLaunch');
-    expect(read('src/theme/motion.ts')).toContain("SPRING.bounce");
+    expect(read('src/theme/motion.ts')).toContain('SPRING.bounce');
   });
 
   it('uses bounce nowhere except the send and the low-balance flinch', () => {
@@ -1512,8 +1599,12 @@ describe('motion lives in one module', () => {
     // containing a `.delay`. Asserted here instead rather than left uncovered.
     const motion = read('src/theme/motion.ts');
     for (const name of ['fadeSwap', 'fadeSwapFast']) {
-      const declaration = motion.slice(motion.indexOf(`export const ${name} =`));
-      expect(declaration.slice(0, 200)).toMatch(/reduceMotion\(\s*ReduceMotion\.System,?\s*\)/);
+      const declaration = motion.slice(
+        motion.indexOf(`export const ${name} =`),
+      );
+      expect(declaration.slice(0, 200)).toMatch(
+        /reduceMotion\(\s*ReduceMotion\.System,?\s*\)/,
+      );
     }
   });
 
@@ -1527,7 +1618,9 @@ describe('motion lives in one module', () => {
     expect(column).toContain('useReducedMotion()');
     expect(column).toContain('useLayoutEffect');
     expect(column).toContain('CAROUSEL_ENTER_OFFSET');
-    expect(column).toMatch(/if \(reduced \|\| words\.length < 2\) \{\s*return;/);
+    expect(column).toMatch(
+      /if \(reduced \|\| words\.length < 2\) \{\s*return;/,
+    );
     // Free-running withRepeat + setInterval was the ghost-word defect; the
     // slide must be armed from the tick layout effect, not a parallel loop.
     expect(column).toMatch(/shift\.value\s*=\s*CAROUSEL_ENTER_OFFSET/);
@@ -1628,8 +1721,12 @@ describe('motion lives in one module', () => {
 
 describe('accessibility budget', () => {
   it('holds AAA for body text in both modes', () => {
-    expect(contrast(LIGHT.color.text.primary, LIGHT.color.bg.base)).toBeGreaterThanOrEqual(7);
-    expect(contrast(DARK.color.text.primary, DARK.color.bg.base)).toBeGreaterThanOrEqual(7);
+    expect(
+      contrast(LIGHT.color.text.primary, LIGHT.color.bg.base),
+    ).toBeGreaterThanOrEqual(7);
+    expect(
+      contrast(DARK.color.text.primary, DARK.color.bg.base),
+    ).toBeGreaterThanOrEqual(7);
   });
 
   /**
@@ -1642,13 +1739,21 @@ describe('accessibility budget', () => {
    * exact token shipped at 3.13:1 once and broke AA outright.
    */
   it('holds AA for secondary text in both modes', () => {
-    expect(contrast(LIGHT.color.text.secondary, LIGHT.color.bg.base)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(DARK.color.text.secondary, DARK.color.bg.base)).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrast(LIGHT.color.text.secondary, LIGHT.color.bg.base),
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrast(DARK.color.text.secondary, DARK.color.bg.base),
+    ).toBeGreaterThanOrEqual(4.5);
   });
 
   it('holds AA for the accent count on its tint', () => {
-    expect(contrast(LIGHT.color.text.accent, LIGHT.color.bg.accentTint)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(DARK.color.text.accent, DARK.color.bg.accentTint)).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrast(LIGHT.color.text.accent, LIGHT.color.bg.accentTint),
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrast(DARK.color.text.accent, DARK.color.bg.accentTint),
+    ).toBeGreaterThanOrEqual(4.5);
   });
 
   /**
@@ -1661,8 +1766,12 @@ describe('accessibility budget', () => {
    * look *better* to whoever made the change.
    */
   it('keeps message text legible on the accent bubble', () => {
-    expect(contrast(LIGHT.color.text.onAccent, LIGHT.color.bg.accentStrong)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(DARK.color.text.onAccent, DARK.color.bg.accentStrong)).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrast(LIGHT.color.text.onAccent, LIGHT.color.bg.accentStrong),
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrast(DARK.color.text.onAccent, DARK.color.bg.accentStrong),
+    ).toBeGreaterThanOrEqual(4.5);
   });
 
   it('records that the bright accent cannot carry text', () => {
@@ -1672,41 +1781,67 @@ describe('accessibility budget', () => {
 
   it('keeps the send glyph legible on its fill', () => {
     // A UI glyph needs 3:1, not 4.5:1, it carries no text.
-    expect(contrast(LIGHT.color.text.onAccent, LIGHT.color.bg.accentStrong)).toBeGreaterThanOrEqual(3);
+    expect(
+      contrast(LIGHT.color.text.onAccent, LIGHT.color.bg.accentStrong),
+    ).toBeGreaterThanOrEqual(3);
   });
 
   it('keeps primary button text legible on the ink fill', () => {
-    expect(contrast(LIGHT.color.text.onInverse, LIGHT.color.bg.inverse)).toBeGreaterThanOrEqual(7);
-    expect(contrast(DARK.color.text.onInverse, DARK.color.bg.inverse)).toBeGreaterThanOrEqual(7);
+    expect(
+      contrast(LIGHT.color.text.onInverse, LIGHT.color.bg.inverse),
+    ).toBeGreaterThanOrEqual(7);
+    expect(
+      contrast(DARK.color.text.onInverse, DARK.color.bg.inverse),
+    ).toBeGreaterThanOrEqual(7);
   });
 
   it('keeps the calm band and the token chip readable', () => {
-    expect(contrast(LIGHT.color.text.positive, LIGHT.color.bg.positive)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(DARK.color.text.positive, DARK.color.bg.positive)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(LIGHT.color.text.token, LIGHT.color.bg.token)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(DARK.color.text.token, DARK.color.bg.token)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(LIGHT.color.text.onTokenStrong, LIGHT.color.bg.tokenHealthy)).toBeGreaterThanOrEqual(
-      4.5,
-    );
-    expect(contrast(LIGHT.color.text.onTokenStrong, LIGHT.color.bg.tokenCritical)).toBeGreaterThanOrEqual(
-      4.5,
-    );
-    expect(contrast(DARK.color.text.onTokenStrong, DARK.color.bg.tokenHealthy)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(DARK.color.text.onTokenStrong, DARK.color.bg.tokenCritical)).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrast(LIGHT.color.text.positive, LIGHT.color.bg.positive),
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrast(DARK.color.text.positive, DARK.color.bg.positive),
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrast(LIGHT.color.text.token, LIGHT.color.bg.token),
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrast(DARK.color.text.token, DARK.color.bg.token),
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrast(LIGHT.color.text.onTokenStrong, LIGHT.color.bg.tokenHealthy),
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrast(LIGHT.color.text.onTokenStrong, LIGHT.color.bg.tokenCritical),
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrast(DARK.color.text.onTokenStrong, DARK.color.bg.tokenHealthy),
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrast(DARK.color.text.onTokenStrong, DARK.color.bg.tokenCritical),
+    ).toBeGreaterThanOrEqual(4.5);
   });
 
   it('makes the presence dot visible as a shape, not just as a colour', () => {
     // A dot has no text to fall back on, so it needs the 3:1 non-text minimum
     // against the page. The softer sage this replaced measured 2.2:1.
-    expect(contrast(LIGHT.color.state.available, LIGHT.color.bg.base)).toBeGreaterThanOrEqual(3);
-    expect(contrast(DARK.color.state.available, DARK.color.bg.base)).toBeGreaterThanOrEqual(3);
+    expect(
+      contrast(LIGHT.color.state.available, LIGHT.color.bg.base),
+    ).toBeGreaterThanOrEqual(3);
+    expect(
+      contrast(DARK.color.state.available, DARK.color.bg.base),
+    ).toBeGreaterThanOrEqual(3);
   });
 
   it('keeps danger distinguishable from the accent, not just from the page', () => {
     // Destructive and brand were both reds once. If they are within a hair of
     // each other, "Block" and "Send" are the same signal.
-    expect(contrast(LIGHT.color.state.danger, LIGHT.color.bg.base)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(LIGHT.color.state.danger, LIGHT.color.bg.accent)).toBeGreaterThanOrEqual(2);
+    expect(
+      contrast(LIGHT.color.state.danger, LIGHT.color.bg.base),
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrast(LIGHT.color.state.danger, LIGHT.color.bg.accent),
+    ).toBeGreaterThanOrEqual(2);
   });
 });
 
@@ -1802,11 +1937,12 @@ describe('accent budget is enforced in code, not just documented', () => {
        */
       'Button.tsx',
       /*
-       * The call surfaces (gated, ADR-0019). The warm field IS the call
-       * background — same class as the bloom — built from the accent tokens; the
-       * accept button is sage, the end/decline button state/danger.
+       * CallScreen no longer uses the coral: the call background is now a CALM
+       * dim/blur surface (Amit, 2026-09-15) — the peer's photo blurred behind a
+       * dark veil, or a dark gradient — not the old warm accent field. The accept
+       * button is sage and the end/decline button is state/danger, neither coral.
+       * So it is off the coral budget entirely.
        */
-      'CallScreen.tsx',
       /*
        * The talk-time meter's Recharge CTA and its live dot (ADR-0019 made chat
        * per-minute). The Recharge button is an action and the dot is a live-state
@@ -2082,7 +2218,8 @@ describe('accent budget is enforced in code, not just documented', () => {
 
   it('never uses the accent for a page background', () => {
     for (const s of componentSources.concat(screenSources)) {
-      const page = /backgroundColor:\s*TOKENS\.color\.bg\.accent\w*,[\s\S]{0,80}(root|host:)/;
+      const page =
+        /backgroundColor:\s*TOKENS\.color\.bg\.accent\w*,[\s\S]{0,80}(root|host:)/;
       expect(s.body).not.toMatch(page);
     }
   });
@@ -2117,8 +2254,11 @@ describe('accent budget is enforced in code, not just documented', () => {
       // sheen on a list row — and built from the accent tokens, not raw hex.
       'HomeScreen.tsx',
       'ProviderDetailScreen.tsx',
-      // The call background is a warm field (gated, ADR-0019), same exemption
-      // class as the hero surfaces, built from accent tokens not raw hex.
+      // The call background is a calm dim/blur surface (Amit, 2026-09-15): the
+      // peer's photo blurred behind a dark veil, or a dark gradient. It uses raw
+      // dark hex (#0B0B10 / #1C1C24 / rgba scrims) for that atmosphere by design,
+      // the same exemption class as the hero surfaces — an atmospheric surface,
+      // not a sheen on a list row.
       'CallScreen.tsx',
       // The recharge balance banner (#13) is a warm gradient field in the same
       // language as the onboarding/hero surfaces, built from the accent tokens.
@@ -2226,7 +2366,9 @@ describe('accent budget is enforced in code, not just documented', () => {
     const jsxAccent = body
       .split('\n')
       .filter(line => /theme\.color\.(bg|text)\.accent/.test(line));
-    expect(jsxAccent).toEqual(['                color={theme.color.bg.accent}']);
+    expect(jsxAccent).toEqual([
+      '                color={theme.color.bg.accent}',
+    ]);
 
     // The avatar is never warm — the original rule's sharpest edge, and the one
     // thing the ring must not become: a FILL behind one stranger's mark.
@@ -2260,7 +2402,9 @@ describe('iOS conformance', () => {
     // choice for every overlay (user 2026-08-30).
     expect(radius.sheet).toBe(28);
     expect(read('src/components/Sheet.tsx')).toContain('TOKENS.radius.sheet');
-    expect(read('src/components/Sheet.tsx')).toContain('TOKENS.typography.titleLargeEmphasized');
+    expect(read('src/components/Sheet.tsx')).toContain(
+      'TOKENS.typography.titleLargeEmphasized',
+    );
   });
 
   it('has a field radius for the iOS filled control', () => {
@@ -2303,7 +2447,12 @@ describe('iOS conformance', () => {
     expect(cap.headlineSmallEmphasized).toBe(1.3);
     expect(cap.titleMediumEmphasized).toBe(1.5);
     expect(cap.wordmarkLarge).toBe(1.0);
-    for (const role of ['bodyLarge', 'bodyMedium', 'labelLarge', 'numeralDisplay']) {
+    for (const role of [
+      'bodyLarge',
+      'bodyMedium',
+      'labelLarge',
+      'numeralDisplay',
+    ]) {
       expect(cap[role]).toBeUndefined();
     }
   });
@@ -2392,7 +2541,7 @@ describe('Material 3 interaction survives', () => {
     // table cell ask for 'ios' and get a full-bleed fill with no scale, and
     // everything else keeps the state layer.
     const pressable = read('src/components/Pressable.tsx');
-    expect(pressable).toContain("highlight");
+    expect(pressable).toContain('highlight');
     expect(pressable).toContain('bg.selected');
   });
 
@@ -2409,9 +2558,16 @@ describe('Material 3 interaction survives', () => {
     // Checked at the *import*, not the tag: `<Button` matches our own Button
     // too, and an assertion that cannot tell them apart is worse than none.
     for (const s of sources) {
-      const rnImport = s.body.match(/import \{([^}]*)\} from 'react-native';/)?.[1] ?? '';
+      const rnImport =
+        s.body.match(/import \{([^}]*)\} from 'react-native';/)?.[1] ?? '';
       const imported = rnImport.split(',').map(n => n.trim());
-      for (const widget of ['Switch', 'Button', 'Alert', 'ToastAndroid', 'ProgressBarAndroid']) {
+      for (const widget of [
+        'Switch',
+        'Button',
+        'Alert',
+        'ToastAndroid',
+        'ProgressBarAndroid',
+      ]) {
         expect(imported).not.toContain(widget);
       }
       expect(s.body).not.toMatch(/Alert\.alert/);
@@ -2435,7 +2591,9 @@ describe('Material 3 interaction survives', () => {
 
 /** JSX comments quote the things these assertions forbid. */
 function withoutJsxComments(source: string): string {
-  return source.replace(/\{?\/\*[\s\S]*?\*\/\}?/g, '').replace(/^\s*\/\/.*$/gm, '');
+  return source
+    .replace(/\{?\/\*[\s\S]*?\*\/\}?/g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
 }
 
 /**
@@ -2468,7 +2626,9 @@ describe('light and dark', () => {
   it('still reads the mode-independent scales statically', () => {
     // If this ever finds nothing, the migration went too far and every spacing
     // value is now paying for a context read.
-    const staticReads = sources.filter(s => /TOKENS\.(space|radius|layout|typography)/.test(s.body));
+    const staticReads = sources.filter(s =>
+      /TOKENS\.(space|radius|layout|typography)/.test(s.body),
+    );
     expect(staticReads.length).toBeGreaterThan(10);
   });
 
@@ -2503,16 +2663,20 @@ describe('light and dark', () => {
 
   it('memoises styles on theme identity rather than rebuilding per render', () => {
     const provider = read('src/theme/ThemeProvider.tsx');
-    expect(provider).toContain('useMemo(() => makeStyles(theme), [makeStyles, theme])');
+    expect(provider).toContain(
+      'useMemo(() => makeStyles(theme), [makeStyles, theme])',
+    );
   });
 
   it('persists the choice and supports light, dark and system modes', () => {
     const provider = read('src/theme/ThemeProvider.tsx');
     expect(provider).toContain('companion.themeMode');
-    expect(provider).toContain("Appearance.getColorScheme()");
+    expect(provider).toContain('Appearance.getColorScheme()');
     // `system` remains a first-class persisted choice even though the empty
     // context and fresh-install fallback now honestly default to Light.
-    expect(provider).toContain("export type ThemeMode = 'light' | 'dark' | 'system'");
+    expect(provider).toContain(
+      "export type ThemeMode = 'light' | 'dark' | 'system'",
+    );
     expect(provider).toContain("stored === 'system'");
   });
 
@@ -2547,10 +2711,14 @@ describe('light and dark', () => {
      * 'light' legitimately appears in this file as a valid stored value and as
      * part of the ThemeMode union, so its absence was never the invariant.
      */
-    expect(provider).toMatch(/:\s*stored\b[\s\S]{0,120}THEME_DEFAULT_MODE|THEME_DEFAULT_MODE;/);
+    expect(provider).toMatch(
+      /:\s*stored\b[\s\S]{0,120}THEME_DEFAULT_MODE|THEME_DEFAULT_MODE;/,
+    );
 
     // Config holds it, and it is dark.
-    expect(config).toMatch(/THEME_DEFAULT_MODE:\s*'light'\s*\|\s*'dark'\s*\|\s*'system'\s*=\s*'dark'/);
+    expect(config).toMatch(
+      /THEME_DEFAULT_MODE:\s*'light'\s*\|\s*'dark'\s*\|\s*'system'\s*=\s*'dark'/,
+    );
 
     /*
      * A STORED choice must still win. This is the ordering that stops a config
@@ -2562,7 +2730,9 @@ describe('light and dark', () => {
       provider.indexOf('function readStoredMode'),
       provider.indexOf('function readStoredMode') + 400,
     );
-    expect(fn.indexOf('storage.get')).toBeLessThan(fn.indexOf('THEME_DEFAULT_MODE'));
+    expect(fn.indexOf('storage.get')).toBeLessThan(
+      fn.indexOf('THEME_DEFAULT_MODE'),
+    );
 
     // A stored 'system' choice must keep working on upgrade.
     expect(provider).toContain('Appearance.addChangeListener');
@@ -2571,12 +2741,16 @@ describe('light and dark', () => {
   it('flips the status bar with the mode', () => {
     // Edge-to-edge means Android draws the clock over our background; a light
     // bar on a light page is an invisible status bar, not a subtle one.
-    expect(read('App.tsx')).toContain("isDark ? 'light-content' : 'dark-content'");
+    expect(read('App.tsx')).toContain(
+      "isDark ? 'light-content' : 'dark-content'",
+    );
   });
 
   it('covers the change with a dissolve rather than cutting', () => {
     expect(read('src/theme/ThemeProvider.tsx')).toContain('Dissolve');
-    expect(read('src/theme/ThemeProvider.tsx')).toContain('pointerEvents="none"');
+    expect(read('src/theme/ThemeProvider.tsx')).toContain(
+      'pointerEvents="none"',
+    );
   });
 });
 
@@ -2608,10 +2782,10 @@ describe('chat-visuals: SpotlightCard is a bottom-anchored M3 sheet', () => {
     // animationType="slide" slides the whole window, dragging the scrim up as a
     // grey rectangle. The sheet alone slides — on `sheetIn`/`sheetOut`, the M3
     // spatialDefault spring, position only — while the window only fades.
-    expect(card).toContain("animationType=\"fade\"");
+    expect(card).toContain('animationType="fade"');
     expect(card).toContain('sheetIn(');
     expect(card).toContain('sheetOut(');
-    expect(card).not.toContain("animationType=\"slide\"");
+    expect(card).not.toContain('animationType="slide"');
   });
 
   it('has a drag-to-dismiss gesture with the token thresholds', () => {
@@ -2655,8 +2829,12 @@ describe('chat-visuals: the chat wallpaper carries no hue in dark mode', () => {
     // black, so the wash still runs — it lifts the sheet to bg.base charcoal
     // rather than leaving the transcript darker than the app around it.
     expect(wallpaper).toContain('isDark');
-    expect(wallpaper).toMatch(/isDark\s*\n?\s*\?\s*{\s*backgroundColor:\s*theme\.color\.bg\.base/);
-    expect(wallpaper).toMatch(/:\s*{\s*backgroundColor:\s*theme\.color\.bg\.accentTint/);
+    expect(wallpaper).toMatch(
+      /isDark\s*\n?\s*\?\s*{\s*backgroundColor:\s*theme\.color\.bg\.base/,
+    );
+    expect(wallpaper).toMatch(
+      /:\s*{\s*backgroundColor:\s*theme\.color\.bg\.accentTint/,
+    );
   });
 });
 
@@ -2706,7 +2884,7 @@ describe('chat-visuals: typing indicator uses conveyor dots, not breathing', () 
     expect(calling).toContain('const PITCH = 8');
     expect(calling).toContain('const DOT = 4');
     expect(calling).toContain('DURATION.base');
-    expect(calling).toContain("withTiming(PITCH");
+    expect(calling).toContain('withTiming(PITCH');
   });
 });
 
@@ -2719,7 +2897,9 @@ describe('chat-visuals: FirstMovePills host has no own pink strip', () => {
     // bright pink band at the bottom of the transcript.
     // Comments stripped: the removed line is explained in a comment that would
     // satisfy a naive includes() check.
-    const stripped = pills.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    const stripped = pills
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
     expect(stripped).not.toMatch(/strip[\s\S]{0,60}backgroundColor/);
   });
 
@@ -2749,7 +2929,9 @@ describe('recharge-theme: RechargeScreen is a compact non-scrolling M3 sheet', (
 
   it('has no inner ScrollView inside the sheet form', () => {
     // The sheet must fit its resting detent without scrolling.
-    const formBlock = recharge.slice(recharge.indexOf('function RechargeSheetForm'));
+    const formBlock = recharge.slice(
+      recharge.indexOf('function RechargeSheetForm'),
+    );
     const endOfForm = formBlock.indexOf('\nfunction ');
     const formOnly = endOfForm > 0 ? formBlock.slice(0, endOfForm) : formBlock;
     expect(formOnly).not.toContain('<ScrollView');
@@ -2783,7 +2965,9 @@ describe('recharge-theme: RechargeScreen is a compact non-scrolling M3 sheet', (
     // grid and the note fit a single screen" was true of one screen height; on
     // a 774dp window the note slid under the bar (2026-09-06). So: exactly one
     // ScrollView, wrapping the form, with the Pay bar a sibling outside it.
-    const page = recharge.slice(recharge.indexOf('export function RechargeWalletPage'));
+    const page = recharge.slice(
+      recharge.indexOf('export function RechargeWalletPage'),
+    );
     const scrollAt = page.indexOf('<ScrollView');
     const formAt = page.indexOf('<RechargeForm');
     const payBarAt = page.indexOf('testID="recharge-wallet-pay"');
@@ -2816,7 +3000,9 @@ describe('recharge-theme: PaymentSheet uses M3 Paper sheet language throughout',
     // The M3 success card (bg/positive surface) replaces it.
     // Strip comments before checking: the migration rationale in comments
     // necessarily names what it replaced, but the import/usage must be gone.
-    const stripped = payment.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    const stripped = payment
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
     expect(stripped).not.toMatch(/BloomField/);
     expect(stripped).not.toMatch(/BLOOM_PALETTES/);
   });
@@ -2846,7 +3032,7 @@ describe('recharge-theme: SettingsSheet Appearance uses three-choice radio picke
     // The binary Toggle expressed only isDark (resolved value), hiding which of
     // light / dark / system the user actually chose. Three radio rows name each
     // choice explicitly.
-    expect(settings).not.toContain("import { Toggle }");
+    expect(settings).not.toContain('import { Toggle }');
     expect(settings).not.toContain('<Toggle');
   });
 
@@ -2921,24 +3107,36 @@ describe('dark theme: Telegram midnight-blue palette, and it still passes contra
 
   it('dark primary text is Telegram white, passes AAA on dark base', () => {
     expect(DARK.color.text.primary).toBe('#FFFFFF');
-    expect(contrast(DARK.color.text.primary, DARK.color.bg.base)).toBeGreaterThanOrEqual(7);
+    expect(
+      contrast(DARK.color.text.primary, DARK.color.bg.base),
+    ).toBeGreaterThanOrEqual(7);
   });
 
   it('dark secondary text passes AA on base, raised AND the peer bubble', () => {
     expect(DARK.color.text.secondary).toBe('#8896A4');
-    for (const bg of [DARK.color.bg.base, DARK.color.bg.raised, DARK.color.bg.sunken]) {
-      expect(contrast(DARK.color.text.secondary, bg)).toBeGreaterThanOrEqual(4.5);
+    for (const bg of [
+      DARK.color.bg.base,
+      DARK.color.bg.raised,
+      DARK.color.bg.sunken,
+    ]) {
+      expect(contrast(DARK.color.text.secondary, bg)).toBeGreaterThanOrEqual(
+        4.5,
+      );
     }
   });
 
   it('dark hairline separator passes the non-text minimum on dark base', () => {
     expect(DARK.color.border.hairline).toBe('#303C4A');
-    expect(contrast(DARK.color.border.hairline, DARK.color.bg.base)).toBeGreaterThan(1.5);
+    expect(
+      contrast(DARK.color.border.hairline, DARK.color.bg.base),
+    ).toBeGreaterThan(1.5);
   });
 
   it('dark inverse surface is Telegram chats_nameMessage, primary button passes AAA', () => {
     expect(DARK.color.bg.inverse).toBe('#E9EEF4');
-    expect(contrast(DARK.color.text.onInverse, DARK.color.bg.inverse)).toBeGreaterThanOrEqual(7);
+    expect(
+      contrast(DARK.color.text.onInverse, DARK.color.bg.inverse),
+    ).toBeGreaterThanOrEqual(7);
   });
 });
 
@@ -2953,7 +3151,7 @@ describe("Pressable's android ripple capability", () => {
     expect(DARK.interaction.rippleRadius).toBe(LIGHT.interaction.rippleRadius);
   });
 
-  it("sources the radius from the token, not a raw literal, and declares the ripple mode", () => {
+  it('sources the radius from the token, not a raw literal, and declares the ripple mode', () => {
     // A bare `radius: 20` inside android_ripple would survive a token rename
     // silently. INTERACTION.rippleRadius is the one place to change the value.
     const pressable = read('src/components/Pressable.tsx');
@@ -3001,14 +3199,20 @@ describe('the search field is wide enough to read what you typed', () => {
      * test passed. Found on a device on 2026-09-06.
      */
     const bar = read('src/components/SearchBar.tsx');
-    const container = bar.slice(bar.indexOf('container: {'), bar.indexOf('input: {'));
+    const container = bar.slice(
+      bar.indexOf('container: {'),
+      bar.indexOf('input: {'),
+    );
     expect(container).toMatch(/\bflex: 1\b/);
     const input = bar.slice(bar.indexOf('input: {'));
     expect(input).toMatch(/\bflex: 1\b/);
   });
 });
 describe('the transition lock has a write side', () => {
-  const motion = readFileSync(join(__dirname, '..', 'src/theme/motion.ts'), 'utf8');
+  const motion = readFileSync(
+    join(__dirname, '..', 'src/theme/motion.ts'),
+    'utf8',
+  );
 
   it('is raised by useScreenEnter, so no pushed screen can forget', () => {
     // The lock is dead code without a writer: `transitioning` would read false
@@ -3027,13 +3231,14 @@ describe('the transition lock has a write side', () => {
     // it avoids.
     const hook = motion.slice(motion.indexOf('export function useScreenEnter'));
     const fade = hook.slice(hook.indexOf('progress.value = withTiming('));
-    expect(fade.indexOf('runOnJS(setTransitioning)(false)')).toBeGreaterThan(-1);
+    expect(fade.indexOf('runOnJS(setTransitioning)(false)')).toBeGreaterThan(
+      -1,
+    );
     expect(fade.indexOf('runOnJS(setTransitioning)(false)')).toBeLessThan(
       fade.indexOf('shift.value = springTo'),
     );
   });
 });
-
 
 /**
  * THE HUE BAND — the gate that could see "brown".
@@ -3088,7 +3293,11 @@ describe('a number that changes is set in tabular figures', () => {
   const RETICKING = [
     ['src/screens/CallScreen.tsx', 'timer', 'the call duration, once a second'],
     ['src/components/CodeField.tsx', 'digit', 'six OTP digits in fixed boxes'],
-    ['src/screens/OnboardingScreen.tsx', 'input', 'the phone field, digit by digit'],
+    [
+      'src/screens/OnboardingScreen.tsx',
+      'input',
+      'the phone field, digit by digit',
+    ],
   ] as const;
 
   it.each(RETICKING)('%s: %s carries tabular figures (%s)', (file, style) => {
@@ -3130,7 +3339,9 @@ describe('a number that changes is set in tabular figures', () => {
 
 describe('the brand stays coral, and coral is a hue', () => {
   const hsl = (hex: string): { h: number; s: number; l: number } => {
-    const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255) as [number, number, number];
+    const [r, g, b] = [1, 3, 5].map(
+      i => parseInt(hex.slice(i, i + 2), 16) / 255,
+    ) as [number, number, number];
     const mx = Math.max(r, g, b);
     const mn = Math.min(r, g, b);
     const l = (mx + mn) / 2;
@@ -3138,7 +3349,11 @@ describe('the brand stays coral, and coral is a hue', () => {
     const d = mx - mn;
     const s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
     const h =
-      (mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4) * 60;
+      (mx === r
+        ? (g - b) / d + (g < b ? 6 : 0)
+        : mx === g
+        ? (b - r) / d + 2
+        : (r - g) / d + 4) * 60;
     return { h, s, l };
   };
 
@@ -3203,8 +3418,17 @@ describe('the brand stays coral, and coral is a hue', () => {
       const { h, s, l } = hsl(value!);
       // Reported as one object so a failure names the token, the mode AND the
       // measured numbers, rather than just "expected 8 to be >= 10".
-      const measured = { name, mode, h: Math.round(h), s: Math.round(s * 100), l: Math.round(l * 100) };
-      expect({ ...measured, coralHue: h >= CORAL_HUE[0] && h <= CORAL_HUE[1] }).toEqual({
+      const measured = {
+        name,
+        mode,
+        h: Math.round(h),
+        s: Math.round(s * 100),
+        l: Math.round(l * 100),
+      };
+      expect({
+        ...measured,
+        coralHue: h >= CORAL_HUE[0] && h <= CORAL_HUE[1],
+      }).toEqual({
         ...measured,
         coralHue: true,
       });
@@ -3213,7 +3437,10 @@ describe('the brand stays coral, and coral is a hue', () => {
         saturated: true,
       });
       if (name === 'bg/accent') {
-        expect({ ...measured, brightEnoughToReadAsCoral: l >= MIN_LIGHT_IDENTITY }).toEqual({
+        expect({
+          ...measured,
+          brightEnoughToReadAsCoral: l >= MIN_LIGHT_IDENTITY,
+        }).toEqual({
           ...measured,
           brightEnoughToReadAsCoral: true,
         });
@@ -3253,8 +3480,12 @@ describe('a primary action is the brand colour, not black and white', () => {
 
   it('fills the primary Button with the accent, and its label with on-accent', () => {
     const button = src('src/components/Button.tsx');
-    expect(rule(button, 'primary')).toContain('backgroundColor: t.color.bg.accentStrong');
-    expect(rule(button, 'primaryLabel')).toContain('color: t.color.text.onAccent');
+    expect(rule(button, 'primary')).toContain(
+      'backgroundColor: t.color.bg.accentStrong',
+    );
+    expect(rule(button, 'primaryLabel')).toContain(
+      'color: t.color.text.onAccent',
+    );
     expect(rule(button, 'primary')).not.toContain('bg.inverse');
   });
 
@@ -3268,7 +3499,10 @@ describe('a primary action is the brand colour, not black and white', () => {
      * on the device this app is developed against and fails AA on the other
      * theme.
      */
-    for (const file of ['src/components/Button.tsx', 'src/screens/ChatScreen.tsx']) {
+    for (const file of [
+      'src/components/Button.tsx',
+      'src/screens/ChatScreen.tsx',
+    ]) {
       const body = src(file);
       for (const line of body.split('\n')) {
         if (/backgroundColor: t\.color\.bg\.accent,/.test(line)) {
@@ -3288,7 +3522,9 @@ describe('a primary action is the brand colour, not black and white', () => {
     // send button are both accent.
     const chat = src('src/screens/ChatScreen.tsx');
     expect(rule(chat, 'extendCardButton')).toContain('t.color.bg.accentStrong');
-    expect(rule(chat, 'extendCardButtonLabel')).toContain('t.color.text.onAccent');
+    expect(rule(chat, 'extendCardButtonLabel')).toContain(
+      't.color.text.onAccent',
+    );
   });
 
   it('leaves the three surfaces where inverse is right, and says which', () => {
@@ -3302,10 +3538,12 @@ describe('a primary action is the brand colour, not black and white', () => {
      *                  control — the theme EXEMPT note already names it.
      *   ProviderDetail the second of three actions, first is accentStrong.
      */
-    expect(src('src/components/UpdateBanner.tsx')).toContain('t.color.bg.inverse');
-    expect(rule(src('src/screens/RechargeScreen.tsx'), 'balanceCard')).toContain(
+    expect(src('src/components/UpdateBanner.tsx')).toContain(
       't.color.bg.inverse',
     );
+    expect(
+      rule(src('src/screens/RechargeScreen.tsx'), 'balanceCard'),
+    ).toContain('t.color.bg.inverse');
     const detail = src('src/screens/ProviderDetailScreen.tsx');
     expect(rule(detail, 'actionDark')).toContain('t.color.bg.inverse');
     // ...and only because the primary beside it carries the brand.
@@ -3328,7 +3566,10 @@ describe('art direction', () => {
   const sources = ['src/components', 'src/screens'].flatMap(dir =>
     readdirSync(join(ROOT, dir))
       .filter(f => f.endsWith('.tsx'))
-      .map(f => ({ file: `${dir}/${f}`, body: stripComments(read(`${dir}/${f}`)) })),
+      .map(f => ({
+        file: `${dir}/${f}`,
+        body: stripComments(read(`${dir}/${f}`)),
+      })),
   );
 
   /*
@@ -3404,7 +3645,10 @@ describe('art direction', () => {
      */
     const scanned = [
       ...sources,
-      { file: 'src/theme/motion.ts', body: stripComments(read('src/theme/motion.ts')) },
+      {
+        file: 'src/theme/motion.ts',
+        body: stripComments(read('src/theme/motion.ts')),
+      },
     ];
     for (const { file, body } of scanned) {
       if (DEFAULT_EASING_ALLOWED.has(file)) {
@@ -3495,7 +3739,9 @@ describe('art direction', () => {
       )) {
         const args = h[2] ?? '';
         const handler = h[3] ?? '';
-        for (const call of handler.matchAll(/\b(springTo|sheetIn|sheetOut)\(([^;]*?)\)[,;]/g)) {
+        for (const call of handler.matchAll(
+          /\b(springTo|sheetIn|sheetOut)\(([^;]*?)\)[,;]/g,
+        )) {
           const fn = call[1] ?? '';
           const params = call[2] ?? '';
           /*

@@ -1,5 +1,12 @@
 import React, { useCallback, useState } from 'react';
-import { Image, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Image,
+  Linking,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated from 'react-native-reanimated';
 import { NAV_BAR_HEIGHT } from '../components/FloatingToolbar';
@@ -16,17 +23,14 @@ import { useQueryClient } from '@tanstack/react-query';
 import { deleteAccount, signOut } from '../api/auth';
 import { stopPush } from '../lib/push';
 import { track } from '../lib/telemetry';
-import { widgetConfigured } from '../lib/msg91Widget';
 import { useSetClayAvatar, useSetPresence } from '../api/provider';
 import { CLAY_SEEDS, CLAY_IMAGES } from '../lib/clayAvatars';
 import { useProfile } from '../api/chat';
 import { PRESENCE_OPTIONS, presenceDetail } from '../lib/presence';
-import { PHONE_VERIFY_ENABLED } from '../api/phone';
 import { legalUrl } from '../lib/legal';
 import { initialOf } from '../lib/display';
 import { formatRupees } from '../lib/rates';
 import { Avatar } from '../components/Avatar';
-import { PhoneVerifySheet } from './PhoneVerifySheet';
 import { resetStore, useStore } from '../store/useStore';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme, useThemeMode } from '../theme/ThemeProvider';
@@ -119,7 +123,8 @@ function SettingsRowContent({
       <View style={styles.rowCopy}>
         <Text
           allowFontScaling
-          style={[styles.rowTitle, danger && styles.rowTitleDanger]}>
+          style={[styles.rowTitle, danger && styles.rowTitleDanger]}
+        >
           {title}
         </Text>
         {detail ? (
@@ -129,9 +134,17 @@ function SettingsRowContent({
         ) : null}
       </View>
       {selected ? (
-        <Icon name="check" size={TOKENS.icon.sm} color={theme.color.text.primary} />
+        <Icon
+          name="check"
+          size={TOKENS.icon.sm}
+          color={theme.color.text.primary}
+        />
       ) : chevron ? (
-        <Icon name="chevronRight" size={TOKENS.icon.sm} color={theme.color.text.tertiary} />
+        <Icon
+          name="chevronRight"
+          size={TOKENS.icon.sm}
+          color={theme.color.text.tertiary}
+        />
       ) : null}
     </>
   );
@@ -188,8 +201,9 @@ export function SettingsSheet({
   const needle = query.trim().toLowerCase();
   const shows = (rowTitle: string) =>
     needle === '' || rowTitle.toLowerCase().includes(needle);
-  const [verifying, setVerifying] = useState(false);
-  const [choiceSheet, setChoiceSheet] = useState<'presence' | 'theme' | null>(null);
+  const [choiceSheet, setChoiceSheet] = useState<'presence' | 'theme' | null>(
+    null,
+  );
   const [avatarSheet, setAvatarSheet] = useState(false);
   const [busy, setBusy] = useState(false);
   const { data: profile } = useProfile();
@@ -220,7 +234,9 @@ export function SettingsSheet({
       // phone screen is where you land.
       onDeleted();
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : 'Could not delete account');
+      setNotice(
+        err instanceof Error ? err.message : 'Could not delete account',
+      );
     } finally {
       setBusy(false);
       setConfirming(false);
@@ -263,30 +279,16 @@ export function SettingsSheet({
     })();
   }, [onSignedOut, queryClient]);
 
-
-  /*
-   * Offered only when it can succeed and only when it is not already done.
-   *
-   * Three conditions, and each removes a different way of showing a dead end.
-   * `PHONE_VERIFY_ENABLED` is off while the server hop is unproven;
-   * `widgetConfigured()` is false in a build with no MSG91 values; and there is
-   * nothing to offer someone who has already verified.
-   */
-  const canVerifyPhone =
-    PHONE_VERIFY_ENABLED &&
-    widgetConfigured() &&
-    profile !== undefined &&
-    profile.phone_verified_at === null;
-
   const providerAppearance =
     profile?.role === 'provider'
       ? ' Anyone browsing the directory sees it too.'
       : ' Only people you have a conversation with can see it.';
 
-  const showAccountSection = canVerifyPhone;
   const presenceLabel =
-    PRESENCE_OPTIONS.find(option => option.value === presence)?.label ?? 'Hidden';
-  const themeLabel = mode === 'light' ? 'Light' : mode === 'dark' ? 'Dark' : 'System';
+    PRESENCE_OPTIONS.find(option => option.value === presence)?.label ??
+    'Hidden';
+  const themeLabel =
+    mode === 'light' ? 'Light' : mode === 'dark' ? 'Dark' : 'System';
   // Members no longer see an account-type label under the avatar (Amit,
   // 2026-09-02): it stated the obvious. Providers keep theirs — the directory
   // side is the meaningful distinction. The balance carries the rest.
@@ -299,7 +301,10 @@ export function SettingsSheet({
    * formatter — there was no formatter. It also skipped grouping, rendering
    * 120000 rather than ₹1,20,000.
    */
-  const profileMetaText = [accountLabel, profile ? formatRupees(profile.token_balance) : '']
+  const profileMetaText = [
+    accountLabel,
+    profile ? formatRupees(profile.token_balance) : '',
+  ]
     .filter(Boolean)
     .join(' · ');
 
@@ -345,76 +350,92 @@ export function SettingsSheet({
             paddingBottom: embedded
               ? TOKENS.space['3xl']
               : insets.bottom +
-                (showBack ? TOKENS.space['3xl'] : NAV_BAR_HEIGHT + TOKENS.space.md),
+                (showBack
+                  ? TOKENS.space['3xl']
+                  : NAV_BAR_HEIGHT + TOKENS.space.md),
           },
-        ]}>
+        ]}
+      >
         {/* WhatsApp's profile-shortcut variant puts a compact app bar over the
             cover. This back action is intentional even on the member tree: the
             user selected that variant after the first profile-first pass.
             https://developer.android.com/develop/ui/compose/components/app-bars */}
         {needle !== '' ? null : (
-        <View style={styles.profileHero}>
-          {/* No cover image any more (Amit, on device: the WhatsApp half-doodle
+          <View style={styles.profileHero}>
+            {/* No cover image any more (Amit, on device: the WhatsApp half-doodle
               cover was dated). A calm centred-avatar header instead — the pattern
               Telegram / iOS Settings / Notion use: the identity sits on the page
               itself, not on a wallpaper band. The back action, on the PUSHED case
               only, is a plain top app bar above it rather than an arrow floating
               on a cover. */}
-          {showBack ? (
-            <View style={{ paddingTop: insets.top }}>
-              <TopAppBar
-                title=""
-                transparent
-                testID="settings-app-bar"
-                leading={
-                  <Pressable
-                    onPress={onBack}
-                    testID="settings-back"
-                    accessibilityLabel="Back"
-                    press="none"
-                    highlight="dim"
-                    size={48}
-                    shape="circle"
-                    style={styles.backButton}>
-                    <Icon name="back" size={TOKENS.icon.md} />
-                  </Pressable>
-                }
-              />
-            </View>
-          ) : null}
-          <View style={styles.profileIdentity}>
-            {/* Both roles can now change their photo (Amit, 2026-09-02): tap the
+            {showBack ? (
+              <View style={{ paddingTop: insets.top }}>
+                <TopAppBar
+                  title=""
+                  transparent
+                  testID="settings-app-bar"
+                  leading={
+                    <Pressable
+                      onPress={onBack}
+                      testID="settings-back"
+                      accessibilityLabel="Back"
+                      press="none"
+                      highlight="dim"
+                      size={48}
+                      shape="circle"
+                      style={styles.backButton}
+                    >
+                      <Icon name="back" size={TOKENS.icon.md} />
+                    </Pressable>
+                  }
+                />
+              </View>
+            ) : null}
+            <View style={styles.profileIdentity}>
+              {/* Both roles can now change their photo (Amit, 2026-09-02): tap the
                 avatar to open the photo sheet rather than launching the picker
                 straight away, so "remove" and "choose" are one deliberate step. */}
-            <Pressable
-              onPress={() => setAvatarSheet(true)}
-              testID="settings-avatar"
-              accessibilityLabel="Change avatar"
-              press="none"
-              highlight="dim"
-              disabled={setClayAvatar.isPending}
-              style={styles.profileAvatarHit}>
-              <Avatar
-                initial={initialOf(profileName)}
-                size={88}
-                uri={profile?.avatar_url ?? null}
-              />
-              <View style={styles.profileCamera}>
-                {/* A "+" edit affordance, not a camera: tapping the avatar opens
+              <Pressable
+                onPress={() => setAvatarSheet(true)}
+                testID="settings-avatar"
+                accessibilityLabel="Change avatar"
+                press="none"
+                highlight="dim"
+                disabled={setClayAvatar.isPending}
+                style={styles.profileAvatarHit}
+              >
+                <Avatar
+                  initial={initialOf(profileName)}
+                  size={88}
+                  uri={profile?.avatar_url ?? null}
+                />
+                <View style={styles.profileCamera}>
+                  {/* A "+" edit affordance, not a camera: tapping the avatar opens
                     the DiceBear picker, not a photo/camera upload. */}
-                <Icon name="plus" size={TOKENS.icon.sm} color={theme.color.text.onAccent} />
-              </View>
-            </Pressable>
-            <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling numberOfLines={1} style={styles.profileName}>
-              {profileName}
-            </Text>
-            {profileMetaText ? (
-              <Text allowFontScaling style={styles.profileMeta}>
-                {profileMetaText}
+                  <Icon
+                    name="plus"
+                    size={TOKENS.icon.sm}
+                    color={theme.color.text.onAccent}
+                  />
+                </View>
+              </Pressable>
+              <Text
+                maxFontSizeMultiplier={
+                  TOKENS.fontScaleCap.titleMediumEmphasized
+                }
+                allowFontScaling
+                numberOfLines={1}
+                style={styles.profileName}
+              >
+                {profileName}
               </Text>
-            ) : null}
+              {profileMetaText ? (
+                <Text allowFontScaling style={styles.profileMeta}>
+                  {profileMetaText}
+                </Text>
+              ) : null}
+            </View>
           </View>
-        </View>
         )}
         {/* Provider controls sit between the hero and the list — the same place a
             member has nothing — so a provider's "You" tab is one settings surface,
@@ -430,22 +451,23 @@ export function SettingsSheet({
         ) : null}
         <View style={styles.group}>
           {shows('Presence') ? (
-          <>
-          <Pressable
-            onPress={() => setChoiceSheet('presence')}
-            testID="settings-presence"
-            accessibilityLabel={`Presence, ${presenceLabel}`}
-            press="none"
-            highlight="dim"
-            style={styles.row}>
-            <SettingsRowContent
-              icon="person"
-              title="Presence"
-              detail={presenceLabel}
-            />
-          </Pressable>
-          <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
-          </>
+            <>
+              <Pressable
+                onPress={() => setChoiceSheet('presence')}
+                testID="settings-presence"
+                accessibilityLabel={`Presence, ${presenceLabel}`}
+                press="none"
+                highlight="dim"
+                style={styles.row}
+              >
+                <SettingsRowContent
+                  icon="person"
+                  title="Presence"
+                  detail={presenceLabel}
+                />
+              </Pressable>
+              <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
+            </>
           ) : null}
           {onBlocked !== undefined && shows('Blocked people') ? (
             <>
@@ -455,7 +477,8 @@ export function SettingsSheet({
                 accessibilityLabel="Blocked People"
                 press="none"
                 highlight="dim"
-                style={styles.row}>
+                style={styles.row}
+              >
                 <SettingsRowContent
                   icon="block"
                   title="Blocked people"
@@ -469,44 +492,25 @@ export function SettingsSheet({
 
         <View style={styles.group}>
           {shows('Theme') ? (
-          <>
-          <Pressable
-            onPress={() => setChoiceSheet('theme')}
-            testID="settings-theme"
-            accessibilityLabel={`Theme, ${themeLabel}`}
-            press="none"
-            highlight="dim"
-            style={styles.row}>
-            <SettingsRowContent icon="settings" title="Theme" detail={themeLabel} />
-          </Pressable>
-          <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
-          </>
+            <>
+              <Pressable
+                onPress={() => setChoiceSheet('theme')}
+                testID="settings-theme"
+                accessibilityLabel={`Theme, ${themeLabel}`}
+                press="none"
+                highlight="dim"
+                style={styles.row}
+              >
+                <SettingsRowContent
+                  icon="settings"
+                  title="Theme"
+                  detail={themeLabel}
+                />
+              </Pressable>
+              <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
+            </>
           ) : null}
         </View>
-
-        {showAccountSection ? (
-          <View style={styles.group}>
-              {canVerifyPhone && shows('Phone verification') ? (
-                <Pressable
-                  onPress={() => requestAnimationFrame(() => setVerifying(true))}
-                  testID="settings-verify-phone"
-                  accessibilityLabel="Verify Phone Number"
-                  press="none"
-                  highlight="dim"
-                  style={styles.row}>
-                  <SettingsRowContent
-                    icon="call"
-                    title="Phone verification"
-                    detail="Optional account recovery"
-                  />
-                </Pressable>
-              ) : null}
-              {/* No provider entry in member settings: member and provider are
-                  mutually exclusive worlds (Amit, 2026-09-03). Becoming a provider
-                  happens through "Become a partner" at sign-up, not from here. */}
-              <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
-          </View>
-        ) : null}
 
         {/* Recharge history: the money ledger. Shown only on the member tree
             (provider tree has no onTransactions).
@@ -516,20 +520,21 @@ export function SettingsSheet({
             member ends up on the one that does not have it. */}
         {onTransactions !== undefined && shows('Recharge history') ? (
           <View style={styles.group}>
-              <Pressable
-                onPress={onTransactions}
-                testID="settings-transactions"
-                accessibilityLabel="Recharge history"
-                press="none"
-                highlight="dim"
-                style={styles.row}>
-                <SettingsRowContent
-                  icon="wallet"
-                  title="Recharge history"
-                  detail="Your top-ups, and what each one cost"
-                />
-              </Pressable>
-              <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
+            <Pressable
+              onPress={onTransactions}
+              testID="settings-transactions"
+              accessibilityLabel="Recharge history"
+              press="none"
+              highlight="dim"
+              style={styles.row}
+            >
+              <SettingsRowContent
+                icon="wallet"
+                title="Recharge history"
+                detail="Your top-ups, and what each one cost"
+              />
+            </Pressable>
+            <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
           </View>
         ) : null}
 
@@ -539,20 +544,21 @@ export function SettingsSheet({
             document that says so. Member tree only: a provider is paid out. */}
         {onInvoices !== undefined && shows('Bills & invoices') ? (
           <View style={styles.group}>
-              <Pressable
-                onPress={onInvoices}
-                testID="settings-invoices"
-                accessibilityLabel="Bills and invoices"
-                press="none"
-                highlight="dim"
-                style={styles.row}>
-                <SettingsRowContent
-                  icon="download"
-                  title="Bills & invoices"
-                  detail="Open or save the bill for any top-up"
-                />
-              </Pressable>
-              <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
+            <Pressable
+              onPress={onInvoices}
+              testID="settings-invoices"
+              accessibilityLabel="Bills and invoices"
+              press="none"
+              highlight="dim"
+              style={styles.row}
+            >
+              <SettingsRowContent
+                icon="download"
+                title="Bills & invoices"
+                detail="Open or save the bill for any top-up"
+              />
+            </Pressable>
+            <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
           </View>
         ) : null}
 
@@ -567,7 +573,8 @@ export function SettingsSheet({
               accessibilityLabel="Usage by session"
               press="none"
               highlight="dim"
-              style={styles.row}>
+              style={styles.row}
+            >
               <SettingsRowContent
                 icon="listen"
                 title={isProvider ? 'Earnings by session' : 'Usage by session'}
@@ -583,108 +590,123 @@ export function SettingsSheet({
         ) : null}
 
         {/*
-          * Terms and Privacy links: android-audit.md launch-blocking gap.
-          * Both are `Linking.openURL` — no in-app webview, same reason as
-          * the Google sign-in: Linking opens the system browser.
-          * URLs are the same as the seeded policy_versions rows (migration 027).
-          */}
+         * Terms and Privacy links: android-audit.md launch-blocking gap.
+         * Both are `Linking.openURL` — no in-app webview, same reason as
+         * the Google sign-in: Linking opens the system browser.
+         * URLs are the same as the seeded policy_versions rows (migration 027).
+         */}
         <View style={styles.group}>
           {shows('Terms of service') ? (
-          <>
-          <Pressable
-            onPress={() => {
-              void Linking.openURL(legalUrl('terms'));
-            }}
-            testID="settings-terms"
-            accessibilityLabel="Terms of Service"
-            press="none"
-            highlight="dim"
-            style={styles.row}>
-            <SettingsRowContent icon="report" title="Terms of service" />
-          </Pressable>
-          <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
-          </>
+            <>
+              <Pressable
+                onPress={() => {
+                  void Linking.openURL(legalUrl('terms'));
+                }}
+                testID="settings-terms"
+                accessibilityLabel="Terms of Service"
+                press="none"
+                highlight="dim"
+                style={styles.row}
+              >
+                <SettingsRowContent icon="report" title="Terms of service" />
+              </Pressable>
+              <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
+            </>
           ) : null}
           {shows('Privacy policy') ? (
-          <Pressable
-            onPress={() => {
-              void Linking.openURL(legalUrl('privacy'));
-            }}
-            testID="settings-privacy"
-            accessibilityLabel="Privacy Policy"
-            press="none"
-            highlight="dim"
-            style={styles.row}>
-            <SettingsRowContent icon="block" title="Privacy policy" />
-          </Pressable>
+            <Pressable
+              onPress={() => {
+                void Linking.openURL(legalUrl('privacy'));
+              }}
+              testID="settings-privacy"
+              accessibilityLabel="Privacy Policy"
+              press="none"
+              highlight="dim"
+              style={styles.row}
+            >
+              <SettingsRowContent icon="block" title="Privacy policy" />
+            </Pressable>
           ) : null}
         </View>
 
         <View style={styles.groupSpaced}>
           {shows('Sign out') ? (
-          <>
-          <Divider />
-          <Pressable
-            onPress={() => {
-              void onSignOutPress();
-            }}
-            disabled={busy}
-            testID="sign-out"
-            accessibilityLabel="Sign Out"
-            press="none"
-            highlight="dim"
-            style={styles.row}>
-            <SettingsRowContent icon="logout" title="Sign out" chevron={false} />
-          </Pressable>
-          <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
-          </>
+            <>
+              <Divider />
+              <Pressable
+                onPress={() => {
+                  void onSignOutPress();
+                }}
+                disabled={busy}
+                testID="sign-out"
+                accessibilityLabel="Sign Out"
+                press="none"
+                highlight="dim"
+                style={styles.row}
+              >
+                <SettingsRowContent
+                  icon="logout"
+                  title="Sign out"
+                  chevron={false}
+                />
+              </Pressable>
+              <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
+            </>
           ) : null}
           {/* The destructive action in the error colour, its own separated row,
               which is how a destructive action is kept from sitting flush against
               a benign one. */}
           {shows('Delete account') ? (
-          <Pressable
-            onPress={() => requestAnimationFrame(() => setConfirming(true))}
-            testID="delete-account"
-            accessibilityLabel="Delete Account"
-            press="none"
-            highlight="dim"
-            style={styles.row}>
-            <SettingsRowContent
-              icon="report"
-              title="Delete account"
-              danger
-              chevron={false}
-            />
-          </Pressable>
+            <Pressable
+              onPress={() => requestAnimationFrame(() => setConfirming(true))}
+              testID="delete-account"
+              accessibilityLabel="Delete Account"
+              press="none"
+              highlight="dim"
+              style={styles.row}
+            >
+              <SettingsRowContent
+                icon="report"
+                title="Delete account"
+                danger
+                chevron={false}
+              />
+            </Pressable>
           ) : null}
         </View>
         {/* Chrome, like the hero above: a search result should be the row and
             nothing else. */}
         {needle === '' ? (
-        <View style={styles.footer}>
-          <Text allowFontScaling={false} style={styles.brandFooter}>
-            Pappal
-          </Text>
-          <Pressable
-            onPress={() => {
-              void Linking.openURL('market://details?id=com.companionchat').catch(() =>
-                Linking.openURL(
-                  'https://play.google.com/store/apps/details?id=com.companionchat',
-                ),
-              );
-            }}
-            testID="settings-rate"
-            accessibilityLabel="Rate us on the Play Store"
-            press="none"
-            highlight="dim"
-            style={styles.rateFooter}>
-            <Icon name="star" size={TOKENS.icon.xs} color={theme.color.text.secondary} />
-            <Text allowFontScaling style={styles.rateFooterText}>
-              Rate Pappal on the Play Store
+          <View style={styles.footer}>
+            <Text allowFontScaling={false} style={styles.brandFooter}>
+              Pappal
             </Text>
-          </Pressable>
-        </View>
+            <Pressable
+              onPress={() => {
+                void Linking.openURL(
+                  'market://details?id=com.companionchat',
+                ).catch(() =>
+                  Linking.openURL(
+                    'https://play.google.com/store/apps/details?id=com.companionchat',
+                  ),
+                );
+              }}
+              testID="settings-rate"
+              accessibilityLabel="Rate us on the Play Store"
+              press="none"
+              highlight="dim"
+              style={styles.rateFooter}
+            >
+              <Icon
+                name="star"
+                size={TOKENS.icon.xs}
+                color={theme.color.text.secondary}
+              />
+              <Text allowFontScaling style={styles.rateFooterText}>
+                Rate Pappal on the Play Store
+              </Text>
+            </Pressable>
+          </View>
         ) : null}
       </Animated.ScrollView>
 
@@ -693,13 +715,16 @@ export function SettingsSheet({
         testID="presence-choice-sheet"
         title="Presence"
         body={`${presenceDetail(presence)}${providerAppearance}`}
-        onClose={() => setChoiceSheet(null)}>
+        onClose={() => setChoiceSheet(null)}
+      >
         <View style={styles.choiceList}>
           {PRESENCE_OPTIONS.map((option, index) => {
             const on = presence === option.value;
             return (
               <React.Fragment key={option.value}>
-                {index === 0 ? null : <Divider variant="inset" insetStart={ROW_TEXT_INSET} />}
+                {index === 0 ? null : (
+                  <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
+                )}
                 <Pressable
                   onPress={() => {
                     if (!on) setPresence.mutate(option.value);
@@ -711,7 +736,8 @@ export function SettingsSheet({
                   accessibilityLabel={option.label}
                   press="none"
                   highlight="dim"
-                  style={styles.row}>
+                  style={styles.row}
+                >
                   <SettingsRowContent
                     icon="person"
                     title={option.label}
@@ -739,18 +765,25 @@ export function SettingsSheet({
           THEME_DEFAULT_MODE === 'system'
             ? 'Your device setting'
             : THEME_DEFAULT_MODE === 'dark'
-              ? 'Dark'
-              : 'Light'
+            ? 'Dark'
+            : 'Light'
         } is the default. System follows your device setting.`}
-        onClose={() => setChoiceSheet(null)}>
+        onClose={() => setChoiceSheet(null)}
+      >
         <View style={styles.choiceList}>
           {(['light', 'dark', 'system'] as const).map((option, index) => {
             const on = mode === option;
             const label =
-              option === 'light' ? 'Light' : option === 'dark' ? 'Dark' : 'System';
+              option === 'light'
+                ? 'Light'
+                : option === 'dark'
+                ? 'Dark'
+                : 'System';
             return (
               <React.Fragment key={option}>
-                {index === 0 ? null : <Divider variant="inset" insetStart={ROW_TEXT_INSET} />}
+                {index === 0 ? null : (
+                  <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
+                )}
                 <Pressable
                   onPress={() => {
                     setMode(option);
@@ -762,7 +795,8 @@ export function SettingsSheet({
                   accessibilityLabel={label}
                   press="none"
                   highlight="dim"
-                  style={styles.row}>
+                  style={styles.row}
+                >
                   <SettingsRowContent
                     icon="settings"
                     title={label}
@@ -797,12 +831,14 @@ export function SettingsSheet({
             ? 'Shown in the directory and in your chats. If you have gallery photos, your main photo is used instead.'
             : 'Shown to people you chat with.'
         }
-        onClose={() => setAvatarSheet(false)}>
+        onClose={() => setAvatarSheet(false)}
+      >
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           {...SCROLL_PHYSICS}
-          contentContainerStyle={styles.avatarPicker}>
+          contentContainerStyle={styles.avatarPicker}
+        >
           {CLAY_SEEDS.map(seed => {
             const selected = seed === currentSeed;
             return (
@@ -817,7 +853,11 @@ export function SettingsSheet({
                 accessibilityRole="radio"
                 checked={selected}
                 press="none"
-                style={[styles.avatarChoice, selected && styles.avatarChoiceSelected]}>
+                style={[
+                  styles.avatarChoice,
+                  selected && styles.avatarChoiceSelected,
+                ]}
+              >
                 <Image
                   source={CLAY_IMAGES[seed]}
                   style={styles.avatarChoiceImage}
@@ -829,9 +869,6 @@ export function SettingsSheet({
           })}
         </ScrollView>
       </Sheet>
-
-      {/* Phone verification stays the OTP sheet, layered over the screen. */}
-      <PhoneVerifySheet visible={verifying} onClose={() => setVerifying(false)} />
 
       {/* Delete confirmation: a destructive confirm IS modal. Names the object and
           says what the button deletes, not 'Yes'. */}
@@ -860,7 +897,8 @@ export function SettingsSheet({
               testID="delete-confirm"
             />
           </>
-        }>
+        }
+      >
         {null}
       </Sheet>
     </View>

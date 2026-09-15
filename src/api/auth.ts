@@ -86,9 +86,11 @@ export { PHONE_AUTH_ENABLED };
  *                setup. Firebase only proves the number; a Supabase session is
  *                minted by the `exchange-firebase-token` Edge Function so RLS
  *                (auth.uid()) is unchanged. See src/lib/firebasePhone.ts.
- *   'supabase' — the original Supabase-native path: signInWithOtp/verifyOtp with
- *                the `send-sms` hook (MSG91/Fast2SMS). Kept intact behind this
- *                flag to switch back to once DLT is approved.
+ *   'supabase' — the Supabase-native path: signInWithOtp/verifyOtp with the
+ *                `send-sms` hook, which now delivers the code over the WhatsApp
+ *                Cloud API. Kept behind this flag; flip to it (WhatsApp primary,
+ *                Firebase as the "Get SMS" fallback) once the WhatsApp template
+ *                and token are live.
  *
  * OnboardingScreen calls sendPhoneOtp/verifyPhoneOtp and never learns
  * which path ran — the flag lives entirely here.
@@ -136,10 +138,10 @@ export type OtpResult =
 
 /**
  * Ask Supabase to issue a code. Supabase generates and stores it, then calls the
- * send-sms hook, which puts it on the network through MSG91.
+ * send-sms hook, which delivers it over the WhatsApp Cloud API.
  *
- * This function never sees the code, which is the point of choosing the hook
- * over the MSG91 widget: Supabase Auth stays the only thing that can mint a
+ * This function never sees the code, which is the point of choosing the hook over
+ * sending it ourselves: Supabase Auth stays the only thing that can mint a
  * session, so RLS keeps resting on `auth.uid()` rather than on our own signing.
  */
 export async function sendPhoneOtp(phone: string): Promise<OtpResult> {
@@ -148,7 +150,10 @@ export async function sendPhoneOtp(phone: string): Promise<OtpResult> {
   }
   const normalised = normalisePhone(phone);
   if (normalised === null) {
-    return { status: 'failed', message: 'That does not look like a phone number.' };
+    return {
+      status: 'failed',
+      message: 'That does not look like a phone number.',
+    };
   }
   if (AUTH_PHONE_PROVIDER === 'firebase') {
     try {
@@ -161,7 +166,9 @@ export async function sendPhoneOtp(phone: string): Promise<OtpResult> {
       };
     }
   }
-  const { error } = await supabase.auth.signInWithOtp({ phone: `+${normalised}` });
+  const { error } = await supabase.auth.signInWithOtp({
+    phone: `+${normalised}`,
+  });
   if (error != null) {
     return { status: 'failed', message: describeOtpError(error.message) };
   }
@@ -178,7 +185,10 @@ export async function verifyPhoneOtp(
   }
   const normalised = normalisePhone(phone);
   if (normalised === null) {
-    return { status: 'failed', message: 'That does not look like a phone number.' };
+    return {
+      status: 'failed',
+      message: 'That does not look like a phone number.',
+    };
   }
   if (AUTH_PHONE_PROVIDER === 'firebase') {
     return verifyFirebasePhone(token);
@@ -229,18 +239,27 @@ async function verifyFirebasePhone(token: string): Promise<OtpResult> {
       },
     );
     if (!response.ok) {
-      return { status: 'failed', message: 'Could not finish signing in. Please try again.' };
+      return {
+        status: 'failed',
+        message: 'Could not finish signing in. Please try again.',
+      };
     }
     session = (await response.json()) as {
       access_token: string;
       refresh_token: string;
     };
   } catch {
-    return { status: 'failed', message: 'Could not finish signing in. Please try again.' };
+    return {
+      status: 'failed',
+      message: 'Could not finish signing in. Please try again.',
+    };
   }
 
   if (!session.access_token || !session.refresh_token) {
-    return { status: 'failed', message: 'Could not finish signing in. Please try again.' };
+    return {
+      status: 'failed',
+      message: 'Could not finish signing in. Please try again.',
+    };
   }
 
   const { error } = await supabase.auth.setSession({
@@ -248,7 +267,10 @@ async function verifyFirebasePhone(token: string): Promise<OtpResult> {
     refresh_token: session.refresh_token,
   });
   if (error != null) {
-    return { status: 'failed', message: 'Could not finish signing in. Please try again.' };
+    return {
+      status: 'failed',
+      message: 'Could not finish signing in. Please try again.',
+    };
   }
   // The Supabase session is the source of truth now; the Firebase one is spent.
   await firebaseSignOut();
@@ -270,7 +292,11 @@ function describeOtpError(message: string): string {
   if (text.includes('invalid') || text.includes('incorrect')) {
     return 'That code is not right. Check the last digits.';
   }
-  if (text.includes('rate') || text.includes('too many') || text.includes('limit')) {
+  if (
+    text.includes('rate') ||
+    text.includes('too many') ||
+    text.includes('limit')
+  ) {
     return 'Too many attempts. Wait a minute and try again.';
   }
   if (text.includes('sms') || text.includes('provider')) {
@@ -366,7 +392,10 @@ export async function signInWithGoogle(): Promise<GoogleResult> {
       }
       return 'session';
     } catch (error) {
-      if (error instanceof GoogleCredentialError && error.reason === 'cancelled') {
+      if (
+        error instanceof GoogleCredentialError &&
+        error.reason === 'cancelled'
+      ) {
         throw error;
       }
       if (!(error instanceof GoogleCredentialError)) {
@@ -397,7 +426,10 @@ export type AuthCallbackResult =
   | { status: 'failed'; message: string };
 
 /** Maps Supabase/Google callback errors onto something a person can act on. */
-function describeCallbackError(code: string | null, description: string | null): string {
+function describeCallbackError(
+  code: string | null,
+  description: string | null,
+): string {
   const detail = (description ?? '').replace(/\+/g, ' ');
   if (/Unable to exchange external code/i.test(detail)) {
     // The provider accepted the user and rejected us. Almost always a client
@@ -417,9 +449,15 @@ function describeCallbackError(code: string | null, description: string | null):
  * the verifier never leaves the app, so intercepting the redirect is not enough
  * to steal the session.
  */
-export async function handleAuthDeepLink(url: string): Promise<AuthCallbackResult> {
+export async function handleAuthDeepLink(
+  url: string,
+): Promise<AuthCallbackResult> {
   const e2eUrl = 'companionchat://e2e-auth';
-  if (url === e2eUrl || url.startsWith(`${e2eUrl}?`) || url.startsWith(`${e2eUrl}#`)) {
+  if (
+    url === e2eUrl ||
+    url.startsWith(`${e2eUrl}?`) ||
+    url.startsWith(`${e2eUrl}#`)
+  ) {
     // Maestro cannot automate Google/Facebook system-owned OAuth UI. A local
     // harness may inject a short-lived Supabase session through this private
     // deep link; production builds categorically ignore it.
@@ -431,7 +469,10 @@ export async function handleAuthDeepLink(url: string): Promise<AuthCallbackResul
     const accessToken = params.get('access_token');
     const refreshToken = params.get('refresh_token');
     if (accessToken == null || refreshToken == null) {
-      return { status: 'failed', message: 'The local test session is incomplete.' };
+      return {
+        status: 'failed',
+        message: 'The local test session is incomplete.',
+      };
     }
     const { error } = await supabase.auth.setSession({
       access_token: accessToken,
@@ -439,7 +480,10 @@ export async function handleAuthDeepLink(url: string): Promise<AuthCallbackResul
     });
     return error == null
       ? { status: 'signedIn' }
-      : { status: 'failed', message: 'Could not install the local test session.' };
+      : {
+          status: 'failed',
+          message: 'Could not install the local test session.',
+        };
   }
 
   if (!url.startsWith(AUTH_REDIRECT_URL)) {
@@ -475,9 +519,14 @@ export async function handleAuthDeepLink(url: string): Promise<AuthCallbackResul
     return { status: 'ignored' };
   }
 
-  const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+  const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(
+    code,
+  );
   if (exchangeError) {
-    return { status: 'failed', message: 'Could not finish signing in. Please try again.' };
+    return {
+      status: 'failed',
+      message: 'Could not finish signing in. Please try again.',
+    };
   }
   return { status: 'signedIn' };
 }
