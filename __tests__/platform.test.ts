@@ -108,7 +108,7 @@ describe('Gradle configuration cache', () => {
      */
     const gradle = read('android/app/build.gradle');
     expect(gradle).toContain(
-      'if (wantsRelease) {\n    apply from: new File(rootProject.projectDir, "../node_modules/@sentry/react-native/sentry.gradle")',
+      'if (wantsRelease || wantsClosedTest) {\n    apply from: new File(rootProject.projectDir, "../node_modules/@sentry/react-native/sentry.gradle")',
     );
     expect(gradle).not.toContain('require.resolve');
     expect(gradle).not.toMatch(/\.execute\(\)/);
@@ -121,7 +121,11 @@ describe('Gradle configuration cache', () => {
     const pkg = read('package.json');
     const scripts = (JSON.parse(pkg) as { scripts: Record<string, string> })
       .scripts;
-    for (const name of ['android:release', 'android:bundle']) {
+    for (const name of [
+      'android:release',
+      'android:bundle',
+      'android:bundle:closed',
+    ]) {
       expect(scripts[name]).toContain('--no-configuration-cache');
     }
   });

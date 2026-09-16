@@ -343,29 +343,17 @@ describe('typography is bound to real font files', () => {
      * ships (Lucide has no filled twin; the active state is colour only for most
      * icons).
      *
-     * PappalGlyphs: RETAINED DELIBERATELY, AND GENUINELY ORPHANED. This entry
-     * used to say "the filled-heart icon face, referenced by Icon.tsx", and that
-     * stopped being true on 2026-09-07 when Amit removed the heart fill ("Remove
-     * the heart fill; keep the outline, heavier"). No file in `src/` names the
-     * face any more — the active favourite is the same Lucide outline dilated in
-     * layout space (`HEAVY_DILATION` in Icon.tsx), and `ICON_FAMILY_FILLED`, which
-     * Icon.tsx does still import, resolves to `'Lucide'` in icons.generated.ts.
-     * Do not read that surviving constant as a reference to this face.
-     *
-     * So this is an exemption for an orphan, which is the one thing this test
-     * exists to forbid, and it is here on purpose for exactly one reason:
-     * removing the file is not a change this suite can make safely. Fonts are
-     * packaged at build time, not served over Metro, so deleting
-     * `PappalGlyphs.ttf` (804 bytes) and its Apache-2.0 notice
-     * `LICENSE-PappalGlyphs.txt` (10,897 bytes) needs a rebuild and a device
-     * pass, and it also touches the NOTICE map below and the prose in
-     * providerPhotos.test.ts. Recorded as a loose end in ADR-0018's 2026-09-07
-     * update rather than left to look like a live reference.
-     *
-     * When that rebuild happens, delete the face, its notice, the NOTICE entry
-     * and this paragraph together, and this regex goes back to /^Lucide/.
+     * PappalGlyphs: REMOVED 2026-09-16. It was the bespoke filled-heart face,
+     * orphaned since the 2026-09-07 heart-fill removal and retained only because
+     * deleting a packaged font needs a rebuild. The Heroicons migration is that
+     * rebuild: the real solid heart now comes from HeroiconsSolid, so
+     * `PappalGlyphs.ttf` and its notice were deleted and this exemption with them.
      */
-    const ICON_FONTS = /^(Lucide|PappalGlyphs)/;
+    // Heroicons / HeroiconsSolid: the icon set the app migrated to — a matched
+    // outline + solid pair, referenced by icons.generated.ts (family per icon in
+    // ICON_FAMILY_BY_NAME). Lucide is now the fallback face for the handful of
+    // glyphs Heroicons has no correct twin for.
+    const ICON_FONTS = /^(Heroicons|HeroiconsSolid|Lucide)/;
     const orphans = FACES.filter(
       face => !referenced.has(face) && !ICON_FONTS.test(face),
     );
@@ -434,12 +422,14 @@ describe('typography is bound to real font files', () => {
       // Material Symbols is Apache-2.0, not OFL — a different licence, still
       // mandatory to ship. Both instances map to the one notice.
       // Lucide is ISC, not OFL — a different licence, still mandatory to ship.
+      // Kept as the fallback face for glyphs Heroicons has no correct twin for.
       Lucide: 'LICENSE-Lucide.txt',
+      // Heroicons is MIT (Tailwind Labs) — the outline and solid faces both ship
+      // under the one notice.
+      Heroicons: 'LICENSE-Heroicons.txt',
+      HeroiconsSolid: 'LICENSE-Heroicons.txt',
       // Geist is OFL (Vercel, 2023).
       Geist: 'OFL-Geist.txt',
-      // PappalGlyphs is Apache-2.0: the filled-heart glyph is derived from
-      // Google Material Symbols 'favorite', which ships under Apache License 2.0.
-      PappalGlyphs: 'LICENSE-PappalGlyphs.txt',
     };
     // `?? name` rather than a non-null assertion: a face called exactly `X.ttf`
     // with no weight suffix is its own family, and split always yields at least
