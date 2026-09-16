@@ -5021,9 +5021,15 @@ describe('post-release UI regressions', () => {
     expect(recharge).toMatch(/card:\s*\{[\s\S]*?width:\s*'100%'/);
   });
 
-  it('keeps the navigation heart outlined when selected', () => {
+  it('fills the navigation heart when its tab is selected', () => {
+    // The earlier "keep the heart outlined in nav" decision was reversed
+    // (approved): with Heroicons shipping a real solid twin, the selected nav
+    // destination shows its filled glyph — Material 3's active nav icon — and the
+    // favourites heart is no longer the exception. So the guard that special-
+    // cased it is gone and every tab passes plain `active={on}`.
     const toolbar = read('src/components/FloatingToolbar.tsx');
-    expect(toolbar).toContain("active={on && tab.key !== 'favourites'}");
+    expect(toolbar).toContain('active={on}');
+    expect(toolbar).not.toContain("tab.key !== 'favourites'");
   });
 
   it('aligns the visible profile consent box without shrinking its target', () => {

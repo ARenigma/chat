@@ -175,10 +175,14 @@ function FloatingToolbarView({
               <Indicator active={on} />
               <Icon
                 name={tab.glyph}
-                // Keep the Lucide heart outlined in both states. The tonal pill
-                // and accent colour already identify the selected destination;
-                // a filled heart reads as a save action instead of navigation.
-                active={on && tab.key !== 'favourites'}
+                // The selected destination shows its SOLID glyph — Material 3's
+                // filled active nav icon. The favourites heart is included: the
+                // earlier "keep the heart outline in nav" decision was reversed
+                // and the heart now fills when active, here and on a favourited
+                // profile. Heroicons ships a real solid twin, so this is a genuine
+                // filled glyph, not the old over-drawn outline.
+                // https://m3.material.io/components/navigation-bar/guidelines
+                active={on}
                 // 20 * the 1.2 icon scale = ~24px, the Material 3 nav icon size.
                 size={TOKENS.icon.md}
                 color={
