@@ -430,60 +430,48 @@ describe('the provider hero pages between photos', () => {
 });
 
 /**
- * The favourite heart is an outline in both states; `active` changes its WEIGHT.
+ * The favourite heart FILLS when active — a real solid glyph, not a hack.
  *
- * Amit, 2026-09-07: "Remove the heart fill; keep the outline, heavier." Gated
- * rather than trusted because the fill it replaces was a whole second font file
- * that is still in the tree — reintroducing it is one import away, and the
- * orphan-face test in theme.test.ts allowlists PappalGlyphs BY NAME, so that
- * gate cannot notice.
+ * The Heroicons migration reversed the 2026-09-07 "keep the outline, heavier"
+ * decision (approved): Heroicons ships a matched outline + solid pair at the same
+ * codepoint, so the favourite heart renders the outline face by default and the
+ * SOLID face when `active`. The old four-way over-draw that faked a heavier
+ * outline (Lucide had no solid twin) is gone, along with its heart-specific
+ * branch and box. Icon.tsx now has ONE generic render path for every glyph.
+ *
+ * Still gated, not trusted: the bespoke filled-heart FACE (PappalGlyphs) must
+ * not come back — the real solid fill comes from HeroiconsSolid via the generic
+ * active→filled-family swap, not from that second font file still in the tree.
  */
-describe('the favourite heart is an outline in both states', () => {
+describe('the favourite heart fills when active (Heroicons solid)', () => {
   const icon = code('src/components/Icon.tsx');
 
-  it('renders no filled heart face anywhere', () => {
+  it('renders no bespoke filled-heart face', () => {
     expect(icon).not.toContain('PappalGlyphs');
     expect(icon).not.toContain('♥');
   });
 
-  /*
-   * There was an `it('never asks for a weight the Lucide asset cannot supply')`
-   * here asserting `not.toContain('fontWeight')`. Removed 2026-09-07 for two
-   * reasons, not one: it was green on fully reverted code, and it duplicated
-   * `theme.test.ts` › "never sets a fontWeight anywhere in the app", which
-   * already walks every file in `src/components` and `src/screens` — Icon.tsx
-   * included — and which strips comments, so it does not fail on the long
-   * explanation in Icon.tsx of why `fontWeight` is not the answer. Two copies of
-   * one rule is one copy to forget when the rule changes.
-   */
-
-  it('synthesises the heavy outline by four-way overdraw at half a Lucide unit', () => {
-    /*
-     * Lucide draws on a 24-unit grid at stroke-width 2, and the font maps that
-     * grid onto the em — measured on assets/fonts/Lucide.ttf: unitsPerEm 1000,
-     * uniE0F2 bbox 916 wide == 22/24 em. So half a grid unit is fontSize/48, and
-     * dilating by it on every side takes the stroke from Lucide's 2 to 3.
-     * https://lucide.dev/contribute/icon-design-guide
-     */
-    expect(icon).toContain('HEAVY_DILATION = 1 / 48');
+  it('carries the fill through the generic active→filled-family swap', () => {
+    // No heart special-case: the fill is the same mechanism every icon uses —
+    // the solid face when active, the outline face otherwise.
     expect(icon).toMatch(
-      /HEAVY_OFFSETS[\s\S]{0,240}\[1, 0\][\s\S]{0,80}\[-1, 0\][\s\S]{0,80}\[0, 1\][\s\S]{0,80}\[0, -1\]/,
+      /active\s*\?\s*ICON_FAMILY_FILLED_BY_NAME\[name\]\s*:\s*ICON_FAMILY_BY_NAME\[name\]/,
     );
-    expect(icon).toMatch(/\{active[\s\S]{0,20}\?[\s\S]{0,20}HEAVY_OFFSETS\.map/);
+  });
+
+  it('drops the over-draw hack entirely', () => {
+    // The faked-heavier-outline machinery is gone: no dilation constant, no
+    // offset table, no heart-only box, no absolute over-draw copies.
+    expect(icon).not.toContain('HEAVY_DILATION');
+    expect(icon).not.toContain('HEAVY_OFFSETS');
+    expect(icon).not.toContain('heartBox');
+    expect(icon).not.toContain('heartOverdraw');
   });
 
   it('puts testID on exactly one copy of the glyph', () => {
-    // RNTL's getByTestId throws on multiple matches; five stacked copies sharing
-    // a testID would break every heart assertion in the suite. Two occurrences
-    // in the file: the heart's base copy, and the generic branch.
-    expect(icon.match(/testID=\{testID\}/g)).toHaveLength(2);
-  });
-
-  it('keeps the no-shift box the two branches shared', () => {
-    // The fixed px-by-px box is why toggling the favourite never nudges the
-    // glyph, and it is now also the positioning context for the overdraw.
-    expect(icon).toContain('styles.heartBox');
-    expect(icon).toMatch(/heartOverdraw:\s*\{\s*position: 'absolute',/);
+    // One render path, one Text node — so exactly one testID, and RNTL's
+    // getByTestId never sees the multiple matches the stacked over-draw risked.
+    expect(icon.match(/testID=\{testID\}/g)).toHaveLength(1);
   });
 });
 

@@ -625,6 +625,23 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
    */
   const openAlert = useAnnounceChatOpen(conversationId, conversationId !== undefined);
 
+  /*
+   * When we actually pinged an away peer (`alerted: true` — a real push went
+   * out, gated server-side on presence/balance/cooldown), drop a one-time
+   * SYSTEM MESSAGE into the transcript confirming it, in addition to the
+   * persistent "knows you are here" bar below. Amit (2026-09-16): the member
+   * should be told the provider has been notified and will join soon, in the
+   * thread itself. Stamped once per open so the row does not resort on every
+   * render; ephemeral (client-only, no DB row) because it is a confirmation of
+   * the just-taken action, not durable history.
+   */
+  const [notifiedAt, setNotifiedAt] = useState<string | null>(null);
+  useEffect(() => {
+    if (openAlert?.alerted === true && notifiedAt === null) {
+      setNotifiedAt(new Date().toISOString());
+    }
+  }, [openAlert?.alerted, notifiedAt]);
+
   const { data: conversationLabels = EMPTY_LABELS } = useConversationLabels();
   const [renaming, setRenaming] = useState(false);
 
@@ -928,8 +945,25 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
       opensDay: false,
     }));
 
+    // A one-time confirmation that we pinged the away peer (see `notifiedAt`).
+    // Same SystemRow shape as a session boundary, so the day-divider and
+    // run-break passes below treat it correctly with no special-casing.
+    const alertRows: SystemRow[] =
+      notifiedAt !== null && name !== ''
+        ? [
+            {
+              kind: 'system' as const,
+              localKey: 'peer-notified',
+              sortAt: notifiedAt,
+              text: `${name} has been notified. They'll join you here soon.`,
+              icon: 'bell' as const,
+              opensDay: false,
+            },
+          ]
+        : [];
+
     // Merge and sort newest-first (matches the inverted FlashList).
-    const sorted = [...messageRows, ...callRows, ...systemRows].sort(
+    const sorted = [...messageRows, ...callRows, ...systemRows, ...alertRows].sort(
       (a, b) => new Date(b.sortAt).getTime() - new Date(a.sortAt).getTime(),
     );
 
@@ -993,7 +1027,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
     }
 
     return sorted;
-  }, [messages, selfId, callRecords, sessionEvents]);
+  }, [messages, selfId, callRecords, sessionEvents, notifiedAt, name]);
 
   /**
    * Force offset 0 whenever a new row appears — local optimistic or remote

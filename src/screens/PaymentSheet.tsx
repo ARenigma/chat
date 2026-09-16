@@ -411,6 +411,14 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
               testID="payment-confirm"
             />
           )}
+          {/* Non-refundable notice at the moment money moves. This is the last
+              surface before the charge, so it restates the stance the recharge
+              screen already carries and the public policy fixes
+              (web/refund.html: "All purchases on Pappal are final"). Same
+              wording as RechargeScreen's footer so the two never drift. */}
+          <Text allowFontScaling style={styles.finalNote} testID="payment-final-note">
+            All purchases are final — no refunds.
+          </Text>
         </>
       )}
     </Sheet>
@@ -525,6 +533,17 @@ const makeStyles = (t: Theme) =>
     totalGst: {
       ...TOKENS.typography.bodySmall,
       color: t.color.text.tertiary,
+    },
+    // The non-refundable line under the Pay options. bodySmall / tertiary — the
+    // quiet disclosure role this sheet already uses for `totalGst`, and centred
+    // because it is a statement about the whole purchase rather than a value on
+    // a row. Reads at the 4.5:1 floor on bg/raised as tertiary does elsewhere.
+    finalNote: {
+      ...TOKENS.typography.bodySmall,
+      color: t.color.text.tertiary,
+      textAlign: 'center',
+      alignSelf: 'stretch',
+      marginTop: TOKENS.space.xs,
     },
     // A text button, so it takes the app's text-button role: labelLargeEmphasized,
     // 14dp Geist-Bold. It was `TOKENS.typography.bodyMedium` — 14dp

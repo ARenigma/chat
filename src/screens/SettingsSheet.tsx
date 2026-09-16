@@ -614,17 +614,39 @@ export function SettingsSheet({
             </>
           ) : null}
           {shows('Privacy policy') ? (
+            <>
+              <Pressable
+                onPress={() => {
+                  void Linking.openURL(legalUrl('privacy'));
+                }}
+                testID="settings-privacy"
+                accessibilityLabel="Privacy Policy"
+                press="none"
+                highlight="dim"
+                style={styles.row}
+              >
+                <SettingsRowContent icon="block" title="Privacy policy" />
+              </Pressable>
+              <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
+            </>
+          ) : null}
+          {/* Refund policy: the purchase surfaces state "no refunds" (RechargeScreen,
+              PaymentSheet) but a member could not read the policy itself in-app. The
+              public site lists it as a legal link (web/refund.html), and legal.ts
+              already resolves the 'refund' route, so it sits here with Terms and
+              Privacy. Same Linking.openURL to the system browser as the two above. */}
+          {shows('Refund policy') ? (
             <Pressable
               onPress={() => {
-                void Linking.openURL(legalUrl('privacy'));
+                void Linking.openURL(legalUrl('refund'));
               }}
-              testID="settings-privacy"
-              accessibilityLabel="Privacy Policy"
+              testID="settings-refund"
+              accessibilityLabel="Refund Policy"
               press="none"
               highlight="dim"
               style={styles.row}
             >
-              <SettingsRowContent icon="block" title="Privacy policy" />
+              <SettingsRowContent icon="wallet" title="Refund policy" />
             </Pressable>
           ) : null}
         </View>
