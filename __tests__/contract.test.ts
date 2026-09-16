@@ -5624,9 +5624,30 @@ describe('a provider offers the channels they choose, and at least one', () => {
       expect(home).toContain(`testID={\`channel-toggle-\${row.key}\`}`);
       expect(home).toContain(key);
     }
-    // The last one on is held, not hidden: a disabled switch states the rule.
+    /*
+     * THE LAST ONE ON IS NO LONGER HELD (Amit, 2026-09-17).
+     *
+     * It used to be `disabled={setChannels.isPending || last}`: the final
+     * enabled switch was frozen so the provider could not reach zero, because
+     * migration 064's `profiles_at_least_one_channel` CHECK would reject the
+     * write anyway. That made the rule enforceable but unsayable — a switch
+     * that does nothing when pressed explains nothing.
+     *
+     * Availability is now a MASTER with these three as children, and turning
+     * off the last one means "I am not taking anyone", so the tap is routed to
+     * an is_available write instead of a channel patch. The three columns are
+     * never touched, so the CHECK is still never violated: Amit's "max 2 can be
+     * turned off" and that constraint are the same rule, and nothing in the
+     * schema moved. `last` survives as the flag that shows the warning line
+     * BEFORE the tap rather than as a reason to block it.
+     */
     expect(home).toMatch(/const last = on && enabledCount === 1/);
-    expect(home).toContain('disabled={setChannels.isPending || last}');
+    expect(home).toMatch(
+      /if \(!next && enabledCount === 1\) \{\s*\n\s*toggle\(false\);/,
+    );
+    expect(home).not.toContain('disabled={setChannels.isPending || last}');
+    // The children are collapsed by the master, not left dimmed under it.
+    expect(home).toMatch(/\{available \?[\s\S]{0,400}entering=\{sectionIn\}/);
   });
 
   it('is registered in the harness with its suite', () => {
