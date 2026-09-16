@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   DeviceEventEmitter,
   Image,
-  PixelRatio,
   StyleSheet,
   Text,
   View,
@@ -11,11 +10,11 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
 import { LIGHT, TOKENS, type Theme } from '../theme/tokens';
-import { useStyles, useTheme } from '../theme/ThemeProvider';
+import { useStyles } from '../theme/ThemeProvider';
 import type { CallResult, ProviderSummary } from '../lib/database.types';
 import type { CallMedium } from '../lib/database.types';
 import { initialOf } from '../lib/display';
-import { sizedStorageImageUri } from '../lib/storageImage';
+import { avatarImageSource, clayFraming, isClayUri } from '../lib/clayAvatars';
 import { useConversationId, useConversations, useProviders } from '../api/chat';
 import { answerCall, endCall, heartbeatCall, startCall, useCallEnded } from '../api/calls';
 import { useCallSession } from '../api/callMedia';
@@ -140,7 +139,6 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   useBackBarrier();
 
   const styles = useStyles(makeStyles);
-  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const setNotice = useStore(s => s.setNotice);
@@ -206,6 +204,19 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   const initial = initialOf(
     peerThread?.peer_display_name ?? provider?.display_name,
   );
+  // A member's avatar_url is always a `clay:<seed>` sentinel naming a bundled
+  // PNG, so it must not reach <Image> as a uri. avatarImageSource resolves both
+  // shapes; the clay art is drawn wider than its box and needs clayFraming.
+  const faceSource = avatarImageSource(peerAvatarUrl, AVATAR, AVATAR, 75);
+  const backdropSource = avatarImageSource(
+    peerAvatarUrl,
+    windowWidth,
+    windowHeight,
+    60,
+  );
+  const peerIsClay = peerAvatarUrl !== null && isClayUri(peerAvatarUrl);
+  const [faceFailed, setFaceFailed] = useState(false);
+  const [backdropFailed, setBackdropFailed] = useState(false);
 
   const [callId, setCallId] = useState<string | null>(incomingCallId);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -798,20 +809,14 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
           zOrder={0}
           style={StyleSheet.absoluteFill}
         />
-      ) : peerAvatarUrl ? (
+      ) : backdropSource !== null && !backdropFailed ? (
         <>
           <Image
-            source={{
-              uri: sizedStorageImageUri(
-                peerAvatarUrl,
-                windowWidth,
-                windowHeight,
-                PixelRatio.get(),
-              ),
-            }}
+            source={backdropSource}
             resizeMode="cover"
             blurRadius={CALL_BG_BLUR}
             style={StyleSheet.absoluteFill}
+            onError={() => setBackdropFailed(true)}
             accessibilityIgnoresInvertColors
           />
           <View style={styles.bgDim} />
@@ -851,27 +856,23 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
       {!showRemoteVideo ? (
         <View style={styles.center} pointerEvents="none">
           <CallRing size={AVATAR} active={pulsing}>
-            {peerAvatarUrl ? (
+            <View style={styles.avatarNeutral}>
+              <Text allowFontScaling={false} style={styles.avatarInitial}>
+                {initial}
+              </Text>
+            </View>
+            {faceSource !== null && !faceFailed ? (
               <Image
-                source={{
-                  uri: sizedStorageImageUri(
-                    peerAvatarUrl,
-                    AVATAR,
-                    AVATAR,
-                    PixelRatio.get(),
-                  ),
-                }}
+                source={faceSource}
                 resizeMode="cover"
-                style={styles.avatarFill}
+                style={[
+                  styles.avatarPhoto,
+                  peerIsClay ? clayFraming(AVATAR) : null,
+                ]}
+                onError={() => setFaceFailed(true)}
                 accessibilityIgnoresInvertColors
               />
-            ) : (
-              <View style={[styles.avatarFill, { backgroundColor: theme.color.state.available }]}>
-                <Text allowFontScaling={false} style={styles.avatarInitial}>
-                  {initial}
-                </Text>
-              </View>
-            )}
+            ) : null}
           </CallRing>
         </View>
       ) : null}
@@ -1061,10 +1062,14 @@ function BarButton({
   disabled?: boolean;
 }) {
   const styles = useStyles(makeStyles);
+  // An active ghost toggle takes the SOLID treatment, not a 20% alpha nudge on
+  // the same white-on-translucent: inverting the ink is the only change at this
+  // size a user reliably reads as "on".
+  const solid = fill === 'solid' || (active && tone !== 'danger');
   const fg =
     tone === 'danger'
       ? LIGHT.color.text.onAccent
-      : fill === 'solid'
+      : solid
         ? LIGHT.color.text.primary
         : LIGHT.color.text.onAccent;
   return (
@@ -1090,9 +1095,8 @@ function BarButton({
         style={[
           styles.barButton,
           tone === 'danger' && styles.danger,
-          tone !== 'danger' && fill === 'solid' && styles.barButtonSolid,
-          tone !== 'danger' && fill === 'ghost' && styles.barButtonGhost,
-          active && tone !== 'danger' && fill === 'ghost' && styles.barButtonActive,
+          tone !== 'danger' && solid && styles.barButtonSolid,
+          tone !== 'danger' && !solid && styles.barButtonGhost,
         ]}>
         <Icon name={glyph} size={TOKENS.icon.lg} color={fg} />
       </Pressable>
@@ -1154,6 +1158,25 @@ const makeStyles = (t: Theme) =>
       height: '100%',
       alignItems: 'center',
       justifyContent: 'center',
+    },
+    // Sits on top of the initial rather than replacing it, so a photo that
+    // fails to load degrades to the letter instead of an empty ring.
+    avatarPhoto: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+    },
+    // A lift off the fixed #0B0B10 call surface rather than a theme token: this
+    // screen is dark in both modes, and the previous fill was state/available,
+    // the presence green, which read as a status badge on a face.
+    avatarNeutral: {
+      width: '100%',
+      height: '100%',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(255,255,255,0.14)',
     },
     avatarInitial: {
       fontFamily: TOKENS.face.semibold,

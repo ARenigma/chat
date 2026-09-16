@@ -638,12 +638,13 @@ export function ProviderHomeScreen({
                         style={[styles.photoTile, p.is_primary && styles.photoTilePrimary]}>
                         <Image
                           source={{
-                            uri: sizedStorageImageUri(
-                              p.url,
-                              PHOTO_TILE,
-                              PHOTO_TILE,
-                              PixelRatio.get(),
-                            ),
+                            uri:
+                              sizedStorageImageUri(
+                                p.url,
+                                PHOTO_TILE,
+                                PHOTO_TILE,
+                                PixelRatio.get(),
+                              ) ?? undefined,
                           }}
                           style={styles.photoImg}
                         />

@@ -1,0 +1,174 @@
+-- ===========================================================================
+-- PROPOSED 111  All three channels off IS "not taking anyone new"
+-- ===========================================================================
+-- NOT A MIGRATION YET. The `.proposed` suffix is load-bearing: `supabase db
+-- push` and every harness in this repo select on `.sql`, so this file is inert
+-- until somebody renames it to `111_all_three_channels_off_is_the_closed_state.sql`
+-- AND adds that name to scripts/db-test.mjs. It is a schema change on a
+-- privacy-adjacent surface and it needs Amit's sign-off first.
+--
+-- ---------------------------------------------------------------------------
+-- WHAT WAS ASKED
+-- ---------------------------------------------------------------------------
+-- Remove the redundant `is_available` / "open to conversation" toggle and keep
+-- only the three channel switches (chat / audio / video).
+--
+-- ---------------------------------------------------------------------------
+-- WHY IT CANNOT JUST BE DELETED
+-- ---------------------------------------------------------------------------
+-- (a) 064 added CHECK `profiles_at_least_one_channel`
+--     (chat_enabled or audio_enabled or video_enabled). The database REFUSES to
+--     let a provider turn all three off. Its stated reason, in 064's own header:
+--     "'Listed but unreachable on every channel' is what `is_available = false`
+--     already means, and it says it honestly." Take `is_available` away and that
+--     sentence has no referent: there is no expressible state left for "not
+--     taking anyone new". The toggle is only redundant AFTER the CHECK goes.
+--
+-- (b) `is_available` does almost nothing today. `provider_directory` (083:123-150)
+--     does NOT filter on it, and HomeScreen filters the directory only by blocked
+--     ids (HomeScreen.tsx:220). Its single live effect is the sort in
+--     `useProviders`: `.order('is_available', { ascending: false })`
+--     (src/api/chat.ts:137). A provider who switches it off is still listed, still
+--     reachable, and still gets rung. So removing it changes almost nothing on its
+--     own, and the CHECK is where the actual behaviour lives.
+--
+-- ---------------------------------------------------------------------------
+-- THE CHANGE
+-- ---------------------------------------------------------------------------
+-- 1. Drop `profiles_at_least_one_channel`. All three off becomes the closed
+--    state, said once, by the three switches the provider already sets.
+-- 2. Publish the derived answer as `provider_directory.is_open`, APPENDED, so
+--    `create or replace view` is legal and nothing downstream reorders. That is
+--    the column the client sorts on instead of `is_available`.
+--
+-- The `is_available` COLUMN IS NOT DROPPED HERE, on purpose. Dropping it means
+-- dropping and rebuilding every view that selects it in dependency order, and a
+-- client that still reads it would break the moment the migration lands, before
+-- anyone can ship a release. Phase 2 is a separate migration, after a client
+-- release that no longer names the column. The full consumer list is at the
+-- bottom of this file so phase 2 does not have to rediscover it.
+
+alter table public.profiles
+  drop constraint if exists profiles_at_least_one_channel;
+
+comment on column public.profiles.chat_enabled is
+  'Provider offers text chat. Client-writable by its owner. Since 111 all '
+  'three channel switches may be off at once: that IS "not taking anyone new", '
+  'and it replaces is_available, which said the same thing a second time. '
+  'Enforced for new sessions by enforce_provider_channel on session_requests.';
+
+-- Restated in full from 083 with one column appended, for the reason 083 gives:
+-- create or replace requires the existing columns in the existing order.
+create or replace view public.provider_directory
+with (security_invoker = false) as
+  select
+    p.id,
+    p.display_name,
+    p.gender,
+    extract(year from age(p.date_of_birth))::int as age,
+    p.headline,
+    p.languages,
+    p.is_available,
+    p.rating_avg,
+    p.rating_count,
+    p.median_reply_seconds,
+    case when p.presence_visible then p.last_active_at end as last_active_at,
+    p.created_at,
+    p.presence,
+    p.avatar_url,
+    p.about,
+    p.chat_enabled,
+    p.audio_enabled,
+    p.video_enabled,
+    p.provider_category,
+    p.expertise,
+    (p.chat_enabled or p.audio_enabled or p.video_enabled) as is_open
+  from public.profiles p
+  where p.role = 'provider'
+    and p.identity_verified_at is not null
+    and (p.suspended_until is null or p.suspended_until <= now());
+
+comment on view public.provider_directory is
+  'Explicit-column privacy boundary over profiles: what a member may see about '
+  'a provider. 064 added the three channel switches; 065 added '
+  'provider_category; 083 added expertise. 111 adds is_open, the derived '
+  '"offers at least one channel" the list sorts on now that all-three-off is a '
+  'legal state and is_available is on its way out. is_available is still '
+  'published until the client stops reading it.';
+
+-- ---------------------------------------------------------------------------
+-- PHASE 2 CHECKLIST: every is_available read site, so nothing is missed
+-- ---------------------------------------------------------------------------
+-- SQL, views that SELECT the column (each must be rebuilt, not replaced, since
+-- create or replace cannot drop a column):
+--   003:112, 004:88, 005:401, 006:679, 011:1489, 012:168, 013:38, 042:43,
+--   064:173, 065:152, 083:132   provider_directory, successively restated.
+--                               083 is the live definition.
+--   005:677, 006:709, 007:42    conversation_peers: `coalesce(d.is_available,
+--                               false) as peer_available`. 012 superseded
+--                               peer_available with peer_presence and no client
+--                               reads it (contract.test.ts:3789, 3800), so this
+--                               column can go with the underlying one.
+--   011:1535, 012:220, 013:64, 103:564
+--                               conversation_summaries: `case when peer.role =
+--                               'provider' then peer.is_available else false
+--                               end`. 103 is the live definition.
+--
+-- SQL, writers:
+--   006:57                      complete_provider_onboarding sets
+--                               is_available = false on promotion.
+--   085:105, scripts/seed-dev.sql:76,150, scripts/e2e.mjs:189,
+--   scripts/session-live.mjs:178   fixtures.
+--
+-- SQL, indexes (drop with the column):
+--   003:371                     profiles (role, is_available)
+--   006:755                     profiles (is_available desc, rating_avg desc
+--                               nulls last)
+--
+-- SQL, guards and policies:
+--   063                         guard_privileged_profile_columns deliberately
+--                               does NOT list is_available: it is one of the
+--                               four columns a client writes directly. Nothing
+--                               to change, but contract.test.ts:5432 asserts
+--                               that absence by name and must drop it.
+--   RLS                         no policy anywhere predicates on is_available.
+--
+-- SQL, data statements:
+--   012:84                      one-time backfill, `where role = 'provider' and
+--                               is_available and presence = 'hidden'`. Historic,
+--                               already run. contract.test.ts:3763 asserts the
+--                               string is in 012, which stays true.
+--
+-- Client:
+--   src/api/provider.ts:378     useSetAvailability writes it. DELETE the hook.
+--   src/api/chat.ts:137         `.order('is_available', ...)` becomes
+--                               `.order('is_open', ...)`.
+--   src/screens/ProviderHomeScreen.tsx:196
+--                               `profile?.is_available ?? false` and the
+--                               AVAILABILITY copy block. This file owns the
+--                               toggle row. NOT owned by this change set.
+--   src/lib/database.types.ts:101,401,467
+--                               Profile.is_available, ProviderSummary
+--                               .is_available, ConversationSummary
+--                               .peer_available.
+--   src/lib/languagePrefs.ts:164, src/lib/presence.ts:6,
+--   src/components/ProviderRow.tsx:394, src/components/Avatar.tsx:268
+--                               comments only.
+--
+-- Edge functions:                none. No function reads is_available.
+--
+-- pgTAP fixtures that SET it (they only need the line deleted):
+--   060, 110:181, 160, 190, 240, 250:92, 260, 280, 290, 300, 340, 350, 360,
+--   370, 380.
+--
+-- ---------------------------------------------------------------------------
+-- THE QUESTION FOR AMIT, because the docs do not answer it
+-- ---------------------------------------------------------------------------
+-- With the CHECK gone, a provider can be listed in the directory while offering
+-- nothing. Today `is_available = false` does not hide them either, so this is
+-- not a regression. But it is the moment to decide whether a closed provider
+-- should be hidden from the directory entirely (add `and (p.chat_enabled or
+-- p.audio_enabled or p.video_enabled)` to the WHERE above), sorted last, or
+-- shown with a "not taking anyone new" state on the row. Sorting last is what
+-- this file does, because it is what is_available does now and it changes
+-- nothing anybody can see.

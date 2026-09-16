@@ -2,13 +2,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AccessibilityInfo,
   Image,
-  PixelRatio,
   ScrollView,
   StyleSheet,
   Text,
   View,
   useWindowDimensions,
-  type ImageSourcePropType,
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -19,12 +17,11 @@ import { LIGHT, TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { useBackBarrier } from '../lib/backGuard';
 import type { ProviderPhoto, ProviderSummary } from '../lib/database.types';
-import { isClayUri, resolveAvatarSource } from '../lib/clayAvatars';
+import { avatarImageSource } from '../lib/clayAvatars';
 import { genderLetter, initialOf } from '../lib/display';
 import { presenceForSpeech, readPresence } from '../lib/presence';
 import { tick } from '../lib/haptics';
 import { SCROLL_PHYSICS } from '../lib/scroll';
-import { sizedStorageImageUri } from '../lib/storageImage';
 import { contentColumnWidth } from '../lib/windowSize';
 import { rateLabel, type Channel } from '../lib/rates';
 import { useProfile, useProviders } from '../api/chat';
@@ -530,13 +527,7 @@ function Hero({
                    https://developer.android.com/guide/topics/ui/accessibility/principles */
                 accessibilityLabel={`${provider.display_name}, photo ${i + 1} of ${gallery.length}`}>
                 <Image
-                  source={
-                    isClayUri(uri)
-                      ? (resolveAvatarSource(uri) as ImageSourcePropType)
-                      : {
-                          uri: sizedStorageImageUri(uri, pageW, HERO_HEIGHT, PixelRatio.get()),
-                        }
-                  }
+                  source={avatarImageSource(uri, pageW, HERO_HEIGHT) ?? undefined}
                   fadeDuration={220}
                   style={styles.heroFill}
                 />

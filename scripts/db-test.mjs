@@ -147,6 +147,8 @@ const MIGRATIONS = [
   'supabase/migrations/106_clean_public_policy_urls.sql',
   'supabase/migrations/107_end_session_flushes_owed_minutes.sql',
   'supabase/migrations/108_telemetry_call_and_perf_events.sql',
+  'supabase/migrations/109_call_rate_limit_is_configurable.sql',
+  'supabase/migrations/110_a_message_push_names_the_member_who_sent_it.sql',
 ];
 
 /**

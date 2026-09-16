@@ -1,5 +1,5 @@
 import React, { memo, useEffect } from 'react';
-import { Image, PixelRatio, StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   ReduceMotion,
   cancelAnimation,
@@ -11,8 +11,7 @@ import Animated, {
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { DURATION, EASE_BREATHE } from '../theme/motion';
-import { sizedStorageImageUri } from '../lib/storageImage';
-import { isClayUri, resolveAvatarSource } from '../lib/clayAvatars';
+import { avatarImageSource, clayFraming, isClayUri } from '../lib/clayAvatars';
 
 /**
  * 40 replaces 42, and that is a platform number rather than a rounder one: iOS
@@ -163,6 +162,7 @@ function AvatarView({
   }));
 
   const dot = DOT[size];
+  const photo = avatarImageSource(uri, size, size, 75);
   const fill =
     tone === 'warm'
       ? theme.color.bg.accentTint
@@ -218,25 +218,13 @@ function AvatarView({
             face — a content change that reads as the wrong person, which is
             worse than the decode it would save. Turn's photos have a designed
             grey placeholder and can be deferred; an identity cannot. */}
-        {uri ? (
+        {photo !== null ? (
           <Image
-            source={
-              isClayUri(uri)
-                ? (resolveAvatarSource(uri) as number)
-                : { uri: sizedStorageImageUri(uri, size, size, PixelRatio.get(), 75) }
-            }
+            source={photo}
             style={[
               styles.photo,
               { width: size, height: size, borderRadius: size / 2 },
-              // The DiceBear clay figure sits low-left in its source art; nudge it
-              // up and right and zoom slightly so the face centres in the circle.
-              isClayUri(uri) && {
-                transform: [
-                  { scale: 1.12 },
-                  { translateX: size * 0.03 },
-                  { translateY: -size * 0.04 },
-                ],
-              },
+              isClayUri(uri) && clayFraming(size),
             ]}
             resizeMode="cover"
             fadeDuration={0}

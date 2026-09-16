@@ -1,4 +1,5 @@
-import type { ImageSourcePropType } from 'react-native';
+import { PixelRatio, type ImageSourcePropType } from 'react-native';
+import { sizedStorageImageUri } from './storageImage';
 
 /** Allowlisted DiceBear clay seeds shipped as bundled PNGs. */
 export const CLAY_SEEDS = [
@@ -62,4 +63,57 @@ export function resolveAvatarSource(
     return local;
   }
   return { uri };
+}
+
+/**
+ * The one resolver for an `avatar_url` on its way into `<Image source={…} />`.
+ *
+ * Every surface that reached for `sizedStorageImageUri` directly drew an empty
+ * frame for every member, because a member's `avatar_url` is ALWAYS the
+ * `clay:<seed>` sentinel — members have no photo upload path — and that string
+ * is a bundled PNG, not a URL. This resolves the sentinel to its `require()` and
+ * a real Storage object to a right-sized transform, so a call site cannot pick
+ * only one of the two.
+ *
+ * Null means "there is no image": no avatar_url, or a seed outside the
+ * allowlist. The caller renders its initial fallback.
+ */
+export function avatarImageSource(
+  uri: string | null | undefined,
+  widthDp: number,
+  heightDp: number,
+  quality?: number,
+): ImageSourcePropType | null {
+  if (uri == null || uri === '') {
+    return null;
+  }
+  const local = claySource(uri);
+  if (local !== null) {
+    return local;
+  }
+  const sized = sizedStorageImageUri(
+    uri,
+    widthDp,
+    heightDp,
+    PixelRatio.get(),
+    quality,
+  );
+  return sized === null ? null : { uri: sized };
+}
+
+/**
+ * The DiceBear clay figure sits low-left in its source art, so a plain circular
+ * crop cuts the face. Nudge it up and right and zoom slightly to centre it.
+ *
+ * Shared rather than re-derived per surface: Avatar and the call screen's 148pt
+ * face frame the same twelve PNGs, and two copies of these three numbers drift.
+ */
+export function clayFraming(size: number) {
+  return {
+    transform: [
+      { scale: 1.12 },
+      { translateX: size * 0.03 },
+      { translateY: -size * 0.04 },
+    ],
+  } as const;
 }

@@ -17,6 +17,11 @@
  * named by their stage name, a member never is — `member_handle` gives the
  * pseudonymous handle the rest of the app shows.
  */
+import { createClient } from 'jsr:@supabase/supabase-js@2';
+
+const FCM_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
+const OAUTH_URL = 'https://oauth2.googleapis.com/token';
+
 interface ServiceAccount {
   client_email: string;
   private_key: string;
@@ -126,7 +131,9 @@ async function send(
     },
   );
   if (!response.ok) {
-    console.error(`open-alert fcm ${response.status} for peer push`);
+    console.error(
+      `push-failure send-open-alert fcm ${response.status} ${await response.text()}`,
+    );
   }
   return response.ok;
 }
@@ -136,6 +143,7 @@ Deno.serve(async request => {
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   const rawSa = Deno.env.get('FCM_SERVICE_ACCOUNT');
   if (!url || !serviceKey || !rawSa) {
+    console.error('push-failure send-open-alert missing SUPABASE_URL/SERVICE_ROLE_KEY/FCM_SERVICE_ACCOUNT');
     return new Response('not configured', { status: 500 });
   }
 
@@ -167,6 +175,7 @@ Deno.serve(async request => {
   }
   const sa = parsed as ServiceAccount;
   if (!sa?.private_key || !sa.client_email || !sa.project_id) {
+    console.error('push-failure send-open-alert FCM_SERVICE_ACCOUNT is missing private_key/client_email/project_id');
     return new Response('bad service account', { status: 500 });
   }
 
@@ -190,11 +199,15 @@ Deno.serve(async request => {
     .select('token, platform')
     .eq('user_id', peerId);
   if (error) {
-    console.error('push_tokens', error.message);
+    console.error(`push-failure send-open-alert push_tokens ${error.message}`);
     return new Response(error.message, { status: 500 });
   }
   const targets = (tokens ?? []) as Target[];
   if (targets.length === 0) {
+    // `announce_chat_open` has already told the member "they know you are here"
+    // by the time this runs: pg_net's net.http_post is fire-and-forget, so the
+    // RPC returns alerted=true on ENQUEUE and never learns this happened.
+    console.error(`push-failure send-open-alert no device registered for peer ${peerId}`);
     return Response.json({ sent: 0, reason: 'no_device' });
   }
 
@@ -204,6 +217,11 @@ Deno.serve(async request => {
     if (await send(bearer, sa.project_id, t.token, opener, directory?.avatar_url ?? null, openerId)) {
       sent += 1;
     }
+  }
+  if (sent === 0) {
+    console.error(
+      `push-failure send-open-alert every one of ${targets.length} device(s) refused`,
+    );
   }
   return Response.json({ sent, targets: targets.length });
 });

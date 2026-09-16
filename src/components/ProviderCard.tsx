@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { Image, PixelRatio, StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
@@ -7,8 +7,7 @@ import type { ProviderSummary } from '../lib/database.types';
 import { initialOf } from '../lib/display';
 import { presenceForSpeech, readPresence } from '../lib/presence';
 import { rowIn } from '../theme/motion';
-import { sizedStorageImageUri } from '../lib/storageImage';
-import { isClayUri, resolveAvatarSource } from '../lib/clayAvatars';
+import { avatarImageSource } from '../lib/clayAvatars';
 import { Avatar } from './Avatar';
 import { Card } from './Card';
 import { Icon } from './Icon';
@@ -343,6 +342,7 @@ function SquareProviderCardView({
   const styles = useStyles(makeSquareStyles);
 
   const initial = initialOf(provider.display_name);
+  const coverSource = avatarImageSource(provider.avatar_url, 300, 300, 85);
   const presence = readPresence(provider.presence, provider.last_active_at);
   // Same reading, same test as the portrait card above and as ProviderRow: the
   // badge slot on the cover carries "here now" one way and the one action that
@@ -373,21 +373,9 @@ function SquareProviderCardView({
           style={styles.inner}>
           {/* Cover: provider photo fills the area; initials Avatar as fallback */}
           <View style={styles.cover}>
-            {provider.avatar_url != null ? (
+            {coverSource !== null ? (
               <Image
-                source={
-                  isClayUri(provider.avatar_url)
-                    ? (resolveAvatarSource(provider.avatar_url) as number)
-                    : {
-                        uri: sizedStorageImageUri(
-                          provider.avatar_url,
-                          300,
-                          300,
-                          PixelRatio.get(),
-                          85,
-                        ),
-                      }
-                }
+                source={coverSource}
                 style={styles.coverImage}
                 resizeMode="cover"
                 accessibilityIgnoresInvertColors

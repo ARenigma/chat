@@ -2,7 +2,6 @@ import React, { memo, useCallback, useEffect, useRef } from 'react';
 import {
   Image,
   Modal,
-  PixelRatio,
   Pressable as RNPressable,
   StyleSheet,
   Text,
@@ -25,7 +24,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LIGHT, TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { GESTURE, INTERACTION, sheetIn, sheetOut } from '../theme/motion';
-import { sizedStorageImageUri } from '../lib/storageImage';
+import { avatarImageSource } from '../lib/clayAvatars';
 import { initialOf } from '../lib/display';
 import { TactileCTA } from './TactileCTA';
 import { Pressable } from './Pressable';
@@ -149,6 +148,7 @@ function SpotlightCardView({ visible, name, avatarUri, online = false, onClose, 
     };
   });
 
+  const photo = avatarImageSource(avatarUri, windowWidth, sheetH);
   // A warm coral field is the fallback when there is no photo.
   const gradient = `linear-gradient(150deg, ${theme.color.bg.accent} 0%, ${theme.color.bg.accentStrong} 100%)`;
   // Bottom scrim so white copy holds over any photo.
@@ -182,11 +182,9 @@ function SpotlightCardView({ visible, name, avatarUri, online = false, onClose, 
             onLayout={measure}
             style={[styles.card, { height: sheetH }, sheetStyle]}>
             {/* Full-bleed image or warm-field fallback */}
-            {avatarUri ? (
+            {photo !== null ? (
               <Image
-                source={{
-                  uri: sizedStorageImageUri(avatarUri, windowWidth, sheetH, PixelRatio.get()),
-                }}
+                source={photo}
                 resizeMode="cover"
                 style={StyleSheet.absoluteFill}
                 accessibilityIgnoresInvertColors

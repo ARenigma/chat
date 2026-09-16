@@ -142,6 +142,23 @@ export function useProviders() {
       return data;
     },
     staleTime: 30_000,
+    /*
+     * Polling, because a provider coming online cannot be pushed here.
+     * `provider_directory` is a VIEW, which `postgres_changes` cannot
+     * replicate, and `profiles` is neither in the `supabase_realtime`
+     * publication nor member-readable (004 dropped that policy deliberately and
+     * made this definer view the privacy boundary), so a subscription would
+     * deliver zero rows. Without the interval a member sitting on Home never
+     * re-reads the directory at all.
+     *
+     * The pause while backgrounded and the refetch on return both depend on
+     * AppState being wired to `focusManager` in App.tsx: React Native has no
+     * window-focus event, so TanStack cannot know either on its own.
+     * https://tanstack.com/query/latest/docs/framework/react/react-native
+     */
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   });
 }
 

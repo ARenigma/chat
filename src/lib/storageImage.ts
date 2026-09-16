@@ -1,5 +1,11 @@
 const MAX_TRANSFORM_PX = 2500;
 
+/**
+ * Spelled out here rather than imported from `clayAvatars`, which imports THIS
+ * module: the reverse edge would close the cycle.
+ */
+const CLAY_PREFIX = 'clay:';
+
 function targetPixels(dp: number, pixelRatio: number): number {
   return Math.min(MAX_TRANSFORM_PX, Math.max(1, Math.round(dp * pixelRatio)));
 }
@@ -14,6 +20,13 @@ function targetPixels(dp: number, pixelRatio: number): number {
  * Non-Supabase and malformed URLs remain untouched: this helper must not invent
  * transformation semantics for an arbitrary CDN.
  *
+ * A `clay:<seed>` sentinel returns **null**, not itself. It names a bundled PNG
+ * rather than a URL, and every caller that passed one through into
+ * `<Image source={{ uri }} />` drew nothing at all — Fresco has no `clay`
+ * scheme, and a member's avatar_url is always that sentinel. Returning the input
+ * made that failure silent; null makes it a type error. Use `avatarImageSource`
+ * (clayAvatars.ts) for anything that can be an avatar.
+ *
  * https://developer.android.com/topic/performance/graphics/load-bitmap
  * https://supabase.com/docs/guides/storage/serving/image-transformations
  */
@@ -23,7 +36,11 @@ export function sizedStorageImageUri(
   heightDp: number,
   pixelRatio: number,
   quality = 80,
-): string {
+): string | null {
+  if (uri.startsWith(CLAY_PREFIX)) {
+    return null;
+  }
+
   const publicObject = '/storage/v1/object/public/';
   const signedObject = '/storage/v1/object/sign/';
   const publicRender = '/storage/v1/render/image/public/';

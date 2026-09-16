@@ -93,8 +93,25 @@ describe('the call notification carries what the app needs to obey it', () => {
     expect(app).toMatch(/const action = qs\.match\(\/action=\(\[\^&\]\+\)\/\)/);
     const branch = app.slice(app.indexOf("if (action === 'decline')"));
     expect(branch.slice(0, 120)).toMatch(/void endCall\(callId\);\s*\n\s*return;/);
-    // Answering still routes into the screen, which owns the lease and media.
-    expect(app).toMatch(/setRoute\(\{ name: 'call', providerId: callPeer, direction: 'in', callId, medium \}\)/);
+    /*
+     * Answering still routes into the screen, which owns the lease and media,
+     * and still carries `medium` rather than defaulting to voice.
+     *
+     * It now goes through `pendingIncoming` rather than calling setRoute
+     * directly, because setRoute only ever fed the MEMBER tree: a provider
+     * renders `providerRoute`, so every answer, body tap and full-screen intent
+     * set a route their tree does not read. Both branches are asserted here so
+     * the provider half cannot be dropped again.
+     */
+    expect(app).toMatch(/setPendingIncoming\(\{ peerId: callPeer, callId, medium \}\)/);
+    expect(app).toMatch(
+      /pushProvider\(\{ name: 'call', peerId, direction: 'in', callId, medium \}\)/,
+    );
+    expect(app).toMatch(
+      /pushRoute\(\{ name: 'call', providerId: peerId, direction: 'in', callId, medium \}\)/,
+    );
+    // The same call must not route twice when Realtime and the push both land.
+    expect(app).toContain('routedCallsRef.current.has(callId)');
   });
 
   it('listens for every action the native receiver emits', () => {

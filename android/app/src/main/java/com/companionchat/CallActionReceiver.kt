@@ -3,8 +3,6 @@ package com.companionchat
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import com.facebook.react.bridge.ReactContext
-import com.facebook.react.modules.core.DeviceEventManagerModule
 
 /**
  * Receives answer/decline/hang-up actions from CallStyle notification buttons.
@@ -30,11 +28,6 @@ class CallActionReceiver : BroadcastReceiver() {
     }
 
     private fun emitToRN(context: Context, eventName: String, data: String) {
-        val reactContext = (context.applicationContext as? com.companionchat.MainApplication)
-            ?.reactNativeHost
-            ?.reactInstanceManager
-            ?.currentReactContext as? ReactContext
-        reactContext?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-            ?.emit(eventName, data)
+        ReactBridgeEvents.emit(context, eventName, data)
     }
 }

@@ -19,6 +19,7 @@ import { SCROLL_PHYSICS } from '../lib/scroll';
 import Animated from 'react-native-reanimated';
 import { contentColumnWidth } from '../lib/windowSize';
 import { sizedStorageImageUri } from '../lib/storageImage';
+import { avatarImageSource } from '../lib/clayAvatars';
 import { useConversations, useProfile, useProviders } from '../api/chat';
 import {
   AGE_BANDS,
@@ -338,9 +339,13 @@ export function HomeScreen({
       if (!p.avatar_url) {
         continue;
       }
-      void Image.prefetch(
-        sizedStorageImageUri(p.avatar_url, heroW, 420, ratio),
-      ).catch(() => {});
+      // Null for a `clay:` sentinel, which is already in the bundle and has no
+      // URL to warm.
+      const hero = sizedStorageImageUri(p.avatar_url, heroW, 420, ratio);
+      if (hero === null) {
+        continue;
+      }
+      void Image.prefetch(hero).catch(() => {});
     }
   }, [directory, columnWidth]);
 
@@ -349,15 +354,16 @@ export function HomeScreen({
       const p =
         directory.find(x => x.id === id) ??
         (featured?.id === id ? featured : undefined);
-      if (p?.avatar_url) {
-        void Image.prefetch(
-          sizedStorageImageUri(
+      const hero = p?.avatar_url
+        ? sizedStorageImageUri(
             p.avatar_url,
             columnWidth - TOKENS.space.md * 2,
             420,
             PixelRatio.get(),
-          ),
-        ).catch(() => {});
+          )
+        : null;
+      if (hero !== null) {
+        void Image.prefetch(hero).catch(() => {});
       }
       onOpenProvider(id);
     },
@@ -1172,6 +1178,18 @@ function FeaturedCard({
    */
   const away = !presence.here;
   /*
+   * A tall crop, not a 178dp band: the window into it happens in the layout
+   * (`featuredPhoto`), so asking the server for a frame-height image would
+   * centre-crop the head off before it arrived. `HERO_PHOTO_HEIGHT_RATIO` is
+   * 4/3 scaled to this card's height — see its note for why that is a trim and
+   * not that band.
+   */
+  const heroPhoto = avatarImageSource(
+    provider.avatar_url,
+    imageWidth,
+    Math.round(imageWidth * HERO_PHOTO_HEIGHT_RATIO),
+  );
+  /*
    * The rating has to be spoken in WORDS from here, because the chip below is
    * `accessible={false}` like every other meta chip and its visible text is now
    * only "★ 4.8" — a glyph and a bare number, which announces nothing about what
@@ -1200,27 +1218,9 @@ function FeaturedCard({
       accessibilityLabel={accessibility}
       press="card"
       style={styles.featured}>
-      {provider.avatar_url ? (
+      {heroPhoto !== null ? (
         <>
-          <Image
-            source={{
-              /*
-               * A tall crop, not a 178dp band: the window into it happens in
-               * the layout above (`featuredPhoto`), so asking the server for a
-               * frame-height image would centre-crop the head off before it
-               * arrived. `HERO_PHOTO_HEIGHT_RATIO` is 4/3 scaled to this
-               * card's height — see its note for why that is a trim and not
-               * that band.
-               */
-              uri: sizedStorageImageUri(
-                provider.avatar_url,
-                imageWidth,
-                Math.round(imageWidth * HERO_PHOTO_HEIGHT_RATIO),
-                PixelRatio.get(),
-              ),
-            }}
-            style={styles.featuredPhoto}
-          />
+          <Image source={heroPhoto} style={styles.featuredPhoto} />
           {/* A dark scrim under the text so white copy stays legible over any
               photo, not only the coral fallback. */}
           <View style={styles.featuredScrim} />

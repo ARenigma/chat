@@ -6,12 +6,19 @@ import {
   getInitialNotification,
   getMessaging,
   getToken,
+  onMessage,
   onNotificationOpenedApp,
   onTokenRefresh,
   requestPermission,
 } from '@react-native-firebase/messaging';
 import { supabase } from './supabase';
-import { ensureConversationChannel } from './conversations';
+import {
+  ensureConversationChannel,
+  readCallPush,
+  readEngagementPush,
+  type CallPush,
+  type EngagementPush,
+} from './conversations';
 import { isUuid } from './ids';
 
 /**
@@ -26,12 +33,18 @@ import { isUuid } from './ids';
  *
  * Three deliberate omissions:
  *
- *   1. **Nothing is displayed while the app is foregrounded.** `onMessage` fires
- *      only in the foreground and does not draw anything unless we ask it to, so
- *      not asking is the whole implementation: Realtime has already put the
- *      message on screen, and a banner over the conversation you are reading is
- *      noise. Background and quit-state notifications are drawn by the OS from
- *      the `notification` block the sender includes.
+ *   1. **No notification is displayed while the app is foregrounded.** A
+ *      foreground delivery goes to `onMessage` INSTEAD of the background
+ *      handler, never to both, so whatever it does is the whole of what the
+ *      user gets. For an ordinary message that is nothing: Realtime has already
+ *      put it on screen and a banner over the conversation you are reading is
+ *      noise. A CALL and an engagement nudge are the two exceptions, and they
+ *      are not cosmetic ones — if the Realtime socket is down (a network flap,
+ *      a Doze wake, a token refresh) the push is the only ring there will be,
+ *      and `announce_chat_open` gates on a MANUAL presence declaration, so it
+ *      reaches somebody who is actively using the app. Both are routed into the
+ *      app's own UI by `onForegroundPush` below rather than drawn.
+ *      https://rnfirebase.io/messaging/usage#foreground-state-messages
  *   2. **The body is never in the payload.** The sender publishes who it is from
  *      and nothing else, see `pending_pushes`. A lock screen that quotes the
  *      message tells whoever is holding the phone what you talked about, and for
@@ -192,6 +205,34 @@ export function openedPeerId(
 ): string | null {
   const raw = remote?.data?.peerId;
   return typeof raw === 'string' && isUuid(raw) ? raw : null;
+}
+
+/**
+ * The two foreground deliveries the app acts on.
+ *
+ * RNFirebase's receiver branches on `isAppInForeground` and, when it is, emits
+ * to `onMessage` rather than starting the headless task index.js registers — so
+ * without this listener a call push that arrives while the app is open is
+ * dropped with no ring and no error.
+ * https://rnfirebase.io/messaging/usage#foreground-state-messages
+ *
+ * A conversation message is deliberately not one of them: see the note above.
+ */
+export function onForegroundPush(handlers: {
+  onCall: (push: CallPush) => void;
+  onEngagement: (push: EngagementPush) => void;
+}): () => void {
+  return onMessage(getMessaging(), remote => {
+    const call = readCallPush(remote.data);
+    if (call !== null) {
+      handlers.onCall(call);
+      return;
+    }
+    const nudge = readEngagementPush(remote.data);
+    if (nudge !== null) {
+      handlers.onEngagement(nudge);
+    }
+  });
 }
 
 /** Fires when a notification is tapped while the app is backgrounded. */

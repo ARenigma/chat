@@ -6,8 +6,6 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
 import androidx.core.content.getSystemService
-import com.facebook.react.bridge.ReactContext
-import com.facebook.react.modules.core.DeviceEventManagerModule
 
 /**
  * Manages audio focus for an active call session.
@@ -76,12 +74,7 @@ class CallAudioFocusManager(private val context: Context) {
      * mid-teardown, and a focus change during teardown is not worth a crash.
      */
     private fun emitToRN(data: String) {
-        val reactContext = (context.applicationContext as? MainApplication)
-            ?.reactNativeHost
-            ?.reactInstanceManager
-            ?.currentReactContext as? ReactContext
-        reactContext?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-            ?.emit("callAction", data)
+        ReactBridgeEvents.emit(context, "callAction", data)
     }
 
     /**

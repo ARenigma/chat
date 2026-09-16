@@ -12,7 +12,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BLUR_SURFACE_AVAILABLE, BlurRoot } from './src/components/BlurSurface';
 import Animated, {
@@ -43,7 +43,13 @@ import { assertEnv } from './src/lib/env';
 import { storage } from './src/lib/storage';
 import { PROVIDER_INTENT_KEY } from './src/lib/providerIntent';
 import { consumeBack } from './src/lib/backGuard';
-import { initialNotificationPeer, onNotificationOpen, setNotificationPolicy, startPush } from './src/lib/push';
+import {
+  initialNotificationPeer,
+  onForegroundPush,
+  onNotificationOpen,
+  setNotificationPolicy,
+  startPush,
+} from './src/lib/push';
 import { clearCall } from './src/lib/conversations';
 import {
   memberParent,
@@ -86,7 +92,7 @@ import {
   parseVideoResolution,
   setVideoResolution,
 } from './src/api/callMedia/profile';
-import { useConversations, useSelfId } from './src/api/chat';
+import { keys, useConversations, useSelfId } from './src/api/chat';
 import { useRole } from './src/api/provider';
 import { useStore } from './src/store/useStore';
 import { PolicyGateScreen } from './src/screens/PolicyGateScreen';
@@ -541,6 +547,16 @@ function Root() {
   const [attempt, setAttempt] = useState(0);
   const [route, setRoute] = useState<MemberRoute>({ name: 'home' });
   const [providerRoute, setProviderRoute] = useState<ProviderRoute>({ name: 'home' });
+  /*
+   * A ring announced from outside the React tree: the notification's Answer
+   * intent, the body tap, or an FCM push. It is HELD here rather than routed
+   * here, because which tree it belongs to depends on the role and `useRole`
+   * lives in `SignedIn`. Calling `setRoute` from this effect was the defect: the
+   * provider tree renders `providerRoute` and nothing else, so every notification
+   * a provider answered set a route their tree does not draw.
+   */
+  const [pendingIncoming, setPendingIncoming] = useState<PendingIncoming | null>(null);
+  const clearPendingIncoming = useCallback(() => setPendingIncoming(null), []);
   const [exitDialogVisible, setExitDialogVisible] = useState(false);
   useReportFullyDrawn(boot.phase !== 'loading' && boot.phase !== 'ready');
   // Refs so the BackHandler closure reads the current route without being in its
@@ -761,7 +777,8 @@ function Root() {
        *
        * Answer still routes into the screen rather than calling answer_call here:
        * that screen owns the lease and the media, and answering without it would
-       * put a connected call behind a UI that does not exist yet.
+       * put a connected call behind a UI that does not exist yet. It routes via
+       * `pendingIncoming`, which is where the role decides which tree gets it.
        *
        * Parsed with regex, not URLSearchParams, which Hermes does not ship.
        */
@@ -780,7 +797,7 @@ function Root() {
             void endCall(callId);
             return;
           }
-          setRoute({ name: 'call', providerId: callPeer, direction: 'in', callId, medium });
+          setPendingIncoming({ peerId: callPeer, callId, medium });
         }
         return;
       }
@@ -922,7 +939,18 @@ function Root() {
     const sub = AppState.addEventListener('change', async (next) => {
       const prev = prevState;
       prevState = next;
+      /*
+       * React Native has no window-focus event, so TanStack Query cannot tell
+       * that the app was backgrounded unless AppState is handed to it. Without
+       * this line `refetchIntervalInBackground: false` never takes effect and
+       * `refetchOnWindowFocus` never fires on either.
+       * https://tanstack.com/query/latest/docs/framework/react/react-native
+       */
+      focusManager.setFocused(next === 'active');
       if (prev === 'background' && next === 'active' && bootPhaseRef.current === 'ready') {
+        // Who is online is the one thing that goes stale while the phone is in
+        // a pocket, and the directory has no realtime channel (see useProviders).
+        void queryClient.invalidateQueries({ queryKey: keys.providers });
         const statuses = await checkGate();
         if (!gateSatisfied(statuses)) {
           setBoot({ phase: 'permissions' });
@@ -1293,6 +1321,8 @@ function Root() {
         backToHome={backToHome}
         setRoute={setRoute}
         setProviderRoute={setProviderRoute}
+        pendingIncoming={pendingIncoming}
+        onIncomingHandled={clearPendingIncoming}
         onSignedOut={() => setBoot({ phase: 'signedOut' })}
       />
       <ConfirmDialog
@@ -1310,6 +1340,13 @@ function Root() {
   );
 }
 
+/** A ring the app learned about outside the React tree, before the role is known. */
+interface PendingIncoming {
+  readonly peerId: string;
+  readonly callId: string;
+  readonly medium: 'voice' | 'video';
+}
+
 interface SignedInProps {
   route: MemberRoute;
   providerRoute: ProviderRoute;
@@ -1320,6 +1357,8 @@ interface SignedInProps {
   backToHome: () => void;
   setRoute: (r: MemberRoute) => void;
   setProviderRoute: (r: ProviderRoute) => void;
+  pendingIncoming: PendingIncoming | null;
+  onIncomingHandled: () => void;
   onSignedOut: () => void;
 }
 
@@ -1336,9 +1375,12 @@ function SignedIn({
   backToHome,
   setRoute,
   setProviderRoute,
+  pendingIncoming,
+  onIncomingHandled,
   onSignedOut,
 }: SignedInProps) {
   const styles = useStyles(makeStyles);
+  const setNotice = useStore(s => s.setNotice);
 
   /*
    * Stable, so `memo(FloatingToolbarView)` can actually hold.
@@ -1459,6 +1501,32 @@ function SignedIn({
   // Home's slide-in on a pop is driven from the pop itself (motion.ts `revealHome`).
   const homeLayer = useHomeRevealStyle();
 
+  /*
+   * The one place a ring becomes a route, whichever of the three announcements
+   * carried it: the Realtime INSERT, the FCM push, or the notification's Answer
+   * intent. One function because the role branch is the thing that drifted —
+   * the deep link only ever knew about the member tree.
+   *
+   * The seen-set is not belt and braces. A call is announced twice by design
+   * (Realtime AND a push), and pushing the route for the second announcement
+   * remounts CallScreen, whose unmount cleanup ends the call that is already up.
+   */
+  const routedCallsRef = useRef<Set<string>>(new Set());
+  const routeIncomingCall = useCallback(
+    (peerId: string, callId: string, medium: 'voice' | 'video') => {
+      if (routedCallsRef.current.has(callId)) {
+        return;
+      }
+      routedCallsRef.current.add(callId);
+      if (role === 'provider') {
+        pushProvider({ name: 'call', peerId, direction: 'in', callId, medium });
+      } else {
+        pushRoute({ name: 'call', providerId: peerId, direction: 'in', callId, medium });
+      }
+    },
+    [role, pushProvider, pushRoute],
+  );
+
   // A ring, foreground: route the incoming call to the right tree's call screen.
   // Declared before the early return so the hook order is stable.
   const onIncoming = useCallback(
@@ -1481,24 +1549,66 @@ function SignedIn({
        *
        * Read through the refs, not `route`/`providerRoute`, so this callback
        * stays stable across navigations — the same reason `onBack` uses them.
+       *
+       * The callId comparison is what keeps that from eating the CALL ON SCREEN.
+       * This path also receives the ring a push has already routed, and a guard
+       * that only asked "is a call open" declined the open one.
        */
-      const onACallAlready =
-        role === 'provider'
-          ? currentProviderRouteRef.current.name === 'call'
-          : currentRouteRef.current.name === 'call';
-      if (onACallAlready) {
-        void endCall(incoming.callId);
+      const current =
+        role === 'provider' ? currentProviderRouteRef.current : currentRouteRef.current;
+      if (current.name === 'call') {
+        if (current.callId !== incoming.callId) {
+          void endCall(incoming.callId);
+        }
         return;
       }
-      if (role === 'provider') {
-        pushProvider({ name: 'call', peerId: incoming.callerId, direction: 'in', callId: incoming.callId, medium: incoming.medium });
-      } else {
-        pushRoute({ name: 'call', providerId: incoming.callerId, direction: 'in', callId: incoming.callId, medium: incoming.medium });
+      /*
+       * The pushed CallStyle notification is cleared as the screen takes the
+       * ring over, which is the only path that ever cleared it before. Not while
+       * backgrounded: there the notification is the ring, and removing it would
+       * leave nothing to answer.
+       * https://developer.android.com/develop/ui/views/notifications/call-style
+       */
+      if (AppState.currentState === 'active') {
+        void clearCall(incoming.callId);
       }
+      routeIncomingCall(incoming.callerId, incoming.callId, incoming.medium);
     },
-    [role, pushRoute, pushProvider],
+    [role, routeIncomingCall],
   );
   useIncomingCalls(selfId, onIncoming);
+
+  /*
+   * A ring that arrived before the role did. `useRole` resolves after the deep
+   * link is consumed on a cold start, so dispatching early would send a
+   * provider's answer into the member tree.
+   */
+  useEffect(() => {
+    if (pendingIncoming === null || isPending) {
+      return;
+    }
+    onIncomingHandled();
+    routeIncomingCall(pendingIncoming.peerId, pendingIncoming.callId, pendingIncoming.medium);
+  }, [pendingIncoming, isPending, onIncomingHandled, routeIncomingCall]);
+
+  /*
+   * Foreground pushes. A call rings through the same entry point as a Realtime
+   * ring; a nudge becomes a notice rather than a notification over an app the
+   * person is already looking at.
+   */
+  useEffect(
+    () =>
+      onForegroundPush({
+        onCall: push =>
+          routeIncomingCall(
+            push.peerId,
+            push.callId,
+            push.medium === 'video' ? 'video' : 'voice',
+          ),
+        onEngagement: push => setNotice(push.body || push.title, 'confirm'),
+      }),
+    [routeIncomingCall, setNotice],
+  );
 
   // No retry handler here on purpose: the profile query owns its own retries, and
   // a button that re-runs a query React Query is already retrying would only
