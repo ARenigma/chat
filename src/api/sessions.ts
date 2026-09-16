@@ -16,6 +16,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { reportSwallowed } from '../lib/sentry';
 import { track } from '../lib/telemetry';
+import { keys, useConversationId } from './chat';
+import { useStore } from '../store/useStore';
 
 type SessionChannel = 'chat' | 'audio' | 'video';
 type SessionStatus =
@@ -203,6 +205,13 @@ export interface ChatOpenAlert {
   alerted: boolean;
   reason: string | null;
   peer_present?: boolean;
+  /**
+   * When this direction may ring again. Returned with `reason: 'cooldown'`
+   * (068:118) and dropped by this type until 2026-09-17, which is why nothing
+   * could render "again in 12m": the one field that makes a persistent
+   * "Notified" honest was being parsed away.
+   */
+  cooldown_until?: string | null;
 }
 
 /**
@@ -238,6 +247,243 @@ export function useAnnounceChatOpen(
   }, [conversationId, enabled]);
 
   return result;
+}
+
+/**
+ * The same RPC as an ACTION rather than a report.
+ *
+ * `useAnnounceChatOpen` above cannot drive a button and was never meant to: it
+ * is a mount effect with one `ChatOpenAlert | null` behind it, and its `.then`
+ * returns early on `error || data === null` recording nothing, so `null` means
+ * in flight AND failed AND never ran. A control needs the three apart.
+ *
+ * The error is THROWN, and reported on the way past. This path had no Sentry
+ * call site at all, which is how a "Notify" button that never called the RPC
+ * shipped and stayed invisible.
+ */
+export function useNotifyPeer(conversationId: string | undefined) {
+  return useMutation<ChatOpenAlert, Error, void>({
+    mutationFn: async () => {
+      if (conversationId === undefined) {
+        throw new Error('No conversation to announce');
+      }
+      const { data, error } = await supabase.rpc('announce_chat_open', {
+        p_conversation_id: conversationId,
+      });
+      if (error) {
+        reportSwallowed('announceChatOpen', error);
+        throw error;
+      }
+      if (data === null || data === undefined) {
+        const empty = new Error('announce_chat_open returned no answer');
+        reportSwallowed('announceChatOpen', empty);
+        throw empty;
+      }
+      return data as unknown as ChatOpenAlert;
+    },
+  });
+}
+
+/**
+ * What the away control shows. One vocabulary for both surfaces that draw it.
+ *
+ * `notified` is the ONLY state that claims the peer knows, and it is reachable
+ * from exactly the two answers that earn the claim: a push was dispatched
+ * (`alerted`), or one was dispatched recently enough that the server refused to
+ * send a second (`cooldown`). That is migration 068's honesty rule
+ * ("Returns alerted=true ONLY when a push was actually dispatched, because the
+ * 'we have notified them' banner is built from this answer") applied to a
+ * button instead of a banner.
+ */
+export type NotifyState =
+  | { kind: 'idle' }
+  | { kind: 'pending' }
+  | { kind: 'notified'; cooldownUntil: string | null }
+  | { kind: 'present' };
+
+export interface NotifyAction {
+  state: NotifyState;
+  notify: () => void;
+}
+
+/**
+ * Whole minutes until `iso`, for "again in 12m". Null when there is nothing to
+ * count to, which is every outcome except a cooldown.
+ */
+export function minutesUntil(iso: string | null | undefined): number | null {
+  if (iso === undefined || iso === null) {
+    return null;
+  }
+  const ms = Date.parse(iso) - Date.now();
+  if (Number.isNaN(ms) || ms <= 0) {
+    return null;
+  }
+  return Math.max(1, Math.ceil(ms / 60_000));
+}
+
+const IDLE: NotifyState = { kind: 'idle' };
+
+interface NotifyMachine {
+  /**
+   * Which provider this state belongs to. FlashList RECYCLES a row's component
+   * instance under a different item, so state that does not name its subject
+   * would show one stranger's "Notified" on another stranger's card.
+   */
+  forId: string;
+  /** Which tap produced it, so a second tap re-fires and a re-render does not. */
+  attempt: number;
+  state: NotifyState;
+}
+
+/**
+ * Notify this provider WITHOUT leaving the surface the member is on.
+ *
+ * Telegram's own in-place notify toggle is the shape:
+ * `toggleScheduledNotify()` (FragmentContextView.java:2770-2792) fires the
+ * request from the control the finger is on and then says what happened, rather
+ * than navigating somewhere to say it. Ours did the opposite: both away controls
+ * routed into the chat, so the RPC only ran from ChatScreen's mount effect and
+ * the surface that would have shown "Notified" unmounted on the tap that earned
+ * it.
+ *
+ * ONE STATED DEPARTURE from that reference. Telegram flips its local flag
+ * BEFORE the server answers (`schedule_start_subscribed = willBeNotified =
+ * !willBeNotified`, :2781). We cannot: our server refuses for six different
+ * reasons and only two of them mean a push went out, so an optimistic flip
+ * would be a claim that the peer knows when nobody has been told. The state
+ * moves on the answer, never on the tap.
+ *
+ * The conversation is resolved LAZILY, on the tap, because `open_conversation`
+ * creates the thread on first call (src/api/chat.ts:190-206) — arming it per
+ * row would mint a conversation with everyone the member scrolled past.
+ */
+export function useNotifyProvider(providerId: string): NotifyAction {
+  const setNotice = useStore(s => s.setNotice);
+  const openWallet = useStore(s => s.openWallet);
+  const queryClient = useQueryClient();
+  const [machine, setMachine] = useState<NotifyMachine>({
+    forId: providerId,
+    attempt: 0,
+    state: IDLE,
+  });
+  const mine = machine.forId === providerId;
+  const state = mine ? machine.state : IDLE;
+
+  const conversation = useConversationId(state.kind === 'idle' ? null : providerId);
+  const conversationId = conversation.data;
+  const notifyPeer = useNotifyPeer(conversationId);
+  const { mutate } = notifyPeer;
+
+  /** The tap already answered, so a re-render cannot ring the doorbell twice. */
+  const firedRef = useRef('');
+  /**
+   * When the current tap happened, so a RETRY is not failed by its predecessor.
+   * A conversation lookup that errors stays errored in the cache, and re-arming
+   * it shows `isError` for the renders before the refetch starts — long enough
+   * to report a failure that has not happened yet. `errorUpdatedAt` is when the
+   * cached error was recorded, so comparing the two asks the only question that
+   * matters: did THIS attempt fail.
+   */
+  const armedAtRef = useRef(0);
+  const lookupFailed =
+    conversation.isError && conversation.errorUpdatedAt >= armedAtRef.current;
+  const attempt = mine ? machine.attempt : 0;
+
+  useEffect(() => {
+    if (state.kind !== 'pending') {
+      return;
+    }
+    const ticket = `${providerId}:${attempt}`;
+    if (firedRef.current === ticket) {
+      return;
+    }
+    const settle = (next: NotifyState) => {
+      setMachine({ forId: providerId, attempt, state: next });
+    };
+    if (lookupFailed) {
+      firedRef.current = ticket;
+      setNotice('Could not notify them. Try again.');
+      settle(IDLE);
+      return;
+    }
+    if (conversationId === undefined) {
+      return;
+    }
+    firedRef.current = ticket;
+    mutate(undefined, {
+      onSuccess: alert => {
+        if (alert.alerted) {
+          settle({ kind: 'notified', cooldownUntil: alert.cooldown_until ?? null });
+          return;
+        }
+        switch (alert.reason) {
+          case 'cooldown':
+            // Still the truth: a push went out inside the cooldown window, so
+            // the peer HAS been told. The only new fact is when we may tell
+            // them again.
+            settle({ kind: 'notified', cooldownUntil: alert.cooldown_until ?? null });
+            break;
+          case 'peer_present':
+            // They came back between the directory read and this tap. The
+            // control stops offering a doorbell for someone standing in the
+            // room, and the directory re-reads so its dot agrees.
+            settle({ kind: 'present' });
+            void queryClient.invalidateQueries({ queryKey: keys.providers });
+            break;
+          case 'in_session':
+            setNotice('Busy right now. Try again in a minute.', 'confirm');
+            settle(IDLE);
+            break;
+          case 'no_balance':
+            // The one refusal the member can act on, so it routes instead of
+            // explaining.
+            setNotice('Add tokens to notify them.', 'confirm');
+            openWallet();
+            settle(IDLE);
+            break;
+          default:
+            /*
+             * not_configured, forbidden, not_found, unauthorized, and anything
+             * a later migration adds. Every one of them means NOBODY WAS TOLD,
+             * so the control goes back to offering the action and says so
+             * rather than sitting on a silent "Notified".
+             *
+             * Telegram turns a refusal it has no specific words for into a
+             * visible bulletin too, and names the single code it stays quiet
+             * for rather than staying quiet by default:
+             * BulletinFactory.java:100-113 (`else if (error.code != 406)`).
+             */
+            setNotice('Could not notify them. Try again.');
+            settle(IDLE);
+        }
+      },
+      onError: () => {
+        setNotice('Could not notify them. Try again.');
+        settle(IDLE);
+      },
+    });
+  }, [
+    state.kind,
+    attempt,
+    providerId,
+    conversationId,
+    lookupFailed,
+    mutate,
+    setNotice,
+    openWallet,
+    queryClient,
+  ]);
+
+  const notify = useCallback(() => {
+    armedAtRef.current = Date.now();
+    setMachine(current => ({
+      forId: providerId,
+      attempt: (current.forId === providerId ? current.attempt : 0) + 1,
+      state: { kind: 'pending' },
+    }));
+  }, [providerId]);
+
+  return { state, notify };
 }
 
 /** A chat request ringing at the provider right now (goal item 13). */

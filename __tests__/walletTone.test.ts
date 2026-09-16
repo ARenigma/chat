@@ -192,7 +192,11 @@ describe('the bright accent carries no label', () => {
       // on the last named branch (`quiet`) so a new button kind inserted ahead of
       // it cannot slide the pairing out of a fixed-width window, while still
       // proving primary itself is the onAccent case.
-      label: /kind === 'quiet'[\s\S]{0,120}theme\.color\.text\.onAccent/,
+      // Anchored on the LAST named branch of the fg ternary, so the default
+      // (onAccent, the pairing this test defends) is what follows it. The
+      // branch was 'quiet' until 2026-09-17: that kind was the away Notify
+      // button painted in M3's disabled vocabulary, and it is now 'tonal'.
+      label: /kind === 'tonal'[\s\S]{0,120}theme\.color\.text\.onAccent/,
       why: "the provider's primary call action, 12dp Bold beside a 22dp glyph",
     },
     {

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.media.AudioAttributes
+import android.media.AudioManager
 import android.net.Uri
 import android.provider.Settings
 import androidx.core.app.NotificationChannelCompat
@@ -15,6 +16,7 @@ import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.Executors
 
 /**
  * Conversation notifications, built the way Android asks a messaging app to
@@ -62,13 +64,19 @@ object Conversations {
     // channel is WRITE-ONCE: once createNotificationChannel() has run, Android
     // caches its importance, sound and AudioAttributes forever and ignores every
     // later edit — the only resets are reinstall, clearing data, or a NEW id.
-    // The original channels ("conversations"/"engagement"/"calls") were created
-    // without an explicit .setSound(), so on devices that first saw an early
-    // build they are stuck silent no matter what importance we now request.
-    // Bumping the id (and deleting the old one, `migrateChannels` below) is how
-    // the sound settings here actually take effect — the same delete+recreate
-    // trick Telegram uses in NotificationsController.checkOtherNotificationsChannel.
     // https://developer.android.com/develop/ui/views/notifications/channels
+    //
+    // CORRECTION (2026-09-17). This comment used to say the pre-`_v2` channels
+    // were "stuck silent" because they were created without an explicit
+    // .setSound(). That is not what a missing setSound does.
+    // NotificationChannelCompat.Builder initialises mSound to
+    // Settings.System.DEFAULT_NOTIFICATION_URI and mAudioAttributes to
+    // Notification.AUDIO_ATTRIBUTES_DEFAULT, so the originals carried the
+    // device's DEFAULT NOTIFICATION SOUND. What the bump actually buys is the
+    // CALL channel: its cached sound was a notification blip at
+    // USAGE_NOTIFICATION, and `_v2` makes it DEFAULT_RINGTONE_URI at
+    // USAGE_NOTIFICATION_RINGTONE, which is the ring stream and the ring volume.
+    // The write-once cache is still why a new id was the only way to get there.
     private const val CHANNEL_ID = "conversations_v2"
 
     /**
@@ -104,6 +112,120 @@ object Conversations {
     private const val BRAND_COLOR = 0xFFF2543D.toInt()
 
     /**
+     * The id of the PRE-notification: the ring posted from the FCM push, before
+     * `CallForegroundService` exists to post one of its own.
+     *
+     * Telegram numbers the same three call states rather than three posters
+     * (VoIPService.java:191-193):
+     *
+     *     ID_ONGOING_CALL_NOTIFICATION     = 201  // connected
+     *     ID_INCOMING_CALL_NOTIFICATION    = 202  // ringing, owned by the service
+     *     ID_INCOMING_CALL_PRENOTIFICATION = 203  // ringing, owned by the push
+     *
+     * `VoIPPreNotificationService.java:413` posts 203 from the push and
+     * `:579` cancels it the moment the service takes the call over. Ours is the
+     * same handover: this id is the push's, `CallForegroundService`'s
+     * CALL_NOTIFICATION_ID is the service's, and the service cancels this one as
+     * it promotes itself. Before that they were two full CallStyle rings racing,
+     * and the FSI-less one (the service's) usually won, so the callee got a tray
+     * entry instead of a full-screen takeover.
+     *
+     * A constant and not a per-call hash, exactly as Telegram's 203 is: the
+     * service has no callId to hash, and one device rings one call at a time.
+     */
+    const val CALL_PRENOTIFICATION_ID = 2003
+
+    /**
+     * Whether the call currently being rung by the push is a video call.
+     *
+     * The service posts the ring once it starts, and `startCallForegroundService`
+     * carries no medium — the camera flag is false while ringing because the
+     * camera only opens on answer. So the push records it here and the service
+     * reads it, the way Telegram's service reads the pending call the
+     * prenotification left behind (`VoIPPreNotificationService.java:379-381`
+     * statics, read by `isVideo()` at `:485-487`).
+     *
+     * Volatile because it is written on the push thread and read on the
+     * service's main thread. False when nothing is pending, which is also the
+     * right answer for an outgoing call.
+     */
+    @Volatile
+    private var pendingCallIsVideo: Boolean = false
+
+    fun pendingCallIsVideo(): Boolean = pendingCallIsVideo
+
+    /**
+     * The push's Answer intent, kept so the service's ring can reuse it as its
+     * own full-screen intent.
+     *
+     * It is the only PendingIntent in the app that carries
+     * `companionchat://call/<peer>?callId=...`, and MainActivity gates
+     * `setShowWhenLocked` / `setTurnScreenOn` on exactly that URI. A launcher
+     * intent in this slot would wake the screen to the launcher instead of to a
+     * ringing call.
+     */
+    @Volatile
+    private var pendingCallAnswer: android.app.PendingIntent? = null
+
+    fun pendingCallAnswer(): android.app.PendingIntent? = pendingCallAnswer
+
+    /**
+     * Forget the ringing call. Called when the call service is destroyed, which
+     * is the end of the call — NOT from [clearCall], which only takes the pushed
+     * notification off the screen and runs before the service has read any of
+     * this (App.tsx clears it as it consumes the Answer deep link).
+     */
+    fun forgetPendingCall() {
+        pendingCallIsVideo = false
+        pendingCallAnswer = null
+    }
+
+    /**
+     * Take the pushed ring off screen. The service calls this as it promotes
+     * itself, so only one of the two ring notifications is ever on screen
+     * (`VoIPPreNotificationService.java:579` does the same `nm.cancel` when
+     * Telegram's service takes the call over).
+     */
+    fun cancelCallPrenotification(context: Context) {
+        NotificationManagerCompat.from(context).cancel(CALL_PRENOTIFICATION_ID)
+    }
+
+    /**
+     * The thread every avatar download runs on.
+     *
+     * `notify`, `notifyEngagement` and `notifyCall` are all reached from the
+     * bridge, which means React Native's single NativeModules queue thread. A
+     * blocking HttpURLConnection there stalls every other native call behind it,
+     * and for a ring that delay is the ring. So each of the three posts its
+     * notification immediately with no photo and fills the photo in here, by
+     * re-posting the SAME notification id: Android replaces a notification in
+     * place when the id matches.
+     * https://developer.android.com/develop/ui/views/notifications/build-notification
+     */
+    private val avatarExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "pappal-avatar").apply { isDaemon = true }
+    }
+
+    /**
+     * How long the callee's ring may stay up, matched to `RING_TIMEOUT_IN_MS` in
+     * `src/screens/CallScreen.tsx` (60 s), which is itself Telegram's
+     * `callRingTimeout` shortened for a paid product.
+     */
+    private const val RING_TIMEOUT_MS = 60_000L
+
+    /**
+     * The longest edge a Person/large-icon bitmap is decoded to.
+     *
+     * A notification's large icon is laid out at a few tens of dp; 384px is 128dp
+     * at xxhdpi, so this is already generous. The old 2048 cap decoded a ~16 MB
+     * bitmap to draw a thumbnail.
+     */
+    private const val AVATAR_MAX_PX = 384
+
+    /** The engagement nudge's photo is the full-width BigPicture, so it stays large. */
+    private const val BIG_PICTURE_MAX_PX = 1024
+
+    /**
      * AudioAttributes for a MESSAGE alert — a one-shot notification blip.
      * USAGE_NOTIFICATION is what the system routes to the notification volume.
      */
@@ -126,10 +248,11 @@ object Conversations {
 
     /**
      * Delete the pre-`_v2` channels once. A channel's sound cannot be changed
-     * after creation, so the fix for the silent originals is to abandon their ids.
+     * after creation, so the only way to move the call channel off the
+     * notification blip it cached and onto the ringtone is to abandon its id.
      * Deleting a channel that never existed (fresh install) is a no-op, so this is
      * safe to call on every ensure*. The user sees the old entries vanish from
-     * Settings; the `_v2` ones replace them with sound on.
+     * Settings; the `_v2` ones replace them.
      */
     private fun migrateSilentChannels(context: Context) {
         val manager = NotificationManagerCompat.from(context)
@@ -216,11 +339,8 @@ object Conversations {
     ) {
         ensureChannel(context)
 
-        // The sender's photo for the Person icon (#6), or null on any failure — a
-        // missing photo must never stop the notification from posting.
-        val avatarIcon = avatarUrl
-            ?.let { loadAvatarBitmap(it) }
-            ?.let { IconCompat.createWithBitmap(it) }
+        val manager = NotificationManagerCompat.from(context)
+        val id = notificationId(conversationId)
 
         /*
          * `setKey` is what makes two Person objects the same person across
@@ -228,68 +348,124 @@ object Conversations {
          * picked the same display name would merge into one conversation — and
          * display names here are user-chosen and not unique.
          */
-        val person = Person.Builder()
+        fun personOf(icon: IconCompat?): Person = Person.Builder()
             .setKey(peerId)
             .setName(senderName)
             .setImportant(true)
-            .apply { if (avatarIcon != null) setIcon(avatarIcon) }
+            .apply { if (icon != null) setIcon(icon) }
             .build()
 
-        /*
-         * The shortcut is not optional garnish. `setLongLived(true)` is what lets
-         * the system keep it after it leaves the launcher, and a notification whose
-         * `shortcutId` points at a shortcut that is not long-lived is demoted out
-         * of the conversation section without an error.
-         */
-        val shortcut = ShortcutInfoCompat.Builder(context, conversationId)
-            .setShortLabel(senderName)
-            .setLongLabel(senderName)
-            .setIcon(avatarIcon ?: IconCompat.createWithResource(context, R.mipmap.ic_launcher))
-            .setLongLived(true)
-            .setPerson(person)
-            .setCategories(setOf(SHARE_CATEGORY))
-            .setIntent(peerIntent(context, peerId))
-            .build()
-        ShortcutManagerCompat.pushDynamicShortcut(context, shortcut)
+        fun post(style: NotificationCompat.MessagingStyle, icon: IconCompat?) {
+            val person = personOf(icon)
 
-        val manager = NotificationManagerCompat.from(context)
-        val id = notificationId(conversationId)
+            /*
+             * The shortcut is not optional garnish. `setLongLived(true)` is what
+             * lets the system keep it after it leaves the launcher, and a
+             * notification whose `shortcutId` points at a shortcut that is not
+             * long-lived is demoted out of the conversation section without an
+             * error.
+             */
+            val shortcut = ShortcutInfoCompat.Builder(context, conversationId)
+                .setShortLabel(senderName)
+                .setLongLabel(senderName)
+                .setIcon(icon ?: IconCompat.createWithResource(context, R.mipmap.ic_launcher))
+                .setLongLived(true)
+                .setPerson(person)
+                .setCategories(setOf(SHARE_CATEGORY))
+                .setIntent(peerIntent(context, peerId))
+                .build()
+            ShortcutManagerCompat.pushDynamicShortcut(context, shortcut)
+
+            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setColor(BRAND_COLOR)
+                .setStyle(style)
+                // The three together are what Android looks for; `setShortcutId` is the
+                // link that ties the style and the shortcut.
+                .setShortcutId(conversationId)
+                .addPerson(person)
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                // minSdk is 24 and channels only exist from 26, so on Android 7.x
+                // the alert comes from here or not at all. "On platforms O and
+                // above this value is ignored in favor of the values set on the
+                // notification's channel. On older platforms, this value is still
+                // used, so it is still required for apps supporting those
+                // platforms."
+                // https://developer.android.com/reference/androidx/core/app/NotificationCompat.Builder#setDefaults(int)
+                .setDefaults(NotificationCompat.DEFAULT_SOUND or NotificationCompat.DEFAULT_VIBRATE)
+                .setAutoCancel(true)
+                .setContentIntent(openConversation(context, peerId))
+                .build()
+
+            try {
+                manager.notify(id, notification)
+            } catch (denied: SecurityException) {
+                /*
+                 * POST_NOTIFICATIONS was revoked between the permission check and
+                 * here. Swallowed rather than crashed: a message arriving is not a
+                 * moment to take the app down, and the user has already said no.
+                 */
+            }
+        }
 
         // Extend the existing transcript if one is showing, so the shade reads as a
         // conversation rather than the latest line repeatedly replacing itself.
-        val existing = manager.activeNotifications
-            .firstOrNull { it.id == id }
-            ?.notification
-        val style = existing
-            ?.let { NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(it) }
+        val style = activeMessagingStyle(manager, id)
             ?: NotificationCompat.MessagingStyle(
                 Person.Builder().setName(context.getString(R.string.you)).build(),
             )
-        style.addMessage(body, sentAt, person)
+        style.addMessage(body, sentAt, personOf(null))
+        post(style, null)
 
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setColor(BRAND_COLOR)
-            .setStyle(style)
-            // The three together are what Android looks for; `setShortcutId` is the
-            // link that ties the style and the shortcut.
-            .setShortcutId(conversationId)
-            .addPerson(person)
-            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-            .setContentIntent(openConversation(context, peerId))
-            .build()
-
-        try {
-            manager.notify(id, notification)
-        } catch (denied: SecurityException) {
-            /*
-             * POST_NOTIFICATIONS was revoked between the permission check and
-             * here. Swallowed rather than crashed: a message arriving is not a
-             * moment to take the app down, and the user has already said no.
-             */
+        if (avatarUrl != null) {
+            avatarExecutor.execute {
+                val icon = loadAvatarBitmap(avatarUrl, AVATAR_MAX_PX)
+                    ?.let { IconCompat.createWithBitmap(it) }
+                    ?: return@execute
+                /*
+                 * Re-read what is actually on screen rather than re-posting the
+                 * transcript captured above: a second message can land while the
+                 * photo is still downloading, and rebuilding from a stale copy
+                 * would delete it from the shade.
+                 */
+                val live = activeMessagingStyle(manager, id) ?: return@execute
+                post(withSenderIcon(live, peerId, icon), icon)
+            }
         }
+    }
+
+    /** The MessagingStyle of the notification currently posted at [id], if any. */
+    private fun activeMessagingStyle(
+        manager: NotificationManagerCompat,
+        id: Int,
+    ): NotificationCompat.MessagingStyle? = manager.activeNotifications
+        .firstOrNull { it.id == id }
+        ?.notification
+        ?.let { NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(it) }
+
+    /**
+     * The same transcript with [peerId]'s photo attached to every line they sent.
+     *
+     * A Message's Person is fixed once it is added, so the icon that arrives after
+     * the notification is already up has to be applied by rebuilding the style.
+     */
+    private fun withSenderIcon(
+        style: NotificationCompat.MessagingStyle,
+        peerId: String,
+        icon: IconCompat,
+    ): NotificationCompat.MessagingStyle {
+        val updated = NotificationCompat.MessagingStyle(style.user)
+        for (message in style.messages) {
+            val sender = message.person
+            val person = if (sender?.key == peerId) {
+                sender.toBuilder().setIcon(icon).build()
+            } else {
+                sender
+            }
+            updated.addMessage(message.text, message.timestamp, person)
+        }
+        return updated
     }
 
     /**
@@ -315,46 +491,61 @@ object Conversations {
         avatarUrl: String? = null,
     ) {
         ensureEngagementChannel(context)
-        val avatar = avatarUrl?.let { loadAvatarBitmap(it) }
         val manager = NotificationManagerCompat.from(context)
         val id = -peerId.hashCode()
 
-        val builder = NotificationCompat.Builder(context, CHANNEL_ENGAGEMENT)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setColor(BRAND_COLOR)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setCategory(NotificationCompat.CATEGORY_SOCIAL)
-            // HIGH so a nudge heads-up like the others (Amit: "notify like calls
-            // for all three"); the channel is IMPORTANCE_HIGH to match.
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-            .setContentIntent(openConversation(context, peerId))
+        fun post(avatar: android.graphics.Bitmap?) {
+            val builder = NotificationCompat.Builder(context, CHANNEL_ENGAGEMENT)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setColor(BRAND_COLOR)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setCategory(NotificationCompat.CATEGORY_SOCIAL)
+                // HIGH so a nudge heads-up like the others (Amit: "notify like calls
+                // for all three"); the channel is IMPORTANCE_HIGH to match.
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                // Ignored from API 26 up in favour of the channel; on 24-25 it is
+                // the only thing that makes the nudge audible. See `notify`.
+                .setDefaults(NotificationCompat.DEFAULT_SOUND or NotificationCompat.DEFAULT_VIBRATE)
+                .setAutoCancel(true)
+                .setContentIntent(openConversation(context, peerId))
 
-        if (avatar != null) {
-            builder
-                .setLargeIcon(avatar)
-                .setStyle(
-                    NotificationCompat.BigPictureStyle()
-                        .bigPicture(avatar)
-                        .bigLargeIcon(null as android.graphics.Bitmap?),
-                )
+            if (avatar != null) {
+                builder
+                    .setLargeIcon(avatar)
+                    .setStyle(
+                        NotificationCompat.BigPictureStyle()
+                            .bigPicture(avatar)
+                            .bigLargeIcon(null as android.graphics.Bitmap?),
+                    )
+            }
+
+            try {
+                manager.notify(id, builder.build())
+            } catch (denied: SecurityException) {
+                // POST_NOTIFICATIONS revoked; swallowed as in notify().
+            }
         }
 
-        try {
-            manager.notify(id, builder.build())
-        } catch (denied: SecurityException) {
-            // POST_NOTIFICATIONS revoked; swallowed as in notify().
+        post(null)
+
+        if (avatarUrl != null) {
+            avatarExecutor.execute {
+                loadAvatarBitmap(avatarUrl, BIG_PICTURE_MAX_PX)?.let { post(it) }
+            }
         }
     }
 
     /**
-     * Ring an incoming call — the third notification type.
+     * Ring an incoming call from the push — the third notification type, and the
+     * PRE-notification of the pair (see [CALL_PRENOTIFICATION_ID]).
      *
      * A `CallStyle.forIncomingCall` notification with a full-screen intent, which
      * is what makes the phone show a full ringing screen (over the lock screen)
      * and use the ringtone, rather than a quiet heads-up. `setOngoing` so it
-     * cannot be swiped away while ringing.
+     * cannot be swiped away while ringing. Telegram's prenotification is built
+     * the same way and for the same reason — FSI plus CallStyle, posted from the
+     * push before any service exists (VoIPPreNotificationService.java:243, :269).
      *
      * Both actions open the app rather than acting silently: Answer and Decline
      * route to MainActivity with an `action` on the deep link, and the in-app
@@ -372,56 +563,111 @@ object Conversations {
     ) {
         ensureCallChannel(context)
 
-        val avatarIcon = avatarUrl
-            ?.let { loadAvatarBitmap(it) }
-            ?.let { IconCompat.createWithBitmap(it) }
-        val caller = Person.Builder()
-            .setKey(peerId)
-            .setName(callerName)
-            .setImportant(true)
-            .apply { if (avatarIcon != null) setIcon(avatarIcon) }
-            .build()
-
+        val isVideo = medium == "video"
+        val manager = NotificationManagerCompat.from(context)
         val answer = callActionIntent(context, peerId, callId, "answer", medium)
         val decline = callActionIntent(context, peerId, callId, "decline", medium)
 
-        val notification = NotificationCompat.Builder(context, CALL_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setColor(BRAND_COLOR)
-            .setStyle(NotificationCompat.CallStyle.forIncomingCall(caller, decline, answer))
-            .setCategory(NotificationCompat.CATEGORY_CALL)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setOngoing(true)
-            .setAutoCancel(true)
-            // setSubText is reliably visible alongside CallStyle on API 12+; the title
-            // is overridden by CallStyle on API 31+, so this is the correct slot for
-            // the call type. "Video call" vs "Voice call" tells the user what to expect
-            // before they answer.
-            .setSubText(if (medium == "video") "wants a video chat" else "wants a voice chat")
-            // Full-screen intent: an incoming call takes over the screen — over the
-            // lock screen — the way a phone call does (Amit, 2026-09-14, reversing
-            // the 2026-08-27 heads-up-only call). The system shows the heads-up when
-            // the device is in use and escalates to the full-screen `answer` intent
-            // when the screen is off or locked; MainActivity sets showWhenLocked /
-            // turnScreenOn for a call URI so it renders over the keyguard. `answer`
-            // opens the RINGING screen (App.tsx routes action=answer into the
-            // incoming CallScreen without auto-answering), not an accepted call.
-            // Gated by USE_FULL_SCREEN_INTENT + MANAGE_OWN_CALLS (calling-app grant).
-            // https://developer.android.com/develop/ui/views/notifications/call-style
-            .setFullScreenIntent(answer, true)
-            .setContentIntent(answer)
-            .build()
+        pendingCallIsVideo = isVideo
+        pendingCallAnswer = answer
 
-        try {
-            NotificationManagerCompat.from(context).notify(callNotificationId(callId), notification)
-        } catch (denied: SecurityException) {
-            // POST_NOTIFICATIONS revoked; swallowed as in notify().
+        fun post(avatarIcon: IconCompat?) {
+            val caller = Person.Builder()
+                .setKey(peerId)
+                .setName(callerName)
+                .setImportant(true)
+                .apply { if (avatarIcon != null) setIcon(avatarIcon) }
+                .build()
+
+            val notification = NotificationCompat.Builder(context, CALL_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setColor(BRAND_COLOR)
+                .setStyle(
+                    NotificationCompat.CallStyle.forIncomingCall(caller, decline, answer)
+                        .setIsVideo(isVideo),
+                )
+                .setCategory(NotificationCompat.CATEGORY_CALL)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setOngoing(true)
+                .setAutoCancel(true)
+                // forIncomingCall "will have a default content text for an incoming
+                // call" — a default, which an explicit one replaces. This used to
+                // be setSubText, which CallStyle demotes to the small header chip
+                // while its own "Incoming call" kept the main line, so the one
+                // thing the callee needs before answering (is my camera about to
+                // come on?) was in the smallest text on the notification.
+                // https://developer.android.com/reference/androidx/core/app/NotificationCompat.CallStyle
+                .setContentText(
+                    context.getString(
+                        if (isVideo) R.string.call_incoming_video else R.string.call_incoming_voice,
+                    ),
+                )
+                // The ring is silent on API 24-25 without this: channels arrive in
+                // 26, and NotificationCompat ignores the sound set here from 26 up
+                // in favour of the channel's, so there is no double alert.
+                // https://developer.android.com/reference/androidx/core/app/NotificationCompat.Builder#setSound(android.net.Uri,int)
+                .setSound(Settings.System.DEFAULT_RINGTONE_URI, AudioManager.STREAM_RING)
+                // An unanswered ring used to stay in the shade forever: `setOngoing`
+                // makes it unswipeable and the only code that cancelled it was the
+                // deep-link branch, so answering by Realtime, a cancel by the
+                // caller, or a ring timeout all left it up. "Specifies the time at
+                // which this notification should be canceled" — the system does it,
+                // which is why this is here rather than an app-side Handler or
+                // AlarmManager that dies with the process. "No-op on versions prior
+                // to O", so on 24-25 the bound is still only JS's clearCall.
+                // https://developer.android.com/reference/androidx/core/app/NotificationCompat.Builder#setTimeoutAfter(long)
+                .setTimeoutAfter(RING_TIMEOUT_MS)
+                // Full-screen intent: an incoming call takes over the screen — over the
+                // lock screen — the way a phone call does (Amit, 2026-09-14, reversing
+                // the 2026-08-27 heads-up-only call). The system shows the heads-up when
+                // the device is in use and escalates to the full-screen `answer` intent
+                // when the screen is off or locked; MainActivity sets showWhenLocked /
+                // turnScreenOn for a call URI so it renders over the keyguard. `answer`
+                // opens the RINGING screen (App.tsx routes action=answer into the
+                // incoming CallScreen without auto-answering), not an accepted call.
+                // Gated by USE_FULL_SCREEN_INTENT + MANAGE_OWN_CALLS (calling-app grant).
+                // https://developer.android.com/develop/ui/views/notifications/call-style
+                .setFullScreenIntent(answer, true)
+                .setContentIntent(answer)
+                .build()
+
+            try {
+                manager.notify(CALL_PRENOTIFICATION_ID, notification)
+            } catch (denied: SecurityException) {
+                // POST_NOTIFICATIONS revoked; swallowed as in notify().
+            }
+        }
+
+        post(null)
+
+        if (avatarUrl != null) {
+            avatarExecutor.execute {
+                /*
+                 * Only worth re-posting while the ring is still the ring. Once the
+                 * service has taken over (or the call is gone) this id is
+                 * cancelled, and re-posting would put a dead ring back on screen.
+                 */
+                loadAvatarBitmap(avatarUrl, AVATAR_MAX_PX)?.let {
+                    if (manager.activeNotifications.any { shown ->
+                            shown.id == CALL_PRENOTIFICATION_ID
+                        }
+                    ) {
+                        post(IconCompat.createWithBitmap(it))
+                    }
+                }
+            }
         }
     }
 
-    /** Clear a call's notification (answered elsewhere, cancelled, timed out). */
+    /**
+     * Clear the pushed ring (answered elsewhere, cancelled, timed out).
+     *
+     * `callId` is no longer part of the id — see [CALL_PRENOTIFICATION_ID] — but
+     * it stays in the signature because the JS side knows which call it is
+     * clearing and a future second ring would need it back.
+     */
     fun clearCall(context: Context, callId: String) {
-        NotificationManagerCompat.from(context).cancel(callNotificationId(callId))
+        cancelCallPrenotification(context)
     }
 
     /**
@@ -461,36 +707,42 @@ object Conversations {
         )
     }
 
-    // Negated-plus-offset namespace so a call notification never collides with a
-    // message (conversation hash) or an engagement nudge (negated peer hash).
-    private fun callNotificationId(callId: String): Int = callId.hashCode() xor 0x5CA11
 
     /**
-     * Download the sender's photo and decode it, for both the collapsed large
-     * icon and the expanded BigPicture.
+     * Download a photo and decode it, for the Person icon or the BigPicture.
      *
-     * Runs on the caller's thread, which is always a background one — the FCM
-     * headless task, never the UI. Every failure (offline, timeout, a 404, a
-     * decode error) returns null so the notification still posts without a photo:
-     * a message arriving is not a moment to throw. Timeouts are short for the same
-     * reason, a notification that takes ten seconds to appear has already failed.
+     * Runs on [avatarExecutor], never on the bridge thread that asked for the
+     * notification. Every failure (offline, timeout, a 404, a decode error)
+     * returns null so the notification simply keeps the plain version it already
+     * posted: a message arriving is not a moment to throw.
      *
-     * Decoded with `inSampleSize` against a ~1024px target: big enough for the
-     * expanded BigPicture to look sharp, small enough that a ~1MB source is not
-     * decoded at full resolution into a background-thread bitmap.
+     * Two guards on the way in:
+     *  - A photo URL may be the bundled-art sentinel `clay:<seed>` rather than an
+     *    address (see `isClayUri` in src/lib/username.ts). `URL()` throws
+     *    MalformedURLException on it, which cost every clay-avatar notification
+     *    its icon, so anything that is not http(s) is skipped rather than fetched.
+     *  - 1.5 s, not 4 s: a ring that waits four seconds for a face has already
+     *    missed the ring.
+     *
+     * [longestEdgePx] bounds the decode with `inSampleSize` — a notification icon
+     * is drawn at a few tens of dp, so decoding a 2048px bitmap to fill it burned
+     * ~16 MB per push.
      */
-    private fun loadAvatarBitmap(url: String): android.graphics.Bitmap? =
-        try {
+    private fun loadAvatarBitmap(url: String, longestEdgePx: Int): android.graphics.Bitmap? {
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            return null
+        }
+        return try {
             val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 4000
-                readTimeout = 4000
+                connectTimeout = 1500
+                readTimeout = 1500
             }
             val bytes = connection.inputStream.use { it.readBytes() }
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
             var sample = 1
             val longest = maxOf(bounds.outWidth, bounds.outHeight)
-            while (longest / sample > 2048) {
+            while (longest / sample > longestEdgePx) {
                 sample *= 2
             }
             val options = BitmapFactory.Options().apply { inSampleSize = sample }
@@ -498,6 +750,7 @@ object Conversations {
         } catch (error: Exception) {
             null
         }
+    }
 
     /** Clear a conversation's notification once it has been read in the app. */
     fun clear(context: Context, conversationId: String) {

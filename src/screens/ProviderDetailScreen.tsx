@@ -30,7 +30,8 @@ import { CALLS_ENABLED } from '../api/calls';
 import { useEconomicsConfig, useKillSwitches, FALLBACK_ECONOMICS } from '../api/appConfig';
 import { useStore } from '../store/useStore';
 import { useFavorites } from '../store/useFavorites';
-import { springTo } from '../theme/motion';
+import { minutesUntil, useNotifyProvider } from '../api/sessions';
+import { fadeSwapFast, springTo } from '../theme/motion';
 import { BackButton } from '../components/BackButton';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
@@ -132,6 +133,31 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
   const onVideo = useCallback(() => onStartCall(providerId, 'video'), [onStartCall, providerId]);
 
   /*
+   * THE NOTIFY ACTION, WHICH RUNS HERE RATHER THAN SOMEWHERE ELSE.
+   *
+   * It used to be `onPress={onChat}`: the away button opened the conversation,
+   * `announce_chat_open` fired from ChatScreen's mount effect, and this screen
+   * unmounted on the tap. So the one surface that could have shown "Notified"
+   * was gone before there was anything to show, and idle -> pending -> notified
+   * could not exist. `useNotifyProvider` performs the RPC in place and keeps the
+   * member here; the state it returns is what the button draws.
+   *
+   * NOTIFIED DOES NOT SURVIVE A REMOUNT, and that is a decision rather than an
+   * omission. The server's cooldown is the real memory of this action (068,
+   * `chat_open_alert_cooldown_minutes`, 30 by default), and the only way to READ
+   * it is to call `announce_chat_open` — which rings the doorbell whenever the
+   * window has passed. A "restore on mount" would therefore notify people to
+   * find out whether they had been notified. Coming back to this screen shows
+   * "Notify" again, and the first tap answers `cooldown` and lands on the same
+   * "Notified, again in NNm" without sending a second push. Nothing is persisted
+   * locally, because a local flag would be the one thing that CAN claim the peer
+   * knows when the server never told anyone.
+   */
+  const notify = useNotifyProvider(providerId);
+  const notified = notify.state.kind === 'notified';
+  const notifyAgainIn = notify.state.kind === 'notified' ? minutesUntil(notify.state.cooldownUntil) : null;
+
+  /*
    * AWAY OFFERS ONE ACTION, AND IT IS NOT A CALL.
    *
    * The same rule the directory row got on 2026-09-13 (ProviderRow.tsx:413),
@@ -153,6 +179,14 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
    */
   const away =
     provider !== null && !readPresence(provider.presence, provider.last_active_at).here;
+  /*
+   * `peer_present` came back from the doorbell: they are here NOW, between the
+   * directory read this screen is drawn from and the tap. Offering to fetch
+   * somebody who is standing in the room is the false affordance in reverse, so
+   * the row of live actions comes back. The directory is invalidated in the same
+   * breath (api/sessions.ts), so the presence dot agrees on the next read.
+   */
+  const peerBack = notify.state.kind === 'present';
 
   return (
     <View style={styles.root}>
@@ -185,24 +219,58 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
           />
 
           <View style={styles.actions}>
-            {away ? (
+            {away && !peerBack ? (
               /* One action, full width — the row's three slots collapse to one
                  because there is only one honest thing to offer. The bell and
                  the word together, as on the directory row: the glyph says this
                  is a different KIND of action from the Call this button is
                  standing in for, and the word says which. Priced at the CHAT
-                 rate because that is what it opens and what it will bill. */
-              <ActionButton
-                channel="chat"
-                kind="quiet"
-                glyph="bell"
-                word="Notify"
-                rate={chatRate}
-                enabled={provider.chat_enabled}
-                offered={provider.chat_enabled}
-                onPress={onChat}
-                label={`Notify ${provider.display_name} that you want to chat`}
-              />
+                 rate because that is what it opens and what it will bill.
+
+                 THE SWAP IS THE ONE NEW ANIMATION IN THIS CHANGE, and it is a
+                 fade-through of the whole control rather than of its parts: the
+                 button changes its mind as one object, which three independently
+                 fading pieces would not read as. `fadeSwapFast` is the existing
+                 builder for exactly this ("a button label that just narrated
+                 itself", motion.ts), DURATION.fast (170ms), EASE_OUT, opacity
+                 only, and it carries `reduceMotion(ReduceMotion.System)` so the
+                 OS setting turns the movement off without turning the state
+                 change off. Keyed on the state name, so it runs once per
+                 transition and never on a re-render.
+
+                 A live region, not an announcement: a focused control whose
+                 label changes does not announce on its own, and Android 16
+                 deprecates announceForAccessibility in favour of exactly this.
+                 https://developer.android.com/about/versions/16/behavior-changes-all
+
+                 OFF WHILE IDLE, because a live region speaks when its content
+                 ARRIVES as well as when it changes, and this subtree arrives
+                 whenever the screen does. Polite only once the control has
+                 something to report. */
+              <Animated.View
+                key={notify.state.kind}
+                entering={fadeSwapFast}
+                style={styles.actionSlot}
+                accessibilityLiveRegion={notify.state.kind === 'idle' ? 'none' : 'polite'}>
+                <ActionButton
+                  channel="chat"
+                  kind="tonal"
+                  glyph={notified ? 'check' : 'bell'}
+                  word={notified ? 'Notified' : 'Notify'}
+                  rate={chatRate}
+                  note={notifyAgainIn === null ? undefined : `again in ${notifyAgainIn}m`}
+                  busy={notify.state.kind === 'pending'}
+                  busyLabel="Notifying"
+                  enabled={provider.chat_enabled}
+                  offered={provider.chat_enabled}
+                  onPress={notify.notify}
+                  label={
+                    notified
+                      ? `${provider.display_name} has been notified`
+                      : `Notify ${provider.display_name} that you want to chat`
+                  }
+                />
+              </Animated.View>
             ) : (
               <>
                 <ActionButton
@@ -629,6 +697,9 @@ function ActionButton({
   glyph,
   word,
   rate,
+  note,
+  busy = false,
+  busyLabel,
   enabled,
   offered = true,
   onPress,
@@ -648,8 +719,8 @@ function ActionButton({
    * WHICH channel takes the lower rank is his call, not the spec's; he chose
    * chat.
    */
-  kind: 'primary' | 'outline' | 'dark' | 'quiet';
-  glyph: 'call' | 'chat' | 'video' | 'bell';
+  kind: 'primary' | 'outline' | 'dark' | 'tonal';
+  glyph: 'call' | 'chat' | 'video' | 'bell' | 'check';
   /**
    * A word beside the glyph, for the button that is alone in the row.
    *
@@ -663,6 +734,24 @@ function ActionButton({
   word?: string;
   /** Live admin rate (tokens/min). Falls back to DEFAULT_RATES[channel] at the call site. */
   rate: number;
+  /**
+   * Replaces the rate on the second line, and in the spoken label.
+   *
+   * There is exactly one caller: a Notify button that has already rung. The
+   * price of a chat is the right second line while the button is an offer; once
+   * it is a status, when the doorbell may ring again is the only fact left worth
+   * the space.
+   */
+  note?: string;
+  /** A request is in flight. Holds the surface compressed; see Pressable. */
+  busy?: boolean;
+  /**
+   * What the button says while `busy`. The present participle of `word`, the
+   * same contract `Button.busyLabel` has (Button.tsx:17-21) — a control that
+   * compresses and says nothing tells a member their tap was felt but not what
+   * it started.
+   */
+  busyLabel?: string;
   enabled: boolean;
   /**
    * False when THIS PROVIDER does not offer the channel (migration 064), as
@@ -686,8 +775,8 @@ function ActionButton({
       ? theme.color.text.primary
       : kind === 'dark'
         ? theme.color.text.onInverse
-        : kind === 'quiet'
-          ? theme.color.text.tertiary
+        : kind === 'tonal'
+          ? theme.color.text.accent
           : theme.color.text.onAccent;
   // The `flex: 1` lives on this wrapper View, not on the Pressable: a `flex: 1`
   // set on a Pressable never reaches its outer touchable (it styles an inner
@@ -699,29 +788,40 @@ function ActionButton({
       <Pressable
         onPress={onPress}
         disabled={!enabled}
+        busy={busy}
         testID={`action-${channel}`}
-        accessibilityLabel={`${label}, ${rateLabel(rate)}${
+        accessibilityLabel={`${label}, ${note ?? rateLabel(rate)}${
           enabled ? '' : offered ? ', coming soon' : ', not offered'
         }`}
         press="none"
         highlight="dim"
+        /*
+         * `actionDisabled` IS GONE, and it was never doing anything. Pressable
+         * applies the caller's style BEFORE its own animated style
+         * (Pressable.tsx:360, `[styles.clip, shapeStyle, innerStyle, animated]`)
+         * and that animated style sets `opacity: disabled ? 0.45 : 1`
+         * unconditionally, so a declared `opacity: 0.5` here was overwritten on
+         * every frame. One control, two answers, and the one nearest the reader
+         * was the dead one. `disabled` already carries the dim and sets
+         * accessibilityState.disabled; the M3 numbers behind it are
+         * interaction.stateDisabledContent / Container in design/tokens.json.
+         */
         style={[
           styles.actionButton,
           word !== undefined && styles.actionWide,
           kind === 'primary' && styles.actionPrimary,
           kind === 'outline' && styles.actionOutline,
           kind === 'dark' && styles.actionDark,
-          kind === 'quiet' && styles.actionQuiet,
-          !enabled && styles.actionDisabled,
+          kind === 'tonal' && styles.actionTonal,
         ]}>
         <Icon name={glyph} size={TOKENS.icon.lg} color={fg} />
         {word !== undefined ? (
           <Text allowFontScaling numberOfLines={1} style={[styles.actionWord, { color: fg }]}>
-            {word}
+            {busy ? busyLabel ?? word : word}
           </Text>
         ) : null}
         <Text allowFontScaling numberOfLines={1} style={[styles.actionRate, { color: fg }]}>
-          {rateLabel(rate)}
+          {note ?? rateLabel(rate)}
         </Text>
       </Pressable>
     </View>
@@ -929,16 +1029,39 @@ const makeStyles = (t: Theme) =>
       borderColor: t.color.border.strong,
     },
     /*
-     * The away "Notify" fill (Amit, 2026-09-16). Notify is a quiet status
-     * action, not the coral Call, so this mirrors the ProviderRow away CTA and
-     * the ProviderCard away marker: transparent container, a hairline (not the
-     * heavier `border/strong`) stroke, and `text/tertiary` ink via `fg` above.
-     * The three away surfaces agree that Notify does not draw the eye.
+     * The away "Notify" button, M3's FILLED TONAL recipe.
+     *
+     * WAS `actionQuiet`: transparent container, hairline stroke, `text/tertiary`
+     * ink. That is not a quiet button, it is M3's DISABLED button, drawn on a
+     * control that is enabled and is the only thing this screen offers. Measured
+     * against the real tokens: the label 4.39:1 light / 3.68:1 dark against the
+     * 4.5 floor that 12dp and 14dp type takes, and the hairline 1.71:1 / 1.50:1
+     * against the 3:1 one for a non-text boundary.
+     * https://developer.android.com/guide/topics/ui/accessibility/apps
+     *
+     * "Filled tonal buttons have a lighter background color and darker label
+     * color, making them less visually prominent than a regular filled button.
+     * They're still used for final or unblocking actions in a flow, but may be
+     * better when these actions don't require quite so much emphasis" — which is
+     * Notify next to Call exactly. It is also the rank the old style was reaching
+     * for: the doc's emphasis order is elevated, filled, filled tonal, outlined,
+     * text, so tonal sits below the coral `actionPrimary` without leaving the
+     * ladder.
+     * https://github.com/material-components/material-components-android/blob/master/docs/components/CommonButton.md
+     *
+     * TWO STATED DEPARTURES. M3's tonal button has no stroke (strokeColor null,
+     * strokeWidth 0dp) and 2dp of elevation; this keeps a 1dp accent stroke and
+     * stays flat. The stroke is load-bearing rather than decorative —
+     * `bg/accentTint` measures 1.19:1 against this page in light and 1.02:1
+     * against a card in dark, so the fill alone is not a findable boundary — and
+     * both it and the label are registered pairs in scripts/check-contrast.mjs
+     * (4.58:1 / 8.22:1 label, 3.08:1 / 6.25:1 outline). The elevation is dropped
+     * because nothing in this app is elevated; the design separates by fill.
      */
-    actionQuiet: {
-      backgroundColor: 'transparent',
+    actionTonal: {
+      backgroundColor: t.color.bg.accentTint,
       borderWidth: 1,
-      borderColor: t.color.border.hairline,
+      borderColor: t.color.bg.accent,
     },
     /*
      * `bg/inverse`, not `text/primary`. THE VIDEO BUTTON WAS INVISIBLE IN DARK
@@ -964,9 +1087,6 @@ const makeStyles = (t: Theme) =>
      */
     actionDark: {
       backgroundColor: t.color.bg.inverse,
-    },
-    actionDisabled: {
-      opacity: 0.5,
     },
     /*
      * The single-action layout: a ROW, so the bell sits beside its verb.

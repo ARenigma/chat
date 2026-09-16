@@ -83,7 +83,12 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
         }
     }
 
-    /** Ring an incoming call — a heads-up CallStyle notification (no full-screen intent). */
+    /**
+     * Ring an incoming call from the push — the PRE-notification, in Telegram's
+     * sense: the CallStyle ring that exists before `CallForegroundService` does,
+     * and that the service cancels when it takes the call over. See
+     * `Conversations.CALL_PRENOTIFICATION_ID`.
+     */
     @ReactMethod
     fun notifyCall(
         callId: String,

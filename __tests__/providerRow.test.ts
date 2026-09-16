@@ -444,8 +444,17 @@ describe('the CTA is 48dp, and the reference is the thing that is wrong', () => 
      * the only glyph permitted here is the bell, and only in the away branch.
      */
     const priceLine = between(code(ROW), '<View style={styles.priceLine}>', '</View>');
-    const icons = priceLine.match(/<Icon\s+name="(\w+)"/g) ?? [];
-    expect(icons).toEqual(['<Icon\n                  name="bell"']);
+    /*
+     * The glyph became an EXPRESSION on 2026-09-17: the bell turns into a check
+     * once the peer has actually been told, which is the visible half of the
+     * Notify state machine. A name="..." only match would find nothing and pass
+     * an empty array, so it matches both forms and the permitted set is still
+     * asserted exactly. Neither branch may be the banned phone glyph.
+     */
+    const icons = priceLine.match(/<Icon\s+name=(?:"\w+"|\{[^}]+\})/g) ?? [];
+    expect(icons).toEqual([
+      "<Icon\n                    name={notified ? 'check' : 'bell'}",
+    ]);
     // ...and it is gated on away, never drawn for a provider who is here.
     expect(priceLine).toContain('{away ? (');
     expect(priceLine).toContain('<RupeeAmount value={ratePerMin}');

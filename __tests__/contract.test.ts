@@ -3833,15 +3833,28 @@ describe('no screen reads a listing switch as a presence dot', () => {
       detail.indexOf('<View style={styles.actions}>'),
       detail.indexOf('<View style={styles.hairline} />'),
     );
-    expect(actions).toContain('{away ? (');
+    // `!peerBack` because a peer who returns mid-view gets the live actions
+    // back rather than a bell that would now ring a phone somebody is holding.
+    expect(actions).toContain('{away && !peerBack ? (');
     const split = actions.indexOf(') : (');
     expect(split).toBeGreaterThan(-1);
     const awayBranch = actions.slice(0, split);
     const hereBranch = actions.slice(split);
-    // One action, the bell, and it opens the conversation.
-    expect(awayBranch).toContain('glyph="bell"');
-    expect(awayBranch).toContain('word="Notify"');
-    expect(awayBranch).toContain('onPress={onChat}');
+    /*
+     * One action, and it NOTIFIES IN PLACE.
+     *
+     * It used to be `onPress={onChat}`, and that was the defect, not the
+     * contract: routing into the chat unmounted the profile on the tap, so
+     * `announce_chat_open` only ever fired from ChatScreen's mount effect and
+     * the control could never show that it had done anything. Reported
+     * 2026-09-16 as issue 17, "Notify icon looks disabled and no state UI
+     * transition". The glyph and word are now expressions over that state:
+     * bell/Notify before, check/Notified after.
+     */
+    expect(awayBranch).toContain("glyph={notified ? 'check' : 'bell'}");
+    expect(awayBranch).toContain("word={notified ? 'Notified' : 'Notify'}");
+    expect(awayBranch).toContain('onPress={notify.notify}');
+    expect(awayBranch).not.toContain('onPress={onChat}');
     expect(awayBranch).not.toMatch(/glyph="(call|video)"/);
     expect(awayBranch).not.toMatch(/onPress=\{on(Audio|Video)\}/);
     // The three-up row is intact for a provider who IS here — this is a branch,
@@ -4068,13 +4081,30 @@ describe('the motion adoption is wired, not just drawn', () => {
   });
 
   it('narrates every mutation a button starts', () => {
-    // Every Button that reports a pending mutation says which one. Counted
-    // rather than named, so a new async button without a participle fails here
-    // instead of shipping a pill that compresses and says nothing.
+    /*
+     * Every button that reports a pending mutation says which one, so a new
+     * async button without a participle fails here instead of shipping a pill
+     * that compresses and says nothing.
+     *
+     * Checked by REACHABILITY rather than by counting. Counting assumed one
+     * `busy=` per `busyLabel=`, which stopped being true once a screen grew a
+     * local wrapper: ProviderDetailScreen's ActionButton takes `busyLabel` as a
+     * prop and renders the participle ITSELF (`{busy ? busyLabel ?? word : word}`)
+     * while handing a bare `busy={busy}` down to the Pressable. That forward is
+     * the same pending state one level lower, not a second one, and the
+     * participle does reach the user. SettingsSheet's `busy={busy}` is the
+     * opposite case, a real declaration with `busyLabel` right beside it, so
+     * excluding the literal `busy={busy}` would have let that one through
+     * unlabelled.
+     */
     for (const source of screens) {
-      const busies = source.body.match(/\bbusy=\{/g)?.length ?? 0;
-      const labels = source.body.match(/\bbusyLabel=/g)?.length ?? 0;
-      expect(labels).toBe(busies);
+      const wrapperRendersParticiple = /busyLabel \?\?/.test(source.body);
+      for (const m of source.body.matchAll(/\bbusy=\{/g)) {
+        const sameElement = source.body.slice(m.index, (m.index ?? 0) + 400);
+        expect(
+          /busyLabel=/.test(sameElement) || wrapperRendersParticiple,
+        ).toBe(true);
+      }
     }
   });
 
@@ -6407,11 +6437,22 @@ describe('the member always starts the session, whoever wrote first', () => {
     expect(withoutComments(read('index.js'))).toContain(
       'wants to have a chat with you',
     );
-    expect(
-      withoutComments(
-        read('android/app/src/main/java/com/companionchat/Conversations.kt'),
-      ),
-    ).toContain('wants a video chat');
+    /*
+     * The call kind moved out of Kotlin and into res/values/strings.xml on
+     * 2026-09-17. It had been `.setSubText("wants a video chat")`, which
+     * CallStyle demotes to the small header chip beside the app name while
+     * rendering its own default "Incoming call" as the main line, so the kind
+     * was never actually the thing the callee read. It is `.setContentText` on
+     * a string resource now, which replaces that default, and the resource is
+     * also translatable, which a Kotlin literal was not.
+     */
+    const strings = read('android/app/src/main/res/values/strings.xml');
+    expect(strings).toContain(
+      '<string name="call_incoming_video">Incoming video call</string>',
+    );
+    expect(strings).toContain(
+      '<string name="call_incoming_voice">Incoming voice call</string>',
+    );
   });
 
   it('is registered in the harness with its suite', () => {

@@ -6,7 +6,8 @@ import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ProviderSummary } from '../lib/database.types';
 import { genderLetter, initialOf } from '../lib/display';
 import { presenceForSpeech, readPresence } from '../lib/presence';
-import { rowIn } from '../theme/motion';
+import { fadeSwapFast, rowIn } from '../theme/motion';
+import { minutesUntil, useNotifyProvider } from '../api/sessions';
 import { Avatar } from './Avatar';
 import { Icon } from './Icon';
 import { META_CHIP_HEIGHT_SM, MetaChip } from './MetaChip';
@@ -55,6 +56,14 @@ interface Props {
    * other reasons; one read at the top and a number down the tree keeps this
    * component a pure function of its props, which is also what makes it
    * assertable without a renderer.
+   *
+   * ONE EXCEPTION SINCE 2026-09-17, stated here because this note is where the
+   * rule is written down: `useNotifyProvider` (see the CTA below) is read in
+   * this component rather than threaded in as a prop. The reason the rate is a
+   * prop does not apply to it — it subscribes to nothing that changes for
+   * anyone else, so no other row re-renders when one of them rings a bell —
+   * and the alternative would be a handler plus a per-row state object passed
+   * down from three different list screens for a control only this file draws.
    */
   ratePerMin: number;
 }
@@ -432,6 +441,28 @@ function ProviderRowView({
   const canCall = provider.audio_enabled && onCall !== undefined && !away;
   const ctaLabel = away ? 'Notify' : canCall ? 'Call' : 'Chat';
 
+  /*
+   * THE BELL NOW RINGS FROM HERE.
+   *
+   * It did not before, and the comment above was describing an intention rather
+   * than the code: the CTA fell through to `onPress(provider.id)`, the same
+   * handler the whole card fires, so tapping "Notify" was indistinguishable from
+   * tapping anywhere else on the row and the RPC only ran later, from
+   * ChatScreen's mount effect. `useNotifyProvider` performs `announce_chat_open`
+   * in place and leaves the member in the list, which is the only arrangement in
+   * which this control can have a state to show.
+   *
+   * WHEN THE PEER TURNS OUT TO BE HERE, this row does NOT keep a local override.
+   * The hook invalidates the directory query, `presence` comes back 'here', and
+   * `away` above goes false on the next render — so the row swaps to Call
+   * through the single reading of presence it already has, rather than growing a
+   * second answer to the same question beside it.
+   */
+  const notify = useNotifyProvider(provider.id);
+  const notified = notify.state.kind === 'notified';
+  const notifyAgainIn =
+    notify.state.kind === 'notified' ? minutesUntil(notify.state.cooldownUntil) : null;
+
   const accessibility = [
     `${provider.display_name}${provider.age !== null ? `, ${provider.age}` : ''}`,
     presenceForSpeech(presence),
@@ -598,47 +629,94 @@ function ProviderRowView({
               testID="provider-category"
             />
             <View style={styles.priceSpacer} />
-            <Pressable
-              onPress={() =>
-                canCall && onCall !== undefined ? onCall(provider.id) : onPress(provider.id)
-              }
-              testID={`provider-cta-${provider.id}`}
-              accessibilityLabel={
-                away
-                  ? `Notify ${provider.display_name} that you want to chat`
-                  : canCall
-                    ? `Call ${provider.display_name}`
-                    : `Message ${provider.display_name}`
-              }
-              press="none"
-              highlight="dim"
-              // `size` is how this Pressable meets the 48dp target — it turns the
-              // 36dp drawn button into a 48dp focusable area via hitSlop, without
-              // inflating the visual (Pressable.tsx:171).
-              size={ROW_CTA_VISUAL_HEIGHT}
-              style={[styles.cta, away && styles.ctaAway]}>
-              {/* The verb and the price, in one control. The rate is the
-                  quieter of the two because the decision is "call or not" and
-                  the price is the condition on it, not the other way round.
+            {/* The state swap, keyed so it runs once per transition and never on
+                a re-render or on a recycled cell that lands on the same state.
+                `fadeSwapFast` is the existing builder for a button label that
+                just narrated itself (motion.ts): DURATION.fast, EASE_OUT,
+                opacity only, `reduceMotion(ReduceMotion.System)`. The whole
+                control fades through rather than its three pieces separately,
+                because it is one object changing its mind.
 
-                  No glyph in front of either. Amit: "remove call icon before
-                  22/min" — and it was doing less than it looked: the phone said
-                  "this rate buys a call", which the word "Call" now says
-                  outright. */}
-              {away ? (
-                <Icon
-                  name="bell"
-                  size={TOKENS.icon.sm}
-                  color={styles.ctaInkAway.color as string}
-                />
-              ) : null}
-              <Text allowFontScaling numberOfLines={1} style={[styles.ctaLabel, away && styles.ctaInkAway]}>
-                {ctaLabel}
-                <Text style={[styles.ctaRate, away && styles.ctaInkAway]}>{'  '}</Text>
-                <RupeeAmount value={ratePerMin} style={[styles.ctaRate, away && styles.ctaInkAway]} />
-                <Text style={[styles.ctaRate, away && styles.ctaInkAway]}>/min</Text>
-              </Text>
-            </Pressable>
+                A live region, because a focused control whose label changes does
+                not announce on its own, and Android 16 deprecates
+                announceForAccessibility in favour of exactly this.
+                https://developer.android.com/about/versions/16/behavior-changes-all
+
+                OFF WHILE IDLE, and on a list that is the difference between a
+                useful announcement and an unusable one: a live region speaks
+                when its content ARRIVES as well as when it changes, and in a
+                recycled list rows arrive continuously under the finger. Polite
+                only once this control has something to report. */}
+            <Animated.View
+              key={notify.state.kind}
+              entering={fadeSwapFast}
+              accessibilityLiveRegion={notify.state.kind === 'idle' ? 'none' : 'polite'}>
+              <Pressable
+                onPress={() =>
+                  away
+                    ? notify.notify()
+                    : canCall && onCall !== undefined ? onCall(provider.id) : onPress(provider.id)
+                }
+                busy={notify.state.kind === 'pending'}
+                testID={`provider-cta-${provider.id}`}
+                /* The cooldown is SPOKEN here and DRAWN on the profile, which is
+                   the one asymmetry in this pair of surfaces and is deliberate:
+                   this control is a fixed 136dp on a row whose every dimension
+                   is a promise to FlashList, and "Notified  again in 12m" does
+                   not fit it at any type size. The profile's Notify button is
+                   full width and shows the same fact in words. */
+                accessibilityLabel={
+                  notified
+                    ? `${provider.display_name} has been notified${
+                        notifyAgainIn === null ? '' : `, again in ${notifyAgainIn}m`
+                      }`
+                    : away
+                      ? `Notify ${provider.display_name} that you want to chat`
+                      : canCall
+                        ? `Call ${provider.display_name}`
+                        : `Message ${provider.display_name}`
+                }
+                press="none"
+                highlight="dim"
+                // `size` is how this Pressable meets the 48dp target — it turns the
+                // 36dp drawn button into a 48dp focusable area via hitSlop, without
+                // inflating the visual (Pressable.tsx:171).
+                size={ROW_CTA_VISUAL_HEIGHT}
+                style={[styles.cta, away && styles.ctaAway]}>
+                {/* The verb and the price, in one control. The rate is the
+                    quieter of the two because the decision is "call or not" and
+                    the price is the condition on it, not the other way round.
+
+                    No glyph in front of either. Amit: "remove call icon before
+                    22/min" — and it was doing less than it looked: the phone said
+                    "this rate buys a call", which the word "Call" now says
+                    outright.
+
+                    The bell becomes a check once they have been told. Same slot,
+                    same size: the control is reporting, not growing. */}
+                {away ? (
+                  <Icon
+                    name={notified ? 'check' : 'bell'}
+                    size={TOKENS.icon.sm}
+                    color={styles.ctaLabel.color as string}
+                  />
+                ) : null}
+                <Text allowFontScaling numberOfLines={1} style={styles.ctaLabel}>
+                  {/* The present participle while the request is in flight, the
+                      same contract Button.busyLabel has (Button.tsx:17-21): a
+                      control that compresses and says nothing tells a member
+                      their tap was felt but not what it started. */}
+                  {notify.state.kind === 'pending'
+                    ? 'Notifying'
+                    : notified
+                      ? 'Notified'
+                      : ctaLabel}
+                  <Text style={styles.ctaRate}>{'  '}</Text>
+                  <RupeeAmount value={ratePerMin} style={styles.ctaRate} />
+                  <Text style={styles.ctaRate}>/min</Text>
+                </Text>
+              </Pressable>
+            </Animated.View>
           </View>
         </View>
       </Pressable>
@@ -839,17 +917,36 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     color: t.color.text.accent,
   },
   /*
-   * Away variant (Amit, 2026-09-16): when the provider is away the CTA is
-   * "Notify", which is a quiet status action — not the coral "Call". Greyed to
-   * the same hairline border + tertiary ink the ProviderCard away marker uses
-   * (ProviderCard.tsx), so the two surfaces agree that Notify does not draw the
-   * eye. On the solid card surface, so no over-photo contrast concern. `Call`
-   * keeps its coral; only the away state is quietened.
+   * Away variant, REVERSED 2026-09-17 from a hairline border + `text/tertiary`
+   * ink to M3's FILLED TONAL fill.
+   *
+   * The greyed version was painting an enabled control with M3's DISABLED
+   * vocabulary — faint outline, tertiary label, no container — which is why the
+   * issue reads "Notify icon looks disabled". It was also below both floors on
+   * this card: the label 4.39:1 light / 3.30:1 dark against the 4.5 that 12dp
+   * and 14dp type takes, and the hairline 1.71:1 / 1.35:1 against the 3:1 for a
+   * non-text boundary.
+   * https://developer.android.com/guide/topics/ui/accessibility/apps
+   *
+   * Tonal is the rank the grey was reaching for and could not express: "Filled
+   * tonal buttons have a lighter background color and darker label color,
+   * making them less visually prominent than a regular filled button", the step
+   * directly below filled and directly above outlined in the same doc's
+   * emphasis order.
+   * https://github.com/material-components/material-components-android/blob/master/docs/components/CommonButton.md
+   *
+   * ONE LINE, because the outlined `cta` above is already the same object: the
+   * accent stroke and the accent ink stay exactly as they are and the FILL is
+   * what moves, so away and here read as one control in two emphases rather
+   * than as two controls. `ctaInkAway` is gone with the grey; it now says
+   * nothing `ctaLabel` does not.
+   *
+   * The 1dp stroke is kept although M3's tonal button has none, and it is
+   * load-bearing: `bg/accentTint` measures 1.02:1 against this card in dark, so
+   * the fill alone would not be a findable boundary. Both pairs are registered
+   * in scripts/check-contrast.mjs.
    */
   ctaAway: {
-    borderColor: t.color.border.hairline,
-  },
-  ctaInkAway: {
-    color: t.color.text.tertiary,
+    backgroundColor: t.color.bg.accentTint,
   },
 });

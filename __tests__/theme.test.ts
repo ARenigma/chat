@@ -2327,21 +2327,45 @@ describe('accent budget is enforced in code, not just documented', () => {
     }
 
     /*
-     * Exactly four accent uses, in order, each unconditional. `[Cc]olor` so
-     * `borderColor` and `backgroundColor` both count — a lowercase-only match
-     * would have counted one of the four and passed while the rest drifted.
+     * NARROWED A THIRD TIME (2026-09-17), same shape as (a) and (b) above.
+     *
+     * (c) The away CTA grew an accentTint FILL, and unlike the four before it
+     *     this one is conditional: `style={[styles.cta, away && styles.ctaAway]}`.
+     *     That is exactly the shape the paragraph above says would break the
+     *     rule, so it is worth saying why it does not.
+     *
+     *     What it was: the away control was painted in Material 3's DISABLED
+     *     vocabulary — transparent fill, hairline outline, text/tertiary label —
+     *     while being fully enabled. Measured on the real tokens it was 3.30:1
+     *     on bg/raised against a 4.5:1 floor, and the CTA's own fill was
+     *     bg/raised on a bg/raised card, which is 1:1. It read as dead, which is
+     *     precisely what Amit reported as issue 17.
+     *
+     *     Why it is not a recommendation: it varies with AVAILABILITY, which is
+     *     a fact about reachability, not a ranking of the person, and it is the
+     *     WEAKER of the two treatments — a present provider still gets the solid
+     *     accentStrong CTA. Accent here marks "this control does something",
+     *     not "this stranger is the good one".
+     *
+     *     What would still break the rule, unchanged: an accent keyed to rating,
+     *     price, recency, or any ordering of people. If a future style tints on
+     *     `featured`, `topRated` or similar, this assertion must fail.
+     *
+     * `[Cc]olor` so `borderColor` and `backgroundColor` both count — a
+     * lowercase-only match would have caught one and passed while the rest drifted.
      */
     const accentLines = styleBlock
       .split('\n')
       .filter(line => /[Cc]olor: t\.color\.(bg|text)\.accent/.test(line));
     expect(accentLines).toEqual([
       // In source order, which is asserted rather than sorted: the ORDER is
-      // itself a check that these are the four styles named below and not four
-      // others that happen to number the same.
+      // itself a check that these are the styles named below and not others
+      // that happen to number the same.
       '    borderColor: t.color.bg.accent,', // ring, on every avatar
       '    color: t.color.text.accent,', // the rate inside the CTA
       '    borderColor: t.color.bg.accent,', // the CTA outline
       '    color: t.color.text.accent,', // the CTA label
+      '    backgroundColor: t.color.bg.accentTint,', // the away CTA's tonal fill
     ]);
 
     /*
