@@ -1091,7 +1091,16 @@ describe('device coverage matrix', () => {
     expect(settings).toMatch(/const ROW_TEXT_INSET = 32 \+ TOKENS\.space\.sm/);
     expect(settings).not.toContain('<Divider variant="inset" />');
     expect(settings).toContain('icon="logout"');
-    expect(settings).toContain("choiceSheet === 'presence'");
+    /*
+     * The presence chooser left this sheet on 2026-09-17. Availability is one
+     * concept now: the provider's master switch on the You tab says whether
+     * they are open, and a second control here offering here / away / hidden
+     * was the redundancy Amit asked to remove. Its absence is asserted rather
+     * than merely unmentioned, because a chooser that quietly came back would
+     * recreate the failure the availability card's own docblock describes,
+     * two controls saying nearly the same thing while meaning different things.
+     */
+    expect(settings).not.toContain("choiceSheet === 'presence'");
     expect(settings).toContain("choiceSheet === 'theme'");
   });
 

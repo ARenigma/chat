@@ -1,27 +1,48 @@
 /**
- * One reading of presence, so four screens cannot disagree about it.
+ * One reading of whether somebody is reachable, so four screens cannot
+ * disagree about it.
  *
  * They did disagree. Before migration 012 the directory row, the inbox row, the
  * chat header and the provider's own inbox each derived a dot and a line
- * separately, from `is_available`, which is the provider's *listing* switch:
- * "listed for discovery and open to new conversations". Rendering that as a
- * presence dot said someone was there when it only meant they wanted work, and
- * the provider's inbox had given up entirely and hardcoded `online={false}`,
- * because `peer_available` is false for a member peer by construction.
+ * separately, from `is_available`, which was then the provider's *listing*
+ * switch: "listed for discovery and open to new conversations". Rendering that
+ * as a presence dot said someone was there when it only meant they wanted work,
+ * and the provider's inbox had given up entirely and hardcoded `online={false}`,
+ * because `peer_available` is false for a member peer by construction. So 012
+ * added `profiles.presence` as a separate declaration, and this module became
+ * the single interpretation of it.
+ *
+ * 2026-09-17: 012 IS REVERSED, DELIBERATELY, and not by merging two ideas back
+ * together. The second idea is GONE. Amit made `is_available` a master switch
+ * over the three channel toggles and removed the presence picker from Settings,
+ * so there is no longer a second declaration that could contradict the switch.
+ * `is_available` is now the only statement anyone makes about being reachable,
+ * which is what makes reading it as the dot honest rather than the overload it
+ * was: there is exactly one concept and nothing left to be ambiguous between.
+ * The consequence was put to him and accepted — a provider who opens up and
+ * never comes back reads as here indefinitely, because nothing else is checked.
+ *
+ * `profiles.presence`, `profiles.presence_visible` and `touch_presence()` are
+ * still in the schema and are now read by nothing. `last_active_at` was never
+ * written at all — `touch_presence` has never been called from a client — which
+ * is why the closed state says a plain word rather than a last-seen stamp it
+ * could not honestly produce.
+ *
+ * The exported names are unchanged. `readPresence` is what the call sites and
+ * `HeaderSubtitle` already speak, including one screen outside this change, and
+ * a rename riding along would make a mechanical edit look like a second idea.
  *
  * Kept pure and here rather than in a hook for the reason `datetime.ts` and
  * `transcript.ts` are: it is the part with rules in it, and it is testable
  * without booting the native runtime.
  */
-import type { PresenceChoice } from './database.types';
-import { listStamp } from './datetime';
 
 export interface PresenceRead {
   /** Whether the avatar's dot lights. */
   here: boolean;
   /**
-   * The line under the name, or null when nothing has been consented to. Null is
-   * a real case and not an empty string: the chat header renders the name alone
+   * The line under the name, or null when there is nothing to say. Null is a
+   * real case and not an empty string: the chat header renders the name alone
    * rather than reserving a blank row, and a row that appears and disappears is
    * what made the header change height.
    */
@@ -31,35 +52,18 @@ export interface PresenceRead {
 const NOTHING: PresenceRead = { here: false, line: null };
 
 /**
- * Fails closed on every unknown: a null presence means the peer has not loaded,
- * or is a row written before 012 and defaulted to `hidden`, and in both cases
- * inventing a state is worse than saying nothing. The one direction that must
- * never happen is showing somebody as present who did not say they were.
- *
- * `hidden` ignores `lastActiveAt` outright rather than trusting the two columns
- * to agree. They are stored independently: `presence_visible` gates the stamp
- * and `presence` is the declaration, and `useSetPresence` writes both so a user
- * only ever makes one choice. If they ever disagree, hidden wins, because hidden
- * is the one that was chosen to conceal.
+ * Three outcomes from a boolean, because null is not false here. The column is
+ * `not null`, so a nullish argument means the row has not loaded, or the peer
+ * is a member and has no listing switch to publish. Saying "Away" about either
+ * would be asserting something nobody stated; the one direction that must never
+ * happen is showing somebody as present who did not open up.
  */
-export function readPresence(
-  presence: PresenceChoice | null | undefined,
-  lastActiveAt: string | null | undefined,
-  now: Date = new Date(),
-): PresenceRead {
-  if (presence === 'here') {
+export function readPresence(isAvailable: boolean | null | undefined): PresenceRead {
+  if (isAvailable === true) {
     return { here: true, line: 'Here now' };
   }
-  if (presence === 'away') {
-    // A stamp is strictly better information than the word, and it is only ever
-    // present when they turned it on, so it is used when we have one.
-    return {
-      here: false,
-      line:
-        lastActiveAt !== null && lastActiveAt !== undefined && lastActiveAt !== ''
-          ? `Last seen ${listStamp(lastActiveAt, now)}`
-          : 'Away',
-    };
+  if (isAvailable === false) {
+    return { here: false, line: 'Away' };
   }
   return NOTHING;
 }
@@ -74,43 +78,52 @@ export function presenceForSpeech(read: PresenceRead): string | null {
   return read.line === null ? null : read.line.toLowerCase();
 }
 
-export interface PresenceOption {
-  value: PresenceChoice;
-  label: string;
-  /** What choosing this actually does, in the second person. */
-  detail: string;
+/** The three channel switches as a provider sets them (migration 064). */
+export interface OfferedChannels {
+  chat_enabled: boolean;
+  audio_enabled: boolean;
+  video_enabled: boolean;
 }
 
 /**
- * The three options and their consequences, in one place so the control and its
- * footer cannot drift. Ordered most to least public, which is also the order a
- * settings list should offer them in: the reader is scanning for the one that
- * describes what they want, and "publish nothing" is the end of that scale
- * rather than a fourth option hidden behind it.
+ * What to say under the name when a provider does not offer everything.
+ *
+ * Amit, 2026-09-17: "gate the mode of interaction if sp has disabled some mode
+ * for member to let them know for example that this sp is only available for
+ * voice chat". The surfaces already withhold the actions; this is the sentence
+ * that stops the absence reading as a bug.
+ *
+ * Null for the full set, because the default needs no caption and a line on
+ * every card would be noise that teaches a member to stop reading it.
+ *
+ * Migration 064's `profiles_at_least_one_channel` CHECK makes the empty set
+ * unrepresentable, so the final return is unreachable rather than a state with
+ * copy of its own.
  */
-export const PRESENCE_OPTIONS: readonly PresenceOption[] = [
-  {
-    value: 'here',
-    label: 'Here Now',
-    detail: 'People you talk to can see you are around.',
-  },
-  {
-    value: 'away',
-    label: 'Away',
-    detail: 'They see that you are not around, and when you last were.',
-  },
-  {
-    value: 'hidden',
-    label: 'Hidden',
-    detail: 'Nobody is told anything about when you are here.',
-  },
-];
-
-/** The footer under the group: what the current choice means, not all three. */
-export function presenceDetail(presence: PresenceChoice): string {
-  return (
-    PRESENCE_OPTIONS.find(o => o.value === presence)?.detail ??
-    PRESENCE_OPTIONS[PRESENCE_OPTIONS.length - 1]?.detail ??
-    ''
-  );
+export function offeredChannelsLine(offered: OfferedChannels): string | null {
+  const chat = offered.chat_enabled;
+  const voice = offered.audio_enabled;
+  const video = offered.video_enabled;
+  if (chat && voice && video) {
+    return null;
+  }
+  if (chat && voice) {
+    return 'Chat and voice calls only';
+  }
+  if (chat && video) {
+    return 'Chat and video calls only';
+  }
+  if (voice && video) {
+    return 'Voice and video calls only';
+  }
+  if (chat) {
+    return 'Chat only';
+  }
+  if (voice) {
+    return 'Voice calls only';
+  }
+  if (video) {
+    return 'Video calls only';
+  }
+  return null;
 }

@@ -423,8 +423,19 @@ describe('the CTA is 48dp, and the reference is the thing that is wrong', () => 
       'const canCall = provider.audio_enabled && onCall !== undefined && !away',
     );
     expect(body).toContain("const away = !presence.here");
+    /*
+     * The fallback stopped being the literal 'Chat' on 2026-09-17. It was the
+     * same false affordance one layer down: a provider who offers video only
+     * still got a button saying Chat, which fails after the tap for exactly the
+     * reason the phone glyph and the Call button already had to go. It now
+     * falls through the offered set in the order the member's own buttons sit,
+     * so the word names something the provider actually takes.
+     */
     expect(body).toContain(
-      "const ctaLabel = away ? 'Notify' : canCall ? 'Call' : 'Chat'",
+      "const offeredVerb = provider.chat_enabled\n    ? 'Chat'\n    : provider.audio_enabled\n      ? 'Call'\n      : 'Video'",
+    );
+    expect(body).toContain(
+      "const ctaLabel = away ? 'Notify' : canCall ? 'Call' : offeredVerb",
     );
     expect(body).toMatch(/canCall && onCall !== undefined \? onCall\(provider\.id\) : onPress\(provider\.id\)/);
   });

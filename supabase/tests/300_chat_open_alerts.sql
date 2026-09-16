@@ -2,7 +2,7 @@
 --
 -- 1. thread meta carries a timestamp per direction, and no content
 -- 2. a stranger cannot announce into someone else's conversation
--- 3. a peer who is HERE is not fetched
+-- 3. a peer who is OPEN is not fetched
 -- 4. a member with no minute means nobody is pinged, whoever opened
 -- 5. ...and that holds when the PROVIDER is the one who opened
 -- 6. no alert while a session is live
@@ -37,15 +37,16 @@ set    role                 = 'provider',
        display_name         = 'Provider068',
        date_of_birth        = (current_date - interval '30 years')::date,
        identity_verified_at = now(),
-       is_available         = true,
-       presence             = 'away'
+       -- CLOSED, because closed is what makes a peer worth fetching now that
+       -- announce_chat_open reads is_available rather than presence (111).
+       -- Assertions 1 and 2 expect the alert to get past the peer gate.
+       is_available         = false
 where  id = 'cc068000-0000-4068-8000-000000000002';
 
 update public.profiles
 set    display_name      = 'Member068',
        promo_balance     = 500,
-       purchased_balance = 0,
-       presence          = 'away'
+       purchased_balance = 0
 where  id = 'cc068000-0000-4068-8000-000000000001';
 
 select test.accept_current_policies('cc068000-0000-4068-8000-000000000001');
@@ -65,9 +66,9 @@ select is(
   '2. a stranger cannot announce into someone else''s conversation'
 );
 
--- 3. the provider is HERE: nobody needs fetching
+-- 3. the provider is OPEN: nobody needs fetching
 reset role;
-update public.profiles set presence = 'here'
+update public.profiles set is_available = true
 where id = 'cc068000-0000-4068-8000-000000000002';
 
 set local role authenticated;
@@ -76,12 +77,14 @@ set local request.jwt.claims =
 select is(
   public.announce_chat_open((select v from test.fixture where k = 'conv068')) ->> 'reason',
   'peer_present',
-  '3. a peer who is here is not fetched'
+  '3. a peer who is open is not fetched'
 );
 
 -- 4. the member has no minute
 reset role;
-update public.profiles set presence = 'away'
+-- Back to closed, or the peer gate answers before the wallet gate is reached
+-- and assertions 4 through 7 stop testing what they name.
+update public.profiles set is_available = false
 where id = 'cc068000-0000-4068-8000-000000000002';
 update public.profiles set promo_balance = 0, purchased_balance = 0
 where id = 'cc068000-0000-4068-8000-000000000001';

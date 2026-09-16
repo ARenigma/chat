@@ -2319,15 +2319,23 @@ describe('the chat restyle is wired, not just drawn', () => {
   });
 
   it('drops the derived socket presence the settled decision rejects', () => {
-    // Realtime presence answers "is their app in the foreground", which is a
-    // question nobody agreed to have answered about them. Presence is
-    // user-controlled: `peer_available` is the provider's own toggle and
-    // `peer_last_active_at` is null unless they turned presence on.
-    // Comments stripped: the note explaining what the header no longer claims
-    // names the selector it stopped reading, so a negative assertion over the raw
-    // source fails on its own documentation.
+    /*
+     * Realtime presence answers "is their app in the foreground", which is a
+     * question nobody agreed to have answered about them. The reading has to
+     * come from something the peer SET.
+     *
+     * That rule is unchanged and is now simpler to state: the one input is
+     * `peer_available`, the provider's own master switch. It used to also cite
+     * `peer_last_active_at`, which was never a good witness for it, because
+     * `touch_presence()` is never called from the client and the column has
+     * never been written by anything.
+     *
+     * Comments stripped: the note explaining what the header no longer claims
+     * names the selector it stopped reading, so a negative assertion over raw
+     * source would fail on its own documentation.
+     */
     expect(chatCode).not.toContain('selectPeerOnline');
-    expect(chatCode).toContain('peer_last_active_at');
+    expect(chatCode).toContain('peer_available');
   });
 
   it('wires swipe-to-reply and on-bubble reactions on both sides', () => {
@@ -3232,8 +3240,11 @@ describe('iOS list separators are drawn the way iOS draws them', () => {
      * be dropped, and the invariant this test protects — that the row says in
      * words where it goes — holds in every state.
      */
+    // The fallback follows the offered set now, not the literal 'Chat': a
+    // provider who takes video only was still being labelled Chat, which is the
+    // same false affordance one layer down. See providerRow.test.ts.
     expect(row).toContain(
-      "const ctaLabel = away ? 'Notify' : canCall ? 'Call' : 'Chat'",
+      "const ctaLabel = away ? 'Notify' : canCall ? 'Call' : offeredVerb",
     );
     // Still live elsewhere, which is what made it worth adding in the first place.
     const chevronUsers = walk(join(ROOT, 'src'))
@@ -3766,12 +3777,33 @@ describe('presence is declared, and PII is not client-writable', () => {
 });
 
 describe('no screen reads a listing switch as a presence dot', () => {
-  // The bug 012 closes, and the only way to keep it closed is to have one
-  // reading of presence rather than four. `is_available` means "listed for
-  // discovery and open to new conversations"; rendering it as a dot said
-  // somebody was there when it only meant they wanted work, and
-  // `peer_available` is false for a member peer by construction, so the
-  // provider's inbox hardcoded the dot off because no value could ever be true.
+  /*
+   * 012 SAID THE DOT MUST NOT COME FROM is_available. IT NOW DOES, ON PURPOSE.
+   *
+   * The original bug: `is_available` meant "listed for discovery and open to
+   * new conversations" while `presence` meant "I am here right now". Rendering
+   * the first as a dot said somebody was there when it only meant they wanted
+   * work. Four screens each derived that dot separately, so they disagreed.
+   *
+   * What changed on 2026-09-17 is not the rule, it is the number of concepts.
+   * Amit collapsed availability to ONE switch: master off reads offline
+   * everywhere and routes the member to Notify, master on reads online. The
+   * presence chooser is gone from Settings and nothing writes the column, so
+   * there is no longer a second meaning for the dot to be confused with. The
+   * separation 012 introduced existed to keep two concepts apart; with one
+   * concept left it has nothing to separate.
+   *
+   * THE INVARIANT THIS BLOCK ACTUALLY DEFENDS IS UNCHANGED AND STILL LOAD
+   * BEARING: there is exactly ONE reading, `readPresence`, and every dot goes
+   * through it. That is what stopped the four screens disagreeing, and it is
+   * what these assertions check. What is forbidden is a RAW column read at the
+   * JSX, not the column itself.
+   *
+   * `last_active_at` is not part of the reading any more either, and could not
+   * honestly have been: `touch_presence()` was never once called from the
+   * client, so every "Last seen" this app rendered was formatting a column
+   * nobody had written.
+   */
   const sites = [
     'src/components/ProviderRow.tsx',
     // ProviderCard renders the same dot for the Favourites tab; must stay on the
@@ -3785,19 +3817,35 @@ describe('no screen reads a listing switch as a presence dot', () => {
   it.each(sites)('derives the dot in %s from readPresence', file => {
     const source = withoutComments(read(file));
     expect(source).toContain('readPresence(');
-    expect(source).not.toMatch(/online=\{[^}]*is_available/);
-    expect(source).not.toMatch(/online=\{[^}]*peer_available/);
+    /*
+     * A dot may read the availability column only THROUGH the one reading. A
+     * bare `online={provider.is_available}` is the 012 bug returning by a
+     * different door: it would light without going through the function that
+     * decides what an unloaded profile means, and an unknown must never light.
+     */
+    for (const m of source.matchAll(/online=\{([^}]*)\}/g)) {
+      const expr = m[1] ?? '';
+      if (/is_available|peer_available/.test(expr)) {
+        expect(expr).toContain('readPresence(');
+      }
+    }
     // The provider's inbox is the specific case: `online={false}` was not
-    // laziness, it was the only honest value available before `peer_presence`.
+    // laziness, it was the only honest value available before the peer's
+    // availability was published on the row.
     expect(source).not.toContain('online={false}');
   });
 
-  it('no longer reads the column 012 removed', () => {
-    // Comments stripped: three of these files carry a note naming the column and
-    // why it was wrong, which is precisely the documentation a negative assertion
-    // over raw source would fail on.
+  it('keeps the last-seen stamp out of the reading', () => {
+    /*
+     * `last_active_at` / `peer_last_active_at` are no longer inputs. Nothing has
+     * ever written them (touch_presence is never called from the client), so a
+     * "Last seen 14:32" was a specific claim made out of an unset column. If a
+     * future change starts maintaining them, this is the assertion to revisit
+     * deliberately rather than the one to quietly delete.
+     */
     for (const file of sites) {
-      expect(withoutComments(read(file))).not.toContain('peer_available');
+      const source = withoutComments(read(file));
+      expect(source).not.toMatch(/readPresence\([^)]*last_active_at/);
     }
   });
 
@@ -3826,8 +3874,10 @@ describe('no screen reads a listing switch as a presence dot', () => {
     const detail = withoutComments(
       read('src/screens/ProviderDetailScreen.tsx'),
     );
+    // One input now: the provider's master switch. See the block header above
+    // for why 012's separation was collapsed deliberately.
     expect(detail).toMatch(
-      /const away =\s*provider !== null && !readPresence\(provider\.presence, provider\.last_active_at\)\.here/,
+      /const away = provider !== null && !readPresence\(provider\.is_available\)\.here/,
     );
     const actions = detail.slice(
       detail.indexOf('<View style={styles.actions}>'),
@@ -3857,16 +3907,25 @@ describe('no screen reads a listing switch as a presence dot', () => {
     expect(awayBranch).not.toContain('onPress={onChat}');
     expect(awayBranch).not.toMatch(/glyph="(call|video)"/);
     expect(awayBranch).not.toMatch(/onPress=\{on(Audio|Video)\}/);
-    // The three-up row is intact for a provider who IS here — this is a branch,
-    // not a deletion, and the kill switches still gate their own channels.
+    /*
+     * The row is intact for a provider who IS here, and BOTH gates still hold,
+     * but they now sit in different places, which is the point.
+     *
+     * The provider's own channel switch decides whether the action EXISTS:
+     * Amit chose "show only offered actions" over three buttons with two dead,
+     * so a provider who takes voice only renders one button rather than one
+     * live and two greyed. The admin kill switch still decides whether an
+     * action that exists is PRESSABLE, because "video chats are taking a short
+     * break" is an operator stop and has to read as temporary, not as a
+     * provider who does not offer video.
+     */
     expect(hereBranch).toContain('onPress={onAudio}');
     expect(hereBranch).toContain('onPress={onVideo}');
-    expect(hereBranch).toContain(
-      'enabled={voiceCallsEnabled && provider.audio_enabled}',
-    );
-    expect(hereBranch).toContain(
-      'enabled={videoCallsEnabled && provider.video_enabled}',
-    );
+    expect(hereBranch).toContain('{provider.audio_enabled ? (');
+    expect(hereBranch).toContain('{provider.chat_enabled ? (');
+    expect(hereBranch).toContain('{provider.video_enabled ? (');
+    expect(hereBranch).toContain('enabled={voiceCallsEnabled}');
+    expect(hereBranch).toContain('enabled={videoCallsEnabled}');
   });
 
   it('says the same thing on the card and on Home, from the same test', () => {
@@ -3943,41 +4002,39 @@ describe('no screen reads a listing switch as a presence dot', () => {
   });
 });
 
-describe('one presence control, writing both columns', () => {
+describe('availability is the one control, and presence is gone', () => {
   const provider = read('src/api/provider.ts');
 
-  it('writes the stamp gate along with the declaration', () => {
-    // 011 stores `presence_visible` as the gate on the last-seen stamp and 012
-    // adds `presence` as the declared state. Independent in the schema on
-    // purpose, but offering two switches for one thought is not a design.
-    expect(provider).toContain(
-      ".update({ presence, presence_visible: presence !== 'hidden' })",
+  it('has no presence control left to disagree with the master switch', () => {
+    /*
+     * REMOVED 2026-09-17, on Amit's instruction. This block used to assert the
+     * here / away / hidden chooser existed, wrote `presence` and
+     * `presence_visible` together, and was offered to both roles in one place.
+     *
+     * Availability is one concept now. The provider's master switch on the You
+     * tab says whether they are open; a second control saying nearly the same
+     * thing was the redundancy he asked to remove, and it was the more
+     * dangerous of the two because `presence` defaults to 'hidden' and nothing
+     * ever wrote it after onboarding. The assertions are inverted rather than
+     * deleted so the chooser cannot return without someone reading why it went.
+     *
+     * The COLUMN is deliberately still there, unread, so profiles.presence,
+     * profiles.presence_visible, touch_presence() and the presence_choice enum
+     * can be dropped in a later cleanup rather than in the change that stopped
+     * reading them. Migration 111 is what moved the last reader, the Notify
+     * gate in announce_chat_open, off it.
+     */
+    // Comments stripped on both: each file carries a tombstone naming what left
+    // and why, which is exactly the documentation a negative assertion over raw
+    // source fails on. The same trap this suite documents two blocks above.
+    const settings = withoutComments(read('src/screens/SettingsSheet.tsx'));
+    expect(settings).not.toContain('PRESENCE_OPTIONS');
+    expect(settings).not.toContain('useSetPresence');
+    expect(settings).not.toContain('presence-${option.value}');
+    expect(withoutComments(provider)).not.toContain('useSetPresence');
+    expect(withoutComments(provider)).not.toContain(
+      "presence_visible: presence !== 'hidden'",
     );
-  });
-
-  it('tracks the change under a name the database allows', () => {
-    // `guard_event_shape` rejects an unknown name outright and rejects any prop
-    // key matching /(body|message|content|text|detail|email|phone|name|token)/i,
-    // so the prop is `choice` and never `name`.
-    expect(provider).toContain(
-      "track('presence_changed', { choice: presence })",
-    );
-    expect(
-      read('supabase/migrations/011_reactions_replies_voice_calls.sql'),
-    ).toContain("'presence_changed'");
-  });
-
-  it('offers the choice to both roles in the same place', () => {
-    // App.tsx mounts SettingsSheet on the provider tree and the member tree, so
-    // one control covers both. Presence is not a provider feature.
-    const settings = read('src/screens/SettingsSheet.tsx');
-    expect(settings).toContain('PRESENCE_OPTIONS.map');
-    expect(settings).toContain('useSetPresence()');
-    // The testID is built from the option, so the rows cannot exist without one
-    // and cannot drift from the enum. That PRESENCE_OPTIONS is exhaustive over
-    // `PresenceChoice` is asserted in presence.test.ts, where it can be checked
-    // against the type rather than against a string.
-    expect(settings).toContain('testID={`presence-${option.value}`}');
   });
 
   it('stops the availability card claiming presence or the word hidden', () => {
@@ -4993,12 +5050,16 @@ describe('independent call controls', () => {
     expect(chat).toContain(
       'videoCallsEnabled && (provider?.video_enabled ?? true)',
     );
-    expect(detail).toContain(
-      'enabled={voiceCallsEnabled && provider.audio_enabled}',
-    );
-    expect(detail).toContain(
-      'enabled={videoCallsEnabled && provider.video_enabled}',
-    );
+    /*
+     * On the profile the provider's half of the pair became conditional
+     * RENDERING rather than a disabled prop (2026-09-17). Both halves still
+     * hold: the channel column decides whether the button is there at all, the
+     * kill switch decides whether it can be pressed.
+     */
+    expect(detail).toContain('{provider.audio_enabled ? (');
+    expect(detail).toContain('{provider.video_enabled ? (');
+    expect(detail).toContain('enabled={voiceCallsEnabled}');
+    expect(detail).toContain('enabled={videoCallsEnabled}');
   });
 
   it('enforces both controls inside start_call, not only in the UI', () => {
@@ -5578,13 +5639,19 @@ describe('a provider offers the channels they choose, and at least one', () => {
     const detail = withoutComments(
       read('src/screens/ProviderDetailScreen.tsx'),
     );
-    expect(detail).toContain('enabled={provider.chat_enabled}');
-    expect(detail).toContain(
-      'enabled={voiceCallsEnabled && provider.audio_enabled}',
-    );
-    expect(detail).toContain(
-      'enabled={videoCallsEnabled && provider.video_enabled}',
-    );
+    /*
+     * The provider's own switch decides whether the action is RENDERED and the
+     * kill switch decides whether a rendered action is pressable. Amit chose
+     * "show only offered actions" over three buttons with two greyed out, so a
+     * channel the provider does not offer has no control at all, and the line
+     * under the name says which set is on.
+     */
+    expect(detail).toContain('{provider.chat_enabled ? (');
+    expect(detail).toContain('{provider.audio_enabled ? (');
+    expect(detail).toContain('{provider.video_enabled ? (');
+    expect(detail).toContain('enabled={voiceCallsEnabled}');
+    expect(detail).toContain('enabled={videoCallsEnabled}');
+    expect(detail).toContain('offeredChannelsLine(');
     // A kill switch and a provider's choice are different refusals with
     // different remedies, so they read differently.
     expect(detail).toContain("', not offered'");

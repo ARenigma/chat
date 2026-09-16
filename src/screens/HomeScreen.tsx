@@ -309,7 +309,7 @@ export function HomeScreen({
    */
   const topPicks = useMemo<ProviderSummary[]>(() => {
     const score = (p: ProviderSummary) =>
-      (readPresence(p.presence, p.last_active_at).here ? 1000 : 0) + (p.rating_avg ?? 0);
+      (readPresence(p.is_available).here ? 1000 : 0) + (p.rating_avg ?? 0);
     return [...directory].sort((a, b) => score(b) - score(a)).slice(0, TOP_PICKS);
   }, [directory]);
 
@@ -998,10 +998,7 @@ export function HomeScreen({
         visible={potdVisible && featured !== null}
         name={featured?.display_name ?? 'Someone for you'}
         avatarUri={featured?.avatar_url ?? null}
-        online={
-          featured !== null &&
-          readPresence(featured.presence, featured.last_active_at).here
-        }
+        online={featured !== null && readPresence(featured.is_available).here}
         onClose={dismissPotd}
         onChat={chatFromPotd}
         testID="potd-sheet"
@@ -1047,7 +1044,10 @@ const RailItem = memo(function ({
     ? Number(chat.unread_count_member)
     : Number(chat.unread_count_provider);
   const unread = unreadCount > 0;
-  const presence = readPresence(chat.peer_presence, chat.peer_last_active_at);
+  // A member has no availability switch, so `peer_available` is false for one by
+  // construction and passing it through would dot every member's face as away.
+  // Null is the honest argument: nothing published, so nothing rendered.
+  const presence = readPresence(chat.peer_is_provider ? chat.peer_available : null);
   const handlePress = useCallback(() => onPress(chat.peer_id), [onPress, chat.peer_id]);
   const handleLongPress = useCallback(() => {
     hostRef.current?.measureInWindow((x, y, width, height) => {
@@ -1125,7 +1125,7 @@ function FeaturedCard({
     provider.age !== null
       ? ` ${letter === null ? '' : `${letter}-`}${provider.age}`
       : '';
-  const presence = readPresence(provider.presence, provider.last_active_at);
+  const presence = readPresence(provider.is_available);
   const tagline =
     provider.headline && provider.headline !== ''
       ? provider.headline
@@ -1162,9 +1162,8 @@ function FeaturedCard({
   /*
    * AWAY, AND WHAT THE CARD OFFERS BECAUSE OF IT.
    *
-   * The same `!presence.here` reading the directory row uses (ProviderRow.tsx:431)
-   * — `hidden` included, because `readPresence` never renders an unknown as
-   * present. This hero has never carried a Call, so there is nothing to take
+   * The same `!presence.here` reading the directory row uses
+   * (ProviderRow.tsx:431). This hero has never carried a Call, so there is nothing to take
    * away; what it was missing is the other half of the rule, which is that an
    * away provider should be OFFERED the one action that works. The dot slot
    * says "here now" when they are; when they are not, it names what a tap leads

@@ -5,7 +5,7 @@ import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ProviderSummary } from '../lib/database.types';
 import { genderLetter, initialOf } from '../lib/display';
-import { presenceForSpeech, readPresence } from '../lib/presence';
+import { offeredChannelsLine, presenceForSpeech, readPresence } from '../lib/presence';
 import { fadeSwapFast, rowIn } from '../theme/motion';
 import { minutesUntil, useNotifyProvider } from '../api/sessions';
 import { Avatar } from './Avatar';
@@ -399,14 +399,16 @@ function ProviderRowView({
   const letter = genderLetter(provider.gender);
 
   /**
-   * The dot and the trailing line both come from `presence` now. They used to
-   * come from `is_available`, which is the provider's *listing* switch: it means
-   * "listed for discovery and open to new conversations", so a row said somebody
-   * was there when it only meant they wanted work. Migration 012 split the two,
-   * and `readPresence` is the one reading of it so this row, the inbox and the
-   * chat header cannot disagree.
+   * The dot and the trailing line both come from `is_available` again, as of
+   * 2026-09-17. They came from it before migration 012 as well, and that was
+   * wrong then for a reason that has since been removed rather than forgotten:
+   * `presence` was a second, separate declaration, so reading the listing switch
+   * as the dot said somebody was there when it only meant they wanted work.
+   * There is no second declaration now — see src/lib/presence.ts — and
+   * `readPresence` is still the one reading, so this row, the inbox and the chat
+   * header cannot disagree.
    */
-  const presence = readPresence(provider.presence, provider.last_active_at);
+  const presence = readPresence(provider.is_available);
 
   /*
    * The CTA calls, unless this provider does not take calls.
@@ -439,7 +441,39 @@ function ProviderRowView({
    */
   const away = !presence.here;
   const canCall = provider.audio_enabled && onCall !== undefined && !away;
-  const ctaLabel = away ? 'Notify' : canCall ? 'Call' : 'Chat';
+  /*
+   * WHICH CHANNEL THE ONE BUTTON NAMES, when it cannot dial.
+   *
+   * The row has a single CTA and the provider may offer any of seven channel
+   * sets (064's CHECK forbids the eighth), so "Chat" was a false affordance on
+   * anyone who had switched chat off — the same class as the Call it already
+   * guards. The verb names a channel they actually offer, and a tap that is not
+   * a dial lands on `onPress`, which is the profile: the one surface that can
+   * render the whole offered set.
+   */
+  const offeredVerb = provider.chat_enabled
+    ? 'Chat'
+    : provider.audio_enabled
+      ? 'Call'
+      : 'Video';
+  const ctaLabel = away ? 'Notify' : canCall ? 'Call' : offeredVerb;
+  const ctaSpoken =
+    ctaLabel === 'Call'
+      ? `Call ${provider.display_name}`
+      : ctaLabel === 'Video'
+        ? `Video call ${provider.display_name}`
+        : `Message ${provider.display_name}`;
+  /*
+   * "Voice calls only" and the rest, in the slot directly under the name.
+   *
+   * It TAKES that slot rather than adding a line, and the trade is deliberate:
+   * every dimension of this card is a promise to FlashList
+   * (`PROVIDER_ROW_HEIGHT`), a sixth line would break it for exactly the
+   * providers who have a limit to declare, and what a member can do with
+   * somebody outranks the topics they cover on a card whose button has already
+   * narrowed to one verb.
+   */
+  const channelLine = away ? null : offeredChannelsLine(provider);
 
   /*
    * THE BELL NOW RINGS FROM HERE.
@@ -466,6 +500,7 @@ function ProviderRowView({
   const accessibility = [
     `${provider.display_name}${provider.age !== null ? `, ${provider.age}` : ''}`,
     presenceForSpeech(presence),
+    channelLine,
     category,
     tags.length > 0 ? tags.join(', ') : headline,
     languages === '' ? null : `speaks ${languages}`,
@@ -599,8 +634,11 @@ function ProviderRowView({
               changed from chips to a comma join. The category chip on the price
               line stays filled per its own instruction. */}
           <View style={styles.tagLine} testID={`provider-tags-${provider.id}`}>
-            <Text allowFontScaling numberOfLines={1} style={styles.secondary}>
-              {tags.length > 0 ? tags.join(', ') : headline}
+            <Text
+              allowFontScaling
+              numberOfLines={1}
+              style={channelLine !== null ? styles.channelLine : styles.secondary}>
+              {channelLine ?? (tags.length > 0 ? tags.join(', ') : headline)}
             </Text>
           </View>
 
@@ -672,9 +710,7 @@ function ProviderRowView({
                       }`
                     : away
                       ? `Notify ${provider.display_name} that you want to chat`
-                      : canCall
-                        ? `Call ${provider.display_name}`
-                        : `Message ${provider.display_name}`
+                      : ctaSpoken
                 }
                 press="none"
                 highlight="dim"
@@ -846,6 +882,16 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   secondary: {
     ...TOKENS.typography.bodySmall,
     color: t.color.text.secondary,
+  },
+  /*
+   * The channel limit, in the tag line's slot and a step louder than it. It is
+   * standing in for facts a member can skim past; this one changes what the
+   * button beside it will do, so it takes the primary ink the name has rather
+   * than the grey the tags and languages share.
+   */
+  channelLine: {
+    ...TOKENS.typography.bodySmall,
+    color: t.color.text.primary,
   },
   priceLine: {
     flexDirection: 'row',

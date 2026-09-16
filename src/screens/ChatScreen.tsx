@@ -709,19 +709,25 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
    *
    * It used to be `selectPeerOnline`, fed by a Realtime presence channel, which
    * answers "is their app in the foreground": a question nobody agreed to have
-   * answered about them, and one that contradicts the settled decision that
-   * presence is user-controlled. It was then `peer_available`, which was honest
-   * about consent and wrong about meaning, because that column is the provider's
-   * *listing* switch and is false for a member peer by construction. So the
-   * provider tree's header could never show a member as present.
+   * answered about them. It was then `peer_presence`, the declaration 012 added,
+   * and since 2026-09-17 it is the master switch again — the declaration is
+   * gone rather than merged, which is what makes that honest (src/lib/presence.ts).
    *
-   * `peer_presence` is the declared state and is published for either role. The
-   * directory fallback covers a conversation opened from the rail before the
-   * first message creates a thread row.
+   * THE MEMBER SIDE STILL PUBLISHES NOTHING, and this is the same fact 012 was
+   * reaching for: a member has no listing switch, so `peer_available` is false
+   * for one by construction. Passing that through would tell a provider that the
+   * person they are talking to is away, which is a claim about a human being
+   * that nobody made. Null instead, and the header renders the name alone.
+   *
+   * The directory fallback covers a conversation opened from the rail before the
+   * first message creates a thread row, and is a provider by definition.
    */
   const presence = readPresence(
-    peerThread?.peer_presence ?? provider?.presence,
-    peerThread?.peer_last_active_at ?? provider?.last_active_at,
+    peerThread !== undefined
+      ? peerThread.peer_is_provider
+        ? peerThread.peer_available
+        : null
+      : provider?.is_available,
   );
 
   /**

@@ -19,7 +19,7 @@ import { useBackBarrier } from '../lib/backGuard';
 import type { ProviderPhoto, ProviderSummary } from '../lib/database.types';
 import { avatarImageSource } from '../lib/clayAvatars';
 import { genderLetter, initialOf } from '../lib/display';
-import { presenceForSpeech, readPresence } from '../lib/presence';
+import { offeredChannelsLine, presenceForSpeech, readPresence } from '../lib/presence';
 import { tick } from '../lib/haptics';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { contentColumnWidth } from '../lib/windowSize';
@@ -161,24 +161,24 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
    * AWAY OFFERS ONE ACTION, AND IT IS NOT A CALL.
    *
    * The same rule the directory row got on 2026-09-13 (ProviderRow.tsx:413),
-   * from the same reading: `readPresence` is the one interpretation of the
-   * `presence` / `last_active_at` pair, so this screen and the card the member
-   * tapped to reach it cannot disagree about who is here. A row that said
-   * "Notify" must not open a profile offering Call and Video — that is the
-   * false-affordance class twice over, since the tap would ring a phone nobody
-   * is holding and `start_call` would refuse it anyway.
+   * from the same reading: `readPresence` is the one interpretation of
+   * `is_available`, so this screen and the card the member tapped to reach it
+   * cannot disagree about who is here. A row that said "Notify" must not open a
+   * profile offering Call and Video — that is the false-affordance class twice
+   * over, since the tap would ring a phone nobody is holding and `start_call`
+   * would refuse it anyway.
    *
-   * `hidden` lands in this branch too, by `readPresence`'s own fail-closed
-   * rule: an unknown is never rendered as present, so it is never offered a
-   * call either.
+   * CLOSED OUTRANKS THE CHANNEL SET, which is the one ordering rule between
+   * this branch and the gating below it: a provider who has shut the master
+   * switch is offline whatever their three toggles say, so the branch is taken
+   * first and the channels are never consulted inside it.
    *
    * The Notify action needs no new endpoint. It opens the conversation, and
    * opening it is what notifies them: `announce_chat_open` (migration 068)
    * pushes to the peer precisely when they are away, the member has a minute,
    * and no session is running.
    */
-  const away =
-    provider !== null && !readPresence(provider.presence, provider.last_active_at).here;
+  const away = provider !== null && !readPresence(provider.is_available).here;
   /*
    * `peer_present` came back from the doorbell: they are here NOW, between the
    * directory read this screen is drawn from and the tap. Offering to fetch
@@ -272,37 +272,56 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
                 />
               </Animated.View>
             ) : (
+              /* ONLY WHAT IS OFFERED IS DRAWN, and this is a change of kind
+                 rather than of degree: these three used to render always and go
+                 disabled, which is M3's vocabulary for "this control exists and
+                 you may not use it yet" and was answering a question nobody
+                 asked. Amit, 2026-09-17: show only the offered actions, plus a
+                 line naming the limit. The line is in the hero, under the name.
+
+                 `enabled` keeps only the OPERATOR's kill switches now. The two
+                 states it used to conflate are different facts — "we have not
+                 shipped this" is ours and stays as a dimmed button with
+                 "coming soon", "she does not do this" is hers and is now an
+                 absence — which is why `offered` survives on the away branch
+                 above and has nothing left to say down here.
+
+                 064's `profiles_at_least_one_channel` is what keeps this row
+                 from rendering empty. */
               <>
-                <ActionButton
-                  channel="audio"
-                  kind="primary"
-                  glyph="call"
-                  rate={audioRate}
-                  enabled={voiceCallsEnabled && provider.audio_enabled}
-                  offered={provider.audio_enabled}
-                  onPress={onAudio}
-                  label={`Call ${provider.display_name}`}
-                />
-                <ActionButton
-                  channel="chat"
-                  kind="outline"
-                  glyph="chat"
-                  rate={chatRate}
-                  enabled={provider.chat_enabled}
-                  offered={provider.chat_enabled}
-                  onPress={onChat}
-                  label={`Message ${provider.display_name}`}
-                />
-                <ActionButton
-                  channel="video"
-                  kind="dark"
-                  glyph="video"
-                  rate={videoRate}
-                  enabled={videoCallsEnabled && provider.video_enabled}
-                  offered={provider.video_enabled}
-                  onPress={onVideo}
-                  label={`Video call ${provider.display_name}`}
-                />
+                {provider.audio_enabled ? (
+                  <ActionButton
+                    channel="audio"
+                    kind="primary"
+                    glyph="call"
+                    rate={audioRate}
+                    enabled={voiceCallsEnabled}
+                    onPress={onAudio}
+                    label={`Call ${provider.display_name}`}
+                  />
+                ) : null}
+                {provider.chat_enabled ? (
+                  <ActionButton
+                    channel="chat"
+                    kind="outline"
+                    glyph="chat"
+                    rate={chatRate}
+                    enabled
+                    onPress={onChat}
+                    label={`Message ${provider.display_name}`}
+                  />
+                ) : null}
+                {provider.video_enabled ? (
+                  <ActionButton
+                    channel="video"
+                    kind="dark"
+                    glyph="video"
+                    rate={videoRate}
+                    enabled={videoCallsEnabled}
+                    onPress={onVideo}
+                    label={`Video call ${provider.display_name}`}
+                  />
+                ) : null}
               </>
             )}
           </View>
@@ -478,7 +497,10 @@ function Hero({
   const theme = useTheme();
   const { width: windowWidth } = useWindowDimensions();
   const gradient = `linear-gradient(150deg, ${theme.color.bg.accent} 0%, ${theme.color.bg.accentStrong} 100%)`;
-  const presence = readPresence(provider.presence, provider.last_active_at);
+  const presence = readPresence(provider.is_available);
+  // Suppressed while they are closed, because the actions below have already
+  // collapsed to Notify and a limit on a set nobody can reach says nothing.
+  const channelLine = presence.here ? offeredChannelsLine(provider) : null;
   // "F-28" here too, so the hero, the card and this header agree on how a
   // person is labelled. See `genderLetter`.
   const letter = genderLetter(provider.gender);
@@ -666,6 +688,13 @@ function Hero({
           </Text>
           {presence.here ? <View style={styles.heroDot} /> : null}
         </View>
+        {/* Under the name and above their own words, because it qualifies the
+            row of buttons below rather than describing the person. */}
+        {channelLine !== null ? (
+          <Text allowFontScaling numberOfLines={1} style={styles.heroChannels}>
+            {channelLine}
+          </Text>
+        ) : null}
         {provider.headline && provider.headline !== '' ? (
           <Text allowFontScaling numberOfLines={1} style={styles.heroTagline}>
             {provider.headline}
@@ -674,7 +703,13 @@ function Hero({
         <Text
           allowFontScaling
           style={styles.heroMeta}
-          accessibilityLabel={`${metaParts.join(', ')}, ${presenceForSpeech(presence)}`}>
+          accessibilityLabel={[
+            ...metaParts,
+            presenceForSpeech(presence),
+            channelLine,
+          ]
+            .filter(Boolean)
+            .join(', ')}>
           {metaParts.join('  ·  ')}
         </Text>
         {/* M3 AssistChips for languages — same native chip as the directory
@@ -964,6 +999,13 @@ const makeStyles = (t: Theme) =>
     heroTagline: {
       ...TOKENS.typography.bodyLarge,
       color: 'rgba(255,255,255,0.95)',
+    },
+    // Pure white, the only line over this photo that gets it: the name is the
+    // subject and this is the condition on everything below, so it outranks the
+    // tagline's 95% and the meta line's 82%.
+    heroChannels: {
+      ...TOKENS.typography.labelLargeEmphasized,
+      color: '#FFFFFF',
     },
     heroMeta: {
       ...TOKENS.typography.bodyMedium,

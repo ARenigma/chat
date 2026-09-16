@@ -149,6 +149,7 @@ const MIGRATIONS = [
   'supabase/migrations/108_telemetry_call_and_perf_events.sql',
   'supabase/migrations/109_call_rate_limit_is_configurable.sql',
   'supabase/migrations/110_a_message_push_names_the_member_who_sent_it.sql',
+  'supabase/migrations/111_open_alerts_read_availability_not_presence.sql',
 ];
 
 /**

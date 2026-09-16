@@ -19,7 +19,6 @@ import { ENV } from '../lib/env';
 import type {
   Gender,
   MyApplication,
-  PresenceChoice,
   Profile,
   ProviderEarnings,
   ProviderPhoto,
@@ -270,16 +269,6 @@ export function useCompleteProviderOnboarding() {
   });
 }
 
-/**
- * The availability toggle. `is_available` is an ordinary profile column a
- * provider owns, deliberately not guarded, because being reachable or not is the
- * one thing about their own listing they should control instantly.
- *
- * It is the LISTING switch and nothing else, as of 012: listed for discovery and
- * open to new conversations. It used to double as the presence dot in four
- * places, which meant a provider who wanted work but had put the phone down
- * still read as here. Presence is `useSetPresence` below.
- */
 /** The three channel switches, as the provider sets them (migration 064). */
 export interface ProviderChannels {
   chat_enabled: boolean;
@@ -362,6 +351,16 @@ export function useSetProviderExpertise() {
   });
 }
 
+/**
+ * The master switch. `is_available` is an ordinary profile column a provider
+ * owns, deliberately not guarded, because being reachable or not is the one
+ * thing about their own listing they must be able to change instantly.
+ *
+ * It was the LISTING switch and nothing else between 012 and 2026-09-17, with
+ * `presence` declared separately. It is now both: off is offline everywhere and
+ * the Notify route, on is online offering the channels in `useSetChannels`. See
+ * src/lib/presence.ts for why collapsing the two is not the overload 012 fixed.
+ */
 export function useSetAvailability() {
   const queryClient = useQueryClient();
   const setNotice = useStore(s => s.setNotice);
@@ -385,6 +384,11 @@ export function useSetAvailability() {
       tick();
       void queryClient.invalidateQueries({ queryKey: keys.profile });
       void queryClient.invalidateQueries({ queryKey: keys.providers });
+      // The inbox dot reads `conversation_summaries.peer_available` since
+      // 2026-09-17, so this switch now moves a list the picker it replaced used
+      // to move. It only refreshes the caller's own copy, but a provider who
+      // just closed up is usually looking at their own inbox when they do it.
+      void queryClient.invalidateQueries({ queryKey: keys.conversationList });
     },
     onError: () => {
       errorTick();
@@ -393,59 +397,16 @@ export function useSetAvailability() {
   });
 }
 
-/**
- * Presence, which is a different question from availability and used to be the
- * same column.
+/*
+ * `useSetPresence` WAS HERE, and is gone as of 2026-09-17.
  *
- * Both roles get this, which is why it lives beside the provider writes rather
- * than in a module of its own: this file already owns every profile write, and
- * splitting one PATCH across two modules by role would be the only reason to
- * have a second.
- *
- * Two columns, one UPDATE, because there is one decision. Migration 011 stored
- * `presence_visible` as the gate on the last-seen stamp and 012 added `presence`
- * as the declared state; keeping them independent in the schema is right (the
- * stamp has its own guard, and 011's tests pin it), but offering the user two
- * switches for one thought is not. Hidden means publish nothing, so hidden also
- * closes the stamp. `readPresence` ignores a stamp that contradicts a hidden
- * choice anyway, so a half-applied write fails closed rather than leaking.
+ * It wrote `profiles.presence` and `presence_visible` for the Settings picker,
+ * which no longer exists: availability is the master switch and the only
+ * reachability signal anyone declares or reads (src/lib/presence.ts). The
+ * columns, the enum and `touch_presence()` are all still in the schema and are
+ * simply unread — removing the control is not the same as destroying the data,
+ * and dropping them is a later cleanup once this has been live for a while.
  */
-export function useSetPresence() {
-  const queryClient = useQueryClient();
-  const setNotice = useStore(s => s.setNotice);
-
-  return useMutation<void, Error, PresenceChoice>({
-    mutationFn: async presence => {
-      const { data } = await supabase.auth.getUser();
-      const me = data.user?.id;
-      if (me === undefined) {
-        throw new Error('No session');
-      }
-      const { error } = await supabase
-        .from('profiles')
-        .update({ presence, presence_visible: presence !== 'hidden' })
-        .eq('id', me);
-      if (error) {
-        throw new Error(error.message);
-      }
-    },
-    onSuccess: (_void, presence) => {
-      tick();
-      track('presence_changed', { choice: presence });
-      void queryClient.invalidateQueries({ queryKey: keys.profile });
-      void queryClient.invalidateQueries({ queryKey: keys.providers });
-      // The peer's inbox reads `conversation_summaries.peer_presence`, so this is
-      // the one invalidation that is about somebody else's screen rather than
-      // this one. It only refreshes the caller's own copy, but a provider who
-      // just went away is usually looking at their own inbox when they do it.
-      void queryClient.invalidateQueries({ queryKey: keys.conversationList });
-    },
-    onError: () => {
-      errorTick();
-      setNotice('Could not change your presence.');
-    },
-  });
-}
 
 export function useEarnings() {
   return useQuery<ProviderEarnings | null>({

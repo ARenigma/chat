@@ -5,7 +5,7 @@ import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import type { ProviderSummary } from '../lib/database.types';
 import { initialOf } from '../lib/display';
-import { presenceForSpeech, readPresence } from '../lib/presence';
+import { offeredChannelsLine, presenceForSpeech, readPresence } from '../lib/presence';
 import { rowIn } from '../theme/motion';
 import { avatarImageSource } from '../lib/clayAvatars';
 import { Avatar } from './Avatar';
@@ -85,15 +85,14 @@ function ProviderCardView({
   const latency = replyLatency(provider.median_reply_seconds);
 
   // Derives presence the same way ProviderRow and ChatScreen do — one reading
-  // of the two-field pair, so the dot and the availability label cannot disagree.
-  const presence = readPresence(provider.presence, provider.last_active_at);
+  // of the master switch, so the dot and the availability label cannot disagree.
+  const presence = readPresence(provider.is_available);
 
   /*
    * AWAY, AND THE ONE THING THIS CARD OFFERS.
    *
    * `!presence.here`, the same test the directory row applies
-   * (ProviderRow.tsx:431) — `hidden` included, since `readPresence` never
-   * renders an unknown as present.
+   * (ProviderRow.tsx:431).
    *
    * This card has never had a Call or a Video on it, so there is nothing here
    * to withdraw; what it was missing is the other half of the rule. Its body
@@ -104,6 +103,13 @@ function ProviderCardView({
    * stops promising a message to someone who is not there to read it.
    */
   const away = !presence.here;
+  /*
+   * What they are open to, when it is not everything. Suppressed while away
+   * because closed outranks the channel set: there is nothing to do with any of
+   * the three until they come back, and naming a limit on top of that reads as
+   * two refusals.
+   */
+  const channelLine = away ? null : offeredChannelsLine(provider);
 
   // Fact chips: experience (seeded placeholder), top languages, reply latency.
   // Cards have more horizontal room than rows; latency earns a chip here.
@@ -121,6 +127,7 @@ function ProviderCardView({
       ? `Notify ${provider.display_name} that you want to chat`
       : `Message ${provider.display_name}`,
     presenceForSpeech(presence),
+    channelLine,
     provider.rating_count > 0
       ? `rated ${provider.rating_avg?.toFixed(1)} from ${provider.rating_count} reviews`
       : 'no reviews yet',
@@ -168,6 +175,14 @@ function ProviderCardView({
                   <Text style={styles.nameAge}> {provider.age}</Text>
                 ) : null}
               </Text>
+              {/* Directly under the name, above the About snippet: it qualifies
+                  who you are looking at rather than describing them, so it
+                  reads before the paragraph and not after it. */}
+              {channelLine !== null ? (
+                <Text allowFontScaling numberOfLines={1} style={styles.channelLine}>
+                  {channelLine}
+                </Text>
+              ) : null}
               {bodyText != null ? (
                 <Text allowFontScaling numberOfLines={2} style={styles.body}>
                   {bodyText}
@@ -260,6 +275,12 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.bodyMedium,
       color: t.color.text.secondary,
     },
+    // Primary ink against the body's secondary: this line narrows what the card
+    // is offering, so it outranks the provider's own paragraph about themselves.
+    channelLine: {
+      ...TOKENS.typography.labelMediumEmphasized,
+      color: t.color.text.primary,
+    },
     chips: {
       flexDirection: 'row',
       flexWrap: 'wrap',
@@ -343,7 +364,7 @@ function SquareProviderCardView({
 
   const initial = initialOf(provider.display_name);
   const coverSource = avatarImageSource(provider.avatar_url, 300, 300, 85);
-  const presence = readPresence(provider.presence, provider.last_active_at);
+  const presence = readPresence(provider.is_available);
   // Same reading, same test as the portrait card above and as ProviderRow: the
   // badge slot on the cover carries "here now" one way and the one action that
   // works the other. This card opens the PROFILE, where an away provider's only
@@ -351,8 +372,16 @@ function SquareProviderCardView({
   // promising a call the profile no longer offers either.
   const away = !presence.here;
 
-  // Prefer headline for the secondary line; fall back to spoken presence label.
-  const secondaryLine = provider.headline?.trim() || presenceForSpeech(presence);
+  /*
+   * The footer's one line, and the limit takes it when there is one.
+   *
+   * A 165dp square has room for a name and a line; the headline is the
+   * provider's own sentence about themselves and this is what a tap will and
+   * will not lead to, so it goes first. The full-set case is unchanged.
+   */
+  const secondaryLine =
+    (away ? null : offeredChannelsLine(provider)) ??
+    (provider.headline?.trim() || presenceForSpeech(presence));
 
   // Even indices land in the left column; odd in the right.
   const isLeft = index % 2 === 0;

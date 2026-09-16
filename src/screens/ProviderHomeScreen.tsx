@@ -384,7 +384,7 @@ export function ProviderHomeScreen({
             uri={item.peer_avatar_url ?? undefined}
             initial={initialOf(label)}
             size={THREAD_AVATAR}
-            online={readPresence(item.peer_presence, item.peer_last_active_at).here}
+            online={readPresence(item.peer_available).here}
           />
           <View style={styles.rowBody}>
             <View style={styles.rowTop}>
