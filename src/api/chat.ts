@@ -26,6 +26,7 @@ import {
   dequeue,
   enqueue,
   pendingFor,
+  readOutbox,
   recordAttempt,
 } from '../lib/outboxStore';
 import { track } from '../lib/telemetry';
@@ -598,6 +599,216 @@ export function prefetchMessages(qc: QueryClient, conversationId: string): void 
  * screen on the same frame as the keypress. It is settled by whichever comes
  * back first, the RPC response or the Realtime INSERT.
  */
+/**
+ * The setters `sendMessageWith` needs, threaded explicitly rather than read
+ * from hooks — the one thing that makes it callable from `drainAllOutbox`
+ * (2026-09-17 audit, X7), which runs with no component and no conversation
+ * screen mounted at all.
+ */
+interface SendMessageDeps {
+  queryClient: QueryClient;
+  conversationId: string;
+  selfId: string;
+  setSending: (sending: boolean) => void;
+  setBalance: (balance: number) => void;
+  setNotice: (message: string) => void;
+  openRefill: () => void;
+}
+
+/**
+ * The actual send: optimistic row, outbox persistence, the RPC, and settling
+ * either the confirmed row or the failure. Split out of `useSendMessage` so
+ * `drainAllOutbox` (X7) can replay a queued entry for a conversation with no
+ * `ChatScreen` open for it, through the exact same logic a live send uses —
+ * not a second, hand-maintained copy of the idempotency/optimistic-UI rules.
+ */
+async function sendMessageWith(
+  deps: SendMessageDeps,
+  raw: string,
+  replyToId: string | null = null,
+  /*
+   * A REPLAY of an already-queued send, rather than a new one.
+   *
+   * Supplied by `useOutboxReplay`/`drainAllOutbox` when draining the
+   * persisted queue: the nonce and timestamp must be the ORIGINALS, or the
+   * replay is a different message. Reusing the nonce is what makes it safe —
+   * migration 081 collapses it if the first attempt in fact landed.
+   */
+  resume?: { readonly nonce: string; readonly createdAt: string },
+): Promise<boolean> {
+  const { queryClient, conversationId, selfId, setSending, setBalance, setNotice, openRefill } =
+    deps;
+  const body = raw.trim();
+  if (body === '') {
+    return false;
+  }
+  // Providers never pay to reply — balance is a member wallet. A provider at
+  // 0 tokens (the normal state) used to open refill and abort before the RPC,
+  // so accepting a pending chat request by sending never left the device.
+  if (memberPaysInThread(queryClient, conversationId) && !canSend(useStore.getState().balance)) {
+    errorTick();
+    openRefill();
+    return false;
+  }
+
+  tick();
+  const key = keys.messages(conversationId);
+  /*
+   * The idempotency key, and the local row's identity, are the SAME value.
+   *
+   * `pending-${Date.now()}` collided whenever two sends landed in one
+   * millisecond — which is exactly the case that produced two "launch test"
+   * rows 5 ms apart in production. A uuid cannot collide, and reusing it as
+   * the nonce means the retry of a send is provably the same send.
+   */
+  const nonce = resume?.nonce ?? newUuid();
+  const pendingId = `${PENDING_PREFIX}${nonce}`;
+  const optimistic: Message = {
+    id: pendingId,
+    conversation_id: conversationId,
+    sender_id: selfId,
+    body,
+    // Carried on the optimistic row so the quote block renders on the same
+    // frame as the keypress. Without it a reply appears as a plain bubble and
+    // then grows a quote when the server confirms, which is the one place a
+    // reply looks like a bug.
+    reply_to_id: replyToId,
+    // 011 made `body` nullable so a row can carry audio instead. Stating the
+    // voice columns here rather than leaving them off means a voice send path
+    // has to be written, not inherited by accident.
+    voice_path: null,
+    voice_duration_ms: null,
+    voice_peaks: null,
+    // Text send: no attachment. Stated rather than left off for the same
+    // reason as the voice columns, so an image path has to be written.
+    attachment_path: null,
+    attachment_type: null,
+    attachment_width: null,
+    attachment_height: null,
+    // Unknown until the RPC returns; a member's own optimistic row never
+    // gates the timer (that gate reads live PROVIDER messages), so null here
+    // is safe. Filled from the confirmed row below.
+    session_id: null,
+    // A human send is always live; only the server writes automated openers.
+    origin: 'live',
+    // A replay keeps its original timestamp, so a message written before a
+    // crash sorts where it was written rather than jumping to the bottom of
+    // the thread when it finally lands.
+    created_at: resume?.createdAt ?? new Date().toISOString(),
+    read_at: null,
+    edited_at: null,
+    deleted_at: null,
+  };
+
+  queryClient.setQueryData<TranscriptMessage[]>(key, prev =>
+    insertOptimistic(prev ?? [], optimistic),
+  );
+  setSending(true);
+
+  /*
+   * Persist the intent BEFORE the request. That ordering is the whole
+   * mechanism, and it is Telegram's: a row at `send_state = 1` exists
+   * before the network is touched, so a process kill in the window between
+   * tapping send and the server answering loses nothing
+   * (MessagesStorage.java:551, replayed from ApplicationLoader.java:259).
+   *
+   * Safe to replay because the nonce goes with it — see `lib/outbox.ts`.
+   */
+  if (resume === undefined) {
+    enqueue({
+      nonce,
+      conversationId,
+      body,
+      replyToId: replyToId ?? null,
+      createdAt: optimistic.created_at,
+      attempts: 1,
+    });
+  } else {
+    // Already queued; count the attempt instead of re-adding it, so the
+    // replay cap in `useOutboxReplay`/`drainAllOutbox` can actually be reached.
+    recordAttempt(nonce);
+  }
+
+  const { data, error } = await supabase.rpc('send_message_idempotent', {
+    p_client_nonce: nonce,
+    p_conversation_id: conversationId,
+    p_body: body,
+    p_reply_to_id: replyToId,
+  });
+  setSending(false);
+
+  const result = sendResultFrom(data, error);
+
+  if (result === null || !result.success) {
+    /*
+     * The bubble STAYS, marked failed. It used to be spliced out, which
+     * meant the member watched their message vanish and had to retype it.
+     *
+     * The outbox entry stays too — but only for a failure that retrying
+     * could plausibly fix. A refusal (blocked, rate limited, no balance)
+     * would replay forever against a server that will keep saying no, so
+     * those are dropped from the queue and left on screen as failed.
+     */
+    const worthRetrying = result === null || result.error === undefined;
+    if (!worthRetrying) {
+      dequeue(nonce);
+    }
+    queryClient.setQueryData<TranscriptMessage[]>(key, prev =>
+      markFailed(prev ?? [], pendingId),
+    );
+    const code = result?.error;
+    // The rejection *reason* is the signal worth watching: a spike in
+    // BLOCKED or RATE_LIMITED is an abuse signal, not a bug report.
+    track('send_rejected', { reason: code ?? 'network' });
+    setNotice(code !== undefined ? NOTICE[code] : 'Could not send. Check your connection.');
+    errorTick();
+    if (code === 'INSUFFICIENT_BALANCE') {
+      openRefill();
+    }
+    // The balance may have moved for reasons unrelated to this send.
+    void queryClient.invalidateQueries({ queryKey: keys.profile });
+    return false;
+  }
+
+  const confirmed: Message | null =
+    result.message_id !== undefined && result.created_at !== undefined
+      ? {
+          id: result.message_id,
+          conversation_id: conversationId,
+          sender_id: selfId,
+          body,
+          reply_to_id: replyToId,
+          voice_path: null,
+          voice_duration_ms: null,
+          voice_peaks: null,
+          attachment_path: null,
+          attachment_type: null,
+          attachment_width: null,
+          attachment_height: null,
+          session_id: result.session_id ?? null,
+          origin: 'live',
+          created_at: result.created_at,
+          read_at: null,
+          edited_at: null,
+          deleted_at: null,
+        }
+      : null;
+
+  // Landed — or was collapsed by the nonce, which is the same outcome.
+  dequeue(nonce);
+  queryClient.setQueryData<TranscriptMessage[]>(key, prev =>
+    settleOptimistic(prev ?? [], pendingId, confirmed),
+  );
+
+  if (typeof result.new_balance === 'number') {
+    setBalance(result.new_balance);
+  }
+  track(replyToId === null ? 'message_sent' : 'reply_sent');
+  // The inbox preview and unread counts are now stale.
+  void queryClient.invalidateQueries({ queryKey: keys.conversationList });
+  return true;
+}
+
 export function useSendMessage(conversationId: string | undefined, selfId: string | undefined) {
   const queryClient = useQueryClient();
   const setSending = useStore(s => s.setSending);
@@ -606,193 +817,102 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
   const openRefill = useStore(s => s.openRefill);
 
   return useCallback(
-    async (
+    (
       raw: string,
       replyToId: string | null = null,
-      /*
-       * A REPLAY of an already-queued send, rather than a new one.
-       *
-       * Supplied by `useOutboxReplay` when draining the persisted queue: the
-       * nonce and timestamp must be the ORIGINALS, or the replay is a different
-       * message. Reusing the nonce is what makes it safe — migration 081
-       * collapses it if the first attempt in fact landed.
-       */
       resume?: { readonly nonce: string; readonly createdAt: string },
     ): Promise<boolean> => {
-      const body = raw.trim();
-      if (body === '' || conversationId === undefined || selfId === undefined) {
-        return false;
+      if (conversationId === undefined || selfId === undefined) {
+        return Promise.resolve(false);
       }
-      // Providers never pay to reply — balance is a member wallet. A provider at
-      // 0 tokens (the normal state) used to open refill and abort before the RPC,
-      // so accepting a pending chat request by sending never left the device.
-      if (memberPaysInThread(queryClient, conversationId) && !canSend(useStore.getState().balance)) {
-        errorTick();
-        openRefill();
-        return false;
-      }
-
-      tick();
-      const key = keys.messages(conversationId);
-      /*
-       * The idempotency key, and the local row's identity, are the SAME value.
-       *
-       * `pending-${Date.now()}` collided whenever two sends landed in one
-       * millisecond — which is exactly the case that produced two "launch test"
-       * rows 5 ms apart in production. A uuid cannot collide, and reusing it as
-       * the nonce means the retry of a send is provably the same send.
-       */
-      const nonce = resume?.nonce ?? newUuid();
-      const pendingId = `${PENDING_PREFIX}${nonce}`;
-      const optimistic: Message = {
-        id: pendingId,
-        conversation_id: conversationId,
-        sender_id: selfId,
-        body,
-        // Carried on the optimistic row so the quote block renders on the same
-        // frame as the keypress. Without it a reply appears as a plain bubble and
-        // then grows a quote when the server confirms, which is the one place a
-        // reply looks like a bug.
-        reply_to_id: replyToId,
-        // 011 made `body` nullable so a row can carry audio instead. Stating the
-        // voice columns here rather than leaving them off means a voice send path
-        // has to be written, not inherited by accident.
-        voice_path: null,
-        voice_duration_ms: null,
-        voice_peaks: null,
-        // Text send: no attachment. Stated rather than left off for the same
-        // reason as the voice columns, so an image path has to be written.
-        attachment_path: null,
-        attachment_type: null,
-        attachment_width: null,
-        attachment_height: null,
-        // Unknown until the RPC returns; a member's own optimistic row never
-        // gates the timer (that gate reads live PROVIDER messages), so null here
-        // is safe. Filled from the confirmed row below.
-        session_id: null,
-        // A human send is always live; only the server writes automated openers.
-        origin: 'live',
-        // A replay keeps its original timestamp, so a message written before a
-        // crash sorts where it was written rather than jumping to the bottom of
-        // the thread when it finally lands.
-        created_at: resume?.createdAt ?? new Date().toISOString(),
-        read_at: null,
-        edited_at: null,
-        deleted_at: null,
-      };
-
-      queryClient.setQueryData<TranscriptMessage[]>(key, prev =>
-        insertOptimistic(prev ?? [], optimistic),
+      return sendMessageWith(
+        { queryClient, conversationId, selfId, setSending, setBalance, setNotice, openRefill },
+        raw,
+        replyToId,
+        resume,
       );
-      setSending(true);
-
-      /*
-       * Persist the intent BEFORE the request. That ordering is the whole
-       * mechanism, and it is Telegram's: a row at `send_state = 1` exists
-       * before the network is touched, so a process kill in the window between
-       * tapping send and the server answering loses nothing
-       * (MessagesStorage.java:551, replayed from ApplicationLoader.java:259).
-       *
-       * Safe to replay because the nonce goes with it — see `lib/outbox.ts`.
-       */
-      if (resume === undefined) {
-        enqueue({
-          nonce,
-          conversationId,
-          body,
-          replyToId: replyToId ?? null,
-          createdAt: optimistic.created_at,
-          attempts: 1,
-        });
-      } else {
-        // Already queued; count the attempt instead of re-adding it, so the
-        // replay cap in `useOutboxReplay` can actually be reached.
-        recordAttempt(nonce);
-      }
-
-      const { data, error } = await supabase.rpc('send_message_idempotent', {
-        p_client_nonce: nonce,
-        p_conversation_id: conversationId,
-        p_body: body,
-        p_reply_to_id: replyToId,
-      });
-      setSending(false);
-
-      const result = sendResultFrom(data, error);
-
-      if (result === null || !result.success) {
-        /*
-         * The bubble STAYS, marked failed. It used to be spliced out, which
-         * meant the member watched their message vanish and had to retype it.
-         *
-         * The outbox entry stays too — but only for a failure that retrying
-         * could plausibly fix. A refusal (blocked, rate limited, no balance)
-         * would replay forever against a server that will keep saying no, so
-         * those are dropped from the queue and left on screen as failed.
-         */
-        const worthRetrying = result === null || result.error === undefined;
-        if (!worthRetrying) {
-          dequeue(nonce);
-        }
-        queryClient.setQueryData<TranscriptMessage[]>(key, prev =>
-          markFailed(prev ?? [], pendingId),
-        );
-        const code = result?.error;
-        // The rejection *reason* is the signal worth watching: a spike in
-        // BLOCKED or RATE_LIMITED is an abuse signal, not a bug report.
-        track('send_rejected', { reason: code ?? 'network' });
-        setNotice(
-          code !== undefined ? NOTICE[code] : 'Could not send. Check your connection.',
-        );
-        errorTick();
-        if (code === 'INSUFFICIENT_BALANCE') {
-          openRefill();
-        }
-        // The balance may have moved for reasons unrelated to this send.
-        void queryClient.invalidateQueries({ queryKey: keys.profile });
-        return false;
-      }
-
-      const confirmed: Message | null =
-        result.message_id !== undefined && result.created_at !== undefined
-          ? {
-              id: result.message_id,
-              conversation_id: conversationId,
-              sender_id: selfId,
-              body,
-              reply_to_id: replyToId,
-              voice_path: null,
-              voice_duration_ms: null,
-              voice_peaks: null,
-              attachment_path: null,
-              attachment_type: null,
-              attachment_width: null,
-              attachment_height: null,
-              session_id: result.session_id ?? null,
-              origin: 'live',
-              created_at: result.created_at,
-              read_at: null,
-              edited_at: null,
-              deleted_at: null,
-            }
-          : null;
-
-      // Landed — or was collapsed by the nonce, which is the same outcome.
-      dequeue(nonce);
-      queryClient.setQueryData<TranscriptMessage[]>(key, prev =>
-        settleOptimistic(prev ?? [], pendingId, confirmed),
-      );
-
-      if (typeof result.new_balance === 'number') {
-        setBalance(result.new_balance);
-      }
-      track(replyToId === null ? 'message_sent' : 'reply_sent');
-      // The inbox preview and unread counts are now stale.
-      void queryClient.invalidateQueries({ queryKey: keys.conversationList });
-      return true;
     },
     [conversationId, selfId, queryClient, setSending, setBalance, setNotice, openRefill],
   );
+}
+
+/**
+ * Drains the persisted outbox for EVERY conversation, not just whichever
+ * chat happens to be open (X7, 2026-09-17 audit — Amit's call: "Drain on
+ * boot", matching Telegram's own `checkUnsentMessages()` scope rather than
+ * this app's previous per-screen one; see `useOutboxReplay`'s docblock for
+ * why this app started scoped to one thread).
+ *
+ * Entries are replayed in `readOutbox()`'s own order — oldest first,
+ * `withEntry` in `lib/outbox.ts` always appends — so a conversation's own
+ * entries stay in the order they were typed, and the queue as a whole drains
+ * oldest-first the same way Telegram's global sweep does. No per-conversation
+ * grouping needed: `sendMessageWith` reads `entry.conversationId` itself.
+ *
+ * Safe to run alongside a live `useOutboxReplay` for the same conversation —
+ * the RPC is idempotent by nonce (migration 081), so the worst a race can do
+ * is one wasted network call, never a duplicate send or a corrupted queue.
+ */
+export async function drainAllOutbox(queryClient: QueryClient): Promise<void> {
+  const entries = readOutbox();
+  if (entries.length === 0) {
+    return;
+  }
+  let selfId: string;
+  try {
+    selfId = await requireUserId();
+  } catch {
+    // Not signed in (yet, or any more) — nothing to drain against.
+    return;
+  }
+  const { setSending, setBalance, setNotice, openRefill } = useStore.getState();
+  for (const entry of entries) {
+    if (entry.attempts >= REPLAY_LIMIT) {
+      continue;
+    }
+    await sendMessageWith(
+      {
+        queryClient,
+        conversationId: entry.conversationId,
+        selfId,
+        setSending,
+        setBalance,
+        setNotice,
+        openRefill,
+      },
+      entry.body,
+      entry.replyToId,
+      { nonce: entry.nonce, createdAt: entry.createdAt },
+    );
+  }
+}
+
+/**
+ * The boot-time / foreground-time half of X7: runs `drainAllOutbox` once the
+ * app is signed in, and again on every return to the foreground — the same
+ * two moments `useOutboxReplay` already replays on, just not gated on any
+ * one screen being mounted. `ready` is App.tsx's own `boot.phase === 'ready'`,
+ * so this never fires ahead of a live session (and never pops the refill
+ * sheet over a boot/auth screen a failed replay would otherwise reach for).
+ *
+ * No cancellation guard on unmount, unlike `useOutboxReplay`: that hook
+ * unmounts on every ordinary chat navigation, which this does not — it lives
+ * in App.tsx's root, which does not unmount in the running app.
+ */
+export function useGlobalOutboxDrain(ready: boolean): void {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (!ready) {
+      return;
+    }
+    void drainAllOutbox(queryClient);
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') {
+        void drainAllOutbox(queryClient);
+      }
+    });
+    return () => sub.remove();
+  }, [ready, queryClient]);
 }
 
 /**

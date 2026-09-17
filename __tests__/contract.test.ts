@@ -8031,3 +8031,46 @@ describe('draft persistence survives backgrounding, purges on intentional exit (
     expect(chat).not.toContain("onStartCall?.('audio')");
   });
 });
+
+describe('outbox drains for every conversation at boot, not just the one opened (X7)', () => {
+  // Amit's call (2026-09-17 audit): "Drain on boot" — a queued send for a
+  // conversation the member has not reopened used to sit forever, since
+  // useOutboxReplay only drains the thread a ChatScreen is currently mounted
+  // for.
+  const api = withoutComments(read('src/api/chat.ts'));
+  const app = withoutComments(read('App.tsx'));
+
+  it('drainAllOutbox reads the whole outbox, not one conversation, and needs a real session', () => {
+    expect(api).toContain('export async function drainAllOutbox');
+    // readOutbox() — every entry, every conversation — not pendingFor(id).
+    const fn = api.slice(
+      api.indexOf('export async function drainAllOutbox'),
+      api.indexOf('export function useGlobalOutboxDrain'),
+    );
+    expect(fn).toContain('readOutbox()');
+    expect(fn).toContain('requireUserId()');
+    expect(fn).toContain('entry.attempts >= REPLAY_LIMIT');
+    expect(fn).toContain('entry.conversationId');
+  });
+
+  it('sendMessageWith is the one send path both useSendMessage and drainAllOutbox call', () => {
+    expect(api).toContain('async function sendMessageWith(');
+    expect(api).toContain('return sendMessageWith(');
+    // The RPC call site itself must not be duplicated into a second copy.
+    expect(api.match(/send_message_idempotent/g)?.length ?? 0).toBe(1);
+  });
+
+  it('useGlobalOutboxDrain gates on ready and fires again on foreground', () => {
+    const fn = api.slice(api.indexOf('export function useGlobalOutboxDrain'));
+    expect(fn).toContain('if (!ready)');
+    expect(fn).toContain("state === 'active'");
+    expect(fn).toContain('void drainAllOutbox(queryClient)');
+  });
+
+  it("App.tsx wires the drain to boot.phase === 'ready', not unconditionally", () => {
+    expect(app).toContain(
+      "import { keys, useConversations, useGlobalOutboxDrain, useSelfId } from './src/api/chat'",
+    );
+    expect(app).toContain("useGlobalOutboxDrain(boot.phase === 'ready')");
+  });
+});

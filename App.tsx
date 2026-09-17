@@ -87,7 +87,7 @@ import {
   parseVideoResolution,
   setVideoResolution,
 } from './src/api/callMedia/profile';
-import { keys, useConversations, useSelfId } from './src/api/chat';
+import { keys, useConversations, useGlobalOutboxDrain, useSelfId } from './src/api/chat';
 import { useRole } from './src/api/provider';
 import { useStore } from './src/store/useStore';
 import { PolicyGateScreen } from './src/screens/PolicyGateScreen';
@@ -772,6 +772,10 @@ function Root() {
   useEffect(() => {
     sweepExpiredOutbox();
   }, []);
+
+  // Drain the outbox for every conversation once signed in, not only
+  // whichever chat the member happens to open (X7, 2026-09-17 audit).
+  useGlobalOutboxDrain(boot.phase === 'ready');
 
 
   /**
