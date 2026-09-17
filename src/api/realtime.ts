@@ -22,7 +22,7 @@
  * participant itself: the database already will not send someone else's
  * conversation. The `conversation_id` filter below is bandwidth, not security.
  */
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
@@ -34,7 +34,7 @@ import {
   type TranscriptMessage,
 } from '../lib/transcript';
 import { recoverMessageGap, keys } from './chat';
-import { useStore } from '../store/useStore';
+import { useStore, type PeerActivity } from '../store/useStore';
 
 /** How long a typing broadcast keeps the indicator up without a refresh. */
 const TYPING_TTL_MS = 4_000;
@@ -45,11 +45,21 @@ export const messagesKey = (conversationId: string) => ['messages', conversation
 
 interface TypingPayload {
   userId: string;
+  /**
+   * Absent on a broadcast from a client older than 2026-09-17, which is why it
+   * is optional and falls back to 'typing': the two builds coexist on the alpha
+   * track, and an old sender must not make the indicator vanish.
+   */
+  kind?: PeerActivity | 'cancel';
 }
 
 export interface LiveConversation {
   /** Call on every keystroke; throttled internally. */
   notifyTyping: () => void;
+  /** Held while the peer records a voice note. */
+  notifyRecording: () => void;
+  /** Mic released: drops the peer's indicator without waiting for the TTL. */
+  notifyRecordingEnded: () => void;
 }
 
 /**
@@ -62,7 +72,7 @@ export function useLiveConversation(
   selfId: string | undefined,
 ): LiveConversation {
   const queryClient = useQueryClient();
-  const setPeerTyping = useStore(s => s.setPeerTyping);
+  const setPeerActivity = useStore(s => s.setPeerActivity);
 
   const channelRef = useRef<RealtimeChannel | null>(null);
   const lastTypingSentRef = useRef(0);
@@ -104,7 +114,7 @@ export function useLiveConversation(
           if (payload.new.sender_id !== selfId) {
             // A message is a stronger signal than the typing broadcast: they
             // sent it, so they have stopped typing.
-            setPeerTyping(false);
+            setPeerActivity(null);
           }
         },
       )
@@ -128,11 +138,15 @@ export function useLiveConversation(
         if (from === undefined || from === selfId) {
           return;
         }
-        setPeerTyping(true);
+        if (payload.kind === 'cancel') {
+          setPeerActivity(null);
+          return;
+        }
+        setPeerActivity(payload.kind ?? 'typing');
         if (typingTimerRef.current !== null) {
           clearTimeout(typingTimerRef.current);
         }
-        typingTimerRef.current = setTimeout(() => setPeerTyping(false), TYPING_TTL_MS);
+        typingTimerRef.current = setTimeout(() => setPeerActivity(null), TYPING_TTL_MS);
       });
 
     void (async () => {
@@ -212,31 +226,67 @@ export function useLiveConversation(
         typingTimerRef.current = null;
       }
       channelRef.current = null;
-      setPeerTyping(false);
+      setPeerActivity(null);
       void supabase.removeChannel(channel);
     };
-  }, [conversationId, selfId, queryClient, setPeerTyping]);
+  }, [conversationId, selfId, queryClient, setPeerActivity]);
+
+  /** One throttled sender for both actions; the kind rides on the payload. */
+  const notify = useCallback(
+    (kind: PeerActivity) => {
+      const channel = channelRef.current;
+      if (channel === null || selfId === undefined) {
+        return;
+      }
+      const now = Date.now();
+      if (now - lastTypingSentRef.current < TYPING_THROTTLE_MS) {
+        return;
+      }
+      lastTypingSentRef.current = now;
+      void channel.send({
+        type: 'broadcast',
+        event: 'typing',
+        payload: { userId: selfId, kind } satisfies TypingPayload,
+      });
+    },
+    [selfId],
+  );
 
   return useMemo<LiveConversation>(
     () => ({
-      notifyTyping: () => {
+      notifyTyping: () => notify('typing'),
+      /*
+       * Held while a voice note is being recorded, and cancelled on release.
+       *
+       * Telegram sends a distinct action for this rather than reusing typing
+       * (TL_sendMessageRecordAudioAction, MessagesController.java:11441) and
+       * renders distinct copy for it (:11210-11213). Without it a voice note is
+       * composed in complete silence on the other side, which this app could
+       * least afford: a voice note takes longer to make than a message, so the
+       * silence it leaves is the longest one in the product.
+       *
+       * `notifyRecordingEnded` is the equivalent of their CancelAction: the TTL
+       * would drop the indicator on its own within 4s, but releasing the mic is
+       * a definite event and there is no reason to make the peer wait it out.
+       */
+      notifyRecording: () => notify('recording'),
+      notifyRecordingEnded: () => {
         const channel = channelRef.current;
         if (channel === null || selfId === undefined) {
           return;
         }
-        const now = Date.now();
-        if (now - lastTypingSentRef.current < TYPING_THROTTLE_MS) {
-          return;
-        }
-        lastTypingSentRef.current = now;
+        // Past the throttle deliberately: a cancel that gets swallowed leaves
+        // the indicator up for the full TTL, which is the thing it exists to
+        // avoid.
+        lastTypingSentRef.current = 0;
         void channel.send({
           type: 'broadcast',
           event: 'typing',
-          payload: { userId: selfId } satisfies TypingPayload,
+          payload: { userId: selfId, kind: 'cancel' } satisfies TypingPayload,
         });
       },
     }),
-    [selfId],
+    [notify, selfId],
   );
 }
 

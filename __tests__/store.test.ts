@@ -10,23 +10,40 @@ describe('useStore', () => {
     const s = useStore.getState();
     expect(s.balance).toBeNull();
     expect(s.sending).toBe(false);
-    expect(s.peerTyping).toBe(false);
+    expect(s.peerActivity).toBeNull();
     expect(s.refillVisible).toBe(false);
     expect(s.walletVisible).toBe(false);
   });
 
   /**
-   * `sending` is about this device's outbound RPC and `peerTyping` about the
+   * `sending` is about this device's outbound RPC and `peerActivity` about the
    * other person. Conflating them, as a single `isStreaming` flag would, is
    * what makes a UI show "replying…" because *you* are typing.
    */
-  it('keeps our own send state independent of the peer typing', () => {
+  it('keeps our own send state independent of the peer activity', () => {
     useStore.getState().setSending(true);
-    expect(useStore.getState().peerTyping).toBe(false);
+    expect(useStore.getState().peerActivity).toBeNull();
 
-    useStore.getState().setPeerTyping(true);
+    useStore.getState().setPeerActivity('typing');
     useStore.getState().setSending(false);
-    expect(useStore.getState().peerTyping).toBe(true);
+    expect(useStore.getState().peerActivity).toBe('typing');
+  });
+
+  /*
+   * A boolean until 2026-09-17. Telegram carries typing and recording as
+   * separate wire actions and renders separate copy for each
+   * (MessagesController.java:11210-11213), and this app has voice notes, so
+   * "typing" was simply untrue for the whole length of one being recorded.
+   */
+  it('distinguishes recording from typing, because they are not the same claim', () => {
+    useStore.getState().setPeerActivity('recording');
+    expect(useStore.getState().peerActivity).toBe('recording');
+
+    useStore.getState().setPeerActivity('typing');
+    expect(useStore.getState().peerActivity).toBe('typing');
+
+    useStore.getState().setPeerActivity(null);
+    expect(useStore.getState().peerActivity).toBeNull();
   });
 
   it('never opens the refill sheet from a balance change alone', () => {
@@ -64,7 +81,7 @@ describe('useStore', () => {
   it('clears conversation state on leave but keeps the balance', () => {
     const s = useStore.getState();
     s.setBalance(12);
-    s.setPeerTyping(true);
+    s.setPeerActivity('typing');
     s.setSending(true);
     s.setNotice('boom');
 
@@ -73,7 +90,7 @@ describe('useStore', () => {
     expect(useStore.getState()).toMatchObject({
       balance: 12,
       sending: false,
-      peerTyping: false,
+      peerActivity: null,
       notice: null,
     });
   });
@@ -122,7 +139,7 @@ describe('useStore', () => {
     expect(useStore.getState()).toMatchObject({
       balance: null,
       sending: false,
-      peerTyping: false,
+      peerActivity: null,
       refillVisible: false,
       walletVisible: false,
       notice: null,

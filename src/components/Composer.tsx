@@ -208,6 +208,10 @@ interface Props {
    * have to know how often a broadcast is affordable.
    */
   onTyping?: () => void;
+  /** Held while a voice note records, so the peer sees "recording" not silence. */
+  onRecording?: () => void;
+  /** Mic released, by any route including unmount. */
+  onRecordingEnded?: () => void;
   /**
    * Fired when the field takes or loses focus, so the dock behind it can drop
    * its frost entirely while composing — the composer becomes a floating capsule
@@ -239,6 +243,15 @@ interface Props {
  * is shown before the note leaves.
  */
 type Mode = 'idle' | 'recording' | 'review';
+
+/**
+ * How often the recording signal is re-sent while the mic is held.
+ *
+ * Matches the typing throttle in api/realtime.ts: the sender throttles at that
+ * interval anyway, so pinging faster would be discarded and pinging slower
+ * would let the peer's 4s TTL expire mid-note.
+ */
+const RECORD_PING_MS = 1_500;
 
 /**
  * Composition state is local, lifting the draft into the store would re-render
@@ -285,6 +298,8 @@ function ComposerView({
   placeholder,
   sendHaloKey,
   onTyping,
+  onRecording,
+  onRecordingEnded,
   onFocusChange,
   onPanelChange,
   onPanelSearchChange,
@@ -294,6 +309,30 @@ function ComposerView({
   const setNotice = useStore(s => s.setNotice);
   const [value, setValue] = useState('');
   const [mode, setMode] = useState<Mode>('idle');
+
+  /*
+   * Tell the peer a voice note is being recorded, for as long as it is.
+   *
+   * Keyed on `mode` rather than hooked into each transition because there are
+   * six paths out of 'recording' (send, review, cancel, backgrounded, a call
+   * arriving, unmount) and a signal that leaks on any one of them leaves the
+   * other person watching an indicator for something that stopped.
+   *
+   * Re-pinged on an interval because the receiver drops the indicator after a
+   * TTL, and a voice note outlasts it. Telegram does the same thing for the
+   * same reason (MessagesController.java:11441).
+   */
+  useEffect(() => {
+    if (mode !== 'recording' || onRecording === undefined) {
+      return;
+    }
+    onRecording();
+    const ping = setInterval(onRecording, RECORD_PING_MS);
+    return () => {
+      clearInterval(ping);
+      onRecordingEnded?.();
+    };
+  }, [mode, onRecording, onRecordingEnded]);
   /**
    * The attach surface, docked in the emoji panel's slot rather than presented
    * as a bottom sheet. Mounted on first open and hidden thereafter, exactly as

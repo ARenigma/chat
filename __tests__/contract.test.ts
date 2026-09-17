@@ -3035,8 +3035,11 @@ describe('the chat seeds openers one at a time, not all at once', () => {
   });
 
   it('shows the peer typing and paces the openers', () => {
-    expect(stripped).toContain('setPeerTyping(true)');
-    expect(stripped).toContain('setPeerTyping(false)');
+    // `setPeerTyping(boolean)` became `setPeerActivity(kind | null)` on
+    // 2026-09-17, when recording a voice note stopped being reported as
+    // "typing". The seeded openers are typed, so this one passes 'typing'.
+    expect(stripped).toContain("setPeerActivity('typing')");
+    expect(stripped).toContain('setPeerActivity(null)');
     // Bounded, length-aware pacing constants.
     expect(stripped).toContain('OPENER_TYPING_MIN_MS');
     expect(stripped).toContain('OPENER_TYPING_MAX_MS');

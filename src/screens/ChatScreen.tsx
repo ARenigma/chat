@@ -298,7 +298,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   // Providers see their earnings in the header instead of the member wallet.
   const { data: earnings } = useEarnings();
   const setNotice = useStore(s => s.setNotice);
-  const setPeerTyping = useStore(s => s.setPeerTyping);
+  const setPeerActivity = useStore(s => s.setPeerActivity);
   const queryClient = useQueryClient();
   const [sendHaloKey, setSendHaloKey] = useState(0);
   const [leaveDialogVisible, setLeaveDialogVisible] = useState(false);
@@ -506,7 +506,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   useSessionRealtime(conversationId);
   useSessionLease(activeSession ?? null);
 
-  const { notifyTyping } = useLiveConversation(conversationId, selfId);
+  const { notifyTyping, notifyRecording, notifyRecordingEnded } =
+    useLiveConversation(conversationId, selfId);
   useMarkRead(conversationId, selfId);
   const send = useSendMessage(conversationId, selfId);
   /*
@@ -773,7 +774,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
         if (cancelled) {
           break;
         }
-        setPeerTyping(true);
+        setPeerActivity('typing');
         await wait(upcoming === null ? OPENER_TYPING_MIN_MS : typingBeat(upcoming));
         if (cancelled) {
           break;
@@ -781,7 +782,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
         const { data, error } = await supabase.rpc('insert_next_opener', {
           p_provider_id: providerId,
         });
-        setPeerTyping(false);
+        setPeerActivity(null);
         if (cancelled || error || data === null) {
           break;
         }
@@ -809,9 +810,9 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
         clearTimeout(pendingTimer);
         pendingTimer = undefined;
       }
-      setPeerTyping(false);
+      setPeerActivity(null);
     };
-  }, [isMemberSide, providerId, queryClient, setPeerTyping]);
+  }, [isMemberSide, providerId, queryClient, setPeerActivity]);
 
   const memberHasSent = useMemo(
     () =>
@@ -2193,6 +2194,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
             onSendVoice={onSendVoice}
             onSendImage={onSendImage}
             onTyping={notifyTyping}
+            onRecording={notifyRecording}
+            onRecordingEnded={notifyRecordingEnded}
             disabled={
               conversationId === undefined ||
               chatClosed ||

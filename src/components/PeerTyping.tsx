@@ -2,7 +2,7 @@ import React, { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
-import { selectPeerTyping, useStore } from '../store/useStore';
+import { selectPeerActivity, useStore } from '../store/useStore';
 import { TypingIndicator } from './TypingIndicator';
 
 /**
@@ -16,9 +16,9 @@ import { TypingIndicator } from './TypingIndicator';
  */
 function PeerTypingView({ name }: { name: string }) {
   const styles = useStyles(makeStyles);
-  const typing = useStore(selectPeerTyping);
+  const activity = useStore(selectPeerActivity);
 
-  if (!typing) {
+  if (activity === null) {
     return null;
   }
 
@@ -37,7 +37,13 @@ function PeerTypingView({ name }: { name: string }) {
           The `bg/sunken` fill Turn.tsx uses is what makes this read as a bubble
           the other person is about to fill. */}
       <View style={styles.bubble}>
-        <TypingIndicator label={`${name} is typing`} />
+        <TypingIndicator
+          label={
+            activity === 'recording'
+              ? `${name} is recording`
+              : `${name} is typing`
+          }
+        />
       </View>
     </View>
   );

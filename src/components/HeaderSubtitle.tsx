@@ -2,13 +2,13 @@ import React, { memo } from 'react';
 import { StyleSheet, Text } from 'react-native';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
-import { selectPeerTyping, useStore } from '../store/useStore';
+import { selectPeerActivity, useStore } from '../store/useStore';
 import type { PresenceRead } from '../lib/presence';
 
 /**
  * The subtitle line under the peer's name in the chat header.
  *
- * Subscribes narrowly to `selectPeerTyping` so that typing broadcasts only
+ * Subscribes narrowly to `selectPeerActivity` so that typing broadcasts only
  * re-render this small leaf, not the entire ChatScreen — the same isolation
  * pattern that `PeerTyping` uses for the transcript bubble. `presence` is a
  * stable value derived from the thread row and changes only when the peer
@@ -27,12 +27,17 @@ import type { PresenceRead } from '../lib/presence';
  */
 function HeaderSubtitleView({ presence }: { presence: PresenceRead }) {
   const styles = useStyles(makeStyles);
-  const typing = useStore(selectPeerTyping);
+  const activity = useStore(selectPeerActivity);
 
   // "typing…" is a single unicode ellipsis character rather than three
   // full stops, which avoids a ligature mismatch on fonts that collapse "..."
   // into a glyph taller than the cap-height.
-  const label = typing
+  const label = activity === 'recording'
+    ? // Telegram says "Recording audio" rather than "typing" here, and the
+      // distinction is the point: this app has voice notes, and a peer holding
+      // the mic is not typing (MessagesController.java:11210-11213).
+      'recording…'
+    : activity === 'typing'
     ? 'typing…'
     : presence.here
       ? 'Online'
@@ -40,7 +45,7 @@ function HeaderSubtitleView({ presence }: { presence: PresenceRead }) {
 
   // Quiet (tertiary) only when there is nothing active to announce. Typing and
   // "Online" both carry the positive colour so they read as live signals.
-  const quiet = !typing && !presence.here;
+  const quiet = activity === null && !presence.here;
 
   // Nothing to say, so nothing rendered. `presence.line` is null for 'hidden'
   // and for a peer that has not loaded, which is the DEFAULT state, and the
