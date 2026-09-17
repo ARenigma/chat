@@ -8312,3 +8312,29 @@ describe('the speaker pill follows the real audio route (M6/M21)', () => {
     expect(fn).toContain('setSpeakerOn(');
   });
 });
+
+describe('video degrades before audio on a poor connection, not alongside it (M5)', () => {
+  // No fallback tier existed at all before this: video and audio degraded
+  // together under a poor downlink until both were unusable, instead of
+  // video stepping down (and, at AudioOnly, stepping out) so the
+  // conversation itself survives.
+  const agora = withoutComments(read('src/api/callMedia/agora.ts'));
+
+  it('setRemoteSubscribeFallbackOption is called with AudioOnly before joining', () => {
+    expect(agora).toContain('engine.setRemoteSubscribeFallbackOption(');
+    expect(agora).toContain('StreamFallbackOptions.StreamFallbackOptionAudioOnly,');
+    // Set before join(), not after — the fallback tier must exist from the
+    // first packet, not be reacted to only once already in a degraded state.
+    expect(agora.indexOf('setRemoteSubscribeFallbackOption')).toBeLessThan(
+      agora.indexOf('const result = join(engine, token);'),
+    );
+  });
+
+  it('onRemoteSubscribeFallbackToAudioOnly reuses remoteVideoEnabled, not a new field', () => {
+    const fn = agora.slice(
+      agora.indexOf('onRemoteSubscribeFallbackToAudioOnly: ('),
+      agora.indexOf('onRemoteSubscribeFallbackToAudioOnly: (') + 250,
+    );
+    expect(fn).toContain('setRemoteVideoEnabled(!isFallbackOrRecover);');
+  });
+});

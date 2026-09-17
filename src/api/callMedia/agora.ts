@@ -11,6 +11,7 @@ import {
   ErrorCodeType,
   LocalAudioStreamReason,
   LocalVideoStreamReason,
+  StreamFallbackOptions,
   UserOfflineReasonType,
   VideoCodecType,
   createAgoraRtcEngine,
@@ -198,6 +199,18 @@ export function useAgoraCallSession(
           if (!cancelled) {
             setRemoteUid(remoteUserUid);
             setRemoteAudioMuted(isMuted);
+          }
+        },
+        /*
+         * The other trigger for the peer's video disappearing (M5): not a
+         * mute, a network fallback. Reuses `remoteVideoEnabled` rather than
+         * a new field, so the screen falls back to the avatar view the same
+         * way it already does for onUserMuteVideo above.
+         */
+        onRemoteSubscribeFallbackToAudioOnly: (remoteUserUid, isFallbackOrRecover) => {
+          if (!cancelled) {
+            setRemoteUid(remoteUserUid);
+            setRemoteVideoEnabled(!isFallbackOrRecover);
           }
         },
         onFirstRemoteVideoDecoded: (_connection, remoteUserUid) => {
@@ -434,6 +447,21 @@ export function useAgoraCallSession(
         bitrate: Math.round(profile.maxBitrate / 1000),
         degradationPreference: DegradationPreference.MaintainBalanced,
       });
+      /*
+       * Video degrades before audio, not alongside it (M5, 2026-09-17
+       * audit). Without this the SDK has no fallback tier at all under poor
+       * downlink conditions — video and audio degrade together until both
+       * are unusable, rather than video stepping down (and, at
+       * AudioOnly, stepping out entirely) so the conversation itself
+       * survives. The SDK keeps monitoring and restores video once
+       * conditions improve; onRemoteSubscribeFallbackToAudioOnly below
+       * reuses `remoteVideoEnabled` so the screen falls back to the avatar
+       * view exactly as it already does when the peer mutes their camera.
+       * https://docs.agora.io/en/video-calling/develop/audio-and-video-fallback
+       */
+      engine.setRemoteSubscribeFallbackOption(
+        StreamFallbackOptions.StreamFallbackOptionAudioOnly,
+      );
       const result = join(engine, token);
       if (result < 0) updateConnectionState('failed');
     })();
