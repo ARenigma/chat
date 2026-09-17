@@ -8224,3 +8224,31 @@ describe('the mic/camera stopping mid-call is no longer silent (L1)', () => {
     );
   });
 });
+
+describe('nothing shows the peer muted their mic, until now (M25)', () => {
+  // onUserMuteVideo already tracked the peer's camera; onUserMuteAudio, its
+  // exact audio twin, was never wired at all. Video muting is self-evident
+  // (no picture); audio muting has no visual consequence without this.
+  const agora = withoutComments(read('src/api/callMedia/agora.ts'));
+  const types = withoutComments(read('src/api/callMedia/types.ts'));
+  const index = withoutComments(read('src/api/callMedia/index.ts'));
+  const callScreen = withoutComments(read('src/screens/CallScreen.tsx'));
+
+  it('agora.ts wires onUserMuteAudio next to its video twin', () => {
+    expect(agora).toContain('const [remoteAudioMuted, setRemoteAudioMuted] = useState(false);');
+    expect(agora).toContain('onUserMuteAudio: (_connection, remoteUserUid, isMuted) => {');
+    expect(agora).toContain('setRemoteAudioMuted(isMuted);');
+    expect(agora).toContain('remoteAudioMuted,');
+  });
+
+  it('remoteAudioMuted is part of the CallMediaSession contract, including its fallback', () => {
+    expect(types).toContain('remoteAudioMuted: boolean;');
+    expect(index).toContain('remoteAudioMuted: false,');
+  });
+
+  it('CallScreen shows an icon+label only once the call is active', () => {
+    expect(callScreen).toContain("phase === 'active' && remoteAudioMuted");
+    expect(callScreen).toContain('testID="call-remote-muted"');
+    expect(callScreen).toContain('name="micOff"');
+  });
+});

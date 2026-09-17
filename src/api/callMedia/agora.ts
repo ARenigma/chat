@@ -51,6 +51,9 @@ export function useAgoraCallSession(
   const [speakerOn, setSpeakerOn] = useState(defaultToSpeaker);
   const [videoEnabled, setVideoEnabled] = useState(false);
   const [remoteVideoEnabled, setRemoteVideoEnabled] = useState(false);
+  // The peer's own mic mute state (M25, 2026-09-17 audit) — see
+  // onUserMuteAudio below.
+  const [remoteAudioMuted, setRemoteAudioMuted] = useState(false);
   const [remoteUid, setRemoteUid] = useState<number | null>(null);
   /*
    * Set when the SDK reports the LOCAL mic or camera stopped for a real
@@ -181,6 +184,19 @@ export function useAgoraCallSession(
           if (!cancelled) {
             setRemoteUid(remoteUserUid);
             setRemoteVideoEnabled(!isMuted);
+          }
+        },
+        /*
+         * The audio twin of onUserMuteVideo just above — never wired at all
+         * (M25, 2026-09-17 audit: "nothing shows peer muted their mic").
+         * Video muting has a self-evident visual consequence (no picture);
+         * audio muting has none, so silence and "they muted" were
+         * indistinguishable to the member without this.
+         */
+        onUserMuteAudio: (_connection, remoteUserUid, isMuted) => {
+          if (!cancelled) {
+            setRemoteUid(remoteUserUid);
+            setRemoteAudioMuted(isMuted);
           }
         },
         onFirstRemoteVideoDecoded: (_connection, remoteUserUid) => {
@@ -482,6 +498,7 @@ export function useAgoraCallSession(
     remoteVideo,
     videoEnabled,
     remoteVideoEnabled,
+    remoteAudioMuted,
     enableVideo,
     disableVideo,
     switchCamera,

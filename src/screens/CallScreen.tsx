@@ -472,6 +472,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     remoteVideo,
     videoEnabled,
     remoteVideoEnabled,
+    remoteAudioMuted,
     enableVideo,
     disableVideo,
     switchCamera,
@@ -1000,6 +1001,20 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
             Keep it kind. No sexual or abusive talk
           </Text>
         ) : null}
+        {/*
+         * The peer muted their mic (M25, 2026-09-17 audit). Video muting is
+         * self-evident (no picture); audio muting is not — silence and "they
+         * muted" read identically without this. `phase === 'active'` only:
+         * the field is meaningless before the call is actually connected.
+         */}
+        {phase === 'active' && remoteAudioMuted ? (
+          <View style={styles.remoteMutedRow}>
+            <Icon name="micOff" size={TOKENS.icon.xs} color="rgba(255,255,255,0.85)" />
+            <Text allowFontScaling testID="call-remote-muted" style={styles.status}>
+              {name} muted their mic
+            </Text>
+          </View>
+        ) : null}
       </View>
 
       {/*
@@ -1370,6 +1385,15 @@ const makeStyles = (t: Theme) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
+    },
+    // Same row shape as statusRow, plus the gap an icon+label pair needs —
+    // not added to statusRow itself, which the ringing/connecting dots row
+    // above also uses and did not ask for a gap.
+    remoteMutedRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: TOKENS.space.hair,
     },
     status: {
       ...TOKENS.typography.bodyMedium,

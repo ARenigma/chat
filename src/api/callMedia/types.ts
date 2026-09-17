@@ -84,6 +84,8 @@ export interface CallMediaSession {
   remoteVideo: CallVideoSource | null;
   videoEnabled: boolean;
   remoteVideoEnabled: boolean;
+  /** The peer muted their own mic (M25, 2026-09-17 audit) — Agora's onUserMuteAudio. */
+  remoteAudioMuted: boolean;
   enableVideo: () => Promise<void>;
   disableVideo: () => void;
   switchCamera: () => void;

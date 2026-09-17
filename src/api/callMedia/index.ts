@@ -31,6 +31,7 @@ const pendingSession: CallMediaSession = {
   remoteVideo: null,
   videoEnabled: false,
   remoteVideoEnabled: false,
+  remoteAudioMuted: false,
   enableVideo: noopAsync,
   disableVideo: noop,
   switchCamera: noop,
