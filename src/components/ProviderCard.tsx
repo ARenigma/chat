@@ -301,7 +301,10 @@ const makeStyles = (t: Theme) =>
       minHeight: META_CHIP_HEIGHT,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: TOKENS.space.hair,
+      // 8dp, not the 2dp this copied from ProviderRow's pre-2026-09-17 geometry.
+      // Amit rejected FOUR on the row as "one smudged shape"; this was half that,
+      // and the bell renders at ICON_SCALE 1.2 so its box is wider than nominal.
+      gap: TOKENS.space.xs,
       paddingHorizontal: TOKENS.space.sm,
       borderRadius: TOKENS.radius.xs,
       borderCurve: 'continuous',
@@ -521,8 +524,11 @@ const makeSquareStyles = (t: Theme) =>
       right: TOKENS.space.xs,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: TOKENS.space.hair,
-      paddingHorizontal: TOKENS.space['2xs'],
+      // Same correction as `notify` above, and the padding with it: 4dp of
+      // horizontal room around a glyph and a word is what made the badge read as
+      // touching its own border.
+      gap: TOKENS.space.xs,
+      paddingHorizontal: TOKENS.space.xs,
       paddingVertical: TOKENS.space.hair,
       borderRadius: TOKENS.radius.pill,
       borderCurve: 'continuous',

@@ -112,12 +112,11 @@ const CHANNEL_ROWS: readonly { key: ChannelKey; title: string; glyph: IconName }
  * the same argument applied to the words.
  *
  * `head` is deliberately NOT presence vocabulary: no "Away", "Offline" or
- * "Hidden". Presence is a separate setting the provider sets in SettingsSheet
- * (`useSetPresence`), and two controls saying "hidden" while meaning different
- * things is how somebody ends up unreachable believing they are only invisible
- * — the failure contract.test's "stops the availability card claiming presence
- * or the word hidden" exists to keep out. Open/Closed is the shop metaphor the
- * card's own title already uses.
+ * "Hidden". That rule outlived the thing it was written against: the separate
+ * presence chooser is GONE from SettingsSheet as of 2026-09-17, and this switch
+ * is now the only availability control in the app. The vocabulary still holds,
+ * because Open/Closed is the shop metaphor the card's own title uses and
+ * "hidden" would now describe nothing at all.
  *
  * `on.sub` CHANGED on 2026-09-17, when the three channel switches moved under
  * this one (see `styles.availabilityCard`'s block below). It used to promise
@@ -964,7 +963,12 @@ function TabButton({
       highlight="dim"
       style={styles.tab}>
       <View>
-        <Icon name={icon} size={TOKENS.icon.lg} color={color} />
+        {/* The SOLID face when selected, not the same outline in a lighter ink.
+            Colour alone is the failure mode this repo has now hit twice, and M3
+            names the fix for this exact control: "the icon of the active
+            destination is filled".
+            https://m3.material.io/components/navigation-bar/guidelines */}
+        <Icon name={icon} active={active} size={TOKENS.icon.lg} color={color} />
         {badge > 0 ? (
           <View style={styles.tabBadge}>
             <Text allowFontScaling style={styles.tabBadgeText}>
@@ -1369,7 +1373,9 @@ const makeStyles = (t: Theme) =>
       flex: 1,
       alignItems: 'center',
       justifyContent: 'center',
-      gap: TOKENS.space.hair,
+      // M3's navigation bar puts 4dp between the icon and its label, not 2.
+      // https://m3.material.io/components/navigation-bar/specs
+      gap: TOKENS.space['2xs'],
       paddingVertical: TOKENS.space['2xs'],
       borderRadius: TOKENS.radius.pill,
     },

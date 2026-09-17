@@ -17,15 +17,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import {
-  DOCK_DELAY_MS,
-  EASE_OUT,
-  KEYBOARD_CUBIC,
-  fadeSwapFast,
-  dockTo,
-  useCrossfade,
-  M3,
-} from '../theme/motion';
+import { DOCK_DELAY_MS, EASE_OUT, KEYBOARD_CUBIC, M3, dockTo, fadeSwapFast, fadeSwapOutFast, useCrossfade } from '../theme/motion';
 import { requestAndroidPermission } from '../lib/permissions';
 import {
   launchCamera,
@@ -1280,7 +1272,7 @@ function ComposerView({
             * already uses for exactly this — a control that has just changed
             * what it says about itself.
             */}
-          <Animated.View key={emojiOpen ? 'keyboard' : 'smile'} entering={fadeSwapFast}>
+          <Animated.View key={emojiOpen ? 'keyboard' : 'smile'} entering={fadeSwapFast} exiting={fadeSwapOutFast}>
             <Icon
               name={emojiOpen ? 'keyboard' : 'smile'}
               size={EMOJI_GLYPH_SIZE}

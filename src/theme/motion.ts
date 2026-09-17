@@ -516,6 +516,33 @@ export const fadeSwapFast = FadeIn.duration(DURATION.fast)
   .reduceMotion(ReduceMotion.System);
 
 /**
+ * The OUT half of that swap, and on the Notify control it is the only half.
+ *
+ * Amit, on the device 2026-09-17: "fade out not fade in". With `entering` alone
+ * on a keyed view the old label is unmounted the instant the key changes and the
+ * new one fades up from nothing, so the eye reads a blink and then a slow
+ * arrival. Reanimated keeps an EXITING view mounted for the length of its
+ * animation, and the replacement is already in place underneath it, so
+ * `exiting` alone dissolves the old label OFF the new one. The control never
+ * shows an empty state, and the change reads as the word being replaced rather
+ * than as the button repainting itself.
+ *
+ * EMPH_ACCEL, not EASE_OUT: this module's own header says decelerate for
+ * entering and accelerate for exiting, and this is an exit. Shorter than
+ * `fast` for the reason `barOut` is shorter than `barIn` two blocks down -
+ * arriving is an announcement and wants to be seen, leaving should get out of
+ * the way.
+ */
+export const fadeSwapOutFast = FadeOut.duration(DURATION.fast * 0.75)
+  .easing(EMPH_ACCEL)
+  .reduceMotion(ReduceMotion.System);
+
+/** The `base`-paced sibling, for a swap that is read rather than glanced at. */
+export const fadeSwapOut = FadeOut.duration(DURATION.base * 0.75)
+  .easing(EMPH_ACCEL)
+  .reduceMotion(ReduceMotion.System);
+
+/**
  * Opening and closing search: a CROSSFADE in place, both directions, 350ms on
  * EASE_OUT_QUINT.
  *

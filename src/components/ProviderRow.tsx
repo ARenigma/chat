@@ -6,7 +6,7 @@ import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ProviderSummary } from '../lib/database.types';
 import { genderLetter, initialOf } from '../lib/display';
 import { offeredChannelsLine, presenceForSpeech, readPresence } from '../lib/presence';
-import { fadeSwapFast, rowIn } from '../theme/motion';
+import { fadeSwapOutFast, rowIn } from '../theme/motion';
 import { minutesUntil, useNotifyProvider } from '../api/sessions';
 import { Avatar } from './Avatar';
 import { Icon } from './Icon';
@@ -680,7 +680,7 @@ function ProviderRowView({
             <View style={styles.priceSpacer} />
             {/* The state swap, keyed so it runs once per transition and never on
                 a re-render or on a recycled cell that lands on the same state.
-                `fadeSwapFast` is the existing builder for a button label that
+                `fadeSwapOutFast` is the existing builder for a button label that
                 just narrated itself (motion.ts): DURATION.fast, EASE_OUT,
                 opacity only, `reduceMotion(ReduceMotion.System)`. The whole
                 control fades through rather than its three pieces separately,
@@ -698,7 +698,7 @@ function ProviderRowView({
                 only once this control has something to report. */}
             <Animated.View
               key={notify.state.kind}
-              entering={fadeSwapFast}
+              exiting={fadeSwapOutFast}
               accessibilityLiveRegion={notify.state.kind === 'idle' ? 'none' : 'polite'}>
               <Pressable
                 onPress={() =>

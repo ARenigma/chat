@@ -20,7 +20,7 @@ import Animated from 'react-native-reanimated';
 import { useQuery } from '@tanstack/react-query';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { fadeSwapFast } from '../theme/motion';
+import { fadeSwapFast, fadeSwapOutFast } from '../theme/motion';
 import { useSubmitSessionReview } from '../api/provider';
 import { supabase } from '../lib/supabase';
 import { useStore } from '../store/useStore';
@@ -294,7 +294,7 @@ export function SessionFeedbackSheet() {
         */}
       <Animated.Text
         key={rating}
-        entering={fadeSwapFast}
+        entering={fadeSwapFast} exiting={fadeSwapOutFast}
         allowFontScaling
         style={styles.word}
         testID="session-feedback-word">

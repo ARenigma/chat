@@ -31,7 +31,7 @@ import { useEconomicsConfig, useKillSwitches, FALLBACK_ECONOMICS } from '../api/
 import { useStore } from '../store/useStore';
 import { useFavorites } from '../store/useFavorites';
 import { minutesUntil, useNotifyProvider } from '../api/sessions';
-import { fadeSwapFast, springTo } from '../theme/motion';
+import { fadeSwapOutFast, springTo } from '../theme/motion';
 import { BackButton } from '../components/BackButton';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
@@ -240,7 +240,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
                  THE SWAP IS THE ONE NEW ANIMATION IN THIS CHANGE, and it is a
                  fade-through of the whole control rather than of its parts: the
                  button changes its mind as one object, which three independently
-                 fading pieces would not read as. `fadeSwapFast` is the existing
+                 fading pieces would not read as. `fadeSwapOutFast` is the existing
                  builder for exactly this ("a button label that just narrated
                  itself", motion.ts), DURATION.fast (170ms), EASE_OUT, opacity
                  only, and it carries `reduceMotion(ReduceMotion.System)` so the
@@ -259,7 +259,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
                  something to report. */
               <Animated.View
                 key={notify.state.kind}
-                entering={fadeSwapFast}
+                exiting={fadeSwapOutFast}
                 style={styles.actionSlot}
                 accessibilityLiveRegion={notify.state.kind === 'idle' ? 'none' : 'polite'}>
                 <ActionButton

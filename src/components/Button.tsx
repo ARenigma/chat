@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
-import { fadeSwapFast } from '../theme/motion';
+import { fadeSwapFast, fadeSwapOutFast } from '../theme/motion';
 import { Pressable } from './Pressable';
 import { LoadingIndicator } from './LoadingIndicator';
 
@@ -124,7 +124,7 @@ function ButtonView({
           only. Nothing scales and nothing translates. */}
       <Animated.Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
         key={shown}
-        entering={fadeSwapFast}
+        entering={fadeSwapFast} exiting={fadeSwapOutFast}
         allowFontScaling
         style={[styles.label, styles[`${kind}Label`]]}>
         {shown}
