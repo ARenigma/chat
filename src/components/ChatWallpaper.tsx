@@ -23,6 +23,18 @@ import { useTheme, useThemeMode } from '../theme/ThemeProvider';
  * https://developer.android.com/develop/ui/views/theming/darktheme
  *
  * Non-interactive and behind everything.
+ *
+ * Source JPGs are 720x1560, not the device's own 1080x2340 (M19, 2026-09-17
+ * audit, Amit's call). A full-bleed Image decodes to an in-memory bitmap at
+ * roughly its source resolution regardless of the JPEG's own compression —
+ * ARGB_8888 is 4 bytes/pixel, so 1080x2340 cost ~10.1MB resident for one
+ * wallpaper, just to back a subtle, already-washed-over doodle pattern.
+ * 720x1560 is ~44% of that (~4.5MB) with a visually negligible loss on a
+ * pattern this understated — RN's `resizeMode="cover"` still scales it to
+ * fill the screen either way, so nothing about the layout changes, only the
+ * bitmap's own pixel density. A crisper fix exists (an RGB_565 bitmap config
+ * halves this again) but needs a native Android module; deferred, not done
+ * here. https://developer.android.com/topic/performance/graphics/manage-memory
  */
 const WASH_OPACITY = 0.2;
 /** Opaque enough to set the charcoal base, low enough to leave the doodles legible. */
