@@ -52,6 +52,12 @@ export function useAgoraCallSession(
   const [muted, setMuted] = useState(false);
   const [speakerOn, setSpeakerOn] = useState(defaultToSpeaker);
   const [videoEnabled, setVideoEnabled] = useState(false);
+  // Read by `join()` on a token-renewal rejoin (H5, 2026-09-17 audit) — the
+  // effect that defines `join` only runs once ([callId, credentials,
+  // enabled]), so a closure over `videoEnabled` itself would always see
+  // whatever it was at call start, not whatever the member has chosen since.
+  const videoEnabledRef = useRef(false);
+  videoEnabledRef.current = videoEnabled;
   const [remoteVideoEnabled, setRemoteVideoEnabled] = useState(false);
   // The peer's own mic mute state (M25, 2026-09-17 audit) — see
   // onUserMuteAudio below.
@@ -105,11 +111,24 @@ export function useAgoraCallSession(
       }
     };
 
+    /*
+     * `publishCameraTrack: videoEnabledRef.current`, not a hardcoded `false`
+     * (H5, 2026-09-17 audit). This same `join()` is also used by
+     * `renewToken`'s rejoin branch below (leaveChannel() + join() again, the
+     * SDK's own documented post-expiry recovery). A hardcoded `false` there
+     * meant a member who had turned their camera ON before a token renewal
+     * rejoined the channel with the camera silently unpublished at the
+     * server — their own preview kept showing (muteLocalVideoStream/
+     * startPreview are untouched by a rejoin), so nothing on screen told
+     * them the peer had stopped receiving their video at all. Reading the
+     * ref is correct for the INITIAL join too: `videoEnabled` cannot be
+     * anything but its `false` default before the call has even connected.
+     */
     const join = (engine: IRtcEngine, nextToken: string) =>
       engine.joinChannel(nextToken, room, localUid, {
         clientRoleType: ClientRoleType.ClientRoleBroadcaster,
         publishMicrophoneTrack: true,
-        publishCameraTrack: false,
+        publishCameraTrack: videoEnabledRef.current,
         autoSubscribeAudio: true,
         autoSubscribeVideo: true,
       });

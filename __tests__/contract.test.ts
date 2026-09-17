@@ -8366,3 +8366,23 @@ describe('the call FGS is not destroyed and restarted when the peer name resolve
     expect(secondEffect).not.toContain('stopCallForegroundService');
   });
 });
+
+describe("a rejoin publishes the member's ACTUAL camera state, not a hardcoded default (H5)", () => {
+  // join() is shared by the initial channel join and renewToken's rejoin
+  // branch (leaveChannel + join again). A hardcoded publishCameraTrack:
+  // false meant a member who had turned video ON before a token-renewal
+  // rejoin kept their own preview showing while the channel silently
+  // stopped publishing it to the peer.
+  const agora = withoutComments(read('src/api/callMedia/agora.ts'));
+
+  it('videoEnabledRef stays in sync with videoEnabled every render', () => {
+    expect(agora).toContain('const videoEnabledRef = useRef(false);');
+    expect(agora).toContain('videoEnabledRef.current = videoEnabled;');
+  });
+
+  it('join() reads the ref instead of a hardcoded false', () => {
+    const fn = agora.slice(agora.indexOf('const join = ('), agora.indexOf('const renewToken ='));
+    expect(fn).toContain('publishCameraTrack: videoEnabledRef.current,');
+    expect(fn).not.toContain('publishCameraTrack: false,');
+  });
+});
