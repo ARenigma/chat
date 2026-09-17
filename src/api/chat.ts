@@ -538,9 +538,17 @@ export function useLiveMessageEdits(
        *
        * `recoverMessageGap` now repairs both halves (see
        * `fetchMessagesChangedSince`), so the two channels can share one repair.
+       *
+       * CHANNEL_ERROR / TIMED_OUT are now actually checked (2026-09-17 audit):
+       * the comment above already argued for this and the code never did it —
+       * only SUBSCRIBED triggered the repair, so the exact failure this
+       * paragraph describes was still live. `recoverMessageGap` is safe to
+       * call from either status; it is a targeted since-gap fetch, not a
+       * full refetch, so calling it once more than strictly necessary costs
+       * one extra query, not a user-visible reflow.
        */
       channel.subscribe(status => {
-        if (status === 'SUBSCRIBED') {
+        if (status === 'SUBSCRIBED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           void recoverMessageGap(queryClient, conversationId, selfId);
         }
       });

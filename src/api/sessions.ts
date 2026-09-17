@@ -768,7 +768,12 @@ export function useIncomingChatRequests(
         },
       )
       .subscribe(status => {
-        if (status === 'SUBSCRIBED') {
+        // CHANNEL_ERROR / TIMED_OUT as well as SUBSCRIBED (2026-09-17
+        // audit) — the same repair the sibling channel above (line ~146)
+        // already has, extended to the one that carries an incoming chat
+        // request: a reconnect that never repairs is a missed request with
+        // no second announcement once it expires server-side.
+        if (status === 'SUBSCRIBED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           void recoverPending();
         }
       });

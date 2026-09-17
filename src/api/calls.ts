@@ -170,6 +170,40 @@ export function useCallEnded(
       return;
     }
     const terminal = ['ended', 'missed', 'declined', 'failed'] as const;
+    const dispatch = (row: { status: string; end_reason: string | null }) => {
+      if (row.status === 'active') {
+        answeredHandler.current?.();
+        return;
+      }
+      const hit = terminal.find(s => s === row.status);
+      if (hit !== undefined) {
+        handler.current({ status: hit, endReason: row.end_reason });
+      }
+    };
+    /*
+     * Recover a status change that landed while the socket was down
+     * (2026-09-17 audit). This channel used to be a bare `.subscribe()` —
+     * no status callback at all, so a CHANNEL_ERROR/TIMED_OUT reconnect
+     * (a known edge of Supabase's multiplexed channels — see realtime.ts's
+     * own docblock) simply lost whatever UPDATE happened in between. Read
+     * the row directly on every (re)subscribe and dispatch through the
+     * SAME handler the live payload uses, so a missed 'active' or a missed
+     * terminal status is not silently dropped.
+     */
+    const recoverStatus = async () => {
+      const { data, error } = await supabase
+        .from('calls')
+        .select('status, end_reason')
+        .eq('id', callId)
+        .maybeSingle();
+      if (error) {
+        reportSwallowed('recoverCallStatus', error);
+        return;
+      }
+      if (data) {
+        dispatch(data);
+      }
+    };
     const channel = supabase
       .channel(`call-status:${callId}`)
       .on(
@@ -180,19 +214,13 @@ export function useCallEnded(
           table: 'calls',
           filter: `id=eq.${callId}`,
         },
-        payload => {
-          const row = payload.new as { status: string; end_reason: string | null };
-          if (row.status === 'active') {
-            answeredHandler.current?.();
-            return;
-          }
-          const hit = terminal.find(s => s === row.status);
-          if (hit !== undefined) {
-            handler.current({ status: hit, endReason: row.end_reason });
-          }
-        },
+        payload => dispatch(payload.new as { status: string; end_reason: string | null }),
       )
-      .subscribe();
+      .subscribe(status => {
+        if (status === 'SUBSCRIBED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          void recoverStatus();
+        }
+      });
     return () => {
       void supabase.removeChannel(channel);
     };
@@ -290,7 +318,11 @@ export function useIncomingCalls(
         },
       )
       .subscribe(status => {
-        if (status === 'SUBSCRIBED') {
+        // CHANNEL_ERROR / TIMED_OUT as well as SUBSCRIBED (2026-09-17
+        // audit): this channel is the one that carries a fresh incoming
+        // ring, and a reconnect that never repairs is a missed call with
+        // no second chance once the ring times out server-side.
+        if (status === 'SUBSCRIBED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           void recoverRinging();
         }
       });

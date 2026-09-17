@@ -5187,6 +5187,64 @@ describe('hardware back hands off to Android before boot is ready', () => {
  * checked at all, with no in-app screen able to resolve the server's own
  * POLICY_REQUIRED refusal short of a relaunch.
  */
+/*
+ * Telegram-CTO audit, 2026-09-17 (X10), contested finding. Realtime
+ * channels that repair only on SUBSCRIBED (not CHANNEL_ERROR/TIMED_OUT) --
+ * a known edge of Supabase's multiplexed sockets realtime.ts's own
+ * docblock already argues about at length -- were applied inconsistently:
+ * three channels had it (realtime.ts, provider.ts, sessions.ts:146), three
+ * did not (calls.ts's two channels, sessions.ts:770, chat.ts's edit
+ * channel). One verifier argued the severity was overstated for incoming
+ * calls specifically (a ring is also announced via FCM push, so the gap is
+ * a redundant layer failing, not the only one) -- which is a real
+ * mitigating fact, not an argument against fixing the inconsistency, and
+ * chat.ts's own comment already argued for the fix it had never actually
+ * made ("a CHANNEL_ERROR here meant edits and deletes stopped arriving and
+ * nothing ever went looking for the ones missed").
+ */
+describe('every incoming-signal realtime channel repairs on CHANNEL_ERROR/TIMED_OUT, not only SUBSCRIBED', () => {
+  it('useCallEnded reads the row directly instead of subscribing blind', () => {
+    const calls = withoutComments(read('src/api/calls.ts'));
+    const recoverStatus = calls.slice(
+      calls.indexOf('const recoverStatus = async'),
+      calls.indexOf('const channel = supabase'),
+    );
+    expect(recoverStatus).toContain(".from('calls')");
+    expect(recoverStatus).toContain("select('status, end_reason')");
+    const subscribeCall = calls.slice(calls.indexOf('void recoverStatus();') - 200, calls.indexOf('void recoverStatus();') + 22);
+    expect(subscribeCall).toMatch(
+      /status === 'SUBSCRIBED' \|\| status === 'CHANNEL_ERROR' \|\| status === 'TIMED_OUT'/,
+    );
+    expect(subscribeCall).toContain('void recoverStatus();');
+  });
+
+  it('useIncomingCalls and the incoming-chat-request channel repair on the same three statuses', () => {
+    const calls = withoutComments(read('src/api/calls.ts'));
+    const ringBranch = calls.slice(calls.indexOf('void recoverRinging();') - 200, calls.indexOf('void recoverRinging();') + 20);
+    expect(ringBranch).toMatch(
+      /status === 'SUBSCRIBED' \|\| status === 'CHANNEL_ERROR' \|\| status === 'TIMED_OUT'/,
+    );
+
+    const sessions = withoutComments(read('src/api/sessions.ts'));
+    const pendingBranch = sessions.slice(sessions.indexOf('void recoverPending();') - 200, sessions.indexOf('void recoverPending();') + 20);
+    expect(pendingBranch).toMatch(
+      /status === 'SUBSCRIBED' \|\| status === 'CHANNEL_ERROR' \|\| status === 'TIMED_OUT'/,
+    );
+  });
+
+  it('useLiveMessageEdits actually implements the repair its own comment already argued for', () => {
+    const chat = withoutComments(read('src/api/chat.ts'));
+    const editBranch = chat.slice(
+      chat.indexOf('channel.subscribe(status => {'),
+      chat.indexOf('channel.subscribe(status => {') + 200,
+    );
+    expect(editBranch).toMatch(
+      /status === 'SUBSCRIBED' \|\| status === 'CHANNEL_ERROR' \|\| status === 'TIMED_OUT'/,
+    );
+    expect(editBranch).toContain('void recoverMessageGap(queryClient, conversationId, selfId);');
+  });
+});
+
 describe('provider onboarding completing re-checks policy and permissions once', () => {
   it('onSubmitted calls onProviderOnboarded, which re-runs bootPhaseAfterAuth', () => {
     const app = withoutComments(read('App.tsx'));
