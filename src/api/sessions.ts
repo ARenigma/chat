@@ -323,6 +323,163 @@ export function minutesUntil(iso: string | null | undefined): number | null {
 
 const IDLE: NotifyState = { kind: 'idle' };
 
+/**
+ * The cooldown 068 enforces, mirrored on the client so a RESTORED "Notified"
+ * can expire on its own.
+ *
+ * It is the server's own fallback: both 068:111 and 111:119 read
+ * `chat_open_alert_cooldown_minutes` from the admin `thresholds` domain and
+ * `coalesce(..., 30)`. The number is not authoritative here and does not need
+ * to be — it only decides how long a restored state is DRAWN. Every claim the
+ * control makes about the server is still settled by the server: the restored
+ * state stays tappable, and the first tap answers `cooldown` with the real
+ * `cooldown_until` (or actually alerts, if the admin window is shorter than
+ * this one).
+ *
+ * `thresholds` does not carry this key in `ThresholdsConfig` yet; threading it
+ * through `useThresholdsConfig` is the honest fix and is reported as a
+ * cross-file need rather than guessed at here.
+ */
+const NOTIFY_COOLDOWN_MINUTES = 30;
+
+/**
+ * When each provider was last told this member opened their chat.
+ *
+ * One query for the whole directory rather than one per row: every away card
+ * mounts `useNotifyProvider`, and a per-row read would be a request per
+ * stranger scrolled past.
+ */
+const notifyKeys = {
+  lastAlerted: ['notify', 'last-alerted'] as const,
+};
+
+/**
+ * PostgREST returns a one-to-one embed as an object and a one-to-many as an
+ * array, and which one it picks depends on its reading of the constraint
+ * rather than on anything stated here, so both are accepted.
+ */
+type ThreadAlertMeta = { provider_alerted_at: string | null };
+interface ThreadAlertRow {
+  provider_id: string;
+  conversation_thread_meta: ThreadAlertMeta | ThreadAlertMeta[] | null;
+}
+
+function alertedAtOf(row: ThreadAlertRow): string | null {
+  const meta = row.conversation_thread_meta;
+  if (meta === null || meta === undefined) {
+    return null;
+  }
+  if (Array.isArray(meta)) {
+    return meta[0]?.provider_alerted_at ?? null;
+  }
+  return meta.provider_alerted_at;
+}
+
+/**
+ * The honest answer to "have I already rung this bell", read WITHOUT ringing it.
+ *
+ * `announce_chat_open` cannot be asked: it is the sender, and calling it to
+ * discover its own state either burns the cooldown it was meant to report or
+ * sends the very push the member is trying not to send twice. What it leaves
+ * behind can be read instead — 068:131-140 upserts
+ * `conversation_thread_meta.provider_alerted_at` in the same transaction as the
+ * dispatch, so that column IS the record of the push, and it is readable by the
+ * member under the "Participants read thread meta" policy (030:280-292).
+ *
+ * `conversations` is read directly rather than through `open_conversation`,
+ * which CREATES the thread on first call (api/chat.ts): resolving a
+ * conversation id per row in order to look up a timestamp would mint a
+ * conversation with everyone in the directory. A row that does not exist is a
+ * provider who has never been notified, which is the same answer.
+ */
+async function readLastAlerted(): Promise<Record<string, string>> {
+  // Neither `conversations` embeds nor `conversation_thread_meta` are in the
+  // generated types; same cast as the other table reads in this file.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = (await (supabase as any)
+    .from('conversations')
+    .select('provider_id, conversation_thread_meta(provider_alerted_at)')) as {
+    data: ThreadAlertRow[] | null;
+    error: { message: string } | null;
+  };
+  if (error) {
+    throw new Error(error.message);
+  }
+  const byProvider: Record<string, string> = {};
+  for (const row of data ?? []) {
+    const at = alertedAtOf(row);
+    if (at !== null) {
+      byProvider[row.provider_id] = at;
+    }
+  }
+  return byProvider;
+}
+
+function cooldownEndsAt(alertedAt: string | undefined): string | null {
+  if (alertedAt === undefined) {
+    return null;
+  }
+  const at = Date.parse(alertedAt);
+  if (Number.isNaN(at)) {
+    return null;
+  }
+  return new Date(at + NOTIFY_COOLDOWN_MINUTES * 60_000).toISOString();
+}
+
+/**
+ * The state a cold start begins in, which used to be `idle` and was a lie.
+ *
+ * Force-stop and relaunch left the control reading "Notify" for a provider who
+ * had just been notified, so the member tapped again, the server swallowed the
+ * second tap on the cooldown, and they believed they had pinged twice when the
+ * provider had been pinged once (found on the S22, 2026-09-17).
+ *
+ * Null once the window has passed, so the claim cannot outlive the cooldown
+ * that makes it true. The timers exist because nothing else would re-render at
+ * that moment: the interval keeps "again in NNm" honest while a surface stays
+ * open, and the timeout lands on expiry itself. Both are armed only for a
+ * provider who actually has a live cooldown, so a directory of strangers arms
+ * none.
+ */
+function useRestoredNotifyState(providerId: string): NotifyState | null {
+  const selectForProvider = useCallback(
+    (rows: Record<string, string>) => cooldownEndsAt(rows[providerId]),
+    [providerId],
+  );
+  const { data: cooldownUntil } = useQuery({
+    queryKey: notifyKeys.lastAlerted,
+    queryFn: readLastAlerted,
+    staleTime: 60_000,
+    select: selectForProvider,
+  });
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    if (cooldownUntil === null || cooldownUntil === undefined) {
+      return;
+    }
+    const remaining = Date.parse(cooldownUntil) - Date.now();
+    if (remaining <= 0) {
+      return;
+    }
+    const minute = setInterval(() => setTick(n => n + 1), 60_000);
+    const expiry = setTimeout(() => setTick(n => n + 1), remaining + 1_000);
+    return () => {
+      clearInterval(minute);
+      clearTimeout(expiry);
+    };
+  }, [cooldownUntil]);
+
+  if (
+    cooldownUntil === null ||
+    cooldownUntil === undefined ||
+    Date.parse(cooldownUntil) <= Date.now()
+  ) {
+    return null;
+  }
+  return { kind: 'notified', cooldownUntil };
+}
+
 interface NotifyMachine {
   /**
    * Which provider this state belongs to. FlashList RECYCLES a row's component
@@ -356,6 +513,9 @@ interface NotifyMachine {
  * The conversation is resolved LAZILY, on the tap, because `open_conversation`
  * creates the thread on first call (src/api/chat.ts:190-206) — arming it per
  * row would mint a conversation with everyone the member scrolled past.
+ *
+ * THE STATE SURVIVES A COLD START, from the server rather than from a local
+ * flag. See `useRestoredNotifyState`.
  */
 export function useNotifyProvider(providerId: string): NotifyAction {
   const setNotice = useStore(s => s.setNotice);
@@ -367,9 +527,33 @@ export function useNotifyProvider(providerId: string): NotifyAction {
     state: IDLE,
   });
   const mine = machine.forId === providerId;
-  const state = mine ? machine.state : IDLE;
+  const local = mine ? machine.state : IDLE;
+  const restored = useRestoredNotifyState(providerId);
+  /*
+   * THE SERVER ANSWERS FIRST, AND ONLY UNTIL THIS MEMBER TAPS.
+   *
+   * `attempt > 0` is what separates "not tapped yet" from "tapped and settled
+   * back to idle", and the two must not share an answer: a tap that came back
+   * `no_balance` or `peer_present` has just told the member something, and a
+   * restored "Notified" arriving on top of it would overwrite the reply to
+   * their own action with a fact about an older one. Before the first tap there
+   * is nothing to overwrite, and the server's record is the only honest state.
+   *
+   * A recycled FlashList cell lands here with `mine` false, so `attempt` is 0
+   * and the new provider's own restored state applies — the same guard that
+   * keeps one stranger's "Notified" off another stranger's card.
+   */
+  const state = local.kind === 'idle' && (!mine || machine.attempt === 0)
+    ? restored ?? IDLE
+    : local;
 
-  const conversation = useConversationId(state.kind === 'idle' ? null : providerId);
+  /*
+   * Armed from `local`, NOT from `state`. `useConversationId` calls
+   * `open_conversation`, which creates the thread on first call, so arming it
+   * from a restored state would mint a conversation for every previously
+   * notified provider the moment the directory rendered.
+   */
+  const conversation = useConversationId(local.kind === 'idle' ? null : providerId);
   const conversationId = conversation.data;
   const notifyPeer = useNotifyPeer(conversationId);
   const { mutate } = notifyPeer;
@@ -390,7 +574,7 @@ export function useNotifyProvider(providerId: string): NotifyAction {
   const attempt = mine ? machine.attempt : 0;
 
   useEffect(() => {
-    if (state.kind !== 'pending') {
+    if (local.kind !== 'pending') {
       return;
     }
     const ticket = `${providerId}:${attempt}`;
@@ -413,6 +597,9 @@ export function useNotifyProvider(providerId: string): NotifyAction {
     mutate(undefined, {
       onSuccess: alert => {
         if (alert.alerted) {
+          // The push 068 just recorded in `provider_alerted_at` is what a later
+          // cold start reads back, so the cached copy of that column has to go.
+          void queryClient.invalidateQueries({ queryKey: notifyKeys.lastAlerted });
           settle({ kind: 'notified', cooldownUntil: alert.cooldown_until ?? null });
           return;
         }
@@ -463,7 +650,7 @@ export function useNotifyProvider(providerId: string): NotifyAction {
       },
     });
   }, [
-    state.kind,
+    local.kind,
     attempt,
     providerId,
     conversationId,

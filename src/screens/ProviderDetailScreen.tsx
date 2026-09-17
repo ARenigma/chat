@@ -142,16 +142,26 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
    * could not exist. `useNotifyProvider` performs the RPC in place and keeps the
    * member here; the state it returns is what the button draws.
    *
-   * NOTIFIED DOES NOT SURVIVE A REMOUNT, and that is a decision rather than an
-   * omission. The server's cooldown is the real memory of this action (068,
-   * `chat_open_alert_cooldown_minutes`, 30 by default), and the only way to READ
-   * it is to call `announce_chat_open` — which rings the doorbell whenever the
-   * window has passed. A "restore on mount" would therefore notify people to
-   * find out whether they had been notified. Coming back to this screen shows
-   * "Notify" again, and the first tap answers `cooldown` and lands on the same
-   * "Notified, again in NNm" without sending a second push. Nothing is persisted
-   * locally, because a local flag would be the one thing that CAN claim the peer
-   * knows when the server never told anyone.
+   * NOTIFIED NOW SURVIVES A COLD START, and the paragraph that used to stand
+   * here said it could not. It was wrong about one thing and the rest followed:
+   * `announce_chat_open` is not the only way to read the cooldown. The push it
+   * dispatches is recorded in `conversation_thread_meta.provider_alerted_at`
+   * (068:131-140), which the member may read directly (030:280-292), so the
+   * state is restored from the server WITHOUT ringing anything. See
+   * `useRestoredNotifyState` in api/sessions.ts.
+   *
+   * It mattered more than it read. Found on the S22 by force-stopping and
+   * relaunching: the control came back saying "Notify" for somebody who had
+   * just been notified, the member tapped it, and 068's thirty-minute
+   * per-direction cooldown swallowed the second tap — so they believed they had
+   * pinged twice and the provider had been pinged once. The control was lying
+   * about the server's state.
+   *
+   * STILL NOTHING IS PERSISTED LOCALLY, because a local flag is the one thing
+   * that CAN claim the peer knows when the server never told anyone. And the
+   * restored button stays pressable: a tap on it answers `cooldown` with the
+   * authoritative `cooldown_until`, or actually alerts if the window has since
+   * been shortened.
    */
   const notify = useNotifyProvider(providerId);
   const notified = notify.state.kind === 'notified';
@@ -349,12 +359,16 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
               nothing renders it, and the RPC contract is left alone so the
               admin side can keep it.
 
-              The stars are the outline Lucide glyph in both states, separated
-              by colour alone — active in the token gold, the rest in the
-              outline grey. Lucide ships one `star`, stroked, and there is no
-              filled sibling in a static font, so a filled/hollow pair is not
-              available to us (RULE 4: the font is generated from
-              design/icons.json). */}
+              The earned stars are the SOLID face, not the outline one in a
+              different colour. That paragraph used to say the opposite, and it
+              was true when it was written: Lucide ships one stroked `star` and
+              a static font cannot fake a fill, so colour carried the whole
+              state. The Heroicons migration ships a matched outline+solid pair
+              at one codepoint, which is what `active` on `Icon` selects, and
+              this block was left behind on the colour-only path while
+              `RatingStars` (the directory row) moved over. A rating read as
+              five outlines in two tints here and as four solid stars plus an
+              outline on the card the member had just tapped. */}
           <Text allowFontScaling style={[styles.aboutLabel, styles.ratingsLabel]}>
             RATINGS
           </Text>
@@ -385,13 +399,23 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
                 {shownRating.score.toFixed(1)}
               </Text>
               <View style={styles.ratingStars}>
+                {/* FLOOR, not round, and the fill is why it had to change. A
+                    4.7 rounded up put a fifth star in the row directly under
+                    the numerals "4.7"; while both faces were outlines that read
+                    as a tint, but a solid fifth star is the row stating a five
+                    the number beside it denies. Floor never claims more than
+                    the figure above it. The fraction is lost here because this
+                    row is icon.md and `RatingStars` — which does draw the
+                    fraction, by clipping — is fixed at icon.xs by its own
+                    width arithmetic. */}
                 {[1, 2, 3, 4, 5].map(n => (
                   <Icon
                     key={n}
                     name="star"
+                    active={n <= Math.floor(shownRating.score)}
                     size={TOKENS.icon.md}
                     color={
-                      n <= Math.round(shownRating.score)
+                      n <= Math.floor(shownRating.score)
                         ? theme.color.text.rating
                         : theme.color.border.strong
                     }
@@ -409,6 +433,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
                       <Icon
                         key={n}
                         name="star"
+                        active={n <= r.rating}
                         size={TOKENS.icon.xs}
                         color={n <= r.rating ? theme.color.text.token : theme.color.border.strong}
                       />

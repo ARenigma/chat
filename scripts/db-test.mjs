@@ -150,6 +150,7 @@ const MIGRATIONS = [
   'supabase/migrations/109_call_rate_limit_is_configurable.sql',
   'supabase/migrations/110_a_message_push_names_the_member_who_sent_it.sql',
   'supabase/migrations/111_open_alerts_read_availability_not_presence.sql',
+  'supabase/migrations/112_a_provider_face_is_a_photograph.sql',
 ];
 
 /**

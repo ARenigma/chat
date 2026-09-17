@@ -156,3 +156,44 @@ thing. See `docs/adr/0016-onboarding-is-one-screen.md` for what guessing cost.
 `react-native-svg` is banned: it throws `synchronouslyUpdateUIProps` inside
 Reanimated views and kills touch on the whole subtree. That is the standard —
 a dependency has to be worth its failure modes.
+
+## RULE 6 — The Emil skills fire on every UI, state, motion or interaction change
+
+Not when asked. **Always.** Amit has had to ask three times in one session
+(2026-09-17: "Use Emil skills for UI, state, clicks and presses animations and
+physics and transitions", then "use emil skill here for all states and transition
+of notify button please", then "I am telling you to use emil skill again and
+againg.. make this a rule for this repo.. so it always fires"). A rule that has
+to be requested is not a rule.
+
+They live in `~/.agents/skills/`:
+
+| Skill                          | When                                                                                           |
+| ------------------------------ | ---------------------------------------------------------------------------------------------- |
+| `animate-expo`                 | **Building any motion in React Native.** This repo is RN, so this one governs, never `animate` |
+| `review-animations`            | Reviewing motion, including your own, before calling it done                                   |
+| `emil-design-eng`              | Component design, states, the invisible details                                                |
+| `find-animation-opportunities` | Auditing a surface for motion it should have                                                   |
+| `improve-animations`           | Auditing existing motion across the codebase                                                   |
+| `prototype`                    | A creative fork Amit should choose between on device                                           |
+
+**Read the skill before writing the code, not after.** The value is in the
+decision order — should it animate at all, what purpose, which thread, which
+properties, which curve — and that order only helps in front of the work.
+
+Things this rule has already caught, each shipped wrong first:
+
+- An accordion written as an animated `height`, which re-runs Yoga every frame
+  for the node and its siblings. `animate-expo` lists height among the
+  properties never to animate; the answer is a layout animation.
+- An away control painted in Material 3's **disabled** vocabulary while being
+  enabled — faint outline, tertiary ink, 3.30:1 against a 4.5:1 floor.
+- The correction to that, an accent fill, which fixed the contrast and broke the
+  hierarchy: a secondary action wearing the primary action's colour.
+- A toggle whose only on/off signal was a 0.22 → 0.42 alpha shift with no icon
+  change, on a control the user presses to change state.
+
+**And the frequency gate is the part that gets skipped.** Motion is budgeted by
+how often a thing is seen: keyboard-initiated and 100+/day get none, tens/day
+get near-imperceptible, occasional gets standard, rare gets the delight budget.
+A list row is not a rare surface.

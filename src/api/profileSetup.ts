@@ -1,8 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import type { Profile } from '../lib/database.types';
-import { isUsernameLocallyValid } from '../lib/username';
+import {
+  USERNAME_MAX,
+  isUsernameLocallyValid,
+  usernameLocalStatus,
+} from '../lib/username';
 import { keys } from './chat';
 
 /**
@@ -142,10 +146,26 @@ export function needsProfileSetup(profile: Profile | undefined): boolean {
   return profile?.role === 'member' && profile.profile_completed_at == null;
 }
 
-export async function checkDisplayName(name: string): Promise<DisplayNameCheck> {
-  const { data, error } = await supabase.rpc('check_display_name', {
-    p_name: name.trim(),
-  });
+/**
+ * `check_display_name` (migration 040) answers BOTH questions in one round
+ * trip: the charset/length rules AND `available` vs `taken` against the
+ * case-insensitive unique index on `lower(display_name)`. There is nothing for
+ * a second RPC to add, so availability has no migration behind it.
+ *
+ * `signal` is what makes an abandoned check stop. React Query hands the query's
+ * own signal to the query function and aborts it once the observer moves to a
+ * newer key (query-core `removeObserver`, which cancels only when the signal
+ * was consumed) — so passing it through is not decoration, it is the
+ * cancellation.
+ */
+export async function checkDisplayName(
+  name: string,
+  signal?: AbortSignal,
+): Promise<DisplayNameCheck> {
+  const call = supabase.rpc('check_display_name', { p_name: name.trim() });
+  const { data, error } = await (signal === undefined
+    ? call
+    : call.abortSignal(signal));
   if (error) {
     throw new Error(error.message);
   }
@@ -157,25 +177,111 @@ export async function checkDisplayName(name: string): Promise<DisplayNameCheck> 
   };
 }
 
+/**
+ * How long the field must be still before a keystroke costs a round trip.
+ *
+ * 450ms, up from 300. 300ms fires inside the gap between two characters of
+ * ordinary typing on a phone, so a nine-character name bought several requests
+ * whose answers were all thrown away — and on a slow Indian mobile connection
+ * the round trip outlives the gap, so the answer arrives against text that has
+ * already moved on. 450ms sits past the typing gap and still lands well inside
+ * the second after the member stops, which is where the verdict has to be to
+ * feel live rather than submitted.
+ */
+export const USERNAME_CHECK_DEBOUNCE_MS = 450;
+
 export function useCheckDisplayName(name: string, enabled: boolean) {
   const trimmed = name.trim();
-  const [debounced, setDebounced] = useState(trimmed);
+  const [debounced, setDebounced] = useState('');
 
   useEffect(() => {
+    // Cleared FIRST, on every change. Without this the key keeps pointing at
+    // the previous name for the whole debounce window, so React Query hands
+    // back that name's cached verdict and the field reads "already taken"
+    // about text the member has since replaced.
+    setDebounced('');
     if (!enabled || !isUsernameLocallyValid(trimmed)) {
-      setDebounced('');
       return;
     }
-    const t = setTimeout(() => setDebounced(trimmed), 300);
+    const t = setTimeout(() => setDebounced(trimmed), USERNAME_CHECK_DEBOUNCE_MS);
     return () => clearTimeout(t);
   }, [trimmed, enabled]);
 
   return useQuery({
     queryKey: ['display-name-check', debounced],
-    queryFn: () => checkDisplayName(debounced),
+    queryFn: ({ signal }) => checkDisplayName(debounced, signal),
     enabled: enabled && debounced.length >= 3,
     staleTime: 10_000,
+    // A failed check must reach the member as a failed check, quickly. Three
+    // silent retries hold the field on "Checking…" for seconds and then report
+    // the same thing anyway; the retry offered next to the verdict is the
+    // member's, and they can see it.
+    retry: false,
   });
+}
+
+/**
+ * Every state the username field can be in, as one value.
+ *
+ * `check_failed` is the state this type exists for. It is NOT `taken`: a member
+ * whose network dropped for one second would otherwise be told a free name
+ * belongs to somebody else, and they would give it up.
+ */
+export type UsernameVerdict =
+  | 'idle'
+  | 'too_short'
+  | 'invalid_chars'
+  | 'too_long'
+  | 'checking'
+  | 'available'
+  | 'taken'
+  | 'check_failed';
+
+/**
+ * The live availability check, as a state machine the screen can render
+ * directly.
+ *
+ * The local rules are applied first and no request is made until they pass —
+ * "at least 3 characters" is knowable without the server, and spending a round
+ * trip to be told so would put a spinner in front of an answer we already have.
+ */
+export function useUsernameVerdict(raw: string): {
+  verdict: UsernameVerdict;
+  retry: () => void;
+} {
+  const trimmed = raw.trim();
+  const local = usernameLocalStatus(trimmed);
+  const localOk = isUsernameLocallyValid(trimmed);
+  const { data, isError, refetch } = useCheckDisplayName(trimmed, localOk);
+
+  const retry = useCallback(() => {
+    void refetch();
+  }, [refetch]);
+
+  let verdict: UsernameVerdict;
+  if (local === 'idle' || local === 'too_short' || local === 'invalid_chars') {
+    verdict = local;
+  } else if (trimmed.length > USERNAME_MAX) {
+    // `usernameLocalStatus` has no `too_long`, and the field's maxLength makes
+    // this unreachable today; it is here so that a caller without that cap
+    // cannot silently fall through to a request that answers 'invalid'.
+    verdict = 'too_long';
+  } else if (isError) {
+    verdict = 'check_failed';
+  } else if (data?.status === 'available') {
+    verdict = 'available';
+  } else if (data?.status === 'taken') {
+    verdict = 'taken';
+  } else if (data?.status === 'invalid') {
+    verdict = 'invalid_chars';
+  } else {
+    // Locally valid with no verdict yet: either the debounce is still running
+    // or the request is in flight. Both are "we do not know yet", which is what
+    // `checking` says, and neither may read as a verdict.
+    verdict = 'checking';
+  }
+
+  return { verdict, retry };
 }
 
 export function useClaimMemberProfile() {

@@ -492,6 +492,16 @@ function ProviderRowView({
    * `away` above goes false on the next render — so the row swaps to Call
    * through the single reading of presence it already has, rather than growing a
    * second answer to the same question beside it.
+   *
+   * AND IT SURVIVES A COLD START. The state is restored from the server's own
+   * record of the push (`conversation_thread_meta.provider_alerted_at`, 068) by
+   * `useNotifyProvider` itself, so this file gains persistence without gaining
+   * a line: a relaunched app draws "Notified" for the thirty minutes the server
+   * would refuse a second doorbell, and "Notify" the moment it would not.
+   *
+   * The cooldown is still only SPOKEN here, per the note on the label below.
+   * The row CTA is a fixed ROW_CTA_WIDTH and restoring a state does not buy it
+   * any more room than earning one did.
    */
   const notify = useNotifyProvider(provider.id);
   const notified = notify.state.kind === 'notified';

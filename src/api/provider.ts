@@ -780,6 +780,13 @@ export function useRemoveAvatar() {
  * `clay:<seed>` sentinel onto `avatar_url`; every reader resolves it through
  * `resolveAvatarSource`. No upload, no storage object — the art ships in the app.
  * Same RLS path as useRemoveAvatar (avatar_url is not a privileged column).
+ *
+ * MEMBERS ONLY. A provider's face is a photograph (Amit, 2026-09-17: "provider
+ * dp can be never be avatar.. always real photo.. user dp will be avatar"), and
+ * migration 112 raises 42501 on a provider row that is written a clay sentinel.
+ * The `role` filter below is the same rule said one round trip earlier, so the
+ * person gets a sentence instead of a Postgres error; the database is what
+ * actually holds the line.
  */
 export function useSetClayAvatar() {
   const queryClient = useQueryClient();
@@ -792,12 +799,17 @@ export function useSetClayAvatar() {
       if (me === undefined) {
         throw new Error('No session');
       }
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .update({ avatar_url: `clay:${seed}` })
-        .eq('id', me);
+        .eq('id', me)
+        .neq('role', 'provider')
+        .select('id');
       if (error) {
         throw new Error(error.message);
+      }
+      if (data === null || data.length === 0) {
+        throw new Error('Provider avatars are photographs');
       }
     },
     onSuccess: () => {
@@ -805,9 +817,13 @@ export function useSetClayAvatar() {
       void queryClient.invalidateQueries({ queryKey: keys.profile });
       void queryClient.invalidateQueries({ queryKey: keys.providers });
     },
-    onError: () => {
+    onError: (err: Error) => {
       errorTick();
-      setNotice('Could not update your avatar. Try again.');
+      setNotice(
+        err.message === 'Provider avatars are photographs'
+          ? 'Your profile photo has to be a real photograph of you.'
+          : 'Could not update your avatar. Try again.',
+      );
     },
   });
 }
