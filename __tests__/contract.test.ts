@@ -8386,3 +8386,36 @@ describe("a rejoin publishes the member's ACTUAL camera state, not a hardcoded d
     expect(fn).not.toContain('publishCameraTrack: false,');
   });
 });
+
+describe('a cold launch offline does not sign a signed-in member out (H6)', () => {
+  // A `null` session caused by a network failure refreshing an expired
+  // token looks identical to a genuine sign-out unless distinguished —
+  // GoTrueClient's own offline-preserve fallback only covers the last
+  // ~minute before an access token's real expiry, so any cold launch after
+  // longer than that returns session: null while offline regardless.
+  const auth = withoutComments(read('src/api/auth.ts'));
+  const app = withoutComments(read('App.tsx'));
+
+  it('currentSession distinguishes a retryable (network) failure from a real sign-out', () => {
+    expect(auth).toContain(
+      "import { isAuthRetryableFetchError, type Session } from '@supabase/supabase-js';",
+    );
+    expect(auth).toContain('retryableError: boolean;');
+    expect(auth).toContain(
+      'retryableError: error !== null && isAuthRetryableFetchError(error),',
+    );
+  });
+
+  it('App.tsx retries via the existing attempt mechanism instead of signing out', () => {
+    expect(app).toContain('const { session, retryableError } = await currentSession();');
+    expect(app).toContain('if (retryableError && authRetryCountRef.current < 3) {');
+    expect(app).toContain('if (onlineManager.isOnline()) {');
+    expect(app).toContain('onlineManager.subscribe(online => {');
+    expect(app).toContain('setAttempt(n => n + 1);');
+  });
+
+  it('the retry is bounded, not infinite', () => {
+    expect(app).toContain('const authRetryCountRef = useRef(0);');
+    expect(app).toContain('authRetryCountRef.current += 1;');
+  });
+});

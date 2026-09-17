@@ -570,6 +570,11 @@ function Root() {
   const bootPhaseRef = useRef(boot.phase);
   bootPhaseRef.current = boot.phase;
   const [attempt, setAttempt] = useState(0);
+  // Bounds the H6 offline-session retry below: `isAuthRetryableFetchError`
+  // covers more than "NetInfo says offline" (a captive portal, the auth
+  // server itself being unreachable), so a case where the network reports
+  // online but the auth fetch keeps failing must not retry forever.
+  const authRetryCountRef = useRef(0);
   const [route, setRoute] = useState<MemberRoute>({ name: 'home' });
   const [providerRoute, setProviderRoute] = useState<ProviderRoute>({ name: 'home' });
   /*
@@ -647,11 +652,46 @@ function Root() {
     (async () => {
       try {
         assertEnv();
-        const session = await currentSession();
+        const { session, retryableError } = await currentSession();
         if (cancelled) {
           return;
         }
         if (session === null) {
+          /*
+           * H6, 2026-09-17 audit: a `null` session caused by a NETWORK
+           * failure (the access token expired days ago and refreshing it
+           * needed a request that could not be made) is not the same fact
+           * as "this member signed out" — but until `retryableError` existed,
+           * both looked identical here, and a signed-in member who cold-
+           * launched offline was bounced to the sign-in screen. Wait for
+           * connectivity and retry the WHOLE boot sequence (the same
+           * `attempt` bump every other retry path in this file already uses)
+           * instead of concluding signed-out on a question we could not
+           * actually answer yet.
+           */
+          if (retryableError && authRetryCountRef.current < 3) {
+            authRetryCountRef.current += 1;
+            // `subscribe` only calls back on a CHANGE (query-core's own
+            // OnlineManager.setOnline) — if the network is already back by
+            // the time this runs (the failure was a transient blip, not a
+            // genuine offline stretch), there is no future "change" left to
+            // wait for and this would hang in 'loading' forever. Bounded to
+            // 3 attempts: `isAuthRetryableFetchError` covers more than
+            // "NetInfo says offline" (a captive portal, the auth server
+            // itself down), so "network reports online but the fetch keeps
+            // failing" must not retry forever either.
+            if (onlineManager.isOnline()) {
+              setAttempt(n => n + 1);
+              return;
+            }
+            const unsubscribe = onlineManager.subscribe(online => {
+              if (online) {
+                unsubscribe();
+                if (!cancelled) setAttempt(n => n + 1);
+              }
+            });
+            return;
+          }
           setBoot({ phase: 'signedOut' });
           return;
         }
