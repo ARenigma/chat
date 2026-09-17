@@ -130,6 +130,7 @@ import { M3Field } from '../components/TextField';
 import { SafetySheet } from './SafetySheet';
 import { RenameChatSheet } from '../components/RenameChatSheet';
 import { useConversationLabels } from '../api/conversationLabels';
+import { clearChatDraft } from '../lib/chatDraft';
 
 /*
  * The transcript's two row shapes, at module scope rather than inside the
@@ -1327,6 +1328,21 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   }, [activeSession, endSessionMutate, setNotice]);
 
   /**
+   * `onBack` wrapped with the draft purge (X6, 2026-09-17 audit): leaving the
+   * chat back to Home is one of Amit's three named exits, the other two being
+   * a call (see `startCall` below) and the app closing (already covered —
+   * nothing reaches this chat again without going through one of the other
+   * two first). Every path back to Home funnels through here rather than a
+   * raw `onBack()`, so there is exactly one place this can be missed.
+   */
+  const leaveChat = useCallback(() => {
+    if (conversationId !== undefined) {
+      clearChatDraft(conversationId);
+    }
+    onBack();
+  }, [conversationId, onBack]);
+
+  /**
    * Back is conditionally intercepted only while a paid session exists. Android
    * recommends enabling a back callback only for the state that needs a decision;
    * ordinary chat navigation remains immediate.
@@ -1334,7 +1350,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
    */
   const requestLeave = useCallback(() => {
     if (!activeSession) {
-      onBack();
+      leaveChat();
       return;
     }
     // The dialog quotes the elapsed time, and above the five-minute mark the
@@ -1344,13 +1360,13 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
     setLeaveDialogVisible(true);
   }, [
     activeSession,
-    onBack,
+    leaveChat,
   ]);
 
   const confirmLeave = useCallback(() => {
     if (!activeSession) {
       setLeaveDialogVisible(false);
-      onBack();
+      leaveChat();
       return;
     }
     endSessionMutate(
@@ -1370,7 +1386,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
           if (isMemberSide && name !== '') {
             requestReview(activeSession.id, name);
           }
-          onBack();
+          leaveChat();
         },
         onError: () => {
           setLeaveDialogVisible(false);
@@ -1382,8 +1398,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
     activeSession,
     endSessionMutate,
     isMemberSide,
+    leaveChat,
     name,
-    onBack,
     requestReview,
     setNotice,
   ]);
@@ -1494,10 +1510,26 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   const openImage = useCallback((image: ImageBody) => setViewerImage(image), []);
   const closeImage = useCallback(() => setViewerImage(null), []);
 
+  /**
+   * `onStartCall` wrapped with the draft purge (X6, 2026-09-17 audit) — the
+   * second of Amit's three named exits. Every call-start in this screen goes
+   * through here, not the raw prop, for the same one-place-to-miss-it reason
+   * `leaveChat` wraps `onBack`.
+   */
+  const startCall = useCallback(
+    (channel: 'audio' | 'video') => {
+      if (conversationId !== undefined) {
+        clearChatDraft(conversationId);
+      }
+      onStartCall?.(channel);
+    },
+    [conversationId, onStartCall],
+  );
+
   /** Re-dial from a missed/declined call row. `medium` is the row's own. */
   const callBack = useCallback(
-    (medium: 'voice' | 'video') => onStartCall?.(medium === 'video' ? 'video' : 'audio'),
-    [onStartCall],
+    (medium: 'voice' | 'video') => startCall(medium === 'video' ? 'video' : 'audio'),
+    [startCall],
   );
 
   const renderItem = useCallback(
@@ -1888,7 +1920,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
             control that actually does something, and the disabled state is an
             honest gate (CALLS_ENABLED) rather than a role that never fires. */}
         <Pressable
-          onPress={() => onStartCall?.('video')}
+          onPress={() => startCall('video')}
           disabled={
             !canStartVideo ||
             (activeSession != null && activeSession.channel !== 'chat')
@@ -1906,7 +1938,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
           <Icon name="video" size={TOKENS.icon.md} color={theme.color.text.secondary} />
         </Pressable>
         <Pressable
-          onPress={() => onStartCall?.('audio')}
+          onPress={() => startCall('audio')}
           disabled={
             !canStartAudio ||
             (activeSession != null && activeSession.channel !== 'chat')
@@ -2311,6 +2343,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
           ) : null}
 
           <Composer
+            conversationId={conversationId}
             onSend={onSend}
             onSendVoice={onSendVoice}
             onSendImage={onSendImage}

@@ -2858,9 +2858,13 @@ describe('calling ships visible and on, wired to a real media layer', () => {
     expect(chat).toMatch(
       /!canStartAudio\s*\|\|\s*\(activeSession != null && activeSession\.channel !== 'chat'\)/,
     );
-    // Real, and ready for the flag flip: the tap starts a call.
-    expect(chat).toContain("onStartCall?.('video')");
-    expect(chat).toContain("onStartCall?.('audio')");
+    // Real, and ready for the flag flip: the tap starts a call — through
+    // `startCall`, not the raw prop, since X6 (2026-09-17 audit) wrapped
+    // every call-start with the draft purge. `startCall` itself still calls
+    // the real prop with the right channel.
+    expect(chat).toContain("onPress={() => startCall('video')}");
+    expect(chat).toContain("onPress={() => startCall('audio')}");
+    expect(chat).toContain('onStartCall?.(channel)');
   });
 
   it('keeps the token counter in the chat header', () => {
@@ -7970,5 +7974,60 @@ describe('system messages — centered session/notice rows in the transcript', (
     expect(api).toContain("from('paid_sessions')");
     expect(api).toMatch(/\.eq\('channel', 'chat'\)/);
     expect(api).toMatch(/\.eq\('status', 'ended'\)/);
+  });
+});
+
+describe('draft persistence survives backgrounding, purges on intentional exit (X6)', () => {
+  // Amit's rule (2026-09-17 audit): a half-typed message survives the app
+  // being backgrounded — including an OS process kill while backgrounded —
+  // but is purged the moment the member leaves the chat back to Home, into
+  // a call, or the app closes.
+  const draftLib = withoutComments(read('src/lib/chatDraft.ts'));
+  const composer = withoutComments(read('src/components/Composer.tsx'));
+  const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+
+  it('chatDraft.ts is a thin per-conversation MMKV shell, same split as outboxStore.ts', () => {
+    expect(draftLib).toContain("import { storage } from './storage'");
+    expect(draftLib).toContain('export function readDraftText');
+    expect(draftLib).toContain('export function writeDraftText');
+    expect(draftLib).toContain('export function clearChatDraft');
+  });
+
+  it('Composer restores the draft once conversationId resolves, never clobbering a keystroke', () => {
+    expect(composer).toContain(
+      "import { readDraftText, writeDraftText } from '../lib/chatDraft'",
+    );
+    // Guarded on the current value being empty, so a character typed in the
+    // window before the id resolves is never overwritten by the restore.
+    expect(composer).toMatch(
+      /setValue\(current => \(current === ''\s*\?\s*readDraftText\(conversationId\)\s*:\s*current\)\)/,
+    );
+  });
+
+  it('Composer persists the draft on the AppState "background" transition, not "inactive"', () => {
+    // Same trigger and the same reasoning the mic-cancel effect above it
+    // already uses: `inactive` fires for the permission sheet, multi-window
+    // transitions and the notification shade without the member leaving.
+    const idx = composer.indexOf('writeDraftText(id, valueRef.current)');
+    expect(idx).toBeGreaterThan(-1);
+    const persistEffect = composer.slice(Math.max(0, idx - 400), idx + 50);
+    expect(persistEffect).toContain("next === 'background'");
+  });
+
+  it('ChatScreen wraps onBack and onStartCall with the purge, not the raw props', () => {
+    expect(chat).toContain(
+      "import { clearChatDraft } from '../lib/chatDraft'",
+    );
+    // leaveChat and startCall are the only two places that may call the raw
+    // onBack()/onStartCall() props — every other exit reads through them.
+    expect(chat).toMatch(/const leaveChat = useCallback\(\(\) => \{/);
+    expect(chat).toMatch(/const startCall = useCallback\(\s*\(channel: 'audio' \| 'video'\) => \{/);
+    // The raw prop is called exactly once each, inside the wrapper that
+    // purges first — comments are already stripped, so every other match
+    // would be a second, unwrapped call site.
+    expect(chat.match(/\bonBack\(\)/g)?.length ?? 0).toBe(1);
+    expect(chat.match(/\bonStartCall\?\.\(channel\)/g)?.length ?? 0).toBe(1);
+    expect(chat).not.toContain("onStartCall?.('video')");
+    expect(chat).not.toContain("onStartCall?.('audio')");
   });
 });

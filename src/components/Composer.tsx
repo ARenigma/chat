@@ -48,6 +48,7 @@ import { SendButton } from './SendButton';
 import { AttachPanel } from './AttachPanel';
 import { EmojiPicker } from './EmojiPicker';
 import { readKeyboardHeight, writeKeyboardHeight } from '../lib/keyboardPanel';
+import { readDraftText, writeDraftText } from '../lib/chatDraft';
 import { usePanelCeiling } from '../lib/imeGeometry';
 import { Waveform } from './Waveform';
 import { TextField } from './TextField';
@@ -198,6 +199,12 @@ export const MAX_INPUT_LINES = 6;
 const KEYBOARD_EASING = KEYBOARD_CUBIC;
 
 interface Props {
+  /**
+   * Keys the draft persisted across an AppState backgrounding (X6, 2026-09-17
+   * audit) — `undefined` while the conversation id is still resolving, which
+   * simply defers the restore/persist effects until it arrives.
+   */
+  conversationId: string | undefined;
   onSend: (text: string) => void;
   /** A finished recording, ready to upload. Both roles get this: the provider
    *  tree renders the same ChatScreen, and voice notes are in scope for both. */
@@ -301,6 +308,7 @@ const RECORD_PING_MS = 1_500;
  * is added later it belongs on top of this, not instead of it.
  */
 function ComposerView({
+  conversationId,
   onSend,
   onSendVoice,
   onSendImage,
@@ -319,6 +327,36 @@ function ComposerView({
   const setNotice = useStore(s => s.setNotice);
   const [value, setValue] = useState('');
   const [mode, setMode] = useState<Mode>('idle');
+
+  /*
+   * Restores a draft persisted across an AppState backgrounding (X6,
+   * 2026-09-17 audit — Amit's rule: the draft survives backgrounding,
+   * including an OS process kill while backgrounded, and is purged only on
+   * an intentional exit; see `chatDraft.ts` and ChatScreen's own purge calls
+   * on leaving to Home or into a call).
+   *
+   * `conversationId` resolves asynchronously (ChatScreen's own comment on
+   * `knownThread`/`openedId`), so this cannot be the `useState` initializer —
+   * it has to be an effect that fires once the id actually arrives. Guarded
+   * on `value === ''` so it can never clobber a character the member has
+   * already typed in the brief window before the id resolves.
+   */
+  const restoredFor = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (conversationId === undefined || conversationId === restoredFor.current) {
+      return;
+    }
+    restoredFor.current = conversationId;
+    setValue(current => (current === '' ? readDraftText(conversationId) : current));
+  }, [conversationId]);
+
+  // Read by the AppState listener below without being in its dep array — the
+  // listener is registered once for lifetime (same idiom as App.tsx's
+  // `bootPhaseRef`), not re-subscribed on every keystroke.
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const conversationIdRef = useRef(conversationId);
+  conversationIdRef.current = conversationId;
 
   /*
    * Tell the peer a voice note is being recorded, for as long as it is.
@@ -1014,6 +1052,27 @@ function ComposerView({
     });
     return () => sub.remove();
   }, [discard]);
+
+  /*
+   * Writes the draft to MMKV on the same `background` transition, so it
+   * survives whatever Android does to the process next — same trigger as the
+   * mic-cancel effect above, same `background`-only reasoning, kept as a
+   * separate effect because the two are unrelated concerns that happen to
+   * share a signal.
+   *
+   * There is deliberately no purge here: leaving the field non-empty on the
+   * way out is exactly the case this exists for. Purging on an intentional
+   * exit is ChatScreen's job (it owns the navigation), not this component's.
+   */
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', next => {
+      const id = conversationIdRef.current;
+      if (next === 'background' && id !== undefined) {
+        writeDraftText(id, valueRef.current);
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   const sendDraft = useCallback(() => {
     if (draft === null) {
