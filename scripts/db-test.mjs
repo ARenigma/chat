@@ -158,6 +158,7 @@ const MIGRATIONS = [
   'supabase/migrations/117_mock_recharge_is_rate_limited.sql',
   'supabase/migrations/118_session_leases_require_a_real_participant.sql',
   'supabase/migrations/119_call_quality_records_loss_rate_and_mos.sql',
+  'supabase/migrations/120_start_call_detects_a_simultaneous_ring.sql',
 ];
 
 /**
@@ -810,6 +811,14 @@ const suites = [
     ),
     label:
       'session_leases cannot be planted by a stranger, and a stray row cannot fake "both present"',
+  },
+  {
+    file: join(
+      ROOT,
+      'supabase/tests/500_start_call_detects_a_simultaneous_ring.sql',
+    ),
+    label:
+      'a simultaneous call in the same conversation is refused with ALREADY_RINGING, not silently replaced',
   },
 ];
 

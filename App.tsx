@@ -1762,7 +1762,28 @@ function SignedIn({
         role === 'provider' ? currentProviderRouteRef.current : currentRouteRef.current;
       if (current.name === 'call') {
         if (current.callId !== incoming.callId) {
-          void endCall(incoming.callId);
+          /*
+           * M23 (2026-09-17 audit): the screen already on top may be OUR OWN
+           * outgoing attempt to this exact peer, still waiting on `start_call`
+           * (callId null — see CallScreen.tsx's outgoing-call effect). That is
+           * not a second, unrelated call to decline; it is the other half of
+           * a simultaneous-dial race, and `start_call` (migration 120) is
+           * about to tell that screen so via ALREADY_RINGING. Declining here
+           * would end the peer's call before that dialog ever has a chance to
+           * show — this realtime path is typically faster than the RPC
+           * round-trip start_call is itself waiting on.
+           */
+          const currentPeerId =
+            role === 'provider'
+              ? (current as ProviderRoute & { name: 'call' }).peerId
+              : (current as MemberRoute & { name: 'call' }).providerId;
+          const isOwnRaceAgainstSamePeer =
+            current.direction === 'out' &&
+            current.callId === null &&
+            currentPeerId === incoming.callerId;
+          if (!isOwnRaceAgainstSamePeer) {
+            void endCall(incoming.callId);
+          }
         }
         return;
       }

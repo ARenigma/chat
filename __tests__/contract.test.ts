@@ -6230,6 +6230,85 @@ describe('a provider offers the channels they choose, and at least one', () => {
     }
   });
 
+});
+
+describe('a simultaneous call in the same conversation is a dialog, not a silent replace', () => {
+  // M23, 2026-09-17 audit. Amit's call: show a dialog ("X is calling you too —
+  // answer instead?"), not auto-connect and not the old silent-replace.
+  const migration120 = read(
+    'supabase/migrations/120_start_call_detects_a_simultaneous_ring.sql',
+  );
+  const callScreen = read('src/screens/CallScreen.tsx');
+  const appTsx = read('App.tsx');
+
+  it('start_call checks for the peer already ringing us before ending anything', () => {
+    const body = migration120.slice(
+      migration120.indexOf('create or replace function public.start_call'),
+    );
+    // The new SELECT must run BEFORE the "end this conversation's live call
+    // row" UPDATE — otherwise it is checking a row it just overwrote.
+    const checkIdx = body.indexOf("status = 'ringing'");
+    const updateIdx = body.indexOf('set    status     = case when status');
+    expect(checkIdx).toBeGreaterThan(-1);
+    expect(updateIdx).toBeGreaterThan(-1);
+    expect(checkIdx).toBeLessThan(updateIdx);
+    expect(body).toContain("caller_id = v_other");
+    expect(body).toContain("callee_id = v_uid");
+    expect(body).toContain("'error', 'ALREADY_RINGING'");
+    expect(body).toContain("'call_id', v_incoming.id");
+    // Scoped to ringing only — an active call means this device already has
+    // that CallScreen open and no Call button to have pressed.
+    expect(body).not.toMatch(/status\s*=\s*'ringing'\s+and\s+status\s*=\s*'active'/);
+  });
+
+  it('CallScreen offers to answer the existing call instead of a plain refusal', () => {
+    expect(callScreen).toContain("code === 'ALREADY_RINGING'");
+    expect(callScreen).toContain('setAlreadyRingingCallId(r.call_id)');
+    // Confirming must not answer via the stale `callId` closure `accept` uses —
+    // it takes the peer's call id explicitly.
+    expect(callScreen).toMatch(
+      /const answerInstead = useCallback\(\s*\(existingCallId: string\) => \{/,
+    );
+    expect(callScreen).toContain('void answerCall(existingCallId)');
+    expect(callScreen).toContain('testID="call-already-ringing"');
+  });
+
+  it('the incoming-call glare guard does not decline the peer mid-race', () => {
+    // Without this, App.tsx's pre-existing GLARE handling (a DIFFERENT, older
+    // fix — a second unrelated ring arriving while a call is on screen) would
+    // auto-decline the peer's call via `endCall` the instant their `calls` row
+    // reaches us over realtime — which is typically FASTER than our own
+    // start_call round-trip, so the ALREADY_RINGING dialog above would never
+    // get the chance to show.
+    const onIncoming = appTsx.slice(
+      appTsx.indexOf('const onIncoming = useCallback'),
+      appTsx.indexOf('useIncomingCalls(selfId, onIncoming);'),
+    );
+    expect(onIncoming).toContain('isOwnRaceAgainstSamePeer');
+    expect(onIncoming).toMatch(
+      /current\.direction === 'out' &&\s*current\.callId === null &&\s*currentPeerId === incoming\.callerId/,
+    );
+    expect(onIncoming).toMatch(/if \(!isOwnRaceAgainstSamePeer\) \{\s*void endCall\(incoming\.callId\);/);
+  });
+
+  it('database.types documents ALREADY_RINGING on CallError', () => {
+    const types = read('src/lib/database.types.ts');
+    expect(types).toMatch(
+      /CallError = SendError \| 'BUSY' \| 'GONE' \| 'SERVER_ERROR' \| 'ALREADY_RINGING'/,
+    );
+  });
+
+  it('db-test.mjs runs migration 120', () => {
+    const dbTest = read('scripts/db-test.mjs');
+    expect(dbTest).toContain(
+      "'supabase/migrations/120_start_call_detects_a_simultaneous_ring.sql',",
+    );
+  });
+});
+
+describe('a provider offers the channels they choose, and at least one — invoices', () => {
+  const migration = read('supabase/migrations/064_provider_channels.sql');
+
   it('publishes the three columns to the member, appended to the directory', () => {
     const view = migration.slice(
       migration.indexOf('create or replace view public.provider_directory'),

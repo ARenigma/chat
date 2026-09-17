@@ -681,7 +681,13 @@ export type SendError =
  * 2026-09-08 call outage spent a day looking like bad wifi because there was no
  * such code and every raise collapsed to `null`.
  */
-export type CallError = SendError | 'BUSY' | 'GONE' | 'SERVER_ERROR';
+/**
+ * `ALREADY_RINGING` (M23, 2026-09-17 audit, migration 120): the other party is
+ * already calling THIS user in the same conversation. `start_call` returns
+ * `call_id` alongside it — the existing (not the refused) call's id — so the
+ * caller can be offered a way to answer it instead of a plain refusal.
+ */
+export type CallError = SendError | 'BUSY' | 'GONE' | 'SERVER_ERROR' | 'ALREADY_RINGING';
 
 export type SendResult = {
   success: boolean;

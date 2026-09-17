@@ -254,6 +254,14 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   const [upgrading, setUpgrading] = useState(false);
   const [memberConsented, setMemberConsented] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  /*
+   * M23 (2026-09-17 audit): the other party's own outgoing call to us landed
+   * in this same conversation while ours was still resolving (migration 120's
+   * ALREADY_RINGING). Their call — not the one this screen was about to place
+   * — is the one to answer, so its id is held separately from `callId` until
+   * the dialog below is confirmed.
+   */
+  const [alreadyRingingCallId, setAlreadyRingingCallId] = useState<string | null>(null);
   // Back must not silently end a call. Leaving this screen hangs up (unmount →
   // endCall), so a bare hardware back was a one-tap hang-up with no confirm.
   // The red button stays immediate — that IS the explicit intent, as on every
@@ -428,6 +436,10 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
           medium,
           sqlstate: r?.sqlstate ?? '',
         });
+        if (code === 'ALREADY_RINGING' && r?.call_id) {
+          setAlreadyRingingCallId(r.call_id);
+          return;
+        }
         if (code === 'INSUFFICIENT_BALANCE' && !isMemberSide) {
           setNotice('Their balance is too low to start this call.');
         } else {
@@ -921,6 +933,36 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   acceptRef.current = accept;
 
   /*
+   * M23: confirms the ALREADY_RINGING dialog. Takes the existing call's id
+   * as a parameter rather than reading `callId` state, because `accept`
+   * above closes over `callId` and this fires before `setCallId` below has
+   * committed — a stale closure would still answer the call this screen was
+   * trying (and failing) to place, not the one actually ringing.
+   */
+  const answerInstead = useCallback(
+    (existingCallId: string) => {
+      setAlreadyRingingCallId(null);
+      setCallId(existingCallId);
+      setAccepted(true);
+      setPhase('connecting');
+      startCallForegroundService(name, false, true);
+      void answerCall(existingCallId).then(result => {
+        if (!result?.success) {
+          setNotice(
+            result?.error === 'SERVER_ERROR'
+              ? SERVER_ERROR_NOTICE
+              : 'This call is no longer available.',
+          );
+          onEnd();
+          return;
+        }
+        setSessionId(result.session_id ?? null);
+      });
+    },
+    [onEnd, setNotice, name],
+  );
+
+  /*
    * L1 (2026-09-17 audit): the mic/camera stopping mid-call used to be
    * silent — nothing told the member their own audio or video had actually
    * stopped reaching the other side. `mediaWarning` (agora.ts) is null for
@@ -1201,6 +1243,20 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
         onConfirm={() => {
           setLeaveDialogVisible(false);
           onEnd();
+        }}
+      />
+      <ConfirmDialog
+        visible={alreadyRingingCallId !== null}
+        testID="call-already-ringing"
+        title={`${name} is calling you too`}
+        body="You were about to call each other at the same time. Answer their call instead?"
+        cancelLabel="Not now"
+        confirmLabel="Answer"
+        onCancel={onEnd}
+        onConfirm={() => {
+          if (alreadyRingingCallId !== null) {
+            answerInstead(alreadyRingingCallId);
+          }
         }}
       />
     </View>
