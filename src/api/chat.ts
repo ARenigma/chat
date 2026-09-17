@@ -527,7 +527,23 @@ export function useLiveMessageEdits(
       if (cancelled) {
         return;
       }
-      channel.subscribe();
+      /*
+       * A status callback, which this channel did not have.
+       *
+       * `useLiveConversation` heals itself on (re)subscribe because a socket
+       * that was down may have missed INSERTs. This one carries UPDATEs, and it
+       * was subscribing blind: a CHANNEL_ERROR here meant edits and deletes
+       * stopped arriving and nothing ever went looking for the ones missed, so
+       * the transcript kept showing a body the peer had already changed.
+       *
+       * `recoverMessageGap` now repairs both halves (see
+       * `fetchMessagesChangedSince`), so the two channels can share one repair.
+       */
+      channel.subscribe(status => {
+        if (status === 'SUBSCRIBED') {
+          void recoverMessageGap(queryClient, conversationId, selfId);
+        }
+      });
     })();
 
     return () => {
@@ -962,6 +978,54 @@ async function fetchMessagesSince(
 }
 
 /**
+ * The rows that CHANGED while the socket was down, as opposed to the rows that
+ * arrived.
+ *
+ * `fetchMessagesSince` above can only ever find messages NEWER than the newest
+ * one held, because it pages forward on `created_at`. An edit, a soft delete or
+ * a read receipt does not move `created_at`: the row keeps the timestamp it was
+ * written with, so a message edited or deleted during an outage is invisible to
+ * that walk forever. The transcript goes on showing the pre-edit body, or a
+ * message the peer deleted, with no error and no spinner. Found by comparing
+ * against Telegram on 2026-09-17.
+ *
+ * Telegram splits the same problem in two and so does this. `getDifference`
+ * returns `new_messages` AND `other_updates`, the second carrying
+ * `updateEditMessage`, `updateDeleteMessages` and `updateReadHistoryOutbox`
+ * (MessagesController.java:17715-17738). We had implemented the first half.
+ *
+ * Deliberately NOT paged. The forward walk pages because an outage can hide an
+ * unbounded number of new messages; the number of OLD messages edited or
+ * deleted in the same window is small in any realistic case, so one bounded
+ * query is the right shape. If it ever saturates, the caller's existing
+ * fall-back to `invalidateQueries` is the correct answer anyway.
+ *
+ * The cursor is the same `newest` the walk starts from, which over-fetches
+ * slightly: a change made BEFORE the outage but after that message was written
+ * is re-read. That is harmless. `mergeIncoming` replaces by id, so re-merging a
+ * row the cache already holds is a no-op, and over-fetching is the safe
+ * direction for a repair path.
+ */
+async function fetchMessagesChangedSince(
+  conversationId: string,
+  sinceIso: string,
+): Promise<Message[]> {
+  const { data, error } = await supabase
+    .from('messages')
+    .select('*')
+    .eq('conversation_id', conversationId)
+    .or(
+      `edited_at.gt.${sinceIso},deleted_at.gt.${sinceIso},read_at.gt.${sinceIso}`,
+    )
+    .order('created_at', { ascending: true })
+    .limit(GAP_PAGE);
+  if (error) {
+    throw new Error(error.message);
+  }
+  return data ?? [];
+}
+
+/**
  * Catch up on everything missed while the socket was down.
  *
  * ---------------------------------------------------------------------------
@@ -1016,6 +1080,21 @@ export async function recoverMessageGap(
     // Cold cache: no cursor to page from, so the ordinary fetch IS the recovery.
     await queryClient.invalidateQueries({ queryKey: key });
     return;
+  }
+
+  /*
+   * The other half of the repair, run FIRST so that a transcript showing a
+   * deleted message stops showing it even if the forward walk then throws.
+   */
+  const changed = await fetchMessagesChangedSince(conversationId, newest);
+  if (changed.length > 0) {
+    queryClient.setQueryData<TranscriptMessage[]>(key, prev => {
+      let next = prev ?? [];
+      for (const row of changed) {
+        next = mergeIncoming(next, row, selfId);
+      }
+      return next;
+    });
   }
 
   let cursor = newest;
