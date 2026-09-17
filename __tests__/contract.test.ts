@@ -8067,6 +8067,15 @@ describe('outbox drains for every conversation at boot, not just the one opened 
     expect(fn).toContain('void drainAllOutbox(queryClient)');
   });
 
+  it('also drains on a reconnect while already foregrounded (M9)', () => {
+    // useOutboxReplay/AppState 'active' alone miss the case where the app
+    // never backgrounded at all -- the network just dropped and came back.
+    const fn = api.slice(api.indexOf('export function useGlobalOutboxDrain'));
+    expect(fn).toContain('onlineManager.subscribe(online => {');
+    expect(fn).toContain('if (online) {');
+    expect(fn).toContain('unsubscribeOnline()');
+  });
+
   it("App.tsx wires the drain to boot.phase === 'ready', not unconditionally", () => {
     expect(app).toContain(
       "import { keys, useConversations, useGlobalOutboxDrain, useSelfId } from './src/api/chat'",

@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import {
+  onlineManager,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 import { AppState } from 'react-native';
 import { supabase } from '../lib/supabase';
 import type {
@@ -900,12 +906,20 @@ export async function drainAllOutbox(queryClient: QueryClient): Promise<void> {
 }
 
 /**
- * The boot-time / foreground-time half of X7: runs `drainAllOutbox` once the
- * app is signed in, and again on every return to the foreground — the same
- * two moments `useOutboxReplay` already replays on, just not gated on any
- * one screen being mounted. `ready` is App.tsx's own `boot.phase === 'ready'`,
- * so this never fires ahead of a live session (and never pops the refill
- * sheet over a boot/auth screen a failed replay would otherwise reach for).
+ * The boot-time / foreground-time / reconnect half of X7 (M9 folded in,
+ * 2026-09-17 audit): runs `drainAllOutbox` once the app is signed in, again
+ * on every return to the foreground, and again the moment the network comes
+ * back while the app was already foregrounded the whole time — three moments
+ * `useOutboxReplay` cannot cover by itself since it is gated on one
+ * conversation's screen being mounted. `ready` is App.tsx's own
+ * `boot.phase === 'ready'`, so this never fires ahead of a live session (and
+ * never pops the refill sheet over a boot/auth screen a failed replay would
+ * otherwise reach for).
+ *
+ * `onlineManager.subscribe` only calls back on a CHANGE (query-core's own
+ * `OnlineManager.setOnline`), so this never drains twice for one reconnect —
+ * only the transition into `online` matters here, an `offline` one has
+ * nothing to drain against.
  *
  * No cancellation guard on unmount, unlike `useOutboxReplay`: that hook
  * unmounts on every ordinary chat navigation, which this does not — it lives
@@ -923,7 +937,15 @@ export function useGlobalOutboxDrain(ready: boolean): void {
         void drainAllOutbox(queryClient);
       }
     });
-    return () => sub.remove();
+    const unsubscribeOnline = onlineManager.subscribe(online => {
+      if (online) {
+        void drainAllOutbox(queryClient);
+      }
+    });
+    return () => {
+      sub.remove();
+      unsubscribeOnline();
+    };
   }, [ready, queryClient]);
 }
 
