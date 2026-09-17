@@ -8128,3 +8128,32 @@ describe('a peer bubble animates in exactly once, not on every FlashList remount
     );
   });
 });
+
+describe('the status line and the typing bubble fade through a change, not a hard cut (M14)', () => {
+  // Rule 7 (motion.ts): a text/content node whose content just changed gets
+  // fadeSwapFast/fadeSwapOutFast, keyed by that content so React remounts it.
+  // Both surfaces flicker many times within one live conversation — the
+  // near-imperceptible tier, not a heavier bubble-arrival entrance.
+  const subtitle = withoutComments(read('src/components/HeaderSubtitle.tsx'));
+  const typing = withoutComments(read('src/components/PeerTyping.tsx'));
+
+  it('HeaderSubtitle keys its Animated.Text by label and fades the swap', () => {
+    expect(subtitle).toContain(
+      "import { fadeSwapFast, fadeSwapOutFast } from '../theme/motion'",
+    );
+    expect(subtitle).toContain('<Animated.Text');
+    expect(subtitle).toContain('key={label}');
+    expect(subtitle).toContain('entering={fadeSwapFast}');
+    expect(subtitle).toContain('exiting={fadeSwapOutFast}');
+  });
+
+  it('PeerTyping keys its row by activity and fades the swap', () => {
+    expect(typing).toContain(
+      "import { fadeSwapFast, fadeSwapOutFast } from '../theme/motion'",
+    );
+    expect(typing).toContain('<Animated.View');
+    expect(typing).toContain('key={activity}');
+    expect(typing).toContain('entering={fadeSwapFast}');
+    expect(typing).toContain('exiting={fadeSwapOutFast}');
+  });
+});

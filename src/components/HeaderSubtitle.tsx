@@ -1,5 +1,7 @@
 import React, { memo } from 'react';
-import { StyleSheet, Text } from 'react-native';
+import { StyleSheet } from 'react-native';
+import Animated from 'react-native-reanimated';
+import { fadeSwapFast, fadeSwapOutFast } from '../theme/motion';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import { selectPeerActivity, useStore } from '../store/useStore';
@@ -62,13 +64,26 @@ function HeaderSubtitleView({ presence }: { presence: PresenceRead }) {
   }
 
   return (
-    <Text
+    /*
+     * Rule 7 (motion.ts): a text node whose content just changed, keyed by
+     * that content so React remounts it and Reanimated runs the swap (M14,
+     * 2026-09-17 audit). Without the key this was a hard cut between
+     * "typing…", "Online" and a last-seen line — a status glimpsed often
+     * enough during a live conversation that the same fadeSwapFast/
+     * fadeSwapOutFast pair the Notify button already uses fits the
+     * near-imperceptible tier this frequency calls for, not a heavier
+     * bubble-style entrance.
+     */
+    <Animated.Text
+      key={label}
+      entering={fadeSwapFast}
+      exiting={fadeSwapOutFast}
       testID="peer-presence"
       allowFontScaling
       numberOfLines={1}
       style={[styles.base, quiet && styles.quiet]}>
       {label}
-    </Text>
+    </Animated.Text>
   );
 }
 
