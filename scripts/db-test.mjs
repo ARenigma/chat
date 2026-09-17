@@ -154,6 +154,7 @@ const MIGRATIONS = [
   'supabase/migrations/113_the_test_providers_have_a_gender_so_they_can_have_a_face.sql',
   'supabase/migrations/114_founder_allowlist_is_case_insensitive.sql',
   'supabase/migrations/115_call_heartbeats_are_activity.sql',
+  'supabase/migrations/116_messages_session_id_is_not_client_writable.sql',
 ];
 
 /**
@@ -790,6 +791,14 @@ const suites = [
     file: join(ROOT, 'supabase/tests/470_call_heartbeats_are_activity.sql'),
     label:
       "a call's own heartbeat counts as activity, so it survives past 5m30s while a quiet chat still ends there",
+  },
+  {
+    file: join(
+      ROOT,
+      'supabase/tests/480_messages_session_id_is_not_client_writable.sql',
+    ),
+    label:
+      'messages.session_id/client_nonce/notified_at cannot be set by the recipient',
   },
 ];
 
