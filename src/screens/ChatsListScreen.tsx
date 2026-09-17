@@ -19,6 +19,7 @@ import { useBlockedPeerIds } from '../api/safety';
 import type { ConversationSummary } from '../lib/database.types';
 import { Avatar } from '../components/Avatar';
 import { BackButton } from '../components/BackButton';
+import { Button } from '../components/Button';
 import { Pressable } from '../components/Pressable';
 import { ChatStartHint } from '../components/ChatStartHint';
 import { ConversationMenu } from '../components/ConversationMenu';
@@ -72,7 +73,8 @@ export function ChatsListScreen({ onBack, onOpenConversation }: Props) {
   const styles = useStyles(makeStyles);
   const insets = useSafeAreaInsets();
   useProfile();
-  const { data: conversations } = useConversations();
+  const { data: conversations, isError: conversationsError, refetch: refetchConversations } =
+    useConversations();
   const blocked = useBlockedPeerIds();
   const railPrefs = useRailPrefs();
   const [menuPeer, setMenuPeer] = useState<string | null>(null);
@@ -137,6 +139,28 @@ export function ChatsListScreen({ onBack, onOpenConversation }: Props) {
           renderItem={renderRow}
           overrideItemLayout={layout => { (layout as { span?: number; size?: number }).size = 72; }}
         />
+      ) : conversationsError ? (
+        /*
+         * Distinct from the "no conversations yet" empty state below
+         * (2026-09-17 audit): before this, a failed fetch fell straight
+         * into `ChatStartHint`, so every conversation appeared to have
+         * vanished rather than the fetch having failed. Same fix as
+         * ChatScreen's own `loadError` branch — see its docblock there for
+         * the full reasoning; this is the rail's equivalent.
+         */
+        <View style={styles.empty}>
+          <Text allowFontScaling style={styles.emptyText}>
+            Couldn&apos;t load your chats
+          </Text>
+          <View style={styles.emptyRetry}>
+            <Button
+              label="Try Again"
+              onPress={() => {
+                void refetchConversations();
+              }}
+            />
+          </View>
+        </View>
       ) : (
         <View style={styles.empty}>
           <ChatStartHint />
@@ -276,5 +300,9 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.bodyLarge,
       color: t.color.text.secondary,
       textAlign: 'center',
+    },
+    emptyRetry: {
+      alignSelf: 'stretch',
+      paddingTop: TOKENS.space.md,
     },
   });

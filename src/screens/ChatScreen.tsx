@@ -405,7 +405,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   useProfile();
   const { data: selfId } = useSelfId();
   const { data: providers } = useProviders();
-  const { data: threads } = useConversations();
+  const { data: threads, isError: threadsError, refetch: refetchThreads } = useConversations();
 
   /**
    * Which side of this thread we are on, and it decides how the conversation id
@@ -450,7 +450,12 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   const needsOpen = knownThread === undefined;
   const { data: openedId } = useConversationId(needsOpen ? providerId : null);
   const conversationId = knownThread?.conversation_id ?? openedId;
-  const { data: messages, isPending: messagesPending } = useMessages(conversationId);
+  const {
+    data: messages,
+    isPending: messagesPending,
+    isError: messagesError,
+    refetch: refetchMessages,
+  } = useMessages(conversationId);
 
   /*
    * Hold the push animation until this screen has its transcript.
@@ -1686,7 +1691,24 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   const loading =
     (conversationId === undefined && threads === undefined) ||
     (knownThread !== undefined && conversationId !== undefined && messages === undefined && messagesPending);
-  const empty = !loading && rows.length === 0;
+  /*
+   * A failed fetch is not the same thing as an empty thread (2026-09-17
+   * audit). Before this, an errored `messages`/`threads` query fell straight
+   * into `empty` below — the exact same "Say hi" first-contact state a
+   * BRAND NEW conversation shows — because `rows` collapses to `[]` on
+   * either `undefined` or a thrown query. A member on a flaky connection
+   * opening a real conversation with history got no signal that the fetch
+   * failed and no way to retry short of leaving the screen.
+   *
+   * Checked and given its own branch BEFORE `empty`, not folded into it:
+   * this is deliberately NOT claiming a real transcript was lost (this
+   * product's sessions are ephemeral by design, ADR-0020 — a genuinely
+   * empty conversation between paid sessions is the correct, working
+   * state) — only that THIS fetch, right now, did not succeed and should
+   * say so rather than look identical to "nothing has ever happened here".
+   */
+  const loadError = messagesError || threadsError;
+  const empty = !loading && !loadError && rows.length === 0;
 
   /*
    * `imeSpace`, `bodyInset`, `panelCeiling`, `listPad` and `composerInset` are
@@ -2051,6 +2073,24 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
         {loading ? (
           <View style={styles.loading}>
             <LoadingIndicator size={48} />
+          </View>
+        ) : loadError ? (
+          // See `loadError`'s own docblock above: distinct from `empty` on
+          // purpose, so a failed fetch never reads as "nothing has ever
+          // happened here".
+          <View style={[styles.loading, styles.loadErrorGap]}>
+            <Text allowFontScaling style={styles.emptyName}>
+              Couldn&apos;t load this chat
+            </Text>
+            <View style={styles.loadErrorRetry}>
+              <Button
+                label="Try Again"
+                onPress={() => {
+                  void refetchMessages();
+                  void refetchThreads();
+                }}
+              />
+            </View>
           </View>
         ) : empty ? (
           /*
@@ -2833,6 +2873,19 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   emptyName: {
     ...TOKENS.typography.headlineSmallEmphasized,
     color: t.color.text.primary,
+  },
+  // The failed-fetch state (loadError, above): same centered layout as
+  // `loading`, plus the gap `empty` already uses between its own stacked
+  // elements, and the same retry-button spacing App.tsx's boot-level error
+  // screen uses (`retryWrap`) so the app has one house style for "this
+  // failed, try again" rather than two.
+  loadErrorGap: {
+    gap: TOKENS.space.xs,
+    paddingHorizontal: TOKENS.space['2xl'],
+  },
+  loadErrorRetry: {
+    alignSelf: 'stretch',
+    paddingTop: TOKENS.space.xs,
   },
   emptyLine: {
     ...TOKENS.typography.bodyLarge,

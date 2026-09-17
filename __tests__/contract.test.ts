@@ -5210,6 +5210,40 @@ describe('hardware back hands off to Android before boot is ready', () => {
  * true forever. Every retry/refetchOnReconnect decision TanStack makes was
  * therefore made against a signal that could never say "offline".
  */
+/*
+ * Telegram-CTO audit, 2026-09-17 (X4), contested finding. Mostly refuted
+ * on independent read: ADR-0020 makes ephemeral sessions the entire
+ * product model (Play Billing's 1:1-paid-service exemption REQUIRES no
+ * durable transcript), so an empty conversation between sessions is the
+ * correct, designed resting state, not data loss -- and persisting
+ * messages to MMKV (the finding's structural remedy) would defeat that
+ * exemption outright. What survives, and what verdict 2 itself conceded:
+ * an errored fetch rendered identically to "nothing has ever happened
+ * here", with no signal that the FETCH failed and no retry. That is the
+ * one thing this fix addresses -- nothing about persistence.
+ */
+describe('a failed fetch says so, distinctly from an empty conversation', () => {
+  it("ChatScreen's loadError branch is checked before empty, and offers a real retry", () => {
+    const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+    expect(chat).toContain('isError: messagesError');
+    expect(chat).toContain('isError: threadsError');
+    expect(chat).toContain('const loadError = messagesError || threadsError;');
+    expect(chat).toContain('const empty = !loading && !loadError && rows.length === 0;');
+    const branch = chat.slice(chat.indexOf('{loading ? ('), chat.indexOf(') : empty ? ('));
+    expect(branch).toContain('loadError ?');
+    expect(branch).toContain("Couldn&apos;t load this chat");
+    expect(branch).toContain('void refetchMessages();');
+    expect(branch).toContain('void refetchThreads();');
+  });
+
+  it("ChatsListScreen's rail gets the same distinction", () => {
+    const list = withoutComments(read('src/screens/ChatsListScreen.tsx'));
+    expect(list).toContain('isError: conversationsError');
+    expect(list).toContain("Couldn&apos;t load your chats");
+    expect(list).toContain('void refetchConversations();');
+  });
+});
+
 describe('TanStack Query actually knows when the device is offline', () => {
   it('wires onlineManager to NetInfo, and leaves networkMode at its default', () => {
     const app = withoutComments(read('App.tsx'));
