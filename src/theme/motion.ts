@@ -3,7 +3,9 @@ import {
   Easing,
   FadeIn,
   FadeInDown,
+  FadeInUp,
   FadeOut,
+  FadeOutDown,
   FadeOutUp,
   ReduceMotion,
   makeMutable,
@@ -785,6 +787,29 @@ export const barIn = FadeInDown.duration(DURATION.base)
   .easing(EASE_OUT)
   .reduceMotion(ReduceMotion.System);
 export const barOut = FadeOutUp.duration(DURATION.fast)
+  .easing(EASE_OUT)
+  .reduceMotion(ReduceMotion.System);
+
+/**
+ * `barIn`/`barOut`'s mirror image, for a control docked at the BOTTOM instead
+ * — the chat transcript's page-down button (2026-09-17 audit).
+ *
+ * Telegram's own button matches this shape from source: alpha 0→1 and
+ * `translationY = dp(80) * (1 - visibility)`, so it rises into place from
+ * below rather than fading in place
+ * (`ChatActivitySideControlsButtonsLayout.java:169-176`,
+ * `checkButtonsPositionsAndVisibility`). `FadeInUp`/`FadeOutDown` is that
+ * same up-to-dock / down-to-leave direction. Telegram drives both halves
+ * through one symmetric 280ms `DECELERATE_INTERPOLATOR`; kept `base`-in/
+ * `fast`-out instead, the same departure `barIn`/`barOut` already state for
+ * the top-docked bar — arriving is an announcement, leaving should get out
+ * of the way, and that asymmetry is this app's own house style, not
+ * Telegram's.
+ */
+export const pageDownIn = FadeInUp.duration(DURATION.base)
+  .easing(EASE_OUT)
+  .reduceMotion(ReduceMotion.System);
+export const pageDownOut = FadeOutDown.duration(DURATION.fast)
   .easing(EASE_OUT)
   .reduceMotion(ReduceMotion.System);
 

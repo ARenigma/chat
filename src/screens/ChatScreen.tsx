@@ -20,6 +20,8 @@ import {
   barOut,
   holdScreenEnter,
   onTransitionSettled,
+  pageDownIn,
+  pageDownOut,
   rowIn,
   transitioning,
 } from '../theme/motion';
@@ -104,6 +106,7 @@ import {
 } from '../api/sessions';
 import { useEarnings } from '../api/provider';
 import { Avatar } from '../components/Avatar';
+import { Badge } from '../components/Badge';
 import { ChatWallpaper } from '../components/ChatWallpaper';
 import { FirstMovePills } from '../components/FirstMovePills';
 import { LoadingIndicator } from '../components/LoadingIndicator';
@@ -214,6 +217,18 @@ interface Props {
  * number is indistinguishable from a drift, and a name can carry its reason.
  */
 const CALL_GLYPH_SIZE = 19;
+
+/*
+ * How far (dp) the inverted transcript must be scrolled from the newest
+ * message before a new incoming row counts as "missed" instead of
+ * triggering the usual scroll-to-bottom (2026-09-17 audit). Deliberately
+ * more forgiving than the extend card's own 64dp: that threshold decides
+ * whether a pinned card is still in view, this one decides whether the
+ * member is genuinely reading history versus glancing at the last couple
+ * of bubbles, so it wants a bigger margin before it starts withholding
+ * the auto-scroll a member sitting near the bottom still expects.
+ */
+const PAGE_DOWN_THRESHOLD = 200;
 
 const OPENER_TYPING_MIN_MS = 700;
 const OPENER_TYPING_MAX_MS = 2200;
@@ -1047,20 +1062,43 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
     return sorted;
   }, [messages, selfId, callRecords, sessionEvents, notifiedAt, name]);
 
-  /**
-   * Force offset 0 whenever a new row appears — local optimistic or remote
-   * incoming — including while the user is scrolled up reading history.
+  /*
+   * Scroll to bottom for MY OWN send; for anything else, only if already
+   * near the bottom — otherwise count it and let the page-down button say
+   * so (2026-09-17 audit, Amit's call on the Telegram-parity sweep).
    *
-   * Items 5/12 in the product spec are the same behaviour: "scroll to bottom
-   * on send" and "scroll to bottom on receive" share one effect here rather than
-   * two separate handlers. The inverted FlashList's resting offset IS 0 (the
-   * newest message), so scrollToOffset(0) is the correct call on FlashList v2.
+   * This replaces the previous rule (force offset 0 on ANY new row,
+   * including while scrolled up reading history), which items 5/12 in the
+   * product spec were read as requiring. Telegram's own rule is narrower —
+   * `if (obj.isOut() && obj.wasJustSent) { scrollToLastMessage(true, false);
+   * return; }`, ChatActivity.java — and increments a page-down badge for
+   * everything else. `rows[0].mine` (message rows only; a call record or
+   * system row is nobody's "own send") is this app's equivalent of
+   * `isOut() && wasJustSent`: the only way a row I sent can newly appear at
+   * the front of a newest-first list is that I just sent it.
    */
+  const [scrolledAwayFromLatest, setScrolledAwayFromLatest] = useState(false);
+  const scrolledAwayFromLatestRef = useRef(false);
+  const [unreadBelow, setUnreadBelow] = useState(0);
+
+  const scrollToLatest = useCallback(() => {
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    setUnreadBelow(0);
+  }, []);
+
   const prevRowsLen = useRef(0);
   useEffect(() => {
     const len = rows.length;
     if (len > prevRowsLen.current) {
       prevRowsLen.current = len;
+      const newest = rows[0];
+      const mine = newest?.kind === 'message' && newest.mine;
+      if (!mine && scrolledAwayFromLatestRef.current) {
+        // Not mine, and the member is reading history: say so, don't yank.
+        setUnreadBelow(n => n + 1);
+        return;
+      }
+      setUnreadBelow(0);
       // W5#6: a message arriving during a push transition triggers scrollToOffset
       // + FlashList re-layout mid-animation. Gate on the lock and defer to after
       // the transition settles. Safety: if setTransitioning(false) is never called
@@ -1239,11 +1277,21 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
 
   const onTranscriptScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      // Inverted FlashList: offset grows as the user scrolls toward older
+      // messages (visual top), 0 is the newest message. Tracked here
+      // unconditionally (2026-09-17 audit) so the page-down button knows
+      // when to appear regardless of the extend card's own, separate
+      // 64dp threshold below.
+      const away = e.nativeEvent.contentOffset.y > PAGE_DOWN_THRESHOLD;
+      scrolledAwayFromLatestRef.current = away;
+      setScrolledAwayFromLatest(prev => (prev === away ? prev : away));
+      if (!away) {
+        setUnreadBelow(0);
+      }
       if (!showPinnedExtend) {
         return;
       }
-      // Inverted FlashList: offset grows as the user scrolls toward older
-      // messages (visual top). Past one card-height, treat extend as out of sight.
+      // Past one card-height, treat extend as out of sight.
       if (e.nativeEvent.contentOffset.y > 64) {
         setExtendScrolledAway(true);
       }
@@ -2134,6 +2182,12 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
           />
         )}
 
+        <PageDownButton
+          visible={scrolledAwayFromLatest}
+          count={unreadBelow}
+          onPress={scrollToLatest}
+        />
+
         {/*
          * The search scrim is GONE, with the expansion it existed for.
          *
@@ -2581,6 +2635,62 @@ function BarSpacer() {
   return <View style={{ height: barHeight }} />;
 }
 
+/**
+ * The page-down button (2026-09-17 audit, Amit's call on the Telegram-parity
+ * sweep: "Match Telegram" — see the force-scroll effect's own docblock for
+ * the rule this button is the other half of).
+ *
+ * `useListPad()`, not `useComposerInset()`: the button floats just clear of
+ * the newest message, and `listPad` is the exact number the transcript
+ * already reserves for that (dock height + the keyboard lift), while
+ * `composerInset` is only the dock's OWN internal bottom padding — using it
+ * here would park the button behind the dock instead of above it. A leaf for
+ * the same reason `Transcript`/`DockStack`/`DockFrost`/`BarSpacer` are: only
+ * this small component re-renders when the keyboard or the dock's height
+ * changes, not the whole screen (`__tests__/contract.test.ts`, "keeps the
+ * owner holding the handle").
+ */
+function PageDownButton({
+  visible,
+  count,
+  onPress,
+}: {
+  visible: boolean;
+  count: number;
+  onPress: () => void;
+}) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
+  const listPad = useListPad();
+  if (!visible) {
+    return null;
+  }
+  return (
+    <Animated.View
+      entering={pageDownIn}
+      exiting={pageDownOut}
+      style={[styles.pageDown, { bottom: listPad + TOKENS.space.sm }]}
+      pointerEvents="box-none">
+      <Pressable
+        onPress={onPress}
+        testID="chat-pagedown"
+        accessibilityLabel={
+          count > 0 ? `${count} new messages, scroll to latest` : 'Scroll to latest'
+        }
+        press="chip"
+        highlight="dim"
+        shape="circle"
+        size={40}
+        style={styles.pageDownButton}>
+        <View style={styles.pageDownGlyph}>
+          <Icon name="arrowUp" size={TOKENS.icon.md} color={theme.color.text.secondary} />
+        </View>
+      </Pressable>
+      <Badge count={count} testID="chat-pagedown-badge" />
+    </Animated.View>
+  );
+}
+
 const makeStyles = (t: Theme) => StyleSheet.create({
   root: {
     flex: 1,
@@ -2741,6 +2851,34 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+  },
+  /*
+   * Right-aligned on the same `md` (16) gutter the transcript's own content
+   * column uses (see `list` below), so its outer edge lines up with a bubble's.
+   * `bottom` is set inline per-render from `listPad` — see `PageDownButton`.
+   */
+  pageDown: {
+    position: 'absolute',
+    right: TOKENS.space.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // `bg/raised`: a surface floating over the transcript, not part of the dock
+  // or the wallpaper beneath it — the same role the extend card's own white
+  // plate carries, at `elevation.composer` rather than `.card` because this
+  // sits at the dock's visual layer, right above it, not inside the list.
+  pageDownButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: t.color.bg.raised,
+    ...TOKENS.elevation.composer,
+  },
+  // `arrowUp` is the app's only vertical chevron (see icons.generated.ts); a
+  // page-DOWN button is the same glyph turned around, not a second icon.
+  pageDownGlyph: {
+    transform: [{ rotate: '180deg' }],
   },
   /*
    * The transcript's content column, and one half of the chat's horizontal grid.

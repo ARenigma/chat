@@ -2482,9 +2482,12 @@ describe('the chat restyle is wired, not just drawn', () => {
   });
 
   it('holds an explicit FlashList ref and scrolls to offset 0 on new messages', () => {
-    // Without a ref, there is no way to scroll programmatically. Without the
-    // useEffect watching rows.length, a new incoming message while the user is
-    // scrolled up reading history goes unnoticed and they miss it.
+    // Without a ref, there is no way to scroll programmatically. The
+    // useEffect watching rows.length only forces the scroll for the member's
+    // own send (Telegram's `isOut() && wasJustSent`) or when already near the
+    // bottom — anything else while scrolled up reading history increments
+    // the page-down button's badge instead of yanking the view (2026-09-17
+    // audit, X5).
     expect(chatCode).toContain('listRef');
     expect(chatCode).toContain('ref={listRef}');
     expect(chatCode).toContain('scrollToOffset({ offset: 0');
@@ -7611,9 +7614,16 @@ describe('W5 #6 transition lock: deferred call sites read the primitive', () => 
     // The scroll still always happens — either immediately (not transitioning)
     // or after the settle (transitioning). `prevRowsLen` stays so the existing
     // assertion on it still holds.
+    //
+    // 1100, not 800: the same effect grew a `mine`/`scrolledAwayFromLatestRef`
+    // gate ahead of both scrollToOffset calls for the page-down button
+    // (2026-09-17 audit, X5), which left the second call only 46 characters
+    // inside the old window. This slice is a character count, not a
+    // structural check, so widen it again the next time the effect
+    // legitimately grows rather than re-deriving a tighter number to match.
     const scrollEffect = chat.slice(
       chat.indexOf('prevRowsLen'),
-      chat.indexOf('prevRowsLen') + 800,
+      chat.indexOf('prevRowsLen') + 1100,
     );
     expect(scrollEffect).toContain('transitioning.value');
     expect(scrollEffect).toContain('onTransitionSettled(');
