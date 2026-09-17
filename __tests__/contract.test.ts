@@ -5102,6 +5102,91 @@ describe('media upload uses M3 determinate progress, not ActivityIndicator', () 
  * the network acknowledged them, not the order they were typed. A member
  * watched their own conversation reorder itself on their own screen.
  */
+/*
+ * Telegram-CTO audit, 2026-09-17. A tapped message notification used two
+ * mechanisms, both wrong:
+ *   1. `getInitialNotification` / `onNotificationOpenedApp` (push.ts), which
+ *      track a tap on a notification FCM itself rendered -- this app's
+ *      messages are data-only and every notification is self-built natively
+ *      (index.js's own docblock says so), so these never fired at all.
+ *   2. The real `companionchat://peer/<id>` deep link (App.tsx), which DID
+ *      fire but called `setRoute` directly, before `role` was known -- so a
+ *      provider's own tap set a route only the member tree draws (it never
+ *      appears), and a member's cold-start tap raced the boot effect's own
+ *      `setRoute({name:'home'})` for whichever won.
+ * Both are fixed the same way `pendingIncoming` already fixed the identical
+ * defect for an incoming call: hold the tap in `pendingPeer` and let
+ * `SignedIn` apply it once `role` resolves.
+ */
+/*
+ * Telegram-CTO audit, 2026-09-17. `onBack`'s every branch assumed
+ * `route`/`providerRoute` describe where the member or provider actually is,
+ * which is only true once `boot.phase === 'ready'`. On splash, sign-in,
+ * profile setup, the policy gate, permissions, the update screen or the
+ * error screen, back fell through to "no parent, show the exit dialog" --
+ * except that dialog only ever renders in the `ready` branch of Root's own
+ * JSX, so back appeared to do nothing there, and the dialog then popped up
+ * unprompted the moment `ready` was reached (exitDialogVisible had been left
+ * `true` the whole time). A brand-new member could get "Leave Pappal?" as
+ * their first impression right after signing up.
+ */
+describe('hardware back hands off to Android before boot is ready', () => {
+  it('onBack returns false for every phase except ready, before any other branch runs', () => {
+    const app = withoutComments(read('App.tsx'));
+    const onBack = app.slice(app.indexOf('const onBack = () => {'), app.indexOf('const sub = BackHandler.addEventListener'));
+    expect(onBack).not.toBe('');
+    expect(onBack).toContain("if (bootPhaseRef.current !== 'ready') {");
+    // The guard must be the FIRST thing checked, not merely present somewhere
+    // -- a guard after the home-tour / overlay checks would still let those
+    // fire on a non-ready screen.
+    const guardIndex = onBack.indexOf("bootPhaseRef.current !== 'ready'");
+    const firstOtherBranchIndex = onBack.indexOf('useHomeTour.getState().active');
+    expect(guardIndex).toBeGreaterThan(-1);
+    expect(guardIndex).toBeLessThan(firstOtherBranchIndex);
+    expect(onBack).toMatch(/if \(bootPhaseRef\.current !== 'ready'\) \{\s*return false;/);
+  });
+});
+
+describe('a tapped message notification is held until `role` is known, not routed blind', () => {
+  it('removed the Firebase notification-tap path that never fired', () => {
+    const push = withoutComments(read('src/lib/push.ts'));
+    for (const dead of ['initialNotificationPeer', 'onNotificationOpen', 'openedPeerId', 'getInitialNotification', 'onNotificationOpenedApp']) {
+      expect({ dead, present: push.includes(dead) }).toEqual({ dead, present: false });
+    }
+  });
+
+  it('holds the tapped peer id in state rather than routing it directly', () => {
+    const app = withoutComments(read('App.tsx'));
+    expect(app).toContain('const [pendingPeer, setPendingPeer] = useState<string | null>(null);');
+    // The deep-link consumer sets it, it does not call setRoute itself.
+    const peerBranch = app.slice(
+      app.indexOf("url.match(/^companionchat:\\/\\/peer\\/(.+)$/)"),
+      app.indexOf('handleAuthDeepLink(url)'),
+    );
+    expect(peerBranch).toContain('setPendingPeer(peerId)');
+    expect(peerBranch).not.toContain('setRoute(');
+  });
+
+  it('applies pendingPeer inside SignedIn, choosing the tree by role', () => {
+    const app = withoutComments(read('App.tsx'));
+    const effect = app.slice(
+      app.indexOf('if (pendingPeer === null || isPending)'),
+      app.indexOf('Foreground pushes. A call rings'),
+    );
+    expect(effect).not.toBe('');
+    expect(effect).toContain("pushProvider({ name: 'chat', peerId: pendingPeer })");
+    expect(effect).toContain("pushRoute({ name: 'chat', providerId: pendingPeer, from: 'home' })");
+    expect(effect).toContain('onPeerHandled()');
+  });
+
+  it('the boot effect no longer sets a competing route for a notification tap', () => {
+    const app = withoutComments(read('App.tsx'));
+    // The old dead-code branch is gone: nothing awaits initialNotificationPeer
+    // and no second setRoute follows the boot effect's setRoute({name:'home'}).
+    expect(app).not.toContain('initialNotificationPeer');
+  });
+});
+
 describe('the offline outbox replays queued messages in order, not all at once', () => {
   it('drains sequentially: an async loop that awaits each replay', () => {
     const chat = withoutComments(read('src/api/chat.ts'));

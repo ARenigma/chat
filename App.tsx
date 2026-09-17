@@ -43,13 +43,7 @@ import { assertEnv } from './src/lib/env';
 import { storage } from './src/lib/storage';
 import { PROVIDER_INTENT_KEY } from './src/lib/providerIntent';
 import { consumeBack } from './src/lib/backGuard';
-import {
-  initialNotificationPeer,
-  onForegroundPush,
-  onNotificationOpen,
-  setNotificationPolicy,
-  startPush,
-} from './src/lib/push';
+import { onForegroundPush, setNotificationPolicy, startPush } from './src/lib/push';
 import { clearCall } from './src/lib/conversations';
 import {
   memberParent,
@@ -557,6 +551,17 @@ function Root() {
    */
   const [pendingIncoming, setPendingIncoming] = useState<PendingIncoming | null>(null);
   const clearPendingIncoming = useCallback(() => setPendingIncoming(null), []);
+  /*
+   * A message notification tapped, held the same way and for the same reason
+   * as `pendingIncoming` above (2026-09-17 audit): `companionchat://peer/<id>`
+   * is a role-agnostic deep link, and routing it from the effect that consumes
+   * it — before `useRole` (in `SignedIn`) has resolved — meant a provider's
+   * tap set a member-tree route their tree does not draw, and a member's tap
+   * on a cold start raced the boot effect's own `setRoute({name:'home'})` for
+   * whichever finished last.
+   */
+  const [pendingPeer, setPendingPeer] = useState<string | null>(null);
+  const clearPendingPeer = useCallback(() => setPendingPeer(null), []);
   const [exitDialogVisible, setExitDialogVisible] = useState(false);
   useReportFullyDrawn(boot.phase !== 'loading' && boot.phase !== 'ready');
   // Refs so the BackHandler closure reads the current route without being in its
@@ -632,15 +637,18 @@ function Root() {
          * The whole key is gone rather than just this read — a stored value
          * nobody restores is a write that only ever misleads the next reader.
          *
-         * A notification tap still wins, below. That is not a remembered route:
-         * it is an explicit statement, made just now, about what this person
-         * opened the app to do.
+         * A notification tap still wins over this — but not from here. It
+         * used to be checked right here via `initialNotificationPeer()`
+         * (2026-09-17 audit: that path never once fired — see push.ts for
+         * why — and worse, calling `setRoute` unconditionally the line above
+         * raced the deep-link effect below for every REAL notification tap,
+         * which arrives as `companionchat://peer/<id>`. That effect now holds
+         * the tap in `pendingPeer` instead of routing directly, and
+         * `SignedIn` applies it once `role` is known — the same fix already
+         * in place for an incoming call's `pendingIncoming`, and for the same
+         * reason: the deep link only ever knew about the member tree.
          */
         setRoute({ name: 'home' });
-        const tapped = await initialNotificationPeer();
-        if (tapped !== null) {
-          setRoute({ name: 'chat', providerId: tapped, from: 'home' });
-        }
         // "Become a partner" before auth → provider onboarding, and it SKIPS the
         // member first-run (username/age/policy) entirely. Member and provider are
         // separate worlds (Amit, 2026-09-03): a provider sets up their OWN profile
@@ -752,14 +760,19 @@ function Root() {
        * fires once the push payload is data-only — see `Conversations.peerIntent`
        * on the native side. It arrives here through `Linking` rather than through
        * Firebase's notification-open handler, because a self-built notification's
-       * PendingIntent is not a Firebase notification event.
+       * PendingIntent is not a Firebase notification event — see push.ts for why
+       * that path (`getInitialNotification` / `onNotificationOpenedApp`) never
+       * fired at all and was removed (2026-09-17 audit).
        *
        * `isUuid` gates it because a deep-link URL is remote input: any value
-       * could arrive on this scheme, and it must not reach a query unchecked —
-       * the same guard `openedPeerId` applies on the Firebase path. Routing only
-       * happens once signed in; a peer link that lands pre-session is dropped
-       * rather than queued, because the id belongs to a session that is not the
-       * current one.
+       * could arrive on this scheme, and it must not reach a query unchecked.
+       * Held in `pendingPeer` rather than routed directly, for the same reason
+       * `pendingIncoming` is held below: `role` is not known here, and a bare
+       * `setRoute` always writes the member tree, so a provider's own tap set a
+       * route their tree never draws. `SignedIn` applies it once `role`
+       * resolves. A peer link that arrives pre-session is dropped rather than
+       * queued (`SignedIn` never mounts to consume it), because the id belongs
+       * to a session that is not the current one.
        */
       /*
        * An incoming-call deep link, checked first. `companionchat://call/<peerId>
@@ -822,8 +835,17 @@ function Root() {
         // Query strings are ignored for routing; strip so a harness-augmented
         // peer URI still opens the chat.
         const peerId = peer.split('?')[0] ?? peer;
+        /*
+         * HELD, not routed (2026-09-17 audit) — same reason `pendingIncoming`
+         * is held above rather than routed from here: `role` is not known
+         * yet, and a bare `setRoute` always writes the MEMBER tree. A
+         * provider's own tap on a message notification set a route their
+         * tree never draws, and a member's cold-start tap raced the boot
+         * effect's own `setRoute({name:'home'})` for whichever won. `SignedIn`
+         * applies `pendingPeer` once `role` resolves, choosing the tree.
+         */
         if (isUuid(peerId)) {
-          setRoute({ name: 'chat', providerId: peerId, from: 'home' });
+          setPendingPeer(peerId);
         }
         return;
       }
@@ -901,12 +923,16 @@ function Root() {
       }
     })();
 
-    const unsubscribeOpen = onNotificationOpen(peerId => {
-      setRoute({ name: 'chat', providerId: peerId, from: 'home' });
-    });
+    // A backgrounded tap on a message notification used to be picked up here
+    // via `onNotificationOpen` (RNFirebase's `onNotificationOpenedApp`).
+    // Removed (2026-09-17 audit): that API tracks a tap on a notification FCM
+    // itself rendered, and this app's messages are always data-only and
+    // self-built — see push.ts. The real path is the SAME
+    // `Linking.addEventListener('url', ...)` the deep-link effect above
+    // already runs, since `companionchat://peer/<id>` is a normal `Linking`
+    // URL event whether the app was backgrounded or cold.
     return () => {
       unsubscribeToken?.();
-      unsubscribeOpen();
     };
   }, [boot.phase]);
 
@@ -1027,6 +1053,31 @@ function Root() {
    */
   useEffect(() => {
     const onBack = () => {
+      /*
+       * NOT READY YET: hand back to Android (2026-09-17 audit).
+       *
+       * Everything below this line assumes `route`/`providerRoute` describe
+       * where the member or provider actually is, which is only true once
+       * `boot.phase === 'ready'`. On splash, sign-in, profile setup, the
+       * policy gate, permissions, the update screen, or the error screen,
+       * `route` still holds its very first default value, so every branch
+       * below fell through to "no parent, show the exit dialog" — except
+       * that dialog is only ever RENDERED in the `ready` branch of Root's own
+       * return (see the JSX at the bottom of this file), so the visible
+       * effect was that back did nothing on those screens, and then the
+       * dialog popped up unprompted the moment `ready` was reached, because
+       * `exitDialogVisible` had been sitting `true` the whole time. A member
+       * on their first launch could get "Leave Pappal?" as their welcome.
+       *
+       * Returning `false` here does what the docblock above already claims
+       * for the true root case: hands the press to Android. On these
+       * screens that means the OS's own back behaviour (typically closing
+       * the activity), which is correct — there is no in-app parent to pop
+       * to on a screen the member has not really "entered" yet.
+       */
+      if (bootPhaseRef.current !== 'ready') {
+        return false;
+      }
       // The Recharge overlay closes before any screen pops: it sits above
       // everything (zIndex 20) and is the thing the user most recently opened, so
       // back means it first. Settings is a normal route now (not an overlay), so
@@ -1323,6 +1374,8 @@ function Root() {
         setProviderRoute={setProviderRoute}
         pendingIncoming={pendingIncoming}
         onIncomingHandled={clearPendingIncoming}
+        pendingPeer={pendingPeer}
+        onPeerHandled={clearPendingPeer}
         onSignedOut={() => setBoot({ phase: 'signedOut' })}
       />
       <ConfirmDialog
@@ -1359,6 +1412,9 @@ interface SignedInProps {
   setProviderRoute: (r: ProviderRoute) => void;
   pendingIncoming: PendingIncoming | null;
   onIncomingHandled: () => void;
+  /** A tapped message notification's peer id, held until `role` resolves. */
+  pendingPeer: string | null;
+  onPeerHandled: () => void;
   onSignedOut: () => void;
 }
 
@@ -1377,6 +1433,8 @@ function SignedIn({
   setProviderRoute,
   pendingIncoming,
   onIncomingHandled,
+  pendingPeer,
+  onPeerHandled,
   onSignedOut,
 }: SignedInProps) {
   const styles = useStyles(makeStyles);
@@ -1590,6 +1648,27 @@ function SignedIn({
     onIncomingHandled();
     routeIncomingCall(pendingIncoming.peerId, pendingIncoming.callId, pendingIncoming.medium);
   }, [pendingIncoming, isPending, onIncomingHandled, routeIncomingCall]);
+
+  /*
+   * A message notification tapped before the role was known (2026-09-17
+   * audit) — exact mirror of the `pendingIncoming` effect above, and for the
+   * same reason: `companionchat://peer/<id>` does not know which tree it
+   * belongs to, only `role` (resolved here, not in the effect that consumed
+   * the deep link) does. Routed via each tree's own chat destination shape —
+   * `pushProvider({name:'chat', peerId})` is the same call
+   * `onOpenConversation` uses from provider home.
+   */
+  useEffect(() => {
+    if (pendingPeer === null || isPending) {
+      return;
+    }
+    onPeerHandled();
+    if (role === 'provider') {
+      pushProvider({ name: 'chat', peerId: pendingPeer });
+    } else {
+      pushRoute({ name: 'chat', providerId: pendingPeer, from: 'home' });
+    }
+  }, [pendingPeer, isPending, onPeerHandled, role, pushProvider, pushRoute]);
 
   /*
    * Foreground pushes. A call rings through the same entry point as a Realtime

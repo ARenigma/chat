@@ -106,8 +106,12 @@ class MainActivity : ReactActivity() {
     }
 
     // A cold-start launched by a call's full-screen intent arrives here with the
-    // call URI already on the intent.
-    applyCallWindowFlags(intent)
+    // call URI already on the intent. `neutralisedIfFromHistory` runs first: a
+    // launch from Recents carries the SAME intent object, stale data and all —
+    // see that function for why this used to replay a dead call.
+    val safeIntent = neutralisedIfFromHistory(intent)
+    if (safeIntent !== intent) setIntent(safeIntent)
+    applyCallWindowFlags(safeIntent)
   }
 
   /**
@@ -123,6 +127,51 @@ class MainActivity : ReactActivity() {
    * 2026-08-27 decision requires (calls only, never messages).
    * https://developer.android.com/develop/ui/views/notifications/build-notification#urgent-message
    */
+  /**
+   * A relaunch from the Recents / task-switcher list carries the SAME
+   * `getIntent()` object the app had when it was last put away — data URI and
+   * all — because this activity is `singleTask` and Android is bringing the
+   * existing task back to front, not starting a fresh one (2026-09-17 audit).
+   *
+   * Before this, a member could answer an incoming call, the call end, they
+   * use other apps for a while, Android reclaims the process, and reopening
+   * Pappal from Recents replayed the SAME `companionchat://call/…` intent as
+   * though someone were calling again right now — full-screen intent,
+   * foreground service, a minute of ringing, from nobody. A tapped message
+   * notification's `companionchat://peer/<id>` replayed the same way,
+   * reopening a paid conversation nobody asked to reopen — which directly
+   * contradicts this app's own "always Home after a restart" rule (App.tsx,
+   * 2026-09-08).
+   *
+   * `FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY` is exactly the signal Android gives
+   * for this: it is set on the intent the system redelivers when an activity
+   * is restored from the recent-tasks list, as opposed to a genuinely new
+   * intent (a fresh notification tap, a fresh deep link). Neutralising the
+   * intent here — replacing it with a bare `ACTION_MAIN`, not merely
+   * stripping its data — is what makes `getIntent()` (which `Linking.
+   * getInitialURL()` reads on the JS side) and `applyCallWindowFlags` both see
+   * "no special launch", the same as any ordinary app reopen.
+   *
+   * Called from BOTH `onCreate` (Android restored the task with a fresh
+   * Activity instance, the process having died) and `onNewIntent` (the task's
+   * Activity instance survived and Android is redelivering to it) — the same
+   * two places the platform docs name for this flag, because either can be
+   * the actual path depending on whether the process survived.
+   *
+   * Takes and returns an explicit `Intent` rather than reading/writing
+   * `getIntent()` implicitly: `onNewIntent(intent: Intent)`'s own parameter
+   * shadows the class's `getIntent()` for the rest of that method, so a
+   * version of this that mutated `getIntent()` behind the scenes would leave
+   * `onNewIntent`'s own later reads of its local `intent` seeing the ORIGINAL,
+   * still-stale value. Every call site uses the returned value from here on.
+   */
+  private fun neutralisedIfFromHistory(candidate: Intent): Intent =
+      if (candidate.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) {
+        Intent(Intent.ACTION_MAIN)
+      } else {
+        candidate
+      }
+
   private fun applyCallWindowFlags(intent: Intent?) {
     val isCall = intent?.data?.toString()?.startsWith("companionchat://call/") == true
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -236,9 +285,13 @@ class MainActivity : ReactActivity() {
 
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
-    setIntent(intent)
-    // A warm app whose task survived gets the call's full-screen intent here.
-    applyCallWindowFlags(intent)
+    // A warm app whose task survived gets the call's full-screen intent here
+    // — or, if this is Android bringing the task back from Recents rather
+    // than a real new intent, the SAME stale one it had before
+    // (neutralisedIfFromHistory strips that case; see its docblock).
+    val safeIntent = neutralisedIfFromHistory(intent)
+    setIntent(safeIntent)
+    applyCallWindowFlags(safeIntent)
   }
 
   /**
