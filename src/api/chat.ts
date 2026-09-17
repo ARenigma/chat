@@ -778,7 +778,26 @@ async function sendMessageWith(
     // The rejection *reason* is the signal worth watching: a spike in
     // BLOCKED or RATE_LIMITED is an abuse signal, not a bug report.
     track('send_rejected', { reason: code ?? 'network' });
-    setNotice(code !== undefined ? NOTICE[code] : 'Could not send. Check your connection.');
+    /*
+     * H7, 2026-09-17 audit: "Check your connection" used to be the fallback
+     * for EVERY unmapped failure, including one the server actively
+     * responded to and rejected for a reason `sendResultFrom` does not have
+     * copy for — a real server-side answer, told to the member as if their
+     * own network had failed. postgrest-js's own convention distinguishes
+     * the two: a client-side/network failure always carries `code: ''`
+     * (never `undefined`) precisely because it never reached PostgREST to
+     * get a real one (PostgrestBuilder.ts's own comment: "we don't populate
+     * code/hint for client-side network errors since those fields are meant
+     * for upstream service errors"). Any OTHER non-empty code is a genuine,
+     * if unmapped, server response.
+     */
+    setNotice(
+      code !== undefined
+        ? NOTICE[code]
+        : error?.code === ''
+          ? 'Could not send. Check your connection.'
+          : 'Something went wrong on our side. Please try again.',
+    );
     errorTick();
     if (code === 'INSUFFICIENT_BALANCE') {
       openRefill();

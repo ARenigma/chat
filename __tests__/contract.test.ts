@@ -8419,3 +8419,22 @@ describe('a cold launch offline does not sign a signed-in member out (H6)', () =
     expect(app).toContain('authRetryCountRef.current += 1;');
   });
 });
+
+describe('a message send tells a server rejection from a dead network apart (H7)', () => {
+  // "Could not send. Check your connection." used to be the fallback for
+  // EVERY unmapped failure, including one the server actively responded to
+  // and rejected for a reason sendResultFrom has no copy for. postgrest-js's
+  // own convention: a client-side/network failure always carries `code: ''`
+  // (never undefined), because it never reached PostgREST to get a real one.
+  const api = withoutComments(read('src/api/chat.ts'));
+
+  it("checks error?.code === '' to distinguish network from an unmapped server response", () => {
+    const fn = api.slice(
+      api.indexOf("track('send_rejected'"),
+      api.indexOf("track('send_rejected'") + 700,
+    );
+    expect(fn).toContain("error?.code === ''");
+    expect(fn).toContain("'Could not send. Check your connection.'");
+    expect(fn).toContain("'Something went wrong on our side. Please try again.'");
+  });
+});
