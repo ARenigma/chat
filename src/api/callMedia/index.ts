@@ -23,6 +23,7 @@ const pendingSession: CallMediaSession = {
   connState: 'connecting',
   mediaReady: false,
   muted: false,
+  mediaWarning: null,
   toggleMute: noop,
   speakerOn: false,
   setSpeaker: noop,

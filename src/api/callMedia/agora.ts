@@ -8,6 +8,8 @@ import {
   ConnectionStateType,
   DegradationPreference,
   ErrorCodeType,
+  LocalAudioStreamReason,
+  LocalVideoStreamReason,
   UserOfflineReasonType,
   VideoCodecType,
   createAgoraRtcEngine,
@@ -50,6 +52,15 @@ export function useAgoraCallSession(
   const [videoEnabled, setVideoEnabled] = useState(false);
   const [remoteVideoEnabled, setRemoteVideoEnabled] = useState(false);
   const [remoteUid, setRemoteUid] = useState<number | null>(null);
+  /*
+   * Set when the SDK reports the LOCAL mic or camera stopped for a real
+   * reason — device busy, capture failed, no permission, a phone call
+   * stealing the mic — as opposed to the member's own mute/camera-off
+   * button, which never produces a non-`Ok` reason (L1, 2026-09-17 audit:
+   * "mic/camera stopping mid-call is silent"). Cleared the moment the SDK
+   * reports the device healthy again.
+   */
+  const [mediaWarning, setMediaWarning] = useState<'mic' | 'camera' | null>(null);
   const engineRef = useRef<IRtcEngine | null>(null);
   // In a ref, not the effect's deps: the route default is fixed for the life of
   // a call, and re-running the join effect would drop the channel.
@@ -294,6 +305,34 @@ export function useAgoraCallSession(
          * Every other code still ends the call: this is a narrow
          * exclusion list, not a general "ignore errors" policy.
          */
+        /*
+         * L1 (2026-09-17 audit): the mic/camera stopping mid-call was
+         * previously silent — nothing read these two callbacks at all.
+         * Reason, not state, is what distinguishes a real problem from the
+         * member's own mute/camera-off: `LocalAudioStreamReasonOk`/
+         * `LocalVideoStreamReasonOk` (0) is what a normal, member-requested
+         * mute/disable reports; every other reason is Agora describing an
+         * actual failure (device busy, no permission, capture failed, a
+         * phone call interrupting the mic).
+         */
+        onLocalAudioStateChanged: (_connection, _state, reason) => {
+          if (cancelled) return;
+          setMediaWarning(prev => {
+            if (reason !== LocalAudioStreamReason.LocalAudioStreamReasonOk) {
+              return 'mic';
+            }
+            return prev === 'mic' ? null : prev;
+          });
+        },
+        onLocalVideoStateChanged: (_source, _state, reason) => {
+          if (cancelled) return;
+          setMediaWarning(prev => {
+            if (reason !== LocalVideoStreamReason.LocalVideoStreamReasonOk) {
+              return 'camera';
+            }
+            return prev === 'camera' ? null : prev;
+          });
+        },
         onError: err => {
           if (
             err === ErrorCodeType.ErrTokenExpired ||
@@ -435,6 +474,7 @@ export function useAgoraCallSession(
     connState,
     mediaReady: connState === 'connected',
     muted,
+    mediaWarning,
     toggleMute,
     speakerOn,
     setSpeaker,

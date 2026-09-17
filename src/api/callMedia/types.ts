@@ -61,6 +61,14 @@ export interface CallMediaSession {
   connState: CallConnState;
   mediaReady: boolean;
   muted: boolean;
+  /**
+   * Set when the SDK reports the local mic or camera stopped for a reason
+   * other than the member's own mute/camera-off (L1, 2026-09-17 audit) —
+   * device busy, capture failed, no permission, an interrupting phone call.
+   * `null` means healthy (or muted/disabled by the member, which is not a
+   * warning). CallScreen surfaces this as a notice; it is not itself UI.
+   */
+  mediaWarning: 'mic' | 'camera' | null;
   toggleMute: () => void;
   /**
    * Audio route. `true` = built-in speaker, `false` = earpiece.

@@ -8185,3 +8185,42 @@ describe('the composer fades between idle, recording and review, not a hard cut 
     expect(review).toContain('exiting={fadeSwapOutFast}');
   });
 });
+
+describe('the mic/camera stopping mid-call is no longer silent (L1)', () => {
+  // Amit's audit, 2026-09-17: nothing read onLocalAudioStateChanged/
+  // onLocalVideoStateChanged at all, so a device problem (busy mic, no
+  // permission, capture failure, an interrupting phone call) mid-call was
+  // invisible to the member. reason, not state, distinguishes that from the
+  // member's own mute/camera-off, which always reports the Ok reason.
+  const agora = withoutComments(read('src/api/callMedia/agora.ts'));
+  const types = withoutComments(read('src/api/callMedia/types.ts'));
+  const index = withoutComments(read('src/api/callMedia/index.ts'));
+  const callScreen = withoutComments(read('src/screens/CallScreen.tsx'));
+
+  it('agora.ts reads the reason on both local audio and video state changes', () => {
+    expect(agora).toContain('onLocalAudioStateChanged: (_connection, _state, reason) => {');
+    expect(agora).toContain(
+      'if (reason !== LocalAudioStreamReason.LocalAudioStreamReasonOk)',
+    );
+    expect(agora).toContain('onLocalVideoStateChanged: (_source, _state, reason) => {');
+    expect(agora).toContain(
+      'if (reason !== LocalVideoStreamReason.LocalVideoStreamReasonOk)',
+    );
+  });
+
+  it('mediaWarning is part of the CallMediaSession contract, including its fallbacks', () => {
+    expect(types).toContain("mediaWarning: 'mic' | 'camera' | null;");
+    expect(index).toContain('mediaWarning: null,');
+  });
+
+  it('CallScreen surfaces the warning as a one-shot notice, not a silent state', () => {
+    const fn = callScreen.slice(
+      callScreen.indexOf('if (mediaWarning ==='),
+      callScreen.indexOf('if (mediaWarning ===') + 300,
+    );
+    expect(fn).toContain("setNotice(\"Your mic stopped. Check if another app is using it.\")");
+    expect(fn).toContain(
+      "setNotice(\"Your camera stopped. Check if another app is using it.\")",
+    );
+  });
+});

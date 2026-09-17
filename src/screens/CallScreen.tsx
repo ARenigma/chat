@@ -464,6 +464,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     backend,
     mediaReady,
     muted,
+    mediaWarning,
     toggleMute,
     speakerOn,
     setSpeaker,
@@ -883,6 +884,23 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     });
   }, [callId, onEnd, setNotice, name]);
   acceptRef.current = accept;
+
+  /*
+   * L1 (2026-09-17 audit): the mic/camera stopping mid-call used to be
+   * silent — nothing told the member their own audio or video had actually
+   * stopped reaching the other side. `mediaWarning` (agora.ts) is null for
+   * the member's own mute/camera-off, so this only fires for a real device
+   * problem (busy, no permission, capture failed, an interrupting call).
+   * One-shot on the transition INTO a warning, matching every other notice
+   * on this screen — no separate "you're back" toast on recovery.
+   */
+  useEffect(() => {
+    if (mediaWarning === 'mic') {
+      setNotice("Your mic stopped. Check if another app is using it.");
+    } else if (mediaWarning === 'camera') {
+      setNotice("Your camera stopped. Check if another app is using it.");
+    }
+  }, [mediaWarning, setNotice]);
 
   const timer = `${Math.floor(elapsed / 60)}:${(elapsed % 60).toString().padStart(2, '0')}`;
   // #4: the coral gradient read as "very ugly" on a real call. A call wants a
