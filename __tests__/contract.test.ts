@@ -8294,3 +8294,21 @@ describe('packet loss and MOS are recorded, and two metrics stop overwriting one
     expect(types).toContain('audioMosValue?: number;');
   });
 });
+
+describe('the speaker pill follows the real audio route (M6/M21)', () => {
+  // speakerOn used to change only when the member pressed the speaker
+  // button, so it kept lying about the route once a Bluetooth headset or
+  // wired headphones changed it out from under the app.
+  const agora = withoutComments(read('src/api/callMedia/agora.ts'));
+
+  it('onAudioRoutingChanged syncs speakerOn from the SDK, not just the button', () => {
+    expect(agora).toContain('onAudioRoutingChanged: routing => {');
+    const fn = agora.slice(
+      agora.indexOf('onAudioRoutingChanged: routing => {'),
+      agora.indexOf('onAudioRoutingChanged: routing => {') + 250,
+    );
+    expect(fn).toContain('routing === AudioRoute.RouteSpeakerphone');
+    expect(fn).toContain('routing === AudioRoute.RouteLoudspeaker');
+    expect(fn).toContain('setSpeakerOn(');
+  });
+});

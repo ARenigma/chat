@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { PermissionsAndroid, Platform } from 'react-native';
 import {
   AudioProfileType,
+  AudioRoute,
   AudioScenarioType,
   ChannelProfileType,
   ClientRoleType,
@@ -204,6 +205,22 @@ export function useAgoraCallSession(
             setRemoteUid(remoteUserUid);
             setRemoteVideoEnabled(true);
           }
+        },
+        /*
+         * M6/M21 (2026-09-17 audit): `speakerOn` used to change ONLY when
+         * the member pressed the speaker button, so it kept reporting the
+         * last thing THEY chose even after the SDK itself moved the call
+         * onto a different route — a Bluetooth headset connecting, wired
+         * headphones plugged in, or Android's own audio-focus routing. This
+         * is the SDK's own source of truth for the route actually in use,
+         * whatever changed it.
+         */
+        onAudioRoutingChanged: routing => {
+          if (cancelled) return;
+          setSpeakerOn(
+            routing === AudioRoute.RouteSpeakerphone ||
+              routing === AudioRoute.RouteLoudspeaker,
+          );
         },
         onConnectionStateChanged: (_connection, state) => {
           if (cancelled) return;
