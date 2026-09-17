@@ -155,6 +155,7 @@ const MIGRATIONS = [
   'supabase/migrations/114_founder_allowlist_is_case_insensitive.sql',
   'supabase/migrations/115_call_heartbeats_are_activity.sql',
   'supabase/migrations/116_messages_session_id_is_not_client_writable.sql',
+  'supabase/migrations/117_mock_recharge_is_rate_limited.sql',
 ];
 
 /**

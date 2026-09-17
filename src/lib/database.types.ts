@@ -755,12 +755,14 @@ export type SpendChatMinuteResult = {
 };
 
 /** Returned by the `mock_recharge` RPC (migration 020). Only callable when
- *  `app_flags.mock_payments = true`; inert (MOCK_DISABLED) in production. */
+ *  `app_flags.mock_payments = true`; inert (MOCK_DISABLED) in production.
+ *  `RATE_LIMITED` (migration 117): capped at 3 calls per user per 24h,
+ *  regardless of the server flag's state. */
 export type MockRechargeResult = {
   success: boolean;
   transaction_id?: string;
   new_balance?: number;
-  error?: 'NOT_AUTHENTICATED' | 'MOCK_DISABLED' | 'INVALID_AMOUNT';
+  error?: 'NOT_AUTHENTICATED' | 'MOCK_DISABLED' | 'INVALID_AMOUNT' | 'RATE_LIMITED';
 };
 
 /** Added by migration 019. */
