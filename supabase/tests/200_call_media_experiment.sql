@@ -1,6 +1,6 @@
 \set ON_ERROR_STOP on
 begin;
-select plan(19);
+select plan(24);
 
 select ok(
   position(
@@ -220,6 +220,43 @@ select is(
   (select quality from public.call_quality_samples),
   2,
   'Agora network quality survives restricted telemetry storage'
+);
+
+-- M7, 2026-09-17 audit: networkQuality/audioLossRate/videoLossRate/
+-- audioMosValue are new columns (migration 119), separate from `quality`
+-- above rather than overwriting it.
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub":"ca100000-0000-4000-8000-000000000001","role":"authenticated"}';
+select is(
+  public.record_call_quality_samples(
+    (select id from media_override_call),
+    '[{"capturedAtMs":1788523200000,"backend":"agora","networkQuality":3,"audioLossRate":1.5,"videoLossRate":2.25,"audioMosValue":410}]'::jsonb
+  ),
+  1,
+  'a sample carrying the new loss-rate/MOS fields is accepted'
+);
+
+reset role;
+select is(
+  (select network_quality from public.call_quality_samples order by id desc limit 1),
+  3,
+  'networkQuality lands in its own column, separate from quality'
+);
+select is(
+  (select audio_loss_rate from public.call_quality_samples order by id desc limit 1),
+  1.5,
+  'audioLossRate is recorded'
+);
+select is(
+  (select video_loss_rate from public.call_quality_samples order by id desc limit 1),
+  2.25,
+  'videoLossRate is recorded'
+);
+select is(
+  (select audio_mos_value from public.call_quality_samples order by id desc limit 1),
+  410,
+  'audioMosValue is recorded'
 );
 
 set local role authenticated;

@@ -53,7 +53,20 @@ export interface CallQualitySample {
   cpuPercent?: number;
   rssBytes?: number;
   thermalStatus?: number;
+  /** The audio stream's own QualityType (Agora's onRemoteAudioStats.quality), 0-6. */
   quality?: number;
+  /**
+   * The tx/rx signal reading (Agora's onNetworkQuality), 0-6 — a SEPARATE
+   * dimension from `quality` above. The two used to share this one field and
+   * overwrite each other (M7, 2026-09-17 audit).
+   */
+  networkQuality?: number;
+  /** RemoteAudioStats.audioLossRate — audio frame loss rate, percent. */
+  audioLossRate?: number;
+  /** RemoteVideoStats.packetLossRate — video packet loss rate, percent. */
+  videoLossRate?: number;
+  /** RemoteAudioStats.mosValue, Agora's raw 0-500 scale (divide by 100 for the 0-5 MOS). */
+  audioMosValue?: number;
 }
 
 export interface CallMediaSession {

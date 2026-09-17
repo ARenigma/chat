@@ -157,6 +157,7 @@ const MIGRATIONS = [
   'supabase/migrations/116_messages_session_id_is_not_client_writable.sql',
   'supabase/migrations/117_mock_recharge_is_rate_limited.sql',
   'supabase/migrations/118_session_leases_require_a_real_participant.sql',
+  'supabase/migrations/119_call_quality_records_loss_rate_and_mos.sql',
 ];
 
 /**

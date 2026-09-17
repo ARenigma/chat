@@ -8252,3 +8252,45 @@ describe('nothing shows the peer muted their mic, until now (M25)', () => {
     expect(callScreen).toContain('name="micOff"');
   });
 });
+
+describe('packet loss and MOS are recorded, and two metrics stop overwriting one field (M7)', () => {
+  // onNetworkQuality (tx/rx signal) and onRemoteAudioStats.quality (the
+  // stream's own QualityType) used to share one `quality` field, each
+  // silently discarding the other's reading. audioLossRate/videoLossRate/
+  // mosValue were never read from the SDK's own stats objects at all.
+  const agora = withoutComments(read('src/api/callMedia/agora.ts'));
+  const types = withoutComments(read('src/api/callMedia/types.ts'));
+
+  it('onNetworkQuality writes networkQuality, not quality', () => {
+    const fn = agora.slice(
+      agora.indexOf('onNetworkQuality: ('),
+      agora.indexOf('onNetworkQuality: (') + 150,
+    );
+    expect(fn).toContain('latestQualityRef.current.networkQuality = Math.max(txQuality, rxQuality);');
+    expect(fn).not.toContain('latestQualityRef.current.quality =');
+  });
+
+  it('onRemoteAudioStats reads audioLossRate and mosValue, not just the coarse enum', () => {
+    const fn = agora.slice(
+      agora.indexOf('onRemoteAudioStats: ('),
+      agora.indexOf('onLocalVideoStats: ('),
+    );
+    expect(fn).toContain('audioLossRate: stats.audioLossRate,');
+    expect(fn).toContain('audioMosValue: stats.mosValue,');
+  });
+
+  it('onRemoteVideoStats reads packetLossRate', () => {
+    const fn = agora.slice(
+      agora.indexOf('onRemoteVideoStats: ('),
+      agora.indexOf('onTokenPrivilegeWillExpire'),
+    );
+    expect(fn).toContain('videoLossRate: stats.packetLossRate,');
+  });
+
+  it('CallQualitySample types all four new fields', () => {
+    expect(types).toContain('networkQuality?: number;');
+    expect(types).toContain('audioLossRate?: number;');
+    expect(types).toContain('videoLossRate?: number;');
+    expect(types).toContain('audioMosValue?: number;');
+  });
+});

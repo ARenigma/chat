@@ -230,14 +230,26 @@ export function useAgoraCallSession(
             updateConnectionState('failed');
           }
         },
+        /*
+         * Writes `networkQuality`, NOT `quality` (M7, 2026-09-17 audit): the
+         * tx/rx signal reading here and onRemoteAudioStats's own stream
+         * quality below are different diagnostic dimensions that used to
+         * share one field, each silently discarding whichever the other
+         * wrote most recently.
+         */
         onNetworkQuality: (_connection, _uid, txQuality, rxQuality) => {
-          latestQualityRef.current.quality = Math.max(txQuality, rxQuality);
+          latestQualityRef.current.networkQuality = Math.max(txQuality, rxQuality);
         },
         onRemoteAudioStats: (_connection, stats) => {
           latestQualityRef.current = {
             ...latestQualityRef.current,
             jitterMs: stats.jitterBufferDelay,
             quality: stats.quality,
+            // audioLossRate/mosValue were never read at all before this
+            // (M7) — the SDK's actual loss-rate and MOS fields, distinct
+            // from the coarse 0-6 `quality` enum above.
+            audioLossRate: stats.audioLossRate,
+            audioMosValue: stats.mosValue,
           };
         },
         onLocalVideoStats: (_connection, _source, stats) => {
@@ -257,6 +269,8 @@ export function useAgoraCallSession(
             frameWidth: stats.width,
             frameHeight: stats.height,
             freezeDurationMs: stats.totalFrozenTime,
+            // packetLossRate was never read at all before this (M7).
+            videoLossRate: stats.packetLossRate,
           };
         },
         // Agora requires fetching a fresh server-minted token and passing it to
