@@ -516,6 +516,34 @@ describe('Cashfree billing invariants', () => {
     // Must assert it never trusts the client alone.
     expect(fn).toMatch(/never trust the client/i);
   });
+
+  /*
+   * Telegram-CTO audit, 2026-09-17 (X9, contested). `onVerify` fires the
+   * instant the member returns from their UPI app -- on Android, exactly
+   * when the network is re-establishing -- so a single un-retried
+   * verify-order call turned a network blip into "Payment failed". The
+   * money was never actually at risk (cashfree-webhook credits server-side
+   * regardless of whether the client learns the result), but the ON-SCREEN
+   * message was needlessly alarming. The severity claimed in the original
+   * finding (a real charge, a chargeback) does not hold in any build that
+   * ships today -- CASHFREE_SANDBOX_CHECKOUT is APP_ENV !== 'production',
+   * so production never renders this checkout at all -- but the retry
+   * itself is a real, low-risk improvement worth having regardless, and
+   * exactly the shape needed the day PAYMENTS_ENABLED does turn on.
+   */
+  it('verifyOrder retries with backoff before giving up', () => {
+    const billing = withoutComments(read('src/api/billing.ts'));
+    const fn = billing.slice(
+      billing.indexOf('async function verifyOrder'),
+      billing.indexOf('async function verifyOrder') + 900,
+    );
+    expect(fn).toContain('const delaysMs = [1000, 2000, 4000];');
+    expect(fn).toContain("supabase.functions.invoke<VerifyResult>('verify-order'");
+    // Must actually loop and await between attempts, not just declare the
+    // delays and ignore them.
+    expect(fn).toMatch(/for \(let attempt = 0; attempt <= delaysMs\.length; attempt \+= 1\)/);
+    expect(fn).toContain('await new Promise(resolve => setTimeout(resolve, delay));');
+  });
 });
 
 function walk(dir: string): string[] {
