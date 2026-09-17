@@ -977,6 +977,36 @@ function Root() {
         // Who is online is the one thing that goes stale while the phone is in
         // a pocket, and the directory has no realtime channel (see useProviders).
         void queryClient.invalidateQueries({ queryKey: keys.providers });
+        /*
+         * DO NOT re-gate over a LIVE CALL (2026-09-17 audit). `setBoot({phase:
+         * 'permissions'})` renders `PermissionsScreen` INSTEAD of `SignedIn`
+         * (below), unmounting whatever was on screen — and CallScreen's own
+         * contract is that unmounting hangs up: "Leaving the screen ends the
+         * call: an unmount hangs up on the server if the call was live."
+         *
+         * The gate checks three permissions (permissionsGate.ts): RECORD_AUDIO
+         * and CAMERA cannot plausibly lapse mid-call — the foreground service
+         * CallScreen already starts keeps that access alive by design
+         * (developer.android.com/training/permissions/requesting: "If you
+         * launch a foreground service while the activity is visible... your
+         * app can continue to access the data until the foreground service
+         * stops") — but POST_NOTIFICATIONS is a plain Settings toggle that
+         * does NOT kill the process, so it can genuinely be switched off
+         * mid-call and trip this exact path on the very next foreground
+         * return: a paid, live call ended by a notification-permission
+         * toggle that has nothing to do with the call itself.
+         *
+         * Deferred, not skipped: `gateSatisfied` still runs, and if it
+         * fails while a call IS on screen this simply waits for the next
+         * foreground return (or the call ending) rather than re-checking
+         * right now. The requirement stays mandatory (ADR-0026); only the
+         * timing moves.
+         */
+        const onCallScreen =
+          routeRef.current.name === 'call' || providerRouteRef.current.name === 'call';
+        if (onCallScreen) {
+          return;
+        }
         const statuses = await checkGate();
         if (!gateSatisfied(statuses)) {
           setBoot({ phase: 'permissions' });
@@ -1377,6 +1407,42 @@ function Root() {
         pendingPeer={pendingPeer}
         onPeerHandled={clearPendingPeer}
         onSignedOut={() => setBoot({ phase: 'signedOut' })}
+        /*
+         * Closes a gap in the provider-intent boot skip (2026-09-17 audit).
+         * While `PROVIDER_INTENT_KEY` is set, the boot effect above skips
+         * `bootPhaseAfterAuth` entirely — profileSetup, policyGate AND
+         * permissions — which is the documented, deliberate shape of
+         * "Become a partner" (Amit, 2026-09-03: "SKIPS the member first-run
+         * ... entirely"). That is correct for the DURATION of the apply
+         * flow: `bootPhaseAfterAuth`'s own `onProviderPath` check only
+         * skips profileSetup, so a member policy modal opening over
+         * provider onboarding was the exact bug it exists to prevent.
+         *
+         * But the skip does not end when onboarding does. The flag clears
+         * on submission and the app flips straight to the provider tree in
+         * THIS SAME SESSION with `boot.phase` still 'ready' — nothing
+         * re-runs `bootPhaseAfterAuth` until the NEXT cold start, so a
+         * freshly-admitted provider could take a paid session having never
+         * seen the policy screen, and the server's own POLICY_REQUIRED
+         * check (session_cutover.sql) would refuse it with no in-app
+         * screen able to resolve that refusal short of a relaunch.
+         *
+         * `onProviderOnboarded` re-runs the exact same check
+         * `bootPhaseAfterAuth` already does on every other post-auth path,
+         * the moment identity_state stops being 'none' — at which point
+         * `onProviderPath` is true via that signal alone, so profileSetup
+         * is (still, correctly) skipped and only policyGate/permissions
+         * get the chance to apply.
+         */
+        onProviderOnboarded={() => {
+          void (async () => {
+            const profile = await getSignedInProfile().catch(() => null);
+            const nextBoot = await bootPhaseAfterAuth(profile).catch(() => null);
+            if (nextBoot !== null) {
+              setBoot(nextBoot);
+            }
+          })();
+        }}
       />
       <ConfirmDialog
         visible={exitDialogVisible}
@@ -1416,6 +1482,10 @@ interface SignedInProps {
   pendingPeer: string | null;
   onPeerHandled: () => void;
   onSignedOut: () => void;
+  /** Re-checks policy/permission gates the moment provider onboarding
+   *  completes, closing the gap the provider-intent boot skip leaves open
+   *  for the rest of this session. See its call site in Root. */
+  onProviderOnboarded: () => void;
 }
 
 /**
@@ -1436,6 +1506,7 @@ function SignedIn({
   pendingPeer,
   onPeerHandled,
   onSignedOut,
+  onProviderOnboarded,
 }: SignedInProps) {
   const styles = useStyles(makeStyles);
   const setNotice = useStore(s => s.setNotice);
@@ -1967,6 +2038,9 @@ function SignedIn({
                 storage.remove(PROVIDER_INTENT_KEY);
                 useStore.getState().setPendingProviderApply(false);
                 void queryClient.invalidateQueries();
+                // Closes the boot-skip gap for the rest of THIS session —
+                // see onProviderOnboarded's own docblock at its call site.
+                onProviderOnboarded();
               }}
             />
           ) : route.name === 'applicationStatus' ? (

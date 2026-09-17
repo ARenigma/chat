@@ -5147,6 +5147,65 @@ describe('hardware back hands off to Android before boot is ready', () => {
   });
 });
 
+/*
+ * Telegram-CTO audit, 2026-09-17 (contested, resolved after independently
+ * reading bootPhaseAfterAuth). The provider-intent boot skip
+ * (App.tsx:~660, "SKIPS the member first-run ... entirely") is a real,
+ * deliberate decision for the DURATION of the apply flow -- but nothing
+ * ended it once onboarding completes. `bootPhaseAfterAuth`'s own
+ * `onProviderPath` check only ever skips profileSetup, not policyGate or
+ * permissions, so a freshly-admitted provider flipping straight into the
+ * provider tree in the SAME session had never had policy/permission
+ * checked at all, with no in-app screen able to resolve the server's own
+ * POLICY_REQUIRED refusal short of a relaunch.
+ */
+describe('provider onboarding completing re-checks policy and permissions once', () => {
+  it('onSubmitted calls onProviderOnboarded, which re-runs bootPhaseAfterAuth', () => {
+    const app = withoutComments(read('App.tsx'));
+    const onSubmittedStart = app.indexOf('onSubmitted={() => {');
+    const onSubmitted = app.slice(
+      onSubmittedStart,
+      app.indexOf("route.name === 'applicationStatus'", onSubmittedStart),
+    );
+    expect(onSubmitted).toContain('onProviderOnboarded();');
+
+    const call = app.slice(
+      app.indexOf('onProviderOnboarded={() => {'),
+      app.indexOf('onProviderOnboarded={() => {') + 500,
+    );
+    expect(call).toContain('await getSignedInProfile()');
+    expect(call).toContain('await bootPhaseAfterAuth(profile)');
+    expect(call).toContain('setBoot(nextBoot)');
+  });
+});
+
+/*
+ * Telegram-CTO audit, 2026-09-17 (contested, resolved: the notification
+ * corner both verdicts converged on is real even where the broader claim
+ * was disputed). The foreground-return permission re-check could switch
+ * `boot.phase` to 'permissions' while a call was on screen, unmounting
+ * CallScreen -- whose own contract ends the call on unmount -- over
+ * POST_NOTIFICATIONS specifically: unlike a one-time RECORD_AUDIO/CAMERA
+ * grant (kept alive by the call's own foreground service, and revoking it
+ * in Settings kills the process before this listener could even run), the
+ * notification permission is a plain toggle that survives the process and
+ * can be flipped mid-call.
+ */
+describe('the foreground-return permission re-check does not tear down a live call', () => {
+  it('skips the re-gate while either tree is on the call screen', () => {
+    const app = withoutComments(read('App.tsx'));
+    const listenerStart = app.indexOf("const sub = AppState.addEventListener('change'");
+    const listener = app.slice(listenerStart, app.indexOf('return () => sub.remove();', listenerStart));
+    expect(listener).toContain(
+      "routeRef.current.name === 'call' || providerRouteRef.current.name === 'call'",
+    );
+    expect(listener).toMatch(/if \(onCallScreen\) \{\s*return;\s*\}/);
+    // The check must come BEFORE checkGate() runs, not merely appear
+    // somewhere in the effect.
+    expect(listener.indexOf('onCallScreen')).toBeLessThan(listener.indexOf('await checkGate()'));
+  });
+});
+
 describe('a tapped message notification is held until `role` is known, not routed blind', () => {
   it('removed the Firebase notification-tap path that never fired', () => {
     const push = withoutComments(read('src/lib/push.ts'));
