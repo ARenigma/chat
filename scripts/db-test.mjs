@@ -156,6 +156,7 @@ const MIGRATIONS = [
   'supabase/migrations/115_call_heartbeats_are_activity.sql',
   'supabase/migrations/116_messages_session_id_is_not_client_writable.sql',
   'supabase/migrations/117_mock_recharge_is_rate_limited.sql',
+  'supabase/migrations/118_session_leases_require_a_real_participant.sql',
 ];
 
 /**
@@ -800,6 +801,14 @@ const suites = [
     ),
     label:
       'messages.session_id/client_nonce/notified_at cannot be set by the recipient',
+  },
+  {
+    file: join(
+      ROOT,
+      'supabase/tests/490_session_leases_require_a_real_participant.sql',
+    ),
+    label:
+      'session_leases cannot be planted by a stranger, and a stray row cannot fake "both present"',
   },
 ];
 
