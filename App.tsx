@@ -59,7 +59,7 @@ import { sweepExpiredOutbox } from './src/lib/outboxStore';
 import { isUuid } from './src/lib/ids';
 import { track } from './src/lib/telemetry';
 import {
-  startFrameWatch,
+  useFrameWatch,
   trackQuerySlow,
   trackScreenOpened,
 } from './src/lib/perfTelemetry';
@@ -2160,7 +2160,7 @@ function Shell() {
 }
 
 export default function App() {
-  useEffect(() => startFrameWatch(), []);
+  useFrameWatch();
   return (
     /**
      * GestureHandlerRootView has to be the outermost view, not a wrapper inside

@@ -55,11 +55,32 @@ describe('display refresh rate', () => {
   });
 
   it('latches the measurement so the inference cannot overwrite it', () => {
-    // The native answer arrives asynchronously, after the rAF estimator has
-    // already been running. Without the latch the next frame's median would
-    // replace the real number with a guess.
-    expect(telemetry).toContain('let measured = false;');
-    expect(telemetry).toContain('if (!measured && window.length >= 20)');
+    // The native answer arrives asynchronously, after the frame-delta
+    // estimator has already been running. Without the latch the next frame's
+    // median would replace the real number with a guess.
+    //
+    // measuredSV/windowSV, not plain variables (M17, 2026-09-17 audit): the
+    // watcher moved onto the UI thread via Reanimated's useFrameCallback, so
+    // its mutable state has to be a shared value to be readable/writable from
+    // the worklet the frame callback runs as.
+    expect(telemetry).toContain('const measuredSV = useSharedValue(false);');
+    expect(telemetry).toContain('if (!measuredSV.value && samples.length >= 20)');
     expect(telemetry).toContain('void readRefreshRate().then(');
+  });
+
+  it('measures jank on the UI thread, not the JS thread (M17)', () => {
+    // A JS-thread requestAnimationFrame only tells you the JS thread got to
+    // run on time; it cannot see a stall entirely on the UI/Fabric side
+    // (an expensive worklet, a slow native commit) with JS sitting idle.
+    expect(telemetry).toContain(
+      "import { runOnJS, useFrameCallback, useSharedValue } from 'react-native-reanimated'",
+    );
+    expect(telemetry).toContain('export function useFrameWatch(): void {');
+    expect(telemetry).toContain('useFrameCallback(frameInfo => {');
+    expect(telemetry).toContain("runOnJS(reportJank)(delta, 1000 / intervalMsSV.value);");
+    // nearestInterval runs inside the frame-callback worklet, so it needs the
+    // directive itself, not just its caller.
+    const fn = telemetry.slice(telemetry.indexOf('function nearestInterval'));
+    expect(fn.slice(0, 80)).toContain("'worklet';");
   });
 });
