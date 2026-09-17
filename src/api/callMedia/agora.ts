@@ -7,6 +7,7 @@ import {
   ClientRoleType,
   ConnectionStateType,
   DegradationPreference,
+  ErrorCodeType,
   UserOfflineReasonType,
   VideoCodecType,
   createAgoraRtcEngine,
@@ -262,7 +263,45 @@ export function useAgoraCallSession(
                 : stats.memoryAppUsageInKbytes * 1024,
           });
         },
-        onError: () => {
+        /*
+         * Three codes excluded from the blanket 'failed' mapping
+         * (2026-09-17 audit, scoped down from the original finding after
+         * checking the installed SDK's own docblocks — the fuller proposal
+         * to delete the leave+rejoin renewal fallback and raise the token
+         * TTL was NOT taken; see renewToken above for why).
+         *
+         * ErrTokenExpired (109) / ErrInvalidToken (110): both carry a
+         * DEPRECATED tag in this SDK version pointing at
+         * onConnectionStateChanged's ConnectionStateTokenExpired /
+         * ConnectionStateInvalidToken instead (AgoraBase.ts:288-296) — the
+         * lifecycle these two numbers describe is already owned by
+         * onTokenPrivilegeWillExpire (pre-emptive renewal, 30s early) and
+         * onRequestToken (the post-expiry rejoin) below. Excluded so that
+         * IF this SDK ever still emits them as a legacy compatibility
+         * path, they cannot double-report a lifecycle those two callbacks
+         * already handle.
+         *
+         * ErrJoinChannelRejected (17): the documented consequence of
+         * `renewToken`'s own leave+rejoin branch below — `leaveChannel()`
+         * is asynchronous ("the channel has not actually been left" the
+         * instant the call returns, IAgoraRtcEngine.ts:3422) and the very
+         * next line calls `join()`, which can race the still-in-progress
+         * leave and get rejected. That is a known artifact of a
+         * vendor-sanctioned recovery path (IAgoraRtcEngine.ts:2088-2091
+         * documents leave+rejoin as one of the two supported post-expiry
+         * remedies), not evidence the call itself failed.
+         *
+         * Every other code still ends the call: this is a narrow
+         * exclusion list, not a general "ignore errors" policy.
+         */
+        onError: err => {
+          if (
+            err === ErrorCodeType.ErrTokenExpired ||
+            err === ErrorCodeType.ErrInvalidToken ||
+            err === ErrorCodeType.ErrJoinChannelRejected
+          ) {
+            return;
+          }
           updateConnectionState('failed');
         },
       };

@@ -5464,6 +5464,45 @@ describe("the caller's ring timer does not outrun a real answer", () => {
   });
 });
 
+/*
+ * Telegram-CTO audit, 2026-09-17 (X2), contested finding, scoped down
+ * after independent verification. The original claim's headline mechanism
+ * (ErrTokenExpired/ErrInvalidToken firing through onError) does not apply
+ * to the installed SDK -- both carry a DEPRECATED tag in this version's
+ * own AgoraBase.ts, pointing at onConnectionStateChanged instead -- and
+ * the pre-emptive renewal (onTokenPrivilegeWillExpire, 30s early) is the
+ * normal path, not the "guaranteed ten-minute kill" the finding's title
+ * claimed. The fuller proposal (delete the leave+rejoin fallback, raise
+ * the token TTL) was NOT taken: IAgoraRtcEngine.ts:2088-2091 documents
+ * leave+rejoin as one of TWO vendor-sanctioned post-expiry remedies, and
+ * docs/android-audit.md already records adopting it deliberately.
+ *
+ * What survived: `onError` was a bare handler with no code inspection at
+ * all, so IF any of the three excluded codes ever does fire (109/110 as a
+ * legacy compatibility path this SDK version may still emit; 17 as the
+ * documented, real consequence of the leave+rejoin race, since
+ * leaveChannel() is asynchronous and the very next line calls join()), it
+ * would incorrectly mark a live call 'failed'. A narrow exclusion list,
+ * not a general "ignore errors" policy -- every other error code still
+ * ends the call.
+ */
+describe('three known-benign Agora error codes do not end a live call', () => {
+  it('onError excludes ErrTokenExpired, ErrInvalidToken and ErrJoinChannelRejected, and nothing else', () => {
+    const agora = withoutComments(read('src/api/callMedia/agora.ts'));
+    const onErrorHandler = agora.slice(
+      agora.indexOf('onError: err => {'),
+      agora.indexOf('onError: err => {') + 400,
+    );
+    expect(onErrorHandler).toContain('err === ErrorCodeType.ErrTokenExpired');
+    expect(onErrorHandler).toContain('err === ErrorCodeType.ErrInvalidToken');
+    expect(onErrorHandler).toContain('err === ErrorCodeType.ErrJoinChannelRejected');
+    expect(onErrorHandler).toContain("updateConnectionState('failed');");
+    // The exclusion must actually return early, not merely check and fall
+    // through to marking the call failed anyway.
+    expect(onErrorHandler).toMatch(/\) \{\s*return;\s*\}/);
+  });
+});
+
 describe('a mid-call network blip is reconnecting, not a hangup', () => {
   it("CallConnState carries a 'reconnecting' value, produced by both onUserOffline and onConnectionStateChanged", () => {
     const types = read('src/api/callMedia/types.ts');
