@@ -84,7 +84,29 @@ pool (subject, file, gender, ord) as (
     ('nia',       'nia-f09661b5.jpg',       'female', 5),
     ('rukmini',   'rukmini-866d0b3d.jpg',   'female', 6),
     ('sara',      'sara-b4cb2e3f.jpg',      'female', 7),
-    ('shubhra',   'shubhra-3006ee8d.jpg',   'female', 8)
+    ('shubhra',   'shubhra-3006ee8d.jpg',   'female', 8),
+    -- Added 2026-09-17. 087 had spent all three male faces on the seeded
+    -- astrologers, so every male provider on clay had nowhere to go and Amit's
+    -- "man for ravi listens" could not be satisfied from what was in the bucket.
+    -- Fifteen more studio headshots were sourced, content-hashed the way 087
+    -- names them, committed to assets/seed/providers/ and uploaded to the same
+    -- public prefix. Ordered AFTER the originals so an existing assignment
+    -- keeps the face it already has.
+    ('arjun',     'arjun-39eb037a.jpg',     'male',   4),
+    ('devansh',   'devansh-40417440.jpg',   'male',   5),
+    ('harish',    'harish-1099343f.jpg',    'male',   6),
+    ('kabir',     'kabir-ea38567d.jpg',     'male',   7),
+    ('nikhil',    'nikhil-389164b1.jpg',    'male',   8),
+    ('rohan',     'rohan-d42d3a62.jpg',     'male',   9),
+    ('aditi',     'aditi-2cc96758.jpg',     'female', 9),
+    ('bhavna',    'bhavna-170ce242.jpg',    'female', 10),
+    ('charu',     'charu-182ebb4f.jpg',     'female', 11),
+    ('gayatri',   'gayatri-e3dda5e4.jpg',   'female', 12),
+    ('ishita',    'ishita-2abd828c.jpg',    'female', 13),
+    ('kavya',     'kavya-5ca99dbe.jpg',     'female', 14),
+    ('meera2',    'meera2-7c8464a0.jpg',    'female', 15),
+    ('nandini',   'nandini-94879f93.jpg',   'female', 16),
+    ('prisha',    'prisha-c9f6f213.jpg',    'female', 17)
 ),
 free as (
   select file,
