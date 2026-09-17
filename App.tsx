@@ -12,7 +12,8 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { focusManager, onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import NetInfo from '@react-native-community/netinfo';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BLUR_SURFACE_AVAILABLE, BlurRoot } from './src/components/BlurSurface';
 import Animated, {
@@ -316,6 +317,36 @@ function useReportFullyDrawn(usable: boolean): void {
     };
   }, [usable]);
 }
+
+/*
+ * TanStack's default OnlineManager listens for the browser's `online`/
+ * `offline` window events, which React Native never dispatches
+ * (2026-09-17 audit; confirmed reading @tanstack/query-core's own source —
+ * `#online = true` at construction, and the listener it registers is
+ * `window.addEventListener`). Without this, the library believes the app
+ * is always online, so `retry`/`refetchOnReconnect` never pause against a
+ * radio that is actually dead — every mutation burns its one retry
+ * against nothing, and a send fails with a generic error at the exact
+ * moment a member has no signal, rather than the paused/queued state
+ * TanStack's whole retry model is meant to give it.
+ * https://tanstack.com/query/latest/docs/framework/react/react-native
+ *
+ * `networkMode` is left at its default ('online'), not set to
+ * 'offlineFirst' as a first read of the TanStack doc might suggest:
+ * offlineFirst exists for a service-worker/HTTP-cache layer that can
+ * satisfy the FIRST attempt from a local cache before the retry-pause
+ * logic engages — this app has no such layer (React Query's in-memory
+ * cache is not that; see lib/outbox.ts's own note that there is no local
+ * message store), so offlineFirst would only mean every query still
+ * attempts once while genuinely offline and fails with a live-network
+ * error, which is the exact "Check your connection" vs "the server said
+ * no" confusion this codebase has already been burned by once.
+ */
+onlineManager.setEventListener(setOnline => {
+  return NetInfo.addEventListener(state => {
+    setOnline(state.isConnected === true);
+  });
+});
 
 const queryClient = new QueryClient({
   defaultOptions: {

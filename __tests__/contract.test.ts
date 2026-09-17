@@ -5202,6 +5202,34 @@ describe('hardware back hands off to Android before boot is ready', () => {
  * made ("a CHANNEL_ERROR here meant edits and deletes stopped arriving and
  * nothing ever went looking for the ones missed").
  */
+/*
+ * Telegram-CTO audit, 2026-09-17 (X8), contested finding, confirmed on
+ * independent read of @tanstack/query-core's own source: the default
+ * OnlineManager listens for the browser's online/offline window events,
+ * which React Native never dispatches, so `#online` starts (and stays)
+ * true forever. Every retry/refetchOnReconnect decision TanStack makes was
+ * therefore made against a signal that could never say "offline".
+ */
+describe('TanStack Query actually knows when the device is offline', () => {
+  it('wires onlineManager to NetInfo, and leaves networkMode at its default', () => {
+    const app = withoutComments(read('App.tsx'));
+    expect(app).toContain("import NetInfo from '@react-native-community/netinfo';");
+    expect(app).toContain('onlineManager.setEventListener(setOnline => {');
+    expect(app).toContain('NetInfo.addEventListener(state => {');
+    expect(app).toContain('setOnline(state.isConnected === true);');
+    // Deliberately no networkMode: 'offlineFirst' — this app has no
+    // service-worker/HTTP-cache layer for that mode to help with, and it
+    // would reintroduce the exact "Check your connection" vs "the server
+    // said no" confusion this codebase has already shipped once.
+    expect(app).not.toMatch(/networkMode:\s*['"]offlineFirst['"]/);
+  });
+
+  it('is a real dependency, not a stray import', () => {
+    const pkg = JSON.parse(read('package.json')) as { dependencies: Record<string, string> };
+    expect(pkg.dependencies).toHaveProperty('@react-native-community/netinfo');
+  });
+});
+
 describe('every incoming-signal realtime channel repairs on CHANNEL_ERROR/TIMED_OUT, not only SUBSCRIBED', () => {
   it('useCallEnded reads the row directly instead of subscribing blind', () => {
     const calls = withoutComments(read('src/api/calls.ts'));
