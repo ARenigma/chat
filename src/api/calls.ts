@@ -140,11 +140,30 @@ export interface CallEnded {
 export function useCallEnded(
   callId: string | null,
   onEnded: (ended: CallEnded) => void,
+  /*
+   * Non-terminal, unlike everything else this hook reports (2026-09-17
+   * audit). `answer_call` sets `calls.status = 'active'` the INSTANT the
+   * callee taps Accept — long before their media joins the channel, which
+   * is a separate, later step (`paid_sessions` activates only once both
+   * sides hold a connected lease). The caller's own phase used to leave
+   * 'ringing' only at that later media-connect moment, so a callee who
+   * answered but whose media took its time left the caller's own 30 s ring
+   * timer running against someone who had already picked up — "No answer."
+   * on a call that was, in fact, answered.
+   *
+   * Reuses this hook's own channel rather than opening a second
+   * subscription to the same row: it is already watching every UPDATE on
+   * `calls` filtered to this id, `active` was simply never one of the
+   * statuses passed upward.
+   */
+  onAnswered?: () => void,
 ): void {
   // A ref so a re-render with a fresh closure does not tear down and re-open
   // the socket mid-ring — the window this hook exists to cover is ~2 s long.
   const handler = useRef(onEnded);
   handler.current = onEnded;
+  const answeredHandler = useRef(onAnswered);
+  answeredHandler.current = onAnswered;
 
   useEffect(() => {
     if (callId === null) {
@@ -163,6 +182,10 @@ export function useCallEnded(
         },
         payload => {
           const row = payload.new as { status: string; end_reason: string | null };
+          if (row.status === 'active') {
+            answeredHandler.current?.();
+            return;
+          }
           const hit = terminal.find(s => s === row.status);
           if (hit !== undefined) {
             handler.current({ status: hit, endReason: row.end_reason });

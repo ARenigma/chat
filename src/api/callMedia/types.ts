@@ -1,5 +1,21 @@
 export type CallMediaBackend = 'current' | 'livekit' | 'agora';
-export type CallConnState = 'connecting' | 'connected' | 'failed' | 'closed';
+/**
+ * `'reconnecting'` added 2026-09-17: a peer's media timing out (Agora's
+ * `UserOfflineDropped`, ~20s of no packets) or the local link itself
+ * dropping (`ConnectionStateReconnecting`) used to be folded into
+ * `'connecting'` or `'closed'` — both wrong, both indistinguishable from a
+ * real hang-up or a fresh cold start. See agora.ts's `onUserOffline` and
+ * `onConnectionStateChanged` for where each is now produced, and
+ * CallScreen.tsx for why it deliberately does NOT interrupt the running
+ * call timer (the server keeps billing through a reconnect; freezing the
+ * clock would only make the screen lie about that, not fix it).
+ */
+export type CallConnState =
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'failed'
+  | 'closed';
 
 /**
  * Vendor-shaped video handle. Agora is the only shipped backend; other arms

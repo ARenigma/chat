@@ -80,6 +80,31 @@ const RING_TIMEOUT_OUT_MS = 30_000;
 const RING_TIMEOUT_IN_MS = 60_000;
 
 /*
+ * How long 'connecting' may last before this side gives up (2026-09-17
+ * audit). Telegram's own equivalent is `callConnectTimeout`, 30 s
+ * (VoIPService.java:3412-3413, cited when this file's media-adapter
+ * comments were written) — matched here rather than picked arbitrarily.
+ *
+ * Needed because of what THIS migration changes: the caller's phase used to
+ * leave 'ringing' only once media actually connected, so the 30 s ring
+ * timer was — by accident — also the caller's only bound on a hung media
+ * join. Now that an 'active' call row moves the caller straight to
+ * 'connecting' the moment the callee answers (see the useCallEnded
+ * callback below), a media join that never completes would otherwise wait
+ * forever with nothing watching it.
+ */
+const MEDIA_CONNECT_TIMEOUT_MS = 30_000;
+
+/*
+ * How long a mid-call reconnect is given before this side gives up
+ * (2026-09-17 audit). Same 30 s as MEDIA_CONNECT_TIMEOUT_MS and the same
+ * Telegram precedent (callConnectTimeout) — a reconnect and a fresh
+ * connect are the same kind of wait from the user's point of view, so they
+ * share one bound rather than each inventing its own number.
+ */
+const RECONNECT_TIMEOUT_MS = 30_000;
+
+/*
  * Not a code any RPC returns — src/api/calls.ts synthesises it when the RPC
  * RAISES. Worth its own sentence rather than falling through to the generic
  * "Could not start the call", because it says the two things a member actually
@@ -638,7 +663,21 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     },
     [direction, finish],
   );
-  useCallEnded(callId, endedNotice);
+  /*
+   * The callee answered (2026-09-17 audit): move off 'ringing' the moment
+   * the server says so, not the moment media happens to join. This is what
+   * stops the ring timeout below from outrunning a real answer — see
+   * useCallEnded's own docblock in api/calls.ts for the full defect.
+   * Guarded on 'ringing' specifically so a callee's OWN screen (whose phase
+   * is 'incoming', never 'ringing') and a call already past this point
+   * cannot be pushed backwards or replayed.
+   */
+  const onCalleeAnswered = useCallback(() => {
+    if (phaseRef.current === 'ringing') {
+      setPhase('connecting');
+    }
+  }, []);
+  useCallEnded(callId, endedNotice, onCalleeAnswered);
 
   /*
    * Give up on an unanswered ring.
@@ -662,6 +701,56 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     }, limit);
     return () => clearTimeout(id);
   }, [phase, finish]);
+
+  /*
+   * Give up on a media join that never completes (2026-09-17 audit).
+   *
+   * A gap this migration opens rather than closes on its own: the caller's
+   * phase now leaves 'ringing' the moment the SERVER says the callee
+   * answered (`onCalleeAnswered`, above), not the moment Agora actually
+   * connects — which used to mean the 30 s ring timer was, by accident,
+   * also the only bound on a hung media join. `MEDIA_CONNECT_TIMEOUT_MS`
+   * replaces that accidental coverage on purpose, at the same 30 s
+   * Telegram uses for the equivalent (`callConnectTimeout`).
+   *
+   * Applies to `'connecting'` from either side that reaches it — the
+   * caller via `onCalleeAnswered`, the callee via their own `accept()` — so
+   * both are protected by the same bound rather than trusting whichever
+   * path happened to still be timed.
+   */
+  useEffect(() => {
+    if (phase !== 'connecting') {
+      return;
+    }
+    const id = setTimeout(() => {
+      finish('Could not connect.');
+    }, MEDIA_CONNECT_TIMEOUT_MS);
+    return () => clearTimeout(id);
+  }, [phase, finish]);
+
+  /*
+   * Give up on a reconnect that never recovers (2026-09-17 audit).
+   *
+   * `connState === 'reconnecting'` (agora.ts: either side's link dropped, or
+   * the peer's media timed out) deliberately does NOT change `phase` — the
+   * call stays 'active' and its timer keeps running, because the server
+   * keeps billing through a reconnect and freezing the clock would only
+   * make the screen understate what is being charged (see CallConnState's
+   * own docblock). But a link that never recovers still has to end
+   * eventually, bounded the same way a fresh connect is
+   * (RECONNECT_TIMEOUT_MS) rather than left to whatever later mechanism —
+   * the 20 s heartbeat, the 30 s session lease grace — happens to notice
+   * first.
+   */
+  useEffect(() => {
+    if (connState !== 'reconnecting') {
+      return;
+    }
+    const id = setTimeout(() => {
+      finish('Connection lost.');
+    }, RECONNECT_TIMEOUT_MS);
+    return () => clearTimeout(id);
+  }, [connState, finish]);
 
   /*
    * Something OUTSIDE the app ended this call.
@@ -698,9 +787,22 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     const sub = DeviceEventEmitter.addListener('callAction', (action: string) => {
       if (action === 'hangUp' || action === 'audioFocusLost' || action === 'decline') {
         onEnd();
-      } else if (action === 'answer' && phaseRef.current === 'ringing') {
-        // Only while ringing: answering an already-connected call would fire a
-        // second answer_call and claim a lease the screen already holds.
+      } else if (action === 'answer' && phaseRef.current === 'incoming') {
+        /*
+         * 'incoming', not 'ringing' (2026-09-17 audit). The callee's own
+         * phase starts at 'incoming' and never becomes 'ringing' -- that
+         * value is reserved for the CALLER's outgoing-ring state (see the
+         * initial-phase logic above: `direction === 'in' ? 'incoming' : ...
+         * 'ringing'`). The green Answer action on the CallStyle notification
+         * fires this same event on the CALLEE's device, so the guard as
+         * written could never once be true: the button looked live and did
+         * nothing, on every incoming call, whenever the app was already
+         * running.
+         *
+         * Only while incoming, still: answering an already-connected call
+         * (phase 'connecting' or 'active') would fire a second answer_call
+         * and claim a lease this screen already holds.
+         */
         acceptRef.current();
       }
     });
@@ -738,6 +840,28 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     }
     setAccepted(true);
     setPhase('connecting');
+    /*
+     * Stop the ring THE INSTANT the call is answered, not once the peer's
+     * media joins (2026-09-17 audit). `CallForegroundService.kt` starts
+     * looping the device ringtone under `isIncoming=true` and only stops it
+     * (`stopRinging()`, gated on `if (isIncoming) startRinging() else
+     * stopRinging()`) when the service is restarted with `isIncoming=false` —
+     * and until this call, the only place that restart happened was the
+     * `mediaReady` effect below, which fires only after Agora actually joins
+     * the channel. Tapping Answer and having the phone keep ringing for a
+     * beat is the first thing that happens on every incoming call, and it
+     * reads as "the button did not work."
+     *
+     * `includeCamera` is left at its default (false) here, exactly like the
+     * FIRST `startCallForegroundService` call on mount below (line ~432):
+     * this restart's job is only to silence the ring and switch the
+     * notification to its ongoing style. The `mediaReady` effect is still
+     * the one place that adds the camera foreground-service type, once
+     * `videoEnabled` actually reflects whether the session is video — a
+     * value this callback's own closure cannot see correctly yet, since
+     * `setAccepted(true)` two lines up has not re-rendered.
+     */
+    startCallForegroundService(name, false, true);
     void answerCall(callId).then(result => {
       if (!result?.success) {
         /*
@@ -757,7 +881,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
       }
       setSessionId(result.session_id ?? null);
     });
-  }, [callId, onEnd, setNotice]);
+  }, [callId, onEnd, setNotice, name]);
   acceptRef.current = accept;
 
   const timer = `${Math.floor(elapsed / 60)}:${(elapsed % 60).toString().padStart(2, '0')}`;
@@ -777,18 +901,32 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
       ? 'wants a video chat'
       : 'calling you';
   const status =
-    phase === 'active'
-      ? timer
-      : phase === 'incoming'
-        ? incomingLabel
-        : phase === 'ringing'
-          ? 'Ringing'
-          : phase === 'connecting'
-            ? 'Connecting'
-            : 'Calling';
+    // A reconnect keeps `phase` at 'active' on purpose (the timer beneath
+    // this line is still counting, and still being billed) — but the status
+    // WORD says so, rather than a running clock silently standing in for a
+    // healthy call during a network blip (2026-09-17 audit).
+    phase === 'active' && connState === 'reconnecting'
+      ? 'Reconnecting'
+      : phase === 'active'
+        ? timer
+        : phase === 'incoming'
+          ? incomingLabel
+          : phase === 'ringing'
+            ? 'Ringing'
+            : phase === 'connecting'
+              ? 'Connecting'
+              : 'Calling';
 
   const showRemoteVideo = remoteVideoEnabled && remoteVideo !== null;
-  const pulsing = phase === 'ringing' || phase === 'connecting' || phase === 'incoming' || phase === 'starting';
+  // `connState === 'reconnecting'` added alongside the phases: 'Reconnecting'
+  // is a waiting word like 'Ringing'/'Connecting'/'Calling' and gets the same
+  // animated ellipsis, even though `phase` itself stays 'active' throughout.
+  const pulsing =
+    phase === 'ringing' ||
+    phase === 'connecting' ||
+    phase === 'incoming' ||
+    phase === 'starting' ||
+    (phase === 'active' && connState === 'reconnecting');
 
   return (
     <View style={styles.root}>

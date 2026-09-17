@@ -7,6 +7,7 @@ import {
   ClientRoleType,
   ConnectionStateType,
   DegradationPreference,
+  UserOfflineReasonType,
   VideoCodecType,
   createAgoraRtcEngine,
   type IRtcEngine,
@@ -142,9 +143,27 @@ export function useAgoraCallSession(
           setRemoteUid(remoteUserUid);
           updateConnectionState('connected');
         },
-        onUserOffline: () => {
+        onUserOffline: (_connection, _remoteUserUid, reason) => {
           remotePresentRef.current = false;
-          updateConnectionState('closed');
+          /*
+           * The reason is now READ, not discarded (2026-09-17 audit).
+           * `UserOfflineQuit` is a real goodbye — the peer actually left,
+           * `'closed'` and CallScreen's terminal handling are correct.
+           * `UserOfflineDropped` is Agora's own timeout for "no packets from
+           * the other party for ~20 s" — exactly a network blip, not a
+           * hang-up, and reporting it as one ended a still-continuing call
+           * the moment a lift or a patchy handover interrupted it. Mapped to
+           * `'reconnecting'` instead: CallScreen keeps the screen (and the
+           * running timer — the server keeps billing through a reconnect,
+           * so freezing the clock would only make the screen understate what
+           * is being charged) and gives the media a bounded recovery window
+           * before giving up for real.
+           */
+          updateConnectionState(
+            reason === UserOfflineReasonType.UserOfflineDropped
+              ? 'reconnecting'
+              : 'closed',
+          );
         },
         onUserMuteVideo: (_connection, remoteUserUid, isMuted) => {
           if (!cancelled) {
@@ -166,11 +185,19 @@ export function useAgoraCallSession(
             updateConnectionState(
               remotePresentRef.current ? 'connected' : 'connecting',
             );
-          } else if (
-            state === ConnectionStateType.ConnectionStateConnecting ||
-            state === ConnectionStateType.ConnectionStateReconnecting
-          ) {
+          } else if (state === ConnectionStateType.ConnectionStateConnecting) {
             updateConnectionState('connecting');
+          } else if (state === ConnectionStateType.ConnectionStateReconnecting) {
+            /*
+             * Was folded into the same 'connecting' as a cold start
+             * (2026-09-17 audit): the LOCAL link dropping mid-call (a lift,
+             * a Wi-Fi/cellular handover) looked identical to the call still
+             * dialling for the first time, so nothing on screen could ever
+             * say "your own connection just hiccupped" as opposed to "we are
+             * still setting up". See onUserOffline above for the matching
+             * fix on the PEER's side of the same problem.
+             */
+            updateConnectionState('reconnecting');
           } else if (state === ConnectionStateType.ConnectionStateFailed) {
             updateConnectionState('failed');
           }

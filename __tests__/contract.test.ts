@@ -5187,6 +5187,112 @@ describe('a tapped message notification is held until `role` is known, not route
   });
 });
 
+/*
+ * Telegram-CTO audit, 2026-09-17: a cluster of calling defects, each found
+ * reading CallScreen.tsx / agora.ts against the platform docs and Telegram's
+ * own VoIPService.
+ */
+describe('the ring stops the instant the call is answered', () => {
+  it('starts the foreground service with isIncoming=false inside accept(), not only once media joins', () => {
+    const call = withoutComments(read('src/screens/CallScreen.tsx'));
+    const accept = call.slice(
+      call.indexOf('const accept = useCallback'),
+      call.indexOf('void answerCall(callId).then'),
+    );
+    expect(accept).toContain('startCallForegroundService(name, false, true)');
+  });
+});
+
+describe('the call notification Answer button actually answers', () => {
+  it("guards on phase 'incoming', which the callee's own phase actually reaches — not 'ringing', which it never does", () => {
+    const call = withoutComments(read('src/screens/CallScreen.tsx'));
+    expect(call).toContain("action === 'answer' && phaseRef.current === 'incoming'");
+    expect(call).not.toContain("action === 'answer' && phaseRef.current === 'ringing'");
+    // The initial-phase logic itself: direction 'in' -> 'incoming', never
+    // 'ringing'. If this ever changes, the guard above has to change with it.
+    expect(call).toMatch(/direction === 'in' \? 'incoming' : incomingCallId !== null \? 'ringing' : 'starting'/);
+  });
+});
+
+describe('an app taking audio focus does not end a paid call', () => {
+  it('AUDIOFOCUS_LOSS is narrowed to a real cellular call via audioManager.mode', () => {
+    // withoutComments: Kotlin's /* */ and // are the same shape this helper
+    // already strips for TS, and the surrounding docblock names
+    // MODE_IN_COMMUNICATION deliberately (to explain why it is excluded),
+    // which would otherwise defeat the very assertion below.
+    const focus = withoutComments(
+      read('android/app/src/main/java/com/companionchat/CallAudioFocusManager.kt'),
+    );
+    const lossBranch = focus.slice(
+      focus.indexOf('AudioManager.AUDIOFOCUS_LOSS ->'),
+      focus.indexOf('AudioManager.AUDIOFOCUS_LOSS_TRANSIENT ->'),
+    );
+    expect(lossBranch).toContain('if (audioManager.mode == AudioManager.MODE_IN_CALL)');
+    expect(lossBranch).toContain('emitToRN("audioFocusLost")');
+    // MODE_IN_COMMUNICATION must NOT be treated as evidence of an
+    // interrupting call: this app sets that mode itself for the whole
+    // duration of every call (requestCallFocus), so checking for it would
+    // make the guard true throughout every call and narrow nothing.
+    expect(lossBranch).not.toContain('MODE_IN_COMMUNICATION');
+  });
+});
+
+describe("the caller's ring timer does not outrun a real answer", () => {
+  it("moves the caller off 'ringing' the moment the server reports the callee answered, not when media joins", () => {
+    const calls = withoutComments(read('src/api/calls.ts'));
+    expect(calls).toContain("row.status === 'active'");
+    expect(calls).toContain('answeredHandler.current?.()');
+
+    const call = withoutComments(read('src/screens/CallScreen.tsx'));
+    expect(call).toContain('const onCalleeAnswered = useCallback(() => {');
+    expect(call).toContain("if (phaseRef.current === 'ringing') {");
+    expect(call).toContain("setPhase('connecting');");
+    expect(call).toContain('useCallEnded(callId, endedNotice, onCalleeAnswered)');
+  });
+
+  it("bounds a hung media join on 'connecting', so leaving 'ringing' early cannot wait forever", () => {
+    const call = withoutComments(read('src/screens/CallScreen.tsx'));
+    expect(call).toContain("const MEDIA_CONNECT_TIMEOUT_MS = 30_000;");
+    expect(call).toMatch(/if \(phase !== 'connecting'\) \{\s*return;\s*\}[\s\S]{0,120}MEDIA_CONNECT_TIMEOUT_MS/);
+  });
+});
+
+describe('a mid-call network blip is reconnecting, not a hangup', () => {
+  it("CallConnState carries a 'reconnecting' value, produced by both onUserOffline and onConnectionStateChanged", () => {
+    const types = read('src/api/callMedia/types.ts');
+    expect(types).toMatch(/CallConnState\s*=[\s\S]*'reconnecting'/);
+
+    const agora = withoutComments(read('src/api/callMedia/agora.ts'));
+    // onUserOffline reads the reason instead of discarding it, and maps ONLY
+    // the timeout case to reconnecting — a real goodbye (UserOfflineQuit,
+    // the implicit default) still closes the call.
+    expect(agora).toContain('onUserOffline: (_connection, _remoteUserUid, reason) => {');
+    expect(agora).toMatch(/reason === UserOfflineReasonType\.UserOfflineDropped\s*\?\s*'reconnecting'\s*:\s*'closed'/);
+    // ConnectionStateReconnecting is no longer folded into ConnectionStateConnecting.
+    expect(agora).not.toMatch(/ConnectionStateConnecting\s*\|\|\s*state === ConnectionStateType\.ConnectionStateReconnecting/);
+    expect(agora).toContain("updateConnectionState('reconnecting');");
+  });
+
+  it('keeps phase and the running timer at active through a reconnect, and only changes the status word', () => {
+    const call = withoutComments(read('src/screens/CallScreen.tsx'));
+    // The connState-driven phase effect must NOT gain a 'reconnecting'
+    // branch: falling through (no phase change) is the whole point.
+    const phaseEffect = call.slice(
+      call.indexOf("if (connState === 'connected') {"),
+      call.indexOf("}, [backend, callId, connState, medium, finish]);"),
+    );
+    expect(phaseEffect).not.toContain("'reconnecting'");
+    // The status word does change, though — and only the word.
+    expect(call).toMatch(/phase === 'active' && connState === 'reconnecting'\s*\?\s*'Reconnecting'/);
+  });
+
+  it("ends the call for real if a reconnect never recovers, on the same bound as a fresh connect", () => {
+    const call = withoutComments(read('src/screens/CallScreen.tsx'));
+    expect(call).toContain('const RECONNECT_TIMEOUT_MS = 30_000;');
+    expect(call).toMatch(/if \(connState !== 'reconnecting'\) \{\s*return;\s*\}[\s\S]{0,120}RECONNECT_TIMEOUT_MS/);
+  });
+});
+
 describe('the offline outbox replays queued messages in order, not all at once', () => {
   it('drains sequentially: an async loop that awaits each replay', () => {
     const chat = withoutComments(read('src/api/chat.ts'));
