@@ -1213,7 +1213,20 @@ function ComposerView({
 
   if (mode === 'recording') {
     return (
-      <View style={styles.row}>
+      /*
+       * Keyed by `mode` (M12, 2026-09-17 audit): idle → recording → review
+       * used to be a hard cut between three early-return trees. A deliberate
+       * mic tap, not a keyboard-frequency event, so the same fadeSwapFast/
+       * fadeSwapOutFast pair the Notify button and HeaderSubtitle use fits —
+       * the idle branch itself is untouched, since typing is the composer's
+       * 100+/day default state and the project's own motion gate says that
+       * tier gets nothing.
+       */
+      <Animated.View
+        key={mode}
+        entering={fadeSwapFast}
+        exiting={fadeSwapOutFast}
+        style={styles.row}>
         <View style={styles.panel}>
           <Pressable
             onPress={() => {
@@ -1269,13 +1282,17 @@ function ComposerView({
             <Icon name="stop" size={TOKENS.icon.sm} color={theme.color.text.primary} />
           </Pressable>
         </View>
-      </View>
+      </Animated.View>
     );
   }
 
   if (mode === 'review' && draft !== null) {
     return (
-      <View style={styles.row}>
+      <Animated.View
+        key={mode}
+        entering={fadeSwapFast}
+        exiting={fadeSwapOutFast}
+        style={styles.row}>
         <View style={styles.panel}>
           <Pressable
             onPress={() => {
@@ -1308,7 +1325,7 @@ function ComposerView({
           />
           <SendButton onPress={sendDraft} disabled={disabled} sendHaloKey={sendHaloKey} />
         </View>
-      </View>
+      </Animated.View>
     );
   }
 

@@ -8157,3 +8157,31 @@ describe('the status line and the typing bubble fade through a change, not a har
     expect(typing).toContain('exiting={fadeSwapOutFast}');
   });
 });
+
+describe('the composer fades between idle, recording and review, not a hard cut (M12)', () => {
+  // Three early-return trees used to swap with no transition at all. A
+  // deliberate mic tap, not a keyboard-frequency event, so recording/review
+  // get fadeSwapFast/fadeSwapOutFast keyed by `mode` — idle itself is
+  // untouched, since typing is the composer's 100+/day default state.
+  const composer = withoutComments(read('src/components/Composer.tsx'));
+
+  it('both the recording and review rows are keyed Animated.View with the fade pair', () => {
+    const recording = composer.slice(
+      composer.indexOf("if (mode === 'recording')"),
+      composer.indexOf("if (mode === 'review'"),
+    );
+    expect(recording).toContain('<Animated.View');
+    expect(recording).toContain('key={mode}');
+    expect(recording).toContain('entering={fadeSwapFast}');
+    expect(recording).toContain('exiting={fadeSwapOutFast}');
+
+    const review = composer.slice(
+      composer.indexOf("if (mode === 'review'"),
+      composer.indexOf("if (mode === 'review'") + 600,
+    );
+    expect(review).toContain('<Animated.View');
+    expect(review).toContain('key={mode}');
+    expect(review).toContain('entering={fadeSwapFast}');
+    expect(review).toContain('exiting={fadeSwapOutFast}');
+  });
+});
