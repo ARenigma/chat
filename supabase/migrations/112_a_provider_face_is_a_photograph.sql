@@ -89,7 +89,7 @@ pool (subject, file, gender, ord) as (
     -- astrologers, so every male provider on clay had nowhere to go and Amit's
     -- "man for ravi listens" could not be satisfied from what was in the bucket.
     -- Fifteen more studio headshots were sourced, content-hashed the way 087
-    -- names them, committed to assets/seed/providers/ and uploaded to the same
+    -- names them, committed to seed/providers/ and uploaded to the same
     -- public prefix. Ordered AFTER the originals so an existing assignment
     -- keeps the face it already has.
     ('arjun',     'arjun-39eb037a.jpg',     'male',   4),

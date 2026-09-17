@@ -6986,7 +6986,7 @@ describe('seed provider photos', () => {
     seeds?: string;
     added?: string;
   };
-  const manifest = JSON.parse(read('assets/seed/providers/manifest.json')) as {
+  const manifest = JSON.parse(read('seed/providers/manifest.json')) as {
     scope: string;
     casting: string;
     naming: string;
@@ -7117,7 +7117,7 @@ describe('seed provider photos', () => {
     // is the only way a licence record stays attached to what it licenses.
     for (const photo of manifest.photos) {
       const bytes = readFileSync(
-        join(ROOT, 'assets/seed/providers', photo.file),
+        join(ROOT, 'seed/providers', photo.file),
       );
       expect(bytes.length).toBe(photo.bytes);
       expect(createHash('sha256').update(bytes).digest('hex')).toBe(
@@ -7165,6 +7165,42 @@ describe('seed provider photos', () => {
     expect(manifest.bucket_path).toBe(
       'avatars/seed/<provider>-<first 8 of sha256>.jpg',
     );
+  });
+
+  /*
+   * Telegram-CTO audit, 2026-09-17: android/app/build.gradle mounts the
+   * REPO ROOT's `assets/` directory wholesale as an Android asset source
+   * dir, to get `assets/fonts/*.ttf` into the APK where React Native looks
+   * for a bundled face. That took the whole tree, not just the fonts --
+   * these seed photos are pushed to the storage bucket out of band (this
+   * describe block's own manifest.upload field says so) and are never read
+   * from local assets at runtime, so 2.99 MB of them were shipping inside
+   * every install for nothing. Moved to a top-level `seed/` directory,
+   * outside anything Gradle mounts, alongside the two wallpaper
+   * `*-source.jpg` originals (design/sources/), which no code ever read by
+   * name either.
+   */
+  it('is not inside assets/, which android/app/build.gradle mounts wholesale into the APK', () => {
+    expect(existsSync(join(ROOT, 'assets/seed'))).toBe(false);
+    expect(existsSync(join(ROOT, 'seed/providers/manifest.json'))).toBe(true);
+    const gradle = read('android/app/build.gradle');
+    expect(gradle).toContain("assets.srcDirs += ['../../assets']");
+  });
+});
+
+describe('design source originals are not inside assets/ either', () => {
+  it('the wallpaper *-source.jpg files moved to design/sources/, nothing reads them by name', () => {
+    for (const name of ['chat-wallpaper-dark-source.jpg', 'chat-wallpaper-light-source.jpg']) {
+      expect(existsSync(join(ROOT, 'assets', name))).toBe(false);
+      expect(existsSync(join(ROOT, 'design/sources', name))).toBe(true);
+    }
+    // Confirms the premise: if some screen DID reference these by name,
+    // moving them would be a live bug, not a cleanup. Scoped to src/ and
+    // App.tsx, the only places a `require()` for one could live.
+    const referenced = [...walk(join(ROOT, 'src')), join(ROOT, 'App.tsx')]
+      .filter(f => /\.tsx?$/.test(f))
+      .some(f => /-source\.jpg/.test(readFileSync(f, 'utf8')));
+    expect(referenced).toBe(false);
   });
 });
 

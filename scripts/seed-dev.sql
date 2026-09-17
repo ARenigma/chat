@@ -43,7 +43,7 @@ on conflict (id) do nothing;
 -- Ages track the PHOTOS, not the other way round: a card that prints 31 beside a
 -- face that reads 26 is the same lie as a face that reads 50 beside a 34. The
 -- reviewer's read of each photograph is recorded as `apparent_age` in
--- assets/seed/providers/manifest.json and a contract test holds the two within
+-- seed/providers/manifest.json and a contract test holds the two within
 -- four years of each other.
 --
 -- Sanya at 24 is also the only provider in the 18-24 band. The casting rule caps
@@ -106,12 +106,12 @@ where p.id = v.id;
 -- half of which were not Indian, in a product that is only for India.
 --
 -- Provenance, photographer, licence and sha256 per file live in
--- assets/seed/providers/manifest.json, and its `scope` note is binding: these
+-- seed/providers/manifest.json, and its `scope` note is binding: these
 -- are DEV SEED ONLY. The Pexels licence forbids implying that a person in a
 -- photo endorses a product, and a paid companionship listing is exactly that
 -- implication. A real provider uploads her own photo (useUploadAvatar).
 --
--- The files are committed under assets/seed/providers/ and pushed to the bucket
+-- The files are committed under seed/providers/ and pushed to the bucket
 -- out of band (the manifest's `upload` field carries the command); this only
 -- points the rows at them. Each name carries the first eight hex of its own
 -- sha256 because the bucket cannot replace an object at an existing key and

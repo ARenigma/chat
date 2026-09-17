@@ -15,7 +15,7 @@
 -- asked
 -- ---------------------------------------------------------------------------
 -- The existing seed uses real Indian portraits from Pexels, and
--- `assets/seed/providers/manifest.json` already binds us on what that permits:
+-- `seed/providers/manifest.json` already binds us on what that permits:
 --
 --   "DEV SEED ONLY. These are stock photographs of real people used to populate
 --    a demo directory on a test project. They must never be shipped as
