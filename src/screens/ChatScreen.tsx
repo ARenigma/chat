@@ -61,8 +61,8 @@ import { useLiveConversation, useMarkRead } from '../api/realtime';
 import { useReactions, useToggleReaction } from '../api/reactions';
 import { CALLS_ENABLED } from '../api/calls';
 import { useKillSwitches } from '../api/appConfig';
-import { useSendVoiceNote, useVoicePlayer } from '../api/voice';
-import { useSendImage } from '../api/attachments';
+import { useSendVoiceNote, useRetryVoiceSend, useVoicePlayer } from '../api/voice';
+import { useSendImage, useRetryImageSend } from '../api/attachments';
 import { opensDay, timeOfDay } from '../lib/datetime';
 import { voiceOf, type VoiceDraft } from '../lib/voice';
 import { imageOf, type ImageDraft } from '../lib/attachments';
@@ -528,6 +528,12 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   sendRef.current = send;
   const sendVoice = useSendVoiceNote(conversationId, selfId);
   const sendImage = useSendImage(conversationId, selfId);
+  // Retry-only siblings: the object already uploaded and only
+  // send_message_idempotent failed, so retrying is the RPC alone (2026-09-17
+  // audit). See useRetryImageSend / useRetryVoiceSend for why this is safe
+  // within a session even though outbox.ts does not replay media across one.
+  const retryImage = useRetryImageSend(conversationId, selfId);
+  const retryVoice = useRetryVoiceSend(conversationId, selfId);
   /**
    * One playhead for the whole transcript, because the recorder exposes one
    * player object. Held here rather than per bubble so starting a second note
@@ -1547,21 +1553,40 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
               onOpenImage={openImage}
               /*
                * A failed send keeps its bubble and offers a retry, rather than
-               * vanishing. `retry` is only wired for text: a voice note or
-               * image whose upload landed but whose send failed cannot be
-               * replayed across a launch (see lib/outbox.ts), so those show the
-               * failed state without a retry that could not keep its promise.
+               * vanishing. Three shapes:
+               *   - text: replay through the same idempotent send path, with
+               *     the original nonce and created_at (unchanged).
+               *   - image / voice, upload already landed (`keepFailed`, not
+               *     `withdraw` — see attachments.ts / voice.ts): retry is the
+               *     RPC alone, via useRetryImageSend / useRetryVoiceSend
+               *     (2026-09-17 audit). This is NOT the outbox's cross-launch
+               *     media replay (lib/outbox.ts explains why that is not
+               *     attempted) — it only ever fires within the same session,
+               *     on a row whose object already exists in the bucket.
+               *   - image / voice whose upload itself never completed
+               *     (`withdraw`): the bubble is gone, so this branch is never
+               *     reached for that case — there is nothing left to retry.
                */
               failed={message.failed === true}
               onRetry={
-                message.failed === true && message.body !== null
-                  ? () => {
-                      void sendRef.current(message.body ?? '', message.reply_to_id, {
-                        nonce: message.id.slice(PENDING_PREFIX.length),
-                        createdAt: message.created_at,
-                      });
-                    }
-                  : undefined
+                message.failed !== true
+                  ? undefined
+                  : message.body !== null
+                    ? () => {
+                        void sendRef.current(message.body ?? '', message.reply_to_id, {
+                          nonce: message.id.slice(PENDING_PREFIX.length),
+                          createdAt: message.created_at,
+                        });
+                      }
+                    : message.attachment_path !== null
+                      ? () => {
+                          void retryImage(message);
+                        }
+                      : message.voice_path !== null
+                        ? () => {
+                            void retryVoice(message);
+                          }
+                        : undefined
               }
               receipt={
                 !isPending(message)
@@ -1618,6 +1643,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
       reactOnMessage,
       reactionRows,
       reportMessage,
+      retryImage,
+      retryVoice,
       selfId,
       styles,
       swipeReply,

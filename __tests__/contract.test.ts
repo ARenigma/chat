@@ -5083,6 +5083,109 @@ describe('media upload uses M3 determinate progress, not ActivityIndicator', () 
   });
 });
 
+/*
+ * Telegram-CTO audit, 2026-09-17: the photo path was full-resolution end to
+ * end (no downscale on pick, a wall-clock upload timeout instead of a stall
+ * detector, ten picked photos racing each other to send), and a media
+ * message whose upload succeeded but whose send RPC failed had no retry
+ * despite the fix being a one-argument replay. Each fix gets the mechanical
+ * assertion RULE 1 asks for, so a regression fails the build rather than
+ * waiting to be found on a device.
+ */
+describe('the photo pipeline downscales, sends in order, and retries what it can', () => {
+  it('bounds both the gallery pick and the camera capture to PHOTO_MAX_DIMENSION', () => {
+    // Before this, `quality: 0.9` with no maxWidth/maxHeight meant
+    // react-native-image-picker recompressed the ORIGINAL resolution rather
+    // than downscaling it (Utils.java: maxWidth/maxHeight of 0 returns the
+    // original dimensions, and shouldResizeImage is keyed only on quality).
+    const composer = withoutComments(read('src/components/Composer.tsx'));
+    const pickCall = composer.slice(
+      composer.indexOf('const pickImage'),
+      composer.indexOf('const takePhoto'),
+    );
+    const cameraCall = composer.slice(
+      composer.indexOf('const takePhoto'),
+      composer.indexOf('if (mode ==='),
+    );
+    for (const [label, block] of [
+      ['pickImage', pickCall],
+      ['takePhoto', cameraCall],
+    ] as const) {
+      expect({ label, hasMaxWidth: block.includes('maxWidth: PHOTO_MAX_DIMENSION') }).toEqual(
+        { label, hasMaxWidth: true },
+      );
+      expect({ label, hasMaxHeight: block.includes('maxHeight: PHOTO_MAX_DIMENSION') }).toEqual(
+        { label, hasMaxHeight: true },
+      );
+    }
+    // 1280, Telegram's own figure, not a guess — pinned so nobody quietly
+    // widens it back to "no limit" by deleting the export.
+    const attachments = read('src/lib/attachments.ts');
+    expect(attachments).toContain('export const PHOTO_MAX_DIMENSION = 1280;');
+  });
+
+  it('sends picked photos one at a time, in order, not all at once', () => {
+    const composer = withoutComments(read('src/components/Composer.tsx'));
+    const handleAssets = composer.slice(
+      composer.indexOf('const handleAssets'),
+      composer.indexOf('const pickImage'),
+    );
+    expect(handleAssets).toContain('async (result: ImagePickerResponse | null)');
+    expect(handleAssets).toContain('await onSendImage(');
+    // The prop must accept the awaited shape, or a caller could still race.
+    expect(composer).toContain('onSendImage: (draft: ImageDraft) => void | Promise<void>;');
+  });
+
+  it('detects an upload STALL rather than bounding total transfer time', () => {
+    // A fixed `xhr.timeout` kills a large file on a slow-but-moving link
+    // exactly as dead as a stuck one (2026-09-17 audit, correcting the
+    // 2026-09-09 fix that added the wall clock in the first place).
+    const stallLib = read('src/lib/uploadStall.ts');
+    expect(stallLib).toContain('export function armStallDetector');
+    expect(stallLib).toContain("xhr.upload.addEventListener('progress', reset)");
+
+    for (const file of ['src/api/attachments.ts', 'src/api/voice.ts']) {
+      const body = withoutComments(read(file));
+      expect({ file, usesStallDetector: body.includes('armStallDetector(xhr,') }).toEqual({
+        file,
+        usesStallDetector: true,
+      });
+      // The old mechanism must actually be gone, not just supplemented —
+      // `xhr.timeout =` and `armStallDetector` disagreeing about when to
+      // abort would be worse than either alone.
+      expect({ file, hasWallClockTimeout: /xhr\.timeout\s*=/.test(body) }).toEqual({
+        file,
+        hasWallClockTimeout: false,
+      });
+    }
+  });
+
+  it('retries a media send whose upload landed but whose RPC failed, without re-uploading', () => {
+    // The KEEP branch (upload succeeded, send_message_idempotent did not) is
+    // exactly the case a retry can honestly promise: the object already
+    // exists at the stored path, so the retry is the RPC alone. WITHDRAW
+    // (the upload itself never landed) stays retry-less — there is nothing
+    // to retry — and that branch is unchanged by this suite.
+    const attachments = withoutComments(read('src/api/attachments.ts'));
+    expect(attachments).toContain('export function useRetryImageSend');
+    // Must NOT call uploadImage: a retry that re-uploads is not this fix.
+    const retryImageBody = attachments.slice(attachments.indexOf('export function useRetryImageSend'));
+    expect(retryImageBody).not.toContain('uploadImage(');
+
+    const voice = withoutComments(read('src/api/voice.ts'));
+    expect(voice).toContain('export function useRetryVoiceSend');
+    const retryVoiceBody = voice.slice(voice.indexOf('export function useRetryVoiceSend'));
+    expect(retryVoiceBody).not.toContain('uploadRecording(');
+
+    // And ChatScreen actually offers it — not just defined and unused.
+    const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+    expect(chat).toContain('useRetryImageSend(conversationId, selfId)');
+    expect(chat).toContain('useRetryVoiceSend(conversationId, selfId)');
+    expect(chat).toContain('retryImage(message)');
+    expect(chat).toContain('retryVoice(message)');
+  });
+});
+
 describe('independent call controls', () => {
   it('exposes separate ON-by-default voice and video knobs in admin and mobile', () => {
     const registry = read('admin/lib/config-registry.ts');

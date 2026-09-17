@@ -35,7 +35,12 @@ import {
   type RecordingHandle,
 } from '../lib/recorder';
 import { MAX_VOICE_MS, clock, isSendable, type VoiceDraft } from '../lib/voice';
-import { MAX_ATTACHMENT_BYTES, MAX_PICK, type ImageDraft } from '../lib/attachments';
+import {
+  MAX_ATTACHMENT_BYTES,
+  MAX_PICK,
+  PHOTO_MAX_DIMENSION,
+  type ImageDraft,
+} from '../lib/attachments';
 import { useStore } from '../store/useStore';
 import { Icon } from './Icon';
 import { Pressable } from './Pressable';
@@ -197,8 +202,13 @@ interface Props {
   /** A finished recording, ready to upload. Both roles get this: the provider
    *  tree renders the same ChatScreen, and voice notes are in scope for both. */
   onSendVoice: (draft: VoiceDraft) => void;
-  /** A picked photo, ready to upload. Same shape of contract as onSendVoice. */
-  onSendImage: (draft: ImageDraft) => void;
+  /**
+   * A picked photo, ready to upload. Same shape of contract as onSendVoice,
+   * except the return is awaited (2026-09-17 audit): picking several photos
+   * at once must send them one at a time, in order, not fire every upload
+   * simultaneously and let the server's arrival order become the send order.
+   */
+  onSendImage: (draft: ImageDraft) => void | Promise<void>;
   disabled: boolean;
   placeholder: string;
   sendHaloKey: number;
@@ -1032,8 +1042,19 @@ function ComposerView({
    *
    * https://github.com/react-native-image-picker/react-native-image-picker
    */
+  /*
+   * Sends are AWAITED, one at a time, not fired together (2026-09-17 audit).
+   * `selectionLimit: MAX_PICK` lets a member pick several photos in one pass,
+   * and until this fix every asset in `result.assets` was handed to
+   * `onSendImage` in the same synchronous loop with no `await` — ten photos
+   * meant ten uploads competing for one link and ten `send_message_idempotent`
+   * calls racing the server, so the thread ended up in whatever order the
+   * network happened to finish them, not the order the member picked them in.
+   * A `for...of` with `await` costs nothing on the common one-photo case and
+   * makes the ten-photo case deterministic.
+   */
   const handleAssets = useCallback(
-    (result: ImagePickerResponse | null) => {
+    async (result: ImagePickerResponse | null) => {
       if (result === null || result.didCancel) {
         return;
       }
@@ -1054,7 +1075,7 @@ function ComposerView({
           continue;
         }
         sentAny = true;
-        onSendImage({
+        await onSendImage({
           uri: asset.uri,
           width: asset.width,
           height: asset.height,
@@ -1088,8 +1109,10 @@ function ComposerView({
       mediaType: 'photo',
       selectionLimit: MAX_PICK,
       quality: 0.9,
+      maxWidth: PHOTO_MAX_DIMENSION,
+      maxHeight: PHOTO_MAX_DIMENSION,
     }).catch(() => null);
-    handleAssets(result);
+    void handleAssets(result);
   }, [disabled, handleAssets]);
 
   /**
@@ -1123,8 +1146,10 @@ function ComposerView({
       mediaType: 'photo',
       quality: 0.9,
       saveToPhotos: false,
+      maxWidth: PHOTO_MAX_DIMENSION,
+      maxHeight: PHOTO_MAX_DIMENSION,
     }).catch(() => null);
-    handleAssets(result);
+    void handleAssets(result);
   }, [disabled, handleAssets, setNotice]);
 
   if (mode === 'recording') {

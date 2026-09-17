@@ -13,6 +13,7 @@ import {
   type TranscriptMessage,
 } from '../lib/transcript';
 import { track } from '../lib/telemetry';
+import { armStallDetector } from '../lib/uploadStall';
 import type { Message, SendError } from '../lib/database.types';
 import {
   attachmentExt,
@@ -92,14 +93,29 @@ async function uploadImage(
         }
       };
     }
-    xhr.onload = () => resolve(xhr.status >= 200 && xhr.status < 300);
-    xhr.onerror = () => resolve(false);
-    xhr.onabort = () => resolve(false);
-    // A stalled upload otherwise never settles this promise, hanging the send
-    // spinner forever (2026-09-09 audit). Settle to the same failure path as
-    // onerror so the composer can offer a retry.
-    xhr.timeout = 30000;
-    xhr.ontimeout = () => resolve(false);
+    /*
+     * A STALL detector, not a wall-clock timeout (2026-09-17 audit). The
+     * 2026-09-09 fix below was a real bug fixed the wrong way: `xhr.timeout`
+     * bounds TOTAL transfer time, so a multi-megabyte photo on a slow but
+     * genuinely moving connection was killed at 30 s exactly as dead as a
+     * truly stuck one. `armStallDetector` watches for the ABSENCE of upload
+     * progress instead — see lib/uploadStall.ts — so a slow-but-moving
+     * upload is never killed and a genuinely stuck one still is, in the same
+     * 30 s.
+     */
+    const disarmStallDetector = armStallDetector(xhr, 30_000);
+    xhr.onload = () => {
+      disarmStallDetector();
+      resolve(xhr.status >= 200 && xhr.status < 300);
+    };
+    xhr.onerror = () => {
+      disarmStallDetector();
+      resolve(false);
+    };
+    xhr.onabort = () => {
+      disarmStallDetector();
+      resolve(false);
+    };
     xhr.send(form);
   });
 }
@@ -221,10 +237,12 @@ export function useSendImage(
 
       /*
        * KEEP: the object uploaded and only the send RPC failed, so the bubble
-       * stays and says so. Not queued in the outbox — see `lib/outbox.ts` for
-       * why media is deliberately not replayed across a launch — but within
-       * this session the member can see what happened instead of watching their
-       * voice note evaporate.
+       * stays and says so — and, since 2026-09-17, can actually be retried:
+       * `useRetryImageSend` below re-sends the RPC alone against this same
+       * object, no re-upload. Not queued in the OUTBOX, still — see
+       * `lib/outbox.ts` for why media is not replayed ACROSS a launch — but a
+       * tap-to-retry within this session needs none of that; the object is
+       * right here.
        */
       const keepFailed = (notice: string) => {
         queryClient.setQueryData<TranscriptMessage[]>(key, prev =>
@@ -296,5 +314,115 @@ export function useSendImage(
       return true;
     },
     [conversationId, selfId, queryClient, setSending, setBalance, setNotice, openRefill, setUploadProgress, clearUploadProgress],
+  );
+}
+
+/**
+ * Retry a photo whose upload SUCCEEDED but whose `send_message_idempotent`
+ * call failed — the `keepFailed` branch above, not `withdraw`. Before this
+ * (2026-09-17 audit), that branch's own docblock argued a retry could not
+ * work and cited the outbox's media limitation to justify offering none —
+ * but that limitation is about replaying media ACROSS a launch, when the
+ * local file may be gone. Within the same session the object already exists
+ * in the bucket at `attachment_path`; nothing needs re-uploading, so the
+ * retry is the RPC alone, reusing the original nonce so the server's own
+ * idempotency (migration 081) is what makes a duplicate impossible if the
+ * first attempt in fact landed.
+ *
+ * `message` is read for its own fields, not passed as a fresh draft: this is
+ * why the retry needs no `ImageDraft` and no picker round-trip.
+ */
+export function useRetryImageSend(
+  conversationId: string | undefined,
+  selfId: string | undefined,
+) {
+  const queryClient = useQueryClient();
+  const setSending = useStore(s => s.setSending);
+  const setBalance = useStore(s => s.setBalance);
+  const setNotice = useStore(s => s.setNotice);
+  const openRefill = useStore(s => s.openRefill);
+
+  return useCallback(
+    async (message: Message): Promise<boolean> => {
+      if (
+        conversationId === undefined ||
+        selfId === undefined ||
+        message.attachment_path === null
+      ) {
+        return false;
+      }
+
+      const pendingId = message.id;
+      const nonce = pendingId.slice(PENDING_PREFIX.length);
+      const key = keys.messages(conversationId);
+
+      const keepFailed = (notice: string) => {
+        queryClient.setQueryData<TranscriptMessage[]>(key, prev =>
+          markFailed(prev ?? [], pendingId),
+        );
+        setNotice(notice);
+        errorTick();
+      };
+
+      tick();
+      setSending(true);
+      const { data, error } = await supabase.rpc('send_message_idempotent', {
+        p_client_nonce: nonce,
+        p_conversation_id: conversationId,
+        p_body: null,
+        p_reply_to_id: message.reply_to_id,
+        p_attachment_path: message.attachment_path,
+        p_attachment_width: message.attachment_width,
+        p_attachment_height: message.attachment_height,
+      });
+      setSending(false);
+
+      const result = sendResultFrom(data, error);
+      if (result === null || !result.success) {
+        const code = result?.error;
+        track('send_rejected', { reason: code ?? 'network' });
+        keepFailed(code !== undefined ? NOTICE[code] : 'Could not send. Check your connection.');
+        if (code === 'INSUFFICIENT_BALANCE') {
+          openRefill();
+        }
+        void queryClient.invalidateQueries({ queryKey: keys.profile });
+        return false;
+      }
+
+      const confirmed: Message | null =
+        result.message_id !== undefined && result.created_at !== undefined
+          ? {
+              id: result.message_id,
+              conversation_id: conversationId,
+              sender_id: selfId,
+              body: null,
+              reply_to_id: message.reply_to_id,
+              voice_path: null,
+              voice_duration_ms: null,
+              voice_peaks: null,
+              attachment_path: message.attachment_path,
+              attachment_type: 'image',
+              attachment_width: message.attachment_width,
+              attachment_height: message.attachment_height,
+              session_id: null,
+              origin: 'live',
+              created_at: result.created_at,
+              read_at: null,
+              edited_at: null,
+              deleted_at: null,
+            }
+          : null;
+
+      queryClient.setQueryData<TranscriptMessage[]>(key, prev =>
+        settleOptimistic(prev ?? [], pendingId, confirmed),
+      );
+
+      if (typeof result.new_balance === 'number') {
+        setBalance(result.new_balance);
+      }
+      void queryClient.invalidateQueries({ queryKey: keys.conversationList });
+      return true;
+    },
+    [conversationId, selfId, queryClient, setSending, setBalance, setNotice, openRefill],
   );
 }

@@ -33,6 +33,7 @@ import {
 import { useStore } from '../store/useStore';
 import { keys, memberPaysInThread } from './chat';
 import { sendResultFrom } from '../lib/sendErrors';
+import { armStallDetector } from '../lib/uploadStall';
 
 /** The private bucket created by migration 011. */
 const BUCKET = 'voice-notes';
@@ -114,14 +115,31 @@ async function uploadRecording(
         }
       };
     }
-    xhr.onload = () => resolve(xhr.status >= 200 && xhr.status < 300);
-    xhr.onerror = () => resolve(false);
-    xhr.onabort = () => resolve(false);
-    // A stalled upload otherwise never settles this promise, hanging the send
-    // spinner forever (2026-09-09 audit). Settle to the same failure path as
-    // onerror so the composer can offer a retry.
-    xhr.timeout = 30000;
-    xhr.ontimeout = () => resolve(false);
+    /*
+     * A STALL detector, not a wall-clock timeout (2026-09-17 audit). See
+     * api/attachments.ts's `uploadImage` for the full argument: the
+     * 2026-09-09 fix below bounded TOTAL transfer time, so a slow but
+     * genuinely moving upload was killed exactly as dead as a stuck one.
+     * Not that voice notes are exposed to this the way photos are — they are
+     * capped at MAX_VOICE_MS, well under a size a normal link cannot move in
+     * 30 s — but the detector is strictly more correct at no cost, and the
+     * two upload functions sharing one implementation (lib/uploadStall.ts)
+     * is the point: they must not drift the way two copies of the same
+     * timeout logic already have once.
+     */
+    const disarmStallDetector = armStallDetector(xhr, 30_000);
+    xhr.onload = () => {
+      disarmStallDetector();
+      resolve(xhr.status >= 200 && xhr.status < 300);
+    };
+    xhr.onerror = () => {
+      disarmStallDetector();
+      resolve(false);
+    };
+    xhr.onabort = () => {
+      disarmStallDetector();
+      resolve(false);
+    };
     xhr.send(form);
   });
 }
@@ -227,10 +245,12 @@ export function useSendVoiceNote(
 
       /*
        * KEEP: the object uploaded and only the send RPC failed, so the bubble
-       * stays and says so. Not queued in the outbox — see `lib/outbox.ts` for
-       * why media is deliberately not replayed across a launch — but within
-       * this session the member can see what happened instead of watching their
-       * voice note evaporate.
+       * stays and says so — and, since 2026-09-17, can actually be retried:
+       * `useRetryVoiceSend` below re-sends the RPC alone against this same
+       * object, no re-recording. Not queued in the OUTBOX, still — see
+       * `lib/outbox.ts` for why media is not replayed ACROSS a launch — but a
+       * tap-to-retry within this session needs none of that; the object is
+       * right here.
        */
       const keepFailed = (notice: string) => {
         queryClient.setQueryData<TranscriptMessage[]>(key, prev =>
@@ -308,6 +328,107 @@ export function useSendVoiceNote(
       return true;
     },
     [conversationId, selfId, queryClient, setSending, setBalance, setNotice, openRefill, setUploadProgress, clearUploadProgress],
+  );
+}
+
+/**
+ * Retry a voice note whose upload SUCCEEDED but whose `send_message_idempotent`
+ * call failed — the `keepFailed` branch above, not `withdraw`. Exact mirror of
+ * `useRetryImageSend` in api/attachments.ts; see there for why this needs no
+ * re-recording and no re-upload, only the RPC, reusing the original nonce.
+ */
+export function useRetryVoiceSend(
+  conversationId: string | undefined,
+  selfId: string | undefined,
+) {
+  const queryClient = useQueryClient();
+  const setSending = useStore(s => s.setSending);
+  const setBalance = useStore(s => s.setBalance);
+  const setNotice = useStore(s => s.setNotice);
+  const openRefill = useStore(s => s.openRefill);
+
+  return useCallback(
+    async (message: Message): Promise<boolean> => {
+      if (
+        conversationId === undefined ||
+        selfId === undefined ||
+        message.voice_path === null
+      ) {
+        return false;
+      }
+
+      const pendingId = message.id;
+      const nonce = pendingId.slice(PENDING_PREFIX.length);
+      const key = keys.messages(conversationId);
+
+      const keepFailed = (notice: string) => {
+        queryClient.setQueryData<TranscriptMessage[]>(key, prev =>
+          markFailed(prev ?? [], pendingId),
+        );
+        setNotice(notice);
+        errorTick();
+      };
+
+      tick();
+      setSending(true);
+      const { data, error } = await supabase.rpc('send_message_idempotent', {
+        p_client_nonce: nonce,
+        p_conversation_id: conversationId,
+        p_body: null,
+        p_reply_to_id: message.reply_to_id,
+        p_voice_path: message.voice_path,
+        p_voice_duration_ms: message.voice_duration_ms,
+        p_voice_peaks: message.voice_peaks,
+      });
+      setSending(false);
+
+      const result = sendResultFrom(data, error);
+      if (result === null || !result.success) {
+        const code = result?.error;
+        track('send_rejected', { reason: code ?? 'network' });
+        keepFailed(code !== undefined ? NOTICE[code] : 'Could not send. Check your connection.');
+        if (code === 'INSUFFICIENT_BALANCE') {
+          openRefill();
+        }
+        void queryClient.invalidateQueries({ queryKey: keys.profile });
+        return false;
+      }
+
+      const confirmed: Message | null =
+        result.message_id !== undefined && result.created_at !== undefined
+          ? {
+              id: result.message_id,
+              conversation_id: conversationId,
+              sender_id: selfId,
+              body: null,
+              reply_to_id: message.reply_to_id,
+              voice_path: message.voice_path,
+              voice_duration_ms: message.voice_duration_ms,
+              voice_peaks: message.voice_peaks,
+              attachment_path: null,
+              attachment_type: null,
+              attachment_width: null,
+              attachment_height: null,
+              session_id: null,
+              origin: 'live',
+              created_at: result.created_at,
+              read_at: null,
+              edited_at: null,
+              deleted_at: null,
+            }
+          : null;
+
+      queryClient.setQueryData<TranscriptMessage[]>(key, prev =>
+        settleOptimistic(prev ?? [], pendingId, confirmed),
+      );
+
+      if (typeof result.new_balance === 'number') {
+        setBalance(result.new_balance);
+      }
+      void queryClient.invalidateQueries({ queryKey: keys.conversationList });
+      return true;
+    },
+    [conversationId, selfId, queryClient, setSending, setBalance, setNotice, openRefill],
   );
 }
 
