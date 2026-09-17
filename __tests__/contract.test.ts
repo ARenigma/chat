@@ -8338,3 +8338,31 @@ describe('video degrades before audio on a poor connection, not alongside it (M5
     expect(fn).toContain('setRemoteVideoEnabled(!isFallbackOrRecover);');
   });
 });
+
+describe('the call FGS is not destroyed and restarted when the peer name resolves (M22)', () => {
+  // `name` starts as a placeholder ("Incoming call"/"Calling") until
+  // peerThread/provider resolve, then changes once. With `name` as a
+  // dependency of the effect that owns startCallForegroundService/
+  // stopCallForegroundService, that one change tore the Android service down
+  // (a true stopService -> onDestroy) and immediately started a fresh one.
+  const callScreen = withoutComments(read('src/screens/CallScreen.tsx'));
+
+  it('the lifecycle effect no longer depends on name', () => {
+    const fn = callScreen.slice(
+      callScreen.indexOf('startCallForegroundService(name, direction'),
+      callScreen.indexOf('startCallForegroundService(name, direction') + 250,
+    );
+    expect(fn).toContain('return stopCallForegroundService;');
+    expect(fn).toContain('}, [callId, direction]);');
+  });
+
+  it('a second effect refreshes the name without calling stop', () => {
+    const fn = callScreen.slice(
+      callScreen.indexOf('const startedRef = useRef(false);'),
+    );
+    const secondEffect = fn.slice(0, fn.indexOf('}, [callId, name, direction]);') + 30);
+    expect(secondEffect).toContain('if (!startedRef.current) {');
+    expect(secondEffect).toContain('startCallForegroundService(name, direction');
+    expect(secondEffect).not.toContain('stopCallForegroundService');
+  });
+});

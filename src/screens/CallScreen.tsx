@@ -454,8 +454,42 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     // late meant the very first buffers were dropped, which on a real device
     // is "the call connects but there is no audio."
     // https://developer.android.com/about/versions/14/changes/fgs-types-required#microphone
+    //
+    // `name` is deliberately NOT a dependency (M22, 2026-09-17 audit): this
+    // effect owns the service's LIFECYCLE (start once, stop once on
+    // unmount/call-end), and `name` starts as a placeholder ("Incoming
+    // call"/"Calling") until peerThread/provider resolve, then changes once.
+    // With `name` in these deps that one change re-ran this whole effect,
+    // and its cleanup below is a TRUE stop — CallForegroundService.stop()
+    // calls stopService(), which tears the Android service down (onDestroy)
+    // — immediately followed by a fresh start(): a visible notification
+    // flicker and a brief gap out of the promoted foreground state. The
+    // effect below refreshes the notification's name once it resolves,
+    // without touching this one's lifecycle.
     startCallForegroundService(name, direction === 'in', true);
     return stopCallForegroundService;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [callId, direction]);
+
+  /*
+   * Refreshes the notification's displayed name once it resolves (M22),
+   * WITHOUT tearing the service down the way including `name` in the effect
+   * above used to. Calling startCallForegroundService again on an
+   * ALREADY-RUNNING service just redelivers a new onStartCommand, which
+   * re-posts the SAME notification ID (ServiceCompat.startForeground) — the
+   * exact mechanism accept() (below) already relies on to move the running
+   * service from ringing to connected, restart without a stop.
+   * `startedRef` skips this effect's own first run: the effect above already
+   * started the service with whatever `name` this render has.
+   */
+  const startedRef = useRef(false);
+  useEffect(() => {
+    if (callId === null) return;
+    if (!startedRef.current) {
+      startedRef.current = true;
+      return;
+    }
+    startCallForegroundService(name, direction === 'in', true);
   }, [callId, name, direction]);
 
   const enabled = callId !== null && accepted;
