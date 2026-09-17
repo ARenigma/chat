@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { createSessionClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { founderAllowlistRow } from '@/lib/auth/founder';
 import { getDomain, validatePayload } from '@/lib/config-registry';
 
 // POST /api/config/[domain]/draft
@@ -23,12 +24,9 @@ export async function POST(
 
   const svc = createServiceClient();
 
-  const { data: allowed } = await svc
-    .schema('admin')
-    .from('founder_allowlist')
-    .select('email')
-    .eq('email', user.email)
-    .maybeSingle();
+  // Requires a verified Google identity, not just an email match — see
+  // admin/lib/auth/founder.ts.
+  const allowed = await founderAllowlistRow(user);
 
   if (!allowed) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });

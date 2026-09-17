@@ -1,11 +1,15 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { createSessionClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { founderAllowlistRow } from '@/lib/auth/founder';
 
 // Manual provider payouts (no cron). GET lists the payable queue; POST disburses
 // one provider's cleared balance via the cashfree-payout Edge function. Both are
 // founder-only (admin.founder_allowlist), matching /api/applications.
-
+//
+// This is the route that reaches real money (via cashfree-payout), so
+// requireFounder uses founderAllowlistRow — a verified Google identity, not
+// just an email match. See admin/lib/auth/founder.ts.
 async function requireFounder(): Promise<{ email: string } | NextResponse> {
   const supabase = await createSessionClient();
   const {
@@ -14,17 +18,11 @@ async function requireFounder(): Promise<{ email: string } | NextResponse> {
   if (!user?.email) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  const svc = createServiceClient();
-  const { data: allowed } = await svc
-    .schema('admin')
-    .from('founder_allowlist')
-    .select('email')
-    .eq('email', user.email)
-    .maybeSingle();
+  const allowed = await founderAllowlistRow(user);
   if (!allowed) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
-  return { email: user.email };
+  return { email: allowed.email };
 }
 
 // GET /api/payouts — the payable queue.

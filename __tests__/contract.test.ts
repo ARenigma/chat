@@ -4810,13 +4810,90 @@ describe('admin control plane key hygiene', () => {
   const ADMIN_ROOT = join(ROOT, 'admin');
   const adminExists = existsSync(ADMIN_ROOT);
 
-  it('admin/middleware.ts exists and imports createServiceClient from lib', () => {
+  /*
+   * middleware.ts used to call createServiceClient directly; since the
+   * 2026-09-17 audit it goes through admin/lib/auth/founder.ts, which is
+   * where the service-role call now lives. The invariant this test protects
+   * — the allowlist check requires service_role, not the anon/session client
+   * RLS would block — moved with it, so the assertion follows it to both
+   * files rather than only checking the one that used to hold it.
+   */
+  it('admin/middleware.ts exists and gates through the founder-auth helper, which requires service_role', () => {
     if (!adminExists) return;
-    const middleware = read('admin/middleware.ts');
     expect(existsSync(join(ROOT, 'admin/middleware.ts'))).toBe(true);
-    // The allowlist check requires service_role; it must come from the server helper.
-    expect(middleware).toContain('createServiceClient');
-    expect(middleware).toContain("from '@/lib/supabase/service'");
+    const middleware = read('admin/middleware.ts');
+    expect(middleware).toContain('founderAllowlistRow');
+    expect(middleware).toContain("from '@/lib/auth/founder'");
+
+    const founder = read('admin/lib/auth/founder.ts');
+    expect(founder).toContain('createServiceClient');
+    expect(founder).toContain("from '@/lib/supabase/service'");
+  });
+
+  /*
+   * The 2026-09-17 audit: every founder_allowlist check used to accept a bare
+   * `user.email` match, so any session with that email — including one that
+   * reached it via a self-service change on a non-Google account — passed.
+   * `founderAllowlistRow` requires a verified Google identity first
+   * (app_metadata.provider === 'google' plus a matching identities[] entry
+   * with identity_data.email_verified). Pinned so a future edit cannot drop
+   * the Google check back to a bare email lookup without failing a test.
+   */
+  it('the founder-auth helper requires a verified Google identity, not just an email match', () => {
+    if (!adminExists) return;
+    const founder = read('admin/lib/auth/founder.ts');
+    expect(founder).toContain("user.app_metadata.provider !== 'google'");
+    expect(founder).toContain("identities?.find(i => i.provider === 'google')");
+    expect(founder).toContain('identity_data?.email_verified === true');
+    // The lookup itself must go through the Google-identity gate, not query
+    // founder_allowlist off a bare email.
+    expect(founder).toContain('hasVerifiedGoogleIdentity(user)');
+
+    // Every call site uses the shared helper rather than its own inline
+    // .eq('email', user.email) query — a repeat of the same site-by-site
+    // drift that caused the original hole.
+    const callSites = [
+      'admin/middleware.ts',
+      'admin/app/(authenticated)/layout.tsx',
+      'admin/app/api/applications/route.ts',
+      'admin/app/api/auth/reauth/route.ts',
+      'admin/app/api/config/[domain]/draft/route.ts',
+      'admin/app/api/config/[domain]/publish/route.ts',
+      'admin/app/api/payouts/route.ts',
+    ];
+    for (const file of callSites) {
+      const body = read(file);
+      expect({ file, importsHelper: body.includes('founderAllowlistRow') }).toEqual({
+        file,
+        importsHelper: true,
+      });
+    }
+
+    // The edge function that actually moves money cannot import from the
+    // Next.js app (different runtime), so it carries its own copy — which
+    // must assert the same thing, not a weaker one.
+    const payoutFn = read('supabase/functions/_shared/founderAuth.ts');
+    expect(payoutFn).toContain("user.app_metadata.provider !== 'google'");
+    expect(payoutFn).toContain("identities?.find(i => i.provider === 'google')");
+    expect(payoutFn).toContain('identity_data?.email_verified === true');
+    const cashfreePayout = read('supabase/functions/cashfree-payout/index.ts');
+    expect(cashfreePayout).toContain("from '../_shared/founderAuth.ts'");
+    expect(cashfreePayout).toContain('founderAllowlistRow(admin, userData.user)');
+  });
+
+  /*
+   * The case-sensitivity half of the same finding: `.eq('email', ...)` with
+   * no normalisation meant one capital letter locked out a real founder.
+   * Migration 114 makes lowercase the only shape the column can hold; the
+   * application side has to hold up its end by normalising before it reads.
+   */
+  it('normalises the email before every founder_allowlist lookup, matching migration 114', () => {
+    if (!adminExists) return;
+    const founder = read('admin/lib/auth/founder.ts');
+    expect(founder).toContain(".eq('email', user.email.toLowerCase())");
+    const migration = read('supabase/migrations/114_founder_allowlist_is_case_insensitive.sql');
+    expect(migration).toContain('founder_allowlist_email_is_lowercase');
+    expect(migration).toContain('check (email = lower(email))');
   });
 
   it('service.ts references SUPABASE_SERVICE_ROLE_KEY and is never prefixed NEXT_PUBLIC_', () => {

@@ -152,6 +152,7 @@ const MIGRATIONS = [
   'supabase/migrations/111_open_alerts_read_availability_not_presence.sql',
   'supabase/migrations/112_a_provider_face_is_a_photograph.sql',
   'supabase/migrations/113_the_test_providers_have_a_gender_so_they_can_have_a_face.sql',
+  'supabase/migrations/114_founder_allowlist_is_case_insensitive.sql',
 ];
 
 /**
