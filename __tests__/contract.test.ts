@@ -8074,3 +8074,22 @@ describe('outbox drains for every conversation at boot, not just the one opened 
     expect(app).toContain("useGlobalOutboxDrain(boot.phase === 'ready')");
   });
 });
+
+describe('the own user id is read locally, not over the network, every boot (L2)', () => {
+  // Amit's audit, 2026-09-17: requireUserId() backed useSelfId()/useProfile(),
+  // both mounted from boot, and auth.getUser() is a JWT-revalidation round
+  // trip to Supabase's servers to answer a question the persisted session
+  // (src/lib/storage.ts, MMKV) already has the answer to. SessionFeedbackSheet
+  // already documents the identical tradeoff for its own local id read.
+  const api = withoutComments(read('src/api/chat.ts'));
+
+  it('requireUserId reads the persisted session, not a network re-validation', () => {
+    const fn = api.slice(
+      api.indexOf('async function requireUserId'),
+      api.indexOf('async function requireUserId') + 200,
+    );
+    expect(fn).toContain('supabase.auth.getSession()');
+    expect(fn).toContain('data.session?.user.id');
+    expect(fn).not.toContain('supabase.auth.getUser()');
+  });
+});

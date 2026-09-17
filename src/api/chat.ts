@@ -73,12 +73,24 @@ const NOTICE: Record<SendError, string> = {
 };
 
 
+/*
+ * `getSession()`, not `getUser()` (L2, 2026-09-17 audit). `getUser()` is a
+ * network round trip to re-validate the JWT server-side; this id is only
+ * ever used for a client-side "is this mine" comparison or to shape a query
+ * whose RLS policy independently re-checks auth.uid() anyway, never to
+ * authorize anything by itself — the same reasoning SessionFeedbackSheet's
+ * useWasTheMember already documents for the identical tradeoff. `getSession()`
+ * reads the session MMKV already persisted (src/lib/storage.ts), so every
+ * caller of `useSelfId()`/`useProfile()` stops paying a network round trip
+ * every boot to answer a question the device already has the answer to.
+ */
 async function requireUserId(): Promise<string> {
-  const { data } = await supabase.auth.getUser();
-  if (!data.user) {
+  const { data } = await supabase.auth.getSession();
+  const userId = data.session?.user.id;
+  if (userId === undefined) {
     throw new Error('No session');
   }
-  return data.user.id;
+  return userId;
 }
 
 /** The session's own profile id, every "is this mine" comparison needs it. */
