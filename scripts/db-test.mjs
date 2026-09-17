@@ -153,6 +153,7 @@ const MIGRATIONS = [
   'supabase/migrations/112_a_provider_face_is_a_photograph.sql',
   'supabase/migrations/113_the_test_providers_have_a_gender_so_they_can_have_a_face.sql',
   'supabase/migrations/114_founder_allowlist_is_case_insensitive.sql',
+  'supabase/migrations/115_call_heartbeats_are_activity.sql',
 ];
 
 /**
@@ -784,6 +785,11 @@ const suites = [
     file: join(ROOT, 'supabase/tests/460_edit_and_delete_messages.sql'),
     label:
       'edit and delete a message, and a provider who can see who they are talking to',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/470_call_heartbeats_are_activity.sql'),
+    label:
+      "a call's own heartbeat counts as activity, so it survives past 5m30s while a quiet chat still ends there",
   },
 ];
 
