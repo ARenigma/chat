@@ -56,7 +56,8 @@
     "version:bump": "node scripts/version-bump.mjs",
     "ship:testers": "npm run version:bump && npm run android:internal && npm run distribute",
     "icons:font": "node scripts/gen-icons-font.mjs",
-    "icons:font:check": "node scripts/gen-icons-font.mjs --check"
+    "icons:font:check": "node scripts/gen-icons-font.mjs --check",
+    "sentry:maps": "node scripts/sentry-maps.mjs"
   },
   "dependencies": {
     "@react-native-firebase/app": "^26.3.1",
