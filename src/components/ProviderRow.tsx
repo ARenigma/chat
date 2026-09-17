@@ -457,6 +457,7 @@ function ProviderRowView({
       ? 'Call'
       : 'Video';
   const ctaLabel = away ? 'Notify' : canCall ? 'Call' : offeredVerb;
+  const rateStyle = away ? [styles.ctaRate, styles.ctaAwayRate] : styles.ctaRate;
   const ctaSpoken =
     ctaLabel === 'Call'
       ? `Call ${provider.display_name}`
@@ -734,10 +735,13 @@ function ProviderRowView({
                   <Icon
                     name={notified ? 'check' : 'bell'}
                     size={TOKENS.icon.sm}
-                    color={styles.ctaLabel.color as string}
+                    color={styles.ctaAwayLabel.color as string}
                   />
                 ) : null}
-                <Text allowFontScaling numberOfLines={1} style={styles.ctaLabel}>
+                <Text
+                  allowFontScaling
+                  numberOfLines={1}
+                  style={[styles.ctaLabel, away && styles.ctaAwayLabel]}>
                   {/* The present participle while the request is in flight, the
                       same contract Button.busyLabel has (Button.tsx:17-21): a
                       control that compresses and says nothing tells a member
@@ -747,9 +751,20 @@ function ProviderRowView({
                     : notified
                       ? 'Notified'
                       : ctaLabel}
-                  <Text style={styles.ctaRate}>{'  '}</Text>
-                  <RupeeAmount value={ratePerMin} style={styles.ctaRate} />
-                  <Text style={styles.ctaRate}>/min</Text>
+                  {/* The rate is the condition on an action about to be taken,
+                      so it goes once there is no longer one to take. It is also
+                      what made the notified state crowd its own glyph: the row
+                      CTA is a fixed 136dp (providerRow.test asserts it, and the
+                      width carries its own 2026-09-08 rationale), and a bell, a
+                      participle and a price do not sit in it without touching
+                      the edges. Dropping the price is what buys the spacing. */}
+                  {notified || notify.state.kind === 'pending' ? null : (
+                    <>
+                      <Text style={rateStyle}>{'  '}</Text>
+                      <RupeeAmount value={ratePerMin} style={rateStyle} />
+                      <Text style={rateStyle}>/min</Text>
+                    </>
+                  )}
                 </Text>
               </Pressable>
             </Animated.View>
@@ -936,9 +951,12 @@ const makeStyles = (t: Theme) => StyleSheet.create({
      * also being squeezed.
      */
     flexDirection: 'row',
-    gap: TOKENS.space['2xs'],
+    // 8dp, not 4: at 4 the bell and the word read as one smudged glyph-word,
+    // which is the "tick mark and notified text distance" defect.
+    gap: TOKENS.space.xs,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: TOKENS.space.xs,
     borderRadius: TOKENS.radius.xs,
     borderCurve: 'continuous',
     borderWidth: 1,
@@ -963,36 +981,48 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     color: t.color.text.accent,
   },
   /*
-   * Away variant, REVERSED 2026-09-17 from a hairline border + `text/tertiary`
-   * ink to M3's FILLED TONAL fill.
+   * Away variant. GREY, and deliberately a DARK one (Amit, 2026-09-17).
    *
-   * The greyed version was painting an enabled control with M3's DISABLED
-   * vocabulary — faint outline, tertiary label, no container — which is why the
-   * issue reads "Notify icon looks disabled". It was also below both floors on
-   * this card: the label 4.39:1 light / 3.30:1 dark against the 4.5 that 12dp
-   * and 14dp type takes, and the hairline 1.71:1 / 1.35:1 against the 3:1 for a
-   * non-text boundary.
-   * https://developer.android.com/guide/topics/ui/accessibility/apps
+   * Two wrong answers preceded this. First a hairline border with
+   * `text/tertiary` ink and no fill, which is Material 3's DISABLED recipe
+   * painted onto an enabled control: measured 3.30:1 on this card, under the
+   * 4.5:1 floor for 14sp, which is exactly why the report read "Notify icon
+   * looks disabled". Then a filled-tonal `bg/accentTint`, which fixed the
+   * contrast and broke the hierarchy: Notify is the SECONDARY action on this
+   * row and must not compete with Call for the accent.
    *
-   * Tonal is the rank the grey was reaching for and could not express: "Filled
-   * tonal buttons have a lighter background color and darker label color,
-   * making them less visually prominent than a regular filled button", the step
-   * directly below filled and directly above outlined in the same doc's
-   * emphasis order.
-   * https://github.com/material-components/material-components-android/blob/master/docs/components/CommonButton.md
+   * `bg/pressed` is the most solid neutral in the scale, and with
+   * `text/primary` on it the label measures 10.25:1 dark and 11.18:1 light.
+   * That number is the whole point: the control reads enabled because the ink
+   * is strong, not because it is coloured.
    *
-   * ONE LINE, because the outlined `cta` above is already the same object: the
-   * accent stroke and the accent ink stay exactly as they are and the FILL is
-   * what moves, so away and here read as one control in two emphases rather
-   * than as two controls. `ctaInkAway` is gone with the grey; it now says
-   * nothing `ctaLabel` does not.
+   * The 1dp stroke carries the edge, because the fill alone cannot: `bg/pressed`
+   * is 1.47:1 against this card in dark. `text/secondary` as the stroke measures
+   * 5.00:1 dark and 7.41:1 light against the card, past the 3:1 non-text floor.
    *
-   * The 1dp stroke is kept although M3's tonal button has none, and it is
-   * load-bearing: `bg/accentTint` measures 1.02:1 against this card in dark, so
-   * the fill alone would not be a findable boundary. Both pairs are registered
-   * in scripts/check-contrast.mjs.
+   * The fill does NOT change between idle, pending and notified. Only the glyph
+   * and the word do. A control that recolours itself on every state change draws
+   * attention it has not earned, and this one is on screen in every row of a
+   * scrolling list.
    */
   ctaAway: {
-    backgroundColor: t.color.bg.accentTint,
+    backgroundColor: t.color.bg.pressed,
+    borderColor: t.color.text.secondary,
+  },
+  ctaAwayLabel: {
+    color: t.color.text.primary,
+  },
+  /*
+   * The rate inside the grey control, and it is a contrast fix rather than a
+   * preference: `text/accent` measures 3.58:1 on this fill in LIGHT mode,
+   * under the 4.5:1 floor for text below 18sp. It also made the price louder
+   * than the verb in a control whose whole point is the verb.
+   *
+   * Hierarchy is carried by size instead, which `ctaRate` already has:
+   * bodySmall against the label's labelLarge. Colour was doing work that type
+   * was already doing.
+   */
+  ctaAwayRate: {
+    color: t.color.text.primary,
   },
 });

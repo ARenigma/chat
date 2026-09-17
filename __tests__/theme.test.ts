@@ -2327,29 +2327,24 @@ describe('accent budget is enforced in code, not just documented', () => {
     }
 
     /*
-     * NARROWED A THIRD TIME (2026-09-17), same shape as (a) and (b) above.
+     * STILL FOUR (2026-09-17), and the near-miss is worth recording.
      *
-     * (c) The away CTA grew an accentTint FILL, and unlike the four before it
-     *     this one is conditional: `style={[styles.cta, away && styles.ctaAway]}`.
-     *     That is exactly the shape the paragraph above says would break the
-     *     rule, so it is worth saying why it does not.
+     * The away Notify CTA briefly took an `accentTint` FILL, which would have
+     * been a fifth — and a CONDITIONAL one, since it is applied as
+     * `style={[styles.cta, away && styles.ctaAway]}`. That is exactly the shape
+     * the paragraph above says would break the rule.
      *
-     *     What it was: the away control was painted in Material 3's DISABLED
-     *     vocabulary — transparent fill, hairline outline, text/tertiary label —
-     *     while being fully enabled. Measured on the real tokens it was 3.30:1
-     *     on bg/raised against a 4.5:1 floor, and the CTA's own fill was
-     *     bg/raised on a bg/raised card, which is 1:1. It read as dead, which is
-     *     precisely what Amit reported as issue 17.
+     * It is grey again, by Amit's call, and the hierarchy is the reason rather
+     * than this test: Notify is the SECONDARY action on the row and must not
+     * compete with Call for the accent. The fill is `bg/pressed` with a
+     * `text/secondary` stroke and a `text/primary` label, none of them accent,
+     * which is why the count below is unchanged.
      *
-     *     Why it is not a recommendation: it varies with AVAILABILITY, which is
-     *     a fact about reachability, not a ranking of the person, and it is the
-     *     WEAKER of the two treatments — a present provider still gets the solid
-     *     accentStrong CTA. Accent here marks "this control does something",
-     *     not "this stranger is the good one".
-     *
-     *     What would still break the rule, unchanged: an accent keyed to rating,
-     *     price, recency, or any ordering of people. If a future style tints on
-     *     `featured`, `topRated` or similar, this assertion must fail.
+     * The original defect it was reaching for is still fixed. The away control
+     * used to be painted in Material 3's DISABLED vocabulary — transparent
+     * fill, hairline outline, text/tertiary ink at 3.30:1 against a 4.5:1 floor
+     * — and now measures 10.25:1 dark / 11.18:1 light. It reads enabled because
+     * the ink is strong, not because it is coloured.
      *
      * `[Cc]olor` so `borderColor` and `backgroundColor` both count — a
      * lowercase-only match would have caught one and passed while the rest drifted.
@@ -2365,7 +2360,6 @@ describe('accent budget is enforced in code, not just documented', () => {
       '    color: t.color.text.accent,', // the rate inside the CTA
       '    borderColor: t.color.bg.accent,', // the CTA outline
       '    color: t.color.text.accent,', // the CTA label
-      '    backgroundColor: t.color.bg.accentTint,', // the away CTA's tonal fill
     ]);
 
     /*
