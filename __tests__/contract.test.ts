@@ -8102,3 +8102,29 @@ describe('the own user id is read locally, not over the network, every boot (L2)
     expect(fn).not.toContain('supabase.auth.getUser()');
   });
 });
+
+describe('a peer bubble animates in exactly once, not on every FlashList remount (M13)', () => {
+  // A message that arrived while the screen was open used to stay eligible
+  // to animate forever (arrivalCutoff never advances), so scrolling far
+  // enough to virtualize its cell out and back in replayed bubbleArrive on
+  // the fresh mount FlashList gives a row re-entering the window.
+  const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+
+  it('tracks which message ids have already been granted their one animation', () => {
+    expect(chat).toContain('const animatedMessageIds = useRef(new Set<string>());');
+  });
+
+  it('animate is computed once per row and consumes the id, not re-derived from a static cutoff', () => {
+    const fn = chat.slice(
+      chat.indexOf('const animate ='),
+      chat.indexOf('const animate =') + 400,
+    );
+    expect(fn).toContain('!animatedMessageIds.current.has(message.id)');
+    expect(fn).toContain('animatedMessageIds.current.add(message.id)');
+    // PeerTurn reads the computed value, not a fresh Date.parse comparison.
+    expect(chat).toContain('animate={animate}');
+    expect(chat).not.toContain(
+      'animate={Date.parse(message.created_at) > arrivalCutoff.current}',
+    );
+  });
+});

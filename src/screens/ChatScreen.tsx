@@ -512,6 +512,21 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
    * at first render, so it is the open time for both fresh and existing chats.
    */
   const arrivalCutoff = useRef(Date.now());
+  /*
+   * `arrivalCutoff` alone is not enough to make a peer bubble animate in
+   * EXACTLY once (M13, 2026-09-17 audit). It never advances, so any message
+   * that arrived after the screen opened stays "after the cutoff" for the
+   * rest of the screen's life — and FlashList does not keep every row
+   * mounted forever. Per its own docs a RECYCLED cell is "re-rendered with a
+   * different item prop" rather than destroyed, but a row that scrolls far
+   * enough off-screen to leave the virtualized window entirely gets a
+   * genuinely fresh mount when it scrolls back into view, and Reanimated's
+   * `entering` reads whatever `animate` is at THAT mount — still true, since
+   * the cutoff never moved. So scrolling away from a live arrival and back
+   * replayed its entrance. This set remembers which message ids have already
+   * been granted their one animation, consumed the first time each is seen.
+   */
+  const animatedMessageIds = useRef(new Set<string>());
   const { data: callRecords } = useCalls(conversationId);
   // `dataUpdatedAt` is the instant the server's snapshot was taken — the only
   // moment `seconds_remaining` was exactly right, and what it is aged from.
@@ -1592,6 +1607,20 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
        * recording that is gone.
        */
       const deleted = isDeleted(message);
+      /*
+       * Granted once, then consumed (M13) — see `animatedMessageIds`'s own
+       * comment above. Computed for every row, not only peer ones, so a
+       * message that starts mine (never animates, MyTurn has no `animate`
+       * prop) and is somehow re-evaluated does not affect this bookkeeping
+       * either way; only the peer branch below actually reads it.
+       */
+      const animate =
+        !mine &&
+        Date.parse(message.created_at) > arrivalCutoff.current &&
+        !animatedMessageIds.current.has(message.id);
+      if (animate) {
+        animatedMessageIds.current.add(message.id);
+      }
       // Only reached when `voice` and `image` are unset, which the payload
       // constraint guarantees means the row has a body. The fallback covers a row
       // that somehow has none rather than rendering an empty bubble.
@@ -1701,9 +1730,9 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
               message={text}
               // Mirrored tail on the oldest bubble of the peer's run.
               tail={first}
-              // Only live arrivals animate in; history and paged-in rows mount
-              // still. See `arrivalCutoff`.
-              animate={Date.parse(message.created_at) > arrivalCutoff.current}
+              // Only live arrivals animate in, and only their first mount —
+              // see `animatedMessageIds` above.
+              animate={animate}
               timestamp={stamp}
               quote={quote}
               reactions={reactions}
