@@ -108,35 +108,42 @@ describe('recharge chips present GST exclusive — charged on top of the base (A
   /*
    * "remove inc xxx gst from footer" (Amit, 2026-09-06).
    *
-   * The footers carry only the rate and the unit — "1 token = ₹1" — because the
-   * chip already names the base and the tax and the Pay bar names the total.
    * `gstRateBps` is present in the footer to compute the Pay button total, which
    * is correct; the assertion is that the INFORMATIONAL copy in the ⓘ row and the
    * wallet note contains no GST wording.
    */
-  it('takes GST copy off both footers, and the rate line survives only on the page', () => {
+  it('takes GST copy off both footers, and the rate line is gone from both', () => {
     const recharge = withoutComments(read('src/screens/RechargeScreen.tsx'));
 
     expect(recharge).not.toContain('gstPercentLabel');
     expect(recharge).not.toContain('gstSplit');
 
     /*
-     * The SHEET's rate line was removed on 2026-09-12 (Amit: "recharge modal
-     * should just Pay without amount and remove 1 token = 1 rs"), so this
-     * asserts its absence there and its presence on the full page.
+     * THE RATE LINE IS NOW GONE FROM BOTH SURFACES, and this assertion inverted
+     * with it.
      *
-     * Not a dropped disclosure, which is what this test exists to protect:
+     * It fell in two steps. The SHEET lost it on 2026-09-12 ("recharge modal
+     * should just Pay without amount and remove 1 token = 1 rs") and this test
+     * then pinned its survival on the full page, on the argument that somebody
+     * who wants the arithmetic goes there and the page has the room. The PAGE
+     * lost it on 2026-09-17 ("remove 1 rs = 1 token in recharge screen .. token
+     * is nowhere to be mentioned ever at all please in app"), which is a
+     * different argument and a stronger one: the first was about layout room,
+     * the second retires the word. A member buys talk time in rupees and is
+     * charged in rupees, so a line that names a second unit purely to equate it
+     * to the first is inventing a currency in order to un-invent it.
+     *
+     * Still not a dropped disclosure, which is what this test exists to protect:
      * ADR-0021 requires the tax to be derivable and INVOICED. Every pack chip
-     * still names its own base and its own tax, and PaymentSheet names the
-     * total again before money moves. What went was a third statement of a rate
-     * that is 1:1, on the one surface with no room for it.
+     * names its own base and its own tax, PaymentSheet names the total again
+     * before money moves, and Axionix issues the invoice. Nothing that was ever
+     * load-bearing left with the line.
      */
-    const footer = recharge.slice(
-      recharge.indexOf('function RechargeSheetFooter'),
-      recharge.indexOf('export function RechargeWalletPage'),
-    );
-    expect(footer).not.toContain('1 token = ₹1');
-    expect(recharge).toContain('1 token = ₹1. You are charged in rupees at checkout.');
+    expect(recharge).not.toContain('1 token = ₹1');
+    // Absence of the sentence is asserted on the FULL file, not a slice: the
+    // predecessor sliced to the sheet's footer, which meant it could only ever
+    // have caught the line in one of the two places it lived.
+    expect(recharge).not.toMatch(/charged in rupees at checkout/);
   });
 
   it('the pay bar shows what Cashfree will actually capture — the discounted total', () => {

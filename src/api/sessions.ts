@@ -624,7 +624,7 @@ export function useNotifyProvider(providerId: string): NotifyAction {
           case 'no_balance':
             // The one refusal the member can act on, so it routes instead of
             // explaining.
-            setNotice('Add tokens to notify them.', 'confirm');
+            setNotice('Top up to notify them.', 'confirm');
             openWallet();
             settle(IDLE);
             break;

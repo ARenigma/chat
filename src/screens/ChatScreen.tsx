@@ -2336,12 +2336,12 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
         title={
           theyOpenedTheChat
             ? `Hey, ${name} wants to have a chat with you`
-            : `Hey — ${name} is here`
+            : `Hey, ${name} is here`
         }
         body={
           theyOpenedTheChat
-            ? 'Keep it kind — no sexual or abusive talk. You are only charged once you both start.'
-            : 'They are ready when you are. Keep it kind — no sexual or abusive talk. You are only charged once you both start.'
+            ? 'Keep it kind. No sexual or abusive talk. You are only charged once you both start.'
+            : 'They are ready when you are. Keep it kind. No sexual or abusive talk. You are only charged once you both start.'
         }
         cancelLabel="Decline"
         confirmLabel="Start session"
@@ -2367,7 +2367,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
               onError: err => {
                 const msg = err instanceof Error ? err.message : '';
                 if (msg.toLowerCase().includes('insufficient')) {
-                  setNotice('Your balance is empty — top up to keep going.');
+                  setNotice('Your balance is empty. Top up to keep going.');
                   openRefill();
                   return;
                 }

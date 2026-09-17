@@ -47,7 +47,7 @@ const BUCKET = 'voice-notes';
 const SIGNED_URL_TTL_SECONDS = 60;
 
 const NOTICE: Record<SendError | 'UPLOAD', string> = {
-  INSUFFICIENT_BALANCE: 'You are out of tokens.',
+  INSUFFICIENT_BALANCE: 'Your balance is empty.',
   POLICY_REQUIRED: 'Accept the latest Terms and Privacy Policy to continue.',
   BAD_REQUEST: 'That voice note could not be sent.',
   UNAUTHORIZED: 'Session expired. Reopen the app to continue.',

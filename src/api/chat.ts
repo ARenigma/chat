@@ -55,7 +55,7 @@ export function memberPaysInThread(
 }
 
 const NOTICE: Record<SendError, string> = {
-  INSUFFICIENT_BALANCE: 'You are out of tokens.',
+  INSUFFICIENT_BALANCE: 'Your balance is empty.',
   POLICY_REQUIRED: 'Accept the latest Terms and Privacy Policy to continue.',
   BAD_REQUEST: 'That message could not be sent.',
   UNAUTHORIZED: 'Session expired. Reopen the app to continue.',

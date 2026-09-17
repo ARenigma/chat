@@ -412,7 +412,7 @@ export function useOpenRechargeSheet() {
         throw new Error('Play Billing is Android-only');
       }
       if (!BillingModule) {
-        throw new Error('BillingModule not available — check native registration');
+        throw new Error('BillingModule not available: check native registration');
       }
       const order = await createOrder(productId);
       track('recharge_sheet_opened');

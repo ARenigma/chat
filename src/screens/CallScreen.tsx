@@ -841,7 +841,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
         )}
         {phase === 'incoming' && isMemberSide ? (
           <Text allowFontScaling style={styles.status}>
-            Keep it kind — no sexual or abusive talk
+            Keep it kind. No sexual or abusive talk
           </Text>
         ) : null}
       </View>
@@ -968,7 +968,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
         }
         testID="call-session-consent"
         title={medium === 'video' ? `Video chat with ${name}?` : `Call ${name}?`}
-        body="Keep it kind — no sexual or abusive talk. Charging starts when they pick up."
+        body="Keep it kind. No sexual or abusive talk. Charging starts when they pick up."
         cancelLabel="Not now"
         confirmLabel={medium === 'video' ? 'Video them' : 'Call them'}
         onCancel={onEnd}

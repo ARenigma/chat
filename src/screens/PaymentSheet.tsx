@@ -417,7 +417,7 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
               (web/refund.html: "All purchases on Pappal are final"). Same
               wording as RechargeScreen's footer so the two never drift. */}
           <Text allowFontScaling style={styles.finalNote} testID="payment-final-note">
-            All purchases are final — no refunds.
+            All purchases are final. No refunds.
           </Text>
         </>
       )}

@@ -3257,77 +3257,54 @@ describe('iOS list separators are drawn the way iOS draws them', () => {
   });
 });
 
-/*
- * The session-consent copy Amit specified on 2026-09-07, verbatim, em dashes
- * included: "Hey — {name} is here", "Keep it kind…". It shipped in versionCode
- * 10110.
- *
- * These five literals are the one place the house rule below is deliberately
- * departed from, and the departure is stated here rather than quietly rewritten,
- * because the copy was reviewed and approved as written. Rewriting an approved
- * string to satisfy a style gate is the gate winning an argument it should have
- * lost.
- *
- * Same mechanism as `EXEMPT` in iconScale.test.ts and the grandfathered spacing
- * in theme.test.ts: an allowlist keyed to the exact literal, so the gate stays
- * armed for every OTHER string and a sixth em dash still fails the build. The
- * entries are exact matches, not patterns, for that reason.
- */
-const APPROVED_EM_DASH: readonly string[] = [
-  '"Keep it kind — no sexual or abusive talk. Charging starts when they pick up."',
-  '`Hey — ${name} is here`',
-  "'Keep it kind — no sexual or abusive talk. You are only charged once you both start.'",
-  "'They are ready when you are. Keep it kind — no sexual or abusive talk. You are only charged once you both start.'",
-  "'Your balance is empty — top up to keep going.'",
-];
-
 describe('no user-facing em dash and no leftover persona pronoun', () => {
+  /*
+   * THE ALLOWLIST IS GONE (Amit, 2026-09-17: "never use emdash anywhere in
+   * app"). It held five strings from the session-consent copy of 2026-09-07 on
+   * the argument that rewriting reviewed copy to satisfy a style gate is the
+   * gate winning an argument it should have lost. That was a good argument
+   * against a style gate. It is not an argument against an instruction, and the
+   * instruction is now absolute. The five were rephrased rather than exempted:
+   * every one of them split cleanly into two sentences, which is what the em
+   * dash was standing in for.
+   *
+   * THE GATE ALSO HAD A HOLE, and the allowlist is what kept it hidden. Scanning
+   * string literals ONLY meant JSX TEXT was never checked, so four em dashes had
+   * been rendering to users with nothing in the build able to see them:
+   *
+   *   CallScreen.tsx        "Keep it kind — no sexual or abusive talk"
+   *   RechargeScreen.tsx    "All purchases are final — no refunds."
+   *   PaymentSheet.tsx      "All purchases are final — no refunds."
+   *   OnboardingScreen.tsx  "New code sent — the previous one no longer works."
+   *
+   * The fix is to stop enumerating the places copy can hide. Once comments are
+   * stripped there is nowhere in a .ts/.tsx file an em dash CAN be except a
+   * string, a template or JSX text, and every one of those three reaches a user.
+   * So the assertion is now the simplest one available: zero U+2014 in
+   * comment-free source, across all of `src`, recursively. No allowlist to keep
+   * honest, no literal grammar to be defeated by, and the next surface somebody
+   * adds is covered on the day they add it rather than the day it is noticed.
+   */
   it('keeps the em dash out of every rendered string', () => {
-    // House rule. Asserted on string literals only: the character is fine in a
-    // comment, and most of the ones in this repo are.
-    const files = ['src/screens', 'src/components'].flatMap(dir =>
-      readdirSync(join(ROOT, dir))
-        .filter(f => f.endsWith('.tsx'))
-        .map(f => ({
-          file: `${dir}/${f}`,
-          body: withoutComments(read(`${dir}/${f}`)),
-        })),
-    );
-    for (const { file, body } of files) {
-      const literals = [...body.matchAll(/'[^'\n]*'|"[^"\n]*"|`[^`]*`/g)].map(
-        m => m[0],
-      );
-      for (const literal of literals) {
-        if (APPROVED_EM_DASH.includes(literal)) {
-          continue;
-        }
-        // Escaped, not literal: a repo-wide punctuation sweep rewrote the
+    const files = walk(join(ROOT, 'src')).filter(f => /\.tsx?$/.test(f));
+    // The walk itself is load-bearing: a gate that silently scans nothing is
+    // the failure mode this test was just rewritten to close.
+    expect(files.length).toBeGreaterThan(100);
+    for (const file of files) {
+      // `codeOnly`, not `withoutComments`: a TRAILING `// note — like this` is
+      // still a comment, and the weaker strip would fail the build on prose.
+      const body = codeOnly(readFileSync(file, 'utf8'));
+      const offender = body
+        .split('\n')
+        .map((line, i) => ({ line: line.trim(), n: i + 1 }))
+        // Escaped, not literal: a repo-wide punctuation sweep once rewrote the
         // equivalent assertion in presence.test.ts into one that forbade commas.
-        expect({ file, literal, dash: literal.includes('\u2014') }).toEqual({
-          file,
-          literal,
-          dash: false,
-        });
-      }
-    }
-  });
-
-  it('keeps the exemption list honest', () => {
-    /*
-     * An allowlist that outlives the strings it names is worse than no
-     * allowlist: it silently re-permits an em dash the day someone reuses one
-     * of these sentences. So every entry must still be present in the source it
-     * was written for.
-     */
-    const all = ['src/screens', 'src/components']
-      .flatMap(dir =>
-        readdirSync(join(ROOT, dir))
-          .filter(f => f.endsWith('.tsx'))
-          .map(f => withoutComments(read(`${dir}/${f}`))),
-      )
-      .join('\n');
-    for (const literal of APPROVED_EM_DASH) {
-      expect(all).toContain(literal);
+        .find(l => l.line.includes('—'));
+      const name = file.slice(ROOT.length + 1);
+      expect({ file: name, offender }).toEqual({
+        file: name,
+        offender: undefined,
+      });
     }
   });
 
@@ -6514,7 +6491,10 @@ describe('the member always starts the session, whoever wrote first', () => {
     expect(chat).toContain('confirmLabel="Start session"');
     expect(chat).toContain('cancelLabel="Decline"');
     expect(chat).toContain('wants to have a chat with you');
-    expect(chat).toContain('Hey — ${name} is here');
+    // Was 'Hey — ${name} is here' until 2026-09-17 ("never use emdash anywhere
+    // in app"). The comma is not a downgrade: it is what the sibling title on
+    // the other branch of this same ternary has always used.
+    expect(chat).toContain('Hey, ${name} is here');
   });
 
   it('names the incoming member call Start session, the provider Accept', () => {
@@ -7120,6 +7100,24 @@ describe('the member reads rupees; "token" is a storage word, never a shown one'
    * Comments are stripped first. This suite's own prose quotes the banned
    * strings at length, and the em-dash gate above already learned that lesson
    * the hard way.
+   *
+   * AND SO DID THIS ONE, on 2026-09-17. It read STRING LITERALS only, exactly
+   * like the em-dash gate did, and JSX text is not a string literal. So
+   *
+   *   <Text style={styles.rupeeNote}>
+   *     1 token = ₹1. You are charged in rupees at checkout.
+   *   </Text>
+   *
+   * sat in RechargeScreen for nine days under a green build, which is how Amit
+   * came to be the one who found it ("remove 1 rs = 1 token in recharge screen ..
+   * token is nowhere to be mentioned ever at all please in app"). A gate that
+   * only reads one of the two ways copy reaches a screen is worth roughly half
+   * of nothing, because the half it misses is the half that is plain prose.
+   *
+   * `jsxText` below is the missing half. It is deliberately crude — anything
+   * between a `>` and a `<` with no brace or angle bracket in it — because the
+   * thing being matched is plain words, and plain words are what that shape
+   * catches. Interpolations are `{...}` and excluded by construction.
    */
   const UI_DIRS = ['src/screens', 'src/components'];
 
@@ -7138,11 +7136,23 @@ describe('the member reads rupees; "token" is a storage word, never a shown one'
   const literals = (source: string): string[] =>
     codeOnly(source).match(/'[^'\n]*'|"[^"\n]*"|`[^`\n]*`/g) ?? [];
 
+  /*
+   * JSX text, wrapped in quotes so it rejoins the same pipeline the literals go
+   * through: `raw.slice(1, -1)` below strips the quote either way, and an
+   * offender reports with the same shape whichever half it came from.
+   */
+  const jsxText = (source: string): string[] =>
+    [...codeOnly(source).matchAll(/>([^<>{}]*)</g)]
+      .map(m => m[1]?.trim() ?? '')
+      .filter(text => text.length > 0)
+      .map(text => `"${text.replace(/\s+/g, ' ')}"`);
+
   it('no screen or component puts the word in front of a member', () => {
     const offenders: string[] = [];
     for (const dir of UI_DIRS) {
       for (const file of walk(join(ROOT, dir)).filter(f => /\.tsx?$/.test(f))) {
-        for (const raw of literals(readFileSync(file, 'utf8'))) {
+        const source = readFileSync(file, 'utf8');
+        for (const raw of [...literals(source), ...jsxText(source)]) {
           /*
            * `${...}` is code, not prose, and is stripped for the same reason
            * comments are. The ledger row renders `${formatRupees(row.tokens)}`
