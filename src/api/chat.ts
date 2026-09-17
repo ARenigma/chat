@@ -901,7 +901,22 @@ export function useOutboxReplay(
     }
     let cancelled = false;
 
-    const drain = () => {
+    /*
+     * SEQUENTIAL, not fire-and-forget (2026-09-17 audit).
+     *
+     * Each replay is independently idempotent, so an interleaved failure
+     * genuinely cannot corrupt another — that reasoning was right. What it
+     * did not cover is ORDER: `send_message_idempotent` re-stamps
+     * `created_at` at the server on every successful call, so three messages
+     * typed offline and fired in parallel land in whatever order the network
+     * happens to acknowledge them, not the order the member typed them in —
+     * and after the next gap-recovery re-sorts by that server timestamp, the
+     * member's own conversation reorders itself on their own screen too.
+     * Awaiting each entry in turn costs nothing a member notices (this is a
+     * queue of a few short strings, not a bulk upload) and makes the
+     * replayed order the typed order.
+     */
+    const drain = async () => {
       for (const entry of pendingFor(conversationId)) {
         if (entry.attempts >= REPLAY_LIMIT) {
           continue;
@@ -909,20 +924,17 @@ export function useOutboxReplay(
         if (cancelled) {
           return;
         }
-        // Sequential would be tidier but a queue of two or three short strings
-        // does not justify serialising them, and each is independently
-        // idempotent, so an interleaved failure cannot corrupt another.
-        void sendRef.current(entry.body, entry.replyToId, {
+        await sendRef.current(entry.body, entry.replyToId, {
           nonce: entry.nonce,
           createdAt: entry.createdAt,
         });
       }
     };
 
-    drain();
+    void drain();
     const sub = AppState.addEventListener('change', state => {
       if (state === 'active') {
-        drain();
+        void drain();
       }
     });
     return () => {

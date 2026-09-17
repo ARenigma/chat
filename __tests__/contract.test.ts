@@ -5092,6 +5092,32 @@ describe('media upload uses M3 determinate progress, not ActivityIndicator', () 
  * assertion RULE 1 asks for, so a regression fails the build rather than
  * waiting to be found on a device.
  */
+/*
+ * Telegram-CTO audit, 2026-09-17: the offline outbox drained every queued
+ * entry in one synchronous loop with no `await`, firing them at the server
+ * together. Each replay is independently idempotent, so a failure genuinely
+ * could not corrupt another — the comment this replaces was right about
+ * that — but `send_message_idempotent` re-stamps `created_at` at the server
+ * on every call, so three messages typed offline landed in whatever order
+ * the network acknowledged them, not the order they were typed. A member
+ * watched their own conversation reorder itself on their own screen.
+ */
+describe('the offline outbox replays queued messages in order, not all at once', () => {
+  it('drains sequentially: an async loop that awaits each replay', () => {
+    const chat = withoutComments(read('src/api/chat.ts'));
+    const drain = chat.slice(
+      chat.indexOf('const drain = async'),
+      chat.indexOf('void drain();'),
+    );
+    expect(drain).not.toBe('');
+    expect(drain).toContain('await sendRef.current(');
+    // The old fire-and-forget call must actually be gone, not merely
+    // supplemented — a `void` alongside an `await` would mean only one of
+    // the two call sites was fixed.
+    expect(chat).not.toMatch(/void sendRef\.current\(/);
+  });
+});
+
 describe('the photo pipeline downscales, sends in order, and retries what it can', () => {
   it('bounds both the gallery pick and the camera capture to PHOTO_MAX_DIMENSION', () => {
     // Before this, `quality: 0.9` with no maxWidth/maxHeight meant
