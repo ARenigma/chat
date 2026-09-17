@@ -1276,6 +1276,21 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
     }
   }, [showExtendCard]);
 
+  /*
+   * M18 (2026-09-17 audit) flagged this as JS-thread-only, and moving it onto
+   * the UI thread via useAnimatedScrollHandler was tried and reverted in this
+   * same pass: FlashList v2 wrapped in Animated.createAnimatedComponent loses
+   * its own imperative ref shape (scrollToOffset) under this Reanimated
+   * version — confirmed by tsc, not a hunch — and the known upstream fix for
+   * that combination is version-sensitive
+   * (software-mansion/react-native-reanimated#3889, #3899, #3938). `listRef`
+   * is load-bearing for the force-scroll effect and the page-down button
+   * (X5), so breaking it silently to save a bridge crossing during scroll is
+   * the wrong trade with no device to verify the fix on. Left as a plain
+   * callback; a real fix wants `useAnimatedRef`/`useScrollOffset` (the
+   * currently-documented alternative to wrapping the component) tried on a
+   * device, not blind.
+   */
   const onTranscriptScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       // Inverted FlashList: offset grows as the user scrolls toward older
