@@ -2468,6 +2468,17 @@ describe('the chat restyle is wired, not just drawn', () => {
     expect(dockFn).not.toMatch(/height:\s*height\.value/);
   });
 
+  it('recycles one pool per cell shape, not one pool per row kind', () => {
+    // Text, voice and media bubbles share nothing in height or subtree. One
+    // shared message pool hands a recycled voice cell to a text message and
+    // the row jumps on scroll.
+    expect(chatCode).toContain('function getTranscriptItemType(');
+    expect(chatCode).toContain("return 'message-voice'");
+    expect(chatCode).toContain("return 'message-media'");
+    expect(chatCode).toContain("return 'message-text'");
+    expect(chatCode).toContain('getItemType={getTranscriptItemType}');
+  });
+
   it('does not stack KeyboardAvoidingView on top of a resizing window', () => {
     // The window never resizes for the IME (adjustNothing, pinned in
     // platform.test.ts); the lift is ours, driven by the controller's inset

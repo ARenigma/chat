@@ -2818,8 +2818,25 @@ const UNREAD_VIEWABILITY_CONFIG: ViewabilityConfig = {
   itemVisiblePercentThreshold: 60,
 };
 
-const Transcript = memo(function TranscriptView({
-  listRef,
+/**
+ * One recycle pool per cell shape. Message rows split further: a text bubble,
+ * a voice row and a media card share nothing in height or subtree, so sharing
+ * a pool would hand a recycled voice cell to a text message and jump.
+ */
+function getTranscriptItemType(item: TranscriptRow): string {
+  if (item.kind !== 'message') {
+    return item.kind;
+  }
+  if (item.voice !== undefined) {
+    return 'message-voice';
+  }
+  if (item.image !== undefined) {
+    return 'message-media';
+  }
+  return 'message-text';
+}
+
+const Transcript = memo(function TranscriptView({  listRef,
   rows,
   renderItem,
   header,
@@ -2854,11 +2871,11 @@ const Transcript = memo(function TranscriptView({
       scrollEventThrottle={16}
       viewabilityConfig={UNREAD_VIEWABILITY_CONFIG}
       onViewableItemsChanged={onViewableItemsChanged}
-      // Two recycle pools: message bubbles and call-log rows have very
-      // different heights and layouts. Keeping them separate prevents
-      // FlashList from handing a recycled bubble cell to a call row (or
-      // vice versa), which would produce a visible layout jump on scroll.
-      getItemType={item => item.kind}
+      // Separate recycle pools per cell shape: a recycled voice row handed to a
+      // text bubble (or vice versa) produces a visible layout jump on scroll.
+      // Text, voice and media bubbles have very different heights and trees;
+      // call, system and divider rows are their own shapes too.
+      getItemType={getTranscriptItemType}
       showsVerticalScrollIndicator={false}
       {...SCROLL_PHYSICS}
     />
