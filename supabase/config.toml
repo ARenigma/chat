@@ -174,3 +174,11 @@ verify_jwt = false
 [functions.send-sms]
 verify_jwt = false
 
+# Meta's GET verify handshake and delivery-status POSTs carry no Supabase JWT —
+# POSTs authenticate via X-Hub-Signature-256/META_APP_SECRET inside the
+# function itself. Deployed once with --no-verify-jwt, which does not persist:
+# without this, a future plain `supabase functions deploy` silently re-enables
+# JWT verification and breaks it.
+[functions.wa-webhook]
+verify_jwt = false
+
