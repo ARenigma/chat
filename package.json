@@ -2,6 +2,7 @@
   "name": "companionchat",
   "version": "0.0.1",
   "private": true,
+  "license": "GPL-2.0",
   "scripts": {
     "start": "react-native start",
     "android": "react-native run-android --active-arch-only",

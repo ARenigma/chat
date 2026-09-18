@@ -1,13 +1,19 @@
 # Telegram Android — measured reference (chat surface)
 
-**Licence line, first.** Telegram Android is GPL-2.0 (`~/references/telegram/LICENSE`).
-Copying its code, assets, icons, Lottie files or strings into Pappal would put
-Pappal under the GPL. Measurements, timings, thresholds and interaction anatomy
-are not copyrightable, so this file records THOSE — dp, ms, curves, behaviour —
-each with the `File.java:line` it was read from, and the app re-implements them
-in its own code. Nothing in this file is source. See ADR-0025 and CLAUDE.md
-RULE 3. The clone lives outside the repo at `~/references/telegram` (shallow,
-720 MB) and is never vendored.
+**Licence line, first (updated 2026-09-18, ADR-0025 §6).** Telegram Android is
+GPL-2.0 (`~/references/telegram/LICENSE`), and Pappal is GPL-2.0 too
+(`/LICENSE`, `THIRD_PARTY_LICENSES.md`) — the old boundary that confined this
+file to measurements-only, cite-and-reimplement, is lifted. Reading its source
+and adapting the algorithm, values or structure directly is allowed. This file
+still records dp, ms, curves and behaviour with a `File.java:line` per entry —
+that discipline is unchanged and still the point, since it is what lets a
+number be checked rather than believed — but the entries below may now be a
+closer port, not only a re-expression. See ADR-0025 and CLAUDE.md RULE 3. The
+clone lives outside the repo at `~/references/telegram` (shallow, 720 MB) and
+is never vendored; the source's own name is kept out of code comments
+elsewhere in the app (a readability call, not a licensing one — the licensing
+attribution lives in `THIRD_PARTY_LICENSES.md`, which is where it is legally
+required to be).
 
 Harvested 2026-09-02 from the `master` checkout. All paths are relative to
 `TMessagesProj/src/main/java/org/telegram/`. Where Pappal differs, the
