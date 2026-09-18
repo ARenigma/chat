@@ -436,6 +436,8 @@ function ComposerView({
   // The field, so the emoji button can focus it (and raise the keyboard, where
   // the emoji key lives — a full in-app picker is a follow-up).
   const inputRef = useRef<TextInput>(null);
+  /** Read inside the `hardwareBackPress` callback below — see its own comment. */
+  const fieldFocusedRef = useRef(false);
   /**
    * Which attempt is current, bumped by every start, stop, discard and unmount.
    *
@@ -926,9 +928,44 @@ function ComposerView({
     // Touching the composer while the panel is searching leaves the search, the
     // same way Telegram's `onTouchEvent` does (`:5386-5391`).
     leaveSearch();
+    fieldFocusedRef.current = true;
     onFocusChange?.(true);
   }, [leaveSearch, onFocusChange]);
-  const onFieldBlur = useCallback(() => onFocusChange?.(false), [onFocusChange]);
+  const onFieldBlur = useCallback(() => {
+    fieldFocusedRef.current = false;
+    onFocusChange?.(false);
+  }, [onFocusChange]);
+
+  /**
+   * Back dismisses the keyboard before it leaves the chat — the same rule as
+   * the panel's own handler above, for the case that handler does not cover.
+   *
+   * That handler is only registered while `emojiOpen || attachOpen`, so a
+   * back press with just the real keyboard up (typing, no panel) had nothing
+   * of this screen's own to catch it and fell through to App.tsx's single
+   * global `hardwareBackPress` subscription — which treats back as "leave the
+   * conversation." Android normally swallows back-while-focused as an IME
+   * dismiss before JS ever sees it, but under this app's edge-to-edge IME
+   * handling that swallow and the JS event can both fire, so the global
+   * handler's navigation and the OS's own keyboard-dismiss raced: found on
+   * device (S22) as the chat screen's own scroll position and touch targets
+   * going stale directly under the composer after backing out of the
+   * keyboard while scrolled up in history — the Chats list underneath had
+   * begun re-mounting while ChatScreen was still on screen. `fieldFocusedRef`
+   * rather than the `composerFocused` store field: this must be read inside a
+   * `BackHandler` callback, not a render, and the store's own rule is that
+   * only leaf hook consumers subscribe to it.
+   */
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (!fieldFocusedRef.current) {
+        return false;
+      }
+      inputRef.current?.blur();
+      return true;
+    });
+    return () => sub.remove();
+  }, []);
 
   const record = useCallback(async () => {
     if (disabled || handle.current !== null) {
@@ -1767,18 +1804,28 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     paddingLeft: TOKENS.space.hair,
     paddingRight: TOKENS.space.hair,
     /*
-     * 44dp, not the 40 the children add up to, and this is a correctness fix
-     * rather than a taste one: at 40 the declared corner below was scaled to
-     * 22 x 40/44 = 20 by RN Android's corner-overlap clamp while the message
+     * CAPSULE_MIN_H, not the 40dp the children add up to, and this is a
+     * correctness fix rather than a taste one: at 40 the declared corner below
+     * was scaled down by RN Android's corner-overlap clamp while the message
      * bubbles painted a true 22, so the capsule and the bubble scrolling under
      * it traced different silhouettes. See CAPSULE_MIN_H for the rule and its
-     * source. `space.hair` (2) top and bottom is the mechanism — it takes the
-     * 40dp of children to the floor and keeps them optically centred under
-     * `alignItems: 'flex-end'` — and `minHeight` is the floor itself, stated so
-     * the requirement survives a change to the children.
+     * source (`TOKENS.interaction.minTarget`, the 48dp a11y minimum touch
+     * target — not 44, which this comment and `paddingVertical` both assumed
+     * until Amit found the send button sitting closer to the capsule's bottom
+     * edge than its top, 2026-09-18). `space.hair` (2dp) padding only ever
+     * matched a 44dp floor; against the real 48dp one it left 4dp of slack
+     * `alignItems: 'flex-end'` puts entirely above the (bottom-anchored)
+     * icons rather than splitting it, since a genuinely-idle capsule never
+     * grows past its own minHeight for the icons to be "anchored against".
+     * `space['2xs']` (4dp) each side makes the declared box exactly
+     * CAPSULE_MIN_H on its own — 4 + 40 + 4 = 48 — so there is no slack left
+     * for flex-end to place unevenly. `minHeight` stays as the floor so a
+     * real multi-line field can still grow past it, at which point flex-end
+     * correctly keeps every icon pinned to the last line, which is what it
+     * is for.
      */
     minHeight: CAPSULE_MIN_H,
-    paddingVertical: TOKENS.space.hair,
+    paddingVertical: TOKENS.space['2xs'],
     /*
      * `radius.bubble` (22dp) rather than `radius.pill` (999).
      *
