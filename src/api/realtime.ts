@@ -291,26 +291,51 @@ export function useLiveConversation(
 }
 
 /**
- * Marks the peer's messages read once they are on screen.
+ * Marks the peer's messages read once they are ON SCREEN, not the instant the
+ * cached page loads.
+ *
+ * Before M1 (2026-09-17 audit) `flush()` marked the WHOLE loaded page read on
+ * mount — opening a chat with 50 unread messages told the peer all 50 had been
+ * seen before a single one had scrolled into view. Telegram-parity read
+ * receipts mean this now only marks ids the caller reports as visible, via
+ * the returned `markVisible` — ChatScreen wires that to FlashList's
+ * `onViewableItemsChanged`.
  *
  * Batched into one `in` filter rather than a write per message, and it only ever
  * touches `read_at`, the RLS policy rejects marking your own message read, and
  * a trigger rejects any other column, so this is the whole of what a client may
  * write to `messages`.
  */
-export function useMarkRead(conversationId: string | undefined, selfId: string | undefined): void {
+export function useMarkRead(
+  conversationId: string | undefined,
+  selfId: string | undefined,
+): (visibleIds: readonly string[]) => void {
   const queryClient = useQueryClient();
   const inFlightRef = useRef<Set<string>>(new Set());
+  const visibleRef = useRef<Set<string>>(new Set());
+  const flushRef = useRef<() => void>(() => undefined);
+
+  useEffect(() => {
+    // A conversation switch starts the visibility/in-flight bookkeeping over —
+    // otherwise a message id that happens to collide across conversations
+    // (never, in practice, but nothing enforces it) could be treated as
+    // already-visible before it has ever been rendered.
+    inFlightRef.current = new Set();
+    visibleRef.current = new Set();
+  }, [conversationId]);
 
   useEffect(() => {
     if (conversationId === undefined || selfId === undefined) {
+      flushRef.current = () => undefined;
       return;
     }
     const key = messagesKey(conversationId);
 
     const flush = (): void => {
       const list = queryClient.getQueryData<TranscriptMessage[]>(key) ?? [];
-      const ids = unreadFromPeer(list, selfId).filter(id => !inFlightRef.current.has(id));
+      const ids = unreadFromPeer(list, selfId).filter(
+        id => visibleRef.current.has(id) && !inFlightRef.current.has(id),
+      );
       if (ids.length === 0) {
         return;
       }
@@ -334,8 +359,8 @@ export function useMarkRead(conversationId: string | undefined, selfId: string |
           }
         });
     };
+    flushRef.current = flush;
 
-    flush();
     const unsubscribe = queryClient.getQueryCache().subscribe(event => {
       if (event.query.queryHash === JSON.stringify(key)) {
         flush();
@@ -343,4 +368,20 @@ export function useMarkRead(conversationId: string | undefined, selfId: string |
     });
     return unsubscribe;
   }, [conversationId, selfId, queryClient]);
+
+  return useCallback((visibleIds: readonly string[]) => {
+    let grew = false;
+    for (const id of visibleIds) {
+      if (!visibleRef.current.has(id)) {
+        visibleRef.current.add(id);
+        grew = true;
+      }
+    }
+    // Only re-run the query when a genuinely NEW id became visible — FlashList
+    // reports the whole viewable set on every scroll tick, and re-flushing
+    // against an unchanged set would just re-filter to the same empty result.
+    if (grew) {
+      flushRef.current();
+    }
+  }, []);
 }

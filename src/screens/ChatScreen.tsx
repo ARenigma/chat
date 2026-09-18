@@ -4,12 +4,14 @@ import {
   type FlashListRef,
   type ListRenderItem,
   type ListRenderItemInfo,
+  type ViewToken,
 } from '@shopify/flash-list';
 import {
   useWindowDimensions,
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  type ViewabilityConfig,
   StyleSheet,
   Text,
   View,
@@ -40,7 +42,13 @@ import {
 } from '../lib/imeGeometry';
 import { readKeyboardHeight } from '../lib/keyboardPanel';
 import { initialOf } from '../lib/display';
-import { isPending, PENDING_PREFIX, sessionEndedLabel } from '../lib/transcript';
+import {
+  isPending,
+  PENDING_PREFIX,
+  sessionEndedLabel,
+  unreadFromPeer,
+  type TranscriptMessage,
+} from '../lib/transcript';
 import {
   canDeleteMessage,
   canEditMessage,
@@ -171,7 +179,22 @@ type SystemRow = {
   opensDay: boolean;
 };
 
-export type TranscriptRow = MessageRow | CallRow | SystemRow;
+/**
+ * "Unread messages" — spliced in once, above the oldest message that was
+ * unread from the peer when this screen opened (M1, 2026-09-17 audit,
+ * Amit's call: "Build it (viewport-based + divider)"). Not driven by
+ * `sortAt`/comparator ties: its position is set explicitly by splicing it
+ * into `rows` right after the anchor row, which stays correct regardless of
+ * how the sort implementation breaks ties on equal timestamps.
+ */
+type DividerRow = {
+  kind: 'divider';
+  localKey: 'unread-divider';
+  sortAt: string;
+  opensDay: false;
+};
+
+export type TranscriptRow = MessageRow | CallRow | SystemRow | DividerRow;
 
 /** A hold that was never taken, so the release is a no-op. */
 const NO_HOLD = (): void => undefined;
@@ -527,6 +550,42 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
    * been granted their one animation, consumed the first time each is seen.
    */
   const animatedMessageIds = useRef(new Set<string>());
+  /*
+   * The unread divider's anchor: the localKey of the OLDEST message from the
+   * peer that was unread the moment this screen opened, snapshotted once per
+   * conversation (M1, 2026-09-17 audit). Read receipts below are now
+   * viewport-gated — messages keep arriving at `read_at !== null` over the
+   * course of the session as they scroll into view — so recomputing this from
+   * live data would make the divider retreat and vanish as the member reads,
+   * which is the opposite of "persistent for the session" Amit asked for.
+   * `null` means computed and there was nothing unread; `undefined` means not
+   * computed yet for this conversation (still loading, or a fresh chat with
+   * no `conversationId`).
+   */
+  const [unreadAnchorId, setUnreadAnchorId] = useState<string | null>(null);
+  const unreadAnchorComputedForRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    // `selfId` (useSelfId, a separate query) is not guaranteed to resolve
+    // before `messages` does — locking the "computed" ref on a run where
+    // selfId was still undefined would permanently snapshot "nothing unread"
+    // for this conversation, since unreadFromPeer(list, undefined) is always
+    // []. Wait for both.
+    if (conversationId === undefined || messages === undefined || selfId === undefined) {
+      return;
+    }
+    if (unreadAnchorComputedForRef.current === conversationId) {
+      return;
+    }
+    unreadAnchorComputedForRef.current = conversationId;
+    const unread = new Set(unreadFromPeer(messages, selfId));
+    let oldest: TranscriptMessage | undefined;
+    for (const m of messages) {
+      if (unread.has(m.id) && (oldest === undefined || m.created_at < oldest.created_at)) {
+        oldest = m;
+      }
+    }
+    setUnreadAnchorId(oldest === undefined ? null : (oldest.localKey ?? oldest.id));
+  }, [conversationId, messages, selfId]);
   const { data: callRecords } = useCalls(conversationId);
   // `dataUpdatedAt` is the instant the server's snapshot was taken — the only
   // moment `seconds_remaining` was exactly right, and what it is aged from.
@@ -544,7 +603,21 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
 
   const { notifyTyping, notifyRecording, notifyRecordingEnded } =
     useLiveConversation(conversationId, selfId);
-  useMarkRead(conversationId, selfId);
+  const markVisible = useMarkRead(conversationId, selfId);
+  const onViewableItemsChanged = useCallback(
+    ({ viewableItems }: { viewableItems: ViewToken<TranscriptRow>[] }) => {
+      const ids: string[] = [];
+      for (const v of viewableItems) {
+        if (v.isViewable && v.item.kind === 'message' && !v.item.mine) {
+          ids.push(v.item.message.id);
+        }
+      }
+      if (ids.length > 0) {
+        markVisible(ids);
+      }
+    },
+    [markVisible],
+  );
   const send = useSendMessage(conversationId, selfId);
   /*
    * Replay anything the persisted outbox still holds for this thread — a send
@@ -1012,7 +1085,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
         : [];
 
     // Merge and sort newest-first (matches the inverted FlashList).
-    const sorted = [...messageRows, ...callRows, ...systemRows, ...alertRows].sort(
+    const sorted: TranscriptRow[] = [...messageRows, ...callRows, ...systemRows, ...alertRows].sort(
       (a, b) => new Date(b.sortAt).getTime() - new Date(a.sortAt).getTime(),
     );
 
@@ -1075,8 +1148,24 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
         newer.opensDay;
     }
 
+    // Splice the unread divider in by explicit index, after every pass above
+    // that assumes a message-only neighbour (opensDay, run-breaks) has run —
+    // it is not a message and should not participate in either.
+    if (unreadAnchorId !== null) {
+      const anchorIndex = sorted.findIndex(r => r.localKey === unreadAnchorId);
+      const anchor = anchorIndex === -1 ? undefined : sorted[anchorIndex];
+      if (anchor !== undefined) {
+        sorted.splice(anchorIndex + 1, 0, {
+          kind: 'divider' as const,
+          localKey: 'unread-divider',
+          sortAt: anchor.sortAt,
+          opensDay: false,
+        });
+      }
+    }
+
     return sorted;
-  }, [messages, selfId, callRecords, sessionEvents, notifiedAt, name]);
+  }, [messages, selfId, callRecords, sessionEvents, notifiedAt, name, unreadAnchorId]);
 
   /*
    * Scroll to bottom for MY OWN send; for anything else, only if already
@@ -1578,6 +1667,16 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
               call={item.call}
               onCallBack={onStartCall && allowed && !busy ? callBack : undefined}
             />
+          </View>
+        );
+      }
+
+      // The unread divider (M1): same muted centered pill as a system message,
+      // distinct copy, never opens a day of its own.
+      if (item.kind === 'divider') {
+        return (
+          <View style={styles.turn}>
+            <SystemMessageRow text="Unread messages" />
           </View>
         );
       }
@@ -2255,6 +2354,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
             header={header}
             footer={footer}
             onScroll={onTranscriptScroll}
+            onViewableItemsChanged={onViewableItemsChanged}
           />
         )}
 
@@ -2625,7 +2725,21 @@ interface TranscriptProps {
   header: () => React.ReactElement;
   footer: () => React.ReactElement;
   onScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  onViewableItemsChanged: (info: { viewableItems: ViewToken<TranscriptRow>[] }) => void;
 }
+
+/*
+ * "On screen" for read-receipt purposes (M1): 60% of the bubble's own area
+ * inside the viewport, not merely brushing an edge — the same bar FlatList's
+ * docs recommend for "the user actually saw this", and generous enough that a
+ * tall image/voice bubble that fills most of the screen still counts once its
+ * majority is visible, rather than needing to be scrolled fully past.
+ * Module-level and never recreated: FlashList's own docs say changing
+ * `viewabilityConfig` on the fly is not supported.
+ */
+const UNREAD_VIEWABILITY_CONFIG: ViewabilityConfig = {
+  itemVisiblePercentThreshold: 60,
+};
 
 const Transcript = memo(function TranscriptView({
   listRef,
@@ -2634,6 +2748,7 @@ const Transcript = memo(function TranscriptView({
   header,
   footer,
   onScroll,
+  onViewableItemsChanged,
 }: TranscriptProps) {
   const styles = useStyles(makeStyles);
   const listPad = useListPad();
@@ -2653,6 +2768,8 @@ const Transcript = memo(function TranscriptView({
       keyboardShouldPersistTaps="handled"
       onScroll={onScroll}
       scrollEventThrottle={16}
+      viewabilityConfig={UNREAD_VIEWABILITY_CONFIG}
+      onViewableItemsChanged={onViewableItemsChanged}
       // Two recycle pools: message bubbles and call-log rows have very
       // different heights and layouts. Keeping them separate prevents
       // FlashList from handing a recycled bubble cell to a call row (or

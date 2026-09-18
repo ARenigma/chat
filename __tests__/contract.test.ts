@@ -8517,3 +8517,71 @@ describe('a message send tells a server rejection from a dead network apart (H7)
     expect(fn).toContain("'Something went wrong on our side. Please try again.'");
   });
 });
+
+describe('read receipts are viewport-gated, with a persistent unread divider (M1)', () => {
+  // 2026-09-17 audit, Amit's call: "Build it (viewport-based + divider)".
+  // Before this, useMarkRead's flush() marked the WHOLE cached page read the
+  // instant a chat opened — every unread message told the peer it had been
+  // seen before a single bubble had scrolled into view.
+  const realtime = withoutComments(read('src/api/realtime.ts'));
+  const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+
+  it('useMarkRead only marks ids the caller reports visible, and returns that reporter', () => {
+    const fn = realtime.slice(
+      realtime.indexOf('export function useMarkRead'),
+    );
+    expect(fn).toContain('visibleRef.current.has(id)');
+    expect(fn).toContain('): (visibleIds: readonly string[]) => void {');
+    // The old unconditional flush() call right after `flushRef.current = flush;`
+    // is gone — flush only runs from a cache change or a reported-visible id.
+    expect(fn).not.toMatch(/flushRef\.current = flush;\s*\n\s*flush\(\);/);
+  });
+
+  it('a conversation switch resets the visibility and in-flight bookkeeping', () => {
+    expect(realtime).toMatch(
+      /useEffect\(\(\) => \{\s*inFlightRef\.current = new Set\(\);\s*visibleRef\.current = new Set\(\);\s*\}, \[conversationId\]\);/,
+    );
+  });
+
+  it('ChatScreen feeds FlashList viewability into useMarkRead, not the raw message list', () => {
+    expect(chat).toContain('const markVisible = useMarkRead(conversationId, selfId);');
+    const handler = chat.slice(
+      chat.indexOf('const onViewableItemsChanged = useCallback('),
+      chat.indexOf('const onViewableItemsChanged = useCallback(') + 500,
+    );
+    expect(handler).toContain("v.item.kind === 'message' && !v.item.mine");
+    expect(handler).toContain('markVisible(ids)');
+    expect(chat).toContain('viewabilityConfig={UNREAD_VIEWABILITY_CONFIG}');
+    expect(chat).toContain('onViewableItemsChanged={onViewableItemsChanged}');
+  });
+
+  it('the unread divider is snapshotted once per conversation, not recomputed as messages are read', () => {
+    const fn = chat.slice(
+      chat.indexOf('const unreadAnchorComputedForRef'),
+      chat.indexOf('const { data: callRecords } = useCalls(conversationId);'),
+    );
+    expect(fn).toContain('if (unreadAnchorComputedForRef.current === conversationId) {');
+    expect(fn).toContain('unreadFromPeer(messages, selfId)');
+    // Snapshotting the OLDEST unread message from the peer as the anchor —
+    // a later one would put the divider below messages that were unread too.
+    expect(fn).toMatch(/oldest === undefined \|\| m\.created_at < oldest\.created_at/);
+  });
+
+  it('the divider is spliced in by explicit index, not by a sort-comparator tie', () => {
+    const fn = chat.slice(
+      chat.indexOf('if (unreadAnchorId !== null) {'),
+      chat.indexOf('return sorted;'),
+    );
+    expect(fn).toContain("sorted.findIndex(r => r.localKey === unreadAnchorId)");
+    expect(fn).toContain('sorted.splice(anchorIndex + 1, 0,');
+    expect(fn).toContain("kind: 'divider' as const");
+  });
+
+  it("renderItem shows the divider as a system pill reading 'Unread messages'", () => {
+    const fn = chat.slice(
+      chat.indexOf("if (item.kind === 'divider') {"),
+      chat.indexOf("if (item.kind === 'divider') {") + 250,
+    );
+    expect(fn).toContain('<SystemMessageRow text="Unread messages" />');
+  });
+});
