@@ -161,10 +161,10 @@ describe('the server half', () => {
   });
 });
 
-describe('ported from Telegram: bounded ringing and a grace window', () => {
+describe('ported from the reference app: bounded ringing and a grace window', () => {
   /*
    * Both of these are places where our only bound was a pg_cron sweep, and
-   * Telegram bounds them on the client as well. Asserted structurally because
+   * the reference app bounds them on the client as well. Asserted structurally because
    * neither can be unit-tested without a device: the failure mode is a timer
    * that was never scheduled, which throws nothing.
    */
@@ -173,7 +173,7 @@ describe('ported from Telegram: bounded ringing and a grace window', () => {
 
   it('bounds an unanswered ring on both sides, in the client', () => {
     /*
-     * Telegram: callReceiveTimeout 20 s (caller) and callRingTimeout 90 s
+     * the reference app: callReceiveTimeout 20 s (caller) and callRingTimeout 90 s
      * (callee), MessagesController.java:1588-1589. We had NO client bound —
      * only meter_active_calls at 45 s on a one-minute pg_cron tick, so a call
      * could ring for 1 m 45 s.

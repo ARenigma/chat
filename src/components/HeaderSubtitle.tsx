@@ -35,7 +35,7 @@ function HeaderSubtitleView({ presence }: { presence: PresenceRead }) {
   // full stops, which avoids a ligature mismatch on fonts that collapse "..."
   // into a glyph taller than the cap-height.
   const label = activity === 'recording'
-    ? // Telegram says "Recording audio" rather than "typing" here, and the
+    ? // the reference app says "Recording audio" rather than "typing" here, and the
       // distinction is the point: this app has voice notes, and a peer holding
       // the mic is not typing (MessagesController.java:11210-11213).
       'recording…'

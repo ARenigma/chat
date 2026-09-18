@@ -57,7 +57,7 @@ import { TextField } from './TextField';
 const CAMERA_SLOT = 40;
 
 /**
- * How far Telegram insets its input island from each screen edge, in dp.
+ * How far the reference app insets its input island from each screen edge, in dp.
  *
  * `createFrame(MATCH_PARENT, WRAP_CONTENT, Gravity.LEFT | Gravity.BOTTOM,
  * 7, 0, 7, 0)` — ChatActivity.java:8078 — with no further margin on the
@@ -65,10 +65,10 @@ const CAMERA_SLOT = 40;
  * blurred background at :81 agreeing. See the note on `row.paddingHorizontal`
  * for why this is a named constant rather than the nearest space token.
  */
-export const TELEGRAM_ISLAND_INSET = 7;
+export const COMPOSER_ISLAND_INSET = 7;
 
 /**
- * The emoji button's square. Telegram's is 44 and sits outside the field; ours is
+ * The emoji button's square. the reference app's is 44 and sits outside the field; ours is
  * inside the capsule, so it matches the capsule's own height instead — a 44 here
  * would make the capsule taller than the 40 measured on device.
  *
@@ -93,7 +93,7 @@ const EMOJI_BUTTON = 40;
  * Input field height bounds (dp).
  *
  * MIN matches the previous `minHeight: 36` so the single-line capsule is unchanged.
- * MAX encodes 6 lines — `TEXT_HEIGHT_MAX = 6` in Telegram
+ * MAX encodes 6 lines — `TEXT_HEIGHT_MAX = 6` in the reference app
  * (ChatActivityEnterView.java:5778) — at lineHeight 20 plus paddingTop+Bottom 4+4:
  * 6×20 + 8 = 128dp, kept at the existing 132 cap for a hair of breathing room.
  *
@@ -146,7 +146,7 @@ export const CAPSULE_MIN_H = TOKENS.interaction.minTarget;
  * The line geometry MIN/MAX are built from, named so the growth handler can
  * quantise to whole lines instead of chasing a pixel measurement.
  *
- * 6 lines is Telegram's cap (ChatActivityEnterView.java:5778); 20 is the
+ * 6 lines is the reference app's cap (ChatActivityEnterView.java:5778); 20 is the
  * field's lineHeight and 8 its paddingTop + paddingBottom, which is exactly
  * how MAX_INPUT_H's 6x20 + 8 = 128 was derived above.
  */
@@ -155,7 +155,7 @@ export const INPUT_PAD_V = 8;
 export const MAX_INPUT_LINES = 6;
 
 /**
- * The Bézier curve Telegram uses for its bar-growth animator.
+ * The Bézier curve the reference app uses for its bar-growth animator.
  *
  * Source: ChatListItemAnimator.java:47
  *   `new CubicBezierInterpolator(0.199..., 0.011..., 0.279..., 0.910...)`
@@ -344,7 +344,7 @@ function ComposerView({
    * other person watching an indicator for something that stopped.
    *
    * Re-pinged on an interval because the receiver drops the indicator after a
-   * TTL, and a voice note outlasts it. Telegram does the same thing for the
+   * TTL, and a voice note outlasts it. the reference app does the same thing for the
    * same reason (MessagesController.java:11441).
    */
   useEffect(() => {
@@ -386,7 +386,7 @@ function ComposerView({
   const searchingRef = useRef(false);
   /**
    * The panel is mounted on FIRST open and then never unmounted, so the swap
-   * costs a visibility flip rather than a full rebuild — Telegram's
+   * costs a visibility flip rather than a full rebuild — the reference app's
    * `createEmojiView()` / `setVisibility` split. Latched here so a user who never
    * opens it never pays for the mount.
    */
@@ -460,9 +460,9 @@ function ComposerView({
    *
    * The one exception is the panel's own search field. It raises the same IME,
    * and closing the panel on it made emoji search unreachable: the panel vanished
-   * and the keystrokes landed in nothing (found on device, 2026-09-04). Telegram
+   * and the keystrokes landed in nothing (found on device, 2026-09-04). the reference app
    * treats searching as its own state rather than as "keyboard up" — see
-   * `design/references/telegram.md`.
+   * `design/references/chat-app-mechanics.md`.
    */
   useEffect(() => {
     const shown = Keyboard.addListener('keyboardDidShow', e => {
@@ -473,7 +473,7 @@ function ComposerView({
       if (!searchingRef.current) {
         /*
          * The keyboard is arriving, so it is the movement — the surface must go
-         * without a travel of its own or the two cross each other. Telegram's
+         * without a travel of its own or the two cross each other. the reference app's
          * hide path has the same `!keyboardVisible` guard as its show path
          * (`ChatActivityEnterView.java:12730`).
          */
@@ -554,7 +554,7 @@ function ComposerView({
    * `slotY` is how far the surface is pushed DOWN out of its place: its own
    * height while closed, zero while open. Driving translation rather than
    * height means the panel's content is laid out once and then moved, which is
-   * what Telegram does (`currentView.setTranslationY(...)` then animate to 0)
+   * what the reference app does (`currentView.setTranslationY(...)` then animate to 0)
    * and is why the swap costs no measure pass.
    *
    * `animateNext` is the `!keyboardVisible` guard: set false when the keyboard
@@ -569,7 +569,7 @@ function ComposerView({
    *
    * `onContentSizeChange` measures the content, clamps it to [MIN_INPUT_H,
    * MAX_INPUT_H], and drives this value over 250ms on the keyboard's Bézier
-   * (Telegram DEFAULT_INTERPOLATOR, ChatListItemAnimator.java:47) so the capsule
+   * (the reference app DEFAULT_INTERPOLATOR, ChatListItemAnimator.java:47) so the capsule
    * grows and shrinks with each added or removed line — no jump, no dip.
    *
    * Using a shared value rather than state so the animation starts on the UI
@@ -597,7 +597,7 @@ function ComposerView({
    *
    * They differ for exactly one interval: the close. A surface hidden the
    * instant its state flips has nothing left on screen to travel, so the slide
-   * out would never be seen. Telegram sets `GONE` in the animator's
+   * out would never be seen. the reference app sets `GONE` in the animator's
    * `onAnimationEnd` for the same reason (`ChatActivityEnterView.java:12736`);
    * this is that callback, as a timer over the same total the travel takes.
    */
@@ -675,7 +675,7 @@ function ComposerView({
    * The travel, keyed on WHETHER a surface is drawn — not on which one.
    *
    * `shown` flipping 'emoji' to 'attach' must not animate: the dock's height
-   * does not change, so there is nothing to travel. Telegram has the same guard
+   * does not change, so there is nothing to travel. the reference app has the same guard
    * from the other direction — `currentHeight - previousHeight` is zero when a
    * panel was already visible, so its animator moves nothing
    * (`ChatActivityEnterView.java:12700`).
@@ -737,7 +737,7 @@ function ComposerView({
   const cameraOpen = useSharedValue(ready ? 0 : 1);
   useEffect(() => {
     cameraOpen.value = withTiming(ready ? 0 : 1, {
-      // M3 short2 = 100ms. Telegram fades its attach icons in 100ms
+      // M3 short2 = 100ms. the reference app fades its attach icons in 100ms
       // (`ChatActivityEnterView.java:7947`). `duration.fast` (170ms) was
       // the mic↔send reveal timing — a different action on a different path.
       // Using the token via the M3 export from motion.ts, not a raw literal.
@@ -820,7 +820,7 @@ function ComposerView({
   /**
    * Swap the keyboard for the panel, or the panel back for the keyboard.
    *
-   * Telegram's `ChatActivityEnterView` does not "close the keyboard and open a
+   * the reference app's `ChatActivityEnterView` does not "close the keyboard and open a
    * sheet" — it shows a popup view whose height IS the remembered keyboard
    * height and hides the IME in the same beat, so the composer never moves and
    * the grid appears to be what the keyboard turned into. Mounting the panel
@@ -830,7 +830,7 @@ function ComposerView({
   /**
    * Leave the search state and hand the focus back to the message field.
    *
-   * Telegram does exactly this from two places — the emoji button
+   * the reference app does exactly this from two places — the emoji button
    * (`ChatActivityEnterView.java:2701-2707`) and a touch on the composer while
    * the panel is showing (`:5387-5391`): `setSearchingTypeInternal(0)`,
    * `emojiView.closeSearch(false)`, `messageEditText.requestFocus()`. The panel
@@ -926,7 +926,7 @@ function ComposerView({
 
   const onFieldFocus = useCallback(() => {
     // Touching the composer while the panel is searching leaves the search, the
-    // same way Telegram's `onTouchEvent` does (`:5386-5391`).
+    // same way the reference app's `onTouchEvent` does (`:5386-5391`).
     leaveSearch();
     fieldFocusedRef.current = true;
     onFocusChange?.(true);
@@ -1106,7 +1106,7 @@ function ComposerView({
    * readability checks — the division of labour the mic button has with
    * `onSendVoice`.
    *
-   * The panel closes once after the first successful send. Telegram dismisses
+   * The panel closes once after the first successful send. the reference app dismisses
    * its whole attach sheet on a successful send (`ChatAttachAlert.dismiss()`),
    * and leaving ours open puts a live viewfinder under the message that was
    * just sent — which reads as "it did not go". Only on the success path: a
@@ -1348,7 +1348,7 @@ function ComposerView({
     {/*
       * The whole dock travels, not just the panel.
       *
-      * Telegram offsets the panel by its own height and animates it back to zero
+      * the reference app offsets the panel by its own height and animates it back to zero
       * (`currentView.setTranslationY(currentHeight - previousHeight)` then
       * `ObjectAnimator ... TRANSLATION_Y ... 0`,
       * `ChatActivityEnterView.java:12700-12706`). Applying that to the panel
@@ -1385,10 +1385,10 @@ function ComposerView({
       <View style={styles.field}>
         {/* Emoji, on the capsule's LEADING edge (Amit, 2026-09-04: "EMOJI should
             be on left corner of pill"). It is the first control in the row in
-            Telegram too — `Gravity.BOTTOM | LEFT`, 44x44, leftMargin 2, padding
+            the reference app too — `Gravity.BOTTOM | LEFT`, 44x44, leftMargin 2, padding
             7.5 around a 32dp glyph (`ChatActivityEnterView.java:2684,:2721`).
 
-            Smile <-> keyboard, the way Telegram's does: while the panel is up the
+            Smile <-> keyboard, the way the reference app's does: while the panel is up the
             control's job is to bring the keyboard back, so it says so. */}
         <Pressable
           onPress={toggleEmoji}
@@ -1402,16 +1402,16 @@ function ComposerView({
           {/* `icon.lg` (24), the same as the camera and the mic across the
               capsule — one glyph size for all three controls, still true after
               this step change (Amit, 2026-09-18: "the emoji icon still looks
-              small... make it exactly like Telegram").
-              `ChatActivityEnterView.java:2670-2721`: Telegram's own emoji
+              small... make it exactly like the reference app").
+              `ChatActivityEnterView.java:2670-2721`: the reference app's own emoji
               button is a 44dp target (`DEFAULT_HEIGHT`) with 7.5dp padding on
               each side, so its DRAWN glyph is 44 - 2*7.5 = 29dp — not the
-              button size alone, which is all `design/references/telegram.md`
+              button size alone, which is all `design/references/chat-app-mechanics.md`
               had recorded before this pass. `icon.lg` at this app's own
               `ICON_SCALE` (1.2) inks 24*1.2 = 28.8dp, matching that almost
               exactly, without touching this app's own 40dp button/capsule
               geometry (a deliberately different, already-settled shape from
-              Telegram's flat bar).
+              the reference app's flat bar).
 
               History on why this was ever 20, not 24: this was `icon.lg` (24)
               with nothing recording why, and a 4dp mismatch against the OTHER
@@ -1468,7 +1468,7 @@ function ComposerView({
           * it via `flex: 1`. `onContentSizeChange` reports the natural content
           * height (all lines, regardless of the container) so it drives the
           * animation even while the field is constrained to a smaller size.
-          * Telegram: bar growth 250ms on DEFAULT_INTERPOLATOR
+          * the reference app: bar growth 250ms on DEFAULT_INTERPOLATOR
           * (ChatListItemAnimator.java:46-47; ChatActivity.java:7896-7940).
           */}
         <Animated.View style={[styles.inputWrapper, inputHStyle]}>
@@ -1524,7 +1524,7 @@ function ComposerView({
                * a 250ms animation toward a different target, and the restarts
                * are the dip.
                *
-               * Telegram sizes from the LINE COUNT, not the pixel height
+               * the reference app sizes from the LINE COUNT, not the pixel height
                * (ChatActivityEnterView.java:5778 caps it at 6). Rounding to a
                * line makes a transient measurement land on the same integer as
                * the settled one, so it produces no animation at all — the dip
@@ -1586,7 +1586,7 @@ function ComposerView({
             * one was narrower. They agree now.
             */}
           {/* `icon.lg` (24), matching the emoji and mic glyphs — see the emoji
-              button's own comment above for the Telegram measurement
+              button's own comment above for the the reference app measurement
               (`ChatActivityEnterView.java:2670-2721`: 44dp button minus 7.5dp
               padding each side = 29dp drawn glyph) this step matches. */}
           <Icon name="clip" size={TOKENS.icon.lg} color={theme.color.text.secondary} />
@@ -1616,7 +1616,7 @@ function ComposerView({
             size={40}
             style={styles.mic}>
             {/* `icon.lg` (24) — see the emoji button's own comment for the
-                Telegram measurement this matches. */}
+                the reference app measurement this matches. */}
             <Icon name="mic" size={TOKENS.icon.lg} color={theme.color.text.secondary} />
           </Pressable>
         </Animated.View>
@@ -1631,7 +1631,7 @@ function ComposerView({
 
       {/* The panel sits IN the dock, under the input row, occupying exactly what
           the IME occupied — so the composer stays where it was and the grid takes
-          the space the keyboard just vacated. Telegram's `emojiPadding`, which is
+          the space the keyboard just vacated. the reference app's `emojiPadding`, which is
           the whole reason its emoji panel reads as the keyboard changing rather
           than two surfaces trading places.
 
@@ -1646,7 +1646,7 @@ function ComposerView({
       {/*
         * One animated slot for both docked surfaces.
         *
-        * Telegram translates the panel by its own height and animates it to 0
+        * the reference app translates the panel by its own height and animates it to 0
         * over `keyboardDuration` (250ms) on the keyboard's cubic, starting the
         * animator 50ms late — and ONLY when the keyboard is not already visible
         * (`showPopup`, `ChatActivityEnterView.java:12687,:12710`). A swap made
@@ -1662,7 +1662,7 @@ function ComposerView({
          * ONE height, searching or not: the keyboard's.
          *
          * Search used to expand the panel to fill from under the header down to
-         * the composer - Telegram's `setStickersExpanded` - with a scrim over the
+         * the composer - the reference app's `setStickersExpanded` - with a scrim over the
          * conversation behind it. That is what Amit rejected (2026-09-05: "emoji
          * search taking full screen but should be like whatsapp docked right").
          *
@@ -1677,7 +1677,7 @@ function ComposerView({
          * DOCKED, never expanded. Capped by the space above the keyboard.
          *
          * Search used to EXPAND the panel to fill from under the header down to
-         * the composer - Telegram's `setStickersExpanded` - with a scrim over the
+         * the composer - the reference app's `setStickersExpanded` - with a scrim over the
          * conversation behind it. Amit rejected that (2026-09-05: "emoji search
          * taking full screen but should be like whatsapp docked right").
          *
@@ -1732,23 +1732,23 @@ export const Composer = memo(ComposerView);
 const makeStyles = (t: Theme) => StyleSheet.create({
   row: {
     /*
-     * Measured off Telegram on the SAME device rather than read off its source
+     * Measured off the reference app on the SAME device rather than read off its source
      * (S22 Ultra, 1080x2316, density 2.8125), because the source dp and what the
      * bar actually renders at have disagreed before.
      *
-     * With the IME up, Telegram's emoji button occupies [29,1232]-[153,1356] and
+     * With the IME up, the reference app's emoji button occupies [29,1232]-[153,1356] and
      * the IME frame starts at 1382 — so there are 26px, 9.2dp, between the bottom
      * of the composer's controls and the top of the keyboard. Idle, the same 26px
      * sits between the controls and the top of the navigation bar. Ours was 7px:
      * the pill was very nearly touching the keyboard (Amit, 2026-09-04: "distance
-     * between pill and IME edge should be exactly as telegram").
+     * between pill and IME edge should be exactly as the reference app").
      *
      * `xs` (8dp) plus the button's own 1dp of optical inset lands on the measured
-     * 9.2dp; the horizontal inset of 8dp already matched Telegram's 10.3dp
+     * 9.2dp; the horizontal inset of 8dp already matched the reference app's 10.3dp
      * closely enough that changing it would move the pill for no visible gain.
      */
     /*
-     * TELEGRAM'S OWN 7dp, read from source rather than approximated.
+     * THE REFERENCE 7dp, read from source rather than approximated.
      *
      * `chatInputBubbleContainer.addView(chatActivityEnterView,
      * LayoutHelper.createFrame(MATCH_PARENT, WRAP_CONTENT,
@@ -1757,22 +1757,22 @@ const makeStyles = (t: Theme) => StyleSheet.create({
      * (`createFrame(MATCH_PARENT, WRAP_CONTENT, Gravity.BOTTOM)`,
      * ChatInputViewsContainer.java:42-43). `blurredBackgroundDrawable
      * .setPadding(dp(7))` at :81 corroborates it. Clone at
-     * ~/references/telegram; measured facts only (ADR-0025).
+     * the local reference checkout; measured facts only (ADR-0025).
      *
      * WAS `space.md` (16), chosen so the capsule's outer edges lined up with the
      * message bubbles' edges — both reading `list.paddingHorizontal`. That was a
      * real property and it is knowingly given up here: Amit asked for the input
-     * box's width to match Telegram exactly (2026-09-12), and Telegram's input
+     * box's width to match the reference app exactly (2026-09-12), and the reference app's input
      * island is deliberately WIDER than its bubbles. Two references in one
      * control is the thing to avoid, so the corner (radius.composer, now 22)
-     * and the inset (7) both come from Telegram now.
+     * and the inset (7) both come from the reference app now.
      *
      * 7 is not on the space scale and must not be rounded onto it — 8 would be
      * "close enough" in exactly the way this file has been burned by before. It
      * is a measured source value, which this repo keeps as a named constant
      * (the `SOURCE_METRICS` / `RIPPLE` precedent).
      */
-    paddingHorizontal: TELEGRAM_ISLAND_INSET,
+    paddingHorizontal: COMPOSER_ISLAND_INSET,
     paddingTop: TOKENS.space['2xs'],
     paddingBottom: TOKENS.space.xs,
     backgroundColor: 'transparent',
@@ -1788,7 +1788,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
    * the reply strip above them. Seen on the S22 2026-09-05, and it is the same
    * defect in both places.
    *
-   * Telegram puts the emoji, the field, the attach clip and the mic INSIDE a
+   * the reference app puts the emoji, the field, the attach clip and the mic INSIDE a
    * single translucent pill - captured from the reference on this device: there
    * is no icon outside it, which is exactly why nothing can ever collide. The
    * pill occludes. Moving our surface up one level reproduces that, and it also
@@ -1864,14 +1864,14 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   /*
    * The emoji button on the capsule's LEADING edge.
    *
-   * Telegram's is the first control in the composer, `Gravity.BOTTOM | LEFT`,
+   * the reference app's is the first control in the composer, `Gravity.BOTTOM | LEFT`,
    * a 44dp square with 7.5dp padding around a ~32dp glyph
    * (`ChatActivityEnterView.java:2684,:2721`). Ours is inside the capsule rather
    * than beside it, so it takes the capsule's height instead of 44 — but the
-   * side, the bottom gravity and the circular press disc are Telegram's.
+   * side, the bottom gravity and the circular press disc are the reference app's.
    *
    * `alignSelf: flex-end` so a field grown to several lines keeps the glyph on
-   * the last line, as Telegram's bottom gravity does, instead of floating it to
+   * the last line, as the reference app's bottom gravity does, instead of floating it to
    * the vertical middle of a tall capsule.
    */
   emoji: {
@@ -1974,7 +1974,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
      * `minHeight` and `maxHeight` are removed — the wrapper is the height-owning
      * element now. MIN_INPUT_H and MAX_INPUT_H are enforced in `onContentSizeChange`.
      *
-     * Telegram source: 16sp text, includeFontPadding false, bottom gravity, max
+     * the reference app source: 16sp text, includeFontPadding false, bottom gravity, max
      * 6 lines — ChatActivityEnterView.java:5779,5781,5778,5750.
      * Measured on S22 Ultra: single-line field 40dp (density 2.8125×).
      */

@@ -16,13 +16,14 @@ import {
   Text,
   View,
 } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, {
+  useAnimatedStyle,
+  type SharedValue,
+} from 'react-native-reanimated';
 import {
   barIn,
   barOut,
   holdScreenEnter,
-  KEYBOARD_CUBIC,
-  M3,
   onTransitionSettled,
   pageDownIn,
   pageDownOut,
@@ -35,15 +36,17 @@ import { useStyles, useTheme } from '../theme/ThemeProvider';
 import {
   ImeGeometryProvider,
   useBarHeight,
-  useBodyInset,
   useChatImeStore,
   useComposerFocused,
   useComposerInset,
   useDockHeight,
   useImeStore,
-  useListPad,
 } from '../lib/imeGeometry';
 import { readKeyboardHeight } from '../lib/keyboardPanel';
+import {
+  useKeyboardEngine,
+  type KeyboardSettled,
+} from '../lib/keyboardEngine';
 import { initialOf } from '../lib/display';
 import {
   isPending,
@@ -121,7 +124,7 @@ import { Badge } from '../components/Badge';
 import { ChatWallpaper } from '../components/ChatWallpaper';
 import { FirstMovePills } from '../components/FirstMovePills';
 import { LoadingIndicator } from '../components/LoadingIndicator';
-import { Composer, TELEGRAM_ISLAND_INSET } from '../components/Composer';
+import { Composer, COMPOSER_ISLAND_INSET } from '../components/Composer';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { DayDivider } from '../components/DayDivider';
 import { Frost } from '../components/Frost';
@@ -447,6 +450,37 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
     (v: boolean) => ime.getState().set({ emojiSearching: v }),
     [ime],
   );
+  /*
+   * The controller's settled numbers mirror into the same store the `Keyboard`
+   * listeners feed (see useChatImeStore): show sets height + up, hide keeps the
+   * last height sticky and only clears the flag. Both sources converge through
+   * `set`'s equality guard, so this changes no behaviour today — it makes the
+   * controller the source of truth for the per-frame values the next slice
+   * (dock/list UI-thread translation) will consume from the engine directly.
+   */
+  const onKeyboardSettled = useCallback(
+    ({ height: h, shown }: KeyboardSettled) =>
+      ime.getState().set(
+        shown ? { keyboardHeight: h, keyboardUp: true } : { keyboardUp: false },
+      ),
+    [ime],
+  );
+  const keyboard = useKeyboardEngine(onKeyboardSettled);
+  /*
+   * The whole transcript rides the IME's live position — a transform on a
+   * wrapper, never a layout change. At rest this equals the old
+   * `md + dockHeight + bodyInset` pad exactly; in transit it tracks the
+   * keyboard frame by frame on the UI thread, so there is no snap and no
+   * FlashList scroll recomputation. the reference app's equivalent is the
+   * TRANSLATION_Y animation on the same curve
+   * (ChatActivityEnterView.java, `currentView.setTranslationY(...)`).
+   * The wrapper is a plain Animated.View — NOT
+   * Animated.createAnimatedComponent(FlashList), which loses scrollToOffset
+   * (M18). The dock takes the same lift through DockStack below.
+   */
+  const listLift = useAnimatedStyle(() => ({
+    transform: [{ translateY: -keyboard.height.value }],
+  }));
 
   useProfile();
   const { data: selfId } = useSelfId();
@@ -506,7 +540,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   /*
    * Hold the push animation until this screen has its transcript.
    *
-   * Telegram's rule, and the reason it feels smoother at the same refresh rate:
+   * the reference app's rule, and the reason it feels smoother at the same refresh rate:
    * a screen is animated in when it has DATA, not when it has geometry. See
    * `holdScreenEnter` for the citations and the measured gap.
    *
@@ -1205,11 +1239,11 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   /*
    * Scroll to bottom for MY OWN send; for anything else, only if already
    * near the bottom — otherwise count it and let the page-down button say
-   * so (2026-09-17 audit, Amit's call on the Telegram-parity sweep).
+   * so (2026-09-17 audit, Amit's call on the reference-parity sweep).
    *
    * This replaces the previous rule (force offset 0 on ANY new row,
    * including while scrolled up reading history), which items 5/12 in the
-   * product spec were read as requiring. Telegram's own rule is narrower —
+   * product spec were read as requiring. the reference app's own rule is narrower —
    * `if (obj.isOut() && obj.wasJustSent) { scrollToLastMessage(true, false);
    * return; }`, ChatActivity.java — and increments a page-down badge for
    * everything else. `rows[0].mine` (message rows only; a call record or
@@ -1920,7 +1954,6 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
     () => (
       <>
         <PeerTyping name={name} />
-        <AnimatedBodyInset />
       </>
     ),
     [name],
@@ -2333,6 +2366,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
             don't compete with SlideInRight for frame budget. The transcript
             sits above it, so the 1-frame delay is invisible. */}
         {wallpaperReady ? <ChatWallpaper /> : null}
+        {/* The transcript rides the IME (listLift): wrapper translate, not layout. */}
+        <Animated.View style={[styles.transcriptWrap, listLift]}>
         {loading ? (
           <View style={styles.loading}>
             <LoadingIndicator size={48} />
@@ -2397,17 +2432,19 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
             onViewableItemsChanged={onViewableItemsChanged}
           />
         )}
+        </Animated.View>
 
         <PageDownButton
           visible={scrolledAwayFromLatest}
           count={unreadBelow}
           onPress={scrollToLatest}
+          lift={keyboard.height}
         />
 
         {/*
          * The search scrim is GONE, with the expansion it existed for.
          *
-         * Telegram's `ScrimDrawable` (black at alpha 102 of 255, ramped with
+         * the reference app's `ScrimDrawable` (black at alpha 102 of 255, ramped with
          * `setStickersExpanded`, ChatActivityEnterView.java:13891-13906) made the
          * expansion read as a panel OVER the chat rather than the chat leaving.
          * The panel is now a docked tray capped at the keyboard's height (Amit,
@@ -2425,7 +2462,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
          * visibly disappeared (Amit, 2026-09-04: "Emoji Searching is taking whole
          * screen space").
          *
-         * Telegram's panel does occupy the same area, but it OVERLAYS: the
+         * the reference app's panel does occupy the same area, but it OVERLAYS: the
          * composer and the panel are translated up together and a 40% scrim is
          * drawn over the chat behind them (`ChatActivityEnterView.java:13706-13716`
          * for the translation, `ScrimDrawable:13905` for `alpha = 102`). The chat
@@ -2439,7 +2476,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
          * deliberately NOT grown by the search expansion — that is what the
          * scrim is for.
          */}
-        <DockStack>
+        <DockStack lift={keyboard.height}>
         <NoticeBar />
 
         {/* Blush strip sits above the white composer dock so the pills match
@@ -2460,7 +2497,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
             chrome lives in the same surface so the transcript scrolls under
             one bar. */}
         {/* The dock is a frosted glass bar, not a white plate: the transcript
-            blurs behind it exactly as Telegram's fixed bottom bar does. `Frost`
+            blurs behind it exactly as the reference app's fixed bottom bar does. `Frost`
             owns the real RenderEffect backdrop blur (the same slot the nav bar and
             header use); the reply chrome and composer render above it in flow, so
             message text over the blur stays fully legible. */}
@@ -2791,13 +2828,12 @@ const Transcript = memo(function TranscriptView({
   onViewableItemsChanged,
 }: TranscriptProps) {
   const styles = useStyles(makeStyles);
-  // The STRUCTURAL part of the pad only — space.md plus the dock's own
-  // measured height, neither of which jumps discretely. The keyboard-lift
-  // portion (`bodyInset`) is `AnimatedBodyInset`, a real child in `header`
-  // (the visual-bottom slot on this inverted list) rather than a value here,
-  // because it DOES change discretely and `contentContainerStyle` cannot be
-  // animated without wrapping FlashList in `Animated.createAnimatedComponent`
-  // — which breaks `scrollToOffset`'s imperative ref (M18, audit todo).
+  // The STRUCTURAL pad only — space.md plus the dock's own measured height.
+  // The keyboard lift is NOT a pad anymore: the whole transcript rides the
+  // IME on a translated wrapper (listLift in this screen's body), so the
+  // container never relayouts and FlashList never recomputes scroll offset.
+  // (The old AnimatedBodyInset animated `height` — a Yoga layout prop, every
+  // frame — and the discrete bodyInset snapped it. Both are gone.)
   const dockHeight = useDockHeight();
   const basePad = TOKENS.space.md + dockHeight;
   return (
@@ -2829,11 +2865,16 @@ const Transcript = memo(function TranscriptView({
   );
 });
 
-/** The dock, lifted clear of the IME. */
-function DockStack({ children }: { children: React.ReactNode }) {
+/** The dock, riding the IME's live position on the UI thread. */
+function DockStack({
+  children,
+  lift,
+}: {
+  children: React.ReactNode;
+  lift: SharedValue<number>;
+}) {
   const styles = useStyles(makeStyles);
   const ime = useImeStore();
-  const bodyInset = useBodyInset();
   // Reads `emojiSearching` from the store rather than from a captured render
   // value, so the guard cannot go stale inside a closure.
   const onLayout = useCallback(
@@ -2845,12 +2886,18 @@ function DockStack({ children }: { children: React.ReactNode }) {
     },
     [ime],
   );
+  // Transform, not padding: the dock is absolute-positioned (out of flow), so
+  // translating it never re-lays-out the transcript. The value is the keyboard
+  // controller's live height — at rest identical to the old discrete bodyInset,
+  // in transit a per-frame ride. the reference app moves the same stack with
+  // TRANSLATION_Y on the keyboard curve (ChatActivityEnterView.java).
+  const dockLift = useAnimatedStyle(() => ({
+    transform: [{ translateY: -lift.value }],
+  }));
   return (
-    <View
-      style={[styles.dockStack, { transform: [{ translateY: -bodyInset }] }]}
-      onLayout={onLayout}>
+    <Animated.View style={[styles.dockStack, dockLift]} onLayout={onLayout}>
       {children}
-    </View>
+    </Animated.View>
   );
 }
 
@@ -2878,40 +2925,8 @@ function BarSpacer() {
 }
 
 /**
- * The keyboard-lift portion of the transcript's bottom padding, animated —
- * unlike `Transcript`'s own static pad (`TOKENS.space.md + dockHeight`),
- * which `contentContainerStyle` still carries as a plain style object
- * (`FlashList` cannot be `Animated.createAnimatedComponent`-wrapped without
- * losing `scrollToOffset`'s imperative ref, per M18 in the audit).
- *
- * `bodyInset` toggling `keyboardUp ? imeSpace : 0` is correct arithmetic (see
- * `imeGeometry.ts`), but applying it as a discrete, unanimated number produces
- * exactly the artefact it was fixed to remove: FlashList recalculates its
- * scroll position in the same frame the value changes, which reads as the
- * transcript reflowing — a day divider popping in or out — right as the
- * keyboard finishes rising back from the emoji panel (Amit, 2026-09-18: "the
- * whole viewport jerks and reloads"). Telegram's own transition is frame-synced
- * to the IME's native animation; the closest equivalent available here is to
- * animate the JS-side number itself over the same 250ms keyboard cubic already
- * used for the composer's own multi-line growth, so the pad grows/shrinks
- * alongside the keyboard/panel swap instead of snapping.
- */
-function AnimatedBodyInset() {
-  const bodyInset = useBodyInset();
-  const height = useSharedValue(bodyInset);
-  useEffect(() => {
-    height.value = withTiming(bodyInset, {
-      duration: M3.duration.medium1,
-      easing: KEYBOARD_CUBIC,
-    });
-  }, [bodyInset, height]);
-  const style = useAnimatedStyle(() => ({ height: height.value }));
-  return <Animated.View style={style} />;
-}
-
-/**
- * The page-down button (2026-09-17 audit, Amit's call on the Telegram-parity
- * sweep: "Match Telegram" — see the force-scroll effect's own docblock for
+ * The page-down button (2026-09-17 audit, Amit's call on the reference-parity
+ * sweep: "Match the reference app" — see the force-scroll effect's own docblock for
  * the rule this button is the other half of).
  *
  * `useListPad()`, not `useComposerInset()`: the button floats just clear of
@@ -2928,14 +2943,23 @@ function PageDownButton({
   visible,
   count,
   onPress,
+  lift,
 }: {
   visible: boolean;
   count: number;
   onPress: () => void;
+  lift: SharedValue<number>;
 }) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
-  const listPad = useListPad();
+  // Static structural offset only (gutter + dock); the keyboard ride is the
+  // same shared-value translation as the transcript and dock, so the button
+  // stays glued to the newest message through the travel instead of snapping
+  // at the end of it.
+  const dockHeight = useDockHeight();
+  const buttonLift = useAnimatedStyle(() => ({
+    transform: [{ translateY: -lift.value }],
+  }));
   if (!visible) {
     return null;
   }
@@ -2943,7 +2967,11 @@ function PageDownButton({
     <Animated.View
       entering={pageDownIn}
       exiting={pageDownOut}
-      style={[styles.pageDown, { bottom: listPad + TOKENS.space.sm }]}
+      style={[
+        styles.pageDown,
+        { bottom: TOKENS.space.md + dockHeight + TOKENS.space.sm },
+        buttonLift,
+      ]}
       pointerEvents="box-none">
       <Pressable
         onPress={onPress}
@@ -2969,6 +2997,11 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: t.color.bg.base,
+  },
+  // The translated transcript wrapper: flex so the list keeps its size while
+  // the wrapper itself only ever carries a transform, never layout.
+  transcriptWrap: {
+    flex: 1,
   },
   // The frosted top overlay: header + talk strip, lifted above the transcript.
   // zIndex (not elevation) so it paints over the list without an Android drop
@@ -3117,7 +3150,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   /*
    * Anchored to the bottom of the body and drawn over the transcript. `bottom: 0`
    * with no height, so it is exactly as tall as its content; the keyboard lift is
-   * a translation rather than a layout change, which is how Telegram moves the
+   * a translation rather than a layout change, which is how the reference app moves the
    * same stack (`setTranslationY` on the enter view and the emoji view together).
    */
   dockStack: {
@@ -3198,7 +3231,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
    * ran through a coral bubble and the dismiss cross landed on top of it, both
    * illegible (2026-09-05).
    *
-   * Telegram's reply chrome sits INSIDE the composer's own translucent surface,
+   * the reference app's reply chrome sits INSIDE the composer's own translucent surface,
    * above the field. Ours is a sibling of the capsule rather than a child, so it
    * takes the same capsule treatment: same fill, same hairline, same radius. It
    * occludes what is behind it, which is the whole job.
@@ -3223,20 +3256,20 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     alignItems: 'center',
     gap: TOKENS.space.xs,
     /*
-     * FOLLOWS THE CAPSULE, not the transcript — `TELEGRAM_ISLAND_INSET` (7).
+     * FOLLOWS THE CAPSULE, not the transcript — `COMPOSER_ISLAND_INSET` (7).
      *
      * This used to be `space.md` (16) to match both `list.paddingHorizontal`
      * and Composer's `row.paddingHorizontal`, because it had once been `xs` (8)
      * and the dock showed TWO gutters at once — the strip 8dp from the edge and
      * the capsule directly under it 16dp.
      *
-     * The capsule moved to Telegram's 7dp island inset on 2026-09-12, so
+     * The capsule moved to the reference app's 7dp island inset on 2026-09-12, so
      * holding this at 16 would recreate that exact defect with the numbers
      * swapped. The strip and the capsule are one floating island and share one
      * inset; the transcript keeps its own 16dp content grid, which is what
-     * Telegram does too (its input island is wider than its bubbles).
+     * the reference app does too (its input island is wider than its bubbles).
      */
-    marginHorizontal: TELEGRAM_ISLAND_INSET,
+    marginHorizontal: COMPOSER_ISLAND_INSET,
     marginBottom: TOKENS.space['2xs'],
     paddingVertical: TOKENS.space.xs,
     paddingHorizontal: TOKENS.space.sm,

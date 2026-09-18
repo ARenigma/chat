@@ -75,7 +75,7 @@ const EMPH_DECEL = Easing.bezier(
   M3.easing.emphasizedDecelerate[3],
 );
 /**
- * Telegram's push/pop curve — Android `DecelerateInterpolator(1.5f)`, a cubic
+ * the reference app's push/pop curve — Android `DecelerateInterpolator(1.5f)`, a cubic
  * ease-out — for the 150ms screen fade only. See the token note for why
  * M3's emphasized-decelerate cannot carry a fade that short.
  */
@@ -86,7 +86,7 @@ const SCREEN_DECEL = Easing.bezier(
   M3.easing.decelerate[3],
 );
 /**
- * Telegram's EASE_OUT_QUINT (0.23,1,0.32,1) — the curve it reveals the send
+ * the reference app's EASE_OUT_QUINT (0.23,1,0.32,1) — the curve it reveals the send
  * button on (`ChatActivityEnterView.java:8217`). A hard, early ease-out that
  * makes a scale-from-nothing feel like it snaps into being rather than grows.
  */
@@ -150,7 +150,7 @@ export const EASE_CONSTANT = Easing.linear;
  * The keyboard's own curve, for a panel that stands in for the keyboard.
  *
  * `CubicBezierInterpolator(0.19919472913616398, 0.010644531250000006,
- * 0.27920937042459737, 0.91025390625)` — Telegram's
+ * 0.27920937042459737, 0.91025390625)` — the reference app's
  * `ChatListItemAnimator.DEFAULT_INTERPOLATOR` (`:47`), which is what it runs
  * every IME-adjacent translation on for `AdjustPanLayoutHelper.keyboardDuration`
  * = 250ms (`AdjustPanLayoutHelper.java:41-42`). A docked emoji or attach panel
@@ -164,19 +164,19 @@ export const KEYBOARD_CUBIC = Easing.bezier(
   M3.easing.keyboard[3],
 );
 
-/** Telegram's deferred animator start, in ms (`ChatActivityEnterView.java:12710`). */
+/** the reference app's deferred animator start, in ms (`ChatActivityEnterView.java:12710`). */
 export const DOCK_DELAY_MS = 50;
 
 /**
  * Slide a docked surface to `to` on the keyboard's curve.
  *
- * Telegram animates only when the keyboard is NOT already visible
+ * the reference app animates only when the keyboard is NOT already visible
  * (`showPopup`: `smoothKeyboard && !keyboardVisible && ...`,
  * `ChatActivityEnterView.java:12687`) — a swap made with the keyboard up is not
  * animated at all, because the keyboard sliding away IS the animation and a
  * second one on top of it reads as a stutter. `animate: false` is that case.
  *
- * The 50ms delay is Telegram's too
+ * The 50ms delay is the reference app's too
  * (`AndroidUtilities.runOnUIThread(runEmojiPanelAnimation, 50)`, `:12710`): the
  * panel's first layout and its first animated frame in the same frame is what
  * produces the artefact frame, so the travel starts one beat after the content
@@ -207,7 +207,7 @@ export function dockTo(to: number, animate: boolean) {
  * The rule that governs the curve: a spring where a finger's velocity is being
  * continued; a timed curve where it is not. A tap has no accumulated velocity
  * so the ramp is `EASE_OUT`, not a spring. The short duration (100ms) keeps
- * feedback attached to the finger — Telegram's emoji cell presses to 0.8 in
+ * feedback attached to the finger — the reference app's emoji cell presses to 0.8 in
  * ~80ms (`EmojiView.java`). `ReduceMotion.System` collapses the scale to
  * nothing under the OS "remove animations" setting; the element still responds
  * (the state change fires), it just does not move.
@@ -259,7 +259,7 @@ export function onTransitionSettled(cb: SettledCallback): () => void {
  * ------------------------------------------------------------------------- */
 
 /**
- * Telegram's safety net, in ms. If the arriving screen never reports itself
+ * the reference app's safety net, in ms. If the arriving screen never reports itself
  * ready, the animation runs anyway at this deadline.
  *
  * `ActionBarLayout.java:2270-2282` posts its delayed-open runnable with a 200ms
@@ -276,7 +276,7 @@ const _readyCallbacks = new Set<SettledCallback>();
  * Declare that the screen now mounting is not ready to be animated in yet.
  *
  * The gap it is aimed at, measured on the S22 at 60Hz: a push/pop landed 65% of
- * its frames inside a 16.68ms budget with a 15.40ms median, against Telegram's
+ * its frames inside a 16.68ms budget with a 15.40ms median, against the reference app's
  * 97.5% and 7.55ms — while plain scrolling matched them almost exactly. The
  * animation runs while the screen is still becoming itself: hooks firing,
  * queries resolving, a list computing its first layout.
@@ -300,7 +300,7 @@ const _readyCallbacks = new Set<SettledCallback>();
  * the panel genuinely at 120Hz, where the budget halves to 8.3ms and mount
  * contention weighs twice as heavily against it.
  *
- * Telegram does not start on geometry, it starts on DATA.
+ * the reference app does not start on geometry, it starts on DATA.
  * `ChatActivity.needDelayOpenAnimation()` (ChatActivity.java:27014) returns
  * `firstLoading`, and the animation is held with the incoming view at alpha 0
  * and translateX 48dp until the first message batch has rendered, at which
@@ -548,13 +548,13 @@ export const fadeSwapOut = FadeOut.duration(DURATION.base * 0.75)
  * Opening and closing search: a CROSSFADE in place, both directions, 350ms on
  * EASE_OUT_QUINT.
  *
- * Telegram's, read from source. Nothing slides and nothing moves: the search
+ * the reference app's, read from source. Nothing slides and nothing moves: the search
  * field arrives in the row the icons were in, which is why it reads as the same
  * bar changing its mind rather than a new screen.
  *
  * CORRECTED 2026-09-07, and the correction is the whole reason this docblock is
  * long. The 150ms these two used to run was read from
- * `ActionBar/ActionBarMenuItem.java` — Telegram's LEGACY action-bar search,
+ * `ActionBar/ActionBarMenuItem.java` — the reference app's LEGACY action-bar search,
  * which the dialogs list has not used for several versions (a 36dp bare
  * `EditTextBoldCursor` with `setBackgroundResource(0)`, no pill), and the two
  * `setDuration(150)` calls in it are at `:1019` and `:973`, not the `:1013` /
@@ -626,7 +626,7 @@ const SEARCH_RESULTS_AWAY = 1.05;
  * flag off, the reference drops the scale animators entirely, sets both pagers
  * to 1 and animates ALPHA ONLY. That is the same split `contentArrive` /
  * `contentLeave` make below — opacity `ReduceMotion.Never`, scale
- * `ReduceMotion.System` — arrived at from the other end: Telegram drops the 5%
+ * `ReduceMotion.System` — arrived at from the other end: the reference app drops the 5%
  * for a slow phone, we drop it for someone who asked the OS for less motion, and
  * in both cases the fade is the part that carries the meaning.
  */
@@ -677,8 +677,8 @@ function contentArrive(away: number, duration: number, delay: number) {
           withTiming(1, {
             duration,
             easing: EASE_OUT,
-            reduceMotion: ReduceMotion.Never,
-          }),
+      reduceMotion: ReduceMotion.Never,
+    }),
         ),
         transform: [
           {
@@ -794,17 +794,17 @@ export const barOut = FadeOutUp.duration(DURATION.fast)
  * `barIn`/`barOut`'s mirror image, for a control docked at the BOTTOM instead
  * — the chat transcript's page-down button (2026-09-17 audit).
  *
- * Telegram's own button matches this shape from source: alpha 0→1 and
+ * the reference app's own button matches this shape from source: alpha 0→1 and
  * `translationY = dp(80) * (1 - visibility)`, so it rises into place from
  * below rather than fading in place
  * (`ChatActivitySideControlsButtonsLayout.java:169-176`,
  * `checkButtonsPositionsAndVisibility`). `FadeInUp`/`FadeOutDown` is that
- * same up-to-dock / down-to-leave direction. Telegram drives both halves
+ * same up-to-dock / down-to-leave direction. the reference app drives both halves
  * through one symmetric 280ms `DECELERATE_INTERPOLATOR`; kept `base`-in/
  * `fast`-out instead, the same departure `barIn`/`barOut` already state for
  * the top-docked bar — arriving is an announcement, leaving should get out
  * of the way, and that asymmetry is this app's own house style, not
- * Telegram's.
+ * the reference app's.
  */
 export const pageDownIn = FadeInUp.duration(DURATION.base)
   .easing(EASE_OUT)
@@ -1063,7 +1063,7 @@ function stagger(base: number, index: number, cap: number): number {
  * one builder serves both — a push enters from the right, a back enters from the
  * left.
  *
- * The geometry is Telegram's, measured from `ActionBarLayout.java` (see the
+ * The geometry is the reference app's, measured from `ActionBarLayout.java` (see the
  * `distance.push` and `duration.short3` token notes): 48dp of travel under a
  * 150ms alpha ramp on a decelerate curve, push and pop symmetric. The first cut
  * used M3's medium2 (300ms) and 24dp and read as slow and wobbly on a device;
@@ -1080,7 +1080,7 @@ function stagger(base: number, index: number, cap: number): number {
  * A two-thing cross-fade toggle, for a slot that swaps one control for another
  * (the composer's send ⇆ mic).
  *
- * Telegram reveals its send button by scaling it from 0.1 and fading it in over
+ * the reference app reveals its send button by scaling it from 0.1 and fading it in over
  * ~220ms on EASE_OUT_QUINT while the mic scales away (`ChatActivityEnterView.java:
  * 8217, 10302-10319`); the reverse is quicker (~150ms). The two returned styles
  * are opposite phases of one shared value, so exactly one control is ever
@@ -1133,7 +1133,7 @@ export function useScreenEnter(): {
    * So the view mounts at opacity 0 / offset 48 (the style's initial values are
    * read from shared values, which IS applied before the first paint) and the
    * ramp starts from `onLayout`, which fires once the screen has real geometry
-   * — content first, then the animation, which is exactly Telegram's
+   * — content first, then the animation, which is exactly the reference app's
    * `needDelayOpenAnimation` (ActionBarLayout.java:2280). `onLayout` can fire
    * more than once; the ramp is started once.
    *
@@ -1156,11 +1156,11 @@ export function useScreenEnter(): {
      * the animation's opening frames were competing with the mount itself:
      * hooks firing, queries subscribing, FlashList computing its first layout.
      * Measured on the S22 at 60Hz, a push/pop had a p50 frame of 17.85ms
-     * against Telegram's 7.55ms, with 44% of frames inside budget against
+     * against the reference app's 7.55ms, with 44% of frames inside budget against
      * their 97.5% — while plain scrolling matched them almost exactly. The
      * transition was the whole gap.
      *
-     * Telegram solves this with a DATA signal, not a geometry one:
+     * the reference app solves this with a DATA signal, not a geometry one:
      * `needDelayOpenAnimation()` holds the incoming screen at alpha 0 and
      * translateX 48dp until the first message batch has rendered
      * (ChatActivity.java:27014 returning `firstLoading`, cleared at :20613,
@@ -1179,7 +1179,7 @@ export function useScreenEnter(): {
     /*
      * Wait for the screen's DATA if it asked us to, and start regardless at the
      * ceiling. `holdScreenEnter`'s header carries the full reasoning and the
-     * Telegram citations.
+     * the reference app citations.
      *
      * Both paths are one-shot through `begin`, so a release arriving in the
      * same tick as the ceiling cannot start two animations. The subscription
@@ -1239,8 +1239,8 @@ export function useScreenEnter(): {
      * back, and a lock left raised is worse than the jank it avoids.
      */
     setTransitioning(true);
-    // 200ms (short4), not Telegram's 150: at 150 the fade read as abrupt on the
-    // S22 by hand (Amit, 2026-09-02); the slide keeps Telegram's 48dp.
+    // 200ms (short4), not the reference app's 150: at 150 the fade read as abrupt on the
+    // S22 by hand (Amit, 2026-09-02); the slide keeps the reference app's 48dp.
     progress.value = withTiming(
       1,
       {
@@ -1303,7 +1303,7 @@ export function screenOut() {
       opacity: withTiming(0, {
         duration: M3.duration.short4,
         // The outgoing screen holds, then goes: emphasized-accelerate (M3's exit
-        // curve). Telegram mirrors its decelerate here (alpha drops fast,
+        // curve). the reference app mirrors its decelerate here (alpha drops fast,
         // ActionBarLayout.java:1899-1907) and that read as a cut by hand on the
         // S22 (Amit, 2026-09-02); the slow-start curve keeps the leaving screen
         // legible while Home settles in beneath it.

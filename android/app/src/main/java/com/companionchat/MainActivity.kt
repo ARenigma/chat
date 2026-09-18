@@ -227,10 +227,10 @@ class MainActivity : ReactActivity() {
    *    id is the one the system honours on devices that expose modes.
    *  - `preferredRefreshRate` = that mode's rate as well. The frame-rate doc
    *    prefers this field when only the rate should change, and it is the
-   *    mechanism the parity oracle uses: Telegram Android sets ONLY
+   *    mechanism the parity oracle uses: the reference app Android sets ONLY
    *    `preferredRefreshRate` to the maximum of `getSupportedRefreshRates()` and
    *    pushes it through `updateViewLayout` (measured fact from
-   *    `AndroidUtilities.java:2819-2838`, see design/references/telegram.md; no
+   *    `AndroidUtilities.java:2819-2838`, see design/references/chat-app-mechanics.md; no
    *    code is copied). Carrying both means a device that ignores one still
    *    gets the vote from the other, and the two can never disagree because
    *    they are read from the same `Display.Mode`.

@@ -551,7 +551,7 @@ describe('motion tokens', () => {
     expect(press.button).toBeLessThan(press.card);
     expect(press.send).toBeLessThan(press.chip);
     // An emoji grid cell is smaller than send in every dimension so it gets
-    // the deepest transient scale (0.80 < 0.86). Telegram: EmojiView 0.8 scale.
+    // the deepest transient scale (0.80 < 0.86). the reference app: EmojiView 0.8 scale.
     expect(press.cell).toBeLessThan(press.send);
   });
 
@@ -589,14 +589,14 @@ describe('motion tokens', () => {
   });
 
   it('keeps the three W4 durations in their measured relationships', () => {
-    // pressRamp is the press-in ramp for emoji cells and icon buttons (Telegram
+    // pressRamp is the press-in ramp for emoji cells and icon buttons (the reference app
     // EmojiView ~80ms, rounded to 100). It must be faster than `instant` (110ms),
     // because the whole point is that press feedback is attached to the finger.
     expect(duration.pressRamp).toBeLessThan(duration.instant);
     // listAdd is the bubble-arrive fade (120ms). Faster than `fast` (170ms) so
     // a received message resolves quickly rather than lingering mid-opacity.
     expect(duration.listAdd).toBeLessThan(duration.fast);
-    // sendReveal is the mic→send crossfade in useCrossfade (Telegram 220ms).
+    // sendReveal is the mic→send crossfade in useCrossfade (the reference app 220ms).
     // Faster than `base` (240ms) so it reads as snappy, not laboured.
     expect(duration.sendReveal).toBeLessThan(duration.base);
     // All three are independent measurements; none equals another, so retuning
@@ -1263,7 +1263,7 @@ describe('spacing lives in tokens', () => {
     .concat({ file: 'App.tsx', body: stripComments(read('App.tsx')) });
 
   const ALLOW: Record<string, string[]> = {
-    // Composer field vertical pad is mapped to Telegram measured on device (S22,
+    // Composer field vertical pad is mapped to the reference app measured on device (S22,
     // density 2.8125×): its composer field is ~40dp with 16sp text, so the input
     // is minHeight 32 + pad 6/6 (capsule ≈ 40 with the field's 4dp paddingVertical).
     'src/components/Composer.tsx': [
@@ -1561,12 +1561,12 @@ describe('motion lives in one module', () => {
      *
      * CodeField joined on 2026-09-02: a correct verification code is a
      * celebratory beat by exactly the completion-mark argument — the boxes fill
-     * in turn and the row pops once — and Telegram resolves its own success with
+     * in turn and the row pops once — and the reference app resolves its own success with
      * a low-bouncy scale spring (CodeNumberField.java:142-144). It fires once,
      * on a right code, at the end of the sign-in flow.
      *
      * ReactionStrip joined on 2026-09-03: the reaction bar scales in on an
-     * overshoot, which is not a celebration but a clean-room match of Telegram's
+     * overshoot, which is not a celebration but a clean-room match of the reference app's
      * own reaction bar (OvershootInterpolator(0.5),
      * ReactionsContainerLayout.java:1499). It fires once per open, on a menu that
      * asks to be noticed, and the overshoot is the specific thing being copied —
@@ -1979,7 +1979,7 @@ describe('accent budget is enforced in code, not just documented', () => {
        * → grey box, and both read badly on device (Amit, 2026-08-27). The selected
        * destination is now a soft accent-tint pill with a coral filled glyph — the
        * "you are here" signal, which is a state, exactly what the budget reserves
-       * the coral for. An icon-only tab bar (iMessage/Telegram) colours its chosen
+       * the coral for. An icon-only tab bar (iMessage/the reference app) colours its chosen
        * tab; this is that.
        */
       'FloatingToolbar.tsx',
@@ -2161,7 +2161,7 @@ describe('accent budget is enforced in code, not just documented', () => {
        * And it is the budget being spent on what the budget is FOR. A reply
        * quote is a pointer to one specific earlier message — the most pointed
        * "this one thing" in the transcript — and it is what both WhatsApp and
-       * Telegram tint with their brand colour. The bubble FILLS are still
+       * the reference app tint with their brand colour. The bubble FILLS are still
        * bubble/*; this is a hairline, not a surface.
        */
       'Turn.tsx',
@@ -3059,21 +3059,21 @@ describe('recharge-theme: SettingsSheet Appearance uses three-choice radio picke
   });
 });
 
-describe('dark theme: Telegram midnight-blue palette, and it still passes contrast', () => {
+describe('dark theme: the reference app midnight-blue palette, and it still passes contrast', () => {
   /*
-   * The dark palette follows Telegram Android's darkblue.attheme - the "midnight
+   * The dark palette follows the reference app Android's darkblue.attheme - the "midnight
    * blue" theme - read as FACTS and re-expressed in design/tokens.json (Amit,
-   * 2026-09-06: "dark theme color palette and token exactly same as telegram").
+   * 2026-09-06: "dark theme color palette and token exactly same as the reference app").
    * It replaced a WhatsApp-charcoal palette (#0B141A / #111B21 / #E9EDEF).
    *
    * Values are pinned so a stray edit to tokens.json cannot quietly drift the
    * theme back, and every pinned value is ALSO contrast-checked: the palette is
-   * Telegram's, the accessibility floor is ours. Where Telegram's own grey did
+   * the reference app's, the accessibility floor is ours. Where the reference app's own grey did
    * not clear AA on its own bubble colour (#7D8B99 on #232E3B is 3.95:1), the
    * grey was lifted by the smallest step that passes - +11 - rather than the
    * gate being lowered.
    */
-  it('dark base and surface are Telegram windowBackgroundGray / windowBackgroundWhite', () => {
+  it('dark base and surface are the reference app windowBackgroundGray / windowBackgroundWhite', () => {
     expect(DARK.color.bg.base).toBe('#151E27');
     expect(DARK.color.bg.raised).toBe('#1D2733');
   });
@@ -3082,7 +3082,7 @@ describe('dark theme: Telegram midnight-blue palette, and it still passes contra
     /*
      * 2026-09-10: the outgoing bubble follows the brand revert to coral. Amit:
      * a colour change swaps every brand-green surface to coral, bubbles too, so
-     * bubble/mine dark moved from the WhatsApp-green-era Telegram blue #3E618A to
+     * bubble/mine dark moved from the WhatsApp-green-era the reference app blue #3E618A to
      * a deep coral (#93361A) carrying white text — this supersedes the earlier
      * "dark mode looks okay.. dont change that token", which scoped only the
      * accent. The INCOMING bubble is neutral (not brand), so it does not move.
@@ -3100,7 +3100,7 @@ describe('dark theme: Telegram midnight-blue palette, and it still passes contra
      * Amit, 2026-09-10: revert the brand colour to coral (Option 1, Sunset),
      * and keep dark's non-brand surfaces as they are. Branding is exactly the
      * part that crosses both modes, so it is the deliberate exception to "do not
-     * change dark". Was WhatsApp green #21C063 / #71EB85; before that Telegram
+     * change dark". Was WhatsApp green #21C063 / #71EB85; before that the reference app
      * blue #5FA3DE / #64B5EF.
      *
      * #FF8457 is the dark-page coral (mark/fill); text/accent is the
@@ -3113,7 +3113,7 @@ describe('dark theme: Telegram midnight-blue palette, and it still passes contra
     expect(DARK.color.bg.accent).not.toBe('#25D366');
   });
 
-  it('dark primary text is Telegram white, passes AAA on dark base', () => {
+  it('dark primary text is the reference app white, passes AAA on dark base', () => {
     expect(DARK.color.text.primary).toBe('#FFFFFF');
     expect(
       contrast(DARK.color.text.primary, DARK.color.bg.base),
@@ -3140,7 +3140,7 @@ describe('dark theme: Telegram midnight-blue palette, and it still passes contra
     ).toBeGreaterThan(1.5);
   });
 
-  it('dark inverse surface is Telegram chats_nameMessage, primary button passes AAA', () => {
+  it('dark inverse surface is the reference app chats_nameMessage, primary button passes AAA', () => {
     expect(DARK.color.bg.inverse).toBe('#E9EEF4');
     expect(
       contrast(DARK.color.text.onInverse, DARK.color.bg.inverse),

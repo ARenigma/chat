@@ -29,7 +29,7 @@ import com.facebook.react.bridge.UiThreadUtil
  * ---------------------------------------------------------------------------
  * Deviation from the plan, deliberate
  * ---------------------------------------------------------------------------
- * The workstream said to pass `FLAG_IGNORE_GLOBAL_SETTING` "where Telegram sets
+ * The workstream said to pass `FLAG_IGNORE_GLOBAL_SETTING` "where the reference app sets
  * it". That flag is not used here, for two independent reasons, either of which
  * is sufficient:
  *

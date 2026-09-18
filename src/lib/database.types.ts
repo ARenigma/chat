@@ -1106,7 +1106,7 @@ export type Database = {
        * `p_attachment_path` may be set (014 made the payload three-way).
        */
       /**
-       * `send_message` with Telegram-style idempotency (migration 081). A retry
+       * `send_message` with the reference app-style idempotency (migration 081). A retry
        * carrying the same `p_client_nonce` returns the ORIGINAL message with
        * `deduped: true` rather than inserting a second row.
        *

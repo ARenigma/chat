@@ -39,7 +39,7 @@ function ReactionStripView({
   /*
    * Overshoot appear, from nothing near the bubble corner.
    *
-   * Telegram's reaction bar scales in over 250ms on an OvershootInterpolator(0.5)
+   * the reference app's reaction bar scales in over 250ms on an OvershootInterpolator(0.5)
    * with the pivot at the anchored corner (ReactionsContainerLayout.java:1499,
    * :847-848). `bounce` (ratio 0.59) overshoots the same way; the origin is set
    * per side below so it grows out of the bubble it belongs to rather than the

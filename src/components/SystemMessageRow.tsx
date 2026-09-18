@@ -5,12 +5,12 @@ import { useStyles } from '../theme/ThemeProvider';
 import { Icon, ICON_SCALE, type IconName } from './Icon';
 
 /**
- * A centered, muted informational row in the transcript — WhatsApp/Telegram's
+ * A centered, muted informational row in the transcript — WhatsApp/the reference app's
  * "system message" (session boundaries, one-time notices). Display-only, never
  * tappable.
  *
  * Per the 2026-09-10 spec (m3.material.io type scale + chips, and the observed
- * WhatsApp/Telegram convention): a fully-rounded pill on bg.sunken, bodySmall in
+ * WhatsApp/the reference app convention): a fully-rounded pill on bg.sunken, bodySmall in
  * text.tertiary, sentence case, centered in the column. Deliberately NOT a
  * bubble — no sender colour, no tail, never left/right aligned — so it cannot be
  * mistaken for a message from either party. Same visual weight as CallLogRow and

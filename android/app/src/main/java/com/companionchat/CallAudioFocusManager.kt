@@ -64,8 +64,8 @@ class CallAudioFocusManager(private val context: Context) {
                  * needs on-device testing against a real carrier call on such a
                  * device, which this session does not have.
                  *
-                 * DEPARTURE FROM TELEGRAM, stated because RULE 1 requires it.
-                 * Telegram watches TelephonyManager directly and hangs up on
+                 * DEPARTURE FROM THE REFERENCE APP, stated because RULE 1 requires it.
+                 * the reference app watches TelephonyManager directly and hangs up on
                  * ACTION_PHONE_STATE_CHANGED / EXTRA_STATE_OFFHOOK
                  * (VoIPService.java:516-519). That needs READ_PHONE_STATE, a
                  * new runtime permission and a Play data-safety declaration, to
@@ -73,7 +73,7 @@ class CallAudioFocusManager(private val context: Context) {
                  * already tells us for free.
                  *
                  * The mapping is deliberately to LOSS and not LOSS_TRANSIENT,
-                 * which mirrors Telegram's own nuance: they hang up on OFFHOOK
+                 * which mirrors the reference app's own nuance: they hang up on OFFHOOK
                  * (answered), not on RINGING. A cellular call that merely rings
                  * takes transient focus and must NOT end a paid call the member
                  * may well continue.
@@ -118,7 +118,7 @@ class CallAudioFocusManager(private val context: Context) {
             // AUDIOFOCUS_GAIN, not _TRANSIENT: a call lasts minutes, not a blip.
             // TRANSIENT tells the system this audio use is brief, which on some
             // OEMs leaves the VoIP low-latency path un-provisioned and routing
-            // incomplete — part of the "no/laggy audio" class. Telegram's
+            // incomplete — part of the "no/laggy audio" class. the reference app's
             // VoIPService requests GAIN for call audio for the same reason.
             val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                 .setAudioAttributes(attrs)

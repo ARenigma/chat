@@ -128,7 +128,7 @@ const ALLOWED = new Set([
   // developer.android.com/training/data-storage/shared/media#selected-photos-access
   'android.permission.READ_MEDIA_VISUAL_USER_SELECTED',
   // CallForegroundService holds a PROXIMITY_SCREEN_OFF_WAKE_LOCK during a voice
-  // call so the screen darkens at the ear (Telegram's VoIPService does the same).
+  // call so the screen darkens at the ear (the reference app's VoIPService does the same).
   // Firebase/Agora also merge it, but the app now uses it first-party, so it is
   // claimed here rather than tolerated. Normal permission; no prompt, no Data
   // Safety row.

@@ -40,7 +40,7 @@ class CallForegroundService : Service() {
 
     /**
      * Turns the screen off while the phone is at the ear during a VOICE call, the
-     * same PROXIMITY_SCREEN_OFF_WAKE_LOCK Telegram's VoIPService holds. Held only
+     * same PROXIMITY_SCREEN_OFF_WAKE_LOCK the reference app's VoIPService holds. Held only
      * for a connected voice call — never while ringing (no mic yet) and never for
      * video, which needs the screen on. Agora routes the audio; the screen is ours.
      */
@@ -53,7 +53,7 @@ class CallForegroundService : Service() {
      * So while the call is ringing this service loops the device ringtone itself,
      * at USAGE_NOTIFICATION_RINGTONE (the ring stream), and stops it the moment
      * the call is answered (the service restarts with isIncoming=false) or ends.
-     * Telegram's VoIPService owns the ring the same way rather than leaning on the
+     * the reference app's VoIPService owns the ring the same way rather than leaning on the
      * channel sound.
      */
     private var ringtone: MediaPlayer? = null
@@ -61,7 +61,7 @@ class CallForegroundService : Service() {
     /**
      * Audio focus for the RING, which is not the audio focus for the call.
      *
-     * Telegram takes two different requests at two different moments:
+     * the reference app takes two different requests at two different moments:
      * `AUDIOFOCUS_GAIN_TRANSIENT` on the ring stream while the phone is ringing
      * (VoIPService.java:4082) and `AUDIOFOCUS_GAIN_TRANSIENT` on the voice-call
      * stream, together with MODE_IN_COMMUNICATION, only once the call CONNECTS
@@ -130,7 +130,7 @@ class CallForegroundService : Service() {
         )
 
         // This notification is now the ring, so the one the push put up has to go.
-        // Telegram's service takes the call over from its prenotification exactly
+        // the reference app's service takes the call over from its prenotification exactly
         // here (VoIPPreNotificationService.java:476 starts the service, :579
         // cancels ID_INCOMING_CALL_PRENOTIFICATION). Leaving both up was the bug:
         // two CallStyle rings raced and the callee got whichever won, which was
@@ -142,7 +142,7 @@ class CallForegroundService : Service() {
         //
         // Before the call focus below, not after, because stopRinging() hands the
         // ring's transient focus back and the two requests must not overlap —
-        // Telegram's accept path stops the ringtone before configureDeviceForCall
+        // the reference app's accept path stops the ringtone before configureDeviceForCall
         // takes call focus (VoIPService.java:4849-4855).
         if (isIncoming) startRinging() else stopRinging()
 
@@ -155,7 +155,7 @@ class CallForegroundService : Service() {
         // MODE_IN_COMMUNICATION and takes USAGE_VOICE_COMMUNICATION focus, and in
         // communication mode the ringtone above is routed to the communication
         // device at call volume, so the phone rang into the earpiece at a level
-        // nobody could hear. Telegram never enters MODE_IN_COMMUNICATION while
+        // nobody could hear. the reference app never enters MODE_IN_COMMUNICATION while
         // ringing — the only two modes in the whole file are MODE_NORMAL and
         // MODE_IN_COMMUNICATION (VoIPService.java:416, 4235, 4839, 4849) — and
         // takes call focus only on CONNECT (VoIPService.java:4849-4855). Our
@@ -178,7 +178,7 @@ class CallForegroundService : Service() {
      * not load or play is swallowed — a missing ring is not worth crashing the
      * call service, and the CallStyle notification is still up.
      *
-     * Ported whole from Telegram's `startRingtoneAndVibration`
+     * Ported whole from the reference app's `startRingtoneAndVibration`
      * (VoIPService.java:4056-4085): gate on the ringer switch, loop, and pick the
      * OUTPUT rather than the audio mode — voice-call output when a headset is
      * plugged in, otherwise the ring stream plus a transient focus request on it.
@@ -196,7 +196,7 @@ class CallForegroundService : Service() {
             ?: return
 
         /*
-         * Telegram's two branches (VoIPService.java:4077-4084) in AudioAttributes
+         * the reference app's two branches (VoIPService.java:4077-4084) in AudioAttributes
          * terms: STREAM_VOICE_CALL is USAGE_VOICE_COMMUNICATION and STREAM_RING is
          * USAGE_NOTIFICATION_RINGTONE. setAudioStreamType has been deprecated
          * since API 26 in favour of setAudioAttributes, which is why this is
@@ -245,7 +245,7 @@ class CallForegroundService : Service() {
     }
 
     /**
-     * `isWiredHeadsetOn()` is what Telegram reads (VoIPPreNotificationService.java:283),
+     * `isWiredHeadsetOn()` is what the reference app reads (VoIPPreNotificationService.java:283),
      * but it has been deprecated since API 15: "Use AudioManager.getDevices(int)
      * instead to list available audio devices." `getDevices` is API 23 and minSdk
      * is 24, so there is no fallback to keep.
@@ -415,7 +415,7 @@ class CallForegroundService : Service() {
                 /*
                  * THE ring notification, not a second one.
                  *
-                 * Telegram builds one object: the full-screen intent goes on it
+                 * the reference app builds one object: the full-screen intent goes on it
                  * (VoIPService.java:5264), CallStyle.forIncomingCall goes on it
                  * (:5283), and it is what startForeground() is handed (:5319).
                  * This used to deliberately omit the full-screen intent because

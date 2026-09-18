@@ -19,6 +19,7 @@ import {
   type TextInputSelectionChangeEventData,
 } from 'react-native';
 import { SCROLL_PHYSICS } from '../lib/scroll';
+import { useImeSpace } from '../lib/useImeSpace';
 import { EASE_CONSTANT, EASE_OUT, springTo } from '../theme/motion';
 import Animated, {
   FadeIn,
@@ -208,6 +209,11 @@ export function OnboardingScreen({ onDone }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  // The form's keyboard lift on Android. The window never resizes
+  // (adjustNothing), so KeyboardAvoidingView's `height` behaviour is dead
+  // there — this hook's own padding does the lifting instead. iOS keeps the
+  // `padding` behaviour below.
+  const imeSpace = useImeSpace();
 
   const words = useWords();
   const setPendingProviderApply = useStore(s => s.setPendingProviderApply);
@@ -1079,12 +1085,17 @@ export function OnboardingScreen({ onDone }: Props) {
 
       {showForm ? (
         <KeyboardAvoidingView
-          style={styles.formHost}
-          // `height` on Android and `padding` on iOS, matching AuthScreen and
-          // ChatScreen. Android's `padding` behaviour double-counts against
-          // `adjustResize`; `height` resizes the container, which is what a
-          // bottom-anchored block needs.
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={[
+            styles.formHost,
+            // Android: `behavior` below is undefined (a plain View), so the
+            // lift comes from this padding, measured by useImeSpace.
+            Platform.OS === 'android' && { paddingBottom: imeSpace },
+          ]}
+          // `padding` on iOS only. Android's `height` behaviour resized the
+          // container against `adjustResize`; under adjustNothing the window
+          // never shrinks and there is nothing to react to, so Android takes
+          // the manual padding above instead of a dead behaviour.
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           pointerEvents={formReady ? 'auto' : 'none'}
           importantForAccessibility={formReady ? 'auto' : 'no-hide-descendants'}
         >
@@ -1812,8 +1823,7 @@ const makeStyles = (t: Theme) =>
      * `alignment: hasFinishedForm ? .center : .bottomLeading`. Worth keeping: the
      * bottom is where a thumb is, and the centre is where a result belongs.
      */
-    // The host is what covers the screen; the form inside it is what flexes, so
-    // `KeyboardAvoidingView` has something to resize.
+    // The host is what covers the screen; the form inside it is what flexes.
     formHost: {
       ...StyleSheet.absoluteFill,
     },

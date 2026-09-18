@@ -157,7 +157,7 @@ export function TabTopBar({
           exiting={exit}
           style={styles.searchRow}>
           {/* NO arrow beside the field, and the field takes the whole row.
-              Amit, 2026-09-07: "telegram search icon is on left edge of the bar
+              Amit, 2026-09-07: "the reference app search icon is on left edge of the bar
               and one cross to the right edge on the bar with full width bar --
               see clearly", and the source is unambiguous:
                 contentView.addView(fragmentSearchField,

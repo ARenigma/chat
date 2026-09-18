@@ -892,7 +892,7 @@ export function HomeScreen({
         </View>
       ) : null}
 
-      {/* The content underneath the row, and the second half of Telegram's
+      {/* The content underneath the row, and the second half of the reference app's
           search transition — the one the row's crossfade is only half of.
 
           The reference swaps these two on a SEPARATE, faster animator from the
@@ -1442,7 +1442,7 @@ const makeStyles = (t: Theme) =>
     },
     railItem: {
       // Wide enough for the 56dp avatar plus the unread ring (3 pad + 2 border
-      // each side = 66) with a little air; Telegram's stories item is 70 (ITEM_
+      // each side = 66) with a little air; the reference app's stories item is 70 (ITEM_
       // WIDTH, DialogStoriesCell.java:111).
       width: 70,
       alignItems: 'center',

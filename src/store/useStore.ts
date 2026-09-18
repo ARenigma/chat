@@ -50,7 +50,7 @@ interface AppState {
   /**
    * What the peer is DOING, not merely whether they are doing something.
    *
-   * A boolean until 2026-09-17. Telegram carries the distinction on the wire as
+   * A boolean until 2026-09-17. the reference app carries the distinction on the wire as
    * separate actions and renders separate copy for each
    * (TL_sendMessageTypingAction vs TL_sendMessageRecordAudioAction,
    * MessagesController.java:11210-11213), and it matters here for the same

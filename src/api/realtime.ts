@@ -184,7 +184,7 @@ export function useLiveConversation(
            * reach back for them. A silent hole in the conversation.
            *
            * `recoverMessageGap` walks a CURSOR forward from the newest row we
-           * hold until a page comes back short, which is Telegram's shape at a
+           * hold until a page comes back short, which is the reference app's shape at a
            * smaller scale, and falls back to the fixed window only when the
            * cache is cold or the gap is enormous.
            */
@@ -205,7 +205,7 @@ export function useLiveConversation(
          * cheap thing to get right is the data: even if the channel is gone for
          * good, the member sees the current transcript instead of a stale one.
          *
-         * Telegram's equivalent is unconditional — it does not wait to be told
+         * the reference app's equivalent is unconditional — it does not wait to be told
          * the connection is healthy again; a gap in `pts` triggers
          * `getDifference` regardless of connection state
          * (MessagesController.java:8206). Same instinct, much smaller hammer.
@@ -258,7 +258,7 @@ export function useLiveConversation(
       /*
        * Held while a voice note is being recorded, and cancelled on release.
        *
-       * Telegram sends a distinct action for this rather than reusing typing
+       * the reference app sends a distinct action for this rather than reusing typing
        * (TL_sendMessageRecordAudioAction, MessagesController.java:11441) and
        * renders distinct copy for it (:11210-11213). Without it a voice note is
        * composed in complete silence on the other side, which this app could
@@ -296,7 +296,7 @@ export function useLiveConversation(
  *
  * Before M1 (2026-09-17 audit) `flush()` marked the WHOLE loaded page read on
  * mount — opening a chat with 50 unread messages told the peer all 50 had been
- * seen before a single one had scrolled into view. Telegram-parity read
+ * seen before a single one had scrolled into view. reference-parity read
  * receipts mean this now only marks ids the caller reports as visible, via
  * the returned `markVisible` — ChatScreen wires that to FlashList's
  * `onViewableItemsChanged`.

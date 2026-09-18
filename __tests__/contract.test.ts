@@ -518,7 +518,7 @@ describe('Cashfree billing invariants', () => {
   });
 
   /*
-   * Telegram-CTO audit, 2026-09-17 (X9, contested). `onVerify` fires the
+   * motion audit, 2026-09-17 (X9, contested). `onVerify` fires the
    * instant the member returns from their UPI app -- on Android, exactly
    * when the network is re-establishing -- so a single un-retried
    * verify-order call turned a network blip into "Payment failed". The
@@ -688,7 +688,7 @@ describe('Android manifest', () => {
       'android.permission.USE_FULL_SCREEN_INTENT',
       'android.permission.VIBRATE',
       // CallForegroundService holds a PROXIMITY_SCREEN_OFF_WAKE_LOCK during a
-      // voice call so the screen darkens at the ear (Telegram's VoIPService does
+      // voice call so the screen darkens at the ear (the reference app's VoIPService does
       // the same). Firebase/Agora also merge WAKE_LOCK, but the app now uses it
       // first-party, so it is claimed here. Added 2026-09-14.
       'android.permission.WAKE_LOCK',
@@ -946,7 +946,7 @@ describe('every screen is reachable', () => {
   const mounters = [
     'App.tsx',
     ...walk(join(ROOT, 'src'))
-      .filter(f => f.endsWith('.tsx'))
+    .filter(f => f.endsWith('.tsx'))
       .map(f => f.slice(ROOT.length + 1)),
   ]
     .map(read)
@@ -1887,7 +1887,7 @@ describe('the redesign holds its own invariants', () => {
     // bubble scrolling under the capsule did not share its silhouette. This app
     // is exclusively 1:1 and the header already carries the peer's avatar, name
     // and presence, so the transcript copy was redundant as well as costly —
-    // which is also why Telegram, the reference, draws no avatar in a 1:1
+    // which is also why the reference app, the reference, draws no avatar in a 1:1
     // transcript and its input bar lines up.
     //
     // Comments stripped: the files still EXPLAIN the removed avatar at length,
@@ -2372,7 +2372,15 @@ describe('the chat restyle is wired, not just drawn', () => {
     expect(imeCode).toContain(
       'const imeSpace = i.keyboardHeight + i.insetBottom',
     );
-    expect(chatCode).toContain('bodyInset');
+    // The screen no longer consumes the discrete lift at all: dock, transcript
+    // and page-down button all ride the controller's live shared value, so the
+    // number cannot drift between consumers by construction.
+    expect(chatCode).toContain('lift={keyboard.height}');
+    expect(chatCode).toContain('translateY: -lift.value');
+    expect(chatCode).toContain('translateY: -keyboard.height.value');
+    expect(chatCode).not.toContain('AnimatedBodyInset');
+    expect(chatCode).not.toContain('useBodyInset(');
+    expect(chatCode).not.toContain('useListPad(');
     expect(withoutComments(read('src/components/Composer.tsx'))).toContain(
       'panelHeight + insets.bottom',
     );
@@ -2438,47 +2446,44 @@ describe('the chat restyle is wired, not just drawn', () => {
     );
   });
 
-  it('animates the keyboard-lift portion of the transcript pad instead of snapping it (M-emoji, 2026-09-18)', () => {
-    // `bodyInset` toggling 0/imeSpace is correct arithmetic, but FlashList's
-    // `contentContainerStyle` cannot be wrapped in `Animated.createAnimatedComponent`
-    // without losing `scrollToOffset`'s imperative ref (M18) — so applying the
-    // number there directly makes the transcript recompute its scroll position
-    // in one frame, which read as a reflow right as the keyboard finished
-    // rising back from the emoji panel ("the whole viewport jerks and reloads").
-    // The fix moves the keyboard-lift number into a real animated child
-    // (`AnimatedBodyInset`, mounted at the visual-bottom slot via `header`),
-    // driven by the same 250ms keyboard cubic the composer's own multi-line
-    // growth already uses.
-    expect(chatCode).toContain('function AnimatedBodyInset()');
-    const fn = chatCode.slice(
-      chatCode.indexOf('function AnimatedBodyInset()'),
-      chatCode.indexOf('function AnimatedBodyInset()') + 600,
-    );
-    expect(fn).toContain('const bodyInset = useBodyInset();');
-    expect(fn).toContain('duration: M3.duration.medium1');
-    expect(fn).toContain('easing: KEYBOARD_CUBIC');
-    // Wired into `header`, the inverted list's visual-bottom slot — not into
-    // `contentContainerStyle`, which stays a plain, unanimated number for the
-    // structural part only (space.md + dockHeight, neither of which jumps).
-    expect(chatCode).toMatch(/<PeerTyping name={name} \/>\s*<AnimatedBodyInset \/>/);
-    expect(chatCode).toContain("paddingTop: basePad");
-    expect(chatCode).not.toContain("paddingTop: listPad");
+  it('rides the keyboard on translated wrappers instead of animated layout (slice 2)', () => {
+    // `bodyInset` toggling 0/imeSpace was correct arithmetic, but applying it
+    // as layout — first discrete, then via a `height`-animated spacer — made
+    // FlashList recompute scroll position mid-travel ("the whole viewport jerks
+    // and reloads"). the reference app never resizes: the panel translates on
+    // TRANSLATION_Y (ChatActivityEnterView.java). The transcript wrapper,
+    // DockStack and PageDownButton now all translate off the controller's live
+    // shared value, and the container carries only the static structural pad.
+    // A wrapper Animated.View is NOT Animated.createAnimatedComponent(FlashList),
+    // which is what loses `scrollToOffset` (M18) — the ref assertion below
+    // still holds.
+    expect(chatCode).toContain('const listLift = useAnimatedStyle(');
+    expect(chatCode).toContain('styles.transcriptWrap');
+    expect(chatCode).toContain('paddingTop: basePad');
+    expect(chatCode).not.toContain('AnimatedBodyInset');
+    expect(chatCode).not.toContain('paddingTop: listPad');
+    // No layout-prop animation anywhere on this screen: height/width/padding
+    // re-run Yoga every frame for the node and its siblings.
+    const dockFn = chatCode.slice(chatCode.indexOf('function DockStack('));
+    expect(dockFn).not.toMatch(/height:\s*height\.value/);
   });
 
-  it('does not stack KeyboardAvoidingView on top of adjustResize', () => {
-    // `behavior="height"` shrank the body by RN's short number while the panel
-    // was sized from a different one, so the two could never agree. The manifest
-    // keeps adjustResize; the lift is ours.
+  it('does not stack KeyboardAvoidingView on top of a resizing window', () => {
+    // The window never resizes for the IME (adjustNothing, pinned in
+    // platform.test.ts); the lift is ours, driven by the controller's inset
+    // events. A KeyboardAvoidingView here would stack a second, disagreeing
+    // resize mechanism on top — the same failure the old behavior="height"
+    // pairing had under adjustResize.
     expect(chatCode).not.toContain('KeyboardAvoidingView');
     expect(read('android/app/src/main/AndroidManifest.xml')).toContain(
-      'android:windowSoftInputMode="adjustResize"',
+      'android:windowSoftInputMode="adjustNothing"',
     );
   });
 
   it('holds an explicit FlashList ref and scrolls to offset 0 on new messages', () => {
     // Without a ref, there is no way to scroll programmatically. The
     // useEffect watching rows.length only forces the scroll for the member's
-    // own send (Telegram's `isOut() && wasJustSent`) or when already near the
+    // own send (the reference app's `isOut() && wasJustSent`) or when already near the
     // bottom — anything else while scrolled up reading history increments
     // the page-down button's badge instead of yanking the view (2026-09-17
     // audit, X5).
@@ -3355,7 +3360,7 @@ describe('chat chrome occludes what is behind it', () => {
    * the S22 (2026-09-05): the camera and mic sat outside the composer capsule,
    * and the reply strip was bare text on the dock.
    *
-   * Telegram's answer, captured from the reference on that device: emoji, field,
+   * the reference app's answer, captured from the reference on that device: emoji, field,
    * attach and mic all live INSIDE one translucent pill, and the reply chrome
    * shares that surface. No icon is ever outside it, which is why nothing can
    * collide.
@@ -5113,7 +5118,7 @@ describe('media upload uses M3 determinate progress, not ActivityIndicator', () 
 });
 
 /*
- * Telegram-CTO audit, 2026-09-17: the photo path was full-resolution end to
+ * motion audit, 2026-09-17: the photo path was full-resolution end to
  * end (no downscale on pick, a wall-clock upload timeout instead of a stall
  * detector, ten picked photos racing each other to send), and a media
  * message whose upload succeeded but whose send RPC failed had no retry
@@ -5122,7 +5127,7 @@ describe('media upload uses M3 determinate progress, not ActivityIndicator', () 
  * waiting to be found on a device.
  */
 /*
- * Telegram-CTO audit, 2026-09-17: the offline outbox drained every queued
+ * motion audit, 2026-09-17: the offline outbox drained every queued
  * entry in one synchronous loop with no `await`, firing them at the server
  * together. Each replay is independently idempotent, so a failure genuinely
  * could not corrupt another — the comment this replaces was right about
@@ -5132,7 +5137,7 @@ describe('media upload uses M3 determinate progress, not ActivityIndicator', () 
  * watched their own conversation reorder itself on their own screen.
  */
 /*
- * Telegram-CTO audit, 2026-09-17. A tapped message notification used two
+ * motion audit, 2026-09-17. A tapped message notification used two
  * mechanisms, both wrong:
  *   1. `getInitialNotification` / `onNotificationOpenedApp` (push.ts), which
  *      track a tap on a notification FCM itself rendered -- this app's
@@ -5148,7 +5153,7 @@ describe('media upload uses M3 determinate progress, not ActivityIndicator', () 
  * `SignedIn` apply it once `role` resolves.
  */
 /*
- * Telegram-CTO audit, 2026-09-17. `onBack`'s every branch assumed
+ * motion audit, 2026-09-17. `onBack`'s every branch assumed
  * `route`/`providerRoute` describe where the member or provider actually is,
  * which is only true once `boot.phase === 'ready'`. On splash, sign-in,
  * profile setup, the policy gate, permissions, the update screen or the
@@ -5177,7 +5182,7 @@ describe('hardware back hands off to Android before boot is ready', () => {
 });
 
 /*
- * Telegram-CTO audit, 2026-09-17 (contested, resolved after independently
+ * motion audit, 2026-09-17 (contested, resolved after independently
  * reading bootPhaseAfterAuth). The provider-intent boot skip
  * (App.tsx:~660, "SKIPS the member first-run ... entirely") is a real,
  * deliberate decision for the DURATION of the apply flow -- but nothing
@@ -5189,7 +5194,7 @@ describe('hardware back hands off to Android before boot is ready', () => {
  * POLICY_REQUIRED refusal short of a relaunch.
  */
 /*
- * Telegram-CTO audit, 2026-09-17 (X10), contested finding. Realtime
+ * motion audit, 2026-09-17 (X10), contested finding. Realtime
  * channels that repair only on SUBSCRIBED (not CHANNEL_ERROR/TIMED_OUT) --
  * a known edge of Supabase's multiplexed sockets realtime.ts's own
  * docblock already argues about at length -- were applied inconsistently:
@@ -5204,7 +5209,7 @@ describe('hardware back hands off to Android before boot is ready', () => {
  * nothing ever went looking for the ones missed").
  */
 /*
- * Telegram-CTO audit, 2026-09-17 (X8), contested finding, confirmed on
+ * motion audit, 2026-09-17 (X8), contested finding, confirmed on
  * independent read of @tanstack/query-core's own source: the default
  * OnlineManager listens for the browser's online/offline window events,
  * which React Native never dispatches, so `#online` starts (and stays)
@@ -5212,7 +5217,7 @@ describe('hardware back hands off to Android before boot is ready', () => {
  * therefore made against a signal that could never say "offline".
  */
 /*
- * Telegram-CTO audit, 2026-09-17 (X4), contested finding. Mostly refuted
+ * motion audit, 2026-09-17 (X4), contested finding. Mostly refuted
  * on independent read: ADR-0020 makes ephemeral sessions the entire
  * product model (Play Billing's 1:1-paid-service exemption REQUIRES no
  * durable transcript), so an empty conversation between sessions is the
@@ -5329,7 +5334,7 @@ describe('provider onboarding completing re-checks policy and permissions once',
 });
 
 /*
- * Telegram-CTO audit, 2026-09-17 (contested, resolved: the notification
+ * motion audit, 2026-09-17 (contested, resolved: the notification
  * corner both verdicts converged on is real even where the broader claim
  * was disputed). The foreground-return permission re-check could switch
  * `boot.phase` to 'permissions' while a call was on screen, unmounting
@@ -5396,8 +5401,8 @@ describe('a tapped message notification is held until `role` is known, not route
 });
 
 /*
- * Telegram-CTO audit, 2026-09-17: a cluster of calling defects, each found
- * reading CallScreen.tsx / agora.ts against the platform docs and Telegram's
+ * motion audit, 2026-09-17: a cluster of calling defects, each found
+ * reading CallScreen.tsx / agora.ts against the platform docs and the reference app's
  * own VoIPService.
  */
 describe('the ring stops the instant the call is answered', () => {
@@ -5466,7 +5471,7 @@ describe("the caller's ring timer does not outrun a real answer", () => {
 });
 
 /*
- * Telegram-CTO audit, 2026-09-17 (X2), contested finding, scoped down
+ * motion audit, 2026-09-17 (X2), contested finding, scoped down
  * after independent verification. The original claim's headline mechanism
  * (ErrTokenExpired/ErrInvalidToken firing through onError) does not apply
  * to the installed SDK -- both carry a DEPRECATED tag in this version's
@@ -5582,7 +5587,7 @@ describe('the photo pipeline downscales, sends in order, and retries what it can
         { label, hasMaxHeight: true },
       );
     }
-    // 1280, Telegram's own figure, not a guess — pinned so nobody quietly
+    // 1280, the reference app's own figure, not a guess — pinned so nobody quietly
     // widens it back to "no limit" by deleting the export.
     const attachments = read('src/lib/attachments.ts');
     expect(attachments).toContain('export const PHOTO_MAX_DIMENSION = 1280;');
@@ -5984,7 +5989,7 @@ describe('attach panel', () => {
   it('uses the grid arithmetic from the reference, with its constants', () => {
     // PADDING and GAP are 2dp and the row is 3 wide in portrait; the cell size
     // subtracts exactly two gaps regardless of column count, which is what the
-    // reference does. See design/references/telegram.md.
+    // reference does. See design/references/chat-app-mechanics.md.
     expect(panel).toContain('const PADDING = 2');
     expect(panel).toContain('const GAP = 2');
     expect(panel).toContain('const COLS_PORTRAIT = 3');
@@ -6018,7 +6023,7 @@ describe('docked panel travel', () => {
 
   it('runs on the reference curve and duration, from tokens', () => {
     // `AdjustPanLayoutHelper.keyboardDuration` = 250ms on
-    // `ChatListItemAnimator.DEFAULT_INTERPOLATOR`. See telegram.md.
+    // `ChatListItemAnimator.DEFAULT_INTERPOLATOR`. See the reference app.md.
     expect(motion).toContain('M3.easing.keyboard[0]');
     expect(motion).toContain('duration: M3.duration.medium1');
     expect(TOKENS.motion.m3.duration.medium1).toBe(250);
@@ -6059,10 +6064,10 @@ describe('docked panel travel', () => {
  * W4#4 — ambient beats are silent.
  *
  * Tab select, emoji tap and picker launch are not confirmations of a committed
- * action. Telegram does not buzz for any of them (telegram.md §Haptics, negative
+ * action. the reference app does not buzz for any of them (chat-app-mechanics.md §Haptics, negative
  * rows). A device that buzzes on every emoji tap reads as cheap.
  *
- * Voice-record start and stop survive: the voice-record lock is in Telegram's own
+ * Voice-record start and stop survive: the voice-record lock is in the reference app's own
  * haptics table (`ChatActivityEnterView.java:4630`), and stopping is the committed
  * action that produces a sendable note.
  */
@@ -6636,16 +6641,16 @@ describe('the directory is grouped and filterable: Listeners, Astrologers, ages'
   });
 });
 
-describe('search opens the way Telegram opens it, and the week has a carousel', () => {
+describe('search opens the way the reference app opens it, and the week has a carousel', () => {
   const home = withoutComments(read('src/screens/HomeScreen.tsx'));
 
-  it("crossfades one row in place, on Telegram's own 350ms", () => {
+  it("crossfades one row in place, on the reference app's own 350ms", () => {
     /*
      * CORRECTED 2026-09-07, and this gate is the reason the correction had to
      * reach a test rather than only a comment: it pinned `searchToggle` = 150
      * and the exact `FadeIn.duration(DURATION.searchToggle)` text, so it held
      * the WRONG number in place. 150 was read from
-     * `ActionBar/ActionBarMenuItem.java` — Telegram's LEGACY action-bar search,
+     * `ActionBar/ActionBarMenuItem.java` — the reference app's LEGACY action-bar search,
      * a 36dp bare EditText with `setBackgroundResource(0)` and no pill, which
      * the dialogs list stopped using several versions ago — and even inside that
      * class the two `setDuration(150)` calls are at :1019 and :973, not the
@@ -6753,7 +6758,7 @@ describe('search opens the way Telegram opens it, and the week has a carousel', 
      *
      * What changed on 2026-09-07 is the OTHER control. The row used to carry a
      * back arrow beside the field to leave search; it now carries nothing but
-     * the field. Amit: "telegram search icon is on left edge of the bar and one
+     * the field. Amit: "the reference app search icon is on left edge of the bar and one
      * cross to the right edge on the bar with full width bar". The source agrees
      * and is unambiguous —
      *   contentView.addView(fragmentSearchField, LayoutHelper.createFrame(
@@ -6794,7 +6799,7 @@ describe('search opens the way Telegram opens it, and the week has a carousel', 
      * ... only exists while there is text". The literal still appears — as
      * `const clearTarget = value.length > 0 ? 1 : 0` — so the gate stayed green
      * while the behaviour it named became false: the cross is now always
-     * MOUNTED, because Telegram holds `pEnd` at a constant `dp(48)` whether or
+     * MOUNTED, because the reference app holds `pEnd` at a constant `dp(48)` whether or
      * not the glyph is showing (FragmentSearchField.java:242) and only animates
      * its alpha, scale and rotation. The gate was passing on an incidental
      * ternary.
@@ -7600,7 +7605,7 @@ describe('seed provider photos', () => {
   });
 
   /*
-   * Telegram-CTO audit, 2026-09-17: android/app/build.gradle mounts the
+   * motion audit, 2026-09-17: android/app/build.gradle mounts the
    * REPO ROOT's `assets/` directory wholesale as an Android asset source
    * dir, to get `assets/fonts/*.ttf` into the APK where React Native looks
    * for a bundled face. That took the whole tree, not just the fonts --
@@ -7759,13 +7764,13 @@ describe('composer capsule and bubbles share one horizontal grid and radius', ()
   const composer = read('src/components/Composer.tsx');
   const turn = read('src/components/Turn.tsx');
 
-  it('composer row uses Telegram own island inset, from one named source', () => {
+  it('composer row uses the reference app own island inset, from one named source', () => {
     /*
      * This asserted `TOKENS.space.md` (16) until 2026-09-12, so that the capsule
      * edges landed on the same column as the bubble edges.
      *
      * That alignment was given up knowingly. The owner asked for the input box
-     * to match Telegram's width exactly, and Telegram insets its input island
+     * to match the reference app's width exactly, and the reference app insets its input island
      * 7dp from each screen edge — `createFrame(MATCH_PARENT, WRAP_CONTENT,
      * Gravity.LEFT | Gravity.BOTTOM, 7, 0, 7, 0)`, ChatActivity.java:8078, with
      * `setPadding(dp(7))` on the blurred background agreeing — which is
@@ -7778,10 +7783,10 @@ describe('composer capsule and bubbles share one horizontal grid and radius', ()
      * A raw 7 in either file is the thing to catch.
      */
     expect(withoutComments(composer)).toContain(
-      'paddingHorizontal: TELEGRAM_ISLAND_INSET',
+      'paddingHorizontal: COMPOSER_ISLAND_INSET',
     );
     expect(withoutComments(composer)).toContain(
-      'export const TELEGRAM_ISLAND_INSET = 7',
+      'export const COMPOSER_ISLAND_INSET = 7',
     );
   });
 
@@ -7821,7 +7826,7 @@ describe('composer capsule and bubbles share one horizontal grid and radius', ()
     // The duration must come from the M3 export (= TOKENS.motion.m3.duration)
     // so the bar-growth timing is in the same token namespace as the dock-travel
     // timing. A raw number here cannot be reviewed alongside the related motion.
-    // Telegram: DEFAULT_DURATION = 250 ms (ChatListItemAnimator.java:46).
+    // the reference app: DEFAULT_DURATION = 250 ms (ChatListItemAnimator.java:46).
     expect(withoutComments(composer)).toMatch(/M3\.duration\.\w+/);
     // The easing must come from KEYBOARD_EASING (built from M3.easing.keyboard),
     // not a raw Easing call with literal coefficients inline.

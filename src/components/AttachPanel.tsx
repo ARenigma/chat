@@ -31,9 +31,9 @@ import {
 /**
  * The grid's outer padding and the gap between cells, in dp.
  *
- * `PADDING = 2` and `GAP = 2` are Telegram's own attach-grid constants
+ * `PADDING = 2` and `GAP = 2` are the reference app's own attach-grid constants
  * (`ChatAttachAlertPhotoLayout.java:3976-3977`, read from the clone at
- * ~/references/telegram; measured facts only, no code copied — ADR-0025).
+ * the local reference checkout; measured facts only, no code copied — ADR-0025).
  * They are deliberately tiny: the tiles are meant to read as one sheet of
  * media with hairline seams, not as spaced cards.
  */
@@ -42,7 +42,7 @@ const GAP = 2;
 
 /**
  * Cells per row: three in portrait, four when the display is wider than it is
- * tall (Telegram uses four for tablets and landscape,
+ * tall (the reference app uses four for tablets and landscape,
  * `ChatAttachAlertPhotoLayout.java:3983-3990`).
  */
 const COLS_PORTRAIT = 3;
@@ -86,16 +86,16 @@ interface Props {
 /**
  * The attach surface, docked in the same slot as the emoji panel.
  *
- * **Two deliberate departures from Telegram, both recorded.**
+ * **Two deliberate departures from the reference app, both recorded.**
  *
- * 1. Telegram's attach surface is a TALL bottom sheet that dismisses the IME and
+ * 1. the reference app's attach surface is a TALL bottom sheet that dismisses the IME and
  *    opens at two fifths of the screen on a spring (stiffness 350, damping 0.75 —
  *    `ChatAttachAlert.java:5338-5346`). Ours is docked at keyboard height in the
  *    emoji panel's slot, so the viewport never moves and the keyboard is one tap
  *    away. That is the owner's decision (Amit, 2026-09-04) and the same model
  *    WhatsApp uses.
  *
- * 2. Telegram fills its grid with the user's actual photos, read straight from
+ * 2. the reference app fills its grid with the user's actual photos, read straight from
  *    `MediaStore`. That needs `READ_MEDIA_IMAGES`, which Google Play treats as a
  *    restricted permission requiring a declaration — and a paid 1:1 chat app is
  *    the textbook rejection for that declaration, because the app ships the
@@ -119,7 +119,7 @@ interface Props {
  *    below the permission does not exist and the panel is exactly what it was.
  *    See `RecentMediaPackage.kt` and the manifest comment.
  *
- * What IS taken from Telegram, unchanged: the grid arithmetic, the 2dp padding
+ * What IS taken from the reference app, unchanged: the grid arithmetic, the 2dp padding
  * and gap, three columns in portrait and four when wide, and the live camera
  * viewfinder occupying the first cell rather than a static icon.
  * https://developer.android.com/training/data-storage/shared/photopicker
@@ -138,7 +138,7 @@ function AttachPanelView({
   const cols = width > winH ? COLS_WIDE : COLS_PORTRAIT;
 
   /**
-   * Telegram's own expression, unchanged:
+   * the reference app's own expression, unchanged:
    * `itemSize = (availableWidth - dp(PADDING * 2) - dp(GAP * 2)) / itemsPerRow`
    * (`ChatAttachAlertPhotoLayout.java:4000`).
    *
@@ -154,8 +154,8 @@ function AttachPanelView({
    * "interchange the camera-photos viewfinder to give camera more space").
    *
    * It was the other way round: the camera was one 1x1 grid cell and the Photos
-   * tile took the remaining two thirds. That followed Telegram, where cell 0 is
-   * the camera — but Telegram's grid is FULL of photo cells, so its camera is
+   * tile took the remaining two thirds. That followed the reference app, where cell 0 is
+   * the camera — but the reference app's grid is FULL of photo cells, so its camera is
    * one tile among many. Ours has two tiles, and the one that shows a live
    * picture was getting a third of the room while the one showing a glyph got
    * the rest.
@@ -356,7 +356,7 @@ function AttachPanelView({
       pointerEvents={visible ? 'auto' : 'none'}
       testID="attach-panel">
       <View style={styles.grid}>
-        {/* Cell 0 is the camera, as it is in Telegram's grid — a live
+        {/* Cell 0 is the camera, as it is in the reference app's grid — a live
             viewfinder, not an icon standing in for one. It is a plain 1x1 cell
             there too (`checkCameraViewPosition` overlays the preview on the cell
             at position 0, `ChatAttachAlertPhotoLayout.java:3051`), so it is a
@@ -443,7 +443,7 @@ function AttachPanelView({
             *
             * The label now lives in the placeholder, so it is present exactly
             * when there is no picture and is covered by the picture when there
-            * is one. That matches Telegram, whose viewfinder cell carries a
+            * is one. That matches the reference app, whose viewfinder cell carries a
             * shutter affordance rather than standing text, and the control keeps
             * its `accessibilityLabel="Take a photo"` either way.
             *
@@ -465,7 +465,7 @@ function AttachPanelView({
             * primary action smaller and ambiguous for the secondary one. A
             * 1x1 grid cell is a viewfinder standing in for a shutter, not a
             * camera UI; the flip belongs where the camera actually is.
-            * Telegram's attach grid does not put one here either.
+            * the reference app's attach grid does not put one here either.
             *
             * The native view keeps its `facing` prop — CameraTilePackage.kt
             * unbinds and rebinds on change — so the capability is intact for
@@ -599,7 +599,7 @@ const makeStyles = (t: Theme) =>
      * the sheet read as broken rather than as deliberate (Amit, 2026-09-12: "it
      * looks very bad").
      *
-     * Telegram can afford a short first row because a scrolling photo grid fills
+     * the reference app can afford a short first row because a scrolling photo grid fills
      * the rest; we have no grid to put there and cannot read the gallery (see
      * departure 2 above). With exactly two actions, the honest answer is to let
      * the two actions have the room: a tall portrait viewfinder — which is the
@@ -620,7 +620,7 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
     },
     // Keeps the reference's column width (so the tile still reads as cell 0 of
-    // Telegram's grid) while taking the panel's full height.
+    // the reference app's grid) while taking the panel's full height.
     cameraCell: {
       alignSelf: 'stretch',
     },

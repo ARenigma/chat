@@ -260,7 +260,7 @@ describe('a selected money chip is a filled container', () => {
     // its own is a 1.22:1 boundary against bg/base.
     //
     // The size moved 17 -> `icon.sm` (16) with ADR-0030, which put every icon on
-    // the Telegram-derived scale. What this line is FOR is that the check is
+    // the reference-derived scale. What this line is FOR is that the check is
     // present at all, so it is re-pinned to the token rather than loosened to a
     // name-only match: the assertion is exactly as specific as it was, and the
     // number it names is now true. Which step it is remains the scale's

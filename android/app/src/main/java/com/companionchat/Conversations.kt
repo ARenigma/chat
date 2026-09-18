@@ -115,7 +115,7 @@ object Conversations {
      * The id of the PRE-notification: the ring posted from the FCM push, before
      * `CallForegroundService` exists to post one of its own.
      *
-     * Telegram numbers the same three call states rather than three posters
+     * the reference app numbers the same three call states rather than three posters
      * (VoIPService.java:191-193):
      *
      *     ID_ONGOING_CALL_NOTIFICATION     = 201  // connected
@@ -130,7 +130,7 @@ object Conversations {
      * and the FSI-less one (the service's) usually won, so the callee got a tray
      * entry instead of a full-screen takeover.
      *
-     * A constant and not a per-call hash, exactly as Telegram's 203 is: the
+     * A constant and not a per-call hash, exactly as the reference app's 203 is: the
      * service has no callId to hash, and one device rings one call at a time.
      */
     const val CALL_PRENOTIFICATION_ID = 2003
@@ -141,7 +141,7 @@ object Conversations {
      * The service posts the ring once it starts, and `startCallForegroundService`
      * carries no medium — the camera flag is false while ringing because the
      * camera only opens on answer. So the push records it here and the service
-     * reads it, the way Telegram's service reads the pending call the
+     * reads it, the way the reference app's service reads the pending call the
      * prenotification left behind (`VoIPPreNotificationService.java:379-381`
      * statics, read by `isVideo()` at `:485-487`).
      *
@@ -184,7 +184,7 @@ object Conversations {
      * Take the pushed ring off screen. The service calls this as it promotes
      * itself, so only one of the two ring notifications is ever on screen
      * (`VoIPPreNotificationService.java:579` does the same `nm.cancel` when
-     * Telegram's service takes the call over).
+     * the reference app's service takes the call over).
      */
     fun cancelCallPrenotification(context: Context) {
         NotificationManagerCompat.from(context).cancel(CALL_PRENOTIFICATION_ID)
@@ -208,7 +208,7 @@ object Conversations {
 
     /**
      * How long the callee's ring may stay up, matched to `RING_TIMEOUT_IN_MS` in
-     * `src/screens/CallScreen.tsx` (60 s), which is itself Telegram's
+     * `src/screens/CallScreen.tsx` (60 s), which is itself the reference app's
      * `callRingTimeout` shortened for a paid product.
      */
     private const val RING_TIMEOUT_MS = 60_000L
@@ -238,7 +238,7 @@ object Conversations {
     /**
      * AudioAttributes for an incoming CALL — USAGE_NOTIFICATION_RINGTONE routes to
      * the ring volume and is what Android treats as a call ring, the same usage
-     * Telegram's VoIPService sets. https://developer.android.com/reference/android/media/AudioAttributes
+     * the reference app's VoIPService sets. https://developer.android.com/reference/android/media/AudioAttributes
      */
     private fun ringtoneAttributes(): AudioAttributes =
         AudioAttributes.Builder()
@@ -543,7 +543,7 @@ object Conversations {
      * A `CallStyle.forIncomingCall` notification with a full-screen intent, which
      * is what makes the phone show a full ringing screen (over the lock screen)
      * and use the ringtone, rather than a quiet heads-up. `setOngoing` so it
-     * cannot be swiped away while ringing. Telegram's prenotification is built
+     * cannot be swiped away while ringing. the reference app's prenotification is built
      * the same way and for the same reason — FSI plus CallStyle, posted from the
      * push before any service exists (VoIPPreNotificationService.java:243, :269).
      *

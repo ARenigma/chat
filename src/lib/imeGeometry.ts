@@ -150,8 +150,8 @@ function inputsOf(g: ImeInputs): ImeInputs {
  * `keyboardUp` is false, so 0 — the panel fills that space itself, so the dock
  * must not also be lifted or the two would stack. Panel open AND searching
  * (the search field raises the keyboard again) → `keyboardUp` is true again on
- * its own, no `emojiSearching` branch needed. Telegram's arrangement, recorded
- * in `design/references/telegram.md`.
+ * its own, no `emojiSearching` branch needed. the reference app's arrangement, recorded
+ * in `design/references/chat-app-mechanics.md`.
  *
  * `panelCeiling`: everything the header and the raised keyboard leave over. The
  * Composer subtracts its own input row, which it measures, because the row grows

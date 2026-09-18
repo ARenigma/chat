@@ -4,7 +4,7 @@
  * ---------------------------------------------------------------------------
  * Why this exists
  * ---------------------------------------------------------------------------
- * Telegram writes an outgoing message into `messages_v2` with `send_state = 1`
+ * the reference app writes an outgoing message into `messages_v2` with `send_state = 1`
  * and a negative `mid` BEFORE the network request goes out, and replays every
  * such row at the next cold launch — `checkUnsentMessages()` →
  * `getUnsentMessages(1000)` (ApplicationLoader.java:259,
@@ -23,7 +23,7 @@
  * than an omission. Their send references an object already uploaded to a
  * bucket, and the local recording sits in a cache directory Android is free to
  * clear. Replaying one after a kill could post a message pointing at a file
- * that no longer exists on either side. Telegram can replay media because it
+ * that no longer exists on either side. the reference app can replay media because it
  * copies it into storage it owns first; we do not, so queueing media would be
  * a promise this module cannot keep. Media sends still keep their bubble and
  * show as failed — they just are not resurrected across a launch.
@@ -33,7 +33,7 @@
  * ---------------------------------------------------------------------------
  * MMKV is already a dependency. A queue of a few dozen short strings does not
  * justify a native SQLite dependency under RULE 5 — and the thing that makes
- * Telegram's outbox correct is not SQL, it is persist-before-send plus an
+ * the reference app's outbox correct is not SQL, it is persist-before-send plus an
  * idempotency key. We have both.
  *
  * This module is PURE and imports nothing from `react-native`, so it is
@@ -64,7 +64,7 @@ export interface OutboxEntry {
    *
    * The whole point of persisting it: a replay carries the SAME nonce, so
    * `send_message_idempotent` collapses it if the original in fact landed. That
-   * is what makes replay safe rather than a duplicate generator — Telegram's
+   * is what makes replay safe rather than a duplicate generator — the reference app's
    * `random_id` reuse (SendMessagesHelper.java:1868) by another name.
    */
   readonly nonce: string;

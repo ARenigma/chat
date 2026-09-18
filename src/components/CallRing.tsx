@@ -11,7 +11,7 @@ import Animated, {
 import { DURATION, EASE_OUT } from '../theme/motion';
 
 /**
- * Telegram outgoing-call halo: a soft glow that breathes out from the avatar.
+ * the reference app outgoing-call halo: a soft glow that breathes out from the avatar.
  * Reference: attached call screen capture (2026-08-30), watched frame-by-frame
  * (2026-08-31). The reference halo is *tight and gentle* — a constant bright
  * ring hugs the avatar, and faint discs expand only ~25% before fading, on a

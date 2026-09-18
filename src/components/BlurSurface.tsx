@@ -70,7 +70,7 @@ const BLUR_MIN_API = 31;
  * (API 36) and the audit records the numbers. What never worked was the LOOK:
  * a translucent white plate over a light cream wallpaper and pale bubbles has
  * almost nothing to reveal, so the blur ran every frame and could not be seen.
- * Telegram's glass reads because its theme is dark and the content behind it is
+ * the reference app's glass reads because its theme is dark and the content behind it is
  * colourful; ours is light on light. That is a palette fact, not a bug we can
  * tune our way out of in an afternoon, and it cost three build cycles to learn.
  *
@@ -107,7 +107,7 @@ export const BlurRoot = requireNativeComponent<BlurRootProps>('PappalBlurRoot');
 /**
  * Props accepted by the PappalBlurSurface native view manager.
  *
- * All props are optional. Defaults match Telegram's chat blur configuration:
+ * All props are optional. Defaults match the reference app's chat blur configuration:
  * tintAlpha 0.70 = key_chat_BlurAlpha 0xB2/255 (ThemeColors.java:660),
  * blurRadius 60 = HIGH-class radius (SizeNotifierFrameLayout.java:952).
  */
@@ -140,7 +140,7 @@ export interface BlurSurfaceProps {
   /**
    * Opacity of the tint overlay in [0, 1].
    *
-   * Default 0.70 matches Telegram's key_chat_BlurAlpha (70%). At this value
+   * Default 0.70 matches the reference app's key_chat_BlurAlpha (70%). At this value
    * the blur is ~30% visible — enough to show depth without becoming a lens.
    * A lower value lets more blur through; higher approaches a solid plate.
    */
@@ -148,7 +148,7 @@ export interface BlurSurfaceProps {
   /**
    * Blur radius in downscaled-pixel space (passed to RenderEffect.createBlurEffect).
    *
-   * Default 60 matches Telegram's HIGH-class radius. The perceived blur in
+   * Default 60 matches the reference app's HIGH-class radius. The perceived blur in
    * screen space is radius × DOWNSCALE (DOWNSCALE = 6 in BlurPackage.kt).
    */
   blurRadius?: number;

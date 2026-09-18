@@ -15,6 +15,7 @@ import {
 import { focusManager, onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import NetInfo from '@react-native-community/netinfo';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { BLUR_SURFACE_AVAILABLE, BlurRoot } from './src/components/BlurSurface';
 import Animated, {
   useAnimatedProps,
@@ -143,13 +144,13 @@ initSentry();
  *
  *              within budget   p50      p95      p99     over 2 budgets
  *   ours           44.2%     17.85ms  37.91ms  50.79ms        11
- *   Telegram       97.5%      7.55ms  14.45ms  23.97ms         0
+ *   the reference app       97.5%      7.55ms  14.45ms  23.97ms         0
  *
  * and on plain scrolling the two are near-identical (p95 28.19 vs 28.82, p99
  * 42.33 vs 42.39), so the transition was the entire felt gap. That is the
  * "push/pop frames exceed budget" evidence this note asked for.
  *
- * Telegram sets LAYER_TYPE_HARDWARE for the same reason before its swipe-back
+ * the reference app sets LAYER_TYPE_HARDWARE for the same reason before its swipe-back
  * (ActionBarLayout.java:1404) — the gesture needs zero-redraw compositing.
  *
  * The toggle is driven from `transitioning`, which `useScreenEnter` raises when
@@ -1743,7 +1744,7 @@ function SignedIn({
        * unmount cleanup calls `endCall` on the call in progress. So an incoming
        * ring **dropped the active paid call** and started ringing the new one.
        *
-       * Telegram declines the second call outright rather than disturbing the
+       * the reference app declines the second call outright rather than disturbing the
        * first (MessagesController.java:20468, "Auto-declining call X because
        * there's already active one", sending BUSY). Same behaviour here, via
        * the existing `endCall`: the server derives `declined` for a callee
@@ -2245,6 +2246,15 @@ export default function App() {
        * recording entirely while no surface is asking for a blur, and records at
        * most once per frame otherwise (see BlurPackage.kt).
        */}
+      {/*
+       * The keyboard's UI-thread tracking lives here. Every screen that reads
+       * the IME position (useGenericKeyboardHandler in src/lib/keyboardEngine.ts)
+       * requires this ancestor; it sits inside the gesture root so pan gestures
+       * and keyboard tracking share one root. Both bars are translucent because
+       * the app is edge-to-edge and applies insets itself — the provider must
+       * agree or its heights disagree with what the window actually shows.
+       */}
+      <KeyboardProvider statusBarTranslucent navigationBarTranslucent>
       <BlurRootOrView style={fill.root}>
         <SafeAreaProvider>
           <QueryClientProvider client={queryClient}>
@@ -2254,6 +2264,7 @@ export default function App() {
           </QueryClientProvider>
         </SafeAreaProvider>
       </BlurRootOrView>
+      </KeyboardProvider>
     </GestureHandlerRootView>
   );
 }

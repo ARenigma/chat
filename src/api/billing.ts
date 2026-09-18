@@ -212,7 +212,7 @@ async function createOrder(productId: string): Promise<RechargeResult> {
  * at risk either way — cashfree-webhook credits the balance server-side
  * independent of whether the client ever learns the result.
  *
- * 3 attempts, 1s/2s/4s, matching the shape of Telegram's own retry
+ * 3 attempts, 1s/2s/4s, matching the shape of the reference app's own retry
  * (ConnectionsManager.cpp: a resend loop against a ceiling, with the
  * degenerate case synthesising a terminal RETRY_LIMIT once it is
  * exhausted) rather than an arbitrary number.

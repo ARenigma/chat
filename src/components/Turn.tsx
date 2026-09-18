@@ -430,17 +430,17 @@ function Body({
   if (voice !== undefined && voicePlayer !== undefined) {
     return (
       <View style={stamp.textBody}>
-        <VoiceNote
-          messageId={voice.messageId}
-          path={voice.path}
-          durationMs={voice.durationMs}
-          peaks={voice.peaks}
-          onAccent={onAccent}
-          pending={pending}
-          onToggle={voicePlayer.toggle}
-          onCycleSpeed={voicePlayer.cycleSpeed}
-          speed={voicePlayer.speed}
-        />
+      <VoiceNote
+        messageId={voice.messageId}
+        path={voice.path}
+        durationMs={voice.durationMs}
+        peaks={voice.peaks}
+        onAccent={onAccent}
+        pending={pending}
+        onToggle={voicePlayer.toggle}
+        onCycleSpeed={voicePlayer.cycleSpeed}
+        speed={voicePlayer.speed}
+      />
         {timestamp ? (
           <MetaRow timestamp={timestamp} receipt={receipt} failed={failed} edited={edited} onAccent={onAccent} />
         ) : null}
@@ -486,11 +486,11 @@ function Body({
         testID={testID}
         allowFontScaling
         style={[textStyle, stamp.messageText]}>
-        {message}
+      {message}
         {timestamp ? (
           <View style={[stamp.metaSpacer, { width: metaWidth + TOKENS.space.xs }]} />
         ) : null}
-      </Text>
+    </Text>
       {timestamp ? (
         <View
           style={stamp.metaOverlay}
@@ -582,7 +582,7 @@ function MediaBubble({
         {/* Held back until the screen transition settles.
             A photo decode is the most expensive thing a bubble does, and it was
             landing inside the push animation — measured on the S22 at 60Hz, a
-            push/pop ran a 15.40ms median frame against Telegram's 7.55ms.
+            push/pop ran a 15.40ms median frame against the reference app's 7.55ms.
             The grey placeholder underneath is not a compromise invented for
             this: it is the state a photo already shows while its signed URL is
             resolving, so holding the Image back for a few frames reuses a
@@ -721,7 +721,7 @@ interface PeerProps extends Shared {
  *
  * Amit, asked directly and answering directly: "Remove it, align the grid."
  * The supporting facts, all checkable: this app is exclusively 1:1, so an avatar
- * in the transcript identifies nobody — Telegram shows none in a 1:1 thread,
+ * in the transcript identifies nobody — the reference app shows none in a 1:1 thread,
  * which is exactly why its input bar traces its bubble grid; and the chat header
  * already carries the peer's photo, name and presence (`ChatScreen`'s identity
  * block, 30dp `Avatar` + `HeaderSubtitle`), so nothing is lost, only repeated.
@@ -840,7 +840,7 @@ function PeerTurnView({
         </InteractiveBubble>
         {reactions && reactions.length > 0 ? (
           <View style={[styles.reactionAttach, styles.reactionAttachPeer]}>
-            <ReactionRow reactions={reactions} testID="reactions-peer" />
+          <ReactionRow reactions={reactions} testID="reactions-peer" />
           </View>
         ) : null}
       </View>
@@ -875,7 +875,7 @@ interface MineProps extends Shared {
   /**
    * The send failed and this bubble is saying so instead of disappearing.
    *
-   * Telegram's `MESSAGE_SEND_STATE_SEND_ERROR` (MessageObject.java:135). The
+   * the reference app's `MESSAGE_SEND_STATE_SEND_ERROR` (MessageObject.java:135). The
    * bubble stays exactly where it was written, so the member can see what they
    * said and act on it, rather than watching their words vanish and having to
    * remember them.
@@ -972,7 +972,7 @@ function MyTurnView({
           */}
         {tail === true ? (
           <View style={styles.tailMine} pointerEvents="none" testID="bubble-tail-mine" />
-        ) : null}
+      ) : null}
         <InteractiveBubble
           mine
           target={target}
@@ -1002,7 +1002,7 @@ function MyTurnView({
           onDeleteMessage={onDeleteMessage}
           chosenReaction={chosenReaction}
           alignEnd>
-          {image !== undefined ? (
+        {image !== undefined ? (
             <MediaBubble
               image={image}
               onAccent
@@ -1014,28 +1014,28 @@ function MyTurnView({
           ) : (
             <>
               {quote ? <QuoteBlock quote={quote} /> : null}
-              <Body
-                message={message}
-                voice={voice}
-                voicePlayer={voicePlayer}
-                pending={pending === true}
-                onAccent
-                textStyle={styles.myText}
-                testID="bubble-mine"
+            <Body
+              message={message}
+              voice={voice}
+              voicePlayer={voicePlayer}
+              pending={pending === true}
+              onAccent
+              textStyle={styles.myText}
+              testID="bubble-mine"
                 timestamp={timestamp}
                 receipt={pending ? undefined : receipt}
                 failed={failed}
                 edited={edited}
                 deleted={deleted}
-              />
+            />
             </>
-          )}
+        )}
         </InteractiveBubble>
-        {reactions && reactions.length > 0 ? (
+      {reactions && reactions.length > 0 ? (
           <View style={[styles.reactionAttach, styles.reactionAttachMine]}>
-            <ReactionRow reactions={reactions} testID="reactions-mine" />
+        <ReactionRow reactions={reactions} testID="reactions-mine" />
           </View>
-        ) : null}
+      ) : null}
       </View>
     </Animated.View>
   );
@@ -1054,9 +1054,9 @@ export const MyTurn = memo(MyTurnView);
  */
 const REPLY_ACTIVATE = 16;
 
-/** Drag distance that commits a swipe-reply (Telegram ChatActivity.java:5033). */
+/** Drag distance that commits a swipe-reply (the reference app ChatActivity.java:5033). */
 const REPLY_TRIGGER = 50;
-/** Hard clamp on the drag; Telegram does not rubber-band past this. */
+/** Hard clamp on the drag; the reference app does not rubber-band past this. */
 const REPLY_MAX_DRAG = 72;
 /** Gap between the reaction strip and the bubble it anchors to. */
 const STRIP_GAP = 8;
@@ -1079,7 +1079,7 @@ const OWNER_PILL_H_EST = 64;
 /**
  * Edit and Delete for your own message, under the reaction strip.
  *
- * TWO PILLS, NOT ONE, and this is Telegram's arrangement rather than an
+ * TWO PILLS, NOT ONE, and this is the reference app's arrangement rather than an
  * afterthought: it anchors the reaction bar above the message and a context
  * menu directly beneath it (ReactionsContainerLayout sits above
  * ChatActivity's popup menu), so the two are visibly a bar of quick reactions
@@ -1092,7 +1092,7 @@ const OWNER_PILL_H_EST = 64;
  * `delete` and has no pencil. Adding one means regenerating the font (RULE 4)
  * AND choosing which pencil the brand uses, which is Amit's call, not one to
  * make silently mid-feature (CLAUDE.md, structural vs creative). Two words is
- * also what Telegram's and WhatsApp's own menus render.
+ * also what the reference app's and WhatsApp's own menus render.
  */
 function OwnerActions({
   onEdit,
@@ -1141,7 +1141,7 @@ function OwnerActions({
 /**
  * Swipe-to-reply + long-press reaction strip around a bubble.
  *
- * Telegram/WhatsApp gestures: a horizontal drag past 50dp quotes the message,
+ * the reference app/WhatsApp gestures: a horizontal drag past 50dp quotes the message,
  * with one KEYBOARD_TAP as it crosses and a reply arrow that fills in behind the
  * bubble; a system-length (500ms) long press fires LONG_PRESS and opens a thin
  * emoji strip anchored on the bubble (not a bottom sheet).
@@ -1217,7 +1217,7 @@ function InteractiveBubble({
   const bubbleRef = useRef<RNView>(null);
   const tx = useSharedValue(0);
   // Latches true once a drag has passed the commit threshold, so the KEYBOARD_TAP
-  // haptic fires exactly once per crossing (Telegram fires it once at 50dp, not
+  // haptic fires exactly once per crossing (the reference app fires it once at 50dp, not
   // per frame — ChatActivity.java:5033-5041). Reset when the drag falls back
   // under the threshold or the gesture ends.
   const crossed = useSharedValue(false);
@@ -1265,8 +1265,8 @@ function InteractiveBubble({
     failOffsetY: [-12, 12],
     onUpdate: e => {
       // Peer: drag right; mine: drag left — both toward the screen edge, like WA.
-      // Hard clamp at MAX_DRAG with no rubber-band: Telegram's swipe-to-reply
-      // does not spring past its limit (design/references/telegram.md).
+      // Hard clamp at MAX_DRAG with no rubber-band: the reference app's swipe-to-reply
+      // does not spring past its limit (design/references/chat-app-mechanics.md).
       const next = mine
         ? Math.max(-REPLY_MAX_DRAG, Math.min(0, e.translationX))
         : Math.max(0, Math.min(REPLY_MAX_DRAG, e.translationX));
@@ -1320,7 +1320,7 @@ function InteractiveBubble({
    */
   const longPress = useLongPressGesture({
     enabled: target !== null,
-    // The Android system long-press timeout, which is what Telegram opens the
+    // The Android system long-press timeout, which is what the reference app opens the
     // reaction menu on (ReactionsContainerLayout.java:2262). Was 400ms.
     minDuration: 500,
     onActivate: () => {
@@ -1416,9 +1416,9 @@ function InteractiveBubble({
     transform: [{ translateX: tx.value }],
   }));
   // The reply arrow the bubble uncovers as it slides: it fills in from 20dp and
-  // is full at the commit threshold, the way Telegram's reply icon grows in
+  // is full at the commit threshold, the way the reference app's reply icon grows in
   // behind the message (ChatActivity.java:4651-4670). Interpolated rather than
-  // Telegram's three-spring chain — the same read at a fraction of the cost.
+  // the reference app's three-spring chain — the same read at a fraction of the cost.
   const replyRevealStyle = useAnimatedStyle(() => {
     const d = Math.abs(tx.value);
     return {
@@ -1546,8 +1546,8 @@ function InteractiveBubble({
                     />
                   ) : null}
                 </View>
-              </View>
-            ) : null}
+        </View>
+      ) : null}
           </GestureHandlerRootView>
         </Modal>
       ) : null}
@@ -1559,7 +1559,7 @@ function InteractiveBubble({
           }
           style={[!media ? bubbleStyle : null, !media ? styles.bubbleInner : null, slideStyle]}>
           {children}
-        </Animated.View>
+    </Animated.View>
       </GestureDetector>
     </View>
   );
@@ -1595,7 +1595,7 @@ function InteractiveBubble({
  * on the outgoing fill and so was invisible there too; accentStrong is
  * 3.79/4.18 on mine and 4.96/6.32 on theirs, clearing the 3:1 non-text step of
  * developer.android.com/guide/topics/ui/accessibility/apps in all four. It also
- * makes the quote rule the brand mark it is in WhatsApp and Telegram.
+ * makes the quote rule the brand mark it is in WhatsApp and the reference app.
  */
 function QuoteBlock({ quote }: { quote: Quote }) {
   const styles = useStyles(makeStyles);

@@ -194,7 +194,7 @@ class PappalBlurRoot(context: Context) : FrameLayout(context) {
         // Create the node once and reuse it. The RenderEffect is immutable after
         // construction, so setRenderEffect is called only on first creation.
         val node = blurNode ?: RenderNode("pappalBlurRoot").also { n ->
-            // Blur radius in downscaled-pixel space. Telegram HIGH path: r = 60 at
+            // Blur radius in downscaled-pixel space. the reference app HIGH path: r = 60 at
             // density ≈ 3× scale (SizeNotifierFrameLayout.java:952). We apply the
             // same radius; DOWNSCALE controls the effective screen-space radius.
             val r = DEFAULT_BLUR_RADIUS
@@ -225,7 +225,7 @@ class PappalBlurRoot(context: Context) : FrameLayout(context) {
 
     companion object {
         // Default blur radius in downscaled-pixel space.
-        // Mirrors Telegram HIGH-class value (SizeNotifierFrameLayout.java:952).
+        // Mirrors the reference app HIGH-class value (SizeNotifierFrameLayout.java:952).
         internal const val DEFAULT_BLUR_RADIUS = 60f
     }
 }
@@ -260,7 +260,7 @@ class PappalBlurRootManager : ViewGroupManager<PappalBlurRoot>() {
  *   – No [PappalBlurRoot] ancestor found: logs once, renders solid.
  *   – Canvas not hardware-accelerated: drawRenderNode requires hw acceleration.
  *
- * Fallback matches Telegram's own path: canvas.drawRect(rectTmp, blurScrimPaint)
+ * Fallback matches the reference app's own path: canvas.drawRect(rectTmp, blurScrimPaint)
  * (SizeNotifierFrameLayout.java:976-979).
  *
  * https://developer.android.com/reference/android/graphics/RenderNode#drawRenderNode(android.graphics.RenderNode)
@@ -286,7 +286,7 @@ class PappalBlurSurface(context: Context) : View(context) {
 
     /**
      * Opacity of the tint overlay in [0.0, 1.0]. Default 0.70 matches
-     * Telegram's key_chat_BlurAlpha = 0xB2000000 (alpha 178/255 ≈ 70%)
+     * the reference app's key_chat_BlurAlpha = 0xB2000000 (alpha 178/255 ≈ 70%)
      * (ThemeColors.java:660). At 70% tint the blur is only ~30% visible;
      * the surface reads as a tinted plate, not a lens. Getting this wrong in
      * the wrong direction makes the blur look like a rendering fault.
@@ -295,7 +295,7 @@ class PappalBlurSurface(context: Context) : View(context) {
 
     /**
      * Whether to use the hardware blur path. false → [drawSolidFallback].
-     * Telegram always draws a rect on this path (SizeNotifierFrameLayout.java:976-979).
+     * the reference app always draws a rect on this path (SizeNotifierFrameLayout.java:976-979).
      */
     /*
      * Named `blurEnabled`, not `enabled`: a `var enabled` on a View subclass
@@ -315,7 +315,7 @@ class PappalBlurSurface(context: Context) : View(context) {
      * Blur radius stored for documentation and future per-surface reconfiguration.
      * Currently, the actual radius is set on the root's shared RenderNode
      * ([PappalBlurRoot.DEFAULT_BLUR_RADIUS]). Surfaces on the same screen
-     * typically share the same radius; the default matches Telegram HIGH
+     * typically share the same radius; the default matches the reference app HIGH
      * (SizeNotifierFrameLayout.java:952).
      */
     var blurRadius: Float = PappalBlurRoot.DEFAULT_BLUR_RADIUS
@@ -425,7 +425,7 @@ class PappalBlurSurface(context: Context) : View(context) {
     /**
      * Draws a solid rect of [tintColor] at full opacity — the fallback for all
      * paths where the hardware blur is unavailable or disabled.
-     * Telegram draws canvas.drawRect(rectTmp, blurScrimPaint) on this path
+     * the reference app draws canvas.drawRect(rectTmp, blurScrimPaint) on this path
      * (SizeNotifierFrameLayout.java:976-979).
      */
     private fun drawSolidFallback(canvas: Canvas) {
@@ -444,7 +444,7 @@ class PappalBlurSurface(context: Context) : View(context) {
         /*
          * Opaque on purpose for a real colour: with no blur behind it, the 55%
          * glass token would let the transcript read straight through the bar.
-         * Telegram draws a solid rect on this path too
+         * the reference app draws a solid rect on this path too
          * (SizeNotifierFrameLayout.java:976-979).
          */
         tintPaint.alpha = 255
@@ -504,13 +504,13 @@ class PappalBlurSurface(context: Context) : View(context) {
          * rgba(255,255,255,0.55) - was rendered at 0.70 instead, and the token
          * table was documenting a value the renderer ignored.
          *
-         * Worse, 0.70 came from Telegram's key_chat_BlurAlpha = 0xB2000000
+         * Worse, 0.70 came from the reference app's key_chat_BlurAlpha = 0xB2000000
          * (ThemeColors.java:660) and the number was ported without its context.
          * That 70% is BLACK, on a DARK theme, over colourful bubbles and photos -
          * 30% of that backdrop still reads clearly as glass. Ours is 70% WHITE
          * over a light cream wallpaper and pale bubbles, which washes out to flat
          * cream: the blur ran every frame and was invisible, which is exactly
-         * what Amit reported ("i see no blur like telegram", 2026-09-05).
+         * what Amit reported ("i see no blur like the reference app", 2026-09-05).
          *
          * Multiplying instead of replacing keeps the prop useful for a caller
          * that wants to dim further, while leaving the palette in charge of how

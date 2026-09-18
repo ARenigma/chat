@@ -30,7 +30,7 @@ describe('useStore', () => {
   });
 
   /*
-   * A boolean until 2026-09-17. Telegram carries typing and recording as
+   * A boolean until 2026-09-17. the reference app carries typing and recording as
    * separate wire actions and renders separate copy for each
    * (MessagesController.java:11210-11213), and this app has voice notes, so
    * "typing" was simply untrue for the whole length of one being recorded.

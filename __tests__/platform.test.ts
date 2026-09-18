@@ -825,7 +825,7 @@ describe('call lifecycle — foreground service and permissions', () => {
      * createNotificationChannel() and ignores every later edit. The originals
      * were created with no .setSound(), so they are stuck silent. The fix is a
      * new id (the `_v2` bump) PLUS an explicit sound, and deleting the old ids so
-     * they stop showing in Settings — the delete+recreate pattern Telegram uses.
+     * they stop showing in Settings — the delete+recreate pattern the reference app uses.
      * https://developer.android.com/develop/ui/views/notifications/channels
      */
     const conversations = read(
@@ -853,7 +853,7 @@ describe('call lifecycle — foreground service and permissions', () => {
 
   it('darkens the screen at the ear during a voice call, and only a voice call', () => {
     /*
-     * PROXIMITY_SCREEN_OFF_WAKE_LOCK, the same lock Telegram's VoIPService holds,
+     * PROXIMITY_SCREEN_OFF_WAKE_LOCK, the same lock the reference app's VoIPService holds,
      * so a voice call turns the screen off when the phone is at the ear. Held only
      * for a connected VOICE call (mic, no camera) — never while ringing and never
      * for video, which needs the screen on — and released on destroy so a service
@@ -920,7 +920,7 @@ describe('call lifecycle — foreground service and permissions', () => {
     /*
      * The service's incoming notification IS the ring, so it carries the
      * full-screen intent and is the object startForeground() is handed. One
-     * notification, the way Telegram builds it: VoIPService.java:5264 sets the
+     * notification, the way the reference app builds it: VoIPService.java:5264 sets the
      * full-screen intent, :5283 builds CallStyle.forIncomingCall, :5319 passes
      * that same object to startForeground.
      *
@@ -943,7 +943,7 @@ describe('call lifecycle — foreground service and permissions', () => {
      * 2026-09-15). A channel's sound plays ONCE on post; a call rings until it is
      * answered. So the service loops the device ringtone on the ring stream while
      * incoming and stops it the instant the call connects or ends — the same way
-     * Telegram's VoIPService owns the ring rather than the channel.
+     * the reference app's VoIPService owns the ring rather than the channel.
      */
     const fgs = read(FGS);
     expect(fgs).toContain('if (isIncoming) startRinging() else stopRinging()');
@@ -1840,7 +1840,7 @@ describe('UI haptics go through the platform feedback constants', () => {
 
   it('never overrides the user with FLAG_IGNORE_GLOBAL_SETTING', () => {
     /*
-     * The plan said to set it "where Telegram sets it". It is not set, for two
+     * The plan said to set it "where the reference app sets it". It is not set, for two
      * independent reasons: the principles page strongly discourages it, and the
      * SDK's own api-versions.xml records it deprecated=33 while this app targets
      * 36. Matching the reference is this project's default, not an obligation -
@@ -1923,7 +1923,7 @@ describe('hardware GPU backdrop blur (PappalBlurRoot + PappalBlurSurface)', () =
      * tint colour, so bg.glass - deliberately rgba(255,255,255,0.55) - rendered
      * at 0.70 and the token table documented a number the renderer ignored.
      *
-     * The 0.70 came from Telegram's key_chat_BlurAlpha 0xB2000000 and was ported
+     * The 0.70 came from the reference app's key_chat_BlurAlpha 0xB2000000 and was ported
      * without its context: that is 70% BLACK on a DARK theme over colourful
      * content. 70% WHITE over a light cream wallpaper washes out to flat cream -
      * the blur ran every frame and could not be seen.
@@ -2071,7 +2071,7 @@ describe('hardware GPU backdrop blur (PappalBlurRoot + PappalBlurSurface)', () =
 
   it('falls back to a solid rect when blur is unavailable or disabled', () => {
     /**
-     * Telegram draws canvas.drawRect(rectTmp, blurScrimPaint) when blur is
+     * the reference app draws canvas.drawRect(rectTmp, blurScrimPaint) when blur is
      * off (SizeNotifierFrameLayout.java:976-979). Our drawSolidFallback is
      * the same pattern. It must exist and be named consistently so searches
      * can trace the fallback path.
@@ -2099,7 +2099,7 @@ describe('hardware GPU backdrop blur (PappalBlurRoot + PappalBlurSurface)', () =
      * imply a code copy. A grep in CI fails the build on these strings.
      */
     const kt = read(BLUR_PACKAGE);
-    expect(kt).not.toContain('org.telegram');
+    expect(kt).not.toContain('org.the reference app');
     expect(kt).not.toContain('TMessagesProj');
     expect(kt).not.toContain('DrKLO');
   });
@@ -2200,7 +2200,7 @@ describe('W5#5 — renderToHardwareTextureAndroid decision is recorded', () => {
   it('promotes a pushed screen to a texture only WHILE it moves', () => {
     // The precondition this was held back for is met: on the S22 at 60Hz a
     // push/pop landed 44.2% of frames inside budget with a 17.85ms p50, against
-    // Telegram's 97.5% and 7.55ms, while plain scrolling matched them almost
+    // the reference app's 97.5% and 7.55ms, while plain scrolling matched them almost
     // exactly. So the texture is on for the animation and off the instant it
     // settles -- a permanent one is ~8MB of GPU memory held while nothing moves.
     const app = read('App.tsx');
@@ -2216,7 +2216,7 @@ describe('W5#5 — renderToHardwareTextureAndroid decision is recorded', () => {
   });
 
   it('waits for the screen to have DATA, not just geometry', () => {
-    // Telegram does not start on layout, it starts when the first message batch
+    // the reference app does not start on layout, it starts when the first message batch
     // has rendered (ChatActivity.java:27014 -> :20613 ->
     // resumeDelayedFragmentAnimation), with a 200ms ceiling
     // (ActionBarLayout.java:2270-2282). Measured gap at 60Hz on the S22 before
@@ -2629,5 +2629,38 @@ describe('FLAG_SECURE demo-capture carve-out', () => {
     expect(app).toContain('supabase.auth.onAuthStateChange');
     // The subscription must be cleaned up on unmount.
     expect(app).toContain('subscription.unsubscribe()');
+  });
+});
+
+describe('the viewport never resizes for the soft keyboard', () => {
+  /*
+   * SOFT_INPUT_ADJUST_NOTHING, permanently. The IME arrives as a WindowInsets
+   * animation and the app lifts its own surfaces by that inset on the UI thread
+   * (src/lib/keyboardEngine.ts); a resize/pan mode would hand the window manager
+   * a shrink-the-layout cycle on every keyboard and emoji-panel swap.
+   * https://developer.android.com/develop/ui/views/layout/edge-to-edge
+   * https://developer.android.com/develop/ui/views/layout/insets
+   */
+  it('MainActivity declares adjustNothing', () => {
+    const manifest = read(MANIFEST);
+    expect(manifest).toContain('android:windowSoftInputMode="adjustNothing"');
+    expect(manifest).not.toContain(
+      'android:windowSoftInputMode="adjustResize"',
+    );
+    expect(manifest).not.toContain('android:windowSoftInputMode="adjustPan"');
+  });
+
+  it('App.tsx hosts the KeyboardProvider the engine hooks require', () => {
+    // useGenericKeyboardHandler throws without a provider ancestor. The
+    // provider sits inside GestureHandlerRootView so gestures and keyboard
+    // tracking share one root, with translucent bars because the app is
+    // edge-to-edge and insets are applied manually.
+    const app = read('App.tsx');
+    expect(app).toContain(
+      "from 'react-native-keyboard-controller'",
+    );
+    expect(app).toContain('<KeyboardProvider');
+    expect(app).toContain('statusBarTranslucent');
+    expect(app).toContain('navigationBarTranslucent');
   });
 });

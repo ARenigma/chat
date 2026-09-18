@@ -16,7 +16,7 @@ import { NativeModules, Vibration } from 'react-native';
  * `HapticsModule.kt`; this file is only the fire points.
  * https://developer.android.com/develop/ui/views/haptics/haptics-principles
  *
- * Telegram's own mapping, for reference:
+ * the reference app's own mapping, for reference:
  *   tick()      → KEYBOARD_TAP  (167 call sites in ui/): send, swipe threshold.
  *   longPress() → LONG_PRESS    (73 call sites): the message action menu/strip.
  */
@@ -52,7 +52,7 @@ export function tick(): void {
 
 /**
  * The heavier beat Android fires when a long-press opens something, for the
- * reaction strip. Telegram uses the system long-press feedback here
+ * reaction strip. the reference app uses the system long-press feedback here
  * (`ReactionsContainerLayout.java:2240`).
  */
 export function longPress(): void {

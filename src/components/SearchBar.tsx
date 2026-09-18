@@ -1,12 +1,12 @@
 /**
- * The search field, measured off Telegram's CURRENT one.
+ * The search field, measured off the reference app's CURRENT one.
  *
  * This file used to be built to `m3.material.io/components/search/specs` (56dp
  * pill, radius 28, carried as `layout.searchBar` = 56 in design/tokens.json,
  * now deleted from the token map because nothing read it). That was a
  * deliberate, recorded decision; it is being reversed on the owner's explicit
- * instruction that search should look and move like Telegram's, so the table
- * below is Telegram's MEASUREMENTS and every place this file does something
+ * instruction that search should look and move like the reference app's, so the table
+ * below is the reference app's MEASUREMENTS and every place this file does something
  * else is named in the departures list under it. Nothing in the table is a
  * claim about what this file does — the departures are.
  *
@@ -15,11 +15,11 @@
  * Reference is the 12.10.1 (7038) tree, clone `62b56a07`, confirmed upstream
  * HEAD on 2026-09-07. `AndroidUtilities.dp()` is `(int) Math.ceil(density *
  * value)` with no font scaling (`AndroidUtilities.java:2702-2707`), so every
- * Telegram dp maps 1:1 onto a React Native dp and nothing needs converting.
+ * the reference app dp maps 1:1 onto a React Native dp and nothing needs converting.
  *
  * IMPORTANT correction to what this repo believed: the numbers previously in
  * here and in `src/theme/motion.ts` were measured off
- * `ActionBar/ActionBarMenuItem.java`, which is Telegram's LEGACY action-bar
+ * `ActionBar/ActionBarMenuItem.java`, which is the reference app's LEGACY action-bar
  * search — a 36dp-tall bare `EditTextBoldCursor` with `setBackgroundResource(0)`,
  * i.e. no pill at all. The dialogs list has not used that path for several
  * versions. The field it actually ships is
@@ -87,7 +87,7 @@
  * on the first keystroke, so the caret jumped sideways as you typed and again
  * when you cleared.
  *
- * That constant is also what makes the touch target free. Telegram's inset is
+ * That constant is also what makes the touch target free. the reference app's inset is
  * 12 + 24 + 12, and 48 is exactly Android's minimum touch target — "we
  * recommend that each interactive UI element have a focusable area, or touch
  * target size, of at least 48dp x 48dp"
@@ -103,9 +103,9 @@
  * of slop inside a content-sized `Animated.View`, and the wrapper clipped every
  * bit of the slop back to 24x24dp.
  *
- * Departs from Telegram, on purpose:
+ * Departs from the reference app, on purpose:
  *   - THE PILL FILL IS A SOLID TOKEN, `bg/sunken`, not on-surface ink at 5% /
- *     7%. Telegram composites its fill from the text colour
+ *     7%. the reference app composites its fill from the text colour
  *     (`getThemedColor(key_windowBackgroundWhiteBlackText, isDark ? 0.07f :
  *     0.05f)`, `FragmentSearchField.java:275`); this app cannot, and the reason
  *     is a build gate rather than taste. `scripts/check-contrast.mjs` measures
@@ -120,18 +120,18 @@
  *   - The clear control's PRESS FEEDBACK is `highlight="ripple"`, the Android
  *     ink ripple at `interaction.rippleRadius` (20dp), not this app's default
  *     Material state layer. Two reasons, and the first is the reference's:
- *     Telegram gives the clear glyph `createSelectorDrawable(key_listSelector,
+ *     the reference app gives the clear glyph `createSelectorDrawable(key_listSelector,
  *     1, dp(17))` (`FragmentSearchField.java:278`), which IS a RippleDrawable,
  *     and RULE 1 §3 says take the platform's own solution over a hand-rolled
  *     one. The second is that the state layer is a rectangle filling its view:
  *     at 24dp that was a small grey square, but on a 48dp target it would be a
- *     square larger than the 40dp pill containing it. 20dp against Telegram's
+ *     square larger than the 40dp pill containing it. 20dp against the reference app's
  *     17dp is the app's single ripple radius rather than a second number.
  *   - The touch box is the 48dp ROW, not the 40dp pill, and the same for the
  *     clear control. 40dp and 24dp are both below the Android minimum quoted
  *     above. The pill is therefore painted as an absolutely-positioned
  *     background and the input owns the full row.
- *   - Input text is M3 bodyLarge 16dp, not Telegram's 15dp
+ *   - Input text is M3 bodyLarge 16dp, not the reference app's 15dp
  *     (`FragmentSearchField.java:97`). ADR-0024 makes the M3 scale the app's type
  *     system and 15 is not a role on it; 1dp is invisible in a 40dp field, a hole
  *     in the scale is not.
@@ -143,12 +143,12 @@
  *     edge lands at 20dp, and the left edge is whatever the 48dp back arrow plus
  *     an xs gap leaves. Both differences are decisions already taken elsewhere
  *     and neither is this component's to change: 16dp is the app's screen edge
- *     everywhere (the space token's own "16/20/24 rule"), and Telegram has NO
+ *     everywhere (the space token's own "16/20/24 rule"), and the reference app has NO
  *     back arrow while search is open — it hides it
  *     (`checkUi_itemBackButtonVisibility`, `DialogsActivity.java:14083-14087`) —
  *     whereas Amit kept ours on 2026-09-06 so a member never sees two crosses.
  *     What IS matched exactly is everything measured from the pill inward.
- *   - Cursor width stays the RN default. Telegram sets 1.5dp
+ *   - Cursor width stays the RN default. the reference app sets 1.5dp
  *     (`FragmentSearchField.java:98`); reactnative.dev/docs/textinput lists every
  *     Android-specific prop and there is no cursor-width control, only
  *     `cursorColor` / `selectionColor` / `selectionHandleColor`.
@@ -224,7 +224,7 @@ const GLYPH_INSET = 12;
  * It is TWO things at once and that coincidence is the whole reason the touch
  * target costs nothing here:
  *
- *   - It is Telegram's constant text inset. `editText.setPadding(dp(48), 0,
+ *   - It is the reference app's constant text inset. `editText.setPadding(dp(48), 0,
  *     dp(48), 0)` (`FragmentSearchField.java:104`), recomputed as
  *     `pEnd = dp(48) + additionalIconsLayout.getMeasuredWidth()` (`:242`), and
  *     12 + 24 + 12 is where that 48 comes from.
@@ -353,14 +353,14 @@ interface Props {
    * removable filters if there are any and otherwise runs `onCloseSearch` — so
    * the mark at the right edge is a clear AND an exit, resolved by what there is
    * to clear. Amit, 2026-09-07: "Please bring exit back in search right edge
-   * like telegram."
+   * like the reference app."
    *
    * Passing this also FORCES the control visible, because otherwise there would
    * be nothing to press in the state where it exits. That is the reference's own
    * supported mode, not an invention: visibility is
    * `closeButtonForcedVisible || editText.length() > 0` (`:326`) and
    * `setCloseButtonForcedVisible` is a public setter (`:321`). Stated plainly
-   * though — DialogsActivity does NOT call it, so Telegram's own dialogs search
+   * though — DialogsActivity does NOT call it, so the reference app's own dialogs search
    * shows no exit while the field is empty and relies on the system back button.
    * We show one because Amit asked for one.
    */
@@ -402,7 +402,7 @@ function SearchBarView({
   };
 
   /*
-   * The clear slot's animation target, not its existence. Telegram never adds or
+   * The clear slot's animation target, not its existence. the reference app never adds or
    * removes the view — `closeIcon` is constructed once and driven by a factor
    * (`checkCloseButtonVisible`, `FragmentSearchField.java:325-333`) — and that is
    * what keeps `pEnd` at a constant `dp(48)` while you type.

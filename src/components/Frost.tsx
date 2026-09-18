@@ -12,7 +12,7 @@ interface Props extends ViewProps {
    * that should read as nothing at all.
    *
    * **This used to be a hairline, and the reference does not draw one.** Above
-   * its composer Telegram draws `chat_composeShadowDrawable`, a nine-patch
+   * its composer the reference app draws `chat_composeShadowDrawable`, a nine-patch
    * shadow (`ChatActivityEnterView.java:4698-4707`) — which is why its bar reads
    * as separated from the transcript without a visible line anywhere. A hairline
    * was tried here and removed for drawing "a line across the transcript with
@@ -63,7 +63,7 @@ interface Props extends ViewProps {
  * turn it on and returns false outright on a low-performance device
  * (`SharedConfig.java:1752`). Ours is on by default, which is a deviation and a
  * deliberate one — the frost is part of this app's identity in a way it is not
- * part of Telegram's.
+ * part of the reference app's.
  *
  * The tint is not decoration either. It is composited at 70% over the blur, so
  * only about a third of the blur shows through — the reference's

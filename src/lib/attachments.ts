@@ -42,7 +42,7 @@ export const MAX_PICK = 10;
  * several megabytes on a connection this product cannot assume clears that
  * in any bounded time.
  *
- * 1280 is not a guess: it is Telegram's own figure for exactly this
+ * 1280 is not a guess: it is the reference app's own figure for exactly this
  * decision (`AndroidUtilities.java:3019-3030`, `photoSize = 1280`), and
  * `SendMessagesHelper.java:9194-9208` downscales to it before every send.
  */

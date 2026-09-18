@@ -60,7 +60,7 @@ const HEARTBEAT_MS = 20_000;
 /**
  * How long a call may ring before this device gives up, per side.
  *
- * Ported from Telegram, which bounds a ring on BOTH sides and does not rely on
+ * Ported from the reference app, which bounds a ring on BOTH sides and does not rely on
  * the server to do it: `callReceiveTimeout` = 20 s for the caller and
  * `callRingTimeout` = 90 s for the callee (MessagesController.java:1588-1589,
  * scheduled at VoIPService.java:1151 and 1806).
@@ -70,9 +70,9 @@ const HEARTBEAT_MS = 20_000;
  * tick — so a call could genuinely ring for **1 m 45 s** with the callee's
  * screen lit and the foreground service up. Two bounds, because either alone
  * has a hole: the client is fast and precise but dies with the process; the
- * cron sweep is slow but survives anything. Telegram's pattern exactly.
+ * cron sweep is slow but survives anything. the reference app's pattern exactly.
  *
- * Shorter than Telegram's on the callee side (60 s, not 90 s) because a ring
+ * Shorter than the reference app's on the callee side (60 s, not 90 s) because a ring
  * here holds a paid session request open, and 90 s of ringing on a per-minute
  * product is most of a chargeable minute spent on a phone nobody answered.
  */
@@ -81,7 +81,7 @@ const RING_TIMEOUT_IN_MS = 60_000;
 
 /*
  * How long 'connecting' may last before this side gives up (2026-09-17
- * audit). Telegram's own equivalent is `callConnectTimeout`, 30 s
+ * audit). the reference app's own equivalent is `callConnectTimeout`, 30 s
  * (VoIPService.java:3412-3413, cited when this file's media-adapter
  * comments were written) — matched here rather than picked arbitrarily.
  *
@@ -98,7 +98,7 @@ const MEDIA_CONNECT_TIMEOUT_MS = 30_000;
 /*
  * How long a mid-call reconnect is given before this side gives up
  * (2026-09-17 audit). Same 30 s as MEDIA_CONNECT_TIMEOUT_MS and the same
- * Telegram precedent (callConnectTimeout) — a reconnect and a fresh
+ * the reference app precedent (callConnectTimeout) — a reconnect and a fresh
  * connect are the same kind of wait from the user's point of view, so they
  * share one bound rather than each inventing its own number.
  */
@@ -759,7 +759,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
    * connects — which used to mean the 30 s ring timer was, by accident,
    * also the only bound on a hung media join. `MEDIA_CONNECT_TIMEOUT_MS`
    * replaces that accidental coverage on purpose, at the same 30 s
-   * Telegram uses for the equivalent (`callConnectTimeout`).
+   * the reference app uses for the equivalent (`callConnectTimeout`).
    *
    * Applies to `'connecting'` from either side that reaches it — the
    * caller via `onCalleeAnswered`, the callee via their own `accept()` — so
@@ -813,7 +813,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
    *                    notification button that appears to hang up and does not
    *                    is worse than no button.
    *   'audioFocusLost' the user answered a cellular call
-   *                    (CallAudioFocusManager.kt). Telegram's OFFHOOK hang-up,
+   *                    (CallAudioFocusManager.kt). the reference app's OFFHOOK hang-up,
    *                    reached through audio focus so it costs no permission —
    *                    the reasoning is on the native side.
    *   'decline'        the Decline action while ringing (CallActionReceiver.kt:22).

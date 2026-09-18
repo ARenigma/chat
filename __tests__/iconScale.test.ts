@@ -9,7 +9,7 @@ const SRC = join(ROOT, 'src');
  * The icon-size scale gate.
  *
  * Amit, 2026-09-07: "no fix all icons please for standard view and token", then,
- * asked which scale to use, "follow telegram here as i dont know standard".
+ * asked which scale to use, "follow the reference app here as i dont know standard".
  *
  * Before ADR-0030 there was no standard at all: 80 `<Icon>` call sites carried
  * 17 distinct raw sizes — 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22, 24, 28,
@@ -18,7 +18,7 @@ const SRC = join(ROOT, 'src');
  * design decisions, they are the residue of forty separate judgements about the
  * same handful of roles.
  *
- * The scale is `TOKENS.icon`, derived in `design/tokens.json` from Telegram
+ * The scale is `TOKENS.icon`, derived in `design/tokens.json` from the reference app
  * 12.10.1's own frame distribution through the measured 0.803 ink/frame ratio.
  * The derivation lives in that file's `$note`, next to the numbers, so it can be
  * re-checked rather than believed.
@@ -227,7 +227,7 @@ const EXEMPT: Record<string, string> = {
   /*
    * SearchBar's two glyphs are matched to the REFERENCE'S ACTUAL INK for that
    * one component, which is a stronger claim than a step on a scale and
-   * predates it. Telegram's magnifier inks 13.94dp inside its 24dp frame and
+   * predates it. the reference app's magnifier inks 13.94dp inside its 24dp frame and
    * its clear cross 11-12dp, both measured at `ScaleType.CENTER` where the
    * frame never scales the mark; SEARCH_GLYPH_SIZE = 14 lands 14.15dp of Lucide
    * ink and CLEAR_GLYPH_SIZE = 17 lands 11.64dp. The full arithmetic and the
@@ -235,7 +235,7 @@ const EXEMPT: Record<string, string> = {
    *
    * Snapping these to `icon.sm` (16) would be a regression, not a cleanup: it
    * would put 16dp of ink where the reference has 13.94, and the whole point of
-   * the search field is that it IS Telegram's. Pinned independently by
+   * the search field is that it IS the reference app's. Pinned independently by
    * __tests__/homeSurface.test.ts.
    */
   SEARCH_GLYPH_SIZE: 'SearchBar: matched to the reference glyph ink, 13.94dp',
@@ -346,15 +346,15 @@ describe('the icon scale is the only source of icon sizes', () => {
   });
 
   /**
-   * The scale really is Telegram's, mapped through the measured ink ratio.
+   * The scale really is the reference app's, mapped through the measured ink ratio.
    *
    * Asserted rather than described, because the `$note` in tokens.json is the
    * kind of claim that survives someone editing the numbers underneath it. Each
-   * step must land within 1.6dp of a real Telegram frame taken through 0.803 —
+   * step must land within 1.6dp of a real the reference app frame taken through 0.803 —
    * their frame scale is 16/20/24/28/36/40 and the worst case is `lg`, 28dp of
    * frame giving 22.49 of ink against a 24 step.
    */
-  it('keeps every step within 1.6dp of a Telegram frame through the ink ratio', () => {
+  it('keeps every step within 1.6dp of a the reference app frame through the ink ratio', () => {
     const RATIO = 0.803;
     const FRAMES: Record<string, number> = {
       xs: 16,
@@ -369,8 +369,8 @@ describe('the icon scale is the only source of icon sizes', () => {
       expect(Math.abs(value - ink)).toBeLessThanOrEqual(1.6);
     }
     // md is the default, and it is their 62% case (24dp frame, 289 of 466
-    // drawables). If the default ever stops being the modal Telegram frame the
-    // scale has stopped being Telegram's.
+    // drawables). If the default ever stops being the modal the reference app frame the
+    // scale has stopped being the reference app's.
     expect(TOKENS.icon.md).toBe(20);
     expect(FRAMES.md).toBe(24);
     expect(Math.round((FRAMES.md as number) * RATIO)).toBe(19);

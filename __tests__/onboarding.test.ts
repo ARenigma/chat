@@ -557,7 +557,7 @@ describe('phone verification hands off without visual input artifacts', () => {
   });
 
   it('gives the code field a working, verifying and success state', () => {
-    // A wrong code shakes AND taps a haptic (Telegram KEYBOARD_TAP), then the
+    // A wrong code shakes AND taps a haptic (the reference app KEYBOARD_TAP), then the
     // red clears itself; a code in flight shows an accent spinner rather than a
     // frozen field; a correct code fills the boxes in the sage success colour
     // and pops once before the screen advances.
@@ -580,15 +580,19 @@ describe('phone verification hands off without visual input artifacts', () => {
 describe('the IME is treated as part of the layout', () => {
   it('lifts the form rather than letting the keyboard cover the input', () => {
     /*
-     * The manifest already asks for `adjustResize`, and that alone was not
-     * enough: React Native 0.86 runs edge-to-edge, where the window no longer
-     * shrinks, and the form is absolutely positioned over the field. The phone
-     * number input sat underneath the keyboard.
+     * The window never resizes (adjustNothing), so KeyboardAvoidingView's
+     * Android behaviours are dead: `padding` double-counted against
+     * adjustResize and `height` has nothing to react to. iOS keeps `padding`;
+     * Android lifts via useImeSpace's own bottom padding, which measures the
+     * IME inset directly. React Native 0.86 runs edge-to-edge, where the phone
+     * number input would otherwise sit underneath the keyboard.
      */
     const screen = read('src/screens/OnboardingScreen.tsx');
     expect(screen).toContain('KeyboardAvoidingView');
+    expect(screen).toContain('useImeSpace()');
+    expect(screen).toContain('paddingBottom: imeSpace');
     const manifest = read('android/app/src/main/AndroidManifest.xml');
-    expect(manifest).toContain('android:windowSoftInputMode="adjustResize"');
+    expect(manifest).toContain('android:windowSoftInputMode="adjustNothing"');
   });
 
   it('listens for the Android keyboard events, not the iOS-only ones', () => {

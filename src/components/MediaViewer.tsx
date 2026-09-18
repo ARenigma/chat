@@ -499,7 +499,7 @@ function MediaViewerView({
   });
 
   /*
-   * Tap anywhere to close, which is what Telegram's viewer does. Bounded by
+   * Tap anywhere to close, which is what the reference app's viewer does. Bounded by
    * TAP_SLOP, and competing with the other two — see the composition note on the
    * component.
    *

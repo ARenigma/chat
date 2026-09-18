@@ -732,9 +732,9 @@ describe('the composer and the bubbles share one grid and one corner', () => {
      * TWO GRIDS NOW, deliberately, and the pairing is what this protects.
      *
      * It used to be one: transcript, reply strip and capsule all on `space.md`
-     * (16). The capsule moved to Telegram's own island inset on 2026-09-12 —
+     * (16). The capsule moved to the reference app's own island inset on 2026-09-12 —
      * `createFrame(..., 7, 0, 7, 0)`, ChatActivity.java:8078 — because the owner
-     * asked for the input box's width to match Telegram exactly, and Telegram's
+     * asked for the input box's width to match the reference app exactly, and the reference app's
      * input island is deliberately wider than its bubbles.
      *
      * So the assertion is no longer "everything shares one number". It is:
@@ -749,16 +749,16 @@ describe('the composer and the bubbles share one grid and one corner', () => {
      */
     expect(TOKENS.space.md).toBe(16);
     expect(styleBlock(chat, 'replyBar')).toContain(
-      'marginHorizontal: TELEGRAM_ISLAND_INSET',
+      'marginHorizontal: COMPOSER_ISLAND_INSET',
     );
     expect(styleBlock(composer, 'row')).toContain(
-      'paddingHorizontal: TELEGRAM_ISLAND_INSET',
+      'paddingHorizontal: COMPOSER_ISLAND_INSET',
     );
     // The transcript is unchanged and keeps the bubbles' own grid.
     expect(styleBlock(chat, 'list')).toContain('paddingHorizontal: TOKENS.space.md');
     // One source for the island number, so the strip and the capsule cannot drift.
-    expect(composer).toContain('export const TELEGRAM_ISLAND_INSET = 7');
-    expect(chat).toContain('TELEGRAM_ISLAND_INSET');
+    expect(composer).toContain('export const COMPOSER_ISLAND_INSET = 7');
+    expect(chat).toContain('COMPOSER_ISLAND_INSET');
   });
 
   it('lands an INCOMING bubble on the content edge, with no avatar column', () => {

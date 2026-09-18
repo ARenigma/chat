@@ -119,7 +119,7 @@ function FloatingToolbarView({
     /*
      * Kept MOUNTED on pushed screens and hidden with `display: none`, not
      * unmounted — the same treatment, for the same reason, as the emoji panel
-     * (EmojiPicker.tsx:258, citing Telegram's create-once/setVisibility
+     * (EmojiPicker.tsx:258, citing the reference app's create-once/setVisibility
      * lifecycle at ChatActivityEnterView.java:12622 and :12746).
      *
      * Rendering it conditionally meant every push and every pop destroyed and
@@ -149,7 +149,7 @@ function FloatingToolbarView({
             <Pressable
               onPress={() => {
                 // No haptic: a tab select is navigation, not a committed action.
-                // Telegram does not buzz for it (telegram.md §Haptics, negative rows).
+                // the reference app does not buzz for it (chat-app-mechanics.md §Haptics, negative rows).
                 onSelect(tab.key);
               }}
               disabled={disabled}

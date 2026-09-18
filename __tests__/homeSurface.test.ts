@@ -37,7 +37,7 @@ function contrast(a: string, b: string): number {
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
-describe('the search field is the one Telegram actually ships', () => {
+describe('the search field is the one the reference app actually ships', () => {
   const bar = withoutComments(read('src/components/SearchBar.tsx'));
   const styles = bar.slice(bar.indexOf('container: {'));
 
@@ -45,7 +45,7 @@ describe('the search field is the one Telegram actually ships', () => {
     /*
      * Everything this component used to be was measured off the M3 docked search
      * bar (56dp, radius 28) and everything the MOTION was measured off came from
-     * ActionBar/ActionBarMenuItem.java — Telegram's LEGACY action-bar search,
+     * ActionBar/ActionBarMenuItem.java — the reference app's LEGACY action-bar search,
      * which the dialogs list stopped using several versions ago. The field it
      * ships is Components/FragmentSearchField.java, built at
      * DialogsActivity.java:3285 and added at :5344 inside a row whose height is
@@ -178,7 +178,7 @@ describe('the search field is the one Telegram actually ships', () => {
     /*
      * THE SECOND RETRACTION. This file used to say "size=20 because Icon.tsx
      * renders at round(size * 1.2), so 20 -> a 24dp box", matching our em box to
-     * Telegram's 24dp `createFrame`. Those are not the same kind of thing. The
+     * the reference app's 24dp `createFrame`. Those are not the same kind of thing. The
      * reference's 24dp is where the mark is PUT — `createFrame(24, 24, ..., 12,
      * 0, 12, 0)` at FragmentSearchField.java:132 and :159 — and both its marks
      * are drawn at `ImageView.ScaleType.CENTER` (`:130`, `:139`), which never
@@ -274,7 +274,7 @@ describe('the search field is the one Telegram actually ships', () => {
      * The defect a member can feel. The clear button used to be conditionally
      * MOUNTED (`value.length > 0 ? <Pressable size={36}> : null`), so the input's
      * right inset flipped between 16dp and 64dp and the caret jumped sideways on
-     * the first keystroke and again on clear. Telegram recomputes `pEnd` as
+     * the first keystroke and again on clear. the reference app recomputes `pEnd` as
      * `dp(48) + additionalIcons` unconditionally (FragmentSearchField.java:242)
      * and only ever animates the glyph's alpha, scale and rotation (:330-333).
      *
@@ -294,7 +294,7 @@ describe('the search field is the one Telegram actually ships', () => {
      * The condition gained a second term on 2026-09-07: the trailing mark is
      * now the EXIT as well as the clear, so it must be visible in the state
      * where there is nothing to clear (Amit: "Please bring exit back in search
-     * right edge like telegram"). The reference supports exactly this —
+     * right edge like the reference app"). The reference supports exactly this —
      * visibility is `closeButtonForcedVisible || editText.length() > 0`
      * (FragmentSearchField.java:326) with a public setter at `:321`.
      *
@@ -402,7 +402,7 @@ describe('the search field is the one Telegram actually ships', () => {
 
   it('paints the pill with a measurable token, and says so as a departure', () => {
     /*
-     * Telegram composites the fill out of the text ink —
+     * the reference app composites the fill out of the text ink —
      * `getThemedColor(key_windowBackgroundWhiteBlackText, isDark ? 0.07f :
      * 0.05f)`, FragmentSearchField.java:275. This app uses the solid `bg/sunken`
      * instead, because `scripts/check-contrast.mjs` measures declared token
@@ -420,19 +420,19 @@ describe('the search field is the one Telegram actually ships', () => {
       0,
       read('src/components/SearchBar.tsx').indexOf('Docked = inline'),
     );
-    expect(header).toContain('Departs from Telegram, on purpose:');
-    const departures = header.slice(header.indexOf('Departs from Telegram'));
+    expect(header).toContain('Departs from the reference app, on purpose:');
+    const departures = header.slice(header.indexOf('Departs from the reference app'));
     expect(departures).toContain('THE PILL FILL IS A SOLID TOKEN');
     expect(departures).toContain('FragmentSearchField.java:275');
     expect(departures).toContain('check-contrast.mjs');
     // The ripple is the second undeclared departure the audit found; it is
-    // Telegram's own createSelectorDrawable, but at our radius token, not dp(17).
+    // the reference app's own createSelectorDrawable, but at our radius token, not dp(17).
     expect(bar).toContain('highlight="ripple"');
     expect(departures).toContain('FragmentSearchField.java:278');
   });
 });
 
-describe('search MOVES the way Telegram moves it, not only measures like it', () => {
+describe('search MOVES the way the reference app moves it, not only measures like it', () => {
   const motion = withoutComments(read('src/theme/motion.ts'));
   const home = withoutComments(read('src/screens/HomeScreen.tsx'));
 
@@ -650,7 +650,7 @@ describe('every control on Home is a real 48dp box, not slop a parent clips', ()
    * touch target size, of at least 48dp x 48dp. Larger is even better."
    * https://developer.android.com/guide/topics/ui/accessibility/apps
    *
-   * NOT taken from the Telegram Mini Apps UI kit, which was mined as a reference
+   * NOT taken from the the reference app Mini Apps UI kit, which was mined as a reference
    * while this was being written and which cannot support a claim about Android
    * sizes at all: EVERY control it ships is under 48 (icon buttons 32/40/44, the
    * segmented track 44, the small button 38) and its "Android" icon-button set is

@@ -495,7 +495,7 @@ interface NotifyMachine {
 /**
  * Notify this provider WITHOUT leaving the surface the member is on.
  *
- * Telegram's own in-place notify toggle is the shape:
+ * the reference app's own in-place notify toggle is the shape:
  * `toggleScheduledNotify()` (FragmentContextView.java:2770-2792) fires the
  * request from the control the finger is on and then says what happened, rather
  * than navigating somewhere to say it. Ours did the opposite: both away controls
@@ -503,7 +503,7 @@ interface NotifyMachine {
  * the surface that would have shown "Notified" unmounted on the tap that earned
  * it.
  *
- * ONE STATED DEPARTURE from that reference. Telegram flips its local flag
+ * ONE STATED DEPARTURE from that reference. the reference app flips its local flag
  * BEFORE the server answers (`schedule_start_subscribed = willBeNotified =
  * !willBeNotified`, :2781). We cannot: our server refuses for six different
  * reasons and only two of them mean a push went out, so an optimistic flip
@@ -635,7 +635,7 @@ export function useNotifyProvider(providerId: string): NotifyAction {
              * so the control goes back to offering the action and says so
              * rather than sitting on a silent "Notified".
              *
-             * Telegram turns a refusal it has no specific words for into a
+             * the reference app turns a refusal it has no specific words for into a
              * visible bulletin too, and names the single code it stays quiet
              * for rather than staying quiet by default:
              * BulletinFactory.java:100-113 (`else if (error.code != 406)`).

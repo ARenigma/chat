@@ -5,7 +5,7 @@ import { createServiceClient } from '@/lib/supabase/service';
  * A FOUNDER SESSION IS ONE THING: a Supabase session whose user authenticated
  * through Google OAuth, for an email Google itself reports as verified.
  *
- * Before this (Telegram-CTO audit, 2026-09-17), every call site checked only
+ * Before this (motion audit, 2026-09-17), every call site checked only
  * `user.email` against `admin.founder_allowlist` — nothing read
  * `app_metadata.provider`, `identities`, or an email-verified flag. The admin
  * site and the mobile app share one GoTrue project (`admin.pappal.live/auth/

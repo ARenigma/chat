@@ -37,7 +37,7 @@ import { TextField } from './TextField';
 const COLUMNS = 8;
 
 /**
- * The grid's horizontal padding. Telegram's emoji grid uses 5dp either side
+ * The grid's horizontal padding. the reference app's emoji grid uses 5dp either side
  * (`EmojiView.java:1751`); eight columns then divide the rest of the width
  * exactly, with no dead strip at the edge.
  */
@@ -45,7 +45,7 @@ const GRID_PAD = 5;
 
 /**
  * The floating backspace: 48dp square, 2dp from the grid's bottom-right corner.
- * Telegram's anatomy (`EmojiView.java:2675-2679`) — it floats OVER the grid
+ * the reference app's anatomy (`EmojiView.java:2675-2679`) — it floats OVER the grid
  * rather than sitting in the search row, so the search row's trailing control is
  * free to mean "close the search", which is what it means in every search field.
  */
@@ -237,7 +237,7 @@ function EmojiPickerView({
   }, [onSearchFocusChange]);
 
   /**
-   * Telegram's `closeSearch`: leave the searching state, clear the query, and
+   * the reference app's `closeSearch`: leave the searching state, clear the query, and
    * give the focus back — here by blurring, which fires `onBlur` and lets the
    * dock collapse the panel to keyboard size again.
    */
@@ -276,8 +276,8 @@ function EmojiPickerView({
    * ~90px of the panel's right edge was dead (measured on an S22 Ultra: the grid
    * spanned [46 … 990] of 1080).
    *
-   * `GRID_PAD` is 5dp, which is Telegram's own grid padding
-   * (`EmojiView.java:1751`, recorded in design/references/telegram.md).
+   * `GRID_PAD` is 5dp, which is the reference app's own grid padding
+   * (`EmojiView.java:1751`, recorded in design/references/chat-app-mechanics.md).
    */
   const { width } = useWindowDimensions();
   const cellSize = Math.floor((width - GRID_PAD * 2) / COLUMNS);
@@ -432,7 +432,7 @@ function EmojiPickerView({
     /*
      * Kept MOUNTED and hidden with `display: none`, not unmounted.
      *
-     * Telegram creates its `emojiView` once (`createEmojiView()`) and thereafter
+     * the reference app creates its `emojiView` once (`createEmojiView()`) and thereafter
      * only flips `setVisibility(VISIBLE/GONE)` (`ChatActivityEnterView.java:12622`
      * and `:12746`). Unmounting meant every single keyboard-to-emoji tap rebuilt
      * the search field, ten tabs and a fresh list on the JS thread inside one
@@ -468,7 +468,7 @@ function EmojiPickerView({
             everywhere. It used to be backspace, and that was the bug behind
             "emoji/keyboard switch doesn't work after clicking cross on search":
             the X deleted a character, the search field kept the focus, and the
-            panel had no way out. Telegram's own search close is `closeSearch`
+            panel had no way out. the reference app's own search close is `closeSearch`
             (`ChatActivityEnterView.java:2701-2707`): drop the searching state,
             clear the query, hand the focus back to the message field. */}
         {searchOpen ? (
@@ -594,7 +594,7 @@ function EmojiPickerView({
       />
 
       {/* Backspace, floating over the grid's bottom-right corner rather than
-          sitting in the search row: Telegram's placement
+          sitting in the search row: the reference app's placement
           (`EmojiView.java:2675-2679`, 48dp square, 2dp margin). The panel has
           replaced a keyboard that had this key, so it has to answer for it —
           but not at the cost of the search field's own close control. */}

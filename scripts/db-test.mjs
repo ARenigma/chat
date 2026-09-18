@@ -257,7 +257,7 @@ function generateParitySql() {
 /**
  * The schema-equivalence check, and the one test in this file that is not pgTAP.
  *
- * Lifted from Telegram, whose single most valuable hand-written test is not a
+ * Lifted from the reference app, whose single most valuable hand-written test is not a
  * behaviour test at all: `TestDatabaseMigration` builds its SQLite schema TWICE
  * — once fresh via createTables() and once by replaying every migration from
  * v120 — and asserts the two are identical

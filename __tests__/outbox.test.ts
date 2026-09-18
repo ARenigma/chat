@@ -26,7 +26,7 @@ const entry = (nonce: string, over: Partial<OutboxEntry> = {}): OutboxEntry => (
 });
 
 /**
- * The persisted send queue — Telegram's `send_state = 1` row, which is what
+ * The persisted send queue — the reference app's `send_state = 1` row, which is what
  * makes a send survive the process dying. See `src/lib/outbox.ts`.
  */
 describe('the outbox list operations', () => {
@@ -126,7 +126,7 @@ describe('decoding what storage hands back', () => {
 describe('the send path persists before it sends', () => {
   /*
    * The ORDER is the mechanism, not a detail: a row that exists only after the
-   * server answers is a row that a process kill erases. Telegram writes at
+   * server answers is a row that a process kill erases. the reference app writes at
    * `send_state = 1` before touching the network (MessagesStorage.java:551).
    * Asserted over source because the failure mode — enqueueing after the
    * await — is invisible at runtime until an app is killed at the wrong moment.
@@ -171,7 +171,7 @@ describe('a failed send keeps its bubble', () => {
 
   it('marks the row failed instead of deleting it', () => {
     // It used to splice the row out, so the member watched their message
-    // vanish and had to retype it. Telegram keeps it at SEND_ERROR.
+    // vanish and had to retype it. the reference app keeps it at SEND_ERROR.
     expect(chat).toContain('markFailed(prev ?? [], pendingId)');
     expect(chat).not.toContain('settleOptimistic(prev ?? [], pendingId, null)');
   });
@@ -264,7 +264,7 @@ describe('gap recovery walks a cursor instead of re-reading a window', () => {
    * the end of the window and are never fetched, because the transcript has no
    * pagination to reach back for them. Silent hole, no error.
    *
-   * Telegram pages against maxMessageId/minDate rather than a fixed window
+   * the reference app pages against maxMessageId/minDate rather than a fixed window
    * (ChatActivity.java:13811) and walks pts forward until the server says it is
    * out of rows (MessagesController.java:16869). Same shape, smaller scale.
    */

@@ -52,7 +52,7 @@ export type TranscriptMessage = Message & {
    * Set instead of removing the row. Deleting the bubble on failure was the old
    * behaviour (`settleOptimistic(..., null)`) and it is the worst of the
    * options: the member watches what they wrote disappear, learns the app eats
-   * messages, and has to retype it. Telegram keeps the row at
+   * messages, and has to retype it. the reference app keeps the row at
    * `MESSAGE_SEND_STATE_SEND_ERROR` with a tap-to-retry mark
    * (MessageObject.java:135) and so do we.
    */

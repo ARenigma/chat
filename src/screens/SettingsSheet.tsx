@@ -354,7 +354,7 @@ export function SettingsSheet({
           <View style={styles.profileHero}>
             {/* No cover image any more (Amit, on device: the WhatsApp half-doodle
               cover was dated). A calm centred-avatar header instead — the pattern
-              Telegram / iOS Settings / Notion use: the identity sits on the page
+              the reference app / iOS Settings / Notion use: the identity sits on the page
               itself, not on a wallpaper band. The back action, on the PUSHED case
               only, is a plain top app bar above it rather than an arrow floating
               on a cover. */}

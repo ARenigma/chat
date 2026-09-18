@@ -725,7 +725,7 @@ async function sendMessageWith(
 
   /*
    * Persist the intent BEFORE the request. That ordering is the whole
-   * mechanism, and it is Telegram's: a row at `send_state = 1` exists
+   * mechanism, and it is the reference app's: a row at `send_state = 1` exists
    * before the network is touched, so a process kill in the window between
    * tapping send and the server answering loses nothing
    * (MessagesStorage.java:551, replayed from ApplicationLoader.java:259).
@@ -876,14 +876,14 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
 /**
  * Drains the persisted outbox for EVERY conversation, not just whichever
  * chat happens to be open (X7, 2026-09-17 audit — Amit's call: "Drain on
- * boot", matching Telegram's own `checkUnsentMessages()` scope rather than
+ * boot", matching the reference app's own `checkUnsentMessages()` scope rather than
  * this app's previous per-screen one; see `useOutboxReplay`'s docblock for
  * why this app started scoped to one thread).
  *
  * Entries are replayed in `readOutbox()`'s own order — oldest first,
  * `withEntry` in `lib/outbox.ts` always appends — so a conversation's own
  * entries stay in the order they were typed, and the queue as a whole drains
- * oldest-first the same way Telegram's global sweep does. No per-conversation
+ * oldest-first the same way the reference app's global sweep does. No per-conversation
  * grouping needed: `sendMessageWith` reads `entry.conversationId` itself.
  *
  * Safe to run alongside a live `useOutboxReplay` for the same conversation —
@@ -1049,10 +1049,10 @@ export const REPLAY_LIMIT = 5;
 /**
  * Drain the persisted outbox for this conversation.
  *
- * Telegram's `checkUnsentMessages()` (ApplicationLoader.java:259), scoped to
+ * the reference app's `checkUnsentMessages()` (ApplicationLoader.java:259), scoped to
  * one thread rather than run globally at boot: we have no local transcript to
  * replay into, so a queued send is only meaningful once the screen that shows
- * it is open. That is a real difference from Telegram, and it means a queued
+ * it is open. That is a real difference from the reference app, and it means a queued
  * message is sent when the member next opens THAT chat rather than at launch.
  *
  * Runs on mount and whenever the app returns to the foreground — the two
@@ -1128,7 +1128,7 @@ export function useOutboxReplay(
 /**
  * How many rows one gap page asks for.
  *
- * 50, which is Telegram's own subsequent-page size — they open a chat with 30
+ * 50, which is the reference app's own subsequent-page size — they open a chat with 30
  * and page with 50 (ChatActivity.java:3264 and :13811). Deliberately smaller
  * than `PAGE_SIZE`: a gap page is fetched while the member is already looking
  * at the thread, so latency matters more than round trips.
@@ -1180,9 +1180,9 @@ async function fetchMessagesSince(
  * written with, so a message edited or deleted during an outage is invisible to
  * that walk forever. The transcript goes on showing the pre-edit body, or a
  * message the peer deleted, with no error and no spinner. Found by comparing
- * against Telegram on 2026-09-17.
+ * against the reference app on 2026-09-17.
  *
- * Telegram splits the same problem in two and so does this. `getDifference`
+ * the reference app splits the same problem in two and so does this. `getDifference`
  * returns `new_messages` AND `other_updates`, the second carrying
  * `updateEditMessage`, `updateDeleteMessages` and `updateReadHistoryOutbox`
  * (MessagesController.java:17715-17738). We had implemented the first half.
@@ -1231,7 +1231,7 @@ async function fetchMessagesChangedSince(
  * transcript to reach back for them — so they are silently absent. No error, no
  * spinner, just a hole in the conversation.
  *
- * Telegram's answer is a cursor: it pages against `maxMessageId` / `minDate`
+ * the reference app's answer is a cursor: it pages against `maxMessageId` / `minDate`
  * rather than re-reading a fixed window (ChatActivity.java:13811), and its
  * update layer walks `pts` forward until the server says there is no more
  * (`getDifference`, MessagesController.java:16869). This is the same shape at

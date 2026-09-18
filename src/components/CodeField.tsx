@@ -17,12 +17,12 @@ import { LoadingIndicator } from './LoadingIndicator';
 import { TextField } from './TextField';
 
 /**
- * Per-box success fill delay. Telegram lights each box in turn on a correct code
+ * Per-box success fill delay. the reference app lights each box in turn on a correct code
  * (`LoginActivity.java:4999-5015`, 75ms × index); the whole cascade lands well
  * inside the `STEP_ADVANCE_MS` window before the screen moves on.
  */
 const SUCCESS_STAGGER_MS = 70;
-/** How long the red error state holds before it clears itself (Telegram: 3s). */
+/** How long the red error state holds before it clears itself (the reference app: 3s). */
 const ERROR_HOLD_MS = 3000;
 
 interface Props {
@@ -196,7 +196,7 @@ function CodeFieldView({
   /**
    * Shake, a short haptic, and a red state that clears itself.
    *
-   * Telegram fires KEYBOARD_TAP (FLAG_IGNORE_GLOBAL_SETTING) and holds the red
+   * the reference app fires KEYBOARD_TAP (FLAG_IGNORE_GLOBAL_SETTING) and holds the red
    * for 3s on a wrong code (`LoginActivity.java:6779`, `:6793-6795`); a rejected
    * code at the exact moment someone is already frustrated is precisely where the
    * tactile cue belongs. The physics is in motion.ts (see shakeX). The red clears
@@ -235,7 +235,7 @@ function CodeFieldView({
   /**
    * The success beat: the boxes fill in turn (sage, the presence/verified colour
    * — not coral, the accent budget is for actions) and the row gives one small
-   * pop, before the screen advances. Telegram's per-box cascade + scale spring
+   * pop, before the screen advances. the reference app's per-box cascade + scale spring
    * (`LoginActivity.java:4999-5015`, `CodeNumberField.java:142-144`).
    */
   useEffect(() => {
@@ -394,7 +394,7 @@ function CodeFieldView({
 
       {/* While the code is in the air the field otherwise looks frozen — the
           segments dim but nothing says the app is working, so a 1–3s verify
-          reads as dead (Amit, 2026-09-02). Telegram shows an accent spinner
+          reads as dead (Amit, 2026-09-02). the reference app shows an accent spinner
           during verification (LoginActivity.java:776-781).
 
           It is NAMED as well as spun. A bare spinner over a field says

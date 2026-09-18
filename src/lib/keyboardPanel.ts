@@ -6,7 +6,7 @@
  * closing and another opening: the panel is given exactly the height the IME
  * last reported, so swapping the two moves nothing in the transcript. The
  * measured anatomy this reimplements is recorded in
- * `design/references/telegram.md`.
+ * `design/references/chat-app-mechanics.md`.
  *
  * Persisted because the FIRST open has nothing to measure: the panel is opened
  * with the keyboard on its way down, so its height must already be known. Kept
