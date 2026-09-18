@@ -1362,23 +1362,37 @@ function ComposerView({
           highlight="material"
           size={EMOJI_BUTTON}
           style={styles.emoji}>
-          {/* `icon.md` (20), the same as the camera and the mic across the
-              capsule. This was `icon.lg` (24) with nothing recording why, and a
-              4dp difference between the leading glyph and the two trailing ones
-              is visible at this size — the second half of "the elements are not
-              aligned" (Amit, 2026-09-12); the first half was the 36dp button in
-              a row of 40s. Three controls in one capsule, one glyph size.
+          {/* `icon.lg` (24), the same as the camera and the mic across the
+              capsule — one glyph size for all three controls, still true after
+              this step change (Amit, 2026-09-18: "the emoji icon still looks
+              small... make it exactly like Telegram").
+              `ChatActivityEnterView.java:2670-2721`: Telegram's own emoji
+              button is a 44dp target (`DEFAULT_HEIGHT`) with 7.5dp padding on
+              each side, so its DRAWN glyph is 44 - 2*7.5 = 29dp — not the
+              button size alone, which is all `design/references/telegram.md`
+              had recorded before this pass. `icon.lg` at this app's own
+              `ICON_SCALE` (1.2) inks 24*1.2 = 28.8dp, matching that almost
+              exactly, without touching this app's own 40dp button/capsule
+              geometry (a deliberately different, already-settled shape from
+              Telegram's flat bar).
 
-              A 2026-09-13 detour shrank this to 19 as an optical correction
-              against the (then) Lucide glyph set — closed circles read larger
-              than open forms at the same nominal size. The icon set moved to a
-              Heroicons font afterward (Icon.tsx's own docblock flagged the need
-              to re-baseline every such correction on a device, which this one
-              never got), and Heroicons' `face-smile` sits further inside its
-              own box than Lucide's did: the Lucide-era shrink left it visibly
-              SMALLER than the clip and mic beside it (Amit, 2026-09-18,
-              confirmed on the S22: ~56dp of ink against their ~60-62dp). Back
-              to the plain token. */}
+              History on why this was ever 20, not 24: this was `icon.lg` (24)
+              with nothing recording why, and a 4dp mismatch against the OTHER
+              two controls (already at 20) read as "the elements are not
+              aligned" (Amit, 2026-09-12) — the fix then was to bring emoji
+              DOWN to match clip/mic, not a claim that 20 was the right
+              absolute size. Moving all three together to 24 now does not
+              reopen that mismatch.
+
+              A 2026-09-13 detour further shrank this to 19 as an optical
+              correction against the (then) Lucide glyph set — closed circles
+              read larger than open forms at the same nominal size. The icon
+              set moved to a Heroicons font afterward, and Heroicons'
+              `face-smile` sits further inside its own box than Lucide's did:
+              the Lucide-era shrink left it visibly SMALLER than the clip and
+              mic beside it (Amit, 2026-09-18, confirmed on the S22: ~56dp of
+              ink against their ~60-62dp at the old icon.md). That correction
+              is now moot — both are `icon.lg`. */}
           {/*
             * The glyph CROSS-FADES rather than cutting (2026-09-12).
             *
@@ -1407,7 +1421,7 @@ function ComposerView({
             style={styles.emojiGlyph}>
             <Icon
               name={emojiOpen ? 'keyboard' : 'smile'}
-              size={TOKENS.icon.md}
+              size={TOKENS.icon.lg}
               color={theme.color.text.secondary}
             />
           </Animated.View>
@@ -1534,7 +1548,11 @@ function ComposerView({
             * "Camera or photos", so the spoken name was right while the drawn
             * one was narrower. They agree now.
             */}
-          <Icon name="clip" size={TOKENS.icon.md} color={theme.color.text.secondary} />
+          {/* `icon.lg` (24), matching the emoji and mic glyphs — see the emoji
+              button's own comment above for the Telegram measurement
+              (`ChatActivityEnterView.java:2670-2721`: 44dp button minus 7.5dp
+              padding each side = 29dp drawn glyph) this step matches. */}
+          <Icon name="clip" size={TOKENS.icon.lg} color={theme.color.text.secondary} />
         </Pressable>
       </Animated.View>
 
@@ -1560,7 +1578,9 @@ function ComposerView({
             highlight="material"
             size={40}
             style={styles.mic}>
-            <Icon name="mic" size={TOKENS.icon.md} color={theme.color.text.secondary} />
+            {/* `icon.lg` (24) — see the emoji button's own comment for the
+                Telegram measurement this matches. */}
+            <Icon name="mic" size={TOKENS.icon.lg} color={theme.color.text.secondary} />
           </Pressable>
         </Animated.View>
         <Animated.View
