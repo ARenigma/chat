@@ -3,16 +3,20 @@ import { alertPermissionBlocked, requestAndroidPermission } from './permissions'
 import {
   AuthorizationStatus,
   deleteToken,
-  getInitialNotification,
   getMessaging,
   getToken,
-  onNotificationOpenedApp,
+  onMessage,
   onTokenRefresh,
   requestPermission,
 } from '@react-native-firebase/messaging';
 import { supabase } from './supabase';
-import { ensureConversationChannel } from './conversations';
-import { isUuid } from './ids';
+import {
+  ensureConversationChannel,
+  readCallPush,
+  readEngagementPush,
+  type CallPush,
+  type EngagementPush,
+} from './conversations';
 
 /**
  * Push notifications, which are the one thing the product's core loop was
@@ -26,12 +30,18 @@ import { isUuid } from './ids';
  *
  * Three deliberate omissions:
  *
- *   1. **Nothing is displayed while the app is foregrounded.** `onMessage` fires
- *      only in the foreground and does not draw anything unless we ask it to, so
- *      not asking is the whole implementation: Realtime has already put the
- *      message on screen, and a banner over the conversation you are reading is
- *      noise. Background and quit-state notifications are drawn by the OS from
- *      the `notification` block the sender includes.
+ *   1. **No notification is displayed while the app is foregrounded.** A
+ *      foreground delivery goes to `onMessage` INSTEAD of the background
+ *      handler, never to both, so whatever it does is the whole of what the
+ *      user gets. For an ordinary message that is nothing: Realtime has already
+ *      put it on screen and a banner over the conversation you are reading is
+ *      noise. A CALL and an engagement nudge are the two exceptions, and they
+ *      are not cosmetic ones — if the Realtime socket is down (a network flap,
+ *      a Doze wake, a token refresh) the push is the only ring there will be,
+ *      and `announce_chat_open` gates on a MANUAL presence declaration, so it
+ *      reaches somebody who is actively using the app. Both are routed into the
+ *      app's own UI by `onForegroundPush` below rather than drawn.
+ *      https://rnfirebase.io/messaging/usage#foreground-state-messages
  *   2. **The body is never in the payload.** The sender publishes who it is from
  *      and nothing else, see `pending_pushes`. A lock screen that quotes the
  *      message tells whoever is holding the phone what you talked about, and for
@@ -174,38 +184,55 @@ export async function stopPush(): Promise<void> {
 }
 
 /**
- * Who a notification wants to open, if the app was launched or resumed by
- * tapping one.
+ * The two foreground deliveries the app acts on.
  *
- * The payload carries `peerId`, not a conversation id, because that is what the
- * app navigates by, routing on the conversation would mean looking the peer up
- * before the first frame, and the sender already knows both. A raw `data` field
- * rather than a deep link: the payload is ours end to end, and a URL would mean
- * parsing an untrusted string into a route.
+ * RNFirebase's receiver branches on `isAppInForeground` and, when it is, emits
+ * to `onMessage` rather than starting the headless task index.js registers — so
+ * without this listener a call push that arrives while the app is open is
+ * dropped with no ring and no error.
+ * https://rnfirebase.io/messaging/usage#foreground-state-messages
  *
- * Validated as a uuid regardless. A push payload is remote input, and remote
- * input is exactly what should not reach a query unchecked, the same reasoning
- * that put `isUuid` in front of the stored last-conversation id.
+ * A conversation message is deliberately not one of them: see the note above.
  */
-export function openedPeerId(
-  remote: { data?: Record<string, string | object> } | null,
-): string | null {
-  const raw = remote?.data?.peerId;
-  return typeof raw === 'string' && isUuid(raw) ? raw : null;
-}
-
-/** Fires when a notification is tapped while the app is backgrounded. */
-export function onNotificationOpen(handler: (peerId: string) => void): () => void {
-  return onNotificationOpenedApp(getMessaging(), remote => {
-    const id = openedPeerId(remote);
-    if (id !== null) {
-      handler(id);
+export function onForegroundPush(handlers: {
+  onCall: (push: CallPush) => void;
+  onEngagement: (push: EngagementPush) => void;
+}): () => void {
+  return onMessage(getMessaging(), remote => {
+    const call = readCallPush(remote.data);
+    if (call !== null) {
+      handlers.onCall(call);
+      return;
+    }
+    const nudge = readEngagementPush(remote.data);
+    if (nudge !== null) {
+      handlers.onEngagement(nudge);
     }
   });
 }
 
-/** The notification that launched a cold start, if there was one. */
-export async function initialNotificationPeer(): Promise<string | null> {
-  const remote = await getInitialNotification(getMessaging());
-  return openedPeerId(remote);
-}
+/*
+ * THERE IS NO `getInitialNotification` / `onNotificationOpenedApp` PATH HERE,
+ * DELIBERATELY (2026-09-17 audit; this replaces `openedPeerId`,
+ * `onNotificationOpen` and `initialNotificationPeer`, which used to live in
+ * this file and never once fired).
+ *
+ * Those two RNFirebase APIs track taps on a notification the SYSTEM rendered
+ * from an FCM message's own `notification` block. This app's messages are
+ * `setBackgroundMessageHandler`'s data-only, by design — see index.js's own
+ * docblock: "A payload with a `notification` block is rendered by the system
+ * and never reaches JavaScript, which also means it can never be a
+ * conversation notification." Every notification a member or provider sees
+ * is built by hand, on the native side
+ * (android/app/src/main/java/com/companionchat/Conversations.kt), with its
+ * own `PendingIntent` carrying a `companionchat://peer/<id>` deep link — not
+ * an intent Firebase's SDK generated or is tracking. So `getInitialNotification`
+ * always resolved null and `onNotificationOpenedApp` never fired, for every
+ * message notification this app has ever sent.
+ *
+ * The real, working path for a tapped message notification is the SAME
+ * `Linking.getInitialURL()` / `addEventListener('url', ...)` deep link App.tsx
+ * already uses for the CALL-style notification's `companionchat://call/...`
+ * link — `companionchat://peer/<id>` is parsed by the identical handler. See
+ * `pendingPeer` in App.tsx for where the role-aware routing happens.
+ */

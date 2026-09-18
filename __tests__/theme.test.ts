@@ -2327,17 +2327,35 @@ describe('accent budget is enforced in code, not just documented', () => {
     }
 
     /*
-     * Exactly four accent uses, in order, each unconditional. `[Cc]olor` so
-     * `borderColor` and `backgroundColor` both count — a lowercase-only match
-     * would have counted one of the four and passed while the rest drifted.
+     * STILL FOUR (2026-09-17), and the near-miss is worth recording.
+     *
+     * The away Notify CTA briefly took an `accentTint` FILL, which would have
+     * been a fifth — and a CONDITIONAL one, since it is applied as
+     * `style={[styles.cta, away && styles.ctaAway]}`. That is exactly the shape
+     * the paragraph above says would break the rule.
+     *
+     * It is grey again, by Amit's call, and the hierarchy is the reason rather
+     * than this test: Notify is the SECONDARY action on the row and must not
+     * compete with Call for the accent. The fill is `bg/pressed` with a
+     * `text/secondary` stroke and a `text/primary` label, none of them accent,
+     * which is why the count below is unchanged.
+     *
+     * The original defect it was reaching for is still fixed. The away control
+     * used to be painted in Material 3's DISABLED vocabulary — transparent
+     * fill, hairline outline, text/tertiary ink at 3.30:1 against a 4.5:1 floor
+     * — and now measures 10.25:1 dark / 11.18:1 light. It reads enabled because
+     * the ink is strong, not because it is coloured.
+     *
+     * `[Cc]olor` so `borderColor` and `backgroundColor` both count — a
+     * lowercase-only match would have caught one and passed while the rest drifted.
      */
     const accentLines = styleBlock
       .split('\n')
       .filter(line => /[Cc]olor: t\.color\.(bg|text)\.accent/.test(line));
     expect(accentLines).toEqual([
       // In source order, which is asserted rather than sorted: the ORDER is
-      // itself a check that these are the four styles named below and not four
-      // others that happen to number the same.
+      // itself a check that these are the styles named below and not others
+      // that happen to number the same.
       '    borderColor: t.color.bg.accent,', // ring, on every avatar
       '    color: t.color.text.accent,', // the rate inside the CTA
       '    borderColor: t.color.bg.accent,', // the CTA outline

@@ -307,7 +307,10 @@ function MediaViewerView({
         ? // A local pick came out of the picker at device resolution already and
           // is not on the CDN at all, so there is no transform to ask for.
           source
-        : sizedStorageImageUri(source, box.width, box.height, density, 90);
+        : // Message media is never a `clay:` sentinel, so this never narrows to
+          // null in practice; undefined keeps <Image> happy either way.
+          (sizedStorageImageUri(source, box.width, box.height, density, 90) ??
+          undefined);
 
   /*
    * Half-extents of the photo as `contain` actually PAINTS it (no pixel

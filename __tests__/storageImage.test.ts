@@ -23,7 +23,8 @@ describe('sizedStorageImageUri', () => {
       48,
       2,
     );
-    const url = new URL(result);
+    expect(result).not.toBeNull();
+    const url = new URL(result as string);
 
     expect(url.pathname).toBe('/storage/v1/render/image/sign/avatars/ada.jpg');
     expect(url.searchParams.get('token')).toBe('secret');

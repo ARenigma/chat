@@ -1,7 +1,7 @@
 import { type CookieOptions } from '@supabase/ssr';
 import { createServerClient } from '@supabase/ssr';
 import { type NextRequest, NextResponse } from 'next/server';
-import { createServiceClient } from '@/lib/supabase/service';
+import { founderAllowlistRow } from '@/lib/auth/founder';
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -42,15 +42,15 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  // Defense in depth: check the founder allowlist on every request.
-  // The admin schema is RLS-restricted; service_role bypasses it.
-  // This is a server-side check — the service key never reaches the client.
-  const { data: allowed } = await createServiceClient()
-    .schema('admin')
-    .from('founder_allowlist')
-    .select('email')
-    .eq('email', user.email)
-    .maybeSingle();
+  // Defense in depth: check the founder allowlist on every request. The
+  // admin schema is RLS-restricted; service_role bypasses it. This is a
+  // server-side check — the service key never reaches the client.
+  //
+  // The check is `founderAllowlistRow`, not a bare email match: a session
+  // authorises admin access only when Google itself vouches for the
+  // identity. See admin/lib/auth/founder.ts for why a mutable email column
+  // by itself was not enough (2026-09-17 audit).
+  const allowed = await founderAllowlistRow(user);
 
   if (!allowed) {
     return NextResponse.redirect(new URL('/login?error=unauthorized', request.url));

@@ -1,6 +1,6 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { onTransitionSettled } from '../theme/motion';
-import { FlashList } from '@shopify/flash-list';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import {
   Keyboard,
   Pressable as RNPressable,
@@ -23,7 +23,6 @@ import {
   emojiForNative,
   searchEmoji,
   withTone,
-  type Emoji,
   type EmojiCategoryId,
 } from '../lib/emoji';
 import { pushRecent, readRecents, readTone, writeTone } from '../lib/emojiRecents';
@@ -152,6 +151,16 @@ const GLYPH = StyleSheet.create({ g: { fontSize: 28, lineHeight: 34 } }).g;
  * result and a recent.
  */
 const keyOf = (item: string, i: number) => `${item}-${i}`;
+
+/**
+ * One recycling pool for the whole grid, module-level for the same reason
+ * `keyOf` is: every cell is the same square View+Text no matter which
+ * category or search result it holds, so there is nothing to distinguish
+ * types by. Explicit rather than omitted so a category swap's mount cost is
+ * "recycle an existing cell with new content", not "cells of an unrecognised
+ * type, mount fresh."
+ */
+const getEmojiItemType = (): 'emoji' => 'emoji';
 
 /**
  * The in-app emoji picker.
@@ -286,21 +295,81 @@ function EmojiPickerView({
   const searching = query.trim() !== '';
 
   /**
-   * What the grid shows: search hits, the recents list, or a category.
-   *
-   * Recents are stored already-toned, so they bypass `withTone` — re-applying
-   * the current tone to a stored '👍🏽' would append a second modifier.
+   * Per (category, tone) cache of the toned list, so rebuilding `browse` below
+   * on a tone change is a map lookup per category instead of a re-map of its
+   * whole array. The picker is mounted once and kept alive for the app's life
+   * (see the component's own docblock on why it is never unmounted), so this
+   * cache lives exactly as long as it is useful and is never stale — a tone
+   * change is a new key, not a mutation of an old one.
    */
+  const tonedCache = useRef(new Map<string, readonly string[]>());
+
+  /**
+   * ALL categories, concatenated into ONE list, with each category's start
+   * index recorded — instead of a separate list per category that gets
+   * swapped on tab tap.
+   *
+   * This is the actual reason a category switch is instant on a real
+   * keyboard: it is not a re-render of a different dataset, it is a SCROLL to
+   * a known position within a list that never changes shape. `sectionToPosition`
+   * / a single `EmojiGridAdapter` walking one `RecyclerView` is the same
+   * anatomy — tapping a tab there is `scrollToPositionWithOffset(start, 0)`,
+   * not a fresh adapter. Swapping `data` per tap (the previous shape here) was
+   * always going to cost a measure-and-diff pass on every tap; scrolling
+   * within one already-measured list costs nothing.
+   *
+   * Recents are stored already-toned, so they bypass `withTone` here too —
+   * re-applying the current tone to a stored '👍🏽' would append a second
+   * modifier.
+   */
+  const browse = useMemo(() => {
+    const items: string[] = [];
+    const sectionStart = new Map<EmojiCategoryId, number>();
+    for (const c of EMOJI_CATEGORIES) {
+      sectionStart.set(c.id, items.length);
+      if (c.id === 'recent') {
+        items.push(...recents);
+        continue;
+      }
+      const cacheKey = `${c.id}:${tone}`;
+      let toned = tonedCache.current.get(cacheKey);
+      if (toned === undefined) {
+        toned = EMOJI_BY_CATEGORY[c.id].map(e => withTone(e, tone));
+        tonedCache.current.set(cacheKey, toned);
+      }
+      items.push(...toned);
+    }
+    return { items, sectionStart };
+  }, [recents, tone]);
+
+  /** What the grid shows: search hits, or the one continuous browse list. */
   const data = useMemo<readonly string[]>(() => {
     if (searching) {
       return searchEmoji(query).map(e => withTone(e, tone));
     }
-    if (category === 'recent') {
-      return recents;
-    }
-    const list: readonly Emoji[] = EMOJI_BY_CATEGORY[category];
-    return list.map(e => withTone(e, tone));
-  }, [searching, query, category, recents, tone]);
+    return browse.items;
+  }, [searching, query, tone, browse]);
+
+  const listRef = useRef<FlashListRef<string>>(null);
+
+  /**
+   * Jump to a category's start position — never a data swap. A category with
+   * nothing in it (recents, before anything has ever been picked) has the
+   * same start index as the one after it, so this degrades to "scroll to
+   * whatever comes next" rather than a scroll to a position with nothing to
+   * show.
+   */
+  const goToCategory = useCallback(
+    (id: EmojiCategoryId) => {
+      setCategory(id);
+      if (searching) {
+        return;
+      }
+      const start = browse.sectionStart.get(id) ?? 0;
+      void listRef.current?.scrollToIndex({ index: start, animated: false });
+    },
+    [browse, searching],
+  );
 
   const pick = useCallback(
     (char: string) => {
@@ -454,7 +523,7 @@ function EmojiPickerView({
           {EMOJI_CATEGORIES.map(c => (
             <Pressable
               key={c.id}
-              onPress={() => setCategory(c.id)}
+              onPress={() => goToCategory(c.id)}
               accessibilityLabel={c.label}
               accessibilityRole="tab"
               selected={c.id === category}
@@ -497,6 +566,7 @@ function EmojiPickerView({
         * preparing the several screens FlatList's default kept mounted.
         */}
       <FlashList
+        ref={listRef}
         data={data as string[]}
         keyExtractor={keyOf}
         numColumns={COLUMNS}
@@ -506,12 +576,20 @@ function EmojiPickerView({
         drawDistance={height}
         extraData={cellStyle}
         style={styles.gridBox}
+        // Every cell is the same square regardless of category or search
+        // state, so ONE recycling pool — search (the one remaining case that
+        // still swaps `data`, browsing no longer does) reuses mounted cells
+        // instead of tearing them down and mounting fresh ones.
+        getItemType={getEmojiItemType}
+        // Reachable only while searching now: browsing is one continuous list
+        // across every category, which is never empty (recents can be, but
+        // it is one section inside a much bigger list, not the whole thing).
         ListEmptyComponent={
-          <Text allowFontScaling style={styles.empty}>
-            {searching
-              ? 'No emoji match that.'
-              : 'Emoji you use will show up here.'}
-          </Text>
+          searching ? (
+            <Text allowFontScaling style={styles.empty}>
+              No emoji match that.
+            </Text>
+          ) : null
         }
       />
 

@@ -20,7 +20,7 @@ import Animated from 'react-native-reanimated';
 import { useQuery } from '@tanstack/react-query';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { fadeSwapFast } from '../theme/motion';
+import { fadeSwapFast, fadeSwapOutFast } from '../theme/motion';
 import { useSubmitSessionReview } from '../api/provider';
 import { supabase } from '../lib/supabase';
 import { useStore } from '../store/useStore';
@@ -259,11 +259,17 @@ export function SessionFeedbackSheet() {
               // those take borderless (circular) ink.
               // https://developer.android.com/training/material/animations
               shape="circle">
-              {/* Filled by colour, not by a second glyph: the icon font has one
-                  star, and a hollow-vs-solid pair would be two glyphs that must
-                  agree about their optical weight forever. */}
+              {/* Filled by the SOLID face, not by colour alone.
+                  The note that used to sit here said the icon font had one star
+                  and that a hollow-vs-solid pair would be two glyphs that must
+                  agree about their optical weight forever. That stopped being
+                  true at the Heroicons migration: both faces are cut from the
+                  same source at the same codepoint, so they cannot drift.
+                  Colour alone also failed the rule that state must not be
+                  carried by hue on its own. */}
               <Icon
                 name="star"
+                active={on}
                 size={TOKENS.icon['2xl']}
                 color={on ? theme.color.text.token : theme.color.border.strong}
               />
@@ -288,7 +294,7 @@ export function SessionFeedbackSheet() {
         */}
       <Animated.Text
         key={rating}
-        entering={fadeSwapFast}
+        entering={fadeSwapFast} exiting={fadeSwapOutFast}
         allowFontScaling
         style={styles.word}
         testID="session-feedback-word">

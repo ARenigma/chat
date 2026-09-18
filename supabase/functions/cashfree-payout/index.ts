@@ -25,6 +25,7 @@
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { cashfreeSignature } from '../_shared/cashfreeSignature.ts';
+import { founderAllowlistRow } from '../_shared/founderAuth.ts';
 
 function payoutBaseUrl(): string {
   const env = Deno.env.get('CASHFREE_ENV') ?? 'sandbox';
@@ -116,7 +117,15 @@ Deno.serve(async (request: Request) => {
     return Response.json({ error: 'method not allowed' }, { status: 405 });
   }
 
-  // 1. Founder-only.
+  // 1. Founder-only — and specifically a session Google itself vouches for.
+  //
+  // This function moves real money to a bank beneficiary, so it is the one
+  // place a bare email-column check (what this was until 2026-09-17) was
+  // worst to leave standing: the admin console and the mobile app share one
+  // GoTrue project, so any signed-in member already holds a session shaped
+  // exactly like a founder's, and GoTrue's own email-change endpoint applies
+  // immediately under this project's `enable_confirmations = false`. See
+  // ../_shared/founderAuth.ts for the full argument.
   const authHeader = request.headers.get('Authorization') ?? '';
   const userClient = createClient(supabaseUrl, anonKey, {
     global: { headers: { Authorization: authHeader } },
@@ -129,12 +138,7 @@ Deno.serve(async (request: Request) => {
   const admin = createClient(supabaseUrl, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
-  const { data: founder } = await admin
-    .schema('admin')
-    .from('founder_allowlist')
-    .select('email')
-    .eq('email', userData.user.email)
-    .maybeSingle();
+  const founder = await founderAllowlistRow(admin, userData.user);
   if (!founder) {
     return Response.json({ error: 'forbidden' }, { status: 403 });
   }

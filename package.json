@@ -2,6 +2,7 @@
   "name": "companionchat",
   "version": "0.0.1",
   "private": true,
+  "license": "GPL-2.0",
   "scripts": {
     "start": "react-native start",
     "android": "react-native run-android --active-arch-only",
@@ -11,7 +12,7 @@
     "test": "jest",
     "test:db": "node scripts/db-test.mjs",
     "verify:manifest": "node scripts/verify-manifest.mjs",
-    "verify": "npm run tokens:check && npm run tokens:web:check && npm run icons:check && npm run icons:font:check && npm run emoji:check && npm run contrast:check && npm run web:check && npm run design:check && npm run typecheck && npm run lint && npm test && npm run verify:manifest && npm run bundle:android && npm run size:check",
+    "verify": "npm run tokens:check && npm run tokens:web:check && npm run icons:check && npm run icons:font:check && npm run handles:check && npm run emoji:check && npm run contrast:check && npm run web:check && npm run design:check && npm run typecheck && npm run lint && npm test && npm run verify:manifest && npm run bundle:android && npm run size:check",
     "size:check": "node scripts/size-gate.mjs",
     "android:release": "cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a --no-configuration-cache",
     "android:bundle": "cd android && ./gradlew bundleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a --no-configuration-cache",
@@ -45,6 +46,8 @@
     "tokens:web:check": "node scripts/gen-web-tokens.mjs --check",
     "icons": "node scripts/gen-icons.mjs",
     "icons:check": "node scripts/gen-icons.mjs --check",
+    "handles": "node scripts/gen-handles.mjs",
+    "handles:check": "node scripts/gen-handles.mjs --check",
     "emoji": "node scripts/gen-emoji.mjs",
     "emoji:check": "node scripts/gen-emoji.mjs --check",
     "design:check": "impeccable detect web/",
@@ -54,9 +57,11 @@
     "version:bump": "node scripts/version-bump.mjs",
     "ship:testers": "npm run version:bump && npm run android:internal && npm run distribute",
     "icons:font": "node scripts/gen-icons-font.mjs",
-    "icons:font:check": "node scripts/gen-icons-font.mjs --check"
+    "icons:font:check": "node scripts/gen-icons-font.mjs --check",
+    "sentry:maps": "node scripts/sentry-maps.mjs"
   },
   "dependencies": {
+    "@react-native-community/netinfo": "^12.0.1",
     "@react-native-firebase/app": "^26.3.1",
     "@react-native-firebase/auth": "^26.3.1",
     "@react-native-firebase/messaging": "^26.3.1",

@@ -14,7 +14,7 @@
   "retrieved_on": "2026-09-06",
   "bucket_path": "avatars/seed/<provider>-<first 8 of sha256>.jpg",
   "processing": "Cropped to 3:4 from the top of the frame and resized to 900x1200. No other edit. 2026-09-08: the astrologer crops are FACE-CENTRED rather than cropped from the top — YuNet (opencv_zoo face_detection_yunet_2023mar) locates the face, and the 3:4 box is 4.6x the face height with the face 34% down. The card renders a 76dp CIRCLE with resizeMode cover, so only the middle ~75% of the frame survives; a top crop put one subject's face at 12% of the frame and she rendered as a distant figure. Reviewed as circles before upload, not as rectangles.",
-  "upload": "The files sit next to this manifest so a fresh project can be seeded from a checkout. Push them with: supabase storage cp --linked --experimental assets/seed/providers/<file> ss:///avatars/seed/<file>",
+  "upload": "The files sit next to this manifest so a fresh project can be seeded from a checkout. Push them with: supabase storage cp --linked --experimental seed/providers/<file> ss:///avatars/seed/<file>",
   "photos": [
     {
       "file": "ada-9cab1c5c.jpg",

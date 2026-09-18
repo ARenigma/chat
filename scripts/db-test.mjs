@@ -147,6 +147,18 @@ const MIGRATIONS = [
   'supabase/migrations/106_clean_public_policy_urls.sql',
   'supabase/migrations/107_end_session_flushes_owed_minutes.sql',
   'supabase/migrations/108_telemetry_call_and_perf_events.sql',
+  'supabase/migrations/109_call_rate_limit_is_configurable.sql',
+  'supabase/migrations/110_a_message_push_names_the_member_who_sent_it.sql',
+  'supabase/migrations/111_open_alerts_read_availability_not_presence.sql',
+  'supabase/migrations/112_a_provider_face_is_a_photograph.sql',
+  'supabase/migrations/113_the_test_providers_have_a_gender_so_they_can_have_a_face.sql',
+  'supabase/migrations/114_founder_allowlist_is_case_insensitive.sql',
+  'supabase/migrations/115_call_heartbeats_are_activity.sql',
+  'supabase/migrations/116_messages_session_id_is_not_client_writable.sql',
+  'supabase/migrations/117_mock_recharge_is_rate_limited.sql',
+  'supabase/migrations/118_session_leases_require_a_real_participant.sql',
+  'supabase/migrations/119_call_quality_records_loss_rate_and_mos.sql',
+  'supabase/migrations/120_start_call_detects_a_simultaneous_ring.sql',
 ];
 
 /**
@@ -778,6 +790,35 @@ const suites = [
     file: join(ROOT, 'supabase/tests/460_edit_and_delete_messages.sql'),
     label:
       'edit and delete a message, and a provider who can see who they are talking to',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/470_call_heartbeats_are_activity.sql'),
+    label:
+      "a call's own heartbeat counts as activity, so it survives past 5m30s while a quiet chat still ends there",
+  },
+  {
+    file: join(
+      ROOT,
+      'supabase/tests/480_messages_session_id_is_not_client_writable.sql',
+    ),
+    label:
+      'messages.session_id/client_nonce/notified_at cannot be set by the recipient',
+  },
+  {
+    file: join(
+      ROOT,
+      'supabase/tests/490_session_leases_require_a_real_participant.sql',
+    ),
+    label:
+      'session_leases cannot be planted by a stranger, and a stray row cannot fake "both present"',
+  },
+  {
+    file: join(
+      ROOT,
+      'supabase/tests/500_start_call_detects_a_simultaneous_ring.sql',
+    ),
+    label:
+      'a simultaneous call in the same conversation is refused with ALREADY_RINGING, not silently replaced',
   },
 ];
 

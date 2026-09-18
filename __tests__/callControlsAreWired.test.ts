@@ -93,8 +93,25 @@ describe('the call notification carries what the app needs to obey it', () => {
     expect(app).toMatch(/const action = qs\.match\(\/action=\(\[\^&\]\+\)\/\)/);
     const branch = app.slice(app.indexOf("if (action === 'decline')"));
     expect(branch.slice(0, 120)).toMatch(/void endCall\(callId\);\s*\n\s*return;/);
-    // Answering still routes into the screen, which owns the lease and media.
-    expect(app).toMatch(/setRoute\(\{ name: 'call', providerId: callPeer, direction: 'in', callId, medium \}\)/);
+    /*
+     * Answering still routes into the screen, which owns the lease and media,
+     * and still carries `medium` rather than defaulting to voice.
+     *
+     * It now goes through `pendingIncoming` rather than calling setRoute
+     * directly, because setRoute only ever fed the MEMBER tree: a provider
+     * renders `providerRoute`, so every answer, body tap and full-screen intent
+     * set a route their tree does not read. Both branches are asserted here so
+     * the provider half cannot be dropped again.
+     */
+    expect(app).toMatch(/setPendingIncoming\(\{ peerId: callPeer, callId, medium \}\)/);
+    expect(app).toMatch(
+      /pushProvider\(\{ name: 'call', peerId, direction: 'in', callId, medium \}\)/,
+    );
+    expect(app).toMatch(
+      /pushRoute\(\{ name: 'call', providerId: peerId, direction: 'in', callId, medium \}\)/,
+    );
+    // The same call must not route twice when Realtime and the push both land.
+    expect(app).toContain('routedCallsRef.current.has(callId)');
   });
 
   it('listens for every action the native receiver emits', () => {
@@ -110,8 +127,20 @@ describe('the call notification carries what the app needs to obey it', () => {
     for (const action of emitted) {
       expect(call).toContain(`'${action}'`);
     }
-    // Answering twice would fire a second answer_call and re-claim a held lease.
-    expect(call).toMatch(/action === 'answer' && phaseRef\.current === 'ringing'/);
+    /*
+     * 'incoming', not 'ringing' (2026-09-17 audit). This assertion used to pin
+     * the OLD, broken guard: the callee's own phase starts at 'incoming' and
+     * never becomes 'ringing' (that value is the CALLER's outgoing-ring
+     * state), so the Answer action's guard as originally written could never
+     * once be true. The green Answer button on the CallStyle notification did
+     * nothing, on every incoming call, whenever the app was already running --
+     * this test was passing the whole time because it checked the code
+     * MATCHED the defect, not that the defect was absent.
+     *
+     * Still only while incoming: answering an already-connected call would
+     * fire a second answer_call and re-claim a lease already held.
+     */
+    expect(call).toMatch(/action === 'answer' && phaseRef\.current === 'incoming'/);
   });
 });
 

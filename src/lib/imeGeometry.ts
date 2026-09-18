@@ -124,10 +124,34 @@ function inputsOf(g: ImeInputs): ImeInputs {
 /**
  * The five numbers, from one input set, in one place.
  *
- * `bodyInset`: the keyboard and the panel are mutually exclusive EXCEPT while
- * the panel's own search field has focus, when both are up — the dock is lifted
- * above the keyboard and the panel expands into what is left. Telegram's
- * arrangement, recorded in `design/references/telegram.md`.
+ * `bodyInset`: reserves room for whatever the NATIVE IME actually occupies —
+ * gated on `keyboardUp` alone, not on `emojiPanelOpen`. `keyboardUp` is already
+ * the real signal (`keyboardDidHide`, which fires only once the OS animation
+ * finishes), so it does not need a second gate; adding one is what caused the
+ * viewport jump below.
+ *
+ * **The bug this replaced (Amit, 2026-09-18, "clicking emoji reloads the chat
+ * viewport"): `toggleEmoji` sets `emojiPanelOpen` SYNCHRONOUSLY on the tap, but
+ * the real keyboard takes ~250-300ms longer to animate away — `keyboardUp`
+ * does not flip to false until `keyboardDidHide` actually fires.** The old
+ * formula, `keyboardUp && (!emojiPanelOpen || emojiSearching)`, zeroed
+ * `bodyInset` (and so `listPad`) the INSTANT `emojiPanelOpen` flipped, while
+ * the keyboard was still visibly on screen. The transcript's bottom padding
+ * collapsed a quarter-second before the space it was padding against actually
+ * emptied — on device, a visible reflow: a day divider that had been sitting
+ * just off the bottom of the transcript, and the whole list content shifting,
+ * both without the member touching anything.
+ *
+ * `keyboardUp` alone gives every case the right answer: keyboard up, panel
+ * closed → imeSpace (unchanged). Panel just opened, keyboard still animating
+ * out (`keyboardUp` still true because `keyboardDidHide` has not fired yet) →
+ * STILL imeSpace, matching what is actually on screen, until the real event
+ * says otherwise. Keyboard confirmed gone, panel open, not searching →
+ * `keyboardUp` is false, so 0 — the panel fills that space itself, so the dock
+ * must not also be lifted or the two would stack. Panel open AND searching
+ * (the search field raises the keyboard again) → `keyboardUp` is true again on
+ * its own, no `emojiSearching` branch needed. Telegram's arrangement, recorded
+ * in `design/references/telegram.md`.
  *
  * `panelCeiling`: everything the header and the raised keyboard leave over. The
  * Composer subtracts its own input row, which it measures, because the row grows
@@ -143,7 +167,7 @@ function inputsOf(g: ImeInputs): ImeInputs {
  */
 export function deriveImeGeometry(i: ImeInputs): ImeGeometry {
   const imeSpace = i.keyboardHeight + i.insetBottom;
-  const bodyInset = i.keyboardUp && (!i.emojiPanelOpen || i.emojiSearching) ? imeSpace : 0;
+  const bodyInset = i.keyboardUp ? imeSpace : 0;
   const panelCeiling = Math.max(0, i.winH - i.barHeight - imeSpace);
   const listPad = TOKENS.space.md + bodyInset + i.dockHeight;
   const composerInset =
@@ -207,6 +231,7 @@ const selectComposerInset = (g: ImeState): number => g.composerInset;
 const selectPanelCeiling = (g: ImeState): number => g.panelCeiling;
 const selectBarHeight = (g: ImeState): number => g.barHeight;
 const selectComposerFocused = (g: ImeState): boolean => g.composerFocused;
+const selectDockHeight = (g: ImeState): number => g.dockHeight;
 
 export const useBodyInset = (): number => useZustandStore(useImeStore(), selectBodyInset);
 export const useListPad = (): number => useZustandStore(useImeStore(), selectListPad);
@@ -217,6 +242,13 @@ export const usePanelCeiling = (): number =>
 export const useBarHeight = (): number => useZustandStore(useImeStore(), selectBarHeight);
 export const useComposerFocused = (): boolean =>
   useZustandStore(useImeStore(), selectComposerFocused);
+/**
+ * The dock's own measured height alone, without `bodyInset` — for the one
+ * caller (the transcript's static content padding) that needs to animate the
+ * keyboard-lift portion separately from this structural one. See
+ * `AnimatedBodyInset` in ChatScreen.tsx.
+ */
+export const useDockHeight = (): number => useZustandStore(useImeStore(), selectDockHeight);
 
 /**
  * The screen's own store, created once and fed by the Keyboard listeners.

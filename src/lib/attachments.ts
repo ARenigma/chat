@@ -27,6 +27,27 @@ export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
  */
 export const MAX_PICK = 10;
 
+/**
+ * The longest edge a picked or captured photo is allowed to keep, passed as
+ * `maxWidth`/`maxHeight` to both `launchImageLibrary` and `launchCamera`.
+ *
+ * Before this bound (2026-09-17 audit), the picker was called with only
+ * `quality: 0.9` and no size limit at all. react-native-image-picker's own
+ * Android source makes what that combination means concrete:
+ * `Utils.getImageDimensBasedOnConstraints` returns the ORIGINAL dimensions
+ * whenever either bound is 0 (`android/src/main/java/com/imagepicker/Utils.java:265-267`),
+ * while `shouldResizeImage` still returns true whenever `quality != 100`
+ * (`Utils.java:293`) — so every photo was being RE-ENCODED at full capture
+ * resolution rather than downscaled, sending a modern 12MP photo out at
+ * several megabytes on a connection this product cannot assume clears that
+ * in any bounded time.
+ *
+ * 1280 is not a guess: it is Telegram's own figure for exactly this
+ * decision (`AndroidUtilities.java:3019-3030`, `photoSize = 1280`), and
+ * `SendMessagesHelper.java:9194-9208` downscales to it before every send.
+ */
+export const PHOTO_MAX_DIMENSION = 1280;
+
 /** The three formats the bucket accepts, MIME -> extension. */
 const EXT_BY_MIME: Record<string, 'jpg' | 'png' | 'webp'> = {
   'image/jpeg': 'jpg',

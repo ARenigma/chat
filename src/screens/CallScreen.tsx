@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   DeviceEventEmitter,
   Image,
-  PixelRatio,
   StyleSheet,
   Text,
   View,
@@ -11,11 +10,11 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
 import { LIGHT, TOKENS, type Theme } from '../theme/tokens';
-import { useStyles, useTheme } from '../theme/ThemeProvider';
+import { useStyles } from '../theme/ThemeProvider';
 import type { CallResult, ProviderSummary } from '../lib/database.types';
 import type { CallMedium } from '../lib/database.types';
 import { initialOf } from '../lib/display';
-import { sizedStorageImageUri } from '../lib/storageImage';
+import { avatarImageSource, clayFraming, isClayUri } from '../lib/clayAvatars';
 import { useConversationId, useConversations, useProviders } from '../api/chat';
 import { answerCall, endCall, heartbeatCall, startCall, useCallEnded } from '../api/calls';
 import { useCallSession } from '../api/callMedia';
@@ -81,6 +80,31 @@ const RING_TIMEOUT_OUT_MS = 30_000;
 const RING_TIMEOUT_IN_MS = 60_000;
 
 /*
+ * How long 'connecting' may last before this side gives up (2026-09-17
+ * audit). Telegram's own equivalent is `callConnectTimeout`, 30 s
+ * (VoIPService.java:3412-3413, cited when this file's media-adapter
+ * comments were written) — matched here rather than picked arbitrarily.
+ *
+ * Needed because of what THIS migration changes: the caller's phase used to
+ * leave 'ringing' only once media actually connected, so the 30 s ring
+ * timer was — by accident — also the caller's only bound on a hung media
+ * join. Now that an 'active' call row moves the caller straight to
+ * 'connecting' the moment the callee answers (see the useCallEnded
+ * callback below), a media join that never completes would otherwise wait
+ * forever with nothing watching it.
+ */
+const MEDIA_CONNECT_TIMEOUT_MS = 30_000;
+
+/*
+ * How long a mid-call reconnect is given before this side gives up
+ * (2026-09-17 audit). Same 30 s as MEDIA_CONNECT_TIMEOUT_MS and the same
+ * Telegram precedent (callConnectTimeout) — a reconnect and a fresh
+ * connect are the same kind of wait from the user's point of view, so they
+ * share one bound rather than each inventing its own number.
+ */
+const RECONNECT_TIMEOUT_MS = 30_000;
+
+/*
  * Not a code any RPC returns — src/api/calls.ts synthesises it when the RPC
  * RAISES. Worth its own sentence rather than falling through to the generic
  * "Could not start the call", because it says the two things a member actually
@@ -140,7 +164,6 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   useBackBarrier();
 
   const styles = useStyles(makeStyles);
-  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const setNotice = useStore(s => s.setNotice);
@@ -206,6 +229,19 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   const initial = initialOf(
     peerThread?.peer_display_name ?? provider?.display_name,
   );
+  // A member's avatar_url is always a `clay:<seed>` sentinel naming a bundled
+  // PNG, so it must not reach <Image> as a uri. avatarImageSource resolves both
+  // shapes; the clay art is drawn wider than its box and needs clayFraming.
+  const faceSource = avatarImageSource(peerAvatarUrl, AVATAR, AVATAR, 75);
+  const backdropSource = avatarImageSource(
+    peerAvatarUrl,
+    windowWidth,
+    windowHeight,
+    60,
+  );
+  const peerIsClay = peerAvatarUrl !== null && isClayUri(peerAvatarUrl);
+  const [faceFailed, setFaceFailed] = useState(false);
+  const [backdropFailed, setBackdropFailed] = useState(false);
 
   const [callId, setCallId] = useState<string | null>(incomingCallId);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -218,6 +254,14 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   const [upgrading, setUpgrading] = useState(false);
   const [memberConsented, setMemberConsented] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  /*
+   * M23 (2026-09-17 audit): the other party's own outgoing call to us landed
+   * in this same conversation while ours was still resolving (migration 120's
+   * ALREADY_RINGING). Their call — not the one this screen was about to place
+   * — is the one to answer, so its id is held separately from `callId` until
+   * the dialog below is confirmed.
+   */
+  const [alreadyRingingCallId, setAlreadyRingingCallId] = useState<string | null>(null);
   // Back must not silently end a call. Leaving this screen hangs up (unmount →
   // endCall), so a bare hardware back was a one-tap hang-up with no confirm.
   // The red button stays immediate — that IS the explicit intent, as on every
@@ -392,6 +436,10 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
           medium,
           sqlstate: r?.sqlstate ?? '',
         });
+        if (code === 'ALREADY_RINGING' && r?.call_id) {
+          setAlreadyRingingCallId(r.call_id);
+          return;
+        }
         if (code === 'INSUFFICIENT_BALANCE' && !isMemberSide) {
           setNotice('Their balance is too low to start this call.');
         } else {
@@ -418,8 +466,42 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     // late meant the very first buffers were dropped, which on a real device
     // is "the call connects but there is no audio."
     // https://developer.android.com/about/versions/14/changes/fgs-types-required#microphone
+    //
+    // `name` is deliberately NOT a dependency (M22, 2026-09-17 audit): this
+    // effect owns the service's LIFECYCLE (start once, stop once on
+    // unmount/call-end), and `name` starts as a placeholder ("Incoming
+    // call"/"Calling") until peerThread/provider resolve, then changes once.
+    // With `name` in these deps that one change re-ran this whole effect,
+    // and its cleanup below is a TRUE stop — CallForegroundService.stop()
+    // calls stopService(), which tears the Android service down (onDestroy)
+    // — immediately followed by a fresh start(): a visible notification
+    // flicker and a brief gap out of the promoted foreground state. The
+    // effect below refreshes the notification's name once it resolves,
+    // without touching this one's lifecycle.
     startCallForegroundService(name, direction === 'in', true);
     return stopCallForegroundService;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [callId, direction]);
+
+  /*
+   * Refreshes the notification's displayed name once it resolves (M22),
+   * WITHOUT tearing the service down the way including `name` in the effect
+   * above used to. Calling startCallForegroundService again on an
+   * ALREADY-RUNNING service just redelivers a new onStartCommand, which
+   * re-posts the SAME notification ID (ServiceCompat.startForeground) — the
+   * exact mechanism accept() (below) already relies on to move the running
+   * service from ringing to connected, restart without a stop.
+   * `startedRef` skips this effect's own first run: the effect above already
+   * started the service with whatever `name` this render has.
+   */
+  const startedRef = useRef(false);
+  useEffect(() => {
+    if (callId === null) return;
+    if (!startedRef.current) {
+      startedRef.current = true;
+      return;
+    }
+    startCallForegroundService(name, direction === 'in', true);
   }, [callId, name, direction]);
 
   const enabled = callId !== null && accepted;
@@ -428,6 +510,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     backend,
     mediaReady,
     muted,
+    mediaWarning,
     toggleMute,
     speakerOn,
     setSpeaker,
@@ -435,6 +518,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     remoteVideo,
     videoEnabled,
     remoteVideoEnabled,
+    remoteAudioMuted,
     enableVideo,
     disableVideo,
     switchCamera,
@@ -627,7 +711,21 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     },
     [direction, finish],
   );
-  useCallEnded(callId, endedNotice);
+  /*
+   * The callee answered (2026-09-17 audit): move off 'ringing' the moment
+   * the server says so, not the moment media happens to join. This is what
+   * stops the ring timeout below from outrunning a real answer — see
+   * useCallEnded's own docblock in api/calls.ts for the full defect.
+   * Guarded on 'ringing' specifically so a callee's OWN screen (whose phase
+   * is 'incoming', never 'ringing') and a call already past this point
+   * cannot be pushed backwards or replayed.
+   */
+  const onCalleeAnswered = useCallback(() => {
+    if (phaseRef.current === 'ringing') {
+      setPhase('connecting');
+    }
+  }, []);
+  useCallEnded(callId, endedNotice, onCalleeAnswered);
 
   /*
    * Give up on an unanswered ring.
@@ -651,6 +749,56 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     }, limit);
     return () => clearTimeout(id);
   }, [phase, finish]);
+
+  /*
+   * Give up on a media join that never completes (2026-09-17 audit).
+   *
+   * A gap this migration opens rather than closes on its own: the caller's
+   * phase now leaves 'ringing' the moment the SERVER says the callee
+   * answered (`onCalleeAnswered`, above), not the moment Agora actually
+   * connects — which used to mean the 30 s ring timer was, by accident,
+   * also the only bound on a hung media join. `MEDIA_CONNECT_TIMEOUT_MS`
+   * replaces that accidental coverage on purpose, at the same 30 s
+   * Telegram uses for the equivalent (`callConnectTimeout`).
+   *
+   * Applies to `'connecting'` from either side that reaches it — the
+   * caller via `onCalleeAnswered`, the callee via their own `accept()` — so
+   * both are protected by the same bound rather than trusting whichever
+   * path happened to still be timed.
+   */
+  useEffect(() => {
+    if (phase !== 'connecting') {
+      return;
+    }
+    const id = setTimeout(() => {
+      finish('Could not connect.');
+    }, MEDIA_CONNECT_TIMEOUT_MS);
+    return () => clearTimeout(id);
+  }, [phase, finish]);
+
+  /*
+   * Give up on a reconnect that never recovers (2026-09-17 audit).
+   *
+   * `connState === 'reconnecting'` (agora.ts: either side's link dropped, or
+   * the peer's media timed out) deliberately does NOT change `phase` — the
+   * call stays 'active' and its timer keeps running, because the server
+   * keeps billing through a reconnect and freezing the clock would only
+   * make the screen understate what is being charged (see CallConnState's
+   * own docblock). But a link that never recovers still has to end
+   * eventually, bounded the same way a fresh connect is
+   * (RECONNECT_TIMEOUT_MS) rather than left to whatever later mechanism —
+   * the 20 s heartbeat, the 30 s session lease grace — happens to notice
+   * first.
+   */
+  useEffect(() => {
+    if (connState !== 'reconnecting') {
+      return;
+    }
+    const id = setTimeout(() => {
+      finish('Connection lost.');
+    }, RECONNECT_TIMEOUT_MS);
+    return () => clearTimeout(id);
+  }, [connState, finish]);
 
   /*
    * Something OUTSIDE the app ended this call.
@@ -687,9 +835,22 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     const sub = DeviceEventEmitter.addListener('callAction', (action: string) => {
       if (action === 'hangUp' || action === 'audioFocusLost' || action === 'decline') {
         onEnd();
-      } else if (action === 'answer' && phaseRef.current === 'ringing') {
-        // Only while ringing: answering an already-connected call would fire a
-        // second answer_call and claim a lease the screen already holds.
+      } else if (action === 'answer' && phaseRef.current === 'incoming') {
+        /*
+         * 'incoming', not 'ringing' (2026-09-17 audit). The callee's own
+         * phase starts at 'incoming' and never becomes 'ringing' -- that
+         * value is reserved for the CALLER's outgoing-ring state (see the
+         * initial-phase logic above: `direction === 'in' ? 'incoming' : ...
+         * 'ringing'`). The green Answer action on the CallStyle notification
+         * fires this same event on the CALLEE's device, so the guard as
+         * written could never once be true: the button looked live and did
+         * nothing, on every incoming call, whenever the app was already
+         * running.
+         *
+         * Only while incoming, still: answering an already-connected call
+         * (phase 'connecting' or 'active') would fire a second answer_call
+         * and claim a lease this screen already holds.
+         */
         acceptRef.current();
       }
     });
@@ -727,6 +888,28 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     }
     setAccepted(true);
     setPhase('connecting');
+    /*
+     * Stop the ring THE INSTANT the call is answered, not once the peer's
+     * media joins (2026-09-17 audit). `CallForegroundService.kt` starts
+     * looping the device ringtone under `isIncoming=true` and only stops it
+     * (`stopRinging()`, gated on `if (isIncoming) startRinging() else
+     * stopRinging()`) when the service is restarted with `isIncoming=false` —
+     * and until this call, the only place that restart happened was the
+     * `mediaReady` effect below, which fires only after Agora actually joins
+     * the channel. Tapping Answer and having the phone keep ringing for a
+     * beat is the first thing that happens on every incoming call, and it
+     * reads as "the button did not work."
+     *
+     * `includeCamera` is left at its default (false) here, exactly like the
+     * FIRST `startCallForegroundService` call on mount below (line ~432):
+     * this restart's job is only to silence the ring and switch the
+     * notification to its ongoing style. The `mediaReady` effect is still
+     * the one place that adds the camera foreground-service type, once
+     * `videoEnabled` actually reflects whether the session is video — a
+     * value this callback's own closure cannot see correctly yet, since
+     * `setAccepted(true)` two lines up has not re-rendered.
+     */
+    startCallForegroundService(name, false, true);
     void answerCall(callId).then(result => {
       if (!result?.success) {
         /*
@@ -746,8 +929,55 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
       }
       setSessionId(result.session_id ?? null);
     });
-  }, [callId, onEnd, setNotice]);
+  }, [callId, onEnd, setNotice, name]);
   acceptRef.current = accept;
+
+  /*
+   * M23: confirms the ALREADY_RINGING dialog. Takes the existing call's id
+   * as a parameter rather than reading `callId` state, because `accept`
+   * above closes over `callId` and this fires before `setCallId` below has
+   * committed — a stale closure would still answer the call this screen was
+   * trying (and failing) to place, not the one actually ringing.
+   */
+  const answerInstead = useCallback(
+    (existingCallId: string) => {
+      setAlreadyRingingCallId(null);
+      setCallId(existingCallId);
+      setAccepted(true);
+      setPhase('connecting');
+      startCallForegroundService(name, false, true);
+      void answerCall(existingCallId).then(result => {
+        if (!result?.success) {
+          setNotice(
+            result?.error === 'SERVER_ERROR'
+              ? SERVER_ERROR_NOTICE
+              : 'This call is no longer available.',
+          );
+          onEnd();
+          return;
+        }
+        setSessionId(result.session_id ?? null);
+      });
+    },
+    [onEnd, setNotice, name],
+  );
+
+  /*
+   * L1 (2026-09-17 audit): the mic/camera stopping mid-call used to be
+   * silent — nothing told the member their own audio or video had actually
+   * stopped reaching the other side. `mediaWarning` (agora.ts) is null for
+   * the member's own mute/camera-off, so this only fires for a real device
+   * problem (busy, no permission, capture failed, an interrupting call).
+   * One-shot on the transition INTO a warning, matching every other notice
+   * on this screen — no separate "you're back" toast on recovery.
+   */
+  useEffect(() => {
+    if (mediaWarning === 'mic') {
+      setNotice("Your mic stopped. Check if another app is using it.");
+    } else if (mediaWarning === 'camera') {
+      setNotice("Your camera stopped. Check if another app is using it.");
+    }
+  }, [mediaWarning, setNotice]);
 
   const timer = `${Math.floor(elapsed / 60)}:${(elapsed % 60).toString().padStart(2, '0')}`;
   // #4: the coral gradient read as "very ugly" on a real call. A call wants a
@@ -766,18 +996,32 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
       ? 'wants a video chat'
       : 'calling you';
   const status =
-    phase === 'active'
-      ? timer
-      : phase === 'incoming'
-        ? incomingLabel
-        : phase === 'ringing'
-          ? 'Ringing'
-          : phase === 'connecting'
-            ? 'Connecting'
-            : 'Calling';
+    // A reconnect keeps `phase` at 'active' on purpose (the timer beneath
+    // this line is still counting, and still being billed) — but the status
+    // WORD says so, rather than a running clock silently standing in for a
+    // healthy call during a network blip (2026-09-17 audit).
+    phase === 'active' && connState === 'reconnecting'
+      ? 'Reconnecting'
+      : phase === 'active'
+        ? timer
+        : phase === 'incoming'
+          ? incomingLabel
+          : phase === 'ringing'
+            ? 'Ringing'
+            : phase === 'connecting'
+              ? 'Connecting'
+              : 'Calling';
 
   const showRemoteVideo = remoteVideoEnabled && remoteVideo !== null;
-  const pulsing = phase === 'ringing' || phase === 'connecting' || phase === 'incoming' || phase === 'starting';
+  // `connState === 'reconnecting'` added alongside the phases: 'Reconnecting'
+  // is a waiting word like 'Ringing'/'Connecting'/'Calling' and gets the same
+  // animated ellipsis, even though `phase` itself stays 'active' throughout.
+  const pulsing =
+    phase === 'ringing' ||
+    phase === 'connecting' ||
+    phase === 'incoming' ||
+    phase === 'starting' ||
+    (phase === 'active' && connState === 'reconnecting');
 
   return (
     <View style={styles.root}>
@@ -798,20 +1042,14 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
           zOrder={0}
           style={StyleSheet.absoluteFill}
         />
-      ) : peerAvatarUrl ? (
+      ) : backdropSource !== null && !backdropFailed ? (
         <>
           <Image
-            source={{
-              uri: sizedStorageImageUri(
-                peerAvatarUrl,
-                windowWidth,
-                windowHeight,
-                PixelRatio.get(),
-              ),
-            }}
+            source={backdropSource}
             resizeMode="cover"
             blurRadius={CALL_BG_BLUR}
             style={StyleSheet.absoluteFill}
+            onError={() => setBackdropFailed(true)}
             accessibilityIgnoresInvertColors
           />
           <View style={styles.bgDim} />
@@ -836,8 +1074,22 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
         )}
         {phase === 'incoming' && isMemberSide ? (
           <Text allowFontScaling style={styles.status}>
-            Keep it kind — no sexual or abusive talk
+            Keep it kind. No sexual or abusive talk
           </Text>
+        ) : null}
+        {/*
+         * The peer muted their mic (M25, 2026-09-17 audit). Video muting is
+         * self-evident (no picture); audio muting is not — silence and "they
+         * muted" read identically without this. `phase === 'active'` only:
+         * the field is meaningless before the call is actually connected.
+         */}
+        {phase === 'active' && remoteAudioMuted ? (
+          <View style={styles.remoteMutedRow}>
+            <Icon name="micOff" size={TOKENS.icon.xs} color="rgba(255,255,255,0.85)" />
+            <Text allowFontScaling testID="call-remote-muted" style={styles.status}>
+              {name} muted their mic
+            </Text>
+          </View>
         ) : null}
       </View>
 
@@ -851,27 +1103,23 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
       {!showRemoteVideo ? (
         <View style={styles.center} pointerEvents="none">
           <CallRing size={AVATAR} active={pulsing}>
-            {peerAvatarUrl ? (
+            <View style={styles.avatarNeutral}>
+              <Text allowFontScaling={false} style={styles.avatarInitial}>
+                {initial}
+              </Text>
+            </View>
+            {faceSource !== null && !faceFailed ? (
               <Image
-                source={{
-                  uri: sizedStorageImageUri(
-                    peerAvatarUrl,
-                    AVATAR,
-                    AVATAR,
-                    PixelRatio.get(),
-                  ),
-                }}
+                source={faceSource}
                 resizeMode="cover"
-                style={styles.avatarFill}
+                style={[
+                  styles.avatarPhoto,
+                  peerIsClay ? clayFraming(AVATAR) : null,
+                ]}
+                onError={() => setFaceFailed(true)}
                 accessibilityIgnoresInvertColors
               />
-            ) : (
-              <View style={[styles.avatarFill, { backgroundColor: theme.color.state.available }]}>
-                <Text allowFontScaling={false} style={styles.avatarInitial}>
-                  {initial}
-                </Text>
-              </View>
-            )}
+            ) : null}
           </CallRing>
         </View>
       ) : null}
@@ -967,7 +1215,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
         }
         testID="call-session-consent"
         title={medium === 'video' ? `Video chat with ${name}?` : `Call ${name}?`}
-        body="Keep it kind — no sexual or abusive talk. Charging starts when they pick up."
+        body="Keep it kind. No sexual or abusive talk. Charging starts when they pick up."
         cancelLabel="Not now"
         confirmLabel={medium === 'video' ? 'Video them' : 'Call them'}
         onCancel={onEnd}
@@ -995,6 +1243,20 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
         onConfirm={() => {
           setLeaveDialogVisible(false);
           onEnd();
+        }}
+      />
+      <ConfirmDialog
+        visible={alreadyRingingCallId !== null}
+        testID="call-already-ringing"
+        title={`${name} is calling you too`}
+        body="You were about to call each other at the same time. Answer their call instead?"
+        cancelLabel="Not now"
+        confirmLabel="Answer"
+        onCancel={onEnd}
+        onConfirm={() => {
+          if (alreadyRingingCallId !== null) {
+            answerInstead(alreadyRingingCallId);
+          }
         }}
       />
     </View>
@@ -1061,10 +1323,14 @@ function BarButton({
   disabled?: boolean;
 }) {
   const styles = useStyles(makeStyles);
+  // An active ghost toggle takes the SOLID treatment, not a 20% alpha nudge on
+  // the same white-on-translucent: inverting the ink is the only change at this
+  // size a user reliably reads as "on".
+  const solid = fill === 'solid' || (active && tone !== 'danger');
   const fg =
     tone === 'danger'
       ? LIGHT.color.text.onAccent
-      : fill === 'solid'
+      : solid
         ? LIGHT.color.text.primary
         : LIGHT.color.text.onAccent;
   return (
@@ -1090,9 +1356,8 @@ function BarButton({
         style={[
           styles.barButton,
           tone === 'danger' && styles.danger,
-          tone !== 'danger' && fill === 'solid' && styles.barButtonSolid,
-          tone !== 'danger' && fill === 'ghost' && styles.barButtonGhost,
-          active && tone !== 'danger' && fill === 'ghost' && styles.barButtonActive,
+          tone !== 'danger' && solid && styles.barButtonSolid,
+          tone !== 'danger' && !solid && styles.barButtonGhost,
         ]}>
         <Icon name={glyph} size={TOKENS.icon.lg} color={fg} />
       </Pressable>
@@ -1155,6 +1420,25 @@ const makeStyles = (t: Theme) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
+    // Sits on top of the initial rather than replacing it, so a photo that
+    // fails to load degrades to the letter instead of an empty ring.
+    avatarPhoto: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+    },
+    // A lift off the fixed #0B0B10 call surface rather than a theme token: this
+    // screen is dark in both modes, and the previous fill was state/available,
+    // the presence green, which read as a status badge on a face.
+    avatarNeutral: {
+      width: '100%',
+      height: '100%',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(255,255,255,0.14)',
+    },
     avatarInitial: {
       fontFamily: TOKENS.face.semibold,
       fontSize: 56,
@@ -1191,6 +1475,15 @@ const makeStyles = (t: Theme) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
+    },
+    // Same row shape as statusRow, plus the gap an icon+label pair needs —
+    // not added to statusRow itself, which the ringing/connecting dots row
+    // above also uses and did not ask for a gap.
+    remoteMutedRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: TOKENS.space.hair,
     },
     status: {
       ...TOKENS.typography.bodyMedium,

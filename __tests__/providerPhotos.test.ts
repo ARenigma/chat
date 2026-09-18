@@ -240,7 +240,9 @@ describe('a provider publishes several photos, and one of them is the face', () 
     expect(detail).toContain('provider.avatar_url !== null');
     // The clay sentinel is a bundled PNG, not a URL: feeding it to <Image
     // source={{uri}}> renders nothing, which is what the single-image hero did.
-    expect(detail).toContain('isClayUri(uri)');
+    // Resolution is centralised in avatarImageSource now, because per-screen
+    // clay checks are exactly how CallScreen shipped without one.
+    expect(detail).toContain('avatarImageSource(uri');
   });
 
   it('offers the provider a single-select, not a row of switches', () => {

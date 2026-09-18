@@ -17,15 +17,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import {
-  DOCK_DELAY_MS,
-  EASE_OUT,
-  KEYBOARD_CUBIC,
-  fadeSwapFast,
-  dockTo,
-  useCrossfade,
-  M3,
-} from '../theme/motion';
+import { DOCK_DELAY_MS, EASE_OUT, KEYBOARD_CUBIC, M3, dockTo, fadeSwapFast, fadeSwapOutFast, useCrossfade } from '../theme/motion';
 import { requestAndroidPermission } from '../lib/permissions';
 import {
   launchCamera,
@@ -43,7 +35,12 @@ import {
   type RecordingHandle,
 } from '../lib/recorder';
 import { MAX_VOICE_MS, clock, isSendable, type VoiceDraft } from '../lib/voice';
-import { MAX_ATTACHMENT_BYTES, MAX_PICK, type ImageDraft } from '../lib/attachments';
+import {
+  MAX_ATTACHMENT_BYTES,
+  MAX_PICK,
+  PHOTO_MAX_DIMENSION,
+  type ImageDraft,
+} from '../lib/attachments';
 import { useStore } from '../store/useStore';
 import { Icon } from './Icon';
 import { Pressable } from './Pressable';
@@ -51,6 +48,7 @@ import { SendButton } from './SendButton';
 import { AttachPanel } from './AttachPanel';
 import { EmojiPicker } from './EmojiPicker';
 import { readKeyboardHeight, writeKeyboardHeight } from '../lib/keyboardPanel';
+import { readDraftText, writeDraftText } from '../lib/chatDraft';
 import { usePanelCeiling } from '../lib/imeGeometry';
 import { Waveform } from './Waveform';
 import { TextField } from './TextField';
@@ -90,29 +88,6 @@ export const TELEGRAM_ISLAND_INSET = 7;
  * `space.hair` padding top and bottom, which is exactly 40.
  */
 const EMOJI_BUTTON = 40;
-
-/**
- * The emoji/keyboard glyph, 19 and not `icon.md` (20) — an OPTICAL correction,
- * measured, not a taste adjustment.
- *
- * Amit, 2026-09-13: "emoji icon should be same size as clip/mic". They already
- * WERE the same token and the same height: measured on an S22 at density 450,
- * all three ink exactly 22.0dp tall. What differs is width, because the glyphs
- * are different shapes — `smile` is a closed circle that traces its full box at
- * 22.0dp wide, `paperclip` is an open form at 20.6dp, and `mic` is a narrow
- * body at 16.4dp. A circle at the same nominal size as an open form reads
- * larger, which is the oldest problem in icon drawing and the reason Material's
- * keylines give circles and rectangles different dimensions inside one grid.
- *
- * 19 lands the circle at ~20.9dp of ink, within 0.3dp of the paperclip beside
- * it. The mic is deliberately NOT the target: a microphone is a narrow object
- * and matching a circle to it would leave the circle looking shrunken.
- *
- * Same class of exception as the chat header's handset, which is pinned at a
- * non-step size for the same reason — two controls in one row must present the
- * same INK, not the same number. Exempted by name in __tests__/iconScale.test.ts.
- */
-const EMOJI_GLYPH_SIZE = 19;
 
 /**
  * Input field height bounds (dp).
@@ -201,12 +176,23 @@ export const MAX_INPUT_LINES = 6;
 const KEYBOARD_EASING = KEYBOARD_CUBIC;
 
 interface Props {
+  /**
+   * Keys the draft persisted across an AppState backgrounding (X6, 2026-09-17
+   * audit) — `undefined` while the conversation id is still resolving, which
+   * simply defers the restore/persist effects until it arrives.
+   */
+  conversationId: string | undefined;
   onSend: (text: string) => void;
   /** A finished recording, ready to upload. Both roles get this: the provider
    *  tree renders the same ChatScreen, and voice notes are in scope for both. */
   onSendVoice: (draft: VoiceDraft) => void;
-  /** A picked photo, ready to upload. Same shape of contract as onSendVoice. */
-  onSendImage: (draft: ImageDraft) => void;
+  /**
+   * A picked photo, ready to upload. Same shape of contract as onSendVoice,
+   * except the return is awaited (2026-09-17 audit): picking several photos
+   * at once must send them one at a time, in order, not fire every upload
+   * simultaneously and let the server's arrival order become the send order.
+   */
+  onSendImage: (draft: ImageDraft) => void | Promise<void>;
   disabled: boolean;
   placeholder: string;
   sendHaloKey: number;
@@ -216,6 +202,10 @@ interface Props {
    * have to know how often a broadcast is affordable.
    */
   onTyping?: () => void;
+  /** Held while a voice note records, so the peer sees "recording" not silence. */
+  onRecording?: () => void;
+  /** Mic released, by any route including unmount. */
+  onRecordingEnded?: () => void;
   /**
    * Fired when the field takes or loses focus, so the dock behind it can drop
    * its frost entirely while composing — the composer becomes a floating capsule
@@ -247,6 +237,15 @@ interface Props {
  * is shown before the note leaves.
  */
 type Mode = 'idle' | 'recording' | 'review';
+
+/**
+ * How often the recording signal is re-sent while the mic is held.
+ *
+ * Matches the typing throttle in api/realtime.ts: the sender throttles at that
+ * interval anyway, so pinging faster would be discarded and pinging slower
+ * would let the peer's 4s TTL expire mid-note.
+ */
+const RECORD_PING_MS = 1_500;
 
 /**
  * Composition state is local, lifting the draft into the store would re-render
@@ -286,6 +285,7 @@ type Mode = 'idle' | 'recording' | 'review';
  * is added later it belongs on top of this, not instead of it.
  */
 function ComposerView({
+  conversationId,
   onSend,
   onSendVoice,
   onSendImage,
@@ -293,6 +293,8 @@ function ComposerView({
   placeholder,
   sendHaloKey,
   onTyping,
+  onRecording,
+  onRecordingEnded,
   onFocusChange,
   onPanelChange,
   onPanelSearchChange,
@@ -302,6 +304,60 @@ function ComposerView({
   const setNotice = useStore(s => s.setNotice);
   const [value, setValue] = useState('');
   const [mode, setMode] = useState<Mode>('idle');
+
+  /*
+   * Restores a draft persisted across an AppState backgrounding (X6,
+   * 2026-09-17 audit — Amit's rule: the draft survives backgrounding,
+   * including an OS process kill while backgrounded, and is purged only on
+   * an intentional exit; see `chatDraft.ts` and ChatScreen's own purge calls
+   * on leaving to Home or into a call).
+   *
+   * `conversationId` resolves asynchronously (ChatScreen's own comment on
+   * `knownThread`/`openedId`), so this cannot be the `useState` initializer —
+   * it has to be an effect that fires once the id actually arrives. Guarded
+   * on `value === ''` so it can never clobber a character the member has
+   * already typed in the brief window before the id resolves.
+   */
+  const restoredFor = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (conversationId === undefined || conversationId === restoredFor.current) {
+      return;
+    }
+    restoredFor.current = conversationId;
+    setValue(current => (current === '' ? readDraftText(conversationId) : current));
+  }, [conversationId]);
+
+  // Read by the AppState listener below without being in its dep array — the
+  // listener is registered once for lifetime (same idiom as App.tsx's
+  // `bootPhaseRef`), not re-subscribed on every keystroke.
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const conversationIdRef = useRef(conversationId);
+  conversationIdRef.current = conversationId;
+
+  /*
+   * Tell the peer a voice note is being recorded, for as long as it is.
+   *
+   * Keyed on `mode` rather than hooked into each transition because there are
+   * six paths out of 'recording' (send, review, cancel, backgrounded, a call
+   * arriving, unmount) and a signal that leaks on any one of them leaves the
+   * other person watching an indicator for something that stopped.
+   *
+   * Re-pinged on an interval because the receiver drops the indicator after a
+   * TTL, and a voice note outlasts it. Telegram does the same thing for the
+   * same reason (MessagesController.java:11441).
+   */
+  useEffect(() => {
+    if (mode !== 'recording' || onRecording === undefined) {
+      return;
+    }
+    onRecording();
+    const ping = setInterval(onRecording, RECORD_PING_MS);
+    return () => {
+      clearInterval(ping);
+      onRecordingEnded?.();
+    };
+  }, [mode, onRecording, onRecordingEnded]);
   /**
    * The attach surface, docked in the emoji panel's slot rather than presented
    * as a bottom sheet. Mounted on first open and hidden thereafter, exactly as
@@ -380,6 +436,8 @@ function ComposerView({
   // The field, so the emoji button can focus it (and raise the keyboard, where
   // the emoji key lives — a full in-app picker is a follow-up).
   const inputRef = useRef<TextInput>(null);
+  /** Read inside the `hardwareBackPress` callback below — see its own comment. */
+  const fieldFocusedRef = useRef(false);
   /**
    * Which attempt is current, bumped by every start, stop, discard and unmount.
    *
@@ -870,9 +928,44 @@ function ComposerView({
     // Touching the composer while the panel is searching leaves the search, the
     // same way Telegram's `onTouchEvent` does (`:5386-5391`).
     leaveSearch();
+    fieldFocusedRef.current = true;
     onFocusChange?.(true);
   }, [leaveSearch, onFocusChange]);
-  const onFieldBlur = useCallback(() => onFocusChange?.(false), [onFocusChange]);
+  const onFieldBlur = useCallback(() => {
+    fieldFocusedRef.current = false;
+    onFocusChange?.(false);
+  }, [onFocusChange]);
+
+  /**
+   * Back dismisses the keyboard before it leaves the chat — the same rule as
+   * the panel's own handler above, for the case that handler does not cover.
+   *
+   * That handler is only registered while `emojiOpen || attachOpen`, so a
+   * back press with just the real keyboard up (typing, no panel) had nothing
+   * of this screen's own to catch it and fell through to App.tsx's single
+   * global `hardwareBackPress` subscription — which treats back as "leave the
+   * conversation." Android normally swallows back-while-focused as an IME
+   * dismiss before JS ever sees it, but under this app's edge-to-edge IME
+   * handling that swallow and the JS event can both fire, so the global
+   * handler's navigation and the OS's own keyboard-dismiss raced: found on
+   * device (S22) as the chat screen's own scroll position and touch targets
+   * going stale directly under the composer after backing out of the
+   * keyboard while scrolled up in history — the Chats list underneath had
+   * begun re-mounting while ChatScreen was still on screen. `fieldFocusedRef`
+   * rather than the `composerFocused` store field: this must be read inside a
+   * `BackHandler` callback, not a render, and the store's own rule is that
+   * only leaf hook consumers subscribe to it.
+   */
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (!fieldFocusedRef.current) {
+        return false;
+      }
+      inputRef.current?.blur();
+      return true;
+    });
+    return () => sub.remove();
+  }, []);
 
   const record = useCallback(async () => {
     if (disabled || handle.current !== null) {
@@ -974,6 +1067,27 @@ function ComposerView({
     return () => sub.remove();
   }, [discard]);
 
+  /*
+   * Writes the draft to MMKV on the same `background` transition, so it
+   * survives whatever Android does to the process next — same trigger as the
+   * mic-cancel effect above, same `background`-only reasoning, kept as a
+   * separate effect because the two are unrelated concerns that happen to
+   * share a signal.
+   *
+   * There is deliberately no purge here: leaving the field non-empty on the
+   * way out is exactly the case this exists for. Purging on an intentional
+   * exit is ChatScreen's job (it owns the navigation), not this component's.
+   */
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', next => {
+      const id = conversationIdRef.current;
+      if (next === 'background' && id !== undefined) {
+        writeDraftText(id, valueRef.current);
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
   const sendDraft = useCallback(() => {
     if (draft === null) {
       return;
@@ -1001,8 +1115,19 @@ function ComposerView({
    *
    * https://github.com/react-native-image-picker/react-native-image-picker
    */
+  /*
+   * Sends are AWAITED, one at a time, not fired together (2026-09-17 audit).
+   * `selectionLimit: MAX_PICK` lets a member pick several photos in one pass,
+   * and until this fix every asset in `result.assets` was handed to
+   * `onSendImage` in the same synchronous loop with no `await` — ten photos
+   * meant ten uploads competing for one link and ten `send_message_idempotent`
+   * calls racing the server, so the thread ended up in whatever order the
+   * network happened to finish them, not the order the member picked them in.
+   * A `for...of` with `await` costs nothing on the common one-photo case and
+   * makes the ten-photo case deterministic.
+   */
   const handleAssets = useCallback(
-    (result: ImagePickerResponse | null) => {
+    async (result: ImagePickerResponse | null) => {
       if (result === null || result.didCancel) {
         return;
       }
@@ -1023,7 +1148,7 @@ function ComposerView({
           continue;
         }
         sentAny = true;
-        onSendImage({
+        await onSendImage({
           uri: asset.uri,
           width: asset.width,
           height: asset.height,
@@ -1057,8 +1182,10 @@ function ComposerView({
       mediaType: 'photo',
       selectionLimit: MAX_PICK,
       quality: 0.9,
+      maxWidth: PHOTO_MAX_DIMENSION,
+      maxHeight: PHOTO_MAX_DIMENSION,
     }).catch(() => null);
-    handleAssets(result);
+    void handleAssets(result);
   }, [disabled, handleAssets]);
 
   /**
@@ -1092,13 +1219,28 @@ function ComposerView({
       mediaType: 'photo',
       quality: 0.9,
       saveToPhotos: false,
+      maxWidth: PHOTO_MAX_DIMENSION,
+      maxHeight: PHOTO_MAX_DIMENSION,
     }).catch(() => null);
-    handleAssets(result);
+    void handleAssets(result);
   }, [disabled, handleAssets, setNotice]);
 
   if (mode === 'recording') {
     return (
-      <View style={styles.row}>
+      /*
+       * Keyed by `mode` (M12, 2026-09-17 audit): idle → recording → review
+       * used to be a hard cut between three early-return trees. A deliberate
+       * mic tap, not a keyboard-frequency event, so the same fadeSwapFast/
+       * fadeSwapOutFast pair the Notify button and HeaderSubtitle use fits —
+       * the idle branch itself is untouched, since typing is the composer's
+       * 100+/day default state and the project's own motion gate says that
+       * tier gets nothing.
+       */
+      <Animated.View
+        key={mode}
+        entering={fadeSwapFast}
+        exiting={fadeSwapOutFast}
+        style={styles.row}>
         <View style={styles.panel}>
           <Pressable
             onPress={() => {
@@ -1154,13 +1296,17 @@ function ComposerView({
             <Icon name="stop" size={TOKENS.icon.sm} color={theme.color.text.primary} />
           </Pressable>
         </View>
-      </View>
+      </Animated.View>
     );
   }
 
   if (mode === 'review' && draft !== null) {
     return (
-      <View style={styles.row}>
+      <Animated.View
+        key={mode}
+        entering={fadeSwapFast}
+        exiting={fadeSwapOutFast}
+        style={styles.row}>
         <View style={styles.panel}>
           <Pressable
             onPress={() => {
@@ -1193,7 +1339,7 @@ function ComposerView({
           />
           <SendButton onPress={sendDraft} disabled={disabled} sendHaloKey={sendHaloKey} />
         </View>
-      </View>
+      </Animated.View>
     );
   }
 
@@ -1253,12 +1399,37 @@ function ComposerView({
           highlight="material"
           size={EMOJI_BUTTON}
           style={styles.emoji}>
-          {/* `icon.md` (20), the same as the camera and the mic across the
-              capsule. This was `icon.lg` (24) with nothing recording why, and a
-              4dp difference between the leading glyph and the two trailing ones
-              is visible at this size — the second half of "the elements are not
-              aligned" (Amit, 2026-09-12); the first half was the 36dp button in
-              a row of 40s. Three controls in one capsule, one glyph size. */}
+          {/* `icon.lg` (24), the same as the camera and the mic across the
+              capsule — one glyph size for all three controls, still true after
+              this step change (Amit, 2026-09-18: "the emoji icon still looks
+              small... make it exactly like Telegram").
+              `ChatActivityEnterView.java:2670-2721`: Telegram's own emoji
+              button is a 44dp target (`DEFAULT_HEIGHT`) with 7.5dp padding on
+              each side, so its DRAWN glyph is 44 - 2*7.5 = 29dp — not the
+              button size alone, which is all `design/references/telegram.md`
+              had recorded before this pass. `icon.lg` at this app's own
+              `ICON_SCALE` (1.2) inks 24*1.2 = 28.8dp, matching that almost
+              exactly, without touching this app's own 40dp button/capsule
+              geometry (a deliberately different, already-settled shape from
+              Telegram's flat bar).
+
+              History on why this was ever 20, not 24: this was `icon.lg` (24)
+              with nothing recording why, and a 4dp mismatch against the OTHER
+              two controls (already at 20) read as "the elements are not
+              aligned" (Amit, 2026-09-12) — the fix then was to bring emoji
+              DOWN to match clip/mic, not a claim that 20 was the right
+              absolute size. Moving all three together to 24 now does not
+              reopen that mismatch.
+
+              A 2026-09-13 detour further shrank this to 19 as an optical
+              correction against the (then) Lucide glyph set — closed circles
+              read larger than open forms at the same nominal size. The icon
+              set moved to a Heroicons font afterward, and Heroicons'
+              `face-smile` sits further inside its own box than Lucide's did:
+              the Lucide-era shrink left it visibly SMALLER than the clip and
+              mic beside it (Amit, 2026-09-18, confirmed on the S22: ~56dp of
+              ink against their ~60-62dp at the old icon.md). That correction
+              is now moot — both are `icon.lg`. */}
           {/*
             * The glyph CROSS-FADES rather than cutting (2026-09-12).
             *
@@ -1280,10 +1451,14 @@ function ComposerView({
             * already uses for exactly this — a control that has just changed
             * what it says about itself.
             */}
-          <Animated.View key={emojiOpen ? 'keyboard' : 'smile'} entering={fadeSwapFast}>
+          <Animated.View
+            key={emojiOpen ? 'keyboard' : 'smile'}
+            entering={fadeSwapFast}
+            exiting={fadeSwapOutFast}
+            style={styles.emojiGlyph}>
             <Icon
               name={emojiOpen ? 'keyboard' : 'smile'}
-              size={EMOJI_GLYPH_SIZE}
+              size={TOKENS.icon.lg}
               color={theme.color.text.secondary}
             />
           </Animated.View>
@@ -1410,7 +1585,11 @@ function ComposerView({
             * "Camera or photos", so the spoken name was right while the drawn
             * one was narrower. They agree now.
             */}
-          <Icon name="clip" size={TOKENS.icon.md} color={theme.color.text.secondary} />
+          {/* `icon.lg` (24), matching the emoji and mic glyphs — see the emoji
+              button's own comment above for the Telegram measurement
+              (`ChatActivityEnterView.java:2670-2721`: 44dp button minus 7.5dp
+              padding each side = 29dp drawn glyph) this step matches. */}
+          <Icon name="clip" size={TOKENS.icon.lg} color={theme.color.text.secondary} />
         </Pressable>
       </Animated.View>
 
@@ -1436,7 +1615,9 @@ function ComposerView({
             highlight="material"
             size={40}
             style={styles.mic}>
-            <Icon name="mic" size={TOKENS.icon.md} color={theme.color.text.secondary} />
+            {/* `icon.lg` (24) — see the emoji button's own comment for the
+                Telegram measurement this matches. */}
+            <Icon name="mic" size={TOKENS.icon.lg} color={theme.color.text.secondary} />
           </Pressable>
         </Animated.View>
         <Animated.View
@@ -1623,18 +1804,28 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     paddingLeft: TOKENS.space.hair,
     paddingRight: TOKENS.space.hair,
     /*
-     * 44dp, not the 40 the children add up to, and this is a correctness fix
-     * rather than a taste one: at 40 the declared corner below was scaled to
-     * 22 x 40/44 = 20 by RN Android's corner-overlap clamp while the message
+     * CAPSULE_MIN_H, not the 40dp the children add up to, and this is a
+     * correctness fix rather than a taste one: at 40 the declared corner below
+     * was scaled down by RN Android's corner-overlap clamp while the message
      * bubbles painted a true 22, so the capsule and the bubble scrolling under
      * it traced different silhouettes. See CAPSULE_MIN_H for the rule and its
-     * source. `space.hair` (2) top and bottom is the mechanism — it takes the
-     * 40dp of children to the floor and keeps them optically centred under
-     * `alignItems: 'flex-end'` — and `minHeight` is the floor itself, stated so
-     * the requirement survives a change to the children.
+     * source (`TOKENS.interaction.minTarget`, the 48dp a11y minimum touch
+     * target — not 44, which this comment and `paddingVertical` both assumed
+     * until Amit found the send button sitting closer to the capsule's bottom
+     * edge than its top, 2026-09-18). `space.hair` (2dp) padding only ever
+     * matched a 44dp floor; against the real 48dp one it left 4dp of slack
+     * `alignItems: 'flex-end'` puts entirely above the (bottom-anchored)
+     * icons rather than splitting it, since a genuinely-idle capsule never
+     * grows past its own minHeight for the icons to be "anchored against".
+     * `space['2xs']` (4dp) each side makes the declared box exactly
+     * CAPSULE_MIN_H on its own — 4 + 40 + 4 = 48 — so there is no slack left
+     * for flex-end to place unevenly. `minHeight` stays as the floor so a
+     * real multi-line field can still grow past it, at which point flex-end
+     * correctly keeps every icon pinned to the last line, which is what it
+     * is for.
      */
     minHeight: CAPSULE_MIN_H,
-    paddingVertical: TOKENS.space.hair,
+    paddingVertical: TOKENS.space['2xs'],
     /*
      * `radius.bubble` (22dp) rather than `radius.pill` (999).
      *
@@ -1692,6 +1883,22 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     alignSelf: 'flex-end',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  /*
+   * A small upward nudge for the glyph itself, not the button. Measured on the
+   * S22 (Amit, 2026-09-18) with the button already perfectly centered in the
+   * capsule: the smile glyph still inked with 44px above it and 33px below —
+   * `textAlignVertical: 'center'` centres the Heroicons font's LINE BOX, not
+   * the glyph's own ink, and this font's ascent/descent are not symmetric
+   * around its centre. -2dp (density 450: 44-33=11px / 2 ≈ 5.5px ≈ 1.96dp)
+   * splits the difference. A font-wide property, so every glyph in the app
+   * carries the same low-single-digit bias — pinned here rather than in
+   * Icon.tsx because this is the one spot it was actually measured and
+   * reported; a global change would move dozens of icons nobody has
+   * re-verified against.
+   */
+  emojiGlyph: {
+    transform: [{ translateY: -2 }],
   },
   // The camera, outside the capsule, between it and the send/mic slot. Width is
   // animated (see `cameraStyle`), so nothing here may set one.

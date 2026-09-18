@@ -3,7 +3,9 @@ import {
   Easing,
   FadeIn,
   FadeInDown,
+  FadeInUp,
   FadeOut,
+  FadeOutDown,
   FadeOutUp,
   ReduceMotion,
   makeMutable,
@@ -516,6 +518,33 @@ export const fadeSwapFast = FadeIn.duration(DURATION.fast)
   .reduceMotion(ReduceMotion.System);
 
 /**
+ * The OUT half of that swap, and on the Notify control it is the only half.
+ *
+ * Amit, on the device 2026-09-17: "fade out not fade in". With `entering` alone
+ * on a keyed view the old label is unmounted the instant the key changes and the
+ * new one fades up from nothing, so the eye reads a blink and then a slow
+ * arrival. Reanimated keeps an EXITING view mounted for the length of its
+ * animation, and the replacement is already in place underneath it, so
+ * `exiting` alone dissolves the old label OFF the new one. The control never
+ * shows an empty state, and the change reads as the word being replaced rather
+ * than as the button repainting itself.
+ *
+ * EMPH_ACCEL, not EASE_OUT: this module's own header says decelerate for
+ * entering and accelerate for exiting, and this is an exit. Shorter than
+ * `fast` for the reason `barOut` is shorter than `barIn` two blocks down -
+ * arriving is an announcement and wants to be seen, leaving should get out of
+ * the way.
+ */
+export const fadeSwapOutFast = FadeOut.duration(DURATION.fast * 0.75)
+  .easing(EMPH_ACCEL)
+  .reduceMotion(ReduceMotion.System);
+
+/** The `base`-paced sibling, for a swap that is read rather than glanced at. */
+export const fadeSwapOut = FadeOut.duration(DURATION.base * 0.75)
+  .easing(EMPH_ACCEL)
+  .reduceMotion(ReduceMotion.System);
+
+/**
  * Opening and closing search: a CROSSFADE in place, both directions, 350ms on
  * EASE_OUT_QUINT.
  *
@@ -760,6 +789,129 @@ export const barIn = FadeInDown.duration(DURATION.base)
 export const barOut = FadeOutUp.duration(DURATION.fast)
   .easing(EASE_OUT)
   .reduceMotion(ReduceMotion.System);
+
+/**
+ * `barIn`/`barOut`'s mirror image, for a control docked at the BOTTOM instead
+ * — the chat transcript's page-down button (2026-09-17 audit).
+ *
+ * Telegram's own button matches this shape from source: alpha 0→1 and
+ * `translationY = dp(80) * (1 - visibility)`, so it rises into place from
+ * below rather than fading in place
+ * (`ChatActivitySideControlsButtonsLayout.java:169-176`,
+ * `checkButtonsPositionsAndVisibility`). `FadeInUp`/`FadeOutDown` is that
+ * same up-to-dock / down-to-leave direction. Telegram drives both halves
+ * through one symmetric 280ms `DECELERATE_INTERPOLATOR`; kept `base`-in/
+ * `fast`-out instead, the same departure `barIn`/`barOut` already state for
+ * the top-docked bar — arriving is an announcement, leaving should get out
+ * of the way, and that asymmetry is this app's own house style, not
+ * Telegram's.
+ */
+export const pageDownIn = FadeInUp.duration(DURATION.base)
+  .easing(EASE_OUT)
+  .reduceMotion(ReduceMotion.System);
+export const pageDownOut = FadeOutDown.duration(DURATION.fast)
+  .easing(EASE_OUT)
+  .reduceMotion(ReduceMotion.System);
+
+/* -------------------------------------------------------------------------
+ * A section of a card that its own master switch reveals and hides
+ * ------------------------------------------------------------------------- */
+
+/**
+ * How far the revealed block travels, in dp — `space.xs`, one M3 spacing step.
+ *
+ * It starts tucked UP behind the row that owns it and settles down into the
+ * space the card just opened, which is the direction an accordion actually
+ * unfolds. Deliberately small: the card has no `overflow: 'hidden'` (a clip
+ * would cost a layer), so the only thing keeping the block off the row above at
+ * the start of the travel is that it is still at opacity 0. Eight dp is under
+ * one line of leading, so it is invisible in the frames where opacity is low
+ * enough to matter and legible in the frames where it is not.
+ */
+const SECTION_SHIFT = TOKENS.space.xs;
+
+/**
+ * A collapsible section arriving, and the same section leaving.
+ *
+ * WHY THIS IS A LAYOUT ANIMATION AND NOT AN ANIMATED HEIGHT. An accordion is
+ * usually written as a height ramp, and a height ramp is the one shape that is
+ * specifically wrong here: `height` re-runs Yoga every frame for the node AND
+ * its siblings, which on Android is the pattern that measures fine on a
+ * flagship in dev and drops frames on a three-year-old phone. The rule the rest
+ * of this file already follows — transform and opacity only, everything else is
+ * a layout pass — gives the same answer, and the sanctioned tool for an element
+ * that mounts and unmounts is `entering` / `exiting`. So the block is
+ * conditionally rendered and the card's height changes ONCE per direction (at
+ * mount, and at the end of the exit) rather than sixty times a second, while
+ * the part the eye actually follows — the fade and the short travel — runs on
+ * the UI runtime with no React render behind it.
+ *
+ * The cost of that choice, stated rather than glossed: the card's own height is
+ * a step, not a ramp, so whatever sits below it moves in one jump. On the way
+ * in the jump is hidden (the space opens, then the content arrives into it); on
+ * the way out it lands after the content has already faded, which is the same
+ * order `barIn` / `barOut` produce and the same order every other
+ * appearing/disappearing block in this app already reads as.
+ *
+ * Timing is `barIn` / `barOut`'s, for the same reason and from the same pair of
+ * tokens: `base` in, `fast` out — arriving is an announcement and wants to be
+ * seen, leaving should get out of the way. `EASE_OUT` both ways rather than
+ * M3's emphasized-accelerate on the exit half, which is a departure from the
+ * curve `screenOut` and `menuOut` take and is named here as one: an accelerate
+ * curve starts slow, and this block is dismissed by the switch directly above
+ * it, so the first frames are exactly where the eye is. Ease-out on both halves
+ * is what `barIn` / `barOut` already do for the same shape of change.
+ *
+ * Opacity is `Never` and the travel is `System`, this file's standing split:
+ * the fade is what says the section went away and must always run, the 8dp is
+ * the decorative half and is precisely what somebody with vestibular
+ * sensitivity asked the OS to stop.
+ */
+export function sectionIn() {
+  'worklet';
+  return {
+    initialValues: { opacity: 0, transform: [{ translateY: -SECTION_SHIFT }] },
+    animations: {
+      opacity: withTiming(1, {
+        duration: DURATION.base,
+        easing: EASE_OUT,
+        reduceMotion: ReduceMotion.Never,
+      }),
+      transform: [
+        {
+          translateY: withTiming(0, {
+            duration: DURATION.base,
+            easing: EASE_OUT,
+            reduceMotion: ReduceMotion.System,
+          }),
+        },
+      ],
+    },
+  };
+}
+
+export function sectionOut() {
+  'worklet';
+  return {
+    initialValues: { opacity: 1, transform: [{ translateY: 0 }] },
+    animations: {
+      opacity: withTiming(0, {
+        duration: DURATION.fast,
+        easing: EASE_OUT,
+        reduceMotion: ReduceMotion.Never,
+      }),
+      transform: [
+        {
+          translateY: withTiming(-SECTION_SHIFT, {
+            duration: DURATION.fast,
+            easing: EASE_OUT,
+            reduceMotion: ReduceMotion.System,
+          }),
+        },
+      ],
+    },
+  };
+}
 
 /* -------------------------------------------------------------------------
  * The tab strip's ACTIVE INDICATOR, which is a Material component's motion and

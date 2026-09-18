@@ -276,11 +276,18 @@ async function send(
   }
 
   if (DEAD_TOKEN.has(status) || response.status === 404) {
+    // Logged like the transient case: a dead token means this device is never
+    // notified again, and the only trace was a `dead` count nobody reads.
+    console.error(
+      `push-failure send-push dead ${response.status} ${status} for message ${row.message_id}`,
+    );
     return 'dead';
   }
   // 429 and 5xx are the transient ones. Leaving notified_at null is what makes
   // the next tick retry, so this branch must not mark anything.
-  console.error(`fcm ${response.status} ${status} for message ${row.message_id}`);
+  console.error(
+    `push-failure send-push fcm ${response.status} ${status} for message ${row.message_id}`,
+  );
   return 'retry';
 }
 
@@ -318,7 +325,7 @@ Deno.serve(async request => {
   }
   const sa = parsed as ServiceAccount;
   if (!sa?.private_key || !sa.client_email || !sa.project_id) {
-    console.error('FCM_SERVICE_ACCOUNT is missing private_key/client_email/project_id');
+    console.error('push-failure send-push FCM_SERVICE_ACCOUNT is missing private_key/client_email/project_id');
     return new Response('bad service account', { status: 500 });
   }
   const db = createClient(url, serviceKey, { auth: { persistSession: false } });
@@ -330,7 +337,7 @@ Deno.serve(async request => {
     .limit(500);
 
   if (error) {
-    console.error('pending_pushes', error.message);
+    console.error(`push-failure send-push pending_pushes ${error.message}`);
     return new Response(error.message, { status: 500 });
   }
   const pending = (data ?? []) as Pending[];
@@ -368,6 +375,14 @@ Deno.serve(async request => {
     outcomes.set(row.message_id, set);
   }
 
+  // Rows existed and not one of them landed. The function still returns 200, so
+  // without this line a wholly broken tick is indistinguishable from a quiet one.
+  if (sent === 0) {
+    console.error(
+      `push-failure send-push delivered nothing for ${pending.length} pending row(s)`,
+    );
+  }
+
   // Retry wins: if any device for this message deserves another attempt, the
   // message stays unnotified so the next tick picks it up again.
   const settled = [...outcomes.entries()]
@@ -379,7 +394,7 @@ Deno.serve(async request => {
       p_message_ids: settled,
     });
     if (markError) {
-      console.error('mark_notified', markError.message);
+      console.error(`push-failure send-push mark_notified ${markError.message}`);
     }
   }
   if (deadTokens.size > 0) {
@@ -387,7 +402,7 @@ Deno.serve(async request => {
       p_tokens: [...deadTokens],
     });
     if (forgetError) {
-      console.error('forget_push_tokens', forgetError.message);
+      console.error(`push-failure send-push forget_push_tokens ${forgetError.message}`);
     }
   }
 

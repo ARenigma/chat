@@ -2,13 +2,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AccessibilityInfo,
   Image,
-  PixelRatio,
   ScrollView,
   StyleSheet,
   Text,
   View,
   useWindowDimensions,
-  type ImageSourcePropType,
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -19,12 +17,11 @@ import { LIGHT, TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { useBackBarrier } from '../lib/backGuard';
 import type { ProviderPhoto, ProviderSummary } from '../lib/database.types';
-import { isClayUri, resolveAvatarSource } from '../lib/clayAvatars';
+import { avatarImageSource } from '../lib/clayAvatars';
 import { genderLetter, initialOf } from '../lib/display';
-import { presenceForSpeech, readPresence } from '../lib/presence';
+import { offeredChannelsLine, presenceForSpeech, readPresence } from '../lib/presence';
 import { tick } from '../lib/haptics';
 import { SCROLL_PHYSICS } from '../lib/scroll';
-import { sizedStorageImageUri } from '../lib/storageImage';
 import { contentColumnWidth } from '../lib/windowSize';
 import { rateLabel, type Channel } from '../lib/rates';
 import { useProfile, useProviders } from '../api/chat';
@@ -33,7 +30,8 @@ import { CALLS_ENABLED } from '../api/calls';
 import { useEconomicsConfig, useKillSwitches, FALLBACK_ECONOMICS } from '../api/appConfig';
 import { useStore } from '../store/useStore';
 import { useFavorites } from '../store/useFavorites';
-import { springTo } from '../theme/motion';
+import { minutesUntil, useNotifyProvider } from '../api/sessions';
+import { fadeSwapOutFast, springTo } from '../theme/motion';
 import { BackButton } from '../components/BackButton';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
@@ -135,27 +133,70 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
   const onVideo = useCallback(() => onStartCall(providerId, 'video'), [onStartCall, providerId]);
 
   /*
+   * THE NOTIFY ACTION, WHICH RUNS HERE RATHER THAN SOMEWHERE ELSE.
+   *
+   * It used to be `onPress={onChat}`: the away button opened the conversation,
+   * `announce_chat_open` fired from ChatScreen's mount effect, and this screen
+   * unmounted on the tap. So the one surface that could have shown "Notified"
+   * was gone before there was anything to show, and idle -> pending -> notified
+   * could not exist. `useNotifyProvider` performs the RPC in place and keeps the
+   * member here; the state it returns is what the button draws.
+   *
+   * NOTIFIED NOW SURVIVES A COLD START, and the paragraph that used to stand
+   * here said it could not. It was wrong about one thing and the rest followed:
+   * `announce_chat_open` is not the only way to read the cooldown. The push it
+   * dispatches is recorded in `conversation_thread_meta.provider_alerted_at`
+   * (068:131-140), which the member may read directly (030:280-292), so the
+   * state is restored from the server WITHOUT ringing anything. See
+   * `useRestoredNotifyState` in api/sessions.ts.
+   *
+   * It mattered more than it read. Found on the S22 by force-stopping and
+   * relaunching: the control came back saying "Notify" for somebody who had
+   * just been notified, the member tapped it, and 068's thirty-minute
+   * per-direction cooldown swallowed the second tap — so they believed they had
+   * pinged twice and the provider had been pinged once. The control was lying
+   * about the server's state.
+   *
+   * STILL NOTHING IS PERSISTED LOCALLY, because a local flag is the one thing
+   * that CAN claim the peer knows when the server never told anyone. And the
+   * restored button stays pressable: a tap on it answers `cooldown` with the
+   * authoritative `cooldown_until`, or actually alerts if the window has since
+   * been shortened.
+   */
+  const notify = useNotifyProvider(providerId);
+  const notified = notify.state.kind === 'notified';
+  const notifyAgainIn = notify.state.kind === 'notified' ? minutesUntil(notify.state.cooldownUntil) : null;
+
+  /*
    * AWAY OFFERS ONE ACTION, AND IT IS NOT A CALL.
    *
    * The same rule the directory row got on 2026-09-13 (ProviderRow.tsx:413),
-   * from the same reading: `readPresence` is the one interpretation of the
-   * `presence` / `last_active_at` pair, so this screen and the card the member
-   * tapped to reach it cannot disagree about who is here. A row that said
-   * "Notify" must not open a profile offering Call and Video — that is the
-   * false-affordance class twice over, since the tap would ring a phone nobody
-   * is holding and `start_call` would refuse it anyway.
+   * from the same reading: `readPresence` is the one interpretation of
+   * `is_available`, so this screen and the card the member tapped to reach it
+   * cannot disagree about who is here. A row that said "Notify" must not open a
+   * profile offering Call and Video — that is the false-affordance class twice
+   * over, since the tap would ring a phone nobody is holding and `start_call`
+   * would refuse it anyway.
    *
-   * `hidden` lands in this branch too, by `readPresence`'s own fail-closed
-   * rule: an unknown is never rendered as present, so it is never offered a
-   * call either.
+   * CLOSED OUTRANKS THE CHANNEL SET, which is the one ordering rule between
+   * this branch and the gating below it: a provider who has shut the master
+   * switch is offline whatever their three toggles say, so the branch is taken
+   * first and the channels are never consulted inside it.
    *
    * The Notify action needs no new endpoint. It opens the conversation, and
    * opening it is what notifies them: `announce_chat_open` (migration 068)
    * pushes to the peer precisely when they are away, the member has a minute,
    * and no session is running.
    */
-  const away =
-    provider !== null && !readPresence(provider.presence, provider.last_active_at).here;
+  const away = provider !== null && !readPresence(provider.is_available).here;
+  /*
+   * `peer_present` came back from the doorbell: they are here NOW, between the
+   * directory read this screen is drawn from and the tap. Offering to fetch
+   * somebody who is standing in the room is the false affordance in reverse, so
+   * the row of live actions comes back. The directory is invalidated in the same
+   * breath (api/sessions.ts), so the presence dot agrees on the next read.
+   */
+  const peerBack = notify.state.kind === 'present';
 
   return (
     <View style={styles.root}>
@@ -188,56 +229,109 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
           />
 
           <View style={styles.actions}>
-            {away ? (
+            {away && !peerBack ? (
               /* One action, full width — the row's three slots collapse to one
                  because there is only one honest thing to offer. The bell and
                  the word together, as on the directory row: the glyph says this
                  is a different KIND of action from the Call this button is
                  standing in for, and the word says which. Priced at the CHAT
-                 rate because that is what it opens and what it will bill. */
-              <ActionButton
-                channel="chat"
-                kind="quiet"
-                glyph="bell"
-                word="Notify"
-                rate={chatRate}
-                enabled={provider.chat_enabled}
-                offered={provider.chat_enabled}
-                onPress={onChat}
-                label={`Notify ${provider.display_name} that you want to chat`}
-              />
-            ) : (
-              <>
-                <ActionButton
-                  channel="audio"
-                  kind="primary"
-                  glyph="call"
-                  rate={audioRate}
-                  enabled={voiceCallsEnabled && provider.audio_enabled}
-                  offered={provider.audio_enabled}
-                  onPress={onAudio}
-                  label={`Call ${provider.display_name}`}
-                />
+                 rate because that is what it opens and what it will bill.
+
+                 THE SWAP IS THE ONE NEW ANIMATION IN THIS CHANGE, and it is a
+                 fade-through of the whole control rather than of its parts: the
+                 button changes its mind as one object, which three independently
+                 fading pieces would not read as. `fadeSwapOutFast` is the existing
+                 builder for exactly this ("a button label that just narrated
+                 itself", motion.ts), DURATION.fast (170ms), EASE_OUT, opacity
+                 only, and it carries `reduceMotion(ReduceMotion.System)` so the
+                 OS setting turns the movement off without turning the state
+                 change off. Keyed on the state name, so it runs once per
+                 transition and never on a re-render.
+
+                 A live region, not an announcement: a focused control whose
+                 label changes does not announce on its own, and Android 16
+                 deprecates announceForAccessibility in favour of exactly this.
+                 https://developer.android.com/about/versions/16/behavior-changes-all
+
+                 OFF WHILE IDLE, because a live region speaks when its content
+                 ARRIVES as well as when it changes, and this subtree arrives
+                 whenever the screen does. Polite only once the control has
+                 something to report. */
+              <Animated.View
+                key={notify.state.kind}
+                exiting={fadeSwapOutFast}
+                style={styles.actionSlot}
+                accessibilityLiveRegion={notify.state.kind === 'idle' ? 'none' : 'polite'}>
                 <ActionButton
                   channel="chat"
-                  kind="outline"
-                  glyph="chat"
+                  kind="tonal"
+                  glyph={notified ? 'check' : 'bell'}
+                  word={notified ? 'Notified' : 'Notify'}
                   rate={chatRate}
+                  note={notifyAgainIn === null ? undefined : `again in ${notifyAgainIn}m`}
+                  busy={notify.state.kind === 'pending'}
+                  busyLabel="Notifying"
                   enabled={provider.chat_enabled}
                   offered={provider.chat_enabled}
-                  onPress={onChat}
-                  label={`Message ${provider.display_name}`}
+                  onPress={notify.notify}
+                  label={
+                    notified
+                      ? `${provider.display_name} has been notified`
+                      : `Notify ${provider.display_name} that you want to chat`
+                  }
                 />
-                <ActionButton
-                  channel="video"
-                  kind="dark"
-                  glyph="video"
-                  rate={videoRate}
-                  enabled={videoCallsEnabled && provider.video_enabled}
-                  offered={provider.video_enabled}
-                  onPress={onVideo}
-                  label={`Video call ${provider.display_name}`}
-                />
+              </Animated.View>
+            ) : (
+              /* ONLY WHAT IS OFFERED IS DRAWN, and this is a change of kind
+                 rather than of degree: these three used to render always and go
+                 disabled, which is M3's vocabulary for "this control exists and
+                 you may not use it yet" and was answering a question nobody
+                 asked. Amit, 2026-09-17: show only the offered actions, plus a
+                 line naming the limit. The line is in the hero, under the name.
+
+                 `enabled` keeps only the OPERATOR's kill switches now. The two
+                 states it used to conflate are different facts — "we have not
+                 shipped this" is ours and stays as a dimmed button with
+                 "coming soon", "she does not do this" is hers and is now an
+                 absence — which is why `offered` survives on the away branch
+                 above and has nothing left to say down here.
+
+                 064's `profiles_at_least_one_channel` is what keeps this row
+                 from rendering empty. */
+              <>
+                {provider.audio_enabled ? (
+                  <ActionButton
+                    channel="audio"
+                    kind="primary"
+                    glyph="call"
+                    rate={audioRate}
+                    enabled={voiceCallsEnabled}
+                    onPress={onAudio}
+                    label={`Call ${provider.display_name}`}
+                  />
+                ) : null}
+                {provider.chat_enabled ? (
+                  <ActionButton
+                    channel="chat"
+                    kind="outline"
+                    glyph="chat"
+                    rate={chatRate}
+                    enabled
+                    onPress={onChat}
+                    label={`Message ${provider.display_name}`}
+                  />
+                ) : null}
+                {provider.video_enabled ? (
+                  <ActionButton
+                    channel="video"
+                    kind="dark"
+                    glyph="video"
+                    rate={videoRate}
+                    enabled={videoCallsEnabled}
+                    onPress={onVideo}
+                    label={`Video call ${provider.display_name}`}
+                  />
+                ) : null}
               </>
             )}
           </View>
@@ -265,12 +359,16 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
               nothing renders it, and the RPC contract is left alone so the
               admin side can keep it.
 
-              The stars are the outline Lucide glyph in both states, separated
-              by colour alone — active in the token gold, the rest in the
-              outline grey. Lucide ships one `star`, stroked, and there is no
-              filled sibling in a static font, so a filled/hollow pair is not
-              available to us (RULE 4: the font is generated from
-              design/icons.json). */}
+              The earned stars are the SOLID face, not the outline one in a
+              different colour. That paragraph used to say the opposite, and it
+              was true when it was written: Lucide ships one stroked `star` and
+              a static font cannot fake a fill, so colour carried the whole
+              state. The Heroicons migration ships a matched outline+solid pair
+              at one codepoint, which is what `active` on `Icon` selects, and
+              this block was left behind on the colour-only path while
+              `RatingStars` (the directory row) moved over. A rating read as
+              five outlines in two tints here and as four solid stars plus an
+              outline on the card the member had just tapped. */}
           <Text allowFontScaling style={[styles.aboutLabel, styles.ratingsLabel]}>
             RATINGS
           </Text>
@@ -301,13 +399,23 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
                 {shownRating.score.toFixed(1)}
               </Text>
               <View style={styles.ratingStars}>
+                {/* FLOOR, not round, and the fill is why it had to change. A
+                    4.7 rounded up put a fifth star in the row directly under
+                    the numerals "4.7"; while both faces were outlines that read
+                    as a tint, but a solid fifth star is the row stating a five
+                    the number beside it denies. Floor never claims more than
+                    the figure above it. The fraction is lost here because this
+                    row is icon.md and `RatingStars` — which does draw the
+                    fraction, by clipping — is fixed at icon.xs by its own
+                    width arithmetic. */}
                 {[1, 2, 3, 4, 5].map(n => (
                   <Icon
                     key={n}
                     name="star"
+                    active={n <= Math.floor(shownRating.score)}
                     size={TOKENS.icon.md}
                     color={
-                      n <= Math.round(shownRating.score)
+                      n <= Math.floor(shownRating.score)
                         ? theme.color.text.rating
                         : theme.color.border.strong
                     }
@@ -325,6 +433,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
                       <Icon
                         key={n}
                         name="star"
+                        active={n <= r.rating}
                         size={TOKENS.icon.xs}
                         color={n <= r.rating ? theme.color.text.token : theme.color.border.strong}
                       />
@@ -413,7 +522,10 @@ function Hero({
   const theme = useTheme();
   const { width: windowWidth } = useWindowDimensions();
   const gradient = `linear-gradient(150deg, ${theme.color.bg.accent} 0%, ${theme.color.bg.accentStrong} 100%)`;
-  const presence = readPresence(provider.presence, provider.last_active_at);
+  const presence = readPresence(provider.is_available);
+  // Suppressed while they are closed, because the actions below have already
+  // collapsed to Notify and a limit on a set nobody can reach says nothing.
+  const channelLine = presence.here ? offeredChannelsLine(provider) : null;
   // "F-28" here too, so the hero, the card and this header agree on how a
   // person is labelled. See `genderLetter`.
   const letter = genderLetter(provider.gender);
@@ -530,13 +642,7 @@ function Hero({
                    https://developer.android.com/guide/topics/ui/accessibility/principles */
                 accessibilityLabel={`${provider.display_name}, photo ${i + 1} of ${gallery.length}`}>
                 <Image
-                  source={
-                    isClayUri(uri)
-                      ? (resolveAvatarSource(uri) as ImageSourcePropType)
-                      : {
-                          uri: sizedStorageImageUri(uri, pageW, HERO_HEIGHT, PixelRatio.get()),
-                        }
-                  }
+                  source={avatarImageSource(uri, pageW, HERO_HEIGHT) ?? undefined}
                   fadeDuration={220}
                   style={styles.heroFill}
                 />
@@ -607,6 +713,13 @@ function Hero({
           </Text>
           {presence.here ? <View style={styles.heroDot} /> : null}
         </View>
+        {/* Under the name and above their own words, because it qualifies the
+            row of buttons below rather than describing the person. */}
+        {channelLine !== null ? (
+          <Text allowFontScaling numberOfLines={1} style={styles.heroChannels}>
+            {channelLine}
+          </Text>
+        ) : null}
         {provider.headline && provider.headline !== '' ? (
           <Text allowFontScaling numberOfLines={1} style={styles.heroTagline}>
             {provider.headline}
@@ -615,7 +728,13 @@ function Hero({
         <Text
           allowFontScaling
           style={styles.heroMeta}
-          accessibilityLabel={`${metaParts.join(', ')}, ${presenceForSpeech(presence)}`}>
+          accessibilityLabel={[
+            ...metaParts,
+            presenceForSpeech(presence),
+            channelLine,
+          ]
+            .filter(Boolean)
+            .join(', ')}>
           {metaParts.join('  ·  ')}
         </Text>
         {/* M3 AssistChips for languages — same native chip as the directory
@@ -638,6 +757,9 @@ function ActionButton({
   glyph,
   word,
   rate,
+  note,
+  busy = false,
+  busyLabel,
   enabled,
   offered = true,
   onPress,
@@ -657,8 +779,8 @@ function ActionButton({
    * WHICH channel takes the lower rank is his call, not the spec's; he chose
    * chat.
    */
-  kind: 'primary' | 'outline' | 'dark' | 'quiet';
-  glyph: 'call' | 'chat' | 'video' | 'bell';
+  kind: 'primary' | 'outline' | 'dark' | 'tonal';
+  glyph: 'call' | 'chat' | 'video' | 'bell' | 'check';
   /**
    * A word beside the glyph, for the button that is alone in the row.
    *
@@ -672,6 +794,24 @@ function ActionButton({
   word?: string;
   /** Live admin rate (tokens/min). Falls back to DEFAULT_RATES[channel] at the call site. */
   rate: number;
+  /**
+   * Replaces the rate on the second line, and in the spoken label.
+   *
+   * There is exactly one caller: a Notify button that has already rung. The
+   * price of a chat is the right second line while the button is an offer; once
+   * it is a status, when the doorbell may ring again is the only fact left worth
+   * the space.
+   */
+  note?: string;
+  /** A request is in flight. Holds the surface compressed; see Pressable. */
+  busy?: boolean;
+  /**
+   * What the button says while `busy`. The present participle of `word`, the
+   * same contract `Button.busyLabel` has (Button.tsx:17-21) — a control that
+   * compresses and says nothing tells a member their tap was felt but not what
+   * it started.
+   */
+  busyLabel?: string;
   enabled: boolean;
   /**
    * False when THIS PROVIDER does not offer the channel (migration 064), as
@@ -695,8 +835,8 @@ function ActionButton({
       ? theme.color.text.primary
       : kind === 'dark'
         ? theme.color.text.onInverse
-        : kind === 'quiet'
-          ? theme.color.text.tertiary
+        : kind === 'tonal'
+          ? theme.color.text.accent
           : theme.color.text.onAccent;
   // The `flex: 1` lives on this wrapper View, not on the Pressable: a `flex: 1`
   // set on a Pressable never reaches its outer touchable (it styles an inner
@@ -708,29 +848,40 @@ function ActionButton({
       <Pressable
         onPress={onPress}
         disabled={!enabled}
+        busy={busy}
         testID={`action-${channel}`}
-        accessibilityLabel={`${label}, ${rateLabel(rate)}${
+        accessibilityLabel={`${label}, ${note ?? rateLabel(rate)}${
           enabled ? '' : offered ? ', coming soon' : ', not offered'
         }`}
         press="none"
         highlight="dim"
+        /*
+         * `actionDisabled` IS GONE, and it was never doing anything. Pressable
+         * applies the caller's style BEFORE its own animated style
+         * (Pressable.tsx:360, `[styles.clip, shapeStyle, innerStyle, animated]`)
+         * and that animated style sets `opacity: disabled ? 0.45 : 1`
+         * unconditionally, so a declared `opacity: 0.5` here was overwritten on
+         * every frame. One control, two answers, and the one nearest the reader
+         * was the dead one. `disabled` already carries the dim and sets
+         * accessibilityState.disabled; the M3 numbers behind it are
+         * interaction.stateDisabledContent / Container in design/tokens.json.
+         */
         style={[
           styles.actionButton,
           word !== undefined && styles.actionWide,
           kind === 'primary' && styles.actionPrimary,
           kind === 'outline' && styles.actionOutline,
           kind === 'dark' && styles.actionDark,
-          kind === 'quiet' && styles.actionQuiet,
-          !enabled && styles.actionDisabled,
+          kind === 'tonal' && styles.actionTonal,
         ]}>
         <Icon name={glyph} size={TOKENS.icon.lg} color={fg} />
         {word !== undefined ? (
           <Text allowFontScaling numberOfLines={1} style={[styles.actionWord, { color: fg }]}>
-            {word}
+            {busy ? busyLabel ?? word : word}
           </Text>
         ) : null}
         <Text allowFontScaling numberOfLines={1} style={[styles.actionRate, { color: fg }]}>
-          {rateLabel(rate)}
+          {note ?? rateLabel(rate)}
         </Text>
       </Pressable>
     </View>
@@ -874,6 +1025,13 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.bodyLarge,
       color: 'rgba(255,255,255,0.95)',
     },
+    // Pure white, the only line over this photo that gets it: the name is the
+    // subject and this is the condition on everything below, so it outranks the
+    // tagline's 95% and the meta line's 82%.
+    heroChannels: {
+      ...TOKENS.typography.labelLargeEmphasized,
+      color: '#FFFFFF',
+    },
     heroMeta: {
       ...TOKENS.typography.bodyMedium,
       color: 'rgba(255,255,255,0.82)',
@@ -938,16 +1096,39 @@ const makeStyles = (t: Theme) =>
       borderColor: t.color.border.strong,
     },
     /*
-     * The away "Notify" fill (Amit, 2026-09-16). Notify is a quiet status
-     * action, not the coral Call, so this mirrors the ProviderRow away CTA and
-     * the ProviderCard away marker: transparent container, a hairline (not the
-     * heavier `border/strong`) stroke, and `text/tertiary` ink via `fg` above.
-     * The three away surfaces agree that Notify does not draw the eye.
+     * The away "Notify" button, M3's FILLED TONAL recipe.
+     *
+     * WAS `actionQuiet`: transparent container, hairline stroke, `text/tertiary`
+     * ink. That is not a quiet button, it is M3's DISABLED button, drawn on a
+     * control that is enabled and is the only thing this screen offers. Measured
+     * against the real tokens: the label 4.39:1 light / 3.68:1 dark against the
+     * 4.5 floor that 12dp and 14dp type takes, and the hairline 1.71:1 / 1.50:1
+     * against the 3:1 one for a non-text boundary.
+     * https://developer.android.com/guide/topics/ui/accessibility/apps
+     *
+     * "Filled tonal buttons have a lighter background color and darker label
+     * color, making them less visually prominent than a regular filled button.
+     * They're still used for final or unblocking actions in a flow, but may be
+     * better when these actions don't require quite so much emphasis" — which is
+     * Notify next to Call exactly. It is also the rank the old style was reaching
+     * for: the doc's emphasis order is elevated, filled, filled tonal, outlined,
+     * text, so tonal sits below the coral `actionPrimary` without leaving the
+     * ladder.
+     * https://github.com/material-components/material-components-android/blob/master/docs/components/CommonButton.md
+     *
+     * TWO STATED DEPARTURES. M3's tonal button has no stroke (strokeColor null,
+     * strokeWidth 0dp) and 2dp of elevation; this keeps a 1dp accent stroke and
+     * stays flat. The stroke is load-bearing rather than decorative —
+     * `bg/accentTint` measures 1.19:1 against this page in light and 1.02:1
+     * against a card in dark, so the fill alone is not a findable boundary — and
+     * both it and the label are registered pairs in scripts/check-contrast.mjs
+     * (4.58:1 / 8.22:1 label, 3.08:1 / 6.25:1 outline). The elevation is dropped
+     * because nothing in this app is elevated; the design separates by fill.
      */
-    actionQuiet: {
-      backgroundColor: 'transparent',
+    actionTonal: {
+      backgroundColor: t.color.bg.accentTint,
       borderWidth: 1,
-      borderColor: t.color.border.hairline,
+      borderColor: t.color.bg.accent,
     },
     /*
      * `bg/inverse`, not `text/primary`. THE VIDEO BUTTON WAS INVISIBLE IN DARK
@@ -973,9 +1154,6 @@ const makeStyles = (t: Theme) =>
      */
     actionDark: {
       backgroundColor: t.color.bg.inverse,
-    },
-    actionDisabled: {
-      opacity: 0.5,
     },
     /*
      * The single-action layout: a ROW, so the bell sits beside its verb.

@@ -4,7 +4,7 @@ import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
-import { fadeSwap } from '../theme/motion';
+import { fadeSwap, fadeSwapOut } from '../theme/motion';
 import { useBackBarrier } from '../lib/backGuard';
 import type { ApplicationStatus } from '../lib/database.types';
 import { useMyApplication } from '../api/provider';
@@ -130,7 +130,7 @@ export function ProviderStatusScreen({ onBack, onEdit }: Props) {
               status. */}
           <Animated.Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized}
             key={copy.title}
-            entering={fadeSwap}
+            entering={fadeSwap} exiting={fadeSwapOut}
             testID="application-status"
             allowFontScaling
             style={styles.title}>
@@ -138,7 +138,7 @@ export function ProviderStatusScreen({ onBack, onEdit }: Props) {
           </Animated.Text>
           <Animated.Text
             key={copy.body}
-            entering={fadeSwap}
+            entering={fadeSwap} exiting={fadeSwapOut}
             allowFontScaling
             style={styles.copy}>
             {copy.body}

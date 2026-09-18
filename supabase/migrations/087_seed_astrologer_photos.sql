@@ -27,7 +27,7 @@
 -- of results.
 --
 -- Provenance for all six — photographer, source URL, sha256, subject, apparent
--- age — is in assets/seed/providers/manifest.json alongside the four listeners,
+-- age — is in seed/providers/manifest.json alongside the four listeners,
 -- and the files are committed there as well as uploaded, so a photo can be
 -- traced back without going to the bucket.
 --

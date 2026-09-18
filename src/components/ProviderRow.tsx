@@ -5,8 +5,9 @@ import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ProviderSummary } from '../lib/database.types';
 import { genderLetter, initialOf } from '../lib/display';
-import { presenceForSpeech, readPresence } from '../lib/presence';
-import { rowIn } from '../theme/motion';
+import { offeredChannelsLine, presenceForSpeech, readPresence } from '../lib/presence';
+import { fadeSwapOutFast, rowIn } from '../theme/motion';
+import { minutesUntil, useNotifyProvider } from '../api/sessions';
 import { Avatar } from './Avatar';
 import { Icon } from './Icon';
 import { META_CHIP_HEIGHT_SM, MetaChip } from './MetaChip';
@@ -55,6 +56,14 @@ interface Props {
    * other reasons; one read at the top and a number down the tree keeps this
    * component a pure function of its props, which is also what makes it
    * assertable without a renderer.
+   *
+   * ONE EXCEPTION SINCE 2026-09-17, stated here because this note is where the
+   * rule is written down: `useNotifyProvider` (see the CTA below) is read in
+   * this component rather than threaded in as a prop. The reason the rate is a
+   * prop does not apply to it — it subscribes to nothing that changes for
+   * anyone else, so no other row re-renders when one of them rings a bell —
+   * and the alternative would be a handler plus a per-row state object passed
+   * down from three different list screens for a control only this file draws.
    */
   ratePerMin: number;
 }
@@ -390,14 +399,16 @@ function ProviderRowView({
   const letter = genderLetter(provider.gender);
 
   /**
-   * The dot and the trailing line both come from `presence` now. They used to
-   * come from `is_available`, which is the provider's *listing* switch: it means
-   * "listed for discovery and open to new conversations", so a row said somebody
-   * was there when it only meant they wanted work. Migration 012 split the two,
-   * and `readPresence` is the one reading of it so this row, the inbox and the
-   * chat header cannot disagree.
+   * The dot and the trailing line both come from `is_available` again, as of
+   * 2026-09-17. They came from it before migration 012 as well, and that was
+   * wrong then for a reason that has since been removed rather than forgotten:
+   * `presence` was a second, separate declaration, so reading the listing switch
+   * as the dot said somebody was there when it only meant they wanted work.
+   * There is no second declaration now — see src/lib/presence.ts — and
+   * `readPresence` is still the one reading, so this row, the inbox and the chat
+   * header cannot disagree.
    */
-  const presence = readPresence(provider.presence, provider.last_active_at);
+  const presence = readPresence(provider.is_available);
 
   /*
    * The CTA calls, unless this provider does not take calls.
@@ -430,11 +441,77 @@ function ProviderRowView({
    */
   const away = !presence.here;
   const canCall = provider.audio_enabled && onCall !== undefined && !away;
-  const ctaLabel = away ? 'Notify' : canCall ? 'Call' : 'Chat';
+  /*
+   * WHICH CHANNEL THE ONE BUTTON NAMES, when it cannot dial.
+   *
+   * The row has a single CTA and the provider may offer any of seven channel
+   * sets (064's CHECK forbids the eighth), so "Chat" was a false affordance on
+   * anyone who had switched chat off — the same class as the Call it already
+   * guards. The verb names a channel they actually offer, and a tap that is not
+   * a dial lands on `onPress`, which is the profile: the one surface that can
+   * render the whole offered set.
+   */
+  const offeredVerb = provider.chat_enabled
+    ? 'Chat'
+    : provider.audio_enabled
+      ? 'Call'
+      : 'Video';
+  const ctaLabel = away ? 'Notify' : canCall ? 'Call' : offeredVerb;
+  const rateStyle = away ? [styles.ctaRate, styles.ctaAwayRate] : styles.ctaRate;
+  const ctaSpoken =
+    ctaLabel === 'Call'
+      ? `Call ${provider.display_name}`
+      : ctaLabel === 'Video'
+        ? `Video call ${provider.display_name}`
+        : `Message ${provider.display_name}`;
+  /*
+   * "Voice calls only" and the rest, in the slot directly under the name.
+   *
+   * It TAKES that slot rather than adding a line, and the trade is deliberate:
+   * every dimension of this card is a promise to FlashList
+   * (`PROVIDER_ROW_HEIGHT`), a sixth line would break it for exactly the
+   * providers who have a limit to declare, and what a member can do with
+   * somebody outranks the topics they cover on a card whose button has already
+   * narrowed to one verb.
+   */
+  const channelLine = away ? null : offeredChannelsLine(provider);
+
+  /*
+   * THE BELL NOW RINGS FROM HERE.
+   *
+   * It did not before, and the comment above was describing an intention rather
+   * than the code: the CTA fell through to `onPress(provider.id)`, the same
+   * handler the whole card fires, so tapping "Notify" was indistinguishable from
+   * tapping anywhere else on the row and the RPC only ran later, from
+   * ChatScreen's mount effect. `useNotifyProvider` performs `announce_chat_open`
+   * in place and leaves the member in the list, which is the only arrangement in
+   * which this control can have a state to show.
+   *
+   * WHEN THE PEER TURNS OUT TO BE HERE, this row does NOT keep a local override.
+   * The hook invalidates the directory query, `presence` comes back 'here', and
+   * `away` above goes false on the next render — so the row swaps to Call
+   * through the single reading of presence it already has, rather than growing a
+   * second answer to the same question beside it.
+   *
+   * AND IT SURVIVES A COLD START. The state is restored from the server's own
+   * record of the push (`conversation_thread_meta.provider_alerted_at`, 068) by
+   * `useNotifyProvider` itself, so this file gains persistence without gaining
+   * a line: a relaunched app draws "Notified" for the thirty minutes the server
+   * would refuse a second doorbell, and "Notify" the moment it would not.
+   *
+   * The cooldown is still only SPOKEN here, per the note on the label below.
+   * The row CTA is a fixed ROW_CTA_WIDTH and restoring a state does not buy it
+   * any more room than earning one did.
+   */
+  const notify = useNotifyProvider(provider.id);
+  const notified = notify.state.kind === 'notified';
+  const notifyAgainIn =
+    notify.state.kind === 'notified' ? minutesUntil(notify.state.cooldownUntil) : null;
 
   const accessibility = [
     `${provider.display_name}${provider.age !== null ? `, ${provider.age}` : ''}`,
     presenceForSpeech(presence),
+    channelLine,
     category,
     tags.length > 0 ? tags.join(', ') : headline,
     languages === '' ? null : `speaks ${languages}`,
@@ -568,8 +645,11 @@ function ProviderRowView({
               changed from chips to a comma join. The category chip on the price
               line stays filled per its own instruction. */}
           <View style={styles.tagLine} testID={`provider-tags-${provider.id}`}>
-            <Text allowFontScaling numberOfLines={1} style={styles.secondary}>
-              {tags.length > 0 ? tags.join(', ') : headline}
+            <Text
+              allowFontScaling
+              numberOfLines={1}
+              style={channelLine !== null ? styles.channelLine : styles.secondary}>
+              {channelLine ?? (tags.length > 0 ? tags.join(', ') : headline)}
             </Text>
           </View>
 
@@ -598,47 +678,106 @@ function ProviderRowView({
               testID="provider-category"
             />
             <View style={styles.priceSpacer} />
-            <Pressable
-              onPress={() =>
-                canCall && onCall !== undefined ? onCall(provider.id) : onPress(provider.id)
-              }
-              testID={`provider-cta-${provider.id}`}
-              accessibilityLabel={
-                away
-                  ? `Notify ${provider.display_name} that you want to chat`
-                  : canCall
-                    ? `Call ${provider.display_name}`
-                    : `Message ${provider.display_name}`
-              }
-              press="none"
-              highlight="dim"
-              // `size` is how this Pressable meets the 48dp target — it turns the
-              // 36dp drawn button into a 48dp focusable area via hitSlop, without
-              // inflating the visual (Pressable.tsx:171).
-              size={ROW_CTA_VISUAL_HEIGHT}
-              style={[styles.cta, away && styles.ctaAway]}>
-              {/* The verb and the price, in one control. The rate is the
-                  quieter of the two because the decision is "call or not" and
-                  the price is the condition on it, not the other way round.
+            {/* The state swap, keyed so it runs once per transition and never on
+                a re-render or on a recycled cell that lands on the same state.
+                `fadeSwapOutFast` is the existing builder for a button label that
+                just narrated itself (motion.ts): DURATION.fast, EASE_OUT,
+                opacity only, `reduceMotion(ReduceMotion.System)`. The whole
+                control fades through rather than its three pieces separately,
+                because it is one object changing its mind.
 
-                  No glyph in front of either. Amit: "remove call icon before
-                  22/min" — and it was doing less than it looked: the phone said
-                  "this rate buys a call", which the word "Call" now says
-                  outright. */}
-              {away ? (
-                <Icon
-                  name="bell"
-                  size={TOKENS.icon.sm}
-                  color={styles.ctaInkAway.color as string}
-                />
-              ) : null}
-              <Text allowFontScaling numberOfLines={1} style={[styles.ctaLabel, away && styles.ctaInkAway]}>
-                {ctaLabel}
-                <Text style={[styles.ctaRate, away && styles.ctaInkAway]}>{'  '}</Text>
-                <RupeeAmount value={ratePerMin} style={[styles.ctaRate, away && styles.ctaInkAway]} />
-                <Text style={[styles.ctaRate, away && styles.ctaInkAway]}>/min</Text>
-              </Text>
-            </Pressable>
+                A live region, because a focused control whose label changes does
+                not announce on its own, and Android 16 deprecates
+                announceForAccessibility in favour of exactly this.
+                https://developer.android.com/about/versions/16/behavior-changes-all
+
+                OFF WHILE IDLE, and on a list that is the difference between a
+                useful announcement and an unusable one: a live region speaks
+                when its content ARRIVES as well as when it changes, and in a
+                recycled list rows arrive continuously under the finger. Polite
+                only once this control has something to report. */}
+            <Animated.View
+              key={notify.state.kind}
+              exiting={fadeSwapOutFast}
+              accessibilityLiveRegion={notify.state.kind === 'idle' ? 'none' : 'polite'}>
+              <Pressable
+                onPress={() =>
+                  away
+                    ? notify.notify()
+                    : canCall && onCall !== undefined ? onCall(provider.id) : onPress(provider.id)
+                }
+                busy={notify.state.kind === 'pending'}
+                testID={`provider-cta-${provider.id}`}
+                /* The cooldown is SPOKEN here and DRAWN on the profile, which is
+                   the one asymmetry in this pair of surfaces and is deliberate:
+                   this control is a fixed 136dp on a row whose every dimension
+                   is a promise to FlashList, and "Notified  again in 12m" does
+                   not fit it at any type size. The profile's Notify button is
+                   full width and shows the same fact in words. */
+                accessibilityLabel={
+                  notified
+                    ? `${provider.display_name} has been notified${
+                        notifyAgainIn === null ? '' : `, again in ${notifyAgainIn}m`
+                      }`
+                    : away
+                      ? `Notify ${provider.display_name} that you want to chat`
+                      : ctaSpoken
+                }
+                press="none"
+                highlight="dim"
+                // `size` is how this Pressable meets the 48dp target — it turns the
+                // 36dp drawn button into a 48dp focusable area via hitSlop, without
+                // inflating the visual (Pressable.tsx:171).
+                size={ROW_CTA_VISUAL_HEIGHT}
+                style={[styles.cta, away && styles.ctaAway]}>
+                {/* The verb and the price, in one control. The rate is the
+                    quieter of the two because the decision is "call or not" and
+                    the price is the condition on it, not the other way round.
+
+                    No glyph in front of either. Amit: "remove call icon before
+                    22/min" — and it was doing less than it looked: the phone said
+                    "this rate buys a call", which the word "Call" now says
+                    outright.
+
+                    The bell becomes a check once they have been told. Same slot,
+                    same size: the control is reporting, not growing. */}
+                {away ? (
+                  <Icon
+                    name={notified ? 'check' : 'bell'}
+                    size={TOKENS.icon.sm}
+                    color={styles.ctaAwayLabel.color as string}
+                  />
+                ) : null}
+                <Text
+                  allowFontScaling
+                  numberOfLines={1}
+                  style={[styles.ctaLabel, away && styles.ctaAwayLabel]}>
+                  {/* The present participle while the request is in flight, the
+                      same contract Button.busyLabel has (Button.tsx:17-21): a
+                      control that compresses and says nothing tells a member
+                      their tap was felt but not what it started. */}
+                  {notify.state.kind === 'pending'
+                    ? 'Notifying'
+                    : notified
+                      ? 'Notified'
+                      : ctaLabel}
+                  {/* The rate is the condition on an action about to be taken,
+                      so it goes once there is no longer one to take. It is also
+                      what made the notified state crowd its own glyph: the row
+                      CTA is a fixed 136dp (providerRow.test asserts it, and the
+                      width carries its own 2026-09-08 rationale), and a bell, a
+                      participle and a price do not sit in it without touching
+                      the edges. Dropping the price is what buys the spacing. */}
+                  {notified || notify.state.kind === 'pending' ? null : (
+                    <>
+                      <Text style={rateStyle}>{'  '}</Text>
+                      <RupeeAmount value={ratePerMin} style={rateStyle} />
+                      <Text style={rateStyle}>/min</Text>
+                    </>
+                  )}
+                </Text>
+              </Pressable>
+            </Animated.View>
           </View>
         </View>
       </Pressable>
@@ -769,6 +908,16 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     ...TOKENS.typography.bodySmall,
     color: t.color.text.secondary,
   },
+  /*
+   * The channel limit, in the tag line's slot and a step louder than it. It is
+   * standing in for facts a member can skim past; this one changes what the
+   * button beside it will do, so it takes the primary ink the name has rather
+   * than the grey the tags and languages share.
+   */
+  channelLine: {
+    ...TOKENS.typography.bodySmall,
+    color: t.color.text.primary,
+  },
   priceLine: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -812,9 +961,12 @@ const makeStyles = (t: Theme) => StyleSheet.create({
      * also being squeezed.
      */
     flexDirection: 'row',
-    gap: TOKENS.space['2xs'],
+    // 8dp, not 4: at 4 the bell and the word read as one smudged glyph-word,
+    // which is the "tick mark and notified text distance" defect.
+    gap: TOKENS.space.xs,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: TOKENS.space.xs,
     borderRadius: TOKENS.radius.xs,
     borderCurve: 'continuous',
     borderWidth: 1,
@@ -839,17 +991,48 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     color: t.color.text.accent,
   },
   /*
-   * Away variant (Amit, 2026-09-16): when the provider is away the CTA is
-   * "Notify", which is a quiet status action — not the coral "Call". Greyed to
-   * the same hairline border + tertiary ink the ProviderCard away marker uses
-   * (ProviderCard.tsx), so the two surfaces agree that Notify does not draw the
-   * eye. On the solid card surface, so no over-photo contrast concern. `Call`
-   * keeps its coral; only the away state is quietened.
+   * Away variant. GREY, and deliberately a DARK one (Amit, 2026-09-17).
+   *
+   * Two wrong answers preceded this. First a hairline border with
+   * `text/tertiary` ink and no fill, which is Material 3's DISABLED recipe
+   * painted onto an enabled control: measured 3.30:1 on this card, under the
+   * 4.5:1 floor for 14sp, which is exactly why the report read "Notify icon
+   * looks disabled". Then a filled-tonal `bg/accentTint`, which fixed the
+   * contrast and broke the hierarchy: Notify is the SECONDARY action on this
+   * row and must not compete with Call for the accent.
+   *
+   * `bg/pressed` is the most solid neutral in the scale, and with
+   * `text/primary` on it the label measures 10.25:1 dark and 11.18:1 light.
+   * That number is the whole point: the control reads enabled because the ink
+   * is strong, not because it is coloured.
+   *
+   * The 1dp stroke carries the edge, because the fill alone cannot: `bg/pressed`
+   * is 1.47:1 against this card in dark. `text/secondary` as the stroke measures
+   * 5.00:1 dark and 7.41:1 light against the card, past the 3:1 non-text floor.
+   *
+   * The fill does NOT change between idle, pending and notified. Only the glyph
+   * and the word do. A control that recolours itself on every state change draws
+   * attention it has not earned, and this one is on screen in every row of a
+   * scrolling list.
    */
   ctaAway: {
-    borderColor: t.color.border.hairline,
+    backgroundColor: t.color.bg.pressed,
+    borderColor: t.color.text.secondary,
   },
-  ctaInkAway: {
-    color: t.color.text.tertiary,
+  ctaAwayLabel: {
+    color: t.color.text.primary,
+  },
+  /*
+   * The rate inside the grey control, and it is a contrast fix rather than a
+   * preference: `text/accent` measures 3.58:1 on this fill in LIGHT mode,
+   * under the 4.5:1 floor for text below 18sp. It also made the price louder
+   * than the verb in a control whose whole point is the verb.
+   *
+   * Hierarchy is carried by size instead, which `ctaRate` already has:
+   * bodySmall against the label's labelLarge. Colour was doing work that type
+   * was already doing.
+   */
+  ctaAwayRate: {
+    color: t.color.text.primary,
   },
 });

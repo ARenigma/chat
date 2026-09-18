@@ -12,7 +12,8 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { focusManager, onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import NetInfo from '@react-native-community/netinfo';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BLUR_SURFACE_AVAILABLE, BlurRoot } from './src/components/BlurSurface';
 import Animated, {
@@ -43,7 +44,7 @@ import { assertEnv } from './src/lib/env';
 import { storage } from './src/lib/storage';
 import { PROVIDER_INTENT_KEY } from './src/lib/providerIntent';
 import { consumeBack } from './src/lib/backGuard';
-import { initialNotificationPeer, onNotificationOpen, setNotificationPolicy, startPush } from './src/lib/push';
+import { onForegroundPush, setNotificationPolicy, startPush } from './src/lib/push';
 import { clearCall } from './src/lib/conversations';
 import {
   memberParent,
@@ -58,7 +59,7 @@ import { sweepExpiredOutbox } from './src/lib/outboxStore';
 import { isUuid } from './src/lib/ids';
 import { track } from './src/lib/telemetry';
 import {
-  startFrameWatch,
+  useFrameWatch,
   trackQuerySlow,
   trackScreenOpened,
 } from './src/lib/perfTelemetry';
@@ -86,7 +87,7 @@ import {
   parseVideoResolution,
   setVideoResolution,
 } from './src/api/callMedia/profile';
-import { useConversations, useSelfId } from './src/api/chat';
+import { keys, useConversations, useGlobalOutboxDrain, useSelfId } from './src/api/chat';
 import { useRole } from './src/api/provider';
 import { useStore } from './src/store/useStore';
 import { PolicyGateScreen } from './src/screens/PolicyGateScreen';
@@ -317,6 +318,36 @@ function useReportFullyDrawn(usable: boolean): void {
   }, [usable]);
 }
 
+/*
+ * TanStack's default OnlineManager listens for the browser's `online`/
+ * `offline` window events, which React Native never dispatches
+ * (2026-09-17 audit; confirmed reading @tanstack/query-core's own source —
+ * `#online = true` at construction, and the listener it registers is
+ * `window.addEventListener`). Without this, the library believes the app
+ * is always online, so `retry`/`refetchOnReconnect` never pause against a
+ * radio that is actually dead — every mutation burns its one retry
+ * against nothing, and a send fails with a generic error at the exact
+ * moment a member has no signal, rather than the paused/queued state
+ * TanStack's whole retry model is meant to give it.
+ * https://tanstack.com/query/latest/docs/framework/react/react-native
+ *
+ * `networkMode` is left at its default ('online'), not set to
+ * 'offlineFirst' as a first read of the TanStack doc might suggest:
+ * offlineFirst exists for a service-worker/HTTP-cache layer that can
+ * satisfy the FIRST attempt from a local cache before the retry-pause
+ * logic engages — this app has no such layer (React Query's in-memory
+ * cache is not that; see lib/outbox.ts's own note that there is no local
+ * message store), so offlineFirst would only mean every query still
+ * attempts once while genuinely offline and fails with a live-network
+ * error, which is the exact "Check your connection" vs "the server said
+ * no" confusion this codebase has already been burned by once.
+ */
+onlineManager.setEventListener(setOnline => {
+  return NetInfo.addEventListener(state => {
+    setOnline(state.isConnected === true);
+  });
+});
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -539,8 +570,34 @@ function Root() {
   const bootPhaseRef = useRef(boot.phase);
   bootPhaseRef.current = boot.phase;
   const [attempt, setAttempt] = useState(0);
+  // Bounds the H6 offline-session retry below: `isAuthRetryableFetchError`
+  // covers more than "NetInfo says offline" (a captive portal, the auth
+  // server itself being unreachable), so a case where the network reports
+  // online but the auth fetch keeps failing must not retry forever.
+  const authRetryCountRef = useRef(0);
   const [route, setRoute] = useState<MemberRoute>({ name: 'home' });
   const [providerRoute, setProviderRoute] = useState<ProviderRoute>({ name: 'home' });
+  /*
+   * A ring announced from outside the React tree: the notification's Answer
+   * intent, the body tap, or an FCM push. It is HELD here rather than routed
+   * here, because which tree it belongs to depends on the role and `useRole`
+   * lives in `SignedIn`. Calling `setRoute` from this effect was the defect: the
+   * provider tree renders `providerRoute` and nothing else, so every notification
+   * a provider answered set a route their tree does not draw.
+   */
+  const [pendingIncoming, setPendingIncoming] = useState<PendingIncoming | null>(null);
+  const clearPendingIncoming = useCallback(() => setPendingIncoming(null), []);
+  /*
+   * A message notification tapped, held the same way and for the same reason
+   * as `pendingIncoming` above (2026-09-17 audit): `companionchat://peer/<id>`
+   * is a role-agnostic deep link, and routing it from the effect that consumes
+   * it — before `useRole` (in `SignedIn`) has resolved — meant a provider's
+   * tap set a member-tree route their tree does not draw, and a member's tap
+   * on a cold start raced the boot effect's own `setRoute({name:'home'})` for
+   * whichever finished last.
+   */
+  const [pendingPeer, setPendingPeer] = useState<string | null>(null);
+  const clearPendingPeer = useCallback(() => setPendingPeer(null), []);
   const [exitDialogVisible, setExitDialogVisible] = useState(false);
   useReportFullyDrawn(boot.phase !== 'loading' && boot.phase !== 'ready');
   // Refs so the BackHandler closure reads the current route without being in its
@@ -595,11 +652,46 @@ function Root() {
     (async () => {
       try {
         assertEnv();
-        const session = await currentSession();
+        const { session, retryableError } = await currentSession();
         if (cancelled) {
           return;
         }
         if (session === null) {
+          /*
+           * H6, 2026-09-17 audit: a `null` session caused by a NETWORK
+           * failure (the access token expired days ago and refreshing it
+           * needed a request that could not be made) is not the same fact
+           * as "this member signed out" — but until `retryableError` existed,
+           * both looked identical here, and a signed-in member who cold-
+           * launched offline was bounced to the sign-in screen. Wait for
+           * connectivity and retry the WHOLE boot sequence (the same
+           * `attempt` bump every other retry path in this file already uses)
+           * instead of concluding signed-out on a question we could not
+           * actually answer yet.
+           */
+          if (retryableError && authRetryCountRef.current < 3) {
+            authRetryCountRef.current += 1;
+            // `subscribe` only calls back on a CHANGE (query-core's own
+            // OnlineManager.setOnline) — if the network is already back by
+            // the time this runs (the failure was a transient blip, not a
+            // genuine offline stretch), there is no future "change" left to
+            // wait for and this would hang in 'loading' forever. Bounded to
+            // 3 attempts: `isAuthRetryableFetchError` covers more than
+            // "NetInfo says offline" (a captive portal, the auth server
+            // itself down), so "network reports online but the fetch keeps
+            // failing" must not retry forever either.
+            if (onlineManager.isOnline()) {
+              setAttempt(n => n + 1);
+              return;
+            }
+            const unsubscribe = onlineManager.subscribe(online => {
+              if (online) {
+                unsubscribe();
+                if (!cancelled) setAttempt(n => n + 1);
+              }
+            });
+            return;
+          }
           setBoot({ phase: 'signedOut' });
           return;
         }
@@ -616,15 +708,18 @@ function Root() {
          * The whole key is gone rather than just this read — a stored value
          * nobody restores is a write that only ever misleads the next reader.
          *
-         * A notification tap still wins, below. That is not a remembered route:
-         * it is an explicit statement, made just now, about what this person
-         * opened the app to do.
+         * A notification tap still wins over this — but not from here. It
+         * used to be checked right here via `initialNotificationPeer()`
+         * (2026-09-17 audit: that path never once fired — see push.ts for
+         * why — and worse, calling `setRoute` unconditionally the line above
+         * raced the deep-link effect below for every REAL notification tap,
+         * which arrives as `companionchat://peer/<id>`. That effect now holds
+         * the tap in `pendingPeer` instead of routing directly, and
+         * `SignedIn` applies it once `role` is known — the same fix already
+         * in place for an incoming call's `pendingIncoming`, and for the same
+         * reason: the deep link only ever knew about the member tree.
          */
         setRoute({ name: 'home' });
-        const tapped = await initialNotificationPeer();
-        if (tapped !== null) {
-          setRoute({ name: 'chat', providerId: tapped, from: 'home' });
-        }
         // "Become a partner" before auth → provider onboarding, and it SKIPS the
         // member first-run (username/age/policy) entirely. Member and provider are
         // separate worlds (Amit, 2026-09-03): a provider sets up their OWN profile
@@ -718,6 +813,10 @@ function Root() {
     sweepExpiredOutbox();
   }, []);
 
+  // Drain the outbox for every conversation once signed in, not only
+  // whichever chat the member happens to open (X7, 2026-09-17 audit).
+  useGlobalOutboxDrain(boot.phase === 'ready');
+
 
   /**
    * The only deep link the app handles, and now it is load-bearing rather than
@@ -736,14 +835,19 @@ function Root() {
        * fires once the push payload is data-only — see `Conversations.peerIntent`
        * on the native side. It arrives here through `Linking` rather than through
        * Firebase's notification-open handler, because a self-built notification's
-       * PendingIntent is not a Firebase notification event.
+       * PendingIntent is not a Firebase notification event — see push.ts for why
+       * that path (`getInitialNotification` / `onNotificationOpenedApp`) never
+       * fired at all and was removed (2026-09-17 audit).
        *
        * `isUuid` gates it because a deep-link URL is remote input: any value
-       * could arrive on this scheme, and it must not reach a query unchecked —
-       * the same guard `openedPeerId` applies on the Firebase path. Routing only
-       * happens once signed in; a peer link that lands pre-session is dropped
-       * rather than queued, because the id belongs to a session that is not the
-       * current one.
+       * could arrive on this scheme, and it must not reach a query unchecked.
+       * Held in `pendingPeer` rather than routed directly, for the same reason
+       * `pendingIncoming` is held below: `role` is not known here, and a bare
+       * `setRoute` always writes the member tree, so a provider's own tap set a
+       * route their tree never draws. `SignedIn` applies it once `role`
+       * resolves. A peer link that arrives pre-session is dropped rather than
+       * queued (`SignedIn` never mounts to consume it), because the id belongs
+       * to a session that is not the current one.
        */
       /*
        * An incoming-call deep link, checked first. `companionchat://call/<peerId>
@@ -761,7 +865,8 @@ function Root() {
        *
        * Answer still routes into the screen rather than calling answer_call here:
        * that screen owns the lease and the media, and answering without it would
-       * put a connected call behind a UI that does not exist yet.
+       * put a connected call behind a UI that does not exist yet. It routes via
+       * `pendingIncoming`, which is where the role decides which tree gets it.
        *
        * Parsed with regex, not URLSearchParams, which Hermes does not ship.
        */
@@ -780,7 +885,7 @@ function Root() {
             void endCall(callId);
             return;
           }
-          setRoute({ name: 'call', providerId: callPeer, direction: 'in', callId, medium });
+          setPendingIncoming({ peerId: callPeer, callId, medium });
         }
         return;
       }
@@ -805,8 +910,17 @@ function Root() {
         // Query strings are ignored for routing; strip so a harness-augmented
         // peer URI still opens the chat.
         const peerId = peer.split('?')[0] ?? peer;
+        /*
+         * HELD, not routed (2026-09-17 audit) — same reason `pendingIncoming`
+         * is held above rather than routed from here: `role` is not known
+         * yet, and a bare `setRoute` always writes the MEMBER tree. A
+         * provider's own tap on a message notification set a route their
+         * tree never draws, and a member's cold-start tap raced the boot
+         * effect's own `setRoute({name:'home'})` for whichever won. `SignedIn`
+         * applies `pendingPeer` once `role` resolves, choosing the tree.
+         */
         if (isUuid(peerId)) {
-          setRoute({ name: 'chat', providerId: peerId, from: 'home' });
+          setPendingPeer(peerId);
         }
         return;
       }
@@ -884,12 +998,16 @@ function Root() {
       }
     })();
 
-    const unsubscribeOpen = onNotificationOpen(peerId => {
-      setRoute({ name: 'chat', providerId: peerId, from: 'home' });
-    });
+    // A backgrounded tap on a message notification used to be picked up here
+    // via `onNotificationOpen` (RNFirebase's `onNotificationOpenedApp`).
+    // Removed (2026-09-17 audit): that API tracks a tap on a notification FCM
+    // itself rendered, and this app's messages are always data-only and
+    // self-built — see push.ts. The real path is the SAME
+    // `Linking.addEventListener('url', ...)` the deep-link effect above
+    // already runs, since `companionchat://peer/<id>` is a normal `Linking`
+    // URL event whether the app was backgrounded or cold.
     return () => {
       unsubscribeToken?.();
-      unsubscribeOpen();
     };
   }, [boot.phase]);
 
@@ -922,7 +1040,48 @@ function Root() {
     const sub = AppState.addEventListener('change', async (next) => {
       const prev = prevState;
       prevState = next;
+      /*
+       * React Native has no window-focus event, so TanStack Query cannot tell
+       * that the app was backgrounded unless AppState is handed to it. Without
+       * this line `refetchIntervalInBackground: false` never takes effect and
+       * `refetchOnWindowFocus` never fires on either.
+       * https://tanstack.com/query/latest/docs/framework/react/react-native
+       */
+      focusManager.setFocused(next === 'active');
       if (prev === 'background' && next === 'active' && bootPhaseRef.current === 'ready') {
+        // Who is online is the one thing that goes stale while the phone is in
+        // a pocket, and the directory has no realtime channel (see useProviders).
+        void queryClient.invalidateQueries({ queryKey: keys.providers });
+        /*
+         * DO NOT re-gate over a LIVE CALL (2026-09-17 audit). `setBoot({phase:
+         * 'permissions'})` renders `PermissionsScreen` INSTEAD of `SignedIn`
+         * (below), unmounting whatever was on screen — and CallScreen's own
+         * contract is that unmounting hangs up: "Leaving the screen ends the
+         * call: an unmount hangs up on the server if the call was live."
+         *
+         * The gate checks three permissions (permissionsGate.ts): RECORD_AUDIO
+         * and CAMERA cannot plausibly lapse mid-call — the foreground service
+         * CallScreen already starts keeps that access alive by design
+         * (developer.android.com/training/permissions/requesting: "If you
+         * launch a foreground service while the activity is visible... your
+         * app can continue to access the data until the foreground service
+         * stops") — but POST_NOTIFICATIONS is a plain Settings toggle that
+         * does NOT kill the process, so it can genuinely be switched off
+         * mid-call and trip this exact path on the very next foreground
+         * return: a paid, live call ended by a notification-permission
+         * toggle that has nothing to do with the call itself.
+         *
+         * Deferred, not skipped: `gateSatisfied` still runs, and if it
+         * fails while a call IS on screen this simply waits for the next
+         * foreground return (or the call ending) rather than re-checking
+         * right now. The requirement stays mandatory (ADR-0026); only the
+         * timing moves.
+         */
+        const onCallScreen =
+          routeRef.current.name === 'call' || providerRouteRef.current.name === 'call';
+        if (onCallScreen) {
+          return;
+        }
         const statuses = await checkGate();
         if (!gateSatisfied(statuses)) {
           setBoot({ phase: 'permissions' });
@@ -999,6 +1158,31 @@ function Root() {
    */
   useEffect(() => {
     const onBack = () => {
+      /*
+       * NOT READY YET: hand back to Android (2026-09-17 audit).
+       *
+       * Everything below this line assumes `route`/`providerRoute` describe
+       * where the member or provider actually is, which is only true once
+       * `boot.phase === 'ready'`. On splash, sign-in, profile setup, the
+       * policy gate, permissions, the update screen, or the error screen,
+       * `route` still holds its very first default value, so every branch
+       * below fell through to "no parent, show the exit dialog" — except
+       * that dialog is only ever RENDERED in the `ready` branch of Root's own
+       * return (see the JSX at the bottom of this file), so the visible
+       * effect was that back did nothing on those screens, and then the
+       * dialog popped up unprompted the moment `ready` was reached, because
+       * `exitDialogVisible` had been sitting `true` the whole time. A member
+       * on their first launch could get "Leave Pappal?" as their welcome.
+       *
+       * Returning `false` here does what the docblock above already claims
+       * for the true root case: hands the press to Android. On these
+       * screens that means the OS's own back behaviour (typically closing
+       * the activity), which is correct — there is no in-app parent to pop
+       * to on a screen the member has not really "entered" yet.
+       */
+      if (bootPhaseRef.current !== 'ready') {
+        return false;
+      }
       // The Recharge overlay closes before any screen pops: it sits above
       // everything (zIndex 20) and is the thing the user most recently opened, so
       // back means it first. Settings is a normal route now (not an overlay), so
@@ -1293,7 +1477,47 @@ function Root() {
         backToHome={backToHome}
         setRoute={setRoute}
         setProviderRoute={setProviderRoute}
+        pendingIncoming={pendingIncoming}
+        onIncomingHandled={clearPendingIncoming}
+        pendingPeer={pendingPeer}
+        onPeerHandled={clearPendingPeer}
         onSignedOut={() => setBoot({ phase: 'signedOut' })}
+        /*
+         * Closes a gap in the provider-intent boot skip (2026-09-17 audit).
+         * While `PROVIDER_INTENT_KEY` is set, the boot effect above skips
+         * `bootPhaseAfterAuth` entirely — profileSetup, policyGate AND
+         * permissions — which is the documented, deliberate shape of
+         * "Become a partner" (Amit, 2026-09-03: "SKIPS the member first-run
+         * ... entirely"). That is correct for the DURATION of the apply
+         * flow: `bootPhaseAfterAuth`'s own `onProviderPath` check only
+         * skips profileSetup, so a member policy modal opening over
+         * provider onboarding was the exact bug it exists to prevent.
+         *
+         * But the skip does not end when onboarding does. The flag clears
+         * on submission and the app flips straight to the provider tree in
+         * THIS SAME SESSION with `boot.phase` still 'ready' — nothing
+         * re-runs `bootPhaseAfterAuth` until the NEXT cold start, so a
+         * freshly-admitted provider could take a paid session having never
+         * seen the policy screen, and the server's own POLICY_REQUIRED
+         * check (session_cutover.sql) would refuse it with no in-app
+         * screen able to resolve that refusal short of a relaunch.
+         *
+         * `onProviderOnboarded` re-runs the exact same check
+         * `bootPhaseAfterAuth` already does on every other post-auth path,
+         * the moment identity_state stops being 'none' — at which point
+         * `onProviderPath` is true via that signal alone, so profileSetup
+         * is (still, correctly) skipped and only policyGate/permissions
+         * get the chance to apply.
+         */
+        onProviderOnboarded={() => {
+          void (async () => {
+            const profile = await getSignedInProfile().catch(() => null);
+            const nextBoot = await bootPhaseAfterAuth(profile).catch(() => null);
+            if (nextBoot !== null) {
+              setBoot(nextBoot);
+            }
+          })();
+        }}
       />
       <ConfirmDialog
         visible={exitDialogVisible}
@@ -1310,6 +1534,13 @@ function Root() {
   );
 }
 
+/** A ring the app learned about outside the React tree, before the role is known. */
+interface PendingIncoming {
+  readonly peerId: string;
+  readonly callId: string;
+  readonly medium: 'voice' | 'video';
+}
+
 interface SignedInProps {
   route: MemberRoute;
   providerRoute: ProviderRoute;
@@ -1320,7 +1551,16 @@ interface SignedInProps {
   backToHome: () => void;
   setRoute: (r: MemberRoute) => void;
   setProviderRoute: (r: ProviderRoute) => void;
+  pendingIncoming: PendingIncoming | null;
+  onIncomingHandled: () => void;
+  /** A tapped message notification's peer id, held until `role` resolves. */
+  pendingPeer: string | null;
+  onPeerHandled: () => void;
   onSignedOut: () => void;
+  /** Re-checks policy/permission gates the moment provider onboarding
+   *  completes, closing the gap the provider-intent boot skip leaves open
+   *  for the rest of this session. See its call site in Root. */
+  onProviderOnboarded: () => void;
 }
 
 /**
@@ -1336,9 +1576,15 @@ function SignedIn({
   backToHome,
   setRoute,
   setProviderRoute,
+  pendingIncoming,
+  onIncomingHandled,
+  pendingPeer,
+  onPeerHandled,
   onSignedOut,
+  onProviderOnboarded,
 }: SignedInProps) {
   const styles = useStyles(makeStyles);
+  const setNotice = useStore(s => s.setNotice);
 
   /*
    * Stable, so `memo(FloatingToolbarView)` can actually hold.
@@ -1459,6 +1705,32 @@ function SignedIn({
   // Home's slide-in on a pop is driven from the pop itself (motion.ts `revealHome`).
   const homeLayer = useHomeRevealStyle();
 
+  /*
+   * The one place a ring becomes a route, whichever of the three announcements
+   * carried it: the Realtime INSERT, the FCM push, or the notification's Answer
+   * intent. One function because the role branch is the thing that drifted —
+   * the deep link only ever knew about the member tree.
+   *
+   * The seen-set is not belt and braces. A call is announced twice by design
+   * (Realtime AND a push), and pushing the route for the second announcement
+   * remounts CallScreen, whose unmount cleanup ends the call that is already up.
+   */
+  const routedCallsRef = useRef<Set<string>>(new Set());
+  const routeIncomingCall = useCallback(
+    (peerId: string, callId: string, medium: 'voice' | 'video') => {
+      if (routedCallsRef.current.has(callId)) {
+        return;
+      }
+      routedCallsRef.current.add(callId);
+      if (role === 'provider') {
+        pushProvider({ name: 'call', peerId, direction: 'in', callId, medium });
+      } else {
+        pushRoute({ name: 'call', providerId: peerId, direction: 'in', callId, medium });
+      }
+    },
+    [role, pushProvider, pushRoute],
+  );
+
   // A ring, foreground: route the incoming call to the right tree's call screen.
   // Declared before the early return so the hook order is stable.
   const onIncoming = useCallback(
@@ -1481,24 +1753,108 @@ function SignedIn({
        *
        * Read through the refs, not `route`/`providerRoute`, so this callback
        * stays stable across navigations — the same reason `onBack` uses them.
+       *
+       * The callId comparison is what keeps that from eating the CALL ON SCREEN.
+       * This path also receives the ring a push has already routed, and a guard
+       * that only asked "is a call open" declined the open one.
        */
-      const onACallAlready =
-        role === 'provider'
-          ? currentProviderRouteRef.current.name === 'call'
-          : currentRouteRef.current.name === 'call';
-      if (onACallAlready) {
-        void endCall(incoming.callId);
+      const current =
+        role === 'provider' ? currentProviderRouteRef.current : currentRouteRef.current;
+      if (current.name === 'call') {
+        if (current.callId !== incoming.callId) {
+          /*
+           * M23 (2026-09-17 audit): the screen already on top may be OUR OWN
+           * outgoing attempt to this exact peer, still waiting on `start_call`
+           * (callId null — see CallScreen.tsx's outgoing-call effect). That is
+           * not a second, unrelated call to decline; it is the other half of
+           * a simultaneous-dial race, and `start_call` (migration 120) is
+           * about to tell that screen so via ALREADY_RINGING. Declining here
+           * would end the peer's call before that dialog ever has a chance to
+           * show — this realtime path is typically faster than the RPC
+           * round-trip start_call is itself waiting on.
+           */
+          const currentPeerId =
+            role === 'provider'
+              ? (current as ProviderRoute & { name: 'call' }).peerId
+              : (current as MemberRoute & { name: 'call' }).providerId;
+          const isOwnRaceAgainstSamePeer =
+            current.direction === 'out' &&
+            current.callId === null &&
+            currentPeerId === incoming.callerId;
+          if (!isOwnRaceAgainstSamePeer) {
+            void endCall(incoming.callId);
+          }
+        }
         return;
       }
-      if (role === 'provider') {
-        pushProvider({ name: 'call', peerId: incoming.callerId, direction: 'in', callId: incoming.callId, medium: incoming.medium });
-      } else {
-        pushRoute({ name: 'call', providerId: incoming.callerId, direction: 'in', callId: incoming.callId, medium: incoming.medium });
+      /*
+       * The pushed CallStyle notification is cleared as the screen takes the
+       * ring over, which is the only path that ever cleared it before. Not while
+       * backgrounded: there the notification is the ring, and removing it would
+       * leave nothing to answer.
+       * https://developer.android.com/develop/ui/views/notifications/call-style
+       */
+      if (AppState.currentState === 'active') {
+        void clearCall(incoming.callId);
       }
+      routeIncomingCall(incoming.callerId, incoming.callId, incoming.medium);
     },
-    [role, pushRoute, pushProvider],
+    [role, routeIncomingCall],
   );
   useIncomingCalls(selfId, onIncoming);
+
+  /*
+   * A ring that arrived before the role did. `useRole` resolves after the deep
+   * link is consumed on a cold start, so dispatching early would send a
+   * provider's answer into the member tree.
+   */
+  useEffect(() => {
+    if (pendingIncoming === null || isPending) {
+      return;
+    }
+    onIncomingHandled();
+    routeIncomingCall(pendingIncoming.peerId, pendingIncoming.callId, pendingIncoming.medium);
+  }, [pendingIncoming, isPending, onIncomingHandled, routeIncomingCall]);
+
+  /*
+   * A message notification tapped before the role was known (2026-09-17
+   * audit) — exact mirror of the `pendingIncoming` effect above, and for the
+   * same reason: `companionchat://peer/<id>` does not know which tree it
+   * belongs to, only `role` (resolved here, not in the effect that consumed
+   * the deep link) does. Routed via each tree's own chat destination shape —
+   * `pushProvider({name:'chat', peerId})` is the same call
+   * `onOpenConversation` uses from provider home.
+   */
+  useEffect(() => {
+    if (pendingPeer === null || isPending) {
+      return;
+    }
+    onPeerHandled();
+    if (role === 'provider') {
+      pushProvider({ name: 'chat', peerId: pendingPeer });
+    } else {
+      pushRoute({ name: 'chat', providerId: pendingPeer, from: 'home' });
+    }
+  }, [pendingPeer, isPending, onPeerHandled, role, pushProvider, pushRoute]);
+
+  /*
+   * Foreground pushes. A call rings through the same entry point as a Realtime
+   * ring; a nudge becomes a notice rather than a notification over an app the
+   * person is already looking at.
+   */
+  useEffect(
+    () =>
+      onForegroundPush({
+        onCall: push =>
+          routeIncomingCall(
+            push.peerId,
+            push.callId,
+            push.medium === 'video' ? 'video' : 'voice',
+          ),
+        onEngagement: push => setNotice(push.body || push.title, 'confirm'),
+      }),
+    [routeIncomingCall, setNotice],
+  );
 
   // No retry handler here on purpose: the profile query owns its own retries, and
   // a button that re-runs a query React Query is already retrying would only
@@ -1778,6 +2134,9 @@ function SignedIn({
                 storage.remove(PROVIDER_INTENT_KEY);
                 useStore.getState().setPendingProviderApply(false);
                 void queryClient.invalidateQueries();
+                // Closes the boot-skip gap for the rest of THIS session —
+                // see onProviderOnboarded's own docblock at its call site.
+                onProviderOnboarded();
               }}
             />
           ) : route.name === 'applicationStatus' ? (
@@ -1862,7 +2221,7 @@ function Shell() {
 }
 
 export default function App() {
-  useEffect(() => startFrameWatch(), []);
+  useFrameWatch();
   return (
     /**
      * GestureHandlerRootView has to be the outermost view, not a wrapper inside

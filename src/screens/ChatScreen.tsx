@@ -4,22 +4,28 @@ import {
   type FlashListRef,
   type ListRenderItem,
   type ListRenderItemInfo,
+  type ViewToken,
 } from '@shopify/flash-list';
 import {
   useWindowDimensions,
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  type ViewabilityConfig,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import Animated from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import {
   barIn,
   barOut,
   holdScreenEnter,
+  KEYBOARD_CUBIC,
+  M3,
   onTransitionSettled,
+  pageDownIn,
+  pageDownOut,
   rowIn,
   transitioning,
 } from '../theme/motion';
@@ -33,12 +39,19 @@ import {
   useChatImeStore,
   useComposerFocused,
   useComposerInset,
+  useDockHeight,
   useImeStore,
   useListPad,
 } from '../lib/imeGeometry';
 import { readKeyboardHeight } from '../lib/keyboardPanel';
 import { initialOf } from '../lib/display';
-import { isPending, PENDING_PREFIX, sessionEndedLabel } from '../lib/transcript';
+import {
+  isPending,
+  PENDING_PREFIX,
+  sessionEndedLabel,
+  unreadFromPeer,
+  type TranscriptMessage,
+} from '../lib/transcript';
 import {
   canDeleteMessage,
   canEditMessage,
@@ -61,8 +74,8 @@ import { useLiveConversation, useMarkRead } from '../api/realtime';
 import { useReactions, useToggleReaction } from '../api/reactions';
 import { CALLS_ENABLED } from '../api/calls';
 import { useKillSwitches } from '../api/appConfig';
-import { useSendVoiceNote, useVoicePlayer } from '../api/voice';
-import { useSendImage } from '../api/attachments';
+import { useSendVoiceNote, useRetryVoiceSend, useVoicePlayer } from '../api/voice';
+import { useSendImage, useRetryImageSend } from '../api/attachments';
 import { opensDay, timeOfDay } from '../lib/datetime';
 import { voiceOf, type VoiceDraft } from '../lib/voice';
 import { imageOf, type ImageDraft } from '../lib/attachments';
@@ -104,6 +117,7 @@ import {
 } from '../api/sessions';
 import { useEarnings } from '../api/provider';
 import { Avatar } from '../components/Avatar';
+import { Badge } from '../components/Badge';
 import { ChatWallpaper } from '../components/ChatWallpaper';
 import { FirstMovePills } from '../components/FirstMovePills';
 import { LoadingIndicator } from '../components/LoadingIndicator';
@@ -127,6 +141,7 @@ import { M3Field } from '../components/TextField';
 import { SafetySheet } from './SafetySheet';
 import { RenameChatSheet } from '../components/RenameChatSheet';
 import { useConversationLabels } from '../api/conversationLabels';
+import { clearChatDraft } from '../lib/chatDraft';
 
 /*
  * The transcript's two row shapes, at module scope rather than inside the
@@ -164,10 +179,29 @@ type SystemRow = {
   sortAt: string;
   text: string;
   icon?: IconName;
+  /** A literal emoji character, for the one mark that IS an emoji rather than
+   * a vector glyph — see the session-ended row below. Mutually exclusive with
+   * `icon`. */
+  emoji?: string;
   opensDay: boolean;
 };
 
-export type TranscriptRow = MessageRow | CallRow | SystemRow;
+/**
+ * "Unread messages" — spliced in once, above the oldest message that was
+ * unread from the peer when this screen opened (M1, 2026-09-17 audit,
+ * Amit's call: "Build it (viewport-based + divider)"). Not driven by
+ * `sortAt`/comparator ties: its position is set explicitly by splicing it
+ * into `rows` right after the anchor row, which stays correct regardless of
+ * how the sort implementation breaks ties on equal timestamps.
+ */
+type DividerRow = {
+  kind: 'divider';
+  localKey: 'unread-divider';
+  sortAt: string;
+  opensDay: false;
+};
+
+export type TranscriptRow = MessageRow | CallRow | SystemRow | DividerRow;
 
 /** A hold that was never taken, so the release is a no-op. */
 const NO_HOLD = (): void => undefined;
@@ -214,6 +248,18 @@ interface Props {
  * number is indistinguishable from a drift, and a name can carry its reason.
  */
 const CALL_GLYPH_SIZE = 19;
+
+/*
+ * How far (dp) the inverted transcript must be scrolled from the newest
+ * message before a new incoming row counts as "missed" instead of
+ * triggering the usual scroll-to-bottom (2026-09-17 audit). Deliberately
+ * more forgiving than the extend card's own 64dp: that threshold decides
+ * whether a pinned card is still in view, this one decides whether the
+ * member is genuinely reading history versus glancing at the last couple
+ * of bubbles, so it wants a bigger margin before it starts withholding
+ * the auto-scroll a member sitting near the bottom still expects.
+ */
+const PAGE_DOWN_THRESHOLD = 200;
 
 const OPENER_TYPING_MIN_MS = 700;
 const OPENER_TYPING_MAX_MS = 2200;
@@ -298,7 +344,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   // Providers see their earnings in the header instead of the member wallet.
   const { data: earnings } = useEarnings();
   const setNotice = useStore(s => s.setNotice);
-  const setPeerTyping = useStore(s => s.setPeerTyping);
+  const setPeerActivity = useStore(s => s.setPeerActivity);
   const queryClient = useQueryClient();
   const [sendHaloKey, setSendHaloKey] = useState(0);
   const [leaveDialogVisible, setLeaveDialogVisible] = useState(false);
@@ -405,7 +451,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   useProfile();
   const { data: selfId } = useSelfId();
   const { data: providers } = useProviders();
-  const { data: threads } = useConversations();
+  const { data: threads, isError: threadsError, refetch: refetchThreads } = useConversations();
 
   /**
    * Which side of this thread we are on, and it decides how the conversation id
@@ -450,7 +496,12 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   const needsOpen = knownThread === undefined;
   const { data: openedId } = useConversationId(needsOpen ? providerId : null);
   const conversationId = knownThread?.conversation_id ?? openedId;
-  const { data: messages, isPending: messagesPending } = useMessages(conversationId);
+  const {
+    data: messages,
+    isPending: messagesPending,
+    isError: messagesError,
+    refetch: refetchMessages,
+  } = useMessages(conversationId);
 
   /*
    * Hold the push animation until this screen has its transcript.
@@ -491,6 +542,57 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
    * at first render, so it is the open time for both fresh and existing chats.
    */
   const arrivalCutoff = useRef(Date.now());
+  /*
+   * `arrivalCutoff` alone is not enough to make a peer bubble animate in
+   * EXACTLY once (M13, 2026-09-17 audit). It never advances, so any message
+   * that arrived after the screen opened stays "after the cutoff" for the
+   * rest of the screen's life — and FlashList does not keep every row
+   * mounted forever. Per its own docs a RECYCLED cell is "re-rendered with a
+   * different item prop" rather than destroyed, but a row that scrolls far
+   * enough off-screen to leave the virtualized window entirely gets a
+   * genuinely fresh mount when it scrolls back into view, and Reanimated's
+   * `entering` reads whatever `animate` is at THAT mount — still true, since
+   * the cutoff never moved. So scrolling away from a live arrival and back
+   * replayed its entrance. This set remembers which message ids have already
+   * been granted their one animation, consumed the first time each is seen.
+   */
+  const animatedMessageIds = useRef(new Set<string>());
+  /*
+   * The unread divider's anchor: the localKey of the OLDEST message from the
+   * peer that was unread the moment this screen opened, snapshotted once per
+   * conversation (M1, 2026-09-17 audit). Read receipts below are now
+   * viewport-gated — messages keep arriving at `read_at !== null` over the
+   * course of the session as they scroll into view — so recomputing this from
+   * live data would make the divider retreat and vanish as the member reads,
+   * which is the opposite of "persistent for the session" Amit asked for.
+   * `null` means computed and there was nothing unread; `undefined` means not
+   * computed yet for this conversation (still loading, or a fresh chat with
+   * no `conversationId`).
+   */
+  const [unreadAnchorId, setUnreadAnchorId] = useState<string | null>(null);
+  const unreadAnchorComputedForRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    // `selfId` (useSelfId, a separate query) is not guaranteed to resolve
+    // before `messages` does — locking the "computed" ref on a run where
+    // selfId was still undefined would permanently snapshot "nothing unread"
+    // for this conversation, since unreadFromPeer(list, undefined) is always
+    // []. Wait for both.
+    if (conversationId === undefined || messages === undefined || selfId === undefined) {
+      return;
+    }
+    if (unreadAnchorComputedForRef.current === conversationId) {
+      return;
+    }
+    unreadAnchorComputedForRef.current = conversationId;
+    const unread = new Set(unreadFromPeer(messages, selfId));
+    let oldest: TranscriptMessage | undefined;
+    for (const m of messages) {
+      if (unread.has(m.id) && (oldest === undefined || m.created_at < oldest.created_at)) {
+        oldest = m;
+      }
+    }
+    setUnreadAnchorId(oldest === undefined ? null : (oldest.localKey ?? oldest.id));
+  }, [conversationId, messages, selfId]);
   const { data: callRecords } = useCalls(conversationId);
   // `dataUpdatedAt` is the instant the server's snapshot was taken — the only
   // moment `seconds_remaining` was exactly right, and what it is aged from.
@@ -506,8 +608,23 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   useSessionRealtime(conversationId);
   useSessionLease(activeSession ?? null);
 
-  const { notifyTyping } = useLiveConversation(conversationId, selfId);
-  useMarkRead(conversationId, selfId);
+  const { notifyTyping, notifyRecording, notifyRecordingEnded } =
+    useLiveConversation(conversationId, selfId);
+  const markVisible = useMarkRead(conversationId, selfId);
+  const onViewableItemsChanged = useCallback(
+    ({ viewableItems }: { viewableItems: ViewToken<TranscriptRow>[] }) => {
+      const ids: string[] = [];
+      for (const v of viewableItems) {
+        if (v.isViewable && v.item.kind === 'message' && !v.item.mine) {
+          ids.push(v.item.message.id);
+        }
+      }
+      if (ids.length > 0) {
+        markVisible(ids);
+      }
+    },
+    [markVisible],
+  );
   const send = useSendMessage(conversationId, selfId);
   /*
    * Replay anything the persisted outbox still holds for this thread — a send
@@ -527,6 +644,12 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   sendRef.current = send;
   const sendVoice = useSendVoiceNote(conversationId, selfId);
   const sendImage = useSendImage(conversationId, selfId);
+  // Retry-only siblings: the object already uploaded and only
+  // send_message_idempotent failed, so retrying is the RPC alone (2026-09-17
+  // audit). See useRetryImageSend / useRetryVoiceSend for why this is safe
+  // within a session even though outbox.ts does not replay media across one.
+  const retryImage = useRetryImageSend(conversationId, selfId);
+  const retryVoice = useRetryVoiceSend(conversationId, selfId);
   /**
    * One playhead for the whole transcript, because the recorder exposes one
    * player object. Held here rather than per bubble so starting a second note
@@ -709,19 +832,25 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
    *
    * It used to be `selectPeerOnline`, fed by a Realtime presence channel, which
    * answers "is their app in the foreground": a question nobody agreed to have
-   * answered about them, and one that contradicts the settled decision that
-   * presence is user-controlled. It was then `peer_available`, which was honest
-   * about consent and wrong about meaning, because that column is the provider's
-   * *listing* switch and is false for a member peer by construction. So the
-   * provider tree's header could never show a member as present.
+   * answered about them. It was then `peer_presence`, the declaration 012 added,
+   * and since 2026-09-17 it is the master switch again — the declaration is
+   * gone rather than merged, which is what makes that honest (src/lib/presence.ts).
    *
-   * `peer_presence` is the declared state and is published for either role. The
-   * directory fallback covers a conversation opened from the rail before the
-   * first message creates a thread row.
+   * THE MEMBER SIDE STILL PUBLISHES NOTHING, and this is the same fact 012 was
+   * reaching for: a member has no listing switch, so `peer_available` is false
+   * for one by construction. Passing that through would tell a provider that the
+   * person they are talking to is away, which is a claim about a human being
+   * that nobody made. Null instead, and the header renders the name alone.
+   *
+   * The directory fallback covers a conversation opened from the rail before the
+   * first message creates a thread row, and is a provider by definition.
    */
   const presence = readPresence(
-    peerThread?.peer_presence ?? provider?.presence,
-    peerThread?.peer_last_active_at ?? provider?.last_active_at,
+    peerThread !== undefined
+      ? peerThread.peer_is_provider
+        ? peerThread.peer_available
+        : null
+      : provider?.is_available,
   );
 
   /**
@@ -736,8 +865,35 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
    * thread has any live content. Member-side only — a provider does not greet
    * themselves.
    */
+  // Mirrors `insert_next_opener`'s own v_live check (045): "does this
+  // conversation already have a real, human message." Booleans, not the raw
+  // array, so the effect below re-fires exactly once when the first fetch
+  // resolves and again only if a genuine live message arrives mid-sequence —
+  // never on every automated-opener insert the loop makes itself (those are
+  // origin='automated_opener', not 'live', so this stays false throughout).
+  const messagesLoaded = messages !== undefined;
+  const hasLiveMessage = useMemo(
+    () => (messages ?? []).some(m => m.origin === 'live'),
+    [messages],
+  );
   useEffect(() => {
     if (!isMemberSide) {
+      return;
+    }
+    /*
+     * Wait for the real message list before showing anything (Amit,
+     * 2026-09-18: "leading typing indicator on chat reload or chat open").
+     * The loop below used to call `setPeerActivity('typing')` and wait a
+     * beat BEFORE its first `insert_next_opener` call — the RPC that alone
+     * knows whether this conversation already has a live message and would
+     * refuse to insert anything. Reopening any established conversation (one
+     * real exchange deep or a hundred) flashed a fake "typing" for up to
+     * 2.2s before the RPC came back and said there was nothing to do. Now
+     * that check runs client-side, first, using data the screen already
+     * fetches for the transcript anyway — no RPC round trip needed just to
+     * decide whether to fake-type.
+     */
+    if (!messagesLoaded || hasLiveMessage) {
       return;
     }
     let cancelled = false;
@@ -767,7 +923,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
         if (cancelled) {
           break;
         }
-        setPeerTyping(true);
+        setPeerActivity('typing');
         await wait(upcoming === null ? OPENER_TYPING_MIN_MS : typingBeat(upcoming));
         if (cancelled) {
           break;
@@ -775,7 +931,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
         const { data, error } = await supabase.rpc('insert_next_opener', {
           p_provider_id: providerId,
         });
-        setPeerTyping(false);
+        setPeerActivity(null);
         if (cancelled || error || data === null) {
           break;
         }
@@ -803,9 +959,9 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
         clearTimeout(pendingTimer);
         pendingTimer = undefined;
       }
-      setPeerTyping(false);
+      setPeerActivity(null);
     };
-  }, [isMemberSide, providerId, queryClient, setPeerTyping]);
+  }, [isMemberSide, providerId, queryClient, setPeerActivity, messagesLoaded, hasLiveMessage]);
 
   const memberHasSent = useMemo(
     () =>
@@ -932,16 +1088,17 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
      * things being recorded are different: a session that was billed, and a
      * call that was attempted.
      *
-     * `heart` is the mark. CallLogRow puts a call/video glyph in the same pill
-     * slot, so the chat row having none was the visible half of these reading
-     * as two features rather than one history.
+     * An orange heart is the mark (Amit, 2026-09-18: swap the vector glyph for
+     * the emoji, same size) — CallLogRow puts a call/video glyph in the same
+     * pill slot, so the chat row having none was the visible half of these
+     * reading as two features rather than one history.
      */
     const systemRows: SystemRow[] = (sessionEvents ?? []).map(e => ({
       kind: 'system' as const,
       localKey: `session-${e.id}`,
       sortAt: e.ended_at,
       text: sessionEndedLabel(e.minutes_billed, e.ended_at),
-      icon: 'heart' as const,
+      emoji: '🧡',
       opensDay: false,
     }));
 
@@ -963,7 +1120,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
         : [];
 
     // Merge and sort newest-first (matches the inverted FlashList).
-    const sorted = [...messageRows, ...callRows, ...systemRows, ...alertRows].sort(
+    const sorted: TranscriptRow[] = [...messageRows, ...callRows, ...systemRows, ...alertRows].sort(
       (a, b) => new Date(b.sortAt).getTime() - new Date(a.sortAt).getTime(),
     );
 
@@ -1026,23 +1183,62 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
         newer.opensDay;
     }
 
-    return sorted;
-  }, [messages, selfId, callRecords, sessionEvents, notifiedAt, name]);
+    // Splice the unread divider in by explicit index, after every pass above
+    // that assumes a message-only neighbour (opensDay, run-breaks) has run —
+    // it is not a message and should not participate in either.
+    if (unreadAnchorId !== null) {
+      const anchorIndex = sorted.findIndex(r => r.localKey === unreadAnchorId);
+      const anchor = anchorIndex === -1 ? undefined : sorted[anchorIndex];
+      if (anchor !== undefined) {
+        sorted.splice(anchorIndex + 1, 0, {
+          kind: 'divider' as const,
+          localKey: 'unread-divider',
+          sortAt: anchor.sortAt,
+          opensDay: false,
+        });
+      }
+    }
 
-  /**
-   * Force offset 0 whenever a new row appears — local optimistic or remote
-   * incoming — including while the user is scrolled up reading history.
+    return sorted;
+  }, [messages, selfId, callRecords, sessionEvents, notifiedAt, name, unreadAnchorId]);
+
+  /*
+   * Scroll to bottom for MY OWN send; for anything else, only if already
+   * near the bottom — otherwise count it and let the page-down button say
+   * so (2026-09-17 audit, Amit's call on the Telegram-parity sweep).
    *
-   * Items 5/12 in the product spec are the same behaviour: "scroll to bottom
-   * on send" and "scroll to bottom on receive" share one effect here rather than
-   * two separate handlers. The inverted FlashList's resting offset IS 0 (the
-   * newest message), so scrollToOffset(0) is the correct call on FlashList v2.
+   * This replaces the previous rule (force offset 0 on ANY new row,
+   * including while scrolled up reading history), which items 5/12 in the
+   * product spec were read as requiring. Telegram's own rule is narrower —
+   * `if (obj.isOut() && obj.wasJustSent) { scrollToLastMessage(true, false);
+   * return; }`, ChatActivity.java — and increments a page-down badge for
+   * everything else. `rows[0].mine` (message rows only; a call record or
+   * system row is nobody's "own send") is this app's equivalent of
+   * `isOut() && wasJustSent`: the only way a row I sent can newly appear at
+   * the front of a newest-first list is that I just sent it.
    */
+  const [scrolledAwayFromLatest, setScrolledAwayFromLatest] = useState(false);
+  const scrolledAwayFromLatestRef = useRef(false);
+  const [unreadBelow, setUnreadBelow] = useState(0);
+
+  const scrollToLatest = useCallback(() => {
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    setUnreadBelow(0);
+  }, []);
+
   const prevRowsLen = useRef(0);
   useEffect(() => {
     const len = rows.length;
     if (len > prevRowsLen.current) {
       prevRowsLen.current = len;
+      const newest = rows[0];
+      const mine = newest?.kind === 'message' && newest.mine;
+      if (!mine && scrolledAwayFromLatestRef.current) {
+        // Not mine, and the member is reading history: say so, don't yank.
+        setUnreadBelow(n => n + 1);
+        return;
+      }
+      setUnreadBelow(0);
       // W5#6: a message arriving during a push transition triggers scrollToOffset
       // + FlashList re-layout mid-animation. Gate on the lock and defer to after
       // the transition settles. Safety: if setTransitioning(false) is never called
@@ -1219,13 +1415,38 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
     }
   }, [showExtendCard]);
 
+  /*
+   * M18 (2026-09-17 audit) flagged this as JS-thread-only, and moving it onto
+   * the UI thread via useAnimatedScrollHandler was tried and reverted in this
+   * same pass: FlashList v2 wrapped in Animated.createAnimatedComponent loses
+   * its own imperative ref shape (scrollToOffset) under this Reanimated
+   * version — confirmed by tsc, not a hunch — and the known upstream fix for
+   * that combination is version-sensitive
+   * (software-mansion/react-native-reanimated#3889, #3899, #3938). `listRef`
+   * is load-bearing for the force-scroll effect and the page-down button
+   * (X5), so breaking it silently to save a bridge crossing during scroll is
+   * the wrong trade with no device to verify the fix on. Left as a plain
+   * callback; a real fix wants `useAnimatedRef`/`useScrollOffset` (the
+   * currently-documented alternative to wrapping the component) tried on a
+   * device, not blind.
+   */
   const onTranscriptScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      // Inverted FlashList: offset grows as the user scrolls toward older
+      // messages (visual top), 0 is the newest message. Tracked here
+      // unconditionally (2026-09-17 audit) so the page-down button knows
+      // when to appear regardless of the extend card's own, separate
+      // 64dp threshold below.
+      const away = e.nativeEvent.contentOffset.y > PAGE_DOWN_THRESHOLD;
+      scrolledAwayFromLatestRef.current = away;
+      setScrolledAwayFromLatest(prev => (prev === away ? prev : away));
+      if (!away) {
+        setUnreadBelow(0);
+      }
       if (!showPinnedExtend) {
         return;
       }
-      // Inverted FlashList: offset grows as the user scrolls toward older
-      // messages (visual top). Past one card-height, treat extend as out of sight.
+      // Past one card-height, treat extend as out of sight.
       if (e.nativeEvent.contentOffset.y > 64) {
         setExtendScrolledAway(true);
       }
@@ -1261,6 +1482,21 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   }, [activeSession, endSessionMutate, setNotice]);
 
   /**
+   * `onBack` wrapped with the draft purge (X6, 2026-09-17 audit): leaving the
+   * chat back to Home is one of Amit's three named exits, the other two being
+   * a call (see `startCall` below) and the app closing (already covered —
+   * nothing reaches this chat again without going through one of the other
+   * two first). Every path back to Home funnels through here rather than a
+   * raw `onBack()`, so there is exactly one place this can be missed.
+   */
+  const leaveChat = useCallback(() => {
+    if (conversationId !== undefined) {
+      clearChatDraft(conversationId);
+    }
+    onBack();
+  }, [conversationId, onBack]);
+
+  /**
    * Back is conditionally intercepted only while a paid session exists. Android
    * recommends enabling a back callback only for the state that needs a decision;
    * ordinary chat navigation remains immediate.
@@ -1268,7 +1504,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
    */
   const requestLeave = useCallback(() => {
     if (!activeSession) {
-      onBack();
+      leaveChat();
       return;
     }
     // The dialog quotes the elapsed time, and above the five-minute mark the
@@ -1278,13 +1514,13 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
     setLeaveDialogVisible(true);
   }, [
     activeSession,
-    onBack,
+    leaveChat,
   ]);
 
   const confirmLeave = useCallback(() => {
     if (!activeSession) {
       setLeaveDialogVisible(false);
-      onBack();
+      leaveChat();
       return;
     }
     endSessionMutate(
@@ -1304,7 +1540,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
           if (isMemberSide && name !== '') {
             requestReview(activeSession.id, name);
           }
-          onBack();
+          leaveChat();
         },
         onError: () => {
           setLeaveDialogVisible(false);
@@ -1316,8 +1552,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
     activeSession,
     endSessionMutate,
     isMemberSide,
+    leaveChat,
     name,
-    onBack,
     requestReview,
     setNotice,
   ]);
@@ -1428,10 +1664,26 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   const openImage = useCallback((image: ImageBody) => setViewerImage(image), []);
   const closeImage = useCallback(() => setViewerImage(null), []);
 
+  /**
+   * `onStartCall` wrapped with the draft purge (X6, 2026-09-17 audit) — the
+   * second of Amit's three named exits. Every call-start in this screen goes
+   * through here, not the raw prop, for the same one-place-to-miss-it reason
+   * `leaveChat` wraps `onBack`.
+   */
+  const startCall = useCallback(
+    (channel: 'audio' | 'video') => {
+      if (conversationId !== undefined) {
+        clearChatDraft(conversationId);
+      }
+      onStartCall?.(channel);
+    },
+    [conversationId, onStartCall],
+  );
+
   /** Re-dial from a missed/declined call row. `medium` is the row's own. */
   const callBack = useCallback(
-    (medium: 'voice' | 'video') => onStartCall?.(medium === 'video' ? 'video' : 'audio'),
-    [onStartCall],
+    (medium: 'voice' | 'video') => startCall(medium === 'video' ? 'video' : 'audio'),
+    [startCall],
   );
 
   const renderItem = useCallback(
@@ -1454,12 +1706,22 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
         );
       }
 
+      // The unread divider (M1): same muted centered pill as a system message,
+      // distinct copy, never opens a day of its own.
+      if (item.kind === 'divider') {
+        return (
+          <View style={styles.turn}>
+            <SystemMessageRow text="Unread messages" />
+          </View>
+        );
+      }
+
       // System message: a centered, non-interactive session boundary / notice.
       if (item.kind === 'system') {
         return (
           <View style={styles.turn}>
             {item.opensDay ? <DayDivider iso={item.sortAt} /> : null}
-            <SystemMessageRow text={item.text} icon={item.icon} />
+            <SystemMessageRow text={item.text} icon={item.icon} emoji={item.emoji} />
           </View>
         );
       }
@@ -1479,6 +1741,20 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
        * recording that is gone.
        */
       const deleted = isDeleted(message);
+      /*
+       * Granted once, then consumed (M13) — see `animatedMessageIds`'s own
+       * comment above. Computed for every row, not only peer ones, so a
+       * message that starts mine (never animates, MyTurn has no `animate`
+       * prop) and is somehow re-evaluated does not affect this bookkeeping
+       * either way; only the peer branch below actually reads it.
+       */
+      const animate =
+        !mine &&
+        Date.parse(message.created_at) > arrivalCutoff.current &&
+        !animatedMessageIds.current.has(message.id);
+      if (animate) {
+        animatedMessageIds.current.add(message.id);
+      }
       // Only reached when `voice` and `image` are unset, which the payload
       // constraint guarantees means the row has a body. The fallback covers a row
       // that somehow has none rather than rendering an empty bubble.
@@ -1540,21 +1816,40 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
               onOpenImage={openImage}
               /*
                * A failed send keeps its bubble and offers a retry, rather than
-               * vanishing. `retry` is only wired for text: a voice note or
-               * image whose upload landed but whose send failed cannot be
-               * replayed across a launch (see lib/outbox.ts), so those show the
-               * failed state without a retry that could not keep its promise.
+               * vanishing. Three shapes:
+               *   - text: replay through the same idempotent send path, with
+               *     the original nonce and created_at (unchanged).
+               *   - image / voice, upload already landed (`keepFailed`, not
+               *     `withdraw` — see attachments.ts / voice.ts): retry is the
+               *     RPC alone, via useRetryImageSend / useRetryVoiceSend
+               *     (2026-09-17 audit). This is NOT the outbox's cross-launch
+               *     media replay (lib/outbox.ts explains why that is not
+               *     attempted) — it only ever fires within the same session,
+               *     on a row whose object already exists in the bucket.
+               *   - image / voice whose upload itself never completed
+               *     (`withdraw`): the bubble is gone, so this branch is never
+               *     reached for that case — there is nothing left to retry.
                */
               failed={message.failed === true}
               onRetry={
-                message.failed === true && message.body !== null
-                  ? () => {
-                      void sendRef.current(message.body ?? '', message.reply_to_id, {
-                        nonce: message.id.slice(PENDING_PREFIX.length),
-                        createdAt: message.created_at,
-                      });
-                    }
-                  : undefined
+                message.failed !== true
+                  ? undefined
+                  : message.body !== null
+                    ? () => {
+                        void sendRef.current(message.body ?? '', message.reply_to_id, {
+                          nonce: message.id.slice(PENDING_PREFIX.length),
+                          createdAt: message.created_at,
+                        });
+                      }
+                    : message.attachment_path !== null
+                      ? () => {
+                          void retryImage(message);
+                        }
+                      : message.voice_path !== null
+                        ? () => {
+                            void retryVoice(message);
+                          }
+                        : undefined
               }
               receipt={
                 !isPending(message)
@@ -1569,9 +1864,9 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
               message={text}
               // Mirrored tail on the oldest bubble of the peer's run.
               tail={first}
-              // Only live arrivals animate in; history and paged-in rows mount
-              // still. See `arrivalCutoff`.
-              animate={Date.parse(message.created_at) > arrivalCutoff.current}
+              // Only live arrivals animate in, and only their first mount —
+              // see `animatedMessageIds` above.
+              animate={animate}
               timestamp={stamp}
               quote={quote}
               reactions={reactions}
@@ -1611,6 +1906,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
       reactOnMessage,
       reactionRows,
       reportMessage,
+      retryImage,
+      retryVoice,
       selfId,
       styles,
       swipeReply,
@@ -1620,7 +1917,12 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   );
 
   const header = useCallback(
-    () => <PeerTyping name={name} />,
+    () => (
+      <>
+        <PeerTyping name={name} />
+        <AnimatedBodyInset />
+      </>
+    ),
     [name],
   );
   // On an inverted list the footer renders at the visual TOP, so this reserves
@@ -1652,7 +1954,24 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   const loading =
     (conversationId === undefined && threads === undefined) ||
     (knownThread !== undefined && conversationId !== undefined && messages === undefined && messagesPending);
-  const empty = !loading && rows.length === 0;
+  /*
+   * A failed fetch is not the same thing as an empty thread (2026-09-17
+   * audit). Before this, an errored `messages`/`threads` query fell straight
+   * into `empty` below — the exact same "Say hi" first-contact state a
+   * BRAND NEW conversation shows — because `rows` collapses to `[]` on
+   * either `undefined` or a thrown query. A member on a flaky connection
+   * opening a real conversation with history got no signal that the fetch
+   * failed and no way to retry short of leaving the screen.
+   *
+   * Checked and given its own branch BEFORE `empty`, not folded into it:
+   * this is deliberately NOT claiming a real transcript was lost (this
+   * product's sessions are ephemeral by design, ADR-0020 — a genuinely
+   * empty conversation between paid sessions is the correct, working
+   * state) — only that THIS fetch, right now, did not succeed and should
+   * say so rather than look identical to "nothing has ever happened here".
+   */
+  const loadError = messagesError || threadsError;
+  const empty = !loading && !loadError && rows.length === 0;
 
   /*
    * `imeSpace`, `bodyInset`, `panelCeiling`, `listPad` and `composerInset` are
@@ -1784,7 +2103,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
             control that actually does something, and the disabled state is an
             honest gate (CALLS_ENABLED) rather than a role that never fires. */}
         <Pressable
-          onPress={() => onStartCall?.('video')}
+          onPress={() => startCall('video')}
           disabled={
             !canStartVideo ||
             (activeSession != null && activeSession.channel !== 'chat')
@@ -1802,7 +2121,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
           <Icon name="video" size={TOKENS.icon.md} color={theme.color.text.secondary} />
         </Pressable>
         <Pressable
-          onPress={() => onStartCall?.('audio')}
+          onPress={() => startCall('audio')}
           disabled={
             !canStartAudio ||
             (activeSession != null && activeSession.channel !== 'chat')
@@ -2018,6 +2337,24 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
           <View style={styles.loading}>
             <LoadingIndicator size={48} />
           </View>
+        ) : loadError ? (
+          // See `loadError`'s own docblock above: distinct from `empty` on
+          // purpose, so a failed fetch never reads as "nothing has ever
+          // happened here".
+          <View style={[styles.loading, styles.loadErrorGap]}>
+            <Text allowFontScaling style={styles.emptyName}>
+              Couldn&apos;t load this chat
+            </Text>
+            <View style={styles.loadErrorRetry}>
+              <Button
+                label="Try Again"
+                onPress={() => {
+                  void refetchMessages();
+                  void refetchThreads();
+                }}
+              />
+            </View>
+          </View>
         ) : empty ? (
           /*
            * An entrance, because this is the moment the member learns a real
@@ -2057,8 +2394,15 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
             header={header}
             footer={footer}
             onScroll={onTranscriptScroll}
+            onViewableItemsChanged={onViewableItemsChanged}
           />
         )}
+
+        <PageDownButton
+          visible={scrolledAwayFromLatest}
+          count={unreadBelow}
+          onPress={scrollToLatest}
+        />
 
         {/*
          * The search scrim is GONE, with the expansion it existed for.
@@ -2183,10 +2527,13 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
           ) : null}
 
           <Composer
+            conversationId={conversationId}
             onSend={onSend}
             onSendVoice={onSendVoice}
             onSendImage={onSendImage}
             onTyping={notifyTyping}
+            onRecording={notifyRecording}
+            onRecordingEnded={notifyRecordingEnded}
             disabled={
               conversationId === undefined ||
               chatClosed ||
@@ -2327,12 +2674,12 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
         title={
           theyOpenedTheChat
             ? `Hey, ${name} wants to have a chat with you`
-            : `Hey — ${name} is here`
+            : `Hey, ${name} is here`
         }
         body={
           theyOpenedTheChat
-            ? 'Keep it kind — no sexual or abusive talk. You are only charged once you both start.'
-            : 'They are ready when you are. Keep it kind — no sexual or abusive talk. You are only charged once you both start.'
+            ? 'Keep it kind. No sexual or abusive talk. You are only charged once you both start.'
+            : 'They are ready when you are. Keep it kind. No sexual or abusive talk. You are only charged once you both start.'
         }
         cancelLabel="Decline"
         confirmLabel="Start session"
@@ -2358,7 +2705,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
               onError: err => {
                 const msg = err instanceof Error ? err.message : '';
                 if (msg.toLowerCase().includes('insufficient')) {
-                  setNotice('Your balance is empty — top up to keep going.');
+                  setNotice('Your balance is empty. Top up to keep going.');
                   openRefill();
                   return;
                 }
@@ -2418,7 +2765,21 @@ interface TranscriptProps {
   header: () => React.ReactElement;
   footer: () => React.ReactElement;
   onScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  onViewableItemsChanged: (info: { viewableItems: ViewToken<TranscriptRow>[] }) => void;
 }
+
+/*
+ * "On screen" for read-receipt purposes (M1): 60% of the bubble's own area
+ * inside the viewport, not merely brushing an edge — the same bar FlatList's
+ * docs recommend for "the user actually saw this", and generous enough that a
+ * tall image/voice bubble that fills most of the screen still counts once its
+ * majority is visible, rather than needing to be scrolled fully past.
+ * Module-level and never recreated: FlashList's own docs say changing
+ * `viewabilityConfig` on the fly is not supported.
+ */
+const UNREAD_VIEWABILITY_CONFIG: ViewabilityConfig = {
+  itemVisiblePercentThreshold: 60,
+};
 
 const Transcript = memo(function TranscriptView({
   listRef,
@@ -2427,9 +2788,18 @@ const Transcript = memo(function TranscriptView({
   header,
   footer,
   onScroll,
+  onViewableItemsChanged,
 }: TranscriptProps) {
   const styles = useStyles(makeStyles);
-  const listPad = useListPad();
+  // The STRUCTURAL part of the pad only — space.md plus the dock's own
+  // measured height, neither of which jumps discretely. The keyboard-lift
+  // portion (`bodyInset`) is `AnimatedBodyInset`, a real child in `header`
+  // (the visual-bottom slot on this inverted list) rather than a value here,
+  // because it DOES change discretely and `contentContainerStyle` cannot be
+  // animated without wrapping FlashList in `Animated.createAnimatedComponent`
+  // — which breaks `scrollToOffset`'s imperative ref (M18, audit todo).
+  const dockHeight = useDockHeight();
+  const basePad = TOKENS.space.md + dockHeight;
   return (
     <FlashList
       ref={listRef}
@@ -2441,11 +2811,13 @@ const Transcript = memo(function TranscriptView({
       renderItem={renderItem}
       ListHeaderComponent={header}
       ListFooterComponent={footer}
-      contentContainerStyle={[styles.list, { paddingTop: listPad }]}
+      contentContainerStyle={[styles.list, { paddingTop: basePad }]}
       keyboardDismissMode="interactive"
       keyboardShouldPersistTaps="handled"
       onScroll={onScroll}
       scrollEventThrottle={16}
+      viewabilityConfig={UNREAD_VIEWABILITY_CONFIG}
+      onViewableItemsChanged={onViewableItemsChanged}
       // Two recycle pools: message bubbles and call-log rows have very
       // different heights and layouts. Keeping them separate prevents
       // FlashList from handing a recycled bubble cell to a call row (or
@@ -2503,6 +2875,94 @@ function DockFrost({ children }: { children: React.ReactNode }) {
 function BarSpacer() {
   const barHeight = useBarHeight();
   return <View style={{ height: barHeight }} />;
+}
+
+/**
+ * The keyboard-lift portion of the transcript's bottom padding, animated —
+ * unlike `Transcript`'s own static pad (`TOKENS.space.md + dockHeight`),
+ * which `contentContainerStyle` still carries as a plain style object
+ * (`FlashList` cannot be `Animated.createAnimatedComponent`-wrapped without
+ * losing `scrollToOffset`'s imperative ref, per M18 in the audit).
+ *
+ * `bodyInset` toggling `keyboardUp ? imeSpace : 0` is correct arithmetic (see
+ * `imeGeometry.ts`), but applying it as a discrete, unanimated number produces
+ * exactly the artefact it was fixed to remove: FlashList recalculates its
+ * scroll position in the same frame the value changes, which reads as the
+ * transcript reflowing — a day divider popping in or out — right as the
+ * keyboard finishes rising back from the emoji panel (Amit, 2026-09-18: "the
+ * whole viewport jerks and reloads"). Telegram's own transition is frame-synced
+ * to the IME's native animation; the closest equivalent available here is to
+ * animate the JS-side number itself over the same 250ms keyboard cubic already
+ * used for the composer's own multi-line growth, so the pad grows/shrinks
+ * alongside the keyboard/panel swap instead of snapping.
+ */
+function AnimatedBodyInset() {
+  const bodyInset = useBodyInset();
+  const height = useSharedValue(bodyInset);
+  useEffect(() => {
+    height.value = withTiming(bodyInset, {
+      duration: M3.duration.medium1,
+      easing: KEYBOARD_CUBIC,
+    });
+  }, [bodyInset, height]);
+  const style = useAnimatedStyle(() => ({ height: height.value }));
+  return <Animated.View style={style} />;
+}
+
+/**
+ * The page-down button (2026-09-17 audit, Amit's call on the Telegram-parity
+ * sweep: "Match Telegram" — see the force-scroll effect's own docblock for
+ * the rule this button is the other half of).
+ *
+ * `useListPad()`, not `useComposerInset()`: the button floats just clear of
+ * the newest message, and `listPad` is the exact number the transcript
+ * already reserves for that (dock height + the keyboard lift), while
+ * `composerInset` is only the dock's OWN internal bottom padding — using it
+ * here would park the button behind the dock instead of above it. A leaf for
+ * the same reason `Transcript`/`DockStack`/`DockFrost`/`BarSpacer` are: only
+ * this small component re-renders when the keyboard or the dock's height
+ * changes, not the whole screen (`__tests__/contract.test.ts`, "keeps the
+ * owner holding the handle").
+ */
+function PageDownButton({
+  visible,
+  count,
+  onPress,
+}: {
+  visible: boolean;
+  count: number;
+  onPress: () => void;
+}) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
+  const listPad = useListPad();
+  if (!visible) {
+    return null;
+  }
+  return (
+    <Animated.View
+      entering={pageDownIn}
+      exiting={pageDownOut}
+      style={[styles.pageDown, { bottom: listPad + TOKENS.space.sm }]}
+      pointerEvents="box-none">
+      <Pressable
+        onPress={onPress}
+        testID="chat-pagedown"
+        accessibilityLabel={
+          count > 0 ? `${count} new messages, scroll to latest` : 'Scroll to latest'
+        }
+        press="chip"
+        highlight="dim"
+        shape="circle"
+        size={40}
+        style={styles.pageDownButton}>
+        <View style={styles.pageDownGlyph}>
+          <Icon name="arrowUp" size={TOKENS.icon.md} color={theme.color.text.secondary} />
+        </View>
+      </Pressable>
+      <Badge count={count} testID="chat-pagedown-badge" />
+    </Animated.View>
+  );
 }
 
 const makeStyles = (t: Theme) => StyleSheet.create({
@@ -2667,6 +3127,34 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     bottom: 0,
   },
   /*
+   * Right-aligned on the same `md` (16) gutter the transcript's own content
+   * column uses (see `list` below), so its outer edge lines up with a bubble's.
+   * `bottom` is set inline per-render from `listPad` — see `PageDownButton`.
+   */
+  pageDown: {
+    position: 'absolute',
+    right: TOKENS.space.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // `bg/raised`: a surface floating over the transcript, not part of the dock
+  // or the wallpaper beneath it — the same role the extend card's own white
+  // plate carries, at `elevation.composer` rather than `.card` because this
+  // sits at the dock's visual layer, right above it, not inside the list.
+  pageDownButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: t.color.bg.raised,
+    ...TOKENS.elevation.composer,
+  },
+  // `arrowUp` is the app's only vertical chevron (see icons.generated.ts); a
+  // page-DOWN button is the same glyph turned around, not a second icon.
+  pageDownGlyph: {
+    transform: [{ rotate: '180deg' }],
+  },
+  /*
    * The transcript's content column, and one half of the chat's horizontal grid.
    *
    * `md` (16) is the same token Composer's `row.paddingHorizontal` and the reply
@@ -2797,6 +3285,19 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   emptyName: {
     ...TOKENS.typography.headlineSmallEmphasized,
     color: t.color.text.primary,
+  },
+  // The failed-fetch state (loadError, above): same centered layout as
+  // `loading`, plus the gap `empty` already uses between its own stacked
+  // elements, and the same retry-button spacing App.tsx's boot-level error
+  // screen uses (`retryWrap`) so the app has one house style for "this
+  // failed, try again" rather than two.
+  loadErrorGap: {
+    gap: TOKENS.space.xs,
+    paddingHorizontal: TOKENS.space['2xl'],
+  },
+  loadErrorRetry: {
+    alignSelf: 'stretch',
+    paddingTop: TOKENS.space.xs,
   },
   emptyLine: {
     ...TOKENS.typography.bodyLarge,

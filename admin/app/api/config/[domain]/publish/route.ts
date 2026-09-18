@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { createSessionClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { founderAllowlistRow } from '@/lib/auth/founder';
 import { getDomain, validatePayload } from '@/lib/config-registry';
 
 const REQUIRED_PHRASE = 'publish to production';
@@ -35,23 +36,26 @@ export async function POST(
 
   const svc = createServiceClient();
 
-  const { data: allowed } = await svc
-    .schema('admin')
-    .from('founder_allowlist')
-    .select('email')
-    .eq('email', user.email)
-    .maybeSingle();
+  // Requires a verified Google identity, not just an email match — see
+  // admin/lib/auth/founder.ts. This is the single most consequential gate in
+  // the console (it promotes config to every user in production), so it
+  // getting the same treatment as the others is not optional.
+  const allowed = await founderAllowlistRow(user);
 
   if (!allowed) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   // Verify re-authentication via server-side admin_sessions record.
+  // `allowed.email`, not `user.email`: admin_sessions rows are written with
+  // the lowercase-normalised email (see /api/auth/reauth), so matching on the
+  // session's own casing would miss a real reauth the moment Google returns
+  // anything but lowercase.
   const { data: reauthRow } = await svc
     .schema('admin')
     .from('admin_sessions')
     .select('reauth_at')
-    .eq('email', user.email)
+    .eq('email', allowed.email)
     .order('reauth_at', { ascending: false })
     .limit(1)
     .maybeSingle();

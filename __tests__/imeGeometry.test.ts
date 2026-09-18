@@ -70,16 +70,36 @@ describe('IME geometry', () => {
     });
     expect(searching.bodyInset).toBe(KEYBOARD + NAV_BAR);
 
-    // Panel open WITHOUT search: the panel fills that space itself, so the dock
+    // Panel open, keyboard CONFIRMED gone (keyboardUp false, the real
+    // keyboardDidHide signal): the panel fills that space itself, so the dock
     // must not also be lifted or the two would stack.
-    const panelOnly = deriveImeGeometry({
+    const panelSettled = deriveImeGeometry({
+      ...BASE,
+      emojiPanelOpen: true,
+      keyboardHeight: KEYBOARD,
+      insetBottom: NAV_BAR,
+    });
+    expect(panelSettled.bodyInset).toBe(0);
+  });
+
+  it('does not drop the lift early when the panel opens (M-emoji, 2026-09-18)', () => {
+    // `toggleEmoji` sets `emojiPanelOpen` synchronously on the tap, but the
+    // real keyboard takes ~250-300ms longer to animate away — `keyboardUp`
+    // does not go false until `keyboardDidHide` actually fires. Gating
+    // `bodyInset` on `emojiPanelOpen` as well as `keyboardUp` used to zero the
+    // transcript's bottom padding the instant the tap landed, a quarter-second
+    // before the keyboard the padding was reserved for had actually gone —
+    // a visible reflow ("clicking emoji reloads the chat viewport"). `keyboardUp`
+    // alone is the real signal, so this transient state must still reserve the
+    // full keyboard space, exactly like the plain keyboard-up case.
+    const transitional = deriveImeGeometry({
       ...BASE,
       keyboardUp: true,
       emojiPanelOpen: true,
       keyboardHeight: KEYBOARD,
       insetBottom: NAV_BAR,
     });
-    expect(panelOnly.bodyInset).toBe(0);
+    expect(transitional.bodyInset).toBe(KEYBOARD + NAV_BAR);
   });
 
   it('pads the bottom only when the screen bottom is actually bare', () => {

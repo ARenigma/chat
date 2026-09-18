@@ -640,20 +640,27 @@ function RechargeForm({
           the legal instrument on the invoice Axionix issues. The clause that
           WAS load-bearing — "the pack price, not the base, is what leaves your
           account" — is load-bearing no longer, because the pack price is now
-          the largest figure on the card instead of being absent from it. */}
-      <Text allowFontScaling style={styles.rupeeNote}>
-        1 token = ₹1. You are charged in rupees at checkout.
-      </Text>
+          the largest figure on the card instead of being absent from it.
+
+          AND THE RATE LINE IS NOW GONE FROM THIS PAGE TOO (Amit, 2026-09-17:
+          "remove 1 rs = 1 token in recharge screen .. token is nowhere to be
+          mentioned ever at all please in app"). The compact sheet dropped it on
+          2026-09-12 and this page kept it on the argument that somebody who
+          wants the arithmetic comes here. That argument was about LAYOUT ROOM.
+          The word itself is the thing being retired: a member buys talk time in
+          rupees and is charged in rupees, so naming a second unit and then
+          immediately equating it to the first only invents a currency to
+          un-invent it. Every figure on this page is already a ₹ figure. */}
       {/* Two reassurances, one about time and one about reversibility:
           money does not rot, and the purchase is final. Both resolve common
           questions before Pay is tapped. "Money you add" scopes the expiry
           claim to purchases only — ADR-0021 notes promo balance may carry an
           expiry, and the balance displayed above is the sum of both. */}
-      <Text allowFontScaling style={styles.neverExpiresNote}>
+      <Text allowFontScaling style={[styles.neverExpiresNote, styles.noteLead]}>
         Money you add never expires.
       </Text>
       <Text allowFontScaling style={styles.neverExpiresNote}>
-        All purchases are final — no refunds.
+        All purchases are final. No refunds.
       </Text>
     </View>
   );
@@ -940,24 +947,27 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.labelMediumEmphasized,
       color: t.color.text.accent,
     },
-    rupeeNote: {
-      ...TOKENS.typography.bodySmall,
-      color: t.color.text.tertiary,
-      paddingTop: TOKENS.space.xs,
-    },
-    // Same fine-print role as `rupeeNote` — bodySmall on tertiary ink — and
-    // deliberately no louder. It is a reassurance, not an offer, and a quiet
-    // line answers "does my unused balance rot?" as well as a loud one would.
+    // Fine print: bodySmall on tertiary ink, and deliberately no louder. These
+    // are reassurances, not offers, and a quiet line answers "does my unused
+    // balance rot?" as well as a loud one would.
     //
-    // No paddingTop of its own, unlike `rupeeNote`: `form`'s 12dp gap already
-    // sits between the two notes, and `rupeeNote`'s own 8dp on top puts 20dp
-    // between the grid and the pair. 12 inside against 20 outside is what makes
-    // them read as one block of fine print rather than two unrelated asides —
-    // m3.material.io/foundations/layout/understanding-layout/spacing, where
-    // proximity is the grouping signal and spacing is not scaled with the text.
+    // No paddingTop of its own — `noteLead` below carries it for the first line
+    // only. `form`'s 12dp gap sits between the two notes and the lead's 8dp on
+    // top puts 20dp between the grid and the pair. 12 inside against 20 outside
+    // is what makes them read as one block of fine print rather than two
+    // unrelated asides — m3.material.io/foundations/layout/understanding-layout/spacing,
+    // where proximity is the grouping signal and spacing is not scaled with the
+    // text. Applying the 8dp to `neverExpiresNote` itself instead would put 20
+    // both inside and outside and collapse the group.
     neverExpiresNote: {
       ...TOKENS.typography.bodySmall,
       color: t.color.text.tertiary,
+    },
+    // The 8dp that used to ride on the deleted rate line (2026-09-17). The line
+    // went; the gap it opened between the pack grid and the fine print was
+    // doing separate work and stays.
+    noteLead: {
+      paddingTop: TOKENS.space.xs,
     },
   });
 

@@ -1,124 +1,118 @@
 import {
-  PRESENCE_OPTIONS,
-  presenceDetail,
+  offeredChannelsLine,
   presenceForSpeech,
   readPresence,
 } from '../src/lib/presence';
-import type { PresenceChoice } from '../src/lib/database.types';
 
 /**
- * The clock is passed explicitly for the same reason `datetime.test.ts` does it:
- * the interesting cases here sit either side of a bucket boundary in
- * `listStamp`, and a test that cannot place an instant on both sides of one is
- * testing nothing.
+ * AVAILABILITY REPLACED PRESENCE (Amit, 2026-09-17).
  *
- * What these assertions are actually defending is a single direction: nobody is
- * ever shown as present who did not say they were. Every unknown, every null and
- * every disagreement between the two stored columns has to resolve to silence,
- * so most of what follows is the closed direction rather than the happy path.
+ * This file used to defend a single direction: nobody is ever shown as present
+ * who did not say they were, so every unknown, every null and every
+ * disagreement between `presence` and `last_active_at` had to resolve to
+ * silence. That rule existed because there were TWO stored columns describing
+ * roughly the same thing and they could contradict each other.
+ *
+ * There is one now. `is_available` is the provider's master switch, and it is
+ * the only input: master off reads offline everywhere and routes the member to
+ * Notify, master on reads online whatever the three channel switches say. The
+ * old `presence` column is deliberately left in the schema, unread, so the
+ * enum, `presence_visible` and `touch_presence()` can be dropped in a later
+ * cleanup rather than in the same change that stopped reading them.
+ *
+ * The closed direction still matters and is still most of what follows, but the
+ * unknown is now a single unloaded boolean rather than a pair that can disagree.
+ * The last-seen stamp cases are gone with the column: `touch_presence()` was
+ * never once called from the client, so `last_active_at` was never written, and
+ * every "Last seen" this app rendered was formatting a value nobody set.
  */
-const at = (y: number, m: number, d: number, h = 12, min = 0): string =>
-  new Date(y, m - 1, d, h, min).toISOString();
 
-const NOW = new Date(2026, 7, 22, 14, 30);
-
-describe('readPresence renders only what was declared', () => {
-  it('lights the dot for here, and nothing else does', () => {
-    expect(readPresence('here', null, NOW)).toEqual({ here: true, line: 'Here now' });
-    expect(readPresence('away', null, NOW).here).toBe(false);
-    expect(readPresence('hidden', null, NOW).here).toBe(false);
+describe('readPresence is a reading of the master switch, and nothing else', () => {
+  it('lights the dot when the provider is open', () => {
+    expect(readPresence(true)).toEqual({ here: true, line: 'Here now' });
   });
 
-  it('says Away when there is no stamp to be more specific with', () => {
-    expect(readPresence('away', null, NOW)).toEqual({ here: false, line: 'Away' });
+  it('says Away when they are closed, rather than inventing a stamp', () => {
+    // Not "Last seen ...": nothing has ever written last_active_at, so a stamp
+    // would be a specific claim made out of an unset column.
+    expect(readPresence(false)).toEqual({ here: false, line: 'Away' });
   });
 
-  it('prefers a last-seen stamp over the bare word', () => {
-    // Consented by construction: the stamp is null in the view unless
-    // `presence_visible` is on, so having one means they published it.
-    const read = readPresence('away', at(2026, 8, 22, 9, 15), NOW);
-    expect(read.here).toBe(false);
-    expect(read.line).toMatch(/^Last seen /);
+  it('fails closed on a profile that has not loaded', () => {
+    // The directory renders before the row arrives. An unknown must never light
+    // the dot, because a lit dot is what a member spends tokens against.
+    expect(readPresence(null).here).toBe(false);
+    expect(readPresence(undefined).here).toBe(false);
   });
 
-  it('formats a stamp from an earlier day as a date, not a time', () => {
-    // The boundary that matters: 'Last seen 09:15' about last Tuesday is a lie
-    // by omission, and `listStamp` is what stops it.
-    const sameDay = readPresence('away', at(2026, 8, 22, 9, 15), NOW).line;
-    const lastWeek = readPresence('away', at(2026, 8, 12, 9, 15), NOW).line;
-    expect(sameDay).not.toBe(lastWeek);
-    expect(lastWeek).toMatch(/^Last seen /);
-  });
-
-  it('publishes nothing at all for hidden', () => {
-    expect(readPresence('hidden', null, NOW)).toEqual({ here: false, line: null });
-  });
-
-  it('ignores a stamp that contradicts a hidden choice', () => {
-    // `presence` and `presence_visible` are stored independently, so they can
-    // disagree: a row written before 012, or a client that wrote one and not the
-    // other. Hidden wins, because hidden is the choice made to conceal.
-    expect(readPresence('hidden', at(2026, 8, 22, 9, 15), NOW).line).toBeNull();
-  });
-
-  it('fails closed on a peer that has not loaded', () => {
-    // Not the same as absent: this is the case where the query is in flight, and
-    // guessing 'here' for one frame is the one guess that must never happen.
-    expect(readPresence(null, null, NOW)).toEqual({ here: false, line: null });
-    expect(readPresence(undefined, at(2026, 8, 22), NOW)).toEqual({
-      here: false,
-      line: null,
-    });
-  });
-
-  it('treats an empty stamp as no stamp rather than formatting it', () => {
-    expect(readPresence('away', '', NOW).line).toBe('Away');
+  it('publishes no line at all for an unknown, rather than guessing Away', () => {
+    // Null is a real case and distinct from closed: the chat header renders the
+    // name alone rather than reserving a row that appears and disappears.
+    expect(readPresence(null).line).toBeNull();
+    expect(readPresence(undefined).line).toBeNull();
   });
 });
 
 describe('presenceForSpeech', () => {
   it('lowercases the line so it reads inside a sentence', () => {
-    // ProviderRow speaks 'Message Ada, here now, rated 4.8...'. Title case mid
-    // sentence is announced as emphasis by some screen readers.
-    expect(presenceForSpeech(readPresence('here', null, NOW))).toBe('here now');
+    expect(presenceForSpeech(readPresence(true))).toBe('here now');
+    expect(presenceForSpeech(readPresence(false))).toBe('away');
   });
 
   it('stays null when there is nothing to say', () => {
-    expect(presenceForSpeech(readPresence('hidden', null, NOW))).toBeNull();
+    expect(presenceForSpeech(readPresence(null))).toBeNull();
   });
 });
 
-describe('the options offered are the options the column accepts', () => {
-  it('offers every value of the enum and no more', () => {
-    // The control is exhaustive over the type, checked here rather than trusted:
-    // a fourth enum value added in SQL and mirrored into `PresenceChoice` would
-    // otherwise ship as a state the user can hold and never choose.
-    const offered = PRESENCE_OPTIONS.map(o => o.value).sort();
-    const all: PresenceChoice[] = ['away', 'here', 'hidden'];
-    expect(offered).toEqual(all.sort());
+describe('offeredChannelsLine names the limit, and says nothing when there is none', () => {
+  const offer = (chat: boolean, audio: boolean, video: boolean) => ({
+    chat_enabled: chat,
+    audio_enabled: audio,
+    video_enabled: video,
   });
 
-  it('runs most public to least, which is the scale a reader is scanning', () => {
-    expect(PRESENCE_OPTIONS.map(o => o.value)).toEqual(['here', 'away', 'hidden']);
+  it('says nothing when all three are offered, because that is the default', () => {
+    // A line on every card would be noise. It earns its row only by excluding
+    // something the member would otherwise reasonably expect.
+    expect(offeredChannelsLine(offer(true, true, true))).toBeNull();
   });
 
-  it('gives every option a consequence in the second person', () => {
-    for (const option of PRESENCE_OPTIONS) {
-      expect(option.detail.length).toBeGreaterThan(0);
-      expect(option.detail.endsWith('.')).toBe(true);
-      // The house rule, and the reason it is asserted rather than reviewed: an
-      // em dash in this copy reaches a screen.
-      // The character itself, written as an escape so a future repo-wide
-      // punctuation sweep cannot rewrite this assertion into one that forbids
-      // commas. That happened once: the sweep replaced the literal here and the
-      // test then failed on copy that legitimately contains a comma.
-      expect(option.detail).not.toContain('\u2014');
-      expect(option.label).not.toContain('\u2014');
+  it('names a single channel', () => {
+    expect(offeredChannelsLine(offer(true, false, false))).toBe('Chat only');
+    expect(offeredChannelsLine(offer(false, true, false))).toBe(
+      'Voice calls only',
+    );
+    expect(offeredChannelsLine(offer(false, false, true))).toBe(
+      'Video calls only',
+    );
+  });
+
+  it('names both when two are offered, in chat, voice, video order', () => {
+    // The same order the member's own action buttons sit in, so the sentence
+    // and the row underneath it cannot read as two different answers.
+    expect(offeredChannelsLine(offer(true, true, false))).toBe(
+      'Chat and voice calls only',
+    );
+    expect(offeredChannelsLine(offer(true, false, true))).toBe(
+      'Chat and video calls only',
+    );
+    expect(offeredChannelsLine(offer(false, true, true))).toBe(
+      'Voice and video calls only',
+    );
+  });
+
+  it('carries no em-dash, which contract.test forbids in member-facing copy', () => {
+    const lines = [
+      offeredChannelsLine(offer(true, false, false)),
+      offeredChannelsLine(offer(false, true, false)),
+      offeredChannelsLine(offer(false, false, true)),
+      offeredChannelsLine(offer(true, true, false)),
+      offeredChannelsLine(offer(true, false, true)),
+      offeredChannelsLine(offer(false, true, true)),
+    ];
+    for (const line of lines) {
+      expect(line).not.toBeNull();
+      expect(line).not.toMatch(/—/);
     }
-  });
-
-  it('resolves a detail for every choice, and falls back to the quietest', () => {
-    expect(presenceDetail('here')).toBe(PRESENCE_OPTIONS[0]?.detail);
-    expect(presenceDetail('hidden')).toBe(PRESENCE_OPTIONS[2]?.detail);
   });
 });

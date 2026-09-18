@@ -1,0 +1,383 @@
+{
+  "note": "Vocabulary and word-shapes for the names the app suggests. Source of truth for src/lib/handles.generated.ts via scripts/gen-handles.mjs. Never edit the generated file; edit this and run `npm run handles`.",
+  "voiceNotes": {
+    "calm": "A provider's stage name is what a stranger reads at 2am while looking for someone steady. Weather, water, kitchens, courtyards, trees and birds. No numbers in three of its four shapes.",
+    "pop": "A member's username is a handle: theirs, playful, and nobody picks a listener by reading it. Indian popular culture, kept to ordinary words that happen to carry weight (masala, jugaad, googly, jalebi) and to fictional names, never a performer's."
+  },
+  "limits": {
+    "minLength": 3,
+    "maxLength": 24,
+    "minWordLength": 3,
+    "maxWordLength": { "adjective": 9, "noun": 10, "suffix": 6 },
+    "number": { "min": 10, "max": 999 }
+  },
+  "banned": {
+    "substrings": [
+      "god",
+      "devi",
+      "shiva",
+      "allah",
+      "jesus",
+      "brahmin",
+      "dalit",
+      "sexy",
+      "hot",
+      "babe",
+      "baby",
+      "queen",
+      "king",
+      "boss"
+    ],
+    "exact": [
+      "rahul",
+      "simran",
+      "anjali",
+      "priya",
+      "raj",
+      "amit",
+      "ravi",
+      "vijay",
+      "geet"
+    ]
+  },
+  "voices": {
+    "calm": {
+      "domains": {
+        "weather": {
+          "adjective": [
+            "Quiet",
+            "Warm",
+            "Steady",
+            "Gentle",
+            "Kind",
+            "Calm",
+            "Patient",
+            "Bright",
+            "Soft",
+            "Still",
+            "Open",
+            "Clear"
+          ],
+          "noun": [
+            "Monsoon",
+            "Sunrise",
+            "Sunset",
+            "Twilight",
+            "Drizzle",
+            "Cloudburst",
+            "Breeze",
+            "Shade"
+          ]
+        },
+        "light": {
+          "adjective": [
+            "Mellow",
+            "Sunny",
+            "Easy",
+            "Cosy",
+            "Golden",
+            "Silver",
+            "Amber",
+            "Dusky",
+            "Misty",
+            "Hushed",
+            "Slow",
+            "Tender"
+          ],
+          "noun": ["Lantern", "Ember", "Firefly"],
+          "suffix": ["Light", "Glow", "Song", "Line"]
+        },
+        "water": {
+          "adjective": [
+            "Sweet",
+            "Fresh",
+            "Wide",
+            "Deep",
+            "Light",
+            "Little",
+            "Lazy",
+            "Breezy",
+            "Rainy",
+            "Velvet",
+            "Honey",
+            "Wild"
+          ],
+          "noun": [
+            "Harbour",
+            "River",
+            "Haven",
+            "Lake",
+            "Delta",
+            "Backwater",
+            "Estuary",
+            "Lagoon",
+            "Island",
+            "Ghat",
+            "Anchor",
+            "Compass"
+          ],
+          "suffix": ["Side", "Fall", "Rest"]
+        },
+        "land": {
+          "noun": [
+            "Meadow",
+            "Orchard",
+            "Valley",
+            "Foothill",
+            "Plateau",
+            "Dune",
+            "Harvest",
+            "Paddy",
+            "Mustard",
+            "Grove",
+            "Canopy"
+          ],
+          "suffix": ["Stone", "Path"]
+        },
+        "trees": {
+          "noun": [
+            "Willow",
+            "Banyan",
+            "Peepal",
+            "Neem",
+            "Tulsi",
+            "Bamboo",
+            "Teak",
+            "Sandal",
+            "Fern",
+            "Moss",
+            "Lotus",
+            "Jasmine",
+            "Marigold"
+          ],
+          "suffix": ["Wood", "Bloom"]
+        },
+        "birds": {
+          "noun": ["Sunbird", "Koel", "Heron", "Egret", "Sparrow", "Mynah"],
+          "suffix": ["Nest"]
+        },
+        "kitchen": {
+          "noun": [
+            "Chai",
+            "Saffron",
+            "Mango",
+            "Guava",
+            "Cardamom",
+            "Jaggery",
+            "Almond",
+            "Coconut",
+            "Ginger",
+            "Clove",
+            "Kettle",
+            "Teapot"
+          ]
+        },
+        "home": {
+          "noun": [
+            "Veranda",
+            "Courtyard",
+            "Terrace",
+            "Balcony",
+            "Window",
+            "Doorway",
+            "Hearth",
+            "Bazaar"
+          ]
+        }
+      },
+      "templates": [
+        { "id": "adjective_noun", "slots": ["adjective", "noun"] },
+        { "id": "noun_noun", "slots": ["noun", "noun"] },
+        { "id": "noun_suffix", "slots": ["noun", "suffix"] },
+        {
+          "id": "adjective_noun_number",
+          "slots": ["adjective", "noun", "number"]
+        }
+      ]
+    },
+    "pop": {
+      "domains": {
+        "cinema": {
+          "adjective": [
+            "Filmi",
+            "Jhakaas",
+            "Bindaas",
+            "Rangeela",
+            "Deewana",
+            "Dhinchak",
+            "Zabardast",
+            "Superhit",
+            "Retro",
+            "Vintage",
+            "Classic"
+          ],
+          "noun": [
+            "Baazigar",
+            "Sholay",
+            "Talkies",
+            "Interval",
+            "Masala",
+            "Tashan",
+            "Jugaad",
+            "Flashback",
+            "Trailer",
+            "Sequel",
+            "Cameo",
+            "Matinee",
+            "Dialogue",
+            "Screenplay",
+            "Poster",
+            "Marquee",
+            "Gabbar",
+            "Mogambo",
+            "Circuit",
+            "Basanti",
+            "Chulbul",
+            "Shehzada",
+            "Jaadu"
+          ],
+          "suffix": ["Giri", "Panti", "Tales"]
+        },
+        "music": {
+          "adjective": ["Solid", "Kadak", "Mast", "Sunehra"],
+          "noun": [
+            "Qawwali",
+            "Dhol",
+            "Tabla",
+            "Sitar",
+            "Veena",
+            "Sarod",
+            "Bansuri",
+            "Thumri",
+            "Antara",
+            "Mukhda",
+            "Taal",
+            "Raag",
+            "Ghazal",
+            "Dhun",
+            "Alaap",
+            "Sargam",
+            "Mridang",
+            "Dholak",
+            "Shehnai",
+            "Tarana"
+          ],
+          "suffix": ["Vibes", "Mode"]
+        },
+        "food": {
+          "adjective": [
+            "Meetha",
+            "Teekha",
+            "Namkeen",
+            "Garam",
+            "Thanda",
+            "Chatpata"
+          ],
+          "noun": [
+            "Jalebi",
+            "Samosa",
+            "Pakoda",
+            "Chaat",
+            "Bhel",
+            "Vada",
+            "Idli",
+            "Dosa",
+            "Thali",
+            "Biryani",
+            "Kulfi",
+            "Lassi",
+            "Falooda",
+            "Rasgulla",
+            "Barfi",
+            "Ladoo",
+            "Halwa",
+            "Chutney",
+            "Achaar",
+            "Paratha",
+            "Kachori",
+            "Khichdi",
+            "Sev",
+            "Papad",
+            "Rabri"
+          ],
+          "suffix": ["Wala", "Club"]
+        },
+        "places": {
+          "adjective": ["Desi", "Local", "Pucca", "Bada", "Purana"],
+          "noun": [
+            "Bazaar",
+            "Galli",
+            "Chowk",
+            "Nukkad",
+            "Mohalla",
+            "Haveli",
+            "Dhaba",
+            "Chowpatty",
+            "Maidan",
+            "Junction",
+            "Platform"
+          ],
+          "suffix": ["Zone", "Core"]
+        },
+        "festivals": {
+          "adjective": ["Jhatpat", "Ekdum"],
+          "noun": [
+            "Rangoli",
+            "Patang",
+            "Phuljhadi",
+            "Dhamaal",
+            "Baraat",
+            "Sangeet",
+            "Mehendi",
+            "Dandiya",
+            "Garba",
+            "Anaar"
+          ],
+          "suffix": ["Squad"]
+        },
+        "cricket": {
+          "noun": [
+            "Googly",
+            "Doosra",
+            "Yorker",
+            "Bouncer",
+            "Sixer",
+            "Century",
+            "Innings",
+            "Maiden",
+            "Wicket",
+            "Stumps",
+            "Gully",
+            "Powerplay"
+          ],
+          "suffix": ["Fan", "Baaz"]
+        },
+        "folklore": {
+          "noun": [
+            "Amrit",
+            "Vimana",
+            "Samudra",
+            "Kalpataru",
+            "Chakravyuh",
+            "Mayavi",
+            "Kavach"
+          ]
+        },
+        "nature": {
+          "noun": ["Monsoon", "Peacock", "Mango", "Neem"]
+        }
+      },
+      "templates": [
+        { "id": "adjective_noun", "slots": ["adjective", "noun"] },
+        { "id": "noun_noun", "slots": ["noun", "noun"] },
+        { "id": "noun_suffix", "slots": ["noun", "suffix"] },
+        {
+          "id": "adjective_noun_number",
+          "slots": ["adjective", "noun", "number"]
+        },
+        { "id": "noun_noun_number", "slots": ["noun", "noun", "number"] },
+        { "id": "noun_suffix_number", "slots": ["noun", "suffix", "number"] }
+      ]
+    }
+  }
+}

@@ -1,8 +1,10 @@
 import React, { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
+import Animated from 'react-native-reanimated';
+import { fadeSwapFast, fadeSwapOutFast } from '../theme/motion';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
-import { selectPeerTyping, useStore } from '../store/useStore';
+import { selectPeerActivity, useStore } from '../store/useStore';
 import { TypingIndicator } from './TypingIndicator';
 
 /**
@@ -16,14 +18,30 @@ import { TypingIndicator } from './TypingIndicator';
  */
 function PeerTypingView({ name }: { name: string }) {
   const styles = useStyles(makeStyles);
-  const typing = useStore(selectPeerTyping);
+  const activity = useStore(selectPeerActivity);
 
-  if (!typing) {
+  if (activity === null) {
     return null;
   }
 
   return (
-    <View style={styles.row}>
+    /*
+     * Keyed by `activity` (M14, 2026-09-17 audit): without it, a flip between
+     * "is typing" and "is recording" was a hard cut, and the bubble itself
+     * popped in/out with no motion at all. `fadeSwapFast`/`fadeSwapOutFast` —
+     * the same pair the Notify button and HeaderSubtitle's own status line
+     * use — fits the frequency here: this flickers on and off many times
+     * within one live conversation, the "near-imperceptible" tier the
+     * project's own motion gate calls for, not a heavier bubble-arrival
+     * entrance. Not `entering` on a recycled FlashList row (the thing to
+     * never do): this is the list's `ListHeaderComponent`, a single
+     * non-recycled slot, not a virtualized item.
+     */
+    <Animated.View
+      key={activity}
+      entering={fadeSwapFast}
+      exiting={fadeSwapOutFast}
+      style={styles.row}>
       {/* In a bubble, at the peer's bubble position — and "the peer's bubble
           position" is now the content edge, which is why the avatar that used
           to sit here is gone.
@@ -37,9 +55,15 @@ function PeerTypingView({ name }: { name: string }) {
           The `bg/sunken` fill Turn.tsx uses is what makes this read as a bubble
           the other person is about to fill. */}
       <View style={styles.bubble}>
-        <TypingIndicator label={`${name} is typing`} />
+        <TypingIndicator
+          label={
+            activity === 'recording'
+              ? `${name} is recording`
+              : `${name} is typing`
+          }
+        />
       </View>
-    </View>
+    </Animated.View>
   );
 }
 

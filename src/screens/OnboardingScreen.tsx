@@ -1644,7 +1644,7 @@ export function OnboardingScreen({ onDone }: Props) {
                       allowFontScaling
                       accessibilityLiveRegion="polite"
                       style={styles.resentNote}>
-                      New code sent — the previous one no longer works.
+                      New code sent. The previous one no longer works.
                     </Text>
                   ) : null}
                   <View style={styles.codeActions}>

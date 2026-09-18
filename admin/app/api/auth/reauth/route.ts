@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { createSessionClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { founderAllowlistRow } from '@/lib/auth/founder';
 
 // POST /api/auth/reauth
 // Records a fresh reauth_at timestamp in admin.admin_sessions.
@@ -18,12 +19,12 @@ export async function POST(request: NextRequest) {
 
   const svc = createServiceClient();
 
-  const { data: allowed } = await svc
-    .schema('admin')
-    .from('founder_allowlist')
-    .select('email')
-    .eq('email', user.email)
-    .maybeSingle();
+  // Requires a verified Google identity, not just an email match — see
+  // admin/lib/auth/founder.ts. This route matters more than most: it is what
+  // stamps the reauth_at row that /api/config/[domain]/publish trusts as
+  // proof of a fresh Google sign-in, so a weak gate here would have let a
+  // hijacked session manufacture its own "recently reauthenticated" record.
+  const allowed = await founderAllowlistRow(user);
 
   if (!allowed) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
@@ -31,8 +32,12 @@ export async function POST(request: NextRequest) {
 
   const userAgent = request.headers.get('user-agent') ?? '';
 
+  // `allowed.email`, not `user.email`: it is the lowercase-normalised value
+  // migration 114 requires, and admin_sessions.email is a foreign key into
+  // founder_allowlist(email) — inserting the session's own casing would
+  // violate that FK the moment Google returns anything but lowercase.
   const { error } = await svc.schema('admin').from('admin_sessions').insert({
-    email: user.email,
+    email: allowed.email,
     reauth_at: new Date().toISOString(),
     user_agent: userAgent,
   });

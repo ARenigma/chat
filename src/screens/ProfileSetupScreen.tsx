@@ -16,7 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { legalUrl } from '../lib/legal';
-import { isUsernameLocallyValid, usernameLocalStatus } from '../lib/username';
+import { USERNAME_MAX } from '../lib/username';
 import { USERNAME_SUGGESTION_HINT, suggestUsernames } from '../lib/stageName';
 import { CLAY_SEEDS, CLAY_IMAGES, type ClaySeed } from '../lib/clayAvatars';
 import { useAcceptAllPendingPolicies, usePendingPolicies } from '../api/policy';
@@ -24,8 +24,8 @@ import {
   AGE_BRACKETS,
   setMemberAgeBracket,
   setPreferredLanguages,
-  useCheckDisplayName,
   useClaimMemberProfile,
+  useUsernameVerdict,
   type AgeBracket,
 } from '../api/profileSetup';
 import {
@@ -215,7 +215,33 @@ export function ProfileSetupScreen({
     })();
   }, [languagesSaving, languages, advance]);
 
-  const [displayName, setDisplayName] = useState('');
+  /**
+   * Three handles to tap, a re-roll, and the first of them already in the
+   * field.
+   *
+   * This is a reversal, and the note it replaces argued the other way: the
+   * field used to open EMPTY, on the reasoning that "claiming is the point" and
+   * a member's own idea should get the first move. Amit, 2026-09-17: the
+   * suggestion goes in the field and stays editable. A blank required field is
+   * a creative task at the end of a form on both sides of this app, and the
+   * provider screen already opens filled for exactly that reason; a member who
+   * has their own idea types over it, which costs them one gesture, while a
+   * member who does not now has a complete, free, checked name without one.
+   *
+   * Lazy initial state, not `useState(suggestUsernames())`: the argument form
+   * re-runs the generator on every render and throws the result away, so the
+   * chips would be recomputed behind an unchanging set of labels.
+   */
+  const [suggestions, setSuggestions] = useState<string[]>(() =>
+    suggestUsernames(),
+  );
+  const [displayName, setDisplayName] = useState(() => suggestions[0] ?? '');
+  /**
+   * The last name THIS SCREEN put in the field, which is what makes re-roll
+   * safe to point at the field at all: a control labelled "Try another" may
+   * replace our own suggestion, and may not delete something the member typed.
+   */
+  const [offered, setOffered] = useState(() => displayName);
   const [avatarSeed, setAvatarSeed] = useState<ClaySeed | null>(null);
   const [termsChecked, setTermsChecked] = useState(false);
   /**
@@ -228,66 +254,73 @@ export function ProfileSetupScreen({
    */
   const [termsRefused, setTermsRefused] = useState(false);
 
-  const localOk = isUsernameLocallyValid(displayName);
-  const { data: nameCheck, isFetching: checkingName } = useCheckDisplayName(
-    displayName,
-    localOk,
-  );
+  const { verdict, retry: retryNameCheck } = useUsernameVerdict(displayName);
 
   const claim = useClaimMemberProfile();
   const { data: pending = [] } = usePendingPolicies();
   const acceptAll = useAcceptAllPendingPolicies();
 
-  const statusLine = useMemo(() => {
-    const local = usernameLocalStatus(displayName);
-    if (local === 'idle') {
-      return null;
-    }
-    if (local === 'too_short') {
-      return { text: 'At least 3 characters', tone: 'bad' as const };
-    }
-    if (local === 'invalid_chars') {
-      return { text: 'Letters, numbers, and underscores only', tone: 'bad' as const };
-    }
-    if (checkingName) {
-      return { text: 'Checking…', tone: 'muted' as const };
-    }
-    if (nameCheck?.status === 'available') {
-      return { text: 'Yay! great choice', tone: 'good' as const };
-    }
-    if (nameCheck?.status === 'taken') {
-      return { text: 'Oops! already taken', tone: 'bad' as const };
-    }
-    if (nameCheck?.status === 'invalid') {
-      return { text: nameCheck.message || 'Oops! already taken', tone: 'bad' as const };
-    }
-    return null;
-  }, [displayName, checkingName, nameCheck]);
-
   /**
-   * Three handles to tap, and a re-roll — the provider screen's interaction,
-   * with one deliberate difference.
+   * One line under the field, and every branch of it says something TRUE.
    *
-   * `ProviderApplicationScreen` opens its field FILLED with a suggestion,
-   * because a provider is being asked to invent a persona at the end of a long
-   * form and the blank field is where they stall (stageName.ts). A member is
-   * asked for a username on a short screen headed "Claim your username", and
-   * claiming is the point — so the field stays empty and their own idea gets
-   * the first move. The suggestions sit under it for the member who has none.
+   * `check_failed` is the branch worth reading. It is the network, not the
+   * name, and it gets its own words and its own colour (accent, tappable)
+   * rather than the danger red the taken branch wears — a member told "already
+   * taken" about a name that is free abandons it, and the mistake is invisible
+   * because both look like a verdict.
    *
-   * Lazy initial state, not `useState(suggestUsernames())`: the argument form
-   * re-runs the generator on every render and throws the result away, so the
-   * chips would be recomputed behind an unchanging set of labels.
+   * No motion on the swap. The animate-expo gate puts a keystroke-driven
+   * element in the "tens of times a day" tier, where the budget is under 150ms
+   * or nothing, and a message whose whole job is to be read the instant it is
+   * true has nothing to gain from a fade in front of it.
    */
-  const [suggestions, setSuggestions] = useState<string[]>(() => suggestUsernames());
+  const statusLine = useMemo(() => {
+    switch (verdict) {
+      case 'idle':
+        return null;
+      case 'too_short':
+        return { text: 'At least 3 characters', tone: 'bad' as const };
+      case 'invalid_chars':
+        return {
+          text: 'Letters, numbers, and underscores only',
+          tone: 'bad' as const,
+        };
+      case 'too_long':
+        return {
+          text: `Up to ${USERNAME_MAX} characters`,
+          tone: 'bad' as const,
+        };
+      case 'checking':
+        return { text: 'Checking…', tone: 'muted' as const };
+      case 'available':
+        return { text: 'Yay! great choice', tone: 'good' as const };
+      case 'taken':
+        return { text: 'Oops! already taken', tone: 'bad' as const };
+      case 'check_failed':
+        return {
+          text: "Couldn't check that name right now.",
+          tone: 'retry' as const,
+        };
+    }
+  }, [verdict]);
 
-  // Re-roll replaces the OFFER and never the field. The provider's re-roll
-  // overwrites its input because there the input is the suggestion; here the
-  // field may already hold something the member typed, and a control labelled
-  // "Try another" has no business deleting it.
-  const rerollSuggestions = useCallback(() => {
-    setSuggestions(suggestUsernames());
+  const chooseSuggestion = useCallback((name: string) => {
+    setDisplayName(name);
+    setOffered(name);
   }, []);
+
+  // Re-roll moves the field only when the field still holds the name we put
+  // there. Typed text survives it, which is the whole reason `offered` is
+  // tracked rather than comparing against the current chip row.
+  const rerollSuggestions = useCallback(() => {
+    const fresh = suggestUsernames();
+    setSuggestions(fresh);
+    const next = fresh[0];
+    if (next !== undefined && displayName.trim() === offered) {
+      setDisplayName(next);
+      setOffered(next);
+    }
+  }, [displayName, offered]);
 
   /**
    * The suggestion the member has in the field that came back bad.
@@ -301,12 +334,40 @@ export function ProfileSetupScreen({
    * THE SAME derived value as the status line under the field — so the two
    * cannot say different things about one name.
    *
-   * `tone === 'bad'` and not `nameCheck.status`: the status line is the thing
-   * the member reads, and this is it.
+   * `verdict === 'taken'` exactly, and not "anything that is not available":
+   * the strikethrough claims somebody else holds the name, which a failed
+   * check has not established.
    */
-  const rejectedName = statusLine?.tone === 'bad' ? displayName.trim() : null;
+  const rejectedName = verdict === 'taken' ? displayName.trim() : null;
 
-  const nameReady = localOk && nameCheck?.status === 'available';
+  /**
+   * The field's own label carries the verdict, because the verdict line is a
+   * separate node: TalkBack reads the edit field on focus and the live region
+   * when it changes, and a member who arrives at the field after the change has
+   * already been announced would otherwise hear an unqualified "Username".
+   */
+  const nameStateLabel = useMemo(() => {
+    switch (verdict) {
+      case 'idle':
+        return 'no name yet';
+      case 'too_short':
+        return 'too short, at least 3 characters';
+      case 'invalid_chars':
+        return 'letters, numbers and underscores only';
+      case 'too_long':
+        return `too long, up to ${USERNAME_MAX} characters`;
+      case 'checking':
+        return 'checking availability';
+      case 'available':
+        return 'available';
+      case 'taken':
+        return 'already taken';
+      case 'check_failed':
+        return 'could not be checked right now';
+    }
+  }, [verdict]);
+
+  const nameReady = verdict === 'available';
   const saving = claim.isPending || acceptAll.isPending;
 
   const onContinue = useCallback(async () => {
@@ -532,7 +593,8 @@ export function ProfileSetupScreen({
           placeholder="username"
           autoCapitalize="none"
           autoCorrect={false}
-          maxLength={24}
+          maxLength={USERNAME_MAX}
+          accessibilityLabel={`Username, ${nameStateLabel}`}
           testID="profile-setup-username"
         />
         {/* NOT moved into M3Field's supporting-text slot, deliberately. This is a
@@ -540,18 +602,42 @@ export function ProfileSetupScreen({
             with one error colour — folding it in would flatten "taken" and
             "available" into the same grey. It stays a sibling at bodyLarge. */}
         {statusLine ? (
-          <Text
-            allowFontScaling
-            style={[
-              styles.status,
-              statusLine.tone === 'good'
-                ? styles.statusGood
-                : statusLine.tone === 'bad'
-                  ? styles.statusBad
-                  : styles.statusMuted,
-            ]}>
-            {statusLine.text}
-          </Text>
+          <View style={styles.statusRow}>
+            <Text
+              allowFontScaling
+              // The verdict changes while the member's focus is in the field,
+              // so nothing moves a screen reader to this node on its own.
+              // `polite` queues the announcement behind whatever the keyboard
+              // is saying rather than cutting it off, which `assertive` would
+              // do on every keystroke that lands a new verdict.
+              accessibilityLiveRegion="polite"
+              testID="profile-setup-username-status"
+              style={[
+                styles.status,
+                statusLine.tone === 'good'
+                  ? styles.statusGood
+                  : statusLine.tone === 'bad'
+                    ? styles.statusBad
+                    : statusLine.tone === 'retry'
+                      ? styles.statusRetry
+                      : styles.statusMuted,
+              ]}>
+              {statusLine.text}
+            </Text>
+            {statusLine.tone === 'retry' ? (
+              <Pressable
+                onPress={retryNameCheck}
+                press="chip"
+                accessibilityRole="button"
+                accessibilityLabel="Check this username again"
+                testID="profile-setup-username-retry"
+                style={styles.statusRetryHit}>
+                <Text allowFontScaling style={styles.statusRetryLabel}>
+                  Try again
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
         ) : null}
 
         {/*
@@ -575,7 +661,7 @@ export function ProfileSetupScreen({
             return (
               <Pressable
                 key={name}
-                onPress={() => setDisplayName(name)}
+                onPress={() => chooseSuggestion(name)}
                 press="chip"
                 accessibilityRole="button"
                 // The a11y label carries the "taken" that the strikethrough
@@ -596,7 +682,7 @@ export function ProfileSetupScreen({
             onPress={rerollSuggestions}
             press="chip"
             accessibilityRole="button"
-            accessibilityLabel="Suggest three more usernames"
+            accessibilityLabel="Suggest three more usernames, and replace a suggested name in the field"
             testID="profile-setup-suggestion-reroll"
             style={styles.suggestReroll}>
             <Text allowFontScaling style={styles.suggestRerollLabel}>
@@ -851,6 +937,30 @@ const makeStyles = (t: Theme) =>
     },
     statusMuted: {
       color: t.color.text.tertiary,
+    },
+    statusRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.xs,
+    },
+    /* Deliberately NOT `state.danger`: a failed check is not a rejection, and
+       painting it in the same red as "already taken" is the whole mistake this
+       state exists to avoid. text/accent is the app's actionable colour and it
+       sits beside a real control. */
+    statusRetry: {
+      color: t.color.text.accent,
+    },
+    statusRetryHit: {
+      minHeight: TOKENS.interaction.minTarget,
+      justifyContent: 'center',
+      paddingHorizontal: TOKENS.space.sm,
+      borderRadius: TOKENS.radius.pill,
+      borderCurve: 'continuous',
+      backgroundColor: t.color.bg.accentTint,
+    },
+    statusRetryLabel: {
+      ...TOKENS.typography.labelMedium,
+      color: t.color.text.accent,
     },
     suggestHint: {
       ...TOKENS.typography.bodySmall,

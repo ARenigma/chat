@@ -1,5 +1,21 @@
 export type CallMediaBackend = 'current' | 'livekit' | 'agora';
-export type CallConnState = 'connecting' | 'connected' | 'failed' | 'closed';
+/**
+ * `'reconnecting'` added 2026-09-17: a peer's media timing out (Agora's
+ * `UserOfflineDropped`, ~20s of no packets) or the local link itself
+ * dropping (`ConnectionStateReconnecting`) used to be folded into
+ * `'connecting'` or `'closed'` — both wrong, both indistinguishable from a
+ * real hang-up or a fresh cold start. See agora.ts's `onUserOffline` and
+ * `onConnectionStateChanged` for where each is now produced, and
+ * CallScreen.tsx for why it deliberately does NOT interrupt the running
+ * call timer (the server keeps billing through a reconnect; freezing the
+ * clock would only make the screen lie about that, not fix it).
+ */
+export type CallConnState =
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'failed'
+  | 'closed';
 
 /**
  * Vendor-shaped video handle. Agora is the only shipped backend; other arms
@@ -37,7 +53,20 @@ export interface CallQualitySample {
   cpuPercent?: number;
   rssBytes?: number;
   thermalStatus?: number;
+  /** The audio stream's own QualityType (Agora's onRemoteAudioStats.quality), 0-6. */
   quality?: number;
+  /**
+   * The tx/rx signal reading (Agora's onNetworkQuality), 0-6 — a SEPARATE
+   * dimension from `quality` above. The two used to share this one field and
+   * overwrite each other (M7, 2026-09-17 audit).
+   */
+  networkQuality?: number;
+  /** RemoteAudioStats.audioLossRate — audio frame loss rate, percent. */
+  audioLossRate?: number;
+  /** RemoteVideoStats.packetLossRate — video packet loss rate, percent. */
+  videoLossRate?: number;
+  /** RemoteAudioStats.mosValue, Agora's raw 0-500 scale (divide by 100 for the 0-5 MOS). */
+  audioMosValue?: number;
 }
 
 export interface CallMediaSession {
@@ -45,6 +74,14 @@ export interface CallMediaSession {
   connState: CallConnState;
   mediaReady: boolean;
   muted: boolean;
+  /**
+   * Set when the SDK reports the local mic or camera stopped for a reason
+   * other than the member's own mute/camera-off (L1, 2026-09-17 audit) —
+   * device busy, capture failed, no permission, an interrupting phone call.
+   * `null` means healthy (or muted/disabled by the member, which is not a
+   * warning). CallScreen surfaces this as a notice; it is not itself UI.
+   */
+  mediaWarning: 'mic' | 'camera' | null;
   toggleMute: () => void;
   /**
    * Audio route. `true` = built-in speaker, `false` = earpiece.
@@ -60,6 +97,8 @@ export interface CallMediaSession {
   remoteVideo: CallVideoSource | null;
   videoEnabled: boolean;
   remoteVideoEnabled: boolean;
+  /** The peer muted their own mic (M25, 2026-09-17 audit) — Agora's onUserMuteAudio. */
+  remoteAudioMuted: boolean;
   enableVideo: () => Promise<void>;
   disableVideo: () => void;
   switchCamera: () => void;

@@ -105,8 +105,12 @@ describe('a call asks for feedback too', () => {
     // heartbeat before the server's 'ended' was read back.
     expect(call).toMatch(/connState === 'closed'[\s\S]{0,1200}finish\(/);
     // The server says so — a decline while ringing, or a server-side end —
-    // delivered by the row subscription rather than waited for.
-    expect(call).toMatch(/useCallEnded\(callId, endedNotice\)/);
+    // delivered by the row subscription rather than waited for. The third
+    // argument (added 2026-09-17) reports a non-terminal 'active' status
+    // instead — the callee answered — and does not itself end the call, so
+    // it is asserted separately in callControlsAreWired.test.ts rather than
+    // here, which is specifically the end-of-call funnel.
+    expect(call).toMatch(/useCallEnded\(callId, endedNotice, onCalleeAnswered\)/);
   });
 
   it('keeps the first end, so a decline is not overwritten by a hang-up', () => {

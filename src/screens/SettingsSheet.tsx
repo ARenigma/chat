@@ -23,10 +23,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { deleteAccount, signOut } from '../api/auth';
 import { stopPush } from '../lib/push';
 import { track } from '../lib/telemetry';
-import { useSetClayAvatar, useSetPresence } from '../api/provider';
+import { useSetClayAvatar } from '../api/provider';
 import { CLAY_SEEDS, CLAY_IMAGES } from '../lib/clayAvatars';
 import { useProfile } from '../api/chat';
-import { PRESENCE_OPTIONS, presenceDetail } from '../lib/presence';
 import { legalUrl } from '../lib/legal';
 import { initialOf } from '../lib/display';
 import { formatRupees } from '../lib/rates';
@@ -201,17 +200,16 @@ export function SettingsSheet({
   const needle = query.trim().toLowerCase();
   const shows = (rowTitle: string) =>
     needle === '' || rowTitle.toLowerCase().includes(needle);
-  const [choiceSheet, setChoiceSheet] = useState<'presence' | 'theme' | null>(
-    null,
-  );
+  /*
+   * A union of one since 2026-09-17, when the Presence row left this sheet.
+   * Kept as a union rather than a boolean because the next multi-choice setting
+   * joins it here, and because the sheet below already switches on the name.
+   */
+  const [choiceSheet, setChoiceSheet] = useState<'theme' | null>(null);
   const [avatarSheet, setAvatarSheet] = useState(false);
   const [busy, setBusy] = useState(false);
   const { data: profile } = useProfile();
-  const setPresence = useSetPresence();
   const setClayAvatar = useSetClayAvatar();
-  // Hidden until the profile loads, and hidden if it never does. Defaulting the
-  // other way would show a checkmark against a state the person has not chosen.
-  const presence = profile?.presence ?? 'hidden';
   const isProvider = profile?.role === 'provider';
   // The clay seed currently in use, so the picker can mark it selected.
   const currentSeed =
@@ -279,14 +277,6 @@ export function SettingsSheet({
     })();
   }, [onSignedOut, queryClient]);
 
-  const providerAppearance =
-    profile?.role === 'provider'
-      ? ' Anyone browsing the directory sees it too.'
-      : ' Only people you have a conversation with can see it.';
-
-  const presenceLabel =
-    PRESENCE_OPTIONS.find(option => option.value === presence)?.label ??
-    'Hidden';
   const themeLabel =
     mode === 'light' ? 'Light' : mode === 'dark' ? 'Dark' : 'System';
   // Members no longer see an account-type label under the avatar (Amit,
@@ -449,26 +439,13 @@ export function SettingsSheet({
             Settings
           </Text>
         ) : null}
+        {/* THE PRESENCE ROW WAS HERE until 2026-09-17. A provider's
+            availability switch (their own "You" tab, above) is the only control
+            over being reachable now, and a member has none to make: two
+            switches for one thought is how somebody ends up unreachable while
+            believing they are only invisible. src/lib/presence.ts carries the
+            argument. */}
         <View style={styles.group}>
-          {shows('Presence') ? (
-            <>
-              <Pressable
-                onPress={() => setChoiceSheet('presence')}
-                testID="settings-presence"
-                accessibilityLabel={`Presence, ${presenceLabel}`}
-                press="none"
-                highlight="dim"
-                style={styles.row}
-              >
-                <SettingsRowContent
-                  icon="person"
-                  title="Presence"
-                  detail={presenceLabel}
-                />
-              </Pressable>
-              <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
-            </>
-          ) : null}
           {onBlocked !== undefined && shows('Blocked people') ? (
             <>
               <Pressable
@@ -731,47 +708,6 @@ export function SettingsSheet({
           </View>
         ) : null}
       </Animated.ScrollView>
-
-      <Sheet
-        visible={choiceSheet === 'presence'}
-        testID="presence-choice-sheet"
-        title="Presence"
-        body={`${presenceDetail(presence)}${providerAppearance}`}
-        onClose={() => setChoiceSheet(null)}
-      >
-        <View style={styles.choiceList}>
-          {PRESENCE_OPTIONS.map((option, index) => {
-            const on = presence === option.value;
-            return (
-              <React.Fragment key={option.value}>
-                {index === 0 ? null : (
-                  <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
-                )}
-                <Pressable
-                  onPress={() => {
-                    if (!on) setPresence.mutate(option.value);
-                    setChoiceSheet(null);
-                  }}
-                  testID={`presence-${option.value}`}
-                  accessibilityRole="radio"
-                  checked={on}
-                  accessibilityLabel={option.label}
-                  press="none"
-                  highlight="dim"
-                  style={styles.row}
-                >
-                  <SettingsRowContent
-                    icon="person"
-                    title={option.label}
-                    selected={on}
-                    chevron={false}
-                  />
-                </Pressable>
-              </React.Fragment>
-            );
-          })}
-        </View>
-      </Sheet>
 
       <Sheet
         visible={choiceSheet === 'theme'}

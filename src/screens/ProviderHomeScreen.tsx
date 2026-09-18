@@ -10,8 +10,10 @@ import {
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { launchImageLibrary } from 'react-native-image-picker';
+import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
+import { sectionIn, sectionOut } from '../theme/motion';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ConversationSummary, ProviderPhoto } from '../lib/database.types';
 import { MAX_PROVIDER_PHOTOS } from '../lib/database.types';
@@ -100,8 +102,8 @@ const CHANNEL_ROWS: readonly { key: ChannelKey; title: string; glyph: IconName }
 ];
 
 /**
- * The availability vocabulary, in one place, because availability is now said
- * in TWO places: the switch in the Chats header and the card on the You tab.
+ * The availability vocabulary, in one place, because availability is said in
+ * TWO places: the switch in the Chats header and the card on the You tab.
  *
  * Co-located rather than left as two inline ternaries so a future edit to the
  * card's wording cannot leave the header describing the same boolean in a
@@ -110,18 +112,25 @@ const CHANNEL_ROWS: readonly { key: ChannelKey; title: string; glyph: IconName }
  * the same argument applied to the words.
  *
  * `head` is deliberately NOT presence vocabulary: no "Away", "Offline" or
- * "Hidden". Presence is a separate setting the provider sets in SettingsSheet
- * (`useSetPresence`), and two controls saying "hidden" while meaning different
- * things is how somebody ends up unreachable believing they are only invisible
- * — the failure contract.test's "stops the availability card claiming presence
- * or the word hidden" exists to keep out. Open/Closed is the shop metaphor the
- * card's own title already uses.
+ * "Hidden". That rule outlived the thing it was written against: the separate
+ * presence chooser is GONE from SettingsSheet as of 2026-09-17, and this switch
+ * is now the only availability control in the app. The vocabulary still holds,
+ * because Open/Closed is the shop metaphor the card's own title uses and
+ * "hidden" would now describe nothing at all.
+ *
+ * `on.sub` CHANGED on 2026-09-17, when the three channel switches moved under
+ * this one (see `styles.availabilityCard`'s block below). It used to promise
+ * "you can be messaged",
+ * which was a claim the card itself could contradict two rows lower the moment
+ * a provider turned Chat off and kept calls on. It now points at the switches
+ * that give the real answer, which is the whole reason they are children rather
+ * than a fourth peer question.
  */
 const AVAILABILITY = {
   on: {
     head: 'Open',
     title: 'Open to New Conversations',
-    sub: 'You are listed and can be messaged.',
+    sub: 'You are listed. Pick how members can reach you.',
   },
   off: {
     head: 'Closed',
@@ -262,11 +271,40 @@ export function ProviderHomeScreen({
     [setAvailability],
   );
 
+  /**
+   * A channel switch, and the one case where it is not a channel write at all.
+   *
+   * Turning off the LAST channel that is on writes `is_available = false`
+   * instead. Three things make that the right write rather than a clever one:
+   *
+   *   - The database refuses the alternative outright.
+   *     `profiles_at_least_one_channel` (064) is
+   *     `check (chat_enabled or audio_enabled or video_enabled)`, so the patch
+   *     this branch skips is a patch that comes back as a constraint error and
+   *     a notice. Amit's "max 2 can be turned off" and that CHECK are the same
+   *     rule said twice; nothing in the schema had to move for this.
+   *   - It is what the provider meant. "I do not want chat, and chat is all I
+   *     was offering" is not an invalid state, it is being closed — which is
+   *     precisely the state the master switch holds.
+   *   - THE THREE COLUMNS ARE LEFT ALONE, which is what makes re-opening
+   *     restore the provider's own last choice instead of resetting them to
+   *     all-on. The section collapses, so the switch they just tapped leaves
+   *     the screen rather than visibly springing back at them.
+   *
+   * `toggle` and not a bare `setAvailability.mutate`, so this closure narrates
+   * the same `availability_changed` event the two switches do; the reason the
+   * provider closed is not a distinction the event carries, and inventing a
+   * second name for it would need a migration to `guard_event_shape`.
+   */
   const toggleChannel = useCallback(
     (key: ChannelKey, next: boolean) => {
+      if (!next && enabledCount === 1) {
+        toggle(false);
+        return;
+      }
       setChannels.mutate({ [key]: next });
     },
-    [setChannels],
+    [enabledCount, setChannels, toggle],
   );
 
   /**
@@ -345,7 +383,7 @@ export function ProviderHomeScreen({
             uri={item.peer_avatar_url ?? undefined}
             initial={initialOf(label)}
             size={THREAD_AVATAR}
-            online={readPresence(item.peer_presence, item.peer_last_active_at).here}
+            online={readPresence(item.peer_available).here}
           />
           <View style={styles.rowBody}>
             <View style={styles.rowTop}>
@@ -523,10 +561,20 @@ export function ProviderHomeScreen({
           onBlocked={onOpenBlocked}
           topSection={
             <View style={styles.controls}>
-              {/* Availability and what they offer are ONE inset card, two
-                  related questions — a provider reasoning about "can anyone
-                  reach me" is reasoning about both at once (goal item 7). Kept
-                  as a single card (not two edge-bleeding siblings) so its
+              {/* Availability and what they offer are ONE inset card, and as of
+                  2026-09-17 they are ONE QUESTION rather than two related ones:
+                  a master switch with the three channels collapsed under it.
+                  Amit: "open to conversation is redundant when we are also
+                  taking toggle for chat, audio call and video call".
+
+                  He was right, and the fix is a hierarchy rather than a
+                  deletion. As four peers, `is_available` overlapped the three —
+                  "open" and "offering chat" are the same claim said twice, and
+                  the four could disagree. As a master it does not overlap
+                  anything: it is the gate, and the three say what comes through
+                  it. Closed is one state to read instead of four.
+
+                  Kept as a single card (not two edge-bleeding siblings) so its
                   controls line up with the photos, earnings and stats blocks
                   below rather than running to the screen edge. */}
               <View style={styles.availabilityCard}>
@@ -534,7 +582,16 @@ export function ProviderHomeScreen({
                     whether anyone new can reach them. The Chats header carries
                     the same switch on the same value; this is the copy that
                     explains what it does, which is why both survive rather than
-                    one moving. */}
+                    one moving.
+
+                    THE HEADER SWITCH IS UNCHANGED BY THE RESTRUCTURE and that
+                    is the point of it: it writes the same column through the
+                    same mutation, so closing from the header closes here too
+                    and the children are already collapsed by the time the
+                    provider opens this tab. It grows no children of its own — a
+                    three-row disclosure hanging off a top app bar would be a
+                    second, differently-shaped control for one value, which is
+                    the drift the vocabulary block above exists to prevent. */}
                 <View style={styles.availabilityRow}>
                   <View style={styles.availabilityText}>
                     <Text
@@ -558,46 +615,75 @@ export function ProviderHomeScreen({
                 </View>
 
                 {/* What they offer, directly under what they are open to,
-                    separated by a hairline rather than a gap. The last one on is
-                    held rather than hidden — a disabled switch says the rule, a
-                    missing one would just look broken. The database refuses it
-                    too (profiles_at_least_one_channel). */}
-                <View style={styles.channels} testID="provider-channels">
-                  <Text allowFontScaling style={styles.channelsLabel}>
-                    What you offer
-                  </Text>
-                  {CHANNEL_ROWS.map(row => {
-                    const on = channels[row.key];
-                    const last = on && enabledCount === 1;
-                    return (
-                      <View key={row.key} style={styles.channelRow}>
-                        <Icon
-                          name={row.glyph}
-                          size={TOKENS.icon.sm}
-                          color={on ? theme.color.text.primary : theme.color.text.tertiary}
-                        />
-                        <View style={styles.channelText}>
-                          <Text allowFontScaling style={styles.channelTitle}>
-                            {row.title}
-                          </Text>
-                          {last ? (
-                            <Text allowFontScaling style={styles.channelHint}>
-                              Keep at least one on so members can reach you.
+                    separated by a hairline rather than a gap — and MOUNTED ONLY
+                    WHILE THE MASTER IS ON.
+
+                    Collapsing rather than disabling, because a row of dimmed
+                    switches under a switch that is off is three controls
+                    explaining that they do not apply. The values behind them
+                    are never written by the collapse, so re-opening restores
+                    the provider's own last choice rather than resetting them to
+                    all-on: what is hidden is the question, not the answer.
+
+                    The last one on is no longer HELD. It used to be disabled,
+                    and a disabled switch was the honest thing to do while these
+                    were peers — the database refuses the all-off update
+                    (profiles_at_least_one_channel, 064) so the UI said the rule
+                    rather than letting a provider discover it as an error. Now
+                    that there is a master, the same tap has a meaning the
+                    schema agrees with: it closes them. `toggleChannel` carries
+                    that, and the hint below says so BEFORE the tap, because a
+                    control that quietly does something larger than it looks is
+                    worse than one that refuses. */}
+                {available ? (
+                  <Animated.View
+                    entering={sectionIn}
+                    exiting={sectionOut}
+                    style={styles.channels}
+                    testID="provider-channels">
+                    <Text allowFontScaling style={styles.channelsLabel}>
+                      What you offer
+                    </Text>
+                    {CHANNEL_ROWS.map(row => {
+                      const on = channels[row.key];
+                      const last = on && enabledCount === 1;
+                      return (
+                        <View key={row.key} style={styles.channelRow}>
+                          <Icon
+                            name={row.glyph}
+                            size={TOKENS.icon.sm}
+                            color={on ? theme.color.text.primary : theme.color.text.tertiary}
+                          />
+                          <View style={styles.channelText}>
+                            <Text allowFontScaling style={styles.channelTitle}>
+                              {row.title}
                             </Text>
-                          ) : null}
+                            {last ? (
+                              <Text allowFontScaling style={styles.channelHint}>
+                                Turning off your last one closes you to new
+                                conversations.
+                              </Text>
+                            ) : null}
+                          </View>
+                          <Toggle
+                            testID={`channel-toggle-${row.key}`}
+                            value={on}
+                            onValueChange={next => toggleChannel(row.key, next)}
+                            disabled={setChannels.isPending || setAvailability.isPending}
+                            /* The consequence is in the row's own hint text,
+                               which TalkBack reaches before this switch, so the
+                               label only has to say WHICH switch is the one the
+                               hint is about. */
+                            accessibilityLabel={
+                              last ? `Offer ${row.title}, your last one` : `Offer ${row.title}`
+                            }
+                            tone="presence"
+                          />
                         </View>
-                        <Toggle
-                          testID={`channel-toggle-${row.key}`}
-                          value={on}
-                          onValueChange={next => toggleChannel(row.key, next)}
-                          disabled={setChannels.isPending || last}
-                          accessibilityLabel={`Offer ${row.title}`}
-                          tone="presence"
-                        />
-                      </View>
-                    );
-                  })}
-                </View>
+                      );
+                    })}
+                  </Animated.View>
+                ) : null}
               </View>
 
               {/* The gallery (migration 070). It lives HERE and not in the
@@ -638,12 +724,13 @@ export function ProviderHomeScreen({
                         style={[styles.photoTile, p.is_primary && styles.photoTilePrimary]}>
                         <Image
                           source={{
-                            uri: sizedStorageImageUri(
-                              p.url,
-                              PHOTO_TILE,
-                              PHOTO_TILE,
-                              PixelRatio.get(),
-                            ),
+                            uri:
+                              sizedStorageImageUri(
+                                p.url,
+                                PHOTO_TILE,
+                                PHOTO_TILE,
+                                PixelRatio.get(),
+                              ) ?? undefined,
                           }}
                           style={styles.photoImg}
                         />
@@ -876,7 +963,12 @@ function TabButton({
       highlight="dim"
       style={styles.tab}>
       <View>
-        <Icon name={icon} size={TOKENS.icon.lg} color={color} />
+        {/* The SOLID face when selected, not the same outline in a lighter ink.
+            Colour alone is the failure mode this repo has now hit twice, and M3
+            names the fix for this exact control: "the icon of the active
+            destination is filled".
+            https://m3.material.io/components/navigation-bar/guidelines */}
+        <Icon name={icon} active={active} size={TOKENS.icon.lg} color={color} />
         {badge > 0 ? (
           <View style={styles.tabBadge}>
             <Text allowFontScaling style={styles.tabBadgeText}>
@@ -1281,7 +1373,9 @@ const makeStyles = (t: Theme) =>
       flex: 1,
       alignItems: 'center',
       justifyContent: 'center',
-      gap: TOKENS.space.hair,
+      // M3's navigation bar puts 4dp between the icon and its label, not 2.
+      // https://m3.material.io/components/navigation-bar/specs
+      gap: TOKENS.space['2xs'],
       paddingVertical: TOKENS.space['2xs'],
       borderRadius: TOKENS.radius.pill,
     },

@@ -19,6 +19,7 @@ import { SCROLL_PHYSICS } from '../lib/scroll';
 import Animated from 'react-native-reanimated';
 import { contentColumnWidth } from '../lib/windowSize';
 import { sizedStorageImageUri } from '../lib/storageImage';
+import { avatarImageSource } from '../lib/clayAvatars';
 import { useConversations, useProfile, useProviders } from '../api/chat';
 import {
   AGE_BANDS,
@@ -308,7 +309,7 @@ export function HomeScreen({
    */
   const topPicks = useMemo<ProviderSummary[]>(() => {
     const score = (p: ProviderSummary) =>
-      (readPresence(p.presence, p.last_active_at).here ? 1000 : 0) + (p.rating_avg ?? 0);
+      (readPresence(p.is_available).here ? 1000 : 0) + (p.rating_avg ?? 0);
     return [...directory].sort((a, b) => score(b) - score(a)).slice(0, TOP_PICKS);
   }, [directory]);
 
@@ -338,9 +339,13 @@ export function HomeScreen({
       if (!p.avatar_url) {
         continue;
       }
-      void Image.prefetch(
-        sizedStorageImageUri(p.avatar_url, heroW, 420, ratio),
-      ).catch(() => {});
+      // Null for a `clay:` sentinel, which is already in the bundle and has no
+      // URL to warm.
+      const hero = sizedStorageImageUri(p.avatar_url, heroW, 420, ratio);
+      if (hero === null) {
+        continue;
+      }
+      void Image.prefetch(hero).catch(() => {});
     }
   }, [directory, columnWidth]);
 
@@ -349,15 +354,16 @@ export function HomeScreen({
       const p =
         directory.find(x => x.id === id) ??
         (featured?.id === id ? featured : undefined);
-      if (p?.avatar_url) {
-        void Image.prefetch(
-          sizedStorageImageUri(
+      const hero = p?.avatar_url
+        ? sizedStorageImageUri(
             p.avatar_url,
             columnWidth - TOKENS.space.md * 2,
             420,
             PixelRatio.get(),
-          ),
-        ).catch(() => {});
+          )
+        : null;
+      if (hero !== null) {
+        void Image.prefetch(hero).catch(() => {});
       }
       onOpenProvider(id);
     },
@@ -992,10 +998,7 @@ export function HomeScreen({
         visible={potdVisible && featured !== null}
         name={featured?.display_name ?? 'Someone for you'}
         avatarUri={featured?.avatar_url ?? null}
-        online={
-          featured !== null &&
-          readPresence(featured.presence, featured.last_active_at).here
-        }
+        online={featured !== null && readPresence(featured.is_available).here}
         onClose={dismissPotd}
         onChat={chatFromPotd}
         testID="potd-sheet"
@@ -1041,7 +1044,10 @@ const RailItem = memo(function ({
     ? Number(chat.unread_count_member)
     : Number(chat.unread_count_provider);
   const unread = unreadCount > 0;
-  const presence = readPresence(chat.peer_presence, chat.peer_last_active_at);
+  // A member has no availability switch, so `peer_available` is false for one by
+  // construction and passing it through would dot every member's face as away.
+  // Null is the honest argument: nothing published, so nothing rendered.
+  const presence = readPresence(chat.peer_is_provider ? chat.peer_available : null);
   const handlePress = useCallback(() => onPress(chat.peer_id), [onPress, chat.peer_id]);
   const handleLongPress = useCallback(() => {
     hostRef.current?.measureInWindow((x, y, width, height) => {
@@ -1119,7 +1125,7 @@ function FeaturedCard({
     provider.age !== null
       ? ` ${letter === null ? '' : `${letter}-`}${provider.age}`
       : '';
-  const presence = readPresence(provider.presence, provider.last_active_at);
+  const presence = readPresence(provider.is_available);
   const tagline =
     provider.headline && provider.headline !== ''
       ? provider.headline
@@ -1156,9 +1162,8 @@ function FeaturedCard({
   /*
    * AWAY, AND WHAT THE CARD OFFERS BECAUSE OF IT.
    *
-   * The same `!presence.here` reading the directory row uses (ProviderRow.tsx:431)
-   * — `hidden` included, because `readPresence` never renders an unknown as
-   * present. This hero has never carried a Call, so there is nothing to take
+   * The same `!presence.here` reading the directory row uses
+   * (ProviderRow.tsx:431). This hero has never carried a Call, so there is nothing to take
    * away; what it was missing is the other half of the rule, which is that an
    * away provider should be OFFERED the one action that works. The dot slot
    * says "here now" when they are; when they are not, it names what a tap leads
@@ -1171,6 +1176,18 @@ function FeaturedCard({
    * replaces and the rating pill beside it are.
    */
   const away = !presence.here;
+  /*
+   * A tall crop, not a 178dp band: the window into it happens in the layout
+   * (`featuredPhoto`), so asking the server for a frame-height image would
+   * centre-crop the head off before it arrived. `HERO_PHOTO_HEIGHT_RATIO` is
+   * 4/3 scaled to this card's height — see its note for why that is a trim and
+   * not that band.
+   */
+  const heroPhoto = avatarImageSource(
+    provider.avatar_url,
+    imageWidth,
+    Math.round(imageWidth * HERO_PHOTO_HEIGHT_RATIO),
+  );
   /*
    * The rating has to be spoken in WORDS from here, because the chip below is
    * `accessible={false}` like every other meta chip and its visible text is now
@@ -1200,27 +1217,9 @@ function FeaturedCard({
       accessibilityLabel={accessibility}
       press="card"
       style={styles.featured}>
-      {provider.avatar_url ? (
+      {heroPhoto !== null ? (
         <>
-          <Image
-            source={{
-              /*
-               * A tall crop, not a 178dp band: the window into it happens in
-               * the layout above (`featuredPhoto`), so asking the server for a
-               * frame-height image would centre-crop the head off before it
-               * arrived. `HERO_PHOTO_HEIGHT_RATIO` is 4/3 scaled to this
-               * card's height — see its note for why that is a trim and not
-               * that band.
-               */
-              uri: sizedStorageImageUri(
-                provider.avatar_url,
-                imageWidth,
-                Math.round(imageWidth * HERO_PHOTO_HEIGHT_RATIO),
-                PixelRatio.get(),
-              ),
-            }}
-            style={styles.featuredPhoto}
-          />
+          <Image source={heroPhoto} style={styles.featuredPhoto} />
           {/* A dark scrim under the text so white copy stays legible over any
               photo, not only the coral fallback. */}
           <View style={styles.featuredScrim} />

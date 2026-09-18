@@ -159,9 +159,16 @@ async function send(
     status = '';
   }
   if (DEAD_TOKEN.has(status) || response.status === 404) {
+    // Logged like the transient case: a dead token is a device that will never
+    // ring again, and until now the only trace was a `dead` count nobody reads.
+    console.error(
+      `push-failure send-call dead ${response.status} ${status} for call ${row.call_id}`,
+    );
     return 'dead';
   }
-  console.error(`call fcm ${response.status} ${status} for call ${row.call_id}`);
+  console.error(
+    `push-failure send-call fcm ${response.status} ${status} for call ${row.call_id}`,
+  );
   return 'retry';
 }
 
@@ -170,6 +177,7 @@ Deno.serve(async request => {
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   const rawSa = Deno.env.get('FCM_SERVICE_ACCOUNT');
   if (!url || !serviceKey || !rawSa) {
+    console.error('push-failure send-call missing SUPABASE_URL/SERVICE_ROLE_KEY/FCM_SERVICE_ACCOUNT');
     return new Response('not configured', { status: 500 });
   }
 
@@ -191,13 +199,14 @@ Deno.serve(async request => {
   }
   const sa = parsed as ServiceAccount;
   if (!sa?.private_key || !sa.client_email || !sa.project_id) {
+    console.error('push-failure send-call FCM_SERVICE_ACCOUNT is missing private_key/client_email/project_id');
     return new Response('bad service account', { status: 500 });
   }
 
   const db = createClient(url, serviceKey, { auth: { persistSession: false } });
   const { data, error } = await db.from('pending_call_pushes').select('*').limit(100);
   if (error) {
-    console.error('pending_call_pushes', error.message);
+    console.error(`push-failure send-call pending_call_pushes ${error.message}`);
     return new Response(error.message, { status: 500 });
   }
   const pending = (data ?? []) as Pending[];
@@ -219,12 +228,20 @@ Deno.serve(async request => {
     }
   }
 
+  // The silent failure this function had no trace of: rows existed, every one
+  // of them failed, and the caller still got a 200. The phone never rang.
+  if (sent === 0) {
+    console.error(
+      `push-failure send-call rang no device for ${pending.length} pending row(s)`,
+    );
+  }
+
   if (notified.size > 0) {
     const { error: markError } = await db.rpc('mark_calls_notified', {
       p_call_ids: [...notified],
     });
     if (markError) {
-      console.error('mark_calls_notified', markError.message);
+      console.error(`push-failure send-call mark_calls_notified ${markError.message}`);
     }
   }
 
@@ -235,7 +252,7 @@ Deno.serve(async request => {
       p_tokens: [...deadTokens],
     });
     if (forgetError) {
-      console.error('forget_push_tokens', forgetError.message);
+      console.error(`push-failure send-call forget_push_tokens ${forgetError.message}`);
     }
   }
 

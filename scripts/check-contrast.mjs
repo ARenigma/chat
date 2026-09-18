@@ -104,13 +104,26 @@ const PAIRS = [
     target: 4.5,
     what: 'previews in a card',
   },
+  /*
+   * NARROWED 2026-09-17, because the words "glanceable metadata" were doing
+   * work they were never entitled to do.
+   *
+   * This row exempts `text/tertiary` on a card at 4.39:1 light / 3.30:1 dark.
+   * That is defensible for the thing it was written for — the review count
+   * under a provider's stars — and it silently covered something else: the
+   * away "Notify" CTA's label and bell on ProviderRow, which took the same ink
+   * on the same fill. A button's label IS the only carrier of its meaning, and
+   * the second clause of this exemption asserted the opposite on its behalf. So
+   * the exemption now names what it covers, and the CTA has its own registered
+   * pairs below rather than a borrowed excuse.
+   */
   {
     fg: 'text/tertiary',
     bg: 'bg/raised',
     target: 3,
-    what: 'timestamps and receipts',
+    what: 'a review count or a receipt under the row it annotates',
     exempt:
-      'glanceable metadata, never the only carrier of meaning, the row it labels is legible without it',
+      'glanceable metadata ONLY, never the only carrier of meaning, the row it labels is legible without it. NOT a control: the label of anything tappable is the only carrier of what the tap does, so it takes the full 4.5 and is registered as its own pair',
   },
   {
     fg: 'text/onAccent',
@@ -263,6 +276,56 @@ const PAIRS = [
     target: 4.5,
     what: 'the avatar initial',
   },
+  /*
+   * The away "Notify" control, on the profile and on the directory row.
+   *
+   * Registered because its ABSENCE was the defect, the same way `text/onAccent`
+   * on `bg/accent` was. Both surfaces painted an ENABLED control with M3's
+   * DISABLED recipe — transparent container, hairline stroke, tertiary ink —
+   * and this file reported "contrast OK" throughout, because neither pair was
+   * listed and the tertiary-on-a-card row above was broad enough to cover the
+   * one that existed. What was actually on screen: the label at 4.39:1 light /
+   * 3.30:1 dark against the 4.5 floor (12dp and 14dp type, so 4.5 is the floor
+   * — developer.android.com/guide/topics/ui/accessibility/apps), and a boundary
+   * at 1.71:1 light / 1.35:1 dark against 3. The ProviderDetail container was
+   * worse than a low number: `styles.cta` also filled with `bg/raised`, the
+   * card's own colour, so the container had literally no contrast with the
+   * surface it sat on.
+   *
+   * The recipe is now M3's FILLED TONAL button: "Filled tonal buttons have a
+   * lighter background color and darker label color, making them less visually
+   * prominent than a regular filled button. They're still used for final or
+   * unblocking actions in a flow, but may be better when these actions don't
+   * require quite so much emphasis" — which is exactly what Notify is next to
+   * Call. Emphasis order in the same doc: elevated, filled, filled tonal,
+   * outlined, text.
+   * https://github.com/material-components/material-components-android/blob/master/docs/components/CommonButton.md
+   *
+   * ONE STATED DEPARTURE: M3's tonal button has no stroke (strokeColor null,
+   * strokeWidth 0dp). Ours keeps a 1dp accent stroke, and the third row below
+   * is why — `bg/accentTint` against the card it sits on measures 1.19:1 light
+   * and 1.02:1 dark, i.e. in dark mode the tonal FILL alone is not a boundary
+   * at all. The stroke is what makes the control findable, so it is measured on
+   * the 3:1 non-text floor rather than assumed.
+   */
+  {
+    fg: 'text/accent',
+    bg: 'bg/accentTint',
+    target: 4.5,
+    what: 'the away Notify label (ProviderDetail + ProviderRow)',
+  },
+  {
+    fg: 'bg/accent',
+    bg: 'bg/base',
+    target: 3,
+    what: "the away Notify button's outline (non-text)",
+  },
+  {
+    fg: 'bg/accent',
+    bg: 'bg/raised',
+    target: 3,
+    what: "the away Notify CTA's outline on a card",
+  },
   {
     fg: 'text/positive',
     bg: 'bg/positive',
@@ -412,9 +475,101 @@ for (const mode of ['Light', 'Dark']) {
   }
 }
 
+/*
+ * The Home hero card (HomeScreen.tsx, FeaturedCard) puts white text directly
+ * over a provider PHOTOGRAPH, not a token background — the one surface in the
+ * app this file's token-pair PAIRS above cannot see at all (M28, 2026-09-17
+ * audit). A photo has no fixed hex to register, so what actually guarantees
+ * legibility is `featuredScrim` — a black gradient, 62% opaque at the text's
+ * end — composited under the text. This checks the text colors against the
+ * WORST CASE the scrim has to survive: a pure white photo behind it (any real
+ * photo is darker somewhere, so this is the floor, not a typical case).
+ *
+ * Hand-maintained, not derived from a token: these are literal style values
+ * in HomeScreen.tsx (`featuredScrim`/`featuredName`/`featuredAge`/
+ * `featuredTagline`/`featuredMeta`), the same reason `bubble/meta`'s rgba is
+ * named as a gap above rather than parsed — this file's token reader only
+ * takes six-digit hex from design/tokens.json. If any of these five values
+ * change in HomeScreen.tsx, this block has to change with them by hand.
+ */
+const SCRIM_OPACITY_AT_TEXT = 0.62; // featuredScrim's 0% stop, where featuredBody sits
+const WORST_CASE_PHOTO = '#ffffff'; // whitest a photo can be behind the scrim
+
+const composite = (fgHex, alpha, bgHex) => {
+  const [fr, fg, fb] = [
+    fgHex.slice(1, 3),
+    fgHex.slice(3, 5),
+    fgHex.slice(5, 7),
+  ].map(h => parseInt(h, 16));
+  const [br, bg, bb] = [
+    bgHex.slice(1, 3),
+    bgHex.slice(3, 5),
+    bgHex.slice(5, 7),
+  ].map(h => parseInt(h, 16));
+  const mix = (f, b) => Math.round(f * alpha + b * (1 - alpha));
+  const toHex = n => n.toString(16).padStart(2, '0');
+  return `#${toHex(mix(fr, br))}${toHex(mix(fg, bg))}${toHex(mix(fb, bb))}`;
+};
+
+// The scrim itself, composited over the worst-case photo — this is the
+// effective background every hero text color is actually read against.
+const scrimOverWorstPhoto = composite(
+  '#000000',
+  SCRIM_OPACITY_AT_TEXT,
+  WORST_CASE_PHOTO,
+);
+
+const HERO_TEXT_PAIRS = [
+  {
+    what: 'featuredName (headlineSmallEmphasized, 24px Bold — large text)',
+    color: '#ffffff',
+    alpha: 1,
+    target: 3,
+  },
+  {
+    what: 'featuredAge (titleMediumEmphasized, 16px Bold — not large text)',
+    color: '#ffffff',
+    alpha: 0.82,
+    target: 4.5,
+  },
+  {
+    what: 'featuredTagline (bodyMedium, 14px Regular)',
+    color: '#ffffff',
+    alpha: 0.92,
+    target: 4.5,
+  },
+  {
+    what: 'featuredMeta (bodySmall, 12px Regular)',
+    color: '#ffffff',
+    alpha: 0.85,
+    target: 4.5,
+  },
+];
+
+for (const pair of HERO_TEXT_PAIRS) {
+  const effective = composite(pair.color, pair.alpha, scrimOverWorstPhoto);
+  const r = ratio(effective, scrimOverWorstPhoto);
+  const ok = r >= pair.target;
+  if (!ok) {
+    failures += 1;
+  }
+  rows.push(
+    `${ok ? '  ok  ' : '  FAIL'} Hero  ${pair.what.padEnd(58)} ` +
+      `${r.toFixed(2).padStart(6)}:1  (needs ${
+        pair.target
+      })  worst-case white photo behind a ${Math.round(
+        SCRIM_OPACITY_AT_TEXT * 100,
+      )}% scrim`,
+  );
+}
+
 console.log(rows.join('\n'));
 if (failures > 0) {
   console.error(`\ncontrast FAILED, ${failures} pair(s) below target`);
   process.exit(1);
 }
-console.log(`\ncontrast OK, ${PAIRS.length * 2} pairs meet WCAG AA targets`);
+console.log(
+  `\ncontrast OK, ${
+    PAIRS.length * 2 + HERO_TEXT_PAIRS.length
+  } pairs meet WCAG AA targets`,
+);

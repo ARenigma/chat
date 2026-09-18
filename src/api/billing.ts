@@ -199,13 +199,41 @@ async function createOrder(productId: string): Promise<RechargeResult> {
   return data;
 }
 
-/** Step 3: server-side payment verification after SDK callback. */
+/**
+ * Step 3: server-side payment verification after SDK callback.
+ *
+ * Retries with backoff before giving up (2026-09-17 audit). `onVerify`
+ * fires the instant the member returns from their UPI app — on Android,
+ * exactly the moment the radio is re-establishing a connection — so a
+ * single un-retried call turning a network blip into "Payment failed" was
+ * the likeliest way this call ever threw. The retry is free: verify-order
+ * is idempotent by design (its own header: "a duplicate verify-order call
+ * (network retry, etc.) will not double-credit"), and the money is never
+ * at risk either way — cashfree-webhook credits the balance server-side
+ * independent of whether the client ever learns the result.
+ *
+ * 3 attempts, 1s/2s/4s, matching the shape of Telegram's own retry
+ * (ConnectionsManager.cpp: a resend loop against a ceiling, with the
+ * degenerate case synthesising a terminal RETRY_LIMIT once it is
+ * exhausted) rather than an arbitrary number.
+ */
 async function verifyOrder(orderId: string): Promise<VerifyResult> {
-  const { data, error } = await supabase.functions.invoke<VerifyResult>('verify-order', {
-    body: { orderId },
-  });
-  if (error || !data) throw error ?? new Error('verify-order returned no data');
-  return data;
+  const delaysMs = [1000, 2000, 4000];
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= delaysMs.length; attempt += 1) {
+    const { data, error } = await supabase.functions.invoke<VerifyResult>('verify-order', {
+      body: { orderId },
+    });
+    if (!error && data) {
+      return data;
+    }
+    lastError = error ?? new Error('verify-order returned no data');
+    const delay = delaysMs[attempt];
+    if (delay !== undefined) {
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  throw lastError;
 }
 
 // ---------------------------------------------------------------------------
@@ -412,7 +440,7 @@ export function useOpenRechargeSheet() {
         throw new Error('Play Billing is Android-only');
       }
       if (!BillingModule) {
-        throw new Error('BillingModule not available — check native registration');
+        throw new Error('BillingModule not available: check native registration');
       }
       const order = await createOrder(productId);
       track('recharge_sheet_opened');

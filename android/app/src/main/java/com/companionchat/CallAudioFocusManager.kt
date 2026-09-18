@@ -6,8 +6,6 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
 import androidx.core.content.getSystemService
-import com.facebook.react.bridge.ReactContext
-import com.facebook.react.modules.core.DeviceEventManagerModule
 
 /**
  * Manages audio focus for an active call session.
@@ -38,18 +36,41 @@ class CallAudioFocusManager(private val context: Context) {
             AudioManager.AUDIOFOCUS_GAIN -> { /* regained — no action needed */ }
             AudioManager.AUDIOFOCUS_LOSS -> {
                 /*
-                 * Permanent loss. In practice this is the telephony stack taking
-                 * exclusive focus, i.e. the user ANSWERED a cellular call, and
-                 * JS is told so it can end the paid session.
+                 * Permanent loss — but NOT exclusively the telephony stack
+                 * (2026-09-17 audit corrects the claim below). AUDIOFOCUS_LOSS
+                 * fires whenever ANY app requests a durable AUDIOFOCUS_GAIN,
+                 * which is the ordinary way YouTube, Spotify or Instagram Reels
+                 * ask for audio the moment their own player starts — glancing at
+                 * any of those mid-call delivered the identical event and ended
+                 * a paid call the member never chose to leave.
+                 *
+                 * `audioManager.mode` is the discriminator, and it costs no
+                 * permission: MODE_IN_CALL is set by the TELEPHONY FRAMEWORK
+                 * ITSELF the moment a cellular call answers, overwriting
+                 * whatever mode this call had configured. A media app taking
+                 * focus does not touch the system audio mode at all, so our own
+                 * MODE_IN_COMMUNICATION (set in requestCallFocus, below) is
+                 * still in place when the interruption is not a real call —
+                 * which is exactly why the check below tests for MODE_IN_CALL
+                 * specifically and not MODE_IN_COMMUNICATION: this app sets
+                 * MODE_IN_COMMUNICATION itself for the whole duration of every
+                 * call, so treating that value as evidence of an INTERRUPTING
+                 * call would make the check true for the entire call and never
+                 * actually narrow anything.
+                 *
+                 * KNOWN GAP, not one this fix introduces: some OEMs implement a
+                 * native VoLTE/VoWiFi call at MODE_IN_COMMUNICATION rather than
+                 * MODE_IN_CALL, which this check would miss. Resolving that
+                 * needs on-device testing against a real carrier call on such a
+                 * device, which this session does not have.
                  *
                  * DEPARTURE FROM TELEGRAM, stated because RULE 1 requires it.
                  * Telegram watches TelephonyManager directly and hangs up on
                  * ACTION_PHONE_STATE_CHANGED / EXTRA_STATE_OFFHOOK
                  * (VoIPService.java:516-519). That needs READ_PHONE_STATE, a
                  * new runtime permission and a Play data-safety declaration, to
-                 * learn something audio focus already tells us. Permanent focus
-                 * loss is the same event by its effect, and it costs no
-                 * permission.
+                 * learn something audio focus (now paired with audio mode)
+                 * already tells us for free.
                  *
                  * The mapping is deliberately to LOSS and not LOSS_TRANSIENT,
                  * which mirrors Telegram's own nuance: they hang up on OFFHOOK
@@ -57,7 +78,9 @@ class CallAudioFocusManager(private val context: Context) {
                  * takes transient focus and must NOT end a paid call the member
                  * may well continue.
                  */
-                emitToRN("audioFocusLost")
+                if (audioManager.mode == AudioManager.MODE_IN_CALL) {
+                    emitToRN("audioFocusLost")
+                }
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> { /* brief loss — hold focus, see above */ }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
@@ -76,12 +99,7 @@ class CallAudioFocusManager(private val context: Context) {
      * mid-teardown, and a focus change during teardown is not worth a crash.
      */
     private fun emitToRN(data: String) {
-        val reactContext = (context.applicationContext as? MainApplication)
-            ?.reactNativeHost
-            ?.reactInstanceManager
-            ?.currentReactContext as? ReactContext
-        reactContext?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-            ?.emit("callAction", data)
+        ReactBridgeEvents.emit(context, "callAction", data)
     }
 
     /**

@@ -883,7 +883,10 @@ interface MineProps extends Shared {
   failed?: boolean;
   /**
    * Tap the failed bubble to send it again. Undefined when a retry cannot
-   * honestly be offered — a media send whose local file may be gone.
+   * honestly be offered — the upload itself never completed, so the bubble
+   * was withdrawn instead of marked failed, and there is nothing left here to
+   * retry. A media send whose upload DID land (2026-09-17 audit) gets a real
+   * retry, same as text: see ChatScreen's onRetry for the three cases.
    */
   onRetry?: () => void;
 }

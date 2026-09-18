@@ -1,14 +1,16 @@
 import React, { memo } from 'react';
-import { StyleSheet, Text } from 'react-native';
+import { StyleSheet } from 'react-native';
+import Animated from 'react-native-reanimated';
+import { fadeSwapFast, fadeSwapOutFast } from '../theme/motion';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
-import { selectPeerTyping, useStore } from '../store/useStore';
+import { selectPeerActivity, useStore } from '../store/useStore';
 import type { PresenceRead } from '../lib/presence';
 
 /**
  * The subtitle line under the peer's name in the chat header.
  *
- * Subscribes narrowly to `selectPeerTyping` so that typing broadcasts only
+ * Subscribes narrowly to `selectPeerActivity` so that typing broadcasts only
  * re-render this small leaf, not the entire ChatScreen — the same isolation
  * pattern that `PeerTyping` uses for the transcript bubble. `presence` is a
  * stable value derived from the thread row and changes only when the peer
@@ -27,12 +29,17 @@ import type { PresenceRead } from '../lib/presence';
  */
 function HeaderSubtitleView({ presence }: { presence: PresenceRead }) {
   const styles = useStyles(makeStyles);
-  const typing = useStore(selectPeerTyping);
+  const activity = useStore(selectPeerActivity);
 
   // "typing…" is a single unicode ellipsis character rather than three
   // full stops, which avoids a ligature mismatch on fonts that collapse "..."
   // into a glyph taller than the cap-height.
-  const label = typing
+  const label = activity === 'recording'
+    ? // Telegram says "Recording audio" rather than "typing" here, and the
+      // distinction is the point: this app has voice notes, and a peer holding
+      // the mic is not typing (MessagesController.java:11210-11213).
+      'recording…'
+    : activity === 'typing'
     ? 'typing…'
     : presence.here
       ? 'Online'
@@ -40,7 +47,7 @@ function HeaderSubtitleView({ presence }: { presence: PresenceRead }) {
 
   // Quiet (tertiary) only when there is nothing active to announce. Typing and
   // "Online" both carry the positive colour so they read as live signals.
-  const quiet = !typing && !presence.here;
+  const quiet = activity === null && !presence.here;
 
   // Nothing to say, so nothing rendered. `presence.line` is null for 'hidden'
   // and for a peer that has not loaded, which is the DEFAULT state, and the
@@ -57,13 +64,26 @@ function HeaderSubtitleView({ presence }: { presence: PresenceRead }) {
   }
 
   return (
-    <Text
+    /*
+     * Rule 7 (motion.ts): a text node whose content just changed, keyed by
+     * that content so React remounts it and Reanimated runs the swap (M14,
+     * 2026-09-17 audit). Without the key this was a hard cut between
+     * "typing…", "Online" and a last-seen line — a status glimpsed often
+     * enough during a live conversation that the same fadeSwapFast/
+     * fadeSwapOutFast pair the Notify button already uses fits the
+     * near-imperceptible tier this frequency calls for, not a heavier
+     * bubble-style entrance.
+     */
+    <Animated.Text
+      key={label}
+      entering={fadeSwapFast}
+      exiting={fadeSwapOutFast}
       testID="peer-presence"
       allowFontScaling
       numberOfLines={1}
       style={[styles.base, quiet && styles.quiet]}>
       {label}
-    </Text>
+    </Animated.Text>
   );
 }
 

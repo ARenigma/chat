@@ -22,7 +22,7 @@
  * participant itself: the database already will not send someone else's
  * conversation. The `conversation_id` filter below is bandwidth, not security.
  */
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
@@ -34,7 +34,7 @@ import {
   type TranscriptMessage,
 } from '../lib/transcript';
 import { recoverMessageGap, keys } from './chat';
-import { useStore } from '../store/useStore';
+import { useStore, type PeerActivity } from '../store/useStore';
 
 /** How long a typing broadcast keeps the indicator up without a refresh. */
 const TYPING_TTL_MS = 4_000;
@@ -45,11 +45,21 @@ export const messagesKey = (conversationId: string) => ['messages', conversation
 
 interface TypingPayload {
   userId: string;
+  /**
+   * Absent on a broadcast from a client older than 2026-09-17, which is why it
+   * is optional and falls back to 'typing': the two builds coexist on the alpha
+   * track, and an old sender must not make the indicator vanish.
+   */
+  kind?: PeerActivity | 'cancel';
 }
 
 export interface LiveConversation {
   /** Call on every keystroke; throttled internally. */
   notifyTyping: () => void;
+  /** Held while the peer records a voice note. */
+  notifyRecording: () => void;
+  /** Mic released: drops the peer's indicator without waiting for the TTL. */
+  notifyRecordingEnded: () => void;
 }
 
 /**
@@ -62,7 +72,7 @@ export function useLiveConversation(
   selfId: string | undefined,
 ): LiveConversation {
   const queryClient = useQueryClient();
-  const setPeerTyping = useStore(s => s.setPeerTyping);
+  const setPeerActivity = useStore(s => s.setPeerActivity);
 
   const channelRef = useRef<RealtimeChannel | null>(null);
   const lastTypingSentRef = useRef(0);
@@ -104,7 +114,7 @@ export function useLiveConversation(
           if (payload.new.sender_id !== selfId) {
             // A message is a stronger signal than the typing broadcast: they
             // sent it, so they have stopped typing.
-            setPeerTyping(false);
+            setPeerActivity(null);
           }
         },
       )
@@ -128,11 +138,15 @@ export function useLiveConversation(
         if (from === undefined || from === selfId) {
           return;
         }
-        setPeerTyping(true);
+        if (payload.kind === 'cancel') {
+          setPeerActivity(null);
+          return;
+        }
+        setPeerActivity(payload.kind ?? 'typing');
         if (typingTimerRef.current !== null) {
           clearTimeout(typingTimerRef.current);
         }
-        typingTimerRef.current = setTimeout(() => setPeerTyping(false), TYPING_TTL_MS);
+        typingTimerRef.current = setTimeout(() => setPeerActivity(null), TYPING_TTL_MS);
       });
 
     void (async () => {
@@ -212,55 +226,116 @@ export function useLiveConversation(
         typingTimerRef.current = null;
       }
       channelRef.current = null;
-      setPeerTyping(false);
+      setPeerActivity(null);
       void supabase.removeChannel(channel);
     };
-  }, [conversationId, selfId, queryClient, setPeerTyping]);
+  }, [conversationId, selfId, queryClient, setPeerActivity]);
+
+  /** One throttled sender for both actions; the kind rides on the payload. */
+  const notify = useCallback(
+    (kind: PeerActivity) => {
+      const channel = channelRef.current;
+      if (channel === null || selfId === undefined) {
+        return;
+      }
+      const now = Date.now();
+      if (now - lastTypingSentRef.current < TYPING_THROTTLE_MS) {
+        return;
+      }
+      lastTypingSentRef.current = now;
+      void channel.send({
+        type: 'broadcast',
+        event: 'typing',
+        payload: { userId: selfId, kind } satisfies TypingPayload,
+      });
+    },
+    [selfId],
+  );
 
   return useMemo<LiveConversation>(
     () => ({
-      notifyTyping: () => {
+      notifyTyping: () => notify('typing'),
+      /*
+       * Held while a voice note is being recorded, and cancelled on release.
+       *
+       * Telegram sends a distinct action for this rather than reusing typing
+       * (TL_sendMessageRecordAudioAction, MessagesController.java:11441) and
+       * renders distinct copy for it (:11210-11213). Without it a voice note is
+       * composed in complete silence on the other side, which this app could
+       * least afford: a voice note takes longer to make than a message, so the
+       * silence it leaves is the longest one in the product.
+       *
+       * `notifyRecordingEnded` is the equivalent of their CancelAction: the TTL
+       * would drop the indicator on its own within 4s, but releasing the mic is
+       * a definite event and there is no reason to make the peer wait it out.
+       */
+      notifyRecording: () => notify('recording'),
+      notifyRecordingEnded: () => {
         const channel = channelRef.current;
         if (channel === null || selfId === undefined) {
           return;
         }
-        const now = Date.now();
-        if (now - lastTypingSentRef.current < TYPING_THROTTLE_MS) {
-          return;
-        }
-        lastTypingSentRef.current = now;
+        // Past the throttle deliberately: a cancel that gets swallowed leaves
+        // the indicator up for the full TTL, which is the thing it exists to
+        // avoid.
+        lastTypingSentRef.current = 0;
         void channel.send({
           type: 'broadcast',
           event: 'typing',
-          payload: { userId: selfId } satisfies TypingPayload,
+          payload: { userId: selfId, kind: 'cancel' } satisfies TypingPayload,
         });
       },
     }),
-    [selfId],
+    [notify, selfId],
   );
 }
 
 /**
- * Marks the peer's messages read once they are on screen.
+ * Marks the peer's messages read once they are ON SCREEN, not the instant the
+ * cached page loads.
+ *
+ * Before M1 (2026-09-17 audit) `flush()` marked the WHOLE loaded page read on
+ * mount — opening a chat with 50 unread messages told the peer all 50 had been
+ * seen before a single one had scrolled into view. Telegram-parity read
+ * receipts mean this now only marks ids the caller reports as visible, via
+ * the returned `markVisible` — ChatScreen wires that to FlashList's
+ * `onViewableItemsChanged`.
  *
  * Batched into one `in` filter rather than a write per message, and it only ever
  * touches `read_at`, the RLS policy rejects marking your own message read, and
  * a trigger rejects any other column, so this is the whole of what a client may
  * write to `messages`.
  */
-export function useMarkRead(conversationId: string | undefined, selfId: string | undefined): void {
+export function useMarkRead(
+  conversationId: string | undefined,
+  selfId: string | undefined,
+): (visibleIds: readonly string[]) => void {
   const queryClient = useQueryClient();
   const inFlightRef = useRef<Set<string>>(new Set());
+  const visibleRef = useRef<Set<string>>(new Set());
+  const flushRef = useRef<() => void>(() => undefined);
+
+  useEffect(() => {
+    // A conversation switch starts the visibility/in-flight bookkeeping over —
+    // otherwise a message id that happens to collide across conversations
+    // (never, in practice, but nothing enforces it) could be treated as
+    // already-visible before it has ever been rendered.
+    inFlightRef.current = new Set();
+    visibleRef.current = new Set();
+  }, [conversationId]);
 
   useEffect(() => {
     if (conversationId === undefined || selfId === undefined) {
+      flushRef.current = () => undefined;
       return;
     }
     const key = messagesKey(conversationId);
 
     const flush = (): void => {
       const list = queryClient.getQueryData<TranscriptMessage[]>(key) ?? [];
-      const ids = unreadFromPeer(list, selfId).filter(id => !inFlightRef.current.has(id));
+      const ids = unreadFromPeer(list, selfId).filter(
+        id => visibleRef.current.has(id) && !inFlightRef.current.has(id),
+      );
       if (ids.length === 0) {
         return;
       }
@@ -284,8 +359,8 @@ export function useMarkRead(conversationId: string | undefined, selfId: string |
           }
         });
     };
+    flushRef.current = flush;
 
-    flush();
     const unsubscribe = queryClient.getQueryCache().subscribe(event => {
       if (event.query.queryHash === JSON.stringify(key)) {
         flush();
@@ -293,4 +368,20 @@ export function useMarkRead(conversationId: string | undefined, selfId: string |
     });
     return unsubscribe;
   }, [conversationId, selfId, queryClient]);
+
+  return useCallback((visibleIds: readonly string[]) => {
+    let grew = false;
+    for (const id of visibleIds) {
+      if (!visibleRef.current.has(id)) {
+        visibleRef.current.add(id);
+        grew = true;
+      }
+    }
+    // Only re-run the query when a genuinely NEW id became visible — FlashList
+    // reports the whole viewable set on every scroll tick, and re-flushing
+    // against an unchanged set would just re-filter to the same empty result.
+    if (grew) {
+      flushRef.current();
+    }
+  }, []);
 }

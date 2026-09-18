@@ -40,11 +40,24 @@ export interface PlayingVoice {
   pending: boolean;
 }
 
-export interface AppState {
+/** What a peer is doing in the composer, mirrored from their device. */
+export type PeerActivity = 'typing' | 'recording';
+
+interface AppState {
   balance: number | null;
   /** A `send_message` RPC is in flight. Distinct from the peer typing. */
   sending: boolean;
-  peerTyping: boolean;
+  /**
+   * What the peer is DOING, not merely whether they are doing something.
+   *
+   * A boolean until 2026-09-17. Telegram carries the distinction on the wire as
+   * separate actions and renders separate copy for each
+   * (TL_sendMessageTypingAction vs TL_sendMessageRecordAudioAction,
+   * MessagesController.java:11210-11213), and it matters here for the same
+   * reason: this app has voice notes, and "typing" is simply untrue while
+   * somebody is holding the mic.
+   */
+  peerActivity: PeerActivity | null;
   refillVisible: boolean;
   /** Full-page Recharge, opened only from the wallet pill. */
   walletVisible: boolean;
@@ -92,7 +105,7 @@ export interface AppState {
 
   setBalance: (balance: number | null) => void;
   setSending: (sending: boolean) => void;
-  setPeerTyping: (typing: boolean) => void;
+  setPeerActivity: (activity: PeerActivity | null) => void;
   /**
    * Replaces rather than merges. A position update for a note that is no longer
    * the active one is a late callback from the player that has just been stopped,
@@ -127,7 +140,7 @@ export interface AppState {
 const INITIAL = {
   balance: null,
   sending: false,
-  peerTyping: false,
+  peerActivity: null,
   refillVisible: false,
   walletVisible: false,
   pendingReview: null,
@@ -141,7 +154,7 @@ const INITIAL = {
   AppState,
   | 'setBalance'
   | 'setSending'
-  | 'setPeerTyping'
+  | 'setPeerActivity'
   | 'setPlaying'
   | 'openRefill'
   | 'closeRefill'
@@ -163,7 +176,7 @@ export const useStore = create<AppState>()(set => ({
 
   setBalance: balance => set({ balance }),
   setSending: sending => set({ sending }),
-  setPeerTyping: peerTyping => set({ peerTyping }),
+  setPeerActivity: peerActivity => set({ peerActivity }),
   setPlaying: playing => set({ playing }),
   openRefill: () => set({ refillVisible: true, walletVisible: false }),
   closeRefill: () => set({ refillVisible: false }),
@@ -198,7 +211,7 @@ export const useStore = create<AppState>()(set => ({
   // `playing` goes with it: audio from the thread you just left should not keep
   // playing over the next one, and the marker has to clear with the sound.
   resetConversation: () =>
-    set({ sending: false, peerTyping: false, notice: null, playing: null, uploadProgress: {} }),
+    set({ sending: false, peerActivity: null, notice: null, playing: null, uploadProgress: {} }),
 }));
 
 /** Test helper; also used to reset state after account deletion. */
@@ -209,7 +222,8 @@ export function resetStore(): void {
 /** Selectors, kept next to the store so components subscribe narrowly. */
 export const selectBalance = (s: AppState): number | null => s.balance;
 export const selectSending = (s: AppState): boolean => s.sending;
-export const selectPeerTyping = (s: AppState): boolean => s.peerTyping;
+export const selectPeerActivity = (s: AppState): PeerActivity | null =>
+  s.peerActivity;
 export const selectIsLow = (s: AppState): boolean => isLowBalance(s.balance);
 export const selectUploadProgress =
   (id: string) =>

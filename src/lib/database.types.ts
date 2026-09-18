@@ -72,16 +72,17 @@ export type TelemetryEvent =
 export type Gender = 'female' | 'male' | 'other';
 
 /**
- * What somebody has chosen to publish about being reachable. Three values rather
- * than a boolean because `away` and `hidden` are observably different to the
- * person looking: away publishes the word, hidden publishes nothing, and
- * collapsing them would make opting out of presence and declaring yourself
- * absent the same statement.
+ * What somebody chose to publish about being reachable, between migration 012
+ * and 2026-09-17. Three values rather than a boolean because `away` and
+ * `hidden` were observably different to the person looking: away published the
+ * word, hidden published nothing.
  *
- * Not `is_available`, which is the provider's directory listing switch. Every
- * dot in the app read that as presence until migration 012, which meant a
- * provider who wanted work but had put the phone down still showed as here, and
- * a member could not appear present at all.
+ * DEAD TO THE CLIENT since 2026-09-17. `is_available` is the master switch and
+ * the only reachability signal any screen reads (src/lib/presence.ts carries
+ * the argument); the picker that wrote this is gone from Settings. The type,
+ * the columns and the `presence_choice` enum stay so the rows keep typechecking
+ * and nothing is destroyed on the way through, and can be dropped once the new
+ * model has been live for a while.
  */
 export type PresenceChoice = 'here' | 'away' | 'hidden';
 
@@ -98,6 +99,11 @@ export type Profile = {
    * those two used to be read as flags by different callers and could disagree.
    */
   identity_state: 'none' | 'pending' | 'verified';
+  /**
+   * The master switch, since 2026-09-17. Off means offline everywhere and the
+   * member gets the Notify route; on means online, offering whichever of the
+   * three channels below is true. It is also what every dot in the app reads.
+   */
   is_available: boolean;
   /**
    * Provider-only in practice: which channels they offer (migration 064).
@@ -131,14 +137,16 @@ export type Profile = {
    * nobody agreed to have that published about them.
    */
   presence_visible: boolean;
-  /** Written only by `touch_presence`, and only while `presence_visible`. */
+  /**
+   * Written only by `touch_presence`, and only while `presence_visible` — so
+   * never, in practice: no client has ever called that RPC, which is why the
+   * app shows a word rather than a last-seen stamp.
+   */
   last_active_at: string | null;
   /**
-   * The declared state, added by 012, and the only presence signal a screen
-   * should render. Client-writable and deliberately in no guard trigger: being
-   * reachable or not is the one thing about themselves a person must be able to
-   * change instantly. `useSetPresence` writes it and `presence_visible` together,
-   * so there is one control rather than two.
+   * The declared state added by 012, and read by nothing since 2026-09-17:
+   * `is_available` is the one reachability signal now. Still written by the
+   * database's own defaults and left in place; see `PresenceChoice`.
    */
   presence: PresenceChoice;
   /**
@@ -335,12 +343,31 @@ export type ConversationSummary = {
   /** The peer's photo (providers only; null for members and until set). */
   peer_avatar_url: string | null;
   /**
-   * The peer's declared presence. Replaced `peer_available` in 012: that
-   * column resolved the provider's listing switch through a join that was false
-   * for every member.
+   * The peer's master switch, and what the inbox dot and the chat header read
+   * since 2026-09-17.
+   *
+   * NEEDS A VIEW MIGRATION. `conversation_peers` has resolved this column since
+   * 011 (`case when peer.role = 'provider' then peer.is_available else false
+   * end`), but `conversation_summaries` — last rebuilt in 037 — does not project
+   * it or `peer_is_provider`, so both are absent from the wire until a migration
+   * adds `pe.peer_available` and `pe.peer_is_provider` to that select list.
+   * Until then every peer reads as not-loaded, which is the fail-closed
+   * direction: no dot and no line, rather than a claim.
+   */
+  peer_available: boolean;
+  /**
+   * Whether the peer has a listing switch at all. A member does not, so `false`
+   * above means "member" rather than "closed", and the two must not render the
+   * same way: telling a provider that the member they are talking to is away is
+   * inventing a fact about a person. Same migration as `peer_available`.
+   */
+  peer_is_provider: boolean;
+  /**
+   * The peer's declared presence. Replaced `peer_available` in 012, and read by
+   * nothing since 2026-09-17; see `PresenceChoice`.
    */
   peer_presence: PresenceChoice | null;
-  /** Null unless the peer turned presence on. */
+  /** Null unless the peer turned presence on. Unread; see `PresenceChoice`. */
   peer_last_active_at: string | null;
   /**
    * Timestamp of the most recent session event for this thread (populated by
@@ -398,33 +425,31 @@ export type ProviderSummary = {
   /** Longer About paragraph. Distinct from the one-line headline. */
   about: string | null;
   languages: string[];
+  /**
+   * The master switch, and what the directory dot renders since 2026-09-17: on
+   * is online and offering the channels below, off is offline and the Notify
+   * route. Published by `provider_directory` since 083.
+   */
   is_available: boolean;
   rating_avg: number | null;
   rating_count: number;
   /** Published so "does she actually reply" is answerable before spending. */
   median_reply_seconds: number | null;
-  /**
-   * "Is she around now", published only with the provider's own consent. Null
-   * whenever `presence_visible` is off, which the view enforces rather than
-   * leaving to the client.
-   */
+  /** Never written by anything; unread since 2026-09-17. See `PresenceChoice`. */
   last_active_at: string | null;
   created_at: string;
-  /**
-   * The declared state, which is what the directory dot renders. `is_available`
-   * above is the listing switch and answers a different question: a provider is
-   * entitled to be here and closed for work, or listed and asleep.
-   */
+  /** The declared state. Unread since 2026-09-17; see `PresenceChoice`. */
   presence: PresenceChoice;
   /**
-   * Which channels this provider offers (migration 064). A third question again:
-   * `is_available` is whether they are taking anyone new at all, `presence` is
-   * whether they are around, and these are what they are willing to do — a
-   * provider who types at 2am but will not be on camera. At least one is always
-   * true (`profiles_at_least_one_channel`).
+   * Which channels this provider offers (migration 064), under the master
+   * switch above: `is_available` is whether they are open at all, and these are
+   * what they are willing to do while they are — a provider who types at 2am but
+   * will not be on camera. At least one is always true
+   * (`profiles_at_least_one_channel`).
    *
-   * The member's buttons read these so a channel that is not offered says so
-   * before it is tapped; the trigger on `session_requests` is what enforces it.
+   * A member is shown ONLY the actions these permit, plus a line naming the
+   * limit (`offeredChannelsLine`), so a channel that is not offered is absent
+   * rather than dead; the trigger on `session_requests` is what enforces it.
    */
   chat_enabled: boolean;
   audio_enabled: boolean;
@@ -656,7 +681,13 @@ export type SendError =
  * 2026-09-08 call outage spent a day looking like bad wifi because there was no
  * such code and every raise collapsed to `null`.
  */
-export type CallError = SendError | 'BUSY' | 'GONE' | 'SERVER_ERROR';
+/**
+ * `ALREADY_RINGING` (M23, 2026-09-17 audit, migration 120): the other party is
+ * already calling THIS user in the same conversation. `start_call` returns
+ * `call_id` alongside it — the existing (not the refused) call's id — so the
+ * caller can be offered a way to answer it instead of a plain refusal.
+ */
+export type CallError = SendError | 'BUSY' | 'GONE' | 'SERVER_ERROR' | 'ALREADY_RINGING';
 
 export type SendResult = {
   success: boolean;
@@ -730,12 +761,14 @@ export type SpendChatMinuteResult = {
 };
 
 /** Returned by the `mock_recharge` RPC (migration 020). Only callable when
- *  `app_flags.mock_payments = true`; inert (MOCK_DISABLED) in production. */
+ *  `app_flags.mock_payments = true`; inert (MOCK_DISABLED) in production.
+ *  `RATE_LIMITED` (migration 117): capped at 3 calls per user per 24h,
+ *  regardless of the server flag's state. */
 export type MockRechargeResult = {
   success: boolean;
   transaction_id?: string;
   new_balance?: number;
-  error?: 'NOT_AUTHENTICATED' | 'MOCK_DISABLED' | 'INVALID_AMOUNT';
+  error?: 'NOT_AUTHENTICATED' | 'MOCK_DISABLED' | 'INVALID_AMOUNT' | 'RATE_LIMITED';
 };
 
 /** Added by migration 019. */

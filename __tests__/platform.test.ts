@@ -862,8 +862,12 @@ describe('call lifecycle — foreground service and permissions', () => {
      */
     const fgs = read(FGS);
     expect(fgs).toContain('PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK');
+    // `!isIncoming` is load-bearing: the comment above already said "never while
+    // ringing", but the pinned literal did not enforce it. includeMicrophone is
+    // true from the FIRST start, which is the ringing one, so the lock was held
+    // for the whole ring with the screen blanked against the caller's ear.
     expect(fgs).toContain(
-      'updateProximity(includeMicrophone && !includeCamera)',
+      'updateProximity(!isIncoming && includeMicrophone && !includeCamera)',
     );
     // Support-checked (not every device has it) and released on destroy.
     expect(fgs).toContain(
@@ -913,9 +917,24 @@ describe('call lifecycle — foreground service and permissions', () => {
       'ContextCompat.startForegroundService(context, intent)',
     );
     expect(fgs).not.toContain('context.startForegroundService(intent)');
-    // The FGS must never use fullScreenIntent — the platform test for
-    // Conversations.kt already asserts its absence from the ring notification.
-    expect(fgs).not.toContain('setFullScreenIntent');
+    /*
+     * The service's incoming notification IS the ring, so it carries the
+     * full-screen intent and is the object startForeground() is handed. One
+     * notification, the way Telegram builds it: VoIPService.java:5264 sets the
+     * full-screen intent, :5283 builds CallStyle.forIncomingCall, :5319 passes
+     * that same object to startForeground.
+     *
+     * This assertion previously read `not.toContain`, encoding a two-notification
+     * design where the service deliberately omitted the intent so as not to
+     * compete with Conversations.notifyCall. They competed anyway: two incoming
+     * CallStyle notifications raced at different ids and the one WITHOUT the
+     * intent was the foreground service's, so the callee got a tray entry
+     * instead of a full-screen takeover. Reported 2026-09-16 as issues 4 and 15.
+     */
+    expect(fgs).toContain('setFullScreenIntent');
+    // And the push's pre-notification comes down when the service takes over,
+    // so only one is ever on screen (VoIPPreNotificationService.java:579).
+    expect(fgs).toContain('cancelCallPrenotification');
   });
 
   it('rings continuously while incoming, not a single channel blip', () => {
@@ -1072,7 +1091,16 @@ describe('device coverage matrix', () => {
     expect(settings).toMatch(/const ROW_TEXT_INSET = 32 \+ TOKENS\.space\.sm/);
     expect(settings).not.toContain('<Divider variant="inset" />');
     expect(settings).toContain('icon="logout"');
-    expect(settings).toContain("choiceSheet === 'presence'");
+    /*
+     * The presence chooser left this sheet on 2026-09-17. Availability is one
+     * concept now: the provider's master switch on the You tab says whether
+     * they are open, and a second control here offering here / away / hidden
+     * was the redundancy Amit asked to remove. Its absence is asserted rather
+     * than merely unmentioned, because a chooser that quietly came back would
+     * recreate the failure the availability card's own docblock describes,
+     * two controls saying nearly the same thing while meaning different things.
+     */
+    expect(settings).not.toContain("choiceSheet === 'presence'");
     expect(settings).toContain("choiceSheet === 'theme'");
   });
 

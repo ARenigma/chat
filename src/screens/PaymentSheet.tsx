@@ -157,6 +157,10 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
       const errCode = data?.error;
       if (errCode === 'MOCK_DISABLED') {
         setErrorMsg('Mock payments are off. Enable app_flags.mock_payments to test.');
+      } else if (errCode === 'RATE_LIMITED') {
+        // migration 117: capped at 3 mock recharges per user per 24h,
+        // regardless of the server flag's state.
+        setErrorMsg('Mock recharge limit hit for today (3 max). Try again tomorrow.');
       } else {
         setErrorMsg('Something went wrong, try again');
       }
@@ -417,7 +421,7 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
               (web/refund.html: "All purchases on Pappal are final"). Same
               wording as RechargeScreen's footer so the two never drift. */}
           <Text allowFontScaling style={styles.finalNote} testID="payment-final-note">
-            All purchases are final — no refunds.
+            All purchases are final. No refunds.
           </Text>
         </>
       )}

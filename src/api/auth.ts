@@ -1,5 +1,5 @@
 import { Linking } from 'react-native';
-import type { Session } from '@supabase/supabase-js';
+import { isAuthRetryableFetchError, type Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { reportSwallowed } from '../lib/sentry';
 import {
@@ -305,7 +305,24 @@ function describeOtpError(message: string): string {
   return 'Could not verify that code. Please try again.';
 }
 
-export async function currentSession(): Promise<Session | null> {
+export interface CurrentSessionResult {
+  session: Session | null;
+  /**
+   * True when `session` came back null because the auth server could not be
+   * reached to refresh an expired token — not because there is genuinely no
+   * stored session (H6, 2026-09-17 audit: "cold launch offline can sign a
+   * signed-in member out"). A member who has not opened the app in a while
+   * has an access token past its real expiry by the time they cold-launch,
+   * so GoTrueClient's own offline-refresh fallback (which only preserves the
+   * session within the last ~minute before real expiry, see
+   * `@supabase/auth-js`'s `__loadSession`) has nothing left to hand back and
+   * genuinely returns `session: null` — indistinguishable, to the caller,
+   * from an actual sign-out unless this flag says otherwise.
+   */
+  retryableError: boolean;
+}
+
+export async function currentSession(): Promise<CurrentSessionResult> {
   const { data, error } = await supabase.auth.getSession();
   // A read error (corrupt storage, unreachable auth) is not the same as "no
   // session", but both land the boot on the sign-in screen. Surface the error so
@@ -314,7 +331,10 @@ export async function currentSession(): Promise<Session | null> {
   if (error) {
     reportSwallowed('currentSession', error);
   }
-  return data.session;
+  return {
+    session: data.session,
+    retryableError: error !== null && isAuthRetryableFetchError(error),
+  };
 }
 
 /**
