@@ -240,22 +240,6 @@ const EXEMPT: Record<string, string> = {
    */
   SEARCH_GLYPH_SIZE: 'SearchBar: matched to the reference glyph ink, 13.94dp',
   /*
-   * The composer's emoji/keyboard glyph. Same class as the header handset
-   * below: three controls in one capsule must present the same INK, not the
-   * same number.
-   *
-   * Measured on an S22 at density 450 — at `icon.md` all three ink 22.0dp TALL,
-   * so the token was never wrong. The width is what differs, and it differs
-   * because the glyphs are different shapes: `smile` is a closed circle tracing
-   * its full box at 22.0dp, `paperclip` 20.6dp, `mic` 16.4dp. A circle reads
-   * larger than an open form at the same nominal size, which is why Material's
-   * keylines size circles and rectangles differently inside one grid.
-   *
-   * 19 lands ~20.9dp, within 0.3dp of the paperclip. The mic is not the target:
-   * matching a circle to a narrow body would leave the circle looking shrunken.
-   */
-  EMOJI_GLYPH_SIZE: 'Composer: optical match to the paperclip beside it, 20.6dp',
-  /*
    * The chat header's handset. Not a step, deliberately: two controls sitting
    * beside each other must present the same INK, and at 20dp the handset's
    * outline inks 20.0dp against the video camera's 19.3dp. Measured on the

@@ -90,29 +90,6 @@ export const TELEGRAM_ISLAND_INSET = 7;
 const EMOJI_BUTTON = 40;
 
 /**
- * The emoji/keyboard glyph, 19 and not `icon.md` (20) — an OPTICAL correction,
- * measured, not a taste adjustment.
- *
- * Amit, 2026-09-13: "emoji icon should be same size as clip/mic". They already
- * WERE the same token and the same height: measured on an S22 at density 450,
- * all three ink exactly 22.0dp tall. What differs is width, because the glyphs
- * are different shapes — `smile` is a closed circle that traces its full box at
- * 22.0dp wide, `paperclip` is an open form at 20.6dp, and `mic` is a narrow
- * body at 16.4dp. A circle at the same nominal size as an open form reads
- * larger, which is the oldest problem in icon drawing and the reason Material's
- * keylines give circles and rectangles different dimensions inside one grid.
- *
- * 19 lands the circle at ~20.9dp of ink, within 0.3dp of the paperclip beside
- * it. The mic is deliberately NOT the target: a microphone is a narrow object
- * and matching a circle to it would leave the circle looking shrunken.
- *
- * Same class of exception as the chat header's handset, which is pinned at a
- * non-step size for the same reason — two controls in one row must present the
- * same INK, not the same number. Exempted by name in __tests__/iconScale.test.ts.
- */
-const EMOJI_GLYPH_SIZE = 19;
-
-/**
  * Input field height bounds (dp).
  *
  * MIN matches the previous `minHeight: 36` so the single-line capsule is unchanged.
@@ -1390,7 +1367,18 @@ function ComposerView({
               4dp difference between the leading glyph and the two trailing ones
               is visible at this size — the second half of "the elements are not
               aligned" (Amit, 2026-09-12); the first half was the 36dp button in
-              a row of 40s. Three controls in one capsule, one glyph size. */}
+              a row of 40s. Three controls in one capsule, one glyph size.
+
+              A 2026-09-13 detour shrank this to 19 as an optical correction
+              against the (then) Lucide glyph set — closed circles read larger
+              than open forms at the same nominal size. The icon set moved to a
+              Heroicons font afterward (Icon.tsx's own docblock flagged the need
+              to re-baseline every such correction on a device, which this one
+              never got), and Heroicons' `face-smile` sits further inside its
+              own box than Lucide's did: the Lucide-era shrink left it visibly
+              SMALLER than the clip and mic beside it (Amit, 2026-09-18,
+              confirmed on the S22: ~56dp of ink against their ~60-62dp). Back
+              to the plain token. */}
           {/*
             * The glyph CROSS-FADES rather than cutting (2026-09-12).
             *
@@ -1415,7 +1403,7 @@ function ComposerView({
           <Animated.View key={emojiOpen ? 'keyboard' : 'smile'} entering={fadeSwapFast} exiting={fadeSwapOutFast}>
             <Icon
               name={emojiOpen ? 'keyboard' : 'smile'}
-              size={EMOJI_GLYPH_SIZE}
+              size={TOKENS.icon.md}
               color={theme.color.text.secondary}
             />
           </Animated.View>
