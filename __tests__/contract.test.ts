@@ -2476,6 +2476,33 @@ describe('the chat restyle is wired, not just drawn', () => {
     );
   });
 
+  it('animates the keyboard-lift portion of the transcript pad instead of snapping it (M-emoji, 2026-09-18)', () => {
+    // `bodyInset` toggling 0/imeSpace is correct arithmetic, but FlashList's
+    // `contentContainerStyle` cannot be wrapped in `Animated.createAnimatedComponent`
+    // without losing `scrollToOffset`'s imperative ref (M18) — so applying the
+    // number there directly makes the transcript recompute its scroll position
+    // in one frame, which read as a reflow right as the keyboard finished
+    // rising back from the emoji panel ("the whole viewport jerks and reloads").
+    // The fix moves the keyboard-lift number into a real animated child
+    // (`AnimatedBodyInset`, mounted at the visual-bottom slot via `header`),
+    // driven by the same 250ms keyboard cubic the composer's own multi-line
+    // growth already uses.
+    expect(chatCode).toContain('function AnimatedBodyInset()');
+    const fn = chatCode.slice(
+      chatCode.indexOf('function AnimatedBodyInset()'),
+      chatCode.indexOf('function AnimatedBodyInset()') + 600,
+    );
+    expect(fn).toContain('const bodyInset = useBodyInset();');
+    expect(fn).toContain('duration: M3.duration.medium1');
+    expect(fn).toContain('easing: KEYBOARD_CUBIC');
+    // Wired into `header`, the inverted list's visual-bottom slot — not into
+    // `contentContainerStyle`, which stays a plain, unanimated number for the
+    // structural part only (space.md + dockHeight, neither of which jumps).
+    expect(chatCode).toMatch(/<PeerTyping name={name} \/>\s*<AnimatedBodyInset \/>/);
+    expect(chatCode).toContain("paddingTop: basePad");
+    expect(chatCode).not.toContain("paddingTop: listPad");
+  });
+
   it('does not stack KeyboardAvoidingView on top of adjustResize', () => {
     // `behavior="height"` shrank the body by RN's short number while the panel
     // was sized from a different one, so the two could never agree. The manifest

@@ -16,11 +16,13 @@ import {
   Text,
   View,
 } from 'react-native';
-import Animated from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import {
   barIn,
   barOut,
   holdScreenEnter,
+  KEYBOARD_CUBIC,
+  M3,
   onTransitionSettled,
   pageDownIn,
   pageDownOut,
@@ -37,6 +39,7 @@ import {
   useChatImeStore,
   useComposerFocused,
   useComposerInset,
+  useDockHeight,
   useImeStore,
   useListPad,
 } from '../lib/imeGeometry';
@@ -176,6 +179,10 @@ type SystemRow = {
   sortAt: string;
   text: string;
   icon?: IconName;
+  /** A literal emoji character, for the one mark that IS an emoji rather than
+   * a vector glyph — see the session-ended row below. Mutually exclusive with
+   * `icon`. */
+  emoji?: string;
   opensDay: boolean;
 };
 
@@ -1054,16 +1061,17 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
      * things being recorded are different: a session that was billed, and a
      * call that was attempted.
      *
-     * `heart` is the mark. CallLogRow puts a call/video glyph in the same pill
-     * slot, so the chat row having none was the visible half of these reading
-     * as two features rather than one history.
+     * An orange heart is the mark (Amit, 2026-09-18: swap the vector glyph for
+     * the emoji, same size) — CallLogRow puts a call/video glyph in the same
+     * pill slot, so the chat row having none was the visible half of these
+     * reading as two features rather than one history.
      */
     const systemRows: SystemRow[] = (sessionEvents ?? []).map(e => ({
       kind: 'system' as const,
       localKey: `session-${e.id}`,
       sortAt: e.ended_at,
       text: sessionEndedLabel(e.minutes_billed, e.ended_at),
-      icon: 'heart' as const,
+      emoji: '🧡',
       opensDay: false,
     }));
 
@@ -1686,7 +1694,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
         return (
           <View style={styles.turn}>
             {item.opensDay ? <DayDivider iso={item.sortAt} /> : null}
-            <SystemMessageRow text={item.text} icon={item.icon} />
+            <SystemMessageRow text={item.text} icon={item.icon} emoji={item.emoji} />
           </View>
         );
       }
@@ -1882,7 +1890,12 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   );
 
   const header = useCallback(
-    () => <PeerTyping name={name} />,
+    () => (
+      <>
+        <PeerTyping name={name} />
+        <AnimatedBodyInset />
+      </>
+    ),
     [name],
   );
   // On an inverted list the footer renders at the visual TOP, so this reserves
@@ -2751,7 +2764,15 @@ const Transcript = memo(function TranscriptView({
   onViewableItemsChanged,
 }: TranscriptProps) {
   const styles = useStyles(makeStyles);
-  const listPad = useListPad();
+  // The STRUCTURAL part of the pad only — space.md plus the dock's own
+  // measured height, neither of which jumps discretely. The keyboard-lift
+  // portion (`bodyInset`) is `AnimatedBodyInset`, a real child in `header`
+  // (the visual-bottom slot on this inverted list) rather than a value here,
+  // because it DOES change discretely and `contentContainerStyle` cannot be
+  // animated without wrapping FlashList in `Animated.createAnimatedComponent`
+  // — which breaks `scrollToOffset`'s imperative ref (M18, audit todo).
+  const dockHeight = useDockHeight();
+  const basePad = TOKENS.space.md + dockHeight;
   return (
     <FlashList
       ref={listRef}
@@ -2763,7 +2784,7 @@ const Transcript = memo(function TranscriptView({
       renderItem={renderItem}
       ListHeaderComponent={header}
       ListFooterComponent={footer}
-      contentContainerStyle={[styles.list, { paddingTop: listPad }]}
+      contentContainerStyle={[styles.list, { paddingTop: basePad }]}
       keyboardDismissMode="interactive"
       keyboardShouldPersistTaps="handled"
       onScroll={onScroll}
@@ -2827,6 +2848,38 @@ function DockFrost({ children }: { children: React.ReactNode }) {
 function BarSpacer() {
   const barHeight = useBarHeight();
   return <View style={{ height: barHeight }} />;
+}
+
+/**
+ * The keyboard-lift portion of the transcript's bottom padding, animated —
+ * unlike `Transcript`'s own static pad (`TOKENS.space.md + dockHeight`),
+ * which `contentContainerStyle` still carries as a plain style object
+ * (`FlashList` cannot be `Animated.createAnimatedComponent`-wrapped without
+ * losing `scrollToOffset`'s imperative ref, per M18 in the audit).
+ *
+ * `bodyInset` toggling `keyboardUp ? imeSpace : 0` is correct arithmetic (see
+ * `imeGeometry.ts`), but applying it as a discrete, unanimated number produces
+ * exactly the artefact it was fixed to remove: FlashList recalculates its
+ * scroll position in the same frame the value changes, which reads as the
+ * transcript reflowing — a day divider popping in or out — right as the
+ * keyboard finishes rising back from the emoji panel (Amit, 2026-09-18: "the
+ * whole viewport jerks and reloads"). Telegram's own transition is frame-synced
+ * to the IME's native animation; the closest equivalent available here is to
+ * animate the JS-side number itself over the same 250ms keyboard cubic already
+ * used for the composer's own multi-line growth, so the pad grows/shrinks
+ * alongside the keyboard/panel swap instead of snapping.
+ */
+function AnimatedBodyInset() {
+  const bodyInset = useBodyInset();
+  const height = useSharedValue(bodyInset);
+  useEffect(() => {
+    height.value = withTiming(bodyInset, {
+      duration: M3.duration.medium1,
+      easing: KEYBOARD_CUBIC,
+    });
+  }, [bodyInset, height]);
+  const style = useAnimatedStyle(() => ({ height: height.value }));
+  return <Animated.View style={style} />;
 }
 
 /**

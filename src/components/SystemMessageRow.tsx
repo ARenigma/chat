@@ -2,7 +2,7 @@ import React, { memo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
-import { Icon, type IconName } from './Icon';
+import { Icon, ICON_SCALE, type IconName } from './Icon';
 
 /**
  * A centered, muted informational row in the transcript — WhatsApp/Telegram's
@@ -17,13 +17,33 @@ import { Icon, type IconName } from './Icon';
  * DayDivider, which it sits beside. No accessibilityRole override: TalkBack
  * reads the child Text as content, which is correct for a non-interactive line.
  */
-function SystemMessageRowView({ text, icon }: { text: string; icon?: IconName }) {
+function SystemMessageRowView({
+  text,
+  icon,
+  emoji,
+}: {
+  text: string;
+  icon?: IconName;
+  /**
+   * A literal emoji character, rendered at the same box the vector icon would
+   * take (`TOKENS.icon.xs`) — for the one mark that IS an emoji rather than a
+   * glyph (the session-ended row's orange heart, Amit 2026-09-18). Mutually
+   * exclusive with `icon`: an emoji carries its own colour, so it does not
+   * take `styles.text.color` the way the Icon glyph does.
+   */
+  emoji?: string;
+}) {
   const styles = useStyles(makeStyles);
   return (
     <View style={styles.row}>
       <View style={styles.pill}>
         {icon !== undefined ? (
           <Icon name={icon} size={TOKENS.icon.xs} color={styles.text.color as string} />
+        ) : null}
+        {emoji !== undefined ? (
+          <Text allowFontScaling={false} style={styles.emoji}>
+            {emoji}
+          </Text>
         ) : null}
         <Text allowFontScaling style={styles.text}>
           {text}
@@ -57,5 +77,13 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.bodySmall,
       color: t.color.text.tertiary,
       textAlign: 'center',
+    },
+    // Matches the box an Icon at `TOKENS.icon.xs` actually renders — Icon.tsx
+    // multiplies `size` by its own `ICON_SCALE` before it becomes a fontSize,
+    // so matching just `TOKENS.icon.xs` here would read smaller than the glyph
+    // it replaced.
+    emoji: {
+      fontSize: Math.round(TOKENS.icon.xs * ICON_SCALE),
+      lineHeight: Math.round(TOKENS.icon.xs * ICON_SCALE),
     },
   });

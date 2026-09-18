@@ -231,6 +231,7 @@ const selectComposerInset = (g: ImeState): number => g.composerInset;
 const selectPanelCeiling = (g: ImeState): number => g.panelCeiling;
 const selectBarHeight = (g: ImeState): number => g.barHeight;
 const selectComposerFocused = (g: ImeState): boolean => g.composerFocused;
+const selectDockHeight = (g: ImeState): number => g.dockHeight;
 
 export const useBodyInset = (): number => useZustandStore(useImeStore(), selectBodyInset);
 export const useListPad = (): number => useZustandStore(useImeStore(), selectListPad);
@@ -241,6 +242,13 @@ export const usePanelCeiling = (): number =>
 export const useBarHeight = (): number => useZustandStore(useImeStore(), selectBarHeight);
 export const useComposerFocused = (): boolean =>
   useZustandStore(useImeStore(), selectComposerFocused);
+/**
+ * The dock's own measured height alone, without `bodyInset` — for the one
+ * caller (the transcript's static content padding) that needs to animate the
+ * keyboard-lift portion separately from this structural one. See
+ * `AnimatedBodyInset` in ChatScreen.tsx.
+ */
+export const useDockHeight = (): number => useZustandStore(useImeStore(), selectDockHeight);
 
 /**
  * The screen's own store, created once and fed by the Keyboard listeners.
