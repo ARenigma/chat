@@ -2464,10 +2464,15 @@ describe('the chat restyle is wired, not just drawn', () => {
     // Closing the panel must clear the flag, or the next composer focus can
     // never put the panel away again.
     expect(composer).toMatch(/!emojiOpen && searchingRef\.current/);
-    // And the dock is lifted above the keyboard in that state, or the expanded
-    // panel would render underneath it.
+    // And the dock is lifted above the keyboard whenever the keyboard is
+    // actually up — including while searching, since the search field raises
+    // it again. `keyboardUp` alone is gated on `keyboardDidHide`, the real
+    // native signal, not on `emojiPanelOpen` (M-emoji, 2026-09-18: gating on
+    // both zeroed the lift the instant the panel's React state flipped, a
+    // quarter-second before the keyboard the lift was reserved for had
+    // actually animated away — a visible transcript reflow on tapping emoji).
     expect(withoutComments(read('src/lib/imeGeometry.ts'))).toContain(
-      '!i.emojiPanelOpen || i.emojiSearching',
+      'const bodyInset = i.keyboardUp ? imeSpace : 0;',
     );
   });
 
