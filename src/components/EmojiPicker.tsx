@@ -154,6 +154,16 @@ const GLYPH = StyleSheet.create({ g: { fontSize: 28, lineHeight: 34 } }).g;
 const keyOf = (item: string, i: number) => `${item}-${i}`;
 
 /**
+ * One recycling pool for the whole grid, module-level for the same reason
+ * `keyOf` is: every cell is the same square View+Text no matter which
+ * category or search result it holds, so there is nothing to distinguish
+ * types by. Explicit rather than omitted so a category swap's mount cost is
+ * "recycle an existing cell with new content", not "cells of an unrecognised
+ * type, mount fresh."
+ */
+const getEmojiItemType = (): 'emoji' => 'emoji';
+
+/**
  * The in-app emoji picker.
  *
  * The system keyboard already has emoji, so this exists to be *better than* that
@@ -286,6 +296,16 @@ function EmojiPickerView({
   const searching = query.trim() !== '';
 
   /**
+   * Per (category, tone) cache of the toned list, so revisiting a tab is a
+   * map lookup instead of a re-map of its whole array. The picker is mounted
+   * once and kept alive for the app's life (see the component's own docblock
+   * on why it is never unmounted), so this cache lives exactly as long as it
+   * is useful and is never stale — a tone change is a new key, not a mutation
+   * of an old one.
+   */
+  const tonedCache = useRef(new Map<string, readonly string[]>());
+
+  /**
    * What the grid shows: search hits, the recents list, or a category.
    *
    * Recents are stored already-toned, so they bypass `withTone` — re-applying
@@ -298,8 +318,15 @@ function EmojiPickerView({
     if (category === 'recent') {
       return recents;
     }
+    const cacheKey = `${category}:${tone}`;
+    const cached = tonedCache.current.get(cacheKey);
+    if (cached !== undefined) {
+      return cached;
+    }
     const list: readonly Emoji[] = EMOJI_BY_CATEGORY[category];
-    return list.map(e => withTone(e, tone));
+    const toned = list.map(e => withTone(e, tone));
+    tonedCache.current.set(cacheKey, toned);
+    return toned;
   }, [searching, query, category, recents, tone]);
 
   const pick = useCallback(
@@ -506,6 +533,12 @@ function EmojiPickerView({
         drawDistance={height}
         extraData={cellStyle}
         style={styles.gridBox}
+        // Every cell is the same square regardless of category or search
+        // state, so ONE recycling pool — a category swap reuses the outgoing
+        // category's mounted cells instead of tearing them down and mounting
+        // fresh ones, which is most of what made switching tabs feel like a
+        // beat rather than instant (Amit, 2026-09-18).
+        getItemType={getEmojiItemType}
         ListEmptyComponent={
           <Text allowFontScaling style={styles.empty}>
             {searching
