@@ -82,8 +82,15 @@ const makeStyles = (t: Theme) =>
     // multiplies `size` by its own `ICON_SCALE` before it becomes a fontSize,
     // so matching just `TOKENS.icon.xs` here would read smaller than the glyph
     // it replaced.
+    //
+    // `lineHeight` is deliberately NOT equal to `fontSize` (EmojiPicker.tsx's
+    // own working glyph is 28/34, the same ~1.2 ratio) — a color emoji's
+    // bitmap needs more vertical room than its nominal font size to paint
+    // without being clipped down to Android's monochrome tofu fallback, which
+    // is what an equal 14/14 box did here (Amit, 2026-09-18, confirmed on the
+    // S22: rendered as a plain grey outline heart, not the orange emoji).
     emoji: {
       fontSize: Math.round(TOKENS.icon.xs * ICON_SCALE),
-      lineHeight: Math.round(TOKENS.icon.xs * ICON_SCALE),
+      lineHeight: Math.round(TOKENS.icon.xs * ICON_SCALE * 1.2),
     },
   });
