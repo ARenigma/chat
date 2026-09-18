@@ -1400,7 +1400,11 @@ function ComposerView({
             * already uses for exactly this — a control that has just changed
             * what it says about itself.
             */}
-          <Animated.View key={emojiOpen ? 'keyboard' : 'smile'} entering={fadeSwapFast} exiting={fadeSwapOutFast}>
+          <Animated.View
+            key={emojiOpen ? 'keyboard' : 'smile'}
+            entering={fadeSwapFast}
+            exiting={fadeSwapOutFast}
+            style={styles.emojiGlyph}>
             <Icon
               name={emojiOpen ? 'keyboard' : 'smile'}
               size={TOKENS.icon.md}
@@ -1812,6 +1816,22 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     alignSelf: 'flex-end',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  /*
+   * A small upward nudge for the glyph itself, not the button. Measured on the
+   * S22 (Amit, 2026-09-18) with the button already perfectly centered in the
+   * capsule: the smile glyph still inked with 44px above it and 33px below —
+   * `textAlignVertical: 'center'` centres the Heroicons font's LINE BOX, not
+   * the glyph's own ink, and this font's ascent/descent are not symmetric
+   * around its centre. -2dp (density 450: 44-33=11px / 2 ≈ 5.5px ≈ 1.96dp)
+   * splits the difference. A font-wide property, so every glyph in the app
+   * carries the same low-single-digit bias — pinned here rather than in
+   * Icon.tsx because this is the one spot it was actually measured and
+   * reported; a global change would move dozens of icons nobody has
+   * re-verified against.
+   */
+  emojiGlyph: {
+    transform: [{ translateY: -2 }],
   },
   // The camera, outside the capsule, between it and the send/mic slot. Width is
   // animated (see `cameraStyle`), so nothing here may set one.
