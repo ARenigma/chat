@@ -865,8 +865,35 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
    * thread has any live content. Member-side only — a provider does not greet
    * themselves.
    */
+  // Mirrors `insert_next_opener`'s own v_live check (045): "does this
+  // conversation already have a real, human message." Booleans, not the raw
+  // array, so the effect below re-fires exactly once when the first fetch
+  // resolves and again only if a genuine live message arrives mid-sequence —
+  // never on every automated-opener insert the loop makes itself (those are
+  // origin='automated_opener', not 'live', so this stays false throughout).
+  const messagesLoaded = messages !== undefined;
+  const hasLiveMessage = useMemo(
+    () => (messages ?? []).some(m => m.origin === 'live'),
+    [messages],
+  );
   useEffect(() => {
     if (!isMemberSide) {
+      return;
+    }
+    /*
+     * Wait for the real message list before showing anything (Amit,
+     * 2026-09-18: "leading typing indicator on chat reload or chat open").
+     * The loop below used to call `setPeerActivity('typing')` and wait a
+     * beat BEFORE its first `insert_next_opener` call — the RPC that alone
+     * knows whether this conversation already has a live message and would
+     * refuse to insert anything. Reopening any established conversation (one
+     * real exchange deep or a hundred) flashed a fake "typing" for up to
+     * 2.2s before the RPC came back and said there was nothing to do. Now
+     * that check runs client-side, first, using data the screen already
+     * fetches for the transcript anyway — no RPC round trip needed just to
+     * decide whether to fake-type.
+     */
+    if (!messagesLoaded || hasLiveMessage) {
       return;
     }
     let cancelled = false;
@@ -934,7 +961,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
       }
       setPeerActivity(null);
     };
-  }, [isMemberSide, providerId, queryClient, setPeerActivity]);
+  }, [isMemberSide, providerId, queryClient, setPeerActivity, messagesLoaded, hasLiveMessage]);
 
   const memberHasSent = useMemo(
     () =>
