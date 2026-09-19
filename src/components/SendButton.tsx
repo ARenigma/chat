@@ -26,16 +26,24 @@ const SIZE = 38;
  * Pressing it **squashes** rather than shrinks: `press="send"` scales to 0.86
  * and then multiplies Y by a further 0.78, so the circle briefly flattens like
  * something taking weight. Uniform scaling reads as "the button got smaller";
- * non-uniform scaling reads as mass. The bubble that arrives a moment later
- * enters with the matching stretch (see `bubbleLaunch`), so the two halves of
- * one gesture rhyme, squeezed here, released there.
+ * non-uniform scaling reads as mass.
  *
- * **This is a deliberate brand exception to the iOS pass, not an oversight.**
- * Every other press model in the app moved to `highlight="dim"`, which does not
- * scale at all; iOS's own send button scales *up* briefly and dims. The squash
- * stays because it is the one moment the product is built around and because it
- * rhymes with the bubble's arrival, which nothing on the platform does. Stated
- * here so the next reader does not "finish" the pass by deleting it.
+ * IT USED TO RHYME WITH THE BUBBLE, AND IT NO LONGER DOES. The squash was one
+ * half of a pair: `bubbleLaunch` gave the sent message a matching
+ * narrow-and-tall entrance, so the gesture was squeezed here and released
+ * there. That entrance was deleted with the V1 transcript on 2026-09-19 — the
+ * V2 transcript lives inside `KeyboardGestureArea`, where a JS animation
+ * racing the native IME lift is the double-authority jump the rewrite exists
+ * to remove, so no bubble animates at all.
+ *
+ * **The squash stays anyway, and that is a decision rather than an
+ * oversight.** Every other press model in the app moved to
+ * `highlight="dim"`, which does not scale; iOS's own send button scales *up*
+ * briefly and dims. This one keeps the squash because it is the moment the
+ * product is built around and because the feedback on the control a member
+ * touches most should be the app's own, not the platform's. Stated here so
+ * the next reader does not "finish" the pass by deleting it — and so nobody
+ * goes looking for the other half.
  *
  * On release it emits a single ring. One ring, not a particle system: the point
  * is to confirm a token was spent, and confirmation is a full stop rather than a

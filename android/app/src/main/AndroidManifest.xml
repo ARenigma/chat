@@ -235,20 +235,20 @@
         `configChanges` keeps its orientation and size entries, which matters more
         now than it did under the lock: rotation, split screen, freeform and a
         folding hinge all resize the window, and a restart rebuilds the surface.
-        `Composer`'s draft is local state by decision (see the comment at
-        src/components/Composer.tsx:47), so a restart costs somebody's half-typed
-        message.
+        The chat draft is written to MMKV on the `background` AppState
+        transition (src/lib/chatDraft.ts), so a restart no longer costs
+        somebody's half-typed message.
       -->
       <!--
         The viewport NEVER resizes for the soft keyboard: SOFT_INPUT_ADJUST_NOTHING.
 
         The OS reports the IME as a WindowInsets animation and the app lifts its
-        own chat surfaces by that inset on the UI thread (keyboard-controller
-        worklets in src/lib/keyboardEngine.ts), instead of letting the window
-        manager shrink the layout and re-run Yoga on every frame of the
-        keyboard's travel. A resize/pan mode reintroduces the onMeasure/onLayout
-        cycle on every keyboard and emoji-panel swap, which is how the transcript
-        visibly jumped.
+        own chat surfaces by that inset on the UI thread (the chat dock's
+        `KeyboardStickyView`, and `useImeSpace` on the forms), instead of
+        letting the window manager shrink the layout and re-run Yoga on every
+        frame of the keyboard's travel. A resize/pan mode reintroduces the
+        onMeasure/onLayout cycle on every keyboard swap, which is how the
+        transcript visibly jumped.
         https://developer.android.com/develop/ui/views/layout/edge-to-edge
         https://developer.android.com/develop/ui/views/layout/insets
         __tests__/platform.test.ts pins this value.

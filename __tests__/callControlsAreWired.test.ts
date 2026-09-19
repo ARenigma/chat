@@ -166,7 +166,7 @@ describe('the wallet follows the money', () => {
   });
 
   it('refreshes it when a call ends, which has no such channel', () => {
-    // useSessionRealtime is keyed by conversation and lives in ChatScreen, so a
+    // useSessionRealtime is keyed by conversation and lives in the chat, so a
     // call never receives the per-minute invalidation above.
     const finish = call.slice(call.indexOf('const finish = useCallback'));
     expect(finish.slice(0, 400)).toMatch(/queryKey: \['profile'\]/);

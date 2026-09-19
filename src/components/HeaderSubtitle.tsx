@@ -11,7 +11,7 @@ import type { PresenceRead } from '../lib/presence';
  * The subtitle line under the peer's name in the chat header.
  *
  * Subscribes narrowly to `selectPeerActivity` so that typing broadcasts only
- * re-render this small leaf, not the entire ChatScreen — the same isolation
+ * re-render this small leaf, not the entire chat screen — the same isolation
  * pattern that `PeerTyping` uses for the transcript bubble. `presence` is a
  * stable value derived from the thread row and changes only when the peer
  * updates their declared state, not on every keystroke.
@@ -22,7 +22,7 @@ import type { PresenceRead } from '../lib/presence';
  * Material 3's own bar does: `TopAppBarLayout` composes the title as a two-child
  * `Column` only `if (subtitle != null)` and as a single `Box` otherwise — it
  * never reserves a blank subtitle line (androidx.compose.material3 AppBar.kt).
- * The header still cannot change height: `ChatScreen`'s `identityText` reserves
+ * The header still cannot change height: `ChatHeaderV2`'s `identityText` reserves
  * `IDENTITY_LINES * fontScale` in both states, which is where M3 puts the
  * reservation (`AppBarSmallTokens.ContainerHeight`), and unlike a blank line box
  * it lets the single-line state centre on the 30dp avatar.
@@ -56,7 +56,7 @@ function HeaderSubtitleView({ presence }: { presence: PresenceRead }) {
   // ("the chat header renders the name alone rather than reserving a blank
   // row"); the code now agrees with it.
   //
-  // Returning null rather than being conditionally rendered by ChatScreen: this
+  // Returning null rather than being conditionally rendered by the header: this
   // component stays MOUNTED and keeps its narrow `selectPeerTyping`
   // subscription, so a typing broadcast still re-renders only this leaf.
   if (label === '') {

@@ -8,10 +8,9 @@
  * cannot tell a right rule from a wrong one. Every rule here is asserted as a
  * value in `__tests__/chatV2Cells.test.ts`.
  *
- * It imports nothing from `src/screens/ChatScreen.tsx`, `Turn.tsx`,
- * `CallLogRow.tsx` or `Composer.tsx`, and nothing that would pull the native
- * runtime into a unit test: `timeOfDay` and `durationWords` are the same shared
- * formatters V1 uses, so the two transcripts cannot word one history two ways.
+ * It imports nothing that would pull the native runtime into a unit test:
+ * `timeOfDay` and `durationWords` are the app's shared formatters, so a call
+ * row and a session row cannot word one history two ways.
  */
 import type { CallRecord } from '../api/chat';
 import { timeOfDay } from '../lib/datetime';

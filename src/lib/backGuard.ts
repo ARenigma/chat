@@ -7,7 +7,7 @@ import { useEffect, useLayoutEffect } from 'react';
  * and stops at the first that returns true. That makes "who handles back" an
  * ORDERING contract between components that do not know about each other, and
  * the order was not stable: App.tsx re-subscribed whenever the Recharge overlay
- * opened or closed, ChatScreen whenever the session row refetched, and
+ * opened or closed, the chat screen whenever the session row refetched, and
  * whichever effect ran last fired first. Open Recharge from the chat bar, close
  * it, press back — and the chat could pop out from under a live paid session
  * with no confirm (found 2026-09-06 while wiring goal item 6).

@@ -5,7 +5,7 @@
  * survives backgrounding, and is purged only on an intentional exit from the
  * chat — back to Home, into a call, or the app closing).
  *
- * The armed reply target is deliberately NOT part of this: ChatScreen's own
+ * The armed reply target is deliberately NOT part of this: the chat screen's own
  * `replyTo` has carried "never persisted: a half-composed reply is not worth
  * surviving a screen" since before this audit, and X6 only asked for the
  * typed text — extending persistence to the reply target too would be a

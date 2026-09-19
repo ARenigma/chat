@@ -167,7 +167,7 @@ describe('the send path persists before it sends', () => {
 
 describe('a failed send keeps its bubble', () => {
   const chat = read('src/api/chat.ts');
-  const turn = read('src/components/Turn.tsx');
+  const cell = read('src/chat-v2/ChatMessageCellV2.tsx');
 
   it('marks the row failed instead of deleting it', () => {
     // It used to splice the row out, so the member watched their message
@@ -179,14 +179,17 @@ describe('a failed send keeps its bubble', () => {
   it('never shows a tick and a failure together', () => {
     // A check mark beside a message that did not send is the single most
     // misleading thing the bubble could say.
-    const at = turn.indexOf('failed === true ? (');
+    const at = cell.indexOf('{failed ? (');
     expect(at).toBeGreaterThan(0);
-    const block = turn.slice(at, at + 900);
+    const block = cell.slice(at, at + 900);
     expect(block).toContain(') : receipt !== undefined ? (');
   });
 
   it('makes the failed bubble the retry target', () => {
-    expect(turn).toContain('failed === true && onRetry !== undefined');
+    // The tap and the screen-reader action land on the same branch, so a
+    // failed row is retryable by either route and only while it is failed.
+    expect(cell).toContain('if (failed && !mutationsDisabled)');
+    expect(cell).toContain('onRetry(messageId)');
   });
 });
 
@@ -197,8 +200,7 @@ describe('the bubble tail, ported from WhatsApp', () => {
    * matching its own tail-out.svg viewBox "0 0 8 13". Not the bottom corner,
    * which is where iMessage puts it and where most clones put theirs.
    */
-  const turn = read('src/components/Turn.tsx');
-  const chat = read('src/screens/ChatScreen.tsx');
+  const turn = read('src/chat-v2/ChatMessageCellV2.tsx');
 
   it('uses WhatsApp own 8x13 dimensions', () => {
     expect(turn).toMatch(/TAIL_W = 8/);
@@ -237,22 +239,23 @@ describe('the bubble tail, ported from WhatsApp', () => {
   it('squares the tail-side corner only', () => {
     // Measured ~1dp on WhatsApp against 9dp on the other three. Without it the
     // tail looks detached from a rounded corner instead of growing out of one.
-    expect(turn).toContain('tailCornerMine: { borderTopRightRadius: 1 }');
-    expect(turn).toContain('tailCornerPeer: { borderTopLeftRadius: 1 }');
+    expect(turn).toMatch(/tailCornerMine: \{\s*borderTopRightRadius: 1,?\s*\}/);
+    expect(turn).toMatch(/tailCornerPeer: \{\s*borderTopLeftRadius: 1,?\s*\}/);
   });
 
   it('shows it only on the first bubble of a run', () => {
     // WhatsApp tails the oldest bubble of a run; the rest are fully rounded.
     // `first` already means exactly that (sender differs from the older
     // neighbour), so no second notion of grouping was invented.
-    expect(chat).toContain('tail={first}');
-    expect(turn).toContain('testID="bubble-tail-mine"');
-    expect(turn).toContain('testID="bubble-tail-peer"');
+    expect(turn).toMatch(
+      /\{first \? \([\s\S]{0,300}testID=\{mine \? 'chat-v2-tail-mine' : 'chat-v2-tail-peer'\}/,
+    );
   });
 
   it('does not let the tail take a tap meant for the bubble', () => {
-    const at = turn.indexOf('testID="bubble-tail-mine"');
-    expect(turn.slice(at - 200, at)).toContain('pointerEvents="none"');
+    const at = turn.indexOf("testID={mine ? 'chat-v2-tail-mine'");
+    expect(at).toBeGreaterThan(0);
+    expect(turn.slice(at, at + 200)).toContain('pointerEvents="none"');
   });
 });
 

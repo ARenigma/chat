@@ -118,9 +118,12 @@ function FloatingToolbarView({
   return (
     /*
      * Kept MOUNTED on pushed screens and hidden with `display: none`, not
-     * unmounted — the same treatment, for the same reason, as the emoji panel
-     * (EmojiPicker.tsx:258, citing the reference app's create-once/setVisibility
-     * lifecycle at ChatActivityEnterView.java:12622 and :12746).
+     * unmounted. The pattern came from the reference app's
+     * create-once/setVisibility lifecycle for its own docked panels
+     * (ChatActivityEnterView.java:12622 and :12746); the emoji panel that
+     * copied it here was deleted with V1 on 2026-09-19, so this is the last
+     * surface in the app that uses it and the reasoning below is its only
+     * home.
      *
      * Rendering it conditionally meant every push and every pop destroyed and
      * rebuilt a `Frost` — one of our native RenderEffect blur surfaces — plus

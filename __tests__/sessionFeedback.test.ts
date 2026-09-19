@@ -48,7 +48,8 @@ const withoutComments = (source: string): string =>
 
 const call = withoutComments(read('src/screens/CallScreen.tsx'));
 const sheet = withoutComments(read('src/components/SessionFeedbackSheet.tsx'));
-const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+const chat = withoutComments(read('src/chat-v2/useChatV2Controller.ts'));
+const chatScreen = withoutComments(read('src/chat-v2/ChatScreenV2.tsx'));
 const store = withoutComments(read('src/store/useStore.ts'));
 const migration = read('supabase/migrations/066_session_reviews_and_ratings.sql');
 
@@ -201,8 +202,11 @@ describe('a call asks for feedback too', () => {
     // provider CAN be the member of this session and must still be asked.
     expect(call).toContain("const isMemberSide = peerThread?.i_am_member ?? true");
     expect(reviewEffect).toContain('isMemberSideRef.current');
-    // The chat half keeps its own gate.
-    expect(chat).toMatch(/if \(isMemberSide && name !== ''\) \{\s*requestReview\(previous, name\);/);
+    // The chat half keeps its own gate, in the one place it asks — so both
+    // the edge-watcher and the leave path inherit it.
+    expect(chat).toMatch(
+      /if \(benchmarkReadOnly \|\| !isMemberSide \|\| displayName === ''\) \{\s*return;\s*\}\s*requestReview\(sessionId, displayName\);/,
+    );
 
     /*
      * 2026-09-13: neither screen's gate is the guarantee. Both compute
@@ -231,7 +235,7 @@ describe('a call asks for feedback too', () => {
      * tick — the edge is never observed. So the dominant exit from a chat ended
      * the session and never asked how it went. It now asks for itself.
      */
-    expect(chat).toContain('requestReview(activeSession.id, name)');
+    expect(chatScreen).toContain('askReview(sessionId)');
     // Double-firing is already handled — the store keeps the first writer and
     // the sheet's ASKED set drops a repeat for the same id — so the watcher and
     // this call cannot produce two sheets when both do observe the same end.

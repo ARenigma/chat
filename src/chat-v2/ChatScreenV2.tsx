@@ -33,6 +33,7 @@ import { M3Field } from '../components/TextField';
 import { SafetySheet } from '../screens/SafetySheet';
 import type { ReactionEmoji } from '../lib/database.types';
 import { useBackBarrier, useBackGuard } from '../lib/backGuard';
+import { MAX_MESSAGE_CHARS } from '../lib/tokenLedger';
 import type { VoiceDraft } from '../lib/voice';
 import { useStore } from '../store/useStore';
 import { TOKENS, type Theme } from '../theme/tokens';
@@ -910,7 +911,7 @@ export function ChatScreenV2({
           onChangeText={setEditDraft}
           // The same ceiling `messages.body`'s CHECK enforces, so the field
           // stops where the database would rather than failing after a tap.
-          maxLength={4000}
+          maxLength={MAX_MESSAGE_CHARS}
           multiline
           autoFocus
         />

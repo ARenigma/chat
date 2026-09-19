@@ -34,7 +34,13 @@ import { sizedStorageImageUri } from '../lib/storageImage';
 import { Icon } from './Icon';
 import { LoadingIndicator } from './LoadingIndicator';
 import { Pressable } from './Pressable';
-import type { ImageBody } from './Turn';
+/*
+ * The photo payload, from the transcript's own row model rather than from a
+ * component. `rows.ts` is pure data — it imports no view — so the type can
+ * travel here without the viewer and the cell forming a cycle, and there is
+ * one definition of a photo instead of a second one kept in step by hand.
+ */
+import type { ChatV2ImageBody as ImageBody } from '../chat-v2/rows';
 
 /**
  * The white the viewer's chrome is drawn in, in BOTH themes.
@@ -53,9 +59,10 @@ const CHROME_INK = '#FFFFFF';
  *
  * `contain` letterboxes, so the button sits over the black backdrop on one photo
  * and over the photo itself on another. A dark disc is the only fill that works
- * for a white glyph in both cases, and it is the same value `MediaBubble`
- * already puts behind the in-photo timestamp (Turn.tsx `mediaTime`) so the two
- * pieces of on-photo chrome read as one family.
+ * for a white glyph in both cases, and it is the same value the transcript's
+ * media body already puts behind the in-photo timestamp
+ * (`ChatMessageCellV2`'s `mediaMeta`) so the two pieces of on-photo chrome
+ * read as one family.
  */
 const CHROME_WASH = 'rgba(0,0,0,0.35)';
 
@@ -103,7 +110,8 @@ const MAX_ZOOM = 3;
  * a touch can wander before we think the user is scrolling" — is 8dp.
  * https://developer.android.com/reference/android/view/ViewConfiguration#getScaledTouchSlop()
  * One number for both edges of the same decision, the way `REPLY_ACTIVATE`
- * serves the transcript's tap ceiling and pan activation together (Turn.tsx).
+ * serves the transcript's tap ceiling and pan activation together
+ * (`src/chat-v2/ChatMessageCellV2.tsx`).
  */
 const TAP_SLOP = 8;
 
@@ -138,9 +146,11 @@ const DRAG_SCRIM_FLOOR = 0.5;
  *    screen can actually show. Android is explicit that a bitmap larger than its
  *    target buys nothing and costs memory: "an image with a higher resolution
  *    does not provide any visible benefit, but still takes up precious memory".
- *    The picker uploads full-resolution originals (Composer.tsx sets no
- *    maxWidth/maxHeight and the bucket allows 10MB), so a 4000x3000 photo would
- *    otherwise decode to roughly 48MB of ARGB_8888 for a 1080x2400 window.
+ *    The photos already in history were uploaded at full resolution (the
+ *    retired composer set no maxWidth/maxHeight and the bucket allows 10MB),
+ *    so a 4000x3000 photo would otherwise decode to roughly 48MB of
+ *    ARGB_8888 for a 1080x2400 window. Sending is deferred, so the ceiling
+ *    matters for RENDERING history rather than for anything new arriving.
  *    https://developer.android.com/topic/performance/graphics/load-bitmap
  *
  *    `1 / density` is the half that was missing, and it made this function do
@@ -182,10 +192,11 @@ function fittedBox(
 /**
  * One photo, full screen, over everything.
  *
- * Hosted by ChatScreen rather than by the bubble that opens it. A Modal declared
- * inside a FlashList cell dies with the cell when the list recycles it, and the
- * transcript recycles while a paid session is delivering messages, so the viewer
- * would vanish mid-look through no action of the user's.
+ * Hosted by `ChatScreenV2` rather than by the bubble that opens it. A Modal
+ * declared inside a FlashList cell dies with the cell when the list recycles
+ * it, and the transcript recycles while a paid session is delivering
+ * messages, so the viewer would vanish mid-look through no action of the
+ * user's.
  *
  * ------------------------------------------------------------------------
  * There is no save, download, share or forward control here, and there must

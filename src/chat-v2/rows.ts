@@ -8,12 +8,11 @@
  * or a query client.
  *
  * It deliberately re-implements nothing. `opensDay`, `voiceOf`, `imageOf`,
- * `sessionEndedLabel` and `unreadFromPeer` are the same helpers V1 uses, so the
- * two transcripts cannot disagree about a day divider or a voice payload while
- * both are on the alpha track. What it does NOT share is the row TYPE: V1's
- * `TranscriptRow` lives inside `src/screens/ChatScreen.tsx` alongside
- * `Turn.tsx`'s `VoiceBody`/`ImageBody`, and importing from there is exactly the
- * coupling this slice exists to avoid.
+ * `sessionEndedLabel` and `unreadFromPeer` are the app's shared helpers, so
+ * the transcript, the inbox and the history list cannot disagree about a day
+ * divider or a voice payload. What it does NOT take from anywhere is the row
+ * TYPE: it is declared here, in a module that imports no view, which is what
+ * lets `MediaViewer` take `ChatV2ImageBody` from it without a cycle.
  *
  * Conventions, stated once because every consumer depends on them:
  *   - rows are NEWEST FIRST, which is what an `inverted` FlashList wants;

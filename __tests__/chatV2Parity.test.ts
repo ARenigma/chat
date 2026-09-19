@@ -1,12 +1,12 @@
 /**
- * What V2 still owes V1, asserted as values and as structure.
+ * What V2 owes the chat, asserted as values and as structure.
  *
  * The slice in `src/chat-v2` was built transcript-first: rows, cells, keyboard
  * geometry. Everything that sits AROUND the transcript — the identity block,
  * the money, the session's consent/countdown/end/leave ladder, the review
- * prompt, the back ladder, the draft purge — lived only in V1, so a cutover
- * would have shipped a chat with no way to end a paid session and no way to
- * report the person you are talking to.
+ * prompt, the back ladder, the draft purge — lived only in the retired V1
+ * screen, so a cutover would have shipped a chat with no way to end a paid
+ * session and no way to report the person you are talking to.
  *
  * These tests are the gate on that. The pure rules are asserted as values
  * (a boolean ladder that reads correct and behaves wrong is exactly what a
@@ -14,16 +14,12 @@
  * screen a route mounts, which file owns a control — is asserted against the
  * source, feature by feature, in one table.
  *
- * Nothing here claims the cutover happened. `CHAT_V2_CUTOVER` is false and a
- * test below pins it there: flipping it is a device decision, not a test one.
+ * The cutover is DONE. The S22 device gates passed on 2026-09-19 and V1 was
+ * deleted on 2026-09-19, so there is no seam left to flip: the first describe
+ * below pins the absence of both the old files and the fallback branch.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import {
-  CHAT_SCREEN,
-  CHAT_V2_CUTOVER,
-  chatScreenChoice,
-} from '../src/chat-v2/cutover';
 import {
   CHAT_V2_OPENER_MS_PER_CHAR,
   CHAT_V2_OPENER_PAUSE_MS,
@@ -75,7 +71,6 @@ const V2_FILES = [
   'ChatSessionBarV2.tsx',
   'cells.ts',
   'chatState.ts',
-  'cutover.ts',
   'openers.ts',
   'rows.ts',
   'session.ts',
@@ -102,31 +97,68 @@ function message(over: Partial<TranscriptMessage> = {}): TranscriptMessage {
 }
 
 /* -------------------------------------------------------------------------- */
-/* The cutover seam                                                            */
+/* There is no seam left                                                       */
 /* -------------------------------------------------------------------------- */
 
-describe('the cutover seam', () => {
-  it('is off, and stays off until a device says otherwise', () => {
-    // The S22 gate has now passed (2026-09-19). CHAT_V2_CUTOVER is true.
-    expect(CHAT_V2_CUTOVER).toBe(true);
-    expect(CHAT_SCREEN).toBe('v2');
+/**
+ * The files the retired chat was made of. Absence is asserted by path rather
+ * than by a source grep because a grep passes vacuously the moment somebody
+ * reads a file that is no longer there — which is how a "removed" screen stays
+ * in the bundle.
+ */
+const DELETED_V1_FILES = [
+  'src/screens/ChatScreen.tsx',
+  'src/components/Composer.tsx',
+  'src/components/Turn.tsx',
+  'src/components/CallLogRow.tsx',
+  'src/components/EmojiPicker.tsx',
+  'src/components/AttachPanel.tsx',
+  'src/components/FirstMovePills.tsx',
+  'src/lib/imeGeometry.ts',
+  'src/lib/keyboardEngine.ts',
+  'src/lib/keyboardPanel.ts',
+  'src/chat-v2/cutover.ts',
+] as const;
+
+describe('V1 is gone and there is no fallback seam', () => {
+  it.each(DELETED_V1_FILES)('%s does not exist', relative => {
+    expect(existsSync(join(ROOT, relative))).toBe(false);
   });
 
-  it('maps the one flag to the one choice', () => {
-    expect(chatScreenChoice(false)).toBe('v1');
-    expect(chatScreenChoice(true)).toBe('v2');
-    expect(CHAT_SCREEN).toBe(chatScreenChoice(CHAT_V2_CUTOVER));
-  });
-
-  it('decides once and reads that decision on both trees', () => {
+  it('leaves no import of a deleted module anywhere in the app', () => {
     const source = app();
-    // One import, one constant. Two `CHAT_V2_CUTOVER ?` expressions in App
-    // would be two decisions that can disagree by a commit.
-    expect(source).toContain("from './src/chat-v2/cutover'");
-    expect(source).not.toContain('CHAT_V2_CUTOVER ?');
-    const uses = source.match(/CHAT_SCREEN === 'v2'/g) ?? [];
-    // Exactly two: the member `chat` route and the provider `chat` route.
-    expect(uses).toHaveLength(2);
+    expect(source).not.toContain("from './src/screens/ChatScreen'");
+    expect(source).not.toContain("from './src/chat-v2/cutover'");
+    expect(source).not.toContain('CHAT_SCREEN');
+    expect(source).not.toContain('CHAT_V2_CUTOVER');
+  });
+
+  it('mounts V2 unconditionally on both normal chat routes', () => {
+    const source = codeOnly(app());
+    /*
+     * The `chat` branch reaches `<ChatScreenV2` with nothing to choose
+     * between on the way. The member route passes through `AfterPaint` and
+     * `PushedLayer` (the entrance wrappers every pushed screen takes), so the
+     * window is generous — what it must NOT contain is a second screen name
+     * or a conditional, which is what the seam looked like.
+     */
+    for (const branch of [
+      "providerRoute.name === 'chat' ? (",
+      "route.name === 'chat' ? (",
+    ]) {
+      const at = source.indexOf(branch);
+      expect(at).toBeGreaterThan(-1);
+      // From the END of the route test, so the branch's own `? (` is not read
+      // as the conditional this forbids.
+      const from = at + branch.length;
+      const mount = source.slice(from, source.indexOf('<ChatScreenV2', from));
+      expect(source.indexOf('<ChatScreenV2', from)).toBeGreaterThan(from);
+      expect(mount).not.toContain('?');
+      expect(mount).not.toContain('ChatScreen ');
+    }
+    // Four mounts total: the member and provider `chat` routes, and the two
+    // dev-only `chatV2` benchmark routes that keep the read-only harness.
+    expect(source.match(/<ChatScreenV2\b/g) ?? []).toHaveLength(4);
   });
 });
 
@@ -160,11 +192,15 @@ describe('route selection for both roles', () => {
     expect(provider.slice(0, 1200)).toContain('onBack');
   });
 
-  it('keeps the production route on V1 while the seam is closed', () => {
+  it('mounts V2 on the member tree with the wallet, profile and calls', () => {
     const source = app();
-    // The member chat route still reaches `leaveChat`, which is what resets the
-    // conversation store — a V2 mount under the seam inherits it unchanged.
-    expect(source).toMatch(/CHAT_SCREEN === 'v2' \?[\s\S]{0,900}<ChatScreen\b/);
+    const member = source.slice(
+      source.indexOf("route.name === 'chat' ? ("),
+    );
+    expect(member.slice(0, 1600)).toContain('<ChatScreenV2');
+    expect(member.slice(0, 1600)).toContain('onOpenProfile');
+    expect(member.slice(0, 1600)).toContain('onStartCall');
+    expect(member.slice(0, 1600)).toContain('onBack');
   });
 });
 
@@ -743,18 +779,17 @@ describe('the opener orchestrator has a single owner', () => {
     );
   });
 
-  it('keeps the same pacing V1 uses, so the two cannot drift', () => {
-    const v1 = read('src/screens/ChatScreen.tsx');
-    expect(v1).toContain(
-      `const OPENER_TYPING_MIN_MS = ${CHAT_V2_OPENER_TYPING_MIN_MS};`,
-    );
-    expect(v1).toContain(
-      `const OPENER_TYPING_MAX_MS = ${CHAT_V2_OPENER_TYPING_MAX_MS};`,
-    );
-    expect(v1).toContain(
-      `const OPENER_MS_PER_CHAR = ${CHAT_V2_OPENER_MS_PER_CHAR};`,
-    );
-    expect(v1).toContain(`const OPENER_PAUSE_MS = ${CHAT_V2_OPENER_PAUSE_MS};`);
+  it('keeps the pacing the device was tuned against', () => {
+    /*
+     * These four numbers were matched against V1's before the cutover so the
+     * typing beat did not change under the member on the day the screen did.
+     * V1 is gone, so they are pinned as values here — the last place that
+     * knows what they were.
+     */
+    expect(CHAT_V2_OPENER_TYPING_MIN_MS).toBe(700);
+    expect(CHAT_V2_OPENER_TYPING_MAX_MS).toBe(2200);
+    expect(CHAT_V2_OPENER_MS_PER_CHAR).toBe(45);
+    expect(CHAT_V2_OPENER_PAUSE_MS).toBe(450);
   });
 
   it('is the only opener loop in the V2 slice', () => {
@@ -766,14 +801,11 @@ describe('the opener orchestrator has a single owner', () => {
     expect(callers).toEqual(['useChatV2Openers.ts']);
   });
 
-  it('cannot be mounted beside V1, because a route picks one screen', () => {
-    const source = app();
-    // `chat` and `chatV2` are different route names, and the `chat` branch is
-    // a single ternary on one constant — so exactly one of the two screens is
-    // ever in the tree for a given route.
-    expect(source).toMatch(
-      /CHAT_SCREEN === 'v2' \? \([\s\S]{0,900}<ChatScreenV2[\s\S]{0,900}\) : \([\s\S]{0,900}<ChatScreen\b/,
-    );
+  it('cannot be mounted twice, because a route renders one screen', () => {
+    const source = codeOnly(app());
+    // `chat` and `chatV2` are different route names in the same exclusive
+    // ternary chain, so exactly one mount is ever in the tree at a time.
+    expect(source).not.toMatch(/<ChatScreenV2[\s\S]{0,400}<ChatScreenV2/);
   });
 });
 

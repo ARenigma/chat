@@ -13,16 +13,15 @@
  * It composes the app's EXISTING hooks — `src/api/chat`, `src/api/realtime`,
  * `src/api/sessions`, `src/api/reactions`, `src/api/voice`,
  * `src/api/attachments` — rather than re-deriving any of them. Nothing here
- * imports `src/screens/ChatScreen.tsx`, `Turn.tsx`, `Composer.tsx`,
- * `imeGeometry`, `keyboardEngine` or `keyboardPanel`; a contract test asserts
- * that, because the whole value of this directory is that V1 keeps working
- * while V2 is built beside it.
+ * imports the retired V1 chat, its composer, its bubble or its JavaScript
+ * model of the IME position; a contract test keeps that ban standing now that
+ * those files are gone, so nothing reintroduces one.
  *
- * The session chrome arrived here on 2026-09-19, and the reason it is safe to
- * hold both is that a ROUTE picks one screen: `chat` mounts whichever
- * `CHAT_SCREEN` names and `chatV2` mounts V2, so V1 and V2 are never in the
- * tree together and cannot race the opener cursor or end the same session
- * twice. What this hook owns now that V1 also owns:
+ * The session chrome arrived here on 2026-09-19, the day V1 was deleted and
+ * this became the only chat. A ROUTE still picks exactly one mount — `chat`
+ * and the dev-only `chatV2` are different route names in the same exclusive
+ * chain — so two instances cannot race the opener cursor or end the same
+ * session twice. What this hook owns:
  *   - the automated-opener orchestrator, behind `chatV2OwnsOpeners`;
  *   - the consent pair (confirm / decline) and the resume after a decline;
  *   - the countdown's aged figure, its tick, and the elapsed clock;

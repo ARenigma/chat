@@ -105,7 +105,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
 
   // No block/report on the profile card. A member can only block a provider they
   // have actually had a session with, and that action lives in the chat itself
-  // (ChatScreen's header + message long-press open the SafetySheet). The profile
+  // (the chat header + a message long-press open the SafetySheet). The profile
   // card is discovery — offering block here let a member block a provider they
   // had never interacted with (Amit, 2026-09-10).
 
@@ -136,7 +136,8 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
    * THE NOTIFY ACTION, WHICH RUNS HERE RATHER THAN SOMEWHERE ELSE.
    *
    * It used to be `onPress={onChat}`: the away button opened the conversation,
-   * `announce_chat_open` fired from ChatScreen's mount effect, and this screen
+   * `announce_chat_open` fired from the chat's controller (`useAnnounceChatOpen`
+   * in `src/chat-v2/useChatV2Controller.ts`), and this screen
    * unmounted on the tap. So the one surface that could have shown "Notified"
    * was gone before there was anything to show, and idle -> pending -> notified
    * could not exist. `useNotifyProvider` performs the RPC in place and keeps the

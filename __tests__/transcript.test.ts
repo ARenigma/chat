@@ -199,9 +199,9 @@ describe('the call log and the session row are formatted by the same function', 
    * than a duplication smell. Asserted at the source because the rows render in
    * different files and nothing else would notice them drifting apart.
    */
-  it('CallLogRow words its duration through durationWords, not its own mm:ss', () => {
-    const src = readFileSync(join(__dirname, '..', 'src/components/CallLogRow.tsx'), 'utf8');
-    expect(src).toContain("import { durationWords } from '../lib/transcript'");
+  it('the call row words its duration through durationWords, not its own mm:ss', () => {
+    const src = readFileSync(join(__dirname, '..', 'src/chat-v2/cells.ts'), 'utf8');
+    expect(src).toContain('durationWords');
     // The old hand-rolled `${minutes}:${String(seconds).padStart(2, '0')}`.
     expect(src).not.toContain('padStart(2');
   });

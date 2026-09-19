@@ -35,7 +35,7 @@ const STARS = [1, 2, 3, 4, 5] as const;
 /**
  * One session, one prompt — for the whole run of the app.
  *
- * Two screens notice a session ending now: ChatScreen watches `activeSession`
+ * Two screens notice a session ending now: the chat watches `activeSession`
  * cross from live to null, and CallScreen fires on unmount. They are not
  * alternatives, they overlap, because `get_active_session` (037:732) selects the
  * conversation's latest live session WITHOUT filtering by channel — so the chat
@@ -59,7 +59,8 @@ const ASKED = new Set<string>();
  * "Was I the MEMBER of that session?" — asked of the session row itself.
  *
  * Both screens that notice a session ending decide this from
- * `peerThread?.i_am_member ?? true` (CallScreen.tsx:177, ChatScreen.tsx:511),
+ * `peerThread?.i_am_member ?? true` (`CallScreen`'s `isMemberSide`, and
+ * `resolveChatV2Conversation` in `src/chat-v2/rows.ts` for the chat),
  * and the `?? true` is a hole: a conversation summary row that has not reached
  * this device yet reads as "I am the member". So a PROVIDER whose conversation
  * list is still loading — or whose list query failed, which is forever — is

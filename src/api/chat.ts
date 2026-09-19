@@ -590,7 +590,7 @@ export function useLiveMessageEdits(
  * Prefetch messages for a conversation into the React Query cache.
  *
  * Called on `onPressIn` from the CHATS rail so the fetch is already in flight
- * when the navigation animation finishes and ChatScreen mounts. No-op if the
+ * when the navigation animation finishes and the chat mounts. No-op if the
  * data is already fresh in cache (React Query's default behaviour).
  */
 export function prefetchMessages(qc: QueryClient, conversationId: string): void {
@@ -643,7 +643,7 @@ interface SendMessageDeps {
  * The actual send: optimistic row, outbox persistence, the RPC, and settling
  * either the confirmed row or the failure. Split out of `useSendMessage` so
  * `drainAllOutbox` (X7) can replay a queued entry for a conversation with no
- * `ChatScreen` open for it, through the exact same logic a live send uses —
+ * the chat open for it, through the exact same logic a live send uses —
  * not a second, hand-maintained copy of the idempotency/optimistic-UI rules.
  */
 async function sendMessageWith(

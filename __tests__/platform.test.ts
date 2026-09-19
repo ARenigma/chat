@@ -652,43 +652,30 @@ describe('conversation notifications actually open the conversation', () => {
 
 describe('the chat transcript is readable by a screen reader', () => {
   /** https://reactnative.dev/docs/accessibility */
-  it('binds the long-press affordance to a HINT, not a label', () => {
+  it('never puts a label on the bubble that carries the gesture', () => {
     /*
-     * accessibilityLabel REPLACES concatenated child text for TalkBack. Setting
-     * it to the long-press hint on every bubble made the entire transcript
-     * unreadable — TalkBack announced only "Long press for message actions". A
-     * hint appends on Android instead, leaving the message body to be read.
+     * `accessibilityLabel` REPLACES concatenated child text for TalkBack.
+     * Setting it on every bubble made the entire transcript unreadable —
+     * TalkBack announced only "Long press for message actions" and never the
+     * message. The rule is element-bounded on purpose: a label on the photo
+     * body and on the retry control is legitimate and lives in the same file,
+     * so a file-wide ban would forbid two correct things to catch one wrong
+     * one.
      *
-     * There was a second assertion here, `not.toMatch(/accessibilityLabel=\
-     * {onLongPress/)`, and it was removed on 2026-09-07 for two reasons rather
-     * than one — the same pair that retired the `fontWeight` ban in
-     * providerPhotos.test.ts.
-     *
-     * It could not fail. `git log -S 'accessibilityLabel={onLongPress' --all`
-     * over Turn.tsx returns nothing: that exact expression has never been in
-     * the file, in any commit, so the pattern forbade a spelling nobody had
-     * written. The defect it was named for was a LABEL on the gesture wrapper,
-     * which the regression would reintroduce under whatever expression came to
-     * hand — `accessibilityLabel={hint}`, or a string literal — and none of
-     * those match.
-     *
-     * And it is already covered, properly. chatSurface.test.ts › "offers the
-     * same thing to a screen reader" bounds the ban to the ELEMENT: it extracts
-     * the prop list of the one `<Animated.View ref={bubbleRef}>` that carries
-     * the gesture and asserts that list contains `accessibilityHint=` and no
-     * `accessibilityLabel` at all. That version goes red for any spelling, and
-     * it has to be element-bounded because `accessibilityLabel="Dismiss
-     * reactions"` on the reaction strip's backdrop is legitimate and lives in
-     * the same function. Two copies of one rule is one copy to forget when the
-     * rule changes, so the file-wide one is gone and the bounded one is the
-     * gate.
-     *
-     * What stays here is the half chatSurface does NOT assert: that the hint is
-     * bound to `onLongPress` specifically, which is what makes the announcement
-     * describe the gesture that actually exists.
+     * The affordance itself is an `accessibilityActions` entry rather than a
+     * hint — RN installs its delegate for a view with a role, state, actions
+     * or test id, and a hint ALONE installs nothing, so V1's sentence was
+     * never announced on any API level. That half is asserted in
+     * chatV2Cells.test.ts › "lets TalkBack reach the actions and the retry
+     * without a gesture"; what is asserted here is the ban it replaced.
      */
-    const turn = read('src/components/Turn.tsx');
-    expect(turn).toMatch(/accessibilityHint=\{\s*onLongPress/);
+    const cell = read('src/chat-v2/ChatMessageCellV2.tsx');
+    const wrapper = /<Animated\.View\s+ref=\{bubbleRef\}([\s\S]*?)\n\s*>/.exec(
+      cell,
+    )?.[1];
+    expect(wrapper).toBeDefined();
+    expect(wrapper).toContain('accessibilityActions');
+    expect(wrapper).not.toContain('accessibilityLabel');
   });
 });
 
@@ -1435,7 +1422,7 @@ describe('sheet motion and display refresh', () => {
 describe('gesture callbacks are workletized by the worklets plugin', () => {
   const GESTURE_FILES = [
     'src/components/MediaViewer.tsx',
-    'src/components/Turn.tsx',
+    'src/chat-v2/ChatMessageCellV2.tsx',
     'src/components/Sheet.tsx',
     'src/components/SpotlightCard.tsx',
   ];
@@ -1691,15 +1678,26 @@ describe('CameraX live-preview tile', () => {
     /*
      * A capture session that fails to negotiate never reports STREAMING, and
      * the correct behaviour then is for the glyph to stay up indefinitely.
-     * Hiding it after a fixed delay would restore the black tile this component
-     * has already shipped once.
+     * Hiding it after a fixed delay would restore the black tile this tile has
+     * already shipped once.
+     *
+     * The tile's only consumer was V1's attach panel, which left on
+     * 2026-09-19 — so the rule moves from that one call site to the contract
+     * the NEXT consumer reads, plus a sweep that nobody has quietly
+     * re-introduced the timer since.
      */
-    const panel = read('src/components/AttachPanel.tsx').replace(
-      /\/\*[\s\S]*?\*\//g,
-      '',
+    expect(read('src/components/CameraPreview.tsx')).toContain(
+      'never start a timer that hides it optimistically',
     );
-    expect(panel).not.toMatch(/setTimeout[\s\S]{0,120}placeholderOpacity/);
-    expect(panel).toContain('placeholderOpacity.value = fadeTo(');
+    for (const dir of ['src/components', 'src/screens', 'src/chat-v2']) {
+      for (const name of readdirSync(join(ROOT, dir))) {
+        if (!/\.tsx?$/.test(name)) {
+          continue;
+        }
+        const source = read(`${dir}/${name}`).replace(/\/\*[\s\S]*?\*\//g, '');
+        expect(source).not.toMatch(/setTimeout[\s\S]{0,120}placeholderOpacity/);
+      }
+    }
   });
 
   it('registers CameraTilePackage in MainApplication', () => {
@@ -2215,30 +2213,37 @@ describe('W5#5 — renderToHardwareTextureAndroid decision is recorded', () => {
     expect(motion).toContain('runOnJS(setTransitioning)(false)');
   });
 
-  it('waits for the screen to have DATA, not just geometry', () => {
-    // the reference app does not start on layout, it starts when the first message batch
-    // has rendered (ChatActivity.java:27014 -> :20613 ->
-    // resumeDelayedFragmentAnimation), with a 200ms ceiling
-    // (ActionBarLayout.java:2270-2282). Measured gap at 60Hz on the S22 before
-    // this: 65% of push frames inside budget against their 97.5%.
-    const motion = read('src/theme/motion.ts');
-    expect(motion).toContain('export function holdScreenEnter()');
-    expect(motion).toContain('const ENTER_HOLD_CEILING_MS = 200;');
-    // The ceiling must exist, or a screen that never reports ready hangs the
-    // animation forever.
-    expect(motion).toContain('setTimeout(begin, ENTER_HOLD_CEILING_MS)');
-    // One-shot: a release landing in the same tick as the ceiling must not
-    // start two animations.
-    expect(motion).toMatch(/const begin = \(\) => \{\s*\n\s*if \(begun\) \{/);
-    // And a screen popped mid-wait tears the wait down rather than animating a
-    // view on its way out.
-    expect(motion).toContain('useEffect(() => () => cancelWait.current(), [])');
-
-    // Not holding is the DEFAULT. A screen nobody thought about must animate
-    // immediately rather than silently paying the ceiling on every push.
-    expect(motion).toMatch(
-      /if \(!isScreenEnterHeld\(\)\) \{\s*\n\s*begin\(\);/,
-    );
+  it('starts on geometry, and says why it no longer waits for DATA', () => {
+    /*
+     * The reference app does not start on layout, it starts when the first
+     * message batch has rendered (ChatActivity.java:27014 -> :20613 ->
+     * resumeDelayedFragmentAnimation), with a 200ms ceiling
+     * (ActionBarLayout.java:2270-2282). This app copied that as
+     * `holdScreenEnter`, and it was DELETED on 2026-09-19 — V1's transcript
+     * was its only caller, so with that screen gone the gate could never be
+     * raised and every screen took the immediate path through a subscription,
+     * a timer and an unmount disposer that could not fire.
+     *
+     * The deletion is asserted, not just the absence, because "no caller" is
+     * a claim about the whole repo and a half-removed mechanism is worse than
+     * either state: `isScreenEnterHeld()` returning a constant false is
+     * exactly the dead-lock shape the `transitioning` writer below exists to
+     * avoid.
+     */
+    const motionCode = code('src/theme/motion.ts');
+    for (const gone of [
+      'holdScreenEnter',
+      'isScreenEnterHeld',
+      'onScreenEnterReady',
+      'ENTER_HOLD_CEILING_MS',
+      '_entryHolds',
+      'cancelWait',
+    ]) {
+      expect(motionCode).not.toContain(gone);
+    }
+    // ...and the reasoning is recorded where the gate used to be, with the
+    // pointer that makes it recoverable.
+    expect(read('src/theme/motion.ts')).toContain('git log -S holdScreenEnter');
   });
 
   it('gives the mount its own frame, and guards against a second start', () => {
@@ -2247,30 +2252,31 @@ describe('W5#5 — renderToHardwareTextureAndroid decision is recorded', () => {
     // The ramp itself is still deferred one frame, so the animation's first
     // frame is never the same frame as the screen's first React commit.
     expect(hook).toContain('requestAnimationFrame(() => {');
-    // The re-entry guard is set before any waiting begins, or a second
-    // onLayout arriving during the wait would start a second animation.
+    // The re-entry guard is set before the ramp is reached, or a second
+    // onLayout in the same frame would start a second animation.
     const guardAt = hook.indexOf('started.value = true;');
-    const waitAt = hook.indexOf('let begun = false;');
+    const rampAt = hook.indexOf('    ramp();');
     expect(guardAt).toBeGreaterThan(-1);
-    expect(waitAt).toBeGreaterThan(guardAt);
+    expect(rampAt).toBeGreaterThan(guardAt);
+    // The early return is what makes the guard mean anything.
+    expect(hook).toMatch(/if \(started\.value\) \{\s*\n\s*return;/);
   });
 
-  it('defers a photo decode but never an identity', () => {
-    // W5#6's last two named sites, and they get opposite answers on purpose.
-    // Turn's photo has a DESIGNED grey placeholder (the state it already shows
-    // while a signed URL resolves), so holding the decode back a few frames
-    // reuses an existing appearance. Avatar's fallback is the person's
-    // INITIALS, which mean "no photo" rather than "loading" -- swapping those
-    // for a face mid-transition reads as the wrong person.
-    const turn = read('src/components/Turn.tsx');
-    expect(turn).toContain('useAfterTransition()');
-    expect(turn).toContain('uri !== undefined && afterTransition ?');
-    // The loading overlay has to cover the held-back window too, or the bubble
-    // reads as grey nothing rather than as a photo arriving.
-    expect(turn).toContain(
-      'pending || uri === undefined || !afterTransition ?',
-    );
-
+  it('never defers an identity, whatever else is deferred', () => {
+    /*
+     * W5#6 named two sites and they got opposite answers. The transcript's
+     * photo bubble — the one WITH a designed grey placeholder, and so the one
+     * that could be deferred — left with V1 on 2026-09-19, and
+     * `useAfterTransition` went with it: it was the last consumer of the
+     * subscribe half of the transition lock, and a primitive with no
+     * subscriber is the same trap as a token nothing reads.
+     *
+     * What is still live, and still a decision, is the REFUSAL. Avatar's
+     * fallback is the person's INITIALS, which mean "no photo" rather than
+     * "loading", so swapping those for a face mid-transition reads as the
+     * wrong person. That reasoning has to survive the hook it declined to
+     * use, which is why it is asserted as prose next to the code.
+     */
     const avatar = read('src/components/Avatar.tsx');
     // Comments stripped: the file EXPLAINS why it does not use the hook, and a
     // gate that cannot tell prose from code fails on its own rationale.
@@ -2282,29 +2288,44 @@ describe('W5#5 — renderToHardwareTextureAndroid decision is recorded', () => {
     // The reasoning is recorded next to the code, not left as an absence.
     expect(avatar).toContain('W5#6 named "avatar fetches" as a deferral site');
 
-    // And the shared hook cannot strand anything: the idle fallback is
-    // unconditional, so a lock that never lowers still releases the photo.
-    const motion = read('src/theme/motion.ts');
-    const hook = motion.slice(
-      motion.indexOf('export function useAfterTransition'),
-    );
-    expect(hook).toContain('requestIdleCallback(go)');
-    expect(hook).toContain('cancelIdleCallback(idle)');
+    // And the hook it declined really is gone, so the comment does not send a
+    // reader looking for an export that is not there.
+    const motionCode = code('src/theme/motion.ts');
+    expect(motionCode).not.toContain('useAfterTransition');
+    expect(motionCode).not.toContain('onTransitionSettled');
   });
 
-  it('releases the hold on unmount as well as on data', () => {
-    // A hold left standing by a screen the user backed out of would make the
-    // NEXT push wait the full ceiling.
-    const chat = read('src/screens/ChatScreen.tsx');
-    expect(chat).toContain('useEffect(() => releaseEnter, [releaseEnter])');
-    // Taken in RENDER, not an effect: a child renders before its parent's
-    // onLayout fires, so an effect-taken hold would arrive too late to matter.
-    expect(chat).toMatch(
-      /useState\(\(\) =>\s*\n?\s*messages === undefined \? holdScreenEnter\(\) : NO_HOLD/,
+  it('cannot strand the texture promotion, which is the lock that is left', () => {
+    /*
+     * With the hold gone, `transitioning` has exactly one writer and one
+     * reader, and the failure mode worth guarding is the cheap one: a lock
+     * raised and never lowered holds App's pushed layer on a hardware texture
+     * — roughly 8MB of GPU memory — for the rest of the session.
+     *
+     * So the lower has to be unconditional. It is the FADE's completion
+     * callback rather than the spring's, because `spatialDefault` settles
+     * asymptotically and would hold the lock long past the point anything is
+     * visibly moving.
+     */
+    const motion = read('src/theme/motion.ts');
+    const hook = motion.slice(motion.indexOf('export function useScreenEnter'));
+    expect(hook).toContain('setTransitioning(true);');
+    expect(hook).toMatch(
+      /withTiming\([\s\S]{0,300}\(\) => \{\s*runOnJS\(setTransitioning\)\(false\);\s*\},/,
     );
-    // And an empty conversation releases too -- no data is coming, so waiting
-    // for it would burn the whole ceiling on every new chat.
-    expect(chat).toContain('if (messages !== undefined || !messagesPending)');
+    // One writer in the whole app, so a new pushed screen cannot forget to
+    // raise it and cannot forget to lower it either.
+    /*
+     * Both spellings, because the lower goes through `runOnJS` — it is called
+     * from a Reanimated completion callback on the UI thread. A pattern that
+     * only knew the direct form would have counted one writer and passed
+     * while the release was missing, which is the exact bug this guards.
+     */
+    const writers = code('src/theme/motion.ts').match(
+      /setTransitioning\)?\((true|false)\)/g,
+    );
+    expect(writers).toEqual(['setTransitioning(true)', 'setTransitioning)(false)']);
+    expect(code('App.tsx')).not.toContain('setTransitioning');
   });
 
   it('Sheet.tsx documents the hardware-texture decision', () => {
@@ -2636,8 +2657,9 @@ describe('the viewport never resizes for the soft keyboard', () => {
   /*
    * SOFT_INPUT_ADJUST_NOTHING, permanently. The IME arrives as a WindowInsets
    * animation and the app lifts its own surfaces by that inset on the UI thread
-   * (src/lib/keyboardEngine.ts); a resize/pan mode would hand the window manager
-   * a shrink-the-layout cycle on every keyboard and emoji-panel swap.
+   * (react-native-keyboard-controller's `KeyboardStickyView` under the chat
+   * dock, `useImeSpace` on the forms); a resize/pan mode would hand the window
+   * manager a shrink-the-layout cycle on every keyboard swap.
    * https://developer.android.com/develop/ui/views/layout/edge-to-edge
    * https://developer.android.com/develop/ui/views/layout/insets
    */

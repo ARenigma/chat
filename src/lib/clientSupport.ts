@@ -5,7 +5,7 @@
  * which changed the chat session contract: a provider's reply now sets
  * `responded_at` and leaves the request `pending`, and the MEMBER completes it
  * by calling `confirm_chat_session` from a consent sheet. The sheet shipped in
- * versionCode 10110. Two testers were on 10109, whose ChatScreen has no such
+ * versionCode 10110. Two testers were on 10109, whose chat screen has no such
  * sheet — so their requests sat `pending` with `responded_at` set, forever. No
  * session, no timer, no tick, and calls blocked behind an active-session check
  * that could never be satisfied.

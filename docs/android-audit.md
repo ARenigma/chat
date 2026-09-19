@@ -962,14 +962,92 @@ Sheet on a release/closedTest build. A screenshot block cannot be unit-tested.
   an intentional exit, and a back ladder registered below a barrier
   (`chatV2BackStep`). The development deep link reaches both trees
   (`chatV2` exists on `ProviderRoute` as well as `MemberRoute`).
-- **The production route is still V1.** `CHAT_V2_CUTOVER` in
-  `src/chat-v2/cutover.ts` is `false`, and `CHAT_SCREEN` — derived from it and
-  read by both trees — resolves to `'v1'`. Flipping that one constant swaps
-  both trees at once; reverting it swaps them back. V1 is not deleted.
-- Not verified on a device. The S22 gate in
-  `scripts/artemis-v2-checklist.md` has not been run, so nothing here claims
-  the keyboard, the dock measurement or the motion behave on hardware.
+- Superseded 2026-09-19 (see the next entry). At the time of writing the
+  production route was still V1, behind a single `CHAT_V2_CUTOVER` constant in
+  `src/chat-v2/cutover.ts`; that seam and that file no longer exist.
 - Verification: `__tests__/chatV2Parity.test.ts` pins the parity matrix, the
   route selection for both roles, the session/leave/consent copy, the back
-  ladder, the opener single-owner rule, the draft purge, the removed composer
-  controls, and `CHAT_V2_CUTOVER === false`.
+  ladder, the opener single-owner rule, the draft purge and the removed
+  composer controls.
+
+## 2026-09-19 — V2 composer capsule restyled, approved on the S22
+
+- Read:
+  - https://www.w3.org/TR/css-backgrounds-3/#corner-overlap
+  - https://m3.material.io/foundations/designing/structure
+  - https://developer.android.com/develop/ui/views/touch-and-input/input-events
+- Requirement applied: a control the user touches on every message is judged
+  on the device, not in a style block. RULE 2 — a still frame cannot show
+  whether a capsule reads as a stadium at the height it actually renders at.
+- Change, requested by Amit and reviewed with him on the live S22 over Metro
+  before anything was deleted:
+  - `borderRadius` `radius.composer` (22, measured off the reference app) →
+    `radius.pill`. `radius.pill` is the 999 sentinel, so RN Android's
+    `BorderRadiusStyle.ensureNoOverlap()` resolves it to exactly half the box
+    — a true stadium at whatever height the capsule ends up, rather than a
+    fixed corner that stops being one as the box grows.
+  - `alignItems` `flex-end` → `center`, so the 40dp send disc sits
+    symmetrically in the 40dp content area (4dp of capsule padding each side).
+  - the input's `paddingVertical` `space.sm` → `space.xs`, which is what makes
+    a single-line field exactly one 48dp touch target tall.
+  - `borderCurve: 'continuous'` dropped: continuous smoothing corrects a fixed
+    corner, and there is no fixed corner left to correct.
+- **Approved by Amit on the running app** (S22, Metro, 2026-09-19),
+  immediately before he asked for V1 to be removed. This is a product
+  decision, not a derived one, and it must not be "corrected" back to a
+  measured corner without asking him.
+- `radius.composer` was left with no consumer and was RETIRED from
+  `design/tokens.json` the same day — the same treatment `searchToggle` got,
+  and for the same reason: a number nothing reads is a number the next reader
+  will believe. Its note keeps the measurement and the method (ADR-0025).
+- Not checked, and recorded rather than implied: the MULTI-LINE capsule.
+  `flex-end` pinned the trailing control to the bottom of a grown field and
+  `center` floats it; nobody has frame-stepped a two- or three-line draft.
+  `maxHeight: 120` bounds how far it can be wrong.
+- Verification: `__tests__/chatSurface.test.ts` › "keeps the capsule shape
+  Amit approved on the S22" pins the resting geometry, bans the retired token
+  by name, and states the multi-line case as open rather than asserting it.
+
+## 2026-09-19 — V1 chat deleted; V2 is the only chat
+
+- Read:
+  - https://developer.android.com/develop/ui/views/layout/sw-keyboard
+  - https://developer.android.com/develop/ui/views/layout/insets
+  - https://developer.android.com/topic/performance/reduce-apk-size
+- Requirement applied: one implementation of a surface, and the platform's own
+  IME inset rather than a second JavaScript model of it.
+- Fix: the six V2 geometry gates passed on the Samsung Galaxy S22 (SM_S908E,
+  Android 16) and the fallback was removed rather than left in the bundle.
+  Both normal `chat` routes — member and provider — mount `ChatScreenV2`
+  unconditionally; there is no constant to flip and nothing to flip it to. The
+  dev-only `chatV2` benchmark routes are unchanged.
+- Deleted: `src/screens/ChatScreen.tsx`, `src/components/Composer.tsx`,
+  `Turn.tsx`, `CallLogRow.tsx`, `EmojiPicker.tsx`, `AttachPanel.tsx`,
+  `FirstMovePills.tsx`, `src/lib/imeGeometry.ts`, `keyboardEngine.ts`,
+  `keyboardPanel.ts`, and `src/chat-v2/cutover.ts`.
+  `src/lib/useImeSpace.ts` STAYS — it serves the forms, not the chat — as do
+  the root `KeyboardProvider` and `adjustNothing`, which V2 depends on.
+  `src/components/CameraPreview.tsx` stays: it is native infrastructure whose
+  only consumer left with the attach panel, and deferred media will want it.
+- Gap this closed rather than opened: V2's composer had no
+  `maxLength={MAX_MESSAGE_CHARS}`, so a message over the `messages.body` CHECK
+  would have failed server-side after a tap. V1 had the cap; V2 has it now.
+- Also deleted, as the second half of the same sweep: `holdScreenEnter` /
+  `isScreenEnterHeld` / `onScreenEnterReady` in `src/theme/motion.ts`, and the
+  `onTransitionSettled` / `useAfterTransition` subscribe half of the
+  transition lock. Every caller of both was V1's, so with that screen gone the
+  hold could never be raised and the subscription could never fire — a
+  mechanism that reads as wired and is not is worse than its absence, and it
+  left a dead branch inside the live `useScreenEnter`. `transitioning` and
+  `setTransitioning` STAY: App.tsx reads the shared value for
+  `renderToHardwareTextureAndroid` and `useScreenEnter` is its one writer.
+- **Device verification, stated precisely.** The V2 chat itself WAS checked on
+  hardware: the six geometry gates ran on the S22 and the composer restyle in
+  the entry above was approved on the running app in the same session. What
+  THIS entry adds on top of that is a deletion, a `maxLength` and comment
+  edits — none of which changes a rendered surface — so no further device pass
+  was run for the deletion specifically. An earlier draft of this entry said
+  no visual re-verification applied at all, which read as "the V2 chat has not
+  been seen on a device" and was wrong.
+- Verification: full typecheck, eslint, the whole Jest suite, and the
+  token/icon/contrast/web/design/manifest gates. No Android build was run.

@@ -28,17 +28,21 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
  * component.
  *
  * `insets.bottom` is added because `endCoordinates.height` measures the IME
- * alone and EXCLUDES the navigation-bar inset the IME is drawn over — the same
- * 15dp discrepancy that made the chat composer jump when the emoji panel was
- * sized from it (the measured note now lives in `imeGeometry.ts`). On a device
- * whose nav bar sits outside the app window (MIUI three-button) that term is
- * simply 0.
+ * alone and EXCLUDES the navigation-bar inset the IME is drawn over. That
+ * discrepancy was measured at 15dp on the S22 Ultra — `dumpsys window` put
+ * the IME frame at 332dp while RN reported 317 — and it is what made the old
+ * chat composer jump 34dp on every emoji-panel swap. The full measurement is
+ * recorded in ADR-0027. On a device whose nav bar sits outside the app window
+ * (MIUI three-button) the term is simply 0.
  *
- * NOT the same rule as `imeGeometry.ts`, and the difference is deliberate: this
- * returns 0 the moment the IME hides, because a form only needs padding while
- * the keyboard is actually there. The chat screen keeps the last measured height
- * and gates on a separate `keyboardUp` flag, because it has to size a panel that
- * is open precisely when the keyboard is not.
+ * THIS IS THE FORMS' HOOK, and it is the only one left. The chat had its own
+ * arithmetic — `imeGeometry.ts`, deleted on 2026-09-19 — which kept the last
+ * measured height and gated on a separate flag, because it had to size a
+ * panel that was open precisely when the keyboard was not. There is no such
+ * panel any more, and the chat now takes the IME position per frame from
+ * `react-native-keyboard-controller` instead. This hook returns 0 the moment
+ * the IME hides, because a form only needs padding while the keyboard is
+ * actually there.
  */
 export function useImeSpace(): number {
   const insets = useSafeAreaInsets();

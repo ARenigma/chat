@@ -315,18 +315,15 @@ const CLEAR_GLYPH_SIZE = 17;
  * `closeIcon.setRotation((1 - factor) * 90)` (`FragmentSearchField.java:333`).
  *
  * EASE_OUT_QUINT is (0.23, 1, 0.32, 1) — `CubicBezierInterpolator.java:13`, and
- * the identical four numbers already live in the token map as
- * `motion.m3.easing.easeOutQuint`. It is rebuilt here rather than imported
- * because `src/theme/motion.ts` keeps its copy module-private; the duration is
- * still a token (`motion.duration.clearReveal`), so nothing here is a hand-picked
- * number. Precedent for a component holding a bezier read from the token map is
- * `Composer.tsx:101` (KEYBOARD_EASING).
- */
-/*
- * `EASE_OUT_QUINT` comes from motion.ts rather than being rebuilt here. This
- * file used to derive its own from the same four token numbers — the identical
- * curve, computed twice, which is exactly the drift the "one module knows how
- * motion behaves" rule exists to prevent (art-direction rule 2, DESIGN.md).
+ * the identical four numbers live in the token map as
+ * `motion.m3.easing.easeOutQuint`.
+ *
+ * It is IMPORTED from `src/theme/motion.ts`, not rebuilt here. This file used
+ * to derive its own from the same four token numbers — the identical curve,
+ * computed twice, which is exactly the drift the "one module knows how motion
+ * behaves" rule exists to prevent (art-direction rule 2, DESIGN.md). The
+ * duration is a token too (`motion.duration.clearReveal`), so nothing here is
+ * a hand-picked number.
  */
 const CLEAR_REVEAL = {
   duration: TOKENS.motion.duration.clearReveal,
@@ -658,8 +655,10 @@ const makeStyles = (t: Theme) =>
        * some fonts, this padding can make text look slightly misaligned when
        * centered vertically. For best results also set textAlignVertical to
        * center." This app sets a custom face (Geist) on this field, which is
-       * exactly the "some fonts" case, and Composer.tsx:1586-1587 already runs
-       * the same pair for the same reason on the message field.
+       * exactly the "some fonts" case. The chat composer's message field runs
+       * the same pair for the same reason — `textAlignVertical: 'center'`
+       * declared on its `input` style, and `includeFontPadding: false`
+       * arriving with the `bodyMedium` typography token it spreads.
        */
       textAlignVertical: 'center',
       includeFontPadding: false,

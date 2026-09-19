@@ -811,7 +811,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
     <View style={[styles.root, { paddingTop: insets.top, paddingBottom: imeSpace }]}>
       <Header onBack={() => setPhase('verify')} />
       {/*
-        * NoticeBar was mounted in ChatScreen and NOWHERE ELSE, so every
+        * NoticeBar was mounted in the chat screen and NOWHERE ELSE, so every
         * `setNotice` from this flow - the 18+ refusal and "verify your identity
         * first" included - was written to the store and never shown. That is why
         * "Go live" looked like a dead button: the RPC failed and the app had no

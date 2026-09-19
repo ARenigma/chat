@@ -83,8 +83,9 @@ const makeStyles = (t: Theme) =>
     // so matching just `TOKENS.icon.xs` here would read smaller than the glyph
     // it replaced.
     //
-    // `lineHeight` is deliberately NOT equal to `fontSize` (EmojiPicker.tsx's
-    // own working glyph is 28/34, the same ~1.2 ratio) — a color emoji's
+    // `lineHeight` is deliberately NOT equal to `fontSize` — roughly a 1.2
+    // ratio, which is what the app's deleted emoji grid also used (28/34) and
+    // what its own measurements showed was needed. A color emoji's
     // bitmap needs more vertical room than its nominal font size to paint
     // without being clipped down to Android's monochrome tofu fallback, which
     // is what an equal 14/14 box did here (Amit, 2026-09-18, confirmed on the

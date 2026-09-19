@@ -121,14 +121,13 @@ function functionBody(source: string, from: string, to: string): string {
  * entitled to, has nothing to do with chat media, and has to keep working.
  */
 const CHAT_MEDIA_FILES = [
-  'src/components/Turn.tsx',
+  'src/chat-v2/ChatMessageCellV2.tsx',
   'src/components/MediaViewer.tsx',
   'src/components/ReactionStrip.tsx',
   'src/components/ConversationMenu.tsx',
-  'src/components/AttachPanel.tsx',
   'src/components/VoiceNote.tsx',
-  'src/components/Composer.tsx',
-  'src/screens/ChatScreen.tsx',
+  'src/chat-v2/ChatComposerV2.tsx',
+  'src/chat-v2/ChatScreenV2.tsx',
   'src/api/attachments.ts',
   'src/api/voice.ts',
 ] as const;
@@ -136,19 +135,20 @@ const CHAT_MEDIA_FILES = [
 /**
  * Anything NEW that touches a chat attachment, found by its two doors:
  * `useAttachmentUrl` (the only place a stored photo becomes a URL) and
- * `ImageBody` (the photo payload every media surface is handed). A second
- * viewer, a gallery, a forward sheet — anything added later is covered by this
- * gate without anyone remembering to list it.
+ * `ImageBody` (the photo payload every media surface is handed — spelled
+ * `ChatV2ImageBody` at its definition, which the unanchored suffix catches).
+ * A second viewer, a gallery, a forward sheet — anything added later is
+ * covered by this gate without anyone remembering to list it.
  */
 function discoveredMediaSurfaces(): readonly string[] {
   const found: string[] = [];
-  for (const dir of ['src/components', 'src/screens']) {
+  for (const dir of ['src/components', 'src/screens', 'src/chat-v2']) {
     for (const name of readdirSync(join(ROOT, dir))) {
       if (!/\.tsx?$/.test(name)) {
         continue;
       }
       const relative = `${dir}/${name}`;
-      if (/useAttachmentUrl|\bImageBody\b/.test(read(relative))) {
+      if (/useAttachmentUrl|ImageBody\b/.test(read(relative))) {
         found.push(relative);
       }
     }
@@ -228,9 +228,9 @@ describe('chat media offers no way to save it (a standing ban, not change covera
     // The discovery markers are load-bearing. If a refactor renames
     // `useAttachmentUrl` or `ImageBody` this goes red rather than silently
     // auditing nothing.
-    expect(discovered).toContain('src/components/Turn.tsx');
+    expect(discovered).toContain('src/chat-v2/ChatMessageCellV2.tsx');
     expect(discovered).toContain('src/components/MediaViewer.tsx');
-    expect(discovered).toContain('src/screens/ChatScreen.tsx');
+    expect(discovered).toContain('src/chat-v2/ChatScreenV2.tsx');
     expect(AUDITED.length).toBeGreaterThanOrEqual(CHAT_MEDIA_FILES.length);
     // And the invoice screen is out of scope, permanently.
     expect(AUDITED).not.toContain('src/screens/TransactionHistoryScreen.tsx');
@@ -263,30 +263,30 @@ describe('chat media offers no way to save it (a standing ban, not change covera
     ]);
   });
 
-  it('the attach panel offers exactly camera and gallery, both inbound', () => {
-    const panel = withoutComments(read('src/components/AttachPanel.tsx'));
+  it('the composer offers no way to put media IN either, for now', () => {
     /*
-     * Grew on 2026-09-12 with the recent-photo strip, and every new control is
-     * still INBOUND, which is the only thing this closed set exists to protect.
-     * The ban is on a route that takes media OUT of the app — save, download,
-     * export, share. Nothing here does that:
+     * V1's attach panel — camera, gallery, recents, all of them INBOUND — was
+     * deleted with the rest of that screen on 2026-09-19 (Amit, 2026-09-19:
+     * no emoji, sticker, camera, gallery or attachment send UI in the
+     * composer). The closed set it was asserted against is therefore replaced
+     * by the absence, asserted at the composer's own controls: a photo can
+     * still be RENDERED from history, and there is no door to send a new one.
      *
-     *   attach-more   opens the system photo-selection dialog so the user can
-     *                 share MORE of their photos with the strip.
-     *   attach-grant  the same call the first time, from the no-access tile.
-     *
-     * `attach-gallery` appears twice because the strip and the bare tile each
-     * carry one, and they are the same action — the system picker — in the two
-     * layouts. Listed twice rather than deduped so that a THIRD one would still
-     * fail here.
+     * Kept in this describe because the export ban above is only meaningful
+     * next to the inbound story — a reader looking for "where does media
+     * enter" must find the answer here rather than conclude the gate rotted.
      */
-    expect(panel.match(/testID="attach-[a-z]+"/g)).toEqual([
-      'testID="attach-panel"',
-      'testID="attach-camera"',
-      'testID="attach-more"',
-      'testID="attach-gallery"',
-      'testID="attach-gallery"',
-      'testID="attach-grant"',
+    const composer = withoutComments(read('src/chat-v2/ChatComposerV2.tsx'));
+    expect(composer.match(/testID="chat-v2-[a-z-]+"/g)).toEqual([
+      // The recording capsule, which replaces the field while a voice note is
+      // being taken. All three are about the recording in hand, not a picker.
+      'testID="chat-v2-record-discard"',
+      'testID="chat-v2-record-elapsed"',
+      'testID="chat-v2-record-wave"',
+      // The field, and the one trailing control that swaps between them.
+      'testID="chat-v2-input"',
+      'testID="chat-v2-send"',
+      'testID="chat-v2-mic"',
     ]);
   });
 
@@ -356,8 +356,8 @@ describe('chat media offers no way to save it (a standing ban, not change covera
  * DIFFERENT bug back, and neither is visible in a screenshot.
  */
 describe('a photo bubble opens full screen on tap', () => {
-  const turn = read('src/components/Turn.tsx');
-  const chat = read('src/screens/ChatScreen.tsx');
+  const turn = read('src/chat-v2/ChatMessageCellV2.tsx');
+  const chat = read('src/chat-v2/ChatScreenV2.tsx');
   const viewer = withoutComments(read('src/components/MediaViewer.tsx'));
 
   it('composes the tap so it steals neither the long press nor the swipe', () => {
@@ -370,21 +370,20 @@ describe('a photo bubble opens full screen on tap', () => {
      * simultaneously rather than competing.
      * https://docs.swmansion.com/react-native-gesture-handler/docs/composition/use-exclusive-gestures
      */
-    const bubble = functionBody(turn, 'function InteractiveBubble', 'function QuoteBlock');
-    expect(bubble).toContain('useTapGesture({');
-    expect(bubble).toContain('useExclusiveGestures(longPress, tap)');
-    expect(bubble).toContain('useSimultaneousGestures(pan, discrete)');
-    expect(bubble).toContain('maxDistance: REPLY_ACTIVATE');
+    const code = withoutComments(turn);
+    expect(code).toContain('useTapGesture({');
+    expect(code).toContain('useExclusiveGestures(hold, tap)');
+    expect(code).toContain('useSimultaneousGestures(pan, discrete)');
+    expect(code).toContain('maxDistance: REPLY_ACTIVATE');
     // One number, two consumers, so the tap ceiling and the pan's activation
     // offset cannot drift into a band where both gestures are true.
-    expect(bubble).toContain('activeOffsetX: [-REPLY_ACTIVATE, REPLY_ACTIVATE]');
-    expect(withoutComments(turn)).toContain('const REPLY_ACTIVATE = 16;');
+    expect(code).toContain('activeOffsetX: [-REPLY_ACTIVATE, REPLY_ACTIVATE]');
+    expect(code).toContain('const REPLY_ACTIVATE = 16;');
   });
 
   it('switches the discretes with `enabled` rather than by reshaping the tree', () => {
     /*
-     * The one structural change the hook migration forced, pinned so it cannot
-     * silently regress into a conditional composition.
+     * Pinned so it cannot silently regress into a conditional composition.
      *
      * `useLongPressGesture` and `useTapGesture` are hooks: they run on every
      * render whatever the props are, and `useGesture` creates the native handler
@@ -397,53 +396,51 @@ describe('a photo bubble opens full screen on tap', () => {
      * disabled long press of an uploading photo cannot strand the tap that waits
      * for it.
      */
-    const bubble = functionBody(turn, 'function InteractiveBubble', 'function QuoteBlock');
-    expect(bubble).toContain('enabled: target !== null');
-    expect(bubble).toContain('enabled: openViewer !== undefined');
+    const code = withoutComments(turn);
+    expect(code).toContain('enabled: actionable');
+    expect(code).toContain('enabled: onTap !== undefined');
     // And no ternary chain building the composition back up. Bounded to the two
     // statements themselves — a whole-body `not.toMatch` for `?` would be
     // satisfied by any optional call anywhere below.
     for (const name of ['discrete', 'composed']) {
-      const statement = new RegExp(`const ${name}\\s*=([^;]*);`).exec(bubble)?.[1];
+      const statement = new RegExp(`const ${name}\\s*=([^;]*);`).exec(code)?.[1];
       expect(statement).toBeDefined();
       expect(statement).not.toContain('?');
     }
   });
 
   it('offers the same thing to a screen reader, which cannot see a gesture', () => {
-    // https://reactnative.dev/docs/accessibility - `activate` is "engaged when a
-    // screen reader user double taps the component".
-    const code = withoutComments(turn);
-    expect(code).toContain("const ACTIVATE_ACTION = [{ name: 'activate' as const }];");
-    expect(code).toContain('accessibilityActions={ACTIVATE_ACTION}');
-    expect(code).toContain('onAccessibilityAction={onTap}');
     /*
-     * ...and NOT by labelling the gesture wrapper, which REPLACES the
-     * concatenated child text and made the whole transcript unreadable once
-     * already.
+     * https://reactnative.dev/docs/accessibility — `activate` is "engaged when
+     * a screen reader user double taps the component", and `longpress` is the
+     * same for the hold. The actions live on the PHOTO rather than on the
+     * bubble wrapper, because a photo is its own `imagebutton` node and
+     * folding it into the parent would take its `activate` with it.
      *
-     * This assertion used to be `not.toMatch(/accessibilityLabel=\{onLongPress/)`,
-     * which forbade a string that has never appeared in this file — a pattern
-     * nobody would write, so nothing was being prevented. Bound to the actual
-     * element instead: the props of the one `Animated.View` that carries the
-     * ref and the gesture. A label added THERE is the regression, whatever
-     * expression it is given, and `accessibilityLabel="Dismiss reactions"` on
-     * the strip's modal backdrop a few lines up is why the slice has to be the
-     * element and not the function.
+     * The bubble wrapper carries no `accessibilityLabel`, and that is the half
+     * with history: a label REPLACES the concatenated child text, which made
+     * the whole transcript announce one hint sentence and nothing else. Bound
+     * to the element rather than to the file, because
+     * `accessibilityLabel="Retry sending photo"` a few lines away is correct.
      */
-    const wrapper = /<Animated\.View\s+ref=\{bubbleRef\}([\s\S]*?)>/.exec(
-      functionBody(turn, 'function InteractiveBubble', 'function QuoteBlock'),
+    const code = withoutComments(turn);
+    expect(code).toContain('chatV2CellA11yActions({');
+    expect(code).toContain('onAccessibilityAction={onA11yAction}');
+    expect(code).toContain("activateLabel: image === undefined ? undefined : 'View photo'");
+
+    const wrapper = /<Animated\.View\s+ref=\{bubbleRef\}([\s\S]*?)\n\s*>/.exec(
+      code,
     )?.[1];
     expect(wrapper).toBeDefined();
-    expect(wrapper).toContain('accessibilityHint=');
+    expect(wrapper).toContain('accessibilityActions');
     expect(wrapper).not.toContain('accessibilityLabel');
   });
 
   it('hosts the viewer on the screen, not inside a recyclable list cell', () => {
     const code = withoutComments(chat);
     expect(code).toContain('<MediaViewer');
-    expect(code).toContain('onOpenImage={openImage}');
-    // A Modal declared inside Turn.tsx would unmount with its FlashList cell.
+    expect(code).toContain('onOpenImage={onOpenImage}');
+    // A Modal declared inside the cell would unmount with its FlashList cell.
     expect(withoutComments(turn)).not.toContain('<MediaViewer');
   });
 
@@ -670,7 +667,10 @@ describe('the photo viewer dismisses on a swipe and zooms on a pinch', () => {
      * is the one assertion in this file that must NOT be comment-stripped —
      * `withoutComments` would delete the very text under test.
      */
-    for (const file of ['src/components/MediaViewer.tsx', 'src/components/Turn.tsx']) {
+    for (const file of [
+      'src/components/MediaViewer.tsx',
+      'src/chat-v2/ChatMessageCellV2.tsx',
+    ]) {
       expect(read(file)).not.toContain('docs/legacy-gestures/');
       expect(read(file)).not.toContain('docs/fundamentals/gesture-composition');
     }
@@ -682,19 +682,26 @@ describe('the photo viewer dismisses on a swipe and zooms on a pinch', () => {
     expect(raw).toContain('docs/composition/use-competing-gestures');
 
     /*
-     * And the migration guide, which is the page the callback renames come from.
-     * Cited in every one of the four files that moved, because the rename that
-     * matters most — `onEnd(e, success)` to `onDeactivate(e)` with the sense of
-     * the flag inverted — is the one a reader is most likely to check.
+     * And the migration guide, which is the page the callback renames come
+     * from. Cited in every file that MOVED, because the rename that matters
+     * most — `onEnd(e, success)` to `onDeactivate(e)` with the sense of the
+     * flag inverted — is the one a reader is most likely to check.
+     *
+     * `ChatMessageCellV2` is deliberately not on this list: it was written on
+     * the hook API and never carried the old one, so a migration note there
+     * would describe a history the file does not have. What it owes instead
+     * is the hooks tree, asserted below.
      */
     for (const file of [
       'src/components/MediaViewer.tsx',
-      'src/components/Turn.tsx',
       'src/components/Sheet.tsx',
       'src/components/SpotlightCard.tsx',
     ]) {
       expect(read(file)).toContain('docs/guides/upgrading-to-3/');
     }
+    const cell = read('src/chat-v2/ChatMessageCellV2.tsx');
+    expect(cell).toContain('docs/gestures/use-pan-gesture');
+    expect(cell).toContain('docs/composition/use-exclusive-gestures');
   });
 });
 
@@ -705,151 +712,160 @@ describe('the photo viewer dismisses on a swipe and zooms on a pinch', () => {
 /**
  * The composer capsule and the message bubbles are one grid.
  *
- * Three things, and each was broken separately.
- *
- * The GUTTER already matched (16 both sides) but nothing checked the
- * transcript's half of it: the existing assertion in contract.test.ts reads
- * Composer.tsx and Turn.tsx and never opens ChatScreen.tsx, so
- * `list.paddingHorizontal` could have changed to `space.sm` and the suite would
- * have stayed green. The reply strip HAD already drifted, to `space.xs`.
- *
- * The CORNER was declared equal and painted unequal. See CAPSULE_MIN_H in
- * Composer.tsx: a 40dp box cannot draw a 22dp corner, so the capsule rendered 20
- * against the bubble's 22.
- *
- * The INCOMING EDGE was the half this file could not assert at all, because it
- * was wrong: a 26dp avatar slot plus an 8dp row gap put an incoming bubble's
- * left edge at 50dp against the capsule's 16dp. The avatar is gone (Amit:
- * "Remove it, align the grid"), so both edges can finally be pinned.
+ * Rebuilt for the V2 shell on 2026-09-19. V1 ran two grids — a 16dp transcript
+ * against a 7dp composer island read off the reference app — and the pairing
+ * that had to be held was "the reply strip matches the capsule, not the
+ * transcript". The Kirill-based shell collapses that: the transcript content,
+ * the reply strip and the capsule all sit on `space.sm`, so there is ONE
+ * number and the thing worth asserting is that it stays one.
  */
 describe('the composer and the bubbles share one grid and one corner', () => {
-  const composer = read('src/components/Composer.tsx');
-  const chat = read('src/screens/ChatScreen.tsx');
-  const turn = read('src/components/Turn.tsx');
+  const composer = read('src/chat-v2/ChatComposerV2.tsx');
+  const chat = read('src/chat-v2/ChatScreenV2.tsx');
+  const list = read('src/chat-v2/ChatListV2.tsx');
+  const cell = read('src/chat-v2/ChatMessageCellV2.tsx');
 
   it('gives the reply strip the same gutter as the transcript and the capsule', () => {
     /*
-     * TWO GRIDS NOW, deliberately, and the pairing is what this protects.
-     *
-     * It used to be one: transcript, reply strip and capsule all on `space.md`
-     * (16). The capsule moved to the reference app's own island inset on 2026-09-12 —
-     * `createFrame(..., 7, 0, 7, 0)`, ChatActivity.java:8078 — because the owner
-     * asked for the input box's width to match the reference app exactly, and the reference app's
-     * input island is deliberately wider than its bubbles.
-     *
-     * So the assertion is no longer "everything shares one number". It is:
-     *   - the floating island (reply strip + capsule) shares ONE inset, and
-     *   - the transcript keeps its own content grid.
-     *
-     * The first half is the one with history. `replyBar` was once `space.xs`
-     * while the capsule under it was 16, and the dock showed TWO gutters at
-     * once. Holding `replyBar` at 16 now that the capsule is 7 would be the
-     * identical defect with the numbers swapped, which is exactly the mistake
-     * this test exists to catch.
+     * ONE GRID. The history this protects is a reply strip that drifted off
+     * the capsule under it and showed two gutters at once in the same dock —
+     * the identical defect whatever the shared number happens to be.
      */
-    expect(TOKENS.space.md).toBe(16);
+    expect(TOKENS.space.sm).toBe(12);
     expect(styleBlock(chat, 'replyBar')).toContain(
-      'marginHorizontal: COMPOSER_ISLAND_INSET',
+      'paddingHorizontal: TOKENS.space.sm',
     );
-    expect(styleBlock(composer, 'row')).toContain(
-      'paddingHorizontal: COMPOSER_ISLAND_INSET',
+    expect(styleBlock(composer, 'root')).toContain(
+      'paddingHorizontal: TOKENS.space.sm',
     );
-    // The transcript is unchanged and keeps the bubbles' own grid.
-    expect(styleBlock(chat, 'list')).toContain('paddingHorizontal: TOKENS.space.md');
-    // One source for the island number, so the strip and the capsule cannot drift.
-    expect(composer).toContain('export const COMPOSER_ISLAND_INSET = 7');
-    expect(chat).toContain('COMPOSER_ISLAND_INSET');
+    // ...and the transcript's own content column is the same edge, so a bubble
+    // and the field under it start in the same place.
+    expect(styleBlock(list, 'content')).toContain(
+      'paddingHorizontal: TOKENS.space.sm',
+    );
   });
 
   it('lands an INCOMING bubble on the content edge, with no avatar column', () => {
     /*
      * The arithmetic, on a 360dp window:
      *
-     *   content column      list.paddingHorizontal = space.md = 16  ->  [16, 344]
-     *   incoming left edge  16 + peerRow(0) + bubbleStack(0)        =   16
-     *                       (was 16 + AVATAR_SLOT 26 + gap 8        =   50)
-     *   outgoing right edge 344 - myColumn(0) - bubbleStackEnd(0)   =   344
-     *   capsule left/right  row.paddingHorizontal = 16              ->  16 / 344
+     *   content column     content.paddingHorizontal = space.sm = 12 -> [12, 348]
+     *   incoming left edge 12 + row(0) + stack(0)                     =  12
+     *   outgoing right edge 348 - row(0) - stack(0)                   =  348
+     *   capsule left/right root.paddingHorizontal = 12                -> 12 / 348
      *
      * Both bubble edges and both capsule edges are the same two columns. The
-     * mechanism is that `peerRow` is now the mirror of `myColumn` — a full-width
-     * column aligned to its own side — instead of a row with a spacer in front
-     * of it, which also makes the two `maxWidth: '80%'` declarations equal for
-     * the first time (the peer's 80% used to be taken of a 34dp-narrower box).
+     * mechanism is that the peer row is the MIRROR of my row — a full-width
+     * column aligned to its own side — rather than a row with an avatar spacer
+     * in front of it, which also makes the two `maxWidth: '80%'` bounds equal.
      */
-    const code = withoutComments(turn);
+    const code = withoutComments(cell);
     expect(code).not.toContain('AVATAR_SLOT');
     expect(code).not.toMatch(/<Avatar\b/);
     expect(code).not.toContain('avatarUri');
-    expect(code).not.toMatch(/\bslot:\s*\{/);
 
-    const peer = styleBlock(turn, 'peerRow');
-    expect(peer).toContain("width: '100%'");
-    expect(peer).toContain("alignItems: 'flex-start'");
-    // A row direction or a row gap is the defect coming back.
-    expect(peer).not.toContain('flexDirection');
-    expect(peer).not.toContain('gap: TOKENS.space.xs');
-
-    const mine = styleBlock(turn, 'myColumn');
-    expect(mine).toContain("width: '100%'");
-    expect(mine).toContain("alignItems: 'flex-end'");
-    expect(styleBlock(turn, 'bubbleStack')).toContain("maxWidth: '80%'");
-
-    // Nothing upstream still feeds a transcript avatar either. `avatarUrl` and
-    // `initial` stay in ChatScreen for the header and PeerTyping; what must be
-    // gone is the plumbing into a ROW.
-    expect(withoutComments(chat)).not.toContain('avatarUri={avatarUrl}');
+    expect(styleBlock(cell, 'row')).toContain("width: '100%'");
+    expect(styleBlock(cell, 'rowPeer')).toContain("alignItems: 'flex-start'");
+    expect(styleBlock(cell, 'rowMine')).toContain("alignItems: 'flex-end'");
+    // A row direction or a row gap is the avatar column coming back.
+    expect(styleBlock(cell, 'row')).not.toContain('flexDirection');
+    // One bound, shared, so the peer's 80% is 80% of the same box as mine.
+    expect(styleBlock(cell, 'stack')).toContain("maxWidth: '80%'");
   });
 
-  it('holds the capsule tall enough to actually PAINT the bubble corner', () => {
+  it('holds the capsule tall enough to actually PAINT its corner', () => {
     /*
      * CSS Backgrounds 3 corner overlap, implemented by RN Android in
      * `BorderRadiusStyle.ensureNoOverlap()`: a box shorter than the sum of its
-     * two vertical radii has EVERY radius multiplied by height/(r+r).
+     * two vertical radii has EVERY radius multiplied by height/(r+r). A pill
+     * corner on a box under 2r is silently not a pill.
      * https://www.w3.org/TR/css-backgrounds-3/#corner-overlap
      */
-    expect(withoutComments(composer)).toContain(
-      'export const CAPSULE_MIN_H = TOKENS.interaction.minTarget;',
-    );
-    /*
-     * No longer derived from the bubble. `radius * 2` is the height at which a
-     * pill's two arcs meet, which was the right rule while the bubble radius
-     * was a pill radius (22 -> 44). WhatsApp's bubble is 9dp and that rule
-     * would give an 18dp text input, so the capsule now takes the 48dp touch
-     * target floor — 1.8dp taller than WhatsApp's own 46.2dp capsule, which
-     * sits below the Android minimum.
-     */
     expect(TOKENS.interaction.minTarget).toBe(48);
-    const bar = styleBlock(composer, 'inputBar');
-          /*
-       * The composer no longer shares the bubble's radius token, and that is a
-       * measurement rather than a drift. WhatsApp on the Redmi: bubble corner
-       * 9dp, composer capsule corner 10.5dp. They are the same FAMILY — close
-       * enough to read as one system — but not one value, and asserting
-       * identity would be asserting something WhatsApp does not do.
-       */
-      expect(bar).toContain('borderRadius: TOKENS.radius.composer');
-      // Same family: within 2dp of each other in either direction.
-      /*
-       * CORRECTED 2026-09-08. This asserted the two radii were within 2dp of
-       * each other, on a measurement of WhatsApp's composer that was wrong:
-       * I had read "the row where the corner ramp reaches the edge" as the
-       * radius and got 10.5dp. Refitting the whole ramp gives 17.93dp, i.e.
-       * 18dp — the composer is TWICE as round as the 9dp bubble, not a
-       * near-match to it.
-       *
-       * So the invariant is the shape of the relationship, not a tolerance:
-       * the composer is clearly rounder, and it is still not a pill.
-       */
-      expect(TOKENS.radius.composer).toBeGreaterThan(TOKENS.radius.bubble);
-      // Not a pill: WhatsApp's capsule is 46.2dp tall against an 18dp corner.
-      expect(TOKENS.radius.composer).toBeLessThan(TOKENS.interaction.minTarget / 2);
-    expect(bar).toContain('minHeight: CAPSULE_MIN_H');
-    // The recording/review capsule shares the slot, so it shares the corner:
-    // `radius.pill` was clamped to 25 there and read as a stadium.
-    expect(styleBlock(composer, 'panel')).toContain('borderRadius: TOKENS.radius.composer');
-    // ...and the bubble's own corner is the same token, not a second number.
-    expect(withoutComments(turn)).toContain('const BUBBLE_RADIUS = TOKENS.radius.bubble;');
+    const field = styleBlock(composer, 'field');
+    expect(field).toContain('minHeight: TOKENS.interaction.minTarget');
+    expect(field).toContain('borderRadius: TOKENS.radius.pill');
+    /*
+     * `radius.pill` is a sentinel (999), so the overlap clamp is not a hazard
+     * here — it is the MECHANISM: every radius is scaled by height/(r+r),
+     * which resolves 999 to exactly half the box and gives a true stadium at
+     * whatever height the capsule ends up. What must hold is that the
+     * sentinel really is past the half-height, or the corner would be a fixed
+     * radius pretending to be a pill.
+     */
+    expect(TOKENS.radius.pill).toBeGreaterThan(
+      TOKENS.interaction.minTarget / 2,
+    );
+    // The recording capsule shares the slot, so it shares the corner and the
+    // height: the swap must change what is inside the bar, not the bar.
+    const record = styleBlock(composer, 'recordBar');
+    expect(record).toContain('minHeight: TOKENS.interaction.minTarget');
+    expect(record).toContain('borderRadius: TOKENS.radius.pill');
+    // ...and the bubble keeps its own, measured corner — deliberately NOT the
+    // capsule's. WhatsApp's bubble is 9dp against a much rounder composer.
+    expect(styleBlock(cell, 'bubble')).toContain(
+      'borderRadius: TOKENS.radius.bubble',
+    );
+    expect(TOKENS.radius.bubble).toBeLessThan(TOKENS.radius.pill);
+  });
+
+  it('keeps the capsule shape Amit approved on the S22, and no other', () => {
+    /*
+     * THIS IS A USER DECISION, NOT A DERIVED ONE, and it is pinned here so a
+     * later "correction" has to argue with it.
+     *
+     * Amit asked for the restyle and approved it on the live S22 over Metro
+     * on 2026-09-19, immediately before asking for V1 to be deleted. Three
+     * things changed together and all three are his:
+     *
+     *   borderRadius  radius.composer (22, measured) -> radius.pill
+     *   alignItems    'flex-end' -> 'center'
+     *   paddingVertical  space.sm -> space.xs on the input
+     *
+     * `radius.composer` was RETIRED from design/tokens.json the same day
+     * rather than left as an unread number; its note carries the measurement
+     * it came from and the reason it stopped being used. So the ban below is
+     * the meaningful half: the old token cannot come back by name, because it
+     * no longer exists to be imported.
+     */
+    const field = styleBlock(composer, 'field');
+    expect(field).toContain("alignItems: 'center'");
+    expect(field).toContain('borderRadius: TOKENS.radius.pill');
+    // A stadium needs no `borderCurve`: continuous smoothing is a correction
+    // for a FIXED corner, and there is no fixed corner left to smooth.
+    expect(field).not.toContain('borderCurve');
+    expect(TOKENS.radius).not.toHaveProperty('composer');
+
+    /*
+     * The send disc centres inside the capsule, and the arithmetic is why
+     * `center` is not interchangeable with `flex-end`:
+     *
+     *   input lineHeight  bodyMedium = 20
+     *   input padding     space.xs * 2 = 16
+     *   input content     20 + 16 = 36, floored by minHeight 40
+     *   capsule           40 content + space['2xs'] * 2 = 48 = minTarget
+     *
+     * so a single-line field is exactly one touch target tall and the 40dp
+     * control sits symmetrically in it.
+     */
+    expect(TOKENS.typography.bodyMedium.lineHeight).toBe(20);
+    const input = styleBlock(composer, 'input');
+    expect(input).toContain('paddingVertical: TOKENS.space.xs');
+    expect(input).toContain('minHeight: 40');
+    expect(TOKENS.space.xs * 2 + TOKENS.typography.bodyMedium.lineHeight).toBeLessThan(40);
+    expect(40 + TOKENS.space['2xs'] * 2).toBe(TOKENS.interaction.minTarget);
+
+    /*
+     * DEFERRED, AND NOT CLAIMED EITHER WAY: what a MULTI-LINE field looks
+     * like. `flex-end` pinned the trailing control to the bottom of a grown
+     * capsule; `center` floats it to the middle. Nobody has frame-checked a
+     * two- or three-line draft on a device, so this file asserts the
+     * single-line geometry it can prove and says so rather than implying the
+     * tall case was reviewed. `maxHeight: 120` is the ceiling that bounds how
+     * far it can be wrong. If it reads badly when someone writes a paragraph,
+     * that is the iteration — not a revert of the approved resting shape.
+     */
+    expect(input).toContain('maxHeight: 120');
   });
 });
 
@@ -875,7 +891,7 @@ describe('the composer and the bubbles share one grid and one corner', () => {
  * spec and a hand-tuned margin would be a departure from it.
  */
 describe('the chat header identity block is block-centred and fixed-height', () => {
-  const chat = read('src/screens/ChatScreen.tsx');
+  const chat = read('src/chat-v2/ChatHeaderV2.tsx');
   const subtitle = read('src/components/HeaderSubtitle.tsx');
 
   it('reserves the two-line height on the column, from tokens, scaled by fontScale', () => {
@@ -959,21 +975,25 @@ function sqlFunctionBody(source: string, name: string): string {
 describe('a message can be edited and deleted, and both facts are visible', () => {
   const migration = read('supabase/migrations/103_edit_and_delete_messages.sql');
   const api = withoutComments(read('src/api/chat.ts'));
-  const turn = withoutComments(read('src/components/Turn.tsx'));
-  const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+  const turn = withoutComments(read('src/chat-v2/ChatMessageCellV2.tsx'));
+  const cells = withoutComments(read('src/chat-v2/cells.ts'));
 
   it('offers exactly edit and delete on your own message', () => {
     /*
      * A closed set, for the reason the reaction strip's twin above states: a
      * new action must be a decision somebody made here, not something that
      * arrives under a name no ban knows. `ReactionStrip`'s own set is asserted
-     * separately and is deliberately untouched — these two live in `Turn.tsx`
-     * because the strip is a peer surface too.
+     * separately and is deliberately untouched — the owner menu is the peer
+     * surface's twin.
      */
-    expect(turn.match(/testID="own-[a-z]+"/g)).toEqual([
-      'testID="own-edit"',
-      'testID="own-delete"',
+    // Trailing comma so the union in the type declaration above the builder
+    // is not read as a third and fourth item.
+    expect(cells.match(/key: '(edit|delete|react|reply|report)',/g)).toEqual([
+      "key: 'edit',",
+      "key: 'delete',",
     ]);
+    expect(cells).toContain("label: 'Edit'");
+    expect(cells).toContain("label: 'Delete'");
   });
 
   it('gives the client the SAME edit window the server enforces', () => {
@@ -1035,29 +1055,40 @@ describe('a message can be edited and deleted, and both facts are visible', () =
     /*
      * A deleted voice note has no `voice_path` — 103 nulls every payload column
      * together — so a tombstone checked AFTER the media branches renders the
-     * "Voice note" fallback for a recording that is gone. Both the screen's
-     * label and the bubble's body check it first.
+     * "Voice note" fallback for a recording that is gone. Both the row's label
+     * and the bubble's body check it first.
      */
-    expect(chat).toMatch(/const deleted = isDeleted\(message\);[\s\S]{0,400}'Voice note'/);
-    expect(chat).toMatch(/mine \? 'You deleted this message' : 'This message was deleted'/);
+    const rows = withoutComments(read('src/chat-v2/rows.ts'));
+    expect(rows).toMatch(
+      /if \(row\.deleted\) \{\s*return chatV2TombstoneText\(row\.mine\);[\s\S]{0,300}'Voice note'/,
+    );
+    expect(rows).toMatch(
+      /mine \? 'You deleted this message' : 'This message was deleted'/,
+    );
     // The bubble's tombstone branch precedes the voice branch, not the reverse.
-    const tombstone = turn.indexOf('if (deleted === true)');
-    const voiceBranch = turn.indexOf('if (voice !== undefined && voicePlayer !== undefined)');
+    const tombstone = turn.indexOf(') : deleted ? (');
+    const voiceBranch = turn.indexOf(') : voice !== undefined ? (');
     expect(tombstone).toBeGreaterThan(-1);
     expect(voiceBranch).toBeGreaterThan(tombstone);
   });
 
   it('offers nothing on a tombstone — not reply, react, report, edit or delete', () => {
-    // One switch for all five: every action hangs off `target`, so a deleted row
-    // having none is what turns the whole menu and the swipe off at once.
-    expect(turn.match(/deleted !== true/g)).toHaveLength(2);
+    // One switch for all five: every action comes from `chatV2MessageActions`,
+    // so a deleted row returning the empty set is what turns the menu, the
+    // reaction strip and the swipe off at once.
+    expect(cells).toMatch(
+      /if \(input\.deleted \|\| input\.pending \|\| input\.failed\) \{\s*return NO_ACTIONS;/,
+    );
+    expect(cells).toMatch(
+      /const NO_ACTIONS[\s\S]{0,200}react: false,\s*reply: false,\s*report: false,\s*edit: false,\s*remove: false,/,
+    );
   });
 
   it('says an edit happened, on both devices', () => {
     // `edited_at` is stamped by the server and is not client-writable, so the
     // marker cannot be suppressed by the device that made the edit.
     expect(sqlFunctionBody(migration, 'edit_message')).toMatch(/edited_at = now\(\)/);
-    expect(turn).toMatch(/Edited · \$\{timestamp\}/);
+    expect(cells).toContain('`Edited · ${facts.stamp}`');
   });
 });
 

@@ -365,6 +365,11 @@ Ultra with a Metro-served debug build, after a false start (see the last point).
   device before optimising** — a chat-open `FrameTimingMetric` benchmark beside
   the existing `StartupBenchmark`. Do not chase the debug number on device.
 - **Still open:** the 150ms exit fade is as abrupt as Telegram's by design but
-  should be judged by hand on device; `bubbleLaunch`/`bubbleArrive` `entering`
-  animations in the chat may be affected by the same suppression and have not
-  been frame-stepped.
+  should be judged by hand on device.
+- **Closed 2026-09-19, by removal rather than by measurement:** the chat's
+  `entering` animations were never frame-stepped and now cannot be.
+  `bubbleLaunch` is deleted and `bubbleArrive` has no consumer — the V2
+  transcript is inside `KeyboardGestureArea`, where a JS entrance racing the
+  native IME lift is banned outright (`__tests__/chatV2Shell.test.ts`). The
+  suppression question they raised does not arise for a subtree with no
+  entrance in it.

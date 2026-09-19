@@ -232,8 +232,19 @@ describe('every covering screen drops a barrier', () => {
     RechargeScreen: 'an overlay App.tsx closes before consumeBack() runs',
   };
 
+  /** Screens that do not live in `src/screens`, by the name App.tsx renders. */
+  const ELSEWHERE: Record<string, string> = {
+    ChatScreenV2: 'src/chat-v2/ChatScreenV2.tsx',
+  };
+
+  /*
+   * The `V\d+` tail is load-bearing: the chat screen is `ChatScreenV2`, and a
+   * pattern that stopped at `Screen\b` matched nothing there — so the one
+   * covering screen with a paid session behind its back press was the one
+   * screen this derivation could not see.
+   */
   const rendered: readonly string[] = [...new Set(
-    [...app.matchAll(/<([A-Z][A-Za-z]*Screen)\b/g)].flatMap(
+    [...app.matchAll(/<([A-Z][A-Za-z]*Screen(?:V\d+)?)\b/g)].flatMap(
       ([, name]) => (name === undefined ? [] : [name]),
     ),
   )].sort();
@@ -245,7 +256,7 @@ describe('every covering screen drops a barrier', () => {
       return;
     }
     const source = readFileSync(
-      join(__dirname, '..', 'src', 'screens', `${name}.tsx`),
+      join(__dirname, '..', ELSEWHERE[name] ?? `src/screens/${name}.tsx`),
       'utf8',
     );
     expect(source).toContain('useBackBarrier()');
@@ -254,6 +265,6 @@ describe('every covering screen drops a barrier', () => {
   it('finds the screens at all, so a changed render shape cannot empty the list', () => {
     // A regex that matched nothing would make every assertion above vacuous.
     expect(rendered.length).toBeGreaterThanOrEqual(20);
-    expect(rendered).toContain('ChatScreen');
+    expect(rendered).toContain('ChatScreenV2');
   });
 });

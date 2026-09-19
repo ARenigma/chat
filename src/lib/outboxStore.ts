@@ -56,7 +56,7 @@ export function pendingFor(conversationId: string): OutboxEntry[] {
 
 /**
  * Drop entries older than the TTL. Called once at boot: replay is per-conversation
- * (on ChatScreen mount), so an entry for a conversation never reopened would
+ * (on chat mount), so an entry for a conversation never reopened would
  * otherwise never be collected. Writes only when something was actually removed.
  */
 export function sweepExpiredOutbox(): void {

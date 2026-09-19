@@ -15,10 +15,10 @@ name: Offline send fails cleanly and spends nothing
     id: 'action-chat'
 
 - tapOn:
-    id: 'composer-input'
+    id: 'chat-v2-input'
 - inputText: 'Does this survive a dead connection?'
 - tapOn:
-    id: 'composer-send'
+    id: 'chat-v2-send'
 
 - extendedWaitUntil:
     visible:

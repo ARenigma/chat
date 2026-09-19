@@ -23,6 +23,33 @@ const read = (relative: string): string =>
   readFileSync(join(ROOT, relative), 'utf8');
 
 /**
+ * The files the chat screen is made of, concatenated.
+ *
+ * V1 was one 3,400-line `src/screens/ChatScreen.tsx`, and the assertions in
+ * this file that said "the chat screen does X" read it whole. V2 splits the
+ * same screen across a shell, a controller and three presentational children,
+ * so the honest translation of "somewhere in the chat screen" is the set —
+ * not one of the five picked by guess, which would let a claim pass because
+ * the behaviour moved next door.
+ *
+ * Claims about a specific FILE's styles or structure read that file directly;
+ * this is for the ones about the screen as a whole.
+ */
+const CHAT_FILES = [
+  'src/chat-v2/ChatScreenV2.tsx',
+  'src/chat-v2/useChatV2Controller.ts',
+  'src/chat-v2/useChatV2Openers.ts',
+  'src/chat-v2/ChatHeaderV2.tsx',
+  'src/chat-v2/ChatSessionBarV2.tsx',
+  'src/chat-v2/ChatListV2.tsx',
+  'src/chat-v2/chatState.ts',
+  'src/chat-v2/cells.ts',
+  'src/chat-v2/rows.ts',
+  'src/chat-v2/session.ts',
+] as const;
+const readChat = (): string => CHAT_FILES.map(read).join('\n');
+
+/**
  * The body of one `create or replace function`, so per-function claims can be
  * made. Comments are stripped: both guards carry a comment explaining *why* they
  * are not SECURITY DEFINER, and the assertion below is about the clause, not the
@@ -501,9 +528,9 @@ describe('Cashfree billing invariants', () => {
     expect(read('src/components/TabTopBar.tsx')).toContain(
       'onPress={openWallet}',
     );
-    // ChatScreen routes members to openWallet; providers route to onOpenEarnings
+    // The chat routes members to openWallet; providers route to onOpenEarnings
     // (with openWallet as fallback). Both paths reach openWallet.
-    expect(read('src/screens/ChatScreen.tsx')).toContain('openWallet');
+    expect(readChat()).toContain('openWallet');
     expect(read('src/screens/ProviderDetailScreen.tsx')).toContain(
       'onPress={openWallet}',
     );
@@ -763,7 +790,7 @@ describe('cross-runtime constants', () => {
   });
 
   it('enforces the message ceiling in the composer and the column', () => {
-    expect(read('src/components/Composer.tsx')).toContain(
+    expect(read('src/chat-v2/ChatComposerV2.tsx')).toContain(
       'maxLength={MAX_MESSAGE_CHARS}',
     );
     expect(read('supabase/migrations/003_human_conversations.sql')).toContain(
@@ -899,7 +926,7 @@ describe('pipeline wiring', () => {
   });
 
   it('asserts the test IDs the flows select on still exist in the components', () => {
-    const sources = ['src/components', 'src/screens'];
+    const sources = ['src/components', 'src/screens', 'src/chat-v2'];
     const haystack = sources
       .flatMap(dir =>
         readdirSync(join(ROOT, dir)).map(f => read(`${dir}/${f}`)),
@@ -993,7 +1020,7 @@ describe('every screen is reachable', () => {
 });
 
 describe('review collection remains deferred', () => {
-  const chat = read('src/screens/ChatScreen.tsx');
+  const chat = readChat();
 
   it('does not couple the ephemeral inbox to review state', () => {
     expect(withoutComments(chat)).not.toContain('reviewed');
@@ -1057,7 +1084,7 @@ describe('gesture handling reaches every root', () => {
     /use(Tap|Pan|Pinch|Rotation|Fling|LongPress|Native|Manual|Hover)Gesture\(/;
 
   const surfaces = (): { file: string; code: string }[] =>
-    ['src/components', 'src/screens'].flatMap(dir =>
+    ['src/components', 'src/screens', 'src/chat-v2'].flatMap(dir =>
       readdirSync(join(ROOT, dir))
         .filter(f => f.endsWith('.tsx'))
         .map(f => ({ file: f, code: codeOnly(read(`${dir}/${f}`)) })),
@@ -1081,7 +1108,7 @@ describe('gesture handling reaches every root', () => {
   it('limits gesture declarations to the sheet, the spotlight card, and the chat bubble', () => {
     // Tripwire: a new usePanGesture/useLongPressGesture needs a wrapper
     // decision, not a copy.
-    // Turn.tsx is the WhatsApp swipe-to-reply / long-press strip.
+    // ChatMessageCellV2.tsx is the WhatsApp swipe-to-reply / long-press strip.
     // SpotlightCard.tsx is the M3 bottom sheet with drag-to-dismiss (2026-09).
     const users = surfaces()
       .filter(s => DECLARES_GESTURE.test(s.code))
@@ -1092,10 +1119,10 @@ describe('gesture handling reaches every root', () => {
     // have and which nothing else in the app can host — the viewer is a Modal,
     // so its gestures cannot collide with the transcript's.
     expect(users).toEqual([
+      'ChatMessageCellV2.tsx',
       'MediaViewer.tsx',
       'Sheet.tsx',
       'SpotlightCard.tsx',
-      'Turn.tsx',
     ]);
   });
 
@@ -1914,8 +1941,8 @@ describe('the redesign holds its own invariants', () => {
     //
     // Comments stripped: the files still EXPLAIN the removed avatar at length,
     // and a gate that reads prose would be satisfied by the explanation.
-    const turn = withoutComments(read('src/components/Turn.tsx'));
-    const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+    const turn = withoutComments(read('src/chat-v2/ChatMessageCellV2.tsx'));
+    const chat = withoutComments(readChat());
     const typing = withoutComments(read('src/components/PeerTyping.tsx'));
 
     // Nothing reintroduces the slot, the plumbing, or the component.
@@ -1931,9 +1958,12 @@ describe('the redesign holds its own invariants', () => {
     expect(typing).not.toMatch(/width:\s*26/);
 
     // The header is where the avatar now lives, exclusively.
-    expect(chat).toContain(
-      '<Avatar initial={initial} uri={avatarUrl} size={42}',
+    expect(withoutComments(read('src/chat-v2/ChatHeaderV2.tsx'))).toMatch(
+      /<Avatar\s+initial=\{peerInitial\}\s+uri=\{peerAvatarUrl\}\s+size=\{42\}/,
     );
+    // ...and the ONE other place the transcript shows a face is the empty
+    // state, which is a greeting and not a row.
+    expect((chat.match(/<Avatar\b/g) ?? []).length).toBe(2);
   });
 
   it('routes the back gesture through the parent map rather than branching inline', () => {
@@ -1981,7 +2011,7 @@ describe('the redesign holds its own invariants', () => {
   it('stops recording when the app reaches the background', () => {
     // Android may transiently report inactive while a system permission surface
     // owns focus. Only background means the app actually left the foreground.
-    const composer = read('src/components/Composer.tsx');
+    const composer = read('src/chat-v2/ChatComposerV2.tsx');
     expect(composer).toContain("AppState.addEventListener('change'");
     expect(composer).toContain("next === 'background'");
   });
@@ -2047,7 +2077,7 @@ describe('the redesign holds its own invariants', () => {
      */
     for (const file of [
       'src/components/ThreadBubble.tsx',
-      'src/components/Turn.tsx',
+      'src/chat-v2/ChatMessageCellV2.tsx',
     ]) {
       expect(read(file)).not.toContain('bg.raised');
     }
@@ -2064,13 +2094,13 @@ describe('the redesign holds its own invariants', () => {
      * 19 inside 18 bulges past the curve it is meant to sit within.
      *
      * The media bubble consumes this since 014: `messages.attachment_path` points
-     * into the private `attachments` bucket and `MediaBubble` in Turn.tsx renders
-     * the photo at `mediaInnerRadius()`. The manifest still removes
+     * into the private `attachments` bucket and the cell's `MediaBody` renders
+     * the photo at the concentric inner radius. The manifest still removes
      * READ_MEDIA_IMAGES on purpose, because the system Photo Picker needs no
      * permission. The geometry that justified the radius change is the geometry
      * the photo now uses.
      */
-    const turn = read('src/components/Turn.tsx');
+    const turn = read('src/chat-v2/ChatMessageCellV2.tsx');
     expect(turn).toContain('TOKENS.radius.bubble');
     expect(turn).not.toMatch(/BUBBLE_RADIUS = \d/);
     /*
@@ -2082,9 +2112,11 @@ describe('the redesign holds its own invariants', () => {
     expect(TOKENS.radius.bubble).toBe(9);
     // Concentric inner radius: outer minus the 3dp media inset.
     expect(TOKENS.radius.bubble - 3).toBe(6);
-    // The consumer exists now: the media bubble reads the attachment at the
-    // concentric inner radius.
-    expect(turn).toContain('mediaInnerRadius');
+    // The consumer exists now, and derives the inner corner from the outer one
+    // rather than carrying a second number that can drift.
+    expect(turn).toContain('const MEDIA_INSET = 3;');
+    expect(turn).toContain('borderRadius: TOKENS.radius.bubble - MEDIA_INSET');
+    expect(turn).toContain('padding: MEDIA_INSET');
   });
 
   it('never puts a neutral avatar on a surface its own fill matches', () => {
@@ -2271,193 +2303,144 @@ describe('phone verification (MSG91 widget removed)', () => {
  * repo's own record is that three UI bugs passed every gate and were only found on
  * a device, so the ones that CAN be asserted structurally are asserted here.
  */
-describe('the composer cross-fades its trailing control', () => {
-  const composer = read('src/components/Composer.tsx');
-  it('swaps send and mic through useCrossfade, not a hard conditional mount', () => {
-    // Both controls are mounted and stacked; the cross-fade decides which is
-    // substantial, and pointerEvents give touches to the live one. A hard
-    // `ready ? <SendButton/> : <mic/>` popped one in and out with no motion.
-    expect(composer).toContain('const trailing = useCrossfade(ready);');
-    expect(composer).toContain('trailing.shownStyle');
-    expect(composer).toContain('trailing.hiddenStyle');
-    expect(composer).toMatch(/pointerEvents=\{ready \? 'auto' : 'none'\}/);
-    expect(composer).toMatch(/pointerEvents=\{ready \? 'none' : 'auto'\}/);
-    expect(composer).not.toMatch(/\{ready \? \(\s*<SendButton/);
-  });
-});
+/*
+ * `the composer cross-fades its trailing control` lived here until 2026-09-19.
+ *
+ * It pinned V1's two stacked controls and their `useCrossfade` opacity swap.
+ * V2 makes the opposite choice deliberately: the dock sits inside
+ * `KeyboardGestureArea`, where chatV2Shell.test.ts bans `withTiming` and
+ * `withSpring` outright because a JS animation racing the native IME lift is
+ * the double-authority jump the rewrite exists to remove. So the trailing slot
+ * swaps its CONTENT, in one fixed-size box, with no motion at all — asserted
+ * in chatV2Cells.test.ts › "shows send for text, mic for silence, and stop
+ * while recording".
+ */
 
 describe('the chat restyle is wired, not just drawn', () => {
-  const chat = read('src/screens/ChatScreen.tsx');
+  const chat = readChat();
   const chatCode = withoutComments(chat);
+  const rows = withoutComments(read('src/chat-v2/rows.ts'));
+  const cells = withoutComments(read('src/chat-v2/cells.ts'));
+  const cell = read('src/chat-v2/ChatMessageCellV2.tsx');
 
   it('renders a day divider per day instead of one hardcoded footer', () => {
     // The bug: `ListFooterComponent={<DayDivider label="Today" />}` on an
     // `inverted` list renders at the visual TOP of the transcript, so a single
     // divider reading 'Today' sat above the OLDEST message the client held,
     // whatever date that message was on.
-    //
-    // A ListFooterComponent exists again, but ONLY as the frosted-bar spacer that
-    // reserves the overlay header's height at the list's visual top. Guard the
-    // actual anti-pattern — a DayDivider living in the footer — not the API.
     expect(chatCode).not.toMatch(
       /ListFooterComponent=\{\s*\(\)\s*=>\s*<DayDivider/,
     );
     expect(chatCode).not.toMatch(/DayDivider label=/);
-    expect(chatCode).toContain('<DayDivider iso={message.created_at} />');
-    // opensDay is now computed in a single post-sort pass over the merged
-    // message+call list (so call rows also get dividers). The pass uses the
-    // opensDay helper from datetime.ts, applied to each row's sortAt field.
-    expect(chatCode).toContain('row.opensDay = opensDay(');
-    // The pass must run AFTER the sort so mixed message/call neighbours are
-    // compared correctly (not just adjacent messages).
-    expect(chatCode).toContain('sorted.length');
+    expect(chatCode).toContain('<DayDivider iso={item.sortAt} />');
+    // opensDay is computed in a single post-sort pass over the merged
+    // message+call+session list, so call rows get dividers too. The pass uses
+    // the opensDay helper from datetime.ts against each row's sortAt.
+    expect(rows).toContain('row.opensDay = opensDay(');
+    // The pass must run AFTER the sort so mixed neighbours are compared
+    // correctly, not just adjacent messages.
+    expect(rows.indexOf('.sort((a, b) =>')).toBeLessThan(
+      rows.indexOf('row.opensDay = opensDay('),
+    );
   });
 
   it('takes clock format from the device rather than hardcoding 24 hours', () => {
-    // `String(d.getHours()).padStart(2, '0')` is wrong on any iPhone with
-    // Settings > General > Date & Time > 24-Hour Time off, which is the default in
-    // most regions.
+    // `String(d.getHours()).padStart(2, '0')` is wrong on any device with
+    // 24-hour time off, which is the default in most regions.
     expect(chatCode).not.toContain('getHours()');
-    expect(chatCode).toContain('timeOfDay(message.created_at)');
+    expect(chatCode).toContain('timeOfDay(item.sortAt)');
+    expect(cells).toContain("import { timeOfDay } from '../lib/datetime'");
   });
 
   it('sources the header identity from the thread, not the directory', () => {
-    // `useProviders()` reads `provider_directory`, which contains providers. This
-    // screen also serves the provider tree, where `providerId` is a MEMBER's id,
-    // so every directory lookup missed and the header read 'Conversation' with a
-    // blank avatar.
-    expect(chatCode).toContain('t.peer_id === providerId');
-    expect(chatCode).toContain('peerThread?.peer_display_name');
+    // `useProviders()` reads `provider_directory`, which contains providers.
+    // This screen also serves the provider tree, where `providerId` is a
+    // MEMBER's id, so every directory lookup missed and the header read
+    // 'Conversation' with a blank avatar. The thread is asked first.
+    expect(rows).toContain('threads?.find(t => t.peer_id === providerId)');
+    expect(chatCode).toContain('knownThread?.peer_display_name');
   });
 
   it('drops the derived socket presence the settled decision rejects', () => {
     /*
      * Realtime presence answers "is their app in the foreground", which is a
      * question nobody agreed to have answered about them. The reading has to
-     * come from something the peer SET.
+     * come from something the peer SET: `peer_available`, the provider's own
+     * master switch.
      *
-     * That rule is unchanged and is now simpler to state: the one input is
-     * `peer_available`, the provider's own master switch. It used to also cite
-     * `peer_last_active_at`, which was never a good witness for it, because
-     * `touch_presence()` is never called from the client and the column has
-     * never been written by anything.
-     *
-     * Comments stripped: the note explaining what the header no longer claims
-     * names the selector it stopped reading, so a negative assertion over raw
-     * source would fail on its own documentation.
+     * Comments stripped, because the note explaining what the header no longer
+     * claims names the selector it stopped reading.
      */
     expect(chatCode).not.toContain('selectPeerOnline');
     expect(chatCode).toContain('peer_available');
   });
 
   it('wires swipe-to-reply and on-bubble reactions on both sides', () => {
-    expect(chatCode).toContain('onSwipeReply={swipeReply}');
-    expect(chatCode).toContain('onReact={reactOnMessage}');
-    expect(chatCode).toContain('onReportMessage={reportMessage}');
-    expect(chatCode).toContain('timeOfDay(message.created_at)');
-    expect(chatCode).not.toContain('last ? timeOfDay');
-    expect(chatCode).toContain('mine,');
+    expect(chatCode).toContain('onSwipeReply={onReply}');
+    expect(chatCode).toContain('onReact={onReact}');
+    expect(chatCode).toContain('onReport={onReport}');
+    expect(chatCode).toContain('stamp={timeOfDay(item.sortAt)}');
+    expect(chatCode).toContain('mine={item.mine}');
   });
 
   it('opens the safety sheet from the strip without stacking a second Modal', () => {
-    const report = chatCode.slice(
-      chatCode.indexOf('const reportMessage'),
-      chatCode.indexOf('const renderItem'),
-    );
-    expect(report).toContain('setSafety({ open: true, messageId })');
+    // One piece of state with a nullable id, so a message report and a thread
+    // report can never both be open.
+    expect(chatCode).toContain('setSafety({ open: true, messageId })');
     expect(chatCode).not.toContain('<MessageActionsSheet');
+    expect((chatCode.match(/<SafetySheet/g) ?? []).length).toBe(1);
   });
 
   it('shows the typing indicator in the empty thread too', () => {
-    // The empty branch REPLACES the FlatList, so PeerTyping was unmounted in
-    // exactly the case it is most wanted: a new peer typing the first message.
-    const empty = chatCode.slice(chatCode.indexOf('styles.starters'));
-    expect(empty).toContain('<PeerTyping');
-  });
-
-  it('keeps the in-flow dock and page-down button on the keyboard signal', () => {
-    const imeCode = withoutComments(read('src/lib/imeGeometry.ts'));
-    expect(imeCode).toContain(
-      'const imeSpace = i.keyboardHeight + i.insetBottom',
-    );
-    expect(chatCode).toContain('lift={keyboard.height}');
-    expect(chatCode).toContain('translateY: -lift.value');
-    expect(chatCode).toContain('<KeyboardStickyView style={styles.dockStack}>');
-    expect(chatCode).not.toContain('AnimatedBodyInset');
-    expect(chatCode).not.toContain('useBodyInset(');
-    expect(chatCode).not.toContain('useListPad(');
-    expect(chatCode).not.toMatch(
-      /const \[(keyboardUp|keyboardHeight|barHeight|dockHeight|emojiPanelOpen|emojiSearching|composerFocused),/,
+    /*
+     * The empty branch used to REPLACE the list, so `PeerTyping` was unmounted
+     * in exactly the case it is most wanted: a new peer typing the first
+     * message. Every status branch now sits OVER the list instead, and the
+     * typing bubble is the list's own header, so it survives all of them.
+     */
+    const list = withoutComments(read('src/chat-v2/ChatListV2.tsx'));
+    expect(list).toContain('<PeerTyping');
+    expect(list).toContain('ListHeaderComponent={header}');
+    expect(withoutComments(read('src/chat-v2/ChatScreenV2.tsx'))).toContain(
+      'testID="chat-v2-empty"',
     );
   });
 
-  it('keeps the owner holding the handle and the leaves holding the subscription', () => {
-    // The whole point of the store is that ChatScreen does NOT subscribe. If its
-    // body ever calls one of the value hooks, the screen silently goes back to
-    // re-rendering all 1858 lines on every keyboard show — with every other test
-    // still green. So the body is checked directly: the four leaf components at
-    // the foot of the file are allowed to call them, and nothing above is.
-    const body = chatCode.slice(
-      0,
-      chatCode.indexOf('const Transcript = memo('),
-    );
-    expect(body).not.toMatch(
-      /use(BodyInset|ListPad|ComposerInset|PanelCeiling|BarHeight|ComposerFocused)\(/,
-    );
-    // The handle itself is fine, and is how the screen writes.
-    expect(body).toContain('useChatImeStore({');
-    expect(body).toContain('seedKeyboardHeight: readKeyboardHeight(false)');
-
-    // Composer remains a single screen-owned input surface.
-    const usages = spawnSync(
-      'grep',
-      ['-rl', '--include=*.tsx', '<Composer', join(ROOT, 'src')],
-      { encoding: 'utf8' },
-    )
-      .stdout.trim()
-      .split('\n')
-      .filter(Boolean);
-    expect(usages).toEqual([join(ROOT, 'src', 'screens', 'ChatScreen.tsx')]);
-  });
-
-  it('keeps the composer in flow below the transcript', () => {
-    // The partial Bluesky port left the sticky dock absolute and depended on
-    // extraContentPadding to keep the final cell clear. On FlashList v2 Android
-    // that still painted the final message under the composer. The deferred
-    // emoji/media surface no longer needs an overlay, so the dock belongs in
-    // normal flex flow and the list owns the remaining height.
-    expect(chatCode).toContain('KeyboardChatScrollView');
-    expect(chatCode).toContain('KeyboardStickyView');
-    expect(chatCode).toContain('style={styles.transcript}');
-    expect(chatCode).not.toContain('extraContentPadding={dockPad}');
-    expect(chatCode).not.toContain("position: 'absolute',\n    left: 0,\n    right: 0,\n    bottom: 0,");
-    expect(chatCode).not.toContain('const listLift = useAnimatedStyle(');
-    expect(chatCode).not.toContain('AnimatedBodyInset');
-    expect(chatCode).not.toContain('function DockStack(');
-  });
-
-  it('adds composer clearance only while the IME lifts the in-flow dock', () => {
-    // At rest the in-flow composer already owns layout height. During IME
-    // translation it overlays the list, so KeyboardChatScrollView needs exactly
-    // one composer-height of extra padding, scaled by native IME progress.
-    expect(chatCode).toContain('const imeComposerPad = useDerivedValue(');
-    expect(chatCode).toContain('dockHeight.value * keyboard.progress.value');
-    expect(chatCode).toContain('extraContentPadding={composerPad}');
-  });
+  /*
+   * Five assertions about V1's keyboard machinery lived here until 2026-09-19:
+   * the in-flow dock on the keyboard signal, the IME store's owner/leaf split,
+   * the composer's place in the flex flow, the IME-progress clearance padding,
+   * and the emoji/attach entry points on the composer.
+   *
+   * All five described `src/lib/imeGeometry.ts`, `keyboardEngine.ts` and
+   * `keyboardPanel.ts` — a JS re-implementation of the IME position that the
+   * V2 shell replaced with the platform's own. There is nothing left to assert
+   * about it, and the thing that took its place is asserted where it lives:
+   * chatV2Shell.test.ts › "uses the reference keyboard hierarchy and native
+   * keyboard motion", and chatV2Cells.test.ts › "clears the whole measured
+   * dock, never just the composer".
+   */
 
   it('removes first-move controls that overlay the transcript', () => {
+    /*
+     * The starter pills and the sticker button are gone. What survives under
+     * the same words is the EMPTY STATE's one line of copy — `Say hi to
+     * <name>`, a sentence rather than a control — so the ban is on the
+     * controls and on a tappable that carries the phrase, not on the phrase.
+     */
     expect(chatCode).not.toContain('FirstMovePills');
     expect(chatCode).not.toContain('Send sticker');
-    expect(chatCode).not.toContain('Say hi');
+    expect(chatCode).not.toMatch(/testID="[^"]*(pill|starter|sticker)/i);
+    expect(chatCode).not.toMatch(/accessibilityLabel="Say hi/);
   });
 
   it('keeps only text, mic and send controls in the composer', () => {
-    const composer = withoutComments(read('src/components/Composer.tsx'));
-    expect(composer).toContain('testID="composer-input"');
-    expect(composer).toContain('testID="voice-record"');
-    expect(composer).toContain('<SendButton');
-    expect(composer).not.toContain('testID="composer-emoji"');
-    expect(composer).not.toContain('testID="composer-attach"');
+    const composer = withoutComments(read('src/chat-v2/ChatComposerV2.tsx'));
+    expect(composer).toContain('testID="chat-v2-input"');
+    expect(composer).toContain('testID="chat-v2-mic"');
+    expect(composer).toContain('testID="chat-v2-send"');
+    expect(composer).not.toContain('testID="chat-v2-emoji"');
+    expect(composer).not.toContain('testID="chat-v2-attach"');
     expect(composer).not.toContain('<EmojiPicker');
     expect(composer).not.toContain('<AttachPanel');
     expect(composer).not.toContain('launchCamera');
@@ -2468,19 +2451,19 @@ describe('the chat restyle is wired, not just drawn', () => {
     // Text, voice and media bubbles share nothing in height or subtree. One
     // shared message pool hands a recycled voice cell to a text message and
     // the row jumps on scroll.
-    expect(chatCode).toContain('function getTranscriptItemType(');
-    expect(chatCode).toContain("return 'message-voice'");
-    expect(chatCode).toContain("return 'message-media'");
-    expect(chatCode).toContain("return 'message-text'");
-    expect(chatCode).toContain('getItemType={getTranscriptItemType}');
+    expect(rows).toContain('export function chatV2ItemType(');
+    expect(rows).toContain("return 'message-voice'");
+    expect(rows).toContain("return 'message-media'");
+    expect(rows).toContain("return 'message-text'");
+    expect(chatCode).toContain('const getItemType = (item: ChatV2Row) => chatV2ItemType(item);');
+    expect(chatCode).toContain('getItemType={getItemType}');
   });
 
   it('does not stack KeyboardAvoidingView on top of a resizing window', () => {
     // The window never resizes for the IME (adjustNothing, pinned in
-    // platform.test.ts); the lift is ours, driven by the controller's inset
-    // events. A KeyboardAvoidingView here would stack a second, disagreeing
-    // resize mechanism on top — the same failure the old behavior="height"
-    // pairing had under adjustResize.
+    // platform.test.ts); the lift is the platform's, inside
+    // `KeyboardStickyView`. A KeyboardAvoidingView here would stack a second,
+    // disagreeing resize mechanism on top.
     expect(chatCode).not.toContain('KeyboardAvoidingView');
     expect(read('android/app/src/main/AndroidManifest.xml')).toContain(
       'android:windowSoftInputMode="adjustNothing"',
@@ -2488,47 +2471,48 @@ describe('the chat restyle is wired, not just drawn', () => {
   });
 
   it('holds an explicit FlashList ref and scrolls to offset 0 on new messages', () => {
-    // Without a ref, there is no way to scroll programmatically. The
-    // useEffect watching rows.length only forces the scroll for the member's
-    // own send (the reference app's `isOut() && wasJustSent`) or when already near the
-    // bottom — anything else while scrolled up reading history increments
-    // the page-down button's badge instead of yanking the view (2026-09-17
-    // audit, X5).
+    // Without a ref there is no way to scroll programmatically. The effect
+    // watching `rows` only forces the scroll for the member's own send;
+    // anything else arriving while they read history increments the page-down
+    // badge instead of yanking the view.
     expect(chatCode).toContain('listRef');
-    expect(chatCode).toContain('ref={listRef}');
+    expect(chatCode).toContain('listRef={listRef}');
     expect(chatCode).toContain('scrollToOffset({ offset: 0');
-    // The effect must watch `rows` so it fires for both local and remote messages.
-    expect(chatCode).toContain('prevRowsLen');
+    expect(chatCode).toContain('chatV2Arrival(');
   });
 
   it('shows receipt inside every settled outgoing bubble, not only newest', () => {
-    // The old code gated receipt on `showReceipt` (only the last own message).
-    // Now every non-pending outgoing row carries a tick: single for sent, double
-    // for read, matching WhatsApp semantics. Pending rows carry undefined.
-    const turnSrc = read('src/components/Turn.tsx');
-    // Receipt is rendered inside the bubble (MetaRow), not in a detached row.
-    expect(turnSrc).toContain('metaRow');
-    expect(turnSrc).not.toContain('receiptRow');
-    // Pending rows suppress the tick; settled rows show it.
-    expect(turnSrc).toContain('pending ? undefined : receipt');
-    // ChatScreen no longer uses showReceipt to gate the prop.
+    // The old code gated the receipt on `showReceipt` (only the last own
+    // message). Now every non-pending outgoing row carries a tick: single for
+    // sent, double for read. Pending rows carry undefined.
+    expect(cell).toContain('metaRow');
+    expect(cell).not.toContain('receiptRow');
+    expect(withoutComments(read('src/chat-v2/ChatListV2.tsx'))).toContain(
+      'receipt={chatV2Receipt(item)}',
+    );
+    expect(cells).toContain('export function chatV2Receipt(');
     expect(chatCode).not.toContain('showReceipt');
   });
 
   it('reserves the inline-timestamp slot so a short bubble hugs the clock (WhatsApp #6)', () => {
-    // The "hi" bug (Amit, 2026-09-13): a wrapping flex row is sized by Yoga to
-    // its WIDEST single item, so a message narrower than the clock dropped the
-    // clock to a second, clock-wide line. The fix reserves the clock's width at
-    // the END of the message text with a zero-content spacer View, and overlays
-    // the real clock absolutely — so the text's own intrinsic width includes the
-    // clock and the bubble hugs to the WhatsApp width. Verified on device.
-    const turnSrc = read('src/components/Turn.tsx');
-    expect(turnSrc).toContain('setMetaWidth');
-    // The inline spacer sized to the measured meta plus the gap.
-    expect(turnSrc).toContain('width: metaWidth + TOKENS.space.xs');
-    // The real clock is absolutely positioned over the reserved slot, not a
-    // wrapping sibling that Yoga can push to its own line.
-    expect(turnSrc).toMatch(/metaOverlay:\s*\{[\s\S]*?position:\s*'absolute'/);
+    /*
+     * The "hi" bug (Amit, 2026-09-13): a wrapping flex row is sized by Yoga to
+     * its WIDEST single item, so a message narrower than the clock dropped the
+     * clock to a second, clock-wide line.
+     *
+     * V1 fixed it by MEASURING the meta row and reserving the measured width,
+     * which costs a layout pass and a re-render per cell and reserves nothing
+     * at all on the first frame. V2 computes the slot from the string instead
+     * — see `chatV2MetaSlot` — so the reservation is right before anything is
+     * drawn. The values are asserted in chatV2Cells.test.ts; what is asserted
+     * here is that the cell spends it rather than measuring again.
+     */
+    expect(cell).toContain('chatV2MetaSlot(');
+    // Comments stripped: the cell's header EXPLAINS the measurement it
+    // replaced, and names `onLayout` in order to say it is not used.
+    const cellCode = withoutComments(cell);
+    expect(cellCode).not.toContain('setMetaWidth');
+    expect(cellCode).not.toContain('onLayout');
   });
 
   it('renders the photo timestamp INSIDE the image, not over the bubble', () => {
@@ -2536,25 +2520,22 @@ describe('the chat restyle is wired, not just drawn', () => {
      * A photo bubble shows its timestamp and tick with the same semantics as a
      * text bubble — but the overlay has to belong to the IMAGE.
      *
-     * It used to be a sibling of `MediaBubble`, absolutely positioned against
-     * the wrapper around it. `mediaBubble` is `maxWidth: '80%'`, so that wrapper
-     * is wider than the photo whenever the photo hits the cap, and the chip
-     * rendered outside the frame with the delivery tick past the coral edge
-     * (measured on device, 2026-09-04). Now `MediaBubble` owns it and draws it
-     * inside `mediaInner`, which clips.
+     * V1 made it a sibling of the media bubble, absolutely positioned against
+     * the wrapper around it. That wrapper is `maxWidth: '80%'` and so is wider
+     * than the photo whenever the photo hits the cap, which rendered the chip
+     * outside the frame with the delivery tick past the coral edge (measured
+     * on device, 2026-09-04).
      */
-    const turnSrc = withoutComments(read('src/components/Turn.tsx'));
-    // Both callers hand the stamp to MediaBubble rather than drawing their own.
-    expect(turnSrc).toMatch(/<MediaBubble[^>]*timestamp=\{timestamp\}/);
-    expect(turnSrc).not.toMatch(/<\/MediaBubble>|mediaMetaRow/);
-    // And the overlay is a child of the clipped image box, so the only
-    // `styles.mediaTime` use sits after the progress bar inside MediaBubble.
-    const media = turnSrc.slice(
-      turnSrc.indexOf('function MediaBubble'),
-      turnSrc.indexOf('interface PeerProps'),
+    const media = withoutComments(cell).slice(
+      cell.indexOf('function MediaBody'),
+      cell.indexOf('function MessageBubble'),
     );
-    expect(media).toContain('styles.mediaTime');
-    expect((turnSrc.match(/styles\.mediaTime/g) ?? []).length).toBe(1);
+    expect(media).toContain('styles.mediaMeta');
+    // Drawn inside `mediaInner`, which clips — so there is exactly one use and
+    // it is in the media body.
+    expect((withoutComments(cell).match(/styles\.mediaMeta\b/g) ?? []).length).toBe(
+      1,
+    );
   });
 });
 
@@ -2625,7 +2606,7 @@ describe('reactions and replies reach a real server call', () => {
 describe('voice notes are recorded, uploaded and sent through the one send path', () => {
   const recorder = read('src/lib/recorder.ts');
   const api = read('src/api/voice.ts');
-  const composer = read('src/components/Composer.tsx');
+  const composer = read('src/chat-v2/ChatComposerV2.tsx');
 
   it('sends through the one send RPC rather than inserting a row', () => {
     // The RPC writes the row, attaches the session and enforces the block graph
@@ -2731,7 +2712,7 @@ describe('voice notes are recorded, uploaded and sent through the one send path'
     // One native player: audio started in a thread you have left keeps playing
     // over the next screen, and the row that started it is gone.
     expect(api).toContain('stopPlayback()');
-    expect(read('src/screens/ChatScreen.tsx')).toContain('useVoicePlayer()');
+    expect(readChat()).toContain('useVoicePlayer()');
   });
 
   it('holds a finished recording instead of sending it at the cap', () => {
@@ -2750,18 +2731,23 @@ describe('voice notes are recorded, uploaded and sent through the one send path'
     // open_conversation is called ONLY to create a conversation that does not
     // exist yet. A provider always has a known thread, so it never calls the RPC;
     // and a member reopening a chat skips the extra round-trip too.
-    const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
-    expect(chat).toContain('const needsOpen = knownThread === undefined');
-    expect(chat).toContain('useConversationId(needsOpen ? providerId : null)');
-    expect(chat).toContain('knownThread?.conversation_id ?? openedId');
+    const rows = withoutComments(read('src/chat-v2/rows.ts'));
+    expect(rows).toContain(
+      'needsOpen: threads !== undefined && knownThread === undefined',
+    );
+    expect(rows).toContain('conversationId: knownThread?.conversation_id ?? openedId');
+    // ...and the screen asks the RPC only through that one answer.
+    expect(withoutComments(readChat())).toContain(
+      'resolveChatV2Conversation(threads, providerId, undefined).needsOpen',
+    );
   });
 
   it('gives both roles the recorder', () => {
-    // The provider tree renders this same screen (App.tsx mounts ChatScreen for
+    // The provider tree renders this same screen (App.tsx mounts ChatScreenV2 for
     // both), so one composer covers both sides. Voice notes being in scope for
     // providers is a settled decision, and a role check here would quietly
     // reverse it.
-    const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+    const chat = withoutComments(readChat());
     expect(chat).toContain('onSendVoice={onSendVoice}');
     expect(chat).not.toMatch(/i_am_member[\s\S]{0,40}onSendVoice/);
   });
@@ -2782,8 +2768,10 @@ describe('voice notes are recorded, uploaded and sent through the one send path'
     expect(
       read('supabase/migrations/011_reactions_replies_voice_calls.sql'),
     ).toContain('evidence_voice_path');
-    expect(read('src/components/Turn.tsx')).toContain('useLongPressGesture({');
-    expect(read('src/components/Turn.tsx')).toContain('onReportMessage');
+    expect(read('src/chat-v2/ChatMessageCellV2.tsx')).toContain('useLongPressGesture({');
+    // The hold opens the actions, and Report is one of them for a peer row.
+    expect(read('src/chat-v2/ChatScreenV2.tsx')).toContain('onReport={onReport}');
+    expect(read('src/chat-v2/cells.ts')).toContain('report: true,');
     expect(read('scripts/moderate.mjs')).toContain('evidence_voice_path');
   });
 
@@ -2837,40 +2825,46 @@ describe('calling ships visible and on, wired to a real media layer', () => {
     // never fires — TalkBack announces a button that does nothing, and stays a
     // no-op even when the flag flips. They are Pressables now: disabled while
     // CALLS_ENABLED is false (an honest gate), and wired to start a call when on.
-    const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+    const chat = withoutComments(readChat());
     expect(chat).toContain('CALLS_ENABLED');
-    expect(chat).toContain('testID="call-video"');
-    expect(chat).toContain('testID="call-voice"');
+    expect(chat).toContain('testID="chat-v2-call-video"');
+    expect(chat).toContain('testID="chat-v2-call-audio"');
     // Voice and video combine the compile-time master flag with independent
     // live controls. A live or pending paid session must end before changing
     // channels, because one conversation has one paid session at a time.
-    expect(chat).toContain('voiceCallsEnabled');
-    expect(chat).toContain('videoCallsEnabled');
+    expect(chat).toContain('voice_calls_enabled');
+    expect(chat).toContain('video_calls_enabled');
     // Since 064 the button reads ONE derived flag that folds the operator's
     // switch together with this provider's own (`canStartAudio`/`canStartVideo`),
     // so the assertion follows it there rather than pinning the raw name at the
     // button. Both halves must still be in the composition.
-    expect(chat).toContain(
-      'const canStartAudio = voiceCallsEnabled && (provider?.audio_enabled ?? true)',
-    );
-    expect(chat).toContain(
-      'const canStartVideo = videoCallsEnabled && (provider?.video_enabled ?? true)',
-    );
-    // Chat session is an upgrade path, not a block: only non-chat activeSession
-    // disables the buttons (migration 073 ends the chat session on the server).
     expect(chat).toMatch(
-      /!canStartVideo\s*\|\|\s*\(activeSession != null && activeSession\.channel !== 'chat'\)/,
+      /const canStartAudio =\s*\(killSwitches\?\.voice_calls_enabled \?\? true\) &&\s*CALLS_ENABLED &&\s*\(provider\?\.audio_enabled \?\? true\);/,
     );
     expect(chat).toMatch(
-      /!canStartAudio\s*\|\|\s*\(activeSession != null && activeSession\.channel !== 'chat'\)/,
+      /const canStartVideo =\s*\(killSwitches\?\.video_calls_enabled \?\? true\) &&\s*CALLS_ENABLED &&\s*\(provider\?\.video_enabled \?\? true\);/,
+    );
+    // Chat session is an upgrade path, not a block: only a NON-chat
+    // activeSession disables the buttons (migration 073 ends the chat session
+    // on the server). One derived flag, read by both controls.
+    expect(chat).toMatch(
+      /const sessionBusy =\s*activeSession !== null && activeSession\.channel !== 'chat';/,
+    );
+    expect(chat).toContain(
+      'disabled={!callsAvailable || !canStartVideo || sessionBusy}',
+    );
+    expect(chat).toContain(
+      'disabled={!callsAvailable || !canStartAudio || sessionBusy}',
     );
     // Real, and ready for the flag flip: the tap starts a call — through
     // `startCall`, not the raw prop, since X6 (2026-09-17 audit) wrapped
     // every call-start with the draft purge. `startCall` itself still calls
     // the real prop with the right channel.
-    expect(chat).toContain("onPress={() => startCall('video')}");
-    expect(chat).toContain("onPress={() => startCall('audio')}");
-    expect(chat).toContain('onStartCall?.(channel)');
+    expect(chat).toContain("onStartCall?.('video')");
+    expect(chat).toContain("onStartCall?.('audio')");
+    expect(read('src/chat-v2/ChatScreenV2.tsx')).toContain(
+      'mutationOnStartCall?.(channel)',
+    );
   });
 
   it('keeps the token counter in the chat header', () => {
@@ -2879,18 +2873,18 @@ describe('calling ships visible and on, wired to a real media layer', () => {
     // seeded balance remains 3 across a pending send. The contract test elsewhere only greps the testID
     // across all of src, so removing it from HERE would keep jest green and break
     // the only gate that would notice.
-    expect(read('src/screens/ChatScreen.tsx')).toContain('<TokenCounter');
+    expect(readChat()).toContain('<TokenCounter');
   });
 });
 
 describe('paid chat sessions expose their live lifecycle', () => {
-  const chat = read('src/screens/ChatScreen.tsx');
+  const chat = readChat();
 
   it('renders a clock from the authoritative server start time', () => {
     expect(chat).toContain("activeSession?.status === 'active'");
-    expect(chat).toContain('activeSession.started_at');
+    expect(chat).toContain('startedAt: activeSession?.started_at ?? null');
     expect(chat).toContain('Date.parse(sessionStartedAt)');
-    expect(chat).toContain('testID="chat-session-timer"');
+    expect(chat).toContain('testID="chat-v2-session-timer"');
   });
 
   it('counts DOWN what the balance buys, per second only inside the last five minutes', () => {
@@ -2898,8 +2892,8 @@ describe('paid chat sessions expose their live lifecycle', () => {
     // The remainder is the server's one-snapshot figure, aged from the instant
     // it was taken — never recomputed from `balance`, which cannot tell whether
     // the current minute has been deducted yet (migration 062).
-    expect(code).toContain(
-      'secondsRemainingNow(activeSession?.seconds_remaining, sessionSyncedAt, sessionNow)',
+    expect(code).toMatch(
+      /secondsRemainingNow\(\s*activeSession\?\.seconds_remaining,\s*sessionSyncedAt,\s*sessionNow,\s*\)/,
     );
     expect(code).toContain('dataUpdatedAt: sessionSyncedAt');
     expect(code).not.toContain('talkTimeLeft(');
@@ -2921,19 +2915,24 @@ describe('paid chat sessions expose their live lifecycle', () => {
      * The threshold itself is unchanged and still single-sourced in
      * sessionClock.ts — that is what the assertions above and below pin.
      */
-    expect(code).toContain('formatClock(sessionRemaining ?? 0)');
+    expect(code).toContain('formatClock(remaining ?? 0)');
     expect(code).not.toContain('formatMinutes(');
     expect(code).not.toContain('estimatedTalkSeconds(');
-    // The bar cannot come back above the window: its own visibility is the
-    // countdown flag, so there is no state in which it shows without a clock.
-    // Member-only: providers do not recharge (isMemberSide guard added 2026-09-07).
+    /*
+     * Both bars come out of ONE rule rather than two conditions that can
+     * disagree — `chatV2SessionBand`, whose truth table is asserted as values
+     * in chatV2Parity.test.ts. What is pinned here is the shape: neither can
+     * show without the countdown, and neither shows to a provider, who does
+     * not recharge.
+     */
     expect(code).toMatch(
-      /showStickyRecharge\s*=\s*\n?\s*isMemberSide\s*&&\s*countingDown\s*&&/,
+      /showExtend: cardEligible && !input\.extendScrolledAway,/,
     );
-    // The extend card and the numerals share one threshold and one figure.
-    // Member-only guard added 2026-09-07.
     expect(code).toMatch(
-      /showExtendCard\s*=\s*\n?\s*isMemberSide\s*&&\s*sessionIsActive\s*&&\s*countingDown/,
+      /showRecharge:\s*input\.isMemberSide &&\s*countingDown &&/,
+    );
+    expect(code).toMatch(
+      /const cardEligible =\s*input\.isMemberSide &&\s*input\.status === 'active' &&\s*countingDown/,
     );
 
     // Server side: one snapshot, member only, registered and tested.
@@ -2965,12 +2964,11 @@ describe('paid chat sessions expose their live lifecycle', () => {
      * since; updated to the pair rather than deleted, because what it guards is
      * that leaving a PAID session asks first, and that is still true.
      */
-    expect(chat).toContain("'Done for now?'");
-    expect(chat).toContain("'Leave this chat?'");
+    expect(chat).toContain("title: ending ? 'Done for now?' : 'Leave this chat?',");
     expect(chat).toContain('leaveIntent');
-    expect(chat).toContain('testID="chat-leave-dialog"');
+    expect(chat).toContain('testID="chat-v2-leave"');
     expect(chat).toContain("reason: 'manual'");
-    expect(chat).toContain('onPress={requestLeave}');
+    expect(chat).toContain('onBack={requestLeave}');
     // The screen does NOT subscribe to BackHandler itself: RN fires
     // subscriptions last-registered-first, and App re-subscribes whenever the
     // Recharge overlay toggles, so the chat's listener could be outranked and
@@ -2992,12 +2990,21 @@ describe('paid chat sessions expose their live lifecycle', () => {
      * So the guard is held whenever EITHER state is up, and only then — the
      * "intercept only in the state that needs a decision" rule is intact.
      */
-    expect(code).toContain(
-      'useBackGuard(activeSession || replyTo !== null ? backGuard : null)',
+    expect(code).toContain('useBackGuard(guarded ? backGuard : null)');
+    /*
+     * The ladder itself is a pure function now (`chatV2BackStep`, asserted as
+     * values in chatV2Parity.test.ts) rather than a chain of ifs inside the
+     * screen, so what is pinned here is that the screen spends it and that
+     * the money rung really opens the dialog.
+     */
+    expect(code).toMatch(
+      /const step = chatV2BackStep\(\{[\s\S]{0,300}sessionActive,\s*\}\);/,
     );
     expect(code).toMatch(
-      /const backGuard = useCallback\(\(\) => \{\s*if \(replyTo !== null\) \{[\s\S]*?if \(activeSession\) \{\s*requestLeave\(\);\s*return true;\s*\}\s*return false;/,
+      /case 'confirmLeave':[\s\S]{0,200}openLeave\('leave'\);\s*return true;/,
     );
+    // ...and declines otherwise, so App's route handler owns the pop.
+    expect(code).toMatch(/default:[\s\S]{0,200}return false;/);
     /*
      * And the barrier, which is the defect the ladder alone would not have
      * fixed. App.tsx keeps HomeScreen mounted under this overlay, so Home's
@@ -3023,11 +3030,13 @@ describe('paid chat sessions expose their live lifecycle', () => {
     // The chip sits a thumb-width from Recharge in the same bar and ended a
     // paid session on one tap. Same dialog, `end` intent, the member stays.
     const code = withoutComments(chat);
-    expect(code).toContain('onPress={requestEnd}');
-    expect(code).toContain("setLeaveIntent('end')");
-    expect(code).toContain(
-      "onConfirm={leaveIntent === 'end' ? confirmEnd : confirmLeave}",
-    );
+    expect(code).toContain('onEndSession={requestEnd}');
+    expect(code).toContain("openLeave('end')");
+    // ONE dialog for both intents, so the copy cannot drift between them —
+    // see `chatV2LeaveCopy`. `leaveIntent` picks the words; `confirmLeave`
+    // decides whether to also leave the screen.
+    expect(code).toContain('onConfirm={confirmLeave}');
+    expect(code).toContain("const leaving = leaveIntent === 'leave';");
     expect(code).not.toContain('endCurrentSession');
 
     // CallScreen unmount hangs up, so a bare back was a silent hang-up. The red
@@ -3042,8 +3051,13 @@ describe('paid chat sessions expose their live lifecycle', () => {
   });
 
   it('surfaces inactivity warning and grace states from the server', () => {
-    expect(chat).toContain("activeSession?.status === 'warning'");
-    expect(chat).toContain("activeSession?.status === 'grace'");
+    // Both statuses meter, so both keep the clock running and both hand the
+    // band to Recharge — the server saying time is up is not a moment to
+    // offer an extend CARD, which is an offer about an ACTIVE session.
+    expect(chat).toContain(
+      "const RUNNING = new Set(['active', 'warning', 'grace']);",
+    );
+    expect(chat).toContain("input.status === 'active' &&");
   });
 
   it('gates the visible timer on a live provider message, not an automated opener', () => {
@@ -3053,18 +3067,18 @@ describe('paid chat sessions expose their live lifecycle', () => {
     // authoritative started_at.
     const stripped = withoutComments(chat);
     expect(stripped).toContain('hasLiveProviderMessage');
-    expect(stripped).toContain("m.origin === 'live'");
-    expect(stripped).toContain('m.sender_id === activeSession.provider_id');
-    expect(stripped).toContain('m.session_id === activeSession.id');
+    expect(stripped).toContain("m.origin === 'live' &&");
+    expect(stripped).toContain('m.sender_id === session.provider_id');
+    expect(stripped).toContain('m.session_id === session.id');
     // The gate is ANDed into the timer's start-time selection.
     expect(stripped).toMatch(
-      /hasLiveProviderMessage\s*\n?\s*\?\s*activeSession\.started_at/,
+      /return input\.hasLiveProviderMessage \? input\.startedAt : null;/,
     );
   });
 });
 
 describe('the chat seeds openers one at a time, not all at once', () => {
-  const chat = read('src/screens/ChatScreen.tsx');
+  const chat = readChat();
   const stripped = withoutComments(chat);
 
   it('drives the sequential opener RPC, not the batch seed', () => {
@@ -3082,10 +3096,10 @@ describe('the chat seeds openers one at a time, not all at once', () => {
     expect(stripped).toContain("setPeerActivity('typing')");
     expect(stripped).toContain('setPeerActivity(null)');
     // Bounded, length-aware pacing constants.
-    expect(stripped).toContain('OPENER_TYPING_MIN_MS');
-    expect(stripped).toContain('OPENER_TYPING_MAX_MS');
-    expect(stripped).toContain('OPENER_MS_PER_CHAR');
-    expect(stripped).toContain('OPENER_PAUSE_MS');
+    // The beat is a pure function of the text's length, bounded at both ends,
+    // and its constants are asserted as VALUES in chatV2Parity.test.ts.
+    expect(stripped).toContain('chatV2OpenerBeat(');
+    expect(stripped).toContain('CHAT_V2_OPENER_PAUSE_MS');
   });
 
   it('is cancellable and refetches after each step', () => {
@@ -3373,10 +3387,10 @@ describe('chat chrome occludes what is behind it', () => {
    * collide.
    */
   it('the composer capsule contains the icons, not just the field', () => {
-    const composer = read('src/components/Composer.tsx');
+    const composer = read('src/chat-v2/ChatComposerV2.tsx');
     const bar = composer.slice(
-      composer.indexOf('  inputBar: {'),
-      composer.indexOf('  attach: {'),
+      composer.indexOf('    field: {'),
+      composer.indexOf('    input: {'),
     );
     // radius.bubble (22dp) matches the message-bubble corner so capsule and
     // bubbles share a continuous grid edge. At single-line height (~40dp) a
@@ -3389,43 +3403,50 @@ describe('chat chrome occludes what is behind it', () => {
      * enough to read as one system — but not one value, and asserting
      * identity would be asserting something WhatsApp does not do.
      */
-    expect(bar).toContain('borderRadius: TOKENS.radius.composer');
-    // Same family: within 2dp of each other in either direction.
     /*
-     * CORRECTED 2026-09-08. This asserted the two radii were within 2dp of
-     * each other, on a measurement of WhatsApp's composer that was wrong:
-     * I had read "the row where the corner ramp reaches the edge" as the
-     * radius and got 10.5dp. Refitting the whole ramp gives 17.93dp, i.e.
-     * 18dp — the composer is TWICE as round as the 9dp bubble, not a
-     * near-match to it.
-     *
-     * So the invariant is the shape of the relationship, not a tolerance:
-     * the composer is clearly rounder, and it is still not a pill.
+     * A STADIUM now, not the measured 18dp corner V1 took from WhatsApp, and
+     * that is the Kirill shell's own decision rather than a drift — verified
+     * on the S22 on 2026-09-19. What the assertion protects is unchanged: the
+     * capsule is clearly rounder than the bubble, and the capsule is the ONE
+     * filled surface, so a control cannot sit outside the pill and collide
+     * with the transcript behind it.
      */
-    expect(TOKENS.radius.composer).toBeGreaterThan(TOKENS.radius.bubble);
-    // Not a pill: WhatsApp's capsule is 46.2dp tall against an 18dp corner.
-    expect(TOKENS.radius.composer).toBeLessThan(
-      TOKENS.interaction.minTarget / 2,
-    );
+    expect(bar).toContain('borderRadius: TOKENS.radius.pill');
+    expect(TOKENS.radius.pill).toBeGreaterThan(TOKENS.radius.bubble);
     expect(bar).toContain('backgroundColor: t.color.bg.raised');
-    expect(bar).toContain("overflow: 'hidden'");
-    // And `field` must NOT also carry a fill, or it is a pill inside a pill.
+    // And the field inside it must NOT also carry a fill, or it is a pill
+    // inside a pill.
     const field = composer.slice(
-      composer.indexOf('  field: {'),
-      composer.indexOf('  inputWrapper: {'),
+      composer.indexOf('    input: {'),
+      composer.indexOf('    recordBar: {'),
     );
     expect(field).not.toContain('backgroundColor: t.color.bg.raised');
-    expect(field).not.toContain('borderRadius: TOKENS.radius.bubble');
+    expect(field).not.toContain('borderRadius:');
   });
 
   it('the reply strip has a surface of its own', () => {
-    const chat = read('src/screens/ChatScreen.tsx');
+    const chat = readChat();
+    /*
+     * The strip no longer paints its OWN plate. It sits inside the measured
+     * dock, which carries `bg.base` for every sticky child at once — so the
+     * reply chrome and the capsule share one surface rather than stacking two,
+     * which is what the reference app does and what the original finding
+     * (a strip floating over the transcript with nothing behind it) asked for.
+     */
     const bar = chat.slice(
-      chat.indexOf('  replyBar: {'),
-      chat.indexOf('  replyRule: {'),
+      chat.indexOf('    replyBar: {'),
+      chat.indexOf('    replyRule: {'),
     );
-    expect(bar).toContain('backgroundColor: t.color.bg.raised');
-    expect(bar).toContain('borderRadius: TOKENS.radius.field');
+    expect(bar).not.toContain('backgroundColor');
+    const dock = chat.slice(
+      chat.indexOf('    dockBody: {'),
+      chat.indexOf('    pageDownDock: {'),
+    );
+    expect(dock).toContain('backgroundColor: t.color.bg.base');
+    // ...and the strip is INSIDE the measured wrapper, so it shares it.
+    expect(chat).toMatch(
+      /testID="chat-v2-dock"[\s\S]{0,1400}testID="chat-v2-reply"/,
+    );
   });
 });
 
@@ -3831,7 +3852,11 @@ describe('no screen reads a listing switch as a presence dot', () => {
     // same readPresence reading as the directory row and the chat header.
     'src/components/ProviderCard.tsx',
     'src/screens/HomeScreen.tsx',
-    'src/screens/ChatScreen.tsx',
+    // The chat's reading is performed in the controller and handed to the
+    // header as a resolved `PresenceRead`, which is the shape this rule wants:
+    // the dot cannot be drawn from a raw column because the header never sees
+    // one.
+    'src/chat-v2/useChatV2Controller.ts',
     'src/screens/ProviderHomeScreen.tsx',
   ];
 
@@ -3916,7 +3941,7 @@ describe('no screen reads a listing switch as a presence dot', () => {
      *
      * It used to be `onPress={onChat}`, and that was the defect, not the
      * contract: routing into the chat unmounted the profile on the tap, so
-     * `announce_chat_open` only ever fired from ChatScreen's mount effect and
+     * `announce_chat_open` only ever fired from the chat's mount effect and
      * the control could never show that it had done anything. Reported
      * 2026-09-16 as issue 17, "Notify icon looks disabled and no state UI
      * transition". The glyph and word are now expressions over that state:
@@ -4292,8 +4317,8 @@ describe('the motion adoption is wired, not just drawn', () => {
 
   it('names the send halo separately from the atmospheric field', () => {
     const sources = [
-      read('src/screens/ChatScreen.tsx'),
-      read('src/components/Composer.tsx'),
+      readChat(),
+      read('src/chat-v2/ChatComposerV2.tsx'),
       read('src/components/SendButton.tsx'),
     ].join('\n');
     expect(sources).toContain('sendHaloKey');
@@ -4422,9 +4447,10 @@ describe('the motion adoption is wired, not just drawn', () => {
      *                     dismisses the tooltip; animating it would tint the page.
      *   PaperMenu.tsx   — dim-band strips that implement the cut-out scrim; each
      *                     strip is an invisible colour layer, not a button.
-     *   Turn.tsx        — one RNPressable for the transparent full-screen backdrop
-     *                     that dismisses the Modal-hosted reaction strip on an
-     *                     outside tap; an invisible capture surface, not a button.
+     *   ChatActionsV2.tsx — one RNPressable for the transparent full-screen
+     *                     backdrop that dismisses the Modal-hosted reaction
+     *                     strip on an outside tap; an invisible capture
+     *                     surface, not a button.
      */
     const RAW_PRESSABLE_IMPORT =
       /import \{[^}]*\bPressable\b[^}]*\} from 'react-native'/;
@@ -4441,39 +4467,49 @@ describe('the motion adoption is wired, not just drawn', () => {
           file: `src/screens/${f}`,
           body: withoutComments(read(`src/screens/${f}`)),
         })),
+      // The chat slice, which this scan did not reach while V1 owned the
+      // screen — so the app's busiest surface was the one it could not see.
+      ...readdirSync(join(ROOT, 'src/chat-v2'))
+        .filter(f => f.endsWith('.tsx'))
+        .map(f => ({
+          file: `src/chat-v2/${f}`,
+          body: withoutComments(read(`src/chat-v2/${f}`)),
+        })),
     ];
     const rawUsers = allSources
       .filter(s => RAW_PRESSABLE_IMPORT.test(s.body))
       .map(s => s.file)
       .sort();
     expect(rawUsers).toEqual([
+      /*
+       * The two halves of the chat's keyboard hierarchy, and the reason is the
+       * inverse of the emoji grid's below: not cost, but a standing ban.
+       *
+       * `Pressable` animates on press. Inside `KeyboardGestureArea` the IME
+       * lift is native and on the UI thread, and a JS animation racing it is
+       * the double-authority jump the V2 rewrite exists to remove — which is
+       * why chatV2Shell.test.ts forbids `entering=`, `withTiming` and
+       * `withSpring` in exactly these files. A press component that brings its
+       * own worklets back into that subtree would reopen it, so the controls
+       * inside the dock take the platform's own `android_ripple` instead.
+       */
+      /*
+       * The reaction strip's Modal scrim — the same invisible full-screen
+       * capture surface `Sheet` and `SpotlightCard` are exempted for, one
+       * layer in. It is a dismiss target, not a button, and animating it
+       * would tint the page behind the strip.
+       */
+      'src/chat-v2/ChatActionsV2.tsx',
+      'src/chat-v2/ChatComposerV2.tsx',
+      'src/chat-v2/ChatScreenV2.tsx',
       'src/components/ChatStartHint.tsx',
       'src/components/CodeField.tsx',
-      /*
-       * The emoji grid, added 2026-09-12, and the only entry here justified by
-       * COUNT rather than by needing something `Pressable` cannot do.
-       *
-       * `Pressable` costs two `useSharedValue`s, two `useAnimatedStyle` worklets
-       * and three nested native views per instance. The grid has ~1,800 cells
-       * and the list keeps many of them alive at once, so the app's own component
-       * is the wrong primitive here by two orders of magnitude — this is what
-       * "the emoji is very slow" was. The cell asked for `press="none"` anyway,
-       * so the only feedback being given up is `highlight="dim"`, and
-       * `android_ripple` is the platform's own version of exactly that,
-       * computed by the OS on the render thread with no JS at all.
-       *
-       * The rule this allowlist enforces is still right: one motion system, one
-       * press component. A list long enough to be a performance surface in its
-       * own right is the documented exception, and it is the only one.
-       */
-      'src/components/EmojiPicker.tsx',
       'src/components/PaperMenu.tsx',
       'src/components/Pressable.tsx',
       'src/components/Sheet.tsx',
       'src/components/SpotlightCard.tsx',
       'src/components/TactileCTA.tsx',
       'src/components/Toggle.tsx',
-      'src/components/Turn.tsx',
     ]);
   });
 });
@@ -4517,11 +4553,11 @@ describe('the motion adoption is wired, not just drawn', () => {
  *   2. **Only a column with a definite height is dangerous.** The growth is in
  *      the parent's MAIN axis. In a `flexDirection: 'row'` parent the vertical
  *      axis is the cross axis, where the child is stretched or content-sized and
- *      nothing is stolen — which is why ProviderCard's `avatarTap`, ChatScreen's
+ *      nothing is stolen — which is why ProviderCard's `avatarTap`, the chat header's
  *      `talkRecharge` and `extendCardButton`, UpdateBanner's `action` and the
  *      rest of the full-width rows are all safe and are NOT flagged. In a column
  *      with no stated height there is no free space to eat, so a content-sized
- *      column (ChatScreen's `identitySlot`: `flex: 1` inside a ROW, so the flex is
+ *      column (`ChatHeaderV2`'s `identitySlot`: `flex: 1` inside a ROW, so the flex is
  *      its width and its height is its content) is safe too.
  *   3. **Siblings.** A lone child filling its column is usually the intent. It is
  *      the siblings that get pushed out, and it is siblings that the project rule
@@ -5064,14 +5100,20 @@ describe('media upload uses M3 determinate progress, not ActivityIndicator', () 
     expect(store).toContain('uploadProgress: {}');
   });
 
-  it('Turn.tsx renders ProgressBar for the upload, not LoadingIndicator', () => {
-    const turn = read('src/components/Turn.tsx');
+  it('the media bubble renders ProgressBar for the upload, not LoadingIndicator', () => {
+    const turn = read('src/chat-v2/ChatMessageCellV2.tsx');
     // Must import ProgressBar, not LoadingIndicator (no new import).
-    expect(turn).toContain("import { ProgressBar } from './ProgressBar'");
+    expect(turn).toContain(
+      "import { ProgressBar } from '../components/ProgressBar'",
+    );
     expect(turn).not.toContain('LoadingIndicator');
-    // The bar receives a numeric progress value from the store.
+    // The bar receives a numeric progress value from the store, and only
+    // while the upload is what is outstanding — a credential still resolving
+    // is indeterminate, which is a different state and a different bar.
     expect(turn).toContain('uploadProgress');
-    expect(turn).toContain('progress={pending ? uploadFraction : undefined}');
+    expect(turn).toContain(
+      "progress={\n                  mediaState === 'uploading' ? uploadFraction : undefined\n                }",
+    );
   });
 
   it('VoiceNote.tsx renders ProgressBar while a voice note is uploading', () => {
@@ -5114,7 +5156,7 @@ describe('media upload uses M3 determinate progress, not ActivityIndicator', () 
   it('accessibilityLabel announces upload progress to screen readers', () => {
     // The image accessibilityLabel must update to read "Sending photo, N percent"
     // while the upload fraction is known, so TalkBack users get progress too.
-    const turn = read('src/components/Turn.tsx');
+    const turn = read('src/chat-v2/ChatMessageCellV2.tsx');
     expect(turn).toContain('Sending photo');
     expect(turn).toContain('percent');
     // Voice note equivalent.
@@ -5236,17 +5278,21 @@ describe('hardware back hands off to Android before boot is ready', () => {
  * one thing this fix addresses -- nothing about persistence.
  */
 describe('a failed fetch says so, distinctly from an empty conversation', () => {
-  it("ChatScreen's loadError branch is checked before empty, and offers a real retry", () => {
-    const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+  it("the chat's loadError branch is checked before empty, and offers a real retry", () => {
+    const chat = withoutComments(readChat());
     expect(chat).toContain('isError: messagesError');
     expect(chat).toContain('isError: threadsError');
-    expect(chat).toContain('const loadError = messagesError || threadsError;');
-    expect(chat).toContain('const empty = !loading && !loadError && rows.length === 0;');
-    const branch = chat.slice(chat.indexOf('{loading ? ('), chat.indexOf(') : empty ? ('));
-    expect(branch).toContain('loadError ?');
+    expect(chat).toContain('const { loading, loadError, empty } = chatV2LoadState({');
+    // The three states are decided by ONE pure function, in this order, so
+    // "errored" can never be rendered as "nothing has ever happened here".
+    expect(chat).toContain('const empty = !loading && !loadError && input.rowCount === 0;');
+    const branch = chat.slice(
+      chat.indexOf('{chat.loading ? ('),
+      chat.indexOf(') : chat.empty ? ('),
+    );
+    expect(branch).toContain('chat.loadError ?');
     expect(branch).toContain("Couldn&apos;t load this chat");
-    expect(branch).toContain('void refetchMessages();');
-    expect(branch).toContain('void refetchThreads();');
+    expect(branch).toContain('onPress={chat.refetch}');
   });
 
   it("ChatsListScreen's rail gets the same distinction", () => {
@@ -5610,10 +5656,10 @@ describe('the photo pipeline downscales, sends in order, and retries what it can
     const retryVoiceBody = voice.slice(voice.indexOf('export function useRetryVoiceSend'));
     expect(retryVoiceBody).not.toContain('uploadRecording(');
 
-    // And ChatScreen actually offers it — not just defined and unused.
-    const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
-    expect(chat).toContain('useRetryImageSend(conversationId, selfId)');
-    expect(chat).toContain('useRetryVoiceSend(conversationId, selfId)');
+    // And the chat actually offers it — not just defined and unused.
+    const chat = withoutComments(readChat());
+    expect(chat).toContain('useRetryImageSend(');
+    expect(chat).toContain('useRetryVoiceSend(');
     expect(chat).toContain('retryImage(message)');
     expect(chat).toContain('retryVoice(message)');
   });
@@ -5632,17 +5678,15 @@ describe('independent call controls', () => {
   });
 
   it('gates each app action with its matching control', () => {
-    const chat = read('src/screens/ChatScreen.tsx');
+    const chat = readChat();
     const detail = read('src/screens/ProviderDetailScreen.tsx');
     // Each live control still reaches its own action; since 064 it does so
     // ANDed with the provider's own switch for that channel, never replaced by
     // it. An operator stop and a provider's choice both have to hold.
-    expect(chat).toContain(
-      'voiceCallsEnabled && (provider?.audio_enabled ?? true)',
-    );
-    expect(chat).toContain(
-      'videoCallsEnabled && (provider?.video_enabled ?? true)',
-    );
+    expect(chat).toContain('(provider?.audio_enabled ?? true)');
+    expect(chat).toContain('(provider?.video_enabled ?? true)');
+    expect(chat).toContain('killSwitches?.voice_calls_enabled ?? true');
+    expect(chat).toContain('killSwitches?.video_calls_enabled ?? true');
     /*
      * On the profile the provider's half of the pair became conditional
      * RENDERING rather than a disabled prop (2026-09-17). Both halves still
@@ -5686,10 +5730,10 @@ describe('post-release UI regressions', () => {
   });
 
   it('constrains the message stack before measuring bubble text', () => {
-    const turn = read('src/components/Turn.tsx');
+    const turn = read('src/chat-v2/ChatMessageCellV2.tsx');
     expect(turn).toContain("maxWidth: '80%'");
     expect(turn).toMatch(/bubble:\s*\{[\s\S]*?maxWidth:\s*'100%'/);
-    expect(turn).toMatch(/myColumn:\s*\{[\s\S]*?width:\s*'100%'/);
+    expect(turn).toMatch(/row:\s*\{[\s\S]*?width:\s*'100%'/);
   });
 
   it('keeps the interrupting recharge sheet compact and non-scrolling', () => {
@@ -5727,12 +5771,12 @@ describe('post-release UI regressions', () => {
 });
 
 describe('first-send refill: all three send paths open recharge on first success', () => {
-  const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+  const chat = withoutComments(readChat());
   const voice = withoutComments(read('src/api/voice.ts'));
   const image = withoutComments(read('src/api/attachments.ts'));
 
   it('useSendVoiceNote returns Promise<boolean>', () => {
-    // The callback must signal success/failure so ChatScreen can trigger the
+    // The callback must signal success/failure so the chat can trigger the
     // first-send refill for voice notes, exactly as it already does for text.
     // Failed, invalid, upload-failed, or server-rejected sends return false.
     expect(voice).toContain('Promise<boolean>');
@@ -5767,7 +5811,7 @@ describe('first-send refill: all three send paths open recharge on first success
 });
 
 describe('opener orchestrator cleanup tracks and clears its timer', () => {
-  const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+  const chat = withoutComments(readChat());
 
   it('tracks the pending timer in a named variable', () => {
     // A bare `new Promise(resolve => setTimeout(resolve, ms))` gives up the
@@ -5837,8 +5881,7 @@ describe('emoji data pipeline', () => {
  * submission, which is the worst possible place to find out.
  */
 describe('attach panel', () => {
-  const composer = withoutComments(read('src/components/Composer.tsx'));
-  const panel = withoutComments(read('src/components/AttachPanel.tsx'));
+  const composer = withoutComments(read('src/chat-v2/ChatComposerV2.tsx'));
   const manifest = read('android/app/src/main/AndroidManifest.xml');
 
   it('is disconnected from the composer while media is deferred', () => {
@@ -5916,31 +5959,20 @@ describe('attach panel', () => {
     );
   });
 
-  it('uses the grid arithmetic from the reference, with its constants', () => {
-    // PADDING and GAP are 2dp and the row is 3 wide in portrait; the cell size
-    // subtracts exactly two gaps regardless of column count, which is what the
-    // reference does. See design/references/chat-app-mechanics.md.
-    expect(panel).toContain('const PADDING = 2');
-    expect(panel).toContain('const GAP = 2');
-    expect(panel).toContain('const COLS_PORTRAIT = 3');
-    expect(panel).toContain('(width - PADDING * 2 - GAP * 2) / cols');
-  });
-
-  it('unbinds the camera when the panel is hidden or the app backgrounds', () => {
-    // The panel stays MOUNTED so the swap is cheap, so visibility alone cannot
-    // gate the hardware — a bound camera lights the OS in-use indicator.
-    // `slotSettled` is a second gate: CameraX must not bind to a TextureView
-    // that is still mid-travel (zero-sized or clipped), verified on the API-36
-    // emulator 2026-09-04.
-    expect(panel).toContain(
-      'visible && slotSettled && foreground && cameraGranted',
-    );
-    expect(panel).toContain("AppState.addEventListener('change'");
-  });
+  /*
+   * `uses the grid arithmetic from the reference` and `unbinds the camera when
+   * the panel is hidden` lived here until 2026-09-19. Both read
+   * `src/components/AttachPanel.tsx`, which went with V1: there is no attach
+   * surface while media is deferred, so the assertions above — the composer
+   * offers no door to one, and the manifest declares no restricted read — are
+   * the whole of what is true. The native tile the panel drove is still in the
+   * binary (`src/components/CameraPreview.tsx`), and the rule its next
+   * consumer inherits is asserted in platform.test.ts.
+   */
 });
 
 describe('deferred composer panels', () => {
-  const composer = withoutComments(read('src/components/Composer.tsx'));
+  const composer = withoutComments(read('src/chat-v2/ChatComposerV2.tsx'));
   it('contains no emoji, sticker, camera, or attachment entry point', () => {
     expect(composer).not.toContain('EmojiPicker');
     expect(composer).not.toContain('AttachPanel');
@@ -5967,14 +5999,8 @@ describe('ambient beats (tab-select, emoji-pick, picker-open) are silent', () =>
     ).not.toContain('tick()');
   });
 
-  it('EmojiPicker fires no tick on pick or tone-strip open', () => {
-    expect(
-      withoutComments(read('src/components/EmojiPicker.tsx')),
-    ).not.toContain('tick()');
-  });
-
   it('Composer fires no tick when the gallery or camera picker opens', () => {
-    const composer = withoutComments(read('src/components/Composer.tsx'));
+    const composer = withoutComments(read('src/chat-v2/ChatComposerV2.tsx'));
     // Picker launches are silent.
     expect(composer).not.toMatch(/pickImage[\s\S]{0,300}tick\(\)/);
     expect(composer).not.toMatch(/takePhoto[\s\S]{0,300}tick\(\)/);
@@ -6253,16 +6279,12 @@ describe('a provider offers the channels they choose, and at least one — invoi
     // different remedies, so they read differently.
     expect(detail).toContain("', not offered'");
 
-    const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
-    expect(chat).toContain(
-      'const canStartAudio = voiceCallsEnabled && (provider?.audio_enabled ?? true)',
-    );
-    expect(chat).toContain(
-      'const canStartVideo = videoCallsEnabled && (provider?.video_enabled ?? true)',
-    );
+    const chat = withoutComments(readChat());
+    expect(chat).toContain('(provider?.audio_enabled ?? true)');
+    expect(chat).toContain('(provider?.video_enabled ?? true)');
     // The composer closes only when a NEW session would be refused.
     expect(chat).toMatch(
-      /chatClosed =\s*isMemberSide && !peerOffersChat && activeSession === null && pendingRequest === null/,
+      /chatClosed =\s*isMemberSide &&\s*!peerOffersChat &&\s*activeSession === null &&\s*pendingRequest === null;/,
     );
 
     // And the refusal that still gets through is mapped once, for all three
@@ -6854,18 +6876,24 @@ describe('a session is rated when it ends, and the ratings are readable', () => 
   });
 
   it('asks once, on the edge, and only of the member', () => {
-    const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+    const chat = withoutComments(readChat());
     // Watches the TRANSITION, not the absence: activeSession is null before a
     // session exists too, and asking then would prompt for a conversation that
     // never happened.
     expect(chat).toContain(
       'const liveSessionRef = useRef<string | null>(null)',
     );
-    // Member-only, and never with a blank name (the cold-open loading window,
-    // where identity has not resolved) — a blank name in the review sheet is
-    // worse than deferring.
+    /*
+     * Member-only, and never with a blank name (the cold-open loading window,
+     * where identity has not resolved) — a blank name in the review sheet is
+     * worse than deferring. The edge itself is a pure function
+     * (`chatV2ReviewOnEnd`, asserted as values in chatV2Parity.test.ts), and
+     * the gate lives in the ONE place the screen asks, so the edge-watcher
+     * and the leave path cannot disagree about who gets prompted.
+     */
+    expect(chat).toContain('chatV2ReviewOnEnd(');
     expect(chat).toMatch(
-      /if \(isMemberSide && name !== ''\) \{\s*requestReview\(previous, name\);/,
+      /if \(benchmarkReadOnly \|\| !isMemberSide \|\| displayName === ''\) \{\s*return;\s*\}\s*requestReview\(sessionId, displayName\);/,
     );
     // One sheet for the whole app, because a session can end in a call too.
     expect(withoutComments(read('App.tsx'))).toContain(
@@ -6981,7 +7009,7 @@ describe('a session is rated when it ends, and the ratings are readable', () => 
     // exactly the same window. The bar held the only m:ss numerals, so the last
     // five minutes — the whole reason a per-second clock exists — rendered a
     // timeless "Need more time?" and no number at all.
-    const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+    const chat = withoutComments(readChat());
     /*
      * The bar's visibility WAS `balance !== null && (!showExtendCard …)`, i.e.
      * any chat with a loaded balance. It is now `countingDown && (…)`
@@ -6990,11 +7018,11 @@ describe('a session is rated when it ends, and the ratings are readable', () => 
      * and could not previously assert.
      */
     expect(chat).toMatch(
-      /showStickyRecharge =\s*\n?\s*isMemberSide && countingDown && \(!showExtendCard/,
+      /showRecharge:\s*input\.isMemberSide &&\s*countingDown &&\s*\(!cardEligible \|\| input\.extendScrolledAway\),/,
     );
-    expect(chat).toContain('testID="chat-extend-timer"');
+    expect(chat).toContain('testID="chat-v2-extend-timer"');
     expect(chat).toMatch(
-      /testID="chat-extend-timer"[\s\S]{0,80}formatClock\(sessionRemaining/,
+      /testID="chat-v2-extend-timer"[\s\S]{0,200}formatClock\(remaining \?\? 0\)/,
     );
     // Asking the question is not the same as answering it.
     expect(chat).not.toContain('Need more time?');
@@ -7058,8 +7086,8 @@ describe('a chat request rings, and can be answered either way', () => {
     const app = withoutComments(read('App.tsx'));
     expect(app).not.toContain('useIncomingChatRequests');
     expect(app).not.toContain('<ChatRingScreen');
-    expect(withoutComments(read('src/screens/ChatScreen.tsx'))).toContain(
-      'testID="chat-session-consent"',
+    expect(withoutComments(readChat())).toContain(
+      'testID="chat-v2-consent"',
     );
     // Chat only: a call request already rings through the call path, and two
     // rings for one event is a bug the member cannot see.
@@ -7077,7 +7105,7 @@ describe('a chat request rings, and can be answered either way', () => {
 
 describe('the member always starts the session, whoever wrote first', () => {
   const sql077 = read('supabase/migrations/077_sp_initiate_member_consent.sql');
-  const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+  const chat = withoutComments(readChat());
   const call = withoutComments(read('src/screens/CallScreen.tsx'));
 
   it('keys confirm_chat_session on the conversation member', () => {
@@ -7104,14 +7132,14 @@ describe('the member always starts the session, whoever wrote first', () => {
   });
 
   it('names the member chat sheet Start session / Decline', () => {
-    expect(chat).toContain('testID="chat-session-consent"');
+    expect(chat).toContain('testID="chat-v2-consent"');
     expect(chat).toContain('confirmLabel="Start session"');
     expect(chat).toContain('cancelLabel="Decline"');
     expect(chat).toContain('wants to have a chat with you');
     // Was 'Hey — ${name} is here' until 2026-09-17 ("never use emdash anywhere
     // in app"). The comma is not a downgrade: it is what the sibling title on
     // the other branch of this same ternary has always used.
-    expect(chat).toContain('Hey, ${name} is here');
+    expect(chat).toContain('Hey, ${input.peerName} is here');
   });
 
   it('names the incoming member call Start session, the provider Accept', () => {
@@ -7199,10 +7227,10 @@ describe('opening a chat tells the other person, both ways', () => {
     );
     expect(beforeDispatch).not.toContain("'alerted', true");
 
-    const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+    const chat = withoutComments(readChat());
     expect(chat).toContain('openAlert?.alerted === true');
-    expect(chat).toContain('testID="peer-notified"');
-    expect(chat).toContain('`${name} knows you are here.`');
+    expect(chat).toContain('testID="chat-v2-peer-notified"');
+    expect(chat).toContain('`${displayName} knows you are here.`');
   });
 
   it('reuses the notification kind the app already builds', () => {
@@ -7530,215 +7558,38 @@ describe('design source originals are not inside assets/ either', () => {
   });
 });
 
-/**
- * W5 #6 — Transition lock: deferred call sites (src/theme/motion.ts primitive).
+/*
+ * `W5 #6 transition lock: deferred call sites read the primitive` lived here
+ * until 2026-09-19.
  *
- * Three of the five deferred sites live in files we own. The other two
- * (Turn images and Avatar fetches) are in Turn.tsx and Avatar.tsx, which are
- * edited concurrently and are asserted separately by their owners.
+ * All four of its call sites were V1's — the chat wallpaper mount, the
+ * message-insert scroll, and the emoji picker's deferred grid — and all four
+ * left with that screen and its panels. The callback/deferral machinery left
+ * with them too. What remains is the much smaller transition flag:
+ * `PushedLayer` is its one writer and its own hardware-texture style is its one
+ * reader.
  *
- * Every deferral must be safe if `setTransitioning(false)` never fires:
- * `requestIdleCallback` is the unconditional fallback in each one. A lock
- * that can strand a message insert or hide a wallpaper permanently is worse
- * than the jank it avoids.
- *
- * The write side (`setTransitioning(true/false)`) is NOT in any of these files.
- * It belongs in App.tsx's PushedLayer, the component that drives the screen
- * push animation. The one-liner needed there is:
- *
- *   setTransitioning(true)  — before the entering animation starts
- *   setTransitioning(false) — in the animation's completion callback (onFinished)
- *
- * These assertions verify only the READ side (the deferred consumers).
+ * `platform.test.ts` pins that one-writer/one-reader relationship. There is no
+ * deferred callback left to strand if `setTransitioning(false)` never fires.
  */
-describe('W5 #6 transition lock: deferred call sites read the primitive', () => {
-  const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
-  const picker = withoutComments(read('src/components/EmojiPicker.tsx'));
 
-  it('ChatScreen imports transitioning and onTransitionSettled from motion', () => {
-    // Both must be named in the same import so a future refactor cannot pull one
-    // without the other: `transitioning` is read for the scroll gate,
-    // `onTransitionSettled` is the callback for both the wallpaper and the scroll.
-    expect(chat).toMatch(
-      /import\s*\{[^}]*\bonTransitionSettled\b[^}]*\}\s*from\s*['"]\.\.\/theme\/motion['"]/,
-    );
-    expect(chat).toMatch(
-      /import\s*\{[^}]*\btransitioning\b[^}]*\}\s*from\s*['"]\.\.\/theme\/motion['"]/,
-    );
-  });
-
-  it('ChatWallpaper mount uses onTransitionSettled with a requestIdleCallback fallback', () => {
-    // The fallback prevents a permanent stall if App.tsx has not yet called
-    // setTransitioning(false). Both must appear in the same effect, not separately.
-    const wallpaperEffect = chat.slice(
-      chat.indexOf('wallpaperReady'),
-      chat.indexOf('wallpaperReady') + 600,
-    );
-    expect(wallpaperEffect).toContain('onTransitionSettled(');
-    expect(wallpaperEffect).toContain('requestIdleCallback(');
-    // And both cleanup arms must exist, so neither leaks across remounts.
-    expect(wallpaperEffect).toContain('unsubscribe()');
-    expect(wallpaperEffect).toContain('cancelIdleCallback(');
-  });
-
-  it('message-insert scroll gates on transitioning.value and defers via onTransitionSettled', () => {
-    // The scroll still always happens — either immediately (not transitioning)
-    // or after the settle (transitioning). `prevRowsLen` stays so the existing
-    // assertion on it still holds.
-    //
-    // 1100, not 800: the same effect grew a `mine`/`scrolledAwayFromLatestRef`
-    // gate ahead of both scrollToOffset calls for the page-down button
-    // (2026-09-17 audit, X5), which left the second call only 46 characters
-    // inside the old window. This slice is a character count, not a
-    // structural check, so widen it again the next time the effect
-    // legitimately grows rather than re-deriving a tighter number to match.
-    const scrollEffect = chat.slice(
-      chat.indexOf('prevRowsLen'),
-      chat.indexOf('prevRowsLen') + 1100,
-    );
-    expect(scrollEffect).toContain('transitioning.value');
-    expect(scrollEffect).toContain('onTransitionSettled(');
-    // The scroll path is present in both branches.
-    expect(
-      scrollEffect.match(/scrollToOffset\(\s*\{/g)?.length ?? 0,
-    ).toBeGreaterThanOrEqual(2);
-  });
-
-  it('EmojiPicker imports onTransitionSettled and gates heavy content on settled', () => {
-    // The gate is `settled || visible`: when the user opens the picker before
-    // the transition settles, interaction wins and the content shows immediately.
-    expect(picker).toContain('onTransitionSettled');
-    expect(picker).toContain('settled');
-    expect(picker).toContain('settled || visible');
-    // requestIdleCallback is the unconditional fallback in the same effect.
-    expect(picker).toContain('requestIdleCallback(');
-    expect(picker).toContain('cancelIdleCallback(');
-  });
-
-  it('EmojiPicker keeps the outer panel shell always rendered (height preserved)', () => {
-    // The outer View with testID="emoji-panel" must always render so the dock
-    // slot holds its height. Only the inner heavy content (FlatList, tabs) is
-    // deferred — confirmed by the settled gate sitting INSIDE the outer View.
-    const panelOpen = picker.indexOf('"emoji-panel"');
-    const settledGate = picker.indexOf('settled || visible', panelOpen);
-    const panelClose = picker.indexOf('</View>', settledGate);
-    // The gate sits between the outer View open and its corresponding close.
-    expect(panelOpen).toBeGreaterThan(-1);
-    expect(settledGate).toBeGreaterThan(panelOpen);
-    expect(panelClose).toBeGreaterThan(settledGate);
-  });
-});
-
-/**
- * Composer capsule and message bubbles share the same horizontal grid and
- * corner radius.
+/*
+ * `composer capsule and bubbles share one horizontal grid and radius` lived
+ * here until 2026-09-19, as a second copy of chatSurface.test.ts's block of
+ * the same name.
  *
- * The alignment that makes the transcript and the input look like one continuous
- * surface — "chat input bar exactly aligned with chat bubbles grid width and
- * roundness" (Amit, 2026-09-06) — depends on three values never drifting:
+ * Both were written against V1's two-grid geometry — a 16dp transcript
+ * against a 7dp composer island read off the reference app, with
+ * `COMPOSER_ISLAND_INSET`, `MIN_INPUT_H`/`MAX_INPUT_H` and an animated
+ * multi-line growth. The V2 shell collapses all of it: one gutter for the
+ * transcript, the reply strip and the capsule, a stadium capsule that does
+ * not animate its own height, and a bubble that keeps its own measured
+ * corner.
  *
- *   1. Horizontal inset: Composer `row.paddingHorizontal` must use the same
- *      token as ChatScreen's `list.paddingHorizontal` (both `TOKENS.space.md`).
- *   2. Corner radius: `inputBar` and bubble must both reference `TOKENS.radius.bubble`
- *      so the curve matches as bubbles scroll past the capsule edge.
- *   3. Multi-line growth: height animation must use a token duration (M3.duration)
- *      and the keyboard easing token, not raw literals that cannot be reviewed
- *      together with the related dock-travel animation.
- *
- * These are structural assertions on the source text, not runtime checks, because
- * the failure mode is "looks fine on one screen size, wrong on another" — not a
- * crash.
+ * Two copies of one rule is one copy to forget when the rule changes — which
+ * is what happened here — so the surviving copy is the one in
+ * chatSurface.test.ts, rebuilt against what ships.
  */
-describe('composer capsule and bubbles share one horizontal grid and radius', () => {
-  const composer = read('src/components/Composer.tsx');
-  const turn = read('src/components/Turn.tsx');
-
-  it('composer row uses the reference app own island inset, from one named source', () => {
-    /*
-     * This asserted `TOKENS.space.md` (16) until 2026-09-12, so that the capsule
-     * edges landed on the same column as the bubble edges.
-     *
-     * That alignment was given up knowingly. The owner asked for the input box
-     * to match the reference app's width exactly, and the reference app insets its input island
-     * 7dp from each screen edge — `createFrame(MATCH_PARENT, WRAP_CONTENT,
-     * Gravity.LEFT | Gravity.BOTTOM, 7, 0, 7, 0)`, ChatActivity.java:8078, with
-     * `setPadding(dp(7))` on the blurred background agreeing — which is
-     * deliberately WIDER than its bubbles. So the capsule and the transcript are
-     * now two grids on purpose.
-     *
-     * What still has to hold is that the number has ONE source: the strip above
-     * the capsule reads the same constant, so the dock cannot show two gutters
-     * at once (see chatSurface.test.ts, which has the history of that defect).
-     * A raw 7 in either file is the thing to catch.
-     */
-    expect(withoutComments(composer)).toContain(
-      'paddingHorizontal: COMPOSER_ISLAND_INSET',
-    );
-    expect(withoutComments(composer)).toContain(
-      'export const COMPOSER_ISLAND_INSET = 7',
-    );
-  });
-
-  it('composer inputBar and Turn bubbles use the same radius token', () => {
-    // Both must reference TOKENS.radius.bubble (22dp) so the capsule corner and
-    // the bubble corner are provably the same number. radius.pill (999) on the
-    // capsule produced a different visual at multi-line height, where the stadium
-    // shape diverged from the rounded-rect bubble corner.
-    /*
-     * The composer reads `radius.composer` now, measured at 10.5dp off
-     * WhatsApp against the bubble's 9dp. Same family, not one value.
-     */
-    expect(withoutComments(composer)).toContain(
-      'borderRadius: TOKENS.radius.composer',
-    );
-    /*
-     * CORRECTED 2026-09-08. This asserted the two radii were within 2dp of
-     * each other, on a measurement of WhatsApp's composer that was wrong:
-     * I had read "the row where the corner ramp reaches the edge" as the
-     * radius and got 10.5dp. Refitting the whole ramp gives 17.93dp, i.e.
-     * 18dp — the composer is TWICE as round as the 9dp bubble, not a
-     * near-match to it.
-     *
-     * So the invariant is the shape of the relationship, not a tolerance:
-     * the composer is clearly rounder, and it is still not a pill.
-     */
-    expect(TOKENS.radius.composer).toBeGreaterThan(TOKENS.radius.bubble);
-    // Not a pill: WhatsApp's capsule is 46.2dp tall against an 18dp corner.
-    expect(TOKENS.radius.composer).toBeLessThan(
-      TOKENS.interaction.minTarget / 2,
-    );
-    // Turn uses BUBBLE_RADIUS which is assigned TOKENS.radius.bubble.
-    expect(turn).toContain('TOKENS.radius.bubble');
-  });
-
-  it('multi-line growth is animated via M3 token duration, not a raw literal', () => {
-    // The duration must come from the M3 export (= TOKENS.motion.m3.duration)
-    // so the bar-growth timing is in the same token namespace as the dock-travel
-    // timing. A raw number here cannot be reviewed alongside the related motion.
-    // the reference app: DEFAULT_DURATION = 250 ms (ChatListItemAnimator.java:46).
-    expect(withoutComments(composer)).toMatch(/M3\.duration\.\w+/);
-    // The easing must come from KEYBOARD_EASING (built from M3.easing.keyboard),
-    // not a raw Easing call with literal coefficients inline.
-    expect(withoutComments(composer)).toContain('KEYBOARD_EASING');
-  });
-
-  it('MIN_INPUT_H and MAX_INPUT_H are the only height bounds in the input style', () => {
-    // The two exported constants replace the old literal minHeight/maxHeight on
-    // the input style. Checking that no bare 36 or 132 is left inside the styles
-    // object (comments are stripped so cited numbers in prose don't trigger).
-    // We assert the constants exist and are exported by Composer.
-    expect(composer).toContain('export const MIN_INPUT_H');
-    expect(composer).toContain('export const MAX_INPUT_H');
-    // The input style block must not set minHeight or maxHeight directly —
-    // those constraints now live in the onContentSizeChange handler.
-    const inputStyleBlock = composer.slice(
-      composer.indexOf('inputWrapper:'),
-      composer.indexOf('// The same capsule as the field'),
-    );
-    expect(inputStyleBlock).not.toContain('minHeight:');
-    expect(inputStyleBlock).not.toContain('maxHeight:');
-  });
-});
 
 describe('the member reads rupees; "token" is a storage word, never a shown one', () => {
   /*
@@ -7848,7 +7699,7 @@ describe('the member reads rupees; "token" is a storage word, never a shown one'
      * which is why this is asserted on the CLAIM and not on the word.
      */
     for (const file of [
-      'src/components/Composer.tsx',
+      'src/chat-v2/ChatComposerV2.tsx',
       'src/components/SendButton.tsx',
     ]) {
       expect(codeOnly(read(file))).not.toMatch(/costs? (one|a)\b/i);
@@ -7889,8 +7740,8 @@ describe('rename chat — private per-user conversation labels', () => {
     );
   });
 
-  it('ChatScreen long-presses the header to rename and resolves the private label', () => {
-    const chat = read('src/screens/ChatScreen.tsx');
+  it('the chat long-presses the header to rename and resolves the private label', () => {
+    const chat = readChat();
     expect(chat).toContain('useConversationLabels');
     expect(chat).toContain('RenameChatSheet');
     expect(chat).toContain('setRenaming(true)');
@@ -7925,8 +7776,8 @@ describe('system messages — centered session/notice rows in the transcript', (
     expect(src).not.toMatch(/bubble\.(mine|theirs)|bg\.accent/);
   });
 
-  it('ChatScreen interleaves session-ended system rows like call logs, no messages-table change', () => {
-    const chat = read('src/screens/ChatScreen.tsx');
+  it('the chat interleaves session-ended system rows like call logs, no messages-table change', () => {
+    const chat = readChat();
     expect(chat).toContain('useSessionEvents');
     expect(chat).toContain('SystemMessageRow');
     expect(chat).toContain("kind: 'system'");
@@ -7950,8 +7801,8 @@ describe('draft persistence survives backgrounding, purges on intentional exit (
   // but is purged the moment the member leaves the chat back to Home, into
   // a call, or the app closes.
   const draftLib = withoutComments(read('src/lib/chatDraft.ts'));
-  const composer = withoutComments(read('src/components/Composer.tsx'));
-  const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+  const composer = withoutComments(read('src/chat-v2/ChatComposerV2.tsx'));
+  const chat = withoutComments(readChat());
 
   it('chatDraft.ts is a thin per-conversation MMKV shell, same split as outboxStore.ts', () => {
     expect(draftLib).toContain("import { storage } from './storage'");
@@ -7960,28 +7811,29 @@ describe('draft persistence survives backgrounding, purges on intentional exit (
     expect(draftLib).toContain('export function clearChatDraft');
   });
 
-  it('Composer restores the draft once conversationId resolves, never clobbering a keystroke', () => {
-    expect(composer).toContain(
-      "import { readDraftText, writeDraftText } from '../lib/chatDraft'",
-    );
-    // Guarded on the current value being empty, so a character typed in the
-    // window before the id resolves is never overwritten by the restore.
+  it('the composer restores the draft once conversationId resolves, never clobbering a keystroke', () => {
+    expect(composer).toContain("from '../lib/chatDraft'");
+    expect(composer).toContain('readDraftText');
+    expect(composer).toContain('writeDraftText');
+    // Seeded ONCE per conversation, and only with something to seed, so a
+    // character typed in the window before the id resolves is never
+    // overwritten and a later re-render cannot resurrect a cleared draft.
     expect(composer).toMatch(
-      /setValue\(current => \(current === ''\s*\?\s*readDraftText\(conversationId\)\s*:\s*current\)\)/,
+      /seededFor\.current = conversationId;\s*const stored = readDraftText\(conversationId\);\s*if \(stored !== ''\) \{\s*setText\(stored\);/,
     );
   });
 
-  it('Composer persists the draft on the AppState "background" transition, not "inactive"', () => {
+  it('the composer persists the draft on the AppState "background" transition, not "inactive"', () => {
     // Same trigger and the same reasoning the mic-cancel effect above it
     // already uses: `inactive` fires for the permission sheet, multi-window
     // transitions and the notification shade without the member leaving.
-    const idx = composer.indexOf('writeDraftText(id, valueRef.current)');
+    const idx = composer.indexOf('writeDraftText(id, textRef.current)');
     expect(idx).toBeGreaterThan(-1);
     const persistEffect = composer.slice(Math.max(0, idx - 400), idx + 50);
     expect(persistEffect).toContain("next === 'background'");
   });
 
-  it('ChatScreen wraps onBack and onStartCall with the purge, not the raw props', () => {
+  it('the chat wraps onBack and onStartCall with the purge, not the raw props', () => {
     expect(chat).toContain(
       "import { clearChatDraft } from '../lib/chatDraft'",
     );
@@ -7989,20 +7841,22 @@ describe('draft persistence survives backgrounding, purges on intentional exit (
     // onBack()/onStartCall() props — every other exit reads through them.
     expect(chat).toMatch(/const leaveChat = useCallback\(\(\) => \{/);
     expect(chat).toMatch(/const startCall = useCallback\(\s*\(channel: 'audio' \| 'video'\) => \{/);
-    // The raw prop is called exactly once each, inside the wrapper that
-    // purges first — comments are already stripped, so every other match
-    // would be a second, unwrapped call site.
+    /*
+     * The raw prop is called exactly once each, inside the wrapper that purges
+     * first — comments are already stripped, so every other match would be a
+     * second, unwrapped call site. `mutationOnStartCall` is `onStartCall`
+     * with the benchmark route's read-only gate already applied, which is why
+     * that is the name the single call site uses.
+     */
     expect(chat.match(/\bonBack\(\)/g)?.length ?? 0).toBe(1);
-    expect(chat.match(/\bonStartCall\?\.\(channel\)/g)?.length ?? 0).toBe(1);
-    expect(chat).not.toContain("onStartCall?.('video')");
-    expect(chat).not.toContain("onStartCall?.('audio')");
+    expect(chat.match(/\bmutationOnStartCall\?\.\(channel\)/g)?.length ?? 0).toBe(1);
   });
 });
 
 describe('outbox drains for every conversation at boot, not just the one opened (X7)', () => {
   // Amit's call (2026-09-17 audit): "Drain on boot" — a queued send for a
   // conversation the member has not reopened used to sit forever, since
-  // useOutboxReplay only drains the thread a ChatScreen is currently mounted
+  // useOutboxReplay only drains the thread a chat screen is currently mounted
   // for.
   const api = withoutComments(read('src/api/chat.ts'));
   const app = withoutComments(read('App.tsx'));
@@ -8072,31 +7926,22 @@ describe('the own user id is read locally, not over the network, every boot (L2)
   });
 });
 
-describe('a peer bubble animates in exactly once, not on every FlashList remount (M13)', () => {
-  // A message that arrived while the screen was open used to stay eligible
-  // to animate forever (arrivalCutoff never advances), so scrolling far
-  // enough to virtualize its cell out and back in replayed bubbleArrive on
-  // the fresh mount FlashList gives a row re-entering the window.
-  const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
-
-  it('tracks which message ids have already been granted their one animation', () => {
-    expect(chat).toContain('const animatedMessageIds = useRef(new Set<string>());');
-  });
-
-  it('animate is computed once per row and consumes the id, not re-derived from a static cutoff', () => {
-    const fn = chat.slice(
-      chat.indexOf('const animate ='),
-      chat.indexOf('const animate =') + 400,
-    );
-    expect(fn).toContain('!animatedMessageIds.current.has(message.id)');
-    expect(fn).toContain('animatedMessageIds.current.add(message.id)');
-    // PeerTurn reads the computed value, not a fresh Date.parse comparison.
-    expect(chat).toContain('animate={animate}');
-    expect(chat).not.toContain(
-      'animate={Date.parse(message.created_at) > arrivalCutoff.current}',
-    );
-  });
-});
+/*
+ * `a peer bubble animates in exactly once, not on every FlashList remount
+ * (M13)` lived here until 2026-09-19.
+ *
+ * It guarded a real defect in V1's transcript: a message that arrived while
+ * the screen was open stayed eligible to animate forever, so scrolling far
+ * enough to virtualize its cell out and back in replayed `bubbleArrive` on
+ * the fresh mount. The remedy was a Set of ids the row consumed once.
+ *
+ * V2 removes the defect by removing the entrance. The transcript lives inside
+ * `KeyboardGestureArea`, where chatV2Shell.test.ts bans `entering=`,
+ * `withTiming` and `withSpring` outright — a JS animation racing the native
+ * IME lift is the double-authority jump the rewrite exists to remove — so
+ * there is no per-bubble animation to grant, replay or track. A row that
+ * animated on remount would now fail that ban rather than this test.
+ */
 
 describe('the status line and the typing bubble fade through a change, not a hard cut (M14)', () => {
   // Rule 7 (motion.ts): a text/content node whose content just changed gets
@@ -8128,30 +7973,37 @@ describe('the status line and the typing bubble fade through a change, not a har
 });
 
 describe('the composer fades between idle, recording and review, not a hard cut (M12)', () => {
-  // Three early-return trees used to swap with no transition at all. A
-  // deliberate mic tap, not a keyboard-frequency event, so recording/review
-  // get fadeSwapFast/fadeSwapOutFast keyed by `mode` — idle itself is
-  // untouched, since typing is the composer's 100+/day default state.
-  const composer = withoutComments(read('src/components/Composer.tsx'));
+  /*
+   * Three early-return trees used to swap with no transition at all. A
+   * deliberate mic tap is not a keyboard-frequency event, so the swap gets
+   * `fadeSwapFast`, keyed by the mode so React remounts it.
+   *
+   * It is now TWO trees rather than three: recording and review share one
+   * capsule, because they are the same bar with a different trailing control,
+   * and one bar that does not resize is what keeps the measured dock height
+   * still while a recording is reviewed.
+   */
+  const composer = withoutComments(read('src/chat-v2/ChatComposerV2.tsx'));
 
-  it('both the recording and review rows are keyed Animated.View with the fade pair', () => {
+  it('keys the recording capsule and the idle capsule, and fades between them', () => {
     const recording = composer.slice(
-      composer.indexOf("if (mode === 'recording')"),
-      composer.indexOf("if (mode === 'review'"),
+      composer.indexOf("if (mode === 'recording' || mode === 'review')"),
+      composer.indexOf("key=\"idle\""),
     );
     expect(recording).toContain('<Animated.View');
     expect(recording).toContain('key={mode}');
     expect(recording).toContain('entering={fadeSwapFast}');
-    expect(recording).toContain('exiting={fadeSwapOutFast}');
 
-    const review = composer.slice(
-      composer.indexOf("if (mode === 'review'"),
-      composer.indexOf("if (mode === 'review'") + 600,
-    );
-    expect(review).toContain('<Animated.View');
-    expect(review).toContain('key={mode}');
-    expect(review).toContain('entering={fadeSwapFast}');
-    expect(review).toContain('exiting={fadeSwapOutFast}');
+    const idle = composer.slice(composer.indexOf('key="idle"'));
+    expect(idle).toContain('entering={fadeSwapFast}');
+    /*
+     * No `exiting`. This subtree lives inside `KeyboardGestureArea`, where
+     * chatV2Shell.test.ts bans `withTiming`/`withSpring` outright: an exit
+     * animation holds the outgoing capsule mounted for its duration, which
+     * changes the measured dock height mid-IME-travel and is the exact
+     * double-authority jump the V2 shell exists to remove.
+     */
+    expect(composer).not.toContain('exiting=');
   });
 });
 
@@ -8414,7 +8266,7 @@ describe('read receipts are viewport-gated, with a persistent unread divider (M1
   // instant a chat opened — every unread message told the peer it had been
   // seen before a single bubble had scrolled into view.
   const realtime = withoutComments(read('src/api/realtime.ts'));
-  const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+  const chat = withoutComments(readChat());
 
   it('useMarkRead only marks ids the caller reports visible, and returns that reporter', () => {
     const fn = realtime.slice(
@@ -8433,25 +8285,29 @@ describe('read receipts are viewport-gated, with a persistent unread divider (M1
     );
   });
 
-  it('ChatScreen feeds FlashList viewability into useMarkRead, not the raw message list', () => {
-    expect(chat).toContain('const markVisible = useMarkRead(conversationId, selfId);');
+  it('the chat feeds FlashList viewability into useMarkRead, not the raw message list', () => {
+    expect(chat).toMatch(/const markVisible = useMarkRead\(/);
     const handler = chat.slice(
       chat.indexOf('const onViewableItemsChanged = useCallback('),
       chat.indexOf('const onViewableItemsChanged = useCallback(') + 500,
     );
-    expect(handler).toContain("v.item.kind === 'message' && !v.item.mine");
-    expect(handler).toContain('markVisible(ids)');
-    expect(chat).toContain('viewabilityConfig={UNREAD_VIEWABILITY_CONFIG}');
+    expect(handler).toContain("token.item.kind === 'message' &&");
+    expect(handler).toContain('!token.item.mine');
+    expect(handler).toContain('onVisibleMessages(ids)');
+    expect(chat).toContain('viewabilityConfig={VIEWABILITY_CONFIG}');
     expect(chat).toContain('onViewableItemsChanged={onViewableItemsChanged}');
   });
 
   it('the unread divider is snapshotted once per conversation, not recomputed as messages are read', () => {
     const fn = chat.slice(
-      chat.indexOf('const unreadAnchorComputedForRef'),
-      chat.indexOf('const { data: callRecords } = useCalls(conversationId);'),
+      chat.indexOf('const anchorComputedFor = useRef'),
+      chat.indexOf('/* ---- identity'),
     );
-    expect(fn).toContain('if (unreadAnchorComputedForRef.current === conversationId) {');
-    expect(fn).toContain('unreadFromPeer(messages, selfId)');
+    expect(fn).toContain('anchorComputedFor.current === conversationId');
+    expect(fn).toContain('unreadAnchorOf(messages, selfId)');
+    expect(read('src/chat-v2/rows.ts')).toContain(
+      'unreadFromPeer(messages, selfId)',
+    );
     // Snapshotting the OLDEST unread message from the peer as the anchor —
     // a later one would put the divider below messages that were unread too.
     expect(fn).toMatch(/oldest === undefined \|\| m\.created_at < oldest\.created_at/);
@@ -8462,16 +8318,24 @@ describe('read receipts are viewport-gated, with a persistent unread divider (M1
       chat.indexOf('if (unreadAnchorId !== null) {'),
       chat.indexOf('return sorted;'),
     );
-    expect(fn).toContain("sorted.findIndex(r => r.localKey === unreadAnchorId)");
+    expect(fn).toContain('sorted.findIndex(r => r.id === unreadAnchorId)');
     expect(fn).toContain('sorted.splice(anchorIndex + 1, 0,');
-    expect(fn).toContain("kind: 'divider' as const");
+    expect(fn).toContain("kind: 'divider',");
   });
 
   it("renderItem shows the divider as a system pill reading 'Unread messages'", () => {
+    /*
+     * A RULE with a label rather than a pill, and that is a change of shape
+     * rather than a drift. The transcript already has three centred system
+     * rows (a session boundary, a notice, a call); a fourth for "unread" would
+     * read as another event instead of as the place the eye should start.
+     */
     const fn = chat.slice(
       chat.indexOf("if (item.kind === 'divider') {"),
-      chat.indexOf("if (item.kind === 'divider') {") + 250,
+      chat.indexOf("if (item.kind === 'divider') {") + 700,
     );
-    expect(fn).toContain('<SystemMessageRow text="Unread messages" />');
+    expect(fn).toContain('testID="chat-v2-divider"');
+    expect(fn).toContain('Unread messages');
+    expect(fn).toContain('styles.unreadRule');
   });
 });

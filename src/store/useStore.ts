@@ -64,7 +64,7 @@ interface AppState {
   /**
    * A session that just ended and has not been rated yet (goal item 14).
    *
-   * Lives in the store rather than in ChatScreen because a session can end
+   * Lives in the store rather than in the chat screen because a session can end
    * anywhere: a chat, a call started from the provider's page, or the server
    * ending it when the balance runs out. Whoever notices sets this; ONE sheet
    * at the App level renders it. `peerName` is carried along because the sheet

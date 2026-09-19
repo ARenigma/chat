@@ -145,7 +145,8 @@ export function ChatsListScreen({ onBack, onOpenConversation }: Props) {
          * (2026-09-17 audit): before this, a failed fetch fell straight
          * into `ChatStartHint`, so every conversation appeared to have
          * vanished rather than the fetch having failed. Same fix as
-         * ChatScreen's own `loadError` branch — see its docblock there for
+         * the chat's own `loadError` branch (`chatV2LoadState` in
+         * `src/chat-v2/chatState.ts`) — see its docblock there for
          * the full reasoning; this is the rail's equivalent.
          */
         <View style={styles.empty}>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect } from 'react';
 import {
   Easing,
   FadeIn,
@@ -164,43 +164,6 @@ export const KEYBOARD_CUBIC = Easing.bezier(
   M3.easing.keyboard[3],
 );
 
-/** the reference app's deferred animator start, in ms (`ChatActivityEnterView.java:12710`). */
-export const DOCK_DELAY_MS = 50;
-
-/**
- * Slide a docked surface to `to` on the keyboard's curve.
- *
- * the reference app animates only when the keyboard is NOT already visible
- * (`showPopup`: `smoothKeyboard && !keyboardVisible && ...`,
- * `ChatActivityEnterView.java:12687`) — a swap made with the keyboard up is not
- * animated at all, because the keyboard sliding away IS the animation and a
- * second one on top of it reads as a stutter. `animate: false` is that case.
- *
- * The 50ms delay is the reference app's too
- * (`AndroidUtilities.runOnUIThread(runEmojiPanelAnimation, 50)`, `:12710`): the
- * panel's first layout and its first animated frame in the same frame is what
- * produces the artefact frame, so the travel starts one beat after the content
- * exists.
- */
-export function dockTo(to: number, animate: boolean) {
-  'worklet';
-  if (!animate) {
-    return to;
-  }
-  return withDelay(
-    DOCK_DELAY_MS,
-    withTiming(to, {
-      duration: M3.duration.medium1,
-      easing: KEYBOARD_CUBIC,
-      // The OS setting decides, not this module. `ReduceMotion.System` makes
-      // Reanimated jump straight to the target when the user has asked for less
-      // motion, which is the correct behaviour for a travel like this — the
-      // panel still appears, it just does not slide.
-      reduceMotion: ReduceMotion.System,
-    }),
-  );
-}
-
 /**
  * Scale a pressable element to its named press scale over `pressRamp` ms.
  *
@@ -222,193 +185,35 @@ export function pressIn(kind: keyof typeof PRESS): number {
 }
 
 /**
- * True while a screen or surface transition is running.
+ * True while a screen transition is running.
  *
- * W5 #6 gates deferred work on this value — realtime message inserts,
- * EmojiPicker pre-mount, image fetches, Avatar loads and ChatWallpaper are
- * buffered here and flushed only after `onTransitionSettled` fires. Mutation
- * is through `setTransitioning`; the transition builders (push/pop/sheetIn)
- * are the only callers. Reading from any component or hook is safe.
+ * ONE reader, and it is the reason this exists at all: App.tsx's pushed layer
+ * sets `renderToHardwareTextureAndroid` from it, so the layer is promoted to
+ * a texture for the duration of the slide and demoted the moment it settles.
+ * Mutation is through `setTransitioning`, and `useScreenEnter` is its only
+ * caller. Reading from any component or hook is safe.
+ *
+ * W5 #6 also built a SUBSCRIBE half here — `onTransitionSettled`, and a
+ * `useAfterTransition` hook over it — so that expensive invisible work could
+ * be deferred past the slide. Every one of its five call sites was V1's (the
+ * chat wallpaper mount, the message-insert scroll, the emoji panel's grid,
+ * the transcript's photo decode), and all five left with that screen on
+ * 2026-09-19. The subscribe half went with them rather than staying as a
+ * primitive with no subscriber: `git log -S onTransitionSettled` has it if a
+ * future surface earns it back.
  */
 export const transitioning = makeMutable<boolean>(false);
-
-type SettledCallback = () => void;
-const _settledCallbacks = new Set<SettledCallback>();
-
-/**
- * Subscribe to the moment the current transition settles.
- *
- * Returns an unsubscribe function — call it from a `useEffect` cleanup to
- * prevent a leak when the subscribing component unmounts mid-transition.
- *
- * Callbacks run synchronously on the JS thread in insertion order the moment
- * `setTransitioning(false)` is called, which is after the animation has
- * completed and the UI thread has reported its final position.
- *
- * W5 #6 wires the five deferral call sites; this primitive is only built here.
- */
-export function onTransitionSettled(cb: SettledCallback): () => void {
-  _settledCallbacks.add(cb);
-  return () => {
-    _settledCallbacks.delete(cb);
-  };
-}
-
-/* -------------------------------------------------------------------------
- * Holding a screen's entrance until it has DATA, not just geometry
- * ------------------------------------------------------------------------- */
-
-/**
- * the reference app's safety net, in ms. If the arriving screen never reports itself
- * ready, the animation runs anyway at this deadline.
- *
- * `ActionBarLayout.java:2270-2282` posts its delayed-open runnable with a 200ms
- * delay and `:1920-1927` (`resumeDelayedFragmentAnimation`) cancels it when the
- * data lands first. So 200 is a CEILING, not a wait: on a warm cache the
- * release usually arrives in a few frames.
- */
-const ENTER_HOLD_CEILING_MS = 200;
-
-let _entryHolds = 0;
-const _readyCallbacks = new Set<SettledCallback>();
-
-/**
- * Declare that the screen now mounting is not ready to be animated in yet.
- *
- * The gap it is aimed at, measured on the S22 at 60Hz: a push/pop landed 65% of
- * its frames inside a 16.68ms budget with a 15.40ms median, against the reference app's
- * 97.5% and 7.55ms — while plain scrolling matched them almost exactly. The
- * animation runs while the screen is still becoming itself: hooks firing,
- * queries resolving, a list computing its first layout.
- *
- * WHAT THIS HOLD ITSELF BUYS IS UNMEASURED, and that is stated rather than
- * implied. An A/B on the Redmi (debug build, 60Hz), three runs each arm,
- * alternated, chat push/pop targeted by resource-id and verified per cycle:
- *
- *   with hold     within-budget 10.8 / 33.3 / 14.2 %   p50 26.5 / 24.5 / 29.7 ms
- *   without hold  within-budget 21.7 / 21.7 / 18.3 %   p50 29.6 / 28.8 / 28.1 ms
- *
- * p50 favours the hold by ~2ms; within-budget favours its absence; frames past
- * two budgets are level. The `with` arm's within-budget spread is 22.5 points
- * across three IDENTICAL runs, so the run-to-run variance of a debug build on a
- * 2019 phone is larger than the effect being looked for. No conclusion is
- * available from that data and none is claimed.
- *
- * It is kept because it is faithful to the mechanism it copies, it is safe by
- * construction (ceiling, unmount release, opt-in), and its cost is bounded at
- * one frame. Where it could actually be proven: the S22 on a RELEASE build with
- * the panel genuinely at 120Hz, where the budget halves to 8.3ms and mount
- * contention weighs twice as heavily against it.
- *
- * the reference app does not start on geometry, it starts on DATA.
- * `ChatActivity.needDelayOpenAnimation()` (ChatActivity.java:27014) returns
- * `firstLoading`, and the animation is held with the incoming view at alpha 0
- * and translateX 48dp until the first message batch has rendered, at which
- * point `:20613` calls `resumeDelayedFragmentAnimation`.
- *
- * CALL THIS DURING THE SCREEN'S FIRST RENDER, not from an effect. A child
- * renders before its parent's `onLayout` fires, so a hold taken in render is
- * already visible to `useScreenEnter`; a hold taken in an effect would arrive
- * after the animation had started and do nothing.
- *
- * The default is NOT to hold. Every screen that says nothing animates
- * immediately, exactly as before — otherwise a screen nobody had thought about
- * would silently pay the ceiling on every push.
- *
- * Returns its own release, which is idempotent and MUST be called from an
- * unmount cleanup as well as when the data lands. A hold left standing by a
- * screen the user backed out of would make the NEXT push wait the ceiling.
- */
-export function holdScreenEnter(): () => void {
-  _entryHolds += 1;
-  let released = false;
-  return () => {
-    if (released) {
-      return;
-    }
-    released = true;
-    _entryHolds = Math.max(0, _entryHolds - 1);
-    if (_entryHolds === 0) {
-      for (const cb of _readyCallbacks) {
-        cb();
-      }
-    }
-  };
-}
-
-/** Whether any arriving screen is still holding its entrance. */
-export function isScreenEnterHeld(): boolean {
-  return _entryHolds > 0;
-}
-
-/**
- * Run `cb` when the last hold is released. Returns an unsubscribe; call it from
- * a cleanup, and call it before running `cb` yourself so a late release cannot
- * start a second animation.
- */
-export function onScreenEnterReady(cb: SettledCallback): () => void {
-  _readyCallbacks.add(cb);
-  return () => {
-    _readyCallbacks.delete(cb);
-  };
-}
-
-/**
- * True once the current screen transition has settled — or immediately, if
- * there was never one to wait for.
- *
- * The shared form of the deferral the chat wallpaper and the emoji panel each
- * hand-rolled: subscribe to `onTransitionSettled`, with an idle callback as an
- * unconditional fallback so nothing can be stranded if the settle never
- * arrives, and first-one-wins between them.
- *
- * Use it to hold back work that is expensive and invisible — an image decode
- * behind a placeholder that already exists. Do NOT use it to hold back content
- * whose fallback means something different: swapping an avatar's initials for a
- * photo mid-transition reads as the wrong person, not as loading.
- */
-export function useAfterTransition(): boolean {
-  const [settled, setSettled] = useState(!transitioning.value);
-  useEffect(() => {
-    if (settled) {
-      return;
-    }
-    let done = false;
-    const go = () => {
-      if (done) {
-        return;
-      }
-      done = true;
-      setSettled(true);
-    };
-    const unsubscribe = onTransitionSettled(go);
-    // The fallback is unconditional on purpose: a lock that never lowers must
-    // not be able to leave a photo permanently unmounted.
-    const idle = requestIdleCallback(go);
-    return () => {
-      unsubscribe();
-      cancelIdleCallback(idle);
-    };
-  }, [settled]);
-  return settled;
-}
 
 /**
  * Mark a transition as started or finished.
  *
  * Call with `true` when a screen push/pop, sheet open or panel swap begins,
  * and with `false` in the animation's completion callback once it has settled.
- * Setting `false` notifies every `onTransitionSettled` subscriber in insertion
- * order, then clears nothing — subscribers remain registered until they call
- * their own unsubscribe return value.
+ * `useScreenEnter` is the only caller in either direction, which is what makes
+ * it impossible for a new pushed screen to forget.
  */
 export function setTransitioning(active: boolean): void {
   transitioning.value = active;
-  if (!active) {
-    for (const cb of _settledCallbacks) {
-      cb();
-    }
-  }
 }
 
 const EMPH_ACCEL = Easing.bezier(
@@ -1126,7 +931,7 @@ export function useScreenEnter(): {
    *   - `entering` (custom worklet and stock `FadeIn` alike) never ran on this
    *     mount path, while `exiting` on the same view did.
    *   - Starting the ramp from `useEffect` ran, but the clock started at MOUNT
-   *     and a heavy screen (ChatScreen) takes several frames to lay out and
+   *     and a heavy screen (the chat) takes several frames to lay out and
    *     paint for the first time — so its first visible frame was already
    *     two-thirds of the way through a 150ms fade: a jump, then a short tail.
    *
@@ -1177,48 +982,26 @@ export function useScreenEnter(): {
      * arriving before the frame fires cannot start a second animation.
      */
     /*
-     * Wait for the screen's DATA if it asked us to, and start regardless at the
-     * ceiling. `holdScreenEnter`'s header carries the full reasoning and the
-     * the reference app citations.
+     * GEOMETRY, and only geometry. There was a second gate here until
+     * 2026-09-19 — `holdScreenEnter`, which let an arriving screen say "I have
+     * no DATA yet" and held the entrance behind a subscription with a 200ms
+     * ceiling, after the reference app's `needDelayOpenAnimation`
+     * (ChatActivity.java:27014, ActionBarLayout.java:2270-2282).
      *
-     * Both paths are one-shot through `begin`, so a release arriving in the
-     * same tick as the ceiling cannot start two animations. The subscription
-     * and the timer are torn down by whichever fires first, and by the
-     * disposer below if the screen is popped mid-wait.
+     * It is gone because it never had a caller but one: V1's transcript, which
+     * held until its first message batch landed. Nothing else ever opted in,
+     * so with that screen deleted `isScreenEnterHeld()` was false forever and
+     * this branch always took the immediate path — a subscription, a timer and
+     * an unmount disposer that could not fire. The A/B that was run for it
+     * (Redmi, debug, three runs an arm) could not separate the effect from the
+     * run-to-run variance either, so nothing measured is being given up.
+     *
+     * If a screen wants it back, the mechanism is in
+     * `git log -S holdScreenEnter` and the place to prove it is a RELEASE
+     * build at 120Hz, where the frame budget halves to 8.3ms.
      */
-    let begun = false;
-    const begin = () => {
-      if (begun) {
-        return;
-      }
-      begun = true;
-      unsubscribe();
-      clearTimeout(ceiling);
-      ramp();
-    };
-    const unsubscribe = isScreenEnterHeld()
-      ? onScreenEnterReady(begin)
-      : () => undefined;
-    const ceiling = isScreenEnterHeld()
-      ? setTimeout(begin, ENTER_HOLD_CEILING_MS)
-      : (undefined as unknown as ReturnType<typeof setTimeout>);
-    cancelWait.current = () => {
-      begun = true;
-      unsubscribe();
-      clearTimeout(ceiling);
-    };
-    if (!isScreenEnterHeld()) {
-      begin();
-    }
+    ramp();
   };
-
-  /*
-   * Popped mid-wait: drop the subscription and the timer so nothing animates a
-   * view that is on its way out, and so the ceiling cannot fire into an
-   * unmounted component.
-   */
-  const cancelWait = useRef<() => void>(() => undefined);
-  useEffect(() => () => cancelWait.current(), []);
 
   const ramp = () => {
     requestAnimationFrame(() => {
@@ -1410,46 +1193,7 @@ export function rowIn(index: number) {
 }
 
 /**
- * The signature moment: a sent message launching out of the composer.
- *
- * Squash-and-stretch, which is the oldest trick in animation and still the one
- * that reads as *mass*. The bubble starts narrow and tall, as if it has just
- * been squeezed through the send button, then the `bounce` spring resolves all
- * three properties at once, overshooting slightly before settling. Because one
- * spring drives width, height and position together, the overshoot is coherent:
- * the bubble arrives as a single object rather than three properties finishing
- * at their own pace.
- *
- * One of two places `bounce` is used. The other is the onboarding completion
- * check in `src/components/CompletionRow.tsx`, added 2026-08-26: the reference
- * flow resolves that mark with `.bouncy(duration: 1)`, and it is the single
- * moment in the product that is allowed to celebrate. A rule that reserved the
- * overshoot for a sent message and denied it to "you're in" would be enforcing
- * the letter of the restraint against its point.
- */
-export function bubbleLaunch() {
-  'worklet';
-  return {
-    initialValues: {
-      opacity: 0,
-      transform: [{ translateY: 18 }, { scaleX: 0.84 }, { scaleY: 1.16 }],
-    },
-    animations: {
-      opacity: withTiming(1, { duration: DURATION.instant }),
-      transform: [
-        { translateY: withSpring(0, SPRING.bounce) },
-        { scaleX: withSpring(1, SPRING.bounce) },
-        { scaleY: withSpring(1, SPRING.bounce) },
-      ],
-    },
-  };
-}
-
-/**
- * A peer's message arriving. Deliberately *not* the launch animation.
- *
- * Their message did not come out of your composer, so giving it the same
- * squash would be a small lie about where it came from.
+ * A peer's message arriving.
  *
  * Rule (motion-system.md, 2026-09-06): a spring where a finger's velocity is
  * being continued; a timed curve where it is not. A received message has no

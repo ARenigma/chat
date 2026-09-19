@@ -76,22 +76,57 @@ nor of 4. 16 is.
   benchmark" recorded it and applied it without asking what it was a measurement
   of. That row is now marked superseded and points here.
 
-## 4. What the removal deleted
+## 4. What the removal deleted, as it stood on 2026-09-07
+
+> **Historical.** Every file named in this section was deleted on 2026-09-19
+> with the V1 chat. §5 maps the decision to the files that hold it now; this
+> section is kept as the record of what the 2026-09-07 change actually
+> touched, which is the only way to check the claims in §2 and §3 against a
+> diff.
 
 From `src/components/Turn.tsx`: `AVATAR_SLOT`, the `slot` spacer, the `initial`
 and `avatarUri` props, the `first` prop, `peerColumn`, and `peerRow`'s row
 direction and gap. From `src/screens/ChatScreen.tsx`: the `avatarUri={avatarUrl}`
 call site.
 
-`first` still exists in `ChatScreen`, where it drives `turnOpensGroup`'s larger
-top padding. **Grouping survives the avatar; it was never the avatar's job** —
-the vertical rhythm between an older turn and a new speaker's first turn is a
-`paddingTop` on the row, unrelated to the horizontal slot.
+`first` survived the removal, and **grouping survives the avatar; it was never
+the avatar's job** — the vertical rhythm between an older turn and a new
+speaker's first turn is spacing on the row, unrelated to the horizontal slot.
+What `first` drives has changed since, and §5 says what it drives now.
 
-`avatarUrl` and `initial` also survive in `ChatScreen`, feeding the header
-identity block and the empty-state 56dp avatar. Both are live.
+## 5. Where the decision lives now (2026-09-19)
 
-## 5. If it ever comes back
+Both files named above were deleted with the V1 chat. **The decision is
+unchanged and is still enforced**; only its address moved:
+
+| Then                         | Now                                             |
+| ---------------------------- | ----------------------------------------------- |
+| `src/components/Turn.tsx`    | `src/chat-v2/ChatMessageCellV2.tsx`             |
+| `src/screens/ChatScreen.tsx` | `src/chat-v2/ChatHeaderV2.tsx` (the one avatar) |
+
+The guard named at the top of this ADR — `__tests__/chatSurface.test.ts` ›
+"lands an INCOMING bubble on the content edge, with no avatar column" — was
+rebuilt against those files on the same day and still bans `AVATAR_SLOT`,
+`avatarUri` and a row direction on the peer row.
+
+**`first` changed job, and the correction matters because §4 describes the old
+one.** It was the flag behind a larger top padding on the row that opened a
+run. In V2 the run gap is uniform — `ChatListV2`'s `cell` carries one
+`marginVertical: space['2xs']` for every row — and `first` instead decides
+whether the bubble draws its TAIL, which is WhatsApp's own rule for the oldest
+bubble of a run. So grouping is still not the avatar's job, but it is no
+longer expressed as padding either.
+
+The one number changed: the shared gutter is `space.sm` (12dp), not the
+16/7 pair V1 ran. The ARITHMETIC in §2 is what matters and is unaffected —
+both bubble edges and both capsule edges are the same two columns, because
+there is no avatar column to displace one of them.
+
+`avatarUrl` and `initial` survive as the controller's `peerAvatarUrl` and
+`peerInitial`, feeding the header identity block and the empty-state 56dp
+avatar. Both are live; neither reaches a transcript row.
+
+## 6. If it ever comes back
 
 It comes back **on both sides or on neither**. A slot on the incoming side only
 is what produced the asymmetry twice; the third occurrence should not be allowed

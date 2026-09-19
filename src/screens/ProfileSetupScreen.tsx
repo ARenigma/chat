@@ -722,7 +722,7 @@ export function ProfileSetupScreen({
           *
           * This screen called `setNotice` in five places — the age bracket, the
           * username, the avatar, the terms, and a failed claim — and NoticeBar
-          * was mounted in ChatScreen and ProviderApplicationScreen only. Every
+          * was mounted in the chat screen and ProviderApplicationScreen only. Every
           * one of those messages was written to the store and never rendered.
           * The comment on Continue's `disabled` even said the checks were
           * "enforced in onContinue with alerts so a missed checkbox tap never

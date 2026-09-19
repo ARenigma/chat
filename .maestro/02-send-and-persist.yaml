@@ -21,17 +21,17 @@ name: Chat request is confirmed and persists
     id: 'action-chat'
 
 - assertVisible:
-    id: 'composer-input'
+    id: 'chat-v2-input'
 - tapOn:
-    id: 'composer-input'
+    id: 'chat-v2-input'
 - inputText: 'Long day. Mind if I talk at you for a bit?'
 - tapOn:
-    id: 'composer-send'
+    id: 'chat-v2-send'
 
 # Our own turn and the pending bilateral-session state.
 - extendedWaitUntil:
     visible:
-      id: 'bubble-mine'
+      id: 'chat-v2-message-mine'
     timeout: 20000
 # Await banner removed: first-send flow no longer shows a status chip above the composer.
 

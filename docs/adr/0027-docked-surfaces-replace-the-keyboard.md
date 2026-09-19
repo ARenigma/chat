@@ -1,8 +1,29 @@
 # ADR-0027, One docked slot with one number replaces KeyboardAvoidingView
 
-Status: **decided and shipped**
+Status: **SUPERSEDED on 2026-09-19 by the V2 chat shell**
 Date: 2026-09-06
-Guard: `__tests__/contract.test.ts` › "DockedSurface is the only surface below the composer row"
+Superseded by: the V2 chat (`src/chat-v2`), device-verified on the S22 and
+made the only chat on 2026-09-19 — see `docs/android-audit.md` › "V1 chat
+deleted; V2 is the only chat".
+
+> **Read this as history.** The decision below is about a docked slot that no
+> longer exists. `src/lib/imeGeometry.ts`, `keyboardEngine.ts` and
+> `keyboardPanel.ts` — the JavaScript model of the IME position everything
+> here is computed in — were deleted with the V1 chat, along with the emoji
+> and attach panels the slot was built to hold.
+>
+> What replaced it is the platform's own answer, which §4 below deferred:
+> `react-native-keyboard-controller`'s `KeyboardStickyView` under a single
+> measured dock, with `KeyboardGestureArea` around the pair. The lift is
+> native and on the UI thread, so there is no remembered height to predict
+> from and no second model to disagree with the first.
+>
+> **What survives and is still load-bearing:** `adjustNothing` in the
+> manifest (pinned in `__tests__/platform.test.ts`), the root
+> `KeyboardProvider`, and the rule the 96px measurement below taught — that
+> RN's reported keyboard height excludes the navigation-bar inset under
+> edge-to-edge, so anything sized from it alone is short by that inset. The
+> measurements in §2 are kept for that reason.
 
 ---
 
@@ -89,11 +110,25 @@ home in the repo.
 
 ### react-native-keyboard-controller
 
-Deferred. `dockTo()` in `motion.ts` predicts the IME rise from the remembered
-height, matching Telegram's `smoothKeyboard` strategy, with no additional
-dependency. `react-native-keyboard-controller@1.22.4` offers per-frame IME
-position tracking, which this model does not use: the dock is stationary, so
-there is nothing to track.
+**ADOPTED 2026-09-19 — this deferral is closed, and the decision recorded
+below was reversed.**
+
+`react-native-keyboard-controller` is now a direct dependency and is what the
+V2 chat's dock rides on: `KeyboardGestureArea` around the transcript-and-dock
+pair, `KeyboardStickyView` under the dock and under the page-down control,
+with the root `KeyboardProvider` in App.tsx. The lift is per-frame, native,
+and on the UI thread. `dockTo()` and `DOCK_DELAY_MS` were deleted with the
+panels they animated.
+
+The trigger named below is roughly what happened, by a different route: the
+dock stopped being stationary. The reasoning as written was sound for a
+stationary dock and is kept for that reason.
+
+_Original entry:_ Deferred. `dockTo()` in `motion.ts` predicts the IME rise
+from the remembered height, matching Telegram's `smoothKeyboard` strategy,
+with no additional dependency. `react-native-keyboard-controller@1.22.4`
+offers per-frame IME position tracking, which this model does not use: the
+dock is stationary, so there is nothing to track.
 
 **Trigger to revisit:** transcript drag-to-dismiss (the gesture needs live IME
 coordinates to couple the drag position to the hide animation), or a visible
@@ -103,6 +138,15 @@ would mean `keyboardDidHide` arrives too late for a no-jump close.
 If adopted, it replaces only the `dockSpace` driver in `motion.ts`. Everything
 in `imeGeometry.ts` is unaffected: it reads Keyboard events, not frame
 positions, and the geometry arithmetic is independent of the source.
+
+_That last prediction was wrong, and it is worth recording why._ Adoption did
+not replace one driver and leave the arithmetic alone — it replaced the
+arithmetic. `imeGeometry.ts`, `keyboardEngine.ts` and `keyboardPanel.ts` were
+deleted outright on 2026-09-19, because once the IME position arrives per
+frame from the platform there is nothing for a JavaScript model of it to
+compute. A second model of a number the OS already reports is not a
+complement to it; it is a second authority, which is the defect the whole V2
+shell exists to remove.
 
 ### Moving Sheet off RN's Modal
 

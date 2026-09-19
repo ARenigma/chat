@@ -300,7 +300,7 @@ export function useLiveConversation(
  * mount — opening a chat with 50 unread messages told the peer all 50 had been
  * seen before a single one had scrolled into view. reference-parity read
  * receipts mean this now only marks ids the caller reports as visible, via
- * the returned `markVisible` — ChatScreen wires that to FlashList's
+ * the returned `markVisible` — the chat's controller wires that to FlashList's
  * `onViewableItemsChanged`.
  *
  * Batched into one `in` filter rather than a write per message, and it only ever

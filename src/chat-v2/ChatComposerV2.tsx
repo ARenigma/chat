@@ -10,6 +10,7 @@ import {
   writeDraftText,
 } from '../lib/chatDraft';
 import { errorTick, tick } from '../lib/haptics';
+import { MAX_MESSAGE_CHARS } from '../lib/tokenLedger';
 import {
   ensureMicrophone,
   startRecording,
@@ -97,9 +98,9 @@ export function ChatComposerV2({
       return;
     }
     seededFor.current = conversationId;
-    const saved = readDraftText(conversationId);
-    if (saved !== '') {
-      setText(saved);
+    const stored = readDraftText(conversationId);
+    if (stored !== '') {
+      setText(stored);
     }
   }, [conversationId]);
   useEffect(() => {
@@ -360,6 +361,10 @@ export function ChatComposerV2({
           testID="chat-v2-input"
           accessibilityLabel="Message"
           editable={!disabled}
+          // The same ceiling `messages.body`'s CHECK enforces (migration 003),
+          // so the field stops where the database would rather than failing
+          // the send after a tap.
+          maxLength={MAX_MESSAGE_CHARS}
           placeholder={placeholder}
           placeholderTextColor={theme.color.text.muted}
           value={text}
@@ -419,11 +424,10 @@ const makeStyles = (t: Theme) =>
     field: {
       minHeight: TOKENS.interaction.minTarget,
       flexDirection: 'row',
-      alignItems: 'flex-end',
+      alignItems: 'center',
       borderWidth: 1,
       borderColor: t.color.border.strong,
-      borderRadius: TOKENS.radius.composer,
-      borderCurve: 'continuous',
+      borderRadius: TOKENS.radius.pill,
       backgroundColor: t.color.bg.raised,
       paddingLeft: TOKENS.space.md,
       paddingRight: TOKENS.space['2xs'],
@@ -435,7 +439,11 @@ const makeStyles = (t: Theme) =>
       minHeight: 40,
       maxHeight: 120,
       paddingHorizontal: 0,
-      paddingVertical: TOKENS.space.sm,
+      // bodyMedium lineHeight 20dp + 8+8 padding = 36dp < 40dp minHeight,
+      // so single-line input renders at exactly 40dp. With alignItems:'center'
+      // the 40dp send button fills the 40dp content area symmetrically (4dp
+      // capsule padding on each side).
+      paddingVertical: TOKENS.space.xs,
       color: t.color.text.primary,
       textAlignVertical: 'center',
     },
@@ -448,8 +456,7 @@ const makeStyles = (t: Theme) =>
       gap: TOKENS.space.xs,
       borderWidth: 1,
       borderColor: t.color.border.strong,
-      borderRadius: TOKENS.radius.composer,
-      borderCurve: 'continuous',
+      borderRadius: TOKENS.radius.pill,
       backgroundColor: t.color.bg.raised,
       paddingLeft: TOKENS.space.xs,
       paddingRight: TOKENS.space['2xs'],

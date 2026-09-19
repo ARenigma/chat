@@ -311,11 +311,13 @@ export function ProviderHomeScreen({
    * Add photos.
    *
    * `selectionLimit` greater than 1 routes through `PickMultipleVisualMedia` —
-   * the system photo picker, which requires NO runtime permission and is not the
-   * MediaStore / READ_MEDIA_IMAGES path AttachPanel refuses on Play-policy
-   * grounds. That is already proven in Composer on the installed
-   * react-native-image-picker 7.2.3, so this adds no dependency and no native
-   * change (RULE 5).
+   * the system photo picker, which requires NO runtime permission and is not
+   * the MediaStore / READ_MEDIA_IMAGES path the app refuses on Play-policy
+   * grounds (the manifest removes that permission; see
+   * `__tests__/contract.test.ts` › "never declares a restricted media-read
+   * permission"). This is now the ONLY picker in the app — the chat's attach
+   * panel was deleted on 2026-09-19 — and it adds no dependency and no native
+   * change on the installed react-native-image-picker 7.2.3 (RULE 5).
    *
    * Clamped to the free slots so the picker never hands back more than the 070
    * trigger will accept; a clamp of 1 is plain single-select, which is the right
@@ -1087,9 +1089,10 @@ const makeStyles = (t: Theme) =>
      * root, everything else moves to an inner view that gets `flexGrow: 1`. This
      * pill had padding and a radius and no box key at all, so its root had no
      * size of its own and the growing inner view took the whole of `pushGate` —
-     * which is `absoluteFill`, so the whole screen. The same shape as the attach
-     * panel's grant chip (AttachPanel.tsx, `grant`) and the provider row's avatar
-     * ring (ProviderRow.tsx, `ring`), both of which shipped before being caught.
+     * which is `absoluteFill`, so the whole screen. The same shape as the
+     * provider row's avatar ring (`ProviderRow.tsx`, `ring`) and as the chat
+     * attach panel's grant chip, both of which shipped before being caught —
+     * the panel has since been deleted, the ring has not.
      * `__tests__/contract.test.ts` now fails the build on it.
      *
      * 48, so the button is exactly Android's minimum touch target rather than the

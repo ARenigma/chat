@@ -119,7 +119,7 @@ export function forConversation(
 /**
  * The age past which a queued entry is abandoned.
  *
- * Replay runs on ChatScreen mount for that entry's conversation, so an entry
+ * Replay runs on chat mount for that entry's conversation, so an entry
  * whose conversation is never reopened (deleted, or simply never revisited)
  * would otherwise sit in MMKV forever. A week is well past any plausible offline
  * window; a text this stale is better dropped than resurrected into a thread

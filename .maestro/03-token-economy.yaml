@@ -22,10 +22,10 @@ name: Pending chat does not create a per-message debit
 - assertVisible: '44'
 
 - tapOn:
-    id: 'composer-input'
+    id: 'chat-v2-input'
 - inputText: 'Still here.'
 - tapOn:
-    id: 'composer-send'
+    id: 'chat-v2-send'
 - extendedWaitUntil:
     visible: 'Still here.'
     timeout: 20000

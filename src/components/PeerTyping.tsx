@@ -52,8 +52,8 @@ function PeerTypingView({ name }: { name: string }) {
           left standing alone at the OLD column, 34dp right of the message it
           precedes. Dropping the avatar here is not a second decision; it is the
           same one, applied to the one surface that duplicated the inset.
-          The `bg/sunken` fill Turn.tsx uses is what makes this read as a bubble
-          the other person is about to fill. */}
+          The `bg/sunken` fill the peer's own bubble uses is what makes this
+          read as a bubble the other person is about to fill. */}
       <View style={styles.bubble}>
         <TypingIndicator
           label={
@@ -81,9 +81,10 @@ const makeStyles = (_t: Theme) => StyleSheet.create({
      *
      * This renders as the inverted list's ListHeaderComponent, so it sits at the
      * visual BOTTOM - flush against the newest bubble, with no margin of its own
-     * while every Turn carries `marginBottom: 2xs` (Turn.tsx:1048). So the dots
-     * butted straight into the message above them and read as overlapping it
-     * (Amit, 2026-09-05: "typing animation overlaps message bubbles").
+     * while every transcript row carries a `2xs` gap (`ChatListV2`'s `cell`
+     * style). So the dots butted straight into the message above them and read
+     * as overlapping it (Amit, 2026-09-05: "typing animation overlaps message
+     * bubbles").
      *
      * On an inverted list the header is BELOW the newest item, so the gap that
      * separates them belongs on this row's TOP.

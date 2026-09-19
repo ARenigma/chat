@@ -74,6 +74,8 @@ server writes, resource IDs first.
     band on screen: the band adds height above the transcript and the dock
     measurement must not move because of it.
 
-Record screenshots/bounds and the ARTEMIS trace ID when this checklist is
-actually executed. This file intentionally records no pass result, and the
-production route stays on V1 (`CHAT_V2_CUTOVER === false`) until it does.
+**Executed and passed on 2026-09-19** — Samsung Galaxy S22 (SM_S908E,
+Android 16). V1 was deleted the same day and both normal `chat` routes now
+mount `ChatScreenV2` unconditionally; there is no flag left to hold.
+
+Record screenshots/bounds and the ARTEMIS trace ID for any re-run.

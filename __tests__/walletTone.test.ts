@@ -143,7 +143,7 @@ describe('the bright accent carries no label', () => {
     why: string;
   }> = [
     {
-      file: 'src/screens/ChatScreen.tsx',
+      file: 'src/chat-v2/ChatSessionBarV2.tsx',
       fill: 'talkRecharge',
       label: 'talkRechargeLabel',
       why: "the talk-time meter's Recharge pill, labelMediumEmphasized 12dp Bold",

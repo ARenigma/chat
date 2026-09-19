@@ -389,9 +389,15 @@ the keyboard up is not animated: the keyboard sliding away IS the movement, and 
 second animation over it reads as a stutter. `previousHeight` also makes a
 panel-to-panel swap a no-op, because the height does not change.
 
-Both are now in `motion.ts` as `KEYBOARD_CUBIC`, `dockTo()` and `DOCK_DELAY_MS`,
-and the curve and the 250ms are tokens (`m3.easing.keyboard`,
-`m3.duration.medium1`) so they cannot drift.
+Both WERE in `motion.ts` as `KEYBOARD_CUBIC`, `dockTo()` and `DOCK_DELAY_MS`.
+`dockTo()` and `DOCK_DELAY_MS` were deleted on 2026-09-19 with the docked
+panels they animated: the V2 chat has no emoji or attach panel to swap for the
+keyboard, and the IME lift is the platform's own
+(`KeyboardStickyView`), so there is nothing left to predict. `KEYBOARD_CUBIC`
+survives — `bubbleArrive` still reads it — and the curve and the 250ms are
+still tokens (`m3.easing.keyboard`, `m3.duration.medium1`) so they cannot
+drift. The measurement below is kept because it is the record of where the
+curve came from.
 
 **Deviation: we translate the DOCK, they translate the PANEL.** Telegram's chat
 content is padded by `emojiPadding` and the padding is released in the animator's

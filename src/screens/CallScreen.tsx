@@ -176,7 +176,8 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   /*
    * Which side of this thread we are on, and who the review sheet should name.
    *
-   * Same source and the same reason as ChatScreen (ChatScreen.tsx:440):
+   * Same source and the same reason as the chat
+   * (`resolveChatV2Conversation` in `src/chat-v2/rows.ts`):
    * `i_am_member` on the summary row, never `profiles.role`, because migration
    * 007 lets a member admitted as a provider keep the threads they paid for —
    * and because this screen serves the provider tree too, where `providerId` is
@@ -198,7 +199,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
    * open — so the default below is free to stay optimistic for the UI without
    * that optimism ever reaching a provider's screen.
    *
-   * The last-resort name is ChatScreen's ('Conversation'), not a new string:
+   * The last-resort name is the chat's ('Conversation'), not a new string:
    * both paths fill the same sheet title, and a second word for the same hole
    * is how two screens end up disagreeing about the same missing peer.
    */
@@ -298,8 +299,9 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   /*
    * The call is over — ask the member how it went (goal item 14).
    *
-   * ChatScreen has done this since 066 for a session that ends in a thread
-   * (ChatScreen.tsx:491), and the store's own comment on `requestReview`
+   * The chat has done this since 066 for a session that ends in a thread
+   * (`askReview` in `src/chat-v2/useChatV2Controller.ts`), and the store's
+   * own comment on `requestReview`
    * ("if a call and its chat both notice the same session ending") describes
    * this half as if it existed. It did not. Every voice or video session that
    * ended while the member was on THIS screen — which is every call that is not
@@ -619,7 +621,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
       endedRef.current = true;
       /*
        * A call is the one paid session with no `useSessionRealtime` subscription
-       * (that hook is keyed by conversation and lives in ChatScreen), so the
+       * (that hook is keyed by conversation and lives in the chat's controller), so the
        * per-minute profile invalidation there never reaches this screen. Without
        * this the member walked out of a ten-minute call with the balance they
        * walked in with, until something else happened to refetch it.

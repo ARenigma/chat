@@ -499,7 +499,7 @@ interface NotifyMachine {
  * `toggleScheduledNotify()` (FragmentContextView.java:2770-2792) fires the
  * request from the control the finger is on and then says what happened, rather
  * than navigating somewhere to say it. Ours did the opposite: both away controls
- * routed into the chat, so the RPC only ran from ChatScreen's mount effect and
+ * routed into the chat, so the RPC only ran from the chat's mount effect and
  * the surface that would have shown "Notified" unmounted on the tap that earned
  * it.
  *
@@ -1010,7 +1010,7 @@ const BACKGROUND_GRACE_MS = 30_000;
  * Sends foreground lease heartbeats while the component is mounted and the app
  * is in the foreground. Stops immediately on background.
  *
- * Mount this in ChatScreen while an active session is running. Unmounting or
+ * Mount this in the chat screen while an active session is running. Unmounting or
  * backgrounding triggers the server-side 30 s grace window, then the session
  * ends automatically. The hook is a no-op when `sessionId` is null.
  */

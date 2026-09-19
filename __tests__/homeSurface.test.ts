@@ -258,15 +258,20 @@ describe('the search field is the one the reference app actually ships', () => {
      * as a second opinion: "With some fonts, this padding can make text look
      * slightly misaligned when centered vertically. For best results also set
      * textAlignVertical to center." This field renders a custom face, so the
-     * pair travels together — which is what Composer.tsx already does for the
-     * message field, and this gate holds both so one cannot be removed alone.
+     * pair travels together — which is what the chat composer already does for
+     * the message field, and this gate holds both so one cannot be removed
+     * alone. There the `includeFontPadding: false` half arrives with the
+     * typography token the field spreads, so it is asserted on the token.
      */
     const input = styles.slice(styles.indexOf('input: {'));
     expect(input).toContain("textAlignVertical: 'center'");
     expect(input).toContain('includeFontPadding: false');
-    expect(withoutComments(read('src/components/Composer.tsx'))).toContain(
-      'includeFontPadding: false',
-    );
+
+    const composer = withoutComments(read('src/chat-v2/ChatComposerV2.tsx'));
+    const field = composer.slice(composer.indexOf('input: {'));
+    expect(field).toContain("textAlignVertical: 'center'");
+    expect(field).toContain('...TOKENS.typography.bodyMedium');
+    expect(TOKENS.typography.bodyMedium.includeFontPadding).toBe(false);
   });
 
   it('holds the text inset constant while you type, the way FragmentSearchField does', () => {

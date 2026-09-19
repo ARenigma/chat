@@ -86,7 +86,7 @@ export function ProviderStatusScreen({ onBack, onEdit }: Props) {
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       {/* A nav bar, not a Material Toolbar: a bare 22pt chevron in a transparent
-          target with a centred 17-semibold title, the same as ChatScreen and
+          target with a centred 17-semibold title, the same as the chat header and
           ProviderApplicationScreen now. The filled 40pt grey circle plus a
           left-aligned 15pt title was the strongest Android tell in the app. */}
       <View style={styles.header}>

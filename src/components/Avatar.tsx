@@ -210,14 +210,21 @@ function AvatarView({
           {initial}
         </Text>
         {/* NOT held back behind a screen transition, and that is a decision.
-            W5#6 named "avatar fetches" as a deferral site, and the mechanism
-            exists (`useAfterTransition` in theme/motion.ts, used by Turn's
-            photo bubbles). It is wrong here: this component's fallback is the
-            person's INITIALS, which mean "no photo", not "loading". Holding the
-            Image back would show initials for a few frames and then swap in a
-            face — a content change that reads as the wrong person, which is
-            worse than the decode it would save. Turn's photos have a designed
-            grey placeholder and can be deferred; an identity cannot. */}
+            W5#6 named "avatar fetches" as a deferral site and built the
+            mechanism for it (`useAfterTransition` over `onTransitionSettled`
+            in theme/motion.ts). It was wrong here: this component's fallback
+            is the person's INITIALS, which mean "no photo", not "loading".
+            Holding the Image back would show initials for a few frames and
+            then swap in a face — a content change that reads as the wrong
+            person, which is worse than the decode it would save. A photo
+            behind a designed grey placeholder can be deferred; an identity
+            cannot.
+
+            The hook itself was deleted on 2026-09-19 — every site that DID
+            take it was V1's and left with that screen — so this is now the
+            only record of the question. It is kept as a decision rather than
+            dropped as moot: the next person to reach for a deferral here has
+            to make the same argument again. */}
         {photo !== null ? (
           <Image
             source={photo}

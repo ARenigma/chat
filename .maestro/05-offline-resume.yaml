@@ -11,16 +11,16 @@ name: Sending works again once the network returns
 - tapOn:
     id: 'action-chat'
 - tapOn:
-    id: 'composer-input'
+    id: 'chat-v2-input'
 - inputText: 'Back online.'
 - tapOn:
-    id: 'composer-send'
+    id: 'chat-v2-send'
 
 - extendedWaitUntil:
     visible: 'Back online.'
     timeout: 30000
 - assertVisible:
-    id: 'bubble-mine'
+    id: 'chat-v2-message-mine'
 - assertNotVisible:
     id: 'notice-bar'
 

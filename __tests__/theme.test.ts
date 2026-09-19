@@ -1276,14 +1276,6 @@ describe('spacing lives in tokens', () => {
     .concat({ file: 'App.tsx', body: stripComments(read('App.tsx')) });
 
   const ALLOW: Record<string, string[]> = {
-    // Composer field vertical pad is mapped to the reference app measured on device (S22,
-    // density 2.8125×): its composer field is ~40dp with 16sp text, so the input
-    // is minHeight 32 + pad 6/6 (capsule ≈ 40 with the field's 4dp paddingVertical).
-    'src/components/Composer.tsx': [
-      'paddingTop: 4',
-      'paddingBottom: 4',
-      'paddingRight: 6',
-    ],
     // Optical nudges the 4dp grid cannot name: a 5dp pill pad, a 6dp dot offset,
     // a 1dp tag inset, a 3dp glyph gap. Grandfathered with their reasons.
     /*
@@ -1346,26 +1338,9 @@ describe('spacing lives in tokens', () => {
      * radius.$bubbleNote in design/tokens.json for why the 12dp that one pass
      * reported as first-party was withdrawn.
      *
-     * An earlier edit added these as a SECOND 'src/components/Turn.tsx' key in
-     * this object literal, which JS silently resolves in favour of the last
-     * one — so the allowlist looked correct and the gate still failed. Merged.
-     */
-    'src/components/Turn.tsx': [
-      'paddingBottom: 14',
-      'paddingHorizontal: 5',
-      'paddingVertical: 1',
-      'gap: 3',
-      'gap: 1',
-      'paddingLeft: 8',
-      'paddingTop: 2',
-      'paddingRight: 10',
-      'paddingBottom: 5',
-    ],
-    /*
-     * The V2 bubble, carrying the SAME measured values as `Turn.tsx` above and
-     * for the same reasons — it is the same WhatsApp box read from the same
-     * APK pull, rebuilt in `src/chat-v2` rather than edited in place so V1 kept
-     * working while it was written.
+     * The V1 bubble (`src/components/Turn.tsx`) carried this same set and was
+     * deleted on 2026-09-19; the measurements live on here, in the one bubble
+     * that ships.
      *
      * Enumerated rather than waved through as "V2 is exempt", because the
      * exemption has to stay as narrow here as it is for V1: the four insets on
@@ -1574,10 +1549,14 @@ describe('motion lives in one module', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('routes the signature moment through the shared builder', () => {
-    expect(read('src/components/Turn.tsx')).toContain('bubbleLaunch');
-    expect(read('src/theme/motion.ts')).toContain('SPRING.bounce');
-  });
+  /*
+   * `routes the signature moment through the shared builder` lived here until
+   * 2026-09-19. It asserted that V1's bubble reached the overshoot through
+   * `bubbleLaunch` rather than hand-rolling a spring; both the entrance and
+   * the bubble are gone, and the rule it protected — `bounce` is reached
+   * through `springTo` and only by the surfaces named — is the next test,
+   * which enumerates every consumer.
+   */
 
   it('uses bounce nowhere except the send and the low-balance flinch', () => {
     const users = sources
@@ -1680,13 +1659,28 @@ describe('motion lives in one module', () => {
     expect(block).toContain('DURATION.pressRamp');
   });
 
-  it('exposes a transition-lock primitive for W5 deferral', () => {
-    // W5 #6 gates realtime inserts, image fetches and Avatar loads on this;
-    // the five call sites are wired there. Only the primitive is built here.
+  it('exposes the transition lock as a value and a writer, and nothing more', () => {
+    /*
+     * W5 #6 built this as a PAIR: a shared value, and an
+     * `onTransitionSettled` subscription so expensive invisible work could be
+     * deferred past the slide. All five of its subscribers were V1's — the
+     * chat wallpaper mount, the message-insert scroll, the emoji panel's
+     * grid, the transcript's photo decode — and they left with that screen on
+     * 2026-09-19.
+     *
+     * So the subscribe half went too, and the absence is asserted rather than
+     * simply not mentioned: a subscription primitive with no subscriber reads
+     * as a wired mechanism to the next person who finds it, which is how a
+     * deferral gets built on something that never fires.
+     *
+     * What is left is what App.tsx actually needs — a value it can read for
+     * `renderToHardwareTextureAndroid`, and one writer.
+     */
     const motion = read('src/theme/motion.ts');
     expect(motion).toContain('export const transitioning');
-    expect(motion).toContain('export function onTransitionSettled(');
     expect(motion).toContain('export function setTransitioning(');
+    expect(stripComments(motion)).not.toContain('onTransitionSettled');
+    expect(stripComments(motion)).not.toContain('useAfterTransition');
   });
 
   it('animates bubbleArrive on timed curves, not springs', () => {
@@ -1984,11 +1978,23 @@ describe('accent budget is enforced in code, not just documented', () => {
        */
       'ChatComposerV2.tsx',
       /*
-       * The V2 bubble. `Turn.tsx` below is the same entry for the V1
-       * transcript and carries the full argument. Here the coral is ONE thing:
-       * the reply quote's left rule, which is the mark both WhatsApp and the
-       * reference client put on a quoted parent. The bubble fills themselves
-       * are `bubble/mine` and `bubble/theirs`, not the accent.
+       * The transcript bubble, and the coral is ONE thing in it: the reply
+       * quote's left rule.
+       *
+       * The narrowness is the argument. That 2dp vertical bar beside a quoted
+       * message was `border/strong`, which measures 1.29:1 on the outgoing
+       * bubble in light and 1.00:1 in dark — invisible, because the fill and
+       * the rule were the same colour. Every other candidate in the neutral
+       * ramp has the same problem: the ramp is authored against bg/base, not
+       * against a coral fill. `bg/accentStrong` is 3.79:1 / 4.18:1 on that
+       * fill and 4.96:1 / 6.32:1 on the peer's, all four registered in
+       * check-contrast.mjs.
+       *
+       * And it is the budget being spent on what the budget is FOR. A reply
+       * quote is a pointer to one specific earlier message — the most pointed
+       * "this one thing" in the transcript — and it is what both WhatsApp and
+       * the reference app tint with their brand colour. The bubble FILLS are
+       * `bubble/mine` and `bubble/theirs`; this is a hairline, not a surface.
        */
       'ChatMessageCellV2.tsx',
       /*
@@ -2006,13 +2012,6 @@ describe('accent budget is enforced in code, not just documented', () => {
        * So it is off the coral budget entirely.
        */
       /*
-       * The talk-time meter's Recharge CTA and its live dot (ADR-0019 made chat
-       * per-minute). The Recharge button is an action and the dot is a live-state
-       * signal — the two things the budget reserves the coral for — and the low
-       * variant reuses the same token-tint the balance pill flinches to.
-       */
-      'ChatScreen.tsx',
-      /*
        * The V2 chat shell. Three uses, each already on this list under another
        * file's name: the retry and start-session buttons are the primary
        * action of the state they appear in (`Button.tsx`'s argument), and the
@@ -2021,12 +2020,12 @@ describe('accent budget is enforced in code, not just documented', () => {
        */
       'ChatScreenV2.tsx',
       /*
-       * The V2 session band, which is V1's talk-time meter moved into its own
-       * file: the same Recharge CTA, the same live dot, the same coral wash on
-       * the low state. The argument is `ChatScreen.tsx`'s above, unchanged —
-       * an action and a live-state signal, which is what the budget reserves
-       * the coral for. The Extend button is the primary action of the one
-       * state it appears in.
+       * The talk-time meter (ADR-0019 made chat per-minute): the Recharge CTA,
+       * the live dot, and the coral wash on the low state. An action and a
+       * live-state signal, which is what the budget reserves the coral for,
+       * and the low variant reuses the same token-tint the balance pill
+       * flinches to. The Extend button is the primary action of the one state
+       * it appears in.
        */
       'ChatSessionBarV2.tsx',
       /*
@@ -2047,17 +2046,7 @@ describe('accent budget is enforced in code, not just documented', () => {
        * — and it appears once, for one second, at the end of one flow.
        */
       'CompletionRow.tsx',
-      /*
-       * The emoji picker's selected category tab. The same M3 navigation
-       * indicator FloatingToolbar already argues for, one level down: a tonal
-       * accent-tint pill marking which of nine destinations you are currently
-       * in. A "you are here" state, not decoration — and the only accent in the
-       * surface, since the grid itself is the user's own glyphs.
-       */
-      'EmojiPicker.tsx',
       'EmptyMark.tsx',
-      // First-message pills: the one warm starter, same Chip accent rule.
-      'FirstMovePills.tsx',
       /*
        * The bottom bar's active tab (FloatingToolbar). It went coral → black slab
        * → grey box, and both read badly on device (Amit, 2026-08-27). The selected
@@ -2224,31 +2213,6 @@ describe('accent budget is enforced in code, not just documented', () => {
       'TabTopBar.tsx',
       'ThreadBubble.tsx',
       'Toggle.tsx',
-      /*
-       * `Turn.tsx` LEFT this list on 2026-09-08, and that is the change worth
-       * noting rather than just deleting a line: the chat bubbles used to spend
-       * the accent budget (outgoing fill = bg/accentStrong, and every metadata
-       * colour derived from text/onAccent). They now read the `bubble/*` group,
-       * so the single largest consumer of the accent in the app no longer
-       * consumes it at all. The budget this test enforces got cheaper.
-       *
-       * It REJOINED on 2026-09-12, for exactly one line, and the narrowness is
-       * the argument. The reply-quote rule — the 2dp vertical bar beside a
-       * quoted message — was `border/strong`, which measures 1.29:1 on the
-       * outgoing bubble in light and 1.00:1 in dark. Invisible: the fill and the
-       * rule were the same colour. Every other candidate in the neutral ramp has
-       * the same problem, because the ramp is authored against bg/base, not
-       * against a coral fill. `bg/accentStrong` is 3.79:1 / 4.18:1 on that fill
-       * and 4.96:1 / 6.32:1 on the peer's, all four registered in
-       * check-contrast.mjs.
-       *
-       * And it is the budget being spent on what the budget is FOR. A reply
-       * quote is a pointer to one specific earlier message — the most pointed
-       * "this one thing" in the transcript — and it is what both WhatsApp and
-       * the reference app tint with their brand colour. The bubble FILLS are still
-       * bubble/*; this is a hairline, not a surface.
-       */
-      'Turn.tsx',
       'TypingIndicator.tsx',
       'WordColumn.tsx',
     ]);
@@ -2274,20 +2238,39 @@ describe('accent budget is enforced in code, not just documented', () => {
    * not a surface colour — RN requires a literal there and no theme varies it.
    */
   it('keeps every colour in the transcript surface in a token', () => {
-    const TRANSCRIPT = [
-      'Turn.tsx',
-      'BubbleTime.tsx',
-      'Composer.tsx',
-      'ThreadBubble.tsx',
-    ];
+    /*
+     * The expected set per file, not a pass/fail allowlist: any literal that
+     * is not the exact one reasoned about below fails, and so does the named
+     * one disappearing without this list being edited.
+     *
+     * `ChatMessageCellV2`'s single entry is the upload progress TRACK. No
+     * token carries it because no theme can: the bar is drawn over arbitrary
+     * photo content, where a white at 35% is the only fill that reads in
+     * either mode. It is declared in a style of its own, `mediaProgressTrack`,
+     * with the reasoning beside it — which is the difference between this and
+     * the `#85D4A0` that sat in V1's media overlay for four days because it
+     * matched no search for a token name.
+     */
+    const TRANSCRIPT: Record<string, readonly string[]> = {
+      'ChatMessageCellV2.tsx': ["'rgba(255,255,255,0.35)'"],
+      'BubbleTime.tsx': [],
+      'ChatComposerV2.tsx': [],
+      'ThreadBubble.tsx': [],
+    };
     const literal = /'(#[0-9A-Fa-f]{3,8}|rgba?\([^')]*\))'/g;
-    for (const s of uiSources.filter(c => TRANSCRIPT.includes(c.file))) {
+    for (const s of uiSources.filter(c => TRANSCRIPT[c.file] !== undefined)) {
       const found = s.body
         .split('\n')
         .filter(line => !line.includes('shadowColor'))
         .flatMap(line => line.match(literal) ?? []);
-      expect({ file: s.file, found }).toEqual({ file: s.file, found: [] });
+      expect({ file: s.file, found }).toEqual({
+        file: s.file,
+        found: TRANSCRIPT[s.file],
+      });
     }
+    // And every file named above was actually read.
+    const seen = uiSources.filter(c => TRANSCRIPT[c.file] !== undefined);
+    expect(seen).toHaveLength(Object.keys(TRANSCRIPT).length);
   });
 
   it('never uses the accent for a page background', () => {
@@ -2980,32 +2963,13 @@ describe('chat-visuals: typing indicator uses conveyor dots, not breathing', () 
   });
 });
 
-describe('chat-visuals: FirstMovePills host has no own pink strip', () => {
-  const pills = read('src/components/FirstMovePills.tsx');
-
-  it('does not set a backgroundColor on the host strip', () => {
-    // The chat wallpaper carries the blush wash (ChatWallpaper.tsx,
-    // bg.accentTint at 0.2 opacity). A second accentTint on the strip created a
-    // bright pink band at the bottom of the transcript.
-    // Comments stripped: the removed line is explained in a comment that would
-    // satisfy a naive includes() check.
-    const stripped = pills
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/^\s*\/\/.*$/gm, '');
-    expect(stripped).not.toMatch(/strip[\s\S]{0,60}backgroundColor/);
-  });
-
-  it('still defines the strip style (pills need the padding)', () => {
-    expect(pills).toContain('strip:');
-    expect(pills).toContain('paddingHorizontal');
-  });
-
-  it('still references the accent (pill ripple color)', () => {
-    // Accent is in the permitted list for first-move pills; removing the
-    // background must not also drop the ripple.
-    expect(pills).toMatch(/accent/);
-  });
-});
+/*
+ * `chat-visuals: FirstMovePills host has no own pink strip` lived here until
+ * 2026-09-19. The component was V1's opener-suggestion strip and left with the
+ * rest of that screen; the rule it protected — the wallpaper owns the blush
+ * wash and no surface over it paints a second one — is still asserted against
+ * `ChatWallpaper.tsx` in the transcript-surface block below.
+ */
 
 /**
  * recharge-theme: mechanical assertions for the recharge/payment changes
@@ -3308,9 +3272,8 @@ describe('the transition lock has a write side', () => {
 
   it('is raised by useScreenEnter, so no pushed screen can forget', () => {
     // The lock is dead code without a writer: `transitioning` would read false
-    // forever and every deferral that reads it -- the wallpaper mount, the
-    // message-insert scroll, the emoji pre-mount -- would silently take its
-    // immediate branch while looking wired.
+    // forever and App's pushed layer would never be promoted to a hardware
+    // texture for the slide, while looking wired.
     const hook = motion.slice(motion.indexOf('export function useScreenEnter'));
     expect(hook).toContain('setTransitioning(true)');
     expect(hook).toContain('runOnJS(setTransitioning)(false)');
@@ -3593,7 +3556,7 @@ describe('a primary action is the brand colour, not black and white', () => {
      */
     for (const file of [
       'src/components/Button.tsx',
-      'src/screens/ChatScreen.tsx',
+      'src/chat-v2/ChatSessionBarV2.tsx',
     ]) {
       const body = src(file);
       for (const line of body.split('\n')) {
@@ -3612,7 +3575,7 @@ describe('a primary action is the brand colour, not black and white', () => {
     // It appears exactly when a member is about to run out of paid time. A
     // black pill at the point of purchase, on a screen whose header pill and
     // send button are both accent.
-    const chat = src('src/screens/ChatScreen.tsx');
+    const chat = src('src/chat-v2/ChatSessionBarV2.tsx');
     expect(rule(chat, 'extendCardButton')).toContain('t.color.bg.accentStrong');
     expect(rule(chat, 'extendCardButtonLabel')).toContain(
       't.color.text.onAccent',
@@ -3810,11 +3773,12 @@ describe('art direction', () => {
    * takes the release velocity as its third argument precisely so a flicked
    * thing keeps going at the speed it was thrown; dropping it makes a fast
    * flick and a slow drag settle identically. Sheet, MediaViewer and
-   * SpotlightCard all passed it. Turn's swipe-to-reply did not, until this.
+   * SpotlightCard all passed it. The transcript's swipe-to-reply did not,
+   * until this.
    */
   const GESTURE_FILES = [
     'src/components/MediaViewer.tsx',
-    'src/components/Turn.tsx',
+    'src/chat-v2/ChatMessageCellV2.tsx',
     'src/components/Sheet.tsx',
     'src/components/SpotlightCard.tsx',
   ];
@@ -3824,13 +3788,21 @@ describe('art direction', () => {
     let checked = 0;
     for (const file of GESTURE_FILES) {
       const body = stripComments(read(file));
-      // The body of each onEnd/onDeactivate handler, up to the next handler key
-      // or the end of the gesture object.
+      /*
+       * The body of each onEnd/onDeactivate handler, up to the next handler
+       * key or the end of the gesture object.
+       *
+       * BOTH parameter spellings. The pattern used to require `(e) =>`, and
+       * exactly one file in the repo wrote it that way — so a gate that reads
+       * as "every spring that ends a gesture" was in fact reading one file,
+       * and went to zero checks the day that file was deleted. The bare
+       * `e =>` form is what the other three use.
+       */
       for (const h of body.matchAll(
-        /\b(onEnd|onDeactivate)\s*:\s*\(([^)]*)\)\s*=>\s*\{([\s\S]*?)\n {4}\}/g,
+        /\b(onEnd|onDeactivate)\s*:\s*(?:\(([^)]*)\)|(\w+))\s*=>\s*\{([\s\S]*?)\n {4}\}/g,
       )) {
-        const args = h[2] ?? '';
-        const handler = h[3] ?? '';
+        const args = h[2] ?? h[3] ?? '';
+        const handler = h[4] ?? '';
         for (const call of handler.matchAll(
           /\b(springTo|sheetIn|sheetOut)\(([^;]*?)\)[,;]/g,
         )) {
@@ -3846,6 +3818,18 @@ describe('art direction', () => {
            * a correction to a boundary, not a continuation of anything.
            */
           if (params.includes('clamp(')) {
+            continue;
+          }
+          /*
+           * The same exemption in its other spelling. `sheetIn()` with no
+           * arguments at all is "return to rest": MediaViewer runs it when a
+           * dismissal drag was CANCELLED by a second finger, or when the photo
+           * is zoomed and the drag was panning the picture rather than
+           * throwing the sheet. Neither has a dismissal velocity to inherit —
+           * a continuation always names a target, so an empty call cannot be
+           * one.
+           */
+          if (params.trim() === '') {
             continue;
           }
           checked += 1;

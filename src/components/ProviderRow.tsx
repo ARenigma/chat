@@ -483,7 +483,7 @@ function ProviderRowView({
    * than the code: the CTA fell through to `onPress(provider.id)`, the same
    * handler the whole card fires, so tapping "Notify" was indistinguishable from
    * tapping anywhere else on the row and the RPC only ran later, from
-   * ChatScreen's mount effect. `useNotifyProvider` performs `announce_chat_open`
+   * the chat's controller. `useNotifyProvider` performs `announce_chat_open`
    * in place and leaves the member in the list, which is the only arrangement in
    * which this control can have a state to show.
    *

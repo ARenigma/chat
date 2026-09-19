@@ -84,7 +84,7 @@ function ProviderCardView({
   const initial = initialOf(provider.display_name);
   const latency = replyLatency(provider.median_reply_seconds);
 
-  // Derives presence the same way ProviderRow and ChatScreen do — one reading
+  // Derives presence the same way ProviderRow and the chat header do — one reading
   // of the master switch, so the dot and the availability label cannot disagree.
   const presence = readPresence(provider.is_available);
 

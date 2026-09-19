@@ -10,7 +10,7 @@
  *     inside the last week, then a short numeric date.
  *   - `ProviderHomeScreen.ago()` reimplemented the same idea from minutes and had
  *     no weeks bucket at all, so a month-old thread read as `31d`.
- *   - `ChatScreen.timeOf()` built `HH:MM` by hand with `getHours()`, which
+ *   - the retired V1 chat screen built `HH:MM` by hand with `getHours()`, which
  *     hardcodes 24-hour time. On an iPhone with Settings > General > Date & Time >
  *     24-Hour Time off, every message in the transcript showed the wrong format.
  *

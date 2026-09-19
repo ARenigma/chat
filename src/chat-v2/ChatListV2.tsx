@@ -87,8 +87,11 @@ const keyExtractor = (item: ChatV2Row) => item.id;
  *
  * It owns the list and nothing else: the keyboard geometry is the screen's, the
  * row rules are `rows.ts`'s, and what a bubble may offer is `cells.ts`'s. Every
- * cell it renders is a V2 component — nothing here reaches into `Turn.tsx` or
- * `CallLogRow.tsx`, which is the isolation the whole directory exists for.
+ * cell it renders is a V2 component. That isolation is why this directory
+ * exists, and it is still asserted as a standing ban even though the V1
+ * transcript it was isolating from was deleted on 2026-09-19 — see
+ * `__tests__/chatV2Cells.test.ts` › "never imports the V1 transcript,
+ * composer or keyboard geometry".
  */
 export function ChatListV2({
   rows,

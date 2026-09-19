@@ -104,9 +104,7 @@ import { HomeTour } from './src/components/HomeTour';
 import { useHomeTour } from './src/store/useHomeTour';
 import { Button } from './src/components/Button';
 import { FloatingToolbar, type ToolbarKey } from './src/components/FloatingToolbar';
-import { ChatScreen } from './src/screens/ChatScreen';
 import { ChatScreenV2 } from './src/chat-v2/ChatScreenV2';
-import { CHAT_SCREEN } from './src/chat-v2/cutover';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
 import { ProviderDetailScreen } from './src/screens/ProviderDetailScreen';
@@ -2001,55 +1999,27 @@ function SignedIn({
               }
             />
           ) : providerRoute.name === 'chat' ? (
-            /*
-             * The production provider conversation. `CHAT_SCREEN` is the ONE
-             * cutover decision (src/chat-v2/cutover.ts) and it is read here
-             * and at the member `chat` route below — the same constant, so the
-             * two trees cannot end up on different screens.
-             */
-            CHAT_SCREEN === 'v2' ? (
-              <ChatScreenV2
-                providerId={providerRoute.peerId}
-                onBack={() => popProvider({ name: 'home' })}
-                onOpenEarnings={() =>
-                  pushProvider({
-                    name: 'usage',
-                    from: 'chat',
-                    peerId: providerRoute.peerId,
-                  })
-                }
-                onStartCall={channel =>
-                  pushProvider({
-                    name: 'call',
-                    peerId: providerRoute.peerId,
-                    direction: 'out',
-                    callId: null,
-                    medium: channel === 'video' ? 'video' : 'voice',
-                  })
-                }
-              />
-            ) : (
-              <ChatScreen
-                providerId={providerRoute.peerId}
-                onBack={() => popProvider({ name: 'home' })}
-                onOpenEarnings={() =>
-                  pushProvider({
-                    name: 'usage',
-                    from: 'chat',
-                    peerId: providerRoute.peerId,
-                  })
-                }
-                onStartCall={channel =>
-                  pushProvider({
-                    name: 'call',
-                    peerId: providerRoute.peerId,
-                    direction: 'out',
-                    callId: null,
-                    medium: channel === 'video' ? 'video' : 'voice',
-                  })
-                }
-              />
-            )
+            /* The production provider conversation. */
+            <ChatScreenV2
+              providerId={providerRoute.peerId}
+              onBack={() => popProvider({ name: 'home' })}
+              onOpenEarnings={() =>
+                pushProvider({
+                  name: 'usage',
+                  from: 'chat',
+                  peerId: providerRoute.peerId,
+                })
+              }
+              onStartCall={channel =>
+                pushProvider({
+                  name: 'call',
+                  peerId: providerRoute.peerId,
+                  direction: 'out',
+                  callId: null,
+                  medium: channel === 'video' ? 'video' : 'voice',
+                })
+              }
+            />
           ) : providerRoute.name === 'payout' ? (
             <ProviderBankScreen onBack={() => popProvider({ name: 'home' })} />
           ) : providerRoute.name === 'blocked' ? (
@@ -2208,34 +2178,17 @@ function SignedIn({
         <AfterPaint>
           <PushedLayer style={[styles.overlay, route.from === 'chatsList' && styles.overlayStack]}>
             {/*
-             * The one cutover decision, read here and at the provider `chat`
-             * route above — `CHAT_SCREEN` is a single constant in
-             * src/chat-v2/cutover.ts, so flipping it moves both trees in one
-             * commit and reverting it moves them back.
-             *
-             * Both branches take the same props, `leaveChat` included: back
-             * out of a chat honours the door it was opened from and resets the
-             * conversation store, whichever screen is mounted.
+             * `leaveChat` rather than a bare pop: back out of a chat honours
+             * the door it was opened from and resets the conversation store.
              */}
-            {CHAT_SCREEN === 'v2' ? (
-              <ChatScreenV2
-                providerId={route.providerId}
-                onBack={leaveChat}
-                onOpenProfile={id => openProvider(id, 'chat')}
-                onStartCall={channel =>
-                  pushRoute({ name: 'call', providerId: route.providerId, direction: 'out', callId: null, medium: channel === 'video' ? 'video' : 'voice' })
-                }
-              />
-            ) : (
-              <ChatScreen
-                providerId={route.providerId}
-                onBack={leaveChat}
-                onOpenProfile={id => openProvider(id, 'chat')}
-                onStartCall={channel =>
-                  pushRoute({ name: 'call', providerId: route.providerId, direction: 'out', callId: null, medium: channel === 'video' ? 'video' : 'voice' })
-                }
-              />
-            )}
+            <ChatScreenV2
+              providerId={route.providerId}
+              onBack={leaveChat}
+              onOpenProfile={id => openProvider(id, 'chat')}
+              onStartCall={channel =>
+                pushRoute({ name: 'call', providerId: route.providerId, direction: 'out', callId: null, medium: channel === 'video' ? 'video' : 'voice' })
+              }
+            />
           </PushedLayer>
         </AfterPaint>
       ) : route.name === 'call' ||
@@ -2421,8 +2374,9 @@ export default function App() {
        */}
       {/*
        * The keyboard's UI-thread tracking lives here. Every screen that reads
-       * the IME position (useGenericKeyboardHandler in src/lib/keyboardEngine.ts)
-       * requires this ancestor; it sits inside the gesture root so pan gestures
+       * the IME position (the chat dock's `KeyboardStickyView`, the forms'
+       * `useImeSpace`) requires this ancestor; it sits inside the gesture root
+       * so pan gestures
        * and keyboard tracking share one root. Both bars are translucent because
        * the app is edge-to-edge and applies insets itself — the provider must
        * agree or its heights disagree with what the window actually shows.

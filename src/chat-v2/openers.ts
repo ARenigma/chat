@@ -11,9 +11,10 @@
  * ladder whose failure mode is a fake "typing…" on a thread that already has a
  * hundred real messages in it, which reads perfectly correct in source.
  *
- * The four constants are V1's, to the millisecond, and a test asserts they
- * still match the literals in `src/screens/ChatScreen.tsx`: while both screens
- * exist, the same conversation opened on either must be paced the same way.
+ * The four constants were matched to the retired V1 screen's, to the
+ * millisecond, so the typing beat did not change under the member on the day
+ * the screen did. They are pinned as VALUES in `__tests__/chatV2Parity.test.ts`
+ * now that this is the only screen that has them.
  */
 
 /** The floor: also the beat before the FIRST opener, whose length is unknown. */

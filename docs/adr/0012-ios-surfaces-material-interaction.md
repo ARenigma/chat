@@ -63,8 +63,15 @@ an oversight: `iOS conformance` and `Material 3 interaction survives`.
 
 1. **The send button's squash.** `press="send"` scales to 0.86 and then multiplies
    Y by 0.78. iOS's send button scales _up_ briefly and dims. The squash stays
-   because it is the moment the product is built around and because it rhymes with
-   `bubbleLaunch`, which nothing on the platform does.
+   because it is the moment the product is built around.
+
+   _Amended 2026-09-19._ It originally rhymed with `bubbleLaunch`, the sent
+   bubble's matching narrow-and-tall entrance. That entrance went with the V1
+   transcript: the V2 one sits inside `KeyboardGestureArea` and animates no
+   bubble at all. The exception is unchanged — the squash is still the app's
+   own feedback on its most-touched control — but the rhyme it was half of no
+   longer exists, so do not go looking for it.
+
 2. **The avatar's breath.** A 2% sine over 4.2s on an empty state and a typing
    avatar. iOS has no ambient motion on a static avatar. It stays because in a
    product with no photographs the avatar is the only thing carrying identity.
