@@ -6056,17 +6056,27 @@ describe('docked panel travel', () => {
     expect(composer).toContain('animateNext.current = false');
   });
 
-  it('primes the offset on the tap, not in an effect', () => {
-    // From an effect the offset lands a commit after the layout and one
-    // un-offset frame shows. `primeDock` is called from the toggles.
-    expect(composer).toMatch(/primeDock\(\);[\s\S]{0,60}set(Emoji|Attach)Open/);
-    expect(composer).toContain('dockY.value = slotHeight');
+  it('reserves the slot at full height instead of priming an offset', () => {
+    // The slot is always laid out at slotHeight, so mounting a panel changes
+    // no measurement and no prime-on-tap is needed: the rest offset already
+    // hides it below the edge. A prime set in the toggle would be one commit
+    // of truth in two places.
+    expect(composer).toContain('style={[styles.slot, { height: slotHeight }]}');
+    expect(composer).toContain('overflow');
+    expect(composer).not.toContain('primeDock');
+    expect(composer).toContain('panelY: SharedValue<number>');
+    const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
+    expect(chat).toContain('panelY={panelY}');
+    expect(chat).toContain('onDockGeometry={onDockGeometry}');
+    expect(chat).toContain('translateY: -keyboard.height.value + panelY.value');
   });
 
   it('never animates a panel-to-panel swap', () => {
-    // Swapping emoji for attach changes no height, so there is nothing to move.
-    expect(composer).toMatch(
-      /if \(shown === null\) \{\s*dockY\.value = slotHeight/,
+    // Swapping emoji for attach changes no offset, so there is nothing to
+    // move: travel runs only on drawn transitions through dockTo.
+    expect(composer).toContain('panelY.value = dockTo(0, animateNext.current)');
+    expect(composer).toContain(
+      'panelY.value = dockTo(slotHeight, animateNext.current)',
     );
   });
 });

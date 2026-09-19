@@ -8,7 +8,6 @@ import {
 } from '@shopify/flash-list';
 import {
   useWindowDimensions,
-  type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type ViewabilityConfig,
@@ -18,6 +17,7 @@ import {
 } from 'react-native';
 import Animated, {
   useAnimatedStyle,
+  useSharedValue,
   type SharedValue,
 } from 'react-native-reanimated';
 import {
@@ -40,7 +40,6 @@ import {
   useComposerFocused,
   useComposerInset,
   useDockHeight,
-  useImeStore,
 } from '../lib/imeGeometry';
 import { readKeyboardHeight } from '../lib/keyboardPanel';
 import {
@@ -466,20 +465,25 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
     [ime],
   );
   const keyboard = useKeyboardEngine(onKeyboardSettled);
+  const panelY = useSharedValue(
+    readKeyboardHeight(false) + insets.bottom,
+  );
+  const onDockGeometry = useCallback(
+    (h: number) => ime.getState().set({ dockHeight: h }),
+    [ime],
+  );
   /*
-   * The whole transcript rides the IME's live position — a transform on a
-   * wrapper, never a layout change. At rest this equals the old
-   * `md + dockHeight + bodyInset` pad exactly; in transit it tracks the
-   * keyboard frame by frame on the UI thread, so there is no snap and no
-   * FlashList scroll recomputation. the reference app's equivalent is the
-   * TRANSLATION_Y animation on the same curve
-   * (ChatActivityEnterView.java, `currentView.setTranslationY(...)`).
+   * The whole transcript rides two translations and zero layout: the IME's
+   * live position, plus the panel cover that cancels the reserved slot's pad
+   * while the panel is closed. At rest both terms agree with the static pad
+   * exactly; in transit they move together on the UI thread, so there is no
+   * snap and no FlashList scroll recomputation.
    * The wrapper is a plain Animated.View — NOT
    * Animated.createAnimatedComponent(FlashList), which loses scrollToOffset
    * (M18). The dock takes the same lift through DockStack below.
    */
   const listLift = useAnimatedStyle(() => ({
-    transform: [{ translateY: -keyboard.height.value }],
+    transform: [{ translateY: -keyboard.height.value + panelY.value }],
   }));
 
   useProfile();
@@ -2439,6 +2443,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
           count={unreadBelow}
           onPress={scrollToLatest}
           lift={keyboard.height}
+          panelY={panelY}
         />
 
         {/*
@@ -2609,6 +2614,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
             onFocusChange={onComposerFocus}
             onPanelChange={onPanelChange}
             onPanelSearchChange={onPanelSearchChange}
+            panelY={panelY}
+            onDockGeometry={onDockGeometry}
           />
         </DockFrost>
         </DockStack>
@@ -2891,28 +2898,14 @@ function DockStack({
   lift: SharedValue<number>;
 }) {
   const styles = useStyles(makeStyles);
-  const ime = useImeStore();
-  // Reads `emojiSearching` from the store rather than from a captured render
-  // value, so the guard cannot go stale inside a closure.
-  const onLayout = useCallback(
-    (e: LayoutChangeEvent) => {
-      const state = ime.getState();
-      if (!state.emojiSearching) {
-        state.set({ dockHeight: e.nativeEvent.layout.height });
-      }
-    },
-    [ime],
-  );
-  // Transform, not padding: the dock is absolute-positioned (out of flow), so
-  // translating it never re-lays-out the transcript. The value is the keyboard
-  // controller's live height — at rest identical to the old discrete bodyInset,
-  // in transit a per-frame ride. the reference app moves the same stack with
-  // TRANSLATION_Y on the keyboard curve (ChatActivityEnterView.java).
+  // No measurement here: the dock's height for the transcript pad comes from
+  // the Composer's own row + reserved slot report (stable across toggles), so
+  // mounting a panel can never reflow the list through this node.
   const dockLift = useAnimatedStyle(() => ({
     transform: [{ translateY: -lift.value }],
   }));
   return (
-    <Animated.View style={[styles.dockStack, dockLift]} onLayout={onLayout}>
+    <Animated.View style={[styles.dockStack, dockLift]}>
       {children}
     </Animated.View>
   );
@@ -2961,11 +2954,13 @@ function PageDownButton({
   count,
   onPress,
   lift,
+  panelY,
 }: {
   visible: boolean;
   count: number;
   onPress: () => void;
   lift: SharedValue<number>;
+  panelY: SharedValue<number>;
 }) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -2975,7 +2970,7 @@ function PageDownButton({
   // at the end of it.
   const dockHeight = useDockHeight();
   const buttonLift = useAnimatedStyle(() => ({
-    transform: [{ translateY: -lift.value }],
+    transform: [{ translateY: -lift.value + panelY.value }],
   }));
   if (!visible) {
     return null;

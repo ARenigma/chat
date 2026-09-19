@@ -16,6 +16,7 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { DOCK_DELAY_MS, EASE_OUT, KEYBOARD_CUBIC, M3, dockTo, fadeSwapFast, fadeSwapOutFast, useCrossfade } from '../theme/motion';
 import { requestAndroidPermission } from '../lib/permissions';
@@ -219,6 +220,15 @@ interface Props {
    */
   onPanelChange?: (open: boolean) => void;
   /**
+   * The panel slot's hide offset, owned by the chat screen and shared with the
+   * transcript: both translate off this one value so the dock and the list can
+   * never disagree mid-travel. Rests at the slot height (slot hidden below the
+   * edge), animates to 0 as the panel opens.
+   */
+  panelY: SharedValue<number>;
+  /** Reports row + slot height for the transcript pad. Stable across toggles. */
+  onDockGeometry?: (h: number) => void;
+  /**
    * Fired when the emoji panel's own search field takes or loses focus. That is
    * the one case where the keyboard and the panel are up TOGETHER, so the dock
    * has to be lifted above the keyboard while the panel stays open — see
@@ -298,6 +308,8 @@ function ComposerView({
   onFocusChange,
   onPanelChange,
   onPanelSearchChange,
+  panelY,
+  onDockGeometry,
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -563,7 +575,14 @@ function ComposerView({
    */
   const surfaceOpen = emojiOpen || attachOpen;
   const slotHeight = panelHeight + insets.bottom;
-  const dockY = useSharedValue(0);
+  // The slot is always laid out at full height — mounting a panel into it
+  // changes no Yoga measurement, so the dock (and the transcript pad derived
+  // from it) never reflows on a toggle. `panelY` hides the empty slot below
+  // the edge when closed and slides it up on open; the transcript rides the
+  // same value through the shared prop.
+  useEffect(() => {
+    onDockGeometry?.(rowHeight + slotHeight);
+  }, [rowHeight, slotHeight, onDockGeometry]);
   /**
    * Animated height of the text-input wrapper.
    *
@@ -589,8 +608,8 @@ function ComposerView({
   // trace on the Redmi is the open question before calling this solved.
   const inputHStyle = useAnimatedStyle(() => ({ height: inputH.value }));
   const animateNext = useRef(true);
-  const dockStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: dockY.value }],
+  const slotInner = useAnimatedStyle(() => ({
+    transform: [{ translateY: panelY.value }],
   }));
   /**
    * Which surface is DRAWN, as opposed to which one is open.
@@ -674,53 +693,31 @@ function ComposerView({
   /**
    * The travel, keyed on WHETHER a surface is drawn — not on which one.
    *
-   * `shown` flipping 'emoji' to 'attach' must not animate: the dock's height
-   * does not change, so there is nothing to travel. the reference app has the same guard
-   * from the other direction — `currentHeight - previousHeight` is zero when a
-   * panel was already visible, so its animator moves nothing
-   * (`ChatActivityEnterView.java:12700`).
+   * `shown` flipping 'emoji' to 'attach' must not animate: the slot height
+   * does not change, so there is nothing to travel. The reference implementation
+   * has the same guard from the other direction — `currentHeight -
+   * previousHeight` is zero when a panel was already visible, so its animator
+   * moves nothing.
    *
-   * The offset is PRIMED in the toggle, not here. Setting it in an effect put it
-   * one commit behind the layout, and the panel rendered at full height with no
-   * offset for a single frame before the travel began — visible as a flash when
-   * stepped frame by frame at 60fps.
+   * No priming needed: the slot rests hidden (offset at rest), so opening
+   * starts from exactly the right position with no setup frame.
    */
   const drawn = shown !== null;
+  // Opening slides the reserved slot up from below the edge. Closing is
+  // handled below while the surface is still drawn; once it unmounts there
+  // is nothing left to move, so this branch deliberately does nothing.
   useEffect(() => {
     if (drawn) {
-      dockY.value = dockTo(0, animateNext.current);
-      return;
+      panelY.value = dockTo(0, animateNext.current);
     }
-    // The dock has just lost the panel's height, so it is already where the
-    // travel was heading. Release the offset in the same commit.
-    dockY.value = 0;
-  }, [drawn, dockY]);
+  }, [drawn, panelY]);
 
-  /** Push the pair down as the surface leaves, while it is still drawn. */
+  /** Push the slot back down as the surface leaves, while it is still drawn. */
   useEffect(() => {
     if (!surfaceOpen && drawn) {
-      dockY.value = dockTo(slotHeight, animateNext.current);
+      panelY.value = dockTo(slotHeight, animateNext.current);
     }
-  }, [surfaceOpen, drawn, slotHeight, dockY]);
-
-  /**
-   * Offset the dock by a panel's height BEFORE the panel is laid out.
-   *
-   * The dock is bottom-anchored, so showing the panel makes it taller and the
-   * row jumps up by that much in the same commit. Pre-offsetting cancels the
-   * jump, and the effect above then animates the offset away — so what is seen
-   * is the pair rising smoothly out of the bottom edge. This has to happen on
-   * the tap, synchronously with the state change; from an effect it lands a
-   * commit late and the un-offset frame shows.
-   *
-   * No-op when a surface is already drawn: swapping emoji for attach changes no
-   * height and must not move anything.
-   */
-  const primeDock = useCallback(() => {
-    if (shown === null) {
-      dockY.value = slotHeight;
-    }
-  }, [shown, slotHeight, dockY]);
+  }, [surfaceOpen, drawn, slotHeight, panelY]);
 
   const ready = value.trim().length > 0 && !disabled;
   // Cross-fades the trailing slot between mic (empty) and send (has text).
@@ -868,7 +865,6 @@ function ComposerView({
     leaveSearch();
     // Opened from the keyboard: no travel, the keyboard's own exit is it.
     animateNext.current = !keyboardUpRef.current;
-    primeDock();
     setEmojiOpen(false);
     setAttachMounted(true);
     setAttachOpen(true);
@@ -881,7 +877,7 @@ function ComposerView({
     void PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA)
       .then(setCameraGranted)
       .catch(() => setCameraGranted(false));
-  }, [attachOpen, leaveSearch, primeDock]);
+  }, [attachOpen, leaveSearch]);
 
   const toggleEmoji = useCallback(() => {
     if (emojiOpen) {
@@ -895,12 +891,11 @@ function ComposerView({
       return;
     }
     animateNext.current = !keyboardUpRef.current;
-    primeDock();
     setAttachOpen(false);
     setPanelMounted(true);
     setEmojiOpen(true);
     Keyboard.dismiss();
-  }, [emojiOpen, leaveSearch, primeDock]);
+  }, [emojiOpen, leaveSearch]);
 
   /** Insert at the end of the draft, the way a keyboard would. */
   const addEmoji = useCallback(
@@ -1346,27 +1341,13 @@ function ComposerView({
   return (
     <>
     {/*
-      * The whole dock travels, not just the panel.
-      *
-      * the reference app offsets the panel by its own height and animates it back to zero
-      * (`currentView.setTranslationY(currentHeight - previousHeight)` then
-      * `ObjectAnimator ... TRANSLATION_Y ... 0`,
-      * `ChatActivityEnterView.java:12700-12706`). Applying that to the panel
-      * ALONE does not work in this layout: the dock is anchored to the bottom,
-      * so the row's position comes from the dock's height, and the height
-      * changes the moment the panel is shown or hidden. The panel would slide
-      * while the row jumped.
-      *
-      * Same trick, one level up: the row and the panel are offset together by
-      * however much of the panel is still hidden. Showing the panel makes the
-      * dock taller (the row jumps up by a panel) and the offset cancels it
-      * exactly, then animates away — so the pair rises smoothly out of the
-      * bottom edge. Hiding is the reverse, and the offset is released on the
-      * same frame the panel stops being laid out, so the two cancel and there is
-      * no snap. Zero layout work during the travel: it is one transform on one
-      * node.
+      * The row never moves for a panel: the slot below is always laid out at
+      * full height, so mounting a surface changes no measurement. The slot's
+      * content rides `panelY` (shared with the transcript, which translates
+      * off the same value): hidden below the edge at rest, sliding up on open.
+      * Zero layout work on any toggle — one transform on each of two nodes.
       */}
-    <Animated.View style={dockStyle}>
+    <View>
     {/* Measured, not assumed: the panel's expanded height while searching is
         everything the header and the keyboard leave over, minus this row, and
         the row grows with the field (up to six lines) and with font scale. */}
@@ -1654,7 +1635,10 @@ function ComposerView({
         * keyboard sliding away IS the animation; animating on top of it reads as
         * a stutter. `dockTo` carries all three of those facts.
         */}
-      <View pointerEvents={surfaceOpen ? 'auto' : 'none'}>
+      <View
+        pointerEvents={surfaceOpen ? 'auto' : 'none'}
+        style={[styles.slot, { height: slotHeight }]}>
+      <Animated.View style={slotInner}>
       {panelMounted ? (
       <EmojiPicker
         visible={shown === 'emoji'}
@@ -1719,9 +1703,9 @@ function ComposerView({
           }}
         />
       ) : null}
+      </Animated.View>
       </View>
-    </Animated.View>
-
+    </View>
 
     </>
   );
@@ -1730,6 +1714,11 @@ function ComposerView({
 export const Composer = memo(ComposerView);
 
 const makeStyles = (t: Theme) => StyleSheet.create({
+  // The reserved panel slot: always laid out at full height (set inline from
+  // slotHeight), content clipped while hidden below the edge.
+  slot: {
+    overflow: 'hidden',
+  },
   row: {
     /*
      * Measured off the reference app on the SAME device rather than read off its source
