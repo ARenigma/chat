@@ -5,25 +5,32 @@ const ROOT = join(__dirname, '..');
 const read = (relative: string): string => readFileSync(join(ROOT, relative), 'utf8');
 
 /**
- * The feel benchmark (workstream W0#2) measures the four interactions this app
- * is judged on by feel rather than by function, and it must refuse to produce a
- * number it cannot stand behind.
+ * The feel benchmark measures the V2 chat interactions this app is judged on
+ * by feel, while retaining the established tab and production-route journeys.
  */
 describe('feel benchmark', () => {
   const bench = read(
     'android/baselineprofile/src/main/java/com/companionchat/baselineprofile/FeelBenchmark.kt',
   );
 
-  it('covers the four journeys the plan named', () => {
+  it('covers the V2 device journeys and preserves existing navigation journeys', () => {
     for (const name of [
-      'emojiSwapFrames',
-      'attachOpenFrames',
+      'imeOpenCloseFrames',
+      'repeatedInteractiveRetractFrames',
+      'multilineComposerGrowthFrames',
+      'pageDownJumpFrames',
+      'composerControlSwapFrames',
+      'scrolledUpAnchorPreservationFrames',
       'tabSwitchFrames',
       'chatPushPopFrames',
     ]) {
       expect(bench).toContain(`fun ${name}()`);
     }
     expect(bench).toContain('FrameTimingMetric()');
+    expect(bench).not.toContain('emojiSwapFrames');
+    expect(bench).not.toContain('attachOpenFrames');
+    expect(bench).not.toContain('composer-emoji');
+    expect(bench).not.toContain('composer-attach');
   });
 
   it('SKIPS on a slow panel rather than passing on slack', () => {
@@ -49,10 +56,11 @@ describe('feel benchmark', () => {
   it('keeps opening the chat out of the measured block', () => {
     // Folding the push into a composer-swap measurement would put a route
     // transition's frames into the swap's numbers. The push has its own test.
-    const inChat = bench.slice(bench.indexOf('private fun measureInChat'));
+    const inChat = bench.slice(bench.indexOf('private fun measureInV2Chat'));
     expect(inChat).toContain('setupBlock = {');
     const setup = inChat.slice(inChat.indexOf('setupBlock = {'));
-    expect(setup).toContain('chat-title');
+    expect(setup).toContain('openV2ChatForSetup()');
+    expect(setup).toContain('chat-v2-screen');
   });
 
   it('leaves the thresholds to the one place that owns them', () => {
@@ -70,8 +78,13 @@ describe('feel benchmark', () => {
     const pkg = JSON.parse(read('package.json')) as {
       scripts: Record<string, string>;
     };
-    expect(pkg.scripts['android:benchmark:feel']).toContain('FeelBenchmark');
-    expect(pkg.scripts['android:benchmark:feel']).toContain(
+    expect(pkg.scripts['android:benchmark:feel']).toBe(
+      'node scripts/run-feel-benchmark.mjs',
+    );
+    expect(pkg.scripts['android:benchmark:feel:collect']).toContain(
+      'FeelBenchmark',
+    );
+    expect(pkg.scripts['android:benchmark:feel:collect']).toContain(
       'connectedNonMinifiedInternalAndroidTest',
     );
   });

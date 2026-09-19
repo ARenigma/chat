@@ -1,5 +1,6 @@
 /**
- * The permissions Pappal asks for, before Home. ADR-0026.
+ * The permissions Pappal explains before Home. Microphone and camera remain
+ * required for the current call product; notifications are an explicit opt-in.
  *
  * Modelled on PolicyGateScreen: a full-screen gate in the boot machine, so no
  * route can reach Home around it. The list, the ask order and the "does this
@@ -14,9 +15,10 @@
  *   - a permanent denial is not a dead end: the row offers Settings, and the
  *     screen re-checks when the app returns to the foreground so a grant made
  *     there is picked up without a tap;
- *   - the cancel the docs require is Sign out. Home without these is not a
- *     Pappal anyone can use (product decision, Amit 2026-09-05, goal item 15).
+ *   - notification denial never blocks Home. Android recommends a dismissible,
+ *     contextual opt-in for non-exempt notifications.
  * https://developer.android.com/training/permissions/requesting
+ * https://developer.android.com/design/ui/mobile/guides/home-screen/notifications
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import { AppState, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -92,8 +94,12 @@ export function PermissionsScreen({ onGranted, onSignOut }: Props) {
   }, [refresh, onGranted]);
 
   const rows = GATE_PERMISSIONS.filter(p => appliesOnThisDevice(p));
-  const anyBlocked = rows.some(p => statuses?.[p.kind] === 'blocked');
-  const anyDenied = rows.some(p => statuses?.[p.kind] === 'denied');
+  const anyBlocked = rows.some(
+    p => p.required && statuses?.[p.kind] === 'blocked',
+  );
+  const anyDenied = rows.some(
+    p => p.required && statuses?.[p.kind] === 'denied',
+  );
 
   const allow = useCallback(async () => {
     if (statuses === null || asking) {
@@ -112,7 +118,7 @@ export function PermissionsScreen({ onGranted, onSignOut }: Props) {
         onGranted();
         return;
       }
-      if (rows.some(p => next[p.kind] === 'blocked')) {
+      if (rows.some(p => p.required && next[p.kind] === 'blocked')) {
         Linking.openSettings().catch(() => undefined);
       }
     } finally {
@@ -129,11 +135,11 @@ export function PermissionsScreen({ onGranted, onSignOut }: Props) {
         showsVerticalScrollIndicator={false}
         bounces={false}>
         <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized} allowFontScaling style={styles.title}>
-          Three things Pappal needs
+          Permissions for calls and replies
         </Text>
         <Text allowFontScaling style={styles.subtitle}>
-          Pappal is calls and chats with a real person. Each of these is what makes one of those work.
-          Android will ask you once for each.
+          Microphone and camera enable calls. Notifications are optional and help
+          replies reach you when Pappal is closed.
         </Text>
         {rows.map(p => {
           const status = statuses?.[p.kind];
@@ -148,6 +154,9 @@ export function PermissionsScreen({ onGranted, onSignOut }: Props) {
               <View style={styles.rowText}>
                 <Text allowFontScaling style={styles.rowTitle}>
                   {p.title}
+                </Text>
+                <Text allowFontScaling style={styles.optionalLabel}>
+                  {p.required ? null : 'Optional'}
                 </Text>
                 <Text allowFontScaling style={styles.rowReason}>
                   {p.reason}
@@ -257,6 +266,10 @@ const makeStyles = (t: Theme) =>
     rowTitle: {
       ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.primary,
+    },
+    optionalLabel: {
+      ...TOKENS.typography.labelSmall,
+      color: t.color.text.tertiary,
     },
     rowReason: {
       ...TOKENS.typography.bodySmall,

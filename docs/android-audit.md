@@ -894,3 +894,82 @@ wrong tag / cast miss) is a no-op — never worse than today's exposure — so i
 ships without regression risk. STILL REQUIRED before it counts as closed:
 `adb exec-out screencap -p` must return black over an open MediaViewer and an open
 Sheet on a release/closedTest build. A screenshot block cannot be unit-tested.
+
+## 2026-09-19 — Chat composer overlap remediation
+
+- Read:
+  - https://developer.android.com/develop/ui/views/layout/edge-to-edge
+  - https://developer.android.com/develop/ui/views/touch-and-input/keyboard-input/visibility
+- Requirement applied: tappable bottom UI must account for system-bar/IME
+  insets, and the final scrolling item must not be obscured by bottom chrome.
+- Finding: the composer and first-move controls were absolutely overlaid on an
+  inverted FlashList. The attempted `extraContentPadding` bridge did not provide
+  reliable structural clearance for the final item in this tree.
+- Fix: emoji/media panels and first-move controls were deferred; the simplified
+  text + mic/send composer now occupies normal flex flow below the transcript.
+  `KeyboardStickyView` supplies IME translation, while
+  `KeyboardChatScrollView` handles keyboard-driven list movement.
+- Verification status: TypeScript and contract tests cover the hierarchy.
+  Release-device verification on the S22 remains required before calling the
+  visual defect closed.
+
+## 2026-09-19 — Notification permission is opt-in
+
+- Read:
+  - https://developer.android.com/develop/ui/views/notifications/notification-permission
+  - https://developer.android.com/design/ui/mobile/guides/home-screen/notifications
+  - https://developer.android.com/training/permissions/requesting
+- Requirement applied: non-exempt notifications require consent; Android
+  recommends a dismissible, contextual opt-in and the app must remain usable
+  after denial.
+- Fix: `POST_NOTIFICATIONS` remains declared but no longer participates in
+  `gateSatisfied`. A denial or permanent block cannot prevent Home or re-open
+  the boot gate. The permissions screen labels notifications Optional, and both
+  local and published production policy default to `optional`.
+- Server change: migration 121 removed the daily 13:00 UTC / 18:30 IST
+  `dispatch-engagement-nudges` cron job and was applied to the linked remote
+  database on 2026-09-19.
+
+## 2026-09-19 — Development-only Chat V2 deep link
+
+- Read:
+  - https://developer.android.com/training/app-links/create-deeplinks
+  - https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks
+- Requirement applied: incoming deep-link data is untrusted and must be
+  allowlisted and validated before it reaches app state.
+- Fix: `companionchat://chat-v2/<uuid>` is parsed only when `__DEV__` is true,
+  requires an exact URL shape and valid UUID, and waits for role resolution
+  before it is routed. Release sessions ignore it.
+- Superseded 2026-09-19 (see the next entry): the link originally routed the
+  member tree only. It now routes whichever tree the resolved role selects.
+- Verification: unit/static tests cover development acceptance, release
+  rejection, malformed input, parent behavior, and mounting on both trees.
+
+## 2026-09-19 — Chat V2 feature parity and the cutover seam
+
+- Read:
+  - https://developer.android.com/guide/navigation/custom-back/predictive-back-gesture
+  - https://developer.android.com/develop/ui/views/layout/sw-keyboard
+  - https://m3.material.io/components/dialogs/guidelines
+- Requirement applied: intercept back only in the state that needs a decision,
+  and make that decision reversible. A paid session must not be left behind a
+  surface the user cannot see.
+- Fix: the V2 chat now carries the chrome that only V1 had — peer identity with
+  avatar and presence, profile/safety/rename entry points, the provider
+  earnings pill, the consent prompt with its decline, the countdown with its
+  extend and recharge controls, the End control, the leave confirmation, the
+  session review prompt, the automated-opener orchestrator, the draft purge on
+  an intentional exit, and a back ladder registered below a barrier
+  (`chatV2BackStep`). The development deep link reaches both trees
+  (`chatV2` exists on `ProviderRoute` as well as `MemberRoute`).
+- **The production route is still V1.** `CHAT_V2_CUTOVER` in
+  `src/chat-v2/cutover.ts` is `false`, and `CHAT_SCREEN` — derived from it and
+  read by both trees — resolves to `'v1'`. Flipping that one constant swaps
+  both trees at once; reverting it swaps them back. V1 is not deleted.
+- Not verified on a device. The S22 gate in
+  `scripts/artemis-v2-checklist.md` has not been run, so nothing here claims
+  the keyboard, the dock measurement or the motion behave on hardware.
+- Verification: `__tests__/chatV2Parity.test.ts` pins the parity matrix, the
+  route selection for both roles, the session/leave/consent copy, the back
+  ladder, the opener single-owner rule, the draft purge, the removed composer
+  controls, and `CHAT_V2_CUTOVER === false`.

@@ -3,11 +3,12 @@ import type { IconName } from '../components/Icon';
 import { requestAndroidPermission } from './permissions';
 
 /**
- * The permissions Pappal asks for before Home, and the arithmetic of "asked".
+ * The permissions Pappal explains before Home, and the arithmetic of "asked".
  *
  * ADR-0026. Pappal is calls and chats with a real person; every path from Home
- * ends in a microphone (a call, a voice note), most in a camera (video, a photo
- * sent), and all of them in a notification (the reply, the incoming call). The
+ * ends in a microphone (a call, a voice note), and video calls need a camera.
+ * Notifications improve reachability but are an opt-in, not a condition of
+ * using Home. The
  * app used to fire three bare system dialogs over Home the moment it opened,
  * with no word about why — and a "Deny" there, twice, is permanent. So the ask
  * moved to one screen, before Home, that names each permission with its reason
@@ -39,6 +40,8 @@ export interface GatePermission {
   title: string;
   reason: string;
   icon: IconName;
+  /** Whether denial prevents the boot machine from entering Home. */
+  required: boolean;
   /** Below this API level the permission is not a runtime one and counts as granted. */
   minApi: number;
 }
@@ -50,6 +53,7 @@ export const GATE_PERMISSIONS: readonly GatePermission[] = [
     title: 'Microphone',
     reason: 'Voice calls and voice notes. Nothing is recorded until you press record.',
     icon: 'mic',
+    required: true,
     minApi: 23,
   },
   {
@@ -58,6 +62,7 @@ export const GATE_PERMISSIONS: readonly GatePermission[] = [
     title: 'Camera',
     reason: 'Video calls, and the photos you choose to send.',
     icon: 'camera',
+    required: true,
     minApi: 23,
   },
   {
@@ -68,6 +73,7 @@ export const GATE_PERMISSIONS: readonly GatePermission[] = [
     title: 'Notifications',
     reason: 'So a reply or an incoming call reaches you when Pappal is closed.',
     icon: 'chat',
+    required: false,
     minApi: 33,
   },
 ];
@@ -88,14 +94,17 @@ export function appliesOnThisDevice(
   return os === 'android' && apiLevel >= p.minApi;
 }
 
-/** Every permission that applies here is granted. */
+/** Every required permission that applies here is granted. */
 export function gateSatisfied(
   statuses: Partial<GateStatuses>,
   apiLevel: number = Number(Platform.Version),
   os: string = Platform.OS,
 ): boolean {
   return GATE_PERMISSIONS.every(
-    p => !appliesOnThisDevice(p, apiLevel, os) || statuses[p.kind] === 'granted',
+    p =>
+      !p.required ||
+      !appliesOnThisDevice(p, apiLevel, os) ||
+      statuses[p.kind] === 'granted',
   );
 }
 

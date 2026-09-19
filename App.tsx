@@ -49,6 +49,7 @@ import { onForegroundPush, setNotificationPolicy, startPush } from './src/lib/pu
 import { clearCall } from './src/lib/conversations';
 import {
   memberParent,
+  parseChatV2Url,
   providerParent,
   transitionFor,
   type ChatDoor,
@@ -104,6 +105,8 @@ import { useHomeTour } from './src/store/useHomeTour';
 import { Button } from './src/components/Button';
 import { FloatingToolbar, type ToolbarKey } from './src/components/FloatingToolbar';
 import { ChatScreen } from './src/screens/ChatScreen';
+import { ChatScreenV2 } from './src/chat-v2/ChatScreenV2';
+import { CHAT_SCREEN } from './src/chat-v2/cutover';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
 import { ProviderDetailScreen } from './src/screens/ProviderDetailScreen';
@@ -290,6 +293,16 @@ function TabLayer({
 const { StartupTiming } = NativeModules as {
   StartupTiming?: { reportFullyDrawn(): void };
 };
+const windowChrome = (
+  NativeModules as {
+    WindowChrome?: {
+      allowBenchmarkRoutes?: boolean;
+      benchmarkReadOnly?: boolean;
+    };
+  }
+).WindowChrome;
+const allowBenchmarkRoutes = windowChrome?.allowBenchmarkRoutes === true;
+const benchmarkReadOnlyLaunch = windowChrome?.benchmarkReadOnly === true;
 
 /**
  * Report TTFD only after a data-backed screen is committed and the JS thread
@@ -599,6 +612,11 @@ function Root() {
    */
   const [pendingPeer, setPendingPeer] = useState<string | null>(null);
   const clearPendingPeer = useCallback(() => setPendingPeer(null), []);
+  const [pendingV2Peer, setPendingV2Peer] = useState<{
+    providerId: string;
+    benchmarkReadOnly: boolean;
+  } | null>(null);
+  const clearPendingV2Peer = useCallback(() => setPendingV2Peer(null), []);
   const [exitDialogVisible, setExitDialogVisible] = useState(false);
   useReportFullyDrawn(boot.phase !== 'loading' && boot.phase !== 'ready');
   // Refs so the BackHandler closure reads the current route without being in its
@@ -816,7 +834,7 @@ function Root() {
 
   // Drain the outbox for every conversation once signed in, not only
   // whichever chat the member happens to open (X7, 2026-09-17 audit).
-  useGlobalOutboxDrain(boot.phase === 'ready');
+  useGlobalOutboxDrain(boot.phase === 'ready' && !benchmarkReadOnlyLaunch);
 
 
   /**
@@ -827,6 +845,26 @@ function Root() {
   useEffect(() => {
     const consume = (url: string | null): void => {
       if (url === null) {
+        return;
+      }
+      /*
+       * Development/internal-only V2 chat seam. The parser validates the
+       * complete URL and UUID as untrusted input. `allowBenchmarkRoutes` is a
+       * compile-time Android build capability that is true only in `internal`;
+       * release defines it false, so an explicit activity intent is rejected.
+       * https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks
+       */
+      if (url.startsWith('companionchat://chat-v2/')) {
+        const v2Peer = parseChatV2Url(
+          url,
+          __DEV__ || allowBenchmarkRoutes,
+        );
+        if (v2Peer !== null) {
+          setPendingV2Peer({
+            providerId: v2Peer,
+            benchmarkReadOnly: benchmarkReadOnlyLaunch,
+          });
+        }
         return;
       }
       /*
@@ -966,12 +1004,9 @@ function Root() {
     }
     let unsubscribeToken: (() => void) | undefined;
 
-    // Push registration. The permissions themselves were granted on the
-    // PermissionsScreen before this phase (ADR-0026) — until 2026-09-06 this
-    // effect fired three bare system dialogs over Home, one after another —
-    // so `startPush()` finds POST_NOTIFICATIONS already granted and only
-    // fetches and uploads the token. The policy still decides whether a
-    // permanent denial found later (revoked in Settings) shows the alert.
+    // Push registration is best-effort. Notification permission is an opt-in:
+    // denial leaves Home and chat fully usable, and startPush returns a no-op
+    // unsubscribe without uploading an unusable token.
     void (async () => {
       try {
         const permissions = await fetchPermissionsConfig();
@@ -1017,9 +1052,9 @@ function Root() {
    *
    * Android's permission model allows the user to revoke a permission at any
    * time via Settings while the app is backgrounded. When they return, the app
-   * would be running in a state where it believes permissions are granted but
-   * they are not — mic, camera, and notification access are all mandatory for
-   * this product.
+   * would be running in a state where it believes required permissions are
+   * granted but they are not. Notification access is optional and never routes
+   * the user back to this gate.
    *
    * Platform doc: "You must check whether you have a permission every time you
    * perform an operation that requires that permission."
@@ -1060,23 +1095,19 @@ function Root() {
          * contract is that unmounting hangs up: "Leaving the screen ends the
          * call: an unmount hangs up on the server if the call was live."
          *
-         * The gate checks three permissions (permissionsGate.ts): RECORD_AUDIO
-         * and CAMERA cannot plausibly lapse mid-call — the foreground service
+         * The gate checks required permissions (permissionsGate.ts):
+         * RECORD_AUDIO and CAMERA cannot plausibly lapse mid-call — the foreground service
          * CallScreen already starts keeps that access alive by design
          * (developer.android.com/training/permissions/requesting: "If you
          * launch a foreground service while the activity is visible... your
          * app can continue to access the data until the foreground service
-         * stops") — but POST_NOTIFICATIONS is a plain Settings toggle that
-         * does NOT kill the process, so it can genuinely be switched off
-         * mid-call and trip this exact path on the very next foreground
-         * return: a paid, live call ended by a notification-permission
-         * toggle that has nothing to do with the call itself.
+         * stops"). POST_NOTIFICATIONS is optional and therefore cannot trip
+         * this path.
          *
          * Deferred, not skipped: `gateSatisfied` still runs, and if it
          * fails while a call IS on screen this simply waits for the next
          * foreground return (or the call ending) rather than re-checking
-         * right now. The requirement stays mandatory (ADR-0026); only the
-         * timing moves.
+         * right now.
          */
         const onCallScreen =
           routeRef.current.name === 'call' || providerRouteRef.current.name === 'call';
@@ -1482,6 +1513,8 @@ function Root() {
         onIncomingHandled={clearPendingIncoming}
         pendingPeer={pendingPeer}
         onPeerHandled={clearPendingPeer}
+        pendingV2Peer={pendingV2Peer}
+        onV2PeerHandled={clearPendingV2Peer}
         onSignedOut={() => setBoot({ phase: 'signedOut' })}
         /*
          * Closes a gap in the provider-intent boot skip (2026-09-17 audit).
@@ -1557,6 +1590,12 @@ interface SignedInProps {
   /** A tapped message notification's peer id, held until `role` resolves. */
   pendingPeer: string | null;
   onPeerHandled: () => void;
+  /** V2 entry, held until role resolution confirms the member tree. */
+  pendingV2Peer: {
+    providerId: string;
+    benchmarkReadOnly: boolean;
+  } | null;
+  onV2PeerHandled: () => void;
   onSignedOut: () => void;
   /** Re-checks policy/permission gates the moment provider onboarding
    *  completes, closing the gap the provider-intent boot skip leaves open
@@ -1581,6 +1620,8 @@ function SignedIn({
   onIncomingHandled,
   pendingPeer,
   onPeerHandled,
+  pendingV2Peer,
+  onV2PeerHandled,
   onSignedOut,
   onProviderOnboarded,
 }: SignedInProps) {
@@ -1838,6 +1879,40 @@ function SignedIn({
     }
   }, [pendingPeer, isPending, onPeerHandled, role, pushProvider, pushRoute]);
 
+  useEffect(() => {
+    if (pendingV2Peer === null || isPending || role === undefined) {
+      return;
+    }
+    onV2PeerHandled();
+    /*
+     * Both trees, because V2 serves both sides of a thread and the provider
+     * side is where the shapes differ — no profile card, an earnings pill
+     * instead of a balance, and a peer id `open_conversation` would reject.
+     * A link only the member tree honoured left that half unexercised right up
+     * to the cutover.
+     */
+    if (role === 'member') {
+      pushRoute({
+        name: 'chatV2',
+        providerId: pendingV2Peer.providerId,
+        benchmarkReadOnly: pendingV2Peer.benchmarkReadOnly,
+      });
+    } else {
+      pushProvider({
+        name: 'chatV2',
+        peerId: pendingV2Peer.providerId,
+        benchmarkReadOnly: pendingV2Peer.benchmarkReadOnly,
+      });
+    }
+  }, [
+    pendingV2Peer,
+    isPending,
+    onV2PeerHandled,
+    role,
+    pushProvider,
+    pushRoute,
+  ]);
+
   /*
    * Foreground pushes. A call rings through the same entry point as a Realtime
    * ring; a nudge becomes a notice rather than a notification over an app the
@@ -1893,9 +1968,17 @@ function SignedIn({
                 })
               }
             />
-          ) : providerRoute.name === 'chat' ? (
-            <ChatScreen
+          ) : providerRoute.name === 'chatV2' ? (
+            /*
+             * The provider tree's V2 seam. Same screen, same props, a member's
+             * id as the peer — which is the whole point of exercising it:
+             * `onOpenProfile` is absent here (a member has no profile card, so
+             * the identity block opens the safety sheet), and the header pill
+             * is earnings rather than a balance.
+             */
+            <ChatScreenV2
               providerId={providerRoute.peerId}
+              benchmarkReadOnly={providerRoute.benchmarkReadOnly}
               onBack={() => popProvider({ name: 'home' })}
               onOpenEarnings={() =>
                 pushProvider({
@@ -1904,16 +1987,69 @@ function SignedIn({
                   peerId: providerRoute.peerId,
                 })
               }
-              onStartCall={channel =>
-                pushProvider({
-                  name: 'call',
-                  peerId: providerRoute.peerId,
-                  direction: 'out',
-                  callId: null,
-                  medium: channel === 'video' ? 'video' : 'voice',
-                })
+              onStartCall={
+                providerRoute.benchmarkReadOnly
+                  ? undefined
+                  : channel =>
+                      pushProvider({
+                        name: 'call',
+                        peerId: providerRoute.peerId,
+                        direction: 'out',
+                        callId: null,
+                        medium: channel === 'video' ? 'video' : 'voice',
+                      })
               }
             />
+          ) : providerRoute.name === 'chat' ? (
+            /*
+             * The production provider conversation. `CHAT_SCREEN` is the ONE
+             * cutover decision (src/chat-v2/cutover.ts) and it is read here
+             * and at the member `chat` route below — the same constant, so the
+             * two trees cannot end up on different screens.
+             */
+            CHAT_SCREEN === 'v2' ? (
+              <ChatScreenV2
+                providerId={providerRoute.peerId}
+                onBack={() => popProvider({ name: 'home' })}
+                onOpenEarnings={() =>
+                  pushProvider({
+                    name: 'usage',
+                    from: 'chat',
+                    peerId: providerRoute.peerId,
+                  })
+                }
+                onStartCall={channel =>
+                  pushProvider({
+                    name: 'call',
+                    peerId: providerRoute.peerId,
+                    direction: 'out',
+                    callId: null,
+                    medium: channel === 'video' ? 'video' : 'voice',
+                  })
+                }
+              />
+            ) : (
+              <ChatScreen
+                providerId={providerRoute.peerId}
+                onBack={() => popProvider({ name: 'home' })}
+                onOpenEarnings={() =>
+                  pushProvider({
+                    name: 'usage',
+                    from: 'chat',
+                    peerId: providerRoute.peerId,
+                  })
+                }
+                onStartCall={channel =>
+                  pushProvider({
+                    name: 'call',
+                    peerId: providerRoute.peerId,
+                    direction: 'out',
+                    callId: null,
+                    medium: channel === 'video' ? 'video' : 'voice',
+                  })
+                }
+              />
+            )
           ) : providerRoute.name === 'payout' ? (
             <ProviderBankScreen onBack={() => popProvider({ name: 'home' })} />
           ) : providerRoute.name === 'blocked' ? (
@@ -2040,7 +2176,23 @@ function SignedIn({
         </PushedLayer>
       ) : null}
 
-      {route.name === 'chat' ? (
+      {route.name === 'chatV2' ? (
+        <AfterPaint>
+          <PushedLayer style={styles.overlay}>
+            <ChatScreenV2
+              providerId={route.providerId}
+              benchmarkReadOnly={route.benchmarkReadOnly}
+              onBack={() => popRoute({ name: 'home' })}
+              onStartCall={
+                route.benchmarkReadOnly
+                  ? undefined
+                  : channel =>
+                      pushRoute({ name: 'call', providerId: route.providerId, direction: 'out', callId: null, medium: channel === 'video' ? 'video' : 'voice' })
+              }
+            />
+          </PushedLayer>
+        </AfterPaint>
+      ) : route.name === 'chat' ? (
         /*
          * `AfterPaint` OUTSIDE the animated overlay, not inside it.
          *
@@ -2055,14 +2207,35 @@ function SignedIn({
          */
         <AfterPaint>
           <PushedLayer style={[styles.overlay, route.from === 'chatsList' && styles.overlayStack]}>
-            <ChatScreen
-              providerId={route.providerId}
-              onBack={leaveChat}
-              onOpenProfile={id => openProvider(id, 'chat')}
-              onStartCall={channel =>
-                pushRoute({ name: 'call', providerId: route.providerId, direction: 'out', callId: null, medium: channel === 'video' ? 'video' : 'voice' })
-              }
-            />
+            {/*
+             * The one cutover decision, read here and at the provider `chat`
+             * route above — `CHAT_SCREEN` is a single constant in
+             * src/chat-v2/cutover.ts, so flipping it moves both trees in one
+             * commit and reverting it moves them back.
+             *
+             * Both branches take the same props, `leaveChat` included: back
+             * out of a chat honours the door it was opened from and resets the
+             * conversation store, whichever screen is mounted.
+             */}
+            {CHAT_SCREEN === 'v2' ? (
+              <ChatScreenV2
+                providerId={route.providerId}
+                onBack={leaveChat}
+                onOpenProfile={id => openProvider(id, 'chat')}
+                onStartCall={channel =>
+                  pushRoute({ name: 'call', providerId: route.providerId, direction: 'out', callId: null, medium: channel === 'video' ? 'video' : 'voice' })
+                }
+              />
+            ) : (
+              <ChatScreen
+                providerId={route.providerId}
+                onBack={leaveChat}
+                onOpenProfile={id => openProvider(id, 'chat')}
+                onStartCall={channel =>
+                  pushRoute({ name: 'call', providerId: route.providerId, direction: 'out', callId: null, medium: channel === 'video' ? 'video' : 'voice' })
+                }
+              />
+            )}
           </PushedLayer>
         </AfterPaint>
       ) : route.name === 'call' ||

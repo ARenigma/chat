@@ -37,6 +37,25 @@
  * without booting the native runtime.
  */
 
+/**
+ * How long a typing or recording broadcast keeps the peer's indicator up
+ * without a refresh, and the minimum gap between the broadcasts that refresh
+ * it.
+ *
+ * Here rather than inside `src/api/realtime.ts`, which is where both used to
+ * live, because a THIRD party has to agree with them: the composer re-pings
+ * while a voice note records, and a correct interval has to clear the throttle
+ * (anything faster is dropped by the sender) and stay UNDER the TTL (anything
+ * slower lets the indicator lapse mid-note). That window cannot be honoured by
+ * a constant copied into a component. The copy was 4s — clear of the throttle,
+ * but sitting exactly ON the TTL, so every refresh raced the expiry it existed
+ * to beat and the indicator blinked off whenever the timer won. A component
+ * cannot import the realtime module without dragging the Supabase client into
+ * a unit test, so the pair moved to the pure module both sides can read.
+ */
+export const TYPING_TTL_MS = 4_000;
+export const TYPING_THROTTLE_MS = 1_500;
+
 export interface PresenceRead {
   /** Whether the avatar's dot lights. */
   here: boolean;

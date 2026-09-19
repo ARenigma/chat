@@ -268,6 +268,9 @@ android {
         // the runtime @example.test account check in WindowChromeModule.
         // https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE
         buildConfigField "boolean", "ALLOW_DEV_CAPTURE", "false"
+        // Internal automation may open isolated, unfinished routes. The default
+        // is closed so no shipping variant acquires the capability by accident.
+        buildConfigField "boolean", "ALLOW_BENCHMARK_ROUTES", "false"
 
         // https://developer.android.com/training/testing/instrumented-tests
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
@@ -317,6 +320,7 @@ android {
             // reader auditing capture policy must find the answer here without
             // tracing the inheritance chain.
             buildConfigField "boolean", "ALLOW_DEV_CAPTURE", "false"
+            buildConfigField "boolean", "ALLOW_BENCHMARK_ROUTES", "false"
         }
 
         /**
@@ -395,6 +399,9 @@ android {
              */
             buildConfigField "boolean", "BLOCK_SCREENSHOTS", "false"
             buildConfigField "boolean", "ALLOW_DEV_CAPTURE", "true"
+            // This variant is the non-debuggable, minified benchmark target.
+            // Release inherits false and repeats it explicitly above.
+            buildConfigField "boolean", "ALLOW_BENCHMARK_ROUTES", "true"
         }
     }
 }

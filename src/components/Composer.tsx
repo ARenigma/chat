@@ -2,33 +2,20 @@ import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
   AppState,
   BackHandler,
-  Keyboard,
-  Linking,
-  useWindowDimensions,
-  PermissionsAndroid,
   StyleSheet,
   Text,
   type TextInput,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withTiming,
-  type SharedValue,
 } from 'react-native-reanimated';
-import { DOCK_DELAY_MS, EASE_OUT, KEYBOARD_CUBIC, M3, dockTo, fadeSwapFast, fadeSwapOutFast, useCrossfade } from '../theme/motion';
-import { requestAndroidPermission } from '../lib/permissions';
-import {
-  launchCamera,
-  launchImageLibrary,
-  type ImagePickerResponse,
-} from 'react-native-image-picker';
+import { KEYBOARD_CUBIC, M3, fadeSwapFast, fadeSwapOutFast, useCrossfade } from '../theme/motion';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { MAX_MESSAGE_CHARS } from '../lib/tokenLedger';
-import { deleteLastGrapheme } from '../lib/graphemes';
 import { errorTick, tick } from '../lib/haptics';
 import {
   ensureMicrophone,
@@ -36,26 +23,13 @@ import {
   type RecordingHandle,
 } from '../lib/recorder';
 import { MAX_VOICE_MS, clock, isSendable, type VoiceDraft } from '../lib/voice';
-import {
-  MAX_ATTACHMENT_BYTES,
-  MAX_PICK,
-  PHOTO_MAX_DIMENSION,
-  type ImageDraft,
-} from '../lib/attachments';
 import { useStore } from '../store/useStore';
 import { Icon } from './Icon';
 import { Pressable } from './Pressable';
 import { SendButton } from './SendButton';
-import { AttachPanel } from './AttachPanel';
-import { EmojiPicker } from './EmojiPicker';
-import { readKeyboardHeight, writeKeyboardHeight } from '../lib/keyboardPanel';
 import { readDraftText, writeDraftText } from '../lib/chatDraft';
-import { usePanelCeiling } from '../lib/imeGeometry';
 import { Waveform } from './Waveform';
 import { TextField } from './TextField';
-
-/** The camera button's slot width, animated to zero when the send takes over. */
-const CAMERA_SLOT = 40;
 
 /**
  * How far the reference app insets its input island from each screen edge, in dp.
@@ -67,28 +41,6 @@ const CAMERA_SLOT = 40;
  * for why this is a named constant rather than the nearest space token.
  */
 export const COMPOSER_ISLAND_INSET = 7;
-
-/**
- * The emoji button's square. the reference app's is 44 and sits outside the field; ours is
- * inside the capsule, so it matches the capsule's own height instead — a 44 here
- * would make the capsule taller than the 40 measured on device.
- *
- * 40, NOT 36, and the two dp matter because the row is bottom-aligned. Measured
- * on the S22 (Amit, 2026-09-12: "message input box elements are not aligned"):
- *
- *     Emoji   [58,2132][160,2234]   102px tall, centre 2183
- *     Field   [181,2132][691,2234]  102px tall, centre 2183
- *     Camera  [781,2121][893,2234]  113px tall, centre 2177.5
- *     Mic     [916,2121][1028,2234] 113px tall, centre 2177.5
- *
- * The camera and the mic are `CAMERA_SLOT`/40; this was 36. Under the capsule's
- * `alignItems: 'flex-end'` every child sits on the same floor, so a shorter one
- * has a higher centre — 2dp higher, 5.6px at this density, which is what reads
- * as the row being out of line. 40 is also what the paragraph above is really
- * asking for: the capsule's usable height is `CAPSULE_MIN_H` (44) minus its
- * `space.hair` padding top and bottom, which is exactly 40.
- */
-const EMOJI_BUTTON = 40;
 
 /**
  * Input field height bounds (dp).
@@ -117,8 +69,8 @@ export const MAX_INPUT_H = 132;
  * and multiplies every corner by it.
  * https://www.w3.org/TR/css-backgrounds-3/#corner-overlap
  *
- * The capsule's children are 40dp at their tallest (CAMERA_SLOT and the
- * trailing mic/send slot), so before this the bar laid out at 40, declared a
+ * The capsule's trailing mic/send slot is 40dp tall, so before this the bar
+ * laid out at 40, declared a
  * 22dp corner and PAINTED 22 x 40/44 = 20 — while a one-line message bubble is
  * about 54dp tall and painted a true 22. Two silhouettes, one grid, and nothing
  * in the code said why. 2 x radius.bubble is the height at which the scale
@@ -187,13 +139,6 @@ interface Props {
   /** A finished recording, ready to upload. Both roles get this: the provider
    *  tree renders the same ChatScreen, and voice notes are in scope for both. */
   onSendVoice: (draft: VoiceDraft) => void;
-  /**
-   * A picked photo, ready to upload. Same shape of contract as onSendVoice,
-   * except the return is awaited (2026-09-17 audit): picking several photos
-   * at once must send them one at a time, in order, not fire every upload
-   * simultaneously and let the server's arrival order become the send order.
-   */
-  onSendImage: (draft: ImageDraft) => void | Promise<void>;
   disabled: boolean;
   placeholder: string;
   sendHaloKey: number;
@@ -213,28 +158,8 @@ interface Props {
    * over the transcript rather than a bar (Amit, 2026-09-04).
    */
   onFocusChange?: (focused: boolean) => void;
-  /**
-   * Fired when the docked emoji panel opens or closes. The panel stands in for
-   * the keyboard and is sized to it, so the dock must drop its safe-area inset
-   * while it is up or the composer sits an inset higher than the keyboard put it.
-   */
-  onPanelChange?: (open: boolean) => void;
-  /**
-   * The panel slot's hide offset, owned by the chat screen and shared with the
-   * transcript: both translate off this one value so the dock and the list can
-   * never disagree mid-travel. Rests at the slot height (slot hidden below the
-   * edge), animates to 0 as the panel opens.
-   */
-  panelY: SharedValue<number>;
-  /** Reports row + slot height for the transcript pad. Stable across toggles. */
+  /** Reports the measured composer row height for adjacent overlays. */
   onDockGeometry?: (h: number) => void;
-  /**
-   * Fired when the emoji panel's own search field takes or loses focus. That is
-   * the one case where the keyboard and the panel are up TOGETHER, so the dock
-   * has to be lifted above the keyboard while the panel stays open — see
-   * `panelCeiling`.
-   */
-  onPanelSearchChange?: (searching: boolean) => void;
 }
 
 /**
@@ -298,7 +223,6 @@ function ComposerView({
   conversationId,
   onSend,
   onSendVoice,
-  onSendImage,
   disabled,
   placeholder,
   sendHaloKey,
@@ -306,9 +230,6 @@ function ComposerView({
   onRecording,
   onRecordingEnded,
   onFocusChange,
-  onPanelChange,
-  onPanelSearchChange,
-  panelY,
   onDockGeometry,
 }: Props) {
   const styles = useStyles(makeStyles);
@@ -370,74 +291,11 @@ function ComposerView({
       onRecordingEnded?.();
     };
   }, [mode, onRecording, onRecordingEnded]);
-  /**
-   * The attach surface, docked in the emoji panel's slot rather than presented
-   * as a bottom sheet. Mounted on first open and hidden thereafter, exactly as
-   * the emoji panel is, so a swap costs a visibility flip and not a rebuild.
-   */
-  const [attachOpen, setAttachOpen] = useState(false);
-  const [attachMounted, setAttachMounted] = useState(false);
-  /**
-   * Whether CAMERA is granted, so the panel's first cell can show a live
-   * viewfinder rather than an icon. Checked when the panel opens, never
-   * requested from there — a permission dialog on panel open would be a prompt
-   * the user did not ask for.
-   * https://developer.android.com/training/permissions/requesting
-   */
-  const [cameraGranted, setCameraGranted] = useState(false);
-  // Whether the docked emoji panel is open (it replaces the keyboard).
-  const [emojiOpen, setEmojiOpen] = useState(false);
-  /**
-   * Whether the panel's OWN search field has the keyboard — the one state where
-   * the keyboard and the panel are up together, so the usual "keyboard appeared,
-   * put the panel away" rule has to be suspended. Mirrored into a ref because the
-   * `keyboardDidShow` listener is registered once and would otherwise close the
-   * panel from a stale closure the instant the search field raised the IME.
-   */
-  const [emojiSearching, setEmojiSearching] = useState(false);
-  const searchingRef = useRef(false);
-  /**
-   * The panel is mounted on FIRST open and then never unmounted, so the swap
-   * costs a visibility flip rather than a full rebuild — the reference app's
-   * `createEmojiView()` / `setVisibility` split. Latched here so a user who never
-   * opens it never pays for the mount.
-   */
-  const [panelMounted, setPanelMounted] = useState(false);
-  /**
-   * Whether the IME is up, as a ref.
-   *
-   * Read by the toggles to decide whether the slot's travel animates, so it has
-   * to be current at the moment of the tap rather than at the last render — a
-   * state read here is one render behind and produces exactly the double
-   * movement the guard exists to prevent.
-   */
-  const keyboardUpRef = useRef(false);
-  /** The input row's measured height, so the expanded panel can subtract it. */
+  /** The row stays in normal flex flow below the transcript. */
   const [rowHeight, setRowHeight] = useState(0);
-  const { width: winW, height: winH } = useWindowDimensions();
-  const landscape = winW > winH;
-  const insets = useSafeAreaInsets();
-  const [panelHeight, setPanelHeight] = useState(() => readKeyboardHeight(landscape));
-  /**
-   * The tallest the panel may be while the keyboard is also up, in px: the space
-   * between the bottom of the frosted header and the top of the keyboard.
-   * Ignored outside search, where the panel is exactly the keyboard's size.
-   *
-   * READ, not received. It is `winH - barHeight - imeSpace`, and both of those
-   * terms now live in the chat screen's IME store — a prop would be only as
-   * fresh as its owner's last render, and the screen deliberately no longer
-   * renders when they change (src/lib/imeGeometry.ts). It changes far less often
-   * than that sounds: `keyboardHeight` is sticky, so an ordinary show/hide does
-   * not move it at all — only a genuinely different IME height, a rotation, or
-   * the top bar resizing.
-   *
-   * NOTE this is not the same number as `panelHeight` above, deliberately: the
-   * panel uses `readKeyboardHeight`'s clamped, persisted, per-orientation value
-   * while the ceiling is built from the raw measured height. They can disagree
-   * for a keyboard outside the clamp band; that divergence predates this and is
-   * recorded in imeGeometry.ts rather than silently unified here.
-   */
-  const panelCeiling = usePanelCeiling();
+  useEffect(() => {
+    onDockGeometry?.(rowHeight);
+  }, [onDockGeometry, rowHeight]);
   const [elapsed, setElapsed] = useState(0);
   const [levels, setLevels] = useState<readonly number[]>([]);
   const [draft, setDraft] = useState<VoiceDraft | null>(null);
@@ -445,8 +303,7 @@ function ComposerView({
   // stop that raced a re-render would otherwise stop a recorder that had already
   // been replaced.
   const handle = useRef<RecordingHandle | null>(null);
-  // The field, so the emoji button can focus it (and raise the keyboard, where
-  // the emoji key lives — a full in-app picker is a follow-up).
+  // The field ref is used by hardware-back handling.
   const inputRef = useRef<TextInput>(null);
   /** Read inside the `hardwareBackPress` callback below — see its own comment. */
   const fieldFocusedRef = useRef(false);
@@ -461,128 +318,6 @@ function ComposerView({
    * it off short of killing the app.
    */
   const attempt = useRef(0);
-  /**
-   * Measure the keyboard, and hand the space back to it when it returns.
-   *
-   * `keyboardDidShow` is both the measurement (remembered for the next panel
-   * open, per orientation) and the signal that the IME has finished coming up —
-   * which is when the panel may safely go, not when the button was tapped. Take
-   * it down any earlier and there is a frame with neither the panel nor the
-   * keyboard, which is the drop-and-spring the swap exists to avoid.
-   *
-   * The one exception is the panel's own search field. It raises the same IME,
-   * and closing the panel on it made emoji search unreachable: the panel vanished
-   * and the keystrokes landed in nothing (found on device, 2026-09-04). the reference app
-   * treats searching as its own state rather than as "keyboard up" — see
-   * `design/references/chat-app-mechanics.md`.
-   */
-  useEffect(() => {
-    const shown = Keyboard.addListener('keyboardDidShow', e => {
-      keyboardUpRef.current = true;
-      const h = e.endCoordinates.height;
-      writeKeyboardHeight(h, landscape);
-      setPanelHeight(readKeyboardHeight(landscape));
-      if (!searchingRef.current) {
-        /*
-         * The keyboard is arriving, so it is the movement — the surface must go
-         * without a travel of its own or the two cross each other. the reference app's
-         * hide path has the same `!keyboardVisible` guard as its show path
-         * (`ChatActivityEnterView.java:12730`).
-         */
-        animateNext.current = false;
-        setEmojiOpen(false);
-        setAttachOpen(false);
-      }
-    });
-    const hidden = Keyboard.addListener('keyboardDidHide', () => {
-      keyboardUpRef.current = false;
-    });
-    return () => {
-      shown.remove();
-      hidden.remove();
-    };
-  }, [landscape]);
-
-  // One signal for "a docked surface is up", because the dock's arithmetic is
-  // the same for either of them.
-  useEffect(() => {
-    onPanelChange?.(emojiOpen || attachOpen);
-  }, [emojiOpen, attachOpen, onPanelChange]);
-
-  useEffect(() => {
-    onPanelSearchChange?.(emojiSearching);
-  }, [emojiSearching, onPanelSearchChange]);
-
-  /** Keep the ref the keyboard listener reads in step with the state. */
-  const onSearchFocusChange = useCallback((focused: boolean) => {
-    searchingRef.current = focused;
-    setEmojiSearching(focused);
-  }, []);
-
-  /**
-   * Back closes the panel before it closes the screen.
-   *
-   * The panel is standing in for the keyboard, and back dismisses a keyboard
-   * rather than leaving the chat — so it has to do the same here, or the swap
-   * quietly changes what the system back button means (Amit, 2026-09-04: back
-   * left the conversation instead of putting the emoji away).
-   */
-  useEffect(() => {
-    if (!emojiOpen && !attachOpen) {
-      return;
-    }
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      // Searching is a state INSIDE the panel, so back leaves the panel and only
-      // puts the search away — one back press per thing that is open, which is
-      // what back means everywhere else in the app.
-      if (searchingRef.current) {
-        Keyboard.dismiss();
-        return true;
-      }
-      // Back with no keyboard coming: the surface's own travel is all there is.
-      animateNext.current = true;
-      setEmojiOpen(false);
-      setAttachOpen(false);
-      return true;
-    });
-    return () => sub.remove();
-  }, [emojiOpen, attachOpen]);
-
-  /**
-   * Closing the panel closes its search with it. Without this the ref stays
-   * true, and the next time the composer field raises the keyboard the listener
-   * above would decline to put the panel away — a state nobody can get out of.
-   */
-  useEffect(() => {
-    if (!emojiOpen && searchingRef.current) {
-      searchingRef.current = false;
-      setEmojiSearching(false);
-    }
-  }, [emojiOpen]);
-
-  /**
-   * The docked slot's travel.
-   *
-   * `slotY` is how far the surface is pushed DOWN out of its place: its own
-   * height while closed, zero while open. Driving translation rather than
-   * height means the panel's content is laid out once and then moved, which is
-   * what the reference app does (`currentView.setTranslationY(...)` then animate to 0)
-   * and is why the swap costs no measure pass.
-   *
-   * `animateNext` is the `!keyboardVisible` guard: set false when the keyboard
-   * is on screen at the moment of the swap, because the keyboard going down is
-   * already the movement.
-   */
-  const surfaceOpen = emojiOpen || attachOpen;
-  const slotHeight = panelHeight + insets.bottom;
-  // The slot is always laid out at full height — mounting a panel into it
-  // changes no Yoga measurement, so the dock (and the transcript pad derived
-  // from it) never reflows on a toggle. `panelY` hides the empty slot below
-  // the edge when closed and slides it up on open; the transcript rides the
-  // same value through the shared prop.
-  useEffect(() => {
-    onDockGeometry?.(rowHeight + slotHeight);
-  }, [rowHeight, slotHeight, onDockGeometry]);
   /**
    * Animated height of the text-input wrapper.
    *
@@ -607,164 +342,10 @@ function ComposerView({
   // (identical remeasures do nothing). Unproven on low-end hardware — a frame
   // trace on the Redmi is the open question before calling this solved.
   const inputHStyle = useAnimatedStyle(() => ({ height: inputH.value }));
-  const animateNext = useRef(true);
-  const slotInner = useAnimatedStyle(() => ({
-    transform: [{ translateY: panelY.value }],
-  }));
-  /**
-   * Which surface is DRAWN, as opposed to which one is open.
-   *
-   * They differ for exactly one interval: the close. A surface hidden the
-   * instant its state flips has nothing left on screen to travel, so the slide
-   * out would never be seen. the reference app sets `GONE` in the animator's
-   * `onAnimationEnd` for the same reason (`ChatActivityEnterView.java:12736`);
-   * this is that callback, as a timer over the same total the travel takes.
-   */
-  const [shown, setShown] = useState<'emoji' | 'attach' | null>(null);
-  useEffect(() => {
-    if (emojiOpen) {
-      setShown('emoji');
-      return;
-    }
-    if (attachOpen) {
-      setShown('attach');
-      return;
-    }
-    const settle = setTimeout(
-      () => setShown(null),
-      DOCK_DELAY_MS + TOKENS.motion.m3.duration.medium1,
-    );
-    return () => clearTimeout(settle);
-  }, [emojiOpen, attachOpen]);
-
-  /**
-   * Settle gate for the camera tile (W3#2).
-   *
-   * CameraX cannot configure a capture session on a TextureView that is still
-   * mid-travel — the surface is zero-sized or partially clipped, and the native
-   * layer logs "Unable to configure camera … not done within 5000ms" while the
-   * tile renders black. Verified on the API-36 emulator 2026-09-04. `slotSettled`
-   * starts false whenever the attach surface is not shown. When it becomes shown
-   * we wait for the dock's animation window before flipping true, so CameraX only
-   * binds to a surface that is already in its final position.
-   *
-   * Three cases, each with a different wait:
-   *   – panel-to-panel swap (emoji → attach): dock height unchanged, no travel;
-   *     settle immediately.
-   *   – opened with keyboard up (`animateNext` false): keyboard exit is the
-   *     motion; dock doesn't travel; settle immediately.
-   *   – opened from closed with animation: wait DOCK_DELAY_MS + medium1 (300ms).
-   *
-   * The timeout expression mirrors the `setShown(null)` teardown timer above so
-   * both always agree on when the animation has finished.
-   *
-   * `prevShownRef` tracks the value of `shown` from the PREVIOUS effect run, which
-   * is `shown` one state-change earlier — the standard pattern for "previous value"
-   * without lifting state. It is updated at the end of each effect body, so the
-   * next run reads the prior value before overwriting it.
-   */
-  const prevShownRef = useRef<'emoji' | 'attach' | null>(null);
-  const [slotSettled, setSlotSettled] = useState(false);
-  useEffect(() => {
-    const prev = prevShownRef.current;
-    prevShownRef.current = shown;
-    if (shown !== 'attach') {
-      setSlotSettled(false);
-      return;
-    }
-    // Emoji → attach swap: dock height does not change, no slide occurs.
-    if (prev !== null) {
-      setSlotSettled(true);
-      return;
-    }
-    // Keyboard was up: its own exit is the motion; dock stays put.
-    if (!animateNext.current) {
-      setSlotSettled(true);
-      return;
-    }
-    // Dock sliding in from closed: wait for DOCK_DELAY_MS (50) + medium1 (250).
-    const t = setTimeout(
-      () => setSlotSettled(true),
-      DOCK_DELAY_MS + TOKENS.motion.m3.duration.medium1,
-    );
-    return () => clearTimeout(t);
-  }, [shown]);
-
-  /**
-   * The travel, keyed on WHETHER a surface is drawn — not on which one.
-   *
-   * `shown` flipping 'emoji' to 'attach' must not animate: the slot height
-   * does not change, so there is nothing to travel. The reference implementation
-   * has the same guard from the other direction — `currentHeight -
-   * previousHeight` is zero when a panel was already visible, so its animator
-   * moves nothing.
-   *
-   * No priming needed: the slot rests hidden (offset at rest), so opening
-   * starts from exactly the right position with no setup frame.
-   */
-  const drawn = shown !== null;
-  // Opening slides the reserved slot up from below the edge. Closing is
-  // handled below while the surface is still drawn; once it unmounts there
-  // is nothing left to move, so this branch deliberately does nothing.
-  useEffect(() => {
-    if (drawn) {
-      panelY.value = dockTo(0, animateNext.current);
-    }
-  }, [drawn, panelY]);
-
-  /** Push the slot back down as the surface leaves, while it is still drawn. */
-  useEffect(() => {
-    if (!surfaceOpen && drawn) {
-      panelY.value = dockTo(slotHeight, animateNext.current);
-    }
-  }, [surfaceOpen, drawn, slotHeight, panelY]);
 
   const ready = value.trim().length > 0 && !disabled;
   // Cross-fades the trailing slot between mic (empty) and send (has text).
   const trailing = useCrossfade(ready);
-
-  /**
-   * The camera's collapse, driven by the same `ready` the trailing slot uses.
-   *
-   * Animating width (not just opacity) is the point: the reference frame's
-   * Writing state has the capsule grow into the space the camera and mic leave,
-   * and a zero-opacity button that still occupies 40dp would leave the capsule
-   * short with an invisible gap beside it.
-   */
-  const cameraOpen = useSharedValue(ready ? 0 : 1);
-  useEffect(() => {
-    cameraOpen.value = withTiming(ready ? 0 : 1, {
-      // M3 short2 = 100ms. the reference app fades its attach icons in 100ms
-      // (`ChatActivityEnterView.java:7947`). `duration.fast` (170ms) was
-      // the mic↔send reveal timing — a different action on a different path.
-      // Using the token via the M3 export from motion.ts, not a raw literal.
-      duration: M3.duration.short2,
-      // EASE_OUT: a collapse is an exit, and an exit must not have an ease-in
-      // phase. Without an explicit easing, Reanimated defaults to
-      // Easing.inOut(Easing.quad), which starts with an ease-in — the one
-      // curve that is always wrong for something disappearing.
-      easing: EASE_OUT,
-    });
-  }, [ready, cameraOpen]);
-  // RULE 1 §6 STATED DEPARTURE — this style animates `width` and `marginLeft`,
-  // which are layout properties that trigger Yoga on every frame. The rule
-  // says animate transform/opacity only. The departure is load-bearing: an
-  // absolutely-positioned slot would leave a hole in the capsule instead of
-  // reclaiming the space as the camera collapses, and the whole point of the
-  // animation is that the text-input capsule grows into the freed space. Width
-  // is what does that; there is no transform equivalent. Bounded at
-  // M3.duration.short2 = 100ms. Unproven on a low-end device — a frame trace
-  // on the Redmi is the open question before calling this solved.
-  const cameraStyle = useAnimatedStyle(() => ({
-    opacity: cameraOpen.value,
-    width: CAMERA_SLOT * cameraOpen.value,
-    // The gap collapses with it, or the capsule stops short of the send button.
-    marginLeft: TOKENS.space.xs * cameraOpen.value,
-    // Pinches to half-width as it collapses (scaleX 0.5 at value=0, 1 at value=1)
-    // so the icon reads as withdrawing rather than cutting out. Width still drives
-    // the actual space reclaim; scaleX is the visual read.
-    transform: [{ scaleX: 0.5 + 0.5 * cameraOpen.value }],
-  }));
 
   const finish = useCallback((next: VoiceDraft | null) => {
     handle.current = null;
@@ -814,130 +395,19 @@ function ComposerView({
     setValue('');
   }, [onSend, ready, value]);
 
-  /**
-   * Swap the keyboard for the panel, or the panel back for the keyboard.
-   *
-   * the reference app's `ChatActivityEnterView` does not "close the keyboard and open a
-   * sheet" — it shows a popup view whose height IS the remembered keyboard
-   * height and hides the IME in the same beat, so the composer never moves and
-   * the grid appears to be what the keyboard turned into. Mounting the panel
-   * BEFORE dismissing is what preserves that: dismiss-then-mount drops the
-   * composer to the bottom of the screen for a frame and springs it back.
-   */
-  /**
-   * Leave the search state and hand the focus back to the message field.
-   *
-   * the reference app does exactly this from two places — the emoji button
-   * (`ChatActivityEnterView.java:2701-2707`) and a touch on the composer while
-   * the panel is showing (`:5387-5391`): `setSearchingTypeInternal(0)`,
-   * `emojiView.closeSearch(false)`, `messageEditText.requestFocus()`. The panel
-   * has to be closed EXPLICITLY here, because the IME is already up and
-   * `keyboardDidShow` — which is what normally takes the panel down — will not
-   * fire a second time. That was the "switch doesn't work after clicking cross
-   * on search" defect.
-   */
-  const leaveSearch = useCallback(() => {
-    if (!searchingRef.current) {
-      return false;
-    }
-    searchingRef.current = false;
-    setEmojiSearching(false);
-    setEmojiOpen(false);
-    inputRef.current?.focus();
-    return true;
-  }, []);
-
-  /**
-   * The attach panel and the emoji panel share one slot and are exclusive.
-   *
-   * Sequenced the way `toggleEmoji` is, and for the same reason: the panel is
-   * mounted BEFORE the keyboard is dismissed, so there is never a frame with
-   * neither surface up. Opening it also closes the other one — the dock is only
-   * ever as tall as one keyboard.
-   */
-  const toggleAttach = useCallback(() => {
-    if (attachOpen) {
-      // Back to the keyboard, the same handover the emoji button does.
-      inputRef.current?.focus();
-      setAttachOpen(false);
-      return;
-    }
-    leaveSearch();
-    // Opened from the keyboard: no travel, the keyboard's own exit is it.
-    animateNext.current = !keyboardUpRef.current;
-    setEmojiOpen(false);
-    setAttachMounted(true);
-    setAttachOpen(true);
-    Keyboard.dismiss();
-    /*
-     * Read the permission, do not request it. `check` is silent; a request here
-     * would fire a dialog the user never asked for just because they opened a
-     * panel. The request happens on the capture tap, in `takePhoto`.
-     */
-    void PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA)
-      .then(setCameraGranted)
-      .catch(() => setCameraGranted(false));
-  }, [attachOpen, leaveSearch]);
-
-  const toggleEmoji = useCallback(() => {
-    if (emojiOpen) {
-      if (leaveSearch()) {
-        return;
-      }
-      // Back to the keyboard. Focusing raises the IME, and the keyboard-shown
-      // listener takes the panel down once it is actually up — again so the two
-      // never leave a gap between them.
-      inputRef.current?.focus();
-      return;
-    }
-    animateNext.current = !keyboardUpRef.current;
-    setAttachOpen(false);
-    setPanelMounted(true);
-    setEmojiOpen(true);
-    Keyboard.dismiss();
-  }, [emojiOpen, leaveSearch]);
-
-  /** Insert at the end of the draft, the way a keyboard would. */
-  const addEmoji = useCallback(
-    (emoji: string) => {
-      setValue(current => (current + emoji).slice(0, MAX_MESSAGE_CHARS));
-      onTyping?.();
-    },
-    [onTyping],
-  );
-
-  /**
-   * The key the keyboard took away when the panel replaced it.
-   *
-   * `Array.from(...).slice(0, -1)` was wrong for exactly the strings this panel
-   * inserts: it iterates CODE POINTS, so one press of backspace over 👩🏽‍🚀 removed
-   * the zero-width joiner and left two loose glyphs, and over 🇮🇳 left half a flag.
-   * `deleteLastGrapheme` removes one user-perceived character. See
-   * `src/lib/graphemes.ts`.
-   */
-  const backspace = useCallback(() => {
-    setValue(current => deleteLastGrapheme(current));
-  }, []);
-
   const onFieldFocus = useCallback(() => {
-    // Touching the composer while the panel is searching leaves the search, the
-    // same way the reference app's `onTouchEvent` does (`:5386-5391`).
-    leaveSearch();
     fieldFocusedRef.current = true;
     onFocusChange?.(true);
-  }, [leaveSearch, onFocusChange]);
+  }, [onFocusChange]);
   const onFieldBlur = useCallback(() => {
     fieldFocusedRef.current = false;
     onFocusChange?.(false);
   }, [onFocusChange]);
 
   /**
-   * Back dismisses the keyboard before it leaves the chat — the same rule as
-   * the panel's own handler above, for the case that handler does not cover.
+   * Back dismisses the keyboard before it leaves the chat.
    *
-   * That handler is only registered while `emojiOpen || attachOpen`, so a
-   * back press with just the real keyboard up (typing, no panel) had nothing
-   * of this screen's own to catch it and fell through to App.tsx's single
+   * A back press with the keyboard up otherwise falls through to App.tsx's single
    * global `hardwareBackPress` subscription — which treats back as "leave the
    * conversation." Android normally swallows back-while-focused as an IME
    * dismiss before JS ever sees it, but under this app's edge-to-edge IME
@@ -1092,134 +562,6 @@ function ComposerView({
     setMode('idle');
   }, [draft, onSendVoice]);
 
-  /**
-   * Validate all picked / captured assets and hand each photo up in turn.
-   *
-   * Shared by the gallery picker (which may return up to MAX_PICK photos via
-   * Android's `PickMultipleVisualMedia`) and the camera (which returns exactly
-   * one). Looping here so every asset goes through the same size and
-   * readability checks — the division of labour the mic button has with
-   * `onSendVoice`.
-   *
-   * The panel closes once after the first successful send. the reference app dismisses
-   * its whole attach sheet on a successful send (`ChatAttachAlert.dismiss()`),
-   * and leaving ours open puts a live viewfinder under the message that was
-   * just sent — which reads as "it did not go". Only on the success path: a
-   * refused pick (too large, unreadable) leaves the panel up so the next
-   * attempt is one tap, not four.
-   *
-   * https://github.com/react-native-image-picker/react-native-image-picker
-   */
-  /*
-   * Sends are AWAITED, one at a time, not fired together (2026-09-17 audit).
-   * `selectionLimit: MAX_PICK` lets a member pick several photos in one pass,
-   * and until this fix every asset in `result.assets` was handed to
-   * `onSendImage` in the same synchronous loop with no `await` — ten photos
-   * meant ten uploads competing for one link and ten `send_message_idempotent`
-   * calls racing the server, so the thread ended up in whatever order the
-   * network happened to finish them, not the order the member picked them in.
-   * A `for...of` with `await` costs nothing on the common one-photo case and
-   * makes the ten-photo case deterministic.
-   */
-  const handleAssets = useCallback(
-    async (result: ImagePickerResponse | null) => {
-      if (result === null || result.didCancel) {
-        return;
-      }
-      let sentAny = false;
-      for (const asset of result.assets ?? []) {
-        if (
-          asset.uri === undefined ||
-          asset.width === undefined ||
-          asset.height === undefined
-        ) {
-          setNotice('That photo could not be read.');
-          errorTick();
-          continue;
-        }
-        if (asset.fileSize !== undefined && asset.fileSize > MAX_ATTACHMENT_BYTES) {
-          setNotice('That photo is too large. Pick one under 10 MB.');
-          errorTick();
-          continue;
-        }
-        sentAny = true;
-        await onSendImage({
-          uri: asset.uri,
-          width: asset.width,
-          height: asset.height,
-          mime: asset.type ?? null,
-        });
-      }
-      if (sentAny) {
-        setAttachOpen(false);
-      }
-    },
-    [onSendImage, setNotice],
-  );
-
-  /**
-   * Pick from the library. The Android 13+ system photo picker needs no
-   * permission at all, so there is nothing to request here.
-   *
-   * `selectionLimit: MAX_PICK` routes through `PickMultipleVisualMedia` on
-   * Android (react-native-image-picker v7.x, ImagePickerModuleImpl.java:154),
-   * which is the same system Photo Picker as the single-select path — no extra
-   * permission, no Play policy risk. Multi-select was confirmed supported in
-   * v7.2.3 (installed); no version bump needed (RULE 5).
-   *
-   * https://developer.android.com/training/data-storage/shared/photopicker
-   */
-  const pickImage = useCallback(async () => {
-    if (disabled) {
-      return;
-    }
-    const result = await launchImageLibrary({
-      mediaType: 'photo',
-      selectionLimit: MAX_PICK,
-      quality: 0.9,
-      maxWidth: PHOTO_MAX_DIMENSION,
-      maxHeight: PHOTO_MAX_DIMENSION,
-    }).catch(() => null);
-    void handleAssets(result);
-  }, [disabled, handleAssets]);
-
-  /**
-   * Capture a live photo (#8). Camera capture, unlike the library picker, needs
-   * the CAMERA runtime permission — requested here right before use, and a
-   * permanent denial points at Settings rather than retrying a dialog Android
-   * will not show again.
-   */
-  const takePhoto = useCallback(async () => {
-    if (disabled) {
-      return;
-    }
-    const outcome = await requestAndroidPermission(
-      PermissionsAndroid.PERMISSIONS.CAMERA,
-    );
-    if (outcome === 'never_ask_again') {
-      errorTick();
-      // Surface a notice with a direct link to Settings; Alert would block the
-      // composer which is disruptive, so we use the store notice + a Linking
-      // call so the user can dismiss and continue composing text instead.
-      setNotice('Camera blocked. Open Settings to allow it.');
-      Linking.openSettings().catch(() => undefined);
-      return;
-    }
-    if (outcome !== 'granted') {
-      errorTick();
-      setNotice('The camera needs permission. Turn it on in Settings.');
-      return;
-    }
-    const result = await launchCamera({
-      mediaType: 'photo',
-      quality: 0.9,
-      saveToPhotos: false,
-      maxWidth: PHOTO_MAX_DIMENSION,
-      maxHeight: PHOTO_MAX_DIMENSION,
-    }).catch(() => null);
-    void handleAssets(result);
-  }, [disabled, handleAssets, setNotice]);
-
   if (mode === 'recording') {
     return (
       /*
@@ -1340,17 +682,9 @@ function ComposerView({
 
   return (
     <>
-    {/*
-      * The row never moves for a panel: the slot below is always laid out at
-      * full height, so mounting a surface changes no measurement. The slot's
-      * content rides `panelY` (shared with the transcript, which translates
-      * off the same value): hidden below the edge at rest, sliding up on open.
-      * Zero layout work on any toggle — one transform on each of two nodes.
-      */}
     <View>
-    {/* Measured, not assumed: the panel's expanded height while searching is
-        everything the header and the keyboard leave over, minus this row, and
-        the row grows with the field (up to six lines) and with font scale. */}
+    {/* Measured because the row grows with the field (up to six lines) and
+        with font scale. */}
     <View style={styles.row} onLayout={e => setRowHeight(e.nativeEvent.layout.height)}>
       <View style={styles.inputBar}>
       {/* The capsule. A SOLID themed surface, not a nested blur.
@@ -1364,86 +698,6 @@ function ComposerView({
           floating pill and icons"). White in light, the elevated surface in dark,
           both from tokens rather than a literal white that would glare in dark. */}
       <View style={styles.field}>
-        {/* Emoji, on the capsule's LEADING edge (Amit, 2026-09-04: "EMOJI should
-            be on left corner of pill"). It is the first control in the row in
-            the reference app too — `Gravity.BOTTOM | LEFT`, 44x44, leftMargin 2, padding
-            7.5 around a 32dp glyph (`ChatActivityEnterView.java:2684,:2721`).
-
-            Smile <-> keyboard, the way the reference app's does: while the panel is up the
-            control's job is to bring the keyboard back, so it says so. */}
-        <Pressable
-          onPress={toggleEmoji}
-          disabled={disabled}
-          testID="composer-emoji"
-          accessibilityLabel={emojiOpen ? 'Keyboard' : 'Emoji'}
-          press="none"
-          highlight="material"
-          size={EMOJI_BUTTON}
-          style={styles.emoji}>
-          {/* `icon.lg` (24), the same as the camera and the mic across the
-              capsule — one glyph size for all three controls, still true after
-              this step change (Amit, 2026-09-18: "the emoji icon still looks
-              small... make it exactly like the reference app").
-              `ChatActivityEnterView.java:2670-2721`: the reference app's own emoji
-              button is a 44dp target (`DEFAULT_HEIGHT`) with 7.5dp padding on
-              each side, so its DRAWN glyph is 44 - 2*7.5 = 29dp — not the
-              button size alone, which is all `design/references/chat-app-mechanics.md`
-              had recorded before this pass. `icon.lg` at this app's own
-              `ICON_SCALE` (1.2) inks 24*1.2 = 28.8dp, matching that almost
-              exactly, without touching this app's own 40dp button/capsule
-              geometry (a deliberately different, already-settled shape from
-              the reference app's flat bar).
-
-              History on why this was ever 20, not 24: this was `icon.lg` (24)
-              with nothing recording why, and a 4dp mismatch against the OTHER
-              two controls (already at 20) read as "the elements are not
-              aligned" (Amit, 2026-09-12) — the fix then was to bring emoji
-              DOWN to match clip/mic, not a claim that 20 was the right
-              absolute size. Moving all three together to 24 now does not
-              reopen that mismatch.
-
-              A 2026-09-13 detour further shrank this to 19 as an optical
-              correction against the (then) Lucide glyph set — closed circles
-              read larger than open forms at the same nominal size. The icon
-              set moved to a Heroicons font afterward, and Heroicons'
-              `face-smile` sits further inside its own box than Lucide's did:
-              the Lucide-era shrink left it visibly SMALLER than the clip and
-              mic beside it (Amit, 2026-09-18, confirmed on the S22: ~56dp of
-              ink against their ~60-62dp at the old icon.md). That correction
-              is now moot — both are `icon.lg`. */}
-          {/*
-            * The glyph CROSS-FADES rather than cutting (2026-09-12).
-            *
-            * It was `name={emojiOpen ? 'keyboard' : 'smile'}` on a bare Icon —
-            * a hard swap, which is the one thing a toggle should not do,
-            * because the whole job of a toggle's feedback is to say "your tap
-            * landed and this is now the other state". An instant substitution
-            * is indistinguishable from a re-render.
-            *
-            * `key` is what makes it work: changing the key remounts the view,
-            * which is what gives Reanimated an entering animation to run.
-            * Without it the same node just takes a new prop and nothing
-            * animates.
-            *
-            * `fadeSwapFast` (DURATION.fast, 170ms, EASE_OUT) rather than
-            * `fadeSwap`, by the frequency rule in DESIGN.md: this button is
-            * pressed many times per conversation, and the budget for something
-            * at that frequency is ~200ms. It is also the builder the app
-            * already uses for exactly this — a control that has just changed
-            * what it says about itself.
-            */}
-          <Animated.View
-            key={emojiOpen ? 'keyboard' : 'smile'}
-            entering={fadeSwapFast}
-            exiting={fadeSwapOutFast}
-            style={styles.emojiGlyph}>
-            <Icon
-              name={emojiOpen ? 'keyboard' : 'smile'}
-              size={TOKENS.icon.lg}
-              color={theme.color.text.secondary}
-            />
-          </Animated.View>
-        </Pressable>
         {/*
           * The wrapper's height is the animated value; the field inside fills
           * it via `flex: 1`. `onContentSizeChange` reports the natural content
@@ -1456,6 +710,7 @@ function ComposerView({
           <TextField
             ref={inputRef}
             testID="composer-input"
+            nativeID="composer-input"
             style={styles.input}
             value={value}
             onChangeText={change}
@@ -1533,47 +788,6 @@ function ComposerView({
         </Animated.View>
       </View>
 
-      {/* Camera. It replaces the old "+" as the single media entry point and
-          opens the SAME Camera / Photos chooser, so nothing is reachable only
-          from a removed control — the gallery is one obvious tap deeper rather
-          than gone (Amit, 2026-09-04).
-
-          It collapses to nothing the moment there is text to send, together with
-          the mic, leaving the send button alone beside the capsule (the reference
-          frame's Writing state). Width as well as opacity, so the capsule takes
-          the freed room instead of leaving a hole. */}
-      <Animated.View style={cameraStyle} pointerEvents={ready ? 'none' : 'auto'}>
-        <Pressable
-          onPress={toggleAttach}
-          disabled={disabled || ready}
-          testID="composer-attach"
-          accessibilityLabel="Add media"
-          accessibilityHint="Camera or photos"
-          press="none"
-          highlight="material"
-          size={40}
-          style={styles.camera}>
-          {/*
-            * A PAPERCLIP, not a camera (Amit, 2026-09-13: "replace camera with
-            * clip icon in text input box").
-            *
-            * The control opens the attach panel, which is a camera AND a photo
-            * library — so a camera glyph named only half of what is behind it,
-            * and named the half that is not the common case. A clip is the
-            * conventional mark for "attach something", which is what this is.
-            *
-            * The accessibility label already said "Add media" with the hint
-            * "Camera or photos", so the spoken name was right while the drawn
-            * one was narrower. They agree now.
-            */}
-          {/* `icon.lg` (24), matching the emoji and mic glyphs — see the emoji
-              button's own comment above for the the reference app measurement
-              (`ChatActivityEnterView.java:2670-2721`: 44dp button minus 7.5dp
-              padding each side = 29dp drawn glyph) this step matches. */}
-          <Icon name="clip" size={TOKENS.icon.lg} color={theme.color.text.secondary} />
-        </Pressable>
-      </Animated.View>
-
       {/* One trailing control, never two competing — but they cross-fade now
           rather than hard-swapping (send scales up from nothing while the mic
           scales away the instant the field stops being empty). Both are mounted,
@@ -1609,102 +823,6 @@ function ComposerView({
       </View>
       </View>
     </View>
-
-      {/* The panel sits IN the dock, under the input row, occupying exactly what
-          the IME occupied — so the composer stays where it was and the grid takes
-          the space the keyboard just vacated. the reference app's `emojiPadding`, which is
-          the whole reason its emoji panel reads as the keyboard changing rather
-          than two surfaces trading places.
-
-          `+ insets.bottom` is not decoration and it is the half of the sum that
-          was missing. `keyboardDidShow.endCoordinates.height` under edge-to-edge
-          reports the IME's height WITHOUT the navigation-bar inset, while the IME
-          window itself runs to the bottom of the screen: measured on an S22
-          Ultra, RN said 317dp and `dumpsys window` put the IME frame at
-          [0,1382][1080,2316] — 332dp, exactly 15dp more, which is the gesture
-          nav inset. Sizing the panel from the raw number left it 15dp short, so
-          the composer fell by that much on every swap. */}
-      {/*
-        * One animated slot for both docked surfaces.
-        *
-        * the reference app translates the panel by its own height and animates it to 0
-        * over `keyboardDuration` (250ms) on the keyboard's cubic, starting the
-        * animator 50ms late — and ONLY when the keyboard is not already visible
-        * (`showPopup`, `ChatActivityEnterView.java:12687,:12710`). A swap made
-        * with the keyboard up is deliberately not animated there, because the
-        * keyboard sliding away IS the animation; animating on top of it reads as
-        * a stutter. `dockTo` carries all three of those facts.
-        */}
-      <View
-        pointerEvents={surfaceOpen ? 'auto' : 'none'}
-        style={[styles.slot, { height: slotHeight }]}>
-      <Animated.View style={slotInner}>
-      {panelMounted ? (
-      <EmojiPicker
-        visible={shown === 'emoji'}
-        /*
-         * ONE height, searching or not: the keyboard's.
-         *
-         * Search used to expand the panel to fill from under the header down to
-         * the composer - the reference app's `setStickersExpanded` - with a scrim over the
-         * conversation behind it. That is what Amit rejected (2026-09-05: "emoji
-         * search taking full screen but should be like whatsapp docked right").
-         *
-         * WhatsApp keeps the panel exactly keyboard-sized and lets the results
-         * scroll inside it, so the conversation never leaves the screen and the
-         * viewport does not move when the query changes. It is also strictly less
-         * machinery: no expansion, no scrim, no second height to keep in step
-         * with the dock. Matching the reference is this project's default, not an
-         * obligation - and here the product asked for the other app.
-         */
-        /*
-         * DOCKED, never expanded. Capped by the space above the keyboard.
-         *
-         * Search used to EXPAND the panel to fill from under the header down to
-         * the composer - the reference app's `setStickersExpanded` - with a scrim over the
-         * conversation behind it. Amit rejected that (2026-09-05: "emoji search
-         * taking full screen but should be like whatsapp docked right").
-         *
-         * WhatsApp keeps the results in a docked tray. But while search has focus
-         * the keyboard is up TOO, so the panel cannot simply stay a keyboard tall
-         * - that would stack two keyboards plus the header and overflow the
-         * screen. It takes whichever is SMALLER: its normal keyboard height, or
-         * everything the header and the raised keyboard leave over. So it never
-         * grows beyond a keyboard and never overflows.
-         *
-         * `Math.min`, where this was `Math.max`. That one word was the whole
-         * difference between a docked tray and a full-screen takeover.
-         */
-        height={
-          emojiSearching
-            ? Math.max(0, Math.min(panelHeight, panelCeiling - rowHeight))
-            : panelHeight + insets.bottom
-        }
-        onBackspace={backspace}
-        onPick={addEmoji}
-        onSearchFocusChange={onSearchFocusChange}
-      />
-      ) : null}
-
-      {/* The attach surface shares the emoji panel's slot and is exclusive with
-          it, so the dock is only ever as tall as one keyboard. Mounted on first
-          open and hidden thereafter, for the same reason the emoji panel is. */}
-      {attachMounted ? (
-        <AttachPanel
-          visible={shown === 'attach'}
-          height={panelHeight + insets.bottom}
-          cameraGranted={cameraGranted}
-          slotSettled={slotSettled}
-          onCamera={() => {
-            void takePhoto();
-          }}
-          onGallery={() => {
-            void pickImage();
-          }}
-        />
-      ) : null}
-      </Animated.View>
-      </View>
     </View>
 
     </>
@@ -1714,11 +832,6 @@ function ComposerView({
 export const Composer = memo(ComposerView);
 
 const makeStyles = (t: Theme) => StyleSheet.create({
-  // The reserved panel slot: always laid out at full height (set inline from
-  // slotHeight), content clipped while hidden below the edge.
-  slot: {
-    overflow: 'hidden',
-  },
   row: {
     /*
      * Measured off the reference app on the SAME device rather than read off its source
@@ -1766,24 +879,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     paddingBottom: TOKENS.space.xs,
     backgroundColor: 'transparent',
   },
-  /*
-   * THE CAPSULE. One floating pill that contains everything.
-   *
-   * The surface used to live on `field`, one level in, with the camera and the
-   * mic/send sitting OUTSIDE it on bare background. The dock behind them carries
-   * no fill (`tint="none"`, and `blur` off entirely while composing), so those
-   * two icons had nothing behind them at all and the transcript ran straight
-   * through: message bubbles collided with the camera and mic glyphs, and with
-   * the reply strip above them. Seen on the S22 2026-09-05, and it is the same
-   * defect in both places.
-   *
-   * the reference app puts the emoji, the field, the attach clip and the mic INSIDE a
-   * single translucent pill - captured from the reference on this device: there
-   * is no icon outside it, which is exactly why nothing can ever collide. The
-   * pill occludes. Moving our surface up one level reproduces that, and it also
-   * honours "no bar bg" (Amit, 2026-09-04) rather than contradicting it: there
-   * is still no full-width bar, only a floating capsule.
-   */
+  // One capsule containing the text field and the mic/send trailing control.
   inputBar: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -1834,112 +930,18 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     backgroundColor: t.color.bg.raised,
     overflow: 'hidden',
   },
-  attach: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  attachCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    alignItems: 'center',
-    justifyContent: 'center',
-    // Filled with the brand coral (#6): the "+" is the primary media action, so
-    // the circle carries the accent rather than a neutral sunken grey.
-    backgroundColor: t.color.bg.accent,
-  },
-  /*
-   * The emoji button on the capsule's LEADING edge.
-   *
-   * the reference app's is the first control in the composer, `Gravity.BOTTOM | LEFT`,
-   * a 44dp square with 7.5dp padding around a ~32dp glyph
-   * (`ChatActivityEnterView.java:2684,:2721`). Ours is inside the capsule rather
-   * than beside it, so it takes the capsule's height instead of 44 — but the
-   * side, the bottom gravity and the circular press disc are the reference app's.
-   *
-   * `alignSelf: flex-end` so a field grown to several lines keeps the glyph on
-   * the last line, as the reference app's bottom gravity does, instead of floating it to
-   * the vertical middle of a tall capsule.
-   */
-  emoji: {
-    width: EMOJI_BUTTON,
-    height: EMOJI_BUTTON,
-    // Circular, so the press state layer is a disc and not the rectangle the
-    // un-rounded style used to clip it to (Amit, 2026-09-04).
-    borderRadius: EMOJI_BUTTON / 2,
-    alignSelf: 'flex-end',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  /*
-   * A small upward nudge for the glyph itself, not the button. Measured on the
-   * S22 (Amit, 2026-09-18) with the button already perfectly centered in the
-   * capsule: the smile glyph still inked with 44px above it and 33px below —
-   * `textAlignVertical: 'center'` centres the Heroicons font's LINE BOX, not
-   * the glyph's own ink, and this font's ascent/descent are not symmetric
-   * around its centre. -2dp (density 450: 44-33=11px / 2 ≈ 5.5px ≈ 1.96dp)
-   * splits the difference. A font-wide property, so every glyph in the app
-   * carries the same low-single-digit bias — pinned here rather than in
-   * Icon.tsx because this is the one spot it was actually measured and
-   * reported; a global change would move dozens of icons nobody has
-   * re-verified against.
-   */
-  emojiGlyph: {
-    transform: [{ translateY: -2 }],
-  },
-  // The camera, outside the capsule, between it and the send/mic slot. Width is
-  // animated (see `cameraStyle`), so nothing here may set one.
-  camera: {
-    width: CAMERA_SLOT,
-    height: CAMERA_SLOT,
-    borderRadius: CAMERA_SLOT / 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   field: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: TOKENS.space.xs,
-    /*
-     * The trailing inset is `space.xs`, matching `gap` above, so every gap in
-     * the row is the same 8dp (Amit, 2026-09-13: "the input box padding around
-     * buttons is unequal").
-     *
-     * It was `space.md`. Measured on an S22: emoji-to-text 8dp, clip-to-mic
-     * 8dp, and text-to-clip THIRTY-TWO — the 16 here plus the camera slot's own
-     * 8dp margin plus the capsule edge. The comment justified it as "the text's
-     * breathing room", which is a real need, but 16 was twice what any other
-     * gap in the capsule got and it read as the field stopping early.
-     *
-     * The LEADING inset stays `space.hair`: the emoji button is the capsule's
-     * first child and carries its own 40dp press disc, so the visible gap there
-     * is the disc's own edge, not this number. The two are asymmetric in the
-     * style precisely so the rendered gaps come out equal.
-     *
-     * ZERO in the end, not 8, and that is the point: the clip slot already
-     * carries `marginLeft: space.xs` in `cameraStyle` (it animates, which is
-     * why the gap has to live there and not here). Any padding on this side
-     * STACKS on top of it. 16 gave 32dp, 8 gave 24dp, and 0 gives the single
-     * 8dp gap every other control in the capsule gets. Measured on device each
-     * time rather than reasoned about, because the two owners of this gap are
-     * in different files.
-     */
-    paddingLeft: TOKENS.space.hair,
-    paddingRight: 0,
+    paddingHorizontal: TOKENS.space.xs,
     // Zero. The 40dp of children is the capsule's CONTENT height; the capsule
     // itself is CAPSULE_MIN_H (44) because a 40dp box cannot paint a 22dp
     // corner. That 4dp lives on `inputBar`'s own paddingVertical, where it is
     // symmetric — any field padding here would stack on top of the 40 and push
     // the capsule taller still.
     paddingVertical: 0,
-    /*
-     * No surface of its own any more - the capsule moved up to `inputBar` so the
-     * camera and mic are inside it. A second rounded fill here would draw a pill
-     * inside a pill.
-     */
+    // No nested surface: inputBar owns the capsule.
   },
   /*
    * Animated wrapper for the text field.

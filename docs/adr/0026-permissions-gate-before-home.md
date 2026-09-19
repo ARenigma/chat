@@ -1,6 +1,6 @@
 # ADR-0026, Permissions are asked for on one explained screen before Home
 
-Status: **decided and shipped**
+Status: **amended and shipped**
 Date: 2026-09-06
 Guard: `__tests__/contract.test.ts` › "asks for permissions on one explained screen before Home, never as bare dialogs over it"
 
@@ -70,3 +70,21 @@ This screen keeps what it can of that and departs on one point deliberately:
 - The `permissions` admin config (`*_internal` / `*_production` levels) no
   longer decides _whether_ to ask — the gate asks for all three — only whether
   `push.ts` shows the blocked-settings alert on a later permanent denial.
+
+## 5. Amendment, 2026-09-19 — notifications are opt-in
+
+Microphone and camera remain required by this gate. Notifications do not.
+`POST_NOTIFICATIONS` is still explained and requested, but denying or
+permanently blocking it cannot prevent Home, re-open the boot gate, or force a
+trip to Settings.
+
+This removes the notification-specific departure above. Android's notification
+guidance says non-exempt notifications should use a dismissible, contextual
+opt-in and that the app should remain usable after denial:
+
+- https://developer.android.com/develop/ui/views/notifications/notification-permission
+- https://developer.android.com/design/ui/mobile/guides/home-screen/notifications
+
+Migration 121 publishes `notification_internal=optional` and
+`notification_production=optional` in both config environments. It also
+unschedules the automatic 18:30 IST engagement nudge.

@@ -58,11 +58,11 @@ import {
  * Notification permission policy — controls whether the blocked-settings alert
  * fires when the user has permanently denied POST_NOTIFICATIONS on Android 13+.
  *
- * Default is 'required' so the blocking alert is shown unless a caller
- * explicitly sets it to 'optional' (internal/testing builds). Set this via
- * `setNotificationPolicy()` before calling `startPush()`.
+ * Default is optional: notification denial is a valid product choice and must
+ * never block Home. Set this via `setNotificationPolicy()` before calling
+ * `startPush()` when remote config is available.
  */
-let _notificationPolicy: 'optional' | 'required' = 'required';
+let _notificationPolicy: 'optional' | 'required' = 'optional';
 
 /**
  * Configure the notification blocking-alert behaviour before startPush().

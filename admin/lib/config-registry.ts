@@ -573,7 +573,7 @@ export const CONFIG_REGISTRY: DomainDef[] = [
           { value: 'optional', label: 'Optional' },
           { value: 'required', label: 'Required' },
         ],
-        default: 'required',
+        default: 'optional',
         risk: 'medium',
         runtime: 'live',
       },

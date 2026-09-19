@@ -19,6 +19,7 @@ import type {
 import { canSend } from '../lib/tokenLedger';
 import { errorTick, tick } from '../lib/haptics';
 import {
+  MESSAGE_PAGE_SIZE,
   PENDING_PREFIX,
   insertOptimistic,
   isPending,
@@ -40,8 +41,13 @@ import { useStore } from '../store/useStore';
 import { messagesKey } from './realtime';
 import { sendResultFrom } from '../lib/sendErrors';
 
-/** Newest-first: the transcript renders into an inverted list. */
-const PAGE_SIZE = 100;
+/**
+ * Newest-first: the transcript renders into an inverted list.
+ *
+ * Defined in `src/lib/transcript.ts` so the pure row builders can read it too —
+ * a full page is how they know older history exists outside the window.
+ */
+const PAGE_SIZE = MESSAGE_PAGE_SIZE;
 
 export const keys = {
   profile: ['profile'] as const,

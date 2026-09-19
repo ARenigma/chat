@@ -717,6 +717,28 @@ describe('Android manifest', () => {
   });
 });
 
+describe('notification opt-in and scheduled nudge shutdown', () => {
+  it('labels notifications optional and keeps production policy optional', () => {
+    const gate = read('src/lib/permissionsGate.ts');
+    const screen = read('src/screens/PermissionsScreen.tsx');
+    const config = read('src/api/appConfig.ts');
+    expect(gate).toMatch(/kind:\s*'notifications'[\s\S]*required:\s*false/);
+    expect(screen).toContain("{p.required ? null : 'Optional'}");
+    expect(config).toContain("notification_production: 'optional'");
+  });
+
+  it('unschedules the 18:30 engagement push in an append-only migration', () => {
+    const migration = read(
+      'supabase/migrations/121_disable_scheduled_engagement_nudges.sql',
+    );
+    expect(migration).toContain("jobname = 'dispatch-engagement-nudges'");
+    expect(migration).toContain(
+      "cron.unschedule('dispatch-engagement-nudges')",
+    );
+    expect(migration).not.toContain('cron.schedule(');
+  });
+});
+
 describe('cross-runtime constants', () => {
   it('keeps the SQL refill grant in step with DAILY_REFILL_TOKENS', () => {
     const migration = read('supabase/migrations/002_bootstrap_and_grants.sql');
@@ -2353,39 +2375,17 @@ describe('the chat restyle is wired, not just drawn', () => {
     expect(empty).toContain('<PeerTyping');
   });
 
-  it('lifts the dock by ONE number the panel is also sized from', () => {
-    // The composer dropped exactly 34dp on every keyboard-to-panel swap (S22
-    // Ultra, measured 96px at density 2.8125). Two errors summed to it: 19dp of
-    // safe-area padding that existed in the keyboard state and was zeroed in the
-    // panel state, and 15dp because the panel was sized from RN's reported
-    // keyboard height, which under edge-to-edge omits the navigation-bar inset
-    // the IME window actually covers.
-    //
-    // The fix is that both states resolve to `keyboardHeight + insets.bottom`,
-    // so they are equal by construction. These assertions are what stops the two
-    // expressions drifting apart again.
-    //
-    // The expressions moved out of the screen and into one derivation
-    // (src/lib/imeGeometry.ts) so they come from one input set and cannot land
-    // one commit apart; the gate followed them rather than being deleted.
+  it('keeps the in-flow dock and page-down button on the keyboard signal', () => {
     const imeCode = withoutComments(read('src/lib/imeGeometry.ts'));
     expect(imeCode).toContain(
       'const imeSpace = i.keyboardHeight + i.insetBottom',
     );
-    // The screen no longer consumes the discrete lift at all: dock, transcript
-    // and page-down button all ride the controller's live shared value, so the
-    // number cannot drift between consumers by construction.
     expect(chatCode).toContain('lift={keyboard.height}');
     expect(chatCode).toContain('translateY: -lift.value');
-    expect(chatCode).toContain('translateY: -keyboard.height.value');
+    expect(chatCode).toContain('<KeyboardStickyView style={styles.dockStack}>');
     expect(chatCode).not.toContain('AnimatedBodyInset');
     expect(chatCode).not.toContain('useBodyInset(');
     expect(chatCode).not.toContain('useListPad(');
-    expect(withoutComments(read('src/components/Composer.tsx'))).toContain(
-      'panelHeight + insets.bottom',
-    );
-    // And the screen cannot re-derive any of it inline behind the gate's back.
-    expect(chatCode).not.toContain('keyboardHeight +');
     expect(chatCode).not.toMatch(
       /const \[(keyboardUp|keyboardHeight|barHeight|dockHeight|emojiPanelOpen|emojiSearching|composerFocused),/,
     );
@@ -2408,9 +2408,7 @@ describe('the chat restyle is wired, not just drawn', () => {
     expect(body).toContain('useChatImeStore({');
     expect(body).toContain('seedKeyboardHeight: readKeyboardHeight(false)');
 
-    // Composer reads `panelCeiling` from context, so a SECOND call site would
-    // silently get the unwritten default store, a zero ceiling, and an emoji
-    // panel that collapses whenever its search field has focus.
+    // Composer remains a single screen-owned input surface.
     const usages = spawnSync(
       'grep',
       ['-rl', '--include=*.tsx', '<Composer', join(ROOT, 'src')],
@@ -2422,50 +2420,48 @@ describe('the chat restyle is wired, not just drawn', () => {
     expect(usages).toEqual([join(ROOT, 'src', 'screens', 'ChatScreen.tsx')]);
   });
 
-  it('keeps the emoji panel open while its own search field has the keyboard', () => {
-    // Every other `keyboardDidShow` means "put the panel away". The panel's own
-    // search field raises the same IME, and closing on it made search
-    // unreachable: the panel vanished and the keystrokes landed nowhere (found
-    // on device, 2026-09-04). The guard is a REF, not state — the listener is
-    // registered once and a state read would be stale inside it.
-    const composer = withoutComments(read('src/components/Composer.tsx'));
-    expect(composer).toContain('if (!searchingRef.current)');
-    expect(composer).toContain('searchingRef.current = focused');
-    // Closing the panel must clear the flag, or the next composer focus can
-    // never put the panel away again.
-    expect(composer).toMatch(/!emojiOpen && searchingRef\.current/);
-    // And the dock is lifted above the keyboard whenever the keyboard is
-    // actually up — including while searching, since the search field raises
-    // it again. `keyboardUp` alone is gated on `keyboardDidHide`, the real
-    // native signal, not on `emojiPanelOpen` (M-emoji, 2026-09-18: gating on
-    // both zeroed the lift the instant the panel's React state flipped, a
-    // quarter-second before the keyboard the lift was reserved for had
-    // actually animated away — a visible transcript reflow on tapping emoji).
-    expect(withoutComments(read('src/lib/imeGeometry.ts'))).toContain(
-      'const bodyInset = i.keyboardUp ? imeSpace : 0;',
-    );
+  it('keeps the composer in flow below the transcript', () => {
+    // The partial Bluesky port left the sticky dock absolute and depended on
+    // extraContentPadding to keep the final cell clear. On FlashList v2 Android
+    // that still painted the final message under the composer. The deferred
+    // emoji/media surface no longer needs an overlay, so the dock belongs in
+    // normal flex flow and the list owns the remaining height.
+    expect(chatCode).toContain('KeyboardChatScrollView');
+    expect(chatCode).toContain('KeyboardStickyView');
+    expect(chatCode).toContain('style={styles.transcript}');
+    expect(chatCode).not.toContain('extraContentPadding={dockPad}');
+    expect(chatCode).not.toContain("position: 'absolute',\n    left: 0,\n    right: 0,\n    bottom: 0,");
+    expect(chatCode).not.toContain('const listLift = useAnimatedStyle(');
+    expect(chatCode).not.toContain('AnimatedBodyInset');
+    expect(chatCode).not.toContain('function DockStack(');
   });
 
-  it('rides the keyboard on translated wrappers instead of animated layout (slice 2)', () => {
-    // `bodyInset` toggling 0/imeSpace was correct arithmetic, but applying it
-    // as layout — first discrete, then via a `height`-animated spacer — made
-    // FlashList recompute scroll position mid-travel ("the whole viewport jerks
-    // and reloads"). the reference app never resizes: the panel translates on
-    // TRANSLATION_Y (ChatActivityEnterView.java). The transcript wrapper,
-    // DockStack and PageDownButton now all translate off the controller's live
-    // shared value, and the container carries only the static structural pad.
-    // A wrapper Animated.View is NOT Animated.createAnimatedComponent(FlashList),
-    // which is what loses `scrollToOffset` (M18) — the ref assertion below
-    // still holds.
-    expect(chatCode).toContain('const listLift = useAnimatedStyle(');
-    expect(chatCode).toContain('styles.transcriptWrap');
-    expect(chatCode).toContain('paddingTop: basePad');
-    expect(chatCode).not.toContain('AnimatedBodyInset');
-    expect(chatCode).not.toContain('paddingTop: listPad');
-    // No layout-prop animation anywhere on this screen: height/width/padding
-    // re-run Yoga every frame for the node and its siblings.
-    const dockFn = chatCode.slice(chatCode.indexOf('function DockStack('));
-    expect(dockFn).not.toMatch(/height:\s*height\.value/);
+  it('adds composer clearance only while the IME lifts the in-flow dock', () => {
+    // At rest the in-flow composer already owns layout height. During IME
+    // translation it overlays the list, so KeyboardChatScrollView needs exactly
+    // one composer-height of extra padding, scaled by native IME progress.
+    expect(chatCode).toContain('const imeComposerPad = useDerivedValue(');
+    expect(chatCode).toContain('dockHeight.value * keyboard.progress.value');
+    expect(chatCode).toContain('extraContentPadding={composerPad}');
+  });
+
+  it('removes first-move controls that overlay the transcript', () => {
+    expect(chatCode).not.toContain('FirstMovePills');
+    expect(chatCode).not.toContain('Send sticker');
+    expect(chatCode).not.toContain('Say hi');
+  });
+
+  it('keeps only text, mic and send controls in the composer', () => {
+    const composer = withoutComments(read('src/components/Composer.tsx'));
+    expect(composer).toContain('testID="composer-input"');
+    expect(composer).toContain('testID="voice-record"');
+    expect(composer).toContain('<SendButton');
+    expect(composer).not.toContain('testID="composer-emoji"');
+    expect(composer).not.toContain('testID="composer-attach"');
+    expect(composer).not.toContain('<EmojiPicker');
+    expect(composer).not.toContain('<AttachPanel');
+    expect(composer).not.toContain('launchCamera');
+    expect(composer).not.toContain('launchImageLibrary');
   });
 
   it('recycles one pool per cell shape, not one pool per row kind', () => {
@@ -5573,49 +5569,6 @@ describe('the offline outbox replays queued messages in order, not all at once',
 });
 
 describe('the photo pipeline downscales, sends in order, and retries what it can', () => {
-  it('bounds both the gallery pick and the camera capture to PHOTO_MAX_DIMENSION', () => {
-    // Before this, `quality: 0.9` with no maxWidth/maxHeight meant
-    // react-native-image-picker recompressed the ORIGINAL resolution rather
-    // than downscaling it (Utils.java: maxWidth/maxHeight of 0 returns the
-    // original dimensions, and shouldResizeImage is keyed only on quality).
-    const composer = withoutComments(read('src/components/Composer.tsx'));
-    const pickCall = composer.slice(
-      composer.indexOf('const pickImage'),
-      composer.indexOf('const takePhoto'),
-    );
-    const cameraCall = composer.slice(
-      composer.indexOf('const takePhoto'),
-      composer.indexOf('if (mode ==='),
-    );
-    for (const [label, block] of [
-      ['pickImage', pickCall],
-      ['takePhoto', cameraCall],
-    ] as const) {
-      expect({ label, hasMaxWidth: block.includes('maxWidth: PHOTO_MAX_DIMENSION') }).toEqual(
-        { label, hasMaxWidth: true },
-      );
-      expect({ label, hasMaxHeight: block.includes('maxHeight: PHOTO_MAX_DIMENSION') }).toEqual(
-        { label, hasMaxHeight: true },
-      );
-    }
-    // 1280, the reference app's own figure, not a guess — pinned so nobody quietly
-    // widens it back to "no limit" by deleting the export.
-    const attachments = read('src/lib/attachments.ts');
-    expect(attachments).toContain('export const PHOTO_MAX_DIMENSION = 1280;');
-  });
-
-  it('sends picked photos one at a time, in order, not all at once', () => {
-    const composer = withoutComments(read('src/components/Composer.tsx'));
-    const handleAssets = composer.slice(
-      composer.indexOf('const handleAssets'),
-      composer.indexOf('const pickImage'),
-    );
-    expect(handleAssets).toContain('async (result: ImagePickerResponse | null)');
-    expect(handleAssets).toContain('await onSendImage(');
-    // The prop must accept the awaited shape, or a caller could still race.
-    expect(composer).toContain('onSendImage: (draft: ImageDraft) => void | Promise<void>;');
-  });
-
   it('detects an upload STALL rather than bounding total transfer time', () => {
     // A fixed `xhr.timeout` kills a large file on a slow-but-moving link
     // exactly as dead as a stuck one (2026-09-17 audit, correcting the
@@ -5871,13 +5824,6 @@ describe('emoji data pipeline', () => {
     expect(read('.eslintrc.js')).toContain('src/lib/emoji.generated.ts');
   });
 
-  it('deletes one user-perceived character, not one code point', () => {
-    // `Array.from(s).slice(0, -1)` iterates code points, so one backspace over
-    // a family emoji removed a zero-width joiner and left loose glyphs.
-    const composer = withoutComments(read('src/components/Composer.tsx'));
-    expect(composer).toContain('deleteLastGrapheme');
-    expect(composer).not.toMatch(/Array\.from\(current\)\.slice/);
-  });
 });
 
 /**
@@ -5895,42 +5841,15 @@ describe('attach panel', () => {
   const panel = withoutComments(read('src/components/AttachPanel.tsx'));
   const manifest = read('android/app/src/main/AndroidManifest.xml');
 
-  it('is docked in the emoji panel slot, not presented as a Sheet', () => {
-    expect(composer).toContain('<AttachPanel');
-    // The media chooser Sheet and its tiles are gone, not merely unused.
+  it('is disconnected from the composer while media is deferred', () => {
+    expect(composer).not.toContain('<AttachPanel');
     expect(composer).not.toContain('media-sheet');
     expect(composer).not.toContain("from './Sheet'");
   });
 
-  it('keeps the two docked surfaces exclusive', () => {
-    // Opening either closes the other, so the dock is only ever one keyboard
-    // tall. Asserted on both directions because one of them is easy to forget.
-    expect(composer).toMatch(
-      /setAttachOpen\(false\);[\s\S]{0,80}setEmojiOpen\(true\)/,
-    );
-    expect(composer).toMatch(
-      /setEmojiOpen\(false\);[\s\S]{0,120}setAttachOpen\(true\)/,
-    );
-  });
-
-  it('sizes both panels from the same expression', () => {
-    // If these ever diverge the composer moves on the swap between them.
-    const heights = composer.match(
-      /height=\{[^}]*panelHeight \+ insets\.bottom[^}]*\}/g,
-    );
-    expect(heights?.length).toBeGreaterThanOrEqual(2);
-  });
-
-  it('CHECKS the camera permission on open and requests it only on use', () => {
-    // A permission dialog fired by opening a panel is a prompt the user never
-    // asked for. `check` is silent; the request belongs on the capture tap.
-    // https://developer.android.com/training/permissions/requesting
-    expect(composer).toContain(
-      'PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA)',
-    );
-    expect(composer).toMatch(
-      /requestAndroidPermission\(\s*PermissionsAndroid\.PERMISSIONS\.CAMERA/,
-    );
+  it('does not expose or request camera access from the composer', () => {
+    expect(composer).not.toContain('PermissionsAndroid.PERMISSIONS.CAMERA');
+    expect(composer).not.toContain('requestAndroidPermission');
   });
 
   it('never declares a restricted media-read permission', () => {
@@ -6020,64 +5939,13 @@ describe('attach panel', () => {
   });
 });
 
-/**
- * The docked surfaces travel on the keyboard's own curve.
- *
- * Everything here is a silent failure. A missing `!keyboardVisible` guard
- * animates on top of the keyboard's own movement and reads as a stutter; a
- * missing prime shows one un-offset frame; and a duration or curve typed as a
- * literal drifts from the token the next time either is touched.
- */
-describe('docked panel travel', () => {
+describe('deferred composer panels', () => {
   const composer = withoutComments(read('src/components/Composer.tsx'));
-  const motion = withoutComments(read('src/theme/motion.ts'));
-
-  it('runs on the reference curve and duration, from tokens', () => {
-    // `AdjustPanLayoutHelper.keyboardDuration` = 250ms on
-    // `ChatListItemAnimator.DEFAULT_INTERPOLATOR`. See the reference app.md.
-    expect(motion).toContain('M3.easing.keyboard[0]');
-    expect(motion).toContain('duration: M3.duration.medium1');
-    expect(TOKENS.motion.m3.duration.medium1).toBe(250);
-    expect(TOKENS.motion.m3.easing.keyboard).toEqual([
-      0.19919472913616398, 0.010644531250000006, 0.27920937042459737,
-      0.91025390625,
-    ]);
-  });
-
-  it('defers the animator start by 50ms, as the reference does', () => {
-    expect(motion).toContain('export const DOCK_DELAY_MS = 50');
-    expect(motion).toContain('withDelay(\n    DOCK_DELAY_MS');
-  });
-
-  it('does not animate when the keyboard is already moving', () => {
-    // The keyboard's own exit is the movement. Both toggles read the IME state
-    // from a REF, because a state read is one render stale at tap time.
-    expect(composer).toContain('animateNext.current = !keyboardUpRef.current');
-    expect(composer).toContain('animateNext.current = false');
-  });
-
-  it('reserves the slot at full height instead of priming an offset', () => {
-    // The slot is always laid out at slotHeight, so mounting a panel changes
-    // no measurement and no prime-on-tap is needed: the rest offset already
-    // hides it below the edge. A prime set in the toggle would be one commit
-    // of truth in two places.
-    expect(composer).toContain('style={[styles.slot, { height: slotHeight }]}');
-    expect(composer).toContain('overflow');
-    expect(composer).not.toContain('primeDock');
-    expect(composer).toContain('panelY: SharedValue<number>');
-    const chat = withoutComments(read('src/screens/ChatScreen.tsx'));
-    expect(chat).toContain('panelY={panelY}');
-    expect(chat).toContain('onDockGeometry={onDockGeometry}');
-    expect(chat).toContain('translateY: -keyboard.height.value + panelY.value');
-  });
-
-  it('never animates a panel-to-panel swap', () => {
-    // Swapping emoji for attach changes no offset, so there is nothing to
-    // move: travel runs only on drawn transitions through dockTo.
-    expect(composer).toContain('panelY.value = dockTo(0, animateNext.current)');
-    expect(composer).toContain(
-      'panelY.value = dockTo(slotHeight, animateNext.current)',
-    );
+  it('contains no emoji, sticker, camera, or attachment entry point', () => {
+    expect(composer).not.toContain('EmojiPicker');
+    expect(composer).not.toContain('AttachPanel');
+    expect(composer).not.toContain('launchCamera');
+    expect(composer).not.toContain('launchImageLibrary');
   });
 });
 
@@ -8175,11 +8043,13 @@ describe('outbox drains for every conversation at boot, not just the one opened 
     expect(fn).toContain('unsubscribeOnline()');
   });
 
-  it("App.tsx wires the drain to boot.phase === 'ready', not unconditionally", () => {
+  it("App.tsx drains only when ready and never during a read-only benchmark launch", () => {
     expect(app).toContain(
       "import { keys, useConversations, useGlobalOutboxDrain, useSelfId } from './src/api/chat'",
     );
-    expect(app).toContain("useGlobalOutboxDrain(boot.phase === 'ready')");
+    expect(app).toContain(
+      "useGlobalOutboxDrain(boot.phase === 'ready' && !benchmarkReadOnlyLaunch)",
+    );
   });
 });
 

@@ -16,6 +16,25 @@ import com.google.firebase.appdistribution.FirebaseAppDistribution
 
 class MainActivity : ReactActivity() {
 
+  companion object {
+    const val BENCHMARK_READ_ONLY_EXTRA = "benchmark_read_only"
+
+    /**
+     * Captured before ReactActivity creates the React surface, so TurboModule
+     * constants can expose the launch mode synchronously to the first JS render.
+     * False is the safe default, and release ignores the extra entirely.
+     */
+    @Volatile
+    var benchmarkReadOnlyLaunch: Boolean = false
+      private set
+  }
+
+  private fun updateBenchmarkLaunch(candidate: Intent) {
+    benchmarkReadOnlyLaunch =
+        BuildConfig.ALLOW_BENCHMARK_ROUTES &&
+        candidate.getBooleanExtra(BENCHMARK_READ_ONLY_EXTRA, false)
+  }
+
   /**
    * Returns the name of the main component registered from JavaScript. This is used to schedule
    * rendering of the component.
@@ -51,6 +70,7 @@ class MainActivity : ReactActivity() {
    * rather than relying on the victim capturing anything.
    */
   override fun onCreate(savedInstanceState: Bundle?) {
+    updateBenchmarkLaunch(intent)
     super.onCreate(savedInstanceState)
 
     /*
@@ -111,6 +131,7 @@ class MainActivity : ReactActivity() {
     // see that function for why this used to replay a dead call.
     val safeIntent = neutralisedIfFromHistory(intent)
     if (safeIntent !== intent) setIntent(safeIntent)
+    updateBenchmarkLaunch(safeIntent)
     applyCallWindowFlags(safeIntent)
   }
 
@@ -291,6 +312,7 @@ class MainActivity : ReactActivity() {
     // (neutralisedIfFromHistory strips that case; see its docblock).
     val safeIntent = neutralisedIfFromHistory(intent)
     setIntent(safeIntent)
+    updateBenchmarkLaunch(safeIntent)
     applyCallWindowFlags(safeIntent)
   }
 

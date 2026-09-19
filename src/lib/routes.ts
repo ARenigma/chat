@@ -15,6 +15,8 @@
  * what the `from` field below replaces for the routes where history matters.
  */
 
+import { isUuid } from './ids';
+
 /** The door a conversation was opened from — back returns here. */
 export type ChatDoor = 'home' | 'detail' | 'chatsList';
 
@@ -46,6 +48,13 @@ export type MemberRoute =
       readonly name: 'chat';
       readonly providerId: string;
       readonly from: ChatDoor;
+    }
+  /** Development-only replacement seam; production links can never create it. */
+  | {
+      readonly name: 'chatV2';
+      readonly providerId: string;
+      /** Internal benchmark entry is observational; debug V2 remains interactive. */
+      readonly benchmarkReadOnly: boolean;
     }
   /**
    * A voice or video call. `direction` is 'out' (we dialled; `callId` is null
@@ -100,6 +109,21 @@ export type ProviderRoute =
    */
   | { readonly name: 'home' }
   | { readonly name: 'chat'; readonly peerId: string }
+  /**
+   * The provider tree's development-only V2 seam, the mirror of the member
+   * tree's `chatV2`.
+   *
+   * It exists because the V2 screen serves BOTH sides of a thread and the
+   * provider side is the one with the different shapes — the peer is a member
+   * with no profile card, the wallet is earnings rather than a balance, and
+   * `open_conversation` would reject the id. A seam only the member tree could
+   * reach would prove none of that before the cutover.
+   */
+  | {
+      readonly name: 'chatV2';
+      readonly peerId: string;
+      readonly benchmarkReadOnly: boolean;
+    }
   /** Bank/UPI + PAN payout setup. */
   | { readonly name: 'payout' }
   /**
@@ -144,6 +168,8 @@ export function memberParent(route: MemberRoute): MemberRoute | null {
       if (route.from === 'chatsList') {
         return { name: 'chatsList' };
       }
+      return { name: 'home' };
+    case 'chatV2':
       return { name: 'home' };
     case 'call':
       // Home for either direction: an incoming call's `providerId` is the caller,
@@ -205,7 +231,11 @@ export function providerParent(route: ProviderRoute): ProviderRoute | null {
   if (route.name === 'payout' || route.name === 'blocked') {
     return { name: 'home' };
   }
-  if (route.name === 'chat' || route.name === 'call') {
+  if (
+    route.name === 'chat' ||
+    route.name === 'chatV2' ||
+    route.name === 'call'
+  ) {
     return { name: 'home' };
   }
   return { name: 'home' };
@@ -238,6 +268,7 @@ export function transitionFor(route: MemberRoute): TransitionKind {
     case 'settings':
       return 'tab';
     case 'chat':
+    case 'chatV2':
     case 'providerDetail':
     case 'call':
     case 'apply':
@@ -249,4 +280,22 @@ export function transitionFor(route: MemberRoute): TransitionKind {
     case 'usage':
       return 'push';
   }
+}
+
+/**
+ * Parses the one development-only conversation entry point.
+ *
+ * Deep-link values are remote input, so the whole URL shape and UUID are
+ * allowlisted before routing. Release passes `false` and ignores the URL.
+ * https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks
+ */
+export function parseChatV2Url(
+  url: string,
+  routeCapabilityEnabled: boolean,
+): string | null {
+  if (!routeCapabilityEnabled) {
+    return null;
+  }
+  const providerId = url.match(/^companionchat:\/\/chat-v2\/([^/?#]+)$/)?.[1];
+  return providerId !== undefined && isUuid(providerId) ? providerId : null;
 }

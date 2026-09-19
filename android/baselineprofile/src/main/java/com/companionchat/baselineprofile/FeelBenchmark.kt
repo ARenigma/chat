@@ -1,6 +1,7 @@
 package com.companionchat.baselineprofile
 
 import android.hardware.display.DisplayManager
+import android.os.SystemClock
 import android.view.Display
 import androidx.benchmark.macro.BaselineProfileMode
 import androidx.benchmark.macro.CompilationMode
@@ -11,22 +12,25 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.Direction
+import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
 import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.regex.Pattern
 
 /**
- * Frames for the four interactions the app is judged on by feel rather than by
- * function: the emoji↔keyboard swap, the attach panel opening, a tab switch,
- * and a chat push and pop.
+ * Frames for the V2 chat interactions the app is judged on by feel rather than
+ * by function, plus the established tab-switch and production chat push/pop
+ * journeys.
  *
  * These are the journeys that were repeatedly reported as janky by eye and
  * repeatedly "fixed" without a number. `CriticalJourneyBenchmark` already
- * covers the home fling and opening a chat; this covers the surface swaps,
- * which is where the artefact frames were.
+ * covers the home fling and opening a production chat; this covers the V2
+ * keyboard/list/composer contract directly.
  *
  * ---------------------------------------------------------------------------
  * The 120 Hz precondition, and why it is an assumption and not a warning
@@ -50,9 +54,10 @@ import org.junit.runner.RunWith
  * ---------------------------------------------------------------------------
  * Running it
  * ---------------------------------------------------------------------------
- * Needs a PHYSICAL device with the internal app already signed in and a chat in
- * the rail — like `CriticalJourneyBenchmark`, it does not manufacture fixtures,
- * because a synthetic transcript does not produce the frames a real one does.
+ * Needs a PHYSICAL device with the internal app already signed in and a seeded
+ * conversation with enough history to scroll. The internal build alone accepts
+ * the explicit V2 route used by setup; release rejects that route in JS behind a
+ * compile-time BuildConfig capability.
  *
  *   npm run android:benchmark:feel -- \
  *     -Pandroid.testInstrumentationRunnerArguments.providerId=<uuid>
@@ -89,43 +94,115 @@ class FeelBenchmark {
 
         providerId =
             InstrumentationRegistry.getArguments().getString("providerId").orEmpty()
-        assumeTrue(
-            "Pass providerId for a seeded conversation; feel benchmarks do not run " +
-                "against synthetic data.",
-            providerId.isNotBlank(),
-        )
+        check(PROVIDER_ID.matches(providerId)) {
+            "providerId must be a canonical UUID for an isolated seeded conversation"
+        }
     }
 
-    /**
-     * Keyboard → emoji panel → keyboard. The swap that produced a visible
-     * artefact frame on every tap, and the one the docked-surface model
-     * (ADR-0027) exists to make stationary.
-     */
+    /** Open and close the IME without folding route setup into the trace. */
     @Test
-    fun emojiSwapFrames() =
-        measureInChat { scope ->
-            scope.device.findObject(By.res("composer-input"))?.click()
-            scope.device.wait(Until.hasObject(By.res("composer-emoji")), TIMEOUT_MS)
-            repeat(3) {
-                scope.device.findObject(By.res("composer-emoji"))?.click()
-                scope.device.wait(Until.hasObject(By.res("emoji-panel")), TIMEOUT_MS)
-                scope.device.findObject(By.res("composer-emoji"))?.click()
-                scope.device.waitForIdle(IDLE_MS)
-            }
+    fun imeOpenCloseFrames() =
+        measureInV2Chat { scope ->
+            scope.requireObject("chat-v2-input").click()
+            scope.waitForIme(shown = true)
+            scope.device.pressBack()
+            scope.waitForIme(shown = false)
         }
 
     /**
-     * The attach panel arriving in the same docked slot. Separate from the emoji
-     * swap because it mounts a live CameraX preview, which is a different cost.
+     * Repeated interactive retraction. Coordinates come from the live list
+     * bounds, not from a device-specific screen guess.
      */
     @Test
-    fun attachOpenFrames() =
-        measureInChat { scope ->
+    fun repeatedInteractiveRetractFrames() =
+        measureInV2Chat { scope ->
+            val input = scope.requireObject("chat-v2-input")
+            val list = scope.requireObject("chat-v2-list")
             repeat(3) {
-                scope.device.findObject(By.res("composer-attach"))?.click()
-                scope.device.wait(Until.hasObject(By.res("attach-panel")), TIMEOUT_MS)
-                scope.device.pressBack()
-                scope.device.waitForIdle(IDLE_MS)
+                input.click()
+                scope.waitForIme(shown = true)
+                val bounds = list.visibleBounds
+                scope.device.swipe(
+                    bounds.centerX(),
+                    bounds.top + bounds.height() / 3,
+                    bounds.centerX(),
+                    bounds.bottom - 1,
+                    SWIPE_STEPS,
+                )
+                scope.waitForIme(shown = false)
+            }
+        }
+
+    /** Grow the native text input through several lines. */
+    @Test
+    fun multilineComposerGrowthFrames() =
+        measureInV2Chat { scope ->
+            val input = scope.requireObject("chat-v2-input")
+            val beforeHeight = input.visibleBounds.height()
+            input.setText(MULTILINE_TEXT)
+            val grown =
+                scope.waitUntil("multiline composer growth") {
+                    scope.findObject("chat-v2-input")
+                        ?.takeIf { it.text == MULTILINE_TEXT && it.visibleBounds.height() > beforeHeight }
+                }
+            check(grown.visibleBounds.height() > beforeHeight) {
+                "multiline composer did not grow"
+            }
+        }
+
+    /** Jump from history to the newest row with the V2 control. */
+    @Test
+    fun pageDownJumpFrames() =
+        measureInV2Chat(
+            setup = { scrollAwayFromLatest() },
+        ) { scope ->
+            scope.requireObject("chat-v2-page-down").click()
+            scope.waitUntilGone("chat-v2-page-down-visible")
+            scope.requireObject("chat-v2-list")
+        }
+
+    /** Swap mic → send → mic without sending or persisting a real message. */
+    @Test
+    fun composerControlSwapFrames() =
+        measureInV2Chat { scope ->
+            val input = scope.requireObject("chat-v2-input")
+            input.setText(CONTROL_TEXT)
+            scope.waitUntil<UiObject2>("composer send control") {
+                scope.findObject("chat-v2-send")
+                    ?.takeIf { scope.requireObject("chat-v2-input").text == CONTROL_TEXT }
+            }
+            input.setText("")
+            scope.waitUntil<UiObject2>("composer mic control") {
+                scope.findObject("chat-v2-mic")
+            }
+            Unit
+        }
+
+    /**
+     * Opening and retracting the IME while reading history must preserve the
+     * same visible bubble within 4dp. The geometry assertion is deliberately
+     * in the journey: a fast transition to the wrong anchor is still wrong.
+     */
+    @Test
+    fun scrolledUpAnchorPreservationFrames() =
+        measureInV2Chat(
+            setup = { scrollAwayFromLatest() },
+        ) { scope ->
+            val anchor = scope.requireUniqueRowAnchor()
+            val anchorResourceId =
+                anchor.resourceName ?: error("V2 row anchor has no resource ID")
+            val before = anchor.visibleBounds.top
+            scope.requireObject("chat-v2-input").click()
+            scope.waitForIme(shown = true)
+            scope.device.pressBack()
+            scope.waitForIme(shown = false)
+            val after = scope.requireObject(anchorResourceId).visibleBounds.top
+            val maxDriftPx =
+                (MAX_ANCHOR_DRIFT_DP * InstrumentationRegistry.getInstrumentation()
+                    .targetContext.resources.displayMetrics.density).toInt()
+            check(kotlin.math.abs(after - before) <= maxDriftPx) {
+                "V2 history anchor moved ${kotlin.math.abs(after - before)}px; " +
+                    "allowed ${maxDriftPx}px (4dp)"
             }
         }
 
@@ -137,12 +214,16 @@ class FeelBenchmark {
     @Test
     fun tabSwitchFrames() =
         measure { scope ->
-            scope.device.wait(Until.hasObject(By.desc("Home")), TIMEOUT_MS)
+            scope.requireDescription("Home")
             repeat(4) {
-                scope.device.findObject(By.desc("You"))?.click()
-                scope.device.waitForIdle(IDLE_MS)
-                scope.device.findObject(By.desc("Home"))?.click()
-                scope.device.waitForIdle(IDLE_MS)
+                scope.requireDescription("You").click()
+                scope.waitUntil<UiObject2>("You tab selected") {
+                    scope.findObject("nav-settings")?.takeIf { it.isSelected }
+                }
+                scope.requireDescription("Home").click()
+                scope.waitUntil<UiObject2>("Home tab selected") {
+                    scope.findObject("nav-home")?.takeIf { it.isSelected }
+                }
             }
         }
 
@@ -155,10 +236,12 @@ class FeelBenchmark {
     fun chatPushPopFrames() =
         measure { scope ->
             repeat(3) {
-                scope.device.findObject(By.res("rail-$providerId"))?.click()
-                scope.device.wait(Until.hasObject(By.res("chat-title")), TIMEOUT_MS)
-                scope.device.findObject(By.res("chat-back"))?.click()
-                scope.device.wait(Until.hasObject(By.desc("Home")), TIMEOUT_MS)
+                scope.requireObject("rail-$providerId").click()
+                scope.requireObject("chat-title")
+                scope.requireObject("chat-back").click()
+                scope.waitUntilGone("chat-title")
+                scope.requireDescription("Home")
+                scope.requireObject("home-scroll")
             }
         }
 
@@ -174,9 +257,11 @@ class FeelBenchmark {
             iterations = ITERATIONS,
             startupMode = null,
             setupBlock = {
+                killProcess()
                 pressHome()
                 startActivityAndWait()
-                device.waitForIdle(IDLE_MS)
+                requireObject("home-scroll")
+                waitForIme(shown = false)
             },
         ) {
             interaction(this)
@@ -188,7 +273,10 @@ class FeelBenchmark {
      * push has its own test, and folding it in here would put a route
      * transition's frames into a composer swap's numbers.
      */
-    private fun measureInChat(interaction: (MacrobenchmarkScope) -> Unit) {
+    private fun measureInV2Chat(
+        setup: MacrobenchmarkScope.() -> Unit = {},
+        interaction: (MacrobenchmarkScope) -> Unit,
+    ) {
         rule.measureRepeated(
             packageName = PACKAGE_NAME,
             metrics = listOf(FrameTimingMetric()),
@@ -199,14 +287,11 @@ class FeelBenchmark {
             iterations = ITERATIONS,
             startupMode = null,
             setupBlock = {
+                killProcess()
                 pressHome()
-                startActivityAndWait()
-                device.wait(Until.findObject(By.res("rail-$providerId")), OPEN_MS)
-                    ?.click()
-                    ?: error("no chat in the rail for providerId=$providerId")
-                check(device.wait(Until.hasObject(By.res("chat-title")), OPEN_MS)) {
-                    "chat did not become usable"
-                }
+                openV2ChatForSetup()
+                resetV2State()
+                setup()
                 device.waitForIdle(IDLE_MS)
             },
         ) {
@@ -214,7 +299,143 @@ class FeelBenchmark {
         }
     }
 
+    /**
+     * Explicit component launch means the custom URI does not need a browsable
+     * manifest filter. The app still validates the complete URL and accepts it
+     * only in debug or the internal benchmark artifact.
+     */
+    private fun MacrobenchmarkScope.openV2ChatForSetup() {
+        device.executeShellCommand(
+            "am start -W -a android.intent.action.VIEW " +
+                "--ez benchmark_read_only true " +
+                "-d companionchat://chat-v2/$providerId " +
+                "-n $PACKAGE_NAME/.MainActivity",
+        )
+        check(device.wait(Until.hasObject(By.res("chat-v2-screen")), OPEN_MS)) {
+            "internal V2 route did not become usable"
+        }
+        requireObject("chat-v2-list")
+        requireObject("chat-v2-input")
+    }
+
+    private fun MacrobenchmarkScope.scrollAwayFromLatest() {
+        val list = requireObject("chat-v2-list")
+        check(list.isScrollable) {
+            "chat-v2-list is not scrollable; seed enough real history"
+        }
+        repeat(3) {
+            list.fling(Direction.DOWN)
+            device.waitForIdle(IDLE_MS)
+        }
+        var marker =
+            device.wait(
+                Until.findObject(By.res("chat-v2-page-down-visible")),
+                TIMEOUT_MS,
+            )
+        if (marker == null) {
+            repeat(3) {
+                list.fling(Direction.UP)
+                device.waitForIdle(IDLE_MS)
+            }
+            marker =
+                device.wait(
+                    Until.findObject(By.res("chat-v2-page-down-visible")),
+                    TIMEOUT_MS,
+                )
+        }
+        check(marker != null) {
+            "chat-v2-page-down-visible did not appear; seed more real history"
+        }
+        requireObject("chat-v2-page-down")
+    }
+
+    private fun MacrobenchmarkScope.resetV2State() {
+        val input = requireObject("chat-v2-input")
+        input.setText("")
+        if (readImeInsets().visible) {
+            device.pressBack()
+        }
+        waitForIme(shown = false)
+        check(findObject("chat-v2-page-down-visible") == null) {
+            "V2 route inherited a scrolled-away position after force-stop"
+        }
+        requireObject("chat-v2-mic")
+    }
+
+    private fun MacrobenchmarkScope.findObject(testId: String): UiObject2? =
+        device.findObject(By.res(testId))
+
+    private fun MacrobenchmarkScope.requireObject(testId: String): UiObject2 =
+        device.wait(Until.findObject(By.res(testId)), TIMEOUT_MS)
+            ?: error("required V2 testID is missing: $testId")
+
+    private fun MacrobenchmarkScope.requireDescription(description: String): UiObject2 =
+        device.wait(Until.findObject(By.desc(description)), TIMEOUT_MS)
+            ?: error("required accessibility description is missing: $description")
+
+    private fun MacrobenchmarkScope.requireUniqueRowAnchor(): UiObject2 {
+        val listBounds = requireObject("chat-v2-list").visibleBounds
+        val dockTop = requireObject("chat-v2-dock").visibleBounds.top
+        return device.findObjects(By.res(ROW_ID_PATTERN))
+            .firstOrNull { row ->
+                row.resourceName?.contains("chat-v2-row-") == true &&
+                    row.visibleBounds.top >= listBounds.top &&
+                    row.visibleBounds.bottom <= dockTop
+            }
+            ?: error("no fully visible unique chat-v2-row-* anchor")
+    }
+
+    private fun MacrobenchmarkScope.waitForIme(shown: Boolean) {
+        val deadline = SystemClock.uptimeMillis() + TIMEOUT_MS
+        var insets = readImeInsets()
+        while (SystemClock.uptimeMillis() < deadline) {
+            insets = readImeInsets()
+            if (insets.visible == shown) return
+            SystemClock.sleep(POLL_MS)
+        }
+        error(
+            "IME did not become ${if (shown) "visible" else "hidden"}; " +
+                "WindowInsets frame=${insets.frame}, visible=${insets.visible}",
+        )
+    }
+
+    private fun MacrobenchmarkScope.readImeInsets(): ImeInsets {
+        val state = device.executeShellCommand("dumpsys window insets")
+        for (type in IME_TYPE.findAll(state)) {
+            val block = state.substring(type.range.first, minOf(state.length, type.range.first + 800))
+            val frame = IME_FRAME.find(block)?.value
+            val visible = IME_VISIBLE.find(block)?.groupValues?.get(1)?.toBooleanStrictOrNull()
+            if (frame != null && visible != null) {
+                return ImeInsets(visible = visible, frame = frame)
+            }
+        }
+        error("dumpsys window insets has no parseable type=ime source with frame and visibility")
+    }
+
+    private fun MacrobenchmarkScope.waitUntilGone(testId: String) {
+        check(device.wait(Until.gone(By.res(testId)), TIMEOUT_MS)) {
+            "$testId did not disappear"
+        }
+    }
+
+    private fun <T> MacrobenchmarkScope.waitUntil(
+        description: String,
+        block: () -> T?,
+    ): T {
+        val deadline = SystemClock.uptimeMillis() + TIMEOUT_MS
+        while (SystemClock.uptimeMillis() < deadline) {
+            block()?.let { return it }
+            SystemClock.sleep(POLL_MS)
+        }
+        error("timed out waiting for $description")
+    }
+
     companion object {
+        private data class ImeInsets(
+            val visible: Boolean,
+            val frame: String,
+        )
+
         private const val PACKAGE_NAME = "com.companionchat"
 
         /**
@@ -226,5 +447,21 @@ class FeelBenchmark {
         private const val TIMEOUT_MS = 5_000L
         private const val OPEN_MS = 20_000L
         private const val IDLE_MS = 2_000L
+        private const val POLL_MS = 100L
+        private const val SWIPE_STEPS = 24
+        private const val MAX_ANCHOR_DRIFT_DP = 4
+        private const val MULTILINE_TEXT =
+            "First line\nSecond line\nThird line\nFourth line"
+        private const val CONTROL_TEXT = "benchmark typing only"
+        private val PROVIDER_ID =
+            Regex(
+                "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                RegexOption.IGNORE_CASE,
+            )
+        private val IME_TYPE = Regex("(?:mType|type)=ime\\b")
+        private val IME_FRAME =
+            Regex("(?:mFrame|frame)=\\[-?\\d+,-?\\d+]\\[-?\\d+,-?\\d+]")
+        private val IME_VISIBLE = Regex("(?:mVisible|visible)=(true|false)")
+        private val ROW_ID_PATTERN = Pattern.compile(".*chat-v2-row-.*")
     }
 }

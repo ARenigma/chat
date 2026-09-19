@@ -62,6 +62,19 @@ export type TranscriptMessage = Message & {
 /** Marks a locally-created row that the server has not yet confirmed. */
 export const PENDING_PREFIX = 'pending-';
 
+/**
+ * How many messages one fetch of a transcript returns.
+ *
+ * Here rather than in `src/api/chat.ts`, which is where it used to live, for
+ * one reason: a full page means older messages EXIST beyond the window, and
+ * anything merged into the transcript beside the messages — a call log, a
+ * session boundary — has to know that to avoid printing a row from a stretch of
+ * history nobody has loaded. Those consumers are pure row builders and cannot
+ * import the Supabase client, so the number moved to the module both sides
+ * already share instead of being copied into one of them.
+ */
+export const MESSAGE_PAGE_SIZE = 100;
+
 export function isPending(message: TranscriptMessage): boolean {
   return message.id.startsWith(PENDING_PREFIX);
 }

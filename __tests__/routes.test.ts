@@ -7,10 +7,13 @@
  */
 import {
   memberParent,
+  parseChatV2Url,
   providerParent,
   transitionFor,
   type MemberRoute,
 } from '../src/lib/routes';
+
+const PEER_ID = '11111111-1111-4111-8111-111111111111';
 
 describe('memberParent', () => {
   it('returns null at the root so Android can close the app', () => {
@@ -35,6 +38,18 @@ describe('memberParent', () => {
     // back (chatsList → home) is what leaves for Home. Instagram / Signal.
     expect(memberParent({ name: 'chat', providerId: 'p1', from: 'chatsList' })).toEqual({
       name: 'chatsList',
+    });
+  });
+
+  it('returns the debug V2 conversation to Home', () => {
+    expect(
+      memberParent({
+        name: 'chatV2',
+        providerId: PEER_ID,
+        benchmarkReadOnly: false,
+      }),
+    ).toEqual({
+      name: 'home',
     });
   });
 
@@ -104,6 +119,11 @@ describe('transitionFor', () => {
     home: { name: 'home' },
     providerDetail: { name: 'providerDetail', providerId: 'p1', from: 'home' },
     chat: { name: 'chat', providerId: 'p1', from: 'home' },
+    chatV2: {
+      name: 'chatV2',
+      providerId: PEER_ID,
+      benchmarkReadOnly: false,
+    },
     call: { name: 'call', providerId: 'p1', direction: 'out', callId: null, medium: 'voice' },
     apply: { name: 'apply', from: 'home' },
     applicationStatus: { name: 'applicationStatus' },
@@ -131,6 +151,7 @@ describe('transitionFor', () => {
     for (const name of [
       'providerDetail',
       'chat',
+      'chatV2',
       'call',
       'apply',
       'applicationStatus',
@@ -158,5 +179,23 @@ describe('transitionFor', () => {
         expect(memberParent(route)).not.toBeNull();
       }
     }
+  });
+});
+
+describe('parseChatV2Url', () => {
+  const url = `companionchat://chat-v2/${PEER_ID}`;
+
+  it('accepts the explicit V2 link in development', () => {
+    expect(parseChatV2Url(url, true)).toBe(PEER_ID);
+  });
+
+  it('ignores the V2 link in release', () => {
+    expect(parseChatV2Url(url, false)).toBeNull();
+  });
+
+  it('rejects malformed ids and lookalike routes', () => {
+    expect(parseChatV2Url('companionchat://chat-v2/not-a-uuid', true)).toBeNull();
+    expect(parseChatV2Url(`companionchat://peer/${PEER_ID}`, true)).toBeNull();
+    expect(parseChatV2Url(`${url}?unexpected=true`, true)).toBeNull();
   });
 });

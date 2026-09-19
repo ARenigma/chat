@@ -159,6 +159,7 @@ const MIGRATIONS = [
   'supabase/migrations/118_session_leases_require_a_real_participant.sql',
   'supabase/migrations/119_call_quality_records_loss_rate_and_mos.sql',
   'supabase/migrations/120_start_call_detects_a_simultaneous_ring.sql',
+  'supabase/migrations/121_disable_scheduled_engagement_nudges.sql',
 ];
 
 /**

@@ -169,11 +169,9 @@ if (benchmarkFiles.length === 0) {
       `    -Pandroid.testInstrumentationRunnerArguments.class=` +
       `com.companionchat.baselineprofile.FeelBenchmark \\\n` +
       `    -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=Macrobenchmark \\\n` +
-      `    -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR \\\n` +
       `    -PreactNativeArchitectures=arm64-v8a --no-parallel\n\n` +
       `Note: Macrobenchmark requires a physical device (not an emulator) for\n` +
-      `reliable frame-timing results. The suppressErrors=EMULATOR flag allows\n` +
-      `collection on an emulator but the numbers will not be representative.\n\n` +
+      `reliable frame-timing results; this gate does not suppress that check.\n\n` +
       `https://developer.android.com/topic/performance/benchmarking/macrobenchmark-overview\n`,
   );
   process.exit(1);
@@ -183,6 +181,7 @@ if (benchmarkFiles.length === 0) {
 // Apply gates
 // ---------------------------------------------------------------------------
 const benchmarkFilter = arg('benchmark');
+const strict = process.argv.includes('--strict');
 const metricName = arg('metric', DEFAULTS.metric);
 const p95Limit = Number(arg('p95', DEFAULTS.p95Limit));
 const p99Limit = Number(arg('p99', DEFAULTS.p99Limit));
@@ -190,6 +189,7 @@ const overrunMetric = arg('overrun-metric', DEFAULTS.overrunMetric);
 const overrunP95Limit = Number(arg('overrun-p95', DEFAULTS.overrunP95Limit));
 
 let failed = false;
+let checkedEntries = 0;
 
 for (const filePath of benchmarkFiles) {
   const data = parseBenchmarkFile(filePath);
@@ -207,6 +207,7 @@ for (const filePath of benchmarkFiles) {
   }
 
   for (const bench of entries) {
+    checkedEntries += 1;
     const label = `${bench.className ?? ''}#${bench.name}`;
     const metrics = bench.metrics ?? {};
 
@@ -238,6 +239,12 @@ for (const filePath of benchmarkFiles) {
           }\n`,
       );
     } else {
+      if (strict) {
+        failed = true;
+        process.stderr.write(
+          `benchmark-gate: required metric "${metricName}" is missing from ${label}\n`,
+        );
+      }
       process.stdout.write(
         `  "${metricName}" not present in this benchmark run\n` +
           `  (wrong class, not measured, or emulator-suppressed GPU metrics)\n`,
@@ -258,9 +265,26 @@ for (const filePath of benchmarkFiles) {
               passOverrun ? 'PASS' : 'FAIL'
             }\n`,
         );
+      } else if (strict) {
+        failed = true;
+        process.stderr.write(
+          `benchmark-gate: required metric "${overrunMetric}" in ${label} has no runs array\n`,
+        );
       }
+    } else if (strict) {
+      failed = true;
+      process.stderr.write(
+        `benchmark-gate: required metric "${overrunMetric}" is missing from ${label}\n`,
+      );
     }
   }
+}
+
+if (strict && checkedEntries === 0) {
+  failed = true;
+  process.stderr.write(
+    'benchmark-gate: strict mode found no benchmark entries to gate\n',
+  );
 }
 
 process.stdout.write('\n');

@@ -34,6 +34,17 @@ class WindowChromeModule(private val reactContext: ReactApplicationContext) :
 
     override fun getName(): String = NAME
 
+    /**
+     * Build capabilities consumed before an asynchronous TurboModule call could
+     * complete. The V2 route is accepted only when this compile-time field is
+     * true; release defines it as false and R8 can erase the accepting branch.
+     */
+    override fun getConstants(): Map<String, Any> =
+        mapOf(
+            "allowBenchmarkRoutes" to BuildConfig.ALLOW_BENCHMARK_ROUTES,
+            "benchmarkReadOnly" to MainActivity.benchmarkReadOnlyLaunch,
+        )
+
     @ReactMethod
     fun setActivityBlur(enabled: Boolean) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return

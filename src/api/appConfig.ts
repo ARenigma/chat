@@ -167,7 +167,7 @@ export const FALLBACK_AUTH_UI: AuthUiConfig = {
 export const FALLBACK_PERMISSIONS: PermissionsConfig = {
   environment_mode: 'internal',
   notification_internal: 'optional',
-  notification_production: 'required',
+  notification_production: 'optional',
   microphone_internal: 'required',
   microphone_production: 'required',
   camera_internal: 'required',

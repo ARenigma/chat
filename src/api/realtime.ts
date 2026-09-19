@@ -34,12 +34,14 @@ import {
   type TranscriptMessage,
 } from '../lib/transcript';
 import { recoverMessageGap, keys } from './chat';
+/*
+ * The indicator's TTL and the sender's throttle now live in `lib/presence.ts`.
+ * They moved because the V2 composer's recording ping has to sit between them
+ * and could not read them from here without importing the Supabase client; see
+ * the note there.
+ */
+import { TYPING_THROTTLE_MS, TYPING_TTL_MS } from '../lib/presence';
 import { useStore, type PeerActivity } from '../store/useStore';
-
-/** How long a typing broadcast keeps the indicator up without a refresh. */
-const TYPING_TTL_MS = 4_000;
-/** Minimum gap between outbound typing broadcasts, per keystroke burst. */
-const TYPING_THROTTLE_MS = 1_500;
 
 export const messagesKey = (conversationId: string) => ['messages', conversationId] as const;
 

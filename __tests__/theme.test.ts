@@ -16,6 +16,19 @@ const stripComments = (body: string): string =>
   body.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 const read = (p: string): string => readFileSync(join(ROOT, p), 'utf8');
 
+/**
+ * Every directory of shipped UI, for the gates in this file that walk source.
+ *
+ * `src/chat-v2` joined on 2026-09-19 and the reason it had to is the point of
+ * having one constant: the V2 transcript is a second set of bubbles, a second
+ * composer and a second set of centred rows, built beside V1 rather than inside
+ * it — so for as long as it was outside this list it was a whole chat surface
+ * that no token, spacing, contrast or accent gate could see. A directory of UI
+ * that is invisible to the design gates is how two chats end up with two design
+ * systems.
+ */
+const UI_SOURCE_DIRS = ['src/components', 'src/screens', 'src/chat-v2'];
+
 /** WCAG relative luminance. */
 function luminance(hex: string): number {
   const channel = (v: number): number => {
@@ -459,7 +472,7 @@ describe('typography is bound to real font files', () => {
     // appearing in that explanation was failing the very gate the explanation
     // exists to honour. A gate that cannot tell code from the reasoning about
     // the code has failed three times in this repo already.
-    const sources = ['src/components', 'src/screens']
+    const sources = UI_SOURCE_DIRS
       .flatMap(dir =>
         readdirSync(join(ROOT, dir)).map(f =>
           stripComments(read(`${dir}/${f}`)),
@@ -902,7 +915,7 @@ describe('large text roles carry a font-scale cap', () => {
   // roles are uncapped by construction and never match. See ADR-0024.
   const CAPPED_SPREAD =
     /\.\.\.\s*TOKENS\.typography\.(wordmark|display|headline|title)[A-Za-z]*/;
-  const sources = ['src/components', 'src/screens'].flatMap(dir =>
+  const sources = UI_SOURCE_DIRS.flatMap(dir =>
     readdirSync(join(ROOT, dir))
       .filter(f => f.endsWith('.tsx'))
       .map(f => ({
@@ -1251,7 +1264,7 @@ describe('a kind of text reads at one role, screen or sheet', () => {
 describe('spacing lives in tokens', () => {
   const SPACING =
     /\b(padding|margin|gap|rowGap|columnGap)(Top|Bottom|Left|Right|Horizontal|Vertical|Start|End)?\s*:\s*(-?[1-9]\d*)\b/g;
-  const sources = ['src/components', 'src/screens']
+  const sources = UI_SOURCE_DIRS
     .flatMap(dir =>
       readdirSync(join(ROOT, dir))
         .filter(f => f.endsWith('.tsx'))
@@ -1348,6 +1361,37 @@ describe('spacing lives in tokens', () => {
       'paddingRight: 10',
       'paddingBottom: 5',
     ],
+    /*
+     * The V2 bubble, carrying the SAME measured values as `Turn.tsx` above and
+     * for the same reasons — it is the same WhatsApp box read from the same
+     * APK pull, rebuilt in `src/chat-v2` rather than edited in place so V1 kept
+     * working while it was written.
+     *
+     * Enumerated rather than waved through as "V2 is exempt", because the
+     * exemption has to stay as narrow here as it is for V1: the four insets on
+     * the bubble itself are `CHAT_V2_BUBBLE_PADDING` and are already tokens by
+     * another name, so what is left is the optical set that has no scale step.
+     *
+     *   paddingBottom: 14   the reserve under a bubble carrying a reaction
+     *                       pill, so the overhang clears the next inverted cell
+     *   gap: 1              the quote block's author-to-body leading
+     *   gap: 3              the media timestamp chip's icon-to-label gap
+     *   paddingHorizontal: 5 / paddingVertical: 1
+     *                       the media timestamp chip and the reaction pill,
+     *                       both sized to a 13pt glyph rather than to the 4dp
+     *                       scale — `ThreadBubble.tsx` above takes the same
+     *                       pair for the same chip
+     *
+     * Rounding any of them onto the 4dp scale discards a measurement, which is
+     * the trade `SOURCE_METRICS` argues against in src/lib/onboarding.ts.
+     */
+    'src/chat-v2/ChatMessageCellV2.tsx': [
+      'paddingBottom: 14',
+      'paddingHorizontal: 5',
+      'paddingVertical: 1',
+      'gap: 3',
+      'gap: 1',
+    ],
     'src/components/VoiceNote.tsx': ['paddingVertical: 1'],
     'src/screens/HomeScreen.tsx': ['padding: 3'],
     'src/screens/PolicyGateScreen.tsx': ['gap: 6'],
@@ -1393,7 +1437,7 @@ describe('spacing lives in tokens', () => {
  * `interaction.minTarget` now).
  */
 describe('component heights come from tokens', () => {
-  const sources = ['src/components', 'src/screens']
+  const sources = UI_SOURCE_DIRS
     .flatMap(dir =>
       readdirSync(join(ROOT, dir))
         .filter(f => f.endsWith('.tsx'))
@@ -1450,7 +1494,7 @@ describe('component heights come from tokens', () => {
  * this calmer" is one number. Everything goes through src/theme/motion.ts.
  */
 describe('motion lives in one module', () => {
-  const sources = ['src/components', 'src/screens'].flatMap(dir =>
+  const sources = UI_SOURCE_DIRS.flatMap(dir =>
     readdirSync(join(ROOT, dir))
       .filter(f => f.endsWith('.tsx'))
       .map(f => ({ file: `${dir}/${f}`, body: read(`${dir}/${f}`) })),
@@ -1836,16 +1880,16 @@ describe('accessibility budget', () => {
 });
 
 describe('accent budget is enforced in code, not just documented', () => {
-  const componentSources = readdirSync(join(ROOT, 'src/components'))
-    .filter(f => f.endsWith('.tsx'))
-    .map(f => ({ file: f, body: read(`src/components/${f}`) }));
-  const screenSources = readdirSync(join(ROOT, 'src/screens'))
-    .filter(f => f.endsWith('.tsx'))
-    .map(f => ({ file: f, body: read(`src/screens/${f}`) }));
+  // Every shipped UI directory, V2 included — see `UI_SOURCE_DIRS`. The file
+  // name alone is the identity, because it is what the list below reads as.
+  const uiSources = UI_SOURCE_DIRS.flatMap(dir =>
+    readdirSync(join(ROOT, dir))
+      .filter(f => f.endsWith('.tsx'))
+      .map(f => ({ file: f, body: read(`${dir}/${f}`) })),
+  );
 
   it('uses the coral in only the permitted places', () => {
-    const users = componentSources
-      .concat(screenSources)
+    const users = uiSources
       .filter(s => /color\.(bg|border|text)\.accent/.test(s.body))
       .map(s => s.file)
       .sort();
@@ -1927,6 +1971,34 @@ describe('accent budget is enforced in code, not just documented', () => {
        */
       'Button.tsx',
       /*
+       * The V2 composer's send disc, and the same argument `SendButton` makes
+       * below: one action on the bar, and the coral IS which control sends.
+       *
+       * `Composer.tsx` used to sit in this list and no longer appears in it at
+       * all. THAT IS NOT THE RULE RELAXING, and it is worth stating because
+       * the entry vanishing looks like one: V1's send control became
+       * `<SendButton />`, which is itself on this list, so the accent moved
+       * into the component that already argues for it instead of being spelled
+       * out in two places. V2 keeps its own entry because its capsule draws the
+       * disc inline rather than delegating.
+       */
+      'ChatComposerV2.tsx',
+      /*
+       * The V2 bubble. `Turn.tsx` below is the same entry for the V1
+       * transcript and carries the full argument. Here the coral is ONE thing:
+       * the reply quote's left rule, which is the mark both WhatsApp and the
+       * reference client put on a quoted parent. The bubble fills themselves
+       * are `bubble/mine` and `bubble/theirs`, not the accent.
+       */
+      'ChatMessageCellV2.tsx',
+      /*
+       * The page-down control's unread count — the badge `Badge.tsx` and
+       * `ThreadBubble.tsx` already argue for, in the transcript instead of the
+       * inbox. A state signal saying there is mail below you, which is the
+       * whole reason the control is worth tapping.
+       */
+      'ChatPageDownV2.tsx',
+      /*
        * CallScreen no longer uses the coral: the call background is now a CALM
        * dim/blur surface (Amit, 2026-09-15) — the peer's photo blurred behind a
        * dark veil, or a dark gradient — not the old warm accent field. The accept
@@ -1940,6 +2012,23 @@ describe('accent budget is enforced in code, not just documented', () => {
        * variant reuses the same token-tint the balance pill flinches to.
        */
       'ChatScreen.tsx',
+      /*
+       * The V2 chat shell. Three uses, each already on this list under another
+       * file's name: the retry and start-session buttons are the primary
+       * action of the state they appear in (`Button.tsx`'s argument), and the
+       * reply strip's left rule is the same quote mark the bubble takes. No
+       * page, header or divider.
+       */
+      'ChatScreenV2.tsx',
+      /*
+       * The V2 session band, which is V1's talk-time meter moved into its own
+       * file: the same Recharge CTA, the same live dot, the same coral wash on
+       * the low state. The argument is `ChatScreen.tsx`'s above, unchanged —
+       * an action and a live-state signal, which is what the budget reserves
+       * the coral for. The Extend button is the primary action of the one
+       * state it appears in.
+       */
+      'ChatSessionBarV2.tsx',
       /*
        * The chat wallpaper's blush wash uses bg.accentTint — the softest tint,
        * reserved for warm atmospheric surfaces (the same token behind Avatar's
@@ -1958,11 +2047,6 @@ describe('accent budget is enforced in code, not just documented', () => {
        * — and it appears once, for one second, at the end of one flow.
        */
       'CompletionRow.tsx',
-      // The composer's send disc. The coral media "+" that used to justify this
-      // entry alongside it is gone with the media Sheet — the attach surface is
-      // now a docked panel of neutral tiles (AttachPanel.tsx), so the send
-      // button is the single accent on the bar again.
-      'Composer.tsx',
       /*
        * The emoji picker's selected category tab. The same M3 navigation
        * indicator FloatingToolbar already argues for, one level down: a tonal
@@ -2197,7 +2281,7 @@ describe('accent budget is enforced in code, not just documented', () => {
       'ThreadBubble.tsx',
     ];
     const literal = /'(#[0-9A-Fa-f]{3,8}|rgba?\([^')]*\))'/g;
-    for (const s of componentSources.filter(c => TRANSCRIPT.includes(c.file))) {
+    for (const s of uiSources.filter(c => TRANSCRIPT.includes(c.file))) {
       const found = s.body
         .split('\n')
         .filter(line => !line.includes('shadowColor'))
@@ -2207,7 +2291,7 @@ describe('accent budget is enforced in code, not just documented', () => {
   });
 
   it('never uses the accent for a page background', () => {
-    for (const s of componentSources.concat(screenSources)) {
+    for (const s of uiSources) {
       const page =
         /backgroundColor:\s*TOKENS\.color\.bg\.accent\w*,[\s\S]{0,80}(root|host:)/;
       expect(s.body).not.toMatch(page);
@@ -2270,7 +2354,7 @@ describe('accent budget is enforced in code, not just documented', () => {
      */
     const codeOnly = (body: string): string =>
       body.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-    for (const s of componentSources.concat(screenSources)) {
+    for (const s of uiSources) {
       if (EXEMPT.has(s.file.split('/').pop() ?? '')) {
         continue;
       }
@@ -2489,7 +2573,7 @@ describe('iOS conformance', () => {
     // borderCurve is iOS-only and a no-op on Android, so it is free. It is also
     // the cheapest single change that makes a rounded rectangle read as iPhone,
     // because every one of them was a circular arc before this.
-    const curved = ['src/components', 'src/screens']
+    const curved = UI_SOURCE_DIRS
       .flatMap(dir =>
         readdirSync(join(ROOT, dir))
           .filter(f => f.endsWith('.tsx'))
@@ -2558,7 +2642,7 @@ describe('Material 3 interaction survives', () => {
     // it renders whatever that Android version's framework draws, and on API 31+
     // Material You would recolour it from the user's wallpaper. RN's Switch was
     // rendering Android's stock teal here.
-    const sources = ['src/components', 'src/screens'].flatMap(dir =>
+    const sources = UI_SOURCE_DIRS.flatMap(dir =>
       readdirSync(join(ROOT, dir))
         .filter(f => f.endsWith('.tsx'))
         .map(f => ({ file: f, body: withoutJsxComments(read(`${dir}/${f}`)) })),
@@ -2618,7 +2702,7 @@ function withoutJsxComments(source: string): string {
  * nothing anywhere fails.
  */
 describe('light and dark', () => {
-  const sources = ['src/components', 'src/screens'].flatMap(dir =>
+  const sources = UI_SOURCE_DIRS.flatMap(dir =>
     readdirSync(join(ROOT, dir))
       .filter(f => f.endsWith('.tsx'))
       .map(f => ({ file: `${dir}/${f}`, body: read(`${dir}/${f}`) })),
@@ -3571,7 +3655,7 @@ describe('a primary action is the brand colour, not black and white', () => {
  * left it in two banners. Prose did not stop any of that. These do.
  */
 describe('art direction', () => {
-  const sources = ['src/components', 'src/screens'].flatMap(dir =>
+  const sources = UI_SOURCE_DIRS.flatMap(dir =>
     readdirSync(join(ROOT, dir))
       .filter(f => f.endsWith('.tsx'))
       .map(f => ({

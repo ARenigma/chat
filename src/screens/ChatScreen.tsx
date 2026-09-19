@@ -6,20 +6,17 @@ import {
   type ListRenderItemInfo,
   type ViewToken,
 } from '@shopify/flash-list';
-import {
-  useWindowDimensions,
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
-  type ViewabilityConfig,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
 import Animated, {
   useAnimatedStyle,
+  useDerivedValue,
   useSharedValue,
   type SharedValue,
 } from 'react-native-reanimated';
+import {
+  KeyboardChatScrollView,
+  KeyboardGestureArea,
+  KeyboardStickyView,
+} from 'react-native-keyboard-controller';
 import {
   barIn,
   barOut,
@@ -46,6 +43,18 @@ import {
   useKeyboardEngine,
   type KeyboardSettled,
 } from '../lib/keyboardEngine';
+import type {
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  ScrollViewProps,
+  ViewabilityConfig,
+} from 'react-native';
+import {
+  useWindowDimensions,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { initialOf } from '../lib/display';
 import {
   isPending,
@@ -77,10 +86,10 @@ import { useReactions, useToggleReaction } from '../api/reactions';
 import { CALLS_ENABLED } from '../api/calls';
 import { useKillSwitches } from '../api/appConfig';
 import { useSendVoiceNote, useRetryVoiceSend, useVoicePlayer } from '../api/voice';
-import { useSendImage, useRetryImageSend } from '../api/attachments';
+import { useRetryImageSend } from '../api/attachments';
 import { opensDay, timeOfDay } from '../lib/datetime';
 import { voiceOf, type VoiceDraft } from '../lib/voice';
-import { imageOf, type ImageDraft } from '../lib/attachments';
+import { imageOf } from '../lib/attachments';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { readPresence } from '../lib/presence';
@@ -121,7 +130,6 @@ import { useEarnings } from '../api/provider';
 import { Avatar } from '../components/Avatar';
 import { Badge } from '../components/Badge';
 import { ChatWallpaper } from '../components/ChatWallpaper';
-import { FirstMovePills } from '../components/FirstMovePills';
 import { LoadingIndicator } from '../components/LoadingIndicator';
 import { Composer, COMPOSER_ISLAND_INSET } from '../components/Composer';
 import { ConfirmDialog } from '../components/ConfirmDialog';
@@ -375,7 +383,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
     const settle = () => {
       if (!fired) {
         fired = true;
-        setWallpaperReady(true);
+      setWallpaperReady(true);
       }
     };
     const unsubscribe = onTransitionSettled(settle);
@@ -441,14 +449,6 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
     (v: boolean) => ime.getState().set({ composerFocused: v }),
     [ime],
   );
-  const onPanelChange = useCallback(
-    (v: boolean) => ime.getState().set({ emojiPanelOpen: v }),
-    [ime],
-  );
-  const onPanelSearchChange = useCallback(
-    (v: boolean) => ime.getState().set({ emojiSearching: v }),
-    [ime],
-  );
   /*
    * The controller's settled numbers mirror into the same store the `Keyboard`
    * listeners feed (see useChatImeStore): show sets height + up, hide keeps the
@@ -465,26 +465,28 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
     [ime],
   );
   const keyboard = useKeyboardEngine(onKeyboardSettled);
-  const panelY = useSharedValue(
-    readKeyboardHeight(false) + insets.bottom,
+  const dockHeight = useSharedValue(0);
+  /*
+   * The composer is in flow at rest, so the list already stops above it.
+   * KeyboardStickyView translates that same row over the list while the IME is
+   * open. Add exactly one row-height of scroll padding across that native IME
+   * progress—zero at rest, full height when open—so the newest bubble remains
+   * above the translated composer.
+   *
+   * Android's implementation guidance requires per-frame synchronization via
+   * WindowInsetsAnimationCompat; keyboard.progress is that UI-thread signal.
+   * https://developer.android.com/develop/ui/views/layout/sw-keyboard
+   */
+  const imeComposerPad = useDerivedValue(
+    () => dockHeight.value * keyboard.progress.value,
   );
   const onDockGeometry = useCallback(
-    (h: number) => ime.getState().set({ dockHeight: h }),
-    [ime],
+    (h: number) => {
+      dockHeight.value = h;
+      ime.getState().set({ dockHeight: h });
+    },
+    [dockHeight, ime],
   );
-  /*
-   * The whole transcript rides two translations and zero layout: the IME's
-   * live position, plus the panel cover that cancels the reserved slot's pad
-   * while the panel is closed. At rest both terms agree with the static pad
-   * exactly; in transit they move together on the UI thread, so there is no
-   * snap and no FlashList scroll recomputation.
-   * The wrapper is a plain Animated.View — NOT
-   * Animated.createAnimatedComponent(FlashList), which loses scrollToOffset
-   * (M18). The dock takes the same lift through DockStack below.
-   */
-  const listLift = useAnimatedStyle(() => ({
-    transform: [{ translateY: -keyboard.height.value + panelY.value }],
-  }));
 
   useProfile();
   const { data: selfId } = useSelfId();
@@ -681,7 +683,6 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
   const sendRef = useRef(send);
   sendRef.current = send;
   const sendVoice = useSendVoiceNote(conversationId, selfId);
-  const sendImage = useSendImage(conversationId, selfId);
   // Retry-only siblings: the object already uploaded and only
   // send_message_idempotent failed, so retrying is the RPC alone (2026-09-17
   // audit). See useRetryImageSend / useRetryVoiceSend for why this is safe
@@ -1001,15 +1002,6 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
     };
   }, [isMemberSide, providerId, queryClient, setPeerActivity, messagesLoaded, hasLiveMessage]);
 
-  const memberHasSent = useMemo(
-    () =>
-      selfId !== undefined &&
-      (messages ?? []).some(
-        m => m.sender_id === selfId && !m.id.startsWith(PENDING_PREFIX),
-      ),
-    [messages, selfId],
-  );
-
   const onSend = useCallback(
     async (text: string) => {
       setSendHaloKey(n => n + 1);
@@ -1036,21 +1028,6 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
       await sendVoice(draft, parent?.id ?? null);
     },
     [sendVoice, replyTo],
-  );
-
-  /**
-   * A picked photo, sent. Clears the reply bar for the same reason text does.
-   *
-   * Same first-send refill guard as onSendVoice and onSend.
-   */
-  const onSendImage = useCallback(
-    async (draft: ImageDraft) => {
-      setSendHaloKey(n => n + 1);
-      const parent = replyTo;
-      setReplyTo(null);
-      await sendImage(draft, parent?.id ?? null);
-    },
-    [sendImage, replyTo],
   );
 
   /**
@@ -1634,7 +1611,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
       requestLeave();
       return true;
     }
-    return false;
+      return false;
   }, [activeSession, replyTo, requestLeave]);
   useBackGuard(activeSession || replyTo !== null ? backGuard : null);
 
@@ -1673,8 +1650,8 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
 
   const commitEdit = useCallback(async () => {
     if (editing === null) {
-      return;
-    }
+        return;
+      }
     setEditBusy(true);
     const ok = await editMessage(editing.id, editDraft);
     setEditBusy(false);
@@ -2327,9 +2304,9 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
                 style={styles.extendCardTimer}>
                 {formatClock(sessionRemaining ?? 0)}
               </Text>
-              <Text allowFontScaling style={styles.extendCardTitle}>
+            <Text allowFontScaling style={styles.extendCardTitle}>
                 left
-              </Text>
+            </Text>
             </View>
             <Text allowFontScaling style={styles.extendCardSubtitle}>
               Extend this match to keep talking
@@ -2370,8 +2347,15 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
             don't compete with SlideInRight for frame budget. The transcript
             sits above it, so the 1-frame delay is invisible. */}
         {wallpaperReady ? <ChatWallpaper /> : null}
-        {/* The transcript rides the IME (listLift): wrapper translate, not layout. */}
-        <Animated.View style={[styles.transcriptWrap, listLift]}>
+        {/*
+         * Kirill chat layout (react-native-keyboard-controller "Building a Chat
+         * App" + Bluesky MessagesList): GestureArea → ChatScrollView list →
+         * KeyboardStickyView composer. No hand-rolled listLift / reserved slot.
+         */}
+        <KeyboardGestureArea
+          style={styles.transcriptWrap}
+          interpolator="ios"
+          textInputNativeID="composer-input">
         {loading ? (
           <View style={styles.loading}>
             <LoadingIndicator size={48} />
@@ -2423,7 +2407,7 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
                 showed nothing at all. */}
             <View style={styles.starters}>
               <PeerTyping name={name} />
-            </View>
+          </View>
           </Animated.View>
         ) : (
           <Transcript
@@ -2434,16 +2418,16 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
             footer={footer}
             onScroll={onTranscriptScroll}
             onViewableItemsChanged={onViewableItemsChanged}
+            composerPad={imeComposerPad}
+            safeBottom={insets.bottom}
           />
         )}
-        </Animated.View>
 
         <PageDownButton
           visible={scrolledAwayFromLatest}
           count={unreadBelow}
           onPress={scrollToLatest}
           lift={keyboard.height}
-          panelY={panelY}
         />
 
         {/*
@@ -2458,45 +2442,12 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
          * the user can still see and scroll would just be a grey veil.
           */}
         {/*
-         * The bottom stack: notices, first-move pills and the composer dock,
-         * lifted OUT of the layout flow.
-         *
-         * It used to be in flow, which meant the emoji panel's height came out of
-         * the transcript's — and when search expanded the panel to fill the chat
-         * area, the transcript was squeezed to nothing and the conversation
-         * visibly disappeared (Amit, 2026-09-04: "Emoji Searching is taking whole
-         * screen space").
-         *
-         * the reference app's panel does occupy the same area, but it OVERLAYS: the
-         * composer and the panel are translated up together and a 40% scrim is
-         * drawn over the chat behind them (`ChatActivityEnterView.java:13706-13716`
-         * for the translation, `ScrimDrawable:13905` for `alpha = 102`). The chat
-         * stays where it is and stays visible through the scrim. Absolute
-         * positioning is what lets us do the same: the panel grows over the
-         * transcript instead of out of it, so the viewport is stable by
-         * construction.
-         *
-         * The transcript's pad (`listPad`, derived in src/lib/imeGeometry.ts)
-         * keeps the newest message clear of the collapsed dock, and is
-         * deliberately NOT grown by the search expansion — that is what the
-         * scrim is for.
+         * KeyboardStickyView — Kirill/Bluesky absolute bottom composer. Rides
+         * the IME via translateY; children (row + optional emoji panel) size
+         * the dock. Replaces the hand-rolled DockStack lift.
          */}
-        <DockStack lift={keyboard.height}>
+        <KeyboardStickyView style={styles.dockStack}>
         <NoticeBar />
-
-        {/* Blush strip sits above the white composer dock so the pills match
-            the first-move reference: soft tint behind white capsules, then
-            solid chrome for the input row. */}
-        {isMemberSide && !loading && !memberHasSent ? (
-          <FirstMovePills
-            onSendSticker={() => {
-              void onSend('👋');
-            }}
-            onSayHi={() => {
-              void onSend('Hi!');
-            }}
-          />
-        ) : null}
 
         {/* Docked tray: hairline + page chrome, not a floating pill. Reply
             chrome lives in the same surface so the transcript scrolls under
@@ -2514,33 +2465,33 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
             children must remain its children or the blur bakes them in as a
             ghost halo (see Frost's own note). */}
         <DockFrost>
-          {replyTo !== null ? (
-            <View style={styles.replyBar}>
-              <View style={styles.replyRule} />
-              <View style={styles.replyFill}>
-                <Text allowFontScaling style={styles.replyAuthor}>
-                  Replying to {replyTo.author}
-                </Text>
-                <Text allowFontScaling numberOfLines={1} style={styles.replyBody}>
-                  {replyTo.body ?? 'Voice note'}
-                </Text>
-              </View>
-              <Pressable
-                onPress={() => setReplyTo(null)}
-                testID="cancel-reply"
-                accessibilityLabel="Cancel reply"
-                press="none"
+        {replyTo !== null ? (
+          <View style={styles.replyBar}>
+            <View style={styles.replyRule} />
+            <View style={styles.replyFill}>
+              <Text allowFontScaling style={styles.replyAuthor}>
+                Replying to {replyTo.author}
+              </Text>
+              <Text allowFontScaling numberOfLines={1} style={styles.replyBody}>
+                {replyTo.body ?? 'Voice note'}
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => setReplyTo(null)}
+              testID="cancel-reply"
+              accessibilityLabel="Cancel reply"
+              press="none"
                 highlight="dim"
-                size={32}
+              size={32}
                 // Circle, not the square touch box — this box sets no radius, so
                 // the `dim` fill painted a solid 32dp square behind a 12pt glyph.
                 // https://developer.android.com/training/material/animations
                 shape="circle"
-                style={styles.replyClose}>
+              style={styles.replyClose}>
                 <Icon name="close" size={TOKENS.icon.xs} color={theme.color.text.secondary} />
-              </Pressable>
-            </View>
-          ) : null}
+            </Pressable>
+          </View>
+        ) : null}
 
           {/*
             * 082: the way back in after a decline.
@@ -2566,13 +2517,12 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
                 testID="chat-start-session"
               />
             </View>
-          ) : null}
+        ) : null}
 
           <Composer
             conversationId={conversationId}
             onSend={onSend}
             onSendVoice={onSendVoice}
-            onSendImage={onSendImage}
             onTyping={notifyTyping}
             onRecording={notifyRecording}
             onRecordingEnded={notifyRecordingEnded}
@@ -2612,14 +2562,12 @@ export function ChatScreen({ providerId, onBack, onStartCall, onOpenProfile, onO
             }
             sendHaloKey={sendHaloKey}
             onFocusChange={onComposerFocus}
-            onPanelChange={onPanelChange}
-            onPanelSearchChange={onPanelSearchChange}
-            panelY={panelY}
             onDockGeometry={onDockGeometry}
           />
         </DockFrost>
-        </DockStack>
-      </View>
+        </KeyboardStickyView>
+        </KeyboardGestureArea>
+        </View>
 
       <SafetySheet
         visible={safety.open}
@@ -2810,6 +2758,8 @@ interface TranscriptProps {
   footer: () => React.ReactElement;
   onScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   onViewableItemsChanged: (info: { viewableItems: ViewToken<TranscriptRow>[] }) => void;
+  composerPad: SharedValue<number>;
+  safeBottom: number;
 }
 
 /*
@@ -2843,39 +2793,70 @@ function getTranscriptItemType(item: TranscriptRow): string {
   return 'message-text';
 }
 
-const Transcript = memo(function TranscriptView({  listRef,
+/**
+ * Kirill ChatScrollComponent (Bluesky MessagesList pattern): FlashList's
+ * `renderScrollComponent` wraps `KeyboardChatScrollView` so keyboard padding
+ * and scroll-position correction run on the UI thread.
+ */
+function ChatScrollComponent({
+  composerPad,
+  safeBottom,
+  ...props
+}: ScrollViewProps & {
+  composerPad: SharedValue<number>;
+  safeBottom: number;
+}) {
+  return (
+    <KeyboardChatScrollView
+      {...props}
+      inverted
+      extraContentPadding={composerPad}
+      offset={safeBottom}
+      keyboardLiftBehavior="always"
+      keyboardDismissMode="interactive"
+    />
+  );
+}
+
+const Transcript = memo(function TranscriptView({
+  listRef,
   rows,
   renderItem,
   header,
   footer,
   onScroll,
   onViewableItemsChanged,
+  composerPad,
+  safeBottom,
 }: TranscriptProps) {
   const styles = useStyles(makeStyles);
-  // The STRUCTURAL pad only — space.md plus the dock's own measured height.
-  // The keyboard lift is NOT a pad anymore: the whole transcript rides the
-  // IME on a translated wrapper (listLift in this screen's body), so the
-  // container never relayouts and FlashList never recomputes scroll offset.
-  // (The old AnimatedBodyInset animated `height` — a Yoga layout prop, every
-  // frame — and the discrete bodyInset snapped it. Both are gone.)
-  const dockHeight = useDockHeight();
-  const basePad = TOKENS.space.md + dockHeight;
+  const renderScroll = useCallback(
+    (props: ScrollViewProps) => (
+      <ChatScrollComponent
+        {...props}
+        composerPad={composerPad}
+        safeBottom={safeBottom}
+      />
+    ),
+    [composerPad, safeBottom],
+  );
   return (
     <FlashList
       ref={listRef}
       data={rows}
       inverted
+      style={styles.transcript}
       // localKey carries the stable key for both message rows and call rows.
       // Message rows use localKey from transcript; call rows use `call-${id}`.
       keyExtractor={r => r.localKey}
       renderItem={renderItem}
       ListHeaderComponent={header}
       ListFooterComponent={footer}
-      contentContainerStyle={[styles.list, { paddingTop: basePad }]}
-      keyboardDismissMode="interactive"
+      contentContainerStyle={styles.list}
       keyboardShouldPersistTaps="handled"
       onScroll={onScroll}
       scrollEventThrottle={16}
+      renderScrollComponent={renderScroll}
       viewabilityConfig={UNREAD_VIEWABILITY_CONFIG}
       onViewableItemsChanged={onViewableItemsChanged}
       // Separate recycle pools per cell shape: a recycled voice row handed to a
@@ -2888,28 +2869,6 @@ const Transcript = memo(function TranscriptView({  listRef,
     />
   );
 });
-
-/** The dock, riding the IME's live position on the UI thread. */
-function DockStack({
-  children,
-  lift,
-}: {
-  children: React.ReactNode;
-  lift: SharedValue<number>;
-}) {
-  const styles = useStyles(makeStyles);
-  // No measurement here: the dock's height for the transcript pad comes from
-  // the Composer's own row + reserved slot report (stable across toggles), so
-  // mounting a panel can never reflow the list through this node.
-  const dockLift = useAnimatedStyle(() => ({
-    transform: [{ translateY: -lift.value }],
-  }));
-  return (
-    <Animated.View style={[styles.dockStack, dockLift]}>
-      {children}
-    </Animated.View>
-  );
-}
 
 /** The dock's frosted plate. */
 function DockFrost({ children }: { children: React.ReactNode }) {
@@ -2954,23 +2913,19 @@ function PageDownButton({
   count,
   onPress,
   lift,
-  panelY,
 }: {
   visible: boolean;
   count: number;
   onPress: () => void;
   lift: SharedValue<number>;
-  panelY: SharedValue<number>;
 }) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
-  // Static structural offset only (gutter + dock); the keyboard ride is the
-  // same shared-value translation as the transcript and dock, so the button
-  // stays glued to the newest message through the travel instead of snapping
-  // at the end of it.
+  // Static structural offset only (gutter + dock); the keyboard ride matches
+  // KeyboardStickyView's translate so the button stays clear of the composer.
   const dockHeight = useDockHeight();
   const buttonLift = useAnimatedStyle(() => ({
-    transform: [{ translateY: -lift.value + panelY.value }],
+    transform: [{ translateY: -lift.value }],
   }));
   if (!visible) {
     return null;
@@ -3013,6 +2968,9 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   // The translated transcript wrapper: flex so the list keeps its size while
   // the wrapper itself only ever carries a transform, never layout.
   transcriptWrap: {
+    flex: 1,
+  },
+  transcript: {
     flex: 1,
   },
   // The frosted top overlay: header + talk strip, lifted above the transcript.
@@ -3159,17 +3117,11 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   body: {
     flex: 1,
   },
-  /*
-   * Anchored to the bottom of the body and drawn over the transcript. `bottom: 0`
-   * with no height, so it is exactly as tall as its content; the keyboard lift is
-   * a translation rather than a layout change, which is how the reference app moves the
-   * same stack (`setTranslationY` on the enter view and the emoji view together).
-   */
+  // In normal flex flow below the transcript. This guarantees the final
+  // message cannot paint beneath the composer at rest; KeyboardStickyView only
+  // supplies the IME translation.
   dockStack: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
+    flexShrink: 0,
   },
   /*
    * Right-aligned on the same `md` (16) gutter the transcript's own content
@@ -3222,6 +3174,8 @@ const makeStyles = (t: Theme) => StyleSheet.create({
    */
   list: {
     paddingHorizontal: TOKENS.space.md,
+    // Small gutter between the final message and the in-flow composer.
+    paddingTop: TOKENS.space.md,
   },
   // paddingTop only, and the gap is the one between this row and the older one
   // above it, which is where a group boundary belongs. A symmetric

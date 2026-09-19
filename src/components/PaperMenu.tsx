@@ -37,6 +37,14 @@ export interface PaperMenuItem {
   danger?: boolean;
   /** Leave the menu mounted (e.g. a confirm that replaces it). */
   keepOpen?: boolean;
+  /**
+   * A hairline rule above this item, grouping what is below it away from what
+   * is above. M3's own divider inside a menu, used here for one purpose:
+   * putting an irreversible action in its own group so it is a deliberate
+   * reach rather than the next row down.
+   * https://m3.material.io/components/menus/guidelines
+   */
+  divider?: boolean;
 }
 
 export interface MenuAnchor {
@@ -170,8 +178,9 @@ export function PaperMenu({ visible, items, onClose, anchor, testID }: Props) {
           ]}
           accessibilityRole="menu">
           {items.map(item => (
+            <React.Fragment key={item.key}>
+              {item.divider === true ? <View style={styles.divider} /> : null}
             <Pressable
-              key={item.key}
               onPress={() => {
                 item.onPress();
                 if (!item.keepOpen) {
@@ -190,6 +199,7 @@ export function PaperMenu({ visible, items, onClose, anchor, testID }: Props) {
                 {item.label}
               </Text>
             </Pressable>
+            </React.Fragment>
           ))}
         </Animated.View>
       </View>
@@ -235,6 +245,12 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
       paddingHorizontal: TOKENS.space.lg,
       paddingVertical: TOKENS.space.sm,
+    },
+    // The rule between groups. A hairline, so it separates without becoming a
+    // second piece of chrome inside a menu that is already a raised card.
+    divider: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: t.color.border.hairline,
     },
     label: {
       ...TOKENS.typography.bodyLarge,

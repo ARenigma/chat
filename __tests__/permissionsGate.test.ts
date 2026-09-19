@@ -43,6 +43,9 @@ describe('permissionsGate: what applies where', () => {
       expect(p.reason).not.toMatch(/—/);
       expect(p.icon.length).toBeGreaterThan(0);
     }
+    expect(byKind('microphone').required).toBe(true);
+    expect(byKind('camera').required).toBe(true);
+    expect(byKind('notifications').required).toBe(false);
   });
 });
 
@@ -52,12 +55,12 @@ describe('permissionsGate: satisfied means every applicable one is granted', () 
     expect(gateSatisfied({ microphone: 'granted', camera: 'granted' }, 29, 'android')).toBe(true);
   });
 
-  it('fails on any applicable denial or block', () => {
+  it('fails on required denial but never gates Home on notifications', () => {
     expect(gateSatisfied({ ...all('granted'), camera: 'denied' }, 33, 'android')).toBe(false);
-    expect(gateSatisfied({ ...all('granted'), notifications: 'blocked' }, 33, 'android')).toBe(false);
+    expect(gateSatisfied({ ...all('granted'), notifications: 'blocked' }, 33, 'android')).toBe(true);
     // Notifications do not apply on 29, so a missing one is not a failure there.
     expect(gateSatisfied({ microphone: 'granted', camera: 'granted' }, 29, 'android')).toBe(true);
-    expect(gateSatisfied({ microphone: 'granted', camera: 'granted' }, 33, 'android')).toBe(false);
+    expect(gateSatisfied({ microphone: 'granted', camera: 'granted' }, 33, 'android')).toBe(true);
   });
 
   it('is a pass-through off Android', () => {
