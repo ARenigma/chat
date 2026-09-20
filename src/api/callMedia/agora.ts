@@ -11,6 +11,7 @@ import {
   ErrorCodeType,
   LocalAudioStreamReason,
   LocalVideoStreamReason,
+  SimulcastStreamMode,
   StreamFallbackOptions,
   UserOfflineReasonType,
   VideoCodecType,
@@ -467,17 +468,23 @@ export function useAgoraCallSession(
         degradationPreference: DegradationPreference.MaintainBalanced,
       });
       /*
-       * Video degrades before audio, not alongside it (M5, 2026-09-17
-       * audit). Without this the SDK has no fallback tier at all under poor
-       * downlink conditions — video and audio degrade together until both
-       * are unusable, rather than video stepping down (and, at
-       * AudioOnly, stepping out entirely) so the conversation itself
-       * survives. The SDK keeps monitoring and restores video once
-       * conditions improve; onRemoteSubscribeFallbackToAudioOnly below
-       * reuses `remoteVideoEnabled` so the screen falls back to the avatar
-       * view exactly as it already does when the peer mutes their camera.
-       * https://docs.agora.io/en/video-calling/develop/audio-and-video-fallback
+       * Network quality fallback — official Video SDK 4.x path (M5 + 2026-09-20):
+       *
+       * 1. Sender: setDualStreamMode(EnableSimulcastStream) so a low-quality
+       *    stream is always available for receivers to fall back to. Without
+       *    this, setRemoteSubscribeFallbackOption can only jump straight to
+       *    audio-only — there is no intermediate low-video tier.
+       * 2. Receiver: setRemoteSubscribeFallbackOption(AudioOnly) so the SDK
+       *    steps high → low video → audio-only as the downlink worsens, then
+       *    restores when conditions improve.
+       *
+       * setLocalPublishFallbackOption was removed in SDK 4.x; dual-stream +
+       * remote subscribe fallback is the supported replacement.
+       * https://api-ref.agora.io/en/video-sdk/react-native/4.x/indexTerms.html
+       * (setDualStreamMode, setRemoteSubscribeFallbackOption)
+       * https://docs.agora.io/en/realtime-media/rtc/reference/release-notes/react-native
        */
+      engine.setDualStreamMode(SimulcastStreamMode.EnableSimulcastStream);
       engine.setRemoteSubscribeFallbackOption(
         StreamFallbackOptions.StreamFallbackOptionAudioOnly,
       );
@@ -538,6 +545,10 @@ export function useAgoraCallSession(
     }
     if (outcome !== 'granted' || !engineRef.current) return;
     engineRef.current.enableVideo();
+    // Dual-stream must be on whenever we publish camera — a voice→video
+    // upgrade after join still needs the low-stream tier for peer fallback.
+    // https://api-ref.agora.io/en/video-sdk/react-native/4.x/indexTerms.html
+    engineRef.current.setDualStreamMode(SimulcastStreamMode.EnableSimulcastStream);
     engineRef.current.startPreview();
     engineRef.current.updateChannelMediaOptions({ publishCameraTrack: true });
     engineRef.current.muteLocalVideoStream(false);

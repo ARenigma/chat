@@ -1,0 +1,52 @@
+{
+  "strictness": 2,
+  "triggerOnUpdates": true,
+  "statusCheck": true,
+  "fixWithAI": true,
+  "ignorePatterns": "**/*.generated.*\ncoverage/**\nadmin/.next/**\nandroid/app/build/**\nandroid/.gradle/**",
+  "instructions": "Pappal is an Android-only React Native paid chat marketplace. Prioritize correctness, security, billing integrity, role isolation, lifecycle races, native API misuse, and missing regression tests. Do not request style-only churn.",
+  "rules": [
+    {
+      "id": "paid-state-machines",
+      "rule": "Paid sessions, calls, wallet mutations, invoices, and request transitions must be server-authoritative, idempotent, role-checked, and safe under retries or concurrent clients.",
+      "scope": ["src/api/**", "src/lib/**", "supabase/**"],
+      "severity": "high"
+    },
+    {
+      "id": "database-security",
+      "rule": "Database changes must preserve RLS, least-privilege grants, immutable ledger/history records, and have pgTAP regression coverage.",
+      "scope": [
+        "supabase/migrations/**",
+        "supabase/functions/**",
+        "supabase/tests/**"
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "android-docs-and-contract",
+      "rule": "Android-facing changes must cite the governing Android or AndroidX implementation documentation and add a mechanical assertion when possible.",
+      "scope": [
+        "android/**",
+        "src/screens/**",
+        "src/components/**",
+        "__tests__/platform.test.ts"
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "behavior-needs-proof",
+      "rule": "Behavior changes and bug fixes need a regression test at the smallest stable seam; UI, motion, native SDK, and system-UI changes also need device-verifiable locators and states.",
+      "severity": "high"
+    },
+    {
+      "id": "generated-files",
+      "rule": "Generated files must be changed through their generator and source data, never hand-edited.",
+      "scope": [
+        "src/**/*.generated.ts",
+        "web/tokens.css",
+        "assets/fonts/Lucide.ttf"
+      ],
+      "severity": "high"
+    }
+  ]
+}

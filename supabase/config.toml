@@ -182,3 +182,21 @@ verify_jwt = false
 [functions.wa-webhook]
 verify_jwt = false
 
+# exchange-truecaller-code: receives an authorization code + PKCE verifier from
+# a device that has not yet signed in; no Supabase JWT exists yet.
+# The caller authenticates through the one-time auth-code + verifier, which are
+# validated against Truecaller's token endpoint server-side.
+[functions.exchange-truecaller-code]
+verify_jwt = false
+
+# truecaller-confirm-new-user: consumes a pending challenge to create an account.
+# No session exists yet.
+[functions.truecaller-confirm-new-user]
+verify_jwt = false
+
+# truecaller-link-account: bearer-authenticated; links a Truecaller identity
+# to an existing signed-in Google account. JWT is validated via the bearer in
+# the request, not by the gateway (which only checks the Supabase anon key).
+[functions.truecaller-link-account]
+verify_jwt = false
+

@@ -73,8 +73,13 @@ import { PROVIDER_INTENT_KEY } from '../lib/providerIntent';
 import {
   GoogleCredentialError,
   PHONE_AUTH_ENABLED,
+  TruecallerOAuthError,
+  confirmTruecallerNewUser,
+  linkTruecallerToCurrentAccount,
   sendPhoneOtp,
   signInWithGoogle,
+  signInWithTruecaller,
+  truecallerAvailable,
   verifyPhoneOtp,
 } from '../api/auth';
 import {
@@ -312,19 +317,18 @@ export function OnboardingScreen({ onDone }: Props) {
    */
   const [postAuth, setPostAuth] = useState<'age' | 'languages' | null>(null);
   const authDone = postAuth !== null;
-  /**
-   * Whether the age row belongs in the checklist at all.
-   *
-   * Separate from `postAuth` because an ANSWERED step stays on screen. Once
-   * age has been asked its row must remain, collapsed, above the language
-   * question — that visible history is why this checklist needs no progress bar
-   * (see `OnboardingStep`'s header) — so this latches true and never clears,
-   * while `postAuth` moves on.
-   */
+  /** Whether the age row belongs in the checklist at all. */
   const [askedAge, setAskedAge] = useState(false);
   /** Whether the language step follows age. Decided once, after auth. */
   const [wantLanguages, setWantLanguages] = useState(false);
   const [languages, setLanguages] = useState<readonly string[]>([]);
+
+  /**
+   * Opaque challenge from exchange-truecaller-code when the phone has no owner.
+   * Held while the member sees the "New here?" / "Already use Google?" picker.
+   * Nulled on any resolution.
+   */
+  const [truecallerChallenge, setTruecallerChallenge] = useState<string | null>(null);
 
   /*
    * The IME is part of the layout, not something to draw behind.
@@ -522,6 +526,126 @@ export function OnboardingScreen({ onDone }: Props) {
     });
   }, [after, finish]);
 
+  /**
+   * PRIMARY: Truecaller 1-tap sign-in.
+   *
+   * Cancellation (user dismissed) is silent — it is a deliberate choice.
+   * Unavailability routes the member to the WhatsApp OTP button without feedback.
+   * A hard failure shows an actionable error and keeps all fallbacks visible.
+   *
+   * If the phone has no Supabase owner yet, the server returns a pending challenge
+   * and the `continuity` stage shows "New here?" / "Already use Google?".
+   */
+  const onTruecaller = useCallback(() => {
+    if (!canSubmit(state)) {
+      return;
+    }
+    setRoute('truecaller');
+    setState('loading');
+    setFailure(null);
+    Keyboard.dismiss();
+    void (async () => {
+      try {
+        const result = await signInWithTruecaller();
+        if (result.status === 'no_owner') {
+          // Verified phone with no account yet — ask the member before creating one.
+          setTruecallerChallenge(result.challenge);
+          setState('idle');
+          setIdentify('continuity');
+          return;
+        }
+        await completeAuthentication();
+      } catch (error) {
+        setRoute('undecided');
+        if (
+          error instanceof TruecallerOAuthError &&
+          error.reason === 'cancelled'
+        ) {
+          setState('idle');
+          return;
+        }
+        if (
+          error instanceof TruecallerOAuthError &&
+          error.reason === 'unavailable'
+        ) {
+          // No Truecaller on this device — silently drop to the WhatsApp path.
+          setState('idle');
+          setIdentify('choose');
+          return;
+        }
+        fail(
+          error instanceof Error
+            ? error.message
+            : 'Could not sign in with Truecaller.',
+        );
+      }
+    })();
+  }, [state, fail, completeAuthentication]);
+
+  /**
+   * "I'm new to Pappal" — consume the pending challenge and create an account.
+   */
+  const onTruecallerNewUser = useCallback(() => {
+    if (!canSubmit(state) || truecallerChallenge === null) return;
+    setState('loading');
+    setFailure(null);
+    const challenge = truecallerChallenge;
+    void (async () => {
+      try {
+        await confirmTruecallerNewUser(challenge);
+        setTruecallerChallenge(null);
+        await completeAuthentication();
+      } catch (error) {
+        fail(error instanceof Error ? error.message : 'Could not create your account.');
+      }
+    })();
+  }, [state, truecallerChallenge, fail, completeAuthentication]);
+
+  /**
+   * "I already use Pappal with Google" — sign in with Google first, then link.
+   * After Google auth the Truecaller challenge is consumed to bind the verified
+   * phone/sub to the existing UUID without changing anything else.
+   */
+  const onTruecallerLinkGoogle = useCallback(() => {
+    if (!canSubmit(state) || truecallerChallenge === null) return;
+    const challenge = truecallerChallenge;
+    setRoute('google');
+    setState('loading');
+    setFailure(null);
+    Keyboard.dismiss();
+    void (async () => {
+      try {
+        const googleResult = await signInWithGoogle();
+        if (googleResult === 'redirected') {
+          // After the deep-link callback, the screen unmounts. The challenge is
+          // in memory and cannot be consumed from App.tsx, so we store it in
+          // a ref that the deep-link handler can pick up — but for now we just
+          // let the member proceed without linking (they can do it later).
+          return;
+        }
+        // Link the Truecaller identity to the freshly signed-in Google account.
+        await linkTruecallerToCurrentAccount(challenge);
+        setTruecallerChallenge(null);
+        await completeAuthentication();
+      } catch (error) {
+        setRoute('undecided');
+        if (
+          error instanceof GoogleCredentialError &&
+          error.reason === 'cancelled'
+        ) {
+          setState('idle');
+          setIdentify('continuity');
+          return;
+        }
+        fail(
+          error instanceof Error
+            ? error.message
+            : 'Could not link your account.',
+        );
+      }
+    })();
+  }, [state, truecallerChallenge, fail, completeAuthentication]);
+
   const onGoogle = useCallback(() => {
     if (!canSubmit(state)) {
       return;
@@ -529,11 +653,6 @@ export function OnboardingScreen({ onDone }: Props) {
     setRoute('google');
     setState('loading');
     setFailure(null);
-    /*
-     * The source's `keyboardShown = false` inside `submitCurrentStep`. Without
-     * it the keyboard stays up over the result of the thing just submitted,
-     * which on a short window is most of the screen.
-     */
     Keyboard.dismiss();
     void (async () => {
       try {
@@ -846,6 +965,13 @@ export function OnboardingScreen({ onDone }: Props) {
         return true;
       }
       if (identify === 'number') {
+        goToStep('choose');
+        return true;
+      }
+      if (identify === 'continuity') {
+        // User backed out of "New here?" picker — discard the challenge and go back.
+        setTruecallerChallenge(null);
+        setRoute('undecided');
         goToStep('choose');
         return true;
       }
@@ -1210,24 +1336,78 @@ export function OnboardingScreen({ onDone }: Props) {
                   exiting={stepOut}
                   style={styles.choices}>
                   {/*
-                   * PRIMARY: white-pill Google button in EVERY mode (see the
-                   * `primary` style note) — the surface it sits on is a variable
-                   * coral bloom, not a flat page, so a theme-flipping fill can't
-                   * promise contrast the way a fixed white one can. The label is
-                   * forced to `LIGHT.color.text.primary`, not the theme token,
-                   * which is what caused the original white-on-white bug. The
-                   * Google "G" is not wrapped in a chip — it reads directly on
-                   * white, its own brand rule.
+                   * PRIMARY: white-pill Truecaller button.
+                   * Truecaller is the default onboarding path — phone-verified,
+                   * one-tap, and zero OTP cost. The button uses the official
+                   * Truecaller "T" mark on a fixed white surface (same treatment
+                   * as the Google button: the bloom behind it can change colour).
+                   *
+                   * Loading state is route-guarded so only the active button
+                   * spins; Google/WhatsApp remain tappable during a Truecaller
+                   * attempt that is still running.
+                   */}
+                  {truecallerAvailable() ? (
+                    <Pressable
+                      onPress={onTruecaller}
+                      testID="onboard-truecaller"
+                      accessibilityLabel="Continue with Truecaller"
+                      press="button"
+                      style={styles.googleButton}
+                    >
+                      {state === 'loading' && route === 'truecaller' ? (
+                        <LoadingIndicator size={20} containerColor="transparent" />
+                      ) : (
+                        <>
+                          <Image
+                            source={require('../../assets/brands/truecaller.png')}
+                            style={styles.googleMark}
+                            resizeMode="contain"
+                            accessibilityIgnoresInvertColors
+                          />
+                          <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.googleLabel}>
+                            Continue with Truecaller
+                          </Text>
+                        </>
+                      )}
+                    </Pressable>
+                  ) : null}
+
+                  {/*
+                   * SECONDARY: WhatsApp OTP — first fallback when Truecaller
+                   * is not installed or the member prefers a different number.
+                   */}
+                  {PHONE_AUTH_ENABLED ? (
+                    <Pressable
+                      onPress={onUsePhone}
+                      testID="onboard-use-phone"
+                      accessibilityLabel={truecallerAvailable() ? 'Use WhatsApp code instead' : 'Verify with WhatsApp'}
+                      press="button"
+                      style={styles.secondary}
+                    >
+                      <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.secondaryLabel}>
+                        {truecallerAvailable() ? 'Use WhatsApp code instead' : 'Verify with WhatsApp'}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+
+                  {/*
+                   * TERTIARY: Google — final fallback for existing members who
+                   * signed up before Truecaller and do not yet have a linked
+                   * phone number. Kept visible so history/wallet is never lost.
                    */}
                   <Pressable
                     onPress={onGoogle}
                     testID="onboard-google"
-                    accessibilityLabel="Continue with Google"
+                    accessibilityLabel={truecallerAvailable() ? 'Used Pappal before? Continue with Google' : 'Continue with Google'}
                     press="button"
-                    style={styles.googleButton}
+                    style={truecallerAvailable() ? styles.partnerLink : styles.googleButton}
                   >
-                    {state === 'loading' ? (
+                    {state === 'loading' && route === 'google' ? (
                       <LoadingIndicator size={20} containerColor="transparent" />
+                    ) : truecallerAvailable() ? (
+                      <Text allowFontScaling style={styles.resendLabel}>
+                        Used Pappal before? Continue with Google
+                      </Text>
                     ) : (
                       <>
                         <Image
@@ -1243,27 +1423,6 @@ export function OnboardingScreen({ onDone }: Props) {
                     )}
                   </Pressable>
 
-                  {/*
-                   * SECONDARY: glass-pill phone link.
-                   *
-                   * Translucent white fill rather than a bare text link, so the
-                   * two-pill stack reads as a real choice pair. Same approach
-                   * as CallScreen's non-primary buttons.
-                   */}
-                  {PHONE_AUTH_ENABLED ? (
-                    <Pressable
-                      onPress={onUsePhone}
-                      testID="onboard-use-phone"
-                      accessibilityLabel="Use my number instead"
-                      press="button"
-                      style={styles.secondary}
-                    >
-                      <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.secondaryLabel}>
-                        Use my number instead
-                      </Text>
-                    </Pressable>
-                  ) : null}
-
                   {/* Ghost link — small, centered, 44pt hit target. */}
                   <Pressable
                     onPress={onBecomePartner}
@@ -1274,6 +1433,46 @@ export function OnboardingScreen({ onDone }: Props) {
                   >
                     <Text allowFontScaling style={styles.partnerLinkLabel}>
                       Become a partner
+                    </Text>
+                  </Pressable>
+                </Animated.View>
+              ) : null}
+
+              {/* Truecaller continuity choice — shown when the phone has no Pappal account yet. */}
+              {phase !== 'done' && !authDone && identify === 'continuity' ? (
+                <Animated.View
+                  entering={stepIn}
+                  exiting={stepOut}
+                  style={styles.choices}>
+                  <Text allowFontScaling style={styles.sentTo}>
+                    New to Pappal with this number?
+                  </Text>
+                  <Pressable
+                    onPress={onTruecallerNewUser}
+                    disabled={state === 'loading'}
+                    testID="onboard-truecaller-new"
+                    accessibilityLabel="I'm new to Pappal"
+                    press="button"
+                    style={styles.googleButton}
+                  >
+                    {state === 'loading' && route === 'truecaller' ? (
+                      <LoadingIndicator size={20} containerColor="transparent" />
+                    ) : (
+                      <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.googleLabel}>
+                        {"I'm new to Pappal"}
+                      </Text>
+                    )}
+                  </Pressable>
+                  <Pressable
+                    onPress={onTruecallerLinkGoogle}
+                    disabled={state === 'loading'}
+                    testID="onboard-truecaller-link-google"
+                    accessibilityLabel="I already use Pappal with Google"
+                    press="button"
+                    style={styles.secondary}
+                  >
+                    <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.secondaryLabel}>
+                      I already use Pappal with Google
                     </Text>
                   </Pressable>
                 </Animated.View>
@@ -1433,7 +1632,7 @@ export function OnboardingScreen({ onDone }: Props) {
                     </Pressable>
                   </View>
                   <Text allowFontScaling style={styles.numberHint}>
-                    We'll send an SMS to verify your number.
+                    {"We'll send a code via WhatsApp to verify your number."}
                   </Text>
                 </Animated.View>
               ) : null}

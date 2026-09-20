@@ -1,0 +1,4 @@
+# Greptile only reviews committed changes, so the earliest honest trigger is
+# post-commit. Findings fail this hook visibly; the commit remains local and
+# pre-push refuses it until a clean review exists for HEAD.
+npm run review:greptile

@@ -165,6 +165,7 @@ const MIGRATIONS = [
   'supabase/migrations/124_usage_ledger_elapsed_seconds.sql',
   'supabase/migrations/125_server_favorites.sql',
   'supabase/migrations/126_idle_home_suggestions.sql',
+  'supabase/migrations/127_truecaller_phone_identity.sql',
 ];
 
 /**

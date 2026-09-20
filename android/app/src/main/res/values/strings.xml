@@ -31,6 +31,17 @@
          makes the style refuse to build. -->
     <string name="you">You</string>
 
+    <!--
+      Truecaller OAuth SDK 3.3.0 client ID.
+      Bound to package com.companionchat and the signing SHA-1 registered in the
+      Truecaller developer portal at https://sdk-console-noneu.truecaller.com.
+      Error 12 ("Invalid partner info") is a hard config failure — it means the
+      SHA-1 or package name does not match. Add debug, upload, and Play App
+      Signing SHA-1s as separate credentials in the portal.
+      https://docs.truecaller.com/truecaller-sdk/android/latest-oauth-sdk-3.3.0/integration-steps/setup
+    -->
+    <string name="clientID">pj5jqxyphh0ijxw1hkq4dlpix-qhkjj262xxrr1iplc</string>
+
     <!-- The incoming call notification's content line. CallStyle.forIncomingCall
          "will have a default content text for an incoming call"
          (developer.android.com/reference/androidx/core/app/NotificationCompat.CallStyle),

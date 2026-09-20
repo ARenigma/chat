@@ -33,11 +33,11 @@ export type Phase = 'welcome' | 'leaving' | 'form' | 'done';
 /**
  * How the member is signing in.
  *
- * Google OR phone, never both. The source's three steps are sequential because
- * a wallet genuinely needs all three keys; ours are alternatives, so the list
- * branches where the reference's does not.
+ * Truecaller is the primary path. Phone (WhatsApp OTP) is the first fallback.
+ * Google is the final fallback for existing members and for devices without
+ * the Truecaller app.
  */
-export type Route = 'undecided' | 'google' | 'phone';
+export type Route = 'undecided' | 'truecaller' | 'google' | 'phone';
 
 /** The rows the checklist can hold. */
 export type StepKey = 'choose' | 'number' | 'code' | 'age' | 'languages';
@@ -53,7 +53,7 @@ export type StepKey = 'choose' | 'number' | 'code' | 'age' | 'languages';
  *
  * This, and not `StepKey`, is what the field's colour follows — see `paletteFor`.
  */
-export type IdentifyStage = 'choose' | 'number' | 'code';
+export type IdentifyStage = 'choose' | 'number' | 'code' | 'continuity';
 
 export interface StepSpec {
   readonly key: StepKey;
@@ -72,13 +72,13 @@ export const STEPS: Readonly<Record<StepKey, StepSpec>> = {
     key: 'choose',
     title: 'Choose a way in',
     description:
-      'One tap with Google, or your number if you would rather not use it.',
+      'One tap with Truecaller, your WhatsApp number, or Google.',
     glyph: 'chat',
   },
   number: {
     key: 'number',
     title: 'Your number',
-    description: "We'll text a 6-digit code to confirm it's you.",
+    description: "We'll send a code via WhatsApp to confirm it's you.",
     /*
      * `call`, the handset. It can read as a smile at the collapsed 20pt size the
      * `code` note below warns about, but "your number" has no better abstract

@@ -1330,9 +1330,11 @@ describe('Cashfree 1-Click Onboarding — native verification bridge', () => {
    * https://www.cashfree.com/docs/api-reference/vrs/v2/1-click-onboarding/1-click-onboarding-sdk#android-native
    */
   it('adds the Cashfree Maven repo (the VRS SDK 404s on Maven Central)', () => {
-    expect(read('android/build.gradle')).toContain(
-      'https://maven.cashfree.com/release',
-    );
+    const root = read('android/build.gradle');
+    expect(root).toContain('https://maven.cashfree.com/release');
+    // Content filter so AndroidX is never resolved from Cashfree (timeouts).
+    expect(root).toContain('includeGroupByRegex');
+    expect(root).toContain('com\\\\.cashfree');
   });
 
   it('depends on the VRS SDK by its real coordinate', () => {
@@ -1363,6 +1365,81 @@ describe('Cashfree 1-Click Onboarding — native verification bridge', () => {
     expect(module).not.toContain(
       'CFVerificationService.Builder().setContext(activity).build().doVerification',
     );
+  });
+});
+
+describe('Truecaller OAuth SDK 3.3.0 — Android platform requirements', () => {
+  /**
+   * RULE 1: Truecaller SDK was integrated after reading the official Android
+   * implementation docs and the OAuth SDK 3.3.0 guide.
+   *
+   * https://docs.truecaller.com/truecaller-sdk/android/latest-oauth-sdk-3.3.0/integration-steps/setup
+   * https://developer.android.com/training/basics/intents/result
+   * https://developer.android.com/privacy-and-security/minimize-permission-requests
+   */
+
+  it('SDK 3.3.0 is declared in app/build.gradle from Maven Central', () => {
+    const build = read('android/app/build.gradle');
+    expect(build).toContain('com.truecaller.android.sdk:truecaller-sdk:3.3.0');
+    // Must resolve from mavenCentral(), which is already in the project.
+    const rootBuild = read('android/build.gradle');
+    expect(rootBuild).toContain('mavenCentral()');
+  });
+
+  it('clientID is in strings.xml and referenced as a metadata resource', () => {
+    const strings = read('android/app/src/main/res/values/strings.xml');
+    expect(strings).toContain('<string name="clientID">');
+    const manifest = read('android/app/src/main/AndroidManifest.xml');
+    expect(manifest).toContain('com.truecaller.android.sdk.ClientId');
+    expect(manifest).toContain('@string/clientID');
+  });
+
+  it('no missed-call or broad phone permissions are added to the manifest', () => {
+    const manifest = read('android/app/src/main/AndroidManifest.xml');
+    // OPTION_VERIFY_ONLY_TC_USERS is used; missed-call flow requires these.
+    expect(manifest).not.toContain('READ_CALL_LOG');
+    expect(manifest).not.toContain('READ_PHONE_STATE');
+    expect(manifest).not.toContain('READ_SMS');
+    expect(manifest).not.toContain('PROCESS_OUTGOING_CALLS');
+  });
+
+  it('ActivityResultLauncher is a class-level property in MainActivity', () => {
+    // https://developer.android.com/training/basics/intents/result:
+    // "you must call registerForActivityResult() before the fragment or
+    // activity is created" — class-level property satisfies this.
+    const main = read('android/app/src/main/java/com/companionchat/MainActivity.kt');
+    expect(main).toContain('registerForActivityResult(StartActivityForResult())');
+    expect(main).toContain('truecallerLauncher');
+    // The module must NOT register a launcher; it delegates to MainActivity.
+    const mod = read('android/app/src/main/java/com/companionchat/TruecallerOAuthModule.kt');
+    expect(mod).not.toContain('registerForActivityResult');
+  });
+
+  it('TcSdk.clear is called in onDestroy (SDK requirement)', () => {
+    // https://docs.truecaller.com/truecaller-sdk/android/latest-oauth-sdk-3.3.0/integration-steps/clearing-sdk-instance
+    const main = read('android/app/src/main/java/com/companionchat/MainActivity.kt');
+    expect(main).toContain('TcSdk.clear()');
+    expect(main).toContain('override fun onDestroy');
+    // Must also appear before re-initialisation to prevent callback re-delivery.
+    const initPos = main.indexOf('TcSdk.initAsync');
+    const clearPos = main.indexOf('TcSdk.clear()');
+    expect(clearPos).toBeLessThan(initPos);
+  });
+
+  it('TruecallerOAuthModule is registered in InAppUpdatePackage', () => {
+    const pkg = read('android/app/src/main/java/com/companionchat/InAppUpdatePackage.kt');
+    expect(pkg).toContain('TruecallerOAuthModule');
+  });
+
+  it('error codes 2/11/14 are mapped to cancelled, not failed', () => {
+    const mod = read('android/app/src/main/java/com/companionchat/TruecallerOAuthModule.kt');
+    // These are "user dismissed" codes and must never show an error to the user.
+    expect(mod).toContain('2, 11, 14 -> E_CANCELLED');
+  });
+
+  it('OPTION_VERIFY_ONLY_TC_USERS keeps the permission surface unchanged', () => {
+    const main = read('android/app/src/main/java/com/companionchat/MainActivity.kt');
+    expect(main).toContain('OPTION_VERIFY_ONLY_TC_USERS');
   });
 });
 

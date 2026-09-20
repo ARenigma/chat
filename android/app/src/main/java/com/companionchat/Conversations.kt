@@ -711,7 +711,7 @@ object Conversations {
             android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
-        fun post(icon: IconCompat?) {
+        fun post(style: NotificationCompat.MessagingStyle, icon: IconCompat?) {
             val person = Person.Builder()
                 .setKey(peerId)
                 .setName(senderName)
@@ -730,16 +730,10 @@ object Conversations {
                 .build()
             ShortcutManagerCompat.pushDynamicShortcut(context, shortcut)
 
-            val existing = activeMessagingStyle(manager, id)
-                ?: NotificationCompat.MessagingStyle(
-                    Person.Builder().setName(context.getString(R.string.you)).build(),
-                )
-            existing.addMessage("wants to have a chat with you", sentAt, person)
-
             val notification = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setColor(BRAND_COLOR)
-                .setStyle(existing)
+                .setStyle(style)
                 .setShortcutId(conversationId)
                 .addPerson(person)
                 .setCategory(NotificationCompat.CATEGORY_MESSAGE)
@@ -769,15 +763,30 @@ object Conversations {
             }
         }
 
-        post(null)
+        val style = activeMessagingStyle(manager, id)
+            ?: NotificationCompat.MessagingStyle(
+                Person.Builder().setName(context.getString(R.string.you)).build(),
+            )
+        style.addMessage(
+            "wants to have a chat with you",
+            sentAt,
+            Person.Builder()
+                .setKey(peerId)
+                .setName(senderName)
+                .setImportant(true)
+                .build(),
+        )
+        post(style, null)
 
         if (avatarUrl != null) {
             avatarExecutor.execute {
                 val icon = loadAvatarBitmap(avatarUrl, AVATAR_MAX_PX)
                     ?.let { IconCompat.createWithBitmap(it) }
                     ?: return@execute
+                // Same live-re-read as notify(): a second request can land while
+                // the photo downloads; rebuilding from a stale style would drop it.
                 val live = activeMessagingStyle(manager, id) ?: return@execute
-                post(withSenderIcon(live, peerId, icon))
+                post(withSenderIcon(live, peerId, icon), icon)
             }
         }
     }

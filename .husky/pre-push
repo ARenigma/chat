@@ -1,0 +1,6 @@
+# Nothing reaches a remote without deterministic checks, changed-code security,
+# and a completed finding-free Greptile review for the exact HEAD commit.
+remote="${1:-origin}"
+npm run verify
+SECURITY_BASE_REF="${remote}/main" npm run security:push
+npm run review:greptile:status

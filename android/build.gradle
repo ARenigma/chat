@@ -42,12 +42,25 @@ buildscript {
  * Central). The 1-Click Onboarding native SDK needs this repo.
  * https://www.cashfree.com/docs/api-reference/vrs/v2/1-click-onboarding/1-click-onboarding-sdk#android-native
  *
+ * content { includeGroupByRegex } is required: without it Gradle probes this
+ * host for every AndroidX / Google artifact too. When Cashfree is slow or
+ * unreachable the whole bundleRelease hangs or fails with dozens of
+ * "Could not HEAD …/androidx/… Read timed out" errors (seen 2026-09-20 on
+ * versionCode 10207). Restricting to Cashfree groups keeps Google/Maven
+ * Central as the sole source for everything else.
+ * https://docs.gradle.org/current/userguide/declaring_repositories_adv.html#sec:repository-content-filtering
+ *
  * A project-level repositories block is safe here: react-native-cashfree-pg-sdk
  * already declares its own, so RepositoriesMode.FAIL_ON_PROJECT_REPOS is off.
  */
 allprojects {
     repositories {
-        maven { url "https://maven.cashfree.com/release" }
+        maven {
+            url "https://maven.cashfree.com/release"
+            content {
+                includeGroupByRegex("com\\.cashfree(\\..+)?")
+            }
+        }
     }
 }
 

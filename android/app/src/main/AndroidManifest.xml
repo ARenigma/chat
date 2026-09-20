@@ -299,6 +299,19 @@
         android:resource="@color/notification_accent"
         tools:replace="android:resource" />
 
+      <!--
+        Truecaller OAuth SDK 3.3.0 client ID.
+        Tied to package com.companionchat and the signing SHA-1 registered in the
+        Truecaller developer portal. Error 12 at runtime means this value does not
+        match the installed build's SHA-1; register debug/upload/Play signing
+        fingerprints as separate credentials and verify with TcSdk.getInstance()
+        .isOAuthFlowUsable after SDK init.
+        https://docs.truecaller.com/truecaller-sdk/android/latest-oauth-sdk-3.3.0/integration-steps/setup
+      -->
+      <meta-data
+        android:name="com.truecaller.android.sdk.ClientId"
+        android:value="@string/clientID" />
+
       <!-- Foreground service for active calls — keeps process alive in background.
            foregroundServiceType declares the maximum capability set for API 34+.
            (developer.android.com/develop/background-work/services/foreground-services) -->

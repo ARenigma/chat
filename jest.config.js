@@ -42,6 +42,20 @@ module.exports = {
     // Generated data, not logic. Its correctness is the generator's `--check`.
     '!src/lib/emoji.generated.ts',
   ],
+  /**
+   * Lock the measured baseline instead of publishing a vanity percentage.
+   * 2026-09-20 baseline: statements 61.51, branches 58.56, functions 55.96,
+   * lines 61.63. Thresholds leave a small rounding margin while making a real
+   * regression fail both local `--coverage` runs and CI.
+   */
+  coverageThreshold: {
+    global: {
+      statements: 61,
+      branches: 58,
+      functions: 55,
+      lines: 61,
+    },
+  },
   transformIgnorePatterns: [
     'node_modules/(?!(@react-native|react-native|react-native-reanimated|react-native-worklets|@sentry|react-native-safe-area-context)/)',
   ],

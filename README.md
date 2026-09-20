@@ -102,10 +102,14 @@ server-side secrets.
 | `npm run typecheck`             | `tsc --noEmit`, strict, `noUncheckedIndexedAccess`                        |
 | `npm run lint`                  | ESLint, `--max-warnings=0`, no `any`, no unused                           |
 | `npm test`                      | Jest: transcript reconciliation, token ledger, Sentry scrubber, contracts |
+| `npm run control -- doctor`     | Agent/device lab readiness with machine-readable output                   |
+| `npm run security:push`         | Changed-code secrets/SAST + critical production dependency advisories     |
+| `npm run review:greptile`       | Greptile review of committed branch changes                               |
 | `npm run test:db`               | Migrations + RLS + grants + ledger parity against real Postgres (Docker)  |
 | `npm run verify:manifest`       | Play Store permission gate, source and merged manifests                   |
 | `npm run bundle:android`        | Metro production bundle, resolves every import for real                   |
 | `npm run verify`                | tokens + typecheck + lint + tests + manifest + bundle                     |
+| `npm run verify:ci`             | same source/artifact gates, with Jest coverage + Cobertura                |
 | `npm run verify:full`           | adds pgTAP                                                                |
 | `npm run verify:hermes`         | the shipped APK really contains Hermes bytecode                           |
 | `npm run e2e:install`           | device journeys on a booted emulator (needs the CLIs below)               |
@@ -125,9 +129,16 @@ directory boundary, blocking, reporting, suspension, rate limits, the
 append-only audit trail, PII-free telemetry, and that `deduct_user_token` agrees
 with its TypeScript mirror on every row of `supabase/tests/ledger_cases.json`.
 
-> `npm run verify` is **not** the command CI runs, CI adds `--coverage`. That
-> one flag difference hid three real failures until the first GitLab pipeline
-> executed. Reproduce CI failures with the exact CI invocation.
+`npm run verify` and `npm run verify:ci` share `verify:source` and
+`verify:artifact`; CI adds only its coverage reporters. Reproduce the static
+GitLab job with `npm run verify:ci`.
+
+Local commits and pushes are gated by Husky. Pre-commit runs staged secret
+scanning, lint-staged, and TypeScript. Post-commit runs Greptile because its CLI
+reviews committed changes only. Pre-push runs `verify`, changed-code security,
+and requires a completed finding-free Greptile review for the exact HEAD. See
+[ADR-0031](docs/adr/0031-verification-before-remote.md) and the project
+`verify-pappal` skill.
 
 ---
 

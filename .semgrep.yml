@@ -1,0 +1,61 @@
+rules:
+  - id: pappal-client-server-secret
+    message: Server-side credentials must never enter React Native client code.
+    severity: ERROR
+    languages: [typescript, javascript]
+    paths:
+      include:
+        - /src/**
+        - /App.tsx
+    pattern-regex: '(SUPABASE_SERVICE_ROLE_KEY|CASHFREE_CLIENT_SECRET)'
+
+  - id: pappal-direct-message-insert
+    message: Messages must use the server-authoritative send_message RPC, not a direct insert.
+    severity: ERROR
+    languages: [typescript, javascript]
+    paths:
+      include:
+        - /src/**
+        - /App.tsx
+    patterns:
+      - pattern-either:
+          - pattern: $DB.from("messages").insert(...)
+          - pattern: $DB.from('messages').insert(...)
+
+  - id: pappal-shell-interpolation
+    message: Do not pass interpolated strings to child-process shell execution; use execFile/spawn argv arrays.
+    severity: ERROR
+    languages: [typescript, javascript]
+    patterns:
+      - pattern-either:
+          - pattern: exec(`...${$VALUE}...`)
+          - pattern: execSync(`...${$VALUE}...`)
+          - pattern: exec($LEFT + $RIGHT)
+          - pattern: execSync($LEFT + $RIGHT)
+
+  - id: pappal-child-process-shell-true
+    message: shell:true expands injection surface; use an executable plus argv array.
+    severity: ERROR
+    languages: [typescript, javascript]
+    patterns:
+      - pattern-either:
+          - pattern: 'spawn($CMD, $ARGS, { ..., shell: true, ... })'
+          - pattern: 'spawnSync($CMD, $ARGS, { ..., shell: true, ... })'
+
+  - id: pappal-dynamic-code-execution
+    message: Dynamic code execution is forbidden in app and operational code.
+    severity: ERROR
+    languages: [typescript, javascript]
+    patterns:
+      - pattern-either:
+          - pattern: eval(...)
+          - pattern: new Function(...)
+
+  - id: pappal-android-javascript-interface
+    message: WebView JavaScript interfaces expose native methods to page content and require explicit security review.
+    severity: ERROR
+    languages: [kotlin]
+    paths:
+      include:
+        - /android/app/src/**
+    pattern: $WEBVIEW.addJavascriptInterface(...)

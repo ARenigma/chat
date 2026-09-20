@@ -1,3 +1,4 @@
 # Stage 0 gate. Fast only — anything slower than ~10s belongs in CI.
+npm run security:staged
 npx lint-staged
 npx tsc --noEmit

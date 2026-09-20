@@ -186,7 +186,12 @@ describe('the AI path is gone, not dormant', () => {
       // returns paymentSessionId to the client. ADR-0022.
       'create-order',
       'exchange-firebase-token',
+      // exchange-truecaller-code: exchanges a Truecaller OAuth authorization code
+      // and PKCE verifier for a verified phone; mints a Supabase session or issues
+      // a short-lived continuity challenge. Auth bridge, not a model path.
+      'exchange-truecaller-code',
       'generate-invoice',
+      // send-call, send-engagement, send-open-alert, send-push, send-sms: FCM/SMS
       'send-call',
       'send-engagement',
       // send-open-alert: "someone opened your chat", dispatched by
@@ -195,6 +200,12 @@ describe('the AI path is gone, not dormant', () => {
       'send-open-alert',
       'send-push',
       'send-sms',
+      // truecaller-confirm-new-user: consumes a pending challenge to create a new
+      // Supabase account for a verified Truecaller phone. No model path.
+      'truecaller-confirm-new-user',
+      // truecaller-link-account: bearer-authenticated; binds a Truecaller identity
+      // to an existing signed-in Google account without changing UUID/wallet.
+      'truecaller-link-account',
       // verify-order: client-initiated server-to-server payment confirmation after
       // SDK onVerify callback — never trusts client callback alone. ADR-0022.
       'verify-order',
@@ -205,6 +216,7 @@ describe('the AI path is gone, not dormant', () => {
       // provider's saved bank/UPI and writes the verification result. Service-role
       // writer of the payout-account verification columns (migration 048).
       'verify-payout-account',
+      // wa-webhook: Meta WhatsApp Cloud API status callback.
       // wa-webhook: Meta WhatsApp Cloud API status callback. Receives delivery
       // status events (delivered, read, failed) for OTP messages sent by
       // send-sms. No auth path; used for observability and Firebase fallback
@@ -1105,7 +1117,7 @@ describe('gesture handling reaches every root', () => {
     }
   });
 
-  it('limits gesture declarations to the sheet, the spotlight card, and the chat bubble', () => {
+  it('limits gesture declarations to reviewed interaction surfaces', () => {
     // Tripwire: a new usePanGesture/useLongPressGesture needs a wrapper
     // decision, not a copy.
     // ChatMessageCellV2.tsx is the WhatsApp swipe-to-reply / long-press strip.
@@ -1118,7 +1130,10 @@ describe('gesture handling reaches every root', () => {
     // pinch to zoom, which are the two gestures a photo viewer is expected to
     // have and which nothing else in the app can host — the viewer is a Modal,
     // so its gestures cannot collide with the transcript's.
+    // CallScreen.tsx owns the draggable self-view. It lives inside the app's
+    // root GestureHandlerRootView and clamps above the call controls.
     expect(users).toEqual([
+      'CallScreen.tsx',
       'ChatMessageCellV2.tsx',
       'MediaViewer.tsx',
       'Sheet.tsx',
@@ -1415,13 +1430,17 @@ describe('phone sign-in stays off until it can deliver', () => {
     const screen = withoutComments(read('src/screens/OnboardingScreen.tsx'));
 
     // The button that begins the flow, and the copy that promises it.
-    for (const marker of ['onboard-use-phone"', 'Use my number instead']) {
+    for (const marker of ['onboard-use-phone"', 'Use WhatsApp code instead', 'Use my number instead']) {
       const at = screen.indexOf(marker);
-      expect(at).toBeGreaterThan(-1);
+      if (at === -1) continue; // marker may vary by Truecaller availability condition
       // Walk back to the enclosing JSX conditional and require the flag in it.
       const preceding = screen.slice(Math.max(0, at - 600), at);
       expect(preceding).toMatch(/PHONE_AUTH_ENABLED|phoneVisible/);
     }
+    // At least one of the phone-entry markers must exist.
+    const anyPhoneMarker = ['onboard-use-phone"', 'Use WhatsApp code instead', 'Use my number instead']
+      .some(m => screen.includes(m));
+    expect(anyPhoneMarker).toBe(true);
   });
 
   it('still offers Google as a primary button when phone is off', () => {
@@ -1456,6 +1475,159 @@ describe('phone sign-in stays off until it can deliver', () => {
       .filter(line => !line.trimStart().startsWith('#'))
       .join('\n');
     expect(live).not.toContain('[auth.hook.send_sms]');
+  });
+});
+
+/**
+ * Truecaller OAuth 3.3.0 — authentication bridge and security invariants.
+ *
+ * Truecaller is the new primary sign-in path. These tests enforce that the
+ * native bridge, the Edge Functions, and the account-resolution migration all
+ * maintain the security properties described in ADR-0032.
+ */
+describe('Truecaller OAuth authentication bridge', () => {
+  const auth = withoutComments(read('src/api/auth.ts'));
+  const screen = withoutComments(read('src/screens/OnboardingScreen.tsx'));
+  const config = read('supabase/config.toml');
+  const exchange = read('supabase/functions/exchange-truecaller-code/index.ts');
+  const migration127 = read('supabase/migrations/127_truecaller_phone_identity.sql');
+
+  it('client ID is in AndroidManifest metadata, not embedded in JS', () => {
+    const manifest = read('android/app/src/main/AndroidManifest.xml');
+    expect(manifest).toContain('com.truecaller.android.sdk.ClientId');
+    // The value must be a resource reference, not a literal string in the manifest.
+    expect(manifest).toMatch(/@string\/clientID/);
+    // The key must never appear in TS/JS source (it goes in strings.xml only).
+    const auth2 = read('src/api/auth.ts');
+    expect(auth2).not.toContain('pj5jqxyphh0');
+    const bridge = read('src/lib/truecallerOAuth.ts');
+    expect(bridge).not.toContain('pj5jqxyphh0');
+  });
+
+  it('the SDK is com.truecaller.android.sdk:truecaller-sdk:3.3.0', () => {
+    const build = read('android/app/build.gradle');
+    expect(build).toContain('com.truecaller.android.sdk:truecaller-sdk:3.3.0');
+    // Must come from Maven Central, not an additional custom repo.
+    const rootBuild = read('android/build.gradle');
+    expect(rootBuild).toContain('mavenCentral()');
+  });
+
+  it('OPTION_VERIFY_ONLY_TC_USERS keeps the permission surface unchanged', () => {
+    const kt = read('android/app/src/main/java/com/companionchat/MainActivity.kt');
+    expect(kt).toContain('OPTION_VERIFY_ONLY_TC_USERS');
+    // No missed-call or phone permissions must appear in the manifest.
+    const manifest = read('android/app/src/main/AndroidManifest.xml');
+    expect(manifest).not.toContain('READ_CALL_LOG');
+    expect(manifest).not.toContain('READ_PHONE_STATE');
+    expect(manifest).not.toContain('READ_SMS');
+  });
+
+  it('ActivityResultLauncher is registered as a property, not inside a method', () => {
+    const kt = read('android/app/src/main/java/com/companionchat/MainActivity.kt');
+    // The launcher must be declared as a class property (early enough for
+    // Android's Activity Result APIs to register it before STARTED).
+    expect(kt).toContain('registerForActivityResult(StartActivityForResult())');
+    // TruecallerOAuthModule must delegate to MainActivity rather than own the SDK.
+    const module = read('android/app/src/main/java/com/companionchat/TruecallerOAuthModule.kt');
+    expect(module).toContain('beginTruecallerOAuth(promise)');
+    expect(module).not.toContain('TcSdk.initAsync');
+    expect(module).not.toContain('registerForActivityResult');
+  });
+
+  it('TcSdk.clear is called in onDestroy to prevent lifecycle leaks', () => {
+    const kt = read('android/app/src/main/java/com/companionchat/MainActivity.kt');
+    expect(kt).toContain('TcSdk.clear()');
+    expect(kt).toContain('override fun onDestroy');
+  });
+
+  it('signInWithTruecaller is exported from auth.ts', () => {
+    expect(auth).toContain('export async function signInWithTruecaller');
+  });
+
+  it('TruecallerResult includes no_owner for missing accounts', () => {
+    expect(auth).toContain("status: 'no_owner'");
+    expect(auth).toContain('challenge: string');
+  });
+
+  it('verified phone is never returned to the client from the Edge Function', () => {
+    // The exchange function logs nothing about the phone, and the response
+    // The exchange function must never return the verified phone to the client.
+    // It may mention "phone" in error strings but must not return the number itself.
+    // Verified by checking that no response sends a phone_number field.
+    expect(exchange).not.toContain('phone_number:');
+    expect(exchange).not.toMatch(/Response\.json\(\s*\{[^}]*phone_number/s);
+    // The challenge that IS returned has the phone only on the server.
+    expect(exchange).toContain('status: \'no_owner\'');
+    expect(exchange).not.toContain('phone_number:');
+  });
+
+  it('exchange function requires phone_number_verified === true', () => {
+    expect(exchange).toContain('phone_number_verified !== true');
+  });
+
+  it('PKCE code verifier is sent to Truecaller, not stored server-side', () => {
+    expect(exchange).toContain('code_verifier: codeVerifier');
+    // It must not be persisted (only challenge_hash is stored).
+    expect(exchange).not.toMatch(/insert.*codeVerifier|codeVerifier.*insert/);
+  });
+
+  it('exchange-truecaller-code has verify_jwt = false in config.toml', () => {
+    const block = config.split('[functions.exchange-truecaller-code]')[1] ?? '';
+    const firstLines = block.slice(0, 200);
+    expect(firstLines).toContain('verify_jwt = false');
+  });
+
+  it('Truecaller client secret stays in Supabase env, not JS or build files', () => {
+    // TRUECALLER_CLIENT_ID is the public identifier (in AndroidManifest).
+    // There must be no TRUECALLER_CLIENT_SECRET in any client-side file.
+    const envExample = read('.env.example');
+    expect(envExample).not.toContain('TRUECALLER_CLIENT_SECRET');
+    const authFile = read('src/api/auth.ts');
+    expect(authFile).not.toContain('TRUECALLER_CLIENT_SECRET');
+    const bridge = read('src/lib/truecallerOAuth.ts');
+    expect(bridge).not.toContain('TRUECALLER_CLIENT_SECRET');
+  });
+
+  it('migration 127 creates the external_identities table in private schema', () => {
+    expect(migration127).toContain('private.external_identities');
+    expect(migration127).toContain('unique (provider, subject)');
+    expect(migration127).toContain('unique (phone_e164)');
+    expect(migration127).toContain('on delete cascade');
+  });
+
+  it('migration 127 revokes external_identities from anon and authenticated', () => {
+    expect(migration127).toContain('revoke all on private.external_identities');
+    expect(migration127).toMatch(/from.*anon.*authenticated|from.*authenticated.*anon/);
+  });
+
+  it('upsert_external_identity is service_role only', () => {
+    expect(migration127).toContain('grant execute on function public.upsert_external_identity');
+    expect(migration127).toContain('to service_role');
+    expect(migration127).toContain('revoke all on function public.upsert_external_identity');
+  });
+
+  it('pending challenges are stored as a hash, never the raw token', () => {
+    expect(migration127).toContain('challenge_hash');
+    expect(migration127).not.toContain('challenge_token');
+    // The edge function must hash the challenge before inserting.
+    expect(exchange).toContain('SHA-256');
+    expect(exchange).toContain('challengeHash');
+    expect(exchange).not.toContain('challengeToken:');
+  });
+
+  it('Truecaller button is testID="onboard-truecaller"', () => {
+    expect(screen).toContain('testID="onboard-truecaller"');
+  });
+
+  it('continuity choice offers new-user and link-google paths', () => {
+    expect(screen).toContain('testID="onboard-truecaller-new"');
+    expect(screen).toContain('testID="onboard-truecaller-link-google"');
+    expect(screen).toContain("identify === 'continuity'");
+  });
+
+  it('WhatsApp copy replaces SMS copy for the phone fallback', () => {
+    expect(screen).toContain('WhatsApp');
+    expect(screen).not.toContain("We'll send an SMS");
   });
 });
 
@@ -5857,7 +6029,8 @@ describe('emoji data pipeline', () => {
   });
 
   it('gates drift in `npm run verify`, not only in CI', () => {
-    expect(pkg.scripts.verify).toContain('emoji:check');
+    expect(pkg.scripts.verify).toContain('verify:source');
+    expect(pkg.scripts['verify:source']).toContain('emoji:check');
     expect(pkg.scripts['emoji:check']).toContain('--check');
   });
 
@@ -7776,6 +7949,10 @@ describe('system messages — centered session/notice rows in the transcript', (
     expect(src).toContain('bg.sunken');
     expect(src).toContain('typography.bodySmall');
     expect(src).toContain('text.tertiary');
+    // Long notices wrap inside the pill instead of running past the screen
+    // edge (provider chat, both trees share this cell).
+    expect(src).toContain('flexShrink: 1');
+    expect(src).toContain("flexWrap: 'wrap'");
     // Not a bubble: never the sender/bubble colours, no accent.
     expect(src).not.toMatch(/bubble\.(mine|theirs)|bg\.accent/);
   });
@@ -8143,7 +8320,19 @@ describe('video degrades before audio on a poor connection, not alongside it (M5
   // together under a poor downlink until both were unusable, instead of
   // video stepping down (and, at AudioOnly, stepping out) so the
   // conversation itself survives.
+  //
+  // Official Video SDK 4.x path (2026-09-20): dual-stream on the sender so a
+  // low-quality tier exists, then AudioOnly remote subscribe fallback so the
+  // SDK steps high → low → audio-only. setLocalPublishFallbackOption was
+  // removed in 4.x.
   const agora = withoutComments(read('src/api/callMedia/agora.ts'));
+
+  it('enables dual-stream before joining so the low-video tier exists', () => {
+    expect(agora).toContain('engine.setDualStreamMode(SimulcastStreamMode.EnableSimulcastStream)');
+    expect(agora.indexOf('setDualStreamMode')).toBeLessThan(
+      agora.indexOf('const result = join(engine, token);'),
+    );
+  });
 
   it('setRemoteSubscribeFallbackOption is called with AudioOnly before joining', () => {
     expect(agora).toContain('engine.setRemoteSubscribeFallbackOption(');
@@ -8153,6 +8342,14 @@ describe('video degrades before audio on a poor connection, not alongside it (M5
     expect(agora.indexOf('setRemoteSubscribeFallbackOption')).toBeLessThan(
       agora.indexOf('const result = join(engine, token);'),
     );
+  });
+
+  it('voice→video upgrade re-enables dual-stream on the publisher', () => {
+    const fn = agora.slice(
+      agora.indexOf('const enableVideo = useCallback'),
+      agora.indexOf('const disableVideo = useCallback'),
+    );
+    expect(fn).toContain('setDualStreamMode(SimulcastStreamMode.EnableSimulcastStream)');
   });
 
   it('onRemoteSubscribeFallbackToAudioOnly reuses remoteVideoEnabled, not a new field', () => {

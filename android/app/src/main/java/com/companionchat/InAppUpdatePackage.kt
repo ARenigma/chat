@@ -28,6 +28,7 @@ class InAppUpdatePackage : ReactPackage {
         WindowChromeModule(reactContext),
         CallDiagnosticsModule(reactContext),
         HapticsModule(reactContext),
+        TruecallerOAuthModule(reactContext),
     )
 
     override fun createViewManagers(

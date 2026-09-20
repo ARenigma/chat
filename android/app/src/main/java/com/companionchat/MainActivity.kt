@@ -7,12 +7,28 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.WindowManager
+import androidx.activity.result.ActivityResult
+import androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult
 import androidx.core.view.WindowCompat
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
+import com.facebook.react.bridge.Promise
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
 import com.google.firebase.appdistribution.FirebaseAppDistribution
+import com.truecaller.android.sdk.oAuth.CodeVerifierUtil
+import com.truecaller.android.sdk.oAuth.TcOAuthCallback
+import com.truecaller.android.sdk.oAuth.TcOAuthData
+import com.truecaller.android.sdk.oAuth.TcOAuthError
+import com.truecaller.android.sdk.oAuth.TcSdk
+import com.truecaller.android.sdk.oAuth.TcSdkOptions
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import java.math.BigInteger
+import java.security.SecureRandom
+import java.util.concurrent.atomic.AtomicReference
 
 class MainActivity : ReactActivity() {
 
@@ -28,6 +44,170 @@ class MainActivity : ReactActivity() {
     var benchmarkReadOnlyLaunch: Boolean = false
       private set
   }
+
+  // ---------------------------------------------------------------------------
+  // Truecaller OAuth
+  //
+  // Lifecycle ownership: the launcher MUST be registered here, unconditionally,
+  // before this Activity reaches STARTED. A module that registers it inside a
+  // signIn() call would be too late — Android silently ignores post-STARTED
+  // registrations. The TruecallerOAuthModule delegates to `beginTruecallerOAuth`;
+  // it does not own any SDK state.
+  //
+  // https://developer.android.com/training/basics/intents/result
+  // https://docs.truecaller.com/truecaller-sdk/android/latest-oauth-sdk-3.3.0/integration-steps/implementing-callbacks
+  // ---------------------------------------------------------------------------
+
+  /**
+   * The in-flight Promise for one Truecaller sign-in attempt. AtomicReference
+   * prevents two concurrent attempts (JS cannot call signIn again while one is
+   * active; a race between a module call and an orphan Activity result is also
+   * guarded here).
+   */
+  private val pendingTruecallerPromise = AtomicReference<Promise?>(null)
+
+  /**
+   * PKCE verifier for the current attempt. Generated freshly per attempt and
+   * nulled on terminal resolution. Never stored persistently — if the process
+   * is killed the orphan Activity result is discarded.
+   */
+  @Volatile
+  private var truecallerCodeVerifier: String? = null
+
+  /** OAuth state for the current attempt. Validated before accepting success. */
+  @Volatile
+  private var truecallerState: String? = null
+
+  /** Background scope for async SDK init. */
+  private val sdkScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+  /**
+   * Registered unconditionally as a property (before STARTED) so the Activity
+   * Result system can deliver results from this Activity even after process death
+   * followed by task restore.
+   *
+   * https://docs.truecaller.com/truecaller-sdk/android/latest-oauth-sdk-3.3.0/integration-steps/implementing-callbacks
+   */
+  private val truecallerLauncher = registerForActivityResult(StartActivityForResult()) {
+    result: ActivityResult ->
+      TcSdk.getInstance()?.onActivityResultObtained(this, result.resultCode, result.data)
+  }
+
+  private val tcOAuthCallback = object : TcOAuthCallback {
+    override fun onSuccess(data: TcOAuthData) {
+      val promise = pendingTruecallerPromise.getAndSet(null) ?: run {
+        Log.w(TAG, "Truecaller onSuccess: no pending promise, discarding.")
+        return
+      }
+      val sentState = truecallerState
+      truecallerState = null
+      val verifier = truecallerCodeVerifier
+      truecallerCodeVerifier = null
+
+      // State mismatch is a request-forgery signal; fail closed.
+      if (data.state != sentState) {
+        Log.e(TAG, "Truecaller state mismatch — possible CSRF. Rejecting.")
+        promise.reject(TruecallerOAuthModule.E_FAILED, "OAuth state mismatch.")
+        return
+      }
+      if (verifier == null) {
+        // Process was recreated mid-attempt; no verifier to send the server.
+        promise.reject(TruecallerOAuthModule.E_UNAVAILABLE, "No code verifier for this attempt.")
+        return
+      }
+      com.facebook.react.bridge.Arguments.createMap().also { map ->
+        map.putString("authorizationCode", data.authorizationCode)
+        map.putString("codeVerifier", verifier)
+        promise.resolve(map)
+      }
+    }
+
+    override fun onFailure(error: TcOAuthError) {
+      val promise = pendingTruecallerPromise.getAndSet(null) ?: run {
+        Log.w(TAG, "Truecaller onFailure (code ${error.errorCode}): no pending promise.")
+        return
+      }
+      truecallerState = null
+      truecallerCodeVerifier = null
+      val outcome = TruecallerOAuthModule.errorCodeToOutcome(error)
+      promise.reject(outcome, error.errorMessage ?: "Truecaller sign-in failed (${error.errorCode}).")
+    }
+  }
+
+  /**
+   * Called by TruecallerOAuthModule.signIn(). Initialises the SDK on a
+   * background thread, validates usability, sets up PKCE + state, and invokes
+   * the consent sheet.
+   *
+   * Only one attempt runs at a time. A concurrent call is rejected immediately
+   * with E_UNAVAILABLE so the UI can remain stable.
+   */
+  fun beginTruecallerOAuth(promise: Promise) {
+    if (!pendingTruecallerPromise.compareAndSet(null, promise)) {
+      promise.reject(TruecallerOAuthModule.E_UNAVAILABLE, "A sign-in is already in progress.")
+      return
+    }
+
+    sdkScope.launch {
+      try {
+        // Clear any previous SDK instance so the fresh callback is wired
+        // correctly, especially if the Activity was recreated.
+        // https://docs.truecaller.com/truecaller-sdk/android/latest-oauth-sdk-3.3.0/integration-steps/clearing-sdk-instance
+        TcSdk.clear()
+
+        val options = TcSdkOptions.Builder(this@MainActivity, tcOAuthCallback)
+          .sdkOptions(TcSdkOptions.OPTION_VERIFY_ONLY_TC_USERS)
+          .consentMode(TcSdkOptions.CONSENT_MODE_BOTTOMSHEET)
+          .footerType(TcSdkOptions.FOOTER_TYPE_ANOTHER_MOBILE_NO)
+          .ctaText(TcSdkOptions.CTA_TEXT_CONTINUE)
+          .setEnhancedBottomSheetEnabled(true)
+          .build()
+
+        TcSdk.initAsync(options)
+
+        if (!TcSdk.getInstance().isOAuthFlowUsable) {
+          // Truecaller is not installed or the account is incomplete.
+          val p = pendingTruecallerPromise.getAndSet(null) ?: return@launch
+          p.reject(TruecallerOAuthModule.E_UNAVAILABLE, "Truecaller is not available on this device.")
+          return@launch
+        }
+
+        // PKCE and state are generated fresh per attempt and held in memory only.
+        // They are nulled on every terminal resolution, so a recreated Activity
+        // with no live attempt produces E_UNAVAILABLE rather than a stale exchange.
+        val stateValue = BigInteger(130, SecureRandom()).toString(32)
+        val verifier = CodeVerifierUtil.generateRandomCodeVerifier()
+        val challenge = CodeVerifierUtil.getCodeChallenge(verifier)
+        if (challenge == null) {
+          val p = pendingTruecallerPromise.getAndSet(null) ?: return@launch
+          p.reject(TruecallerOAuthModule.E_FAILED, "Device cannot produce a PKCE code challenge.")
+          return@launch
+        }
+
+        truecallerState = stateValue
+        truecallerCodeVerifier = verifier
+
+        TcSdk.getInstance().setOAuthState(stateValue)
+        TcSdk.getInstance().setOAuthScopes(arrayOf("openid", "phone"))
+        TcSdk.getInstance().setCodeChallenge(challenge)
+
+        // Switch to the main thread for the Activity-bound SDK invocation.
+        launch(Dispatchers.Main) {
+          TcSdk.getInstance().getAuthorizationCode(this@MainActivity, truecallerLauncher)
+        }
+      } catch (e: Exception) {
+        val p = pendingTruecallerPromise.getAndSet(null) ?: return@launch
+        truecallerState = null
+        truecallerCodeVerifier = null
+        p.reject(TruecallerOAuthModule.E_FAILED, e.message ?: "Truecaller SDK error.")
+      }
+    }
+  }
+
+  private companion object {
+    const val TAG = "MainActivity"
+  }
+
 
   private fun updateBenchmarkLaunch(candidate: Intent) {
     benchmarkReadOnlyLaunch =
@@ -341,5 +521,30 @@ class MainActivity : ReactActivity() {
         .addOnFailureListener { error ->
           Log.i("AppDistribution", "no update offered: ${error.message}")
         }
+  }
+
+  override fun onDestroy() {
+    super.onDestroy()
+    /*
+     * Free SDK resources when the Activity is destroyed.
+     *
+     * Must be called here rather than onStop/onPause so a configuration change
+     * (rotation, fold) that creates a new Activity instance calls clear() before
+     * the new instance runs initAsync(). Failing to clear means the old callback
+     * reference is still registered, and the result of the new consent sheet
+     * would be delivered to a dead Activity rather than the new one.
+     *
+     * https://docs.truecaller.com/truecaller-sdk/android/latest-oauth-sdk-3.3.0/integration-steps/clearing-sdk-instance
+     */
+    TcSdk.clear()
+    // If the Activity is destroyed while a sign-in is in progress (e.g. user
+    // force-quits the app), reject the pending promise so the JS side is not
+    // left waiting on a ghost.
+    pendingTruecallerPromise.getAndSet(null)?.reject(
+      TruecallerOAuthModule.E_UNAVAILABLE,
+      "Activity was destroyed during sign-in.",
+    )
+    truecallerState = null
+    truecallerCodeVerifier = null
   }
 }

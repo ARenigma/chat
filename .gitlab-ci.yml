@@ -116,6 +116,29 @@ no-server-keys:
       fi
       echo "no server-side credentials in the tree"
 
+# SAST on the code introduced by this push/MR. Scanning the whole historical
+# tree produced 66 false positives in source-reading contract tests and Android
+# launcher intent filters; a baseline scan keeps the gate strict on NEW code
+# while the existing findings are triaged deliberately instead of blanket-
+# ignored. Both engine and blocking rules are pinned: `.semgrep.yml` is reviewed
+# with the code, so a remote registry update cannot silently change this gate.
+sast-changes:
+  stage: static
+  image:
+    name: semgrep/semgrep:1.176.0
+    entrypoint: ['']
+  script:
+    - bash scripts/security-check.sh sast
+
+# Known dependency vulnerabilities. High and critical are fail-closed. The
+# production dependency graph is currently clean; low dev-only advisories remain
+# visible without blocking Android delivery.
+dependency-audit:
+  stage: static
+  extends: .node
+  script:
+    - npm run security:dependencies
+
 lint-commits:
   stage: static
   extends: .node
@@ -129,11 +152,9 @@ static:
   extends: .node
   script:
     - cp .env.example .env # Placeholders; Babel needs the module to resolve.
-    - npm run tokens:check # Design tokens changed in Figma without regenerating.
-    - npm run emoji:check # emoji.generated.ts hand-edited, or the source bumped.
-    - npx tsc --noEmit
-    - npm run lint
-    - npx jest --ci --coverage --coverageReporters=text-summary --coverageReporters=cobertura
+    # One command owner for local and CI verification. CI's only difference is
+    # the coverage reporters; source/artifact gates stay byte-for-byte shared.
+    - npm run verify:ci
   coverage: '/All files[^|]*\|[^|]*\s+([\d\.]+)/'
   artifacts:
     when: always
@@ -223,7 +244,15 @@ android:
   stage: build
   tags: ['$ANDROID_RUNNER_TAG']
   image: reactnativecommunity/react-native-android:v21.0
-  needs: [static, database, secret-scan, no-server-keys]
+  needs:
+    [
+      static,
+      database,
+      secret-scan,
+      no-server-keys,
+      sast-changes,
+      dependency-audit,
+    ]
   cache:
     - key:
         files: [package-lock.json]

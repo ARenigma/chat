@@ -7,6 +7,12 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
+import Animated, {
+  clamp,
+  useAnimatedStyle,
+  useSharedValue,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
 import { LIGHT, TOKENS, type Theme } from '../theme/tokens';
@@ -19,6 +25,7 @@ import { useConversationId, useConversations, useProviders, useSelfId } from '..
 import { answerCall, endCall, heartbeatCall, requestMediaUpgrade, respondMediaUpgrade, startCall, useCallEnded, useMediaUpgrade } from '../api/calls';
 import { useCallSession } from '../api/callMedia';
 import { CallVideoView } from '../api/callMedia/CallVideoView';
+import type { CallVideoSource } from '../api/callMedia/types';
 import { useSessionLease } from '../api/sessions';
 import {
   startCallForegroundService,
@@ -1173,13 +1180,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
       ) : null}
 
       {videoEnabled && localVideo !== null ? (
-        <CallVideoView
-          source={localVideo}
-          objectFit="cover"
-          mirror
-          zOrder={1}
-          style={styles.localPip}
-        />
+        <LocalVideoPip source={localVideo} />
       ) : null}
 
       {/*
@@ -1450,8 +1451,107 @@ const AVATAR = 148;
 /** How soft the peer photo blurs into the background wash (#4). */
 const CALL_BG_BLUR = 40;
 const BTN = 56;
-/** Clearance for the labelled control row + home indicator. */
+/**
+ * Clearance for the labelled control row above the home indicator.
+ * Does NOT include the safe-area inset — LocalVideoPip adds `insets.bottom`
+ * so the self-view clears the real button row on every device (the previous
+ * fixed `bottom: 120` sat under the buttons once the inset grew).
+ */
 const CONTROLS_CLEARANCE = 120;
+const PIP_WIDTH = 120;
+const PIP_HEIGHT = 160;
+/** Edge gap between the floating self-view and the screen / control row. */
+const PIP_EDGE = TOKENS.space.md;
+
+/**
+ * Own-camera picture-in-picture.
+ *
+ * Default dock: bottom-right, clear of the call-control row (inset-aware).
+ * Free movement after that — pan anywhere inside the safe band; release leaves
+ * it where the finger stopped (no corner snap). Position via left/top shared
+ * values (not animated width/height) so Yoga stays out of the drag path.
+ *
+ * Frequency: occasional during a video call, finger-driven — the motion is the
+ * finger itself; no enter/exit animation on the PIP.
+ */
+function LocalVideoPip({ source }: { source: CallVideoSource }) {
+  const styles = useStyles(makeStyles);
+  const insets = useSafeAreaInsets();
+  const { width: windowW, height: windowH } = useWindowDimensions();
+
+  const dockLeft = windowW - PIP_EDGE - PIP_WIDTH;
+  const dockTop =
+    windowH - insets.bottom - CONTROLS_CLEARANCE - PIP_EDGE - PIP_HEIGHT;
+  const minLeft = PIP_EDGE;
+  const maxLeft = Math.max(minLeft, windowW - PIP_EDGE - PIP_WIDTH);
+  const minTop = insets.top + PIP_EDGE;
+  const maxTop = Math.max(
+    minTop,
+    windowH - insets.bottom - CONTROLS_CLEARANCE - PIP_EDGE - PIP_HEIGHT,
+  );
+  // Translate limits relative to the default dock origin.
+  const minTX = minLeft - dockLeft;
+  const maxTX = maxLeft - dockLeft;
+  const minTY = minTop - dockTop;
+  const maxTY = maxTop - dockTop;
+
+  const tx = useSharedValue(0);
+  const ty = useSharedValue(0);
+  const startTX = useSharedValue(0);
+  const startTY = useSharedValue(0);
+
+  // Keep the viewfinder on-screen when the window or insets change. Remount
+  // (video off→on) re-initialises shared values at the default dock (0,0).
+  useEffect(() => {
+    tx.value = clamp(tx.value, minTX, maxTX);
+    ty.value = clamp(ty.value, minTY, maxTY);
+  }, [tx, ty, minTX, maxTX, minTY, maxTY]);
+
+  /*
+   * RNGH 3: usePanGesture — same pattern as MediaViewer. Stay where released
+   * (free movement); only clamp so the viewfinder cannot cover the control
+   * row or leave the screen. Drag via translateX/Y — never left/top — so Yoga
+   * stays out of the frame path (animate-expo).
+   * https://docs.swmansion.com/react-native-gesture-handler/docs/gestures/use-pan-gesture
+   */
+  const pan = usePanGesture({
+    onActivate: () => {
+      startTX.value = tx.value;
+      startTY.value = ty.value;
+    },
+    onUpdate: e => {
+      tx.value = clamp(startTX.value + e.translationX, minTX, maxTX);
+      ty.value = clamp(startTY.value + e.translationY, minTY, maxTY);
+    },
+  });
+
+  const pipStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: tx.value }, { translateY: ty.value }],
+  }));
+
+  return (
+    <GestureDetector gesture={pan}>
+      <Animated.View
+        testID="call-local-pip"
+        accessibilityLabel="Your video"
+        accessibilityHint="Drag to move"
+        style={[
+          styles.localPip,
+          { left: dockLeft, top: dockTop },
+          pipStyle,
+        ]}
+      >
+        <CallVideoView
+          source={source}
+          objectFit="cover"
+          mirror
+          zOrder={1}
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
+    </GestureDetector>
+  );
+}
 
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
@@ -1645,12 +1745,15 @@ const makeStyles = (t: Theme) =>
     },
     localPip: {
       position: 'absolute',
-      right: TOKENS.space.md,
-      bottom: CONTROLS_CLEARANCE,
-      width: 120,
-      height: 160,
+      // Default dock left/top set inline; free movement is translateX/Y.
+      width: PIP_WIDTH,
+      height: PIP_HEIGHT,
       borderRadius: TOKENS.radius.lg,
       borderCurve: 'continuous',
       overflow: 'hidden',
+      // Below the control row (zIndex 2) so a missed clamp never steals taps
+      // from End / Mute; above the remote video fill.
+      zIndex: 1,
+      elevation: 4,
     },
   });

@@ -58,6 +58,14 @@
             to anyone you talk to — a separate display name is.
           </li>
           <li>
+            <strong>Your verified phone number</strong>, when you sign in with
+            Truecaller or verify a number via WhatsApp. The number is used only
+            to identify your account; it is never shown to the people you talk
+            to. Truecaller shares only your verified phone number with us after
+            you consent — we do not receive your Truecaller profile, name, or
+            email through that flow.
+          </li>
+          <li>
             <strong>Your messages</strong>, so a conversation can continue while
             it is live. When a session ends, the messages disappear from the app
             for both people immediately. We keep an inaccessible copy on our
@@ -161,7 +169,8 @@
         <h2>Where it lives</h2>
         <p>
           Supabase (PostgreSQL) for data, Google Firebase for notifications and
-          app distribution, Sentry for crash reports. Crash reports are scrubbed
+          app distribution, Sentry for crash reports, and Truecaller for
+          phone-number verification. Crash reports are scrubbed
           of message contents before they are sent.
         </p>
 

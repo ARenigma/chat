@@ -1,0 +1,22 @@
+---
+description: Requires local Greptile review and verification before remote writes
+alwaysApply: true
+---
+
+# Greptile review gate
+
+- Never push code immediately after committing.
+- Every commit must complete `npm run review:greptile`; Greptile reviews
+  committed branch changes and ignores the working tree.
+- Read `.git/greptile/latest.txt`. Fix every valid P0/P1 finding and every P2
+  that indicates correctness, security, performance, or maintainability risk.
+- Do not apply feedback blindly. Verify the claim against code/docs, fix the
+  root cause, add a regression test, and rerun the relevant Pappal verification.
+- Commit the fix; the post-commit hook starts a fresh review for the new HEAD.
+- Before any push, run `npm run review:greptile:status`. Do not bypass the
+  pre-push hook or push while review is absent, running, failed, or has findings.
+- Pull/merge requests must keep Greptile update reviews enabled. Address new
+  findings before merge; the Greptile status check is required, not advisory.
+- A completed AI review is one layer, not proof. Typecheck, lint, tests,
+  security scans, database checks, Android build checks, and device evidence
+  remain authoritative for their domains.

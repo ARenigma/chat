@@ -58,12 +58,22 @@ export const SystemMessageRow = memo(SystemMessageRowView);
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
     row: {
+      // Full-width column so the pill's maxWidth percentage resolves against the
+      // transcript, not against an intrinsic shrink-wrapped parent — without a
+      // definite parent width the pill grew with the string and ran off-screen
+      // on long notices (provider chat, both sides share this cell).
       alignItems: 'center',
+      alignSelf: 'stretch',
+      paddingHorizontal: TOKENS.space.lg,
       paddingVertical: TOKENS.space['2xs'],
     },
     pill: {
       flexDirection: 'row',
       alignItems: 'center',
+      // Allow the label to wrap onto a second line inside the pill instead of
+      // stretching the row past the screen edge.
+      flexWrap: 'wrap',
+      justifyContent: 'center',
       gap: TOKENS.space['2xs'],
       paddingHorizontal: TOKENS.space.sm,
       paddingVertical: TOKENS.space['2xs'],
@@ -71,12 +81,17 @@ const makeStyles = (t: Theme) =>
       borderCurve: 'continuous',
       backgroundColor: t.color.bg.sunken,
       // Long notices wrap and stay centered rather than run edge to edge.
-      maxWidth: '82%',
+      maxWidth: '100%',
+      alignSelf: 'center',
     },
     text: {
       ...TOKENS.typography.bodySmall,
       color: t.color.text.tertiary,
       textAlign: 'center',
+      // Row flex children refuse to shrink below their intrinsic text width
+      // unless told to — without this the pill ignores maxWidth and the
+      // string paints past the screen edge.
+      flexShrink: 1,
     },
     // Matches the box an Icon at `TOKENS.icon.xs` actually renders — Icon.tsx
     // multiplies `size` by its own `ICON_SCALE` before it becomes a fontSize,

@@ -549,6 +549,24 @@ dependencies {
     implementation("com.cashfree.vrs:kyc-verification:1.0.1")
 
     /**
+     * Truecaller OAuth SDK 3.3.0 — phone-verified 1-tap onboarding.
+     *
+     * RULE 1: prefer the platform's own solution. The SDK ships a consent sheet
+     * in Truecaller's own process, not a webview we maintain, and returns an
+     * authorization code + PKCE verifier that the server exchanges for a
+     * verified phone number without any credential transiting JS.
+     *
+     * Available on Maven Central. mavenCentral() is already in the project-level
+     * repositories block. No missed-call or READ_PHONE_STATE/READ_CALL_LOG
+     * permissions are requested; OPTION_VERIFY_ONLY_TC_USERS limits the flow to
+     * existing Truecaller users, keeping the permission surface unchanged.
+     *
+     * https://docs.truecaller.com/truecaller-sdk/android/latest-oauth-sdk-3.3.0/integration-steps/setup
+     * https://central.sonatype.com/artifact/com.truecaller.android.sdk/truecaller-sdk/3.3.0
+     */
+    implementation("com.truecaller.android.sdk:truecaller-sdk:3.3.0")
+
+    /**
      * CameraX 1.4.0 — live-preview native view (PappalCameraPreview).
      *
      * RULE 1: prefer the platform's own solution. CameraX is Google's official

@@ -7,6 +7,11 @@ import {
   credentialSheetAvailable,
   requestGoogleCredential,
 } from '../lib/googleCredential';
+import {
+  TruecallerOAuthError,
+  requestTruecallerAuth,
+} from '../lib/truecallerOAuth';
+export { truecallerAvailable } from '../lib/truecallerOAuth';
 import { AUTH_REDIRECT_URL, ENV } from '../lib/env';
 import { normalisePhone } from '../lib/phone';
 import {
@@ -96,7 +101,7 @@ export { PHONE_AUTH_ENABLED };
  * which path ran — the flag lives entirely here.
  */
 export type PhoneAuthProvider = 'firebase' | 'supabase';
-export const AUTH_PHONE_PROVIDER: PhoneAuthProvider = 'firebase';
+export const AUTH_PHONE_PROVIDER: PhoneAuthProvider = 'supabase';
 
 /**
  * Whether to try Credential Manager before the browser.
@@ -375,6 +380,170 @@ export async function signInWith(provider: SocialProvider): Promise<void> {
 export type GoogleResult = 'session' | 'redirected';
 
 export { GoogleCredentialError } from '../lib/googleCredential';
+
+/**
+ * Why Truecaller is the new primary sign-in.
+ *
+ * Phone-verified, one-tap, zero OTP, zero SMS cost, and zero Truecaller
+ * profile data collected — the server requests only `openid` + `phone`.
+ * It replaces Google as the primary CTA because it delivers both Google's
+ * "stay in the app" experience and phone-number accountability — which Google
+ * cannot provide. WhatsApp OTP is the first fallback (existing path), Google
+ * the final fallback (existing wallet/history continuity for pre-Truecaller
+ * members and devices without the app).
+ */
+
+export { TruecallerOAuthError } from '../lib/truecallerOAuth';
+
+/**
+ * How a Truecaller sign-in attempt ended.
+ *
+ *   'session'   — exchange succeeded, Supabase session installed, signed in.
+ *   'no_owner'  — Truecaller verified the phone but no Supabase user owns it.
+ *                 The caller receives the opaque challenge and must ask the
+ *                 member "New here?" or "Already use Google?" before proceeding.
+ *
+ * Cancellation and unavailability throw TruecallerOAuthError (not a result).
+ */
+export type TruecallerResult =
+  | { status: 'session' }
+  | { status: 'no_owner'; challenge: string };
+
+/**
+ * Sign in with Truecaller: consent sheet → server PKCE exchange →
+ * verified-phone account resolution → Supabase session.
+ *
+ * Throws TruecallerOAuthError on cancellation (`reason: 'cancelled'`),
+ * unavailability (`reason: 'unavailable'`), or hard failure (`reason: 'failed'`).
+ *
+ * Cancellation must never be shown to the user — it is a deliberate choice,
+ * not an error. Unavailability should route silently to WhatsApp OTP.
+ */
+export async function signInWithTruecaller(): Promise<TruecallerResult> {
+  // Get the authorization code + PKCE verifier from the native SDK.
+  const { authorizationCode, codeVerifier } = await requestTruecallerAuth();
+
+  // Exchange on the server: Truecaller token endpoint → userinfo → identity resolution.
+  let response: Response;
+  try {
+    response = await fetch(
+      `${ENV.supabaseUrl}/functions/v1/exchange-truecaller-code`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          apikey: ENV.supabaseAnonKey,
+          Authorization: `Bearer ${ENV.supabaseAnonKey}`,
+        },
+        body: JSON.stringify({ authorizationCode, codeVerifier }),
+      },
+    );
+  } catch {
+    throw new TruecallerOAuthError('failed', 'Could not reach the sign-in server.');
+  }
+
+  if (!response.ok) {
+    throw new TruecallerOAuthError(
+      'failed',
+      'Could not complete Truecaller sign-in. Please try again.',
+    );
+  }
+
+  const data = (await response.json()) as {
+    status?: string;
+    challenge?: string;
+    access_token?: string;
+    refresh_token?: string;
+  };
+
+  // No-owner: first time this phone number appears on Pappal.
+  if (data.status === 'no_owner' && typeof data.challenge === 'string') {
+    return { status: 'no_owner', challenge: data.challenge };
+  }
+
+  // Matched user: install the session.
+  if (
+    typeof data.access_token === 'string' &&
+    typeof data.refresh_token === 'string'
+  ) {
+    const { error } = await supabase.auth.setSession({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+    });
+    if (error != null) {
+      throw new TruecallerOAuthError('failed', 'Could not complete sign-in. Please try again.');
+    }
+    return { status: 'session' };
+  }
+
+  throw new TruecallerOAuthError('failed', 'Unexpected response from the sign-in server.');
+}
+
+/**
+ * Confirm a "New here?" continuity choice: consume the pending challenge and
+ * create a Supabase account for the verified Truecaller phone.
+ */
+export async function confirmTruecallerNewUser(challenge: string): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `${ENV.supabaseUrl}/functions/v1/truecaller-confirm-new-user`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          apikey: ENV.supabaseAnonKey,
+          Authorization: `Bearer ${ENV.supabaseAnonKey}`,
+        },
+        body: JSON.stringify({ challenge }),
+      },
+    );
+  } catch {
+    throw new TruecallerOAuthError('failed', 'Could not reach the sign-in server.');
+  }
+  if (!response.ok) {
+    throw new TruecallerOAuthError('failed', 'Could not create your account. Please try again.');
+  }
+  const data = (await response.json()) as { access_token?: string; refresh_token?: string };
+  if (typeof data.access_token === 'string' && typeof data.refresh_token === 'string') {
+    const { error } = await supabase.auth.setSession({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+    });
+    if (error != null) {
+      throw new TruecallerOAuthError('failed', 'Could not complete sign-in. Please try again.');
+    }
+  }
+}
+
+/**
+ * Link a Truecaller identity to the currently signed-in Google account.
+ * The `challenge` must come from a prior `signInWithTruecaller()` no-owner result.
+ */
+export async function linkTruecallerToCurrentAccount(challenge: string): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new TruecallerOAuthError('failed', 'You must be signed in to link accounts.');
+  let response: Response;
+  try {
+    response = await fetch(
+      `${ENV.supabaseUrl}/functions/v1/truecaller-link-account`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          apikey: ENV.supabaseAnonKey,
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ challenge }),
+      },
+    );
+  } catch {
+    throw new TruecallerOAuthError('failed', 'Could not reach the sign-in server.');
+  }
+  if (!response.ok) {
+    throw new TruecallerOAuthError('failed', 'Could not link your account. Please try again.');
+  }
+}
 
 /**
  * Sign in with Google: Credential Manager's explicit-button flow, falling back

@@ -60,6 +60,20 @@ export const CASHFREE_SANDBOX_CHECKOUT = APP_ENV !== 'production';
 export const PHONE_AUTH_ENABLED = true;
 
 /**
+ * Whether Truecaller OAuth is presented as the primary sign-in CTA.
+ *
+ * True: Truecaller appears as the first button; WhatsApp OTP and Google are
+ *   shown below it as fallbacks.
+ * False: reverts to the previous Google-primary layout (for device builds
+ *   where the Truecaller SDK was not yet integrated, or rollback).
+ *
+ * Runtime availability is checked separately via `truecallerAvailable()` from
+ * src/lib/truecallerOAuth.ts — this flag only controls which CTA is shown
+ * first when the SDK IS available.
+ */
+export const TRUECALLER_AUTH_ENABLED = true;
+
+/**
  * Which theme a FRESH INSTALL opens in.
  *
  * Amit, 2026-09-08: "default app at dark mode ... and all this should be in
