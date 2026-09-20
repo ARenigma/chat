@@ -79,6 +79,18 @@ Deno.serve(async request => {
       },
     );
     if (linkError) {
+      // Idempotent retry after the link committed but the response was lost.
+      // Only the same authenticated UUID may observe success.
+      const { data: linkedUserId, error: resumeError } = await admin.rpc(
+        'resolve_consumed_challenge_user',
+        { p_challenge_hash: challengeHash },
+      );
+      if (!resumeError && linkedUserId === userId) {
+        return Response.json(
+          { status: 'linked' },
+          { headers: { 'Cache-Control': 'no-store' } },
+        );
+      }
       return Response.json(
         { error: 'challenge is invalid, conflicting, already used, or expired' },
         { status: 409 },

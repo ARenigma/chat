@@ -68,6 +68,24 @@ Deno.serve(async request => {
         ? (challengeRow as { out_phone: string }).out_phone
         : null;
     if (error || phone === null) {
+      // The identity may already be linked and the challenge consumed while a
+      // later GoTrue session mint/response failed. Resume minting for that exact
+      // recorded UUID; never create or relink on this path.
+      const { data: resumedUserId, error: resumeError } = await admin.rpc(
+        'resolve_consumed_challenge_user',
+        { p_challenge_hash: challengeHash },
+      );
+      if (
+        !resumeError &&
+        typeof resumedUserId === 'string' &&
+        resumedUserId !== ''
+      ) {
+        const email = await ensureEmail(admin, resumedUserId);
+        const session = await mintSession(admin, anon, email);
+        return Response.json(session, {
+          headers: { 'Cache-Control': 'no-store' },
+        });
+      }
       return Response.json(
         { error: 'challenge is invalid, already used, or expired' },
         { status: 409 },

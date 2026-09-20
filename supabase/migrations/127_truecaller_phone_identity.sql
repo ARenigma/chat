@@ -76,6 +76,7 @@ create table if not exists private.pending_identity_challenges (
   challenge_hash text not null,   -- SHA-256 hex of the random challenge token
   expires_at     timestamptz not null default (now() + interval '10 minutes'),
   consumed_at    timestamptz,
+  linked_user_id uuid references auth.users(id) on delete cascade,
   created_at     timestamptz not null default now()
 );
 alter table private.pending_identity_challenges enable row level security;
@@ -332,7 +333,8 @@ begin
   );
 
   update private.pending_identity_challenges
-     set consumed_at = now()
+     set consumed_at = now(),
+         linked_user_id = p_user_id
    where id = v_challenge.id;
 end;
 $$;
@@ -340,6 +342,32 @@ $$;
 revoke all on function public.consume_and_link_pending_challenge(text, uuid)
   from public, anon, authenticated;
 grant execute on function public.consume_and_link_pending_challenge(text, uuid)
+  to service_role;
+
+-- Resume session minting after the atomic link committed but a downstream
+-- GoTrue mint/network response failed. This never relinks: it returns only the
+-- UUID already recorded by consume_and_link_pending_challenge, and only while
+-- the original ten-minute challenge window is active.
+create or replace function public.resolve_consumed_challenge_user(
+  p_challenge_hash text
+)
+returns uuid
+language sql
+security definer
+set search_path = ''
+as $$
+  select linked_user_id
+    from private.pending_identity_challenges
+   where challenge_hash = p_challenge_hash
+     and consumed_at is not null
+     and linked_user_id is not null
+     and expires_at > now()
+   limit 1;
+$$;
+
+revoke all on function public.resolve_consumed_challenge_user(text)
+  from public, anon, authenticated;
+grant execute on function public.resolve_consumed_challenge_user(text)
   to service_role;
 
 -- ---------------------------------------------------------------------------

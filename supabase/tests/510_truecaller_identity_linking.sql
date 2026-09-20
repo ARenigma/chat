@@ -4,11 +4,17 @@
 -- its grants, owner resolution, conflict behavior, idempotency, challenge
 -- retryability/consumption, and deletion cascade.
 begin;
-select plan(26);
+select plan(29);
 
 select has_schema('private', 'private identity schema exists');
 select has_table('private', 'external_identities', 'external identities are private');
 select has_table('private', 'pending_identity_challenges', 'pending challenges are private');
+select has_column(
+  'private',
+  'pending_identity_challenges',
+  'linked_user_id',
+  'consumed challenges record the linked UUID for mint retries'
+);
 select is(
   (select relrowsecurity
      from pg_class
@@ -42,7 +48,8 @@ select is(
       'upsert_external_identity',
       'create_pending_challenge',
       'read_pending_challenge',
-      'consume_and_link_pending_challenge'
+      'consume_and_link_pending_challenge',
+      'resolve_consumed_challenge_user'
     )
       and grantee in ('anon', 'authenticated')),
   0,
@@ -57,10 +64,11 @@ select is(
       'upsert_external_identity',
       'create_pending_challenge',
       'read_pending_challenge',
-      'consume_and_link_pending_challenge'
+      'consume_and_link_pending_challenge',
+      'resolve_consumed_challenge_user'
     )
       and grantee = 'service_role'),
-  6,
+  7,
   'service_role can execute every identity RPC'
 );
 
@@ -173,6 +181,11 @@ select is(
   'cccccccc-5100-4000-8000-000000000002'::uuid,
   'atomic consume created the external identity'
 );
+select is(
+  public.resolve_consumed_challenge_user('challenge-hash-1'),
+  'cccccccc-5100-4000-8000-000000000002'::uuid,
+  'a consumed challenge can resume session minting for its linked UUID'
+);
 select throws_ok(
   $$select public.consume_and_link_pending_challenge(
       'challenge-hash-1',
@@ -191,6 +204,11 @@ select is(
   (select out_phone from public.read_pending_challenge('challenge-expired')),
   null::text,
   'expired challenge is unreadable'
+);
+select is(
+  public.resolve_consumed_challenge_user('challenge-expired'),
+  null::uuid,
+  'expired challenge cannot resume session minting'
 );
 select throws_ok(
   $$select public.consume_and_link_pending_challenge(

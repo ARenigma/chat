@@ -1868,6 +1868,7 @@ FUNCTION relation_owner_is(name, name, name, text) returns text security=invoker
 FUNCTION relation_owner_is(name, name, text) returns text security=invoker
 FUNCTION request_application_info(p_user_id uuid, p_missing text[], p_note text) returns void security=definer
 FUNCTION request_media_upgrade(p_call_id uuid, p_to_medium text) returns jsonb security=definer
+FUNCTION resolve_consumed_challenge_user(p_challenge_hash text) returns uuid security=definer
 FUNCTION resolve_external_identity(p_provider text, p_subject text) returns uuid security=definer
 FUNCTION resolve_phone_owner(p_phone text) returns uuid security=definer
 FUNCTION respond_media_upgrade(p_call_id uuid, p_accept boolean) returns jsonb security=definer
