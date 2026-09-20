@@ -90,6 +90,7 @@ const row = (over: Partial<UsageRow> = {}): UsageRow => ({
   channel: 'chat',
   started_at: null,
   ended_at: null,
+  elapsed_seconds: null,
   minutes: 12,
   i_am_member: true,
   tokens: 22,

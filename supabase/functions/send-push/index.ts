@@ -257,6 +257,11 @@ async function send(
             sentAt: String(Date.parse(row.created_at)),
             kind: row.kind ?? 'message',
             ...(image ? { senderAvatar: image } : {}),
+            // On the contact branch, message_id IS the session_request id
+            // (migration 105 — uuids from the two tables never collide). Carrying
+            // it lets the client build Accept/Decline actions on the lock-screen
+            // notification without needing a second fetch.
+            ...(row.kind === 'contact' ? { requestId: row.message_id } : {}),
           },
         },
       }),

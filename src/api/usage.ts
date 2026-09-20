@@ -15,6 +15,12 @@ export interface UsageRow {
   channel: UsageChannel;
   started_at: string | null;
   ended_at: string | null;
+  /**
+   * Actual wall-clock elapsed seconds for display (migration 124).
+   * Null when either timestamp is absent (legacy rows or sessions without an
+   * end timestamp). Client falls back to `minutes * 60` when null.
+   */
+  elapsed_seconds: number | null;
   minutes: number;
   /** True when the caller paid for this session; false when they were paid. */
   i_am_member: boolean;

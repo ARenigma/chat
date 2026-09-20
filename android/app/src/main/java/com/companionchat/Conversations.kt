@@ -671,6 +671,118 @@ object Conversations {
     }
 
     /**
+     * Post a chat-request notification — MessagingStyle with Accept/Decline
+     * action buttons.
+     *
+     * Android conversation requirements still apply (shortcut, Person,
+     * MessagingStyle) so this lives in the conversations channel and shade section.
+     * CallStyle is deliberately NOT used: a chat request is a message event and the
+     * docs reserve CallStyle for telephony.
+     * https://developer.android.com/develop/ui/views/notifications/conversations
+     *
+     * Accept opens the conversation via the same peerIntent a message tap uses;
+     * if the request is still pending the in-app ChatRingScreen handles accept/decline.
+     * Decline broadcasts to ChatRequestReceiver, which calls decline_session_request
+     * without opening the UI.
+     */
+    fun notifyChatRequest(
+        context: Context,
+        conversationId: String,
+        peerId: String,
+        senderName: String,
+        requestId: String,
+        sentAt: Long,
+        avatarUrl: String? = null,
+    ) {
+        ensureChannel(context)
+
+        val manager = NotificationManagerCompat.from(context)
+        val id = notificationId(conversationId)
+        val accept = openConversation(context, peerId)
+
+        val declineIntent = Intent(ChatRequestReceiver.ACTION_DECLINE)
+            .setClass(context, ChatRequestReceiver::class.java)
+            .putExtra(ChatRequestReceiver.EXTRA_REQUEST_ID, requestId)
+            .putExtra(ChatRequestReceiver.EXTRA_CONVERSATION_ID, conversationId)
+        val decline = android.app.PendingIntent.getBroadcast(
+            context,
+            requestId.hashCode(),
+            declineIntent,
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+
+        fun post(icon: IconCompat?) {
+            val person = Person.Builder()
+                .setKey(peerId)
+                .setName(senderName)
+                .setImportant(true)
+                .apply { if (icon != null) setIcon(icon) }
+                .build()
+
+            val shortcut = ShortcutInfoCompat.Builder(context, conversationId)
+                .setShortLabel(senderName)
+                .setLongLabel(senderName)
+                .setIcon(icon ?: IconCompat.createWithResource(context, R.mipmap.ic_launcher))
+                .setLongLived(true)
+                .setPerson(person)
+                .setCategories(setOf(SHARE_CATEGORY))
+                .setIntent(peerIntent(context, peerId))
+                .build()
+            ShortcutManagerCompat.pushDynamicShortcut(context, shortcut)
+
+            val existing = activeMessagingStyle(manager, id)
+                ?: NotificationCompat.MessagingStyle(
+                    Person.Builder().setName(context.getString(R.string.you)).build(),
+                )
+            existing.addMessage("wants to have a chat with you", sentAt, person)
+
+            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setColor(BRAND_COLOR)
+                .setStyle(existing)
+                .setShortcutId(conversationId)
+                .addPerson(person)
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setDefaults(NotificationCompat.DEFAULT_SOUND or NotificationCompat.DEFAULT_VIBRATE)
+                .setContentIntent(accept)
+                .setAutoCancel(true)
+                .addAction(
+                    NotificationCompat.Action.Builder(
+                        R.drawable.ic_notification,
+                        "Accept",
+                        accept,
+                    ).build(),
+                )
+                .addAction(
+                    NotificationCompat.Action.Builder(
+                        R.drawable.ic_notification,
+                        "Decline",
+                        decline,
+                    ).build(),
+                )
+                .build()
+            try {
+                manager.notify(id, notification)
+            } catch (denied: SecurityException) {
+                // POST_NOTIFICATIONS revoked; swallowed as in notify().
+            }
+        }
+
+        post(null)
+
+        if (avatarUrl != null) {
+            avatarExecutor.execute {
+                val icon = loadAvatarBitmap(avatarUrl, AVATAR_MAX_PX)
+                    ?.let { IconCompat.createWithBitmap(it) }
+                    ?: return@execute
+                val live = activeMessagingStyle(manager, id) ?: return@execute
+                post(withSenderIcon(live, peerId, icon))
+            }
+        }
+    }
+
+    /**
      * The PendingIntent for a call action, addressed explicitly to MainActivity
      * (not a manifest-declared browsable filter — same private-target reasoning as
      * `peerIntent`). The `action` query tells the app to answer or decline.

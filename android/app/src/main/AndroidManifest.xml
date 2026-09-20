@@ -316,5 +316,13 @@
               <action android:name="com.companionchat.ACTION_HANG_UP" />
           </intent-filter>
       </receiver>
+
+      <receiver
+          android:name=".ChatRequestReceiver"
+          android:exported="false">
+          <intent-filter>
+              <action android:name="com.companionchat.ACTION_DECLINE_CHAT_REQUEST" />
+          </intent-filter>
+      </receiver>
     </application>
 </manifest>

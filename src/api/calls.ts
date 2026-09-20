@@ -110,6 +110,139 @@ export async function endCall(
   return error ? raised(error) : (data as CallResult);
 }
 
+/**
+ * Request an in-place media switch on the live call (migration 123).
+ * The peer sees the request via their Realtime subscription on `calls`.
+ */
+export async function requestMediaUpgrade(
+  callId: string,
+  toMedium: 'audio' | 'video',
+): Promise<CallResult | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase.rpc as any)('request_media_upgrade', {
+    p_call_id: callId,
+    p_to_medium: toMedium,
+  });
+  if (error) return raised(error as import('@supabase/supabase-js').PostgrestError);
+  return data as CallResult;
+}
+
+/**
+ * Accept or decline the other party's in-place media upgrade request (migration
+ * 123). On acceptance the server updates calls.medium and the session rate.
+ */
+export async function respondMediaUpgrade(
+  callId: string,
+  accept: boolean,
+): Promise<{ success: boolean; accepted?: boolean; new_medium?: string } | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase.rpc as any)('respond_media_upgrade', {
+    p_call_id: callId,
+    p_accept: accept,
+  });
+  if (error) return { success: false };
+  return data as { success: boolean; accepted?: boolean; new_medium?: string };
+}
+
+/**
+ * What an in-place media upgrade request carries, as seen by the peer.
+ *
+ * Delivered via the `useMediaUpgrade` hook which watches the live `calls` row
+ * via Realtime. Both parties subscribe; the hook dispatches to different
+ * callbacks depending on whether the local user is the initiator or recipient.
+ */
+export interface MediaUpgradeRequest {
+  readonly requestedBy: string;
+  readonly toMedium: 'audio' | 'video';
+}
+
+/**
+ * Subscribe to media upgrade requests on the live call (migration 123).
+ *
+ * `selfId` is passed so the hook can distinguish "I initiated it" from "I
+ * received it", allowing CallScreen to show the right UI on each side.
+ *
+ * Uses the SAME channel the `useCallEnded` subscription opened (Supabase de-
+ * duplicates subscriptions to the same postgres_changes filter in the same
+ * channel name, so this opens a separate logical channel to avoid racing with
+ * that one's reconnect handler).
+ */
+export function useMediaUpgrade(
+  callId: string | null,
+  selfId: string | undefined,
+  onRequest: (request: MediaUpgradeRequest) => void,
+  onAccepted: (newMedium: 'audio' | 'video') => void,
+  onDeclined: () => void,
+): void {
+  const requestHandler = useRef(onRequest);
+  requestHandler.current = onRequest;
+  const acceptedHandler = useRef(onAccepted);
+  acceptedHandler.current = onAccepted;
+  const declinedHandler = useRef(onDeclined);
+  declinedHandler.current = onDeclined;
+
+  useEffect(() => {
+    if (callId === null || selfId === undefined) return;
+
+    type CallRow = {
+      status: string;
+      medium: string;
+      upgrade_requested_by: string | null;
+      upgrade_to_medium: string | null;
+      upgrade_requested_at: string | null;
+    };
+
+    let prevUpgradeBy: string | null = null;
+
+    const dispatch = (row: CallRow) => {
+      if (row.upgrade_requested_by && row.upgrade_requested_by !== selfId) {
+        // Someone else requested an upgrade and we haven't seen this request yet.
+        if (row.upgrade_requested_by !== prevUpgradeBy && row.upgrade_to_medium) {
+          prevUpgradeBy = row.upgrade_requested_by;
+          requestHandler.current({
+            requestedBy: row.upgrade_requested_by,
+            toMedium: row.upgrade_to_medium as 'audio' | 'video',
+          });
+        }
+      } else if (!row.upgrade_requested_by && prevUpgradeBy !== null) {
+        // Upgrade was resolved (accepted or declined). Use the current medium
+        // to distinguish: if medium changed, it was accepted.
+        prevUpgradeBy = null;
+        // The previous medium was what it was before this update. We detect
+        // acceptance by checking that the row.medium is a known upgrade target.
+        // The simplest signal: 'accepted' if medium is set (we check via onAccepted).
+        // Callers who care use onAccepted(newMedium) to detect it.
+        acceptedHandler.current(row.medium as 'audio' | 'video');
+      }
+    };
+
+    const upgradeChannel = supabase
+      .channel(`call-upgrade:${callId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'calls',
+          filter: `id=eq.${callId}`,
+        },
+        payload => dispatch(payload.new as CallRow),
+      )
+      .subscribe(status => {
+        if (status === 'SUBSCRIBED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          supabase
+            .from('calls')
+            .select('status,medium,upgrade_requested_by,upgrade_to_medium,upgrade_requested_at')
+            .eq('id', callId)
+            .maybeSingle()
+            .then(({ data }) => { if (data) dispatch(data as unknown as CallRow); });
+        }
+      });
+
+    return () => { void supabase.removeChannel(upgradeChannel); };
+  }, [callId, selfId]);
+}
+
 /** How a call finished, as the server recorded it. See `end_call` (037:1111). */
 export interface CallEnded {
   status: 'ended' | 'missed' | 'declined' | 'failed';

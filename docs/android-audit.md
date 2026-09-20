@@ -1051,3 +1051,51 @@ Sheet on a release/closedTest build. A screenshot block cannot be unit-tested.
   been seen on a device" and was wrong.
 - Verification: full typecheck, eslint, the whole Jest suite, and the
   token/icon/contrast/web/design/manifest gates. No Android build was run.
+
+## 2026-09-20 — V2 production hardening batch
+
+### FLAG_KEEP_SCREEN_ON for video calls
+
+- Read: https://developer.android.com/develop/background-work/background-tasks/awake/screen-on
+- Read: https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_KEEP_SCREEN_ON
+- Requirement: set FLAG_KEEP_SCREEN_ON on the Activity window while a video call
+  is active; clear it on end or camera-off.
+- Fix: added setKeepScreenOn(Boolean) to WindowChromeModule.kt (activity window
+  only — the doc says "This flag may only be set in an activity"). JS side:
+  setKeepScreenOn() in windowChrome.ts, wired in CallScreen.tsx via
+  `const keepScreenOn = medium === 'video' && mediaReady`.
+  Proximity lock in CallForegroundService.kt is unchanged: still voice-only.
+- Verification: device verification on S22 required — apply FLAG, confirm display
+  stays on during a live video call, confirm it clears after `onEnd`.
+
+### ChatRequestReceiver — notification Accept/Decline actions
+
+- Read: https://developer.android.com/develop/ui/views/notifications/build-notification#Actions
+- Requirement: Accept/Decline action buttons on the lock-screen chat-request
+  notification (MessagingStyle, not CallStyle — docs reserve CallStyle for telephony).
+- Fix: ChatRequestReceiver.kt (new BroadcastReceiver), registered in
+  AndroidManifest.xml, emits chatRequestDecline to JS via ReactBridgeEvents.
+  App.tsx listens via DeviceEventEmitter and calls decline_session_request RPC.
+- Verification: test on S22 with app killed — Decline button should dismiss notification
+  and decline the request without opening the app.
+
+### In-place media upgrade (migration 123)
+
+- Read: https://docs.agora.io/en/video-calling/develop/audio-and-video-fallback
+- Requirement: audio↔video switch stays in the same call/session; no second ring.
+- Fix: request_media_upgrade / respond_media_upgrade RPCs; useMediaUpgrade hook
+  subscribes to calls UPDATE; CallScreen shows consent dialog; agora.enableVideo()
+  used in-place.
+- Verification: two-phone test — initiate upgrade, verify peer sees dialog, verify
+  both cameras come on, verify billing rate updates at next minute tick.
+
+### Elapsed duration display
+
+- Policy set by Amit 2026-09-20: show actual wall-clock elapsed time in all
+  history/usage surfaces. Billing remains on minutes_billed; GST invoices remain
+  recharge-only (no session duration on tax documents).
+- Fix: sessionEndedLabel() updated to use elapsed from started_at/ended_at;
+  get_usage_ledger (migration 124) returns elapsed_seconds; UsageLedgerScreen
+  uses durationWords(elapsed_seconds).
+- Verification: ledger rows should show "1 min 30 secs" not "2 min" for a 90-second
+  session billed at 2 minutes.

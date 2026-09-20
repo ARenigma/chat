@@ -13,6 +13,7 @@ const native = (
       setActivityBlur: (enabled: boolean) => void;
       getRefreshRate: () => Promise<number | null>;
       secureModal: (tag: number, secure: boolean) => void;
+      setKeepScreenOn: (enabled: boolean) => void;
     };
   }
 ).WindowChrome;
@@ -73,4 +74,21 @@ export async function readRefreshRate(): Promise<number | null> {
     // A perf signal is never worth a crash.
     return null;
   }
+}
+
+/**
+ * Hold FLAG_KEEP_SCREEN_ON on the Activity window while a video call is active
+ * so the display does not dim or lock while the user is watching the remote feed.
+ *
+ * Pass `true` when the video call becomes active; `false` when it ends or when
+ * the camera is disabled. Do NOT use for voice-only calls — those use the
+ * proximity wake lock in CallForegroundService to blank the screen while near
+ * the ear.
+ *
+ * https://developer.android.com/develop/background-work/background-tasks/awake/screen-on
+ * https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_KEEP_SCREEN_ON
+ */
+export function setKeepScreenOn(enabled: boolean): void {
+  if (Platform.OS !== 'android' || native?.setKeepScreenOn === undefined) return;
+  native.setKeepScreenOn(enabled);
 }

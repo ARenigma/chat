@@ -14,7 +14,7 @@ export const ICON_FAMILY = 'Heroicons' as const;
 export const ICON_FAMILY_FILLED = 'HeroiconsSolid' as const;
 export const ICON_FILL_ON_ACTIVE = true as const;
 
-export type IconName = 'arrowUp' | 'back' | 'badgeCheck' | 'bell' | 'block' | 'call' | 'callEnd' | 'camera' | 'cameraFlip' | 'chat' | 'check' | 'checkCheck' | 'chevronLeft' | 'chevronRight' | 'clip' | 'close' | 'code' | 'delete' | 'dot' | 'download' | 'forward' | 'globe' | 'heart' | 'home' | 'image' | 'keyboard' | 'listen' | 'logout' | 'mic' | 'micOff' | 'more' | 'pause' | 'people' | 'person' | 'play' | 'plus' | 'reply' | 'report' | 'search' | 'send' | 'settings' | 'share' | 'smile' | 'speaker' | 'star' | 'sticker' | 'stop' | 'unwind' | 'vent' | 'video' | 'videoOff' | 'wallet';
+export type IconName = 'arrowUp' | 'back' | 'badgeCheck' | 'bell' | 'block' | 'call' | 'callEnd' | 'camera' | 'cameraFlip' | 'chat' | 'check' | 'checkCheck' | 'chevronLeft' | 'chevronRight' | 'clip' | 'close' | 'code' | 'delete' | 'dot' | 'download' | 'forward' | 'globe' | 'heart' | 'home' | 'image' | 'keyboard' | 'listen' | 'logout' | 'mic' | 'micOff' | 'more' | 'pause' | 'people' | 'person' | 'play' | 'plus' | 'reply' | 'report' | 'search' | 'send' | 'settings' | 'share' | 'smile' | 'speaker' | 'speakerOff' | 'star' | 'sticker' | 'stop' | 'unwind' | 'vent' | 'video' | 'videoOff' | 'wallet';
 
 export const ICON_GLYPH: Record<IconName, string> = {
   arrowUp: "",
@@ -61,6 +61,7 @@ export const ICON_GLYPH: Record<IconName, string> = {
   share: "",
   smile: "",
   speaker: "",
+  speakerOff: "",
   star: "",
   sticker: "",
   stop: "",
@@ -117,6 +118,7 @@ export const ICON_FAMILY_BY_NAME: Record<IconName, string> = {
   share: "Heroicons",
   smile: "Heroicons",
   speaker: "Heroicons",
+  speakerOff: "Lucide",
   star: "Heroicons",
   sticker: "Lucide",
   stop: "Heroicons",
@@ -173,6 +175,7 @@ export const ICON_FAMILY_FILLED_BY_NAME: Record<IconName, string> = {
   share: "HeroiconsSolid",
   smile: "HeroiconsSolid",
   speaker: "HeroiconsSolid",
+  speakerOff: "Lucide",
   star: "HeroiconsSolid",
   sticker: "Lucide",
   stop: "HeroiconsSolid",

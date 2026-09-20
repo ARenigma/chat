@@ -120,6 +120,37 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
         promise.resolve(null)
     }
 
+    /**
+     * Post a chat-request notification with Accept/Decline action buttons.
+     * Resolves rather than rejects on failure — same headless-handler contract as
+     * `notify` and `notifyCall`.
+     */
+    @ReactMethod
+    fun notifyChatRequest(
+        conversationId: String,
+        peerId: String,
+        senderName: String,
+        requestId: String,
+        sentAt: Double,
+        avatarUrl: String,
+        promise: Promise,
+    ) {
+        try {
+            Conversations.notifyChatRequest(
+                reactContext,
+                conversationId = conversationId,
+                peerId = peerId,
+                senderName = senderName,
+                requestId = requestId,
+                sentAt = sentAt.toLong(),
+                avatarUrl = avatarUrl.ifEmpty { null },
+            )
+            promise.resolve(true)
+        } catch (error: Exception) {
+            promise.resolve(false)
+        }
+    }
+
     /** Clear a conversation's notification once it has been read in the app. */
     @ReactMethod
     fun clear(conversationId: String, promise: Promise) {

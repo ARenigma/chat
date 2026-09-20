@@ -174,6 +174,29 @@ class WindowChromeModule(private val reactContext: ReactApplicationContext) :
         }
     }
 
+    /**
+     * Set or clear FLAG_KEEP_SCREEN_ON on the activity window.
+     *
+     * Called by CallScreen when a video call is active so the display stays on
+     * while the user is watching the remote video feed. Cleared when the call
+     * ends or camera is disabled. Must only be set when the user is actively
+     * watching; do not use for background or voice calls.
+     *
+     * https://developer.android.com/develop/background-work/background-tasks/awake/screen-on
+     * https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_KEEP_SCREEN_ON
+     */
+    @ReactMethod
+    fun setKeepScreenOn(enabled: Boolean) {
+        UiThreadUtil.runOnUiThread {
+            val win = reactContext.currentActivity?.window ?: return@runOnUiThread
+            if (enabled) {
+                win.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            } else {
+                win.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        }
+    }
+
     companion object {
         const val NAME = "WindowChrome"
         /** 20 px is enough to read as frost without smearing type on the page. */

@@ -59,6 +59,7 @@ import { Pressable } from '../components/Pressable';
 import { Toggle } from '../components/Toggle';
 import { SettingsSheet } from './SettingsSheet';
 import { notificationsGranted } from '../lib/push';
+import { useServerFavorites } from '../store/useFavorites';
 
 /**
  * The gallery tile, in dp. A measured size gets a name rather than sitting as a
@@ -90,7 +91,7 @@ interface Props {
   onDeleted: () => void;
 }
 
-type Tab = 'chats' | 'you';
+type Tab = 'chats' | 'favourites' | 'you';
 
 /** The three channel switches, in the order the member's own buttons sit. */
 type ChannelKey = 'chat_enabled' | 'audio_enabled' | 'video_enabled';
@@ -545,6 +546,14 @@ export function ProviderHomeScreen({
             />
           )}
         </>
+      ) : tab === 'favourites' ? (
+        /* Provider's saved members — thread rows filtered to favourited peer
+           ids (migration 125). Inline component so the nav stays simple. */
+        <ProviderFavouritesTab
+          threads={allThreads ?? []}
+          conversationLabels={conversationLabels}
+          onOpenConversation={onOpenConversation}
+        />
       ) : (
         /* The "You" tab IS the settings surface, exactly like the member tree —
            one screen, not a dashboard with a second Settings behind a gear. The
@@ -927,6 +936,13 @@ export function ProviderHomeScreen({
           onPress={() => setTab('chats')}
         />
         <TabButton
+          icon="heart"
+          label="Saved"
+          active={tab === 'favourites'}
+          badge={0}
+          onPress={() => setTab('favourites')}
+        />
+        <TabButton
           icon="person"
           label="You"
           active={tab === 'you'}
@@ -935,6 +951,96 @@ export function ProviderHomeScreen({
         />
       </View>
     </View>
+  );
+}
+
+/**
+ * Provider's "Saved" tab — members they have bookmarked.
+ *
+ * Shows conversation-summary rows from `allThreads` filtered to those whose
+ * `peer_id` is in the server favorites list. An empty state guides the provider
+ * to favourite a member from a chat header.
+ */
+function ProviderFavouritesTab({
+  threads,
+  conversationLabels,
+  onOpenConversation,
+}: {
+  threads: readonly ConversationSummary[];
+  conversationLabels: ReadonlyMap<string, string> | undefined;
+  onOpenConversation: (peerId: string) => void;
+}) {
+  const { data: favorites = [] } = useServerFavorites();
+  const savedIds = new Set(favorites.map(f => f.liked_id));
+  const saved = threads.filter(t => savedIds.has(t.peer_id) && !t.i_am_member);
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
+
+  if (saved.length === 0) {
+    return (
+      <View style={styles.listEmpty} testID="provider-favourites-empty">
+        <Icon name="heart" size={TOKENS.icon.xl} color={theme.color.text.tertiary} />
+        <Text allowFontScaling style={styles.emptyTitle}>No saved members yet</Text>
+        <Text allowFontScaling style={styles.emptyBody}>
+          {'Open a chat and use the ··· menu to save a member here.'}
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <FlashList
+      testID="provider-favourites-list"
+      data={saved as ConversationSummary[]}
+      keyExtractor={t => t.conversation_id}
+      renderItem={({ item }) => {
+        const unreadCount = Number(item.unread_count_provider);
+        const unread = unreadCount > 0;
+        const label =
+          conversationLabels?.get(item.conversation_id) ??
+          item.peer_display_name ??
+          `Member ${item.peer_id.slice(0, 4)}`;
+        return (
+          <Pressable
+            onPress={() => onOpenConversation(item.peer_id)}
+            testID={`provider-saved-thread-${item.peer_id}`}
+            accessibilityLabel={label}
+            press="none"
+            highlight="dim"
+            style={styles.row}>
+            <Avatar
+              uri={item.peer_avatar_url ?? undefined}
+              initial={initialOf(label)}
+              size={THREAD_AVATAR}
+              online={readPresence(item.peer_available).here}
+            />
+            <View style={styles.rowBody}>
+              <View style={styles.rowTop}>
+                <Text
+                  maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
+                  allowFontScaling
+                  numberOfLines={1}
+                  style={styles.rowName}>
+                  {label}
+                </Text>
+                <Text allowFontScaling style={styles.rowTime}>
+                  {item.last_session_at ? listStamp(item.last_session_at) : ''}
+                </Text>
+              </View>
+              {unread ? (
+                <View testID="saved-waiting-dot" style={styles.unread}>
+                  <Text allowFontScaling style={styles.unreadCount}>
+                    {unreadCount}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          </Pressable>
+        );
+      }}
+      showsVerticalScrollIndicator={false}
+      {...SCROLL_PHYSICS}
+    />
   );
 }
 
@@ -1071,6 +1177,13 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.bodyMedium,
       color: t.color.text.secondary,
       textAlign: 'center',
+    },
+    listEmpty: {
+      flex: 1,
+      alignItems: 'center' as const,
+      justifyContent: 'center' as const,
+      gap: TOKENS.space.sm,
+      paddingHorizontal: TOKENS.space.xl,
     },
     pushGate: {
       ...StyleSheet.absoluteFill,

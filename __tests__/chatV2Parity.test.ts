@@ -231,7 +231,10 @@ const PARITY: readonly {
   {
     feature: 'rename on a long press, once the conversation exists',
     file: 'ChatHeaderV2.tsx',
-    tokens: ['onLongPress', 'onRename'],
+    // Rename moved to right-edge overflow menu (2026-09-20, Bluesky ConvoMenu
+    // pattern). The prop is still passed but onLongPress was removed from the
+    // identity — the menu is the single source of conversation actions.
+    tokens: ['onRename', 'testID="chat-v2-menu"'],
   },
   {
     feature: 'voice and video call controls',

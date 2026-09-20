@@ -104,3 +104,17 @@ export const THEME_DEFAULT_MODE: 'light' | 'dark' | 'system' = 'dark';
  * costs a release, which is the correct price.
  */
 export const SYSTEM_RATINGS_ENABLED = true;
+
+/**
+ * Idle-home provider suggestion campaign (migration 126, Amit 2026-09-20).
+ *
+ * When a member idles on Home for 10 s, shows up to three sequential "Ravi is
+ * calling"-style prompts, one from each of three distinct available providers,
+ * 10 s apart. The copy says "{name} is calling" even though the provider did not
+ * initiate it. Honesty trade-off: accepted by Amit explicitly (2026-09-20).
+ *
+ * Compile-time OFF until device verification completes. Flip to true in a
+ * release commit once ARTEMIS tests pass on an S22 — same class of decision as
+ * SYSTEM_RATINGS_ENABLED.
+ */
+export const HOME_SUGGESTIONS_ENABLED = false;

@@ -21,6 +21,7 @@ import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Avatar } from '../components/Avatar';
 import { HeaderSubtitle } from '../components/HeaderSubtitle';
 import { Icon } from '../components/Icon';
+import { PaperMenu, type PaperMenuItem } from '../components/PaperMenu';
 import { Pressable } from '../components/Pressable';
 import { TokenCounter } from '../components/TokenCounter';
 import type { PresenceRead } from '../lib/presence';
@@ -72,15 +73,16 @@ interface Props {
   endingSession: boolean;
   onBack: () => void;
   /**
-   * The peer's profile card. Present on the member tree only — on the provider
-   * tree the peer is a member with no profile, and the identity block opens
-   * the safety sheet instead.
+   * Opens the peer's full profile.
+   *   Member tree  → provider detail screen
+   *   Provider tree → safe member profile sheet
+   * Present on both trees. When absent (benchmark route) the identity block
+   * is a plain view rather than a pressable.
    */
   onOpenProfile?: () => void;
   /**
-   * Report or block. Absent on the benchmark route, which observes and must
-   * not reach a surface that writes — and an identity block with nowhere to go
-   * is then rendered as plain text rather than as a control that does nothing.
+   * Report or block — moved to the right-edge overflow menu (2026-09-20).
+   * Still a separate callback so the benchmark route can keep both absent.
    */
   onOpenSafety?: () => void;
   /** Absent until the conversation exists: there is nothing to label before then. */
@@ -117,7 +119,24 @@ export function ChatHeaderV2({
   // https://reactnative.dev/docs/usewindowdimensions
   const { fontScale } = useWindowDimensions();
   const callsAvailable = onStartCall !== undefined;
-  const onIdentityPress = onOpenProfile ?? onOpenSafety;
+
+  /**
+   * Identity press goes to the PROFILE, never to safety.
+   *
+   * Before this change: `onOpenProfile ?? onOpenSafety` — on the member tree
+   * both are passed, so `onOpenSafety` was unreachable from the header. That
+   * meant members could only report/block from a long-press on a message.
+   * Safety is now in the right-edge menu (Bluesky pattern); profile is the
+   * identity tap on both trees.
+   */
+  const onIdentityPress = onOpenProfile;
+
+  /** State for the right-edge overflow menu (Bluesky ConvoMenu pattern). */
+  const [menuVisible, setMenuVisible] = React.useState(false);
+  const [menuAnchor, setMenuAnchor] = React.useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const menuButtonRef = React.useRef<View>(null);
+  const menuHasItems =
+    onRename !== undefined || onOpenSafety !== undefined;
 
   /*
    * The avatar, the name and the presence line, built once and then wrapped in
@@ -185,20 +204,9 @@ export function ChatHeaderV2({
         ) : (
           <Pressable
             onPress={onIdentityPress}
-            onLongPress={onRename}
             testID="chat-v2-identity"
-            accessibilityLabel={
-              onOpenProfile !== undefined
-                ? `${displayName}. View profile`
-                : `${displayName}. Block or report`
-            }
-            accessibilityHint={
-              onRename !== undefined
-                ? 'Long press to rename this chat'
-                : onOpenProfile !== undefined
-                ? 'Opens their profile'
-                : 'Opens safety options'
-            }
+            accessibilityLabel={`${displayName}. View profile`}
+            accessibilityHint={onRename !== undefined ? 'Long press to rename this chat' : 'Opens their profile'}
             press="none"
             highlight="dim"
             style={styles.identity}
@@ -293,6 +301,57 @@ export function ChatHeaderV2({
           onPress={onOpenEarnings}
         />
       )}
+
+      {/*
+       * Right-edge overflow menu (Bluesky ConvoMenu pattern).
+       *
+       * Block, Report, and Rename used to be reached from the identity tap
+       * (member tree: `onOpenSafety` was unreachable because `onOpenProfile ??
+       * onOpenSafety` always resolved to profile; provider tree: identity opened
+       * safety with no profile). Splitting them here fixes both trees:
+       *   Identity tap → profile on both sides
+       *   ··· menu     → Rename / Block / Report
+       * Absent on the benchmark route (no `onOpenSafety` → no `menuHasItems`).
+       */}
+      {menuHasItems ? (
+        <>
+          <Pressable
+            onPress={() => {
+              menuButtonRef.current?.measureInWindow((x, y, w, h) => {
+                setMenuAnchor({ x, y, width: w, height: h });
+                setMenuVisible(true);
+              });
+            }}
+            testID="chat-v2-menu"
+            accessibilityLabel="Conversation options"
+            press="none"
+            highlight="dim"
+            size={28}
+            style={styles.navButton}
+          >
+            {/* Wrap in a View so measureInWindow works (Pressable is not a View). */}
+            <View ref={menuButtonRef} collapsable={false}>
+              <Icon name="more" size={TOKENS.icon.md} color={theme.color.text.secondary} />
+            </View>
+          </Pressable>
+          <PaperMenu
+            visible={menuVisible}
+            anchor={menuAnchor}
+            onClose={() => setMenuVisible(false)}
+            items={([] as PaperMenuItem[]).concat(
+              onRename !== undefined
+                ? [{ key: 'rename', label: 'Rename chat', onPress: () => { setMenuVisible(false); onRename(); } }]
+                : [],
+              onOpenSafety !== undefined
+                ? [
+                    { key: 'report', label: 'Report', onPress: () => { setMenuVisible(false); onOpenSafety(); } },
+                    { key: 'block', label: 'Block', divider: true, onPress: () => { setMenuVisible(false); onOpenSafety(); } },
+                  ]
+                : [],
+            )}
+          />
+        </>
+      ) : null}
     </View>
   );
 }

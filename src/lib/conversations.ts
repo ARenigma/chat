@@ -30,6 +30,14 @@ interface Native {
     body: string,
     avatarUrl: string,
   ): Promise<boolean>;
+  notifyChatRequest(
+    conversationId: string,
+    peerId: string,
+    senderName: string,
+    requestId: string,
+    sentAt: number,
+    avatarUrl: string,
+  ): Promise<boolean>;
   notifyCall(
     callId: string,
     peerId: string,
@@ -67,6 +75,13 @@ export interface ConversationPush {
   // The sender's public photo, when the sender is a provider; null otherwise.
   // Rendered as the notification's Person icon — the SP-photo hero (#6).
   readonly avatarUrl: string | null;
+  /**
+   * The session_request id, present only on `kind: 'contact'` pushes (migration
+   * 105). Carried so the native notification can build Accept/Decline actions
+   * without an extra DB round-trip. Absent on plain message pushes and on
+   * builds shipped before send-push was redeployed.
+   */
+  readonly requestId?: string;
 }
 
 /**
@@ -101,6 +116,9 @@ export function readConversationPush(
     // Absent for a member sender (no public photo) and for older server builds;
     // '' from `asString` becomes null so the native side skips the icon.
     avatarUrl: asString('senderAvatar') || null,
+    // Present only on kind: 'contact' pushes (send-push redeploy from migration
+    // 105). Absent on plain messages — the native layer checks for undefined.
+    requestId: asString('requestId') || undefined,
   };
 }
 
@@ -271,9 +289,34 @@ export async function notifyConversation(
   );
 }
 
+/**
+ * Post a chat-request notification with Accept/Decline action buttons.
+ *
+ * Used for `kind: 'contact'` pushes — a provider-initiated chat request that
+ * the member needs to accept or decline. The lock-screen notification stays in
+ * the conversations channel (MessagingStyle) per Android guidance; CallStyle is
+ * reserved for telephony. The Accept action navigates to the conversation; the
+ * Decline action fires a BroadcastReceiver that declines without opening the UI.
+ * https://developer.android.com/develop/ui/views/notifications/conversations
+ */
+export async function notifyChatRequest(push: ConversationPush): Promise<boolean> {
+  if (native === undefined || !push.requestId) {
+    // Fallback to a plain conversation notification when the bridge is absent or
+    // when requestId is missing (older server build before send-push redeploy).
+    return notifyConversation(push, 'wants to have a chat with you');
+  }
+  return native.notifyChatRequest(
+    push.conversationId,
+    push.peerId,
+    push.senderName,
+    push.requestId,
+    push.sentAt,
+    push.avatarUrl ?? '',
+  );
+}
+
 /** Clear a conversation's notification once it has been read in the app. */
-export async function clearConversation(conversationId: string): Promise<void> {
-  if (native === undefined) {
+export async function clearConversation(conversationId: string): Promise<void> {  if (native === undefined) {
     return;
   }
   await native.clear(conversationId);

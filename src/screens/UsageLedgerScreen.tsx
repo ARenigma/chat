@@ -35,6 +35,7 @@ import { useBackBarrier } from '../lib/backGuard';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { listStamp } from '../lib/datetime';
 import { formatCount, formatRupees } from '../lib/rates';
+import { durationWords } from '../lib/transcript';
 import { useUsageLedger, type UsageRow } from '../api/usage';
 import { useProfile } from '../api/chat';
 import { BackButton } from '../components/BackButton';
@@ -58,9 +59,15 @@ const CHANNEL_LABEL: Record<UsageRow['channel'], string> = {
   video: 'Video call',
 };
 
-/** "12 min", and "under 1 min" rather than "0 min" for a part-minute session. */
-function minutesLabel(minutes: number): string {
-  return minutes < 1 ? 'under 1 min' : `${minutes} min`;
+/**
+ * Duration label for a usage row — actual elapsed time when available (migration
+ * 124), otherwise falls back to the billed-minutes approximation.
+ * Uses `durationWords` so the format matches the chat transcript ("2 min 30 secs").
+ */
+function elapsedLabel(row: UsageRow): string {
+  const secs = row.elapsed_seconds ?? (row.minutes > 0 ? row.minutes * 60 : 0);
+  if (secs <= 0) return row.minutes < 1 ? 'under 1 min' : `${row.minutes} min`;
+  return durationWords(secs) || (row.minutes < 1 ? 'under 1 min' : `${row.minutes} min`);
 }
 
 /** The two top-level figures, with the words that make each one mean something. */
@@ -291,7 +298,7 @@ export function UsageLedgerScreen({ onBack }: Props) {
                   {row.peer_name}
                 </Text>
                 <Text allowFontScaling style={styles.rowMeta}>
-                  {`${CHANNEL_LABEL[row.channel]} · ${minutesLabel(row.minutes)}${
+                  {`${CHANNEL_LABEL[row.channel]} · ${elapsedLabel(row)}${
                     row.started_at !== null ? ` · ${listStamp(row.started_at)}` : ''
                   }`}
                 </Text>

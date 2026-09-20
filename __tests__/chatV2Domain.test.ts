@@ -303,11 +303,14 @@ describe('V2 row model', () => {
     });
   });
 
-  it('labels an ended chat session with the shared transcript helper', () => {
+  it('labels an ended chat session with the shared transcript helper (elapsed time)', () => {
     const rows = buildChatV2Rows({ ...EMPTY, sessionEvents: [sessionEvent()] });
 
     expect(rows[0]?.kind).toBe('system');
-    expect((rows[0] as { text: string }).text).toMatch(/^Chat · 3 min · /);
+    // sessionEvent() has started_at = BASE - 60_000ms and ended_at = BASE + 1_500ms,
+    // so elapsed = 61.5 s → "1 min 1 sec". The new policy shows wall-clock elapsed
+    // time rather than billed minutes (Amit, 2026-09-20).
+    expect((rows[0] as { text: string }).text).toMatch(/^Chat · 1 min 1 sec · /);
   });
 
   it('attaches voice and image bodies from the existing payload readers', () => {

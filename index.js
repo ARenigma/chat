@@ -20,6 +20,7 @@ import App from './App';
 import { name as appName } from './app.json';
 import {
   notifyCall,
+  notifyChatRequest,
   notifyConversation,
   notifyEngagement,
   readCallPush,
@@ -59,6 +60,10 @@ if (__DEV__) {
  *     branded heads-up popup (not a full-screen takeover — Amit, 2026-08-27).
  *   - `kind: 'engagement'` → a BigPicture re-engagement nudge (an SP photo plus a
  *     call to action), for when there is no real message.
+ *   - `kind: 'contact'` with a requestId → a MessagingStyle notification with
+ *     Accept/Decline actions for a provider-initiated paid chat request (migration
+ *     105 + notifyChatRequest). Falls back to a plain conversation notification
+ *     when requestId is absent (older server build before send-push redeploy).
  *   - anything else → a MessagingStyle conversation notification for a real
  *     message. Its body is a warm line and never carries message text:
  *     content on a lock screen is a disclosure this product cannot make, given
@@ -77,6 +82,12 @@ setBackgroundMessageHandler(getMessaging(), async remote => {
   }
   const push = readConversationPush(remote.data);
   if (push === null) {
+    return;
+  }
+  // A provider-initiated chat request carries a requestId (migration 105);
+  // route it to the notification with Accept/Decline action buttons.
+  if (push.requestId) {
+    await notifyChatRequest(push);
     return;
   }
   await notifyConversation(push, 'wants to have a chat with you');

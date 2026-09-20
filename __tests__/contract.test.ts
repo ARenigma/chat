@@ -7082,10 +7082,14 @@ describe('a chat request rings, and can be answered either way', () => {
     expect(timeout.slice(0, 200)).not.toContain('decline');
   });
 
-  it('does not mount a provider ChatRing — member consent is the sheet', () => {
+  it('mounts the provider ChatRing via useIncomingChatRequests in SignedIn', () => {
     const app = withoutComments(read('App.tsx'));
-    expect(app).not.toContain('useIncomingChatRequests');
-    expect(app).not.toContain('<ChatRingScreen');
+    // Wired in task notifications-chat-ring (2026-09-20): providers receive
+    // in-app chat-request rings via useIncomingChatRequests + ChatRingScreen.
+    expect(app).toContain('useIncomingChatRequests');
+    expect(app).toContain('<ChatRingScreen');
+    // Only for providers (not members): the ring is guarded by role.
+    expect(app).toContain("role === 'provider'");
     expect(withoutComments(readChat())).toContain(
       'testID="chat-v2-consent"',
     );

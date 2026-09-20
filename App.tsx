@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AppState,
   BackHandler,
+  DeviceEventEmitter,
   Linking,
   NativeModules,
   Platform,
@@ -122,6 +123,8 @@ import { SettingsSheet } from './src/screens/SettingsSheet';
 import { SplashScreen } from './src/screens/SplashScreen';
 import { TransactionHistoryScreen } from './src/screens/TransactionHistoryScreen';
 import { UsageLedgerScreen } from './src/screens/UsageLedgerScreen';
+import { ChatRingScreen } from './src/components/ChatRingScreen';
+import { useDeclineSessionRequest, useIncomingChatRequests } from './src/api/sessions';
 
 initSentry();
 
@@ -1844,6 +1847,61 @@ function SignedIn({
   useIncomingCalls(selfId, onIncoming);
 
   /*
+   * In-app chat-request ring for the provider (goal item 13).
+   *
+   * `useIncomingChatRequests` fires when a session_request INSERT lands on the
+   * Realtime channel while the provider is live. The store's first-writer-wins
+   * guard prevents two overlapping rings. `setIncomingRequest` is stable (Zustand
+   * updater), so this callback never changes identity and never resubscribes.
+   *
+   * Peer name: looked up from the already-fetched conversations list. If the
+   * conversation exists the provider knows who this is; otherwise a short
+   * handle derived from the initiator id is used — the same fallback
+   * `member_handle()` produces server-side.
+   *
+   * The ring only fires on the provider tree; members never receive a
+   * session_request as the recipient.
+   * https://developer.android.com/develop/ui/views/notifications/conversations
+   */
+  const setIncomingRequest = useStore(s => s.setIncomingRequest);
+  const onIncomingChatRequest = useCallback(
+    (request: { requestId: string; conversationId: string; initiatorId: string }) => {
+      if (role !== 'provider') return;
+      const conv = (conversations ?? []).find(c => c.conversation_id === request.conversationId);
+      const peerName =
+        conv?.peer_display_name ??
+        `Member ${request.initiatorId.replace(/-/g, '').slice(0, 4)}`;
+      setIncomingRequest({
+        requestId: request.requestId,
+        conversationId: request.conversationId,
+        peerId: request.initiatorId,
+        peerName,
+      });
+    },
+    [role, conversations, setIncomingRequest],
+  );
+  useIncomingChatRequests(role === 'provider' ? selfId : undefined, onIncomingChatRequest);
+
+  /*
+   * Decline action fired from the lock-screen chat-request notification button.
+   *
+   * ChatRequestReceiver emits "chatRequestDecline" with the payload
+   * "<requestId>|<conversationId>" when the provider taps Decline without opening
+   * the app. Parse it here and forward to the RPC, exactly as accepting from the
+   * in-app ring calls useAcceptSessionRequest. The effect re-subscribes only when
+   * the decline mutate function changes identity, which is stable across renders.
+   */
+  const declineSessionRequest = useDeclineSessionRequest();
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('chatRequestDecline', (payload: string) => {
+      const [requestId = '', conversationId = ''] = payload.split('|');
+      if (!requestId) return;
+      declineSessionRequest.mutate({ requestId, conversationId });
+    });
+    return () => sub.remove();
+  }, [declineSessionRequest]);
+
+  /*
    * A ring that arrived before the role did. `useRole` resolves after the deep
    * link is consumed on a cold start, so dispatching early would send a
    * provider's answer into the member tree.
@@ -1956,15 +2014,6 @@ function SignedIn({
               // Symmetry with the member tree: hanging up returns to that peer's
               // chat, not the provider home (user 2026-08-31).
               onEnd={() => popProvider({ name: 'chat', peerId: providerRoute.peerId })}
-              onUpgradeToVideo={newCallId =>
-                pushProvider({
-                  name: 'call',
-                  peerId: providerRoute.peerId,
-                  direction: 'out',
-                  callId: newCallId,
-                  medium: 'video',
-                })
-              }
             />
           ) : providerRoute.name === 'chatV2' ? (
             /*
@@ -2050,6 +2099,13 @@ function SignedIn({
             />
           )}
         </PushedLayer>
+        {/* The chat ring, above every screen and both nav bars (goal item 13).
+            Renders nothing unless a request is live. setIncomingRequest is wired
+            in useIncomingChatRequests above; clearIncomingRequest is called by
+            ChatRingScreen itself on accept/decline/expire. */}
+        <ChatRingScreen
+          onOpenConversation={peerId => pushProvider({ name: 'chat', peerId })}
+        />
       </View>
     );
   }
@@ -2087,6 +2143,7 @@ function SignedIn({
             })
           }
           onSeeAllChats={() => pushRoute({ name: 'chatsList' })}
+          hasActiveCall={route.name === 'call'}
         />
       </Animated.View>
 
@@ -2216,15 +2273,6 @@ function SignedIn({
                 // outgoing call (started from the chat) and an answered incoming
                 // ring, which should also drop the member into that SP's thread.
                 onEnd={() => openChat(route.providerId)}
-                onUpgradeToVideo={newCallId =>
-                  setRoute({
-                    name: 'call',
-                    providerId: route.providerId,
-                    direction: 'out',
-                    callId: newCallId,
-                    medium: 'video',
-                  })
-                }
               />
             </AfterPaint>
           ) : route.name === 'providerDetail' ? (
@@ -2316,10 +2364,8 @@ function SignedIn({
           whichever screen noticed (goal item 14). It renders nothing until the
           store holds a session to rate. */}
       <SessionFeedbackSheet />
-      {/* The chat ring, above every screen and both nav bars (goal item 13).
-          Renders nothing unless a request is live, and only a provider ever
-          receives one. `openConversation` is the provider tree's own opener,
-          so accepting lands them in the thread. */}
+      {/* The chat ring comment is intentionally moved to the provider tree above.
+          Members never receive session_requests as the recipient. */}
     </View>
   );
 }

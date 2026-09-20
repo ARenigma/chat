@@ -18,6 +18,8 @@ import { reportSwallowed } from '../lib/sentry';
 import { track } from '../lib/telemetry';
 import { keys, useConversationId } from './chat';
 import { useStore } from '../store/useStore';
+import { usageKeys } from './usage';
+import { providerKeys } from './provider';
 
 type SessionChannel = 'chat' | 'audio' | 'video';
 type SessionStatus =
@@ -119,6 +121,22 @@ export function useSessionRealtime(conversationId: string | undefined): void {
       void queryClient.invalidateQueries({
         queryKey: ['messages', conversationId],
       });
+      /*
+       * Settlement fan-out — everything that changes the moment a paid session
+       * ends (Amit, 2026-09-20: "session end/start should update in real time
+       * both sides on chat screen, usage, billing, invoices etc").
+       *
+       * session events: the "Chat · N min · HH:MM" system row in the transcript
+       * calls: call log rows in the transcript
+       * usage-ledger: the per-session usage screen
+       * provider-earnings: the provider header pill and home KPIs
+       */
+      void queryClient.invalidateQueries({
+        queryKey: sessionKeys.events(conversationId),
+      });
+      void queryClient.invalidateQueries({ queryKey: ['calls', conversationId] });
+      void queryClient.invalidateQueries({ queryKey: usageKeys.ledger });
+      void queryClient.invalidateQueries({ queryKey: providerKeys.earnings });
     };
 
     const channel = supabase
@@ -893,6 +911,10 @@ export function useEndSession() {
       void queryClient.invalidateQueries({ queryKey: ['session'] });
       void queryClient.invalidateQueries({ queryKey: ['messages'] });
       void queryClient.invalidateQueries({ queryKey: ['conversation-list'] });
+      // Settlement fan-out: usage screen, provider earnings, profile balance.
+      void queryClient.invalidateQueries({ queryKey: usageKeys.ledger });
+      void queryClient.invalidateQueries({ queryKey: providerKeys.earnings });
+      void queryClient.invalidateQueries({ queryKey: ['profile'] });
     },
   });
 }

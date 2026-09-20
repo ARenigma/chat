@@ -29,6 +29,7 @@ import { Icon } from '../components/Icon';
 import { MediaViewer } from '../components/MediaViewer';
 import { RenameChatSheet } from '../components/RenameChatSheet';
 import { Sheet } from '../components/Sheet';
+import { MemberProfileSheet } from '../components/MemberProfileSheet';
 import { M3Field } from '../components/TextField';
 import { SafetySheet } from '../screens/SafetySheet';
 import type { ReactionEmoji } from '../lib/database.types';
@@ -172,6 +173,7 @@ export function ChatScreenV2({
   }>({ open: false, messageId: null });
   const [renaming, setRenaming] = useState(false);
   const [viewerImage, setViewerImage] = useState<ChatV2ImageBody | null>(null);
+  const [memberProfileVisible, setMemberProfileVisible] = useState(false);
 
   const { actionsFor, targetOf, chosenReactionOf } = chat;
   const onMessageLongPress = useCallback(
@@ -615,9 +617,12 @@ export function ChatScreenV2({
         endingSession={chat.endingSession}
         onBack={requestLeave}
         onOpenProfile={
-          onOpenProfile === undefined
+          benchmarkReadOnly
             ? undefined
-            : () => onOpenProfile(providerId)
+            : onOpenProfile !== undefined
+            ? () => onOpenProfile(providerId)
+            : // Provider tree: open the safe member profile sheet.
+              () => setMemberProfileVisible(true)
         }
         // Both are writes behind one press, so both are absent on the
         // benchmark route rather than disabled: a report and a rename are the
@@ -875,6 +880,15 @@ export function ChatScreenV2({
         peerId={providerId}
         peerName={chat.displayName}
         messageId={safety.messageId}
+      />
+
+      {/* Safe member profile sheet (provider tree only — when the identity
+          tap opens a member's info rather than routing to a provider detail). */}
+      <MemberProfileSheet
+        visible={memberProfileVisible}
+        peerName={chat.peerName}
+        peerAvatarUrl={chat.peerAvatarUrl}
+        onClose={() => setMemberProfileVisible(false)}
       />
 
       {/*

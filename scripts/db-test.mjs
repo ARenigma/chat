@@ -160,6 +160,11 @@ const MIGRATIONS = [
   'supabase/migrations/119_call_quality_records_loss_rate_and_mos.sql',
   'supabase/migrations/120_start_call_detects_a_simultaneous_ring.sql',
   'supabase/migrations/121_disable_scheduled_engagement_nudges.sql',
+  'supabase/migrations/122_avatar_repair_and_member_backfill.sql',
+  'supabase/migrations/123_in_place_media_upgrade.sql',
+  'supabase/migrations/124_usage_ledger_elapsed_seconds.sql',
+  'supabase/migrations/125_server_favorites.sql',
+  'supabase/migrations/126_idle_home_suggestions.sql',
 ];
 
 /**

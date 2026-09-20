@@ -88,8 +88,8 @@ export function ChatsListScreen({ onBack, onOpenConversation }: Props) {
         .sort((a, b) =>
           compareConversations(
             railPrefs,
-            { peerId: a.peer_id, at: a.last_session_at ?? '' },
-            { peerId: b.peer_id, at: b.last_session_at ?? '' },
+            { peerId: a.peer_id, at: a.last_session_at ?? '', unread: a.i_am_member ? Number(a.unread_count_member) : Number(a.unread_count_provider) },
+            { peerId: b.peer_id, at: b.last_session_at ?? '', unread: b.i_am_member ? Number(b.unread_count_member) : Number(b.unread_count_provider) },
           ),
         ),
     [conversations, blocked, railPrefs],

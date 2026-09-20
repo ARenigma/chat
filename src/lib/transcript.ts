@@ -225,27 +225,33 @@ export function durationWords(totalSeconds: number): string {
  * rather than "0 min", which would look like a fault rather than a session
  * nobody used.
  *
- * WHY THIS ROW SHOWS NO SECONDS, unlike the call row beside it. It is not that
- * they are unreachable: `useSessionEvents` already selects `started_at` and
- * `ended_at`, so wall-clock seconds are one argument away. They are the wrong
- * number. `minutes_billed` is what the wallet debited and what the provider
- * accrued against (`accrue_ended_paid_session` reads `new.minutes_billed`), and
- * migration 095 exists solely to make a displayed duration ride on it: it
- * re-created `end_session` to write `minutes_billed * 60` into the inbox's
- * duration where wall-clock time had been, under the rule "Display / usage /
- * wallet / billing must be one coherent chain — no two may ever disagree."
- * Worse than incoherent, wall clock would UNDERSTATE the charge: the first
- * minute is billed the instant the session activates (037, `minutes_billed = 1`
- * with `next_bill_at = now() + 1 minute`), so a session ended after 30 seconds
- * was charged a minute and would read "30 secs". Showing billed minutes with no
- * seconds is the truthful rendering of an integer number of minutes; giving
- * this row real seconds is a server change, not a formatting one.
+ * ELAPSED SECONDS (Amit, 2026-09-20): display shows actual wall-clock elapsed
+ * time so the member sees exactly how long their conversation lasted. Billing
+ * charges remain on `minutes_billed` (whole started minutes) and are shown
+ * separately on the usage ledger, never mixed into this transcript label.
+ * `started_at` and `ended_at` are already present in `useSessionEvents`; when
+ * both are available the elapsed is derived from them; otherwise we fall back to
+ * the billed-minutes approximation so the row is never blank.
  */
 export function sessionEndedLabel(
   minutesBilled: number,
   endedAt?: string,
+  startedAt?: string,
 ): string {
   const stamp = endedAt === undefined ? '' : ` · ${timeOfDay(endedAt)}`;
+
+  // Prefer actual elapsed when both timestamps are available.
+  if (startedAt !== undefined && endedAt !== undefined) {
+    const elapsedSec = Math.max(
+      0,
+      Math.floor((Date.parse(endedAt) - Date.parse(startedAt)) / 1000),
+    );
+    if (elapsedSec > 0) {
+      return `Chat · ${durationWords(elapsedSec)}${stamp}`;
+    }
+  }
+
+  // Fallback: billed-minutes approximation when timestamps are absent.
   if (!Number.isFinite(minutesBilled) || minutesBilled <= 0) {
     return `Chat${stamp}`;
   }

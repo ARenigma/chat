@@ -378,7 +378,7 @@ export function buildChatV2Rows(input: ChatV2RowInput): ChatV2Row[] {
       kind: 'system',
       id: `session-${e.id}`,
       sortAt: e.ended_at,
-      text: sessionEndedLabel(e.minutes_billed, e.ended_at),
+      text: sessionEndedLabel(e.minutes_billed, e.ended_at, e.started_at ?? undefined),
       emoji: '🧡',
       opensDay: false,
     }));

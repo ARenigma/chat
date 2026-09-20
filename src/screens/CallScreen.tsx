@@ -15,8 +15,8 @@ import type { CallResult, ProviderSummary } from '../lib/database.types';
 import type { CallMedium } from '../lib/database.types';
 import { initialOf } from '../lib/display';
 import { avatarImageSource, clayFraming, isClayUri } from '../lib/clayAvatars';
-import { useConversationId, useConversations, useProviders } from '../api/chat';
-import { answerCall, endCall, heartbeatCall, startCall, useCallEnded } from '../api/calls';
+import { useConversationId, useConversations, useProviders, useSelfId } from '../api/chat';
+import { answerCall, endCall, heartbeatCall, requestMediaUpgrade, respondMediaUpgrade, startCall, useCallEnded, useMediaUpgrade } from '../api/calls';
 import { useCallSession } from '../api/callMedia';
 import { CallVideoView } from '../api/callMedia/CallVideoView';
 import { useSessionLease } from '../api/sessions';
@@ -32,6 +32,7 @@ import { Icon, type IconName } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { track } from '../lib/telemetry';
 import { useBackBarrier, useBackGuard } from '../lib/backGuard';
+import { setKeepScreenOn } from '../lib/windowChrome';
 
 /** Which way the call goes. Outgoing dials; incoming rings and offers answer. */
 export type CallDirection = 'out' | 'in';
@@ -46,12 +47,6 @@ interface Props {
   medium: CallMedium;
   /** Decline (incoming, ringing) or hang up (in call). Leaving the screen ends it. */
   onEnd: () => void;
-  /**
-   * Fired when an audio→video session upgrade succeeds. App.tsx swaps the
-   * route to a fresh outgoing video CallScreen with the new call id so that
-   * the old audio call row is cleaned up on unmount and the new one starts.
-   */
-  onUpgradeToVideo?: (newCallId: string) => void;
 }
 
 /** How long between heartbeats while a call is up; the ticker reads last_seen_at. */
@@ -152,7 +147,7 @@ type Phase = 'starting' | 'ringing' | 'connecting' | 'active' | 'incoming';
  * Toggling uses RTCRtpSender.replaceTrack so no renegotiation is needed. If the
  * call was started as `medium='video'`, the camera is auto-enabled on connect.
  */
-export function CallScreen({ providerId, direction, callId: incomingCallId, medium, onEnd, onUpgradeToVideo }: Props) {
+export function CallScreen({ providerId, direction, callId: incomingCallId, medium, onEnd }: Props) {
   /*
    * This screen covers Home, and Home stays mounted underneath it (App.tsx
    * renders pushed screens as overlays so returning never remounts Home's
@@ -253,6 +248,12 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     direction === 'in' ? 'incoming' : incomingCallId !== null ? 'ringing' : 'starting',
   );
   const [upgrading, setUpgrading] = useState(false);
+  /**
+   * In-place media upgrade (migration 123): a pending request from the PEER
+   * to switch audio↔video on the live call. Shown as a consent dialog.
+   * null = no request pending; `requestedBy` is the peer's id.
+   */
+  const [upgradeRequest, setUpgradeRequest] = useState<{ requestedBy: string; toMedium: 'audio' | 'video' } | null>(null);
   const [memberConsented, setMemberConsented] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   /*
@@ -278,8 +279,8 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   // provider resolves it exactly as opening a chat does.
   const { data: openedId } = useConversationId(direction === 'out' ? providerId : null);
   // For an incoming call (provider receiving), the conversation is in peerThread.
-  // We need it for the audio→video upgrade path regardless of direction.
-  const conversationId = openedId ?? peerThread?.conversation_id;
+  // (Reserved for future use — in-place upgrade no longer needs it.)
+  const _conversationId = openedId ?? peerThread?.conversation_id; void _conversationId;
 
   // End on unmount if the call was live, so End / Decline / hardware-back all
   // hang up through one path. Refs so the cleanup sees the latest without
@@ -558,6 +559,24 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   }, [callId, mediaReady, name, videoEnabled]);
 
   /*
+   * FLAG_KEEP_SCREEN_ON: hold the display bright during an active video call
+   * so the user is not plunged into darkness mid-conversation.
+   *
+   * On during: media connected AND camera is either on (the member's own feed is
+   * publishing) OR video is the channel's medium (we are watching the peer even
+   * if our own feed is off). Off when the call ends, camera is disabled, or the
+   * call never connected. Voice calls are excluded — those use proximity lock in
+   * CallForegroundService to dim when near the ear.
+   *
+   * https://developer.android.com/develop/background-work/background-tasks/awake/screen-on
+   */
+  const keepScreenOn = medium === 'video' && mediaReady;
+  useEffect(() => {
+    setKeepScreenOn(keepScreenOn);
+    return () => setKeepScreenOn(false);
+  }, [keepScreenOn]);
+
+  /*
    * The lease has to tell the TRUTH about media, because billing reads it.
    *
    * `claim_session_lease` (037:427-441) starts the meter — the first
@@ -728,6 +747,33 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     }
   }, []);
   useCallEnded(callId, endedNotice, onCalleeAnswered);
+
+  /*
+   * In-place media upgrade (migration 123): subscribe to upgrade requests
+   * from the peer and route them to the consent dialog. When the peer accepts
+   * our own request, enable the camera on the Agora channel.
+   */
+  const { data: selfId } = useSelfId();
+  useMediaUpgrade(
+    callId,
+    selfId,
+    /* onRequest */ req => setUpgradeRequest(req),
+    /* onAccepted */ newMedium => {
+      // Clear any pending request state on our side.
+      setUpgradeRequest(null);
+      setUpgrading(false);
+      if (newMedium === 'video' && !videoEnabled) {
+        // Peer accepted our switch-to-video request: enable camera in-place.
+        void enableVideo();
+      } else if (newMedium === 'audio' && videoEnabled) {
+        disableVideo();
+      }
+    },
+    /* onDeclined */ () => {
+      setUpgradeRequest(null);
+      setUpgrading(false);
+    },
+  );
 
   /*
    * Give up on an unanswered ring.
@@ -1158,7 +1204,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
           <View style={styles.bar}>
             <BarButton
               testID="call-speaker"
-              glyph="speaker"
+              glyph={speakerOn ? 'speaker' : 'speakerOff'}
               active={speakerOn}
               onPress={() => setSpeaker(!speakerOn)}
               label="Speaker"
@@ -1168,25 +1214,22 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
               glyph={medium === 'voice' ? 'video' : videoEnabled ? 'video' : 'videoOff'}
               active={medium === 'video' && !videoEnabled}
               fill={medium === 'video' && videoEnabled ? 'ghost' : 'solid'}
-              disabled={medium === 'voice' ? (phase !== 'active' || upgrading || conversationId === undefined) : false}
+              disabled={medium === 'voice' ? (phase !== 'active' || upgrading || callId === null) : false}
               onPress={() => {
                 if (medium === 'voice') {
-                  // Audio → Video upgrade: end this audio session and start a
-                  // fresh video session request. The server (migration 074) handles
-                  // the paid_session teardown atomically in start_call.
-                  if (phase !== 'active' || conversationId === undefined || onUpgradeToVideo === undefined) return;
+                  // In-place audio → video upgrade (migration 123): ask the peer
+                  // to consent rather than ending the call and starting a new one.
+                  // The peer sees a consent dialog via useMediaUpgrade; on accept
+                  // the server updates calls.medium and we enable the camera here.
+                  if (phase !== 'active' || callId === null) return;
                   setUpgrading(true);
-                  void startCall(conversationId, 'video').then(r => {
-                    if (r?.success && r.call_id) {
-                      // Hand off to App.tsx — it swaps the route so this
-                      // CallScreen unmounts (ending the audio calls row) and a
-                      // fresh outgoing video CallScreen mounts.
-                      onUpgradeToVideo(r.call_id);
-                    } else {
+                  void requestMediaUpgrade(callId, 'video').then(r => {
+                    if (!r?.success) {
                       setUpgrading(false);
-                      const code = r?.error;
-                      setNotice(code ? (START_NOTICE[code] ?? 'Could not upgrade the call.') : 'Could not upgrade to video. Check your connection.');
+                      setNotice(r?.error ? 'Could not request video switch.' : 'Check your connection.');
                     }
+                    // On success: the peer sees the request via Realtime;
+                    // upgrading stays true until they accept/decline.
                   });
                 } else {
                   // Video call: toggle camera on/off.
@@ -1198,7 +1241,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
                 }
               }}
               onLongPress={medium === 'video' && videoEnabled ? switchCamera : undefined}
-              label={medium === 'voice' ? (upgrading ? 'Upgrading' : 'Switch to Video') : videoEnabled ? 'Camera off' : 'Start Video'}
+              label={medium === 'voice' ? (upgrading ? 'Requesting' : 'Switch to Video') : videoEnabled ? 'Camera off' : 'Start Video'}
             />
             <BarButton
               testID="call-mute"
@@ -1259,6 +1302,38 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
           if (alreadyRingingCallId !== null) {
             answerInstead(alreadyRingingCallId);
           }
+        }}
+      />
+      {/* In-place media upgrade consent (migration 123). Shown when the peer
+          requests a switch while the call is active. Accepting calls
+          respondMediaUpgrade; the useMediaUpgrade hook then enables/disables
+          the camera client-side when the Realtime UPDATE confirms the change. */}
+      <ConfirmDialog
+        visible={upgradeRequest !== null}
+        testID="call-upgrade-request"
+        title={upgradeRequest?.toMedium === 'video' ? 'Switch to Video?' : 'Switch to Voice?'}
+        body={
+          upgradeRequest?.toMedium === 'video'
+            ? `${name} wants to switch this call to video. Your camera will turn on.`
+            : `${name} wants to turn off the video. The call will continue as voice only.`
+        }
+        cancelLabel="Decline"
+        confirmLabel="Accept"
+        onCancel={() => {
+          if (callId) void respondMediaUpgrade(callId, false);
+          setUpgradeRequest(null);
+        }}
+        onConfirm={() => {
+          if (callId) {
+            void respondMediaUpgrade(callId, true).then(r => {
+              if (r?.accepted && r.new_medium === 'video') {
+                void enableVideo();
+              } else if (r?.accepted && r.new_medium === 'audio') {
+                disableVideo();
+              }
+            });
+          }
+          setUpgradeRequest(null);
         }}
       />
     </View>

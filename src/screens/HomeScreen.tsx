@@ -75,6 +75,9 @@ import {
   searchResultsIn,
   searchResultsOut,
 } from '../theme/motion';
+import { HOME_SUGGESTIONS_ENABLED } from '../config';
+import { HomeSuggestionPrompt } from '../components/HomeSuggestionPrompt';
+import { useHomeSuggestions } from '../hooks/useHomeSuggestions';
 
 /**
  * Whether the spotlight has been dismissed IN THIS APP RUN.
@@ -124,6 +127,11 @@ interface Props {
   onCallProvider: (providerId: string) => void;
   /** Open the full chats list from the rail's "See all". */
   onSeeAllChats: () => void;
+  /**
+   * True when a call or incoming ring is live so the idle-home campaign
+   * suppresses itself. Passed from App.tsx which owns the route state.
+   */
+  hasActiveCall?: boolean;
 }
 
 /**
@@ -147,6 +155,7 @@ export function HomeScreen({
   onOpenProvider,
   onCallProvider,
   onSeeAllChats,
+  hasActiveCall = false,
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -161,6 +170,13 @@ export function HomeScreen({
   const { data: conversations, isPending: convosPending } = useConversations();
   const { data: providers, isPending: providersPending } = useProviders();
   const blocked = useBlockedPeerIds();
+
+  /* Idle-home campaign — only active when HOME_SUGGESTIONS_ENABLED = true.
+     R8 dead-strips this code path in disabled builds because the constant is
+     compile-time false. The hook is unconditionally called (rule of hooks) but
+     returns null suggestion when the flag is off. */
+  const { currentSuggestion, onAccept: onAcceptSuggestion, onDismiss: onDismissSuggestion } =
+    useHomeSuggestions({ hasActiveCallOrRing: hasActiveCall, onOpenConversation });
 
   const railPrefs = useRailPrefs();
   const startTour = useHomeTour(s => s.start);
@@ -207,8 +223,8 @@ export function HomeScreen({
         .sort((a, b) =>
           compareConversations(
             railPrefs,
-            { peerId: a.peer_id, at: a.last_session_at ?? '' },
-            { peerId: b.peer_id, at: b.last_session_at ?? '' },
+            { peerId: a.peer_id, at: a.last_session_at ?? '', unread: a.i_am_member ? Number(a.unread_count_member) : Number(a.unread_count_provider) },
+            { peerId: b.peer_id, at: b.last_session_at ?? '', unread: b.i_am_member ? Number(b.unread_count_member) : Number(b.unread_count_provider) },
           ),
         ),
     [conversations, blocked, railPrefs, categoryById, exploreCategory],
@@ -1013,6 +1029,17 @@ export function HomeScreen({
           setMenuAnchor(null);
         }}
       />
+      {/* Idle-home campaign prompt. Gated by HOME_SUGGESTIONS_ENABLED so R8
+          strips it in production builds where the flag is false. Renders over
+          all Home content (absolute position with zIndex) but below the app
+          navigation layer (App.tsx's call ring is at zIndex 40). */}
+      {HOME_SUGGESTIONS_ENABLED && currentSuggestion !== null ? (
+        <HomeSuggestionPrompt
+          suggestion={currentSuggestion}
+          onAccept={onAcceptSuggestion}
+          onDismiss={onDismissSuggestion}
+        />
+      ) : null}
     </View>
   );
 }
