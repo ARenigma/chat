@@ -148,6 +148,21 @@ $$;
 revoke all on function public.resolve_phone_owner(text) from public, anon, authenticated;
 grant execute on function public.resolve_phone_owner(text) to service_role;
 
+-- Keep the legacy Firebase RPC name as a compatibility wrapper over the same
+-- canonical owner. No auth bridge may bypass external/profile ownership.
+create or replace function public.get_user_id_by_phone(p_phone text)
+returns uuid
+language sql
+security definer
+set search_path = ''
+as $$
+  select public.resolve_phone_owner(p_phone);
+$$;
+
+revoke all on function public.get_user_id_by_phone(text)
+  from public, anon, authenticated;
+grant execute on function public.get_user_id_by_phone(text) to service_role;
+
 -- Resolve by stable provider subject without exposing the private table through
 -- PostgREST's schema allow-list. Edge Functions call this service-role RPC.
 create or replace function public.resolve_external_identity(

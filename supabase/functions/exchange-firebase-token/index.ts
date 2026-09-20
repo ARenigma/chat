@@ -25,13 +25,20 @@
  * This keeps the "Supabase is the only thing that mints a session" rule the
  * Supabase-native OTP path was built on — Firebase only proves the number.
  *
- * PHONE → USER LOOKUP. supabase-js has no `getUserByPhone`, and GoTrue's admin
- * `listUsers` was unreliable here ("Database error finding users"), so this calls
- * a `service_role`-only SECURITY DEFINER RPC (`get_user_id_by_phone`, migration
- * 018) that reads auth.users directly.
+ * PHONE → USER LOOKUP. Both Firebase and Truecaller call the shared
+ * `resolve_phone_owner` RPC through sessionBridge.ts. It resolves auth.users,
+ * verified profile phones, and stable external identities as one ownership
+ * domain, so changing auth providers cannot create a second wallet/profile.
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { createRemoteJWKSet, jwtVerify } from 'npm:jose@5';
+import {
+  E164,
+  createPhoneUser,
+  ensureEmail,
+  findUserIdByPhone,
+  mintSession,
+} from '../_shared/sessionBridge.ts';
 
 /** Google's public keys for Firebase ID tokens (Secure Token service). */
 const FIREBASE_JWKS = createRemoteJWKSet(
@@ -39,30 +46,6 @@ const FIREBASE_JWKS = createRemoteJWKSet(
     'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com',
   ),
 );
-
-/** E.164 with the plus. Must agree with migration 010's phone check. */
-const E164 = /^\+[1-9][0-9]{7,14}$/;
-
-/** Unroutable placeholder email for a phone user, needed only to drive generateLink. */
-function placeholderEmail(): string {
-  // RFC 2606 `.invalid` TLD: syntactically valid, guaranteed unroutable.
-  return `phone_${crypto.randomUUID()}@pappal.invalid`;
-}
-
-/**
- * Find an existing user's id by E.164 phone via the SECURITY DEFINER RPC
- * (migration 018). Returns null if no user has that phone.
- */
-async function findUserIdByPhone(
-  admin: ReturnType<typeof createClient>,
-  phone: string,
-): Promise<string | null> {
-  const { data, error } = await admin.rpc('get_user_id_by_phone', { p_phone: phone });
-  if (error != null) {
-    throw error;
-  }
-  return typeof data === 'string' && data !== '' ? data : null;
-}
 
 Deno.serve(async request => {
   const url = Deno.env.get('SUPABASE_URL');
@@ -111,6 +94,9 @@ Deno.serve(async request => {
   const admin = createClient(url, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
+  const anon = createClient(url, anonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 
   // 2. Map the phone to a user, or create one. An existing user may have been
   //    created by the Supabase-native OTP path with no email, so ensure a
@@ -118,36 +104,11 @@ Deno.serve(async request => {
   let email: string;
   try {
     const existingId = await findUserIdByPhone(admin, phone);
-
     if (existingId !== null) {
-      const { data: got, error: getError } = await admin.auth.admin.getUserById(existingId);
-      if (getError != null || got?.user == null) {
-        throw getError ?? new Error('user vanished');
-      }
-      const current = got.user.email ?? '';
-      if (current === '') {
-        email = placeholderEmail();
-        const { error: updateError } = await admin.auth.admin.updateUserById(existingId, {
-          email,
-          email_confirm: true,
-        });
-        if (updateError != null) {
-          throw updateError;
-        }
-      } else {
-        email = current;
-      }
+      email = await ensureEmail(admin, existingId);
     } else {
-      email = placeholderEmail();
-      const { data: created, error: createError } = await admin.auth.admin.createUser({
-        phone,
-        phone_confirm: true,
-        email,
-        email_confirm: true,
-      });
-      if (createError != null || created?.user == null) {
-        throw createError ?? new Error('create returned no user');
-      }
+      const created = await createPhoneUser(admin, phone);
+      email = created.email;
     }
   } catch (err) {
     console.error(`user get-or-create failed: ${String(err)}`);
@@ -157,28 +118,8 @@ Deno.serve(async request => {
   // 3. Mint a real GoTrue session: generateLink (no email is sent) → the anon
   //    client exchanges the one-time token for access + refresh tokens.
   try {
-    const { data: link, error: linkError } = await admin.auth.admin.generateLink({
-      type: 'magiclink',
-      email,
-    });
-    if (linkError != null || link?.properties?.hashed_token == null) {
-      throw linkError ?? new Error('no hashed_token');
-    }
-
-    const anon = createClient(url, anonKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-    const { data: verified, error: verifyError } = await anon.auth.verifyOtp({
-      token_hash: link.properties.hashed_token,
-      type: 'email',
-    });
-    if (verifyError != null || verified?.session == null) {
-      throw verifyError ?? new Error('no session from verifyOtp');
-    }
-
-    return Response.json({
-      access_token: verified.session.access_token,
-      refresh_token: verified.session.refresh_token,
+    return Response.json(await mintSession(admin, anon, email), {
+      headers: { 'Cache-Control': 'no-store' },
     });
   } catch (err) {
     console.error(`session mint failed: ${String(err)}`);

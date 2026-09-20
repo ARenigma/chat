@@ -4,7 +4,7 @@
 -- its grants, owner resolution, conflict behavior, idempotency, challenge
 -- retryability/consumption, and deletion cascade.
 begin;
-select plan(29);
+select plan(30);
 
 select has_schema('private', 'private identity schema exists');
 select has_table('private', 'external_identities', 'external identities are private');
@@ -93,6 +93,11 @@ select is(
   public.resolve_phone_owner('+919000000002'),
   'cccccccc-5100-4000-8000-000000000002'::uuid,
   'verified profile phone resolves an existing Google account'
+);
+select is(
+  public.get_user_id_by_phone('+919000000002'),
+  'cccccccc-5100-4000-8000-000000000002'::uuid,
+  'legacy Firebase lookup delegates to canonical phone ownership'
 );
 select is(
   public.resolve_phone_owner('+919000000099'),

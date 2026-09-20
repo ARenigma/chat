@@ -80,6 +80,7 @@ import {
   sendPhoneOtp,
   signInWithGoogle,
   signInWithTruecaller,
+  signOut,
   stageTruecallerGoogleLink,
   truecallerAvailable,
   verifyPhoneOtp,
@@ -635,6 +636,10 @@ export function OnboardingScreen({ onDone }: Props) {
         setTruecallerChallenge(null);
         await completeAuthentication();
       } catch (error) {
+        // Credential Manager may already have installed a Google session before
+        // the server-side Truecaller link fails. Remove it so boot/session
+        // restoration cannot enter an unlinked account.
+        await signOut();
         setRoute('undecided');
         clearPendingTruecallerGoogleLink();
         if (

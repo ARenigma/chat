@@ -20,6 +20,7 @@ describe('verification-before-remote pipeline', () => {
     expect(prePush).toContain('npm run verify');
     expect(prePush).toContain('security:push');
     expect(prePush).toContain('while read -r local_ref local_sha');
+    expect(prePush).toContain('git rev-parse "${local_sha}^{commit}"');
     expect(prePush).toContain('scripts/greptile-review.sh status "$head_sha"');
     expect(prePush.indexOf('npm run verify')).toBeLessThan(
       prePush.indexOf('security:push'),

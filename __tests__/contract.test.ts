@@ -1595,6 +1595,25 @@ describe('Truecaller OAuth authentication bridge', () => {
     expect(migration127).toContain('on delete cascade');
   });
 
+  it('Firebase and Truecaller share canonical phone ownership/session minting', () => {
+    const firebase = read(
+      'supabase/functions/exchange-firebase-token/index.ts',
+    );
+    expect(firebase).toContain("../_shared/sessionBridge.ts");
+    expect(firebase).toContain('findUserIdByPhone(admin, phone)');
+    expect(firebase).toContain('mintSession(admin, anon, email)');
+    expect(firebase).not.toContain(
+      "admin.rpc('get_user_id_by_phone'",
+    );
+
+    const migration130 = read(
+      'supabase/migrations/130_canonical_phone_owner.sql',
+    );
+    expect(migration130).toContain(
+      'select public.resolve_phone_owner(p_phone)',
+    );
+  });
+
   it('migration 127 revokes external_identities from anon and authenticated', () => {
     expect(migration127).toContain('revoke all on private.external_identities');
     expect(migration127).toMatch(/from.*anon.*authenticated|from.*authenticated.*anon/);
@@ -1623,6 +1642,18 @@ describe('Truecaller OAuth authentication bridge', () => {
     expect(screen).toContain('testID="onboard-truecaller-new"');
     expect(screen).toContain('testID="onboard-truecaller-link-google"');
     expect(screen).toContain("identify === 'continuity'");
+  });
+
+  it('a failed Credential Manager link cannot leave its Google session installed', () => {
+    const linkFlow = screen.slice(
+      screen.indexOf('const onTruecallerLinkGoogle'),
+      screen.indexOf('const onGoogle'),
+    );
+    const failure = linkFlow.slice(linkFlow.indexOf('} catch (error)'));
+    expect(failure).toContain('await signOut();');
+    expect(failure.indexOf('await signOut();')).toBeLessThan(
+      failure.indexOf("setRoute('undecided')"),
+    );
   });
 
   it('clears a staged Truecaller link on every terminal Google failure', () => {
