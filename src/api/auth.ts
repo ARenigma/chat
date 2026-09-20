@@ -433,12 +433,22 @@ export function stageTruecallerGoogleLink(challenge: string): void {
   );
 }
 
-function pendingTruecallerGoogleLink(): string | null {
+interface PendingTruecallerGoogleLinkState {
+  readonly challenge: string | null;
+  readonly hadRecord: boolean;
+}
+
+function pendingTruecallerGoogleLink(): PendingTruecallerGoogleLinkState {
   const raw = storage.get(TRUECALLER_GOOGLE_LINK_KEY);
+  if (raw === null) {
+    return { challenge: null, hadRecord: false };
+  }
   const pending = parsePendingTruecallerGoogleLink(raw, Date.now());
-  if (pending !== null) return pending.challenge;
+  if (pending !== null) {
+    return { challenge: pending.challenge, hadRecord: true };
+  }
   storage.remove(TRUECALLER_GOOGLE_LINK_KEY);
-  return null;
+  return { challenge: null, hadRecord: true };
 }
 
 export function clearPendingTruecallerGoogleLink(): void {
@@ -766,10 +776,22 @@ export async function handleAuthDeepLink(
   // opaque challenge was staged in MMKV. Link before reporting signedIn; if
   // linking fails, sign back out so App.tsx never enters a Google session whose
   // Truecaller identity was silently lost.
-  const pendingChallenge = pendingTruecallerGoogleLink();
-  if (pendingChallenge !== null) {
+  const pendingLink = pendingTruecallerGoogleLink();
+  if (pendingLink.hadRecord && pendingLink.challenge === null) {
+    // This Google callback belongs to an explicit Truecaller-link attempt, but
+    // the opaque challenge expired while the browser was open. Do not silently
+    // enter Google-only state: that would make later Truecaller sign-ins look
+    // unowned again. Remove the fresh session and require a new Truecaller proof.
+    await supabase.auth.signOut();
+    return {
+      status: 'failed',
+      message:
+        'Your verified-number link expired while signing in. Start with Truecaller again.',
+    };
+  }
+  if (pendingLink.challenge !== null) {
     try {
-      await linkTruecallerToCurrentAccount(pendingChallenge);
+      await linkTruecallerToCurrentAccount(pendingLink.challenge);
       clearPendingTruecallerGoogleLink();
     } catch {
       clearPendingTruecallerGoogleLink();

@@ -1644,6 +1644,24 @@ describe('Truecaller OAuth authentication bridge', () => {
     expect(handler).toContain('await linkTruecallerToCurrentAccount');
   });
 
+  it('an expired staged link cannot silently become Google-only success', () => {
+    const handler = auth.slice(
+      auth.indexOf('export async function handleAuthDeepLink'),
+      auth.indexOf('export async function signOut'),
+    );
+    expect(handler).toContain(
+      'pendingLink.hadRecord && pendingLink.challenge === null',
+    );
+    const expiredBranch = handler.slice(
+      handler.indexOf(
+        'pendingLink.hadRecord && pendingLink.challenge === null',
+      ),
+      handler.indexOf('if (pendingLink.challenge !== null)'),
+    );
+    expect(expiredBranch).toContain('await supabase.auth.signOut();');
+    expect(expiredBranch).toContain("status: 'failed'");
+  });
+
   it('sign-out cannot leave a staged identity link for the next account', () => {
     const signOut = auth.slice(auth.indexOf('export async function signOut'));
     expect(signOut).toContain('clearPendingTruecallerGoogleLink();');
