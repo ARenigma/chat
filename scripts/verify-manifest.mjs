@@ -171,6 +171,14 @@ const ALLOWED_FROM_LIBRARIES = new Set([
   // permission. It is internal to Play services and is not requested at runtime.
   // developers.google.com/android/guides/permissions
   'com.google.android.providers.gsf.permission.READ_GSERVICES',
+  // Truecaller OAuth SDK uses this vendor-scoped permission to ask the installed
+  // Truecaller app whether a signed-in account is available for its one-tap
+  // consent flow. It is not an Android phone/call-log permission, has no runtime
+  // prompt, and exposes no account data to our JS. OPTION_VERIFY_ONLY_TC_USERS
+  // deliberately avoids Truecaller's missed-call path and its restricted
+  // READ_CALL_LOG / READ_PHONE_STATE permissions.
+  // docs.truecaller.com/.../faqs/android-oauth-sdk
+  'com.truecaller.permission.sdk.internal.read_account_state',
 ]);
 
 /**
@@ -202,6 +210,9 @@ const FORBIDDEN = [
   // the reason and the cost written above — the microphone for voice notes and
   // the camera for photo capture (#8), each a product decision the app owns.
   'android.permission.READ_PHONE_STATE',
+  'android.permission.READ_CALL_LOG',
+  'android.permission.READ_SMS',
+  'android.permission.PROCESS_OUTGOING_CALLS',
   'android.permission.QUERY_ALL_PACKAGES',
 ];
 
