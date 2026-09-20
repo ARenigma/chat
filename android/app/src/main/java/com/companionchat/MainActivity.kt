@@ -79,8 +79,13 @@ class MainActivity : ReactActivity() {
   @Volatile
   private var truecallerState: String? = null
 
-  /** Background scope for async SDK init. */
-  private val sdkScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+  /** Activity-owned job/scope for async SDK init; cancelled in onDestroy. */
+  private val sdkJob = SupervisorJob()
+  private val sdkScope = CoroutineScope(sdkJob + Dispatchers.IO)
+  private val truecallerLifecycleLock = Any()
+
+  @Volatile
+  private var truecallerDestroyed = false
 
   /**
    * Registered unconditionally as a property (before STARTED) so the Activity
@@ -96,6 +101,7 @@ class MainActivity : ReactActivity() {
 
   private val tcOAuthCallback = object : TcOAuthCallback {
     override fun onSdkReady() {
+      if (truecallerDestroyed) return
       val promise = pendingTruecallerPromise.get() ?: return
       val stateValue = truecallerState
       val verifier = truecallerCodeVerifier
@@ -155,6 +161,7 @@ class MainActivity : ReactActivity() {
     }
 
     override fun onVerificationRequired(error: TcOAuthError?) {
+      if (truecallerDestroyed) return
       val promise = pendingTruecallerPromise.getAndSet(null) ?: return
       clearTruecallerAttempt()
       promise.reject(
@@ -164,6 +171,7 @@ class MainActivity : ReactActivity() {
     }
 
     override fun onSuccess(data: TcOAuthData) {
+      if (truecallerDestroyed) return
       val promise = pendingTruecallerPromise.getAndSet(null) ?: run {
         Log.w(TAG, "Truecaller onSuccess: no pending promise, discarding.")
         return
@@ -191,6 +199,7 @@ class MainActivity : ReactActivity() {
     }
 
     override fun onFailure(error: TcOAuthError) {
+      if (truecallerDestroyed) return
       val promise = pendingTruecallerPromise.getAndSet(null) ?: run {
         Log.w(TAG, "Truecaller onFailure (code ${error.errorCode}): no pending promise.")
         return
@@ -222,19 +231,26 @@ class MainActivity : ReactActivity() {
 
     sdkScope.launch {
       try {
-        // Clear any previous SDK instance so the fresh callback is wired
-        // correctly, especially if the Activity was recreated.
-        // https://docs.truecaller.com/truecaller-sdk/android/latest-oauth-sdk-3.3.0/integration-steps/clearing-sdk-instance
-        TcSdk.clear()
+        synchronized(truecallerLifecycleLock) {
+          if (truecallerDestroyed) return@launch
 
-        val options = TcSdkOptions.Builder(this@MainActivity, tcOAuthCallback)
-          .sdkOptions(TcSdkOptions.OPTION_VERIFY_ONLY_TC_USERS)
-          .consentMode(TcSdkOptions.CONSENT_MODE_BOTTOMSHEET)
-          .footerType(TcSdkOptions.FOOTER_TYPE_ANOTHER_MOBILE_NO)
-          .ctaText(TcSdkOptions.CTA_TEXT_CONTINUE)
-          .build()
+          // Clear any previous SDK instance so the fresh callback is wired
+          // correctly, especially if the Activity was recreated.
+          // https://docs.truecaller.com/truecaller-sdk/android/latest-oauth-sdk-3.3.0/integration-steps/clearing-sdk-instance
+          TcSdk.clear()
 
-        TcSdk.initAsync(options)
+          val options = TcSdkOptions.Builder(this@MainActivity, tcOAuthCallback)
+            .sdkOptions(TcSdkOptions.OPTION_VERIFY_ONLY_TC_USERS)
+            .consentMode(TcSdkOptions.CONSENT_MODE_BOTTOMSHEET)
+            .footerType(TcSdkOptions.FOOTER_TYPE_ANOTHER_MOBILE_NO)
+            .ctaText(TcSdkOptions.CTA_TEXT_CONTINUE)
+            .build()
+
+          // initAsync may continue on SDK-owned threads after this call returns.
+          // onDestroy takes the same lock, marks destroyed, then clears the SDK;
+          // every callback also checks truecallerDestroyed.
+          TcSdk.initAsync(options)
+        }
       } catch (e: Exception) {
         val p = pendingTruecallerPromise.getAndSet(null) ?: return@launch
         clearTruecallerAttempt()
@@ -564,7 +580,11 @@ class MainActivity : ReactActivity() {
   }
 
   override fun onDestroy() {
-    super.onDestroy()
+    sdkJob.cancel()
+    synchronized(truecallerLifecycleLock) {
+      truecallerDestroyed = true
+      TcSdk.clear()
+    }
     /*
      * Free SDK resources when the Activity is destroyed.
      *
@@ -576,7 +596,6 @@ class MainActivity : ReactActivity() {
      *
      * https://docs.truecaller.com/truecaller-sdk/android/latest-oauth-sdk-3.3.0/integration-steps/clearing-sdk-instance
      */
-    TcSdk.clear()
     // If the Activity is destroyed while a sign-in is in progress (e.g. user
     // force-quits the app), reject the pending promise so the JS side is not
     // left waiting on a ghost.
@@ -586,5 +605,6 @@ class MainActivity : ReactActivity() {
     )
     truecallerState = null
     truecallerCodeVerifier = null
+    super.onDestroy()
   }
 }

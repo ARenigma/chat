@@ -1426,6 +1426,17 @@ describe('Truecaller OAuth SDK 3.3.0 — Android platform requirements', () => {
     expect(clearPos).toBeLessThan(initPos);
   });
 
+  it('Activity destruction cancels and fences asynchronous SDK initialization', () => {
+    const main = read(
+      'android/app/src/main/java/com/companionchat/MainActivity.kt',
+    );
+    expect(main).toContain('private val sdkJob = SupervisorJob()');
+    expect(main).toContain('sdkJob.cancel()');
+    expect(main).toContain('synchronized(truecallerLifecycleLock)');
+    expect(main).toContain('truecallerDestroyed = true');
+    expect(main).toMatch(/onSdkReady\(\) \{\s*if \(truecallerDestroyed\) return/);
+  });
+
   it('TruecallerOAuthModule is registered in InAppUpdatePackage', () => {
     const pkg = read('android/app/src/main/java/com/companionchat/InAppUpdatePackage.kt');
     expect(pkg).toContain('TruecallerOAuthModule');
