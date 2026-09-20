@@ -1,4 +1,6 @@
 # Stage 0 gate. Fast only — anything slower than ~10s belongs in CI.
+set -eu
+
 npm run security:staged
 npx lint-staged
 npx tsc --noEmit

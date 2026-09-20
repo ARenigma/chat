@@ -1612,6 +1612,15 @@ describe('Truecaller OAuth authentication bridge', () => {
     expect(migration130).toContain(
       'select public.resolve_phone_owner(p_phone)',
     );
+    const migration131 = read(
+      'supabase/migrations/131_truecaller_recheck_phone_owner.sql',
+    );
+    expect(migration131).toContain(
+      'v_phone_owner := public.resolve_phone_owner(p_phone)',
+    );
+    expect(migration131).toContain(
+      'v_phone_owner <> p_user_id',
+    );
   });
 
   it('migration 127 revokes external_identities from anon and authenticated', () => {

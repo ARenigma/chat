@@ -169,6 +169,7 @@ const MIGRATIONS = [
   'supabase/migrations/128_truecaller_identity_rls.sql',
   'supabase/migrations/129_truecaller_challenge_resume.sql',
   'supabase/migrations/130_canonical_phone_owner.sql',
+  'supabase/migrations/131_truecaller_recheck_phone_owner.sql',
 ];
 
 /**

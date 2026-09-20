@@ -4,7 +4,7 @@
 -- its grants, owner resolution, conflict behavior, idempotency, challenge
 -- retryability/consumption, and deletion cascade.
 begin;
-select plan(30);
+select plan(32);
 
 select has_schema('private', 'private identity schema exists');
 select has_table('private', 'external_identities', 'external identities are private');
@@ -222,6 +222,30 @@ select throws_ok(
     )$$,
   'P0002', null,
   'expired challenge cannot link'
+);
+
+-- A different auth path can claim the phone after challenge issuance. The
+-- delayed Truecaller link must re-resolve ownership inside its transaction.
+select public.create_pending_challenge(
+  'truecaller', 'tc-raced', '+919000000003', 'challenge-raced'
+);
+update auth.users
+   set phone = '919000000003'
+ where id = 'cccccccc-5100-4000-8000-000000000003';
+select throws_ok(
+  $$select public.consume_and_link_pending_challenge(
+      'challenge-raced',
+      'cccccccc-5100-4000-8000-000000000002'
+    )$$,
+  'P0001', null,
+  'a delayed challenge cannot override a newly claimed phone'
+);
+select is(
+  (select consumed_at is null
+     from private.pending_identity_challenges
+    where challenge_hash = 'challenge-raced'),
+  true,
+  'ownership conflict leaves the challenge unconsumed'
 );
 
 -- Auth-user deletion cascades identity ownership.

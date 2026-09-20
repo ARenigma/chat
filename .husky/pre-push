@@ -1,5 +1,7 @@
 # Nothing reaches a remote without deterministic checks, changed-code security,
 # and a completed finding-free Greptile review for the exact commit being pushed.
+set -eu
+
 remote="${1:-origin}"
 head_sha="$(git rev-parse HEAD)"
 zero_sha="0000000000000000000000000000000000000000"

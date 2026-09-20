@@ -8,6 +8,7 @@ const read = (path: string): string =>
 describe('verification-before-remote pipeline', () => {
   it('keeps commit and push gates at the right cost boundary', () => {
     const preCommit = read('.husky/pre-commit');
+    expect(preCommit).toContain('set -eu');
     expect(preCommit).toContain('security:staged');
     expect(preCommit).toContain('lint-staged');
     expect(preCommit).toContain('tsc --noEmit');
@@ -17,6 +18,7 @@ describe('verification-before-remote pipeline', () => {
     expect(postCommit).toContain('review:greptile');
 
     const prePush = read('.husky/pre-push');
+    expect(prePush).toContain('set -eu');
     expect(prePush).toContain('npm run verify');
     expect(prePush).toContain('security:push');
     expect(prePush).toContain('while read -r local_ref local_sha');
@@ -108,6 +110,7 @@ describe('verification-before-remote pipeline', () => {
     const control = read('scripts/control-pappal.mjs');
     expect(control).toContain('function deviceShellQuote');
     expect(control).toContain('deviceShellQuote(uri)');
+    expect(control).toContain('text.split(/([ %])/).filter(Boolean)');
     expect(control).toContain(
       'press accepts an uppercase Android key name or numeric keycode.',
     );

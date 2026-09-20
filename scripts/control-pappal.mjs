@@ -424,16 +424,14 @@ switch (command) {
         2,
       );
     }
-    // `adb shell` joins argv and invokes the device shell. Escape every
-    // non-alphanumeric character before it reaches `/system/bin/sh`; Android's
-    // input command uses `%s` for spaces.
-    const encoded = [...text]
-      .map(character => {
-        if (character === ' ') return '%s';
-        return /[A-Za-z0-9_.-]/.test(character) ? character : `\\${character}`;
-      })
-      .join('');
-    adb(['shell', 'input', 'text', encoded]);
+    // Android's input command replaces the literal sequence `%s` with a space.
+    // Send spaces and percent signs as separate invocations so user text such
+    // as `50%s` cannot be rewritten to `50 s`. Quote every chunk for the device
+    // shell; execFileSync already protects the host shell.
+    for (const chunk of text.split(/([ %])/).filter(Boolean)) {
+      const payload = chunk === ' ' ? '%s' : chunk;
+      adb(['shell', 'input', 'text', deviceShellQuote(payload)]);
+    }
     emit({ ok: true });
     break;
   }

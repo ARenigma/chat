@@ -485,7 +485,10 @@ describe('sign in with Google happens in an app-owned sheet', () => {
     // impossible". Without the fallback those users have a dead button.
     const auth = read('src/api/auth.ts');
     expect(auth).toContain('credentialSheetAvailable()');
-    expect(auth).toMatch(/await signInWith\('google'\);\s*\n\s*return 'redirected';/);
+    expect(auth).toContain("await signInWith(");
+    expect(auth).toContain("? TRUECALLER_LINK_REDIRECT_URL");
+    expect(auth).toContain(": AUTH_REDIRECT_URL");
+    expect(auth).toMatch(/return 'redirected';/);
   });
 
   it('goes through the sheet too, not the browser', () => {

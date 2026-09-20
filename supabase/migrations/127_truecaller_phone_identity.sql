@@ -210,6 +210,7 @@ set search_path = ''
 as $$
 declare
   v_existing private.external_identities%rowtype;
+  v_phone_owner uuid;
 begin
   if p_provider <> 'truecaller'
      or p_subject is null or btrim(p_subject) = ''
@@ -222,6 +223,15 @@ begin
   -- racing for one phone must not get past separate subject-only locks.
   perform pg_advisory_xact_lock(hashtext('subject:' || p_provider || ':' || p_subject));
   perform pg_advisory_xact_lock(hashtext('phone:' || p_phone));
+
+  -- The phone may have been unowned when a pending challenge was issued but
+  -- claimed by Firebase/OTP/verified-profile auth before this delayed link.
+  -- Re-resolve under the phone lock and refuse cross-user ownership.
+  v_phone_owner := public.resolve_phone_owner(p_phone);
+  if v_phone_owner is not null and v_phone_owner <> p_user_id then
+    raise exception 'identity conflict: phone already owned by a different user'
+      using errcode = 'P0001';
+  end if;
 
   select * into v_existing
     from private.external_identities
