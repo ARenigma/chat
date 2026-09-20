@@ -40,7 +40,7 @@
       Signing SHA-1s as separate credentials in the portal.
       https://docs.truecaller.com/truecaller-sdk/android/latest-oauth-sdk-3.3.0/integration-steps/setup
     -->
-    <string name="clientID">pj5jqxyphh0ijxw1hkq4dlpix-qhkjj262xxrr1iplc</string>
+    <string name="clientID">eq9oguwehbperyo1mnhyyleonpsz8wnbptonnth-rk0</string>
 
     <!-- The incoming call notification's content line. CallStyle.forIncomingCall
          "will have a default content text for an incoming call"
