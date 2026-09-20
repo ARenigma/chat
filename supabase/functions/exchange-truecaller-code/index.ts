@@ -176,24 +176,28 @@ Deno.serve(async request => {
   });
 
   try {
-    // a. Check whether this Truecaller subject is already mapped.
-    const { data: existingBySubject } = await admin
-      .from('external_identities')
-      .select('user_id')
-      .eq('provider', 'truecaller')
-      .eq('subject', sub)
-      .maybeSingle()
-      .schema('private');
+    // a. Resolve through a service-role-only RPC. The private schema is
+    // deliberately absent from PostgREST's exposed schema list.
+    const { data: existingBySubject, error: subjectError } = await admin.rpc(
+      'resolve_external_identity',
+      {
+        p_provider: 'truecaller',
+        p_subject: sub,
+      },
+    );
+    if (subjectError) throw subjectError;
 
-    if (existingBySubject?.user_id) {
-      // Returning Truecaller user — upsert to pick up any phone change, then mint.
-      await admin.rpc('upsert_external_identity', {
+    if (typeof existingBySubject === 'string' && existingBySubject !== '') {
+      // Returning Truecaller user — exact identity retry is idempotent; a phone
+      // change fails closed in the RPC rather than silently moving ownership.
+      const { error: upsertError } = await admin.rpc('upsert_external_identity', {
         p_provider: 'truecaller',
         p_subject: sub,
         p_phone: phone,
-        p_user_id: existingBySubject.user_id,
+        p_user_id: existingBySubject,
       });
-      const email = await ensureEmail(admin, existingBySubject.user_id);
+      if (upsertError) throw upsertError;
+      const email = await ensureEmail(admin, existingBySubject);
       const session = await mintSession(admin, anon, email);
       return Response.json(session, {
         headers: { 'Cache-Control': 'no-store' },
@@ -205,12 +209,13 @@ Deno.serve(async request => {
 
     if (existingUserId) {
       // First Truecaller sign-in for an existing phone-owner: link and mint.
-      await admin.rpc('upsert_external_identity', {
+      const { error: upsertError } = await admin.rpc('upsert_external_identity', {
         p_provider: 'truecaller',
         p_subject: sub,
         p_phone: phone,
         p_user_id: existingUserId,
       });
+      if (upsertError) throw upsertError;
       const email = await ensureEmail(admin, existingUserId);
       const session = await mintSession(admin, anon, email);
       return Response.json(session, {
@@ -234,12 +239,13 @@ Deno.serve(async request => {
       .map(b => b.toString(16).padStart(2, '0'))
       .join('');
 
-    await admin.rpc('create_pending_challenge', {
+    const { error: challengeError } = await admin.rpc('create_pending_challenge', {
       p_provider:       'truecaller',
       p_subject:        sub,
       p_phone:          phone,
       p_challenge_hash: challengeHash,
     });
+    if (challengeError) throw challengeError;
 
     return Response.json(
       { status: 'no_owner', challenge: challengeToken },

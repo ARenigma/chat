@@ -34,6 +34,7 @@ class MainActivity : ReactActivity() {
 
   companion object {
     const val BENCHMARK_READ_ONLY_EXTRA = "benchmark_read_only"
+    private const val TAG = "MainActivity"
 
     /**
      * Captured before ReactActivity creates the React surface, so TurboModule
@@ -94,15 +95,82 @@ class MainActivity : ReactActivity() {
   }
 
   private val tcOAuthCallback = object : TcOAuthCallback {
+    override fun onSdkReady() {
+      val promise = pendingTruecallerPromise.get() ?: return
+      val stateValue = truecallerState
+      val verifier = truecallerCodeVerifier
+      if (stateValue == null || verifier == null) {
+        if (pendingTruecallerPromise.compareAndSet(promise, null)) {
+          promise.reject(
+            TruecallerOAuthModule.E_UNAVAILABLE,
+            "Truecaller attempt state was lost.",
+          )
+        }
+        return
+      }
+
+      try {
+        if (!TcSdk.getInstance().isOAuthFlowUsable) {
+          if (pendingTruecallerPromise.compareAndSet(promise, null)) {
+            clearTruecallerAttempt()
+            promise.reject(
+              TruecallerOAuthModule.E_UNAVAILABLE,
+              "Truecaller is not available on this device.",
+            )
+          }
+          return
+        }
+
+        val challenge = CodeVerifierUtil.getCodeChallenge(verifier)
+        if (challenge == null) {
+          if (pendingTruecallerPromise.compareAndSet(promise, null)) {
+            clearTruecallerAttempt()
+            promise.reject(
+              TruecallerOAuthModule.E_FAILED,
+              "Device cannot produce a PKCE code challenge.",
+            )
+          }
+          return
+        }
+
+        TcSdk.getInstance().setOAuthState(stateValue)
+        TcSdk.getInstance().setOAuthScopes(arrayOf("openid", "phone"))
+        TcSdk.getInstance().setCodeChallenge(challenge)
+        runOnUiThread {
+          TcSdk.getInstance().getAuthorizationCode(
+            this@MainActivity,
+            truecallerLauncher,
+          )
+        }
+      } catch (error: Exception) {
+        if (pendingTruecallerPromise.compareAndSet(promise, null)) {
+          clearTruecallerAttempt()
+          promise.reject(
+            TruecallerOAuthModule.E_FAILED,
+            error.message ?: "Truecaller SDK error.",
+            error,
+          )
+        }
+      }
+    }
+
+    override fun onVerificationRequired(error: TcOAuthError?) {
+      val promise = pendingTruecallerPromise.getAndSet(null) ?: return
+      clearTruecallerAttempt()
+      promise.reject(
+        TruecallerOAuthModule.E_UNAVAILABLE,
+        error?.errorMessage ?: "Truecaller verification is unavailable.",
+      )
+    }
+
     override fun onSuccess(data: TcOAuthData) {
       val promise = pendingTruecallerPromise.getAndSet(null) ?: run {
         Log.w(TAG, "Truecaller onSuccess: no pending promise, discarding.")
         return
       }
       val sentState = truecallerState
-      truecallerState = null
       val verifier = truecallerCodeVerifier
-      truecallerCodeVerifier = null
+      clearTruecallerAttempt()
 
       // State mismatch is a request-forgery signal; fail closed.
       if (data.state != sentState) {
@@ -127,8 +195,7 @@ class MainActivity : ReactActivity() {
         Log.w(TAG, "Truecaller onFailure (code ${error.errorCode}): no pending promise.")
         return
       }
-      truecallerState = null
-      truecallerCodeVerifier = null
+      clearTruecallerAttempt()
       val outcome = TruecallerOAuthModule.errorCodeToOutcome(error)
       promise.reject(outcome, error.errorMessage ?: "Truecaller sign-in failed (${error.errorCode}).")
     }
@@ -148,6 +215,11 @@ class MainActivity : ReactActivity() {
       return
     }
 
+    // Generate one state/verifier pair before async initialization. onSdkReady
+    // configures the initialized SDK and opens the consent sheet.
+    truecallerState = BigInteger(130, SecureRandom()).toString(32)
+    truecallerCodeVerifier = CodeVerifierUtil.generateRandomCodeVerifier()
+
     sdkScope.launch {
       try {
         // Clear any previous SDK instance so the fresh callback is wired
@@ -160,52 +232,20 @@ class MainActivity : ReactActivity() {
           .consentMode(TcSdkOptions.CONSENT_MODE_BOTTOMSHEET)
           .footerType(TcSdkOptions.FOOTER_TYPE_ANOTHER_MOBILE_NO)
           .ctaText(TcSdkOptions.CTA_TEXT_CONTINUE)
-          .setEnhancedBottomSheetEnabled(true)
           .build()
 
         TcSdk.initAsync(options)
-
-        if (!TcSdk.getInstance().isOAuthFlowUsable) {
-          // Truecaller is not installed or the account is incomplete.
-          val p = pendingTruecallerPromise.getAndSet(null) ?: return@launch
-          p.reject(TruecallerOAuthModule.E_UNAVAILABLE, "Truecaller is not available on this device.")
-          return@launch
-        }
-
-        // PKCE and state are generated fresh per attempt and held in memory only.
-        // They are nulled on every terminal resolution, so a recreated Activity
-        // with no live attempt produces E_UNAVAILABLE rather than a stale exchange.
-        val stateValue = BigInteger(130, SecureRandom()).toString(32)
-        val verifier = CodeVerifierUtil.generateRandomCodeVerifier()
-        val challenge = CodeVerifierUtil.getCodeChallenge(verifier)
-        if (challenge == null) {
-          val p = pendingTruecallerPromise.getAndSet(null) ?: return@launch
-          p.reject(TruecallerOAuthModule.E_FAILED, "Device cannot produce a PKCE code challenge.")
-          return@launch
-        }
-
-        truecallerState = stateValue
-        truecallerCodeVerifier = verifier
-
-        TcSdk.getInstance().setOAuthState(stateValue)
-        TcSdk.getInstance().setOAuthScopes(arrayOf("openid", "phone"))
-        TcSdk.getInstance().setCodeChallenge(challenge)
-
-        // Switch to the main thread for the Activity-bound SDK invocation.
-        launch(Dispatchers.Main) {
-          TcSdk.getInstance().getAuthorizationCode(this@MainActivity, truecallerLauncher)
-        }
       } catch (e: Exception) {
         val p = pendingTruecallerPromise.getAndSet(null) ?: return@launch
-        truecallerState = null
-        truecallerCodeVerifier = null
+        clearTruecallerAttempt()
         p.reject(TruecallerOAuthModule.E_FAILED, e.message ?: "Truecaller SDK error.")
       }
     }
   }
 
-  private companion object {
-    const val TAG = "MainActivity"
+  private fun clearTruecallerAttempt() {
+    truecallerState = null
+    truecallerCodeVerifier = null
   }
 
 

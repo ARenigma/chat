@@ -11,6 +11,8 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import {
   createPhoneUser,
+  ensureEmail,
+  findUserIdByPhone,
   mintSession,
 } from '../_shared/sessionBridge.ts';
 
@@ -54,26 +56,47 @@ Deno.serve(async request => {
       .map(b => b.toString(16).padStart(2, '0'))
       .join('');
 
-    const { data, error } = await admin.rpc('consume_pending_challenge', {
+    // Read without consuming. If user creation fails, the challenge remains
+    // active and a retry is safe.
+    const { data, error } = await admin.rpc('read_pending_challenge', {
       p_challenge_hash: challengeHash,
     });
-    if (error) {
-      // P0002 = not found / consumed / expired
+    const challengeRow = Array.isArray(data) ? data[0] : data;
+    const phone =
+      challengeRow != null &&
+      typeof (challengeRow as { out_phone?: unknown }).out_phone === 'string'
+        ? (challengeRow as { out_phone: string }).out_phone
+        : null;
+    if (error || phone === null) {
       return Response.json(
         { error: 'challenge is invalid, already used, or expired' },
         { status: 409 },
       );
     }
-    const { out_provider: provider, out_subject: subject, out_phone: phone } =
-      data as { out_provider: string; out_subject: string; out_phone: string };
 
-    const { userId, email } = await createPhoneUser(admin, phone);
-    await admin.rpc('upsert_external_identity', {
-      p_provider: provider,
-      p_subject:  subject,
-      p_phone:    phone,
-      p_user_id:  userId,
-    });
+    // A prior attempt may have created the user and failed before the atomic
+    // link. Resolve by phone first so retries reuse that UUID.
+    let userId = await findUserIdByPhone(admin, phone);
+    let email: string;
+    if (userId === null) {
+      const created = await createPhoneUser(admin, phone);
+      userId = created.userId;
+      email = created.email;
+    } else {
+      email = await ensureEmail(admin, userId);
+    }
+
+    // Atomic DB commit point: link identity + consume challenge in one
+    // transaction. Any conflict/error rolls both back, preserving retryability.
+    const { error: linkError } = await admin.rpc(
+      'consume_and_link_pending_challenge',
+      {
+        p_challenge_hash: challengeHash,
+        p_user_id: userId,
+      },
+    );
+    if (linkError) throw linkError;
+
     const session = await mintSession(admin, anon, email);
     return Response.json(session, { headers: { 'Cache-Control': 'no-store' } });
   } catch (err) {

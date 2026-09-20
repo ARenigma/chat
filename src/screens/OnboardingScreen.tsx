@@ -75,10 +75,12 @@ import {
   PHONE_AUTH_ENABLED,
   TruecallerOAuthError,
   confirmTruecallerNewUser,
+  clearPendingTruecallerGoogleLink,
   linkTruecallerToCurrentAccount,
   sendPhoneOtp,
   signInWithGoogle,
   signInWithTruecaller,
+  stageTruecallerGoogleLink,
   truecallerAvailable,
   verifyPhoneOtp,
 } from '../api/auth';
@@ -98,10 +100,13 @@ import {
   isLanguageSelected,
   toggleLanguage,
 } from '../lib/languagePrefs';
+import { actionForTruecallerFailure } from '../lib/truecallerAuthDomain';
 
 const BLOCK_PAD = SOURCE_METRICS.blockPad;
 const COLUMN_TOP = SOURCE_METRICS.columnTop;
 const COLUMN_INSET = SOURCE_METRICS.columnInset;
+/** Official Truecaller wordmark aspect at a 24dp auth-button height. */
+const TRUECALLER_MARK_WIDTH = 96;
 
 /** How long "Resend code" stays unavailable after an OTP is sent. */
 const RESEND_SECONDS = 30;
@@ -557,21 +562,21 @@ export function OnboardingScreen({ onDone }: Props) {
         await completeAuthentication();
       } catch (error) {
         setRoute('undecided');
-        if (
-          error instanceof TruecallerOAuthError &&
-          error.reason === 'cancelled'
-        ) {
-          setState('idle');
-          return;
-        }
-        if (
-          error instanceof TruecallerOAuthError &&
-          error.reason === 'unavailable'
-        ) {
-          // No Truecaller on this device — silently drop to the WhatsApp path.
-          setState('idle');
-          setIdentify('choose');
-          return;
+        if (error instanceof TruecallerOAuthError) {
+          const action = actionForTruecallerFailure(error.reason);
+          if (action === 'return_to_chooser') {
+            setState('idle');
+            return;
+          }
+          if (action === 'show_whatsapp_fallback') {
+            // No usable Truecaller on this device: show the WhatsApp number
+            // step, but never auto-send a code without another user press.
+            setRoute('phone');
+            setIdentify('number');
+            setState('idle');
+            setFailure(null);
+            return;
+          }
         }
         fail(
           error instanceof Error
@@ -613,22 +618,23 @@ export function OnboardingScreen({ onDone }: Props) {
     setState('loading');
     setFailure(null);
     Keyboard.dismiss();
+    stageTruecallerGoogleLink(challenge);
     void (async () => {
       try {
         const googleResult = await signInWithGoogle();
         if (googleResult === 'redirected') {
-          // After the deep-link callback, the screen unmounts. The challenge is
-          // in memory and cannot be consumed from App.tsx, so we store it in
-          // a ref that the deep-link handler can pick up — but for now we just
-          // let the member proceed without linking (they can do it later).
+          // handleAuthDeepLink consumes the staged challenge after installing
+          // the Google session, before it reports signedIn to App.tsx.
           return;
         }
         // Link the Truecaller identity to the freshly signed-in Google account.
         await linkTruecallerToCurrentAccount(challenge);
+        clearPendingTruecallerGoogleLink();
         setTruecallerChallenge(null);
         await completeAuthentication();
       } catch (error) {
         setRoute('undecided');
+        clearPendingTruecallerGoogleLink();
         if (
           error instanceof GoogleCredentialError &&
           error.reason === 'cancelled'
@@ -1358,15 +1364,20 @@ export function OnboardingScreen({ onDone }: Props) {
                         <LoadingIndicator size={20} containerColor="transparent" />
                       ) : (
                         <>
+                          <Text
+                            maxFontSizeMultiplier={
+                              TOKENS.fontScaleCap.titleMediumEmphasized
+                            }
+                            allowFontScaling
+                            style={styles.googleLabel}>
+                            Continue with
+                          </Text>
                           <Image
                             source={require('../../assets/brands/truecaller.png')}
-                            style={styles.googleMark}
+                            style={styles.truecallerMark}
                             resizeMode="contain"
                             accessibilityIgnoresInvertColors
                           />
-                          <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.googleLabel}>
-                            Continue with Truecaller
-                          </Text>
                         </>
                       )}
                     </Pressable>
@@ -2151,6 +2162,10 @@ const makeStyles = (t: Theme) =>
     googleMark: {
       width: 20,
       height: 20,
+    },
+    truecallerMark: {
+      width: TRUECALLER_MARK_WIDTH,
+      height: TOKENS.space.xl,
     },
     // SECONDARY: outline pill. The sign-in ("choose") surface is a LIGHT warm
     // field, so a translucent-white glass fill would vanish. A transparent pill

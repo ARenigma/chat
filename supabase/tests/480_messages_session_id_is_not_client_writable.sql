@@ -18,6 +18,21 @@ insert into auth.users (id) values
   ('dd480000-0000-4000-8000-000000000001'),  -- sender
   ('ee480000-0000-4000-8000-000000000002'); -- recipient
 
+-- open_conversation now requires an admitted provider. This suite predates that
+-- invariant, so create the same minimal approved-provider fixture used by the
+-- call suites rather than failing before any guard assertion runs.
+insert into public.provider_applications
+  (user_id, display_name, date_of_birth, languages)
+values (
+  'ee480000-0000-4000-8000-000000000002',
+  'Guard Provider 480',
+  (current_date - interval '26 years')::date,
+  array['English']
+);
+select public.approve_provider_application(
+  'ee480000-0000-4000-8000-000000000002'
+);
+
 set local role authenticated;
 set local request.jwt.claims =
   '{"sub":"dd480000-0000-4000-8000-000000000001","role":"authenticated"}';
@@ -28,14 +43,18 @@ values (
   public.open_conversation('ee480000-0000-4000-8000-000000000002')
 );
 
-do $$
-begin
-  perform public.send_message(
-    (select v from test.fixture where k = 'thread480'),
-    'hello, 480'
-  );
-end$$;
+-- This suite tests the UPDATE guard, not the paid-send/session preconditions.
+-- Insert the fixture as the database owner so a future send_message gate cannot
+-- make the UPDATE match zero rows and turn every throws_ok into a false failure.
+reset role;
+insert into public.messages (conversation_id, sender_id, body)
+values (
+  (select v from test.fixture where k = 'thread480'),
+  'dd480000-0000-4000-8000-000000000001',
+  'hello, 480'
+);
 
+set local role authenticated;
 set local request.jwt.claims =
   '{"sub":"ee480000-0000-4000-8000-000000000002","role":"authenticated"}';
 

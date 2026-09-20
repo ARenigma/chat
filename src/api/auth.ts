@@ -14,6 +14,12 @@ import {
 export { truecallerAvailable } from '../lib/truecallerOAuth';
 import { AUTH_REDIRECT_URL, ENV } from '../lib/env';
 import { normalisePhone } from '../lib/phone';
+import { storage } from '../lib/storage';
+import {
+  parsePendingTruecallerGoogleLink,
+  parseTruecallerExchange,
+  serializePendingTruecallerGoogleLink,
+} from '../lib/truecallerAuthDomain';
 import {
   firebaseConfirmOtp,
   firebaseSendOtp,
@@ -409,6 +415,36 @@ export type TruecallerResult =
   | { status: 'session' }
   | { status: 'no_owner'; challenge: string };
 
+const TRUECALLER_GOOGLE_LINK_KEY = 'auth.truecallerGoogleLink';
+const TRUECALLER_CHALLENGE_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Persist only the opaque, one-time server challenge while browser Google OAuth
+ * leaves the app. The verified phone/subject never enter JS storage. The record
+ * expires with the server-side challenge and is removed on every terminal path.
+ */
+export function stageTruecallerGoogleLink(challenge: string): void {
+  storage.set(
+    TRUECALLER_GOOGLE_LINK_KEY,
+    serializePendingTruecallerGoogleLink(
+      challenge,
+      Date.now() + TRUECALLER_CHALLENGE_TTL_MS,
+    ),
+  );
+}
+
+function pendingTruecallerGoogleLink(): string | null {
+  const raw = storage.get(TRUECALLER_GOOGLE_LINK_KEY);
+  const pending = parsePendingTruecallerGoogleLink(raw, Date.now());
+  if (pending !== null) return pending.challenge;
+  storage.remove(TRUECALLER_GOOGLE_LINK_KEY);
+  return null;
+}
+
+export function clearPendingTruecallerGoogleLink(): void {
+  storage.remove(TRUECALLER_GOOGLE_LINK_KEY);
+}
+
 /**
  * Sign in with Truecaller: consent sheet → server PKCE exchange →
  * verified-phone account resolution → Supabase session.
@@ -449,26 +485,18 @@ export async function signInWithTruecaller(): Promise<TruecallerResult> {
     );
   }
 
-  const data = (await response.json()) as {
-    status?: string;
-    challenge?: string;
-    access_token?: string;
-    refresh_token?: string;
-  };
+  const outcome = parseTruecallerExchange(await response.json());
 
   // No-owner: first time this phone number appears on Pappal.
-  if (data.status === 'no_owner' && typeof data.challenge === 'string') {
-    return { status: 'no_owner', challenge: data.challenge };
+  if (outcome.status === 'no_owner') {
+    return { status: 'no_owner', challenge: outcome.challenge };
   }
 
   // Matched user: install the session.
-  if (
-    typeof data.access_token === 'string' &&
-    typeof data.refresh_token === 'string'
-  ) {
+  if (outcome.status === 'session') {
     const { error } = await supabase.auth.setSession({
-      access_token: data.access_token,
-      refresh_token: data.refresh_token,
+      access_token: outcome.accessToken,
+      refresh_token: outcome.refreshToken,
     });
     if (error != null) {
       throw new TruecallerOAuthError('failed', 'Could not complete sign-in. Please try again.');
@@ -504,16 +532,21 @@ export async function confirmTruecallerNewUser(challenge: string): Promise<void>
   if (!response.ok) {
     throw new TruecallerOAuthError('failed', 'Could not create your account. Please try again.');
   }
-  const data = (await response.json()) as { access_token?: string; refresh_token?: string };
-  if (typeof data.access_token === 'string' && typeof data.refresh_token === 'string') {
+  const outcome = parseTruecallerExchange(await response.json());
+  if (outcome.status === 'session') {
     const { error } = await supabase.auth.setSession({
-      access_token: data.access_token,
-      refresh_token: data.refresh_token,
+      access_token: outcome.accessToken,
+      refresh_token: outcome.refreshToken,
     });
     if (error != null) {
       throw new TruecallerOAuthError('failed', 'Could not complete sign-in. Please try again.');
     }
+    return;
   }
+  throw new TruecallerOAuthError(
+    'failed',
+    'Unexpected response while creating your account.',
+  );
 }
 
 /**
@@ -716,6 +749,26 @@ export async function handleAuthDeepLink(
       status: 'failed',
       message: 'Could not finish signing in. Please try again.',
     };
+  }
+
+  // Browser Google fallback for a pending Truecaller continuity link. The
+  // onboarding screen was unmounted while the browser owned focus, so the
+  // opaque challenge was staged in MMKV. Link before reporting signedIn; if
+  // linking fails, sign back out so App.tsx never enters a Google session whose
+  // Truecaller identity was silently lost.
+  const pendingChallenge = pendingTruecallerGoogleLink();
+  if (pendingChallenge !== null) {
+    try {
+      await linkTruecallerToCurrentAccount(pendingChallenge);
+      clearPendingTruecallerGoogleLink();
+    } catch {
+      clearPendingTruecallerGoogleLink();
+      await supabase.auth.signOut();
+      return {
+        status: 'failed',
+        message: 'Google sign-in worked, but we could not link your verified number. Please retry.',
+      };
+    }
   }
   return { status: 'signedIn' };
 }

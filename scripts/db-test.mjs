@@ -827,6 +827,11 @@ const suites = [
     label:
       'a simultaneous call in the same conversation is refused with ALREADY_RINGING, not silently replaced',
   },
+  {
+    file: join(ROOT, 'supabase/tests/510_truecaller_identity_linking.sql'),
+    label:
+      'Truecaller identity ownership, conflicts, grants, challenge replay, and deletion cascade',
+  },
 ];
 
 let passed = 0;

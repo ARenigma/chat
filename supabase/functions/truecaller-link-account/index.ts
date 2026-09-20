@@ -19,7 +19,8 @@ Deno.serve(async request => {
   }
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  if (!supabaseUrl || !serviceKey) {
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
+  if (!supabaseUrl || !serviceKey || !anonKey) {
     return Response.json({ error: 'server configuration error' }, { status: 500 });
   }
 
@@ -48,7 +49,8 @@ Deno.serve(async request => {
   });
   // Use the caller's bearer to resolve their user id — we must not trust the client
   // to supply their own UUID.
-  const userClient = createClient(supabaseUrl, bearer, {
+  const userClient = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: `Bearer ${bearer}` } },
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
@@ -67,24 +69,21 @@ Deno.serve(async request => {
       .map(b => b.toString(16).padStart(2, '0'))
       .join('');
 
-    const { data, error: consumeError } = await admin.rpc('consume_pending_challenge', {
-      p_challenge_hash: challengeHash,
-    });
-    if (consumeError) {
+    // Atomic DB commit point: validate active challenge, bind the identity to
+    // this authenticated UUID, then mark consumed in the same transaction.
+    const { error: linkError } = await admin.rpc(
+      'consume_and_link_pending_challenge',
+      {
+        p_challenge_hash: challengeHash,
+        p_user_id: userId,
+      },
+    );
+    if (linkError) {
       return Response.json(
-        { error: 'challenge is invalid, already used, or expired' },
+        { error: 'challenge is invalid, conflicting, already used, or expired' },
         { status: 409 },
       );
     }
-    const { out_provider: provider, out_subject: subject, out_phone: phone } =
-      data as { out_provider: string; out_subject: string; out_phone: string };
-
-    await admin.rpc('upsert_external_identity', {
-      p_provider: provider,
-      p_subject:  subject,
-      p_phone:    phone,
-      p_user_id:  userId,
-    });
 
     return Response.json({ status: 'linked' }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (err) {

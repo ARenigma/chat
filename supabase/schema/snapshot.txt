@@ -40,6 +40,8 @@ COLUMN call_quality_runs.termination_reason text null=YES default=-
 COLUMN call_quality_runs.transport text null=YES default=-
 COLUMN call_quality_runs.user_id uuid null=NO default=-
 COLUMN call_quality_samples.audio_concealed_samples bigint null=YES default=-
+COLUMN call_quality_samples.audio_loss_rate numeric null=YES default=-
+COLUMN call_quality_samples.audio_mos_value integer null=YES default=-
 COLUMN call_quality_samples.bitrate_kbps numeric null=YES default=-
 COLUMN call_quality_samples.bytes_received bigint null=YES default=-
 COLUMN call_quality_samples.bytes_sent bigint null=YES default=-
@@ -54,6 +56,7 @@ COLUMN call_quality_samples.freeze_duration_ms numeric null=YES default=-
 COLUMN call_quality_samples.id bigint null=NO default=-
 COLUMN call_quality_samples.jitter_ms numeric null=YES default=-
 COLUMN call_quality_samples.nack_count bigint null=YES default=-
+COLUMN call_quality_samples.network_quality integer null=YES default=-
 COLUMN call_quality_samples.network_transport text null=YES default=-
 COLUMN call_quality_samples.packets_lost bigint null=YES default=-
 COLUMN call_quality_samples.packets_received bigint null=YES default=-
@@ -65,6 +68,7 @@ COLUMN call_quality_samples.rtt_ms numeric null=YES default=-
 COLUMN call_quality_samples.run_id uuid null=NO default=-
 COLUMN call_quality_samples.selected_route text null=YES default=-
 COLUMN call_quality_samples.thermal_status integer null=YES default=-
+COLUMN call_quality_samples.video_loss_rate numeric null=YES default=-
 COLUMN calls.callee_id uuid null=NO default=-
 COLUMN calls.caller_id uuid null=NO default=-
 COLUMN calls.conversation_id uuid null=NO default=-
@@ -84,6 +88,9 @@ COLUMN calls.session_request_id uuid null=YES default=-
 COLUMN calls.started_at timestamp with time zone null=YES default=-
 COLUMN calls.status USER-DEFINED null=NO default='ringing'::call_status
 COLUMN calls.tokens_debited integer null=NO default=0
+COLUMN calls.upgrade_requested_at timestamp with time zone null=YES default=-
+COLUMN calls.upgrade_requested_by uuid null=YES default=-
+COLUMN calls.upgrade_to_medium text null=YES default=-
 COLUMN conversation_labels.conversation_id uuid null=NO default=-
 COLUMN conversation_labels.custom_name text null=NO default=-
 COLUMN conversation_labels.updated_at timestamp with time zone null=NO default=now()
@@ -145,6 +152,14 @@ COLUMN first_recharge_discounts.claimed_at timestamp with time zone null=NO defa
 COLUMN first_recharge_discounts.discount_bps integer null=NO default=-
 COLUMN first_recharge_discounts.order_id uuid null=NO default=-
 COLUMN first_recharge_discounts.user_id uuid null=NO default=-
+COLUMN home_suggestion_campaigns.conversation_id uuid null=YES default=-
+COLUMN home_suggestion_campaigns.created_at timestamp with time zone null=NO default=now()
+COLUMN home_suggestion_campaigns.id uuid null=NO default=gen_random_uuid()
+COLUMN home_suggestion_campaigns.member_id uuid null=NO default=-
+COLUMN home_suggestion_campaigns.outcome text null=NO default='shown'::text
+COLUMN home_suggestion_campaigns.prompt_number smallint null=NO default=-
+COLUMN home_suggestion_campaigns.provider_id uuid null=NO default=-
+COLUMN home_suggestion_campaigns.shown_at timestamp with time zone null=NO default=now()
 COLUMN invoice_counters.fy text null=NO default=-
 COLUMN invoice_counters.last_seq bigint null=NO default=0
 COLUMN invoices.buyer jsonb null=NO default=-
@@ -579,6 +594,11 @@ COLUMN token_transactions.status text null=NO default='succeeded'::text
 COLUMN token_transactions.tokens_delta integer null=NO default=-
 COLUMN token_transactions.updated_at timestamp with time zone null=NO default=now()
 COLUMN token_transactions.user_id uuid null=YES default=-
+COLUMN user_favorites.created_at timestamp with time zone null=NO default=now()
+COLUMN user_favorites.id uuid null=NO default=gen_random_uuid()
+COLUMN user_favorites.liked_id uuid null=NO default=-
+COLUMN user_favorites.liked_role text null=NO default=-
+COLUMN user_favorites.liker_id uuid null=NO default=-
 CONSTRAINT app_flags.app_flags_pkey PRIMARY KEY (key)
 CONSTRAINT blocks.blocks_blocked_id_fkey FOREIGN KEY (blocked_id) REFERENCES profiles(id) ON DELETE CASCADE
 CONSTRAINT blocks.blocks_blocker_id_fkey FOREIGN KEY (blocker_id) REFERENCES profiles(id) ON DELETE CASCADE
@@ -595,6 +615,7 @@ CONSTRAINT call_quality_runs.call_quality_runs_call_id_user_id_key UNIQUE (call_
 CONSTRAINT call_quality_runs.call_quality_runs_pkey PRIMARY KEY (id)
 CONSTRAINT call_quality_runs.call_quality_runs_role_check CHECK ((role = ANY (ARRAY['caller'::text, 'callee'::text])))
 CONSTRAINT call_quality_runs.call_quality_runs_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+CONSTRAINT call_quality_samples.call_quality_samples_network_quality_check CHECK (((network_quality >= 0) AND (network_quality <= 6)))
 CONSTRAINT call_quality_samples.call_quality_samples_pkey PRIMARY KEY (id)
 CONSTRAINT call_quality_samples.call_quality_samples_quality_check CHECK (((quality >= 0) AND (quality <= 6)))
 CONSTRAINT call_quality_samples.call_quality_samples_run_id_fkey FOREIGN KEY (run_id) REFERENCES call_quality_runs(id) ON DELETE CASCADE
@@ -610,6 +631,8 @@ CONSTRAINT calls.calls_minutes_billed_check CHECK ((minutes_billed >= 0))
 CONSTRAINT calls.calls_pkey PRIMARY KEY (id)
 CONSTRAINT calls.calls_session_request_id_fkey FOREIGN KEY (session_request_id) REFERENCES session_requests(id)
 CONSTRAINT calls.calls_tokens_debited_check CHECK ((tokens_debited >= 0))
+CONSTRAINT calls.calls_upgrade_requested_by_fkey FOREIGN KEY (upgrade_requested_by) REFERENCES profiles(id)
+CONSTRAINT calls.calls_upgrade_to_medium_check CHECK ((upgrade_to_medium = ANY (ARRAY['audio'::text, 'video'::text])))
 CONSTRAINT conversation_labels.conversation_labels_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 CONSTRAINT conversation_labels.conversation_labels_custom_name_check CHECK (((char_length(btrim(custom_name)) >= 1) AND (char_length(btrim(custom_name)) <= 40)))
 CONSTRAINT conversation_labels.conversation_labels_pkey PRIMARY KEY (user_id, conversation_id)
@@ -630,6 +653,11 @@ CONSTRAINT events.events_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(
 CONSTRAINT first_recharge_discounts.first_recharge_discounts_discount_bps_check CHECK (((discount_bps > 0) AND (discount_bps < 10000)))
 CONSTRAINT first_recharge_discounts.first_recharge_discounts_pkey PRIMARY KEY (user_id)
 CONSTRAINT first_recharge_discounts.first_recharge_discounts_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT home_suggestion_campaigns.home_suggestion_campaigns_member_id_fkey FOREIGN KEY (member_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT home_suggestion_campaigns.home_suggestion_campaigns_outcome_check CHECK ((outcome = ANY (ARRAY['shown'::text, 'accepted'::text, 'declined'::text, 'expired'::text])))
+CONSTRAINT home_suggestion_campaigns.home_suggestion_campaigns_pkey PRIMARY KEY (id)
+CONSTRAINT home_suggestion_campaigns.home_suggestion_campaigns_prompt_number_check CHECK (((prompt_number >= 1) AND (prompt_number <= 3)))
+CONSTRAINT home_suggestion_campaigns.home_suggestion_campaigns_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES profiles(id) ON DELETE CASCADE
 CONSTRAINT invoice_counters.invoice_counters_pkey PRIMARY KEY (fy)
 CONSTRAINT invoices.invoices_document_type_check CHECK ((document_type = ANY (ARRAY['tax_invoice'::text, 'bill_of_supply'::text])))
 CONSTRAINT invoices.invoices_invoice_number_key UNIQUE (invoice_number)
@@ -781,6 +809,11 @@ CONSTRAINT token_transactions.token_transactions_pkey PRIMARY KEY (id)
 CONSTRAINT token_transactions.token_transactions_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES profiles(id) ON DELETE SET NULL
 CONSTRAINT token_transactions.token_transactions_status_check CHECK ((status = ANY (ARRAY['created'::text, 'succeeded'::text, 'failed'::text, 'refunded'::text])))
 CONSTRAINT token_transactions.token_transactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE SET NULL
+CONSTRAINT user_favorites.user_favorites_liked_id_fkey FOREIGN KEY (liked_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT user_favorites.user_favorites_liked_role_check CHECK ((liked_role = ANY (ARRAY['member'::text, 'provider'::text])))
+CONSTRAINT user_favorites.user_favorites_liker_id_fkey FOREIGN KEY (liker_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT user_favorites.user_favorites_liker_id_liked_id_key UNIQUE (liker_id, liked_id)
+CONSTRAINT user_favorites.user_favorites_pkey PRIMARY KEY (id)
 ENUM application_status = draft,submitted,under_review,needs_info,approved,rejected
 ENUM call_media_backend = current,livekit,agora
 ENUM call_medium = voice,video
@@ -1127,6 +1160,8 @@ FUNCTION composite_owner_is(name, name, name) returns text security=invoker
 FUNCTION composite_owner_is(name, name, name, text) returns text security=invoker
 FUNCTION composite_owner_is(name, name, text) returns text security=invoker
 FUNCTION confirm_chat_session(p_request_id uuid) returns uuid security=definer
+FUNCTION consume_and_link_pending_challenge(p_challenge_hash text, p_user_id uuid) returns void security=definer
+FUNCTION create_pending_challenge(p_provider text, p_subject text, p_phone text, p_challenge_hash text) returns void security=definer
 FUNCTION create_provider_payout_batch(p_provider_id uuid, p_ignore_minimum boolean) returns TABLE(batch_id uuid, total_tokens integer, total_paise integer, method text, beneficiary_id text) security=definer
 FUNCTION create_session_request(p_conversation_id uuid, p_channel session_channel) returns uuid security=definer
 FUNCTION credit_promo_tokens(p_user_id uuid, p_amount integer, p_reason text) returns integer security=definer
@@ -1252,6 +1287,8 @@ FUNCTION functions_are(name[], text) returns text security=invoker
 FUNCTION get_active_config(p_domain text) returns jsonb security=definer
 FUNCTION get_active_session(p_conversation_id uuid) returns jsonb security=definer
 FUNCTION get_chat_consent(p_conversation_id uuid) returns jsonb security=definer
+FUNCTION get_home_suggestions() returns jsonb security=definer
+FUNCTION get_my_favorites() returns jsonb security=definer
 FUNCTION get_pending_session_request(p_conversation_id uuid) returns jsonb security=definer
 FUNCTION get_provider_ratings(p_provider_id uuid, p_recent_limit integer) returns jsonb security=definer
 FUNCTION get_public_config(p_domain text) returns jsonb security=definer
@@ -1266,10 +1303,12 @@ FUNCTION guard_message_columns() returns trigger security=invoker
 FUNCTION guard_message_edit_columns() returns trigger security=invoker
 FUNCTION guard_message_reply_and_voice() returns trigger security=invoker
 FUNCTION guard_message_retention_columns() returns trigger security=invoker
+FUNCTION guard_message_session_and_dedup_columns() returns trigger security=invoker
 FUNCTION guard_phone_columns() returns trigger security=invoker
 FUNCTION guard_pii_columns() returns trigger security=invoker
 FUNCTION guard_presence_columns() returns trigger security=invoker
 FUNCTION guard_privileged_profile_columns() returns trigger security=invoker
+FUNCTION guard_provider_avatar_is_a_photograph() returns trigger security=invoker
 FUNCTION guard_provider_photo_columns() returns trigger security=invoker
 FUNCTION handle_new_user() returns trigger security=definer
 FUNCTION has_cast(name, name) returns text security=invoker
@@ -1805,15 +1844,18 @@ FUNCTION provider_is_listed(p_provider_id uuid) returns boolean security=definer
 FUNCTION provider_offers_channel(p_provider_id uuid, p_channel session_channel) returns boolean security=definer
 FUNCTION provider_photos_single_primary() returns trigger security=definer
 FUNCTION provider_photos_sync_avatar() returns trigger security=definer
+FUNCTION purge_expired_challenges() returns void security=definer
 FUNCTION purge_expired_evidence() returns integer security=definer
 FUNCTION purge_expired_hidden_content() returns integer security=definer
 FUNCTION purge_expired_reports() returns integer security=definer
 FUNCTION purge_orphaned_attachments() returns integer security=definer
 FUNCTION purge_orphaned_voice_notes() returns integer security=definer
 FUNCTION purge_session_content(p_session_id uuid) returns integer security=definer
+FUNCTION read_pending_challenge(p_challenge_hash text, OUT out_provider text, OUT out_subject text, OUT out_phone text) returns record security=definer
 FUNCTION record_call_quality_samples(p_call_id uuid, p_samples jsonb) returns integer security=definer
 FUNCTION record_invoice(p_transaction_id uuid, p_document_type text, p_fy text, p_seller jsonb, p_buyer jsonb, p_place_of_supply text, p_taxable_paise integer, p_cgst_paise integer, p_sgst_paise integer, p_igst_paise integer, p_total_paise integer, p_gst_rate_bps integer) returns jsonb security=definer
 FUNCTION record_provider_accrual(p_provider_id uuid, p_session_id uuid, p_minutes_billed integer, p_rate_per_min integer, p_provider_share_percent integer, p_payout_hold_days integer, p_config_version_id uuid) returns void security=definer
+FUNCTION record_suggestion_outcome(p_provider_id uuid, p_prompt_number smallint, p_outcome text, p_conversation_id uuid) returns void security=definer
 FUNCTION refresh_media_channel_usage_estimates(p_since timestamp with time zone) returns integer security=definer
 FUNCTION refresh_provider_rating() returns trigger security=definer
 FUNCTION refresh_reply_latencies() returns integer security=definer
@@ -1825,6 +1867,10 @@ FUNCTION relation_owner_is(name, name, name) returns text security=invoker
 FUNCTION relation_owner_is(name, name, name, text) returns text security=invoker
 FUNCTION relation_owner_is(name, name, text) returns text security=invoker
 FUNCTION request_application_info(p_user_id uuid, p_missing text[], p_note text) returns void security=definer
+FUNCTION request_media_upgrade(p_call_id uuid, p_to_medium text) returns jsonb security=definer
+FUNCTION resolve_external_identity(p_provider text, p_subject text) returns uuid security=definer
+FUNCTION resolve_phone_owner(p_phone text) returns uuid security=definer
+FUNCTION respond_media_upgrade(p_call_id uuid, p_accept boolean) returns jsonb security=definer
 FUNCTION results_eq(refcursor, anyarray) returns text security=invoker
 FUNCTION results_eq(refcursor, anyarray, text) returns text security=invoker
 FUNCTION results_eq(refcursor, refcursor) returns text security=invoker
@@ -1966,6 +2012,7 @@ FUNCTION todo(why text, how_many integer) returns SETOF boolean security=invoker
 FUNCTION todo_end() returns SETOF boolean security=invoker
 FUNCTION todo_start() returns SETOF boolean security=invoker
 FUNCTION todo_start(text) returns SETOF boolean security=invoker
+FUNCTION toggle_favorite(p_liked_id uuid) returns jsonb security=definer
 FUNCTION toggle_reaction(p_message_id uuid, p_emoji text) returns json security=definer
 FUNCTION touch_chat() returns trigger security=definer
 FUNCTION touch_presence() returns void security=definer
@@ -1991,6 +2038,7 @@ FUNCTION unalike(anyelement, text) returns text security=invoker
 FUNCTION unalike(anyelement, text, text) returns text security=invoker
 FUNCTION unialike(anyelement, text) returns text security=invoker
 FUNCTION unialike(anyelement, text, text) returns text security=invoker
+FUNCTION upsert_external_identity(p_provider text, p_subject text, p_phone text, p_user_id uuid) returns void security=definer
 FUNCTION upsert_media_channel_usage_analytics(p_call_id uuid, p_duration_seconds integer, p_participant_acu numeric, p_raw jsonb) returns uuid security=definer
 FUNCTION upsert_media_vendor_usage_daily(p_backend call_media_backend, p_project_id text, p_usage_date date, p_duration_audio_seconds bigint, p_duration_video_hd_seconds bigint, p_duration_video_hdp_seconds bigint, p_duration_video_1080p_seconds bigint, p_duration_video_2k_seconds bigint, p_duration_video_4k_seconds bigint, p_source text, p_raw jsonb, p_cost_paise_override integer) returns uuid security=definer
 FUNCTION upsert_my_payout_account(p_method text, p_upi_vpa text, p_account_number text, p_ifsc text, p_account_holder_name text) returns uuid security=definer
@@ -2041,6 +2089,9 @@ INDEX events_name_time_idx CREATE INDEX events_name_time_idx ON public.events US
 INDEX events_pkey CREATE UNIQUE INDEX events_pkey ON public.events USING btree (id)
 INDEX events_time_idx CREATE INDEX events_time_idx ON public.events USING btree (created_at DESC)
 INDEX first_recharge_discounts_pkey CREATE UNIQUE INDEX first_recharge_discounts_pkey ON public.first_recharge_discounts USING btree (user_id)
+INDEX home_suggestion_campaigns_pkey CREATE UNIQUE INDEX home_suggestion_campaigns_pkey ON public.home_suggestion_campaigns USING btree (id)
+INDEX hsc_member_idx CREATE INDEX hsc_member_idx ON public.home_suggestion_campaigns USING btree (member_id, shown_at)
+INDEX hsc_provider_idx CREATE INDEX hsc_provider_idx ON public.home_suggestion_campaigns USING btree (provider_id, shown_at)
 INDEX invoice_counters_pkey CREATE UNIQUE INDEX invoice_counters_pkey ON public.invoice_counters USING btree (fy)
 INDEX invoices_invoice_number_key CREATE UNIQUE INDEX invoices_invoice_number_key ON public.invoices USING btree (invoice_number)
 INDEX invoices_pkey CREATE UNIQUE INDEX invoices_pkey ON public.invoices USING btree (id)
@@ -2112,6 +2163,10 @@ INDEX session_requests_pkey CREATE UNIQUE INDEX session_requests_pkey ON public.
 INDEX session_requests_recipient_status CREATE INDEX session_requests_recipient_status ON public.session_requests USING btree (recipient_id, status, created_at DESC)
 INDEX token_transactions_pkey CREATE UNIQUE INDEX token_transactions_pkey ON public.token_transactions USING btree (id)
 INDEX token_transactions_user_id_created_at_idx CREATE INDEX token_transactions_user_id_created_at_idx ON public.token_transactions USING btree (user_id, created_at DESC)
+INDEX user_favorites_liked_idx CREATE INDEX user_favorites_liked_idx ON public.user_favorites USING btree (liked_id)
+INDEX user_favorites_liker_id_liked_id_key CREATE UNIQUE INDEX user_favorites_liker_id_liked_id_key ON public.user_favorites USING btree (liker_id, liked_id)
+INDEX user_favorites_liker_idx CREATE INDEX user_favorites_liker_idx ON public.user_favorites USING btree (liker_id)
+INDEX user_favorites_pkey CREATE UNIQUE INDEX user_favorites_pkey ON public.user_favorites USING btree (id)
 POLICY public.blocks.Owner creates own blocks cmd=INSERT roles=public
 POLICY public.blocks.Owner reads own blocks cmd=SELECT roles=public
 POLICY public.blocks.Owner removes own blocks cmd=DELETE roles=public
@@ -2120,6 +2175,7 @@ POLICY public.conversation_labels.Owner reads own conversation labels cmd=SELECT
 POLICY public.conversation_thread_meta.Participants read thread meta cmd=SELECT roles=authenticated
 POLICY public.conversations.Participants read their conversation cmd=SELECT roles=public
 POLICY public.events.Own events insertable cmd=INSERT roles=public
+POLICY public.home_suggestion_campaigns.Members read own campaigns cmd=SELECT roles=public
 POLICY public.invoices.Members read own invoices cmd=SELECT roles=authenticated
 POLICY public.message_reactions.Participants read reactions cmd=SELECT roles=public
 POLICY public.messages.Participants read messages cmd=SELECT roles=public
@@ -2150,6 +2206,8 @@ POLICY public.session_leases.Participants read own leases cmd=SELECT roles=authe
 POLICY public.session_leases.Participants upsert own lease cmd=ALL roles=authenticated
 POLICY public.session_requests.Participants read session requests cmd=SELECT roles=authenticated
 POLICY public.token_transactions.Members read own transactions cmd=SELECT roles=authenticated
+POLICY public.user_favorites.Users manage own favorites cmd=ALL roles=public
+POLICY public.user_favorites.Users read own favorites cmd=SELECT roles=public
 RLS app_flags enabled=true
 RLS blocks enabled=true
 RLS call_media_overrides enabled=true
@@ -2163,6 +2221,7 @@ RLS conversation_thread_meta enabled=true
 RLS conversations enabled=true
 RLS events enabled=true
 RLS first_recharge_discounts enabled=true
+RLS home_suggestion_campaigns enabled=true
 RLS invoice_counters enabled=true
 RLS invoices enabled=true
 RLS media_channel_usage enabled=true
@@ -2190,6 +2249,7 @@ RLS reviews enabled=true
 RLS session_leases enabled=true
 RLS session_requests enabled=true
 RLS token_transactions enabled=true
+RLS user_favorites enabled=true
 TRIGGER calls.call_push_on_insert
 TRIGGER calls.calls_assign_media_backend
 TRIGGER events.guard_event_shape
@@ -2197,6 +2257,7 @@ TRIGGER messages.guard_message_columns
 TRIGGER messages.guard_message_edit_columns
 TRIGGER messages.guard_message_reply_and_voice
 TRIGGER messages.guard_message_retention_columns
+TRIGGER messages.guard_message_session_and_dedup_columns
 TRIGGER messages.message_push_on_insert
 TRIGGER messages.messages_touch_session_activity
 TRIGGER moderation_actions.moderation_actions_no_update
@@ -2206,6 +2267,7 @@ TRIGGER profiles.guard_profile_phone_columns
 TRIGGER profiles.guard_profile_pii_columns
 TRIGGER profiles.guard_profile_presence_columns
 TRIGGER profiles.guard_profile_privileged_columns
+TRIGGER profiles.guard_profile_provider_avatar
 TRIGGER profiles.sync_token_balance
 TRIGGER provider_applications.guard_application_transitions
 TRIGGER provider_photos.guard_provider_photo_columns

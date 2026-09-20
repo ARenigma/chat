@@ -27,6 +27,9 @@
 -- Stores the stable (provider, sub) → user_id mapping for any external OAuth
 -- provider. Currently used only for Truecaller; other providers can be added.
 
+create schema if not exists private;
+revoke all on schema private from public, anon, authenticated;
+
 create table if not exists private.external_identities (
   id           uuid primary key default gen_random_uuid(),
   provider     text not null check (provider in ('truecaller')),
@@ -81,7 +84,10 @@ comment on table private.pending_identity_challenges is
 
 create index if not exists pending_challenges_hash_idx
   on private.pending_identity_challenges (challenge_hash)
-  where consumed_at is null and expires_at > now();
+  where consumed_at is null;
+
+create unique index if not exists pending_challenges_hash_unique
+  on private.pending_identity_challenges (challenge_hash);
 
 revoke all on private.pending_identity_challenges from public, anon, authenticated;
 
@@ -95,32 +101,72 @@ revoke all on private.pending_identity_challenges from public, anon, authenticat
 --      verified their number through the in-app phone-verification sheet,
 --      migration 010)
 --
--- Returns null when no owner exists. The caller decides whether to create one
--- or issue a pending challenge.
+-- Returns null when no owner exists. More than one distinct owner is a corrupt
+-- identity state and fails closed instead of silently selecting by precedence.
 
 create or replace function public.resolve_phone_owner(p_phone text)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_owner uuid;
+  v_count integer;
+begin
+  if p_phone !~ '^\+[1-9][0-9]{7,14}$' then
+    raise exception 'phone must be E.164' using errcode = '22023';
+  end if;
+
+  with owners as (
+    select user_id as id
+      from private.external_identities
+     where phone_e164 = p_phone
+    union
+    select id
+      from auth.users
+     where phone = ltrim(p_phone, '+')
+    union
+    select id
+      from public.profiles
+     where phone_e164 = p_phone
+       and phone_verified_at is not null
+  )
+  select (array_agg(id))[1], count(*) into v_owner, v_count from owners;
+
+  if v_count > 1 then
+    raise exception 'identity conflict: phone has multiple owners'
+      using errcode = 'P0001';
+  end if;
+  return v_owner;
+end;
+$$;
+
+revoke all on function public.resolve_phone_owner(text) from public, anon, authenticated;
+grant execute on function public.resolve_phone_owner(text) to service_role;
+
+-- Resolve by stable provider subject without exposing the private table through
+-- PostgREST's schema allow-list. Edge Functions call this service-role RPC.
+create or replace function public.resolve_external_identity(
+  p_provider text,
+  p_subject text
+)
 returns uuid
 language sql
 security definer
 set search_path = ''
 as $$
-  select coalesce(
-    -- 1. External identity (Truecaller sub-keyed, most reliable)
-    (select user_id from private.external_identities
-     where phone_e164 = p_phone limit 1),
-    -- 2. auth.users.phone (Firebase / Supabase-native OTP)
-    (select id from auth.users
-     where phone = ltrim(p_phone, '+') limit 1),
-    -- 3. profiles.phone_e164 verified through the in-app sheet (Google users)
-    (select id from public.profiles
-     where phone_e164 = p_phone
-       and phone_verified_at is not null
-     limit 1)
-  );
+  select user_id
+    from private.external_identities
+   where provider = p_provider
+     and subject = p_subject
+   limit 1;
 $$;
 
-revoke all on function public.resolve_phone_owner(text) from public, anon, authenticated;
-grant execute on function public.resolve_phone_owner(text) to service_role;
+revoke all on function public.resolve_external_identity(text, text)
+  from public, anon, authenticated;
+grant execute on function public.resolve_external_identity(text, text)
+  to service_role;
 
 -- ---------------------------------------------------------------------------
 -- upsert_external_identity: record a new or returning Truecaller sign-in
@@ -145,39 +191,49 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_lock_key bigint;
+  v_existing private.external_identities%rowtype;
 begin
-  -- Advisory lock scoped to (provider, subject) to serialise concurrent attempts
-  -- for the same Truecaller user while the table upsert is non-atomic.
-  v_lock_key := hashtext(p_provider || ':' || p_subject);
-  perform pg_advisory_xact_lock(v_lock_key);
-
-  insert into private.external_identities
-    (provider, subject, phone_e164, user_id)
-  values
-    (p_provider, p_subject, p_phone, p_user_id)
-  on conflict (provider, subject) do update
-    set phone_e164 = excluded.phone_e164
-    -- Reject subject re-assignment to a different user.
-    where external_identities.user_id = excluded.user_id
-      and external_identities.provider = excluded.provider
-      and external_identities.subject = excluded.subject;
-
-  if not found then
-    raise exception 'identity conflict: subject % already bound to a different user', p_subject
-      using errcode = 'P0001';
+  if p_provider <> 'truecaller'
+     or p_subject is null or btrim(p_subject) = ''
+     or p_phone !~ '^\+[1-9][0-9]{7,14}$'
+     or p_user_id is null then
+    raise exception 'invalid external identity' using errcode = '22023';
   end if;
 
-  -- Also ensure the phone isn't already owned by a different user via a different subject.
+  -- Serialize by BOTH subject and phone. Two different Truecaller subjects
+  -- racing for one phone must not get past separate subject-only locks.
+  perform pg_advisory_xact_lock(hashtext('subject:' || p_provider || ':' || p_subject));
+  perform pg_advisory_xact_lock(hashtext('phone:' || p_phone));
+
+  select * into v_existing
+    from private.external_identities
+   where provider = p_provider and subject = p_subject;
+
+  if found then
+    if v_existing.user_id <> p_user_id then
+      raise exception 'identity conflict: subject already bound to a different user'
+        using errcode = 'P0001';
+    end if;
+    if v_existing.phone_e164 <> p_phone then
+      raise exception 'identity conflict: subject phone changed'
+        using errcode = 'P0001';
+    end if;
+    return; -- exact retry: idempotent
+  end if;
+
   if exists (
     select 1 from private.external_identities
-    where phone_e164 = p_phone
-      and subject <> p_subject
-      and provider = p_provider
+     where phone_e164 = p_phone
+       and (provider <> p_provider or subject <> p_subject or user_id <> p_user_id)
   ) then
     raise exception 'identity conflict: phone already bound to a different identity'
       using errcode = 'P0001';
   end if;
+
+  insert into private.external_identities
+    (provider, subject, phone_e164, user_id)
+  values
+    (p_provider, p_subject, p_phone, p_user_id);
 end;
 $$;
 
@@ -187,9 +243,9 @@ grant execute on function public.upsert_external_identity(text, text, text, uuid
   to service_role;
 
 -- ---------------------------------------------------------------------------
--- create_pending_challenge / consume_pending_challenge
+-- create / read / atomically consume-and-link a pending challenge
 -- ---------------------------------------------------------------------------
--- These two RPCs back the "New here?" / "Already use Google?" continuity flow.
+-- These RPCs back the "New here?" / "Already use Google?" continuity flow.
 
 create or replace function public.create_pending_challenge(
   p_provider      text,
@@ -213,36 +269,76 @@ revoke all on function public.create_pending_challenge(text, text, text, text)
 grant execute on function public.create_pending_challenge(text, text, text, text)
   to service_role;
 
-create or replace function public.consume_pending_challenge(
+-- Read without consuming. New-user creation happens through GoTrue's Admin API
+-- outside PostgreSQL; if that network call fails, the challenge remains
+-- retryable. The final consume_and_link call below is the atomic commit point.
+create or replace function public.read_pending_challenge(
   p_challenge_hash text,
   out out_provider text,
   out out_subject  text,
   out out_phone    text
 )
 returns record
+language sql
+security definer
+set search_path = ''
+as $$
+  select provider, subject, phone_e164
+    from private.pending_identity_challenges
+   where challenge_hash = p_challenge_hash
+     and consumed_at is null
+     and expires_at > now()
+   limit 1;
+$$;
+
+revoke all on function public.read_pending_challenge(text)
+  from public, anon, authenticated;
+grant execute on function public.read_pending_challenge(text) to service_role;
+
+-- Atomically validates an active challenge, links the external identity, and
+-- marks the challenge consumed. If identity linking raises (conflict/transient
+-- DB failure), PostgreSQL rolls back consumed_at too, so the client can retry.
+create or replace function public.consume_and_link_pending_challenge(
+  p_challenge_hash text,
+  p_user_id uuid
+)
+returns void
 language plpgsql
 security definer
 set search_path = ''
 as $$
+declare
+  v_challenge private.pending_identity_challenges%rowtype;
 begin
-  update private.pending_identity_challenges
-  set consumed_at = now()
-  where challenge_hash = p_challenge_hash
-    and consumed_at is null
-    and expires_at > now()
-  returning provider, subject, phone_e164
-  into out_provider, out_subject, out_phone;
+  select * into v_challenge
+    from private.pending_identity_challenges
+   where challenge_hash = p_challenge_hash
+     and consumed_at is null
+     and expires_at > now()
+   for update;
 
-  if out_provider is null then
+  if not found then
     raise exception 'challenge not found, already consumed, or expired'
       using errcode = 'P0002';
   end if;
+
+  perform public.upsert_external_identity(
+    v_challenge.provider,
+    v_challenge.subject,
+    v_challenge.phone_e164,
+    p_user_id
+  );
+
+  update private.pending_identity_challenges
+     set consumed_at = now()
+   where id = v_challenge.id;
 end;
 $$;
 
-revoke all on function public.consume_pending_challenge(text)
+revoke all on function public.consume_and_link_pending_challenge(text, uuid)
   from public, anon, authenticated;
-grant execute on function public.consume_pending_challenge(text) to service_role;
+grant execute on function public.consume_and_link_pending_challenge(text, uuid)
+  to service_role;
 
 -- ---------------------------------------------------------------------------
 -- Housekeeping: purge expired unclaimed challenges
@@ -256,6 +352,10 @@ as $$
   delete from private.pending_identity_challenges
   where expires_at < now() - interval '1 hour';
 $$;
+
+revoke all on function public.purge_expired_challenges()
+  from public, anon, authenticated;
+grant execute on function public.purge_expired_challenges() to service_role;
 
 -- Schedule daily via pg_cron if present (not enforced here — the RPC exists
 -- so it can be invoked from any cron mechanism).
