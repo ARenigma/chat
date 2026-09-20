@@ -8,6 +8,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 mode="${1:-status}"
+commit_ref="${2:-HEAD}"
 report_dir="$(git rev-parse --git-path greptile)"
 report="$report_dir/latest.txt"
 mkdir -p "$report_dir"
@@ -60,14 +61,14 @@ case "$mode" in
     ;;
   status)
     set +e
-    greptile_github review status --commit HEAD --agent --no-color >"$report" 2>&1
+    greptile_github review status --commit "$commit_ref" --agent --no-color >"$report" 2>&1
     status=$?
     set -e
     cat "$report"
     case "$status" in
       0) ;;
       1)
-        echo "greptile-review: HEAD has no completed review. Run: npm run review:greptile" >&2
+        echo "greptile-review: $commit_ref has no completed review. Run: npm run review:greptile" >&2
         exit 1
         ;;
       3)
@@ -100,4 +101,4 @@ if grep -Eq '(^|[[:space:]\[])P[012]([[:space:]\]:-]|$)' "$report"; then
   exit 1
 fi
 
-echo "greptile-review: HEAD is reviewed with no P0/P1/P2 findings."
+echo "greptile-review: $commit_ref is reviewed with no P0/P1/P2 findings."

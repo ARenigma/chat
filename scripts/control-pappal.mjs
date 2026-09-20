@@ -124,6 +124,15 @@ function adb(args, options) {
   return run('adb', ['-s', serial(), ...args], options);
 }
 
+/**
+ * `adb shell` joins argv into one device-shell command. Single-quote one
+ * untrusted argument so URI metacharacters (`&`, `;`, `$`, backticks) remain
+ * data. Host-shell injection is already prevented by execFileSync.
+ */
+function deviceShellQuote(value) {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
 function snapshot() {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const result = tryRun('adb', [
@@ -341,6 +350,9 @@ switch (command) {
         2,
       );
     }
+    if (uri.length > 2048 || !/^companionchat:\/\/[\x21-\x7e]+$/.test(uri)) {
+      fail('open accepts only a printable companionchat:// URI.', undefined, 2);
+    }
     adb([
       'shell',
       'am',
@@ -349,7 +361,7 @@ switch (command) {
       '-a',
       'android.intent.action.VIEW',
       '-d',
-      uri,
+      deviceShellQuote(uri),
     ]);
     emit({ ok: true, uri });
     break;
@@ -433,6 +445,13 @@ switch (command) {
         'Examples: BACK, HOME, ENTER.',
         2,
       );
+    if (!/^(?:[A-Z][A-Z0-9_]{0,39}|[0-9]{1,3})$/.test(key)) {
+      fail(
+        'press accepts an uppercase Android key name or numeric keycode.',
+        'Examples: BACK, KEYCODE_HOME, 66.',
+        2,
+      );
+    }
     adb(['shell', 'input', 'keyevent', key]);
     emit({ ok: true, key });
     break;

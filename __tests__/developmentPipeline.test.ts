@@ -19,19 +19,22 @@ describe('verification-before-remote pipeline', () => {
     const prePush = read('.husky/pre-push');
     expect(prePush).toContain('npm run verify');
     expect(prePush).toContain('security:push');
-    expect(prePush).toContain('review:greptile:status');
+    expect(prePush).toContain('while read -r local_ref local_sha');
+    expect(prePush).toContain('scripts/greptile-review.sh status "$head_sha"');
     expect(prePush.indexOf('npm run verify')).toBeLessThan(
       prePush.indexOf('security:push'),
     );
     expect(prePush.indexOf('security:push')).toBeLessThan(
-      prePush.indexOf('review:greptile:status'),
+      prePush.indexOf('scripts/greptile-review.sh status'),
     );
   });
 
   it('routes Greptile to GitHub without changing the GitLab branch upstream', () => {
     const review = read('scripts/greptile-review.sh');
     expect(review).toContain('GIT_CONFIG_VALUE_0=origin');
-    expect(review).toContain('review status --commit HEAD');
+    expect(review).toContain(
+      'review status --commit "$commit_ref"',
+    );
 
     const config = JSON.parse(read('.greptile/config.json')) as {
       triggerOnUpdates?: boolean;
@@ -96,5 +99,16 @@ describe('verification-before-remote pipeline', () => {
     expect(security).toContain('semgrep scan --validate --config .semgrep.yml');
     expect(security).toContain('semgrep scan --config .semgrep.yml');
     expect(security).toContain('npm audit --omit=dev --audit-level=high');
+    expect(security).not.toContain('base="HEAD~1"');
+    expect(security).toContain('full_scan=true');
+  });
+
+  it('quotes device-shell URIs and validates key events', () => {
+    const control = read('scripts/control-pappal.mjs');
+    expect(control).toContain('function deviceShellQuote');
+    expect(control).toContain('deviceShellQuote(uri)');
+    expect(control).toContain(
+      'press accepts an uppercase Android key name or numeric keycode.',
+    );
   });
 });

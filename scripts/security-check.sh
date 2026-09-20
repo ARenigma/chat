@@ -49,13 +49,29 @@ case "$mode" in
     need semgrep "Use the pinned Semgrep image in CI."
     semgrep scan --validate --config .semgrep.yml
     base="${SEMGREP_BASELINE_COMMIT:-${CI_MERGE_REQUEST_DIFF_BASE_SHA:-${CI_COMMIT_BEFORE_SHA:-origin/main}}}"
-    # GitLab uses all-zero before-SHA for the first commit on a branch.
+    full_scan=false
+    # GitLab uses all-zero before-SHA for the first push to a branch. Prefer the
+    # default branch so the entire introduced branch range is scanned. If no
+    # trustworthy baseline exists (new repository / detached source), scan the
+    # full tree rather than narrowing silently to HEAD~1.
     if [[ "$base" =~ ^0+$ ]] || ! git rev-parse --verify "$base^{commit}" >/dev/null 2>&1; then
-      base="HEAD~1"
+      default_ref="origin/${CI_DEFAULT_BRANCH:-main}"
+      if git rev-parse --verify "$default_ref^{commit}" >/dev/null 2>&1 &&
+         [[ "$(git rev-parse "$default_ref")" != "$(git rev-parse HEAD)" ]]; then
+        base="$default_ref"
+      else
+        full_scan=true
+      fi
     fi
-    semgrep scan --config .semgrep.yml --baseline-commit "$base" --error \
-      --exclude node_modules --exclude android/.gradle --exclude android/app/build \
-      --exclude coverage --exclude admin/.next .
+    semgrep_args=(
+      scan --config .semgrep.yml --error
+      --exclude node_modules --exclude android/.gradle
+      --exclude android/app/build --exclude coverage --exclude admin/.next
+    )
+    if [[ "$full_scan" == false ]]; then
+      semgrep_args+=(--baseline-commit "$base")
+    fi
+    semgrep "${semgrep_args[@]}" .
     ;;
 
   dependencies)

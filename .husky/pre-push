@@ -1,6 +1,31 @@
 # Nothing reaches a remote without deterministic checks, changed-code security,
-# and a completed finding-free Greptile review for the exact HEAD commit.
+# and a completed finding-free Greptile review for the exact commit being pushed.
 remote="${1:-origin}"
+head_sha="$(git rev-parse HEAD)"
+zero_sha="0000000000000000000000000000000000000000"
+pushed=0
+
+# Git supplies one line per ref: <local-ref> <local-sha> <remote-ref> <remote-sha>.
+# The working tree can only verify its checked-out commit. Fail closed if a
+# caller tries `git push origin other-branch`; they must check that branch out so
+# tests, SAST, and Greptile all inspect the bytes actually being published.
+while read -r local_ref local_sha remote_ref remote_sha; do
+  # Deleting a remote ref has an all-zero local SHA and publishes no code.
+  if [ "$local_sha" = "$zero_sha" ]; then
+    continue
+  fi
+  pushed=1
+  if [ "$local_sha" != "$head_sha" ]; then
+    echo "pre-push: refusing unverified ref $local_ref ($local_sha)." >&2
+    echo "Check out that ref and push again; current HEAD is $head_sha." >&2
+    exit 1
+  fi
+done
+
+if [ "$pushed" -eq 0 ]; then
+  exit 0
+fi
+
 npm run verify
 SECURITY_BASE_REF="${remote}/main" npm run security:push
-npm run review:greptile:status
+bash scripts/greptile-review.sh status "$head_sha"
