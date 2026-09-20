@@ -91,9 +91,11 @@ export type TruecallerFailureAction =
 
 /** Product behavior for each native terminal outcome. */
 export function actionForTruecallerFailure(
-  reason: 'cancelled' | 'unavailable' | 'failed',
+  reason: 'cancelled' | 'alternate_number' | 'unavailable' | 'failed',
 ): TruecallerFailureAction {
   if (reason === 'cancelled') return 'return_to_chooser';
-  if (reason === 'unavailable') return 'show_whatsapp_fallback';
+  if (reason === 'alternate_number' || reason === 'unavailable') {
+    return 'show_whatsapp_fallback';
+  }
   return 'show_error';
 }

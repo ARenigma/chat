@@ -73,6 +73,9 @@ describe('Truecaller → browser Google continuity record', () => {
 describe('Truecaller terminal outcome policy', () => {
   it('keeps cancellation silent, routes unavailability to WhatsApp, and surfaces failures', () => {
     expect(actionForTruecallerFailure('cancelled')).toBe('return_to_chooser');
+    expect(actionForTruecallerFailure('alternate_number')).toBe(
+      'show_whatsapp_fallback',
+    );
     expect(actionForTruecallerFailure('unavailable')).toBe(
       'show_whatsapp_fallback',
     );

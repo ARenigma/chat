@@ -51,7 +51,11 @@ export function truecallerAvailable(): boolean {
  * `failed` — configuration error (wrong client ID or SHA-1) or unexpected
  *   SDK error. Show an actionable error and keep the fallbacks visible.
  */
-export type TruecallerFailureReason = 'cancelled' | 'unavailable' | 'failed';
+export type TruecallerFailureReason =
+  | 'cancelled'
+  | 'alternate_number'
+  | 'unavailable'
+  | 'failed';
 
 export class TruecallerOAuthError extends Error {
   constructor(
@@ -79,9 +83,13 @@ export async function requestTruecallerAuth(): Promise<TruecallerOAuthResult> {
   } catch (error) {
     const code = (error as { code?: string }).code;
     const reason: TruecallerFailureReason =
-      code === 'cancelled' ? 'cancelled' :
-      code === 'unavailable' ? 'unavailable' :
-      'failed';
+      code === 'cancelled'
+        ? 'cancelled'
+        : code === 'alternate_number'
+          ? 'alternate_number'
+          : code === 'unavailable'
+            ? 'unavailable'
+            : 'failed';
     throw new TruecallerOAuthError(
       reason,
       (error as { message?: string }).message ?? 'Truecaller sign-in failed.',

@@ -65,6 +65,7 @@ class TruecallerOAuthModule(private val reactContext: ReactApplicationContext) :
     companion object {
         const val NAME = "TruecallerOAuth"
         const val E_CANCELLED = "cancelled"
+        const val E_ALTERNATE_NUMBER = "alternate_number"
         const val E_UNAVAILABLE = "unavailable"
         const val E_FAILED = "failed"
 
@@ -79,13 +80,14 @@ class TruecallerOAuthModule(private val reactContext: ReactApplicationContext) :
          *   6  — "Conflicting request / old SDK" → failed
          *   7  — "App closed unexpectedly"       → unavailable (retry-safe)
          *   10 — "Invalid account state"         → failed
-         *   11 — "User denied via footer button" → cancelled
+         *   11 — "Use another number" footer      → alternate_number
          *   12 — "Invalid partner info"          → failed  (config error)
          *   14 — "User dismissed consent screen" → cancelled
          *   16 — "Device not supported"          → unavailable
          */
         fun errorCodeToOutcome(error: TcOAuthError): String = when (error.errorCode) {
-            2, 11, 14 -> E_CANCELLED
+            2, 14 -> E_CANCELLED
+            11 -> E_ALTERNATE_NUMBER
             5, 7, 16 -> E_UNAVAILABLE
             else -> E_FAILED
         }
