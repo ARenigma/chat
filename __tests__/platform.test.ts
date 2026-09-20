@@ -1445,8 +1445,8 @@ describe('Truecaller OAuth SDK 3.3.0 — Android platform requirements', () => {
   it('dismissal and alternate-number outcomes stay distinct', () => {
     const mod = read('android/app/src/main/java/com/companionchat/TruecallerOAuthModule.kt');
     // These are "user dismissed" codes and must never show an error to the user.
-    expect(mod).toContain('2, 14 -> E_CANCELLED');
-    expect(mod).toContain('11 -> E_ALTERNATE_NUMBER');
+    expect(mod).toContain('2 -> E_CANCELLED');
+    expect(mod).toContain('11, 14 -> E_ALTERNATE_NUMBER');
   });
 
   it('OPTION_VERIFY_ONLY_TC_USERS keeps the permission surface unchanged', () => {

@@ -82,12 +82,17 @@ class TruecallerOAuthModule(private val reactContext: ReactApplicationContext) :
          *   10 — "Invalid account state"         → failed
          *   11 — "Use another number" footer      → alternate_number
          *   12 — "Invalid partner info"          → failed  (config error)
-         *   14 — "User dismissed consent screen" → cancelled
+         *   14 — enhanced-sheet alternate footer  → alternate_number
+         *
+         * SDK 3.3 device evidence (S22, Android 16): the loaded enhanced sheet's
+         * "ENTER DETAILS MANUALLY" footer returns 14, despite the docs assigning
+         * 11 to the footer and 14 to dismissal. System back/outside do not dismiss
+         * this Activity. Code 2 remains the true loading-time cancellation.
          *   16 — "Device not supported"          → unavailable
          */
         fun errorCodeToOutcome(error: TcOAuthError): String = when (error.errorCode) {
-            2, 14 -> E_CANCELLED
-            11 -> E_ALTERNATE_NUMBER
+            2 -> E_CANCELLED
+            11, 14 -> E_ALTERNATE_NUMBER
             5, 7, 16 -> E_UNAVAILABLE
             else -> E_FAILED
         }
