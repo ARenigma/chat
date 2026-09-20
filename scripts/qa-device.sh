@@ -20,7 +20,8 @@ fi
 echo "qa-device: installing debug with embedded bundle (arm64)…"
 ./android/gradlew -p android :app:installDebug \
   -x lint -x test \
-  -PreactNativeArchitectures=arm64-v8a
+  -PreactNativeArchitectures=arm64-v8a \
+  --no-configuration-cache
 
 adb shell am force-stop com.companionchat || true
 adb shell am start -n com.companionchat/.MainActivity
