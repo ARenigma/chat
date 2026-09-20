@@ -4,11 +4,25 @@
 -- its grants, owner resolution, conflict behavior, idempotency, challenge
 -- retryability/consumption, and deletion cascade.
 begin;
-select plan(24);
+select plan(26);
 
 select has_schema('private', 'private identity schema exists');
 select has_table('private', 'external_identities', 'external identities are private');
 select has_table('private', 'pending_identity_challenges', 'pending challenges are private');
+select is(
+  (select relrowsecurity
+     from pg_class
+    where oid = 'private.external_identities'::regclass),
+  true,
+  'external identities have RLS enabled'
+);
+select is(
+  (select relrowsecurity
+     from pg_class
+    where oid = 'private.pending_identity_challenges'::regclass),
+  true,
+  'pending identity challenges have RLS enabled'
+);
 
 -- Neither app role can inspect the private tables or invoke the resolver RPCs.
 select is(

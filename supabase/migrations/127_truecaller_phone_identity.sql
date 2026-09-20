@@ -40,6 +40,7 @@ create table if not exists private.external_identities (
   constraint external_identities_provider_subject_unique unique (provider, subject),
   constraint external_identities_phone_unique unique (phone_e164)
 );
+alter table private.external_identities enable row level security;
 
 comment on table private.external_identities is
   'Maps a stable (provider, provider_subject) OAuth identity to a single '
@@ -77,6 +78,7 @@ create table if not exists private.pending_identity_challenges (
   consumed_at    timestamptz,
   created_at     timestamptz not null default now()
 );
+alter table private.pending_identity_challenges enable row level security;
 
 comment on table private.pending_identity_challenges is
   'Short-lived opaque challenges for unmatched Truecaller verifications. '

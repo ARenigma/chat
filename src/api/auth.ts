@@ -730,6 +730,11 @@ export async function handleAuthDeepLink(
 
   const error = params.get('error') ?? params.get('error_code');
   if (error != null) {
+    // A staged Truecaller→Google link belongs to this one OAuth attempt. If
+    // Google denies/fails it, leaving the challenge in MMKV would let a later,
+    // unrelated Google sign-in consume it and bind the abandoned Truecaller
+    // identity to the wrong account.
+    clearPendingTruecallerGoogleLink();
     return {
       status: 'failed',
       message: describeCallbackError(error, params.get('error_description')),
@@ -738,13 +743,18 @@ export async function handleAuthDeepLink(
 
   const code = params.get('code');
   if (code == null) {
-    return { status: 'ignored' };
+    clearPendingTruecallerGoogleLink();
+    return {
+      status: 'failed',
+      message: 'The sign-in response was incomplete. Please try again.',
+    };
   }
 
   const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(
     code,
   );
   if (exchangeError) {
+    clearPendingTruecallerGoogleLink();
     return {
       status: 'failed',
       message: 'Could not finish signing in. Please try again.',
@@ -774,6 +784,7 @@ export async function handleAuthDeepLink(
 }
 
 export async function signOut(): Promise<void> {
+  clearPendingTruecallerGoogleLink();
   // Two independent sessions can exist after a Firebase phone sign-in — the
   // Supabase one the app runs on, and a Firebase one that is normally already
   // dropped at verify time. Sign both out so a stale Firebase session can never

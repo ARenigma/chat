@@ -1625,6 +1625,30 @@ describe('Truecaller OAuth authentication bridge', () => {
     expect(screen).toContain("identify === 'continuity'");
   });
 
+  it('clears a staged Truecaller link on every terminal Google failure', () => {
+    const handler = auth.slice(
+      auth.indexOf('export async function handleAuthDeepLink'),
+      auth.indexOf('export async function signOut'),
+    );
+    const oauthError = handler.slice(
+      handler.indexOf("const error = params.get('error')"),
+      handler.indexOf("const code = params.get('code')"),
+    );
+    expect(oauthError).toContain('clearPendingTruecallerGoogleLink();');
+
+    const exchangeFailure = handler.slice(
+      handler.indexOf('if (exchangeError)'),
+      handler.indexOf("return { status: 'signedIn' }"),
+    );
+    expect(exchangeFailure).toContain('clearPendingTruecallerGoogleLink();');
+    expect(handler).toContain('await linkTruecallerToCurrentAccount');
+  });
+
+  it('sign-out cannot leave a staged identity link for the next account', () => {
+    const signOut = auth.slice(auth.indexOf('export async function signOut'));
+    expect(signOut).toContain('clearPendingTruecallerGoogleLink();');
+  });
+
   it('WhatsApp copy replaces SMS copy for the phone fallback', () => {
     expect(screen).toContain('WhatsApp');
     expect(screen).not.toContain("We'll send an SMS");
