@@ -1680,6 +1680,17 @@ describe('Truecaller OAuth authentication bridge', () => {
     expect(ordinaryCallback).toContain('clearPendingTruecallerGoogleLink();');
     expect(ordinaryCallback).toContain("return { status: 'signedIn' };");
 
+    const markedSuccess = handler.slice(
+      handler.indexOf('if (pendingLink.challenge !== null)'),
+      handler.indexOf(
+        '// A marked link callback without a staged challenge',
+      ),
+    );
+    expect(markedSuccess).toContain(
+      'await linkTruecallerToCurrentAccount(pendingLink.challenge);',
+    );
+    expect(markedSuccess).toContain("return { status: 'signedIn' };");
+
     const authConfig = read('supabase/config.toml');
     expect(authConfig).toContain(
       'companionchat://auth-callback/truecaller-link',

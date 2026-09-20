@@ -822,6 +822,7 @@ export async function handleAuthDeepLink(
     try {
       await linkTruecallerToCurrentAccount(pendingLink.challenge);
       clearPendingTruecallerGoogleLink();
+      return { status: 'signedIn' };
     } catch {
       clearPendingTruecallerGoogleLink();
       await supabase.auth.signOut();
