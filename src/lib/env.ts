@@ -26,6 +26,9 @@ export const ENV = {
 
 /** Deep-link target for the optional OAuth account link. */
 export const AUTH_REDIRECT_URL = 'companionchat://auth-callback';
+/** Browser Google OAuth callback used only to finish Truecaller account linking. */
+export const TRUECALLER_LINK_REDIRECT_URL =
+  'companionchat://auth-callback/truecaller-link';
 
 /** Fail loudly at boot rather than mysteriously on the first request. */
 export function assertEnv(): void {

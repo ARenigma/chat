@@ -12,7 +12,11 @@ import {
   requestTruecallerAuth,
 } from '../lib/truecallerOAuth';
 export { truecallerAvailable } from '../lib/truecallerOAuth';
-import { AUTH_REDIRECT_URL, ENV } from '../lib/env';
+import {
+  AUTH_REDIRECT_URL,
+  ENV,
+  TRUECALLER_LINK_REDIRECT_URL,
+} from '../lib/env';
 import { normalisePhone } from '../lib/phone';
 import { storage } from '../lib/storage';
 import {
@@ -356,10 +360,13 @@ export async function currentSession(): Promise<CurrentSessionResult> {
  * (`disallowed_useragent`). `skipBrowserRedirect` hands us the URL so we can
  * open it with `Linking` instead of letting the SDK navigate.
  */
-export async function signInWith(provider: SocialProvider): Promise<void> {
+export async function signInWith(
+  provider: SocialProvider,
+  redirectTo: string = AUTH_REDIRECT_URL,
+): Promise<void> {
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider,
-    options: { redirectTo: AUTH_REDIRECT_URL, skipBrowserRedirect: true },
+    options: { redirectTo, skipBrowserRedirect: true },
   });
   if (error || !data.url) {
     throw new Error(error?.message ?? `Could not start ${provider} sign-in`);
@@ -608,7 +615,9 @@ export async function linkTruecallerToCurrentAccount(challenge: string): Promise
  * Google embedded the SHA-256 in the token and Supabase is handed the original,
  * which is why the native side returns both.
  */
-export async function signInWithGoogle(): Promise<GoogleResult> {
+export async function signInWithGoogle(options?: {
+  readonly truecallerLink?: boolean;
+}): Promise<GoogleResult> {
   if (CREDENTIAL_MANAGER_ENABLED && credentialSheetAvailable()) {
     try {
       const { idToken, rawNonce } = await requestGoogleCredential();
@@ -639,7 +648,12 @@ export async function signInWithGoogle(): Promise<GoogleResult> {
       // Fall through to the browser.
     }
   }
-  await signInWith('google');
+  await signInWith(
+    'google',
+    options?.truecallerLink === true
+      ? TRUECALLER_LINK_REDIRECT_URL
+      : AUTH_REDIRECT_URL,
+  );
   return 'redirected';
 }
 
@@ -724,7 +738,13 @@ export async function handleAuthDeepLink(
 
   // Supabase puts callback parameters in the fragment as well as the query
   // depending on the failure, so both are parsed.
-  const raw = url.slice(AUTH_REDIRECT_URL.length).replace(/^[?#]/, '');
+  const isTruecallerLinkCallback = url.startsWith(
+    TRUECALLER_LINK_REDIRECT_URL,
+  );
+  const callbackBase = isTruecallerLinkCallback
+    ? TRUECALLER_LINK_REDIRECT_URL
+    : AUTH_REDIRECT_URL;
+  const raw = url.slice(callbackBase.length).replace(/^[?#]/, '');
   const params = new URLSearchParams(raw.replace(/^[?#]/, ''));
 
   if (__DEV__) {
@@ -777,6 +797,15 @@ export async function handleAuthDeepLink(
   // linking fails, sign back out so App.tsx never enters a Google session whose
   // Truecaller identity was silently lost.
   const pendingLink = pendingTruecallerGoogleLink();
+  if (!isTruecallerLinkCallback) {
+    // This is an ordinary Google sign-in. A pending challenge means a previous
+    // Truecaller-link browser attempt was abandoned without a callback. Clear
+    // it rather than binding that identity to this unrelated Google session.
+    if (pendingLink.hadRecord) {
+      clearPendingTruecallerGoogleLink();
+    }
+    return { status: 'signedIn' };
+  }
   if (pendingLink.hadRecord && pendingLink.challenge === null) {
     // This Google callback belongs to an explicit Truecaller-link attempt, but
     // the opaque challenge expired while the browser was open. Do not silently
@@ -802,7 +831,13 @@ export async function handleAuthDeepLink(
       };
     }
   }
-  return { status: 'signedIn' };
+  // A marked link callback without a staged challenge cannot be trusted to
+  // identify what Truecaller proof it belongs to.
+  await supabase.auth.signOut();
+  return {
+    status: 'failed',
+    message: 'The verified-number link was not found. Start with Truecaller again.',
+  };
 }
 
 export async function signOut(): Promise<void> {

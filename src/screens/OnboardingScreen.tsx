@@ -621,7 +621,9 @@ export function OnboardingScreen({ onDone }: Props) {
     stageTruecallerGoogleLink(challenge);
     void (async () => {
       try {
-        const googleResult = await signInWithGoogle();
+        const googleResult = await signInWithGoogle({
+          truecallerLink: true,
+        });
         if (googleResult === 'redirected') {
           // handleAuthDeepLink consumes the staged challenge after installing
           // the Google session, before it reports signedIn to App.tsx.

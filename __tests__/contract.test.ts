@@ -1662,6 +1662,30 @@ describe('Truecaller OAuth authentication bridge', () => {
     expect(expiredBranch).toContain("status: 'failed'");
   });
 
+  it('only a marked Google callback may consume a Truecaller challenge', () => {
+    expect(screen).toContain('truecallerLink: true');
+    const handler = auth.slice(
+      auth.indexOf('export async function handleAuthDeepLink'),
+      auth.indexOf('export async function signOut'),
+    );
+    expect(handler).toMatch(
+      /url\.startsWith\(\s*TRUECALLER_LINK_REDIRECT_URL,\s*\)/,
+    );
+    const ordinaryCallback = handler.slice(
+      handler.indexOf('if (!isTruecallerLinkCallback)'),
+      handler.indexOf(
+        'if (pendingLink.hadRecord && pendingLink.challenge === null)',
+      ),
+    );
+    expect(ordinaryCallback).toContain('clearPendingTruecallerGoogleLink();');
+    expect(ordinaryCallback).toContain("return { status: 'signedIn' };");
+
+    const authConfig = read('supabase/config.toml');
+    expect(authConfig).toContain(
+      'companionchat://auth-callback/truecaller-link',
+    );
+  });
+
   it('sign-out cannot leave a staged identity link for the next account', () => {
     const signOut = auth.slice(auth.indexOf('export async function signOut'));
     expect(signOut).toContain('clearPendingTruecallerGoogleLink();');

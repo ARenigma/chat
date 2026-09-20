@@ -33,6 +33,9 @@ enable_manual_linking = false
 site_url = "companionchat://auth-callback"
 additional_redirect_urls = [
   "companionchat://auth-callback",
+  # Distinguishes an explicit Truecaller→Google link from an ordinary Google
+  # sign-in, so an abandoned challenge can never attach to a later account.
+  "companionchat://auth-callback/truecaller-link",
   # Admin control plane OAuth callback — ADR-0023
   "https://admin.pappal.live/auth/callback",
 ]
