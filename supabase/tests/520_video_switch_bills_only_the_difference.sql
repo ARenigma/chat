@@ -12,7 +12,7 @@
 
 \set ON_ERROR_STOP on
 begin;
-select plan(22);
+select plan(23);
 
 insert into auth.users (id) values
   ('aa520000-0000-4000-8000-000000000001'),  -- member
@@ -479,6 +479,13 @@ select is(
   (select medium::text || '/' || upgrade_result from public.calls where id = 'dd520000-0000-4000-8000-0000000000a9'),
   'voice/video_disabled',
   '22. the call stays voice and the outcome names the real reason'
+);
+
+select ok(
+  (select position('from public.calls where id = v_call_id for update' in pg_get_functiondef(p.oid))
+          between 1 and position('where id = p_session_id' || chr(10) || '  for update' in pg_get_functiondef(p.oid))
+     from pg_proc p where p.proname = 'claim_session_lease'),
+  '23. claim_session_lease locks the call before the session (139): the order end_call uses'
 );
 
 select * from finish();

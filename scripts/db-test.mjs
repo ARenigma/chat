@@ -177,6 +177,7 @@ const MIGRATIONS = [
   'supabase/migrations/136_switched_call_falls_back_to_voice_at_start.sql',
   'supabase/migrations/137_video_switch_acceptance_respects_kill_switch.sql',
   'supabase/migrations/138_fallback_skips_locked_call_and_kill_switch_outcome.sql',
+  'supabase/migrations/139_claim_session_lease_locks_call_first.sql',
 ];
 
 /**

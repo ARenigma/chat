@@ -8668,6 +8668,7 @@ describe('switch to video works end to end and bills only the difference (132, 2
     expect(dbTest).toContain('supabase/migrations/136_switched_call_falls_back_to_voice_at_start.sql');
     expect(dbTest).toContain('supabase/migrations/137_video_switch_acceptance_respects_kill_switch.sql');
     expect(dbTest).toContain('supabase/migrations/138_fallback_skips_locked_call_and_kill_switch_outcome.sql');
+    expect(dbTest).toContain('supabase/migrations/139_claim_session_lease_locks_call_first.sql');
     const sql = read('supabase/migrations/132_video_switch_bills_only_the_difference.sql');
     expect(sql).toContain("'NOT_YOUR_REQUEST'");
     expect(sql).toContain('coalesce(v_video_rate, 0) - v_session.rate_tokens_per_min');
