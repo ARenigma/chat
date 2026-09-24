@@ -178,6 +178,7 @@ const MIGRATIONS = [
   'supabase/migrations/137_video_switch_acceptance_respects_kill_switch.sql',
   'supabase/migrations/138_fallback_skips_locked_call_and_kill_switch_outcome.sql',
   'supabase/migrations/139_claim_session_lease_locks_call_first.sql',
+  'supabase/migrations/140_inr_sync_checks_gross_against_debits.sql',
 ];
 
 /**
@@ -859,6 +860,14 @@ const suites = [
     ),
     label:
       'a client cannot delete or re-insert its profile to grant itself a balance, role, or verified phone',
+  },
+  {
+    file: join(
+      ROOT,
+      'supabase/tests/540_inr_sync_checks_gross_against_debits.sql',
+    ),
+    label:
+      'a call switched to video mid-session reconciles against what the member was debited',
   },
 ];
 
