@@ -30,8 +30,9 @@ name: First launch reaches supported sign-in
     timeout: 15000
 - assertVisible:
     id: 'onboard-google'
-- assertVisible:
-    id: 'onboard-truecaller'
+# 'onboard-truecaller' is not asserted: it only renders when the Truecaller app
+# is installed and usable, and on such a phone the bloom opens the sheet
+# directly. Google is the one control every device shows.
 # Asserted absent, not merely unmentioned: the Facebook button existed with no
 # credentials behind it, so every tap failed. A flow that stops naming it would
 # pass again the moment someone re-added it.

@@ -552,7 +552,7 @@ export function OnboardingScreen({ onDone }: Props) {
    * PRIMARY: Truecaller 1-tap sign-in.
    *
    * Cancellation (user dismissed) is silent — it is a deliberate choice.
-   * Unavailability routes the member to the WhatsApp OTP button without feedback.
+   * Unavailability returns the member to the chooser without feedback.
    * A hard failure shows an actionable error and keeps all fallbacks visible.
    *
    * If the phone has no Supabase owner yet, the server returns a pending challenge
@@ -591,8 +591,7 @@ export function OnboardingScreen({ onDone }: Props) {
           if (action === 'use_google') {
             // The sheet's "Use another method" footer: go straight to the
             // Google account picker rather than making them tap again.
-            setState('idle');
-            onGoogleRef.current();
+            startGoogleRef.current();
             return;
           }
         }
@@ -676,10 +675,12 @@ export function OnboardingScreen({ onDone }: Props) {
     })();
   }, [state, truecallerChallenge, fail, completeAuthentication]);
 
-  const onGoogle = useCallback(() => {
-    if (!canSubmit(state)) {
-      return;
-    }
+  /*
+   * Unguarded so the Truecaller footer can hand straight off to it: in that
+   * path `state` is still the stale 'loading' from the sheet in this render,
+   * and the button's canSubmit guard would swallow the call.
+   */
+  const startGoogle = useCallback(() => {
     setRoute('google');
     setState('loading');
     setFailure(null);
@@ -725,14 +726,21 @@ export function OnboardingScreen({ onDone }: Props) {
         );
       }
     })();
-  }, [state, fail, completeAuthentication]);
+  }, [fail, completeAuthentication]);
+
+  const onGoogle = useCallback(() => {
+    if (!canSubmit(state)) {
+      return;
+    }
+    startGoogle();
+  }, [state, startGoogle]);
 
   // Latest handlers for callers defined above them (the bloom's hand-off in
   // `begin`, the sheet's footer in `onTruecaller`, the partner link).
   const onTruecallerRef = useRef(onTruecaller);
   onTruecallerRef.current = onTruecaller;
-  const onGoogleRef = useRef(onGoogle);
-  onGoogleRef.current = onGoogle;
+  const startGoogleRef = useRef(startGoogle);
+  startGoogleRef.current = startGoogle;
 
   const onUsePhone = useCallback(() => {
     setRoute('phone');
