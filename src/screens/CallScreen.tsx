@@ -845,10 +845,12 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   // an old request can never start (or fire) a timer for a newer one.
   const askAttempt = useRef(0);
   const askTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // True while our request RPC is in flight. Every outcome of a NEW request
-  // needs the peer to see it and act, so none can arrive before the RPC's own
-  // response: an outcome received in this window answers an older request.
+  // True while our request RPC is in flight. An outcome arriving in this
+  // window may answer this request (a fast peer) or an older one, and only
+  // the RPC's requested_at can tell, so it is held rather than dropped: the
+  // reducer has already marked it seen and will not deliver it again.
   const askInFlight = useRef(false);
+  const heldOutcome = useRef<{ result: VideoSwitchResult; resolvedAt: string } | null>(null);
   // The server's time for our latest recorded request (141). An outcome
   // resolved before it answers an earlier request; both are server clock.
   const myRequestAt = useRef<string | null>(null);
@@ -890,40 +892,48 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     },
     /* onResolved: both sides hear the server's recorded outcome */
     (result: VideoSwitchResult, resolvedAt: string) => {
-      if (askInFlight.current) return;
-      if (myRequestAt.current !== null && Date.parse(resolvedAt) < Date.parse(myRequestAt.current)) return;
-      const iAsked = askedRef.current;
-      clearAsk();
-      setVideoRequestFrom(null);
-      setUpgrading(false);
-      if (result === 'accepted') {
-        adoptMedium('video');
+      if (askInFlight.current) {
+        heldOutcome.current = { result, resolvedAt };
         return;
       }
-      // 136: a call switched to video before it started can be put back on
-      // voice at start if the member can no longer afford video. Both sides
-      // follow the server back.
-      if (result === 'insufficient_balance' && liveMediumRef.current === 'video') {
-        adoptMedium('voice');
-        setNotice('Balance too low for video, so the call continues on voice.');
-        return;
-      }
-      if (!iAsked) return;
-      setNotice(
-        result === 'declined'
-          ? `${name} would rather stay on voice.`
-          : result === 'insufficient_balance'
-            ? 'Not enough balance to switch to video.'
-            : result === 'video_disabled'
-              ? 'Video calls are paused right now.'
-              : result === 'session_ended'
-                ? 'This paid session has ended, so the call stays on voice.'
-                : `${name} didn't answer. You're still on voice.`,
-      );
+      handleOutcome(result, resolvedAt);
     },
     /* onMedium: the server's medium, e.g. for a screen that subscribed late */
     adoptMedium,
   );
+
+  /** A switch outcome, on both sides (see useVideoSwitch). */
+  function handleOutcome(result: VideoSwitchResult, resolvedAt: string) {
+    if (myRequestAt.current !== null && Date.parse(resolvedAt) < Date.parse(myRequestAt.current)) return;
+    const iAsked = askedRef.current;
+    clearAsk();
+    setVideoRequestFrom(null);
+    setUpgrading(false);
+    if (result === 'accepted') {
+      adoptMedium('video');
+      return;
+    }
+    // 136: a call switched to video before it started can be put back on
+    // voice at start if the member can no longer afford video. Both sides
+    // follow the server back.
+    if (result === 'insufficient_balance' && liveMediumRef.current === 'video') {
+      adoptMedium('voice');
+      setNotice('Balance too low for video, so the call continues on voice.');
+      return;
+    }
+    if (!iAsked) return;
+    setNotice(
+      result === 'declined'
+        ? `${name} would rather stay on voice.`
+        : result === 'insufficient_balance'
+          ? 'Not enough balance to switch to video.'
+          : result === 'video_disabled'
+            ? 'Video calls are paused right now.'
+            : result === 'session_ended'
+              ? 'This paid session has ended, so the call stays on voice.'
+              : `${name} didn't answer. You're still on voice.`,
+    );
+  }
 
   const askForVideo = () => {
     if (callId === null) return;
@@ -934,11 +944,19 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     // The server only records 'expired' if the peer answers late, so an
     // ignored request must end here or the button stays on "Requesting".
     void requestVideoSwitch(callId).catch((): null => null).then(r => {
-      if (attempt === askAttempt.current) askInFlight.current = false;
-      // Superseded (answered already, or asked again): not this response's call.
-      if (attempt !== askAttempt.current || !askedRef.current) return;
+      if (attempt !== askAttempt.current) return;
+      askInFlight.current = false;
+      const held = heldOutcome.current;
+      heldOutcome.current = null;
+      if (!askedRef.current) return;
       if (r?.success) {
         myRequestAt.current = r.requested_at ?? null;
+        // An outcome that raced ahead of this response: apply it if it
+        // answers this request (handleOutcome drops an older one).
+        if (held !== null) {
+          handleOutcome(held.result, held.resolvedAt);
+          if (!askedRef.current) return;
+        }
         // Started once the server has recorded the request, so it tracks the
         // server's own 30 s deadline rather than running ahead of it.
         askTimer.current = setTimeout(() => {

@@ -8709,7 +8709,10 @@ describe('switch to video works end to end and bills only the difference (132, 2
     const sql = read('supabase/migrations/141_video_switch_request_returns_requested_at.sql');
     expect(sql).toContain("jsonb_build_object('success', true, 'requested_at', now())");
     const screen = withoutComments(read('src/screens/CallScreen.tsx'));
-    expect(screen).toContain('if (askInFlight.current) return;');
+    // Held, not dropped: the reducer will not deliver a seen outcome again,
+    // and a fast peer's accept can beat the RPC response (Greptile P1).
+    expect(screen).toContain('heldOutcome.current = { result, resolvedAt };');
+    expect(screen).toContain('handleOutcome(held.result, held.resolvedAt);');
     expect(screen).toContain('Date.parse(resolvedAt) < Date.parse(myRequestAt.current)) return;');
     expect(screen).toContain('myRequestAt.current = r.requested_at ?? null;');
   });
