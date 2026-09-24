@@ -24,13 +24,9 @@ name: First launch reaches supported sign-in
 - tapOn:
     id: 'welcome-continue'
     retryTapIfNoChange: true
-# On a phone with a usable Truecaller the bloom opens its sheet over the
-# chooser. Dismissing it returns there ('cancelled' → return_to_chooser).
-- runFlow:
-    when:
-      visible: 'Use another method'
-    commands:
-      - back
+# Precondition: no usable Truecaller (the emulator). With one, the bloom opens
+# its sheet over the chooser instead, and that path is driven on a real phone
+# rather than dismissed here by an unverified gesture.
 - extendedWaitUntil:
     visible:
       id: 'onboard-google'
