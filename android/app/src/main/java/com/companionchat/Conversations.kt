@@ -80,6 +80,38 @@ object Conversations {
     private const val CHANNEL_ID = "conversations_v2"
 
     /**
+     * The IN-APP conversation channel: a message for a conversation the person
+     * is not looking at, arriving while they are using the app (`inApp` on
+     * [notify] and [notifyChatRequest], `onForegroundPush` in src/lib/push.ts).
+     *
+     * The rule it carries is the owner's, taken from Bluesky (social-app
+     * src/lib/hooks/useNotificationHandler.ts): in the shade AND as a heads-up
+     * banner, with no sound. That needs a channel of its own because on API 26+
+     * both halves belong to the channel, not the post. The importance table
+     * gives "Urgent: Makes a sound and appears as a heads-up notification" to
+     * IMPORTANCE_HIGH, and the heads-up conditions list "The notification
+     * channel has high importance" for 8.0 and higher, so HIGH is what peeks;
+     * the sound is a separate channel property, and null here is what makes it
+     * quiet. The per-post alternative, NotificationCompat.Builder#setSilent, is
+     * the one this replaced: it files the post in a "silent" group with
+     * GROUP_ALERT_SUMMARY, which is exactly what stops it peeking, so the
+     * banner half of the rule could never happen through it.
+     * https://developer.android.com/develop/ui/views/notifications/channels
+     * https://developer.android.com/develop/ui/compose/notifications#Heads-up
+     *
+     * A stated deviation: `setSound` says "Notification channels with an
+     * importance of at least IMPORTANCE_DEFAULT should have a sound". This one
+     * is HIGH for the banner and soundless by the owner's rule; "should", not
+     * "must", and the person is already holding the phone.
+     *
+     * No channel group, because [CHANNEL_ID] has none; the two sit side by side
+     * in Settings, and the name says which one is which. `_v1` because a
+     * channel is write-once (see [CHANNEL_ID]): if this ever needs a different
+     * importance or sound, the id is what changes.
+     */
+    private const val CHANNEL_IN_APP = "conversations_in_app_v1"
+
+    /**
      * The engagement channel, separate from conversations so a re-engagement nudge
      * can be silenced on its own and rings at DEFAULT rather than a message's HIGH
      * — a marketing nudge in the same high-importance channel as real messages is
@@ -261,8 +293,17 @@ object Conversations {
         }
     }
 
+    /**
+     * Both conversation channels, Messages and [CHANNEL_IN_APP].
+     *
+     * Together, because the app calls this at startup precisely so a channel
+     * is in Settings before the first push that uses it (see
+     * `ConversationsModule.ensureChannel`). A person who wants the in-app
+     * banner off should find it there before the first banner, not after.
+     */
     fun ensureChannel(context: Context) {
         migrateSilentChannels(context)
+        val manager = NotificationManagerCompat.from(context)
         val channel = NotificationChannelCompat
             .Builder(CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_HIGH)
             .setName(context.getString(R.string.channel_conversations))
@@ -270,7 +311,112 @@ object Conversations {
             .setShowBadge(true)
             .setSound(Settings.System.DEFAULT_NOTIFICATION_URI, notificationAttributes())
             .build()
-        NotificationManagerCompat.from(context).createNotificationChannel(channel)
+        manager.createNotificationChannel(channel)
+        // HIGH so it peeks, no sound and no vibration so it does nothing else.
+        // setVibrationEnabled is the Compat builder's NotificationChannel
+        // #enableVibration. Both are "Only modifiable before the channel is
+        // submitted", which is why they are explicit rather than left to
+        // whatever the builder defaults to today.
+        val inApp = NotificationChannelCompat
+            .Builder(CHANNEL_IN_APP, NotificationManagerCompat.IMPORTANCE_HIGH)
+            .setName(context.getString(R.string.channel_conversations_in_app))
+            .setDescription(context.getString(R.string.channel_conversations_in_app_desc))
+            .setShowBadge(true)
+            .setSound(null, null)
+            .setVibrationEnabled(false)
+            .build()
+        manager.createNotificationChannel(inApp)
+    }
+
+    /**
+     * Where one conversation post goes.
+     *
+     * [quiet] is `NotificationCompat.Builder#setSilent`, and it is only ever
+     * true where the person's own quieter choice has to be carried across the
+     * two channels by hand (see [route]).
+     */
+    private class Route(val channelId: String, val quiet: Boolean)
+
+    /**
+     * The channel for a post, or null for no post at all: Messages for a
+     * background push, [CHANNEL_IN_APP] for an in-app one, each yielding to a
+     * quieter choice the person made on the other.
+     *
+     * "After you create a notification channel ... The user has complete
+     * control at that point." A second channel must not become a way round
+     * that, in either direction.
+     *
+     * The platform keys a conversation's own settings by PARENT channel. A
+     * person who long-presses a conversation notification and picks Priority,
+     * Default or Silent gets a conversation channel created under the channel
+     * THAT notification was posted on, and turning the conversation off in
+     * Settings then acts on that channel. Every later post finds it only if
+     * it is posted on the same parent:
+     * `getNotificationChannel(channelId, conversationId)` "If a conversation
+     * channel with the given conversation id is not found, this method will
+     * instead return the parent channel with the given channel ID". The shade
+     * entry for a conversation belongs to whichever channel posted it last,
+     * and it stays in the shade after the app goes to the background, so both
+     * directions happen:
+     *
+     *   - In-app post, choice made on Messages (Messages turned down, or the
+     *     conversation made Silent from a background post): read Messages
+     *     through the conversation's channel; below HIGH, the post goes on
+     *     Messages itself, quieted, so the system shows it at or below what
+     *     the person chose (nothing at all if they blocked it). A choice made
+     *     on the in-app channel needs nothing here: the post is on that
+     *     parent, so the system applies it.
+     *   - Background post, choice made on the in-app channel (the conversation
+     *     made Silent or turned off from an in-app banner): Messages alone
+     *     would never see it. So the in-app channel's conversation channel is
+     *     read too, and only when it is a conversation channel
+     *     (`conversationId != null`): this app never creates one, so one that
+     *     exists is the person's. Turned off, the post is skipped; below HIGH,
+     *     the post goes on Messages quieted. A choice the person made on
+     *     Messages for this conversation wins over it, because that is the
+     *     channel the system itself applies to this post.
+     *
+     * DEVIATION, stated: only the quieter half can be carried across. Priority,
+     * or a custom sound, chosen from an in-app banner lives on the in-app
+     * channel's conversation channel and cannot be applied to a Messages post
+     * by any per-post flag, so a background post uses Messages' own settings
+     * for it. The reverse is the same: in-app posts are silent by the owner's
+     * rule whatever sound Messages has.
+     *
+     * The shortcut id is the conversation id here, so it is the conversationId
+     * both lookups need. Null channels mean below API 26, where there are no
+     * channels and the post's own defaults decide (`setDefaults` in [notify]);
+     * below API 30 there are no conversation channels, and the lookup
+     * "Returns the channel for the channelId".
+     * https://developer.android.com/develop/ui/views/notifications/channels
+     * https://developer.android.com/develop/ui/views/notifications/conversations
+     * https://developer.android.com/reference/android/app/NotificationManager#getNotificationChannel(java.lang.String,%20java.lang.String)
+     * https://developer.android.com/reference/androidx/core/app/NotificationManagerCompat#getNotificationChannelCompat(java.lang.String,java.lang.String)
+     */
+    private fun route(
+        manager: NotificationManagerCompat,
+        conversationId: String,
+        inApp: Boolean,
+    ): Route? {
+        val messages = manager.getNotificationChannelCompat(CHANNEL_ID, conversationId)
+        if (inApp) {
+            if (messages == null || messages.importance >= NotificationManagerCompat.IMPORTANCE_HIGH) {
+                return Route(CHANNEL_IN_APP, quiet = false)
+            }
+            return Route(CHANNEL_ID, quiet = true)
+        }
+        val inAppChoice = manager.getNotificationChannelCompat(CHANNEL_IN_APP, conversationId)
+            ?.takeIf { it.conversationId != null }
+        if (inAppChoice == null || messages?.conversationId != null) {
+            return Route(CHANNEL_ID, quiet = false)
+        }
+        if (inAppChoice.importance == NotificationManagerCompat.IMPORTANCE_NONE) {
+            return null
+        }
+        return Route(
+            CHANNEL_ID,
+            quiet = inAppChoice.importance < NotificationManagerCompat.IMPORTANCE_HIGH,
+        )
     }
 
     fun ensureEngagementChannel(context: Context) {
@@ -327,6 +473,20 @@ object Conversations {
      * The notification id is the conversation's hash, so every message in a
      * conversation lands on the same notification and a different conversation
      * gets its own.
+     *
+     * [inApp] is the FOREGROUND post (`onForegroundPush` in src/lib/push.ts):
+     * a message for a conversation other than the one on screen, arriving while
+     * the person is using the app. It is the same notification (same id, same
+     * shortcut, same cumulative transcript) posted on [CHANNEL_IN_APP], which
+     * peeks without a sound. It is per-POST, not per-notification: posting the
+     * same id on another channel replaces the notification in place ("call
+     * NotificationManagerCompat.notify() again, passing it the same ID"), and
+     * the transcript is read back from whatever is live, whichever channel put
+     * it there. So the next background push for the same conversation passes
+     * `false`, lands on Messages and alerts with sound, and still extends the
+     * lines this post left in the shade; the reverse holds too. Every existing
+     * caller gets the default, which is the behaviour they had.
+     * https://developer.android.com/develop/ui/views/notifications/build-notification#Updating
      */
     fun notify(
         context: Context,
@@ -336,11 +496,16 @@ object Conversations {
         body: String,
         sentAt: Long,
         avatarUrl: String? = null,
+        inApp: Boolean = false,
     ) {
         ensureChannel(context)
 
         val manager = NotificationManagerCompat.from(context)
         val id = notificationId(conversationId)
+        // Decided once, for the text post and its photo fill alike: a fill is
+        // an update of that post and only changes the picture. Null is the
+        // person having turned this conversation off (see `route`).
+        val route = route(manager, conversationId, inApp) ?: return
 
         /*
          * `setKey` is what makes two Person objects the same person across
@@ -355,7 +520,11 @@ object Conversations {
             .apply { if (icon != null) setIcon(icon) }
             .build()
 
-        fun post(style: NotificationCompat.MessagingStyle, icon: IconCompat?) {
+        fun post(
+            style: NotificationCompat.MessagingStyle,
+            icon: IconCompat?,
+            photoFill: Boolean = false,
+        ) {
             val person = personOf(icon)
 
             /*
@@ -376,7 +545,7 @@ object Conversations {
                 .build()
             ShortcutManagerCompat.pushDynamicShortcut(context, shortcut)
 
-            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            val notification = NotificationCompat.Builder(context, route.channelId)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setColor(BRAND_COLOR)
                 .setStyle(style)
@@ -393,9 +562,44 @@ object Conversations {
                 // used, so it is still required for apps supporting those
                 // platforms."
                 // https://developer.android.com/reference/androidx/core/app/NotificationCompat.Builder#setDefaults(int)
-                .setDefaults(NotificationCompat.DEFAULT_SOUND or NotificationCompat.DEFAULT_VIBRATE)
+                //
+                // None for an in-app post: no sound is the owner's rule on
+                // every API level. On 24-25 that also costs the banner, since
+                // the heads-up condition there is "high priority and uses
+                // ringtones or vibrations"; where the two halves of the rule
+                // cannot both hold, the quiet half wins, as it does on 26+ for
+                // a person who turned Messages down (see `route`).
+                // https://developer.android.com/develop/ui/compose/notifications#Heads-up
+                .setDefaults(
+                    if (inApp) 0 else NotificationCompat.DEFAULT_SOUND or NotificationCompat.DEFAULT_VIBRATE,
+                )
                 .setAutoCancel(true)
                 .setContentIntent(openConversation(context, peerId))
+                // Only where a quieter choice the person made on one channel
+                // has to be carried to a post on Messages (see `route`): an
+                // in-app post while Messages is turned down, or a background
+                // post for a conversation made Silent from an in-app banner.
+                // setSilent "prevents
+                // the notification from peeking on screen, regardless of the
+                // importance, sounds, or vibrations set on the notification or
+                // notification channel", which is why it is not how the in-app
+                // banner is made, and exactly why it is right here: a person
+                // who turned it down gets no banner and no sound. It files the
+                // post in a "silent" group with GROUP_ALERT_SUMMARY, so it stays
+                // correct only while this builder sets no group of its own.
+                // https://developer.android.com/reference/androidx/core/app/NotificationCompat.Builder#setSilent(boolean)
+                .setSilent(route.quiet)
+                // A photo fill is an UPDATE of a notification that already
+                // alerted (or already chose not to), and "interrupts the user...
+                // only the first time the notification appears and not for later
+                // updates" is exactly what it wants. Without it the fill is an
+                // update Android may alert for again, so a message from a
+                // provider with a photo could sound twice, once for the text and
+                // once for the picture. Never set on a post that adds a message,
+                // or a second message in the transcript would land without a
+                // sound.
+                // https://developer.android.com/develop/ui/views/notifications/build-notification#Updating
+                .setOnlyAlertOnce(photoFill)
                 .build()
 
             try {
@@ -430,7 +634,7 @@ object Conversations {
                  * would delete it from the shade.
                  */
                 val live = activeMessagingStyle(manager, id) ?: return@execute
-                post(withSenderIcon(live, peerId, icon), icon)
+                post(withSenderIcon(live, peerId, icon), icon, photoFill = true)
             }
         }
     }
@@ -684,6 +888,9 @@ object Conversations {
      * if the request is still pending the in-app ChatRingScreen handles accept/decline.
      * Decline broadcasts to ChatRequestReceiver, which calls decline_session_request
      * without opening the UI.
+     *
+     * [inApp] means what it means on [notify]: the foreground post, same
+     * notification, on [CHANNEL_IN_APP], so it peeks without a sound.
      */
     fun notifyChatRequest(
         context: Context,
@@ -693,11 +900,13 @@ object Conversations {
         requestId: String,
         sentAt: Long,
         avatarUrl: String? = null,
+        inApp: Boolean = false,
     ) {
         ensureChannel(context)
 
         val manager = NotificationManagerCompat.from(context)
         val id = notificationId(conversationId)
+        val route = route(manager, conversationId, inApp) ?: return
         val accept = openConversation(context, peerId)
 
         val declineIntent = Intent(ChatRequestReceiver.ACTION_DECLINE)
@@ -711,7 +920,11 @@ object Conversations {
             android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
-        fun post(style: NotificationCompat.MessagingStyle, icon: IconCompat?) {
+        fun post(
+            style: NotificationCompat.MessagingStyle,
+            icon: IconCompat?,
+            photoFill: Boolean = false,
+        ) {
             val person = Person.Builder()
                 .setKey(peerId)
                 .setName(senderName)
@@ -730,7 +943,7 @@ object Conversations {
                 .build()
             ShortcutManagerCompat.pushDynamicShortcut(context, shortcut)
 
-            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            val notification = NotificationCompat.Builder(context, route.channelId)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setColor(BRAND_COLOR)
                 .setStyle(style)
@@ -738,9 +951,17 @@ object Conversations {
                 .addPerson(person)
                 .setCategory(NotificationCompat.CATEGORY_MESSAGE)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setDefaults(NotificationCompat.DEFAULT_SOUND or NotificationCompat.DEFAULT_VIBRATE)
+                // Same channel, defaults and flags, for the same reasons, as
+                // notify(): an in-app post peeks without a sound, a post that
+                // carries the person's quieter choice across channels is quiet,
+                // and a photo fill never alerts a second time.
+                .setDefaults(
+                    if (inApp) 0 else NotificationCompat.DEFAULT_SOUND or NotificationCompat.DEFAULT_VIBRATE,
+                )
                 .setContentIntent(accept)
                 .setAutoCancel(true)
+                .setSilent(route.quiet)
+                .setOnlyAlertOnce(photoFill)
                 .addAction(
                     NotificationCompat.Action.Builder(
                         R.drawable.ic_notification,
@@ -786,7 +1007,7 @@ object Conversations {
                 // Same live-re-read as notify(): a second request can land while
                 // the photo downloads; rebuilding from a stale style would drop it.
                 val live = activeMessagingStyle(manager, id) ?: return@execute
-                post(withSenderIcon(live, peerId, icon), icon)
+                post(withSenderIcon(live, peerId, icon), icon, photoFill = true)
             }
         }
     }

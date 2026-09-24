@@ -88,6 +88,7 @@ import {
   type ReactionTally,
 } from '../lib/reactions';
 import { isPending, PENDING_PREFIX } from '../lib/transcript';
+import { useViewingConversation } from '../lib/viewingConversation';
 import type { VoiceDraft, VoicePlayer } from '../lib/voice';
 import {
   selectPeerActivity,
@@ -360,6 +361,10 @@ export function useChatV2Controller(
   const { data: conversationLabels } = useConversationLabels();
 
   useSessionRealtime(conversationId);
+  // This thread is on screen: a foreground push for it is already drawn by
+  // Realtime, so `onForegroundPush` posts nothing for it (push.ts), and any
+  // notification it already has is taken out of the shade.
+  useViewingConversation(conversationId);
   useSessionLease(benchmarkReadOnly ? null : activeSession);
 
   const { notifyTyping, notifyRecording, notifyRecordingEnded } =

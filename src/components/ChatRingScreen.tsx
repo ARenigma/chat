@@ -19,13 +19,15 @@
  * missed it still has the thread waiting. Nothing is declined by silence.
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { AppState, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { initialOf } from '../lib/display';
 import { formatClock } from '../lib/sessionClock';
 import { useAcceptSessionRequest, useDeclineSessionRequest } from '../api/sessions';
+import { clearConversation } from '../lib/conversations';
+import { getRingingConversation, setRingingConversation } from '../lib/viewingConversation';
 import { useStore } from '../store/useStore';
 import { Avatar } from './Avatar';
 import { CallRing } from './CallRing';
@@ -61,17 +63,81 @@ export function ChatRingScreen({ onOpenConversation }: Props) {
     }
     setLeft(CHAT_RING_SECONDS);
     const started = Date.now();
+    const conversationId = incoming.conversationId;
+    /*
+     * Whether the ring has been in front of somebody using the app for its
+     * whole life, which is what decides the notification below. Cleared on any
+     * departure and never set again: a return in the last second is not 30
+     * seconds of watching, and a ring can run out with nobody there. React
+     * Native's timers stop on onHostPause but run again for any headless task
+     * (JavaTimerManager), so this interval can fire in the background while
+     * the FCM handler is posting that very notification, or late on the way
+     * back, the moment the host resumes.
+     */
+    let watched = AppState.currentState === 'active';
+    /*
+     * While this ring is on screen, a foreground push for its conversation is
+     * the same event told twice, and a banner over the ring opened the chat
+     * underneath it (`foregroundPushAction`). Held only while the app is in
+     * use, so a phone locked mid-ring still alerts, and released only if it
+     * is still ours, `useViewingConversation`'s rule, so a newer ring's claim
+     * survives an older one's cleanup.
+     */
+    let over = false;
+    const release = (): void => {
+      if (getRingingConversation() === conversationId) {
+        setRingingConversation(null);
+      }
+    };
+    if (watched) {
+      setRingingConversation(conversationId);
+    }
+    const subscription = AppState.addEventListener('change', next => {
+      if (next === 'active') {
+        // Not after the clock ran out: the ring is gone even if the render
+        // that removes it has not landed yet.
+        if (!over) {
+          setRingingConversation(conversationId);
+        }
+      } else {
+        watched = false;
+        release();
+      }
+    });
     const timer = setInterval(() => {
       const elapsed = Math.floor((Date.now() - started) / 1000);
       const remaining = CHAT_RING_SECONDS - elapsed;
       setLeft(remaining);
       if (remaining <= 0) {
+        clearInterval(timer);
+        // The ring is off the screen from here, whenever the re-render lands.
+        over = true;
+        release();
         // Silence is not a decline: the request lives its full 24 hours and the
         // thread is still waiting in their list.
         clearIncoming();
+        /*
+         * The ring and the "wants to have a chat with you" notification are the
+         * same event, and once the ring has been watched to the end the shade
+         * copy is only a stale second telling. Same id either way, the
+         * conversation's (`clearConversation` in src/lib/conversations.ts).
+         * Only when watched: "Don't cancel a conversation notification before
+         * the user has seen the message", and a ring that ran out behind a
+         * locked screen or another app is the example given of getting that
+         * wrong. Left alone, it goes when the chat is opened
+         * (`useViewingConversation`), and the request is still in the list.
+         * https://developer.android.com/develop/ui/views/notifications/conversations#best-practices
+         */
+        if (watched && AppState.currentState === 'active') {
+          void clearConversation(conversationId);
+        }
       }
     }, 1000);
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      subscription.remove();
+      release();
+    };
   }, [incoming, clearIncoming]);
 
   const onAccept = useCallback(() => {
@@ -96,9 +162,24 @@ export function ChatRingScreen({ onOpenConversation }: Props) {
     if (incoming === null) {
       return;
     }
+    const conversationId = incoming.conversationId;
     decline.mutate(
-      { requestId: incoming.requestId, conversationId: incoming.conversationId },
-      { onSettled: clearIncoming },
+      { requestId: incoming.requestId, conversationId },
+      {
+        /*
+         * The ring ends either way, and so does its notification: a press on
+         * Decline is the provider having seen and answered the request, which
+         * is the moment the platform allows a conversation notification to be
+         * cancelled. The lock-screen Decline already does the same in
+         * ChatRequestReceiver; this is the in-app half. Accept needs nothing
+         * here, because opening the chat clears it (`useViewingConversation`).
+         * https://developer.android.com/develop/ui/views/notifications/conversations#best-practices
+         */
+        onSettled: () => {
+          clearIncoming();
+          void clearConversation(conversationId);
+        },
+      },
     );
   }, [incoming, decline, clearIncoming]);
 

@@ -1,5 +1,6 @@
 package com.companionchat
 
+import android.util.Log
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -28,6 +29,12 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
      * surface an error to anybody: the app is usually in the background with no
      * one looking, and a rejected promise inside a headless FCM handler is an
      * unhandled rejection rather than a message anyone reads.
+     *
+     * `inApp` is required here, not defaulted: a bridge method has one arity,
+     * and the default lives in the JS wrapper (`notifyConversation` in
+     * src/lib/conversations.ts) so every existing caller keeps its behaviour
+     * without passing anything. Only the foreground path passes `true`, which
+     * posts on the in-app channel (see `Conversations.CHANNEL_IN_APP`).
      */
     @ReactMethod
     fun notify(
@@ -37,6 +44,7 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
         body: String,
         sentAt: Double,
         avatarUrl: String,
+        inApp: Boolean,
         promise: Promise,
     ) {
         try {
@@ -49,6 +57,7 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
                 sentAt = sentAt.toLong(),
                 // '' means "no photo": a member sender, or an older server build.
                 avatarUrl = avatarUrl.ifEmpty { null },
+                inApp = inApp,
             )
             promise.resolve(true)
         } catch (error: Exception) {
@@ -123,7 +132,7 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
     /**
      * Post a chat-request notification with Accept/Decline action buttons.
      * Resolves rather than rejects on failure — same headless-handler contract as
-     * `notify` and `notifyCall`.
+     * `notify` and `notifyCall`. `inApp` as on `notify`.
      */
     @ReactMethod
     fun notifyChatRequest(
@@ -133,6 +142,7 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
         requestId: String,
         sentAt: Double,
         avatarUrl: String,
+        inApp: Boolean,
         promise: Promise,
     ) {
         try {
@@ -144,6 +154,7 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
                 requestId = requestId,
                 sentAt = sentAt.toLong(),
                 avatarUrl = avatarUrl.ifEmpty { null },
+                inApp = inApp,
             )
             promise.resolve(true)
         } catch (error: Exception) {
@@ -188,7 +199,8 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
     }
 
     /**
-     * Create the channel early, so it exists in Settings before the first push.
+     * Create the conversation channels early, so they exist in Settings before
+     * the first push: Messages and the in-app one, both.
      *
      * A channel that only appears after the first notification means a user who
      * wants to pre-emptively silence the app finds nothing to silence.
@@ -199,7 +211,35 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
         promise.resolve(null)
     }
 
+    /**
+     * One line of push diagnostics to logcat, under a tag of its own.
+     *
+     * Exists because the question "did this device register?" had no answer
+     * in a RELEASE build. Registration in src/lib/push.ts only ever logged in
+     * `__DEV__`, so a device with no row in `push_tokens` left nothing behind
+     * to say whether the RPC failed, FCM had no token to give, or permission
+     * was never granted. A fixed tag makes it one command on any build:
+     * `adb logcat -s PappalPush`.
+     * https://developer.android.com/reference/android/util/Log
+     *
+     * The caller composes the message and never passes the FCM token: a token
+     * is a capability to push onto this lock screen (see migration 008), and
+     * logcat is readable by anyone holding the phone over adb. Info and warn
+     * only, both of which survive in release builds.
+     */
+    @ReactMethod
+    fun pushLog(warn: Boolean, message: String) {
+        if (warn) {
+            Log.w(PUSH_LOG_TAG, message)
+        } else {
+            Log.i(PUSH_LOG_TAG, message)
+        }
+    }
+
     companion object {
         const val NAME = "Conversations"
+
+        /** Stable, so the adb filter in docs and scripts keeps working. */
+        const val PUSH_LOG_TAG = "PappalPush"
     }
 }

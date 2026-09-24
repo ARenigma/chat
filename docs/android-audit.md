@@ -1099,3 +1099,27 @@ Sheet on a release/closedTest build. A screenshot block cannot be unit-tested.
   uses durationWords(elapsed_seconds).
 - Verification: ledger rows should show "1 min 30 secs" not "2 min" for a 90-second
   session billed at 2 minutes.
+
+### Conversation channels are keyed by parent: the in-app channel and Messages (2026-09-25)
+
+- Read: https://developer.android.com/develop/ui/views/notifications/conversations,
+  https://developer.android.com/reference/android/app/NotificationManager#getNotificationChannel(java.lang.String,%20java.lang.String),
+  https://developer.android.com/reference/androidx/core/app/NotificationManagerCompat#getNotificationChannelCompat(java.lang.String,java.lang.String)
+- Requirement: a per-conversation choice (Priority, Default, Silent, off) is a
+  conversation channel under the PARENT the long-pressed notification was
+  posted on; a lookup "will instead return the parent channel" when none
+  exists under the parent asked about. The user's choice must hold on every
+  post for that conversation.
+- Finding: foreground posts use `conversations_in_app_v1`, background posts
+  `conversations_v2`. A conversation made Silent from an in-app banner was
+  ignored by every background post, since `route()` never read the in-app
+  parent on that path.
+- Fix: `Conversations.route()` reads the conversation channel under both
+  parents. Background post: a user-made in-app conversation channel that is
+  off skips the post, and one below HIGH quiets it (`setSilent`), unless
+  Messages has its own conversation channel. Deviation, stated in the KDoc:
+  Priority or a custom sound chosen on the in-app channel cannot be carried to
+  a Messages post by a per-post flag. Asserted in `__tests__/pushForeground.test.ts`.
+- Verification: on a device, make a conversation Silent from an in-app banner,
+  background the app, send a message, and read `adb shell dumpsys notification`
+  for the post's channel and its `mSilent`/importance. Not yet done.

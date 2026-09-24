@@ -68,6 +68,13 @@ if (__DEV__) {
  *     message. Its body is a warm line and never carries message text:
  *     content on a lock screen is a disclosure this product cannot make, given
  *     who the conversations are with.
+ *
+ * A push that arrives while the app is in the foreground never reaches this
+ * handler; RNFirebase hands it to `onMessage` instead. `onForegroundPush` in
+ * src/lib/push.ts routes the last two kinds there the same way, posting the
+ * same notification on the in-app channel (a banner with no sound) and skipping
+ * the conversation on screen — so a change to the routing here is a change to
+ * make there too.
  */
 setBackgroundMessageHandler(getMessaging(), async remote => {
   const call = readCallPush(remote.data);

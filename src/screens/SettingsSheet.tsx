@@ -220,11 +220,29 @@ export function SettingsSheet({
   const onDelete = useCallback(async () => {
     setBusy(true);
     try {
-      // Before the account goes: the token row cascades with the user, but the
-      // *device* keeps the FCM token, and a token that outlives its row would be
-      // re-registered by the next sign-in on this phone.
-      await stopPush();
       await deleteAccount();
+      /*
+       * Only once the account is gone. The token row cascades with the user,
+       * but the *device* keeps the FCM token, and a token that outlives its row
+       * would be re-registered by the next sign-in on this phone, so stopPush
+       * still has to run; it used to run FIRST, and a deletion that then failed
+       * (offline, an RPC error) left an account that still exists on a device
+       * with no token and no listeners, silent until the next cold start.
+       *
+       * After, rather than first with a startPush in the catch to undo it:
+       * restarting push can raise the POST_NOTIFICATIONS dialog bare over this
+       * sheet (the ambush ADR-0026 exists to prevent), mints a new FCM token,
+       * and has to reach the network that the deletion just failed to reach.
+       * Nothing needs undoing if nothing was stopped. The cost is a moment in
+       * which the listeners outlive the account, and anything they send lands
+       * on a user that no longer exists: push_tokens.user_id references
+       * auth.users on delete cascade (migration 008), so a late
+       * register_push_token fails its foreign key rather than recreating a row.
+       * stopPush never throws, so it cannot turn a completed deletion into the
+       * error notice below. Its row delete now runs without a session and
+       * finds nothing to remove, which is the cascade having done it already.
+       */
+      await stopPush();
       track('account_deleted');
       queryClient.clear();
       resetStore();

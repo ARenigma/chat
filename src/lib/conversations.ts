@@ -23,6 +23,9 @@ interface Native {
     // because the bridge marshals a non-optional String; the native side treats
     // '' as "no icon" and builds the Person without one.
     avatarUrl: string,
+    // Required at the bridge (one arity per method); the default is
+    // `notifyConversation`'s, below. See `NotifyOptions`.
+    inApp: boolean,
   ): Promise<boolean>;
   notifyEngagement(
     peerId: string,
@@ -37,6 +40,7 @@ interface Native {
     requestId: string,
     sentAt: number,
     avatarUrl: string,
+    inApp: boolean,
   ): Promise<boolean>;
   notifyCall(
     callId: string,
@@ -55,6 +59,7 @@ interface Native {
   stopCallForegroundService(): void;
   clear(conversationId: string): Promise<void>;
   ensureChannel(): Promise<void>;
+  pushLog(warn: boolean, message: string): void;
 }
 
 const native = (NativeModules as { Conversations?: Native }).Conversations;
@@ -267,6 +272,21 @@ export async function notifyEngagement(push: EngagementPush): Promise<boolean> {
 }
 
 /**
+ * How a conversation notification is posted.
+ *
+ * `inApp` is the foreground post (`onForegroundPush` in push.ts): the same
+ * notification, id and cumulative transcript, posted on the in-app channel,
+ * which shows it in the shade and as a heads-up banner with no sound, because
+ * the person is using the app. Absent means `false`, which is what every
+ * caller that predates it (the background handler in index.js) gets without
+ * changing a line. See `Conversations.route` for the channel it picks and why
+ * it is a channel rather than a per-post flag.
+ */
+export interface NotifyOptions {
+  readonly inApp?: boolean;
+}
+
+/**
  * Post or extend a conversation notification.
  *
  * Resolves `false` rather than rejecting when the module is absent, so a caller
@@ -275,6 +295,7 @@ export async function notifyEngagement(push: EngagementPush): Promise<boolean> {
 export async function notifyConversation(
   push: ConversationPush,
   body: string,
+  options: NotifyOptions = {},
 ): Promise<boolean> {
   if (native === undefined) {
     return false;
@@ -286,6 +307,7 @@ export async function notifyConversation(
     body,
     push.sentAt,
     push.avatarUrl ?? '',
+    options.inApp === true,
   );
 }
 
@@ -299,11 +321,16 @@ export async function notifyConversation(
  * Decline action fires a BroadcastReceiver that declines without opening the UI.
  * https://developer.android.com/develop/ui/views/notifications/conversations
  */
-export async function notifyChatRequest(push: ConversationPush): Promise<boolean> {
+export async function notifyChatRequest(
+  push: ConversationPush,
+  options: NotifyOptions = {},
+): Promise<boolean> {
   if (native === undefined || !push.requestId) {
     // Fallback to a plain conversation notification when the bridge is absent or
     // when requestId is missing (older server build before send-push redeploy).
-    return notifyConversation(push, 'wants to have a chat with you');
+    // The options ride along: a foreground fallback goes on the same in-app
+    // channel as the request it stands in for.
+    return notifyConversation(push, 'wants to have a chat with you', options);
   }
   return native.notifyChatRequest(
     push.conversationId,
@@ -312,18 +339,25 @@ export async function notifyChatRequest(push: ConversationPush): Promise<boolean
     push.requestId,
     push.sentAt,
     push.avatarUrl ?? '',
+    options.inApp === true,
   );
 }
 
-/** Clear a conversation's notification once it has been read in the app. */
-export async function clearConversation(conversationId: string): Promise<void> {  if (native === undefined) {
+/**
+ * Clear a conversation's notification once it has been read in the app. Called
+ * by `useViewingConversation` whenever that conversation is on screen, and by
+ * `ChatRingScreen` when the provider declines a ringing request or watches it
+ * ring out.
+ */
+export async function clearConversation(conversationId: string): Promise<void> {
+  if (native === undefined) {
     return;
   }
   await native.clear(conversationId);
 }
 
 /**
- * Create the notification channel up front.
+ * Create the conversation channels up front: Messages and the in-app one.
  *
  * Called at startup rather than lazily on the first push, so somebody who wants
  * to silence messages before ever receiving one finds the channel in Settings.
@@ -333,4 +367,20 @@ export async function ensureConversationChannel(): Promise<void> {
     return;
   }
   await native.ensureChannel();
+}
+
+/**
+ * One line of push diagnostics to logcat under the `PappalPush` tag, in every
+ * build including release (`adb logcat -s PappalPush`).
+ *
+ * The message is the caller's and must never contain the FCM token — see
+ * `ConversationsModule.pushLog` for why. A warning is also mirrored to the JS
+ * console in `__DEV__`, which is where push.ts's failures used to be the only
+ * trace; a no-op under jest and anywhere else the module is absent.
+ */
+export function pushLog(level: 'info' | 'warn', message: string): void {
+  if (__DEV__ && level === 'warn') {
+    console.warn(`PappalPush ${message}`);
+  }
+  native?.pushLog(level === 'warn', message);
 }
