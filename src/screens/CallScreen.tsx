@@ -832,6 +832,15 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
         void enableVideoRef.current();
         return;
       }
+      // 136: a call switched to video before it started can be put back on
+      // voice at start if the member can no longer afford video. Both sides
+      // follow the server back.
+      if (result === 'insufficient_balance' && liveMediumRef.current === 'video') {
+        setLiveMedium('voice');
+        disableVideo();
+        setNotice('Balance too low for video, so the call continues on voice.');
+        return;
+      }
       if (!iAsked) return;
       setNotice(
         result === 'declined'

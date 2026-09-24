@@ -1945,6 +1945,7 @@ FUNCTION sequences_are(name[], text) returns text security=invoker
 FUNCTION server_privs_are(name, name, name[]) returns text security=invoker
 FUNCTION server_privs_are(name, name, name[], text) returns text security=invoker
 FUNCTION session_video_rate(p_session_id uuid) returns integer security=definer
+FUNCTION session_voice_rate(p_session_id uuid) returns integer security=definer
 FUNCTION set_conversation_name(p_conversation_id uuid, p_name text) returns void security=definer
 FUNCTION set_eq(text, anyarray) returns text security=invoker
 FUNCTION set_eq(text, anyarray, text) returns text security=invoker
