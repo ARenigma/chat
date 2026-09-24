@@ -173,6 +173,7 @@ const MIGRATIONS = [
   'supabase/migrations/132_video_switch_bills_only_the_difference.sql',
   'supabase/migrations/133_profiles_are_not_client_insertable_or_deletable.sql',
   'supabase/migrations/134_video_switch_pending_session_and_quote.sql',
+  'supabase/migrations/135_video_switch_pending_session_checks_balance.sql',
 ];
 
 /**

@@ -2795,3 +2795,19 @@ describe('the app-wide notice overlay clears the status bar and never blocks tou
     expect(read('App.tsx').match(/<NoticeOverlay \/>/g)).toHaveLength(1);
   });
 });
+
+describe('the switch-to-video fade respects reduced motion and is device-locatable (2026-09-24)', () => {
+  const screen = read('src/screens/CallScreen.tsx');
+  it('is opacity-only, standard duration, decelerate, and follows the system setting', () => {
+    expect(screen).toContain('FadeIn.duration(DURATION.base)');
+    expect(screen).toMatch(/const videoFadeIn = FadeIn\.duration\(DURATION\.base\)\s*\.easing\(EASE_OUT\)\s*\.reduceMotion\(ReduceMotion\.System\)/);
+    expect(screen).toContain('https://docs.swmansion.com/react-native-reanimated/docs/guides/accessibility');
+  });
+  it('both video surfaces carry testIDs a device gate can find', () => {
+    expect(screen).toContain('testID="call-remote-video"');
+    expect(screen).toContain('testID="call-local-pip"');
+  });
+  it('a switch accepted before media connects still turns the camera on at connect', () => {
+    expect(screen).toContain("if (liveMediumRef.current === 'video') {");
+  });
+});

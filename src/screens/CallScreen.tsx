@@ -272,6 +272,8 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
    * screen on, the button, the lease channel) stayed on voice.
    */
   const [liveMedium, setLiveMedium] = useState<CallMedium>(medium);
+  const liveMediumRef = useRef(liveMedium);
+  liveMediumRef.current = liveMedium;
   /** The member confirms the price before asking to switch (132). */
   const [videoPriceVisible, setVideoPriceVisible] = useState(false);
   const [memberConsented, setMemberConsented] = useState(false);
@@ -686,7 +688,10 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
           if (result?.session_id) setSessionId(result.session_id);
         });
       }
-      if (medium === 'video') {
+      // The LIVE medium, not the route prop: a switch accepted before this
+      // device's media connected must still turn the camera on here, because
+      // enableVideo was a no-op without an engine at the moment of acceptance.
+      if (liveMediumRef.current === 'video') {
         void enableVideoRef.current();
       }
     } else if (connState === 'failed') {
@@ -1173,7 +1178,10 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
         * BOTH sides (member and provider), so each finally sees the other.
         */}
       {showRemoteVideo ? (
-        <Animated.View entering={videoFadeIn} style={StyleSheet.absoluteFill}>
+        <Animated.View
+          testID="call-remote-video"
+          entering={videoFadeIn}
+          style={StyleSheet.absoluteFill}>
           <CallVideoView
             key={`agora-${remoteVideo.uid}-${remoteVideo.local ? 'local' : 'remote'}`}
             source={remoteVideo}
@@ -1648,7 +1656,14 @@ function LocalVideoPip({ source }: { source: CallVideoSource }) {
 /**
  * The switch to video (rare) fades the picture in rather than cutting from the
  * blurred photo to a live face; purpose: preventing a jarring change. Standard
- * duration, decelerate, and off under the system's reduced-motion setting.
+ * duration (DURATION.base), decelerate (EASE_OUT), opacity only.
+ *
+ * Honours Android's "Remove animations" accessibility setting through
+ * `ReduceMotion.System`, which Reanimated maps to the platform animator scale
+ * (https://docs.swmansion.com/react-native-reanimated/docs/guides/accessibility,
+ * https://developer.android.com/guide/topics/ui/accessibility/principles —
+ * "Remove animations"). Device-locatable: `call-remote-video` / `call-local-pip`.
+ * Asserted in __tests__/platform.test.ts.
  */
 const videoFadeIn = FadeIn.duration(DURATION.base)
   .easing(EASE_OUT)

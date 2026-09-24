@@ -12,7 +12,7 @@
 
 \set ON_ERROR_STOP on
 begin;
-select plan(15);
+select plan(17);
 
 insert into auth.users (id) values
   ('aa520000-0000-4000-8000-000000000001'),  -- member
@@ -305,6 +305,61 @@ select is(
   (select channel || '/' || rate_tokens_per_min || '/' || tokens_debited from public.paid_sessions where id = 'ee520000-0000-4000-8000-0000000000d1'),
   'video/' || (select video from rates) || '/0',
   '15. the pending session will start at the video rate'
+);
+
+-- ---------------------------------------------------------------------------
+-- Session E (135): pending session, member can afford voice but not video.
+-- ---------------------------------------------------------------------------
+update public.calls set status = 'ended', ended_at = now()
+where id = 'dd520000-0000-4000-8000-0000000000d1';
+update public.paid_sessions set status = 'ended', ended_at = now()
+where id = 'ee520000-0000-4000-8000-0000000000d1';
+update public.profiles
+set promo_balance = 25, purchased_balance = 0
+where id = 'aa520000-0000-4000-8000-000000000001';
+
+insert into public.calls (
+  id, conversation_id, caller_id, callee_id, medium, status,
+  started_at, media_backend, media_assignment_kind, last_seen_at
+) values (
+  'dd520000-0000-4000-8000-0000000000e1',
+  'cc520000-0000-4000-8000-0000000000c1',
+  'aa520000-0000-4000-8000-000000000001',
+  'bb520000-0000-4000-8000-000000000002',
+  'voice', 'active', now(), 'agora', 'default', now()
+);
+insert into public.paid_sessions (
+  id, conversation_id, channel, status, member_id, provider_id,
+  call_id, minutes_billed, tokens_debited, rate_tokens_per_min,
+  provider_share_percent, payout_hold_days, accepted_at
+) values (
+  'ee520000-0000-4000-8000-0000000000e1',
+  'cc520000-0000-4000-8000-0000000000c1',
+  'audio', 'pending_leases',
+  'aa520000-0000-4000-8000-000000000001',
+  'bb520000-0000-4000-8000-000000000002',
+  'dd520000-0000-4000-8000-0000000000e1',
+  0, 0, 22, 60, 7, now()
+);
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub":"aa520000-0000-4000-8000-000000000001","role":"authenticated"}';
+select public.request_media_upgrade('dd520000-0000-4000-8000-0000000000e1', 'video');
+set local request.jwt.claims =
+  '{"sub":"bb520000-0000-4000-8000-000000000002","role":"authenticated"}';
+select is(
+  public.respond_media_upgrade('dd520000-0000-4000-8000-0000000000e1', true) ->> 'error',
+  'INSUFFICIENT_BALANCE',
+  '16. a pending session is not switched to a rate the member cannot pay'
+);
+reset role;
+select is(
+  (select c.medium::text || '/' || ps.rate_tokens_per_min
+     from public.calls c join public.paid_sessions ps on ps.call_id = c.id
+    where c.id = 'dd520000-0000-4000-8000-0000000000e1'),
+  'voice/22',
+  '17. the call and its session stay voice'
 );
 
 select * from finish();
