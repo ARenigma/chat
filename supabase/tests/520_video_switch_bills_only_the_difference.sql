@@ -81,10 +81,12 @@ select is(
   '1. only voice → video is a valid switch'
 );
 
+-- 141: success carries the server's request time (now() is fixed within
+-- this transaction), which the requester uses to tell its outcome apart.
 select is(
-  (public.request_media_upgrade('dd520000-0000-4000-8000-0000000000a1', 'video') ->> 'success')::boolean,
-  true,
-  '2. the member can ask to switch to video'
+  (public.request_media_upgrade('dd520000-0000-4000-8000-0000000000a1', 'video') ->> 'requested_at')::timestamptz,
+  now(),
+  '2. the member can ask to switch to video, and is told when it was recorded'
 );
 
 select is(

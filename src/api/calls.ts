@@ -120,14 +120,17 @@ export async function endCall(
  * Ask the other party to switch the live voice call to video (migration 132).
  * Voice → video only; turning the camera off is a local toggle.
  */
-export async function requestVideoSwitch(callId: string): Promise<CallResult | null> {
+/** `requested_at` (141) is the server's own time for the recorded request. */
+export type VideoSwitchRequestResult = CallResult & { requested_at?: string };
+
+export async function requestVideoSwitch(callId: string): Promise<VideoSwitchRequestResult | null> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase.rpc as any)('request_media_upgrade', {
     p_call_id: callId,
     p_to_medium: 'video',
   });
   if (error) return raised(error as import('@supabase/supabase-js').PostgrestError);
-  return data as CallResult;
+  return data as VideoSwitchRequestResult;
 }
 
 export interface VideoSwitchResponse {
@@ -165,14 +168,19 @@ export type { VideoSwitchResult } from '../lib/videoSwitch';
  * sides with the server's recorded outcome (`calls.upgrade_result`, 132). Who
  * asked is the caller's own knowledge (it made the request), not inferred
  * here: a missed or late UPDATE can arrive after `upgrade_requested_by` has
- * already been cleared. The event logic is `videoSwitchEvents`.
+ * already been cleared. `onMedium` reports the row's medium whenever it can
+ * be ordered (see `videoSwitchEvents`), so a late subscriber still adopts a
+ * switch it never saw happen. The event logic is `videoSwitchEvents`.
  */
 export function useVideoSwitch(
   callId: string | null,
   selfId: string | undefined,
   onRequest: (requestedBy: string) => void,
-  onResolved: (result: VideoSwitchResult) => void,
+  onResolved: (result: VideoSwitchResult, resolvedAt: string) => void,
+  onMedium: (medium: CallMedium) => void,
 ): void {
+  const mediumHandler = useRef(onMedium);
+  mediumHandler.current = onMedium;
   const requestHandler = useRef(onRequest);
   requestHandler.current = onRequest;
   const resolvedHandler = useRef(onResolved);
@@ -189,9 +197,12 @@ export function useVideoSwitch(
         if (event.kind === 'request') {
           requestHandler.current(event.requestedBy);
         } else {
-          resolvedHandler.current(event.result);
+          resolvedHandler.current(event.result, event.resolvedAt);
         }
       }
+      // After the outcome, so an outcome's own handling (the fall-back notice)
+      // runs first and this is the no-op backstop for a missed one.
+      if (next.medium !== null) mediumHandler.current(next.medium);
     };
 
     const switchChannel = supabase
@@ -205,7 +216,7 @@ export function useVideoSwitch(
         if (status === 'SUBSCRIBED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           void supabase
             .from('calls')
-            .select('upgrade_requested_by,upgrade_requested_at,upgrade_result,upgrade_resolved_at')
+            .select('medium,upgrade_requested_by,upgrade_requested_at,upgrade_result,upgrade_resolved_at')
             .eq('id', callId)
             .maybeSingle()
             .then(({ data }) => {

@@ -8696,9 +8696,45 @@ describe('switch to video works end to end and bills only the difference (132, 2
     const screen = withoutComments(read('src/screens/CallScreen.tsx'));
     expect(screen).toContain('const [liveMedium, setLiveMedium] = useState<CallMedium>(medium)');
     expect(screen).toContain("const keepScreenOn = liveMedium === 'video' && mediaReady");
-    expect(screen).toContain("setLiveMedium('video')");
+    expect(screen).toContain("adoptMedium('video')");
+    // A late subscriber adopts the server's medium (Greptile P1, 2026-09-24).
+    expect(read('src/api/calls.ts')).toContain(".select('medium,upgrade_requested_by");
+    expect(screen).toMatch(/adoptMedium,\s*\);/);
     expect(screen).toContain('testID="call-video-price"');
     expect(screen).toContain('entering={videoFadeIn}');
+  });
+
+  it("an outcome of an earlier request cannot cancel the requester's new one", () => {
+    // Greptile P1, 2026-09-24. 141 returns the server's request time.
+    const sql = read('supabase/migrations/141_video_switch_request_returns_requested_at.sql');
+    expect(sql).toContain("jsonb_build_object('success', true, 'requested_at', now())");
+    const screen = withoutComments(read('src/screens/CallScreen.tsx'));
+    expect(screen).toContain('if (askInFlight.current) return;');
+    expect(screen).toContain('Date.parse(resolvedAt) < Date.parse(myRequestAt.current)) return;');
+    expect(screen).toContain('myRequestAt.current = r.requested_at ?? null;');
+  });
+
+  it('a switch is refused once the paid session has ended (142)', () => {
+    // Greptile P1, 2026-09-24: acceptance in that window put video on for free.
+    const sql = read('supabase/migrations/142_video_switch_refused_after_session_ended.sql');
+    expect(sql).toContain("return jsonb_build_object('success', false, 'error', 'SESSION_ENDED');");
+    expect(sql).toContain("'video_disabled', 'session_ended'");
+    expect(read('src/lib/videoSwitch.ts')).toContain("| 'session_ended'");
+    const screen = withoutComments(read('src/screens/CallScreen.tsx'));
+    expect(screen).toContain("r.error === 'SESSION_ENDED'");
+    expect(screen).toContain("result === 'session_ended'");
+  });
+
+  it('a partner intent never outlives a failed Truecaller attempt or a Google sign-in', () => {
+    // Greptile P1, 2026-09-24: the intent routed a phoneless Google account
+    // into provider onboarding.
+    const screen = withoutComments(read('src/screens/OnboardingScreen.tsx'));
+    const start = screen.slice(screen.indexOf('const startGoogle = useCallback'), screen.indexOf('const onGoogle = useCallback'));
+    expect(start).toContain('clearPartnerIntent();');
+    const truecaller = screen.slice(screen.indexOf('const onTruecaller = useCallback'), screen.indexOf('const onTruecallerNewUser'));
+    expect(truecaller).toMatch(/catch \(error\) \{\s*setRoute\('undecided'\);\s*clearPartnerIntent\(\);/);
+    const partner = screen.slice(screen.indexOf('const onBecomePartner = useCallback'));
+    expect(partner.indexOf('if (!truecallerAvailable())')).toBeLessThan(partner.indexOf("storage.set(PROVIDER_INTENT_KEY, '1')"));
   });
 
   it('the member confirms only a price the server quoted for this call', () => {
@@ -8719,5 +8755,24 @@ describe('switch to video works end to end and bills only the difference (132, 2
     for (const file of ['src/screens/ProfileSetupScreen.tsx', 'src/screens/ProviderApplicationScreen.tsx']) {
       expect(withoutComments(read(file))).not.toContain('<NoticeBar');
     }
+  });
+});
+
+describe('the Greptile push gate sees findings (2026-09-24)', () => {
+  // The gate's pattern never matched under the system grep, so every push
+  // passed with P1s outstanding. Run the script's own pattern through it.
+  const script = read('scripts/greptile-review.sh');
+  const pattern = /grep -Eq '([^']+)' "\$report"/.exec(script)?.[1] ?? '';
+  const matches = (text: string) =>
+    spawnSync('/usr/bin/grep', ['-Eq', pattern], { input: text }).status === 0;
+  it('blocks on each severity badge the review prints', () => {
+    expect(pattern).not.toBe('');
+    for (const line of ['1. P1 comment src/a.ts:1', '[P0] x', 'P2: y', '  P1']) {
+      expect(matches(line)).toBe(true);
+    }
+  });
+  it('passes a clean review', () => {
+    expect(matches('No review comments.\nConfidence: 5/5')).toBe(false);
+    expect(matches('MP3 HP1X P12')).toBe(false);
   });
 });

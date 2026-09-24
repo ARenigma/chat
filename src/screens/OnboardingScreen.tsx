@@ -509,6 +509,17 @@ export function OnboardingScreen({ onDone }: Props) {
     setErrorNonce(n => n + 1);
   }, []);
 
+  /*
+   * A partner is only ever created with a Truecaller-verified number (Cashfree
+   * 1-Click is keyed on it). Any path that leaves Truecaller without success,
+   * or that signs in with plain Google, drops the intent so it cannot route a
+   * phoneless account into provider onboarding.
+   */
+  const clearPartnerIntent = useCallback(() => {
+    storage.remove(PROVIDER_INTENT_KEY);
+    setPendingProviderApply(false);
+  }, [setPendingProviderApply]);
+
   const completeAuthentication = useCallback(async () => {
     const profile = await getSignedInProfile();
     // A provider signup ("Become a partner") skips the member first-run entirely
@@ -579,6 +590,7 @@ export function OnboardingScreen({ onDone }: Props) {
         await completeAuthentication();
       } catch (error) {
         setRoute('undecided');
+        clearPartnerIntent();
         if (error instanceof TruecallerOAuthError) {
           const action = actionForTruecallerFailure(error.reason);
           if (error.reason === 'unavailable') {
@@ -602,7 +614,7 @@ export function OnboardingScreen({ onDone }: Props) {
         );
       }
     })();
-  }, [state, fail, completeAuthentication]);
+  }, [state, fail, completeAuthentication, clearPartnerIntent]);
 
   /**
    * "I'm new to Pappal" — consume the pending challenge and create an account.
@@ -681,6 +693,7 @@ export function OnboardingScreen({ onDone }: Props) {
    * and the button's canSubmit guard would swallow the call.
    */
   const startGoogle = useCallback(() => {
+    clearPartnerIntent();
     setRoute('google');
     setState('loading');
     setFailure(null);
@@ -726,7 +739,7 @@ export function OnboardingScreen({ onDone }: Props) {
         );
       }
     })();
-  }, [fail, completeAuthentication]);
+  }, [fail, completeAuthentication, clearPartnerIntent]);
 
   const onGoogle = useCallback(() => {
     if (!canSubmit(state)) {
@@ -761,15 +774,17 @@ export function OnboardingScreen({ onDone }: Props) {
   const onBecomePartner = useCallback(() => {
     // Persist the intent too (see providerIntent.ts): the in-memory flag was
     // being lost across the auth → boot transition, dropping the provider on Home.
-    storage.set(PROVIDER_INTENT_KEY, '1');
-    setPendingProviderApply(true);
     // Partners need a verified number (Cashfree 1-Click is keyed on it), and
     // with phone codes off (2026-09-24) Truecaller is the only way to verify.
-    if (truecallerAvailable()) {
-      onTruecallerRef.current();
-    } else {
+    // The intent is stored only when that attempt can start, and onTruecaller
+    // clears it if the attempt fails.
+    if (!truecallerAvailable()) {
       fail('Partner sign-up needs the Truecaller app on this phone.');
+      return;
     }
+    storage.set(PROVIDER_INTENT_KEY, '1');
+    setPendingProviderApply(true);
+    onTruecallerRef.current();
   }, [setPendingProviderApply, fail]);
 
   /**

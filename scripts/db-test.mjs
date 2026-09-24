@@ -179,6 +179,8 @@ const MIGRATIONS = [
   'supabase/migrations/138_fallback_skips_locked_call_and_kill_switch_outcome.sql',
   'supabase/migrations/139_claim_session_lease_locks_call_first.sql',
   'supabase/migrations/140_inr_sync_checks_gross_against_debits.sql',
+  'supabase/migrations/141_video_switch_request_returns_requested_at.sql',
+  'supabase/migrations/142_video_switch_refused_after_session_ended.sql',
 ];
 
 /**
@@ -868,6 +870,14 @@ const suites = [
     ),
     label:
       'a call switched to video mid-session reconciles against what the member was debited',
+  },
+  {
+    file: join(
+      ROOT,
+      'supabase/tests/550_video_switch_refused_after_session_ended.sql',
+    ),
+    label:
+      'a video switch is refused once billing has ended, and a never-billed call still switches',
   },
 ];
 

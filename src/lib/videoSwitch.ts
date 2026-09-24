@@ -7,14 +7,18 @@
  * re-fetched row (the channel re-subscribes on CHANNEL_ERROR/TIMED_OUT and
  * re-reads the row) never fires an event twice.
  */
+import type { CallMedium } from './database.types';
+
 export type VideoSwitchResult =
   | 'accepted'
   | 'declined'
   | 'expired'
   | 'insufficient_balance'
-  | 'video_disabled';
+  | 'video_disabled'
+  | 'session_ended';
 
 export interface VideoSwitchRow {
+  medium?: CallMedium;
   upgrade_requested_by: string | null;
   upgrade_requested_at: string | null;
   upgrade_result: VideoSwitchResult | null;
@@ -28,7 +32,7 @@ export interface VideoSwitchSeen {
 
 export type VideoSwitchEvent =
   | { kind: 'request'; requestedBy: string }
-  | { kind: 'resolved'; result: VideoSwitchResult };
+  | { kind: 'resolved'; result: VideoSwitchResult; resolvedAt: string };
 
 /** A request older than this has expired server-side (132: 30 s). */
 export const VIDEO_SWITCH_REQUEST_TTL_MS = 30_000;
@@ -44,9 +48,25 @@ export function videoSwitchEvents(
   row: VideoSwitchRow,
   selfId: string,
   nowMs: number,
-): { seen: VideoSwitchSeen; events: VideoSwitchEvent[] } {
+): { seen: VideoSwitchSeen; events: VideoSwitchEvent[]; medium: CallMedium | null } {
   const events: VideoSwitchEvent[] = [];
   let { requestAt, resolvedAt } = seen;
+
+  /*
+   * The server's medium, when this row can be trusted to carry it. Every
+   * server-side medium change (an accept, 136's fall back to voice) stamps
+   * upgrade_resolved_at in the same UPDATE, so a row at least as new as the
+   * latest outcome seen holds the current medium. Not limited to fresh
+   * outcomes: a screen subscribing long after an accept still adopts video.
+   * A row with no resolution (a pending request) cannot be ordered and says
+   * nothing about the medium.
+   */
+  const medium =
+    row.medium !== undefined &&
+    row.upgrade_resolved_at !== null &&
+    (resolvedAt === null || Date.parse(row.upgrade_resolved_at) >= Date.parse(resolvedAt))
+      ? row.medium
+      : null;
 
   if (
     row.upgrade_requested_by !== null &&
@@ -76,10 +96,19 @@ export function videoSwitchEvents(
     isNewer(row.upgrade_resolved_at, resolvedAt)
   ) {
     resolvedAt = row.upgrade_resolved_at;
-    if (nowMs - Date.parse(row.upgrade_resolved_at) < RESOLUTION_FRESH_MS) {
-      events.push({ kind: 'resolved', result: row.upgrade_result });
+    // An outcome older than the latest request answers an EARLIER request (a
+    // late re-read of a decline landing after the member asked again). The
+    // server clears upgrade_requested_at on resolution, so order is the only
+    // link between an outcome and its request.
+    const answersAnOlderRequest =
+      requestAt !== null && Date.parse(row.upgrade_resolved_at) < Date.parse(requestAt);
+    if (
+      nowMs - Date.parse(row.upgrade_resolved_at) < RESOLUTION_FRESH_MS &&
+      !answersAnOlderRequest
+    ) {
+      events.push({ kind: 'resolved', result: row.upgrade_result, resolvedAt: row.upgrade_resolved_at });
     }
   }
 
-  return { seen: { requestAt, resolvedAt }, events };
+  return { seen: { requestAt, resolvedAt }, events, medium };
 }

@@ -56,7 +56,7 @@ describe('the speaker button moves the audio route', () => {
 
   it('starts a video call on the speaker and a voice call on the earpiece', () => {
     expect(agora).toMatch(/setDefaultAudioRouteToSpeakerphone\(defaultSpeakerRef\.current\)/);
-    expect(call).toMatch(/useCallSession\(callId, direction === 'out', enabled, medium === 'video'\)/);
+    expect(call).toMatch(/useCallSession\(callId, direction === 'out', enabled, liveMedium === 'video'\)/);
   });
 
   it('leaves setRouteInCommunicationMode alone', () => {
