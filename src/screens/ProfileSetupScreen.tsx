@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { useStore } from '../store/useStore';
-import { NoticeBar } from '../components/NoticeBar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -716,26 +715,6 @@ export function ProfileSetupScreen({
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
-        {/*
-          * THIRD instance of the same bug, so it is written down rather than
-          * just fixed.
-          *
-          * This screen called `setNotice` in five places — the age bracket, the
-          * username, the avatar, the terms, and a failed claim — and NoticeBar
-          * was mounted in the chat screen and ProviderApplicationScreen only. Every
-          * one of those messages was written to the store and never rendered.
-          * The comment on Continue's `disabled` even said the checks were
-          * "enforced in onContinue with alerts so a missed checkbox tap never
-          * leaves a dead button"; there were no alerts, and it was exactly a
-          * dead button (Amit, 2026-09-12: the username page "doesnt show visual
-          * cue"). ProviderApplicationScreen's own note records the identical
-          * finding, one screen earlier.
-          *
-          * In the footer rather than under the header: this screen scrolls, the
-          * blocked action is down here, and a strip at the top can be off
-          * screen at the moment it appears.
-          */}
-        <NoticeBar />
         <View style={styles.termsRow}>
           <Pressable
             onPress={() => {

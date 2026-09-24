@@ -15,7 +15,8 @@
  *   confirm  → primary text (acknowledgement, not an error).
  */
 import React, { useEffect } from 'react';
-import { StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInUp, FadeOut, ReduceMotion } from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
@@ -74,6 +75,30 @@ export function NoticeBar() {
     </Animated.View>
   );
 }
+
+/**
+ * The one place a notice is shown, mounted once at the app root (App.tsx Shell).
+ *
+ * It used to be placed per screen, which is how the v2 chat, the call screen
+ * and the safety sheet lost every notice when the v1 ChatScreen that mounted it
+ * was deleted. Pinned under the status bar rather than above the nav bar: the
+ * chat window runs `adjustNothing`, so the IME draws over the bottom of every
+ * screen and a bottom snackbar would sit behind the keyboard.
+ */
+export function NoticeOverlay() {
+  const insets = useSafeAreaInsets();
+  return (
+    <View
+      pointerEvents="box-none"
+      style={[overlay.root, { top: insets.top + TOKENS.space.xs }]}>
+      <NoticeBar />
+    </View>
+  );
+}
+
+const overlay = StyleSheet.create({
+  root: { position: 'absolute', left: 0, right: 0, zIndex: 1000, elevation: 1000 },
+});
 
 const makeStyles = (t: Theme) => StyleSheet.create({
   // M3 Snackbar anatomy: rounded container, 4 dp horizontal margin, 8 dp bottom

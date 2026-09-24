@@ -42,6 +42,7 @@ import {
 } from './src/theme/motion';
 import { AfterPaint } from './src/components/AfterPaint';
 import { UpdateBanner } from './src/components/UpdateBanner';
+import { NoticeOverlay } from './src/components/NoticeBar';
 import { assertEnv } from './src/lib/env';
 import { storage } from './src/lib/storage';
 import { PROVIDER_INTENT_KEY } from './src/lib/providerIntent';
@@ -2389,6 +2390,7 @@ function Shell() {
           navigates. */}
       <UpdateBanner />
       <HomeTour />
+      <NoticeOverlay />
     </>
   );
 }

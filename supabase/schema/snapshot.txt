@@ -90,7 +90,9 @@ COLUMN calls.status USER-DEFINED null=NO default='ringing'::call_status
 COLUMN calls.tokens_debited integer null=NO default=0
 COLUMN calls.upgrade_requested_at timestamp with time zone null=YES default=-
 COLUMN calls.upgrade_requested_by uuid null=YES default=-
-COLUMN calls.upgrade_to_medium text null=YES default=-
+COLUMN calls.upgrade_resolved_at timestamp with time zone null=YES default=-
+COLUMN calls.upgrade_result text null=YES default=-
+COLUMN calls.upgrade_to_medium USER-DEFINED null=YES default=-
 COLUMN conversation_labels.conversation_id uuid null=NO default=-
 COLUMN conversation_labels.custom_name text null=NO default=-
 COLUMN conversation_labels.updated_at timestamp with time zone null=NO default=now()
@@ -632,7 +634,7 @@ CONSTRAINT calls.calls_pkey PRIMARY KEY (id)
 CONSTRAINT calls.calls_session_request_id_fkey FOREIGN KEY (session_request_id) REFERENCES session_requests(id)
 CONSTRAINT calls.calls_tokens_debited_check CHECK ((tokens_debited >= 0))
 CONSTRAINT calls.calls_upgrade_requested_by_fkey FOREIGN KEY (upgrade_requested_by) REFERENCES profiles(id)
-CONSTRAINT calls.calls_upgrade_to_medium_check CHECK ((upgrade_to_medium = ANY (ARRAY['audio'::text, 'video'::text])))
+CONSTRAINT calls.calls_upgrade_result_check CHECK ((upgrade_result = ANY (ARRAY['accepted'::text, 'declined'::text, 'expired'::text, 'insufficient_balance'::text])))
 CONSTRAINT conversation_labels.conversation_labels_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 CONSTRAINT conversation_labels.conversation_labels_custom_name_check CHECK (((char_length(btrim(custom_name)) >= 1) AND (char_length(btrim(custom_name)) <= 40)))
 CONSTRAINT conversation_labels.conversation_labels_pkey PRIMARY KEY (user_id, conversation_id)
@@ -1941,6 +1943,7 @@ FUNCTION sequences_are(name[]) returns text security=invoker
 FUNCTION sequences_are(name[], text) returns text security=invoker
 FUNCTION server_privs_are(name, name, name[]) returns text security=invoker
 FUNCTION server_privs_are(name, name, name[], text) returns text security=invoker
+FUNCTION session_video_rate(p_session_id uuid) returns integer security=definer
 FUNCTION set_conversation_name(p_conversation_id uuid, p_name text) returns void security=definer
 FUNCTION set_eq(text, anyarray) returns text security=invoker
 FUNCTION set_eq(text, anyarray, text) returns text security=invoker
@@ -2185,8 +2188,6 @@ POLICY public.paid_sessions.Participants read own sessions cmd=SELECT roles=auth
 POLICY public.policy_acceptances.Users insert own acceptances cmd=INSERT roles=authenticated
 POLICY public.policy_acceptances.Users read own acceptances cmd=SELECT roles=authenticated
 POLICY public.policy_versions.Authenticated read policy versions cmd=SELECT roles=authenticated
-POLICY public.profiles.Profile deletable by owner cmd=DELETE roles=public
-POLICY public.profiles.Profile insertable by owner cmd=INSERT roles=public
 POLICY public.profiles.Profile readable by owner cmd=SELECT roles=public
 POLICY public.profiles.Profile updatable by owner cmd=UPDATE roles=public
 POLICY public.provider_applications.Applicant creates own draft cmd=INSERT roles=public

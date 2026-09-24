@@ -170,6 +170,8 @@ const MIGRATIONS = [
   'supabase/migrations/129_truecaller_challenge_resume.sql',
   'supabase/migrations/130_canonical_phone_owner.sql',
   'supabase/migrations/131_truecaller_recheck_phone_owner.sql',
+  'supabase/migrations/132_video_switch_bills_only_the_difference.sql',
+  'supabase/migrations/133_profiles_are_not_client_insertable_or_deletable.sql',
 ];
 
 /**
@@ -835,6 +837,22 @@ const suites = [
     file: join(ROOT, 'supabase/tests/510_truecaller_identity_linking.sql'),
     label:
       'Truecaller identity ownership, conflicts, grants, challenge replay, and deletion cascade',
+  },
+  {
+    file: join(
+      ROOT,
+      'supabase/tests/520_video_switch_bills_only_the_difference.sql',
+    ),
+    label:
+      'voice → video needs the peer, charges only the difference, and accrual pays what was debited',
+  },
+  {
+    file: join(
+      ROOT,
+      'supabase/tests/530_profiles_are_not_client_insertable_or_deletable.sql',
+    ),
+    label:
+      'a client cannot delete or re-insert its profile to grant itself a balance, role, or verified phone',
   },
 ];
 

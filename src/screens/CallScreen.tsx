@@ -10,6 +10,8 @@ import {
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import Animated, {
   clamp,
+  FadeIn,
+  ReduceMotion,
   useAnimatedStyle,
   useSharedValue,
 } from 'react-native-reanimated';
@@ -22,7 +24,9 @@ import type { CallMedium } from '../lib/database.types';
 import { initialOf } from '../lib/display';
 import { avatarImageSource, clayFraming, isClayUri } from '../lib/clayAvatars';
 import { useConversationId, useConversations, useProviders, useSelfId } from '../api/chat';
-import { answerCall, endCall, heartbeatCall, requestMediaUpgrade, respondMediaUpgrade, startCall, useCallEnded, useMediaUpgrade } from '../api/calls';
+import { answerCall, endCall, heartbeatCall, requestVideoSwitch, respondVideoSwitch, startCall, useCallEnded, useVideoSwitch, type VideoSwitchResult } from '../api/calls';
+import { useEconomicsConfig, FALLBACK_ECONOMICS } from '../api/appConfig';
+import { DURATION, EASE_OUT } from '../theme/motion';
 import { useCallSession } from '../api/callMedia';
 import { CallVideoView } from '../api/callMedia/CallVideoView';
 import type { CallVideoSource } from '../api/callMedia/types';
@@ -260,7 +264,15 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
    * to switch audio↔video on the live call. Shown as a consent dialog.
    * null = no request pending; `requestedBy` is the peer's id.
    */
-  const [upgradeRequest, setUpgradeRequest] = useState<{ requestedBy: string; toMedium: 'audio' | 'video' } | null>(null);
+  const [videoRequestFrom, setVideoRequestFrom] = useState<string | null>(null);
+  /**
+   * The call's medium NOW. `medium` is the route prop and never changes, so
+   * after an accepted switch to video everything keyed on it (layout, keep
+   * screen on, the button, the lease channel) stayed on voice.
+   */
+  const [liveMedium, setLiveMedium] = useState<CallMedium>(medium);
+  /** The member confirms the price before asking to switch (132). */
+  const [videoPriceVisible, setVideoPriceVisible] = useState(false);
   const [memberConsented, setMemberConsented] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   /*
@@ -577,7 +589,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
    *
    * https://developer.android.com/develop/background-work/background-tasks/awake/screen-on
    */
-  const keepScreenOn = medium === 'video' && mediaReady;
+  const keepScreenOn = liveMedium === 'video' && mediaReady;
   useEffect(() => {
     setKeepScreenOn(keepScreenOn);
     return () => setKeepScreenOn(false);
@@ -612,7 +624,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
    */
   useSessionLease(
     sessionId
-      ? { id: sessionId, channel: medium === 'voice' ? 'audio' : 'video' }
+      ? { id: sessionId, channel: liveMedium === 'voice' ? 'audio' : 'video' }
       : null,
     connState === 'connected' ? 'connected' : 'foreground',
   );
@@ -761,26 +773,51 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
    * our own request, enable the camera on the Agora channel.
    */
   const { data: selfId } = useSelfId();
-  useMediaUpgrade(
+  const { data: economics } = useEconomicsConfig();
+  const voiceRate = economics?.audio_rate_tokens_per_min ?? FALLBACK_ECONOMICS.audio_rate_tokens_per_min;
+  const videoRate = economics?.video_rate_tokens_per_min ?? FALLBACK_ECONOMICS.video_rate_tokens_per_min;
+  const videoExtra = Math.max(0, videoRate - voiceRate);
+  useVideoSwitch(
     callId,
     selfId,
-    /* onRequest */ req => setUpgradeRequest(req),
-    /* onAccepted */ newMedium => {
-      // Clear any pending request state on our side.
-      setUpgradeRequest(null);
+    /* onRequest: the peer asked; the consent dialog is ours to answer */
+    requestedBy => setVideoRequestFrom(requestedBy),
+    /* onResolved: both sides hear the server's recorded outcome */
+    (result: VideoSwitchResult, requestedBySelf: boolean) => {
+      setVideoRequestFrom(null);
       setUpgrading(false);
-      if (newMedium === 'video' && !videoEnabled) {
-        // Peer accepted our switch-to-video request: enable camera in-place.
-        void enableVideo();
-      } else if (newMedium === 'audio' && videoEnabled) {
-        disableVideo();
+      if (result === 'accepted') {
+        setLiveMedium('video');
+        void enableVideoRef.current();
+        return;
       }
-    },
-    /* onDeclined */ () => {
-      setUpgradeRequest(null);
-      setUpgrading(false);
+      if (!requestedBySelf) return;
+      setNotice(
+        result === 'declined'
+          ? `${name} would rather stay on voice.`
+          : result === 'insufficient_balance'
+            ? 'Not enough balance to switch to video.'
+            : `${name} didn't answer. You're still on voice.`,
+      );
     },
   );
+
+  const askForVideo = () => {
+    if (callId === null) return;
+    setUpgrading(true);
+    void requestVideoSwitch(callId).then(r => {
+      if (!r?.success) {
+        setUpgrading(false);
+        setNotice(
+          r?.error === 'UPGRADE_PENDING'
+            ? 'Already asked. Waiting for an answer.'
+            : r?.error === 'VIDEO_DISABLED'
+              ? 'Video calls are paused right now.'
+              : 'Could not ask to switch to video.',
+        );
+      }
+    });
+  };
 
   /*
    * Give up on an unanswered ring.
@@ -1090,13 +1127,15 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
         * BOTH sides (member and provider), so each finally sees the other.
         */}
       {showRemoteVideo ? (
-        <CallVideoView
-          key={`agora-${remoteVideo.uid}-${remoteVideo.local ? 'local' : 'remote'}`}
-          source={remoteVideo}
-          objectFit="cover"
-          zOrder={0}
-          style={StyleSheet.absoluteFill}
-        />
+        <Animated.View entering={videoFadeIn} style={StyleSheet.absoluteFill}>
+          <CallVideoView
+            key={`agora-${remoteVideo.uid}-${remoteVideo.local ? 'local' : 'remote'}`}
+            source={remoteVideo}
+            objectFit="cover"
+            zOrder={0}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
       ) : backdropSource !== null && !backdropFailed ? (
         <>
           <Image
@@ -1212,37 +1251,27 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
             />
             <BarButton
               testID="call-video-toggle"
-              glyph={medium === 'voice' ? 'video' : videoEnabled ? 'video' : 'videoOff'}
-              active={medium === 'video' && !videoEnabled}
-              fill={medium === 'video' && videoEnabled ? 'ghost' : 'solid'}
-              disabled={medium === 'voice' ? (phase !== 'active' || upgrading || callId === null) : false}
+              glyph={liveMedium === 'voice' ? 'video' : videoEnabled ? 'video' : 'videoOff'}
+              active={liveMedium === 'video' && !videoEnabled}
+              fill={liveMedium === 'video' && videoEnabled ? 'ghost' : 'solid'}
+              disabled={liveMedium === 'voice' ? (phase !== 'active' || upgrading || callId === null) : false}
               onPress={() => {
-                if (medium === 'voice') {
-                  // In-place audio → video upgrade (migration 123): ask the peer
-                  // to consent rather than ending the call and starting a new one.
-                  // The peer sees a consent dialog via useMediaUpgrade; on accept
-                  // the server updates calls.medium and we enable the camera here.
+                if (liveMedium === 'voice') {
                   if (phase !== 'active' || callId === null) return;
-                  setUpgrading(true);
-                  void requestMediaUpgrade(callId, 'video').then(r => {
-                    if (!r?.success) {
-                      setUpgrading(false);
-                      setNotice(r?.error ? 'Could not request video switch.' : 'Check your connection.');
-                    }
-                    // On success: the peer sees the request via Realtime;
-                    // upgrading stays true until they accept/decline.
-                  });
-                } else {
-                  // Video call: toggle camera on/off.
-                  if (videoEnabled) {
-                    disableVideo();
-                  } else {
-                    void enableVideo();
+                  // The member pays, so they see the price before asking.
+                  if (isMemberSide) {
+                    setVideoPriceVisible(true);
+                    return;
                   }
+                  askForVideo();
+                } else if (videoEnabled) {
+                  disableVideo();
+                } else {
+                  void enableVideo();
                 }
               }}
-              onLongPress={medium === 'video' && videoEnabled ? switchCamera : undefined}
-              label={medium === 'voice' ? (upgrading ? 'Requesting' : 'Switch to Video') : videoEnabled ? 'Camera off' : 'Start Video'}
+              onLongPress={liveMedium === 'video' && videoEnabled ? switchCamera : undefined}
+              label={liveMedium === 'voice' ? (upgrading ? 'Requesting' : 'Switch to Video') : videoEnabled ? 'Camera off' : 'Start Video'}
             />
             <BarButton
               testID="call-mute"
@@ -1305,36 +1334,51 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
           }
         }}
       />
-      {/* In-place media upgrade consent (migration 123). Shown when the peer
-          requests a switch while the call is active. Accepting calls
-          respondMediaUpgrade; the useMediaUpgrade hook then enables/disables
-          the camera client-side when the Realtime UPDATE confirms the change. */}
+      {/* Switch-to-video consent (132). Only the party who did NOT ask sees it;
+          the member (who pays) is told the price. */}
       <ConfirmDialog
-        visible={upgradeRequest !== null}
+        visible={videoRequestFrom !== null}
         testID="call-upgrade-request"
-        title={upgradeRequest?.toMedium === 'video' ? 'Switch to Video?' : 'Switch to Voice?'}
+        title="Switch to video?"
         body={
-          upgradeRequest?.toMedium === 'video'
-            ? `${name} wants to switch this call to video. Your camera will turn on.`
-            : `${name} wants to turn off the video. The call will continue as voice only.`
+          isMemberSide
+            ? `${name} wants to switch to video. Video is ₹${videoRate}/min. This minute is topped up by ₹${videoExtra}, and nothing already paid is charged again. Your camera will turn on.`
+            : `${name} wants to switch to video. Your camera will turn on.`
         }
-        cancelLabel="Decline"
-        confirmLabel="Accept"
+        cancelLabel="Stay on voice"
+        confirmLabel="Switch"
         onCancel={() => {
-          if (callId) void respondMediaUpgrade(callId, false);
-          setUpgradeRequest(null);
+          if (callId) void respondVideoSwitch(callId, false);
+          setVideoRequestFrom(null);
         }}
         onConfirm={() => {
           if (callId) {
-            void respondMediaUpgrade(callId, true).then(r => {
-              if (r?.accepted && r.new_medium === 'video') {
-                void enableVideo();
-              } else if (r?.accepted && r.new_medium === 'audio') {
-                disableVideo();
+            void respondVideoSwitch(callId, true).then(r => {
+              if (!r.success) {
+                setNotice(
+                  r.error === 'INSUFFICIENT_BALANCE'
+                    ? 'Not enough balance to switch to video.'
+                    : r.error === 'EXPIRED'
+                      ? 'That request timed out. You\'re still on voice.'
+                      : 'Could not switch to video.',
+                );
               }
             });
           }
-          setUpgradeRequest(null);
+          setVideoRequestFrom(null);
+        }}
+      />
+      <ConfirmDialog
+        visible={videoPriceVisible}
+        testID="call-video-price"
+        title="Switch to video?"
+        body={`Video is ₹${videoRate}/min. If ${name} agrees, this minute is topped up by ₹${videoExtra}, and nothing already paid is charged again.`}
+        cancelLabel="Not now"
+        confirmLabel="Ask"
+        onCancel={() => setVideoPriceVisible(false)}
+        onConfirm={() => {
+          setVideoPriceVisible(false);
+          askForVideo();
         }}
       />
     </View>
@@ -1533,6 +1577,7 @@ function LocalVideoPip({ source }: { source: CallVideoSource }) {
     <GestureDetector gesture={pan}>
       <Animated.View
         testID="call-local-pip"
+        entering={videoFadeIn}
         accessibilityLabel="Your video"
         accessibilityHint="Drag to move"
         style={[
@@ -1552,6 +1597,15 @@ function LocalVideoPip({ source }: { source: CallVideoSource }) {
     </GestureDetector>
   );
 }
+
+/**
+ * The switch to video (rare) fades the picture in rather than cutting from the
+ * blurred photo to a live face; purpose: preventing a jarring change. Standard
+ * duration, decelerate, and off under the system's reduced-motion setting.
+ */
+const videoFadeIn = FadeIn.duration(DURATION.base)
+  .easing(EASE_OUT)
+  .reduceMotion(ReduceMotion.System);
 
 const makeStyles = (t: Theme) =>
   StyleSheet.create({

@@ -687,7 +687,8 @@ export type SendError =
  * `call_id` alongside it — the existing (not the refused) call's id — so the
  * caller can be offered a way to answer it instead of a plain refusal.
  */
-export type CallError = SendError | 'BUSY' | 'GONE' | 'SERVER_ERROR' | 'ALREADY_RINGING';
+// INVALID_MEDIUM onward: request_media_upgrade (132).
+export type CallError = SendError | 'BUSY' | 'GONE' | 'SERVER_ERROR' | 'ALREADY_RINGING' | 'INVALID_MEDIUM' | 'VIDEO_DISABLED' | 'ALREADY_IN_MEDIUM' | 'UPGRADE_PENDING';
 
 export type SendResult = {
   success: boolean;

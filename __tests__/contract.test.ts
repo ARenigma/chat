@@ -8657,3 +8657,39 @@ describe('read receipts are viewport-gated, with a persistent unread divider (M1
     expect(fn).toContain('styles.unreadRule');
   });
 });
+
+describe('switch to video works end to end and bills only the difference (132, 2026-09-24)', () => {
+  it('the server fix is a registered migration with a pgTAP suite', () => {
+    const dbTest = read('scripts/db-test.mjs');
+    expect(dbTest).toContain('supabase/migrations/132_video_switch_bills_only_the_difference.sql');
+    expect(dbTest).toContain('supabase/tests/520_video_switch_bills_only_the_difference.sql');
+    const sql = read('supabase/migrations/132_video_switch_bills_only_the_difference.sql');
+    expect(sql).toContain("'NOT_YOUR_REQUEST'");
+    expect(sql).toContain('coalesce(v_video_rate, 0) - v_session.rate_tokens_per_min');
+    expect(sql).toContain('coalesce(sum(-tokens_delta), 0)');
+  });
+
+  it('both sides hear the recorded outcome, not only the recipient', () => {
+    const calls = withoutComments(read('src/api/calls.ts'));
+    expect(calls).toContain('upgrade_result');
+    expect(calls).toContain('resolvedHandler.current(row.upgrade_result');
+    expect(calls).not.toContain('useMediaUpgrade');
+  });
+
+  it('CallScreen tracks the live medium and prices the switch for the member', () => {
+    const screen = withoutComments(read('src/screens/CallScreen.tsx'));
+    expect(screen).toContain('const [liveMedium, setLiveMedium] = useState<CallMedium>(medium)');
+    expect(screen).toContain("const keepScreenOn = liveMedium === 'video' && mediaReady");
+    expect(screen).toContain("setLiveMedium('video')");
+    expect(screen).toContain('testID="call-video-price"');
+    expect(screen).toContain('entering={videoFadeIn}');
+  });
+
+  it('notices render app-wide from one root overlay', () => {
+    const app = read('App.tsx');
+    expect(app).toContain('<NoticeOverlay />');
+    for (const file of ['src/screens/ProfileSetupScreen.tsx', 'src/screens/ProviderApplicationScreen.tsx']) {
+      expect(withoutComments(read(file))).not.toContain('<NoticeBar');
+    }
+  });
+});

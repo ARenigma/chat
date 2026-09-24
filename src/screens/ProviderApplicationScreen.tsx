@@ -45,7 +45,6 @@ import { Chip, FilterChip } from '../components/Chip';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { LoadingIndicator } from '../components/LoadingIndicator';
-import { NoticeBar } from '../components/NoticeBar';
 import { M3Field } from '../components/TextField';
 /*
  * The offered set now comes from `lib/languagePrefs.ts` rather than a literal
@@ -810,14 +809,6 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
   return (
     <View style={[styles.root, { paddingTop: insets.top, paddingBottom: imeSpace }]}>
       <Header onBack={() => setPhase('verify')} />
-      {/*
-        * NoticeBar was mounted in the chat screen and NOWHERE ELSE, so every
-        * `setNotice` from this flow - the 18+ refusal and "verify your identity
-        * first" included - was written to the store and never shown. That is why
-        * "Go live" looked like a dead button: the RPC failed and the app had no
-        * surface on which to say so.
-        */}
-      <NoticeBar />
       <ScrollView
         {...SCROLL_PHYSICS}
         contentContainerStyle={[styles.scroll, { paddingBottom: (imeSpace > 0 ? 0 : insets.bottom) + TOKENS.space.md }]}
