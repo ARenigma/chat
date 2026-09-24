@@ -33,5 +33,10 @@ if [ "$pushed" -eq 0 ]; then
 fi
 
 npm run verify
+# Dead code (TS) and Python lint/dead code (Amit, 2026-09-24: every push goes
+# through Greptile, Semgrep, ruff and vulture). knip is a ratchet: the ceiling
+# in package.json only ever goes down.
+npm run deadcode
+npm run python:check
 SECURITY_BASE_REF="${remote}/main" npm run security:push
 bash scripts/greptile-review.sh status "$head_sha"

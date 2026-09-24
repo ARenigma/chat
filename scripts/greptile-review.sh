@@ -95,7 +95,10 @@ esac
 # P0/P1/P2 comments fail-closed: fix valid findings, commit, and let the new
 # commit trigger a fresh review. This pattern matches severity badges in the
 # documented plain/agent output without depending on an unpublished JSON schema.
-if grep -Eq '(^|[[:space:]\[])P[012]([[:space:]\]:-]|$)' "$report"; then
+# Inside a POSIX bracket a backslash is literal, so `]` goes first rather than
+# `\]`: the old `[[:space:]\]:-]` closed early and BSD grep never matched a
+# finding, which let every push through (found 2026-09-24).
+if grep -Eq '(^|[[:space:][])P[012]([][:space:]:-]|$)' "$report"; then
   echo "greptile-review: unresolved P0/P1/P2 findings remain." >&2
   echo "Fix them, verify the change, and commit again before pushing." >&2
   exit 1
