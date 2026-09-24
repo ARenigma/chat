@@ -8738,6 +8738,7 @@ describe('switch to video works end to end and bills only the difference (132, 2
     expect(truecaller).toMatch(/catch \(error\) \{\s*setRoute\('undecided'\);\s*clearPartnerIntent\(\);/);
     const partner = screen.slice(screen.indexOf('const onBecomePartner = useCallback'));
     expect(partner.indexOf('if (!truecallerAvailable())')).toBeLessThan(partner.indexOf("storage.set(PROVIDER_INTENT_KEY, '1')"));
+    expect(partner.indexOf('if (!canSubmit(state)) return;')).toBeLessThan(partner.indexOf("storage.set(PROVIDER_INTENT_KEY, '1')"));
   });
 
   it('the member confirms only a price the server quoted for this call', () => {

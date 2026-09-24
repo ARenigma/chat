@@ -777,7 +777,9 @@ export function OnboardingScreen({ onDone }: Props) {
     // Partners need a verified number (Cashfree 1-Click is keyed on it), and
     // with phone codes off (2026-09-24) Truecaller is the only way to verify.
     // The intent is stored only when that attempt can start, and onTruecaller
-    // clears it if the attempt fails.
+    // clears it if the attempt fails. A sign-in already in flight (Google)
+    // would make onTruecaller refuse, leaving the intent on a phoneless account.
+    if (!canSubmit(state)) return;
     if (!truecallerAvailable()) {
       fail('Partner sign-up needs the Truecaller app on this phone.');
       return;
@@ -785,7 +787,7 @@ export function OnboardingScreen({ onDone }: Props) {
     storage.set(PROVIDER_INTENT_KEY, '1');
     setPendingProviderApply(true);
     onTruecallerRef.current();
-  }, [setPendingProviderApply, fail]);
+  }, [state, setPendingProviderApply, fail]);
 
   /**
    * The numbering rules for whatever the picker is showing.
