@@ -55,7 +55,7 @@
 
 \set ON_ERROR_STOP on
 begin;
-select plan(55);
+select plan(60);
 
 -- ── The storage stand-in ───────────────────────────────────────────────────
 create schema storage;
@@ -695,6 +695,36 @@ select throws_ok(
   '42501',
   null,
   '38d. nor read which stories were deleted'
+);
+
+reset role;
+
+-- A fresh deploy has only push_sender_url; the purge must not wait on a
+-- second secret nobody knows to set (Greptile P1 on 7a9de76).
+select is(
+  public.story_media_purge_endpoint('', 'https://abc.supabase.co/functions/v1/send-push'),
+  'https://abc.supabase.co/functions/v1/purge-story-media',
+  '39. the purge URL is derived from push_sender_url when its own secret is empty'
+);
+select is(
+  public.story_media_purge_endpoint('  https://x.example/functions/v1/purge-story-media ', 'https://abc.supabase.co/functions/v1/send-push'),
+  'https://x.example/functions/v1/purge-story-media',
+  '39b. an explicit story_media_purge_url still wins'
+);
+select is(
+  public.story_media_purge_endpoint(null, 'https://abc.supabase.co/functions/v1/send-push?x=1'),
+  'https://abc.supabase.co/functions/v1/purge-story-media',
+  '39c. a query string on the sender URL is not carried over'
+);
+select ok(
+  public.story_media_purge_endpoint('', '') is null
+    and public.story_media_purge_endpoint(null, 'http://abc.supabase.co/functions/v1/send-push') is null
+    and public.story_media_purge_endpoint(null, 'https://abc.supabase.co/rest/v1/x') is null,
+  '39d. nothing usable gives NULL (plain http and non-function URLs refused)'
+);
+select ok(
+  not has_function_privilege('authenticated', 'public.story_media_purge_endpoint(text, text)', 'EXECUTE'),
+  '39e. clients cannot call the endpoint helper'
 );
 
 select * from finish();

@@ -190,11 +190,12 @@ grant execute on function public.story_objects_to_purge(integer) to service_role
 -- ---------------------------------------------------------------------------
 -- 4. Calling the Edge Function
 -- ---------------------------------------------------------------------------
--- 009's dispatch, for 009's reasons. The function URL is configuration, so it
--- is a Vault secret created EMPTY here and filled out of band; the key is the
--- service-role secret every cron-to-function call already uses. Until both
--- are set the dispatch is a quiet no-op. Nothing to remove is the common
--- case, and it costs one query rather than an HTTP request and a cold start.
+-- 009's dispatch, for 009's reasons. The key is the service-role secret every
+-- cron-to-function call already uses. The URL needs no step of its own: it is
+-- derived from push_sender_url (story_media_purge_endpoint, below), and the
+-- secret created EMPTY here only overrides it for a project whose functions
+-- live elsewhere. Nothing to remove is the common case, and it costs one query
+-- rather than an HTTP request and a cold start.
 do $$
 begin
   if to_regclass('vault.secrets') is null then
@@ -206,6 +207,43 @@ begin
   end if;
 end
 $$;
+
+/*
+ * Where the purge function lives, without a second secret to set by hand.
+ *
+ * A fresh deploy used to create story_media_purge_url empty and schedule the
+ * job anyway, so every run was a quiet no-op until somebody filled the secret
+ * in: expired rows went, their files stayed in Storage forever (Greptile P1 on
+ * 7a9de76). Every project already has push_sender_url set to one of its own
+ * Edge Functions (009), so the purge function's URL is that URL with the
+ * function name swapped. An explicit story_media_purge_url still wins, for a
+ * project whose functions live elsewhere. NULL only when neither is usable,
+ * and the dispatcher then says so in the database log instead of staying
+ * silent.
+ */
+create or replace function public.story_media_purge_endpoint(
+  p_explicit        text,
+  p_push_sender_url text
+)
+returns text
+language sql
+immutable
+set search_path = pg_catalog
+as $$
+  select case
+    when nullif(btrim(p_explicit), '') is not null then btrim(p_explicit)
+    when p_push_sender_url ~ '^https://[^/]+/functions/v1/[A-Za-z0-9_-]+([?#].*)?$'
+      then regexp_replace(
+        p_push_sender_url,
+        '/functions/v1/[A-Za-z0-9_-]+([?#].*)?$',
+        '/functions/v1/purge-story-media'
+      )
+    else null
+  end
+$$;
+
+revoke all on function public.story_media_purge_endpoint(text, text) from public, anon, authenticated;
+grant execute on function public.story_media_purge_endpoint(text, text) to service_role;
 
 create or replace function public.dispatch_story_media_purge()
 returns void
@@ -221,10 +259,16 @@ begin
     return;
   end if;
 
-  select decrypted_secret into v_url from vault.decrypted_secrets where name = 'story_media_purge_url';
+  v_url := public.story_media_purge_endpoint(
+    (select decrypted_secret from vault.decrypted_secrets where name = 'story_media_purge_url'),
+    (select decrypted_secret from vault.decrypted_secrets where name = 'push_sender_url')
+  );
   select decrypted_secret into v_key from vault.decrypted_secrets where name = 'push_sender_key';
 
-  if v_url is null or v_url = '' or v_key is null or v_key = '' then
+  if v_url is null or v_key is null or v_key = '' then
+    -- Files are waiting and nothing can remove them: loud, not a quiet no-op.
+    raise warning 'story media purge: % file(s) waiting but no purge endpoint or key is configured (set push_sender_url and push_sender_key, or story_media_purge_url)',
+      (select count(*) from public.story_objects_to_purge(1000));
     return;
   end if;
 

@@ -48,9 +48,36 @@ export function setViewingConversation(conversationId: string | null): void {
   viewing = conversationId;
 }
 
+/**
+ * How many overlays currently cover the screen: every bottom sheet (`Sheet`,
+ * which SafetySheet, ConfirmDialog and the rest are built on) and the
+ * full-screen MediaViewer. A chat under one is still mounted, so it still
+ * holds `viewing`, but its transcript is not what the person is looking at;
+ * a message for it that arrived then was `ignore`d as "already on screen" and
+ * never shown anywhere (Greptile P1 on 7a9de76). While anything covers the
+ * screen, no conversation counts as viewed, so that message gets the in-app
+ * banner (no sound) like any other.
+ */
+let covers = 0;
+
+/**
+ * Mark the screen covered until the returned release is called. The release
+ * is idempotent, so an effect cleanup and an explicit close cannot count
+ * twice.
+ */
+export function coverViewing(): () => void {
+  covers += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    covers = Math.max(0, covers - 1);
+  };
+}
+
 /** The conversation on screen, or `null` when no chat is being looked at. */
 export function getViewingConversation(): string | null {
-  return viewing;
+  return covers > 0 ? null : viewing;
 }
 
 let ringing: string | null = null;

@@ -2060,6 +2060,7 @@ FUNCTION stories_release_media() returns trigger security=definer
 FUNCTION story_comment_is_visible(p_comment_id uuid) returns boolean security=definer
 FUNCTION story_comment_tombstone_clears_reaction() returns trigger security=definer
 FUNCTION story_is_visible(p_story_id uuid) returns boolean security=definer
+FUNCTION story_media_purge_endpoint(p_explicit text, p_push_sender_url text) returns text security=invoker
 FUNCTION story_media_upload_allowed(p_name text) returns boolean security=definer
 FUNCTION story_objects_to_purge(p_limit integer) returns TABLE(object_name text) security=definer
 FUNCTION story_reaction_counts(p_story_id uuid) returns TABLE(emoji text, reaction_count integer) security=definer

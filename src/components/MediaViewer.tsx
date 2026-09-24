@@ -32,6 +32,7 @@ import { secureModal } from '../lib/windowChrome';
 import { useAttachmentUrl } from '../api/attachments';
 import { sizedStorageImageUri } from '../lib/storageImage';
 import { Icon } from './Icon';
+import { coverViewing } from '../lib/viewingConversation';
 import { LoadingIndicator } from './LoadingIndicator';
 import { Pressable } from './Pressable';
 /*
@@ -379,6 +380,11 @@ function MediaViewerView({
     },
     [stageW, stageH],
   );
+
+  // Full screen: a chat under the viewer is not being looked at, so its
+  // messages must reach the person as a banner, not be dropped as on screen.
+  const open = image !== null;
+  useEffect(() => (open ? coverViewing() : undefined), [open]);
 
   // The viewer is memoised and stays MOUNTED with `image === null` between
   // looks, so a photo closed at 3x would reopen at 3x. Reset on every change of

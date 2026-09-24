@@ -26,6 +26,7 @@ import { GESTURE, INTERACTION, sheetIn, sheetOut } from '../theme/motion';
 import { secureModal, setSheetBackdropBlur } from '../lib/windowChrome';
 import { trackSheetClosed } from '../lib/perfTelemetry';
 import { Pressable } from './Pressable';
+import { coverViewing } from '../lib/viewingConversation';
 
 // Where the sheet starts its entry slide: safely below the tallest sheet, so it
 // begins off-screen and springs up into view. Only the last stretch is visible.
@@ -155,7 +156,13 @@ function SheetView({
   useEffect(() => {
     if (!visible) return;
     setSheetBackdropBlur(true);
-    return () => setSheetBackdropBlur(false);
+    // A chat under an open sheet is not being looked at: its messages must
+    // reach the person as a banner, not be dropped as "on screen".
+    const uncover = coverViewing();
+    return () => {
+      setSheetBackdropBlur(false);
+      uncover();
+    };
   }, [visible]);
 
   useEffect(() => {

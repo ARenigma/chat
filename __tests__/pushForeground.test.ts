@@ -2032,3 +2032,28 @@ describe('a sign-in waits for a sign-out still finishing (Greptile P1 on 6c8e3b7
     expect(press).not.toMatch(/await stopPush\(\)|await signOut\(\)/);
   });
 });
+
+describe('a chat covered by a sheet or the media viewer is not on screen (Greptile P1 on 7a9de76)', () => {
+  it('reads no viewed conversation while anything covers it, and the chat again after', () => {
+    const vc = require('../src/lib/viewingConversation') as typeof import('../src/lib/viewingConversation');
+    vc.setViewingConversation(A);
+    expect(vc.getViewingConversation()).toBe(A);
+    const sheet = vc.coverViewing();
+    const viewer = vc.coverViewing();
+    expect(vc.getViewingConversation()).toBeNull();
+    expect(vc.foregroundPushAction({ conversationId: A }, vc.getViewingConversation())).toBe('show-in-app');
+    sheet();
+    sheet(); // idempotent: an effect cleanup after an explicit close
+    expect(vc.getViewingConversation()).toBeNull();
+    viewer();
+    expect(vc.getViewingConversation()).toBe(A);
+    vc.setViewingConversation(null);
+  });
+
+  it('Sheet and MediaViewer cover the screen while open', () => {
+    const sheet = read('src/components/Sheet.tsx');
+    expect(sheet).toMatch(/if \(!visible\) return;[^]*const uncover = coverViewing\(\);[^]*uncover\(\);/);
+    const viewer = read('src/components/MediaViewer.tsx');
+    expect(viewer).toContain('useEffect(() => (open ? coverViewing() : undefined), [open]);');
+  });
+});
