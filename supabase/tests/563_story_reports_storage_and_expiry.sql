@@ -55,7 +55,7 @@
 
 \set ON_ERROR_STOP on
 begin;
-select plan(62);
+select plan(64);
 
 -- ── The storage stand-in ───────────────────────────────────────────────────
 create schema storage;
@@ -343,6 +343,19 @@ select is(
    from public.reports where id = (select v from test.fixture where k = 'r_story')),
   'null|look at this',
   '12. the report outlives the story it is about'
+);
+select is(
+  (select evidence_surface || '|' || coalesce(story_comment_id::text, 'null') || '|'
+          || evidence_body || '|' || evidence_context
+   from public.reports where id = (select v from test.fixture where k = 'r_comment')),
+  'story_comment|null|something awful|look at this',
+  '12b. a comment report still says it was a comment, with its words and the story caption, once the story is gone'
+);
+select is(
+  (select evidence_story_media_path
+   from public.reports where id = (select v from test.fixture where k = 'r_comment')),
+  null,
+  '12c. a comment report keeps no copy of the provider''s story media'
 );
 
 -- ── The provider's report-and-delete ───────────────────────────────────────

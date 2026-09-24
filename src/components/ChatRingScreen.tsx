@@ -59,6 +59,12 @@ function stillRinging(requestId: string): boolean {
   return useStore.getState().incomingRequest?.requestId === requestId;
 }
 
+/** The server refused the Accept outright (086): nothing is left to answer. */
+function acceptRefused(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return code === 'P0001' || code === 'P0007' || code === '42501';
+}
+
 /**
  * A different request for the same conversation is ringing now. The shade
  * entry is the conversation's, not the request's, so an answer to an older
@@ -183,26 +189,41 @@ export function ChatRingScreen({ onOpenConversation }: Props) {
       { requestId, conversationId },
       {
         /*
-         * Either way the ring is over: on success they are in the conversation,
-         * and on failure (expired, withdrawn) there is nothing left to answer.
-         * Unless it already ran out and another request rings now, which this
-         * answer must not end (`stillRinging`).
+         * On success they are in the conversation; on a refusal (Greptile P1
+         * on 5cb4480) -- the request gone, answered elsewhere, expired, or not
+         * this provider's (086's P0001 and P0007, and 42501) -- there is
+         * nothing left to answer. Either way the ring ends, unless it already
+         * ran out and another request rings now (`stillRinging`), and the chat
+         * opens, so a notification the ring was covering goes when that chat
+         * is on screen (`clearIfUncovered`), never one a newer request for
+         * this conversation now owns (`newerRequestRings`).
          *
-         * Either way, too, the chat is what shows next, so a notification the
-         * ring was covering goes when that chat is already on screen
-         * (`clearIfUncovered`). Nothing is lost on a failure: the
-         * notification's own Accept only opens this same chat.
+         * Anything else never reached the server, so the request is still
+         * pending. That used to clear the notification anyway and leave the
+         * provider nothing to answer it from. Now the ring stays up with its
+         * buttons live again, the notification stays for after the ring, and
+         * the notice says the press did not take.
          */
-        onSettled: () => {
-          if (stillRinging(requestId)) {
-            clearIncoming();
+        onSuccess: () => finish(),
+        onError: (error: unknown) => {
+          if (acceptRefused(error)) {
+            finish();
+            return;
           }
-          clearIfUncovered(conversationId);
-          onOpenConversation(peerId);
+          setNotice('Could not accept. Try again.');
         },
       },
     );
-  }, [incoming, accept, clearIncoming, onOpenConversation]);
+    function finish(): void {
+      if (stillRinging(requestId)) {
+        clearIncoming();
+      }
+      if (!newerRequestRings(requestId, conversationId)) {
+        clearIfUncovered(conversationId);
+      }
+      onOpenConversation(peerId);
+    }
+  }, [incoming, accept, clearIncoming, onOpenConversation, setNotice]);
 
   const onDecline = useCallback(() => {
     if (incoming === null) {

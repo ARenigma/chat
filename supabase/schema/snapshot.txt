@@ -261,7 +261,9 @@ COLUMN moderation_queue.conversation_id uuid null=YES default=-
 COLUMN moderation_queue.created_at timestamp with time zone null=YES default=-
 COLUMN moderation_queue.detail text null=YES default=-
 COLUMN moderation_queue.evidence_body text null=YES default=-
+COLUMN moderation_queue.evidence_context text null=YES default=-
 COLUMN moderation_queue.evidence_story_media_path text null=YES default=-
+COLUMN moderation_queue.evidence_surface text null=YES default=-
 COLUMN moderation_queue.evidence_voice_path text null=YES default=-
 COLUMN moderation_queue.id uuid null=YES default=-
 COLUMN moderation_queue.reason USER-DEFINED null=YES default=-
@@ -535,7 +537,9 @@ COLUMN reports.created_at timestamp with time zone null=NO default=now()
 COLUMN reports.detail text null=YES default=-
 COLUMN reports.evidence_at timestamp with time zone null=YES default=-
 COLUMN reports.evidence_body text null=YES default=-
+COLUMN reports.evidence_context text null=YES default=-
 COLUMN reports.evidence_story_media_path text null=YES default=-
+COLUMN reports.evidence_surface text null=YES default=-
 COLUMN reports.evidence_voice_path text null=YES default=-
 COLUMN reports.id uuid null=NO default=gen_random_uuid()
 COLUMN reports.message_id uuid null=YES default=-
@@ -829,6 +833,7 @@ CONSTRAINT report_evidence.report_evidence_kind_check CHECK ((kind = ANY (ARRAY[
 CONSTRAINT report_evidence.report_evidence_pkey PRIMARY KEY (id)
 CONSTRAINT reports.reports_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE SET NULL
 CONSTRAINT reports.reports_detail_check CHECK (((detail IS NULL) OR (length(detail) <= 2000)))
+CONSTRAINT reports.reports_evidence_surface_check CHECK ((evidence_surface = ANY (ARRAY['story'::text, 'story_comment'::text])))
 CONSTRAINT reports.reports_message_id_fkey FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE SET NULL
 CONSTRAINT reports.reports_pkey PRIMARY KEY (id)
 CONSTRAINT reports.reports_reporter_id_fkey FOREIGN KEY (reporter_id) REFERENCES profiles(id) ON DELETE SET NULL

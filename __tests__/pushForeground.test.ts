@@ -1985,6 +1985,49 @@ describe('the chat-request ring takes its notification with it', () => {
     expect(ring.onOpenConversation.mock.calls).toEqual([[PEER]]);
   });
 
+  it('keeps the ring and the notification when Accept never reached the server', () => {
+    // Greptile P1 on 5cb4480: a network failure cleared the notification of a
+    // request still pending, leaving nothing to answer it from.
+    const ring = mountRing({ chatUnder: A });
+    press(ring, 'chat-ring-accept');
+    answer(ring.accept, 'error');
+    expect(ring.clear).not.toHaveBeenCalled();
+    expect(ring.clearIncomingRequest).not.toHaveBeenCalled();
+    expect(ring.onOpenConversation).not.toHaveBeenCalled();
+    expect(ring.setNotice.mock.calls).toEqual([['Could not accept. Try again.']]);
+  });
+
+  it.each(['P0001', 'P0007', '42501'])(
+    'ends the ring and opens the chat when the server refused the Accept (%s)',
+    code => {
+      const ring = mountRing({ chatUnder: A });
+      press(ring, 'chat-ring-accept');
+      const calls = ring.accept.mutate.mock.calls;
+      const [variables, callbacks] = calls[calls.length - 1] as [RequestVariables, MutateCallbacks];
+      const refused = Object.assign(new Error('refused'), { code });
+      callbacks.onError?.(refused, variables, undefined, MUTATION_CONTEXT);
+      callbacks.onSettled?.(undefined, refused, variables, undefined, MUTATION_CONTEXT);
+      expect(ring.clearIncomingRequest).toHaveBeenCalledTimes(1);
+      expect(ring.onOpenConversation.mock.calls).toEqual([[PEER]]);
+      expect(ring.setNotice).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not clear a newer request\'s notification when an older Accept lands late', () => {
+    const NEWER = 'eeeeeeee-0000-4000-8000-00000000000e';
+    const ring = mountRing({ chatUnder: A });
+    jest.advanceTimersByTime(20_000);
+    press(ring, 'chat-ring-accept');
+    jest.advanceTimersByTime(10_000);
+    // The ring-out itself uncovered A, which may clear; only the late
+    // answer is under test here.
+    const before = ring.clear.mock.calls.length;
+    ring.store.incomingRequest = { ...REQUEST_ROW, requestId: NEWER, conversationId: A };
+    answer(ring.accept, 'success', 'session-1');
+    expect(ring.clear.mock.calls.length).toBe(before);
+    expect(ring.store.incomingRequest?.requestId).toBe(NEWER);
+  });
+
   it('clears it when an unwatched ring runs out over its own chat, which then shows', () => {
     const ring = mountRing({ chatUnder: A });
     jest.advanceTimersByTime(10_000);

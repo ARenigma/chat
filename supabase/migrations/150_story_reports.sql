@@ -27,13 +27,25 @@ alter table public.reports
     references public.stories(id) on delete set null,
   add column if not exists story_comment_id uuid
     references public.story_comments(id) on delete set null,
-  add column if not exists evidence_story_media_path text;
+  add column if not exists evidence_story_media_path text,
+  -- Durable: never set null. The story and comment ids above go when the
+  -- story expires, and a report reviewed after that could not tell a
+  -- comment's snapshot from a chat message's (Greptile P1 on 5cb4480).
+  add column if not exists evidence_surface text
+    check (evidence_surface in ('story', 'story_comment')),
+  add column if not exists evidence_context text;
 
 comment on column public.reports.story_id is
   'The reported story, or the story a reported comment was on (150). Set null '
   'when the story expires or is deleted; the evidence columns keep what it was.';
 comment on column public.reports.story_comment_id is
   'The reported story comment (150). Set null when purged.';
+comment on column public.reports.evidence_surface is
+  'Which story surface a report came from (150): story or story_comment. Null '
+  'for chat reports. Kept after the story is purged, unlike story_id.';
+comment on column public.reports.evidence_context is
+  'For a comment report, the caption of the story it was on, copied at report '
+  'time so a moderator can read the comment in context after the story is gone.';
 comment on column public.reports.evidence_story_media_path is
   'Object key in the `stories` bucket, copied at report time. The media purge '
   '(151) never removes an object any report still names.';
@@ -232,11 +244,11 @@ begin
 
   insert into public.reports (
     reporter_id, subject_user_id, story_id, reason, detail,
-    evidence_body, evidence_story_media_path, evidence_at
+    evidence_body, evidence_story_media_path, evidence_at, evidence_surface
   )
   values (
     v_uid, v_story.provider_id, v_story.id, p_reason, nullif(btrim(p_detail), ''),
-    v_story.caption, v_story.media_path, v_story.created_at
+    v_story.caption, v_story.media_path, v_story.created_at, 'story'
   )
   returning id into v_id;
 
@@ -269,6 +281,7 @@ as $$
 declare
   v_uid     uuid := auth.uid();
   v_comment public.story_comments%rowtype;
+  v_parent  public.stories%rowtype;
   v_recent  integer;
   v_id      uuid;
 begin
@@ -297,6 +310,10 @@ begin
     raise exception 'cannot report your own comment' using errcode = '22023';
   end if;
 
+  -- The story it was on, locked for the same reason as the comment: its
+  -- caption is the context the report keeps.
+  select * into v_parent from public.stories where id = v_comment.story_id for share;
+
   -- Before the count, so parallel reports cannot all see nine (section 0).
   perform pg_advisory_xact_lock(hashtextextended('report:' || v_uid::text, 0));
 
@@ -310,11 +327,16 @@ begin
 
   insert into public.reports (
     reporter_id, subject_user_id, story_id, story_comment_id, reason, detail,
-    evidence_body, evidence_at
+    evidence_body, evidence_at, evidence_surface, evidence_context
   )
   values (
     v_uid, v_comment.author_id, v_comment.story_id, v_comment.id, p_reason,
-    nullif(btrim(p_detail), ''), v_comment.body, v_comment.created_at
+    nullif(btrim(p_detail), ''), v_comment.body, v_comment.created_at,
+    -- The caption of the story the comment answered, so it still reads in
+    -- context once the story is purged. Not its media: keeping a provider's
+    -- photo past its 24 hours because of what a commenter wrote is the
+    -- trade moderate.mjs's liveStoryMediaPath already declines.
+    'story_comment', v_parent.caption
   )
   returning id into v_id;
 
@@ -449,7 +471,9 @@ create or replace view public.moderation_queue as
     p.role as subject_role,
     r.story_id,
     r.story_comment_id,
-    r.evidence_story_media_path
+    r.evidence_story_media_path,
+    r.evidence_surface,
+    r.evidence_context
   from public.reports r
   left join public.profiles p on p.id = r.subject_user_id
   where r.status = 'open'

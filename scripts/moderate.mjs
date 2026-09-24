@@ -182,26 +182,37 @@ async function show() {
   const storyId = r.story_id ?? null;
   const commentId = r.story_comment_id ?? null;
   const storyMedia = r.evidence_story_media_path ?? null;
+  // evidence_surface is durable (150); the ids above are nulled when the
+  // story expires, so the surface decides what the snapshot was.
+  const surface = r.evidence_surface ?? null;
   const aboutStory =
-    storyId !== null || commentId !== null || storyMedia !== null;
+    surface !== null ||
+    storyId !== null ||
+    commentId !== null ||
+    storyMedia !== null;
+  const aboutComment = surface === 'story_comment' || commentId !== null;
   // Only printed when set, so a chat report reads exactly as it always has.
   if (aboutStory) {
     console.log(`story         ${storyId ?? '(expired or deleted)'}`);
   }
-  if (commentId !== null) {
-    console.log(`comment       ${commentId}`);
+  if (aboutComment) {
+    console.log(`comment       ${commentId ?? '(expired with its story)'}`);
   }
   console.log(`\nreporter said:\n  ${clip(r.detail, 500)}`);
   // evidence_body is the words snapshotted at report time, whichever surface
   // they came from: a message, a story's caption, or a comment (150).
-  const evidenceLabel =
-    commentId !== null
-      ? 'reported comment'
-      : aboutStory
-      ? 'reported story caption'
-      : 'reported message';
+  const evidenceLabel = aboutComment
+    ? 'reported comment'
+    : aboutStory
+    ? 'reported story caption'
+    : 'reported message';
   console.log(`\n${evidenceLabel} (snapshot at ${r.evidence_at ?? 'n/a'}):`);
   console.log(`  ${clip(r.evidence_body, 2000)}`);
+  if (aboutComment) {
+    // The story the comment answered, kept past the story's 24 hours.
+    console.log('\non the story captioned:');
+    console.log(`  ${clip(r.evidence_context ?? '(no caption)', 500)}`);
+  }
   if (r.evidence_voice_path) {
     // A reported voice note is unreadable, so the queue has to hand over
     // something playable or "he sent me something vile" is unactionable the
@@ -221,7 +232,7 @@ async function show() {
     if (path === null) {
       console.log('\nstory media:');
       console.log(
-        '  (the story is gone; a comment report keeps the words, not the media)',
+        '  (the story is gone; a comment report keeps the words and the caption, not the media)',
       );
     } else {
       // story_media_path_is_scoped (143) allows .mp4 for a video and only
@@ -229,7 +240,7 @@ async function show() {
       const kind = path.endsWith('.mp4') ? 'video' : 'photo';
       const signed = await sign('stories', path, 600);
       console.log(
-        commentId !== null
+        aboutComment
           ? `\nthe story the comment is on (${kind}):`
           : `\nreported story ${kind}:`,
       );

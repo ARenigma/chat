@@ -158,3 +158,16 @@ describe('story media is removed through the Storage API, never in SQL', () => {
     expect(existsSync(join(ROOT, 'supabase/functions/story-media-url/index.ts'))).toBe(true);
   });
 });
+
+describe('moderate.mjs reads a comment report as a comment after its story is gone', () => {
+  it('labels from the durable evidence_surface, not the ids the purge nulls', () => {
+    const src = require('fs').readFileSync(
+      require('path').join(__dirname, '../scripts/moderate.mjs'),
+      'utf8',
+    ) as string;
+    expect(src).toContain('const surface = r.evidence_surface ?? null;');
+    expect(src).toContain("const aboutComment = surface === 'story_comment' || commentId !== null;");
+    expect(src).toMatch(/const evidenceLabel =\s*aboutComment\s*\? 'reported comment'/);
+    expect(src).toContain("clip(r.evidence_context ?? '(no caption)', 500)");
+  });
+});
