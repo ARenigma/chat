@@ -90,6 +90,7 @@ export const PROVIDER_LABEL: Record<SocialProvider, string> = {
 // and re-exported so callers that import from auth.ts keep working.
 // A contract test asserts this flag: see contract.test.ts 'phone sign-in stays off'.
 import { PHONE_AUTH_ENABLED } from '../config';
+import { stopPush } from '../lib/push';
 export { PHONE_AUTH_ENABLED };
 
 /**
@@ -160,6 +161,7 @@ export type OtpResult =
  * session, so RLS keeps resting on `auth.uid()` rather than on our own signing.
  */
 export async function sendPhoneOtp(phone: string): Promise<OtpResult> {
+  await afterPendingSignOut();
   if (!PHONE_AUTH_ENABLED) {
     return { status: 'failed', message: 'Phone sign-in is not available yet.' };
   }
@@ -195,6 +197,7 @@ export async function verifyPhoneOtp(
   phone: string,
   token: string,
 ): Promise<OtpResult> {
+  await afterPendingSignOut();
   if (!PHONE_AUTH_ENABLED) {
     return { status: 'failed', message: 'Phone sign-in is not available yet.' };
   }
@@ -364,6 +367,7 @@ export async function signInWith(
   provider: SocialProvider,
   redirectTo: string = AUTH_REDIRECT_URL,
 ): Promise<void> {
+  await afterPendingSignOut();
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider,
     options: { redirectTo, skipBrowserRedirect: true },
@@ -473,6 +477,7 @@ export function clearPendingTruecallerGoogleLink(): void {
  * not an error. Unavailability should route silently to WhatsApp OTP.
  */
 export async function signInWithTruecaller(): Promise<TruecallerResult> {
+  await afterPendingSignOut();
   // Get the authorization code + PKCE verifier from the native SDK.
   const { authorizationCode, codeVerifier } = await requestTruecallerAuth();
 
@@ -529,6 +534,7 @@ export async function signInWithTruecaller(): Promise<TruecallerResult> {
  * create a Supabase account for the verified Truecaller phone.
  */
 export async function confirmTruecallerNewUser(challenge: string): Promise<void> {
+  await afterPendingSignOut();
   let response: Response;
   try {
     response = await fetch(
@@ -618,6 +624,7 @@ export async function linkTruecallerToCurrentAccount(challenge: string): Promise
 export async function signInWithGoogle(options?: {
   readonly truecallerLink?: boolean;
 }): Promise<GoogleResult> {
+  await afterPendingSignOut();
   if (CREDENTIAL_MANAGER_ENABLED && credentialSheetAvailable()) {
     try {
       const { idToken, rawNonce } = await requestGoogleCredential();
@@ -698,6 +705,7 @@ function describeCallbackError(
 export async function handleAuthDeepLink(
   url: string,
 ): Promise<AuthCallbackResult> {
+  await afterPendingSignOut();
   const e2eUrl = 'companionchat://e2e-auth';
   if (
     url === e2eUrl ||
@@ -841,7 +849,53 @@ export async function handleAuthDeepLink(
   };
 }
 
-export async function signOut(): Promise<void> {
+/*
+ * The sign-out still finishing, which every sign-in waits for first.
+ *
+ * Settings leaves the signed-in UI the moment Sign out is tapped and ends the
+ * session behind it (`beginSignOut`): push teardown, which can wait up to
+ * STOP_DRAIN_MS for a registration on the wire, then `signOut`. Somebody who
+ * signs straight back in, or into another account, during that window got a
+ * new Supabase session that the old `signOut()` then ended. Supabase keeps one
+ * session per client, so the stale call cannot tell the two apart; the only
+ * safe order is for the new sign-in to start after the old sign-out is done.
+ * Never rejects, so a failed sign-out cannot turn into a failed sign-in.
+ */
+let signOutInFlight: Promise<void> = Promise.resolve();
+
+function trackSignOut(run: Promise<void>): void {
+  const previous = signOutInFlight;
+  signOutInFlight = Promise.all([previous, run.catch(() => undefined)]).then(
+    () => undefined,
+  );
+}
+
+/** Held by every sign-in entry point before it starts a session. */
+async function afterPendingSignOut(): Promise<void> {
+  await signOutInFlight;
+}
+
+/**
+ * Sign out without the caller waiting: revoke this device's push token while
+ * the session that authorises the delete still exists, then end the session.
+ * Recorded at once, so a sign-in during either step waits for both.
+ */
+export function beginSignOut(): Promise<void> {
+  const run = (async () => {
+    await stopPush();
+    await signOut();
+  })();
+  trackSignOut(run);
+  return run;
+}
+
+export function signOut(): Promise<void> {
+  const run = endSession();
+  trackSignOut(run);
+  return run;
+}
+
+async function endSession(): Promise<void> {
   clearPendingTruecallerGoogleLink();
   // Two independent sessions can exist after a Firebase phone sign-in — the
   // Supabase one the app runs on, and a Firebase one that is normally already

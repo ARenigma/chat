@@ -1746,8 +1746,11 @@ describe('Truecaller OAuth authentication bridge', () => {
   });
 
   it('sign-out cannot leave a staged identity link for the next account', () => {
-    const signOut = auth.slice(auth.indexOf('export async function signOut'));
-    expect(signOut).toContain('clearPendingTruecallerGoogleLink();');
+    // signOut records itself and delegates to endSession (the sign-in wait,
+    // 2026-09-25); the clear lives in what every sign-out runs.
+    expect(auth).toMatch(/export function signOut\(\): Promise<void> \{\s*const run = endSession\(\);/);
+    const end = auth.slice(auth.indexOf('async function endSession'));
+    expect(end).toMatch(/^async function endSession\(\): Promise<void> \{\s*clearPendingTruecallerGoogleLink\(\);/);
   });
 
   it('WhatsApp copy replaces SMS copy for the phone fallback', () => {
@@ -2046,6 +2049,73 @@ describe('a block is visible where it matters and reversible everywhere', () => 
     // caller to read `blocker_id` and assume the list is symmetric; RLS returns
     // only rows where the caller is the blocker, so it never has been.
     expect(safety).not.toContain('export function useBlocks');
+  });
+
+  it('lists every block on the Blocked screen, members included', () => {
+    // The screen used to filter the provider directory by the block set. The
+    // directory has no members, so a provider who blocked a member, from a
+    // chat or from a story comment (152), saw "You haven't blocked anyone" and
+    // could not undo it. blocked_people names every block the caller made
+    // (suites 564 and 565).
+    const screen = read('src/screens/BlockedUsersScreen.tsx');
+    expect(screen).toContain('useBlockedPeople()');
+    expect(screen).not.toContain('useProviders');
+    expect(screen).not.toContain('useBlockedPeerIds');
+    expect(screen).toContain('unblock.mutate(p.blocked_id)');
+    // Loading and failure are branched before the empty copy, so neither can
+    // tell somebody their list is empty.
+    const empty = screen.indexOf('You haven’t blocked anyone.');
+    expect(screen.indexOf('isLoading ?')).toBeGreaterThan(-1);
+    expect(screen.indexOf('isLoading ?')).toBeLessThan(empty);
+    expect(screen.indexOf('isError ||')).toBeGreaterThan(-1);
+    expect(screen.indexOf('isError ||')).toBeLessThan(empty);
+
+    const safety = read('src/api/safety.ts');
+    expect(safety).toContain(".from('blocked_people')");
+    // Under the `blocks` prefix, so the invalidation every block and unblock
+    // already does refreshes the list too.
+    expect(safety).toContain("blockedPeople: ['blocks', 'people'] as const");
+    // The unblock names no blocker: 005's owner policy scopes it, which is why
+    // it lifts a member the caller never chatted with (565, assertion 8) and
+    // nobody else's block of the same person (565, assertion 7).
+    expect(safety).toContain(
+      ".from('blocks').delete().eq('blocked_id', peerId)",
+    );
+  });
+
+  it('keeps blocked rows on screen when a refresh fails, and offers a retry', () => {
+    // A failed background refetch keeps the last list and still raises isError
+    // (blockedList.test.ts pins that). With the error checked first, a refresh
+    // that failed after one unblock hid every block still in force, on the one
+    // screen that can undo them and with nothing to press to ask again.
+    const screen = read('src/screens/BlockedUsersScreen.tsx');
+    const rows = screen.indexOf('list !== undefined && list.length > 0 ?');
+    const loading = screen.indexOf('isLoading ?');
+    const failed = screen.indexOf('isError ||');
+    const retry = screen.indexOf('void refetch()');
+    const empty = screen.indexOf('You haven’t blocked anyone.');
+    expect(rows).toBeGreaterThan(-1);
+    expect(rows).toBeLessThan(loading);
+    expect(loading).toBeLessThan(failed);
+    // The retry lives in the failure branch, not after the empty copy.
+    expect(failed).toBeLessThan(retry);
+    expect(retry).toBeLessThan(empty);
+    expect(screen).toContain('label="Try Again"');
+    expect(screen).toContain('busy={isFetching}');
+
+    // The unblocked row leaves the cache before the refetch, so a refetch that
+    // fails cannot leave it offered again after "Unblocked." has shown.
+    const safety = read('src/api/safety.ts');
+    const unblock = safety.slice(
+      safety.indexOf('export function useUnblockUser'),
+      safety.indexOf('export interface ReportInput'),
+    );
+    const dropRow = unblock.indexOf(
+      'setQueryData<BlockedPerson[]>(safetyKeys.blockedPeople',
+    );
+    expect(dropRow).toBeGreaterThan(-1);
+    expect(unblock).toContain('p.blocked_id !== peerId');
+    expect(dropRow).toBeLessThan(unblock.indexOf('invalidateQueries'));
   });
 });
 

@@ -20,7 +20,7 @@ import { TopAppBar } from '../components/TopAppBar';
 import { TabTopBar } from '../components/TabTopBar';
 import { Divider } from '../components/Divider';
 import { useQueryClient } from '@tanstack/react-query';
-import { deleteAccount, signOut } from '../api/auth';
+import { beginSignOut, deleteAccount } from '../api/auth';
 import { stopPush } from '../lib/push';
 import { track } from '../lib/telemetry';
 import { useSetClayAvatar } from '../api/provider';
@@ -284,15 +284,12 @@ export function SettingsSheet({
     queryClient.clear();
     resetStore();
     onSignedOut();
-    void (async () => {
-      try {
-        await stopPush();
-        await signOut();
-      } catch {
-        // Best-effort: the user is already gone from this device's point of
-        // view, and there is no screen left to report a failure to.
-      }
-    })();
+    // Recorded in auth.ts the moment it starts, so a sign-in on the screen
+    // this just showed waits for it rather than being ended by it.
+    beginSignOut().catch(() => {
+      // Best-effort: the user is already gone from this device's point of
+      // view, and there is no screen left to report a failure to.
+    });
   }, [onSignedOut, queryClient]);
 
   const themeLabel =

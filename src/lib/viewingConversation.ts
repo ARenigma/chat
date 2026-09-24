@@ -143,7 +143,7 @@ export function foregroundPushAction(
    * ChatRingScreen's own header draws the line: the ring is the in-app half,
    * the notification the out-of-app half. A banner dropped over it announces
    * the event twice, and tapping it opened the chat underneath the ring,
-   * which stayed up. Any other conversation still gets its banner.
+   * which stayed up. While it is up, no conversation gets a banner (below).
    *
    * Silent, not dropped. This used to be `ignore`, on the reasoning that the
    * event was on screen already; it is, but only while the provider stays.
@@ -181,7 +181,15 @@ export function foregroundPushAction(
    * when a ring starts would close the gap, and would also cancel older lines
    * of that conversation nobody has read, which the platform says not to do.
    */
-  if (ringingId !== null && push.conversationId === ringingId) {
+  /*
+   * Any ring, not only this conversation's. The ring is opaque and full
+   * screen, so while it is up nothing under it is visible, including the chat
+   * the viewing signal still names: a message for that chat must not be
+   * `ignore`d as "already on screen", and no banner may peek over the ring
+   * for any conversation. Everything goes to the shade silently until the
+   * ring leaves.
+   */
+  if (ringingId !== null) {
     return 'show-silent';
   }
   if (viewingId !== null && push.conversationId === viewingId) {

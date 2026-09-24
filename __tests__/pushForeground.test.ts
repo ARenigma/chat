@@ -129,8 +129,9 @@ describe('foregroundPushAction', () => {
 
   it('ignores the conversation on screen, which Realtime has already drawn', () => {
     expect(foregroundPushAction({ conversationId: A }, A)).toBe('ignore');
-    // A ring for some other conversation does not change that.
-    expect(foregroundPushAction({ conversationId: A }, A, true, B)).toBe('ignore');
+    // Unless a ring covers it: the chat under an opaque ring is not on screen,
+    // so its message goes to the shade silently (Greptile P1 on 6c8e3b7).
+    expect(foregroundPushAction({ conversationId: A }, A, true, B)).toBe('show-silent');
   });
 
   it('shows the in-app banner when no chat is on screen', () => {
@@ -163,7 +164,7 @@ describe('foregroundPushAction', () => {
     expect(foregroundPushAction({ conversationId: A }, A, true, A)).toBe('show-silent');
   });
 
-  it('never silences anything but the ringing conversation', () => {
+  it('silences everything while a ring is up, and nothing otherwise', () => {
     const outcomes = new Set<string>();
     for (const viewingId of [null, A, B]) {
       for (const inUse of [true, false]) {
@@ -175,15 +176,22 @@ describe('foregroundPushAction', () => {
         }
       }
     }
-    // In use and ringing A, whatever is on screen under the ring.
+    // In use and any ring up, whatever is on screen under the ring.
     expect([...outcomes].sort()).toEqual(
-      [`${A} true ${A}`, `${B} true ${A}`, `null true ${A}`].sort(),
+      [
+        `${A} true ${A}`, `${B} true ${A}`, `null true ${A}`,
+        `${A} true ${B}`, `${B} true ${B}`, `null true ${B}`,
+      ].sort(),
     );
   });
 
-  it('still shows a banner for a different conversation while a ring is up', () => {
-    expect(foregroundPushAction({ conversationId: A }, null, true, B)).toBe('show-in-app');
-    expect(foregroundPushAction({ conversationId: A }, B, true, B)).toBe('show-in-app');
+  it('shows no banner over a ring, for any conversation, but still posts it', () => {
+    // A banner peeking over the full-screen ring was the original complaint;
+    // silent keeps the message in the shade without covering the ring.
+    expect(foregroundPushAction({ conversationId: A }, null, true, B)).toBe('show-silent');
+    expect(foregroundPushAction({ conversationId: A }, B, true, B)).toBe('show-silent');
+    // A covered chat's own message is posted, not dropped as "on screen".
+    expect(foregroundPushAction({ conversationId: A }, A, true, B)).toBe('show-silent');
   });
 
   it('still alerts for the ringing conversation when the phone is not in use', () => {
@@ -424,7 +432,7 @@ describe('onForegroundPush', () => {
     expect(h.logs()).toContain('foreground message: ignore');
   });
 
-  it('posts the conversation ringing in the app silently, and a banner for any other', () => {
+  it('posts the ringing conversation and any other silently while the ring is up', () => {
     // Silently: in the shade (so a provider who leaves mid-ring still has it)
     // with no banner over the ring. Dropping it outright was the defect.
     const h = load();
@@ -440,7 +448,16 @@ describe('onForegroundPush', () => {
     expect(h.native.notify).toHaveBeenCalledTimes(2);
     expect(h.native.notify.mock.calls[1][0]).toBe(B);
     expect(h.native.notify.mock.calls[1][6]).toBe(true);
-    expect(h.native.notify.mock.calls[1][7]).toBe(false);
+    expect(h.native.notify.mock.calls[1][7]).toBe(true);
+    // And the chat covered by the ring gets its message posted too.
+    h.viewing.setViewingConversation(B);
+    deliver(message(B));
+    expect(h.native.notify).toHaveBeenCalledTimes(3);
+    expect(h.native.notify.mock.calls[2][7]).toBe(true);
+    // Once the ring leaves, the chat on screen is ignored again.
+    h.viewing.setRingingConversation(null);
+    deliver(message(B));
+    expect(h.native.notify).toHaveBeenCalledTimes(3);
   });
 
   it('posts the ringing conversation silently when its own chat is under the ring', () => {
@@ -1975,5 +1992,43 @@ describe('the lock-screen Decline clears under the post lock', () => {
     ) as string;
     expect(src).toContain('Conversations.clear(context, conversationId)');
     expect(src).not.toMatch(/NotificationManagerCompat[\s\S]*\.cancel\(/);
+  });
+});
+
+describe('a sign-in waits for a sign-out still finishing (Greptile P1 on 6c8e3b7)', () => {
+  const auth = read('src/api/auth.ts');
+  const bodyOf = (signature: string) => {
+    const at = auth.indexOf(signature);
+    expect(at).toBeGreaterThanOrEqual(0);
+    return auth.slice(at, auth.indexOf('\n}\n', at));
+  };
+
+  it.each([
+    'export async function sendPhoneOtp(',
+    'export async function verifyPhoneOtp(',
+    'export async function signInWith(',
+    'export async function signInWithTruecaller(',
+    'export async function confirmTruecallerNewUser(',
+    'export async function signInWithGoogle(',
+    'export async function handleAuthDeepLink(',
+  ])('%s waits before it starts a session', signature => {
+    // First statement, so no session work can run before the old sign-out ends.
+    expect(bodyOf(signature)).toMatch(/\): Promise<[^>]+> \{\s*await afterPendingSignOut\(\);/);
+  });
+
+  it('records the whole sign-out, push teardown included, the moment it starts', () => {
+    const begin = bodyOf('export function beginSignOut(');
+    expect(begin).toMatch(/await stopPush\(\);\s*await signOut\(\);/);
+    expect(begin).toMatch(/\}\)\(\);\s*trackSignOut\(run\);\s*return run;/);
+    expect(bodyOf('export function signOut(')).toMatch(/const run = endSession\(\);\s*trackSignOut\(run\);/);
+    // Never rejects into a sign-in.
+    expect(auth).toMatch(/run\.catch\(\(\) => undefined\)/);
+  });
+
+  it('Settings signs out through beginSignOut, not its own unrecorded chain', () => {
+    const settings = read('src/screens/SettingsSheet.tsx');
+    const press = settings.slice(settings.indexOf('const onSignOutPress'), settings.indexOf('}, [onSignedOut, queryClient]);'));
+    expect(press).toContain('beginSignOut()');
+    expect(press).not.toMatch(/await stopPush\(\)|await signOut\(\)/);
   });
 });

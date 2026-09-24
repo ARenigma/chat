@@ -501,18 +501,12 @@ export async function startPush(): Promise<() => void> {
  * (`drainRegistrations`, bounded by `STOP_DRAIN_MS`), so a late
  * `register_push_token` cannot land after the delete and recreate the row.
  *
- * Not safe against a sign-in that lands while it is still running, and the
- * drain makes that window longer whenever a registration is on the wire.
- * `onSignOutPress` leaves the signed-in UI at once and runs `stopPush()` then
- * `signOut()` behind it. A new sign-in in that time replaces the one Supabase
- * session, so this row delete and `deleteToken` remove the row and the token
- * the NEW user just registered from this phone, and the caller's `signOut()`
- * then ends the new session. A
- * generation check here alone does not fix it: it would skip the delete and
- * the revoke while the caller still signs the new user out, leaving a live
- * row and token for somebody signed out, the state this function exists to
- * prevent. The fix belongs to the sign-out chain in SettingsSheet.tsx, which
- * would have to know that no newer session has started before it tears down.
+ * A sign-in that lands while this is still running is safe from both sides:
+ * `startPush` waits for the teardown (`teardown`) before it registers, and
+ * every sign-in entry point in auth.ts waits for the whole sign-out
+ * (`beginSignOut`, this then `signOut`) before it starts a session, so the old
+ * `signOut()` can no longer end the new one and this delete cannot remove the
+ * new user's row or token.
  */
 export function stopPush(): Promise<void> {
   // First, so nothing re-registers the row this is about to delete.
