@@ -274,6 +274,17 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   const [liveMedium, setLiveMedium] = useState<CallMedium>(medium);
   const liveMediumRef = useRef(liveMedium);
   liveMediumRef.current = liveMedium;
+  /**
+   * Turn the camera on for a call that is video NOW, and re-check when the
+   * start resolves: it can wait on the camera permission dialog, and if the
+   * server has put the call back on voice meanwhile (136), granting permission
+   * must not publish video on a call billed as voice.
+   */
+  const enableCameraIfStillVideo = () => {
+    void Promise.resolve(enableVideoRef.current()).then(() => {
+      if (liveMediumRef.current !== 'video') disableVideoRef.current();
+    });
+  };
   /** The member confirms the price before asking to switch (132). */
   const [videoPriceVisible, setVideoPriceVisible] = useState(false);
   const [memberConsented, setMemberConsented] = useState(false);
@@ -636,6 +647,8 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   // without becoming a dependency that changes on every render.
   const enableVideoRef = useRef(enableVideo);
   enableVideoRef.current = enableVideo;
+  const disableVideoRef = useRef(disableVideo);
+  disableVideoRef.current = disableVideo;
 
   /*
    * One end, and the FIRST one wins — because there are now two detectors and
@@ -692,7 +705,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
       // device's media connected must still turn the camera on here, because
       // enableVideo was a no-op without an engine at the moment of acceptance.
       if (liveMediumRef.current === 'video') {
-        void enableVideoRef.current();
+        enableCameraIfStillVideo();
       }
     } else if (connState === 'failed') {
       // Telemetry (#3): a media failure the user would otherwise have to report.
@@ -829,7 +842,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
         // A video call is held away from the ear: speaker, as a call started
         // as video already defaults to.
         setSpeaker(true);
-        void enableVideoRef.current();
+        enableCameraIfStillVideo();
         return;
       }
       // 136: a call switched to video before it started can be put back on
@@ -838,6 +851,8 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
       if (result === 'insufficient_balance' && liveMediumRef.current === 'video') {
         setLiveMedium('voice');
         disableVideo();
+        // Back to the earpiece: the speaker was forced on only for video.
+        setSpeaker(false);
         setNotice('Balance too low for video, so the call continues on voice.');
         return;
       }

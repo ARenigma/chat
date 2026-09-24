@@ -8683,6 +8683,10 @@ describe('switch to video works end to end and bills only the difference (132, 2
     expect(screen).toContain('const iAsked = askedRef.current');
     expect(screen).toContain('VIDEO_SWITCH_REQUEST_TTL_MS');
     expect(screen).toContain('getVideoSwitchQuote(callId)');
+    // A camera start still waiting on permission must not publish video after
+    // the server put the call back on voice; the fallback returns the earpiece.
+    expect(screen).toContain("if (liveMediumRef.current !== 'video') disableVideoRef.current();");
+    expect(screen).toContain('setSpeaker(false);');
   });
 
   it('CallScreen tracks the live medium and prices the switch for the member', () => {
