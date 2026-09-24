@@ -2823,6 +2823,11 @@ describe('the Truecaller sheet footer leads to Google (2026-09-24)', () => {
   });
   it("the footer's outcome routes to Google sign-in", () => {
     expect(read('src/lib/truecallerAuthDomain.ts')).toContain("if (reason === 'alternate_number') return 'use_google';");
-    expect(read('src/screens/OnboardingScreen.tsx')).toContain('onGoogleRef.current();');
+    const screen = read('src/screens/OnboardingScreen.tsx');
+    expect(screen).toContain('startGoogleRef.current();');
+    // The hand-off must not pass through the button's canSubmit guard: state
+    // is still 'loading' from the sheet in that render.
+    const start = screen.slice(screen.indexOf('const startGoogle = useCallback'), screen.indexOf('const onGoogle = useCallback'));
+    expect(start).not.toContain('canSubmit(');
   });
 });

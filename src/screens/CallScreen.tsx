@@ -26,7 +26,6 @@ import { avatarImageSource, clayFraming, isClayUri } from '../lib/clayAvatars';
 import { useConversationId, useConversations, useProviders, useSelfId } from '../api/chat';
 import { answerCall, endCall, getVideoSwitchQuote, heartbeatCall, requestVideoSwitch, respondVideoSwitch, startCall, useCallEnded, useVideoSwitch, type VideoSwitchQuote, type VideoSwitchResult } from '../api/calls';
 import { VIDEO_SWITCH_REQUEST_TTL_MS } from '../lib/videoSwitch';
-import { useEconomicsConfig, FALLBACK_ECONOMICS } from '../api/appConfig';
 import { DURATION, EASE_OUT } from '../theme/motion';
 import { useCallSession } from '../api/callMedia';
 import { CallVideoView } from '../api/callMedia/CallVideoView';
@@ -795,21 +794,24 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   /**
    * The price shown in both switch dialogs, from the SERVER (134): the rates
    * pinned to this session's economics version, which is what the bill uses.
-   * The cached app config is only the fallback while the quote loads.
+   * No cached-config fallback: a member confirms only a price the server has
+   * quoted for THIS call, so the confirming action waits for the quote.
+   * `null` while a quote is in flight; an older response never replaces a
+   * newer request's.
    */
-  const { data: economics } = useEconomicsConfig();
   const [quote, setQuote] = useState<VideoSwitchQuote | null>(null);
+  const quoteAttempt = useRef(0);
   const loadQuote = useCallback(() => {
-    if (callId !== null) void getVideoSwitchQuote(callId).then(setQuote);
+    if (callId === null) return;
+    const attempt = ++quoteAttempt.current;
+    setQuote(null);
+    void getVideoSwitchQuote(callId)
+      .catch((): VideoSwitchQuote => ({ success: false }))
+      .then(q => {
+        if (attempt === quoteAttempt.current) setQuote(q);
+      });
   }, [callId]);
-  const videoRate =
-    quote?.video_rate ?? economics?.video_rate_tokens_per_min ?? FALLBACK_ECONOMICS.video_rate_tokens_per_min;
-  const videoExtra =
-    quote?.extra_now ??
-    Math.max(
-      0,
-      videoRate - (economics?.audio_rate_tokens_per_min ?? FALLBACK_ECONOMICS.audio_rate_tokens_per_min),
-    );
+  const quoteReady = quote?.success === true && (quote.billed === false || typeof quote.video_rate === 'number');
   // A not-yet-connected call (134) is quoted 0 NOW because nothing has been
   // charged yet — its first minute is then charged at the video rate. Say
   // that, not "topped up by ₹0".
@@ -819,7 +821,17 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     (quote.video_rate ?? 0) > (quote.current_rate ?? 0);
   const switchPriceLine = notStartedYet
     ? 'Nothing is charged now. Video is billed from the first minute once the call connects.'
-    : `This minute is topped up by ₹${videoExtra}, and nothing already paid is charged again.`;
+    : `This minute is topped up by ₹${quote?.extra_now ?? 0}, and nothing already paid is charged again.`;
+  const quoteStatus =
+    quote === null
+      ? 'Checking the video price…'
+      : !quoteReady
+        ? 'The video price could not be loaded. Try again in a moment.'
+        : null;
+  const videoPrice =
+    quote?.billed === false
+      ? 'Video is not charged on this call.'
+      : `Video is ₹${quote?.video_rate ?? 0}/min. ${switchPriceLine}`;
 
   // Whether THIS device made the pending request. Known locally (we sent it)
   // rather than read off the row: by the time a missed or late UPDATE
@@ -1442,11 +1454,12 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
         title="Switch to video?"
         body={
           isMemberSide
-            ? `${name} wants to switch to video. Video is ₹${videoRate}/min. ${switchPriceLine} Your camera will turn on.`
+            ? `${name} wants to switch to video. ${quoteStatus ?? videoPrice} Your camera will turn on.`
             : `${name} wants to switch to video. Your camera will turn on.`
         }
         cancelLabel="Stay on voice"
         confirmLabel="Switch"
+        confirmDisabled={isMemberSide && !quoteReady}
         onCancel={() => {
           if (callId) void respondVideoSwitch(callId, false);
           setVideoRequestFrom(null);
@@ -1474,9 +1487,10 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
         visible={videoPriceVisible}
         testID="call-video-price"
         title="Switch to video?"
-        body={`Video is ₹${videoRate}/min if ${name} agrees. ${switchPriceLine}`}
+        body={quoteStatus ?? `${name} will be asked first. ${videoPrice}`}
         cancelLabel="Not now"
         confirmLabel="Ask"
+        confirmDisabled={!quoteReady}
         onCancel={() => setVideoPriceVisible(false)}
         onConfirm={() => {
           setVideoPriceVisible(false);

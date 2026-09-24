@@ -15,6 +15,8 @@ interface Props {
   destructive?: boolean;
   busy?: boolean;
   busyLabel?: string;
+  /** Holds the confirming action back (e.g. until a price is known); cancel stays live. */
+  confirmDisabled?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
   testID?: string;
@@ -37,6 +39,7 @@ export function ConfirmDialog({
   destructive = false,
   busy = false,
   busyLabel = 'Working…',
+  confirmDisabled = false,
   onCancel,
   onConfirm,
   testID,
@@ -65,7 +68,7 @@ export function ConfirmDialog({
                 label={confirmLabel}
                 onPress={onConfirm}
                 kind="danger"
-                disabled={busy}
+                disabled={busy || confirmDisabled}
                 busy={busy}
                 busyLabel={busyLabel}
                 testID="confirm-dialog-confirm"
@@ -88,7 +91,7 @@ export function ConfirmDialog({
               <Button
                 label={confirmLabel}
                 onPress={onConfirm}
-                disabled={busy}
+                disabled={busy || confirmDisabled}
                 busy={busy}
                 busyLabel={busyLabel}
                 testID="confirm-dialog-confirm"

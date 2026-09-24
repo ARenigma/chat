@@ -8701,6 +8701,18 @@ describe('switch to video works end to end and bills only the difference (132, 2
     expect(screen).toContain('entering={videoFadeIn}');
   });
 
+  it('the member confirms only a price the server quoted for this call', () => {
+    // Greptile P1, 2026-09-24: "Ask" was live while the quote loaded, over a
+    // cached price that could differ from the rate pinned to the session.
+    const screen = withoutComments(read('src/screens/CallScreen.tsx'));
+    expect(screen).not.toContain('useEconomicsConfig');
+    expect(screen).toContain('if (attempt === quoteAttempt.current) setQuote(q);');
+    expect(screen).toContain('confirmDisabled={!quoteReady}');
+    expect(screen).toContain('confirmDisabled={isMemberSide && !quoteReady}');
+    const dialog = read('src/components/ConfirmDialog.tsx');
+    expect(dialog.match(/disabled=\{busy \|\| confirmDisabled\}/g)).toHaveLength(2);
+  });
+
   it('notices render app-wide from one root overlay', () => {
     const app = read('App.tsx');
     expect(app).toContain('<NoticeOverlay />');
