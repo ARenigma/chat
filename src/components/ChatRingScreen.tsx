@@ -60,6 +60,22 @@ function stillRinging(requestId: string): boolean {
 }
 
 /**
+ * A different request for the same conversation is ringing now. The shade
+ * entry is the conversation's, not the request's, so an answer to an older
+ * request that lands late must not cancel it: that would take the newer,
+ * unanswered request out of the shade (Greptile P1 on 03c9aae).
+ */
+function newerRequestRings(requestId: string, conversationId: string): boolean {
+  const ringing = useStore.getState().incomingRequest;
+  return (
+    ringing !== null &&
+    ringing !== undefined &&
+    ringing.conversationId === conversationId &&
+    ringing.requestId !== requestId
+  );
+}
+
+/**
  * The ring has left, and if the chat it covered is this conversation, that
  * chat is now what the person is reading: `useViewingConversation`'s moment to
  * take the notification out of the shade, which that hook skips while the ring
@@ -213,7 +229,9 @@ export function ChatRingScreen({ onOpenConversation }: Props) {
           if (stillRinging(requestId)) {
             clearIncoming();
           }
-          void clearConversation(conversationId);
+          if (!newerRequestRings(requestId, conversationId)) {
+            void clearConversation(conversationId);
+          }
         },
         /*
          * A failure is a Decline that never reached the server: the RPC

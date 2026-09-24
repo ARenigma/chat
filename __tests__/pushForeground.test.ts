@@ -1937,6 +1937,20 @@ describe('the chat-request ring takes its notification with it', () => {
     expect(ring.store.incomingRequest?.requestId).toBe(NEWER);
   });
 
+  it('keeps the newer request\'s notification when an older Decline for the same chat lands late', () => {
+    // Greptile P1 on 03c9aae: the clear is by conversation, so an answer to
+    // the old request took the new, unanswered one out of the shade.
+    const NEWER = 'eeeeeeee-0000-4000-8000-00000000000e';
+    const ring = mountRing();
+    jest.advanceTimersByTime(20_000);
+    press(ring, 'chat-ring-decline');
+    jest.advanceTimersByTime(10_000);
+    ring.store.incomingRequest = { ...REQUEST_ROW, requestId: NEWER, conversationId: A };
+    answer(ring.decline, 'success');
+    expect(ring.clear).not.toHaveBeenCalled();
+    expect(ring.store.incomingRequest?.requestId).toBe(NEWER);
+  });
+
   /* The ring over its own conversation's chat --------------------------- */
 
   it('leaves the notification on a return while the ring covers its own chat', () => {
