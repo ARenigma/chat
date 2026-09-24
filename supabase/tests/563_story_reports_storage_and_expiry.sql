@@ -55,7 +55,7 @@
 
 \set ON_ERROR_STOP on
 begin;
-select plan(60);
+select plan(61);
 
 -- ── The storage stand-in ───────────────────────────────────────────────────
 create schema storage;
@@ -698,6 +698,16 @@ select throws_ok(
 );
 
 reset role;
+
+-- A report racing the author's delete must carry the text or be refused;
+-- one session cannot race itself, so pin the order in the definition.
+select ok(
+  (select position('for share' in d) > 0
+      and position('for share' in d) < position('story_comment_is_visible' in d)
+      and position('for share' in d) < position('insert into public.reports' in d)
+   from (select pg_get_functiondef('public.report_story_comment(uuid, public.report_reason, text)'::regprocedure) as d) f),
+  '39f. report_story_comment locks the comment before checking and reading it'
+);
 
 -- A fresh deploy has only push_sender_url; the purge must not wait on a
 -- second secret nobody knows to set (Greptile P1 on 7a9de76).

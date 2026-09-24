@@ -1,16 +1,15 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import { useBackBarrier } from '../lib/backGuard';
-import type { ProviderSummary } from '../lib/database.types';
 import { initialOf } from '../lib/display';
 import { SCROLL_PHYSICS } from '../lib/scroll';
-import { useProviders } from '../api/chat';
-import { useBlockedPeerIds, useUnblockUser } from '../api/safety';
+import { useBlockedPeople, useUnblockUser } from '../api/safety';
 import { Avatar } from '../components/Avatar';
 import { BackButton } from '../components/BackButton';
+import { Button } from '../components/Button';
 import { Pressable } from '../components/Pressable';
 
 interface Props {
@@ -25,10 +24,11 @@ interface Props {
  * longer a thread to open to unblock them. Play's UGC policy requires that a
  * block be manageable, so this screen exists solely to undo one.
  *
- * Names are resolved through the directory (`useProviders`), which still lists a
- * blocked provider — the filtering is client-side. A blocked id with no
- * directory entry (a rare member-to-member block) is not shown here yet; the
- * common marketplace case is a member unblocking a provider.
+ * The list is `blocked_people` (152), not the provider directory filtered by
+ * the block set. The directory has no members, so a provider who blocked a
+ * member, from a chat or from a comment on their story, was told "You haven't
+ * blocked anyone" and had no way to undo it. Every row is somebody the caller
+ * blocked, member or provider, under their public name only.
  */
 export function BlockedUsersScreen({ onBack }: Props) {
   /*
@@ -43,14 +43,8 @@ export function BlockedUsersScreen({ onBack }: Props) {
 
   const styles = useStyles(makeStyles);
   const insets = useSafeAreaInsets();
-  const { data: providers } = useProviders();
-  const blocked = useBlockedPeerIds();
+  const { data: list, isLoading, isError, isFetching, refetch } = useBlockedPeople();
   const unblock = useUnblockUser();
-
-  const list = useMemo<ProviderSummary[]>(
-    () => (providers ?? []).filter(p => blocked.has(p.id)),
-    [providers, blocked],
-  );
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
@@ -61,13 +55,20 @@ export function BlockedUsersScreen({ onBack }: Props) {
         </Text>
       </View>
 
-      {list.length === 0 ? (
-        <View style={styles.empty}>
-          <Text allowFontScaling style={styles.emptyText}>
-            You haven’t blocked anyone.
-          </Text>
-        </View>
-      ) : (
+      {/*
+        Rows first, whatever the fetch did last. React Query keeps the previous
+        data when a background refetch fails but still raises `isError`, so an
+        error-first order let a failed refresh after an unblock hide every block
+        still in force, on a screen with no way to ask again. Same order as the
+        Chats list (2026-09-17 audit): cached rows, then loading, then failure,
+        then empty.
+
+        Loading and failure are their own states, never the empty one. "You
+        haven't blocked anyone" is a claim about somebody's safety settings, and
+        showing it before the list arrives, or when it could not be read, tells
+        them a block they made is gone.
+      */}
+      {list !== undefined && list.length > 0 ? (
         <ScrollView
           showsVerticalScrollIndicator={false}
           {...SCROLL_PHYSICS}
@@ -77,15 +78,15 @@ export function BlockedUsersScreen({ onBack }: Props) {
             they were blocked.
           </Text>
           {list.map(p => (
-            <View key={p.id} style={styles.row}>
+            <View key={p.blocked_id} style={styles.row}>
               <Avatar initial={initialOf(p.display_name)} size={40} />
               <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling numberOfLines={1} style={styles.name}>
                 {p.display_name}
               </Text>
               <Pressable
-                onPress={() => unblock.mutate(p.id)}
+                onPress={() => unblock.mutate(p.blocked_id)}
                 disabled={unblock.isPending}
-                testID={`unblock-${p.id}`}
+                testID={`unblock-${p.blocked_id}`}
                 accessibilityLabel={`Unblock ${p.display_name}`}
                 press="chip"
                 style={styles.unblock}>
@@ -96,6 +97,42 @@ export function BlockedUsersScreen({ onBack }: Props) {
             </View>
           ))}
         </ScrollView>
+      ) : isLoading ? (
+        <View style={styles.empty}>
+          <Text allowFontScaling style={styles.emptyText}>
+            Loading…
+          </Text>
+        </View>
+      ) : isError || list === undefined ? (
+        /*
+         * A retry, because this is the only screen a block can be undone from:
+         * a failure with no way to ask again leaves every block here stuck until
+         * the screen is closed and reopened. `busy` rather than nothing while it
+         * runs, since a failing refetch retries once before it settles and a
+         * button that goes quiet for that long reads as dead.
+         */
+        <View style={styles.empty}>
+          <Text allowFontScaling style={styles.emptyText}>
+            Could not load your blocked list right now.
+          </Text>
+          <View style={styles.emptyRetry}>
+            <Button
+              label="Try Again"
+              busy={isFetching}
+              busyLabel="Trying Again"
+              testID="blocked-retry"
+              onPress={() => {
+                void refetch();
+              }}
+            />
+          </View>
+        </View>
+      ) : (
+        <View style={styles.empty}>
+          <Text allowFontScaling style={styles.emptyText}>
+            You haven’t blocked anyone.
+          </Text>
+        </View>
       )}
     </View>
   );
@@ -167,5 +204,9 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.bodyLarge,
       color: t.color.text.secondary,
       textAlign: 'center',
+    },
+    emptyRetry: {
+      alignSelf: 'stretch',
+      paddingTop: TOKENS.space.md,
     },
   });

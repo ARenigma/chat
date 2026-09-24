@@ -13,7 +13,7 @@
 import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
-import type { Block, ReportReason } from '../lib/database.types';
+import type { Block, BlockedPerson, ReportReason } from '../lib/database.types';
 import { track } from '../lib/telemetry';
 import { errorTick, tick } from '../lib/haptics';
 import { useStore } from '../store/useStore';
@@ -21,6 +21,11 @@ import { keys } from './chat';
 
 const safetyKeys = {
   blocks: ['blocks'] as const,
+  // Nested under `blocks` on purpose. Invalidation matches by prefix, so every
+  // write that refreshes the block set refreshes the named list too, and a
+  // caller that blocks by another route (block_story_commenter writes the row
+  // server-side) invalidates `blocks` once and cannot leave either stale.
+  blockedPeople: ['blocks', 'people'] as const,
   myReports: ['my-reports'] as const,
 };
 
@@ -65,6 +70,34 @@ function useBlocks() {
 export function useBlockedPeerIds(): ReadonlySet<string> {
   const { data } = useBlocks();
   return useMemo(() => new Set((data ?? []).map(b => b.blocked_id)), [data]);
+}
+
+/**
+ * Everyone this session has blocked, with a name to show: what the Blocked
+ * screen lists, most recent first.
+ *
+ * Its own read rather than the id set above joined to a directory, because no
+ * directory holds everyone. The provider directory has no members, so a
+ * provider who blocked a member, from a chat or from a comment on their story
+ * (152), had a block the app could not show and so could not undo.
+ * `blocked_people` resolves every block the caller made to a public name and a
+ * clay avatar, and never a phone number or email.
+ */
+export function useBlockedPeople() {
+  return useQuery<BlockedPerson[]>({
+    queryKey: safetyKeys.blockedPeople,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('blocked_people')
+        .select('blocked_id, display_name, avatar_url, blocked_at')
+        .order('blocked_at', { ascending: false });
+      if (error) {
+        throw new Error(error.message);
+      }
+      return data;
+    },
+    staleTime: 30_000,
+  });
 }
 
 export function useBlockUser() {
@@ -113,10 +146,17 @@ export function useUnblockUser() {
         throw new Error(error.message);
       }
     },
-    onSuccess: () => {
+    onSuccess: (_void, peerId) => {
       tick();
       track('user_unblocked');
       setNotice('Unblocked.', 'confirm');
+      // Drop the row before the refetch rather than waiting on it. The delete
+      // has already landed, and a refetch that fails keeps the old list, so
+      // without this the Blocked screen would go on offering to unblock
+      // somebody it just said was unblocked.
+      queryClient.setQueryData<BlockedPerson[]>(safetyKeys.blockedPeople, prev =>
+        prev?.filter(p => p.blocked_id !== peerId),
+      );
       void queryClient.invalidateQueries({ queryKey: safetyKeys.blocks });
       void queryClient.invalidateQueries({ queryKey: keys.conversationList });
     },

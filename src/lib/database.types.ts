@@ -327,6 +327,22 @@ export type Block = {
 };
 
 /**
+ * One row of `blocked_people` (152): somebody the caller blocked, member or
+ * provider, whichever path made the block (a chat, or a comment on the
+ * caller's own story). What BlockedUsersScreen lists. There is no
+ * `blocker_id`: the view only ever returns the caller's own blocks, and a row
+ * where the caller is the one blocked is never on it (005).
+ */
+export type BlockedPerson = {
+  blocked_id: string;
+  /** A provider's name, a member's chosen username, or `member_handle()`. */
+  display_name: string;
+  /** A `clay:<seed>` avatar, or null. Never a URL, for 148's reason. */
+  avatar_url: string | null;
+  blocked_at: string;
+};
+
+/**
  * One row per thread for the inbox. Backed by the `conversation_summaries`
  * view (last rebuilt in migration 031: no message content by design).
  *
@@ -1304,6 +1320,11 @@ export type Database = {
       };
       story_comment_feed: {
         Row: StoryCommentFeedItem;
+        Relationships: [];
+      };
+      /** 152. Read-only; unblocking stays a DELETE on `blocks`. */
+      blocked_people: {
+        Row: BlockedPerson;
         Relationships: [];
       };
     };

@@ -914,6 +914,11 @@ const suites = [
     label:
       'a story provider blocks a stranger commenter by comment id, and the block rules hide and stop them',
   },
+  {
+    file: join(ROOT, 'supabase/tests/565_blocked_people.sql'),
+    label:
+      'the Blocked screen lists every block the caller made, member or provider, by public name only, and unblocking lifts only their own',
+  },
 ];
 
 let passed = 0;

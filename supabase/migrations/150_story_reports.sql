@@ -266,11 +266,22 @@ begin
     raise exception 'UNAUTHORIZED' using errcode = '42501';
   end if;
 
-  if not public.story_comment_is_visible(p_comment_id) then
+  /*
+   * Lock the row BEFORE checking it, and read the evidence from that locked
+   * row. Checked first and read unlocked, an author deleting the comment in
+   * the same instant could null its body between the two steps, and the
+   * report was filed with no text for a moderator to review (Greptile P1 on
+   * 7036bf8). FOR SHARE makes a concurrent delete wait for this report to
+   * commit; a delete that committed first leaves deleted_at set, and the
+   * report is refused as if the comment were gone, which it is.
+   */
+  select * into v_comment from public.story_comments where id = p_comment_id for share;
+
+  if not found
+     or v_comment.deleted_at is not null
+     or not public.story_comment_is_visible(p_comment_id) then
     raise exception 'no such comment' using errcode = 'no_data_found';
   end if;
-
-  select * into v_comment from public.story_comments where id = p_comment_id;
 
   if v_comment.author_id = v_uid then
     raise exception 'cannot report your own comment' using errcode = '22023';
