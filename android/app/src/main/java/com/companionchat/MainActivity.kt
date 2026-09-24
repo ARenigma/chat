@@ -242,7 +242,9 @@ class MainActivity : ReactActivity() {
           val options = TcSdkOptions.Builder(this@MainActivity, tcOAuthCallback)
             .sdkOptions(TcSdkOptions.OPTION_VERIFY_ONLY_TC_USERS)
             .consentMode(TcSdkOptions.CONSENT_MODE_BOTTOMSHEET)
-            .footerType(TcSdkOptions.FOOTER_TYPE_ANOTHER_MOBILE_NO)
+            // "Use another method" → Google (2026-09-24). The SDK has no custom
+            // footer text; this is the closest preset to "Use Google instead".
+            .footerType(TcSdkOptions.FOOTER_TYPE_ANOTHER_METHOD)
             .ctaText(TcSdkOptions.CTA_TEXT_CONTINUE)
             .build()
 

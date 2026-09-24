@@ -86,16 +86,17 @@ export function parsePendingTruecallerGoogleLink(
 
 export type TruecallerFailureAction =
   | 'return_to_chooser'
-  | 'show_whatsapp_fallback'
+  | 'use_google'
   | 'show_error';
 
 /** Product behavior for each native terminal outcome. */
 export function actionForTruecallerFailure(
   reason: 'cancelled' | 'alternate_number' | 'unavailable' | 'failed',
 ): TruecallerFailureAction {
-  if (reason === 'cancelled') return 'return_to_chooser';
-  if (reason === 'alternate_number' || reason === 'unavailable') {
-    return 'show_whatsapp_fallback';
-  }
+  // The sheet's footer ("Use another method") is the member asking for the
+  // alternative, which is Google (2026-09-24). No Truecaller, or a dismissal,
+  // lands on the Google screen without an error.
+  if (reason === 'alternate_number') return 'use_google';
+  if (reason === 'cancelled' || reason === 'unavailable') return 'return_to_chooser';
   return 'show_error';
 }

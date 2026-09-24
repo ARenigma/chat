@@ -70,9 +70,9 @@ export interface StepSpec {
 export const STEPS: Readonly<Record<StepKey, StepSpec>> = {
   choose: {
     key: 'choose',
-    title: 'Choose a way in',
+    title: 'Sign in',
     description:
-      'One tap with Truecaller, your WhatsApp number, or Google.',
+      'One tap with Truecaller, or continue with Google.',
     glyph: 'chat',
   },
   number: {

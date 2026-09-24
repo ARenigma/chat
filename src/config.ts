@@ -50,14 +50,15 @@ export const MOCK_PAYMENTS = APP_ENV !== 'production';
 export const CASHFREE_SANDBOX_CHECKOUT = APP_ENV !== 'production';
 
 /**
- * Phone sign-in: implemented, and on (Firebase path). Flip to false when
- * reverting to the Supabase-native path while DLT registration is pending.
+ * Phone-code (WhatsApp OTP) sign-in: OFF (Amit, 2026-09-24). Sign-in is the
+ * Truecaller sheet with Google as the only alternative; the WhatsApp Cloud API
+ * credentials were never set in prod, so the code step delivered nothing.
  *
- * Turning it off is one step: flip this to false. Both sendPhoneOtp and
- * verifyPhoneOtp return early when false, so the guard cannot be bypassed
- * by adding a button. See auth.ts for the full DLT/SMS note.
+ * Both sendPhoneOtp and verifyPhoneOtp return early while this is false, so
+ * the guard cannot be bypassed by adding a button. Flip to true only once the
+ * WhatsApp secrets are live AND resolve_phone_owner covers GoTrue phone OTP.
  */
-export const PHONE_AUTH_ENABLED = true;
+export const PHONE_AUTH_ENABLED = false;
 
 /**
  * Whether Truecaller OAuth is presented as the primary sign-in CTA.

@@ -31,7 +31,7 @@ name: First launch reaches supported sign-in
 - assertVisible:
     id: 'onboard-google'
 - assertVisible:
-    id: 'onboard-use-phone'
+    id: 'onboard-truecaller'
 # Asserted absent, not merely unmentioned: the Facebook button existed with no
 # credentials behind it, so every tap failed. A flow that stops naming it would
 # pass again the moment someone re-added it.

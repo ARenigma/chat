@@ -74,10 +74,10 @@ describe('Truecaller terminal outcome policy', () => {
   it('keeps cancellation silent, routes unavailability to WhatsApp, and surfaces failures', () => {
     expect(actionForTruecallerFailure('cancelled')).toBe('return_to_chooser');
     expect(actionForTruecallerFailure('alternate_number')).toBe(
-      'show_whatsapp_fallback',
+      'use_google',
     );
     expect(actionForTruecallerFailure('unavailable')).toBe(
-      'show_whatsapp_fallback',
+      'return_to_chooser',
     );
     expect(actionForTruecallerFailure('failed')).toBe('show_error');
   });

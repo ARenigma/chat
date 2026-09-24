@@ -121,10 +121,12 @@ max_frequency = "30s"
 # [auth.sms]; repeating it here is what made the whole file unparseable, because
 # TOML rejects a key redefined inside the same table and the original commented
 # block was written before that flag was flipped.
-[auth.hook.send_sms]
-enabled = true
-uri = "https://uvghvhcrovmuwivgijvl.supabase.co/functions/v1/send-sms"
-secrets = "env(SEND_SMS_HOOK_SECRET)"
+# OFF with PHONE_AUTH_ENABLED (2026-09-24): sign-in is Truecaller or Google,
+# and the WhatsApp secrets this hook needs were never set in prod.
+# [auth.hook.send_sms]
+# enabled = true
+# uri = "https://uvghvhcrovmuwivgijvl.supabase.co/functions/v1/send-sms"
+# secrets = "env(SEND_SMS_HOOK_SECRET)"
 #
 # ON DLT: WhatsApp AUTHENTICATION templates are pre-approved by Meta and need
 # no TRAI/DLT registration of our own. Android SMS Retriever autofill does not
@@ -190,6 +192,12 @@ verify_jwt = false
 # The caller authenticates through the one-time auth-code + verifier, which are
 # validated against Truecaller's token endpoint server-side.
 [functions.exchange-truecaller-code]
+verify_jwt = false
+
+# exchange-firebase-token: called by signed-OUT older builds (Firebase SMS) with
+# no Supabase session, so there is no JWT to verify. Declared here so a plain
+# `supabase functions deploy` keeps it off, as prod already runs it (v28).
+[functions.exchange-firebase-token]
 verify_jwt = false
 
 # truecaller-confirm-new-user: consumes a pending challenge to create an account.

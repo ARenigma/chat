@@ -335,6 +335,12 @@ export function OnboardingScreen({ onDone }: Props) {
    * Nulled on any resolution.
    */
   const [truecallerChallenge, setTruecallerChallenge] = useState<string | null>(null);
+  /**
+   * The native module is registered on every Android build, so it can't say
+   * whether the Truecaller APP is usable; the first attempt can. Once it
+   * answers `unavailable`, the "Use Truecaller" link stops offering it.
+   */
+  const [truecallerUnusable, setTruecallerUnusable] = useState(false);
 
   /*
    * The IME is part of the layout, not something to draw behind.
@@ -472,6 +478,16 @@ export function OnboardingScreen({ onDone }: Props) {
        * `open`, same two findings closed at once.
        */
       formIn.value = springTo(1, 'smooth');
+      /*
+       * The bloom opens the Truecaller sheet directly (Amit, 2026-09-24:
+       * "after this tap the flow should be short, devoid of redundant steps,
+       * with bloom animation opening the truecaller sheet directly"). The
+       * Google screen underneath is only what a dismissal, a missing
+       * Truecaller, or the sheet's "Use another method" footer lands on.
+       */
+      if (truecallerAvailable()) {
+        onTruecallerRef.current();
+      }
     });
   }, [phase, elapsed, welcomeOut, formIn, after]);
 
@@ -565,17 +581,18 @@ export function OnboardingScreen({ onDone }: Props) {
         setRoute('undecided');
         if (error instanceof TruecallerOAuthError) {
           const action = actionForTruecallerFailure(error.reason);
+          if (error.reason === 'unavailable') {
+            setTruecallerUnusable(true);
+          }
           if (action === 'return_to_chooser') {
             setState('idle');
             return;
           }
-          if (action === 'show_whatsapp_fallback') {
-            // No usable Truecaller on this device: show the WhatsApp number
-            // step, but never auto-send a code without another user press.
-            setRoute('phone');
-            setIdentify('number');
+          if (action === 'use_google') {
+            // The sheet's "Use another method" footer: go straight to the
+            // Google account picker rather than making them tap again.
             setState('idle');
-            setFailure(null);
+            onGoogleRef.current();
             return;
           }
         }
@@ -710,6 +727,13 @@ export function OnboardingScreen({ onDone }: Props) {
     })();
   }, [state, fail, completeAuthentication]);
 
+  // Latest handlers for callers defined above them (the bloom's hand-off in
+  // `begin`, the sheet's footer in `onTruecaller`, the partner link).
+  const onTruecallerRef = useRef(onTruecaller);
+  onTruecallerRef.current = onTruecaller;
+  const onGoogleRef = useRef(onGoogle);
+  onGoogleRef.current = onGoogle;
+
   const onUsePhone = useCallback(() => {
     setRoute('phone');
     setIdentify('number');
@@ -731,11 +755,14 @@ export function OnboardingScreen({ onDone }: Props) {
     // being lost across the auth → boot transition, dropping the provider on Home.
     storage.set(PROVIDER_INTENT_KEY, '1');
     setPendingProviderApply(true);
-    setRoute('phone');
-    setIdentify('number');
-    setState('idle');
-    setFailure(null);
-  }, [setPendingProviderApply]);
+    // Partners need a verified number (Cashfree 1-Click is keyed on it), and
+    // with phone codes off (2026-09-24) Truecaller is the only way to verify.
+    if (truecallerAvailable()) {
+      onTruecallerRef.current();
+    } else {
+      fail('Partner sign-up needs the Truecaller app on this phone.');
+    }
+  }, [setPendingProviderApply, fail]);
 
   /**
    * The numbering rules for whatever the picker is showing.
@@ -1343,89 +1370,31 @@ export function OnboardingScreen({ onDone }: Props) {
                * finished, per the source's `if !hasFinishedForm`: the completion
                * row should be the only thing left on screen.
                */}
-              {phase !== 'done' && !authDone && identify === 'choose' ? (
+              {/*
+               * Under the Truecaller sheet (2026-09-24 wireframe, screens 2 and 6):
+               * the bloom opens the sheet directly, so this is only what a
+               * dismissal, a phone without Truecaller, or a failed sheet lands on.
+               * Google is the one alternative; the WhatsApp code option is gone
+               * (PHONE_AUTH_ENABLED). Hidden while the sheet is up, so the bloom
+               * is the whole backdrop behind it.
+               */}
+              {phase !== 'done' &&
+              !authDone &&
+              identify === 'choose' &&
+              !(state === 'loading' && route === 'truecaller') ? (
                 <Animated.View
                   entering={stepIn}
                   exiting={stepOut}
                   style={styles.choices}>
-                  {/*
-                   * PRIMARY: white-pill Truecaller button.
-                   * Truecaller is the default onboarding path — phone-verified,
-                   * one-tap, and zero OTP cost. The button uses the official
-                   * Truecaller "T" mark on a fixed white surface (same treatment
-                   * as the Google button: the bloom behind it can change colour).
-                   *
-                   * Loading state is route-guarded so only the active button
-                   * spins; Google/WhatsApp remain tappable during a Truecaller
-                   * attempt that is still running.
-                   */}
-                  {truecallerAvailable() ? (
-                    <Pressable
-                      onPress={onTruecaller}
-                      testID="onboard-truecaller"
-                      accessibilityLabel="Continue with Truecaller"
-                      press="button"
-                      style={styles.googleButton}
-                    >
-                      {state === 'loading' && route === 'truecaller' ? (
-                        <LoadingIndicator size={20} containerColor="transparent" />
-                      ) : (
-                        <>
-                          <Text
-                            maxFontSizeMultiplier={
-                              TOKENS.fontScaleCap.titleMediumEmphasized
-                            }
-                            allowFontScaling
-                            style={styles.googleLabel}>
-                            Continue with
-                          </Text>
-                          <Image
-                            source={require('../../assets/brands/truecaller.png')}
-                            style={styles.truecallerMark}
-                            resizeMode="contain"
-                            accessibilityIgnoresInvertColors
-                          />
-                        </>
-                      )}
-                    </Pressable>
-                  ) : null}
-
-                  {/*
-                   * SECONDARY: WhatsApp OTP — first fallback when Truecaller
-                   * is not installed or the member prefers a different number.
-                   */}
-                  {PHONE_AUTH_ENABLED ? (
-                    <Pressable
-                      onPress={onUsePhone}
-                      testID="onboard-use-phone"
-                      accessibilityLabel={truecallerAvailable() ? 'Use WhatsApp code instead' : 'Verify with WhatsApp'}
-                      press="button"
-                      style={styles.secondary}
-                    >
-                      <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.secondaryLabel}>
-                        {truecallerAvailable() ? 'Use WhatsApp code instead' : 'Verify with WhatsApp'}
-                      </Text>
-                    </Pressable>
-                  ) : null}
-
-                  {/*
-                   * TERTIARY: Google — final fallback for existing members who
-                   * signed up before Truecaller and do not yet have a linked
-                   * phone number. Kept visible so history/wallet is never lost.
-                   */}
                   <Pressable
                     onPress={onGoogle}
                     testID="onboard-google"
-                    accessibilityLabel={truecallerAvailable() ? 'Used Pappal before? Continue with Google' : 'Continue with Google'}
+                    accessibilityLabel="Continue with Google"
                     press="button"
-                    style={truecallerAvailable() ? styles.partnerLink : styles.googleButton}
+                    style={styles.googleButton}
                   >
                     {state === 'loading' && route === 'google' ? (
                       <LoadingIndicator size={20} containerColor="transparent" />
-                    ) : truecallerAvailable() ? (
-                      <Text allowFontScaling style={styles.resendLabel}>
-                        Used Pappal before? Continue with Google
-                      </Text>
                     ) : (
                       <>
                         <Image
@@ -1441,7 +1410,37 @@ export function OnboardingScreen({ onDone }: Props) {
                     )}
                   </Pressable>
 
-                  {/* Ghost link — small, centered, 44pt hit target. */}
+                  {/* Off by default (config.ts). Flipping PHONE_AUTH_ENABLED back on
+                      restores the whole number → code flow below in one step. */}
+                  {PHONE_AUTH_ENABLED ? (
+                    <Pressable
+                      onPress={onUsePhone}
+                      testID="onboard-use-phone"
+                      accessibilityLabel="Use a WhatsApp code instead"
+                      press="button"
+                      style={styles.partnerLink}
+                    >
+                      <Text allowFontScaling style={styles.resendLabel}>
+                        Use a WhatsApp code instead
+                      </Text>
+                    </Pressable>
+                  ) : null}
+
+                  {/* Back to the sheet for someone who dismissed it by mistake. */}
+                  {truecallerAvailable() && !truecallerUnusable ? (
+                    <Pressable
+                      onPress={onTruecaller}
+                      testID="onboard-truecaller"
+                      accessibilityLabel="Use Truecaller"
+                      press="button"
+                      style={styles.partnerLink}
+                    >
+                      <Text allowFontScaling style={styles.resendLabel}>
+                        Use Truecaller
+                      </Text>
+                    </Pressable>
+                  ) : null}
+
                   <Pressable
                     onPress={onBecomePartner}
                     testID="onboard-become-partner"
