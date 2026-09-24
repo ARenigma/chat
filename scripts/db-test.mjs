@@ -172,6 +172,7 @@ const MIGRATIONS = [
   'supabase/migrations/131_truecaller_recheck_phone_owner.sql',
   'supabase/migrations/132_video_switch_bills_only_the_difference.sql',
   'supabase/migrations/133_profiles_are_not_client_insertable_or_deletable.sql',
+  'supabase/migrations/134_video_switch_pending_session_and_quote.sql',
 ];
 
 /**

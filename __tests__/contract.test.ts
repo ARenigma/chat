@@ -8663,6 +8663,7 @@ describe('switch to video works end to end and bills only the difference (132, 2
     const dbTest = read('scripts/db-test.mjs');
     expect(dbTest).toContain('supabase/migrations/132_video_switch_bills_only_the_difference.sql');
     expect(dbTest).toContain('supabase/tests/520_video_switch_bills_only_the_difference.sql');
+    expect(dbTest).toContain('supabase/migrations/134_video_switch_pending_session_and_quote.sql');
     const sql = read('supabase/migrations/132_video_switch_bills_only_the_difference.sql');
     expect(sql).toContain("'NOT_YOUR_REQUEST'");
     expect(sql).toContain('coalesce(v_video_rate, 0) - v_session.rate_tokens_per_min');
@@ -8672,8 +8673,14 @@ describe('switch to video works end to end and bills only the difference (132, 2
   it('both sides hear the recorded outcome, not only the recipient', () => {
     const calls = withoutComments(read('src/api/calls.ts'));
     expect(calls).toContain('upgrade_result');
-    expect(calls).toContain('resolvedHandler.current(row.upgrade_result');
+    expect(calls).toContain('videoSwitchEvents(seen, row, selfId, Date.now())');
     expect(calls).not.toContain('useMediaUpgrade');
+    // Who asked is the screen's own knowledge, not inferred from a row the
+    // server may already have cleared (Greptile P1, 2026-09-24).
+    const screen = withoutComments(read('src/screens/CallScreen.tsx'));
+    expect(screen).toContain('const iAsked = askedRef.current');
+    expect(screen).toContain('VIDEO_SWITCH_REQUEST_TTL_MS');
+    expect(screen).toContain('getVideoSwitchQuote(callId)');
   });
 
   it('CallScreen tracks the live medium and prices the switch for the member', () => {

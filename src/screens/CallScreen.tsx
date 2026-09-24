@@ -24,7 +24,8 @@ import type { CallMedium } from '../lib/database.types';
 import { initialOf } from '../lib/display';
 import { avatarImageSource, clayFraming, isClayUri } from '../lib/clayAvatars';
 import { useConversationId, useConversations, useProviders, useSelfId } from '../api/chat';
-import { answerCall, endCall, heartbeatCall, requestVideoSwitch, respondVideoSwitch, startCall, useCallEnded, useVideoSwitch, type VideoSwitchResult } from '../api/calls';
+import { answerCall, endCall, getVideoSwitchQuote, heartbeatCall, requestVideoSwitch, respondVideoSwitch, startCall, useCallEnded, useVideoSwitch, type VideoSwitchQuote, type VideoSwitchResult } from '../api/calls';
+import { VIDEO_SWITCH_REQUEST_TTL_MS } from '../lib/videoSwitch';
 import { useEconomicsConfig, FALLBACK_ECONOMICS } from '../api/appConfig';
 import { DURATION, EASE_OUT } from '../theme/motion';
 import { useCallSession } from '../api/callMedia';
@@ -773,25 +774,60 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
    * our own request, enable the camera on the Agora channel.
    */
   const { data: selfId } = useSelfId();
+  /**
+   * The price shown in both switch dialogs, from the SERVER (134): the rates
+   * pinned to this session's economics version, which is what the bill uses.
+   * The cached app config is only the fallback while the quote loads.
+   */
   const { data: economics } = useEconomicsConfig();
-  const voiceRate = economics?.audio_rate_tokens_per_min ?? FALLBACK_ECONOMICS.audio_rate_tokens_per_min;
-  const videoRate = economics?.video_rate_tokens_per_min ?? FALLBACK_ECONOMICS.video_rate_tokens_per_min;
-  const videoExtra = Math.max(0, videoRate - voiceRate);
+  const [quote, setQuote] = useState<VideoSwitchQuote | null>(null);
+  const loadQuote = useCallback(() => {
+    if (callId !== null) void getVideoSwitchQuote(callId).then(setQuote);
+  }, [callId]);
+  const videoRate =
+    quote?.video_rate ?? economics?.video_rate_tokens_per_min ?? FALLBACK_ECONOMICS.video_rate_tokens_per_min;
+  const videoExtra =
+    quote?.extra_now ??
+    Math.max(
+      0,
+      videoRate - (economics?.audio_rate_tokens_per_min ?? FALLBACK_ECONOMICS.audio_rate_tokens_per_min),
+    );
+
+  // Whether THIS device made the pending request. Known locally (we sent it)
+  // rather than read off the row: by the time a missed or late UPDATE
+  // arrives, the server has already cleared `upgrade_requested_by`.
+  const askedRef = useRef(false);
+  const askTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearAsk = () => {
+    askedRef.current = false;
+    if (askTimer.current !== null) clearTimeout(askTimer.current);
+    askTimer.current = null;
+  };
+  useEffect(() => clearAsk, []);
+
   useVideoSwitch(
     callId,
     selfId,
     /* onRequest: the peer asked; the consent dialog is ours to answer */
-    requestedBy => setVideoRequestFrom(requestedBy),
+    requestedBy => {
+      loadQuote();
+      setVideoRequestFrom(requestedBy);
+    },
     /* onResolved: both sides hear the server's recorded outcome */
-    (result: VideoSwitchResult, requestedBySelf: boolean) => {
+    (result: VideoSwitchResult) => {
+      const iAsked = askedRef.current;
+      clearAsk();
       setVideoRequestFrom(null);
       setUpgrading(false);
       if (result === 'accepted') {
         setLiveMedium('video');
+        // A video call is held away from the ear: speaker, as a call started
+        // as video already defaults to.
+        setSpeaker(true);
         void enableVideoRef.current();
         return;
       }
-      if (!requestedBySelf) return;
+      if (!iAsked) return;
       setNotice(
         result === 'declined'
           ? `${name} would rather stay on voice.`
@@ -805,8 +841,18 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
   const askForVideo = () => {
     if (callId === null) return;
     setUpgrading(true);
+    askedRef.current = true;
+    // The server only records 'expired' if the peer answers late, so an
+    // ignored request must end here or the button stays on "Requesting".
+    askTimer.current = setTimeout(() => {
+      if (!askedRef.current) return;
+      clearAsk();
+      setUpgrading(false);
+      setNotice(`${name} didn't answer. You're still on voice.`);
+    }, VIDEO_SWITCH_REQUEST_TTL_MS);
     void requestVideoSwitch(callId).then(r => {
       if (!r?.success) {
+        clearAsk();
         setUpgrading(false);
         setNotice(
           r?.error === 'UPGRADE_PENDING'
@@ -1260,6 +1306,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
                   if (phase !== 'active' || callId === null) return;
                   // The member pays, so they see the price before asking.
                   if (isMemberSide) {
+                    loadQuote();
                     setVideoPriceVisible(true);
                     return;
                   }

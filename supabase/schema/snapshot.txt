@@ -1297,6 +1297,7 @@ FUNCTION get_public_config(p_domain text) returns jsonb security=definer
 FUNCTION get_session_billing_snapshot(p_channel text) returns TABLE(rate_tokens_per_min integer, provider_share_percent integer, payout_hold_days integer, economics_version_id uuid) security=definer
 FUNCTION get_usage_ledger(p_limit integer, p_before timestamp with time zone) returns jsonb security=definer
 FUNCTION get_user_id_by_phone(p_phone text) returns uuid security=definer
+FUNCTION get_video_switch_quote(p_call_id uuid) returns jsonb security=definer
 FUNCTION groups_are(name[]) returns text security=invoker
 FUNCTION groups_are(name[], text) returns text security=invoker
 FUNCTION guard_application_transitions() returns trigger security=invoker

@@ -2775,3 +2775,23 @@ describe('the viewport never resizes for the soft keyboard', () => {
     expect(app).toContain('navigationBarTranslucent');
   });
 });
+
+describe('the app-wide notice overlay clears the status bar and never blocks touches (2026-09-24)', () => {
+  const bar = read('src/components/NoticeBar.tsx');
+  const overlay = bar.slice(bar.indexOf('export function NoticeOverlay'));
+
+  it('is offset by the status-bar inset, since the app is edge-to-edge', () => {
+    expect(overlay).toContain('useSafeAreaInsets()');
+    expect(overlay).toContain('top: insets.top + TOKENS.space.xs');
+    expect(bar).toContain('https://developer.android.com/develop/ui/views/layout/edge-to-edge');
+  });
+
+  it('floats above every screen without taking touches from the header beneath it', () => {
+    expect(overlay).toContain('pointerEvents="box-none"');
+    expect(overlay).toMatch(/position: 'absolute'/);
+  });
+
+  it('is mounted exactly once, at the root', () => {
+    expect(read('App.tsx').match(/<NoticeOverlay \/>/g)).toHaveLength(1);
+  });
+});

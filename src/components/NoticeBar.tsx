@@ -84,6 +84,15 @@ export function NoticeBar() {
  * was deleted. Pinned under the status bar rather than above the nav bar: the
  * chat window runs `adjustNothing`, so the IME draws over the bottom of every
  * screen and a bottom snackbar would sit behind the keyboard.
+ *
+ * Deliberate departure from M3's bottom placement
+ * (https://m3.material.io/components/snackbar/guidelines, "above the bottom
+ * app bar"): with an app-drawn IME inset the bottom is not reliably visible.
+ * The top offset is the status-bar inset, because the app is edge-to-edge and
+ * must pad its own content clear of the system bars
+ * (https://developer.android.com/develop/ui/views/layout/edge-to-edge).
+ * `pointerEvents="box-none"` keeps the empty overlay from eating touches on
+ * the header beneath it. Asserted in __tests__/platform.test.ts.
  */
 export function NoticeOverlay() {
   const insets = useSafeAreaInsets();

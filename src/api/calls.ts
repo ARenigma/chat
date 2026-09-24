@@ -13,6 +13,12 @@
  */
 import { useEffect, useRef } from 'react';
 import type { PostgrestError } from '@supabase/supabase-js';
+import {
+  videoSwitchEvents,
+  type VideoSwitchResult,
+  type VideoSwitchRow,
+  type VideoSwitchSeen,
+} from '../lib/videoSwitch';
 import { supabase } from '../lib/supabase';
 import { reportSwallowed } from '../lib/sentry';
 import { ENV } from '../lib/env';
@@ -150,22 +156,22 @@ export async function respondVideoSwitch(
   return data as VideoSwitchResponse;
 }
 
-export type VideoSwitchResult = 'accepted' | 'declined' | 'expired' | 'insufficient_balance';
+export type { VideoSwitchResult } from '../lib/videoSwitch';
 
 /**
  * Watch the live call row for switch-to-video requests and their outcome.
  *
  * `onRequest` fires on the side that did NOT ask. `onResolved` fires on BOTH
- * sides with the server's recorded outcome (`calls.upgrade_result`, 132), so
- * the requester learns a decline or a balance refusal instead of sitting on
- * "Requesting" — the defect in the 123 version of this hook, which only ever
- * told the recipient and reported every resolution as an accept.
+ * sides with the server's recorded outcome (`calls.upgrade_result`, 132). Who
+ * asked is the caller's own knowledge (it made the request), not inferred
+ * here: a missed or late UPDATE can arrive after `upgrade_requested_by` has
+ * already been cleared. The event logic is `videoSwitchEvents`.
  */
 export function useVideoSwitch(
   callId: string | null,
   selfId: string | undefined,
   onRequest: (requestedBy: string) => void,
-  onResolved: (result: VideoSwitchResult, requestedBySelf: boolean) => void,
+  onResolved: (result: VideoSwitchResult) => void,
 ): void {
   const requestHandler = useRef(onRequest);
   requestHandler.current = onRequest;
@@ -175,41 +181,15 @@ export function useVideoSwitch(
   useEffect(() => {
     if (callId === null || selfId === undefined) return;
 
-    type CallRow = {
-      upgrade_requested_by: string | null;
-      upgrade_requested_at: string | null;
-      upgrade_result: VideoSwitchResult | null;
-      upgrade_resolved_at: string | null;
-    };
-
-    let seenRequestAt: string | null = null;
-    let seenResolvedAt: string | null = null;
-    let lastRequester: string | null = null;
-    const fresh = (iso: string, seconds: number) =>
-      Date.now() - new Date(iso).getTime() < seconds * 1000;
-
-    const dispatch = (row: CallRow) => {
-      if (
-        row.upgrade_requested_by !== null &&
-        row.upgrade_requested_at !== null &&
-        row.upgrade_requested_at !== seenRequestAt
-      ) {
-        seenRequestAt = row.upgrade_requested_at;
-        lastRequester = row.upgrade_requested_by;
-        if (row.upgrade_requested_by !== selfId && fresh(row.upgrade_requested_at, 30)) {
-          requestHandler.current(row.upgrade_requested_by);
-        }
-      }
-      if (
-        row.upgrade_result !== null &&
-        row.upgrade_resolved_at !== null &&
-        row.upgrade_resolved_at !== seenResolvedAt
-      ) {
-        seenResolvedAt = row.upgrade_resolved_at;
-        // A result resolved long before this screen subscribed is history,
-        // not news.
-        if (fresh(row.upgrade_resolved_at, 60)) {
-          resolvedHandler.current(row.upgrade_result, lastRequester === selfId);
+    let seen: VideoSwitchSeen = { requestAt: null, resolvedAt: null };
+    const dispatch = (row: VideoSwitchRow) => {
+      const next = videoSwitchEvents(seen, row, selfId, Date.now());
+      seen = next.seen;
+      for (const event of next.events) {
+        if (event.kind === 'request') {
+          requestHandler.current(event.requestedBy);
+        } else {
+          resolvedHandler.current(event.result);
         }
       }
     };
@@ -219,7 +199,7 @@ export function useVideoSwitch(
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'calls', filter: `id=eq.${callId}` },
-        payload => dispatch(payload.new as CallRow),
+        payload => dispatch(payload.new as VideoSwitchRow),
       )
       .subscribe(status => {
         if (status === 'SUBSCRIBED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
@@ -229,7 +209,7 @@ export function useVideoSwitch(
             .eq('id', callId)
             .maybeSingle()
             .then(({ data }) => {
-              if (data) dispatch(data as unknown as CallRow);
+              if (data) dispatch(data as unknown as VideoSwitchRow);
             });
         }
       });
@@ -238,6 +218,30 @@ export function useVideoSwitch(
       void supabase.removeChannel(switchChannel);
     };
   }, [callId, selfId]);
+}
+
+export interface VideoSwitchQuote {
+  success: boolean;
+  /** False when the call has no paid session (nothing will be charged). */
+  billed?: boolean;
+  video_rate?: number;
+  current_rate?: number;
+  /** Charged the moment the switch is accepted (134). */
+  extra_now?: number;
+}
+
+/**
+ * The server's own price for switching this call to video, from the session's
+ * pinned economics version (134) — the numbers the bill will use, not the
+ * active config the app happens to have cached.
+ */
+export async function getVideoSwitchQuote(callId: string): Promise<VideoSwitchQuote> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase.rpc as any)('get_video_switch_quote', {
+    p_call_id: callId,
+  });
+  if (error) return { success: false };
+  return data as VideoSwitchQuote;
 }
 
 /** How a call finished, as the server recorded it. See `end_call` (037:1111). */
