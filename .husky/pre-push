@@ -37,6 +37,13 @@ npm run verify
 # through Greptile, Semgrep, ruff and vulture). knip is a ratchet: the ceiling
 # in package.json only ever goes down.
 npm run deadcode
+# uvx fetches the pinned ruff and vulture on first use, so the only
+# prerequisite is uv itself (https://docs.astral.sh/uv/).
+if ! command -v uvx >/dev/null 2>&1; then
+  echo "pre-push: uv is missing (needed for ruff and vulture)." >&2
+  echo "Install: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
+  exit 1
+fi
 npm run python:check
 SECURITY_BASE_REF="${remote}/main" npm run security:push
 bash scripts/greptile-review.sh status "$head_sha"

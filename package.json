@@ -18,7 +18,7 @@
     "security:dependencies": "bash scripts/security-check.sh dependencies",
     "security:ci": "bash scripts/security-check.sh ci",
     "deadcode": "knip --no-progress --max-issues 189",
-    "python:check": "ruff check scripts && vulture scripts --min-confidence 60",
+    "python:check": "uvx ruff@0.15.22 check scripts && uvx vulture@2.16 scripts --min-confidence 60",
     "review:greptile": "bash scripts/greptile-review.sh review",
     "review:greptile:status": "bash scripts/greptile-review.sh status",
     "test:db": "node scripts/db-test.mjs",
