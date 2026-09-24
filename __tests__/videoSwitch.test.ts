@@ -67,4 +67,23 @@ describe('videoSwitchEvents', () => {
     );
     expect(again.events).toEqual([{ kind: 'request', requestedBy: PEER }]);
   });
+
+  it('a late re-read of an OLDER outcome does not override a newer one', () => {
+    // The server accepted (t=1s), then fell back to voice (t=5s, 136). A row
+    // read started before the fallback lands last with the accept.
+    const newer = videoSwitchEvents(
+      none,
+      { ...idle, upgrade_result: 'insufficient_balance', upgrade_resolved_at: at(5000) },
+      ME,
+      T0 + 6000,
+    );
+    const late = videoSwitchEvents(
+      newer.seen,
+      { ...idle, upgrade_result: 'accepted', upgrade_resolved_at: at(1000) },
+      ME,
+      T0 + 6500,
+    );
+    expect(late.events).toEqual([]);
+    expect(late.seen.resolvedAt).toBe(at(5000));
+  });
 });

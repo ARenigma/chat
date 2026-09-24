@@ -873,24 +873,27 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     askedRef.current = true;
     // The server only records 'expired' if the peer answers late, so an
     // ignored request must end here or the button stays on "Requesting".
-    askTimer.current = setTimeout(() => {
-      if (!askedRef.current) return;
+    void requestVideoSwitch(callId).then(r => {
+      if (r?.success) {
+        // Started once the server has recorded the request, so it tracks the
+        // server's own 30 s deadline rather than running ahead of it.
+        askTimer.current = setTimeout(() => {
+          if (!askedRef.current) return;
+          clearAsk();
+          setUpgrading(false);
+          setNotice(`${name} didn't answer. You're still on voice.`);
+        }, VIDEO_SWITCH_REQUEST_TTL_MS);
+        return;
+      }
       clearAsk();
       setUpgrading(false);
-      setNotice(`${name} didn't answer. You're still on voice.`);
-    }, VIDEO_SWITCH_REQUEST_TTL_MS);
-    void requestVideoSwitch(callId).then(r => {
-      if (!r?.success) {
-        clearAsk();
-        setUpgrading(false);
-        setNotice(
-          r?.error === 'UPGRADE_PENDING'
-            ? 'Already asked. Waiting for an answer.'
-            : r?.error === 'VIDEO_DISABLED'
-              ? 'Video calls are paused right now.'
-              : 'Could not ask to switch to video.',
-        );
-      }
+      setNotice(
+        r?.error === 'UPGRADE_PENDING'
+          ? 'Already asked. Waiting for an answer.'
+          : r?.error === 'VIDEO_DISABLED'
+            ? 'Video calls are paused right now.'
+            : 'Could not ask to switch to video.',
+      );
     });
   };
 

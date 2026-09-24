@@ -30,6 +30,10 @@ export const VIDEO_SWITCH_REQUEST_TTL_MS = 30_000;
 /** A resolution older than this is history, not news. */
 const RESOLUTION_FRESH_MS = 60_000;
 
+/** True when `candidate` is strictly later than `seen` (null = never seen). */
+const isNewer = (candidate: string, seen: string | null) =>
+  seen === null || Date.parse(candidate) > Date.parse(seen);
+
 export function videoSwitchEvents(
   seen: VideoSwitchSeen,
   row: VideoSwitchRow,
@@ -42,7 +46,9 @@ export function videoSwitchEvents(
   if (
     row.upgrade_requested_by !== null &&
     row.upgrade_requested_at !== null &&
-    row.upgrade_requested_at !== requestAt
+    // Strictly newer, not merely different: a re-read that began during a
+    // reconnect can land after a newer UPDATE and must not replay the past.
+    isNewer(row.upgrade_requested_at, requestAt)
   ) {
     requestAt = row.upgrade_requested_at;
     const age = nowMs - Date.parse(row.upgrade_requested_at);
@@ -54,7 +60,7 @@ export function videoSwitchEvents(
   if (
     row.upgrade_result !== null &&
     row.upgrade_resolved_at !== null &&
-    row.upgrade_resolved_at !== resolvedAt
+    isNewer(row.upgrade_resolved_at, resolvedAt)
   ) {
     resolvedAt = row.upgrade_resolved_at;
     if (nowMs - Date.parse(row.upgrade_resolved_at) < RESOLUTION_FRESH_MS) {
