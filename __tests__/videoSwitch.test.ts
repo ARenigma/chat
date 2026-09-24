@@ -86,4 +86,20 @@ describe('videoSwitchEvents', () => {
     expect(late.events).toEqual([]);
     expect(late.seen.resolvedAt).toBe(at(5000));
   });
+
+  it('a late read of a pending row does not reopen consent after its outcome', () => {
+    const resolved = videoSwitchEvents(
+      none,
+      { ...idle, upgrade_result: 'declined', upgrade_resolved_at: at(4000) },
+      ME,
+      T0 + 4500,
+    );
+    const stalePending = videoSwitchEvents(
+      resolved.seen,
+      { ...idle, upgrade_requested_by: PEER, upgrade_requested_at: at(1000) },
+      ME,
+      T0 + 5000,
+    );
+    expect(stalePending.events).toEqual([]);
+  });
 });

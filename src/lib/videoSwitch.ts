@@ -52,7 +52,15 @@ export function videoSwitchEvents(
   ) {
     requestAt = row.upgrade_requested_at;
     const age = nowMs - Date.parse(row.upgrade_requested_at);
-    if (row.upgrade_requested_by !== selfId && age < VIDEO_SWITCH_REQUEST_TTL_MS) {
+    // Already resolved: an outcome at or after this request was seen first
+    // (a late read of the pending row), so there is nothing left to answer.
+    const alreadyResolved =
+      resolvedAt !== null && Date.parse(resolvedAt) >= Date.parse(row.upgrade_requested_at);
+    if (
+      row.upgrade_requested_by !== selfId &&
+      age < VIDEO_SWITCH_REQUEST_TTL_MS &&
+      !alreadyResolved
+    ) {
       events.push({ kind: 'request', requestedBy: row.upgrade_requested_by });
     }
   }

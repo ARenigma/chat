@@ -1458,7 +1458,9 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
                     ? 'Not enough balance to switch to video.'
                     : r.error === 'EXPIRED'
                       ? 'That request timed out. You\'re still on voice.'
-                      : 'Could not switch to video.',
+                      : r.error === 'VIDEO_DISABLED'
+                        ? 'Video calls are paused right now.'
+                        : 'Could not switch to video.',
                 );
               }
             });

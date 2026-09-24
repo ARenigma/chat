@@ -12,7 +12,7 @@
 
 \set ON_ERROR_STOP on
 begin;
-select plan(20);
+select plan(22);
 
 insert into auth.users (id) values
   ('aa520000-0000-4000-8000-000000000001'),  -- member
@@ -435,6 +435,50 @@ select is(
      from public.calls where id = 'dd520000-0000-4000-8000-0000000000f1'),
   'voice/insufficient_balance',
   '20. the call is back on voice and both sides are told why'
+);
+
+-- ---------------------------------------------------------------------------
+-- 137: video is kill-switched between the request and the acceptance.
+-- ---------------------------------------------------------------------------
+update public.calls set status = 'ended', ended_at = now()
+where id = 'dd520000-0000-4000-8000-0000000000f1';
+update public.paid_sessions set status = 'ended', ended_at = now()
+where id = 'ee520000-0000-4000-8000-0000000000f1';
+
+insert into public.calls (
+  id, conversation_id, caller_id, callee_id, medium, status,
+  started_at, media_backend, media_assignment_kind, last_seen_at
+) values (
+  'dd520000-0000-4000-8000-0000000000a9',
+  'cc520000-0000-4000-8000-0000000000c1',
+  'aa520000-0000-4000-8000-000000000001',
+  'bb520000-0000-4000-8000-000000000002',
+  'voice', 'active', now(), 'agora', 'default', now()
+);
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub":"aa520000-0000-4000-8000-000000000001","role":"authenticated"}';
+select public.request_media_upgrade('dd520000-0000-4000-8000-0000000000a9', 'video');
+
+reset role;
+update admin.config_active
+set payload = payload || '{"video_calls_enabled": false}'::jsonb
+where domain = 'kill_switches' and environment = 'prod';
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub":"bb520000-0000-4000-8000-000000000002","role":"authenticated"}';
+select is(
+  public.respond_media_upgrade('dd520000-0000-4000-8000-0000000000a9', true) ->> 'error',
+  'VIDEO_DISABLED',
+  '21. acceptance is refused once video is switched off'
+);
+reset role;
+select is(
+  (select medium::text || '/' || upgrade_result from public.calls where id = 'dd520000-0000-4000-8000-0000000000a9'),
+  'voice/declined',
+  '22. the call stays voice and the request is closed'
 );
 
 select * from finish();
