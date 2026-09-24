@@ -25,6 +25,7 @@ import {
   readEngagementPush,
   type CallPush,
   type EngagementPush,
+  type NotifyOptions,
 } from './conversations';
 import {
   foregroundPushAction,
@@ -174,6 +175,8 @@ let lastRegisteredAt = 0;
  * by a `register_push_token` for the session it had just ended.
  */
 let generation = 0;
+/** The last `stopPush` teardown; `startPush` waits for it. Never rejects. */
+let teardown: Promise<void> = Promise.resolve();
 
 /** Tears down whichever listeners `listen` installed last. */
 let stopListening: () => void = () => undefined;
@@ -183,6 +186,70 @@ function halt(): void {
   generation += 1;
   stopListening();
   stopListening = () => undefined;
+}
+
+/**
+ * Every `register_push_token` call still on the wire.
+ *
+ * The generation checks stop a registration from STARTING after a sign-out,
+ * and cannot stop one that already left: a return-to-app register whose RPC
+ * was sent a moment before `stopPush` is answered whenever the server gets to
+ * it, and if that is after `stopPush`'s row delete, the row is back, for the
+ * user who just signed out. So `stopPush` waits for these before it deletes
+ * (`drainRegistrations`). Settled-only promises, never rejecting, so the wait
+ * cannot throw.
+ */
+const inFlight = new Set<Promise<void>>();
+
+/**
+ * The longest `stopPush` waits for a registration on the wire before deleting
+ * the row anyway.
+ *
+ * A bound because the RPC has no timeout of its own and a sign-out must not
+ * hang on a dead network. Past it the order is no longer guaranteed, and the
+ * cost is bounded by what `stopPush` does next: `deleteToken` revokes the FCM
+ * token that a late row would carry, and `send-push` forgets a token FCM
+ * answers UNREGISTERED for (see `listen`).
+ *
+ * Whether the wait is seen depends on the caller. Sign-out runs this in the
+ * background after the signed-in UI has already gone (`onSignOutPress` in
+ * SettingsSheet.tsx), so it is not on screen. Account deletion awaits it on
+ * screen, behind the confirm sheet's spinner (`onDelete`), for up to this
+ * long, and there the drain protects nothing: push_tokens.user_id cascades
+ * from auth.users (migration 008), so a registration answered after the
+ * deletion fails its foreign key and one answered before it goes with the
+ * cascade. The wait happens only while an RPC is actually on the wire, which
+ * is normally one round trip.
+ */
+export const STOP_DRAIN_MS = 3_000;
+
+/** `work`, recorded in `inFlight` until it settles either way. */
+function inFlightUntilSettled<T>(work: Promise<T>): Promise<T> {
+  const settled = work.then(
+    () => undefined,
+    () => undefined,
+  );
+  inFlight.add(settled);
+  void settled.then(() => inFlight.delete(settled));
+  return work;
+}
+
+/** Wait, up to `ms`, for every registration already on the wire to land. */
+async function drainRegistrations(ms: number): Promise<void> {
+  if (inFlight.size === 0) {
+    return;
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const landed = await Promise.race([
+    Promise.all([...inFlight]).then(() => true),
+    new Promise<boolean>(resolve => {
+      timer = setTimeout(() => resolve(false), ms);
+    }),
+  ]);
+  clearTimeout(timer);
+  if (!landed) {
+    pushLog('warn', `stop: a registration was still in flight after ${ms}ms, deleting anyway`);
+  }
 }
 
 /** Bounded, token-free text for a log line. */
@@ -203,7 +270,8 @@ function detail(text: string, token: string): string {
  * `gen` is the generation the caller started under (see `generation`). It is
  * checked before `getToken`, which after `stopPush`'s `deleteToken` would mint
  * a token nobody should hold, and again before the RPC, since FCM can take
- * seconds to answer.
+ * seconds to answer. An RPC that got past both is in `inFlight` until it is
+ * answered, and `stopPush` waits for it.
  */
 async function register(
   reason: RegisterReason,
@@ -231,10 +299,20 @@ async function register(
     pushLog('info', `register ${reason}: dropped, push stopped meanwhile`);
     return false;
   }
-  const { error } = await supabase.rpc('register_push_token', {
-    p_token: token,
-    p_platform: Platform.OS === 'ios' ? 'ios' : 'android',
-  });
+  // Recorded in the same synchronous step as the check above, so a stopPush
+  // either moved the generation first (and nothing is sent) or finds this in
+  // `inFlight` and waits for it. Promise.resolve turns the query builder into
+  // ONE promise: the builder is a thenable that sends a fresh request every
+  // time `then` is called on it, and this await and the drain would each call
+  // it.
+  const { error } = await inFlightUntilSettled(
+    Promise.resolve(
+      supabase.rpc('register_push_token', {
+        p_token: token,
+        p_platform: Platform.OS === 'ios' ? 'ios' : 'android',
+      }),
+    ),
+  );
   if (error !== null) {
     const why = `${error.code || 'no code'} ${detail(error.message, token)}`;
     pushLog('warn', `register ${reason}: failed, ${why}`);
@@ -363,6 +441,18 @@ export async function startPush(): Promise<() => void> {
   const started = generation;
 
   /*
+   * Wait out a sign-out teardown still in flight before registering anything.
+   *
+   * Sign-out puts the sign-in screen up at once and tears push down behind it
+   * (SettingsSheet's `onSignOutPress`), and that teardown can take up to
+   * STOP_DRAIN_MS plus two network calls. Somebody who signs straight back in
+   * would otherwise register a fresh row that the old teardown then deletes,
+   * and have the token itself revoked by its `deleteToken` — a signed-in
+   * device with no push and nothing to say so.
+   */
+  await teardown;
+
+  /*
    * Create the notification channel before asking for permission, not after.
    *
    * Android 8+ requires a channel for any notification, and this app declared
@@ -405,11 +495,37 @@ export async function startPush(): Promise<() => void> {
  * This is the other half: between signing out and anyone signing in, the row
  * should not exist at all. Deleting the FCM token as well forces a fresh one,
  * so the old value cannot be replayed.
+ *
+ * Order-safe against a registration already on the wire: `halt` stops any
+ * from starting, and the delete waits for the ones that started before it
+ * (`drainRegistrations`, bounded by `STOP_DRAIN_MS`), so a late
+ * `register_push_token` cannot land after the delete and recreate the row.
+ *
+ * Not safe against a sign-in that lands while it is still running, and the
+ * drain makes that window longer whenever a registration is on the wire.
+ * `onSignOutPress` leaves the signed-in UI at once and runs `stopPush()` then
+ * `signOut()` behind it. A new sign-in in that time replaces the one Supabase
+ * session, so this row delete and `deleteToken` remove the row and the token
+ * the NEW user just registered from this phone, and the caller's `signOut()`
+ * then ends the new session. A
+ * generation check here alone does not fix it: it would skip the delete and
+ * the revoke while the caller still signs the new user out, leaving a live
+ * row and token for somebody signed out, the state this function exists to
+ * prevent. The fix belongs to the sign-out chain in SettingsSheet.tsx, which
+ * would have to know that no newer session has started before it tears down.
  */
-export async function stopPush(): Promise<void> {
+export function stopPush(): Promise<void> {
   // First, so nothing re-registers the row this is about to delete.
   halt();
+  const run = revoke();
+  // `startPush` awaits this; it must never reject into a sign-in.
+  teardown = run.catch(() => undefined);
+  return run;
+}
+
+async function revoke(): Promise<void> {
   try {
+    await drainRegistrations(STOP_DRAIN_MS);
     const token = await getToken(getMessaging());
     if (token !== '') {
       await supabase.from('push_tokens').delete().eq('token', token);
@@ -442,10 +558,10 @@ const MESSAGE_BODY = 'wants to have a chat with you';
  * Calls and nudges go to the app's own UI through `handlers`. A conversation
  * or contact push goes to the same native notification the background handler
  * posts, decided by `foregroundPushAction`: nothing for the conversation on
- * screen or the one whose chat request is ringing in the app, the in-app
- * banner with no sound for any other while the app is in use, alerting if
- * AppState says it is not. The kinds are read in index.js's order, so a push is never
- * two things at once.
+ * screen, a silent shade entry (no banner, no sound) for the one whose chat
+ * request is ringing in the app, the in-app banner with no sound for any other
+ * while the app is in use, alerting if AppState says it is not. The kinds are
+ * read in index.js's order, so a push is never two things at once.
  */
 export function onForegroundPush(handlers: {
   onCall: (push: CallPush) => void;
@@ -476,7 +592,12 @@ export function onForegroundPush(handlers: {
     if (action === 'ignore') {
       return;
     }
-    const options = { inApp: action === 'show-in-app' };
+    // A ringing request's push is an in-app post too, on the same channel,
+    // only silenced: in the shade, no banner over the ring.
+    const options: NotifyOptions = {
+      inApp: action === 'show-in-app' || action === 'show-silent',
+      silent: action === 'show-silent',
+    };
     // Same routing as index.js: a requestId is a provider's chat request and
     // gets Accept/Decline; anything else extends the conversation transcript.
     void (push.requestId

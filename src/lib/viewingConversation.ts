@@ -57,13 +57,23 @@ let ringing: string | null = null;
 
 /**
  * Declare the conversation whose chat request is ringing full screen in the
- * app, or `null` when no ring is up. Set by ChatRingScreen while AppState is
- * active, and released by it on any departure and when the ring ends.
+ * app, or `null` when no ring is up. Set by ChatRingScreen for the ring's
+ * whole life, whether or not the app is in use, and released by it when the
+ * ring ends or unmounts.
  *
  * A second signal rather than a second use of `viewing`, because the ring is
  * not the chat: `useViewingConversation` also clears the conversation's
  * notification, which is right for a chat on screen and wrong for a ring the
  * provider may let run out (ChatRingScreen decides that clear itself).
+ *
+ * Not dropped while the app is out of use, for two reasons. It does not need
+ * to be: `foregroundPushAction` tests `inUse` before the ring, so a phone
+ * locked mid-ring still alerts. And it must not be: `useViewingConversation`
+ * reads it on every return to active to decide whether the ring still covers
+ * its chat, and AppState calls its listeners in the order they subscribed.
+ * The chat under a ring subscribed first, so a signal the ring took back on
+ * the same return would still be clear when the chat asked, and the chat
+ * would clear a notification nobody could see.
  */
 export function setRingingConversation(conversationId: string | null): void {
   ringing = conversationId;
@@ -78,10 +88,16 @@ export function getRingingConversation(): string | null {
  * What a foreground push does.
  *
  *   - `ignore`: the push is not a conversation push, or it is for the
- *     conversation on screen, where Realtime has already drawn the message and
- *     a notification on top of it would be noise, or for the conversation
- *     whose chat request is ringing full screen in the app, which is that same
- *     event already on screen.
+ *     conversation on screen with no ring over it, where Realtime has already
+ *     drawn the message and a notification on top of it would be noise.
+ *   - `show-silent`: the push is for the conversation whose chat request is
+ *     ringing full screen in the app, even when that conversation's chat is
+ *     the screen under the ring. The ring is that same event on screen, so
+ *     no banner and no sound; but it still goes into the shade, silently
+ *     (NotificationCompat#setSilent), because the ring is out of sight the
+ *     moment AppState leaves active: a provider who locks the phone or
+ *     switches apps before answering, and does not come back, has only the
+ *     shade entry to answer from.
  *   - `show-in-app`: post the same conversation notification the background
  *     handler would, on the in-app channel: in the shade and as a heads-up
  *     banner, with no sound or vibration. The person is already holding the
@@ -91,7 +107,7 @@ export function getRingingConversation(): string | null {
  *     when RNFirebase reported the app as foreground but the app is not
  *     actually in use (see `inUse`).
  */
-export type ForegroundPushAction = 'show-in-app' | 'show' | 'ignore';
+export type ForegroundPushAction = 'show-in-app' | 'show-silent' | 'show' | 'ignore';
 
 /**
  * Decide a foreground conversation push. Pure, so the rule is asserted as a
@@ -119,9 +135,6 @@ export function foregroundPushAction(
   if (!inUse) {
     return 'show';
   }
-  if (viewingId !== null && push.conversationId === viewingId) {
-    return 'ignore';
-  }
   /*
    * The ring. A member's first message inserts the session request and the
    * message in one transaction (077), so the provider gets the ring over
@@ -130,10 +143,36 @@ export function foregroundPushAction(
    * ChatRingScreen's own header draws the line: the ring is the in-app half,
    * the notification the out-of-app half. A banner dropped over it announces
    * the event twice, and tapping it opened the chat underneath the ring,
-   * which stayed up. So a push for the ringing conversation is on screen
-   * already. Any other conversation still gets its banner.
+   * which stayed up. Any other conversation still gets its banner.
    *
-   * After the not-in-use test, so a phone locked mid-ring still alerts.
+   * Silent, not dropped. This used to be `ignore`, on the reasoning that the
+   * event was on screen already; it is, but only while the provider stays.
+   * The ring is out of sight the moment AppState leaves active, and a
+   * provider who locked the phone or switched apps before answering, and did
+   * not come back, had no shade entry at all: the one out-of-app half of the
+   * request had been thrown away while they were looking at the in-app half.
+   * (One who comes back within the 30 seconds finds the ring still up; after
+   * it the request waits in the thread.) setSilent "prevents the
+   * notification from peeking on screen, regardless of the importance",
+   * which keeps the ring clear, and the entry sits in the shade until it is
+   * answered, dismissed, or cleared: ChatRingScreen clears it on a decline the
+   * server took, on a ring watched to the end, and when the ring leaves with
+   * this conversation's chat on screen under it; opening the chat clears it
+   * (`useViewingConversation`).
+   * https://developer.android.com/develop/ui/views/notifications/build-notification#Removing
+   * https://developer.android.com/reference/androidx/core/app/NotificationCompat.Builder#setSilent(boolean)
+   *
+   * Before the viewing test. The ring is opaque and covers whatever is under
+   * it, so the chat on screen by the signal can be this very conversation
+   * with nobody able to see it: a provider still on a member's thread when
+   * that member sends again with no live session gets a new request (077)
+   * and its ring over that thread. Tested the other way round, that push was
+   * `ignore`, and the provider who then left had no shade entry at all, the
+   * case this branch exists for.
+   *
+   * After the not-in-use test, so a phone locked mid-ring still alerts. That
+   * order is the whole of it: ChatRingScreen holds the ringing signal while
+   * the app is out of use (see `setRingingConversation`).
    * Residual, and accepted: this reads the signal at delivery, so a push that
    * beats the Realtime insert can still peek once before the ring starts. Both
    * leave the server on the same commit (the push through 092/105's insert
@@ -143,6 +182,9 @@ export function foregroundPushAction(
    * of that conversation nobody has read, which the platform says not to do.
    */
   if (ringingId !== null && push.conversationId === ringingId) {
+    return 'show-silent';
+  }
+  if (viewingId !== null && push.conversationId === viewingId) {
     return 'ignore';
   }
   return 'show-in-app';
@@ -177,6 +219,14 @@ export function foregroundPushAction(
  * on Home or on a bare app launch. A tap on the notification already cleared
  * it through `setAutoCancel`. Same id both posts use (`notificationId` in
  * Conversations.kt), so a chat request's notification goes too.
+ *
+ * Except while this conversation's chat request is ringing over it. The ring
+ * is opaque and full screen (ChatRingScreen), so the chat is mounted, in use
+ * and holding the signal while nobody can see it: the platform's view "where
+ * the user can't see or address the message". The shade entry is then the
+ * ring's out-of-app half (`show-silent` in `foregroundPushAction`), and
+ * clearing it on a return would undo that. ChatRingScreen does this clear
+ * instead, when the ring leaves with this chat on screen.
  * https://developer.android.com/develop/ui/views/notifications/conversations#best-practices
  * https://developer.android.com/develop/ui/views/notifications/build-notification#Removing
  */
@@ -193,7 +243,9 @@ export function useViewingConversation(conversationId: string | undefined): void
     const sync = (state: AppStateStatus): void => {
       if (state === 'active') {
         setViewingConversation(conversationId);
-        void clearConversation(conversationId);
+        if (getRingingConversation() !== conversationId) {
+          void clearConversation(conversationId);
+        }
       } else {
         release();
       }

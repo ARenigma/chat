@@ -18,7 +18,7 @@
  * pending its full 24 hours after that; only the ring stops, so a provider who
  * missed it still has the thread waiting. Nothing is declined by silence.
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
@@ -27,7 +27,11 @@ import { initialOf } from '../lib/display';
 import { formatClock } from '../lib/sessionClock';
 import { useAcceptSessionRequest, useDeclineSessionRequest } from '../api/sessions';
 import { clearConversation } from '../lib/conversations';
-import { getRingingConversation, setRingingConversation } from '../lib/viewingConversation';
+import {
+  getRingingConversation,
+  getViewingConversation,
+  setRingingConversation,
+} from '../lib/viewingConversation';
 import { useStore } from '../store/useStore';
 import { Avatar } from './Avatar';
 import { CallRing } from './CallRing';
@@ -45,15 +49,50 @@ interface Props {
   onOpenConversation: (peerId: string) => void;
 }
 
+/**
+ * Whether `requestId` is still the request ringing. An answer can land after
+ * its own ring has run out and a newer request has started ringing, and the
+ * store's clear is unconditional, so the Accept and Decline callbacks ask this
+ * first rather than end a ring they were never pressed on.
+ */
+function stillRinging(requestId: string): boolean {
+  return useStore.getState().incomingRequest?.requestId === requestId;
+}
+
+/**
+ * The ring has left, and if the chat it covered is this conversation, that
+ * chat is now what the person is reading: `useViewingConversation`'s moment to
+ * take the notification out of the shade, which that hook skips while the ring
+ * covers it. Nothing for any other chat, or none, or an app not in use (the
+ * viewing signal is clear then). Accepting from the ring opens the peer's
+ * chat, and when that chat is already the screen underneath nothing mounts
+ * again to do this clear.
+ * https://developer.android.com/develop/ui/views/notifications/conversations#best-practices
+ */
+function clearIfUncovered(conversationId: string): void {
+  if (getViewingConversation() === conversationId) {
+    void clearConversation(conversationId);
+  }
+}
+
 export function ChatRingScreen({ onOpenConversation }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const incoming = useStore(s => s.incomingRequest);
   const clearIncoming = useStore(s => s.clearIncomingRequest);
+  const setNotice = useStore(s => s.setNotice);
   const accept = useAcceptSessionRequest();
   const decline = useDeclineSessionRequest();
   const [left, setLeft] = useState(CHAT_RING_SECONDS);
+  /*
+   * The request whose Decline is on the wire, or null. The clock does not stop
+   * for it (`busy` only disables the buttons), and a ring that runs out
+   * meanwhile must not take the notification with it: the provider's answer
+   * has not landed, and if it fails the request is still pending with the
+   * shade entry as one way back to it.
+   */
+  const declining = useRef<string | null>(null);
 
   // One clock, restarted per request. Ringing forever is how a provider learns
   // to ignore the screen.
@@ -63,7 +102,7 @@ export function ChatRingScreen({ onOpenConversation }: Props) {
     }
     setLeft(CHAT_RING_SECONDS);
     const started = Date.now();
-    const conversationId = incoming.conversationId;
+    const { conversationId, requestId } = incoming;
     /*
      * Whether the ring has been in front of somebody using the app for its
      * whole life, which is what decides the notification below. Cleared on any
@@ -76,32 +115,25 @@ export function ChatRingScreen({ onOpenConversation }: Props) {
      */
     let watched = AppState.currentState === 'active';
     /*
-     * While this ring is on screen, a foreground push for its conversation is
-     * the same event told twice, and a banner over the ring opened the chat
-     * underneath it (`foregroundPushAction`). Held only while the app is in
-     * use, so a phone locked mid-ring still alerts, and released only if it
-     * is still ours, `useViewingConversation`'s rule, so a newer ring's claim
-     * survives an older one's cleanup.
+     * While this ring is up, a foreground push for its conversation is the
+     * same event told twice, and a banner over the ring opened the chat
+     * underneath it, so that push goes to the shade silently instead, with no
+     * banner (`foregroundPushAction`), and is there if the provider leaves
+     * before answering. Held for the ring's whole life, in use or not (see
+     * `setRingingConversation` for why a departure does not drop it; a phone
+     * locked mid-ring still alerts because the push decision tests `inUse`
+     * first), and released only if it is still ours, `useViewingConversation`'s
+     * rule, so a newer ring's claim survives an older one's cleanup.
      */
-    let over = false;
     const release = (): void => {
       if (getRingingConversation() === conversationId) {
         setRingingConversation(null);
       }
     };
-    if (watched) {
-      setRingingConversation(conversationId);
-    }
+    setRingingConversation(conversationId);
     const subscription = AppState.addEventListener('change', next => {
-      if (next === 'active') {
-        // Not after the clock ran out: the ring is gone even if the render
-        // that removes it has not landed yet.
-        if (!over) {
-          setRingingConversation(conversationId);
-        }
-      } else {
+      if (next !== 'active') {
         watched = false;
-        release();
       }
     });
     const timer = setInterval(() => {
@@ -111,7 +143,6 @@ export function ChatRingScreen({ onOpenConversation }: Props) {
       if (remaining <= 0) {
         clearInterval(timer);
         // The ring is off the screen from here, whenever the re-render lands.
-        over = true;
         release();
         // Silence is not a decline: the request lives its full 24 hours and the
         // thread is still waiting in their list.
@@ -125,11 +156,20 @@ export function ChatRingScreen({ onOpenConversation }: Props) {
          * the user has seen the message", and a ring that ran out behind a
          * locked screen or another app is the example given of getting that
          * wrong. Left alone, it goes when the chat is opened
-         * (`useViewingConversation`), and the request is still in the list.
+         * (`useViewingConversation`), and the request is still in the list;
+         * or now, if that chat is the one the ring was covering, since the
+         * person is looking at it from here (`clearIfUncovered`).
+         * Neither while a Decline is on the wire (`declining`): that answer
+         * clears it itself if it lands.
          * https://developer.android.com/develop/ui/views/notifications/conversations#best-practices
          */
+        if (declining.current === requestId) {
+          return;
+        }
         if (watched && AppState.currentState === 'active') {
           void clearConversation(conversationId);
+        } else {
+          clearIfUncovered(conversationId);
         }
       }
     }, 1000);
@@ -144,14 +184,26 @@ export function ChatRingScreen({ onOpenConversation }: Props) {
     if (incoming === null) {
       return;
     }
-    const peerId = incoming.peerId;
+    const { requestId, conversationId, peerId } = incoming;
     accept.mutate(
-      { requestId: incoming.requestId, conversationId: incoming.conversationId },
+      { requestId, conversationId },
       {
-        // Either way the ring is over: on success they are in the conversation,
-        // and on failure (expired, withdrawn) there is nothing left to answer.
+        /*
+         * Either way the ring is over: on success they are in the conversation,
+         * and on failure (expired, withdrawn) there is nothing left to answer.
+         * Unless it already ran out and another request rings now, which this
+         * answer must not end (`stillRinging`).
+         *
+         * Either way, too, the chat is what shows next, so a notification the
+         * ring was covering goes when that chat is already on screen
+         * (`clearIfUncovered`). Nothing is lost on a failure: the
+         * notification's own Accept only opens this same chat.
+         */
         onSettled: () => {
-          clearIncoming();
+          if (stillRinging(requestId)) {
+            clearIncoming();
+          }
+          clearIfUncovered(conversationId);
           onOpenConversation(peerId);
         },
       },
@@ -162,26 +214,59 @@ export function ChatRingScreen({ onOpenConversation }: Props) {
     if (incoming === null) {
       return;
     }
-    const conversationId = incoming.conversationId;
+    const { requestId, conversationId } = incoming;
+    declining.current = requestId;
     decline.mutate(
-      { requestId: incoming.requestId, conversationId },
+      { requestId, conversationId },
       {
         /*
-         * The ring ends either way, and so does its notification: a press on
-         * Decline is the provider having seen and answered the request, which
-         * is the moment the platform allows a conversation notification to be
-         * cancelled. The lock-screen Decline already does the same in
-         * ChatRequestReceiver; this is the in-app half. Accept needs nothing
-         * here, because opening the chat clears it (`useViewingConversation`).
+         * Only once the server has taken it does the ring end, and its
+         * notification with it: a Decline that landed is the provider having
+         * seen and answered the request, which is the moment the platform
+         * allows a conversation notification to be cancelled. The lock-screen
+         * Decline already does the same in ChatRequestReceiver; this is the
+         * in-app half. The ring is ended only if it is still this one
+         * (`stillRinging`); the notification goes regardless, since the
+         * answer it carried has landed, even after a ring-out left it there
+         * (`declining`).
          * https://developer.android.com/develop/ui/views/notifications/conversations#best-practices
          */
-        onSettled: () => {
-          clearIncoming();
+        onSuccess: () => {
+          if (stillRinging(requestId)) {
+            clearIncoming();
+          }
           void clearConversation(conversationId);
+        },
+        /*
+         * A failure is a Decline that never reached the server: the RPC
+         * reports a request that is gone or already answered in its result,
+         * not as an error, and only a transport or PostgREST error throws
+         * (migration 082's decline_session_request). So the request is
+         * still pending, and this used to clear the ring and the notification
+         * regardless, leaving the provider nothing to answer it from while the
+         * member waited. Now nothing is cleared: the ring stays up with both
+         * buttons live again (`busy` falls back), the notification stays in the
+         * shade for after the ring, and the notice says the press did not take.
+         * If the ring ran out while the RPC was on the wire, there is no
+         * button left to try again on, so the notice points to the thread,
+         * which has its own Decline for the same request.
+         * No motion of its own: the notice bar brings its own entrance.
+         */
+        onError: () => {
+          setNotice(
+            stillRinging(requestId)
+              ? 'Could not decline. Try again.'
+              : 'Could not decline. It is still waiting in the chat.',
+          );
+        },
+        onSettled: () => {
+          if (declining.current === requestId) {
+            declining.current = null;
+          }
         },
       },
     );
-  }, [incoming, decline, clearIncoming]);
+  }, [incoming, decline, clearIncoming, setNotice]);
 
   if (incoming === null) {
     return null;

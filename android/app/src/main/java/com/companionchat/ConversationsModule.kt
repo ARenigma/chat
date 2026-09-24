@@ -35,6 +35,9 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
      * src/lib/conversations.ts) so every existing caller keeps its behaviour
      * without passing anything. Only the foreground path passes `true`, which
      * posts on the in-app channel (see `Conversations.CHANNEL_IN_APP`).
+     * `silent` is required for the same reason, and only the foreground post
+     * for a request ringing in the app passes `true`: in the shade, no banner
+     * (see `Conversations.Route.silencedIf`).
      */
     @ReactMethod
     fun notify(
@@ -45,6 +48,7 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
         sentAt: Double,
         avatarUrl: String,
         inApp: Boolean,
+        silent: Boolean,
         promise: Promise,
     ) {
         try {
@@ -58,6 +62,7 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
                 // '' means "no photo": a member sender, or an older server build.
                 avatarUrl = avatarUrl.ifEmpty { null },
                 inApp = inApp,
+                silent = silent,
             )
             promise.resolve(true)
         } catch (error: Exception) {
@@ -132,7 +137,7 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
     /**
      * Post a chat-request notification with Accept/Decline action buttons.
      * Resolves rather than rejects on failure — same headless-handler contract as
-     * `notify` and `notifyCall`. `inApp` as on `notify`.
+     * `notify` and `notifyCall`. `inApp` and `silent` as on `notify`.
      */
     @ReactMethod
     fun notifyChatRequest(
@@ -143,6 +148,7 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
         sentAt: Double,
         avatarUrl: String,
         inApp: Boolean,
+        silent: Boolean,
         promise: Promise,
     ) {
         try {
@@ -155,6 +161,7 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
                 sentAt = sentAt.toLong(),
                 avatarUrl = avatarUrl.ifEmpty { null },
                 inApp = inApp,
+                silent = silent,
             )
             promise.resolve(true)
         } catch (error: Exception) {

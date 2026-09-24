@@ -1123,3 +1123,72 @@ Sheet on a release/closedTest build. A screenshot block cannot be unit-tested.
 - Verification: on a device, make a conversation Silent from an in-app banner,
   background the app, send a message, and read `adb shell dumpsys notification`
   for the post's channel and its `mSilent`/importance. Not yet done.
+
+### Conversation photo fills and the ringing request's notification (2026-09-25)
+
+- Read: https://developer.android.com/develop/ui/views/notifications/build-notification
+  (#Updating, #Removing),
+  https://developer.android.com/reference/androidx/core/app/NotificationCompat.Builder#setSilent(boolean),
+  https://developer.android.com/reference/androidx/core/app/NotificationCompat#getChannelId(android.app.Notification),
+  https://developer.android.com/reference/androidx/core/app/NotificationCompat#GROUP_KEY_SILENT()
+- Requirement: an update is `notify()` again with the same id, and it replaces
+  the notification in place, channel included. `setSilent(true)` "prevents the
+  notification from peeking on screen, regardless of the importance"; a
+  notification stays in the shade until it is dismissed, tapped (with
+  `setAutoCancel`), cancelled, or times out.
+- Finding 1: a photo fill re-posted the live transcript on the route its own
+  post had computed. If a newer message had moved the notification between
+  `conversations_v2` and `conversations_in_app_v1` while the photo downloaded,
+  the fill moved it back, and took that post's quiet flag with it.
+- Fix 1: `Conversations.liveRoute()` reads the route off the live notification:
+  its channel (`NotificationCompat.getChannelId`) and whether it was silenced
+  (the `GROUP_KEY_SILENT` group `setSilent` files an ungrouped post in). Below
+  O there is no channel, and the fill keeps its own. A fill whose notification
+  is gone still does nothing. Text posts, fills and `clear()` now read and post
+  under one lock, so a fill can no longer post over a newer message or bring
+  back a notification cancelled by `clear()`.
+- Known gap in Fix 1, narrowed 2026-09-25: the lock-screen Decline now
+  cancels through `Conversations.clear()` in `ChatRequestReceiver`, so it takes
+  the lock and a fill can no longer bring a declined request back. What stays
+  open: the system removes a notification on a tap (`setAutoCancel`) or a swipe
+  without the lock, and one that lands between a fill's read and its `notify`
+  (a few ms to tens of ms, after the avatar download) is undone by the fill.
+  System cancels cannot be locked against.
+- Finding 2: a foreground push for the conversation whose chat request was
+  ringing full screen was discarded. A provider who then locked the phone or
+  left the app had no shade entry for the request.
+- Fix 2: `foregroundPushAction` returns `show-silent` for that push. It is
+  posted on the in-app route with `setSilent(true)` (`Route.silencedIf`): in
+  the shade, no banner over the ring, no sound. It is cleared when a decline
+  succeeds, when the ring is watched to the end, or when the chat opens. A ring
+  that runs out while a Decline is still on the wire leaves it alone, and the
+  Decline clears it if it lands.
+- Read: https://developer.android.com/develop/ui/views/notifications/conversations#best-practices
+  ("Don't cancel a conversation notification before the user has seen the
+  message", with "canceling a notification when opening the app in a view where
+  the user can't see or address the message" as the example).
+- Finding 3: the ring is opaque and covers the screen under it, which can be
+  the same conversation's chat (a provider still on a member's thread when that
+  member sends again with no live session gets a new request). That push was
+  `ignore`, because the chat counted as viewed, and the chat's
+  `useViewingConversation` cleared the notification on every return to the app
+  while the ring hid the chat.
+- Fix 3: the ring test comes before the viewing test in `foregroundPushAction`,
+  so that push is `show-silent` too. `useViewingConversation` does not clear
+  while a ring for its conversation is up. ChatRingScreen does that clear when
+  the ring leaves (Accept, or a ring-out) with that chat on screen. The ringing
+  signal is now held for the whole ring, in use or not, because AppState calls
+  listeners in subscription order and the chat under a ring subscribed first:
+  a signal the ring took back on return would still be clear when the chat
+  checked it. A locked phone still alerts because `inUse` is tested first.
+- Asserted in `__tests__/pushForeground.test.ts` (source contracts for the
+  Kotlin, driven tests for the JS).
+- Verification: not yet done on a device. (1) Post an in-app banner for a
+  provider with a photo, send a background push before the photo lands, and
+  check `adb shell dumpsys notification` shows the notification on
+  `conversations_v2`. (2) With a request ringing, confirm the push posts with
+  `mSilent`/group `silent` and no heads-up, then lock the phone and check the
+  entry is in the shade. (3) With a provider on a member's thread, have the
+  member start a new request, background and return to the app while it rings,
+  and check the entry is still in `dumpsys notification`; accept, and check it
+  is gone.

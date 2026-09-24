@@ -26,6 +26,7 @@ interface Native {
     // Required at the bridge (one arity per method); the default is
     // `notifyConversation`'s, below. See `NotifyOptions`.
     inApp: boolean,
+    silent: boolean,
   ): Promise<boolean>;
   notifyEngagement(
     peerId: string,
@@ -41,6 +42,7 @@ interface Native {
     sentAt: number,
     avatarUrl: string,
     inApp: boolean,
+    silent: boolean,
   ): Promise<boolean>;
   notifyCall(
     callId: string,
@@ -281,9 +283,18 @@ export async function notifyEngagement(push: EngagementPush): Promise<boolean> {
  * caller that predates it (the background handler in index.js) gets without
  * changing a line. See `Conversations.route` for the channel it picks and why
  * it is a channel rather than a per-post flag.
+ *
+ * `silent` is the one foreground post that must not peek: a push for the
+ * conversation whose chat request is ringing full screen in the app
+ * (`foregroundPushAction`). Same channel as `inApp`, posted with
+ * NotificationCompat's setSilent, so it goes into the shade with no banner over
+ * the ring and no sound, and is there to answer from if the provider leaves
+ * before the ring is answered. Only meaningful with `inApp`; absent means
+ * `false`. See `Route.silencedIf` in Conversations.kt.
  */
 export interface NotifyOptions {
   readonly inApp?: boolean;
+  readonly silent?: boolean;
 }
 
 /**
@@ -308,6 +319,7 @@ export async function notifyConversation(
     push.sentAt,
     push.avatarUrl ?? '',
     options.inApp === true,
+    options.silent === true,
   );
 }
 
@@ -340,14 +352,15 @@ export async function notifyChatRequest(
     push.sentAt,
     push.avatarUrl ?? '',
     options.inApp === true,
+    options.silent === true,
   );
 }
 
 /**
  * Clear a conversation's notification once it has been read in the app. Called
  * by `useViewingConversation` whenever that conversation is on screen, and by
- * `ChatRingScreen` when the provider declines a ringing request or watches it
- * ring out.
+ * `ChatRingScreen` once the server has taken the provider's decline of a
+ * ringing request, or when they watch it ring out.
  */
 export async function clearConversation(conversationId: string): Promise<void> {
   if (native === undefined) {

@@ -1,5 +1,6 @@
 package com.companionchat
 
+import android.app.Notification
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
@@ -239,6 +240,28 @@ object Conversations {
     }
 
     /**
+     * Held across every read-then-post of a conversation notification, and
+     * across [clear].
+     *
+     * A text post runs on the bridge thread and a photo fill on
+     * [avatarExecutor], and both read the live notification before they post
+     * over it. Without one lock the fill could read, a newer message could post
+     * in between, and the fill would then put the older transcript back over
+     * it, or re-post a notification [clear] had just cancelled. Never held
+     * across the download, only across the read and the `notify`.
+     *
+     * [clear] is the only cancel it covers. The other ways a notification
+     * leaves the shade take no lock of ours: the lock-screen Decline cancels
+     * directly in ChatRequestReceiver, and the system removes one the person
+     * swipes away or taps (`setAutoCancel`). Any of those can land between a
+     * fill's read and its `notify`, and the fill then puts the notification
+     * back. The window is the read, the shortcut push and the post, after the
+     * download has finished.
+     * https://developer.android.com/develop/ui/views/notifications/build-notification#Removing
+     */
+    private val postLock = Any()
+
+    /**
      * How long the callee's ring may stay up, matched to `RING_TIMEOUT_IN_MS` in
      * `src/screens/CallScreen.tsx` (60 s), which is itself the reference app's
      * `callRingTimeout` shortened for a paid product.
@@ -331,11 +354,37 @@ object Conversations {
     /**
      * Where one conversation post goes.
      *
-     * [quiet] is `NotificationCompat.Builder#setSilent`, and it is only ever
-     * true where the person's own quieter choice has to be carried across the
-     * two channels by hand (see [route]).
+     * [quiet] is `NotificationCompat.Builder#setSilent`. It is true where the
+     * person's own quieter choice has to be carried across the two channels by
+     * hand (see [route]), and for a post the caller asked to be silent (see
+     * [silencedIf]).
      */
-    private class Route(val channelId: String, val quiet: Boolean)
+    private class Route(val channelId: String, val quiet: Boolean) {
+        /**
+         * This route, or, when [silent], the same channel with no alert at all.
+         *
+         * `silent` is the foreground post for a conversation whose chat request
+         * is ringing full screen in the app (`foregroundPushAction` in
+         * src/lib/viewingConversation.ts). The ring is that same event on
+         * screen, so a banner over it would tell it twice; but the post still
+         * has to be MADE, because the ring is out of sight the moment the
+         * provider locks the phone or leaves the app, and a provider who does
+         * not come back has only the shade entry to answer from. (One who comes
+         * back within the 30 seconds finds the ring still up, and after it the
+         * request waits in the thread.) setSilent is the per-post switch for a
+         * post that must be made without alerting: it "silences this instance
+         * of the notification and prevents the notification from peeking on
+         * screen, regardless of the importance, sounds, or vibrations set on
+         * the notification or notification channel", and "Notifications remain
+         * visible until" the person dismisses or taps them, or the app cancels
+         * them, so the entry stays in the shade. Same channel as the unsilenced
+         * post would use, so a per-conversation choice made on it still
+         * applies.
+         * https://developer.android.com/develop/ui/views/notifications/build-notification#Removing
+         * https://developer.android.com/reference/androidx/core/app/NotificationCompat.Builder#setSilent(boolean)
+         */
+        fun silencedIf(silent: Boolean): Route = if (silent) Route(channelId, quiet = true) else this
+    }
 
     /**
      * The channel for a post, or null for no post at all: Messages for a
@@ -487,6 +536,9 @@ object Conversations {
      * lines this post left in the shade; the reverse holds too. Every existing
      * caller gets the default, which is the behaviour they had.
      * https://developer.android.com/develop/ui/views/notifications/build-notification#Updating
+     *
+     * [silent] posts it in the shade with no banner and no sound (see
+     * [Route.silencedIf]); only ever passed with [inApp].
      */
     fun notify(
         context: Context,
@@ -497,15 +549,18 @@ object Conversations {
         sentAt: Long,
         avatarUrl: String? = null,
         inApp: Boolean = false,
+        silent: Boolean = false,
     ) {
         ensureChannel(context)
 
         val manager = NotificationManagerCompat.from(context)
         val id = notificationId(conversationId)
-        // Decided once, for the text post and its photo fill alike: a fill is
-        // an update of that post and only changes the picture. Null is the
-        // person having turned this conversation off (see `route`).
-        val route = route(manager, conversationId, inApp) ?: return
+        // This post's route. Its photo fill does not reuse it: by the time the
+        // picture arrives a newer post may have moved the notification to the
+        // other channel, so the fill takes the route of whatever is live then
+        // (`liveRoute`). Null is the person having turned this conversation
+        // off (see `route`).
+        val route = route(manager, conversationId, inApp)?.silencedIf(silent) ?: return
 
         /*
          * `setKey` is what makes two Person objects the same person across
@@ -523,6 +578,7 @@ object Conversations {
         fun post(
             style: NotificationCompat.MessagingStyle,
             icon: IconCompat?,
+            via: Route,
             photoFill: Boolean = false,
         ) {
             val person = personOf(icon)
@@ -545,7 +601,7 @@ object Conversations {
                 .build()
             ShortcutManagerCompat.pushDynamicShortcut(context, shortcut)
 
-            val notification = NotificationCompat.Builder(context, route.channelId)
+            val notification = NotificationCompat.Builder(context, via.channelId)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setColor(BRAND_COLOR)
                 .setStyle(style)
@@ -578,8 +634,9 @@ object Conversations {
                 // Only where a quieter choice the person made on one channel
                 // has to be carried to a post on Messages (see `route`): an
                 // in-app post while Messages is turned down, or a background
-                // post for a conversation made Silent from an in-app banner.
-                // setSilent "prevents
+                // post for a conversation made Silent from an in-app banner;
+                // and for a post the caller asked to be silent, the ringing
+                // request (see `Route.silencedIf`). setSilent "prevents
                 // the notification from peeking on screen, regardless of the
                 // importance, sounds, or vibrations set on the notification or
                 // notification channel", which is why it is not how the in-app
@@ -588,7 +645,7 @@ object Conversations {
                 // post in a "silent" group with GROUP_ALERT_SUMMARY, so it stays
                 // correct only while this builder sets no group of its own.
                 // https://developer.android.com/reference/androidx/core/app/NotificationCompat.Builder#setSilent(boolean)
-                .setSilent(route.quiet)
+                .setSilent(via.quiet)
                 // A photo fill is an UPDATE of a notification that already
                 // alerted (or already chose not to), and "interrupts the user...
                 // only the first time the notification appears and not for later
@@ -615,12 +672,14 @@ object Conversations {
 
         // Extend the existing transcript if one is showing, so the shade reads as a
         // conversation rather than the latest line repeatedly replacing itself.
-        val style = activeMessagingStyle(manager, id)
-            ?: NotificationCompat.MessagingStyle(
-                Person.Builder().setName(context.getString(R.string.you)).build(),
-            )
-        style.addMessage(body, sentAt, personOf(null))
-        post(style, null)
+        synchronized(postLock) {
+            val style = activeMessagingStyle(manager, id)
+                ?: NotificationCompat.MessagingStyle(
+                    Person.Builder().setName(context.getString(R.string.you)).build(),
+                )
+            style.addMessage(body, sentAt, personOf(null))
+            post(style, null, route)
+        }
 
         if (avatarUrl != null) {
             avatarExecutor.execute {
@@ -631,21 +690,36 @@ object Conversations {
                  * Re-read what is actually on screen rather than re-posting the
                  * transcript captured above: a second message can land while the
                  * photo is still downloading, and rebuilding from a stale copy
-                 * would delete it from the shade.
+                 * would delete it from the shade. The route too, for the same
+                 * reason (`liveRoute`). Gone means cancelled, and the picture is
+                 * not a reason to bring it back. Only a cancel by `clear` is
+                 * kept out of the window between this read and the post
+                 * (`postLock`); a tap or a swipe that lands inside it is undone.
                  */
-                val live = activeMessagingStyle(manager, id) ?: return@execute
-                post(withSenderIcon(live, peerId, icon), icon, photoFill = true)
+                synchronized(postLock) {
+                    val live = activeNotification(manager, id) ?: return@execute
+                    val style = NotificationCompat.MessagingStyle
+                        .extractMessagingStyleFromNotification(live)
+                        ?: return@execute
+                    post(withSenderIcon(style, peerId, icon), icon, liveRoute(live, route), photoFill = true)
+                }
             }
         }
     }
+
+    /** The notification currently posted at [id], if any. */
+    private fun activeNotification(
+        manager: NotificationManagerCompat,
+        id: Int,
+    ): Notification? = manager.activeNotifications
+        .firstOrNull { it.id == id }
+        ?.notification
 
     /** The MessagingStyle of the notification currently posted at [id], if any. */
     private fun activeMessagingStyle(
         manager: NotificationManagerCompat,
         id: Int,
-    ): NotificationCompat.MessagingStyle? = manager.activeNotifications
-        .firstOrNull { it.id == id }
-        ?.notification
+    ): NotificationCompat.MessagingStyle? = activeNotification(manager, id)
         ?.let { NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(it) }
 
     /**
@@ -670,6 +744,39 @@ object Conversations {
             updated.addMessage(message.text, message.timestamp, person)
         }
         return updated
+    }
+
+    /**
+     * The route [live] was posted with, for a photo fill to re-post it on.
+     *
+     * A fill is an update of whatever notification is live when the picture
+     * arrives, and that may no longer be the post that asked for the picture:
+     * a newer message can have replaced it on the other channel (an in-app
+     * banner, then a background push, or the reverse). Re-posting on the
+     * route captured with the older post moved the notification back to the
+     * older channel and its older quiet flag, over the newer post's choice.
+     * An update replaces the notification in place, channel included ("call
+     * NotificationManagerCompat.notify() again, passing it the same ID"), so
+     * the fill must name the channel the live one is already on.
+     *
+     * Both halves are read off the notification itself. The channel is
+     * NotificationCompat.getChannelId, "the ID of the channel this notification
+     * posts to". The quiet flag is the group setSilent files a post in:
+     * GROUP_KEY_SILENT is "the group key that's added to notifications that are
+     * not already grouped when setNotificationSilent is used when SDK_INT is >=
+     * O", and no builder here sets a group of its own (see `notify`). Below O
+     * there is no channel to read and none to get wrong, so [posted] stands;
+     * the fill cannot alert there either, being setOnlyAlertOnce.
+     * https://developer.android.com/develop/ui/views/notifications/build-notification#Updating
+     * https://developer.android.com/reference/androidx/core/app/NotificationCompat#getChannelId(android.app.Notification)
+     * https://developer.android.com/reference/androidx/core/app/NotificationCompat#GROUP_KEY_SILENT()
+     */
+    private fun liveRoute(live: Notification, posted: Route): Route {
+        val channelId = NotificationCompat.getChannelId(live) ?: return posted
+        return Route(
+            channelId,
+            quiet = NotificationCompat.getGroup(live) == NotificationCompat.GROUP_KEY_SILENT,
+        )
     }
 
     /**
@@ -890,7 +997,10 @@ object Conversations {
      * without opening the UI.
      *
      * [inApp] means what it means on [notify]: the foreground post, same
-     * notification, on [CHANNEL_IN_APP], so it peeks without a sound.
+     * notification, on [CHANNEL_IN_APP], so it peeks without a sound. So does
+     * [silent]: this request is ringing full screen in the app, so the post
+     * goes to the shade with no banner over the ring, and is still there if the
+     * provider leaves before answering (see [Route.silencedIf]).
      */
     fun notifyChatRequest(
         context: Context,
@@ -901,12 +1011,14 @@ object Conversations {
         sentAt: Long,
         avatarUrl: String? = null,
         inApp: Boolean = false,
+        silent: Boolean = false,
     ) {
         ensureChannel(context)
 
         val manager = NotificationManagerCompat.from(context)
         val id = notificationId(conversationId)
-        val route = route(manager, conversationId, inApp) ?: return
+        // This post's route; its photo fill takes the live one, as in notify().
+        val route = route(manager, conversationId, inApp)?.silencedIf(silent) ?: return
         val accept = openConversation(context, peerId)
 
         val declineIntent = Intent(ChatRequestReceiver.ACTION_DECLINE)
@@ -923,6 +1035,7 @@ object Conversations {
         fun post(
             style: NotificationCompat.MessagingStyle,
             icon: IconCompat?,
+            via: Route,
             photoFill: Boolean = false,
         ) {
             val person = Person.Builder()
@@ -943,7 +1056,7 @@ object Conversations {
                 .build()
             ShortcutManagerCompat.pushDynamicShortcut(context, shortcut)
 
-            val notification = NotificationCompat.Builder(context, route.channelId)
+            val notification = NotificationCompat.Builder(context, via.channelId)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setColor(BRAND_COLOR)
                 .setStyle(style)
@@ -953,14 +1066,15 @@ object Conversations {
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 // Same channel, defaults and flags, for the same reasons, as
                 // notify(): an in-app post peeks without a sound, a post that
-                // carries the person's quieter choice across channels is quiet,
-                // and a photo fill never alerts a second time.
+                // carries the person's quieter choice across channels or was
+                // asked to be silent is quiet, and a photo fill never alerts a
+                // second time.
                 .setDefaults(
                     if (inApp) 0 else NotificationCompat.DEFAULT_SOUND or NotificationCompat.DEFAULT_VIBRATE,
                 )
                 .setContentIntent(accept)
                 .setAutoCancel(true)
-                .setSilent(route.quiet)
+                .setSilent(via.quiet)
                 .setOnlyAlertOnce(photoFill)
                 .addAction(
                     NotificationCompat.Action.Builder(
@@ -984,30 +1098,42 @@ object Conversations {
             }
         }
 
-        val style = activeMessagingStyle(manager, id)
-            ?: NotificationCompat.MessagingStyle(
-                Person.Builder().setName(context.getString(R.string.you)).build(),
+        synchronized(postLock) {
+            val style = activeMessagingStyle(manager, id)
+                ?: NotificationCompat.MessagingStyle(
+                    Person.Builder().setName(context.getString(R.string.you)).build(),
+                )
+            style.addMessage(
+                "wants to have a chat with you",
+                sentAt,
+                Person.Builder()
+                    .setKey(peerId)
+                    .setName(senderName)
+                    .setImportant(true)
+                    .build(),
             )
-        style.addMessage(
-            "wants to have a chat with you",
-            sentAt,
-            Person.Builder()
-                .setKey(peerId)
-                .setName(senderName)
-                .setImportant(true)
-                .build(),
-        )
-        post(style, null)
+            post(style, null, route)
+        }
 
         if (avatarUrl != null) {
             avatarExecutor.execute {
                 val icon = loadAvatarBitmap(avatarUrl, AVATAR_MAX_PX)
                     ?.let { IconCompat.createWithBitmap(it) }
                     ?: return@execute
-                // Same live-re-read as notify(): a second request can land while
-                // the photo downloads; rebuilding from a stale style would drop it.
-                val live = activeMessagingStyle(manager, id) ?: return@execute
-                post(withSenderIcon(live, peerId, icon), icon, photoFill = true)
+                // Same live re-read as notify(), transcript and route both: a
+                // second post can land while the photo downloads, on either
+                // channel, and a notification `clear` cancelled stays
+                // cancelled. Only `clear`'s (`postLock`): the lock-screen
+                // Decline's own cancel in ChatRequestReceiver, a tap and a
+                // swipe can still land between this read and the post, and the
+                // fill then brings the declined request back.
+                synchronized(postLock) {
+                    val live = activeNotification(manager, id) ?: return@execute
+                    val style = NotificationCompat.MessagingStyle
+                        .extractMessagingStyleFromNotification(live)
+                        ?: return@execute
+                    post(withSenderIcon(style, peerId, icon), icon, liveRoute(live, route), photoFill = true)
+                }
             }
         }
     }
@@ -1094,9 +1220,16 @@ object Conversations {
         }
     }
 
-    /** Clear a conversation's notification once it has been read in the app. */
+    /**
+     * Clear a conversation's notification once it has been read in the app.
+     *
+     * Under [postLock], so a photo fill that has already read the live
+     * notification cannot post it back after this cancels it.
+     */
     fun clear(context: Context, conversationId: String) {
-        NotificationManagerCompat.from(context).cancel(notificationId(conversationId))
+        synchronized(postLock) {
+            NotificationManagerCompat.from(context).cancel(notificationId(conversationId))
+        }
     }
 
     private fun openConversation(context: Context, peerId: String) =

@@ -1,5 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type {
+  MutateOptions,
+  MutationFunctionContext,
+  QueryClient,
+} from '@tanstack/react-query';
 import {
   foregroundPushAction,
   getRingingConversation,
@@ -124,6 +129,8 @@ describe('foregroundPushAction', () => {
 
   it('ignores the conversation on screen, which Realtime has already drawn', () => {
     expect(foregroundPushAction({ conversationId: A }, A)).toBe('ignore');
+    // A ring for some other conversation does not change that.
+    expect(foregroundPushAction({ conversationId: A }, A, true, B)).toBe('ignore');
   });
 
   it('shows the in-app banner when no chat is on screen', () => {
@@ -141,11 +148,37 @@ describe('foregroundPushAction', () => {
     expect(foregroundPushAction({ conversationId: A }, B, false)).toBe('show');
   });
 
-  it('ignores a push for the conversation ringing in-app', () => {
+  it('posts a push for the conversation ringing in-app to the shade, silently', () => {
     // The member's first message and the ring are one event: the full-screen
     // ring is already telling it, and a banner over it opened the chat
-    // underneath the ring.
-    expect(foregroundPushAction({ conversationId: A }, null, true, A)).toBe('ignore');
+    // underneath the ring. But dropping it left nothing in the shade once the
+    // provider locked the phone or left mid-ring, so it is posted, silenced.
+    expect(foregroundPushAction({ conversationId: A }, null, true, A)).toBe('show-silent');
+  });
+
+  it('posts it silently even when the chat under the ring is that same conversation', () => {
+    // The ring is opaque: a provider still on A's thread when A's member sends
+    // again gets the ring over it, and the chat counts as viewed while nobody
+    // can see it. `ignore` here left no shade entry for a provider who left.
+    expect(foregroundPushAction({ conversationId: A }, A, true, A)).toBe('show-silent');
+  });
+
+  it('never silences anything but the ringing conversation', () => {
+    const outcomes = new Set<string>();
+    for (const viewingId of [null, A, B]) {
+      for (const inUse of [true, false]) {
+        for (const ringingId of [null, A, B]) {
+          const action = foregroundPushAction({ conversationId: A }, viewingId, inUse, ringingId);
+          if (action === 'show-silent') {
+            outcomes.add(`${String(viewingId)} ${String(inUse)} ${String(ringingId)}`);
+          }
+        }
+      }
+    }
+    // In use and ringing A, whatever is on screen under the ring.
+    expect([...outcomes].sort()).toEqual(
+      [`${A} true ${A}`, `${B} true ${A}`, `null true ${A}`].sort(),
+    );
   });
 
   it('still shows a banner for a different conversation while a ring is up', () => {
@@ -215,6 +248,12 @@ interface Harness {
   setGranted: (granted: boolean) => void;
   /** Every line written to the PappalPush tag. */
   logs: () => string[];
+  /**
+   * Server-side writes to push_tokens, in the order they happen:
+   * `register` for every register_push_token the default RPC answers, and
+   * `delete` for every row delete. A test that holds an RPC pushes its own.
+   */
+  events: string[];
 }
 
 jest.mock('@react-native-firebase/messaging', () => ({
@@ -283,7 +322,19 @@ function load(): Harness {
   const unsubscribeRefresh = jest.fn();
   messaging.onTokenRefresh.mockImplementation(() => unsubscribeRefresh);
   messaging.getToken.mockImplementation(async () => TOKEN);
-  supabase.rpc.mockImplementation(async () => ({ error: null }));
+  const events: string[] = [];
+  supabase.rpc.mockImplementation(async () => {
+    events.push('register');
+    return { error: null };
+  });
+  (supabase as unknown as { from: jest.Mock }).from.mockImplementation((table: string) => ({
+    delete: () => ({
+      eq: async (column: string, value: string) => {
+        events.push(`delete ${table} ${column}=${value === TOKEN ? 'TOKEN' : value}`);
+        return { error: null };
+      },
+    }),
+  }));
 
   const push = require('../src/lib/push') as PushModule;
   const viewing = require('../src/lib/viewingConversation') as ViewingModule;
@@ -310,6 +361,7 @@ function load(): Harness {
       granted = next;
     },
     logs: () => native.pushLog.mock.calls.map(call => String(call[1])),
+    events,
   };
 }
 
@@ -350,6 +402,8 @@ describe('onForegroundPush', () => {
       avatar: '',
       inApp: true,
     });
+    // A banner: in-app, and not silenced.
+    expect(h.native.notify.mock.calls[0][7]).toBe(false);
     expect(h.logs()).toContain('foreground message: show-in-app');
   });
 
@@ -370,17 +424,47 @@ describe('onForegroundPush', () => {
     expect(h.logs()).toContain('foreground message: ignore');
   });
 
-  it('posts nothing for the conversation ringing in the app, and a banner for any other', () => {
+  it('posts the conversation ringing in the app silently, and a banner for any other', () => {
+    // Silently: in the shade (so a provider who leaves mid-ring still has it)
+    // with no banner over the ring. Dropping it outright was the defect.
     const h = load();
     const { deliver } = subscribe(h);
     h.viewing.setRingingConversation(A);
     deliver(message(A));
-    expect(h.native.notify).not.toHaveBeenCalled();
-    expect(h.logs()).toContain('foreground message: ignore');
-    deliver(message(B));
     expect(h.native.notify).toHaveBeenCalledTimes(1);
-    expect(h.native.notify.mock.calls[0][0]).toBe(B);
+    expect(h.native.notify.mock.calls[0][0]).toBe(A);
     expect(h.native.notify.mock.calls[0][6]).toBe(true);
+    expect(h.native.notify.mock.calls[0][7]).toBe(true);
+    expect(h.logs()).toContain('foreground message: show-silent');
+    deliver(message(B));
+    expect(h.native.notify).toHaveBeenCalledTimes(2);
+    expect(h.native.notify.mock.calls[1][0]).toBe(B);
+    expect(h.native.notify.mock.calls[1][6]).toBe(true);
+    expect(h.native.notify.mock.calls[1][7]).toBe(false);
+  });
+
+  it('posts the ringing conversation silently when its own chat is under the ring', () => {
+    const h = load();
+    const { deliver } = subscribe(h);
+    h.viewing.setViewingConversation(A);
+    h.viewing.setRingingConversation(A);
+    deliver(message(A, { kind: 'contact', requestId: REQUEST }));
+    expect(h.native.notifyChatRequest).toHaveBeenCalledTimes(1);
+    const call = h.native.notifyChatRequest.mock.calls[0];
+    expect([call[0], call[6], call[7]]).toEqual([A, true, true]);
+    expect(h.logs()).toContain('foreground contact: show-silent');
+  });
+
+  it('posts the ringing request itself silently, with its Accept and Decline', () => {
+    const h = load();
+    const { deliver } = subscribe(h);
+    h.viewing.setRingingConversation(A);
+    deliver(message(A, { kind: 'contact', requestId: REQUEST }));
+    expect(h.native.notify).not.toHaveBeenCalled();
+    expect(h.native.notifyChatRequest).toHaveBeenCalledTimes(1);
+    const call = h.native.notifyChatRequest.mock.calls[0];
+    expect([call[0], call[3], call[6], call[7]]).toEqual([A, REQUEST, true, true]);
+    expect(h.logs()).toContain('foreground contact: show-silent');
   });
 
   it('routes a contact push to the Accept/Decline notification, in-app', () => {
@@ -393,6 +477,7 @@ describe('onForegroundPush', () => {
     expect(call[0]).toBe(A);
     expect(call[3]).toBe(REQUEST);
     expect(call[6]).toBe(true);
+    expect(call[7]).toBe(false);
   });
 
   it('alerts when the delivery lands while AppState is not active', () => {
@@ -401,6 +486,7 @@ describe('onForegroundPush', () => {
     h.setCurrentState('background');
     deliver(message(A));
     expect(h.native.notify.mock.calls[0][6]).toBe(false);
+    expect(h.native.notify.mock.calls[0][7]).toBe(false);
   });
 
   it('still hands calls and nudges to the app, and draws neither', () => {
@@ -430,6 +516,8 @@ describe('onForegroundPush', () => {
     await conversations.notifyChatRequest({ ...push!, requestId: REQUEST });
     expect(h.native.notify.mock.calls[0][6]).toBe(false);
     expect(h.native.notifyChatRequest.mock.calls[0][6]).toBe(false);
+    expect(h.native.notify.mock.calls[0][7]).toBe(false);
+    expect(h.native.notifyChatRequest.mock.calls[0][7]).toBe(false);
   });
 });
 
@@ -654,6 +742,216 @@ describe('token registration stays alive', () => {
     await expectNothingLeft(h);
   });
 
+  /**
+   * Hold the next register_push_token on the wire, the way the supabase query
+   * builder does it: a thenable, not a promise, that sends a request each time
+   * `then` is called on it.
+   */
+  function holdNextRegistration(h: Harness): { answer: () => void; thens: () => number } {
+    let answer: () => void = () => undefined;
+    let thens = 0;
+    const reply = new Promise<{ error: null }>(resolve => {
+      answer = () => {
+        h.events.push('register answered');
+        resolve({ error: null });
+      };
+    });
+    h.rpc.mockImplementationOnce(() => {
+      h.events.push('register sent');
+      return {
+        then: (onFulfilled: (value: { error: null }) => unknown, onRejected?: (err: unknown) => unknown) => {
+          thens += 1;
+          return reply.then(onFulfilled, onRejected);
+        },
+      };
+    });
+    return { answer: () => answer(), thens: () => thens };
+  }
+
+  /** Signed in, registered, and a later return to the app has an RPC out. */
+  async function registrationOnTheWire(h: Harness) {
+    await h.push.startPush();
+    await jest.advanceTimersByTimeAsync(h.push.ACTIVE_MIN_INTERVAL_MS);
+    const held = holdNextRegistration(h);
+    h.appState('background');
+    h.appState('active');
+    await jest.advanceTimersByTimeAsync(h.push.ACTIVE_SETTLE_MS);
+    expect(h.events).toEqual(['register', 'register sent']);
+    return held;
+  }
+
+  const DELETE = 'delete push_tokens token=TOKEN';
+
+  it('lets a registration already on the wire land before stopPush deletes the row', async () => {
+    // The generation checks stop a registration from STARTING after a
+    // sign-out; one already sent used to be answered after the delete and
+    // recreate the row for the user who had just signed out.
+    const h = load();
+    const held = await registrationOnTheWire(h);
+    const stopping = h.push.stopPush();
+    await jest.advanceTimersByTimeAsync(h.push.STOP_DRAIN_MS - 1);
+    expect(h.events).not.toContain(DELETE);
+    held.answer();
+    await stopping;
+    expect(h.events).toEqual(['register', 'register sent', 'register answered', DELETE]);
+    // One request per registration: the builder's `then` is called once.
+    expect(held.thens()).toBe(1);
+    // And nothing recreates it afterwards, on a return or otherwise.
+    await jest.advanceTimersByTimeAsync(h.push.ACTIVE_MIN_INTERVAL_MS);
+    h.appState('background');
+    h.appState('active');
+    await jest.advanceTimersByTimeAsync(h.push.ACTIVE_SETTLE_MS);
+    expect(h.events[h.events.length - 1]).toBe(DELETE);
+    expect(registerCalls(h)).toBe(2);
+  });
+
+  it('holds a sign-in that lands during a sign-out teardown until the teardown is done', async () => {
+    // Sign-out shows the sign-in screen at once and tears push down behind
+    // it. A quick re-sign-in used to register a row the old teardown then
+    // deleted, and have its token revoked by that teardown's deleteToken.
+    const h = load();
+    const held = await registrationOnTheWire(h);
+    const stopping = h.push.stopPush();
+    const starting = h.push.startPush();
+    await flush();
+    const before = registerCalls(h);
+    held.answer();
+    await stopping;
+    await starting;
+    await flush();
+    const deleteAt = h.events.indexOf(DELETE);
+    expect(deleteAt).toBeGreaterThanOrEqual(0);
+    // The new start registered, and only after the old row was deleted.
+    expect(registerCalls(h)).toBe(before + 1);
+    expect(h.events.lastIndexOf('register')).toBeGreaterThan(deleteAt);
+  });
+
+  /** Wait, microtask by microtask, until `condition` holds. */
+  async function until(condition: () => boolean): Promise<void> {
+    for (let i = 0; i < 200 && !condition(); i += 1) {
+      await Promise.resolve();
+    }
+    expect(condition()).toBe(true);
+  }
+
+  /** Run every microtask a settled RPC sets off, without moving the clock. */
+  async function flush(): Promise<void> {
+    for (let i = 0; i < 200; i += 1) {
+      await Promise.resolve();
+    }
+  }
+
+  /** The onTokenRefresh handler the live `listen` installed. */
+  function refreshHandler(h: Harness): (next: string) => void {
+    const calls = h.onTokenRefresh.mock.calls;
+    return calls[calls.length - 1][1] as (next: string) => void;
+  }
+
+  /** What FCM hands onTokenRefresh; any token will do, the RPC is held. */
+  const FRESH = 'fcm-FRESH-rotated-by-onTokenRefresh-0123456789';
+
+  type Held = ReturnType<typeof holdNextRegistration>;
+
+  /**
+   * A registration of each kind held on the wire, all three through the same
+   * `register`. `settled` is whatever else waits on it: the start itself, for
+   * a start.
+   */
+  const onTheWire: Record<
+    'start' | 'refresh' | 'active',
+    (h: Harness) => Promise<{ held: Held; settled: Promise<unknown> }>
+  > = {
+    start: async h => {
+      const held = holdNextRegistration(h);
+      const settled = h.push.startPush();
+      await until(() => h.events.includes('register sent'));
+      return { held, settled };
+    },
+    refresh: async h => {
+      await h.push.startPush();
+      const held = holdNextRegistration(h);
+      refreshHandler(h)(FRESH);
+      await until(() => h.events.includes('register sent'));
+      return { held, settled: Promise.resolve() };
+    },
+    active: async h => ({ held: await registrationOnTheWire(h), settled: Promise.resolve() }),
+  };
+
+  it.each(['start', 'refresh', 'active'] as const)(
+    'lets a %s registration already on the wire land before the delete',
+    async reason => {
+      const h = load();
+      const { held, settled } = await onTheWire[reason](h);
+      const stopping = h.push.stopPush();
+      await jest.advanceTimersByTimeAsync(h.push.STOP_DRAIN_MS - 1);
+      expect(h.events).not.toContain(DELETE);
+      held.answer();
+      await stopping;
+      await settled;
+      const answered = h.events.indexOf('register answered');
+      expect(answered).toBeGreaterThan(-1);
+      expect(h.events.indexOf(DELETE)).toBeGreaterThan(answered);
+      expect(h.events[h.events.length - 1]).toBe(DELETE);
+      // A start overtaken by the sign-out installs nothing either.
+      expect(h.listenerCount()).toBe(0);
+    },
+  );
+
+  it.each([
+    ['the older one first', 'older'],
+    ['the newer one first', 'newer'],
+  ] as const)(
+    'waits for every registration on the wire, not just one, answered %s',
+    async (_order, first) => {
+      // A return-to-app register and a token refresh can overlap. Waiting on
+      // only the first or only the last of them lets the other land after the
+      // delete, which is the defect the drain exists for.
+      const h = load();
+      const older = await registrationOnTheWire(h);
+      const newer = holdNextRegistration(h);
+      refreshHandler(h)(FRESH);
+      await until(() => count(h.events.join('\n'), 'register sent') === 2);
+      const stopping = h.push.stopPush();
+      const [one, other] = first === 'older' ? [older, newer] : [newer, older];
+      one.answer();
+      await flush();
+      expect(h.events).not.toContain(DELETE);
+      other.answer();
+      await stopping;
+      expect(h.events).toEqual([
+        'register',
+        'register sent',
+        'register sent',
+        'register answered',
+        'register answered',
+        DELETE,
+      ]);
+    },
+  );
+
+  it('waits a bounded time for it, then deletes anyway and says so', async () => {
+    const h = load();
+    await registrationOnTheWire(h);
+    const stopping = h.push.stopPush();
+    await jest.advanceTimersByTimeAsync(h.push.STOP_DRAIN_MS - 1);
+    expect(h.events).not.toContain(DELETE);
+    await jest.advanceTimersByTimeAsync(1);
+    await stopping;
+    expect(h.events[h.events.length - 1]).toBe(DELETE);
+    expect(h.logs()).toContain(
+      `stop: a registration was still in flight after ${h.push.STOP_DRAIN_MS}ms, deleting anyway`,
+    );
+  });
+
+  it('does not wait at all when nothing is on the wire', async () => {
+    const h = load();
+    await h.push.startPush();
+    // No timer is advanced: a stopPush that waited here would never finish.
+    await h.push.stopPush();
+    expect(h.events).toEqual(['register', DELETE]);
+    expect(h.logs().some(line => line.startsWith('stop:'))).toBe(false);
+  });
+
   it('never writes the token to the log, even when the server echoes it', async () => {
     const h = load();
     h.rpc.mockImplementation(async () => ({
@@ -756,6 +1054,32 @@ describe('useViewingConversation', () => {
     expect(clear.mock.calls).toEqual([[A], [A]]);
   });
 
+  it('leaves the shade alone while this conversation\'s ring covers the chat', () => {
+    // The ring is opaque, so the chat under it is in use and unseen, and the
+    // shade entry is the ring's out-of-app half. Clearing it on mount or on a
+    // return threw away the entry `show-silent` exists to keep.
+    const { viewing, screen, appState, clear } = mount();
+    viewing.setRingingConversation(A);
+    screen(A);
+    expect(viewing.getViewingConversation()).toBe(A);
+    appState('background');
+    appState('active');
+    expect(clear).not.toHaveBeenCalled();
+    // Once the ring is gone, the next return clears it as usual.
+    viewing.setRingingConversation(null);
+    appState('background');
+    appState('active');
+    expect(clear.mock.calls).toEqual([[A]]);
+  });
+
+  it('still clears its own conversation while a ring for another one is up', () => {
+    const { viewing, screen, clear } = mount();
+    viewing.setRingingConversation(B);
+    screen(A);
+    expect(clear.mock.calls).toEqual([[A]]);
+    viewing.setRingingConversation(null);
+  });
+
   it('leaves the shade alone while the chat is mounted but not in use', () => {
     // Cancelling a message the person has not seen loses it: a chat left open
     // under a locked screen is not a chat being read.
@@ -849,7 +1173,10 @@ describe('the in-app flag reaches its own Android channel', () => {
     // ...and below that the yield: Messages itself, quieted, so a person who
     // turned Messages down gets no banner and no sound while the app is open.
     expect(inApp).toMatch(/return Route\(CHANNEL_ID, quiet = true\)\s*\}\s*$/);
-    expect(count(code, 'quiet = true')).toBe(1);
+    // That yield, and the caller-asked silence of `silencedIf`: nowhere else is
+    // a post quieted.
+    expect(count(code, 'Route(CHANNEL_ID, quiet = true)')).toBe(1);
+    expect(count(code, 'quiet = true')).toBe(2);
     // Declaration, channel builder, route's post and route's lookup: nothing
     // else names it, so no builder can post on it except through `route`.
     expect(count(code, 'CHANNEL_IN_APP')).toBe(4);
@@ -886,28 +1213,35 @@ describe('the in-app flag reaches its own Android channel', () => {
   }
 
   const builders: Array<[string, string]> = [
-    // notify() ends where the helper it reads the live transcript with begins.
-    ['    fun notify(\n', '    private fun activeMessagingStyle('],
+    // notify() ends where the helper it reads the live notification with begins.
+    ['    fun notify(\n', '    private fun activeNotification('],
     ['    fun notifyChatRequest(\n', '    private fun callActionIntent('],
   ];
 
   it.each(builders)('posts on the routed channel, with no sound of its own in-app, in %j', (start, end) => {
     const body = builder(start, end);
     expect(body).toContain('inApp: Boolean = false,');
+    expect(body).toContain('silent: Boolean = false,');
     // A null route is the person having turned the conversation off: no post.
-    expect(count(body, 'val route = route(manager, conversationId, inApp) ?: return')).toBe(1);
-    expect(count(body, 'NotificationCompat.Builder(context, route.channelId)')).toBe(1);
+    expect(count(body, 'val route = route(manager, conversationId, inApp)?.silencedIf(silent) ?: return')).toBe(1);
+    // Every post, text or fill, names the route it was handed and nothing
+    // else: the builder never reaches for the closure's `route` itself.
+    expect(count(body, 'NotificationCompat.Builder(context, via.channelId)')).toBe(1);
+    expect(body).not.toContain('route.channelId');
     // The route's quiet flag reaches the builder, or the yield is only a
     // channel choice and a turned-down Messages still sounds in the app.
-    expect(count(body, '.setSilent(route.quiet)')).toBe(1);
+    expect(count(body, '.setSilent(via.quiet)')).toBe(1);
+    expect(body).not.toContain('route.quiet');
     expect(body).not.toContain('NotificationCompat.Builder(context, CHANNEL_ID)');
     // Below 26 the channel is ignored and the defaults ARE the alert: none
     // for an in-app post, sound and vibration for a background one.
     expect(body).toContain(
       'if (inApp) 0 else NotificationCompat.DEFAULT_SOUND or NotificationCompat.DEFAULT_VIBRATE',
     );
-    // The flag touches the route and the defaults, and nothing else.
+    // The flag touches the route and the defaults, and nothing else; silent
+    // touches only the route, through `silencedIf`.
     expect(body.match(/\binApp\b/g)).toEqual(['inApp', 'inApp', 'inApp']);
+    expect(body.match(/\bsilent\b/g)).toEqual(['silent', 'silent']);
   });
 
   it.each(builders)(
@@ -918,25 +1252,109 @@ describe('the in-app flag reaches its own Android channel', () => {
       // line is added, then that same style is posted.
       const readBack = body.indexOf('val style = activeMessagingStyle(manager, id)');
       const add = body.indexOf('style.addMessage(', readBack);
-      const post = body.indexOf('post(style, null)', add);
+      const post = body.indexOf('post(style, null, route)', add);
       expect(readBack).toBeGreaterThan(-1);
       expect(add).toBeGreaterThan(readBack);
       expect(post).toBeGreaterThan(add);
       // The photo fill re-reads what is live at that moment, never the copy
       // captured above, and is the only post that is an update.
-      const live = body.indexOf('val live = activeMessagingStyle(manager, id) ?: return@execute');
+      const live = body.indexOf('val live = activeNotification(manager, id) ?: return@execute');
       expect(live).toBeGreaterThan(post);
-      expect(body.indexOf('post(withSenderIcon(live, peerId, icon), icon, photoFill = true)')).toBeGreaterThan(live);
+      const style = body.indexOf('.extractMessagingStyleFromNotification(live)', live);
+      expect(style).toBeGreaterThan(live);
+      expect(body.indexOf('post(withSenderIcon(style, peerId, icon), icon, liveRoute(live, route), photoFill = true)')).toBeGreaterThan(style);
       expect(count(body, 'photoFill = true')).toBe(1);
       expect(count(body, '.setOnlyAlertOnce(photoFill)')).toBe(1);
     },
   );
 
+  it.each(builders)(
+    'fills the photo in on the channel the live notification is on, not the one its own post used, in %j',
+    (start, end) => {
+      /*
+       * A newer post can move the notification between Messages and the
+       * in-app channel while an older post's photo is downloading. The fill
+       * re-posted it on the older post's route, moving it back. So the fill
+       * reads the route off the live notification (`liveRoute`), and only the
+       * text post uses the route it computed.
+       */
+      const body = builder(start, end);
+      const fill = body.slice(body.indexOf('avatarExecutor.execute {'));
+      expect(fill).toContain('liveRoute(live, route), photoFill = true)');
+      // No post in the fill names a route that is not the live one.
+      expect(fill).not.toMatch(/icon, (route|via), photoFill/);
+      expect(count(body, 'liveRoute(')).toBe(1);
+      expect(count(body, 'post(style, null, route)')).toBe(1);
+    },
+  );
+
+  it('reads the live route off the notification itself: its channel and its silent group', () => {
+    /*
+     * The whole body, whitespace aside, and not a line at a time: a line check
+     * still passes with an early `return posted` in front of them, which is
+     * the original defect (the fill's own route) back again. No Kotlin unit
+     * tests exist in this repo, so the source is what there is to hold.
+     *
+     * Below O there is no channel to read, and the fill's own route stands.
+     * setSilent files an ungrouped post under GROUP_KEY_SILENT on O and up,
+     * and no builder here sets a group, so the group IS the quiet flag.
+     */
+    const live = slice('private fun liveRoute(', '\n    }\n').replace(/\s+/g, ' ').trim();
+    expect(live).toBe(
+      [
+        'private fun liveRoute(live: Notification, posted: Route): Route {',
+        'val channelId = NotificationCompat.getChannelId(live) ?: return posted',
+        'return Route(',
+        'channelId,',
+        'quiet = NotificationCompat.getGroup(live) == NotificationCompat.GROUP_KEY_SILENT,',
+        ')',
+      ].join(' '),
+    );
+    expect(count(live, 'return')).toBe(2);
+    expect(code).not.toMatch(/\.setGroup\(/);
+    expect(count(code, 'liveRoute(live, route)')).toBe(2);
+  });
+
+  it.each(builders)(
+    'reads and posts under one lock, text post and fill alike, and skips a fill whose notification is gone, in %j',
+    (start, end) => {
+      // Otherwise a fill that read the live notification can post over a newer
+      // message, or bring back a notification `clear` cancelled meanwhile.
+      // ChatRequestReceiver's Decline goes through `clear`, so it holds the
+      // lock too; only a tap or swipe in the shade takes none (see `postLock`).
+      const body = builder(start, end);
+      expect(body).toMatch(
+        /synchronized\(postLock\) \{\s*val style = activeMessagingStyle\(manager, id\)/,
+      );
+      expect(body).toMatch(
+        /synchronized\(postLock\) \{\s*val live = activeNotification\(manager, id\) \?: return@execute/,
+      );
+      expect(count(body, 'synchronized(postLock)')).toBe(2);
+      // The download is outside it: the lock never waits on the network.
+      const download = body.indexOf('loadAvatarBitmap(');
+      expect(download).toBeGreaterThan(-1);
+      expect(download).toBeLessThan(body.lastIndexOf('synchronized(postLock)'));
+    },
+  );
+
+  it('cancels under the same lock, so a fill cannot put a cleared notification back', () => {
+    const clear = slice('fun clear(context: Context, conversationId: String) {', '\n    }\n');
+    expect(clear).toMatch(/synchronized\(postLock\) \{\s*NotificationManagerCompat\.from\(context\)\.cancel\(notificationId\(conversationId\)\)/);
+  });
+
+  it('silences a post by the caller only through setSilent, on the channel it would have used', () => {
+    const route = slice('private class Route(', '\n    }\n');
+    expect(route).toContain(
+      'fun silencedIf(silent: Boolean): Route = if (silent) Route(channelId, quiet = true) else this',
+    );
+    expect(count(code, '.silencedIf(silent)')).toBe(2);
+  });
+
   it('reads the transcript back by notification id alone, never by channel', () => {
     // A background post on Messages and a foreground post on the in-app
     // channel share one id, so a lookup that filtered on the channel would
     // start a fresh transcript every time the two alternated.
-    const lookup = slice('private fun activeMessagingStyle(', 'private fun withSenderIcon(');
+    const lookup = slice('private fun activeNotification(', 'private fun withSenderIcon(');
     expect(lookup).toContain('.firstOrNull { it.id == id }');
     expect(lookup).not.toMatch(/channel/i);
     expect(count(code, 'private fun notificationId(conversationId: String): Int = conversationId.hashCode()')).toBe(1);
@@ -950,6 +1368,10 @@ describe('the in-app flag reaches its own Android channel', () => {
       'https://developer.android.com/develop/ui/compose/notifications#Heads-up',
       'https://developer.android.com/reference/android/app/NotificationManager#getNotificationChannel(java.lang.String,%20java.lang.String)',
       'https://developer.android.com/reference/androidx/core/app/NotificationManagerCompat#getNotificationChannelCompat(java.lang.String,java.lang.String)',
+      'https://developer.android.com/develop/ui/views/notifications/build-notification#Removing',
+      'https://developer.android.com/reference/androidx/core/app/NotificationCompat.Builder#setSilent(boolean)',
+      'https://developer.android.com/reference/androidx/core/app/NotificationCompat#getChannelId(android.app.Notification)',
+      'https://developer.android.com/reference/androidx/core/app/NotificationCompat#GROUP_KEY_SILENT()',
     ]) {
       expect({ page, cited: kt.includes(page) }).toEqual({ page, cited: true });
     }
@@ -960,8 +1382,11 @@ describe('the in-app flag reaches its own Android channel', () => {
     expect(count(module, 'inApp = inApp,')).toBe(2);
     expect(count(bridge, 'options.inApp === true')).toBe(2);
     expect(bridge).toContain("options: NotifyOptions = {}");
-    expect(module).not.toMatch(/\bsilent\b/);
-    expect(bridge).not.toMatch(/\bsilent\b/);
+    // `silent` crosses as its own flag, right after inApp, and is never folded
+    // into it: the in-app banner is a channel, not a silenced post.
+    expect(count(module, 'inApp: Boolean,\n        silent: Boolean,\n        promise: Promise,')).toBe(2);
+    expect(count(module, 'inApp = inApp,\n                silent = silent,')).toBe(2);
+    expect(count(bridge, 'options.inApp === true,\n    options.silent === true,')).toBe(2);
   });
 
   it('logs under a stable tag that survives release builds', () => {
@@ -982,7 +1407,10 @@ describe('push.ts wiring', () => {
     expect(foreground).toContain('getViewingConversation()');
     expect(foreground).toContain('getRingingConversation()');
     expect(foreground).toContain("AppState.currentState === 'active'");
-    expect(foreground).toContain("inApp: action === 'show-in-app'");
+    expect(foreground).toContain("inApp: action === 'show-in-app' || action === 'show-silent',");
+    // Silenced only for the ringing request, never for the in-app banner.
+    expect(foreground).toContain("silent: action === 'show-silent',");
+    expect(count(foreground, 'silent:')).toBe(1);
     expect(foreground).toContain('notifyChatRequest(push, options)');
     expect(foreground).toContain('notifyConversation(push, MESSAGE_BODY, options)');
   });
@@ -1005,11 +1433,11 @@ describe('push.ts wiring', () => {
     const check = push.slice(push.indexOf('async function registerIfGranted'), push.indexOf('function listen'));
     expect(check).toContain('notificationsGranted()');
     expect(check).not.toContain('ensurePermission');
-    expect(push).toMatch(/export async function stopPush\(\): Promise<void> \{\s*halt\(\);/);
+    expect(push).toMatch(/export function stopPush\(\): Promise<void> \{\s*halt\(\);\s*const run = revoke\(\);\s*teardown = run\.catch\(\(\) => undefined\);/);
   });
 
   it('carries the start generation into registration instead of re-reading it later', () => {
-    const start = push.slice(push.indexOf('export async function startPush'), push.indexOf('export async function stopPush'));
+    const start = push.slice(push.indexOf('export async function startPush'), push.indexOf('export function stopPush'));
     expect(start).toMatch(/^[^]*?\{\s*halt\(\);\s*const started = generation;/);
     expect(start.indexOf('const started = generation;')).toBeLessThan(start.indexOf('await '));
     expect(start).toContain("register('start', started)");
@@ -1106,7 +1534,25 @@ describe('the chat-request ring takes its notification with it', () => {
     return byTestId(element.props.children, testID);
   }
 
-  function mountRing(startState: 'active' | 'background' = 'active') {
+  /** The store as the ring sees it: its request, and the two actions it calls. */
+  interface RingStore {
+    incomingRequest: typeof REQUEST_ROW | null;
+    clearIncomingRequest: jest.Mock;
+    setNotice: jest.Mock;
+  }
+
+  interface RingOptions {
+    /** AppState when the ring starts. */
+    startState?: 'active' | 'background';
+    /**
+     * A V2 chat already on screen under the ring, mounted (and so subscribed
+     * to AppState) before it, as it is when the provider is in a thread when
+     * the request arrives.
+     */
+    chatUnder?: string;
+  }
+
+  function mountRing({ startState = 'active', chatUnder }: RingOptions = {}) {
     jest.resetModules();
     const effects: Array<() => void | (() => void)> = [];
     jest.doMock('react', () => ({
@@ -1116,6 +1562,7 @@ describe('the chat-request ring takes its notification with it', () => {
       },
       useState: <T,>(initial: T) => [initial, () => undefined],
       useCallback: <T,>(callback: T) => callback,
+      useRef: <T,>(initial: T) => ({ current: initial }),
     }));
     jest.doMock('react-native-safe-area-context', () => ({
       useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
@@ -1126,14 +1573,25 @@ describe('the chat-request ring takes its notification with it', () => {
         color: { text: { onAccent: '#fff' }, state: { danger: '#f00', available: '#0f0' } },
       }),
     }));
-    const clearIncomingRequest = jest.fn();
-    jest.doMock('../src/store/useStore', () => ({
-      useStore: (select: (state: object) => unknown) =>
-        select({ incomingRequest: REQUEST_ROW, clearIncomingRequest }),
-    }));
+    // A live store, not a snapshot: the ring reads it again when an answer
+    // lands (`stillRinging`), and its clear really empties it.
+    const store: RingStore = {
+      incomingRequest: REQUEST_ROW,
+      clearIncomingRequest: jest.fn(),
+      setNotice: jest.fn(),
+    };
+    store.clearIncomingRequest.mockImplementation(() => {
+      store.incomingRequest = null;
+    });
+    const useStore = Object.assign(
+      (select: (state: RingStore) => unknown) => select(store),
+      { getState: () => store },
+    );
+    jest.doMock('../src/store/useStore', () => ({ useStore }));
+    const accept = { mutate: jest.fn(), isPending: false };
     const decline = { mutate: jest.fn(), isPending: false };
     jest.doMock('../src/api/sessions', () => ({
-      useAcceptSessionRequest: () => ({ mutate: jest.fn(), isPending: false }),
+      useAcceptSessionRequest: () => accept,
       useDeclineSessionRequest: () => decline,
     }));
     for (const leaf of ['Avatar', 'CallRing', 'Icon', 'Pressable']) {
@@ -1156,18 +1614,34 @@ describe('the chat-request ring takes its notification with it', () => {
     const clear = jest.fn(async (_conversationId: string) => undefined);
     (rn.NativeModules as Record<string, unknown>).Conversations = { clear };
 
-    const { ChatRingScreen } = require('../src/components/ChatRingScreen') as typeof import('../src/components/ChatRingScreen');
-    // The same module instance the component imported, so its signal is ours.
+    // The same module instance the component imports, so its signal is ours.
     const viewing = require('../src/lib/viewingConversation') as ViewingModule;
-    const tree = ChatRingScreen({ onOpenConversation: jest.fn() });
+    if (chatUnder !== undefined) {
+      // The chat first, as on a device: it was on screen before the request
+      // arrived, so its AppState listener runs before the ring's on every
+      // change. Its mount clear predates the ring and is not under test.
+      viewing.useViewingConversation(chatUnder);
+      expect(effects).toHaveLength(1);
+      for (const effect of effects.splice(0)) {
+        effect();
+      }
+      clear.mockClear();
+    }
+    const { ChatRingScreen } = require('../src/components/ChatRingScreen') as typeof import('../src/components/ChatRingScreen');
+    const onOpenConversation = jest.fn();
+    const tree = ChatRingScreen({ onOpenConversation });
     // One effect, the ring's clock; run it the way React would on mount.
     expect(effects).toHaveLength(1);
     const cleanup = effects.map(effect => effect())[0];
     return {
       tree,
+      store,
       clear,
-      clearIncomingRequest,
+      clearIncomingRequest: store.clearIncomingRequest,
+      setNotice: store.setNotice,
+      accept,
       decline,
+      onOpenConversation,
       listeners,
       viewing,
       appState: (next: 'active' | 'background') => {
@@ -1204,22 +1678,77 @@ describe('the chat-request ring takes its notification with it', () => {
     }
   });
 
-  it('clears the notification when the provider declines in the app', () => {
-    const ring = mountRing();
-    const button = byTestId(ring.tree, 'chat-ring-decline');
+  type Ring = ReturnType<typeof mountRing>;
+  type RequestVariables = { requestId: string; conversationId: string };
+  /** A `mutate`'s own callbacks, typed as TanStack Query declares them. */
+  type MutateCallbacks = MutateOptions<unknown, Error, RequestVariables, unknown>;
+  /** The callbacks' last argument. The ring reads none of it. */
+  const MUTATION_CONTEXT: MutationFunctionContext = {
+    client: {} as QueryClient,
+    meta: undefined,
+  };
+
+  /** Press one of the ring's two buttons. */
+  function press(ring: Ring, testID: 'chat-ring-accept' | 'chat-ring-decline'): void {
+    const button = byTestId(ring.tree, testID);
     expect(button?.props.onPress).toBeDefined();
     button!.props.onPress!();
+  }
+
+  /**
+   * Answer the latest `mutate` on `hook` the way TanStack Query calls a
+   * mutate's own callbacks, arguments and all: onSuccess(data, variables,
+   * onMutateResult, context) or onError(error, variables, onMutateResult,
+   * context), then onSettled(data, error, variables, onMutateResult, context)
+   * either way, with `error` null on success.
+   */
+  function answer(
+    hook: { mutate: jest.Mock },
+    outcome: 'success' | 'error',
+    data: unknown = undefined,
+  ): void {
+    const calls = hook.mutate.mock.calls;
+    const [variables, callbacks] = calls[calls.length - 1] as [RequestVariables, MutateCallbacks];
+    if (outcome === 'success') {
+      callbacks.onSuccess?.(data, variables, undefined, MUTATION_CONTEXT);
+      callbacks.onSettled?.(data, null, variables, undefined, MUTATION_CONTEXT);
+    } else {
+      const error = new Error('TypeError: Network request failed');
+      callbacks.onError?.(error, variables, undefined, MUTATION_CONTEXT);
+      callbacks.onSettled?.(undefined, error, variables, undefined, MUTATION_CONTEXT);
+    }
+  }
+
+  /** Press Decline, check nothing ends on the press itself, then answer it. */
+  function declineAnd(ring: Ring, outcome: 'success' | 'error'): void {
+    press(ring, 'chat-ring-decline');
     expect(ring.decline.mutate).toHaveBeenCalledTimes(1);
-    const [variables, callbacks] = ring.decline.mutate.mock.calls[0] as [
-      { requestId: string; conversationId: string },
-      { onSettled: () => void },
-    ];
-    expect(variables).toEqual({ requestId: REQUEST, conversationId: A });
-    // The ring and its shade entry end together, when the RPC settles.
+    expect(ring.decline.mutate.mock.calls[0][0]).toEqual({ requestId: REQUEST, conversationId: A });
+    // Nothing ends on the press itself, only when the RPC answers.
     expect(ring.clear).not.toHaveBeenCalled();
-    callbacks.onSettled();
+    expect(ring.clearIncomingRequest).not.toHaveBeenCalled();
+    answer(ring.decline, outcome);
+  }
+
+  it('clears the notification when the provider declines in the app', () => {
+    const ring = mountRing();
+    declineAnd(ring, 'success');
+    // The ring and its shade entry end together, once the server took it.
     expect(ring.clearIncomingRequest).toHaveBeenCalledTimes(1);
     expect(ring.clear.mock.calls).toEqual([[A]]);
+    expect(ring.setNotice).not.toHaveBeenCalled();
+  });
+
+  it('keeps the ring and the notification when the decline does not reach the server, and says so', () => {
+    // The request is still pending. Clearing on settle took away both ways to
+    // answer it: the ring and the shade entry.
+    const ring = mountRing();
+    declineAnd(ring, 'error');
+    expect(ring.clearIncomingRequest).not.toHaveBeenCalled();
+    expect(ring.clear).not.toHaveBeenCalled();
+    expect(ring.setNotice.mock.calls).toEqual([['Could not decline. Try again.']]);
+    // Still ringing, so its pushes still go to the shade without a banner.
+    expect(ring.viewing.getRingingConversation()).toBe(A);
   });
 
   it('clears the notification when the ring is watched to the end', () => {
@@ -1250,26 +1779,33 @@ describe('the chat-request ring takes its notification with it', () => {
   });
 
   it('leaves the notification when the ring started with nobody looking', () => {
-    const ring = mountRing('background');
+    const ring = mountRing({ startState: 'background' });
     jest.advanceTimersByTime(30_000);
     expect(ring.clearIncomingRequest).toHaveBeenCalledTimes(1);
     expect(ring.clear).not.toHaveBeenCalled();
   });
 
-  it('holds the ringing signal while the ring is up and in use, and lets go on every departure', () => {
+  it('holds the ringing signal for the whole ring, in use or not, and lets go when it ends', () => {
+    // Not dropped on a departure: the chat under the ring reads it on the way
+    // back, before the ring's own listener has run (see the chat tests below).
     const ring = mountRing();
     expect(ring.viewing.getRingingConversation()).toBe(A);
     ring.appState('background');
-    expect(ring.viewing.getRingingConversation()).toBeNull();
+    expect(ring.viewing.getRingingConversation()).toBe(A);
+    // And a phone locked mid-ring still alerts, because the decision tests
+    // `inUse` before the ring.
+    expect(
+      foregroundPushAction({ conversationId: A }, null, false, ring.viewing.getRingingConversation()),
+    ).toBe('show');
     ring.appState('active');
     expect(ring.viewing.getRingingConversation()).toBe(A);
     ring.unmount();
     expect(ring.viewing.getRingingConversation()).toBeNull();
   });
 
-  it('claims nothing for a ring that starts with nobody looking', () => {
-    const ring = mountRing('background');
-    expect(ring.viewing.getRingingConversation()).toBeNull();
+  it('claims it for a ring that starts with nobody looking, too', () => {
+    const ring = mountRing({ startState: 'background' });
+    expect(ring.viewing.getRingingConversation()).toBe(A);
   });
 
   it('lets go when the clock runs out, and does not take it back on a return', () => {
@@ -1291,7 +1827,111 @@ describe('the chat-request ring takes its notification with it', () => {
   it('uses the same clear the chat screen does, by conversation id', () => {
     const ring = withoutComments(read('src/components/ChatRingScreen.tsx'));
     expect(ring).toContain("import { clearConversation } from '../lib/conversations';");
-    expect(count(ring, 'void clearConversation(conversationId);')).toBe(2);
+    // A watched ring-out, a decline that landed, and a ring leaving its own
+    // chat on screen (`clearIfUncovered`).
+    expect(count(ring, 'void clearConversation(conversationId);')).toBe(3);
+  });
+
+  /* A Decline still on the wire when the ring runs out ------------------- */
+
+  it('leaves the notification when the ring runs out on a Decline in flight, and points to the thread if it fails', () => {
+    const ring = mountRing();
+    jest.advanceTimersByTime(20_000);
+    press(ring, 'chat-ring-decline');
+    jest.advanceTimersByTime(10_000);
+    // The ring is gone, watched to the end...
+    expect(ring.clearIncomingRequest).toHaveBeenCalledTimes(1);
+    // ...but the answer has not landed, so its notification stays.
+    expect(ring.clear).not.toHaveBeenCalled();
+    answer(ring.decline, 'error');
+    expect(ring.clear).not.toHaveBeenCalled();
+    expect(ring.clearIncomingRequest).toHaveBeenCalledTimes(1);
+    // No ring left to try again on; the thread has its own Decline.
+    expect(ring.setNotice.mock.calls).toEqual([['Could not decline. It is still waiting in the chat.']]);
+  });
+
+  it('clears the notification when that Decline lands after the ring-out', () => {
+    const ring = mountRing();
+    jest.advanceTimersByTime(20_000);
+    press(ring, 'chat-ring-decline');
+    jest.advanceTimersByTime(10_000);
+    expect(ring.clear).not.toHaveBeenCalled();
+    answer(ring.decline, 'success');
+    expect(ring.clear.mock.calls).toEqual([[A]]);
+    expect(ring.clearIncomingRequest).toHaveBeenCalledTimes(1);
+    expect(ring.setNotice).not.toHaveBeenCalled();
+  });
+
+  it('clears on a watched ring-out again once a failed Decline has settled', () => {
+    const ring = mountRing();
+    jest.advanceTimersByTime(5_000);
+    declineAnd(ring, 'error');
+    expect(ring.setNotice.mock.calls).toEqual([['Could not decline. Try again.']]);
+    jest.advanceTimersByTime(25_000);
+    expect(ring.clear.mock.calls).toEqual([[A]]);
+  });
+
+  it.each([
+    ['accept', 'chat-ring-accept'],
+    ['decline', 'chat-ring-decline'],
+  ] as const)('does not end a newer ring when a late %s lands', (kind, testID) => {
+    // The store's clear is unconditional, so an answer for a ring that ran
+    // out would end whichever request rings now.
+    const NEWER = 'eeeeeeee-0000-4000-8000-00000000000e';
+    const ring = mountRing();
+    jest.advanceTimersByTime(20_000);
+    press(ring, testID);
+    jest.advanceTimersByTime(10_000);
+    expect(ring.clearIncomingRequest).toHaveBeenCalledTimes(1);
+    ring.store.incomingRequest = { ...REQUEST_ROW, requestId: NEWER, conversationId: B };
+    answer(kind === 'accept' ? ring.accept : ring.decline, 'success', kind === 'accept' ? 'session-1' : undefined);
+    expect(ring.clearIncomingRequest).toHaveBeenCalledTimes(1);
+    expect(ring.store.incomingRequest?.requestId).toBe(NEWER);
+  });
+
+  /* The ring over its own conversation's chat --------------------------- */
+
+  it('leaves the notification on a return while the ring covers its own chat', () => {
+    // The chat's listener runs first on the way back. A ringing signal that
+    // the ring dropped on leaving and took back on return was still clear
+    // when the chat asked, and the chat cleared what nobody could see.
+    const ring = mountRing({ chatUnder: A });
+    expect(ring.viewing.getViewingConversation()).toBe(A);
+    ring.appState('background');
+    ring.appState('active');
+    expect(ring.viewing.getViewingConversation()).toBe(A);
+    expect(ring.clear).not.toHaveBeenCalled();
+  });
+
+  it('clears it on Accept when that chat is already the screen underneath', () => {
+    // Accept opens the chat that is already mounted, so nothing mounts again
+    // to take the notification out of the shade.
+    const ring = mountRing({ chatUnder: A });
+    press(ring, 'chat-ring-accept');
+    expect(ring.clear).not.toHaveBeenCalled();
+    answer(ring.accept, 'success', 'session-1');
+    expect(ring.clear.mock.calls).toEqual([[A]]);
+    expect(ring.clearIncomingRequest).toHaveBeenCalledTimes(1);
+    expect(ring.onOpenConversation.mock.calls).toEqual([[PEER]]);
+  });
+
+  it('leaves it to the chat that opens when Accept is pressed over a different one', () => {
+    const ring = mountRing({ chatUnder: B });
+    press(ring, 'chat-ring-accept');
+    answer(ring.accept, 'success', 'session-1');
+    expect(ring.clear).not.toHaveBeenCalled();
+    expect(ring.onOpenConversation.mock.calls).toEqual([[PEER]]);
+  });
+
+  it('clears it when an unwatched ring runs out over its own chat, which then shows', () => {
+    const ring = mountRing({ chatUnder: A });
+    jest.advanceTimersByTime(10_000);
+    ring.appState('background');
+    ring.appState('active');
+    jest.advanceTimersByTime(19_000);
+    expect(ring.clear).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(1_000);
+    expect(ring.clear.mock.calls).toEqual([[A]]);
   });
 });
 
@@ -1319,7 +1959,21 @@ describe('account deletion keeps push until the account is actually gone', () =>
     expect(catchBlock).not.toContain('startPush');
     // And the precondition that makes the order safe: stopPush cannot throw.
     const push = withoutComments(read('src/lib/push.ts'));
-    const stop = push.slice(push.indexOf('export async function stopPush'), push.indexOf('const MESSAGE_BODY'));
-    expect(stop).toMatch(/halt\(\);\s*try \{[^]*\} catch \(err\) \{/);
+    const stop = push.slice(push.indexOf('export function stopPush'), push.indexOf('const MESSAGE_BODY'));
+    expect(stop).toMatch(/halt\(\);\s*const run = revoke\(\);/);
+    expect(stop).toMatch(/async function revoke\(\): Promise<void> \{\s*try \{[^]*\} catch \(err\) \{/);
+    // The wait for a registration on the wire is inside that try, and first.
+    expect(stop).toMatch(/try \{\s*await drainRegistrations\(STOP_DRAIN_MS\);\s*const token = await getToken/);
+  });
+});
+
+describe('the lock-screen Decline clears under the post lock', () => {
+  it('ChatRequestReceiver cancels through Conversations.clear, never a bare cancel', () => {
+    const src = require('fs').readFileSync(
+      require('path').join(__dirname, '../android/app/src/main/java/com/companionchat/ChatRequestReceiver.kt'),
+      'utf8',
+    ) as string;
+    expect(src).toContain('Conversations.clear(context, conversationId)');
+    expect(src).not.toMatch(/NotificationManagerCompat[\s\S]*\.cancel\(/);
   });
 });
