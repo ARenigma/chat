@@ -244,6 +244,9 @@ class MainActivity : ReactActivity() {
             .consentMode(TcSdkOptions.CONSENT_MODE_BOTTOMSHEET)
             // "Use another method" → Google (2026-09-24). The SDK has no custom
             // footer text; this is the closest preset to "Use Google instead".
+            // Footer presets and their labels:
+            // https://docs.truecaller.com/truecaller-sdk/android/latest-oauth-sdk-3.3.0/integration-steps/customisation
+            // Asserted in __tests__/platform.test.ts.
             .footerType(TcSdkOptions.FOOTER_TYPE_ANOTHER_METHOD)
             .ctaText(TcSdkOptions.CTA_TEXT_CONTINUE)
             .build()

@@ -2812,3 +2812,17 @@ describe('the switch-to-video fade respects reduced motion and is device-locatab
     expect(screen).toContain("if (liveMediumRef.current === 'video') {");
   });
 });
+
+describe('the Truecaller sheet footer leads to Google (2026-09-24)', () => {
+  const activity = read('android/app/src/main/java/com/companionchat/MainActivity.kt');
+  it('uses the "Use another method" preset, with its documentation cited', () => {
+    expect(activity).toContain('.footerType(TcSdkOptions.FOOTER_TYPE_ANOTHER_METHOD)');
+    expect(activity).toContain(
+      'https://docs.truecaller.com/truecaller-sdk/android/latest-oauth-sdk-3.3.0/integration-steps/customisation',
+    );
+  });
+  it("the footer's outcome routes to Google sign-in", () => {
+    expect(read('src/lib/truecallerAuthDomain.ts')).toContain("if (reason === 'alternate_number') return 'use_google';");
+    expect(read('src/screens/OnboardingScreen.tsx')).toContain('onGoogleRef.current();');
+  });
+});
