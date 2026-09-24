@@ -19,7 +19,7 @@
  * missed it still has the thread waiting. Nothing is declined by silence.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -104,17 +104,6 @@ export function ChatRingScreen({ onOpenConversation }: Props) {
     const started = Date.now();
     const { conversationId, requestId } = incoming;
     /*
-     * Whether the ring has been in front of somebody using the app for its
-     * whole life, which is what decides the notification below. Cleared on any
-     * departure and never set again: a return in the last second is not 30
-     * seconds of watching, and a ring can run out with nobody there. React
-     * Native's timers stop on onHostPause but run again for any headless task
-     * (JavaTimerManager), so this interval can fire in the background while
-     * the FCM handler is posting that very notification, or late on the way
-     * back, the moment the host resumes.
-     */
-    let watched = AppState.currentState === 'active';
-    /*
      * While this ring is up, a foreground push for its conversation is the
      * same event told twice, and a banner over the ring opened the chat
      * underneath it, so that push goes to the shade silently instead, with no
@@ -131,11 +120,6 @@ export function ChatRingScreen({ onOpenConversation }: Props) {
       }
     };
     setRingingConversation(conversationId);
-    const subscription = AppState.addEventListener('change', next => {
-      if (next !== 'active') {
-        watched = false;
-      }
-    });
     const timer = setInterval(() => {
       const elapsed = Math.floor((Date.now() - started) / 1000);
       const remaining = CHAT_RING_SECONDS - elapsed;
@@ -148,34 +132,28 @@ export function ChatRingScreen({ onOpenConversation }: Props) {
         // thread is still waiting in their list.
         clearIncoming();
         /*
-         * The ring and the "wants to have a chat with you" notification are the
-         * same event, and once the ring has been watched to the end the shade
-         * copy is only a stale second telling. Same id either way, the
-         * conversation's (`clearConversation` in src/lib/conversations.ts).
-         * Only when watched: "Don't cancel a conversation notification before
-         * the user has seen the message", and a ring that ran out behind a
-         * locked screen or another app is the example given of getting that
-         * wrong. Left alone, it goes when the chat is opened
-         * (`useViewingConversation`), and the request is still in the list;
-         * or now, if that chat is the one the ring was covering, since the
-         * person is looking at it from here (`clearIfUncovered`).
-         * Neither while a Decline is on the wire (`declining`): that answer
-         * clears it itself if it lands.
+         * A ring that runs out leaves the shade alone, watched or not.
+         *
+         * It used to clear the conversation's notification when the ring was
+         * watched to the end, as a stale second telling of the request. But
+         * the notification is the whole conversation's, and a message the
+         * member sent while the opaque ring covered the chat was posted into
+         * it silently and never seen (Greptile P1 on 1e845ce). The request
+         * is still pending, so its entry is still true; it goes when the chat
+         * is opened (`useViewingConversation`), or now if the chat the ring
+         * was covering is the one on screen, since the person is looking at
+         * every message in it (`clearIfUncovered`). Neither while a Decline is
+         * on the wire (`declining`): that answer clears it itself if it lands.
          * https://developer.android.com/develop/ui/views/notifications/conversations#best-practices
          */
         if (declining.current === requestId) {
           return;
         }
-        if (watched && AppState.currentState === 'active') {
-          void clearConversation(conversationId);
-        } else {
-          clearIfUncovered(conversationId);
-        }
+        clearIfUncovered(conversationId);
       }
     }, 1000);
     return () => {
       clearInterval(timer);
-      subscription.remove();
       release();
     };
   }, [incoming, clearIncoming]);

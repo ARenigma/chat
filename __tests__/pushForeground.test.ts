@@ -1796,17 +1796,19 @@ describe('the chat-request ring takes its notification with it', () => {
     expect(ring.viewing.getRingingConversation()).toBe(A);
   });
 
-  it('clears the notification when the ring is watched to the end', () => {
+  it('leaves the notification when the ring is watched to the end', () => {
+    // Greptile P1 on 1e845ce: the entry is the whole conversation's, and a
+    // message sent while the ring covered the chat sat in it unseen. The
+    // request is still pending, so its entry is still true.
     const ring = mountRing();
     jest.advanceTimersByTime(29_000);
     expect(ring.clearIncomingRequest).not.toHaveBeenCalled();
-    expect(ring.clear).not.toHaveBeenCalled();
     jest.advanceTimersByTime(1_000);
     expect(ring.clearIncomingRequest).toHaveBeenCalledTimes(1);
-    expect(ring.clear.mock.calls).toEqual([[A]]);
+    expect(ring.clear).not.toHaveBeenCalled();
     // Once: the clock stops itself rather than waiting for the re-render.
     jest.advanceTimersByTime(5_000);
-    expect(ring.clear).toHaveBeenCalledTimes(1);
+    expect(ring.clearIncomingRequest).toHaveBeenCalledTimes(1);
     ring.unmount();
     expect(ring.listeners.size).toBe(0);
   });
@@ -1872,9 +1874,9 @@ describe('the chat-request ring takes its notification with it', () => {
   it('uses the same clear the chat screen does, by conversation id', () => {
     const ring = withoutComments(read('src/components/ChatRingScreen.tsx'));
     expect(ring).toContain("import { clearConversation } from '../lib/conversations';");
-    // A watched ring-out, a decline that landed, and a ring leaving its own
-    // chat on screen (`clearIfUncovered`).
-    expect(count(ring, 'void clearConversation(conversationId);')).toBe(3);
+    // A decline that landed, and a ring leaving its own chat on screen
+    // (`clearIfUncovered`). Never a ring-out on its own.
+    expect(count(ring, 'void clearConversation(conversationId);')).toBe(2);
   });
 
   /* A Decline still on the wire when the ring runs out ------------------- */
@@ -1907,13 +1909,14 @@ describe('the chat-request ring takes its notification with it', () => {
     expect(ring.setNotice).not.toHaveBeenCalled();
   });
 
-  it('clears on a watched ring-out again once a failed Decline has settled', () => {
+  it('keeps the notification through a ring-out after a failed Decline has settled', () => {
     const ring = mountRing();
     jest.advanceTimersByTime(5_000);
     declineAnd(ring, 'error');
     expect(ring.setNotice.mock.calls).toEqual([['Could not decline. Try again.']]);
     jest.advanceTimersByTime(25_000);
-    expect(ring.clear.mock.calls).toEqual([[A]]);
+    expect(ring.clearIncomingRequest).toHaveBeenCalledTimes(1);
+    expect(ring.clear).not.toHaveBeenCalled();
   });
 
   it.each([

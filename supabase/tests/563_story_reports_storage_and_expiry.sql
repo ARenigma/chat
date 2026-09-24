@@ -55,7 +55,7 @@
 
 \set ON_ERROR_STOP on
 begin;
-select plan(61);
+select plan(62);
 
 -- ── The storage stand-in ───────────────────────────────────────────────────
 create schema storage;
@@ -707,6 +707,13 @@ select ok(
       and position('for share' in d) < position('insert into public.reports' in d)
    from (select pg_get_functiondef('public.report_story_comment(uuid, public.report_reason, text)'::regprocedure) as d) f),
   '39f. report_story_comment locks the comment before checking and reading it'
+);
+select ok(
+  (select position('for share' in d) > 0
+      and position('for share' in d) < position('story_is_visible' in d)
+      and position('for share' in d) < position('insert into public.reports' in d)
+   from (select pg_get_functiondef('public.report_story(uuid, public.report_reason, text)'::regprocedure) as d) f),
+  '39g. report_story locks the story before checking and reading it'
 );
 
 -- A fresh deploy has only push_sender_url; the purge must not wait on a

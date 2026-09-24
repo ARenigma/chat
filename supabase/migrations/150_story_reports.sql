@@ -197,13 +197,23 @@ begin
     raise exception 'UNAUTHORIZED' using errcode = '42501';
   end if;
 
-  -- Only what the reporter can actually see, so a report cannot be used to
-  -- pull the caption and media path of a story they were never shown.
-  if not public.story_is_visible(p_story_id) then
+  /*
+   * Lock the story before checking and reading it, as report_story_comment
+   * does for a comment. Checked and read unlocked, a provider deleting the
+   * story (or the expiry sweep removing it) between those steps and the
+   * insert made the report fail on the story reference, and the member could
+   * not report it at all (Greptile P1 on 1e845ce). FOR SHARE makes the delete
+   * wait for this report to commit; one that committed first is refused here
+   * as a story that no longer exists.
+   *
+   * Only what the reporter can actually see, so a report cannot be used to
+   * pull the caption and media path of a story they were never shown.
+   */
+  select * into v_story from public.stories where id = p_story_id for share;
+
+  if not found or not public.story_is_visible(p_story_id) then
     raise exception 'no such story' using errcode = 'no_data_found';
   end if;
-
-  select * into v_story from public.stories where id = p_story_id;
 
   if v_story.provider_id = v_uid then
     raise exception 'cannot report your own story' using errcode = '22023';
