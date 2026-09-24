@@ -60,6 +60,9 @@ export function setViewingConversation(conversationId: string | null): void {
  */
 let covers = 0;
 
+/** Run when the last cover lifts, so a chat can clear what it now shows. */
+const uncoverListeners = new Set<() => void>();
+
 /**
  * Mark the screen covered until the returned release is called. The release
  * is idempotent, so an effect cleanup and an explicit close cannot count
@@ -72,6 +75,9 @@ export function coverViewing(): () => void {
     if (released) return;
     released = true;
     covers = Math.max(0, covers - 1);
+    if (covers === 0) {
+      for (const listener of [...uncoverListeners]) listener();
+    }
   };
 }
 
@@ -271,24 +277,44 @@ export function useViewingConversation(conversationId: string | undefined): void
       return;
     }
     const release = (): void => {
-      if (getViewingConversation() === conversationId) {
+      // The raw signal, not getViewingConversation: that reads null while a
+      // sheet covers the chat, and a chat leaving under one would otherwise
+      // never let go.
+      if (viewing === conversationId) {
         setViewingConversation(null);
+      }
+    };
+    /*
+     * Take this conversation out of the shade only once it can be seen: the
+     * app in use, nothing covering the chat, and no ring over it. A return to
+     * the app with a sheet or the media viewer still open used to clear a
+     * notification for a message still hidden behind it (Greptile P1 on
+     * d0a4f8d); that clear now waits for the cover to lift.
+     */
+    const clearIfSeen = (): void => {
+      if (
+        AppState.currentState === 'active' &&
+        covers === 0 &&
+        viewing === conversationId &&
+        getRingingConversation() !== conversationId
+      ) {
+        void clearConversation(conversationId);
       }
     };
     const sync = (state: AppStateStatus): void => {
       if (state === 'active') {
         setViewingConversation(conversationId);
-        if (getRingingConversation() !== conversationId) {
-          void clearConversation(conversationId);
-        }
+        clearIfSeen();
       } else {
         release();
       }
     };
     sync(AppState.currentState);
     const subscription = AppState.addEventListener('change', sync);
+    uncoverListeners.add(clearIfSeen);
     return () => {
       subscription.remove();
+      uncoverListeners.delete(clearIfSeen);
       release();
     };
   }, [conversationId]);

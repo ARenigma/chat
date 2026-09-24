@@ -1071,6 +1071,34 @@ describe('useViewingConversation', () => {
     expect(clear.mock.calls).toEqual([[A], [A]]);
   });
 
+  it('clears only once the chat can be seen: not under a sheet, and on the sheet closing', () => {
+    // Greptile P1 on d0a4f8d: a return with a sheet or the media viewer still
+    // open cleared a notification for a message hidden behind it.
+    const { viewing, screen, appState, clear } = mount();
+    const unmount = screen(A);
+    expect(clear.mock.calls).toEqual([[A]]);
+    const sheet = viewing.coverViewing();
+    appState('background');
+    appState('active');
+    expect(clear).toHaveBeenCalledTimes(1);
+    sheet();
+    expect(clear.mock.calls).toEqual([[A], [A]]);
+    // After the chat is gone, lifting a cover clears nothing for it.
+    unmount();
+    viewing.coverViewing()();
+    expect(clear).toHaveBeenCalledTimes(2);
+  });
+
+  it('lets go of the conversation even when it leaves under a sheet', () => {
+    const { viewing, screen } = mount();
+    const unmount = screen(A);
+    const sheet = viewing.coverViewing();
+    unmount();
+    sheet();
+    // Nothing is left claiming A once the cover is gone.
+    expect(viewing.getViewingConversation()).toBeNull();
+  });
+
   it('leaves the shade alone while this conversation\'s ring covers the chat', () => {
     // The ring is opaque, so the chat under it is in use and unseen, and the
     // shade entry is the ring's out-of-app half. Clearing it on mount or on a
@@ -1483,7 +1511,7 @@ describe('who sets the signal, and who starts push', () => {
     expect(controller).toContain('useViewingConversation(conversationId);');
     const lib = withoutComments(read('src/lib/viewingConversation.ts'));
     expect(lib).toContain("AppState.addEventListener('change', sync)");
-    expect(lib).toMatch(/return \(\) => \{\s*subscription\.remove\(\);\s*release\(\);/);
+    expect(lib).toMatch(/return \(\) => \{\s*subscription\.remove\(\);\s*uncoverListeners\.delete\(clearIfSeen\);\s*release\(\);/);
   });
 
   it('starts push once, at the ready phase, above the member/provider split', () => {
