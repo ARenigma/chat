@@ -875,7 +875,9 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
           ? `${name} would rather stay on voice.`
           : result === 'insufficient_balance'
             ? 'Not enough balance to switch to video.'
-            : `${name} didn't answer. You're still on voice.`,
+            : result === 'video_disabled'
+              ? 'Video calls are paused right now.'
+              : `${name} didn't answer. You're still on voice.`,
       );
     },
   );

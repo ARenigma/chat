@@ -477,8 +477,8 @@ select is(
 reset role;
 select is(
   (select medium::text || '/' || upgrade_result from public.calls where id = 'dd520000-0000-4000-8000-0000000000a9'),
-  'voice/declined',
-  '22. the call stays voice and the request is closed'
+  'voice/video_disabled',
+  '22. the call stays voice and the outcome names the real reason'
 );
 
 select * from finish();

@@ -634,7 +634,7 @@ CONSTRAINT calls.calls_pkey PRIMARY KEY (id)
 CONSTRAINT calls.calls_session_request_id_fkey FOREIGN KEY (session_request_id) REFERENCES session_requests(id)
 CONSTRAINT calls.calls_tokens_debited_check CHECK ((tokens_debited >= 0))
 CONSTRAINT calls.calls_upgrade_requested_by_fkey FOREIGN KEY (upgrade_requested_by) REFERENCES profiles(id)
-CONSTRAINT calls.calls_upgrade_result_check CHECK ((upgrade_result = ANY (ARRAY['accepted'::text, 'declined'::text, 'expired'::text, 'insufficient_balance'::text])))
+CONSTRAINT calls.calls_upgrade_result_check CHECK ((upgrade_result = ANY (ARRAY['accepted'::text, 'declined'::text, 'expired'::text, 'insufficient_balance'::text, 'video_disabled'::text])))
 CONSTRAINT conversation_labels.conversation_labels_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 CONSTRAINT conversation_labels.conversation_labels_custom_name_check CHECK (((char_length(btrim(custom_name)) >= 1) AND (char_length(btrim(custom_name)) <= 40)))
 CONSTRAINT conversation_labels.conversation_labels_pkey PRIMARY KEY (user_id, conversation_id)

@@ -7,7 +7,12 @@
  * re-fetched row (the channel re-subscribes on CHANNEL_ERROR/TIMED_OUT and
  * re-reads the row) never fires an event twice.
  */
-export type VideoSwitchResult = 'accepted' | 'declined' | 'expired' | 'insufficient_balance';
+export type VideoSwitchResult =
+  | 'accepted'
+  | 'declined'
+  | 'expired'
+  | 'insufficient_balance'
+  | 'video_disabled';
 
 export interface VideoSwitchRow {
   upgrade_requested_by: string | null;
