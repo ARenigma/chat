@@ -64,6 +64,9 @@ export function NoticeBar() {
       entering={noticeIn}
       exiting={noticeOut}
       style={styles.bar}
+      // No action on a notice, so it never takes a touch: it can sit over a
+      // header control and the tap still reaches the control.
+      pointerEvents="none"
       testID="notice-bar"
       accessibilityLiveRegion="polite"
       // A confirmation is not an alert; polite gets it announced without

@@ -2788,6 +2788,7 @@ describe('the app-wide notice overlay clears the status bar and never blocks tou
 
   it('floats above every screen without taking touches from the header beneath it', () => {
     expect(overlay).toContain('pointerEvents="box-none"');
+    expect(bar).toContain('pointerEvents="none"');
     expect(overlay).toMatch(/position: 'absolute'/);
   });
 

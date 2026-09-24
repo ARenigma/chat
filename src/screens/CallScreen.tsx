@@ -810,11 +810,24 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
       0,
       videoRate - (economics?.audio_rate_tokens_per_min ?? FALLBACK_ECONOMICS.audio_rate_tokens_per_min),
     );
+  // A not-yet-connected call (134) is quoted 0 NOW because nothing has been
+  // charged yet — its first minute is then charged at the video rate. Say
+  // that, not "topped up by ₹0".
+  const notStartedYet =
+    quote?.billed === true &&
+    quote.extra_now === 0 &&
+    (quote.video_rate ?? 0) > (quote.current_rate ?? 0);
+  const switchPriceLine = notStartedYet
+    ? 'Nothing is charged now. Video is billed from the first minute once the call connects.'
+    : `This minute is topped up by ₹${videoExtra}, and nothing already paid is charged again.`;
 
   // Whether THIS device made the pending request. Known locally (we sent it)
   // rather than read off the row: by the time a missed or late UPDATE
   // arrives, the server has already cleared `upgrade_requested_by`.
   const askedRef = useRef(false);
+  // Which request a timer or RPC response belongs to, so a late response from
+  // an old request can never start (or fire) a timer for a newer one.
+  const askAttempt = useRef(0);
   const askTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearAsk = () => {
     askedRef.current = false;
@@ -871,14 +884,17 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     if (callId === null) return;
     setUpgrading(true);
     askedRef.current = true;
+    const attempt = ++askAttempt.current;
     // The server only records 'expired' if the peer answers late, so an
     // ignored request must end here or the button stays on "Requesting".
     void requestVideoSwitch(callId).then(r => {
+      // Superseded (answered already, or asked again): not this response's call.
+      if (attempt !== askAttempt.current || !askedRef.current) return;
       if (r?.success) {
         // Started once the server has recorded the request, so it tracks the
         // server's own 30 s deadline rather than running ahead of it.
         askTimer.current = setTimeout(() => {
-          if (!askedRef.current) return;
+          if (attempt !== askAttempt.current || !askedRef.current) return;
           clearAsk();
           setUpgrading(false);
           setNotice(`${name} didn't answer. You're still on voice.`);
@@ -1424,7 +1440,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
         title="Switch to video?"
         body={
           isMemberSide
-            ? `${name} wants to switch to video. Video is ₹${videoRate}/min. This minute is topped up by ₹${videoExtra}, and nothing already paid is charged again. Your camera will turn on.`
+            ? `${name} wants to switch to video. Video is ₹${videoRate}/min. ${switchPriceLine} Your camera will turn on.`
             : `${name} wants to switch to video. Your camera will turn on.`
         }
         cancelLabel="Stay on voice"
@@ -1454,7 +1470,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
         visible={videoPriceVisible}
         testID="call-video-price"
         title="Switch to video?"
-        body={`Video is ₹${videoRate}/min. If ${name} agrees, this minute is topped up by ₹${videoExtra}, and nothing already paid is charged again.`}
+        body={`Video is ₹${videoRate}/min if ${name} agrees. ${switchPriceLine}`}
         cancelLabel="Not now"
         confirmLabel="Ask"
         onCancel={() => setVideoPriceVisible(false)}
