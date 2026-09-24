@@ -450,6 +450,22 @@ export const CONFIG_REGISTRY: DomainDef[] = [
         runtime: 'live',
       },
       {
+        // Read by public.stories_enabled() (migration 143), which gates every
+        // write that ADDS story content. Migration 143 also publishes the key ON,
+        // as 044 did for the call controls, so this switch opens showing the
+        // real state and a publish of any other field here carries it forward.
+        key: 'stories_enabled',
+        label: 'Stories',
+        description:
+          'Allow providers to post stories, and members to comment on and react to them.',
+        type: 'boolean',
+        default: true,
+        risk: 'high',
+        impact:
+          'Emergency stop for new stories, comments and reactions. Viewing, deleting and reporting keep working.',
+        runtime: 'live',
+      },
+      {
         key: 'new_registrations_enabled',
         label: 'New registrations',
         description: 'Allow new users to create accounts.',

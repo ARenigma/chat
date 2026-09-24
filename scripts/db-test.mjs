@@ -181,6 +181,16 @@ const MIGRATIONS = [
   'supabase/migrations/140_inr_sync_checks_gross_against_debits.sql',
   'supabase/migrations/141_video_switch_request_returns_requested_at.sql',
   'supabase/migrations/142_video_switch_refused_after_session_ended.sql',
+  'supabase/migrations/143_stories.sql',
+  'supabase/migrations/144_stories_bucket.sql',
+  'supabase/migrations/145_story_views.sql',
+  'supabase/migrations/146_story_reactions.sql',
+  'supabase/migrations/147_story_comments.sql',
+  'supabase/migrations/148_story_comment_reactions.sql',
+  'supabase/migrations/149_story_insights.sql',
+  'supabase/migrations/150_story_reports.sql',
+  'supabase/migrations/151_story_expiry_purge.sql',
+  'supabase/migrations/152_story_commenter_block.sql',
 ];
 
 /**
@@ -878,6 +888,31 @@ const suites = [
     ),
     label:
       'a video switch is refused once billing has ended, and a never-billed call still switches',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/560_stories_creation_and_visibility.sql'),
+    label:
+      'stories: only a listed provider posts, behind the kill switch and the cap, and blocked or expired stories are invisible',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/561_story_views_and_reactions.sql'),
+    label:
+      'story views and reactions: idempotent views, one allowlisted reaction, counts for everyone, identities for the provider only',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/562_story_comments.sql'),
+    label:
+      'story comments: public with a public name and no account id, no provider reply, rate limited, blocked pairs excluded, creator reactions',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/563_story_reports_storage_and_expiry.sql'),
+    label:
+      'story reports keep evidence, the bucket and its policies hold, and the hourly purge removes expired rows and objects',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/564_story_commenter_block.sql'),
+    label:
+      'a story provider blocks a stranger commenter by comment id, and the block rules hide and stop them',
   },
 ];
 

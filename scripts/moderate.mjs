@@ -15,7 +15,9 @@
  *
  * Commands
  *   list [--limit=n]                    the open queue, minor_safety first
- *   show <report-id>                    one report with its evidence
+ *   show <report-id>                    one report with its evidence, and a
+ *                                        10-minute link to a reported voice
+ *                                        note or story's media
  *   act <report-id> --action=<a> [opts] record an action and resolve the report
  *   dismiss <report-id> [--note=...]    close with no action
  *   purge                               drop resolved reports past retention
@@ -91,11 +93,24 @@ async function rpc(fn, body = {}) {
 }
 
 const short = id => (id ?? '').slice(0, 8);
+/*
+ * Every field this prints is written by a user: a report's detail, a message,
+ * a caption, a comment, a display name. A raw ESC in any of them is a terminal
+ * escape sequence, and `\x1b[2K\x1b[1A` erases the line above, so a comment
+ * could rewrite what the operator reads about it. C0 and C1 controls become
+ * U+FFFD before anything else, so they show as a visible mark instead of
+ * acting. Tab, LF, VT, FF and CR are left to the whitespace collapse after it,
+ * so a CRLF in a message still reads as one space rather than two marks.
+ */
 const clip = (s, n) => {
   if (s === null || s === undefined) {
     return ',';
   }
-  const flat = String(s).replace(/\s+/g, ' ');
+  const flat = String(s)
+    // Matching control characters is the whole job of this line.
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u0008\u000e-\u001f\u007f-\u009f]/g, '\ufffd')
+    .replace(/\s+/g, ' ');
   return flat.length > n ? `${flat.slice(0, n - 1)}…` : flat;
 };
 
@@ -161,31 +176,104 @@ async function show() {
   console.log(`subject       ${r.subject_user_id ?? '(deleted account)'}`);
   console.log(`priors        ${priors.length} report(s) against this subject`);
   console.log(`conversation  ${r.conversation_id ?? ','}`);
+  // Story reports (150) carry no conversation. `?? null` because a database
+  // without 150 has no such columns and PostgREST simply omits them, which
+  // must read as "not a story report" rather than as undefined !== null.
+  const storyId = r.story_id ?? null;
+  const commentId = r.story_comment_id ?? null;
+  const storyMedia = r.evidence_story_media_path ?? null;
+  const aboutStory =
+    storyId !== null || commentId !== null || storyMedia !== null;
+  // Only printed when set, so a chat report reads exactly as it always has.
+  if (aboutStory) {
+    console.log(`story         ${storyId ?? '(expired or deleted)'}`);
+  }
+  if (commentId !== null) {
+    console.log(`comment       ${commentId}`);
+  }
   console.log(`\nreporter said:\n  ${clip(r.detail, 500)}`);
-  console.log(`\nreported message (snapshot at ${r.evidence_at ?? 'n/a'}):`);
+  // evidence_body is the words snapshotted at report time, whichever surface
+  // they came from: a message, a story's caption, or a comment (150).
+  const evidenceLabel =
+    commentId !== null
+      ? 'reported comment'
+      : aboutStory
+      ? 'reported story caption'
+      : 'reported message';
+  console.log(`\n${evidenceLabel} (snapshot at ${r.evidence_at ?? 'n/a'}):`);
   console.log(`  ${clip(r.evidence_body, 2000)}`);
   if (r.evidence_voice_path) {
     // A reported voice note is unreadable, so the queue has to hand over
     // something playable or "he sent me something vile" is unactionable the
     // moment it was spoken rather than typed. Ten minutes: long enough to listen
     // twice, short enough that a pasted link in a chat log expires.
-    const signed = await sign(r.evidence_voice_path, 600);
+    const signed = await sign('voice-notes', r.evidence_voice_path, 600);
     console.log('\nreported voice note:');
     console.log(`  ${signed ?? '(the audio is gone; the report outlived it)'}`);
     console.log('  link expires in 10 minutes');
   }
+  if (aboutStory) {
+    // The voice note's reasoning, for a photo or a video. A caption is
+    // optional, so for most story reports the media IS the evidence, and the
+    // bucket is private (144): without a link there is nothing to look at.
+    // Same ten minutes, for the same reasons.
+    const path = storyMedia ?? (await liveStoryMediaPath(storyId));
+    if (path === null) {
+      console.log('\nstory media:');
+      console.log(
+        '  (the story is gone; a comment report keeps the words, not the media)',
+      );
+    } else {
+      // story_media_path_is_scoped (143) allows .mp4 for a video and only
+      // jpg, jpeg, png or webp for an image, so the extension is the type.
+      const kind = path.endsWith('.mp4') ? 'video' : 'photo';
+      const signed = await sign('stories', path, 600);
+      console.log(
+        commentId !== null
+          ? `\nthe story the comment is on (${kind}):`
+          : `\nreported story ${kind}:`,
+      );
+      console.log(
+        `  ${signed ?? '(the media is gone; the report outlived it)'}`,
+      );
+      if (signed !== null) {
+        console.log('  link expires in 10 minutes');
+      }
+    }
+  }
+}
+
+/**
+ * The media key of a story that still exists, or null.
+ *
+ * Only reached for a report on a COMMENT. A report on a story snapshots its key
+ * (evidence_story_media_path, 150), and the media purge (151) keeps every object
+ * a report names, so that link outlives the story's 24 hours for as long as the
+ * report is retained. A comment report snapshots the comment's words, which are
+ * the evidence, and not the story, which is context: retaining it would keep a
+ * provider's photo past its 24 hours because of something a commenter did. So
+ * the story can be shown only while its row still exists. Read with the service
+ * role, because no client policy applies to an operator.
+ */
+async function liveStoryMediaPath(storyId) {
+  if (storyId === null) {
+    return null;
+  }
+  const [story] = await rest(`stories?id=eq.${storyId}&select=media_path`);
+  return story?.media_path ?? null;
 }
 
 /**
  * A short-lived URL for a private object.
  *
  * Storage is not PostgREST, so this cannot go through `rest`. Returns null rather
- * than failing the command: a report whose audio has already been purged is still
- * a report worth reading.
+ * than failing the command: a report whose audio or story media has already been
+ * purged is still a report worth reading. The service key goes in the headers
+ * only; the URL printed carries the object's own expiring token and nothing else.
  */
-async function sign(path, seconds) {
+async function sign(bucket, path, seconds) {
   const response = await fetch(
-    `${URL_BASE}/storage/v1/object/sign/voice-notes/${path}`,
+    `${URL_BASE}/storage/v1/object/sign/${bucket}/${path}`,
     {
       method: 'POST',
       headers: {

@@ -1,0 +1,85 @@
+/**
+ * Removes story photos and videos from the `stories` bucket, through the
+ * Storage API, which is the only thing that can.
+ *
+ * Deleting a storage.objects row in SQL removes the row and leaves the bytes:
+ * "Deleting objects via a SQL query will not remove the object from the
+ * bucket and will result in the object being orphaned." The Storage API's
+ * delete removes both. So the database decides WHICH objects go
+ * (story_objects_to_purge, migration 151) and this function makes them go.
+ * https://supabase.com/docs/guides/storage/management/delete-objects
+ *
+ * Called by dispatch_story_media_purge (151) from pg_cron with the service
+ * role key. It deletes in a bucket no client may delete in, so it takes a
+ * service_role caller only, as send-push does: `verify_jwt` alone would let
+ * any signed-in user trigger it.
+ */
+import { createClient } from 'jsr:@supabase/supabase-js@2';
+
+const BUCKET = 'stories';
+/**
+ * Names per page and per remove(): "there is a limit of 1000 objects at a
+ * time using the `remove` method" (the page above), and the RPC caps a page
+ * at the same number.
+ */
+const PAGE = 1000;
+/**
+ * Pages per run. Ten minutes of deletes and an hour of expiries fit in one
+ * page with room to spare; the cap is for a remove() that keeps failing on
+ * some names, which would otherwise come back on every page forever.
+ */
+const MAX_PAGES = 10;
+
+Deno.serve(async (request: Request) => {
+  const url = Deno.env.get('SUPABASE_URL');
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (!url || !serviceKey) {
+    return new Response('not configured', { status: 500 });
+  }
+
+  // Service-role only, the way send-push and send-engagement check it.
+  const auth = request.headers.get('Authorization') ?? '';
+  const jwt = auth.replace(/^Bearer\s+/i, '');
+  let role = '';
+  try {
+    role = JSON.parse(atob(jwt.split('.')[1] ?? '')).role ?? '';
+  } catch {
+    role = '';
+  }
+  if (role !== 'service_role') {
+    return new Response('forbidden', { status: 403 });
+  }
+
+  const db = createClient(url, serviceKey, { auth: { persistSession: false } });
+  let removed = 0;
+  let pages = 0;
+  while (pages < MAX_PAGES) {
+    const { data, error } = await db.rpc('story_objects_to_purge', { p_limit: PAGE });
+    if (error) {
+      console.error('story_objects_to_purge', error.message);
+      return Response.json({ removed, pages, error: 'list failed' }, { status: 500 });
+    }
+    const names = ((data ?? []) as Array<{ object_name: unknown }>)
+      .map(row => row.object_name)
+      .filter((name): name is string => typeof name === 'string');
+    if (names.length === 0) {
+      break;
+    }
+    pages += 1;
+
+    const { data: gone, error: removeError } = await db.storage.from(BUCKET).remove(names);
+    if (removeError) {
+      console.error('stories remove', removeError.message);
+      return Response.json({ removed, pages, error: 'remove failed' }, { status: 500 });
+    }
+    const count = gone?.length ?? 0;
+    removed += count;
+    // A short page was the last one, and a page that removed nothing would
+    // only be listed again.
+    if (names.length < PAGE || count === 0) {
+      break;
+    }
+  }
+
+  return Response.json({ removed, pages });
+});

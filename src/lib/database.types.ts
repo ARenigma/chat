@@ -846,6 +846,200 @@ export type PolicyAcceptance = {
   accepted_at: string;
 };
 
+/**
+ * Stories (migrations 143-152): a provider's photo or video that lives for 24
+ * hours. Any MEMBER sees a LISTED provider's live stories unless the two are
+ * blocked; a provider sees only their own. Every read path already filters
+ * expiry, role and blocks, so a row a client receives is always one it may
+ * show.
+ */
+export type StoryMediaType = 'image' | 'video';
+
+export type Story = {
+  /** Minted by the client before upload: the media is named after it. */
+  id: string;
+  provider_id: string;
+  media_type: StoryMediaType;
+  /**
+   * Key in the PRIVATE `stories` bucket, `{provider_id}/{id}.{ext}`
+   * (jpg/jpeg/png/webp for an image, mp4 for a video). No client can sign it:
+   * the bucket has no client read policy (144). Get a URL from the
+   * `story-media-url` Edge Function (`{ story_id }` in, `StoryMediaUrl` out),
+   * which signs for at most 60 seconds while this row is visible.
+   */
+  media_path: string;
+  /**
+   * 1-200 characters with something visible in them and at most 3 line
+   * breaks, or null. A blank-looking caption is stored as null (143).
+   */
+  caption: string | null;
+  /** Image: display time, 1-15s (7s when not given). Video: clip length, 1-30s. */
+  duration_ms: number;
+  created_at: string;
+  /** Always created_at + 24h. */
+  expires_at: string;
+};
+
+/**
+ * The `story-media-url` Edge Function's answer: a signed URL for one story's
+ * media, good for `expires_in` seconds (60 at most, never past the story's
+ * expiry). A 404 means missing, expired, blocked or not an audience, alike.
+ */
+export type StoryMediaUrl = {
+  url: string;
+  media_type: StoryMediaType;
+  expires_in: number;
+};
+
+/** The caller's own "seen" rows (145); nobody else's are readable. */
+export type StoryView = {
+  story_id: string;
+  viewer_id: string;
+  viewed_at: string;
+};
+
+/** The caller's own reaction to a story (146), from the 011 emoji set. */
+export type StoryReaction = {
+  story_id: string;
+  member_id: string;
+  emoji: ReactionEmoji;
+  created_at: string;
+};
+
+/** `story_reaction_counts`: counts only, never who. */
+export type StoryReactionCount = {
+  emoji: ReactionEmoji;
+  reaction_count: number;
+};
+
+/**
+ * One row of `story_comment_feed` (148), the public comment list and the ONLY
+ * read of comments: the `story_comments` table itself is not readable by any
+ * client, because its rows carry the author's account id (147). The commenter
+ * is a public name and avatar only; `is_own` is how a client knows to offer
+ * delete.
+ */
+export type StoryCommentFeedItem = {
+  id: string;
+  story_id: string;
+  body: string;
+  created_at: string;
+  /** A chosen username, or `member_handle()` for someone who never picked one. */
+  author_display_name: string;
+  /**
+   * A `clay:<seed>` avatar, or null. Never a URL: avatar_url is
+   * client-writable, and a URL here would make every viewer's phone fetch a
+   * server the commenter chose. Resolve with `avatarImageSource`.
+   */
+  author_avatar_url: string | null;
+  is_own: boolean;
+  /** The story provider's one public reaction to this comment, if any. */
+  creator_reaction: ReactionEmoji | null;
+};
+
+/** The story provider's single reaction to a comment on their own story (148). */
+export type StoryCommentReaction = {
+  comment_id: string;
+  provider_id: string;
+  emoji: ReactionEmoji;
+  created_at: string;
+};
+
+/** `story_viewers` (149): the provider's viewer list. The only read of who reacted. */
+export type StoryViewer = {
+  viewer_id: string;
+  display_name: string;
+  /**
+   * A `clay:<seed>` avatar, or null. Never a URL. Viewers are members (143),
+   * whose avatar is a clay pick; anything else draws the initial.
+   */
+  avatar_url: string | null;
+  viewed_at: string;
+  reaction: ReactionEmoji | null;
+};
+
+/** `my_story_insights` (149): one row per live story of the caller's. */
+export type MyStoryInsight = {
+  story_id: string;
+  media_type: StoryMediaType;
+  created_at: string;
+  expires_at: string;
+  view_count: number;
+  reaction_count: number;
+  comment_count: number;
+};
+
+/**
+ * Every code the story RPCs return. NOT_FOUND covers missing, expired and
+ * blocked alike, on purpose, so it never says which. STORIES_DISABLED is the
+ * kill switch (kill_switches.stories_enabled); it stops adding content and
+ * never stops deleting or reporting.
+ */
+export type StoryError =
+  | 'UNAUTHORIZED'
+  | 'BAD_REQUEST'
+  | 'NOT_FOUND'
+  | 'FORBIDDEN'
+  | 'SUSPENDED'
+  | 'POLICY_REQUIRED'
+  | 'STORIES_DISABLED'
+  /** create_story: the caller is not a listed provider. */
+  | 'NOT_LISTED'
+  /** create_story: nothing was uploaded at media_path. */
+  | 'MEDIA_MISSING'
+  /** create_story: the upload's content type is not what its file name says. */
+  | 'MEDIA_MISMATCH'
+  /** create_story: 30 live stories already. */
+  | 'LIMIT_REACHED'
+  /**
+   * post_story_comment: 5 on this story (ever) or 20 overall in the last
+   * hour. delete_story_comment with a report reason: the 10 reports an hour
+   * are spent, and nothing was deleted.
+   */
+  | 'RATE_LIMITED';
+
+export type CreateStoryResult = {
+  success: boolean;
+  story_id?: string;
+  created_at?: string;
+  expires_at?: string;
+  error?: StoryError;
+};
+
+export type MarkStoryViewedResult = {
+  success: boolean;
+  /** False on a repeat view and on the provider's own. */
+  first_view?: boolean;
+  error?: StoryError;
+};
+
+/** toggle_story_reaction / react_to_story_comment. Null emoji means taken back. */
+export type StoryReactionResult = {
+  success: boolean;
+  emoji?: ReactionEmoji | null;
+  error?: StoryError;
+};
+
+export type PostStoryCommentResult = {
+  success: boolean;
+  comment_id?: string;
+  created_at?: string;
+  error?: StoryError;
+};
+
+export type DeleteStoryCommentResult = {
+  success: boolean;
+  /** Set when a report reason was given and the report was filed first. */
+  report_id?: string | null;
+  error?: StoryError;
+};
+
+/** block_story_commenter (152). Says nothing about the author, by design. */
+export type BlockStoryCommenterResult = {
+  success: boolean;
+  error?: StoryError;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -1046,6 +1240,34 @@ export type Database = {
         Update: never;
         Relationships: [];
       };
+      /** Stories (143). Written only by create_story; the provider may DELETE their own. */
+      stories: {
+        Row: Story;
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      /** Own rows only (145). Written by mark_story_viewed. */
+      story_views: {
+        Row: StoryView;
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      /** Own row only (146). Written by toggle_story_reaction. */
+      story_reactions: {
+        Row: StoryReaction;
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      /** Public as far as the comment is (148). Written by react_to_story_comment. */
+      story_comment_reactions: {
+        Row: StoryCommentReaction;
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
     };
     Views: {
       provider_directory: {
@@ -1078,6 +1300,10 @@ export type Database = {
           pan_verified: boolean;
           can_go_live: boolean;
         };
+        Relationships: [];
+      };
+      story_comment_feed: {
+        Row: StoryCommentFeedItem;
         Relationships: [];
       };
     };
@@ -1508,6 +1734,91 @@ export type Database = {
           expires_at: string;
           created_at: string;
         } | null;
+      };
+      /** 143. Upload to `stories/{uid}/{p_story_id}.{ext}` first; a retry with the same id is the same story. */
+      create_story: {
+        Args: {
+          p_story_id: string;
+          p_media_type: StoryMediaType;
+          p_media_path: string;
+          p_caption?: string | null;
+          p_duration_ms?: number | null;
+        };
+        Returns: CreateStoryResult;
+      };
+      mark_story_viewed: {
+        Args: { p_story_id: string };
+        Returns: MarkStoryViewedResult;
+      };
+      /** 146. Members only; the same emoji again takes it back. */
+      toggle_story_reaction: {
+        Args: { p_story_id: string; p_emoji: ReactionEmoji };
+        Returns: StoryReactionResult;
+      };
+      story_reaction_counts: {
+        Args: { p_story_id: string };
+        Returns: StoryReactionCount[];
+      };
+      /** 147. Members only: the story's provider cannot reply. 1-500 visible characters, at most 6 lines. */
+      post_story_comment: {
+        Args: { p_story_id: string; p_body: string };
+        Returns: PostStoryCommentResult;
+      };
+      /**
+       * 150. The comment's author, or the story's provider. The provider may
+       * pass a report reason: the report is filed first, in the same
+       * transaction, and if it is refused nothing is deleted.
+       */
+      delete_story_comment: {
+        Args: {
+          p_comment_id: string;
+          p_report_reason?: ReportReason | null;
+          p_report_detail?: string | null;
+        };
+        Returns: DeleteStoryCommentResult;
+      };
+      /**
+       * 152. The story's provider blocks a comment's author, with no prior
+       * conversation needed. Report first: once blocked, the author's comments
+       * are hidden from the provider too.
+       */
+      block_story_commenter: {
+        Args: { p_comment_id: string };
+        Returns: BlockStoryCommenterResult;
+      };
+      /** 148. The story's provider only; the same emoji again takes it back. */
+      react_to_story_comment: {
+        Args: { p_comment_id: string; p_emoji: ReactionEmoji };
+        Returns: StoryReactionResult;
+      };
+      /** 149. The story's provider only; raises 42501 for anyone else. */
+      story_viewers: {
+        Args: { p_story_id: string };
+        Returns: StoryViewer[];
+      };
+      my_story_insights: {
+        Args: Record<string, never>;
+        Returns: MyStoryInsight[];
+      };
+      /**
+       * 150. Same shape and failure mode as submit_report: returns the report id,
+       * raises 54000 past 10 reports an hour (shared with submit_report).
+       */
+      report_story: {
+        Args: {
+          p_story_id: string;
+          p_reason: ReportReason;
+          p_detail?: string | null;
+        };
+        Returns: string;
+      };
+      report_story_comment: {
+        Args: {
+          p_comment_id: string;
+          p_reason: ReportReason;
+          p_detail?: string | null;
+        };
+        Returns: string;
       };
     };
     Enums: {

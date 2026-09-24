@@ -1,5 +1,9 @@
 COLUMN app_flags.enabled boolean null=NO default=false
 COLUMN app_flags.key text null=NO default=-
+COLUMN blocked_people.avatar_url text null=YES default=-
+COLUMN blocked_people.blocked_at timestamp with time zone null=YES default=-
+COLUMN blocked_people.blocked_id uuid null=YES default=-
+COLUMN blocked_people.display_name text null=YES default=-
 COLUMN blocks.blocked_id uuid null=NO default=-
 COLUMN blocks.blocker_id uuid null=NO default=-
 COLUMN blocks.created_at timestamp with time zone null=NO default=now()
@@ -257,11 +261,14 @@ COLUMN moderation_queue.conversation_id uuid null=YES default=-
 COLUMN moderation_queue.created_at timestamp with time zone null=YES default=-
 COLUMN moderation_queue.detail text null=YES default=-
 COLUMN moderation_queue.evidence_body text null=YES default=-
+COLUMN moderation_queue.evidence_story_media_path text null=YES default=-
 COLUMN moderation_queue.evidence_voice_path text null=YES default=-
 COLUMN moderation_queue.id uuid null=YES default=-
 COLUMN moderation_queue.reason USER-DEFINED null=YES default=-
 COLUMN moderation_queue.reports_against_subject bigint null=YES default=-
 COLUMN moderation_queue.status USER-DEFINED null=YES default=-
+COLUMN moderation_queue.story_comment_id uuid null=YES default=-
+COLUMN moderation_queue.story_id uuid null=YES default=-
 COLUMN moderation_queue.subject_role USER-DEFINED null=YES default=-
 COLUMN moderation_queue.subject_user_id uuid null=YES default=-
 COLUMN moderation_queue.suspended_until timestamp with time zone null=YES default=-
@@ -528,6 +535,7 @@ COLUMN reports.created_at timestamp with time zone null=NO default=now()
 COLUMN reports.detail text null=YES default=-
 COLUMN reports.evidence_at timestamp with time zone null=YES default=-
 COLUMN reports.evidence_body text null=YES default=-
+COLUMN reports.evidence_story_media_path text null=YES default=-
 COLUMN reports.evidence_voice_path text null=YES default=-
 COLUMN reports.id uuid null=NO default=gen_random_uuid()
 COLUMN reports.message_id uuid null=YES default=-
@@ -536,6 +544,8 @@ COLUMN reports.reporter_id uuid null=YES default=-
 COLUMN reports.resolved_at timestamp with time zone null=YES default=-
 COLUMN reports.resolver_note text null=YES default=-
 COLUMN reports.status USER-DEFINED null=NO default='open'::report_status
+COLUMN reports.story_comment_id uuid null=YES default=-
+COLUMN reports.story_id uuid null=YES default=-
 COLUMN reports.subject_user_id uuid null=YES default=-
 COLUMN reviews.comment text null=YES default=-
 COLUMN reviews.conversation_id uuid null=NO default=-
@@ -568,6 +578,41 @@ COLUMN session_requests.notified_at timestamp with time zone null=YES default=-
 COLUMN session_requests.recipient_id uuid null=NO default=-
 COLUMN session_requests.responded_at timestamp with time zone null=YES default=-
 COLUMN session_requests.status USER-DEFINED null=NO default='pending'::session_request_status
+COLUMN stories.caption text null=YES default=-
+COLUMN stories.created_at timestamp with time zone null=NO default=now()
+COLUMN stories.duration_ms integer null=NO default=-
+COLUMN stories.expires_at timestamp with time zone null=NO default=-
+COLUMN stories.id uuid null=NO default=-
+COLUMN stories.media_path text null=NO default=-
+COLUMN stories.media_type text null=NO default=-
+COLUMN stories.provider_id uuid null=NO default=-
+COLUMN story_comment_feed.author_avatar_url text null=YES default=-
+COLUMN story_comment_feed.author_display_name text null=YES default=-
+COLUMN story_comment_feed.body text null=YES default=-
+COLUMN story_comment_feed.created_at timestamp with time zone null=YES default=-
+COLUMN story_comment_feed.creator_reaction text null=YES default=-
+COLUMN story_comment_feed.id uuid null=YES default=-
+COLUMN story_comment_feed.is_own boolean null=YES default=-
+COLUMN story_comment_feed.story_id uuid null=YES default=-
+COLUMN story_comment_reactions.comment_id uuid null=NO default=-
+COLUMN story_comment_reactions.created_at timestamp with time zone null=NO default=now()
+COLUMN story_comment_reactions.emoji text null=NO default=-
+COLUMN story_comment_reactions.provider_id uuid null=NO default=-
+COLUMN story_comments.author_id uuid null=NO default=-
+COLUMN story_comments.body text null=YES default=-
+COLUMN story_comments.created_at timestamp with time zone null=NO default=now()
+COLUMN story_comments.deleted_at timestamp with time zone null=YES default=-
+COLUMN story_comments.id uuid null=NO default=gen_random_uuid()
+COLUMN story_comments.story_id uuid null=NO default=-
+COLUMN story_media_released.name text null=NO default=-
+COLUMN story_media_released.released_at timestamp with time zone null=NO default=now()
+COLUMN story_reactions.created_at timestamp with time zone null=NO default=now()
+COLUMN story_reactions.emoji text null=NO default=-
+COLUMN story_reactions.member_id uuid null=NO default=-
+COLUMN story_reactions.story_id uuid null=NO default=-
+COLUMN story_views.story_id uuid null=NO default=-
+COLUMN story_views.viewed_at timestamp with time zone null=NO default=now()
+COLUMN story_views.viewer_id uuid null=NO default=-
 COLUMN tap_funky.args text null=YES default=-
 COLUMN tap_funky.is_definer boolean null=YES default=-
 COLUMN tap_funky.is_strict boolean null=YES default=-
@@ -787,6 +832,8 @@ CONSTRAINT reports.reports_detail_check CHECK (((detail IS NULL) OR (length(deta
 CONSTRAINT reports.reports_message_id_fkey FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE SET NULL
 CONSTRAINT reports.reports_pkey PRIMARY KEY (id)
 CONSTRAINT reports.reports_reporter_id_fkey FOREIGN KEY (reporter_id) REFERENCES profiles(id) ON DELETE SET NULL
+CONSTRAINT reports.reports_story_comment_id_fkey FOREIGN KEY (story_comment_id) REFERENCES story_comments(id) ON DELETE SET NULL
+CONSTRAINT reports.reports_story_id_fkey FOREIGN KEY (story_id) REFERENCES stories(id) ON DELETE SET NULL
 CONSTRAINT reports.reports_subject_user_id_fkey FOREIGN KEY (subject_user_id) REFERENCES profiles(id) ON DELETE SET NULL
 CONSTRAINT reviews.reviews_comment_check CHECK (((comment IS NULL) OR (length(comment) <= 1000)))
 CONSTRAINT reviews.reviews_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
@@ -803,6 +850,29 @@ CONSTRAINT session_requests.session_requests_initiator_id_fkey FOREIGN KEY (init
 CONSTRAINT session_requests.session_requests_no_self CHECK ((initiator_id <> recipient_id))
 CONSTRAINT session_requests.session_requests_pkey PRIMARY KEY (id)
 CONSTRAINT session_requests.session_requests_recipient_id_fkey FOREIGN KEY (recipient_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT stories.stories_media_type_check CHECK ((media_type = ANY (ARRAY['image'::text, 'video'::text])))
+CONSTRAINT stories.stories_pkey PRIMARY KEY (id)
+CONSTRAINT stories.stories_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT stories.story_caption_is_short CHECK (((caption IS NULL) OR ((story_text_trim(caption) IS NOT NULL) AND (length(caption) <= 200) AND (story_text_line_breaks(caption) <= 3) AND (NOT story_text_has_control(caption)))))
+CONSTRAINT stories.story_duration_in_range CHECK ((((media_type = 'image'::text) AND ((duration_ms >= 1000) AND (duration_ms <= 15000))) OR ((media_type = 'video'::text) AND ((duration_ms >= 1000) AND (duration_ms <= 30000)))))
+CONSTRAINT stories.story_lasts_a_day CHECK (((expires_at - created_at) = '24:00:00'::interval))
+CONSTRAINT stories.story_media_path_is_scoped CHECK ((((media_type = 'image'::text) AND ((((media_path = ((((provider_id)::text || '/'::text) || (id)::text) || '.jpg'::text)) OR (media_path = ((((provider_id)::text || '/'::text) || (id)::text) || '.jpeg'::text))) OR (media_path = ((((provider_id)::text || '/'::text) || (id)::text) || '.png'::text))) OR (media_path = ((((provider_id)::text || '/'::text) || (id)::text) || '.webp'::text)))) OR ((media_type = 'video'::text) AND (media_path = ((((provider_id)::text || '/'::text) || (id)::text) || '.mp4'::text)))))
+CONSTRAINT story_comment_reactions.story_comment_reactions_comment_id_fkey FOREIGN KEY (comment_id) REFERENCES story_comments(id) ON DELETE CASCADE
+CONSTRAINT story_comment_reactions.story_comment_reactions_emoji_check CHECK ((emoji = ANY (ARRAY['❤️'::text, '👍'::text, '😂'::text, '😮'::text, '😢'::text, '🙏'::text])))
+CONSTRAINT story_comment_reactions.story_comment_reactions_pkey PRIMARY KEY (comment_id)
+CONSTRAINT story_comment_reactions.story_comment_reactions_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT story_comments.story_comment_body_or_tombstone CHECK ((((deleted_at IS NULL) AND (body IS NOT NULL) AND (story_text_trim(body) IS NOT NULL) AND (length(body) <= 500) AND (story_text_line_breaks(body) <= 5) AND (NOT story_text_has_control(body))) OR ((deleted_at IS NOT NULL) AND (body IS NULL))))
+CONSTRAINT story_comments.story_comments_author_id_fkey FOREIGN KEY (author_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT story_comments.story_comments_pkey PRIMARY KEY (id)
+CONSTRAINT story_comments.story_comments_story_id_fkey FOREIGN KEY (story_id) REFERENCES stories(id) ON DELETE CASCADE
+CONSTRAINT story_media_released.story_media_released_pkey PRIMARY KEY (name)
+CONSTRAINT story_reactions.story_reactions_emoji_check CHECK ((emoji = ANY (ARRAY['❤️'::text, '👍'::text, '😂'::text, '😮'::text, '😢'::text, '🙏'::text])))
+CONSTRAINT story_reactions.story_reactions_member_id_fkey FOREIGN KEY (member_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT story_reactions.story_reactions_pkey PRIMARY KEY (story_id, member_id)
+CONSTRAINT story_reactions.story_reactions_story_id_fkey FOREIGN KEY (story_id) REFERENCES stories(id) ON DELETE CASCADE
+CONSTRAINT story_views.story_views_pkey PRIMARY KEY (story_id, viewer_id)
+CONSTRAINT story_views.story_views_story_id_fkey FOREIGN KEY (story_id) REFERENCES stories(id) ON DELETE CASCADE
+CONSTRAINT story_views.story_views_viewer_id_fkey FOREIGN KEY (viewer_id) REFERENCES profiles(id) ON DELETE CASCADE
 CONSTRAINT token_transactions.token_transactions_amount_paise_check CHECK ((amount_paise >= 0))
 CONSTRAINT token_transactions.token_transactions_config_version_id_fkey FOREIGN KEY (config_version_id) REFERENCES admin.config_versions(id)
 CONSTRAINT token_transactions.token_transactions_discount_bps_check CHECK (((discount_bps >= 0) AND (discount_bps < 10000)))
@@ -1057,6 +1127,7 @@ FUNCTION bag_ne(text, anyarray) returns text security=invoker
 FUNCTION bag_ne(text, anyarray, text) returns text security=invoker
 FUNCTION bag_ne(text, text) returns text security=invoker
 FUNCTION bag_ne(text, text, text) returns text security=invoker
+FUNCTION block_story_commenter(p_comment_id uuid) returns json security=definer
 FUNCTION call_minimum_minutes() returns integer security=invoker
 FUNCTION call_tokens_per_minute() returns integer security=invoker
 FUNCTION can(name, name[]) returns text security=invoker
@@ -1166,6 +1237,7 @@ FUNCTION consume_and_link_pending_challenge(p_challenge_hash text, p_user_id uui
 FUNCTION create_pending_challenge(p_provider text, p_subject text, p_phone text, p_challenge_hash text) returns void security=definer
 FUNCTION create_provider_payout_batch(p_provider_id uuid, p_ignore_minimum boolean) returns TABLE(batch_id uuid, total_tokens integer, total_paise integer, method text, beneficiary_id text) security=definer
 FUNCTION create_session_request(p_conversation_id uuid, p_channel session_channel) returns uuid security=definer
+FUNCTION create_story(p_story_id uuid, p_media_type text, p_media_path text, p_caption text, p_duration_ms integer) returns json security=definer
 FUNCTION credit_promo_tokens(p_user_id uuid, p_amount integer, p_reason text) returns integer security=definer
 FUNCTION credit_purchased_recharge(p_user_id uuid, p_amount integer, p_transaction_id uuid) returns void security=definer
 FUNCTION credit_user_token(p_user_id uuid, p_amount integer) returns json security=definer
@@ -1177,6 +1249,7 @@ FUNCTION decline_session_request(p_request_id uuid) returns jsonb security=defin
 FUNCTION deduct_tokens(p_user_id uuid, p_amount integer, p_session_id uuid, p_config_version_id uuid) returns integer security=definer
 FUNCTION deduct_user_token(p_user_id uuid, p_cost integer) returns json security=definer
 FUNCTION delete_message(p_message_id uuid) returns jsonb security=definer
+FUNCTION delete_story_comment(p_comment_id uuid, p_report_reason report_reason, p_report_detail text) returns json security=definer
 FUNCTION delete_user_account() returns void security=definer
 FUNCTION diag(VARIADIC anyarray) returns text security=invoker
 FUNCTION diag(VARIADIC text[]) returns text security=invoker
@@ -1187,6 +1260,7 @@ FUNCTION dispatch_agora_usage_ingest() returns void security=definer
 FUNCTION dispatch_call_push() returns trigger security=definer
 FUNCTION dispatch_engagement_nudges() returns void security=definer
 FUNCTION dispatch_pending_pushes() returns void security=definer
+FUNCTION dispatch_story_media_purge() returns void security=definer
 FUNCTION display_oper(name, oid) returns text security=invoker
 FUNCTION do_tap() returns SETOF text security=invoker
 FUNCTION do_tap(name) returns SETOF text security=invoker
@@ -1584,6 +1658,7 @@ FUNCTION indexes_are(name, name, name[], text) returns text security=invoker
 FUNCTION indexes_are(name, name[]) returns text security=invoker
 FUNCTION indexes_are(name, name[], text) returns text security=invoker
 FUNCTION insert_next_opener(p_provider_id uuid) returns jsonb security=definer
+FUNCTION install_stories_bucket() returns void security=invoker
 FUNCTION is(anyelement, anyelement) returns text security=invoker
 FUNCTION is(anyelement, anyelement, text) returns text security=invoker
 FUNCTION is_aggregate(name) returns text security=invoker
@@ -1775,6 +1850,7 @@ FUNCTION mark_calls_notified(p_call_ids uuid[]) returns integer security=definer
 FUNCTION mark_engagement_nudged(p_member_ids uuid[]) returns void security=definer
 FUNCTION mark_notified(p_message_ids uuid[]) returns integer security=definer
 FUNCTION mark_provider_payout_submitted(p_batch_id uuid, p_cashfree_id text) returns void security=definer
+FUNCTION mark_story_viewed(p_story_id uuid) returns json security=definer
 FUNCTION matches(anyelement, text) returns text security=invoker
 FUNCTION matches(anyelement, text, text) returns text security=invoker
 FUNCTION materialized_view_owner_is(name, name) returns text security=invoker
@@ -1793,6 +1869,7 @@ FUNCTION mirror_user_phone() returns trigger security=definer
 FUNCTION mock_recharge(p_amount_paise integer, p_tokens integer) returns json security=definer
 FUNCTION moderation_actions_are_immutable() returns trigger security=invoker
 FUNCTION my_first_recharge_discount_bps() returns integer security=definer
+FUNCTION my_story_insights() returns TABLE(story_id uuid, media_type text, created_at timestamp with time zone, expires_at timestamp with time zone, view_count integer, reaction_count integer, comment_count integer) security=definer
 FUNCTION next_invoice_seq(p_fy text) returns bigint security=definer
 FUNCTION no_plan() returns SETOF boolean security=invoker
 FUNCTION notify_generate_invoice() returns trigger security=definer
@@ -1843,6 +1920,7 @@ FUNCTION policy_roles_are(name, name, name, name[]) returns text security=invoke
 FUNCTION policy_roles_are(name, name, name, name[], text) returns text security=invoker
 FUNCTION policy_roles_are(name, name, name[]) returns text security=invoker
 FUNCTION policy_roles_are(name, name, name[], text) returns text security=invoker
+FUNCTION post_story_comment(p_story_id uuid, p_body text) returns json security=definer
 FUNCTION provider_is_listed(p_provider_id uuid) returns boolean security=definer
 FUNCTION provider_offers_channel(p_provider_id uuid, p_channel session_channel) returns boolean security=definer
 FUNCTION provider_photos_single_primary() returns trigger security=definer
@@ -1851,9 +1929,11 @@ FUNCTION purge_expired_challenges() returns void security=definer
 FUNCTION purge_expired_evidence() returns integer security=definer
 FUNCTION purge_expired_hidden_content() returns integer security=definer
 FUNCTION purge_expired_reports() returns integer security=definer
+FUNCTION purge_expired_stories() returns json security=definer
 FUNCTION purge_orphaned_attachments() returns integer security=definer
 FUNCTION purge_orphaned_voice_notes() returns integer security=definer
 FUNCTION purge_session_content(p_session_id uuid) returns integer security=definer
+FUNCTION react_to_story_comment(p_comment_id uuid, p_emoji text) returns json security=definer
 FUNCTION read_pending_challenge(p_challenge_hash text, OUT out_provider text, OUT out_subject text, OUT out_phone text) returns record security=definer
 FUNCTION record_call_quality_samples(p_call_id uuid, p_samples jsonb) returns integer security=definer
 FUNCTION record_invoice(p_transaction_id uuid, p_document_type text, p_fy text, p_seller jsonb, p_buyer jsonb, p_place_of_supply text, p_taxable_paise integer, p_cgst_paise integer, p_sgst_paise integer, p_igst_paise integer, p_total_paise integer, p_gst_rate_bps integer) returns jsonb security=definer
@@ -1869,6 +1949,8 @@ FUNCTION relation_owner_is(name, name) returns text security=invoker
 FUNCTION relation_owner_is(name, name, name) returns text security=invoker
 FUNCTION relation_owner_is(name, name, name, text) returns text security=invoker
 FUNCTION relation_owner_is(name, name, text) returns text security=invoker
+FUNCTION report_story(p_story_id uuid, p_reason report_reason, p_detail text) returns uuid security=definer
+FUNCTION report_story_comment(p_comment_id uuid, p_reason report_reason, p_detail text) returns uuid security=definer
 FUNCTION request_application_info(p_user_id uuid, p_missing text[], p_note text) returns void security=definer
 FUNCTION request_media_upgrade(p_call_id uuid, p_to_medium text) returns jsonb security=definer
 FUNCTION resolve_consumed_challenge_user(p_challenge_hash text) returns uuid security=definer
@@ -1973,6 +2055,18 @@ FUNCTION skip(text) returns text security=invoker
 FUNCTION skip(why text, how_many integer) returns text security=invoker
 FUNCTION spend_chat_minute() returns json security=definer
 FUNCTION start_call(p_conversation_id uuid, p_medium call_medium) returns json security=definer
+FUNCTION stories_enabled() returns boolean security=definer
+FUNCTION stories_release_media() returns trigger security=definer
+FUNCTION story_comment_is_visible(p_comment_id uuid) returns boolean security=definer
+FUNCTION story_comment_tombstone_clears_reaction() returns trigger security=definer
+FUNCTION story_is_visible(p_story_id uuid) returns boolean security=definer
+FUNCTION story_media_upload_allowed(p_name text) returns boolean security=definer
+FUNCTION story_objects_to_purge(p_limit integer) returns TABLE(object_name text) security=definer
+FUNCTION story_reaction_counts(p_story_id uuid) returns TABLE(emoji text, reaction_count integer) security=definer
+FUNCTION story_text_has_control(p_text text) returns boolean security=invoker
+FUNCTION story_text_line_breaks(p_text text) returns integer security=invoker
+FUNCTION story_text_trim(p_text text) returns text security=invoker
+FUNCTION story_viewers(p_story_id uuid) returns TABLE(viewer_id uuid, display_name text, avatar_url text, viewed_at timestamp with time zone, reaction text) security=definer
 FUNCTION submit_provider_application(p_display_name text, p_gender text, p_date_of_birth date, p_headline text, p_languages text[], p_about text) returns text[] security=definer
 FUNCTION submit_report(p_conversation_id uuid, p_message_id uuid, p_reason report_reason, p_detail text) returns uuid security=definer
 FUNCTION submit_review(p_conversation_id uuid, p_rating smallint, p_comment text) returns void security=definer
@@ -2020,6 +2114,7 @@ FUNCTION todo_start() returns SETOF boolean security=invoker
 FUNCTION todo_start(text) returns SETOF boolean security=invoker
 FUNCTION toggle_favorite(p_liked_id uuid) returns jsonb security=definer
 FUNCTION toggle_reaction(p_message_id uuid, p_emoji text) returns json security=definer
+FUNCTION toggle_story_reaction(p_story_id uuid, p_emoji text) returns json security=definer
 FUNCTION touch_chat() returns trigger security=definer
 FUNCTION touch_presence() returns void security=definer
 FUNCTION touch_session_activity() returns trigger security=definer
@@ -2154,7 +2249,10 @@ INDEX refund_reviews_pkey CREATE UNIQUE INDEX refund_reviews_pkey ON public.refu
 INDEX report_evidence_case CREATE INDEX report_evidence_case ON public.report_evidence USING btree (case_id)
 INDEX report_evidence_pkey CREATE UNIQUE INDEX report_evidence_pkey ON public.report_evidence USING btree (id)
 INDEX report_evidence_retain CREATE INDEX report_evidence_retain ON public.report_evidence USING btree (retain_until)
+INDEX reports_evidence_story_media_path CREATE INDEX reports_evidence_story_media_path ON public.reports USING btree (evidence_story_media_path) WHERE (evidence_story_media_path IS NOT NULL)
 INDEX reports_pkey CREATE UNIQUE INDEX reports_pkey ON public.reports USING btree (id)
+INDEX reports_story_comment_id CREATE INDEX reports_story_comment_id ON public.reports USING btree (story_comment_id) WHERE (story_comment_id IS NOT NULL)
+INDEX reports_story_id CREATE INDEX reports_story_id ON public.reports USING btree (story_id) WHERE (story_id IS NOT NULL)
 INDEX reports_subject_idx CREATE INDEX reports_subject_idx ON public.reports USING btree (subject_user_id, created_at DESC)
 INDEX reports_triage_idx CREATE INDEX reports_triage_idx ON public.reports USING btree (status, reason, created_at DESC)
 INDEX reviews_one_per_legacy_conversation CREATE UNIQUE INDEX reviews_one_per_legacy_conversation ON public.reviews USING btree (conversation_id) WHERE (session_id IS NULL)
@@ -2167,6 +2265,19 @@ INDEX session_requests_one_pending CREATE UNIQUE INDEX session_requests_one_pend
 INDEX session_requests_pending_push_idx CREATE INDEX session_requests_pending_push_idx ON public.session_requests USING btree (created_at) WHERE ((notified_at IS NULL) AND (status = 'pending'::session_request_status))
 INDEX session_requests_pkey CREATE UNIQUE INDEX session_requests_pkey ON public.session_requests USING btree (id)
 INDEX session_requests_recipient_status CREATE INDEX session_requests_recipient_status ON public.session_requests USING btree (recipient_id, status, created_at DESC)
+INDEX stories_expires_at CREATE INDEX stories_expires_at ON public.stories USING btree (expires_at)
+INDEX stories_media_path CREATE UNIQUE INDEX stories_media_path ON public.stories USING btree (media_path)
+INDEX stories_pkey CREATE UNIQUE INDEX stories_pkey ON public.stories USING btree (id)
+INDEX stories_provider_created CREATE INDEX stories_provider_created ON public.stories USING btree (provider_id, created_at)
+INDEX story_comment_reactions_pkey CREATE UNIQUE INDEX story_comment_reactions_pkey ON public.story_comment_reactions USING btree (comment_id)
+INDEX story_comment_reactions_provider CREATE INDEX story_comment_reactions_provider ON public.story_comment_reactions USING btree (provider_id)
+INDEX story_comments_author_created CREATE INDEX story_comments_author_created ON public.story_comments USING btree (author_id, created_at DESC)
+INDEX story_comments_pkey CREATE UNIQUE INDEX story_comments_pkey ON public.story_comments USING btree (id)
+INDEX story_comments_story_created CREATE INDEX story_comments_story_created ON public.story_comments USING btree (story_id, created_at)
+INDEX story_media_released_pkey CREATE UNIQUE INDEX story_media_released_pkey ON public.story_media_released USING btree (name)
+INDEX story_reactions_pkey CREATE UNIQUE INDEX story_reactions_pkey ON public.story_reactions USING btree (story_id, member_id)
+INDEX story_views_pkey CREATE UNIQUE INDEX story_views_pkey ON public.story_views USING btree (story_id, viewer_id)
+INDEX story_views_viewer CREATE INDEX story_views_viewer ON public.story_views USING btree (viewer_id, story_id)
 INDEX token_transactions_pkey CREATE UNIQUE INDEX token_transactions_pkey ON public.token_transactions USING btree (id)
 INDEX token_transactions_user_id_created_at_idx CREATE INDEX token_transactions_user_id_created_at_idx ON public.token_transactions USING btree (user_id, created_at DESC)
 INDEX user_favorites_liked_idx CREATE INDEX user_favorites_liked_idx ON public.user_favorites USING btree (liked_id)
@@ -2209,6 +2320,11 @@ POLICY public.reviews.Participants read reviews cmd=SELECT roles=public
 POLICY public.session_leases.Participants read own leases cmd=SELECT roles=authenticated
 POLICY public.session_leases.Participants upsert own lease cmd=ALL roles=authenticated
 POLICY public.session_requests.Participants read session requests cmd=SELECT roles=authenticated
+POLICY public.stories.stories_delete_own cmd=DELETE roles=authenticated
+POLICY public.stories.stories_select_visible cmd=SELECT roles=authenticated
+POLICY public.story_comment_reactions.story_comment_reactions_select_visible cmd=SELECT roles=authenticated
+POLICY public.story_reactions.story_reactions_select_own cmd=SELECT roles=authenticated
+POLICY public.story_views.story_views_select_own cmd=SELECT roles=authenticated
 POLICY public.token_transactions.Members read own transactions cmd=SELECT roles=authenticated
 POLICY public.user_favorites.Users manage own favorites cmd=ALL roles=public
 POLICY public.user_favorites.Users read own favorites cmd=SELECT roles=public
@@ -2252,6 +2368,12 @@ RLS reports enabled=true
 RLS reviews enabled=true
 RLS session_leases enabled=true
 RLS session_requests enabled=true
+RLS stories enabled=true
+RLS story_comment_reactions enabled=true
+RLS story_comments enabled=true
+RLS story_media_released enabled=true
+RLS story_reactions enabled=true
+RLS story_views enabled=true
 RLS token_transactions enabled=true
 RLS user_favorites enabled=true
 TRIGGER calls.call_push_on_insert
@@ -2280,6 +2402,8 @@ TRIGGER provider_photos.provider_photos_sync_avatar
 TRIGGER reviews.refresh_provider_rating
 TRIGGER session_requests.enforce_provider_channel
 TRIGGER session_requests.session_request_push_on_insert
+TRIGGER stories.stories_release_media
+TRIGGER story_comments.story_comment_tombstone_clears_reaction
 TRIGGER token_transactions.on_recharge_credited
 TRIGGER token_transactions.on_recharge_inserted
 TRIGGER token_transactions.touch_transaction_updated_at

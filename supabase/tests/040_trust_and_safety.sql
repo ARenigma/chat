@@ -263,6 +263,25 @@ select isnt(
   'a participant can file a report'
 );
 select is(
+  (select count(*)::int from public.my_reports), 1,
+  'the reporter can see their own report and its status'
+);
+
+-- Reporting one's own message must capture no evidence: otherwise the snapshot
+-- is a way to pin your own words on the other party. Filed here, as the
+-- reporter, and read below as the owner.
+insert into test.fixture (k, v)
+values ('own_report', public.submit_report(
+  (select v from test.fixture where k = 'thread'),
+  (select id from public.messages
+    where sender_id = 'bbbbbbbb-0000-4000-8000-000000000002' limit 1),
+  'other', null));
+reset role;
+
+-- Read as the owner: since 150 a reporter can read only the columns
+-- my_reports shows (id, reason, status, times), and not subject_user_id or
+-- the evidence, which for a story comment would be a stranger's account id.
+select is(
   (select subject_user_id from public.reports
     where id = (select v from test.fixture where k = 'report')),
   'aaaaaaaa-0000-4000-8000-000000000001'::uuid,
@@ -275,21 +294,10 @@ select is(
   'the reported text is snapshotted, because messages die with the account'
 );
 select is(
-  (select count(*)::int from public.my_reports), 1,
-  'the reporter can see their own report and its status'
-);
-
--- Reporting one's own message must capture no evidence: otherwise the snapshot
--- is a way to pin your own words on the other party.
-select is(
-  (select evidence_body from public.reports where id = public.submit_report(
-    (select v from test.fixture where k = 'thread'),
-    (select id from public.messages
-      where sender_id = 'bbbbbbbb-0000-4000-8000-000000000002' limit 1),
-    'other', null)),
+  (select evidence_body from public.reports
+    where id = (select v from test.fixture where k = 'own_report')),
   null, 'a report cannot snapshot the reporter''s own message as evidence'
 );
-reset role;
 
 -- A non-participant with a stolen conversation id gets nothing.
 set local role authenticated;

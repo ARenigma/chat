@@ -191,6 +191,10 @@ describe('the AI path is gone, not dormant', () => {
       // a short-lived continuity challenge. Auth bridge, not a model path.
       'exchange-truecaller-code',
       'generate-invoice',
+      // purge-story-media: removes story photos and videos through the Storage
+      // API, which a SQL delete cannot (migration 151). Service-role only, run
+      // by pg_cron; no model path.
+      'purge-story-media',
       // send-call, send-engagement, send-open-alert, send-push, send-sms: FCM/SMS
       'send-call',
       'send-engagement',
@@ -200,6 +204,10 @@ describe('the AI path is gone, not dormant', () => {
       'send-open-alert',
       'send-push',
       'send-sms',
+      // story-media-url: the only signer of story media. Authorises on the
+      // caller's own RLS read of the story row and signs for 60s at most
+      // (migration 144). No model path.
+      'story-media-url',
       // truecaller-confirm-new-user: consumes a pending challenge to create a new
       // Supabase account for a verified Truecaller phone. No model path.
       'truecaller-confirm-new-user',
