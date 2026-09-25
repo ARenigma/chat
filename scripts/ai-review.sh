@@ -61,8 +61,12 @@ If there are no such defects, output exactly: NONE'
 review_chunk() {
   local chunk="$1"
   local out="${chunk%.diff}.out"
+  # One retry: a transient CLI or API failure is not a finding.
   if ! claude -p --model "$model" "$prompt" < "$chunk" > "$out" 2> "${out}.err"; then
-    echo "REVIEW-FAILED $(basename "$chunk")" > "$out"
+    sleep 5
+    if ! claude -p --model "$model" "$prompt" < "$chunk" > "$out" 2>> "${out}.err"; then
+      echo "REVIEW-FAILED $(basename "$chunk")" > "$out"
+    fi
   fi
 }
 export -f review_chunk

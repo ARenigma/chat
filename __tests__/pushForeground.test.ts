@@ -2137,7 +2137,7 @@ describe('the in-app flag reaches its own Android channel', () => {
     expect(code.match(/(?<![.\w])EXTRA_REQUEST_ID\b/g)).toHaveLength(3);
     // Bridged, and the lock-screen Decline is its only caller.
     expect(module).toMatch(
-      /fun clearRequest\(conversationId: String, requestId: String, promise: Promise\) \{\s*Conversations\.clearRequest\(reactContext, conversationId, requestId\)\s*promise\.resolve\(null\)/,
+      /fun clearRequest\(conversationId: String, requestId: String, promise: Promise\) \{[^}]*?try \{\s*Conversations\.clearRequest\(reactContext, conversationId, requestId\)\s*promise\.resolve\(null\)/,
     );
     expect(bridge).toMatch(/await native\.clearRequest\(conversationId, requestId\);/);
     expect(withoutComments(read('src/lib/chatRequestDecline.ts'))).toContain(
@@ -2187,7 +2187,7 @@ describe('the in-app flag reaches its own Android channel', () => {
     expect(all).toContain('ShortcutManagerCompat.FLAG_MATCH_DYNAMIC or ShortcutManagerCompat.FLAG_MATCH_CACHED');
     expect(all).toContain('ShortcutManagerCompat.removeLongLivedShortcuts(context, ids)');
     expect(all).toContain('ShortcutManagerCompat.removeAllDynamicShortcuts(context)');
-    expect(module).toMatch(/fun clearAll\(promise: Promise\) \{\s*Conversations\.clearAll\(reactContext\)\s*promise\.resolve\(null\)/);
+    expect(module).toMatch(/fun clearAll\(promise: Promise\) \{\s*try \{\s*Conversations\.clearAll\(reactContext\)\s*promise\.resolve\(null\)/);
     expect(bridge).toMatch(/export async function clearAllConversations\(\): Promise<void> \{\s*if \(native === undefined\) \{\s*return;\s*\}\s*await native\.clearAll\(\);/);
     for (const page of [
       'https://developer.android.com/reference/android/app/NotificationManager#cancelAll()',
@@ -3677,7 +3677,7 @@ describe('sign-out drops the device session first and ends the old one on a clie
     void a.auth.beginSignOut();
     // Synchronously: nothing awaited yet, and the session is already gone.
     expect(a.store.has(SESSION_KEY)).toBe(false);
-    expect(JSON.parse(a.store.get('auth.pendingSignOut') ?? '[]')).toEqual([{ session: STORED, push: true }]);
+    expect(JSON.parse(a.store.get('auth.pendingSignOut') ?? '[]')).toEqual([{ session: STORED, push: true, at: expect.any(Number) }]);
     // The push teardown has started (registration halted) in the same step.
     expect(a.stopPush).toHaveBeenCalledTimes(1);
     // Nothing this account set decides a push for the next one.
@@ -3731,7 +3731,7 @@ describe('sign-out drops the device session first and ends the old one on a clie
     expect(a.store.has(SESSION_KEY)).toBe(false);
     // Kept, and with its push half written down as done: only the session
     // is left to end.
-    expect(JSON.parse(a.store.get('auth.pendingSignOut') ?? '[]')).toEqual([{ session: STORED, push: false }]);
+    expect(JSON.parse(a.store.get('auth.pendingSignOut') ?? '[]')).toEqual([{ session: STORED, push: false, at: expect.any(Number) }]);
     // The next launch: a fresh module graph over the same storage.
     const next = loadAuth({ store: a.store });
     const resumed = next.auth.resumePendingSignOuts();
@@ -3899,7 +3899,7 @@ describe('sign-out drops the device session first and ends the old one on a clie
     const out = a.auth.beginSignOut();
     a.pushTeardown.open();
     await out;
-    expect(JSON.parse(a.store.get('auth.pendingSignOut') ?? '[]')).toEqual([{ session: STORED, push: true }]);
+    expect(JSON.parse(a.store.get('auth.pendingSignOut') ?? '[]')).toEqual([{ session: STORED, push: true, at: expect.any(Number) }]);
     expect(a.events).not.toContain('ghost signOut local');
     // The next retry, with the network back: the whole teardown, then /logout.
     pushFails = false;
@@ -4191,5 +4191,15 @@ describe('a chat covered by a sheet or the media viewer is not on screen (Grepti
     expect(sheet).toMatch(/if \(!visible\) return;[^]*const uncover = coverViewing\(\);[^]*uncover\(\);/);
     const viewer = read('src/components/MediaViewer.tsx');
     expect(viewer).toContain('useEffect(() => (open ? coverViewing() : undefined), [open]);');
+  });
+});
+
+describe('a dropped session is not kept on the device forever (review finding, 2026-09-25)', () => {
+  it('ages pending sign-out entries out after 7 days, and stamps new ones', () => {
+    const auth = read('src/api/auth.ts');
+    expect(auth).toContain('const PENDING_SIGN_OUT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;');
+    expect(auth).toMatch(/Date\.now\(\) - \(\(entry as PendingSignOut\)\.at as number\) > PENDING_SIGN_OUT_MAX_AGE_MS/);
+    expect(auth).toContain('{ session: stored, push: remember.push, at: Date.now() }');
+    expect(auth).toContain('await trackServerHalf(tellServer(entry, pushHalfFor(entry)));');
   });
 });

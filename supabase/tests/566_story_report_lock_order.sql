@@ -570,7 +570,7 @@ select is(
   test.answer_while_held(
     'c5660000-0000-4566-8000-0000000000a5', 'c5660000-0000-4566-8000-000000000006',
     $$select public.delete_story_comment('c5660000-0000-4566-8000-0000000000c5')::text$$),
-  '{"success" : false, "error" : "FORBIDDEN"}',
+  '{"success" : false, "error" : "NOT_FOUND"}',
   '9. a stranger''s delete is refused without waiting on the story'
 );
 select is(

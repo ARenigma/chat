@@ -288,6 +288,11 @@ begin
   end if;
 
   select c.author_id into v_author from public.story_comments c where c.id = p_comment_id;
+  -- Gone between the visibility check and here (deleted, or its author's
+  -- account removed): nothing to block, not a constraint error.
+  if v_author is null then
+    return json_build_object('success', false, 'error', 'NOT_FOUND');
+  end if;
 
   -- Your own comment: there is nobody to block, and you know whose it is.
   if v_author = v_uid then

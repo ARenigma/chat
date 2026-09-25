@@ -927,7 +927,18 @@ interface PendingSignOut {
   readonly session: string;
   /** Whether this device's push registration still has to be revoked. */
   readonly push: boolean;
+  /** When it was dropped (ms), for the age cap below. Absent on older entries. */
+  readonly at?: number;
 }
+
+/*
+ * How long a dropped session's tokens stay on the device waiting for the
+ * server half. A phone that stays offline used to keep a live, reusable
+ * credential on disk indefinitely after a "sign out". Past this it is thrown
+ * away unfinished: the server session then lapses on its own rather than
+ * being ended, which is the lesser risk than a stored credential.
+ */
+const PENDING_SIGN_OUT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 function readPending(): PendingSignOut[] {
   const raw = storage.get(PENDING_SIGN_OUT_KEY);
@@ -942,7 +953,11 @@ function readPending(): PendingSignOut[] {
             typeof entry === 'object' &&
             entry !== null &&
             typeof (entry as PendingSignOut).session === 'string' &&
-            typeof (entry as PendingSignOut).push === 'boolean',
+            typeof (entry as PendingSignOut).push === 'boolean' &&
+            !(
+              typeof (entry as PendingSignOut).at === 'number' &&
+              Date.now() - ((entry as PendingSignOut).at as number) > PENDING_SIGN_OUT_MAX_AGE_MS
+            ),
         )
       : [];
   } catch {
@@ -966,7 +981,7 @@ function forgetPending(entry: PendingSignOut): void {
 function markPushDone(entry: PendingSignOut): void {
   writePending(
     readPending().map(other =>
-      other.session === entry.session ? { session: other.session, push: false } : other,
+      other.session === entry.session ? { session: other.session, push: false, at: other.at } : other,
     ),
   );
 }
@@ -982,7 +997,8 @@ function leaveDevice(remember: { push: boolean } | null): {
   pending: PendingSignOut | null;
 } {
   const stored = storage.get(SESSION_STORAGE_KEY);
-  const pending = stored !== null && remember !== null ? { session: stored, push: remember.push } : null;
+  const pending =
+    stored !== null && remember !== null ? { session: stored, push: remember.push, at: Date.now() } : null;
   if (pending !== null) {
     writePending([...readPending(), pending]);
   }
@@ -1175,7 +1191,10 @@ export function finishPendingSignOuts(): Promise<void> {
     finishing = (async () => {
       await serverHalves;
       for (const entry of readPending()) {
-        await tellServer(entry, pushHalfFor(entry));
+        // Tracked like every server half, so a sign-out that starts while
+        // this retry is on the wire waits for it instead of racing its
+        // stopPush and deleteToken.
+        await trackServerHalf(tellServer(entry, pushHalfFor(entry)));
       }
     })().finally(() => {
       finishing = null;

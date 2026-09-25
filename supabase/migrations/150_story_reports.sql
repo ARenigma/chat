@@ -725,11 +725,10 @@ begin
   from public.story_comments c where c.id = p_comment_id;
   select s.provider_id into v_provider from public.stories s where s.id = v_story;
 
-  if v_author is null or v_provider is null then
+  -- NOT_FOUND to a stranger, as for no comment: see 147.
+  if v_author is null or v_provider is null
+     or (v_uid <> v_author and v_uid <> v_provider) then
     return json_build_object('success', false, 'error', 'NOT_FOUND');
-  end if;
-  if v_uid <> v_author and v_uid <> v_provider then
-    return json_build_object('success', false, 'error', 'FORBIDDEN');
   end if;
 
   if p_report_reason is not null then

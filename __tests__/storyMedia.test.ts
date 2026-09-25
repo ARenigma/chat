@@ -152,7 +152,7 @@ describe('story media is removed through the Storage API, never in SQL', () => {
   });
 
   it('answers only a service-role caller', () => {
-    expect(fn).toContain("if (role !== 'service_role') {");
+    expect(fn).toContain("if (!timingSafeEqual(presented, serviceKey)) {");
     expect(fn).toContain("return new Response('forbidden', { status: 403 });");
   });
 

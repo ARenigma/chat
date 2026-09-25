@@ -670,11 +670,19 @@ type RowDeleter = Pick<typeof supabase, 'rpc'>;
  * Promise.resolve for `register`'s reason: one request per call.
  */
 async function unregisterRow(db: RowDeleter, token: string): Promise<boolean> {
-  const { error } = await Promise.resolve(db.rpc('unregister_push_token', { p_token: token }));
+  const { data, error } = await Promise.resolve(db.rpc('unregister_push_token', { p_token: token }));
   if (error !== null) {
     const why = `${error.code || 'no code'} ${detail(error.message, token)}`;
     pushLog('warn', `unregister: failed, ${why}`);
     return false;
+  }
+  // `data` is false when no row matched. That is done too, not a failure:
+  // the delete runs as the old session on its own client (`account`), and
+  // 143 matches `token = p_token and user_id = auth.uid()`, so no row means
+  // this account has none on this device left to remove. Retrying it would
+  // loop forever on a sign-out that already finished.
+  if (data === false) {
+    pushLog('info', 'unregister: no row left for this account');
   }
   return true;
 }

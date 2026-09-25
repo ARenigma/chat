@@ -351,11 +351,12 @@ begin
   where c.id = p_comment_id
   for update of c;
 
-  if v_author is null then
+  -- NOT_FOUND to anyone who is neither its author nor the story's provider,
+  -- the same answer as for no comment at all: FORBIDDEN told a member who
+  -- had since been blocked, or whose story had gone, that the comment still
+  -- existed.
+  if v_author is null or (v_uid <> v_author and v_uid <> v_provider) then
     return json_build_object('success', false, 'error', 'NOT_FOUND');
-  end if;
-  if v_uid <> v_author and v_uid <> v_provider then
-    return json_build_object('success', false, 'error', 'FORBIDDEN');
   end if;
 
   -- Already gone is success: the client's intent is satisfied.

@@ -508,13 +508,13 @@ set local role authenticated;
 set local request.jwt.claims = '{"sub":"c5620000-0000-4562-8000-000000000002","role":"authenticated"}';
 select is(
   public.delete_story_comment((select v from test.fixture where k = 'a1')) ->> 'error',
-  'FORBIDDEN',
-  '30. a member cannot delete someone else''s comment'
+  'NOT_FOUND',
+  '30. a member cannot delete someone else''s comment, and is not told it exists'
 );
 set local request.jwt.claims = '{"sub":"c5620000-0000-4562-8000-000000000011","role":"authenticated"}';
 select is(
   public.delete_story_comment((select v from test.fixture where k = 'a1')) ->> 'error',
-  'FORBIDDEN',
+  'NOT_FOUND',
   '31. nor can a provider whose story it is not'
 );
 

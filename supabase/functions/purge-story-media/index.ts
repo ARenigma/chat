@@ -40,6 +40,18 @@ const PAGE = 1000;
  */
 const MAX_PAGES = 10;
 
+/** Length-then-byte comparison that does not stop at the first difference. */
+function timingSafeEqual(a: string, b: string): boolean {
+  const x = new TextEncoder().encode(a);
+  const y = new TextEncoder().encode(b);
+  // Counts differences instead of returning at the first one.
+  let diff = x.length === y.length ? 0 : 1;
+  for (let i = 0; i < Math.max(x.length, y.length); i += 1) {
+    diff += (x[i] ?? -1) === (y[i] ?? -2) ? 0 : 1;
+  }
+  return diff === 0;
+}
+
 Deno.serve(async (request: Request) => {
   const url = Deno.env.get('SUPABASE_URL');
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -48,15 +60,12 @@ Deno.serve(async (request: Request) => {
   }
 
   // Service-role only, the way send-push and send-engagement check it.
+  // The exact service key, not a decoded role claim: a payload is not proof
+  // without its signature, and this must hold even if verify_jwt is ever off
+  // for a cron-invoked function.
   const auth = request.headers.get('Authorization') ?? '';
-  const jwt = auth.replace(/^Bearer\s+/i, '');
-  let role = '';
-  try {
-    role = JSON.parse(atob(jwt.split('.')[1] ?? '')).role ?? '';
-  } catch {
-    role = '';
-  }
-  if (role !== 'service_role') {
+  const presented = auth.replace(/^Bearer\s+/i, '');
+  if (!timingSafeEqual(presented, serviceKey)) {
     return new Response('forbidden', { status: 403 });
   }
 
@@ -77,6 +86,9 @@ Deno.serve(async (request: Request) => {
     }
     pages += 1;
 
+    // A failed or partial remove orphans nothing: the claim lists objects
+    // still present in the bucket, so whatever survives is listed again on
+    // the next run. The release record only stops the id being reused.
     const { data: gone, error: removeError } = await db.storage.from(BUCKET).remove(names);
     if (removeError) {
       console.error('stories remove', removeError.message);

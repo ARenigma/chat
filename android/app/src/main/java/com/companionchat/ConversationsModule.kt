@@ -189,8 +189,14 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
      */
     @ReactMethod
     fun clearRequest(conversationId: String, requestId: String, promise: Promise) {
-        Conversations.clearRequest(reactContext, conversationId, requestId)
-        promise.resolve(null)
+        // Like notify: a system failure rejects the promise rather than
+        // crashing the bridge thread.
+        try {
+            Conversations.clearRequest(reactContext, conversationId, requestId)
+            promise.resolve(null)
+        } catch (e: Exception) {
+            promise.reject("E_CLEAR", e)
+        }
     }
 
     /**
@@ -200,8 +206,12 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
      */
     @ReactMethod
     fun clearAll(promise: Promise) {
-        Conversations.clearAll(reactContext)
-        promise.resolve(null)
+        try {
+            Conversations.clearAll(reactContext)
+            promise.resolve(null)
+        } catch (e: Exception) {
+            promise.reject("E_CLEAR", e)
+        }
     }
 
     /**
