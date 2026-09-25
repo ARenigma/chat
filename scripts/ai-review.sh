@@ -12,6 +12,13 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 base="${1:-origin/main}"
+
+# One-off escape hatch, only on Amit's say-so (2026-09-25: "push now, file
+# findings"). Logged loudly; every other pre-push gate still runs.
+if [ "${AI_REVIEW_SKIP:-}" = "1" ]; then
+  echo "ai-review: SKIPPED by AI_REVIEW_SKIP=1 (owner-approved one-off)." >&2
+  exit 0
+fi
 model="${AI_REVIEW_MODEL:-sonnet}"
 jobs="${AI_REVIEW_JOBS:-6}"
 chunk_bytes="${AI_REVIEW_CHUNK_BYTES:-120000}"
