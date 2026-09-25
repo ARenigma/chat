@@ -206,6 +206,9 @@ export function ChatRingScreen({ onOpenConversation, held = false }: Props) {
    * Decline can still be out when the next ring's is pressed.
    */
   const declining = useRef<Set<string>>(new Set());
+  // Accepts on the wire, for the same reason: a ring-out while one is out
+  // must not clear a notification the Accept may still need if it fails.
+  const accepting = useRef<Set<string>>(new Set());
   /** Queued requests already announced out of the app (`announceQueued`). */
   const announced = useRef<Set<string>>(new Set());
 
@@ -274,7 +277,7 @@ export function ChatRingScreen({ onOpenConversation, held = false }: Props) {
          * https://developer.android.com/develop/ui/views/notifications/conversations#best-practices
          */
         clearRevealedChat(conversationId);
-        if (declining.current.has(requestId)) {
+        if (declining.current.has(requestId) || accepting.current.has(requestId)) {
           return;
         }
         clearIfUncovered(conversationId);
@@ -304,7 +307,10 @@ export function ChatRingScreen({ onOpenConversation, held = false }: Props) {
      * it started, which settles for that call whatever is pressed after it.
      * https://tanstack.com/query/v5/docs/framework/react/guides/mutations#mutateasync
      */
-    void accept.mutateAsync({ requestId, conversationId }).then(
+    accepting.current.add(requestId);
+    void accept.mutateAsync({ requestId, conversationId }).finally(() => {
+      accepting.current.delete(requestId);
+    }).then(
       /*
        * On success they are in the conversation; on a refusal (Greptile P1
        * on 5cb4480) -- the request gone, answered elsewhere, expired, or not

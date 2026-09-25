@@ -144,8 +144,10 @@ async function send(
               : {}),
             ...(row.caller_avatar_url ? { senderAvatar: row.caller_avatar_url } : {}),
             // Whose ring this is (143), for send-push's reason: the device
-            // rings only for the account signed in on it.
-            recipientId: row.recipient_id,
+            // rings only for the account signed in on it. Spread like the
+            // other optional fields: FCM data values must be strings, and a
+            // null would refuse the whole call push.
+            ...(row.recipient_id ? { recipientId: row.recipient_id } : {}),
           },
         },
       }),

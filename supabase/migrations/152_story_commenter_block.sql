@@ -242,6 +242,11 @@ begin
   if v_provider is distinct from v_uid then
     return json_build_object('success', false, 'error', 'FORBIDDEN');
   end if;
+  -- Nobody blocks themselves (providers cannot comment today; this keeps it
+  -- so if that changes).
+  if v_author = v_uid then
+    return json_build_object('success', false, 'error', 'FORBIDDEN');
+  end if;
 
   -- Both profiles, in id order, before the insert's foreign key takes them
   -- blocker first: an account deletion's prologue takes profiles in id order

@@ -757,7 +757,7 @@ describe('a push for another account is not shown in this one (143)', () => {
     const sendPush = withoutComments(read('supabase/functions/send-push/index.ts'));
     expect(sendPush).toContain('recipientId: row.recipient_id,');
     const sendCall = withoutComments(read('supabase/functions/send-call/index.ts'));
-    expect(sendCall).toContain('recipientId: row.recipient_id,');
+    expect(sendCall).toContain('...(row.recipient_id ? { recipientId: row.recipient_id } : {}),');
     // The nudges too, from the account their tokens were chosen by.
     expect(withoutComments(read('supabase/functions/send-engagement/index.ts'))).toContain('recipientId: row.member_id,');
     const openAlert = withoutComments(read('supabase/functions/send-open-alert/index.ts'));

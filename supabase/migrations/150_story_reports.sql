@@ -1006,14 +1006,22 @@ declare
   v_purchased  integer;
   v_tx_id      uuid;
   v_session_id uuid;
+  v_locked     uuid[];
 begin
-  -- 0. The lock order (above): the live sessions, then every profile.
-  perform 1
-  from   public.paid_sessions
-  where  (member_id = auth.uid() or provider_id = auth.uid())
-    and  status not in ('ended', 'reported_hold')
-  order  by created_at
-  for update;
+  -- 0. The lock order (above): the live sessions, then every profile. The
+  --    sessions locked here are the ones step 1 ends: a session that
+  --    appeared after this lock was never ordered before the profiles, so
+  --    it is left to the cascade rather than locked out of order below.
+  select coalesce(array_agg(id order by created_at), '{}')
+  into   v_locked
+  from (
+    select id, created_at
+    from   public.paid_sessions
+    where  (member_id = auth.uid() or provider_id = auth.uid())
+      and  status not in ('ended', 'reported_hold')
+    order  by created_at
+    for update
+  ) s;
 
   perform 1
   from   public.profiles p
@@ -1029,13 +1037,7 @@ begin
   -- 1. End anything still running. 'system' is an accepted end_reason (091).
   --    end_session's own participant check passes because the caller IS a
   --    participant — this runs before auth.uid()'s profile is gone.
-  for v_session_id in
-    select id
-    from   public.paid_sessions
-    where  (member_id = auth.uid() or provider_id = auth.uid())
-      and  status not in ('ended', 'reported_hold')
-    order  by created_at
-  loop
+  foreach v_session_id in array v_locked loop
     perform public.end_session(v_session_id, 'system', null, null, null);
   end loop;
 
