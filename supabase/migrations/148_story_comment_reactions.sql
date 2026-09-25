@@ -86,6 +86,24 @@ begin
     return json_build_object('success', false, 'error', 'SUSPENDED');
   end if;
 
+  /*
+   * Lock the story, then the comment (every path's order, 150), and re-check
+   * the comment is live under the lock. The tombstone's reaction-clearing
+   * trigger fires on the delete's UPDATE; a reaction inserted by a call that
+   * checked visibility before that delete committed would otherwise land on a
+   * deleted comment and survive it.
+   */
+  perform 1 from public.stories s
+  join public.story_comments c on c.story_id = s.id
+  where c.id = p_comment_id
+  for share of s;
+  perform 1 from public.story_comments
+  where id = p_comment_id and deleted_at is null
+  for share;
+  if not found then
+    return json_build_object('success', false, 'error', 'NOT_FOUND');
+  end if;
+
   select emoji into v_existing
   from public.story_comment_reactions
   where comment_id = p_comment_id;

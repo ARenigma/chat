@@ -85,7 +85,7 @@
 
 \set ON_ERROR_STOP on
 begin;
-select plan(115);
+select plan(116);
 
 -- ── The storage stand-in ───────────────────────────────────────────────────
 create schema storage;
@@ -1061,7 +1061,14 @@ select ok(
    from (select pg_get_functiondef('public.delete_story_comment(uuid, public.report_reason, text, uuid)'::regprocedure) as d) f),
   '39i. delete_story_comment locks the story, then the comment, before it files a report'
 );
--- And those are the only two that lock a comment row, so the order above is
+select ok(
+  (select position('for share of s' in d) > 0
+      and position('for share of s' in d) < position('deleted_at is null
+  for share' in d)
+   from (select pg_get_functiondef('public.react_to_story_comment(uuid, text)'::regprocedure) as d) f),
+  '39j0. react_to_story_comment locks the story, then the live comment'
+);
+-- And those are the only three that lock a comment row, so the order above is
 -- the whole of it: a new function locking comments fails here until it is
 -- added, and checked, above.
 select is(
@@ -1070,8 +1077,8 @@ select is(
    join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public'
      and p.prosrc ~ 'from public\.story_comments[^;]*\mfor (share|update|no key update|key share)\M'),
-  'delete_story_comment,report_story_comment',
-  '39j. only those two take a row lock on a comment'
+  'delete_story_comment,react_to_story_comment,report_story_comment',
+  '39j. only those three take a row lock on a comment'
 );
 
 -- And before any of those row locks, the profiles the report's insert will

@@ -1107,9 +1107,15 @@ async function tellServer(entry: PendingSignOut | null, push: PushHalf): Promise
       }
     }
   } catch (err) {
-    await pushDone;
-    retry = isAuthRetryableFetchError(err);
-    if (!retry) {
+    const pushed = await pushDone.catch(() => false);
+    if (entry !== null && push !== 'none' && pushed) {
+      markPushDone(entry);
+    }
+    // A refused old session is final for /logout, but a device teardown that
+    // failed can still be retried without it (its token revoke needs no
+    // session), so the entry is kept for that.
+    retry = isAuthRetryableFetchError(err) || (!pushed && push === 'device');
+    if (!isAuthRetryableFetchError(err)) {
       reportSwallowed('signOut.server', err);
     }
   }
