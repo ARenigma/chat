@@ -683,6 +683,10 @@ exception
   -- copies cannot drift.
   when check_violation or not_null_violation then
     return json_build_object('success', false, 'error', 'BAD_REQUEST');
+  -- The same client-minted id raced by another account: its advisory lock is
+  -- per caller, so only the primary key sees the collision.
+  when unique_violation then
+    return json_build_object('success', false, 'error', 'BAD_REQUEST');
 end;
 $$;
 

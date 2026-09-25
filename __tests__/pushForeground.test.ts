@@ -64,6 +64,24 @@ function withoutComments(source: string): string {
       i += 1;
       continue;
     }
+    // A regex literal: a `/` where an expression starts (after an operator,
+    // an opening bracket, or line start). Copied through whole, so a `//` or
+    // `/*` inside it is never read as a comment.
+    if (c === '/' && source[i + 1] !== '/' && source[i + 1] !== '*' && /(^|[(,=:[!&|?{};+\-*%<>~^]|\breturn)\s*$/.test(out.slice(-40))) {
+      let j = i + 1;
+      let inClass = false;
+      while (j < source.length && source[j] !== '\n') {
+        const d = source[j];
+        if (d === '\\') { j += 2; continue; }
+        if (d === '[') inClass = true;
+        else if (d === ']') inClass = false;
+        else if (d === '/' && !inClass) break;
+        j += 1;
+      }
+      out += source.slice(i, j + 1);
+      i = j + 1;
+      continue;
+    }
     if (source.startsWith('//', i)) {
       const end = source.indexOf('\n', i);
       i = end === -1 ? source.length : end;
@@ -1461,6 +1479,11 @@ describe('token registration stays alive', () => {
 
   it('never writes the token to the log, even when the server echoes it', async () => {
     const h = load();
+    // Every console channel too, not only pushLog: a direct console call that
+    // bypassed it would reach logcat just the same.
+    const spies = (['log', 'info', 'warn', 'error', 'debug'] as const).map(m =>
+      jest.spyOn(console, m).mockImplementation(() => undefined),
+    );
     h.rpc.mockImplementation(async () => ({
       error: { code: '22023', message: `not a token: ${TOKEN}` },
     }));
@@ -1469,6 +1492,12 @@ describe('token registration stays alive', () => {
     expect(logs.some(line => line.startsWith('register start: failed, 22023'))).toBe(true);
     for (const line of logs) {
       expect(line).not.toContain(TOKEN);
+    }
+    for (const spy of spies) {
+      for (const call of spy.mock.calls) {
+        expect(call.map(String).join(' ')).not.toContain(TOKEN);
+      }
+      spy.mockRestore();
     }
   });
 });

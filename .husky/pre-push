@@ -46,4 +46,5 @@ if ! command -v uvx >/dev/null 2>&1; then
 fi
 npm run python:check
 SECURITY_BASE_REF="${remote}/main" npm run security:push
-bash scripts/greptile-review.sh status "$head_sha"
+# Greptile trial exhausted 2026-09-25; the local Sonnet review stands in.
+bash scripts/ai-review.sh "${remote}/main"

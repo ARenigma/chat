@@ -380,12 +380,13 @@ describe('moderate.mjs acts on stories as the owner rules say', () => {
   });
 
   describe('act is resumable after a failed takedown (Greptile P1 on 6bb4114)', () => {
-    it('records the action and suspension once, then finishes the takedown and closes the report', async () => {
+    it('records the action once, re-applies the suspension, then finishes the takedown and closes the report', async () => {
       const { act, calls, logs } = runAct(STORY_REPORT, 'suspended', { days: '7' }, ['suspended']);
       await act();
       const paths = calls.map(call => `${call.options?.method ?? 'GET'} ${call.path}`);
       expect(paths).not.toContain('POST moderation_actions');
-      expect(paths.some(path => path.startsWith('PATCH profiles?'))).toBe(false);
+      // The suspension is re-applied: the first run may have died before it.
+      expect(paths.some(path => path.startsWith('PATCH profiles?'))).toBe(true);
       expect(paths).toContain('DELETE stories?id=eq.s-1');
       expect(paths).toContain('PATCH reports?id=eq.r-1');
       expect(logs.some(line => line.startsWith('resuming:'))).toBe(true);

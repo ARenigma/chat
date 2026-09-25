@@ -109,6 +109,10 @@ begin
 exception
   when check_violation or not_null_violation then
     return json_build_object('success', false, 'error', 'BAD_REQUEST');
+  -- The story was deleted (by its provider or the purge) between the
+  -- visibility check and this write: it is gone, not a server error.
+  when foreign_key_violation then
+    return json_build_object('success', false, 'error', 'NOT_FOUND');
 end;
 $$;
 

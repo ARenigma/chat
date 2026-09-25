@@ -91,6 +91,10 @@ begin
   get diagnostics v_inserted = row_count;
 
   return json_build_object('success', true, 'first_view', v_inserted = 1);
+exception
+  -- The story was deleted between the visibility check and this insert.
+  when foreign_key_violation then
+    return json_build_object('success', false, 'error', 'NOT_FOUND');
 end;
 $$;
 

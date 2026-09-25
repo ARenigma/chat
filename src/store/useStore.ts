@@ -241,6 +241,12 @@ export const useStore = create<AppState>()(set => ({
       if (known) {
         return state;
       }
+      // A request delivered after it expired (a late Realtime INSERT after a
+      // reconnect) never rings: it would hold the ring slot for a dead request
+      // and queue a live one behind it. The queue already drops expired ones.
+      if (request.expiresAt !== undefined && Date.parse(request.expiresAt) <= Date.now()) {
+        return state;
+      }
       if (state.incomingRequest === null) {
         return {
           incomingRequest: request,

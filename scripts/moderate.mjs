@@ -604,8 +604,8 @@ async function act() {
   // landed, which exits with the report still open. Re-running the same act
   // used to record the action a second time (Greptile P1 on 6bb4114). An
   // existing row for this report and action means this is that retry: the
-  // record and the suspension are kept, and only the takedowns and the
-  // resolve are finished.
+  // record is kept (not written twice); the suspension, the takedowns and the
+  // resolve are re-applied, all idempotent.
   const [already] = await rest(
     `moderation_actions?report_id=eq.${r.id}&action=eq.${action}&select=id&limit=1`,
   );
@@ -625,7 +625,10 @@ async function act() {
       prefer: 'return=minimal',
     });
 
-  if (suspendedUntil !== null && already === undefined) {
+  // Always, even on a resume: the audit row can land and the PATCH fail, and
+  // a resume that skipped it closed a report whose suspension never applied.
+  // Setting the same restriction twice is harmless.
+  if (suspendedUntil !== null) {
     await rest(`profiles?id=eq.${r.subject_user_id}`, {
       method: 'PATCH',
       body: { suspended_until: suspendedUntil },

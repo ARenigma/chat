@@ -90,6 +90,20 @@
 \set ON_ERROR_STOP on
 begin;
 create extension if not exists dblink with schema test;
+
+-- Close every named connection a failed race left open, so one real
+-- regression shows as its own failing assertion instead of a "duplicate
+-- connection" abort in every race after it.
+create or replace function test.dblink_reset() returns void
+language plpgsql as $$
+declare
+  v_name text;
+begin
+  foreach v_name in array coalesce(test.dblink_get_connections(), '{}'::text[]) loop
+    perform test.dblink_disconnect(v_name);
+  end loop;
+end;
+$$;
 select plan(26);
 
 create function test.conninfo()
@@ -321,6 +335,7 @@ declare
   v_aerror text;
   v_berror text;
 begin
+  perform test.dblink_reset();
   perform test.dblink_connect('h', test.conninfo());
   perform test.dblink_connect('a', test.conninfo());
   perform test.dblink_connect('b', test.conninfo());
@@ -386,6 +401,7 @@ declare
   v_result text;
   v_error  text;
 begin
+  perform test.dblink_reset();
   perform test.dblink_connect('h', test.conninfo());
   perform test.dblink_connect('x', test.conninfo());
   perform test.dblink_exec('h', 'begin');
@@ -423,6 +439,7 @@ declare
   v_rerror  text;
   v_derror  text;
 begin
+  perform test.dblink_reset();
   perform test.dblink_connect('h', test.conninfo());
   perform test.dblink_connect('r', test.conninfo());
   perform test.dblink_connect('d', test.conninfo());
@@ -488,6 +505,7 @@ declare
   v_rerror  text;
   v_derror  text;
 begin
+  perform test.dblink_reset();
   perform test.dblink_connect('h', test.conninfo());
   perform test.dblink_connect('r', test.conninfo());
   perform test.dblink_connect('d', test.conninfo());
@@ -601,6 +619,7 @@ declare
   v_waited boolean := false;
   v_rerror text;
 begin
+  perform test.dblink_reset();
   perform test.dblink_connect('h', test.conninfo());
   perform test.dblink_connect('r', test.conninfo());
   perform test.dblink_connect('c', test.conninfo());

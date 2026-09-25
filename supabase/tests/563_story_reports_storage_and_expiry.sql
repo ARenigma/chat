@@ -746,7 +746,7 @@ reset role;
 -- sweep, up to about 70 minutes past the 24 hours, and deleting the object is
 -- the only thing that stops a CDN-cached signed URL (story-media-url).
 select is(
-  (select string_agg(right(object_name, 10), ',') from public.story_objects_to_purge(1000))
+  (select string_agg(right(t.object_name, 10), ',' order by t.ordinality) from public.story_objects_to_purge(1000) with ordinality as t)
   || '|' || (select count(*) from public.stories where id = 'c5630000-0000-4563-8000-0000000000a3'),
   '0000b8.jpg,0000a3.png,0000a4.jpg|1',
   '33b. an expired story''s media is named before the sweep reaches its row; a live or reported story''s is not'
@@ -774,14 +774,14 @@ select is(
 
 -- The list purge-story-media removes through the Storage API, oldest first.
 select is(
-  (select string_agg(right(object_name, 10), ',')
-   from public.story_objects_to_purge(1000)),
+  (select string_agg(right(t.object_name, 10), ',' order by t.ordinality)
+   from public.story_objects_to_purge(1000) with ordinality as t),
   '0000b8.jpg,0000a3.png,0000a4.jpg',
   '36b. named: the abandoned upload, the expired story''s, and the deleted story''s at once'
 );
 select is(
-  (select string_agg(right(object_name, 10), ',')
-   from public.story_objects_to_purge(1)),
+  (select string_agg(right(t.object_name, 10), ',' order by t.ordinality)
+   from public.story_objects_to_purge(1) with ordinality as t),
   '0000b8.jpg',
   '36c. a page is the limit asked for, oldest first'
 );
@@ -797,8 +797,8 @@ select is(
 -- is recorded as released before it is handed out, the abandoned upload's
 -- included, which had no story to release it.
 select is(
-  (select string_agg(right(object_name, 10), ',')
-   from public.claim_story_objects_to_purge(1000)),
+  (select string_agg(right(t.object_name, 10), ',' order by t.ordinality)
+   from public.claim_story_objects_to_purge(1000) with ordinality as t),
   '0000b8.jpg,0000a3.png,0000a4.jpg',
   '37a. the claim hands out exactly the list'
 );

@@ -284,6 +284,15 @@ object Conversations {
      * The lock-screen Decline no longer cancels anything itself; it clears
      * through [clearRequest] once its RPC has succeeded (ChatRequestReceiver).
      * https://developer.android.com/develop/ui/views/notifications/build-notification#Removing
+     *
+     * One lock for every id, deliberately, not one per conversation.
+     * [clearAll] (sign-out) retires every stamp and sets [clearedAll] in one
+     * step, and per-id locks would let a post for an id it had not reached yet
+     * slip in between and survive the sign-out. The cost is that posts for
+     * different conversations queue: each holds the lock for one `notify` and
+     * one shortcut push, Binder calls of about a millisecond, and the avatar
+     * download (the slow part) runs outside it. A reconnect burst is a
+     * handful of posts, so the queue is milliseconds long.
      */
     private val postLock = Any()
 

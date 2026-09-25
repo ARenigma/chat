@@ -14,8 +14,9 @@ describe('verification-before-remote pipeline', () => {
     expect(preCommit).toContain('tsc --noEmit');
     expect(preCommit).not.toContain('npm run verify');
 
+    // Review moved to pre-push when the Greptile trial ran out (2026-09-25).
     const postCommit = read('.husky/post-commit');
-    expect(postCommit).toContain('review:greptile');
+    expect(postCommit).not.toContain('review:greptile');
 
     const prePush = read('.husky/pre-push');
     expect(prePush).toContain('set -eu');
@@ -23,12 +24,12 @@ describe('verification-before-remote pipeline', () => {
     expect(prePush).toContain('security:push');
     expect(prePush).toContain('while read -r local_ref local_sha');
     expect(prePush).toContain('git rev-parse "${local_sha}^{commit}"');
-    expect(prePush).toContain('scripts/greptile-review.sh status "$head_sha"');
+    expect(prePush).toContain('bash scripts/ai-review.sh "${remote}/main"');
     expect(prePush.indexOf('npm run verify')).toBeLessThan(
       prePush.indexOf('security:push'),
     );
     expect(prePush.indexOf('security:push')).toBeLessThan(
-      prePush.indexOf('scripts/greptile-review.sh status'),
+      prePush.indexOf('scripts/ai-review.sh'),
     );
   });
 
@@ -114,5 +115,15 @@ describe('verification-before-remote pipeline', () => {
     expect(control).toContain(
       'press accepts an uppercase Android key name or numeric keycode.',
     );
+  });
+});
+
+describe('the local AI review gate (Greptile stand-in, 2026-09-25)', () => {
+  const review = require('fs').readFileSync(require('path').join(__dirname, '../scripts/ai-review.sh'), 'utf8') as string;
+  it('reviews the pushed range with Sonnet and fails closed on P0-P2 or a failed chunk', () => {
+    expect(review).toContain('model="${AI_REVIEW_MODEL:-sonnet}"');
+    expect(review).toContain("grep -Eq '^P[012] ' \"$report\"");
+    expect(review).toContain("grep -q '^REVIEW-FAILED' \"$report\"");
+    expect(review).toContain('set -euo pipefail');
   });
 });

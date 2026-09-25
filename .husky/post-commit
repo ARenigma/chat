@@ -1,4 +1,2 @@
-# Greptile only reviews committed changes, so the earliest honest trigger is
-# post-commit. Findings fail this hook visibly; the commit remains local and
-# pre-push refuses it until a clean review exists for HEAD.
-npm run review:greptile
+# Greptile trial exhausted 2026-09-25: review now runs at pre-push
+# (scripts/ai-review.sh), so commits stay fast.
